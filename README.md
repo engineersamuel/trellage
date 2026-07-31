@@ -1,0 +1,143 @@
+# Isolated Agent Evaluation Harness
+
+This repository runs multiple coding-agent configurations against the same prompt without loading their plugins, skills, hooks, sessions, caches, or configuration into the host harness.
+
+The included comparison builds the same TODO app twice:
+
+- Codex CLI with a pinned `wshobson/agents` plugin, using `copilot-proxy-rs` for model calls.
+- GitHub Copilot CLI with pinned `github/awesome-copilot` plugins, using native GitHub Copilot authentication.
+
+Each contestant gets its own image, Compose project, network, workspace volume, app-data volume, session, and loopback port. The output is normalized evidence for later grading; the harness does not select a winner.
+
+## Quick Start
+
+Prerequisites:
+
+- Docker Engine with Compose.
+- `jq`, `gh`, Node.js, and npm on the host.
+- A running `copilot-proxy-rs` Compose project whose network is named `copilot-proxy-rs_default`.
+- A GitHub account with Copilot access. Authenticate with `gh auth login`, or set `COPILOT_GITHUB_TOKEN` or `GH_TOKEN`.
+
+Install the host Playwright browser once:
+
+```bash
+cd tests/playwright
+npm ci
+npx playwright install chromium
+cd ../..
+```
+
+Run the complete comparison:
+
+```bash
+make compare
+```
+
+This validates the manifest, builds both images, runs both agents concurrently, serves both apps, verifies both generated workspaces and browser flows, and writes a timestamped evidence bundle.
+
+Open the live apps:
+
+- Codex + `wshobson/agents`: <http://127.0.0.1:4173>
+- Copilot + `awesome-copilot`: <http://127.0.0.1:4174>
+
+## Native Copilot Authentication
+
+The Copilot contestant does not use `copilot-proxy-rs`. The runner resolves a token in this order:
+
+1. `COPILOT_GITHUB_TOKEN`
+2. `GH_TOKEN`
+3. `gh auth token`
+
+It writes the value to a temporary mode-`0600` file, mounts that file only as `/run/secrets/copilot_token` in the one-shot Copilot agent container, and deletes the temporary file when the run ends. The token is not placed in container environment configuration, host bind mounts, logs, or collected evidence. Host `~/.copilot` and `~/.config/gh` directories are never mounted.
+
+## Lifecycle Commands
+
+The default manifest is `harnesses/todo-side-by-side/harness.json`.
+
+```bash
+./scripts/harness validate harnesses/todo-side-by-side/harness.json
+./scripts/harness build    harnesses/todo-side-by-side/harness.json
+./scripts/harness run      harnesses/todo-side-by-side/harness.json
+./scripts/harness resume   harnesses/todo-side-by-side/harness.json
+./scripts/harness serve    harnesses/todo-side-by-side/harness.json
+./scripts/harness verify   harnesses/todo-side-by-side/harness.json
+HARNESS_RUN_ID=my-run ./scripts/harness collect harnesses/todo-side-by-side/harness.json
+./scripts/harness down     harnesses/todo-side-by-side/harness.json
+./scripts/harness purge    harnesses/todo-side-by-side/harness.json
+```
+
+- `run` creates new retained agent sessions and runs contestants concurrently.
+- `resume` continues both retained sessions with the shared prompt.
+- `serve` publishes the generated runtime artifacts and starts both apps.
+- `verify` runs each app's own test/type/lint/build/audit checks, recreates clean app processes, runs the shared CRUD flow, recreates each app again, and proves SQLite persistence.
+- `collect` exports normalized, secret-scanned evidence and refuses to overwrite an existing run ID.
+- `down` stops containers but preserves workspaces, sessions, and app data.
+- `purge` permanently removes both contestant projects and their named volumes.
+
+Use another manifest with Make:
+
+```bash
+make compare HARNESS=harnesses/my-comparison/harness.json
+```
+
+## Define a Comparison
+
+Copy the existing harness directory and edit its manifest and prompt. Keep contestant IDs and ports unique.
+
+Each package entry contains:
+
+- `source`: the repository supported by that runtime adapter.
+- `ref`: an exact 40-character Git commit SHA.
+- `plugins`: the plugin or plugins baked into that contestant image.
+- `skills` and `hooks`: reserved direct-selection fields; they must currently be empty.
+
+Current adapter capabilities:
+
+| Runtime | Package source | Plugin selection | Agents and skills | Hooks |
+|---|---|---|---|---|
+| Codex | `wshobson/agents` | Exactly one plugin per contestant | Generated Codex agents and skills bundled by that plugin | Direct hooks unsupported |
+| Copilot | `github/awesome-copilot` | One or more plugins per contestant | Native plugin agents and skills are materialized with their manifests | Plugin hooks and direct hooks unsupported |
+
+The Awesome Copilot adapter also rejects plugin manifests that require MCP servers, commands, extensions, unsafe paths, or symbolic links. Unsupported surfaces fail validation or build instead of being silently ignored.
+
+When changing package inputs, use a new harness/contestant ID for a clean comparison, or run `purge` first. Reusing an ID intentionally reuses that contestant's retained workspace and data volumes.
+
+## Isolation Contract
+
+- No host bind mounts or Docker socket mounts.
+- No host agent configuration or harness state mounted into contestants.
+- Non-root agent UID/GID `10001:10001`; non-root app UID/GID `10002:10002`.
+- Read-only root filesystems, all capabilities dropped, and `no-new-privileges`.
+- Separate workspace and SQLite volumes for every contestant.
+- Separate Compose networks and localhost-only app ports.
+- Only the Codex agent joins `copilot-proxy-rs_default`.
+- The Copilot agent joins only its project network and receives only its ephemeral file secret.
+- Generated apps cannot reach the proxy network and receive no model credentials.
+
+The app networks are ordinary Docker bridges because published host ports do not work on Docker internal networks. Isolation is enforced by project-scoped networks and volumes, hardened containers, and loopback-only port publication.
+
+## Evidence
+
+Each collection creates:
+
+```text
+results/<harness-id>/<run-id>/
+├── acceptance.json
+├── comparison.json
+├── manifest.resolved.json
+├── prompt.md
+└── contestants/<contestant-id>/
+    ├── input.json
+    ├── runtime.json
+    ├── checks.json
+    ├── browser.json
+    ├── events.jsonl
+    ├── last-message.md
+    ├── package-inventory.txt
+    ├── app-inventory.json
+    └── artifact-hashes.json
+```
+
+`comparison.json` records prompt parity, runtime/provider/model identity, evidence roots, and pass/fail status. It intentionally has no `winner` field, leaving a stable seam for a deterministic rubric or future LLM judge.
+
+See [docs/verification.md](docs/verification.md) for the current live proof and audit commands.

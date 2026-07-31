@@ -1,0 +1,6 @@
+.codex/agents/full-stack-orchestration__deployment-engineer.toml
+.codex/agents/full-stack-orchestration__performance-engineer.toml
+.codex/agents/full-stack-orchestration__security-auditor.toml
+.codex/agents/full-stack-orchestration__test-automator.toml
+.codex/skills/full-stack-orchestration__full-stack-feature/SKILL.md
+.codex/skills/full-stack-orchestration__full-stack-feature/references/details.md

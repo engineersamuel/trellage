@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1.7
+
+FROM python:3.13.14-slim-bookworm AS adapter
+
+ARG WSHOBSON_AGENTS_REF=c4b82b0ad771190355eb8e204b1329732a18449a
+ARG WSHOBSON_AGENTS_PLUGIN=full-stack-orchestration
+ARG UV_VERSION=0.11.21
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir "uv==${UV_VERSION}"
+
+RUN git init -q /opt/agents \
+    && git -C /opt/agents remote add origin https://github.com/wshobson/agents.git \
+    && git -C /opt/agents fetch --depth 1 origin "${WSHOBSON_AGENTS_REF}" \
+    && git -C /opt/agents checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/agents rev-parse HEAD)" = "${WSHOBSON_AGENTS_REF}"
+
+COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
+
+RUN mkdir -p /opt/agent-kit \
+    && uv run --project /opt/agents/plugins/plugin-eval \
+      python /opt/agents/tools/generate.py \
+      --harness codex \
+      --plugin "${WSHOBSON_AGENTS_PLUGIN}" \
+      --output-root /opt/agent-kit \
+    && /usr/local/bin/adapt-agent-kit.sh /opt/agent-kit \
+    && find /opt/agent-kit -type f -print \
+      | sed 's#^/opt/agent-kit/##' \
+      | LC_ALL=C sort > /opt/agent-kit-inventory.txt \
+    && test -s /opt/agent-kit-inventory.txt
+
+FROM node:22-bookworm-slim AS runtime
+
+ARG CODEX_VERSION=0.144.6
+ARG PLAYWRIGHT_VERSION=1.61.1
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git jq \
+    && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
+    && npm install --global "@openai/codex@${CODEX_VERSION}" \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 agent \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/agent --shell /bin/bash agent \
+    && mkdir -p /workspace \
+    && touch /workspace/.volume-seed \
+    && chown -R 10001:10001 /workspace /home/agent
+
+COPY --from=adapter /opt/agent-kit /opt/agent-kit
+COPY --from=adapter /opt/agent-kit-inventory.txt /opt/agent-kit-inventory.txt
+COPY docker/codex-config.toml /opt/codex-config.toml
+COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
+COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+COPY scripts/run-agent.sh /usr/local/bin/run-agent.sh
+
+RUN chmod 0555 /usr/local/bin/agent-entrypoint.sh /usr/local/bin/run-agent.sh \
+    && chmod -R a=rX /opt/agent-kit /opt/agent-kit-inventory.txt /opt/codex-config.toml
+
+ENV HOME=/home/agent \
+    CODEX_HOME=/workspace/.codex-home \
+    XDG_CACHE_HOME=/workspace/.cache \
+    XDG_CONFIG_HOME=/workspace/.config \
+    npm_config_cache=/workspace/.npm \
+    npm_config_update_notifier=false
+
+WORKDIR /workspace
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint.sh"]
+CMD ["bash"]

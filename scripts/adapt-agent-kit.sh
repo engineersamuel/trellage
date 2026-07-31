@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+agent_kit_root="${1:?usage: adapt-agent-kit.sh AGENT_KIT_ROOT}"
+agent_dir="$agent_kit_root/.codex/agents"
+skill_dir="$agent_kit_root/.codex/skills"
+
+[[ -d "$agent_dir" ]] || {
+  printf 'agent kit adapter: missing agent directory: %s\n' "$agent_dir" >&2
+  exit 1
+}
+[[ -d "$skill_dir" ]] || {
+  printf 'agent kit adapter: missing skill directory: %s\n' "$skill_dir" >&2
+  exit 1
+}
+
+for agent_file in "$agent_dir"/*.toml; do
+  agent_name="$(sed -n 's/^name = "\([^"]*\)"/\1/p' "$agent_file")"
+  [[ "$agent_name" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || {
+    printf 'agent kit adapter: invalid agent name in %s\n' "$agent_file" >&2
+    exit 1
+  }
+
+  legacy_name="${agent_name/__/-}"
+  [[ "$legacy_name" != "$agent_name" ]] || continue
+
+  while IFS= read -r -d '' skill_file; do
+    grep -Fq "$legacy_name" "$skill_file" || continue
+    adapted_file="$(mktemp "${TMPDIR:-/tmp}/adapt-agent-kit.XXXXXX")"
+    if ! sed "s/${legacy_name}/${agent_name}/g" "$skill_file" >"$adapted_file"; then
+      rm -f "$adapted_file"
+      exit 1
+    fi
+
+    restore_read_only=false
+    if [[ ! -w "$skill_file" ]]; then
+      chmod u+w "$skill_file"
+      restore_read_only=true
+    fi
+    if ! cp "$adapted_file" "$skill_file"; then
+      [[ "$restore_read_only" == false ]] || chmod u-w "$skill_file"
+      rm -f "$adapted_file"
+      exit 1
+    fi
+    [[ "$restore_read_only" == false ]] || chmod u-w "$skill_file"
+    rm -f "$adapted_file"
+  done < <(find "$skill_dir" -type f -name '*.md' -print0)
+done

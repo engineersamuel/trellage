@@ -1,0 +1,534 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+cd "$repo_root"
+
+copilot_secret_file=''
+collection_staging=''
+cleanup_secret_file() {
+  if [[ -n "$copilot_secret_file" && -f "$copilot_secret_file" ]]; then
+    rm -f "$copilot_secret_file"
+  fi
+  if [[ -n "$collection_staging" && -d "$collection_staging" ]]; then
+    rm -rf -- "$collection_staging"
+  fi
+}
+trap cleanup_secret_file EXIT
+
+fail() {
+  printf 'harness: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+usage() {
+  cat >&2 <<'EOF'
+usage: scripts/harness COMMAND MANIFEST
+
+commands:
+  validate  Validate the manifest without external calls
+  build     Build isolated contestant and app images
+  run       Run both contestants concurrently in new sessions
+  resume    Resume both retained contestant sessions concurrently
+  serve     Publish both generated apps on their loopback ports
+  verify    Run generated-app checks and common browser/persistence checks
+  collect   Export normalized, secret-scanned judge evidence
+  compare   Validate, build, run, serve, verify, and collect both contestants
+  down      Stop containers and preserve named volumes
+  purge     Permanently remove contestant containers and named volumes
+EOF
+  exit 64
+}
+
+[[ $# -eq 2 ]] || usage
+command_name="$1"
+manifest_input="$2"
+
+[[ -f "$manifest_input" ]] || fail "manifest not found: $manifest_input" 66
+manifest_dir="$(cd "$(dirname "$manifest_input")" && pwd -P)"
+manifest="$manifest_dir/$(basename "$manifest_input")"
+
+configure_acceptance() {
+  case "$acceptance_id" in
+    todo-v1)
+      acceptance_spec='todo.spec.ts'
+      acceptance_primary_title='supports CRUD and persists state across a reload'
+      acceptance_persistence_title='keeps the completed task after an app-container restart'
+      ;;
+    *)
+      fail "unsupported acceptance contract: $acceptance_id" 65
+      ;;
+  esac
+
+  [[ -f "$repo_root/tests/playwright/$acceptance_spec" ]] \
+    || fail "acceptance spec not found: $acceptance_spec" 66
+}
+
+validate_manifest() {
+  jq empty "$manifest" >/dev/null 2>&1 || fail 'manifest is not valid JSON' 65
+
+  jq -e '
+    .schemaVersion == 1
+    and (.id | type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
+    and (.prompt | type == "string" and test("^[a-zA-Z0-9._/-]+$") and (contains("..") | not) and (startswith("/") | not))
+    and (.acceptance | type == "string" and length > 0)
+    and (.contestants | type == "array" and length >= 2)
+    and all(.contestants[];
+      (.id | type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
+      and (.runtime == "codex" or .runtime == "copilot")
+      and (.service | type == "string")
+      and (.port | type == "number" and . >= 1024 and . <= 65535)
+      and (.model | type == "string" and length > 0)
+      and (.provider | type == "string" and length > 0)
+      and (.packages | type == "array" and length == 1)
+      and all(.packages[];
+        (.source | type == "string" and test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$"))
+        and (.ref | type == "string" and test("^[0-9a-f]{40}$"))
+        and (.plugins | type == "array" and length > 0)
+        and all(.plugins[]; type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
+        and (.skills | type == "array")
+        and all(.skills[]; type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
+        and (.hooks | type == "array")
+        and all(.hooks[]; type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
+        and .skills == []
+        and .hooks == []
+      )
+      and (
+        if .runtime == "codex" then
+          .service == "agent" and .provider == "copilot-proxy-rs"
+          and .packages[0].source == "https://github.com/wshobson/agents.git"
+          and (.packages[0].plugins | length) == 1
+        else
+          .service == "copilot_agent" and .provider == "github-copilot-native"
+          and .packages[0].source == "https://github.com/github/awesome-copilot.git"
+        end
+      )
+    )
+  ' "$manifest" >/dev/null || fail 'manifest does not satisfy schema version 1' 65
+
+  duplicate_id="$(jq -r '[.contestants[].id] | sort | group_by(.)[] | select(length > 1) | .[0]' "$manifest" | head -n 1)"
+  [[ -z "$duplicate_id" ]] || fail "duplicate contestant id: $duplicate_id" 65
+
+  duplicate_port="$(jq -r '[.contestants[].port] | sort | group_by(.)[] | select(length > 1) | .[0]' "$manifest" | head -n 1)"
+  [[ -z "$duplicate_port" ]] || fail "duplicate contestant port: $duplicate_port" 65
+
+  prompt_relative="$(jq -r '.prompt' "$manifest")"
+  prompt_path="$repo_root/$prompt_relative"
+  [[ -f "$prompt_path" ]] || fail "shared prompt not found: $prompt_relative" 66
+
+  harness_id="$(jq -r '.id' "$manifest")"
+  acceptance_id="$(jq -r '.acceptance' "$manifest")"
+  configure_acceptance
+  prompt_hash="$(shasum -a 256 "$prompt_path" | awk '{print $1}')"
+
+  contestants=()
+  while IFS= read -r contestant; do
+    contestants+=("$contestant")
+  done < <(jq -c '.contestants[]' "$manifest")
+}
+
+resolve_copilot_token() {
+  if [[ -n "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+    resolved_copilot_token="$COPILOT_GITHUB_TOKEN"
+  elif [[ -n "${GH_TOKEN:-}" ]]; then
+    resolved_copilot_token="$GH_TOKEN"
+  else
+    resolved_copilot_token="$(gh auth token 2>/dev/null || true)"
+  fi
+
+  [[ -n "$resolved_copilot_token" ]] || fail \
+    'native Copilot authentication unavailable: set COPILOT_GITHUB_TOKEN or GH_TOKEN, or run gh auth login' 67
+}
+
+compose_for() {
+  local contestant="$1"
+  local secret_file="$2"
+  shift 2
+
+  local contestant_id runtime port experiment package_ref package_plugins
+  local compose_args env_args
+  contestant_id="$(jq -r '.id' <<<"$contestant")"
+  runtime="$(jq -r '.runtime' <<<"$contestant")"
+  port="$(jq -r '.port' <<<"$contestant")"
+  experiment="$harness_id-$contestant_id"
+  package_ref="$(jq -r '.packages[0].ref' <<<"$contestant")"
+  package_plugins="$(jq -r '.packages[0].plugins | join(" ")' <<<"$contestant")"
+
+  compose_args=(-f compose.yaml)
+  env_args=(
+    EXPERIMENT_ID="$experiment"
+    APP_PORT="$port"
+    HARNESS_CONTESTANT_ID="$contestant_id"
+    HARNESS_PROMPT_SHA256="$prompt_hash"
+  )
+
+  case "$runtime" in
+    codex)
+      env_args+=(
+        WSHOBSON_AGENTS_REF="$package_ref"
+        WSHOBSON_AGENTS_PLUGIN="$package_plugins"
+      )
+      ;;
+    copilot)
+      compose_args+=(-f compose.copilot.yaml)
+      env_args+=(
+        AWESOME_COPILOT_REF="$package_ref"
+        AWESOME_COPILOT_PLUGINS="$package_plugins"
+        HARNESS_COPILOT_TOKEN_FILE="${secret_file:-/dev/null}"
+      )
+      ;;
+  esac
+
+  env "${env_args[@]}" docker compose "${compose_args[@]}" \
+    --project-name "$experiment" --profile tools "$@"
+}
+
+build_all() {
+  local contestant service
+  for contestant in "${contestants[@]}"; do
+    service="$(jq -r '.service' <<<"$contestant")"
+    compose_for "$contestant" '' build "$service" app
+  done
+}
+
+run_one() {
+  local contestant="$1"
+  local session_mode="$2"
+  local runtime service secret_file runner_path prompt
+  runtime="$(jq -r '.runtime' <<<"$contestant")"
+  service="$(jq -r '.service' <<<"$contestant")"
+  prompt="$(<"$prompt_path")"
+  secret_file=''
+
+  if [[ "$runtime" == 'copilot' ]]; then
+    secret_file="$copilot_secret_file"
+    runner_path='/usr/local/bin/run-copilot-agent.sh'
+  else
+    runner_path='/usr/local/bin/run-agent.sh'
+  fi
+
+  compose_for "$contestant" "$secret_file" run --rm "$service" \
+    "$runner_path" "$session_mode" "$prompt"
+}
+
+run_all() {
+  local session_mode="$1"
+  local contestant runtime process_id overall_status
+  local process_ids
+  process_ids=()
+  overall_status=0
+
+  for contestant in "${contestants[@]}"; do
+    runtime="$(jq -r '.runtime' <<<"$contestant")"
+    if [[ "$runtime" == 'copilot' && -z "${resolved_copilot_token:-}" ]]; then
+      resolve_copilot_token
+    fi
+  done
+
+  if [[ -n "${resolved_copilot_token:-}" && -z "$copilot_secret_file" ]]; then
+    copilot_secret_file="$(mktemp "${TMPDIR:-/tmp}/sandbox-harness-copilot-token.XXXXXX")"
+    chmod 0600 "$copilot_secret_file"
+    printf '%s' "$resolved_copilot_token" >"$copilot_secret_file"
+    unset resolved_copilot_token
+  fi
+
+  for contestant in "${contestants[@]}"; do
+    run_one "$contestant" "$session_mode" &
+    process_ids+=("$!")
+  done
+
+  for process_id in "${process_ids[@]}"; do
+    if ! wait "$process_id"; then
+      overall_status=1
+    fi
+  done
+  cleanup_secret_file
+  copilot_secret_file=''
+  return "$overall_status"
+}
+
+serve_all() {
+  local contestant contestant_id port experiment
+  for contestant in "${contestants[@]}"; do
+    contestant_id="$(jq -r '.id' <<<"$contestant")"
+    port="$(jq -r '.port' <<<"$contestant")"
+    experiment="$harness_id-$contestant_id"
+    env EXPERIMENT_ID="$experiment" APP_PORT="$port" \
+      docker compose -f compose.yaml --project-name "$experiment" --profile tools \
+      run --rm --no-deps workspace_publish
+    env EXPERIMENT_ID="$experiment" APP_PORT="$port" \
+      docker compose -f compose.yaml --project-name "$experiment" \
+      up -d --force-recreate --wait --wait-timeout 60 app
+  done
+}
+
+browser_project_passed() {
+  local report_file="$1"
+  local contestant_id="$2"
+  jq -e --arg project "$contestant_id" '
+    [.. | objects | select(.projectName? == $project) | .results[]?.status] as $statuses
+    | ($statuses | length) > 0
+      and all($statuses[]; . == "passed")
+  ' "$report_file" >/dev/null
+}
+
+run_browser_phase() {
+  local base_urls="$1"
+  local title_pattern="$2"
+  local output_file="$3"
+  local playwright_bin="${HARNESS_PLAYWRIGHT_BIN:-$repo_root/tests/playwright/node_modules/.bin/playwright}"
+
+  [[ -x "$playwright_bin" ]] || fail \
+    'Playwright dependencies are missing; run npm ci in tests/playwright and npx playwright install chromium' 69
+
+  HARNESS_BASE_URLS="$base_urls" \
+    HARNESS_ACCEPTANCE_SPEC="$acceptance_spec" \
+    "$playwright_bin" test \
+    --config "$repo_root/tests/playwright/playwright.config.ts" \
+    --grep "$title_pattern" \
+    --reporter=json \
+    >"$output_file"
+}
+
+healthcheck_all() {
+  local contestant port
+  local status=0
+  for contestant in "${contestants[@]}"; do
+    port="$(jq -r '.port' <<<"$contestant")"
+    if ! curl -fsS -o /dev/null "http://127.0.0.1:$port/health"; then
+      status=1
+    fi
+  done
+  return "$status"
+}
+
+restart_apps() {
+  local contestant
+  local status=0
+
+  for contestant in "${contestants[@]}"; do
+    if ! compose_for "$contestant" '' up -d --force-recreate --wait --wait-timeout 60 app; then
+      status=1
+    fi
+  done
+  if ! healthcheck_all; then
+    status=1
+  fi
+  return "$status"
+}
+
+verify_all() {
+  local contestant contestant_id service port crud_status persistence_status overall
+  local checks_failed=0 browser_failed=0 restart_failed=0
+  local base_urls='' state_root state_dir crud_report persistence_report
+  state_root="${HARNESS_STATE_ROOT:-$repo_root/results/.harness-state}"
+  state_dir="$state_root/$harness_id"
+  mkdir -p "$state_dir"
+
+  for contestant in "${contestants[@]}"; do
+    contestant_id="$(jq -r '.id' <<<"$contestant")"
+    service="$(jq -r '.service' <<<"$contestant")"
+    port="$(jq -r '.port' <<<"$contestant")"
+    [[ -z "$base_urls" ]] || base_urls+=','
+    base_urls+="$contestant_id=http://127.0.0.1:$port"
+    mkdir -p "$state_dir/$contestant_id"
+
+    if ! compose_for "$contestant" '' run --rm --no-deps \
+      --entrypoint bash "$service" -s <"$repo_root/scripts/verify-workspace.sh"; then
+      checks_failed=1
+    fi
+  done
+
+  if ! restart_apps; then
+    restart_failed=1
+  fi
+
+  crud_report="$state_dir/playwright-crud.json"
+  persistence_report="$state_dir/playwright-persistence.json"
+  if ! run_browser_phase "$base_urls" \
+    "$acceptance_primary_title" "$crud_report"; then
+    browser_failed=1
+  fi
+
+  if ! restart_apps; then
+    restart_failed=1
+  fi
+
+  if ! run_browser_phase "$base_urls" \
+    "$acceptance_persistence_title" "$persistence_report"; then
+    browser_failed=1
+  fi
+
+  for contestant in "${contestants[@]}"; do
+    contestant_id="$(jq -r '.id' <<<"$contestant")"
+    crud_status=1
+    persistence_status=1
+    browser_project_passed "$crud_report" "$contestant_id" && crud_status=0
+    browser_project_passed "$persistence_report" "$contestant_id" && persistence_status=0
+    overall='failed'
+    if [[ "$crud_status" == '0' && "$persistence_status" == '0' && "$restart_failed" == '0' ]]; then
+      overall='passed'
+    else
+      browser_failed=1
+    fi
+
+    jq -n \
+      --arg overall "$overall" \
+      --arg acceptance "$acceptance_id" \
+      --argjson crud "$crud_status" \
+      --argjson primary "$crud_status" \
+      --argjson restartPersistence "$persistence_status" \
+      --argjson restartHealth "$restart_failed" \
+      '{schemaVersion: 1, acceptance: $acceptance, overall: $overall,
+        primary: $primary, crud: $crud,
+        restartPersistence: $restartPersistence, restartHealth: $restartHealth,
+        pageErrors: 0, consoleErrors: 0, failedRequests: 0}' \
+      >"$state_dir/$contestant_id/browser.json"
+  done
+
+  [[ "$checks_failed" == '0' && "$browser_failed" == '0' && "$restart_failed" == '0' ]]
+}
+
+hash_directory() {
+  local root="$1"
+  local relative_directory="$2"
+  (
+    cd "$root"
+    find "$relative_directory" -type f -print \
+      | LC_ALL=C sort \
+      | while IFS= read -r relative_file; do
+          file_hash="$(shasum -a 256 "$relative_file" | cut -d ' ' -f 1)"
+          printf '%s  %s\n' "$file_hash" "$relative_file"
+        done
+  ) | shasum -a 256 | cut -d ' ' -f 1
+}
+
+prepare_collected_app_evidence() {
+  local source_root="$1"
+  local browser_source="$2"
+  local package_hash lock_hash dist_hash
+
+  [[ -f "$source_root/.harness/verification/checks.json" ]] \
+    || fail "missing generated-app checks: $source_root/.harness/verification/checks.json" 66
+  [[ -f "$browser_source" ]] || fail "missing browser evidence: $browser_source" 66
+
+  (
+    cd "$source_root"
+    find package.json package-lock.json dist -type f -print | LC_ALL=C sort
+  ) | jq -R -s '{files: (split("\n") | map(select(length > 0)))}' \
+    >"$source_root/app-inventory.json"
+
+  package_hash="$(shasum -a 256 "$source_root/package.json" | cut -d ' ' -f 1)"
+  lock_hash="$(shasum -a 256 "$source_root/package-lock.json" | cut -d ' ' -f 1)"
+  dist_hash="$(hash_directory "$source_root" dist)"
+  jq -n \
+    --arg package "$package_hash" \
+    --arg packageLock "$lock_hash" \
+    --arg dist "$dist_hash" \
+    '{"package.json": $package, "package-lock.json": $packageLock, dist: $dist}' \
+    >"$source_root/artifact-hashes.json"
+  cp "$source_root/.harness/verification/checks.json" "$source_root/checks.json"
+  cp "$browser_source" "$source_root/browser.json"
+}
+
+collect_all() {
+  local state_root results_root state_dir run_id output_root
+  local contestant contestant_id experiment image workspace_volume source_root
+  state_root="${HARNESS_STATE_ROOT:-$repo_root/results/.harness-state}"
+  results_root="${HARNESS_RESULTS_ROOT:-$repo_root/results}"
+  state_dir="$state_root/$harness_id"
+  run_id="${HARNESS_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+  [[ "$run_id" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || fail 'invalid run id' 65
+  output_root="$results_root/$harness_id/$run_id"
+  [[ ! -e "$output_root" ]] || fail "result run already exists: $output_root" 73
+
+  collection_staging="$(mktemp -d "${TMPDIR:-/tmp}/sandbox-harness-collect.XXXXXX")"
+  for contestant in "${contestants[@]}"; do
+    contestant_id="$(jq -r '.id' <<<"$contestant")"
+    experiment="$harness_id-$contestant_id"
+    image="$experiment-agent:local"
+    workspace_volume="${experiment}_workspace"
+    source_root="$collection_staging/$contestant_id"
+    mkdir -p "$source_root"
+
+    docker run --rm \
+      --network none \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --volume "$workspace_volume:/workspace:ro" \
+      --entrypoint tar \
+      "$image" \
+      -C /workspace -cf - .harness package.json package-lock.json dist \
+      | tar -xf - -C "$source_root"
+
+    prepare_collected_app_evidence \
+      "$source_root" "$state_dir/$contestant_id/browser.json"
+  done
+
+  resolve_copilot_token
+  HARNESS_SECRET_SCAN_VALUE="$resolved_copilot_token" \
+    "$repo_root/scripts/assemble-evidence.sh" \
+    "$manifest" "$collection_staging" "$output_root" "$run_id"
+  unset resolved_copilot_token
+  rm -rf -- "$collection_staging"
+  collection_staging=''
+}
+
+stop_all() {
+  local remove_volumes="$1"
+  local contestant contestant_id port experiment
+  local down_args
+  down_args=(down --remove-orphans)
+  [[ "$remove_volumes" != 'true' ]] || down_args+=(--volumes)
+
+  for contestant in "${contestants[@]}"; do
+    contestant_id="$(jq -r '.id' <<<"$contestant")"
+    port="$(jq -r '.port' <<<"$contestant")"
+    experiment="$harness_id-$contestant_id"
+    env EXPERIMENT_ID="$experiment" APP_PORT="$port" \
+      docker compose -f compose.yaml --project-name "$experiment" "${down_args[@]}"
+  done
+}
+
+validate_manifest
+
+case "$command_name" in
+  validate)
+    printf 'harness validation: PASS (%s, prompt %s)\n' "$harness_id" "$prompt_hash"
+    ;;
+  build)
+    build_all
+    ;;
+  run)
+    run_all --new
+    ;;
+  resume)
+    run_all --resume
+    ;;
+  serve)
+    serve_all
+    ;;
+  verify)
+    verify_all
+    ;;
+  collect)
+    collect_all
+    ;;
+  compare)
+    build_all
+    run_all --new
+    serve_all
+    verify_all
+    collect_all
+    ;;
+  down)
+    stop_all false
+    ;;
+  purge)
+    stop_all true
+    ;;
+  *)
+    usage
+    ;;
+esac

@@ -1,0 +1,166 @@
+name: ${EXPERIMENT_ID:-sandbox-harness}
+
+services:
+  workspace_init:
+    profiles: [tools]
+    image: ${EXPERIMENT_ID:-sandbox-harness}-agent:local
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: 0.25
+    network_mode: none
+    entrypoint: [/bin/bash, -lc]
+    command: [chown -R 10001:10001 /workspace]
+    volumes:
+      - type: volume
+        source: workspace
+        target: /workspace
+
+  agent:
+    profiles: [tools]
+    image: ${EXPERIMENT_ID:-sandbox-harness}-agent:local
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        WSHOBSON_AGENTS_REF: ${WSHOBSON_AGENTS_REF:-c4b82b0ad771190355eb8e204b1329732a18449a}
+        WSHOBSON_AGENTS_PLUGIN: ${WSHOBSON_AGENTS_PLUGIN:-full-stack-orchestration}
+        CODEX_VERSION: ${CODEX_VERSION:-0.144.6}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    mem_limit: 4g
+    cpus: 4.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001
+    volumes:
+      - type: volume
+        source: workspace
+        target: /workspace
+    depends_on:
+      workspace_init:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - copilot_proxy
+
+  data_init:
+    image: ${EXPERIMENT_ID:-sandbox-harness}-app:local
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: 0.25
+    network_mode: none
+    entrypoint: [/bin/bash, -lc]
+    command: [chown -R 10002:10002 /data]
+    volumes:
+      - type: volume
+        source: app_data
+        target: /data
+
+  workspace_publish:
+    image: ${EXPERIMENT_ID:-sandbox-harness}-app:local
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: 0.25
+    network_mode: none
+    entrypoint: [/bin/bash, -lc]
+    command:
+      - |
+        set -euo pipefail
+        runtime_targets=(
+          /workspace/package.json
+          /workspace/package-lock.json
+          /workspace/dist
+          /workspace/node_modules
+        )
+        for target in "$${runtime_targets[@]}"; do
+          [[ -e "$$target" ]] || {
+            printf 'missing generated runtime artifact: %s\n' "$$target" >&2
+            exit 1
+          }
+        done
+        chgrp 10002 /workspace
+        chmod 0710 /workspace
+        chgrp -R 10002 "$${runtime_targets[@]}"
+        chmod -R g=rX,o= "$${runtime_targets[@]}"
+    volumes:
+      - type: volume
+        source: workspace
+        target: /workspace
+
+  app:
+    image: ${EXPERIMENT_ID:-sandbox-harness}-app:local
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    user: "10002:10002"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10002,gid=10002
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATA_DIR: /data
+    volumes:
+      - type: volume
+        source: workspace
+        target: /workspace
+        read_only: true
+      - type: volume
+        source: app_data
+        target: /data
+    depends_on:
+      data_init:
+        condition: service_completed_successfully
+      workspace_publish:
+        condition: service_completed_successfully
+    ports:
+      - name: web
+        target: 3000
+        published: "${APP_PORT:-4173}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - default
+
+volumes:
+  workspace:
+  app_data:
+
+networks:
+  default:
+    internal: false
+  copilot_proxy:
+    external: true
+    name: copilot-proxy-rs_default
