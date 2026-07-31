@@ -1,0 +1,54 @@
+{
+  "$schema": "./packages/trellage-cli/node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "vitest"],
+  "env": { "node": true },
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "rules": {
+    "no-debugger": "error",
+    "no-dupe-keys": "error",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-unused-vars": "error"
+  },
+  "overrides": [
+    {
+      "files": ["packages/trellage-cli/test/**/*.ts"],
+      "env": { "vitest": true }
+    },
+    {
+      "files": ["packages/trellage-cli/test/application.test.ts", "packages/trellage-cli/test/copilot-plugin.test.ts"],
+      "rules": { "vitest/expect-expect": "off" }
+    },
+    {
+      "files": ["packages/trellage-cli/test/cache.test.ts"],
+      "rules": { "vitest/no-conditional-expect": "off" }
+    },
+    {
+      "files": ["packages/trellage-cli/test/copilot-release.test.ts"],
+      "rules": { "vitest/require-mock-type-parameters": "off" }
+    },
+    {
+      "files": [
+        "packages/trellage-cli/test/application.test.ts",
+        "packages/trellage-cli/test/materialize.test.ts",
+        "packages/trellage-cli/test/profile.test.ts"
+      ],
+      "rules": { "vitest/require-to-throw-message": "off" }
+    },
+    {
+      "files": ["packages/trellage-cli/test/application.test.ts"],
+      "rules": { "vitest/valid-expect": "off" }
+    },
+    {
+      "files": ["packages/trellage-cli/src/application.ts", "packages/trellage-cli/test/render.test.ts"],
+      "rules": { "no-useless-escape": "off" }
+    },
+    {
+      "files": ["packages/trellage-cli/test/cli.test.ts"],
+      "rules": { "no-unused-expressions": "off" }
+    },
+    {
+      "files": ["packages/trellage-cli/src/copilot-plugin.ts"],
+      "rules": { "no-control-regex": "off" }
+    }
+  ]
+}

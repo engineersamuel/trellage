@@ -1,8 +1,46 @@
-.PHONY: test manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence build compare compare-down clean
+.PHONY: test publication-contract publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry native-codex-profiles native-copilot-profiles native-grok-profiles copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
+PROFILE_MATRIX_ARGS ?=
+PUBLICATION_CONTRACT_ARGS ?=
 
-test: manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+test: publication-contract publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry native-codex-profiles native-copilot-profiles native-grok-profiles manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+
+publication-contract:
+	bash tests/publication_contract.sh $(PUBLICATION_CONTRACT_ARGS)
+
+publication-contract-self-test:
+	bash tests/publication_contract_self_test.sh
+
+agent-profile-hup-contract:
+	bash tests/agent_profile_hup_contract.sh
+
+profile-compiler:
+	cd packages/trellage-cli && npm run lint && npm run format:check && npm test && npm run check && npm run build
+
+trellage-identity:
+	bash tests/trellage_identity_contract.sh
+
+agent-harness:
+	bash tests/agent_harness_contract.sh
+
+claude-entry:
+	bash prototypes/trellage/tests/claude_entry_contract.sh
+
+native-codex-profiles:
+	bash prototypes/trellage-codex-profiles/tests/contract.sh
+
+native-copilot-profiles:
+	bash prototypes/trellage-copilot-profiles/tests/contract.sh
+
+native-grok-profiles:
+	bash prototypes/trellage-grok-profiles/tests/contract.sh
+
+copilot-hve-image:
+	cd prototypes/trellage && ./trellage build --locked ../../profiles/copilot-hve/profile.toml
+
+copilot-hve-smoke:
+	cd prototypes/trellage && ./tests/smoke.sh --copilot ../../profiles/copilot-hve/profile.toml
 
 manifest:
 	bash tests/manifest_contract.sh
@@ -33,6 +71,12 @@ playwright-matrix:
 
 evidence:
 	bash tests/evidence_contract.sh
+
+profile-matrix:
+	scripts/verify-agent-profiles $(PROFILE_MATRIX_ARGS)
+
+profile-matrix-test:
+	bash tests/agent_profile_matrix.sh
 
 build:
 	docker compose build

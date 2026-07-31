@@ -1,0 +1,37 @@
+{
+  "name": "@trellage/profile-compiler",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "trellage-profile": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "format": "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --config .prettierrc.json 'packages/trellage-cli/src/*.ts' 'packages/trellage-cli/test/*.ts' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json",
+    "format:check": "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --check --config .prettierrc.json 'packages/trellage-cli/src/*.ts' 'packages/trellage-cli/test/*.ts' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json",
+    "lint": "oxlint -c ../../.eslintrc.json src test",
+    "lint:fix": "oxlint -c ../../.eslintrc.json --fix src test",
+    "prepare": "bash ../../scripts/install-lefthook-hook.sh",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@effect/cli": "0.76.0",
+    "@effect/platform-node": "0.108.0",
+    "effect": "3.22.0",
+    "proper-lockfile": "4.1.2",
+    "skills": "1.5.19",
+    "smol-toml": "1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/proper-lockfile": "4.1.4",
+    "lefthook": "^2.1.10",
+    "oxfmt": "0.60.0",
+    "oxlint": "1.75.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

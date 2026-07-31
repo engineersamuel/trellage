@@ -1,0 +1,588 @@
+schema = 1
+source_date_epoch = 1784379906
+profile_hash = "sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971"
+
+[[sources]]
+kind = "skill"
+repository = "https://github.com/obra/superpowers.git"
+ref = "v6.2.0"
+select = ["*"]
+commit = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9"
+integrity = "sha256:e0c381378ecd0d0ecfa35102b19c6d2acc91b84fed28a974f8912bd46e286813"
+
+[[sources.files]]
+path = "skills/brainstorming/scripts/frame-template.html"
+sha256 = "sha256:6a8a4e58bd6a44b904e2e3c57de774481d909204597e1498de53f1b2fecc4c4e"
+
+[[sources.files]]
+path = "skills/brainstorming/scripts/helper.js"
+sha256 = "sha256:43c6d69954a46ec34a2a262bcc62a9a7e83e839c739f199cb72646d397c686e3"
+
+[[sources.files]]
+path = "skills/brainstorming/scripts/server.cjs"
+sha256 = "sha256:2d2961ea8d11f56c5f4c3a1a68d22709efa5d7601a2246d8c880774e7e9e8412"
+
+[[sources.files]]
+path = "skills/brainstorming/scripts/start-server.sh"
+sha256 = "sha256:a4e5ae84275bcaacd2f84345afeabe59cf7b00ba080e123da7cc1fb226f12847"
+
+[[sources.files]]
+path = "skills/brainstorming/scripts/stop-server.sh"
+sha256 = "sha256:0b5ccbbd57f62d3ed88993f7940b5ee0e5c0fc9b21c550c623da4f6292e47daf"
+
+[[sources.files]]
+path = "skills/brainstorming/SKILL.md"
+sha256 = "sha256:4a54a4858b99807f3155ed1614b2f116e35ea5c1b788e793f565dd837fd3891f"
+
+[[sources.files]]
+path = "skills/brainstorming/spec-document-reviewer-prompt.md"
+sha256 = "sha256:95a0a195de9d984be2fffa95bab16fc8c563bc296a9cfc5e9c29cb3ece0d7457"
+
+[[sources.files]]
+path = "skills/brainstorming/visual-companion.md"
+sha256 = "sha256:60cbad29b9dd7eaf08da020e301c498a72230b2e13c1813fa967a135ffcc1d71"
+
+[[sources.files]]
+path = "skills/dispatching-parallel-agents/SKILL.md"
+sha256 = "sha256:1968923066f3b707eb01d1992cdf4c42284c3855f70253b9cd5000ff45fca13c"
+
+[[sources.files]]
+path = "skills/executing-plans/SKILL.md"
+sha256 = "sha256:c4c3d8b628c51114cd165fb8246fe02744cd8be180032328391252e653028d9b"
+
+[[sources.files]]
+path = "skills/finishing-a-development-branch/SKILL.md"
+sha256 = "sha256:d0ac8360ed9d59121776ef95c84bcb38e9747de0d7ae7e227dca81e437593b9b"
+
+[[sources.files]]
+path = "skills/receiving-code-review/SKILL.md"
+sha256 = "sha256:091df1629510af1b92fc4abd6f96732ebedb4cb2c0f3457e8f2740b0504a2438"
+
+[[sources.files]]
+path = "skills/requesting-code-review/code-reviewer.md"
+sha256 = "sha256:b2f2ec7596925fe52dac158fdfbca19b3a7d779d619c481e6706a6c0001662d3"
+
+[[sources.files]]
+path = "skills/requesting-code-review/SKILL.md"
+sha256 = "sha256:d71cc01ba56d2325cf8af5f7c11837819b63ecd57de0bfdb812f7f3ff7751df8"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/implementer-prompt.md"
+sha256 = "sha256:946601616a6f76ab3f165ef98377390968f1ec124ecef87422bc3553404e0332"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/re-review-prompt.md"
+sha256 = "sha256:e1d8e0e65e58ccde6dc920843da9148d23e65aeb0f8932bcc30be1341a703c4c"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/scripts/review-package"
+sha256 = "sha256:fac3d4bd7f94369e8037b9ead2a8a502dca6ab333902b560b9455dbb3c450ebe"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/scripts/sdd-workspace"
+sha256 = "sha256:95a09d9d3983ad1aafd093ca72b4587946dea885c6e302caa02a779a2f911c31"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/scripts/task-brief"
+sha256 = "sha256:d6954ef7841c7da3d77373e6ff5118b3f2f2e998606fd95d33e6527851bce044"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/SKILL.md"
+sha256 = "sha256:349a08ad8b59b19b86c13a7d2f34a1a38719bf88257004a863eefefa8d9f9e40"
+
+[[sources.files]]
+path = "skills/subagent-driven-development/task-reviewer-prompt.md"
+sha256 = "sha256:e3b4a1bfe7cd55ed0459e5ca9cdddb6ff086c345b99e9097036db6a18545729e"
+
+[[sources.files]]
+path = "skills/systematic-debugging/condition-based-waiting-example.ts"
+sha256 = "sha256:40ae5ebe497fdf310200e43fe986552546d0a22837c0d39e855db1cfd33eb88e"
+
+[[sources.files]]
+path = "skills/systematic-debugging/condition-based-waiting.md"
+sha256 = "sha256:e89fec8400d6cd50f43407cec9fab50976ba4d55d0ec2eb51c0bd68036b54c26"
+
+[[sources.files]]
+path = "skills/systematic-debugging/CREATION-LOG.md"
+sha256 = "sha256:c24733a5b1821bd6bed1fc950261f0b9f4e90097e0bbb96459d8179713730789"
+
+[[sources.files]]
+path = "skills/systematic-debugging/defense-in-depth.md"
+sha256 = "sha256:1e175fb86fc357e58c6aebf5441e481e1b7868b4380c0456b63a17eefbd18ba7"
+
+[[sources.files]]
+path = "skills/systematic-debugging/find-polluter.sh"
+sha256 = "sha256:dd7b8f13c4cc2a24b33ff87b18da9248f3e1c80a085c3316224f69ff0fa5c43c"
+
+[[sources.files]]
+path = "skills/systematic-debugging/root-cause-tracing.md"
+sha256 = "sha256:6b0622269e098ca1399e123e553fd385f0b6412d88ef0e9c4f5a8ea9cf1cec7b"
+
+[[sources.files]]
+path = "skills/systematic-debugging/SKILL.md"
+sha256 = "sha256:808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787"
+
+[[sources.files]]
+path = "skills/systematic-debugging/test-academic.md"
+sha256 = "sha256:fe2ba480d78ac0d686dc025f41c2a32a43d642bf533f91b0c6053a04d35d6486"
+
+[[sources.files]]
+path = "skills/systematic-debugging/test-pressure-1.md"
+sha256 = "sha256:0b6a915db0054577819834c79be9eb614e97bddba10d73768e1fbe91cfed048a"
+
+[[sources.files]]
+path = "skills/systematic-debugging/test-pressure-2.md"
+sha256 = "sha256:b2030aeffba07050e8ad573ddf87486457c4a016a786bb326235bebd856f2016"
+
+[[sources.files]]
+path = "skills/systematic-debugging/test-pressure-3.md"
+sha256 = "sha256:96b50a52e2c7989c9cf20fb752c47c1e9a3a70dc362f8f7989f8f5b64dac7708"
+
+[[sources.files]]
+path = "skills/test-driven-development/SKILL.md"
+sha256 = "sha256:bf1b8216e523851a411e91d429a7c1c2a173e79d88957bc78e348218d50edd54"
+
+[[sources.files]]
+path = "skills/test-driven-development/writing-good-tests.md"
+sha256 = "sha256:51471c853306ff92ca8bb41dcaea05f31c0e46b03651f8f3c99754b7172f4ae1"
+
+[[sources.files]]
+path = "skills/using-git-worktrees/SKILL.md"
+sha256 = "sha256:8cfb86f121269e8f7f12361e6795c4f6738828340e28964c9229d365666c9edd"
+
+[[sources.files]]
+path = "skills/using-superpowers/references/antigravity-tools.md"
+sha256 = "sha256:4880f6de3da4e32f9659ebe7a72b9e0ebfff04e028c2ed96173f86d0387a04c0"
+
+[[sources.files]]
+path = "skills/using-superpowers/references/codex-tools.md"
+sha256 = "sha256:d3f113a8ebbd748e8ba847b09b57b7685442775ca4ee194d693ce3663f8fac68"
+
+[[sources.files]]
+path = "skills/using-superpowers/references/gemini-tools.md"
+sha256 = "sha256:62b9157bcb0ee3c6784e3d0da0798ddfa5872f9e0c34bea48f3079dabea71965"
+
+[[sources.files]]
+path = "skills/using-superpowers/references/pi-tools.md"
+sha256 = "sha256:703dbc83d23ecab9c6f388460c38abc482e9dee2fe6772a8c7a255152ad3a4d5"
+
+[[sources.files]]
+path = "skills/using-superpowers/SKILL.md"
+sha256 = "sha256:55379fe7c1c473a02c61961c822996bff30e1320d6921d9062509bc508482c05"
+
+[[sources.files]]
+path = "skills/verification-before-completion/SKILL.md"
+sha256 = "sha256:2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3"
+
+[[sources.files]]
+path = "skills/writing-plans/plan-document-reviewer-prompt.md"
+sha256 = "sha256:aa728b96aad603c8be28875a4305637f6c984aa81ffcadcb13e743202fa2a0c7"
+
+[[sources.files]]
+path = "skills/writing-plans/SKILL.md"
+sha256 = "sha256:72190c88b2b5a67a96b91d66aa72b9161913e10e8769da3f28a226f4cc7b99d0"
+
+[[sources.files]]
+path = "skills/writing-skills/anthropic-best-practices.md"
+sha256 = "sha256:217629b356c09c9bd11017c9788e8fc654ca1b32c92d4a51cd490e16dd65e59a"
+
+[[sources.files]]
+path = "skills/writing-skills/examples/CLAUDE_MD_TESTING.md"
+sha256 = "sha256:0b379a3415e185d3c434b3ad283d8aa132f3022c2a4f210f168865b5986bcef0"
+
+[[sources.files]]
+path = "skills/writing-skills/graphviz-conventions.dot"
+sha256 = "sha256:e2890a593c91370e384b42f2f67b1a6232c9e69dddea7891a0c1c46d7b20b694"
+
+[[sources.files]]
+path = "skills/writing-skills/persuasion-principles.md"
+sha256 = "sha256:a51bc9bf75189ea73a27b3fb504a2fdfdb966fb1f7f1cdf03203230a216ccc03"
+
+[[sources.files]]
+path = "skills/writing-skills/render-graphs.js"
+sha256 = "sha256:ccda971a87bb185f8febf81c56b556a20d026fa980c17b35fa3e8824fbb37852"
+
+[[sources.files]]
+path = "skills/writing-skills/SKILL.md"
+sha256 = "sha256:d34db5c8aed6a4e0440132bd0613aace70a693ec7819d5637ad77481d8e10d1b"
+
+[[sources.files]]
+path = "skills/writing-skills/testing-skills-with-subagents.md"
+sha256 = "sha256:c711346852c911b24a84aa161e0cff06a4cd7f4e2fa9e9c0a266cead5afcbade"
+
+[[sources]]
+kind = "plugin"
+adapter = "wshobson-agents"
+repository = "https://github.com/wshobson/agents.git"
+ref = "c4b82b0ad771190355eb8e204b1329732a18449a"
+select = ["full-stack-orchestration"]
+commit = "c4b82b0ad771190355eb8e204b1329732a18449a"
+integrity = "sha256:202ae9a393714fd6dac971176ba5488f0c2c6a7c79a906ea4768e58e01893462"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/.claude-plugin/plugin.json"
+sha256 = "sha256:466c10eff95ba7c1a4ba86ead9344915e357588c459e4c4798a649addad63098"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/.codex-plugin/plugin.json"
+sha256 = "sha256:70ced97ccb1801e7290e5ec2c3686f6e6368b6d2717e49acbce9b610798592fa"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/agents/deployment-engineer.md"
+sha256 = "sha256:5ebd904ccea45725fd9887fcf113658ff0e8a2c553215a0ab3297ef83264b905"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/agents/performance-engineer.md"
+sha256 = "sha256:d7f67ec4521413ef6583040f2bcfac8395b23d38ed8ae6e70391ededfab3415f"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/agents/security-auditor.md"
+sha256 = "sha256:13a353ae95f3c1f3ae3adf3ee8c884812c7028b3329a91a146531ac48ea9d1fd"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/agents/test-automator.md"
+sha256 = "sha256:2c01590fc3ef4f4f730fa61fff66c3f76f353017c424d264728f9e7f8170398e"
+
+[[sources.files]]
+path = "plugins/full-stack-orchestration/commands/full-stack-feature.md"
+sha256 = "sha256:1f49309505ab1b11ae6e56792c06ea789e3ed72b5e3b32c1f84d9728bea65f90"
+
+[[sources.files]]
+path = "plugins/plugin-eval/.claude-plugin/plugin.json"
+sha256 = "sha256:87bbe143e66e4b5bdc5762bc802753e2148b0d801eed715721d11ffe69a04f70"
+
+[[sources.files]]
+path = "plugins/plugin-eval/.codex-plugin/plugin.json"
+sha256 = "sha256:1dcdcb61bf8324ccf7884c2d63ce4af1506b9c42277846ef6a95dbafb860516f"
+
+[[sources.files]]
+path = "plugins/plugin-eval/agents/eval-judge.md"
+sha256 = "sha256:44c155e2fe50a1d2946797650839d6d9c4eb83963b9e90af4552134d1c8b6816"
+
+[[sources.files]]
+path = "plugins/plugin-eval/agents/eval-orchestrator.md"
+sha256 = "sha256:3d9ddfbcd3da4d0b3fc8d71e9dd15be31683e5ccb77d59dd1bb8e67f2e2bd75d"
+
+[[sources.files]]
+path = "plugins/plugin-eval/commands/certify.md"
+sha256 = "sha256:9b3956b119d4fef8d79e922f01574356c7dc122d4740810a5490fb655790353d"
+
+[[sources.files]]
+path = "plugins/plugin-eval/commands/compare.md"
+sha256 = "sha256:e8aad1141b68f44aa836437ffe461c7302fc797192f15b90b02f7fa8bba43a42"
+
+[[sources.files]]
+path = "plugins/plugin-eval/commands/eval.md"
+sha256 = "sha256:c5058d82d772c6ec89c808a1fe32da5a60de3c03c4648eeed9b4c5e58c459e6c"
+
+[[sources.files]]
+path = "plugins/plugin-eval/pyproject.toml"
+sha256 = "sha256:f89ae1ce90be1568399622ecd1d258de91cd721190a9aaa7079cd94e5ead83da"
+
+[[sources.files]]
+path = "plugins/plugin-eval/README.md"
+sha256 = "sha256:d2f8398d64c23b531ac7e699e008ab4deaa823ee6ec49d551caf779589a05b26"
+
+[[sources.files]]
+path = "plugins/plugin-eval/scripts/eval_all.py"
+sha256 = "sha256:1ac44c81680e0c3cc440d2a5f775412d43de1f49ba47755502fbf35fe86630f6"
+
+[[sources.files]]
+path = "plugins/plugin-eval/skills/evaluation-methodology/references/rubrics.md"
+sha256 = "sha256:c815591dc2d250620f1cb2818040d572e1fc88f1587b205e3d303176e6abdf36"
+
+[[sources.files]]
+path = "plugins/plugin-eval/skills/evaluation-methodology/SKILL.md"
+sha256 = "sha256:1fe24ef3053651427ee3c82927e28a12f9fc89209fd54e0f9e487319ac80beb0"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/__init__.py"
+sha256 = "sha256:d13034ae3b7e1a8b2b37fdc237babbaf34c6b098be5098dd971270825e022463"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/cli.py"
+sha256 = "sha256:a81f1489ccfd2138d91ea3aa6e0cc0c3baced53d9b04fc416850ece908cf9b09"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/corpus.py"
+sha256 = "sha256:c6db3334e9e024ab99ae7acb0844e742a7446fcfc9727e8407e3de0600d80aab"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/elo.py"
+sha256 = "sha256:caafa59e243c5a98f4728b66229016f8388a5d7af62d0f5ffd54ebe960d43734"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/engine.py"
+sha256 = "sha256:d3adf97e3dd2317c93219ae3e98d34fa25be8a109b2b4a5b7aa5ad49b2f3aa95"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/layers/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/layers/_sdk.py"
+sha256 = "sha256:3355ebba732a445f9f8be1dc38d6e11001d0e02fcc9530b3d9643fbcdb1c897a"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/layers/harness_portability.py"
+sha256 = "sha256:108eddda6e1093a26f8cac2873895ebe2c83dabee6c580555089b80ff2f39b3b"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/layers/judge.py"
+sha256 = "sha256:f665286e7eb3cd970541bf1f8c95044fe2828a04a16f12447fd486f246b0ba71"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/layers/monte_carlo.py"
+sha256 = "sha256:f5a4d81fa660015049787bc0a3a11746cedb6d12b3019ad85a5f65a27c9030c8"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/layers/static.py"
+sha256 = "sha256:9365d0c64f8ba6a1df4c55053e05c577f6187c7acacec36505d791aed6513118"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/models.py"
+sha256 = "sha256:aff0f84ccd95af551e027601be20d11d0f22c9e5349f468441ffce79f09abae7"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/parser.py"
+sha256 = "sha256:b8aa225fe0d0f79a5940faddd049d4851aa7cabd0bd7adf89bfb42c01df805ab"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/py.typed"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/reporter.py"
+sha256 = "sha256:a7515cfd472ee0181316fc69787695d774e432fe8ff60d6225ec2d050cfed47f"
+
+[[sources.files]]
+path = "plugins/plugin-eval/src/plugin_eval/stats.py"
+sha256 = "sha256:d3879d9d4f1d61a8c64fd35c5d17f1faa0d4c3648ebb599e9a22bf513b2da342"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/conftest.py"
+sha256 = "sha256:3bdf4b7cc8adcb7a8c78913a8ed0ff918cdd31aef95e4df6564dd99cfbd15b86"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_cli.py"
+sha256 = "sha256:06b012e75f27fa72901e24dd6560f23dbb80ed5d679410a7d23393abbe36ae57"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_corpus.py"
+sha256 = "sha256:16d879c11d09f037d640f2a3c403aed170f20c856b64298c8148f3f4c8853704"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_e2e.py"
+sha256 = "sha256:86f72c68eb9cf4c30954f2a6ed32013e953c4afed48bf0d6d8b73192c323291a"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_elo.py"
+sha256 = "sha256:b1138dfffa589efc9964dcbaa30a397d4d8c0a4bde30437193d9812672c1814d"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_engine.py"
+sha256 = "sha256:4dce63360e2c6856a193057fc4526523522fcbb15735c56f1e1294509db85dc8"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_harness_portability.py"
+sha256 = "sha256:d0e96e382414e85dded2cfd545e7c17049d2ec2d7ab32cf0a6ddba6767fc9bb1"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_judge.py"
+sha256 = "sha256:e45dc09b7fa3889e277f8698eaee0e0900cc464a21872b54c922d4b5e0e3e939"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_models.py"
+sha256 = "sha256:e117050709b19a9a9b4af03a9d020366890cde9272affbe2b306afa7bbf37f3b"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_monte_carlo.py"
+sha256 = "sha256:4ac3cd388c71697f65d8a41b186cb9bca94366a748dab0e05c6959835a0fc813"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_parser.py"
+sha256 = "sha256:5a8ddc98ababbaa894557dc28ab49ab5706b35fd40a9eaa9ce14d78eec8e408a"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_reporter.py"
+sha256 = "sha256:130839826059343263ff35e7aa25b98e32a6d32823ad03de989105ddb2fd010b"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_static.py"
+sha256 = "sha256:df2f4fbdf0ac4808da751b84ffe0efbc22c2cea63a14fd0e3bc20cbaa0cd40b2"
+
+[[sources.files]]
+path = "plugins/plugin-eval/tests/test_stats.py"
+sha256 = "sha256:984dda19ca9acde5ff88a66008ceacfcfd664dac7b936b079c474d655a53f014"
+
+[[sources.files]]
+path = "plugins/plugin-eval/uv.lock"
+sha256 = "sha256:a34f463bc90c61b4791ab7e3a4fe391a4d1c3b8cdd98e00a638065b3807a983f"
+
+[[sources.files]]
+path = "tools/adapters/__init__.py"
+sha256 = "sha256:0043a5c7cfa0fd0cea51e3e10b51447075ec514ca929abf6a5860c01c1e01d80"
+
+[[sources.files]]
+path = "tools/adapters/base.py"
+sha256 = "sha256:c7b35b63ea4196ef0efe27a2f0987db9f69819a4b4a5cc5a578e7836df7ec2a9"
+
+[[sources.files]]
+path = "tools/adapters/capabilities.py"
+sha256 = "sha256:820215d4df406169e587bf623a8556f23a49f5e3002470e3b8a2c0fdb7f70638"
+
+[[sources.files]]
+path = "tools/adapters/codex.py"
+sha256 = "sha256:a2d826e8f02756a92c77abe4b57e9824ce52a6fc1498c1c8732fbbbbb5e6cc24"
+
+[[sources.files]]
+path = "tools/adapters/copilot.py"
+sha256 = "sha256:546c52774bf63c9fe4c193498bd6685d9e328ac6c7541cfef717f7d478cfc36f"
+
+[[sources.files]]
+path = "tools/adapters/cursor_rules/000-project-conventions.mdc"
+sha256 = "sha256:3ea8c48d6f7e25720f9873a756307e69b9029cb3cc5d809f987c66e1cc9dbd25"
+
+[[sources.files]]
+path = "tools/adapters/cursor_rules/010-python-tooling.mdc"
+sha256 = "sha256:3571a78350ed68bedcc938b316cb46b861cb1b44626c4760a0bbbea0327e072b"
+
+[[sources.files]]
+path = "tools/adapters/cursor_rules/020-agent-skill-authoring.mdc"
+sha256 = "sha256:2034b3719f377d29f9cc13be491d3ac7ff99f82f36af3c46493467a44ca42212"
+
+[[sources.files]]
+path = "tools/adapters/cursor.py"
+sha256 = "sha256:541166afad1fd08528b75ba0d11bb9d3b19d4273d8a5d76340311441424fcb38"
+
+[[sources.files]]
+path = "tools/adapters/gemini.py"
+sha256 = "sha256:80b7b6d7294f54d80e9536d29dada828fbc3c8214d01818e943fe9aaf9f53a25"
+
+[[sources.files]]
+path = "tools/adapters/opencode.py"
+sha256 = "sha256:a3225d1ea1955c087a3d164d5bdd23ba3fd9fa048e8d7e19a8eac3cdd299f484"
+
+[[sources.files]]
+path = "tools/check_agent_name_collisions.py"
+sha256 = "sha256:1df411258a7b0694416c550960cfa682741ec4b21221f13d829013759c576503"
+
+[[sources.files]]
+path = "tools/doc_gardener.py"
+sha256 = "sha256:42ce883bc0a3fe45c6924e6727a97e8942ffe10cbaa8248126ad1ad226a99124"
+
+[[sources.files]]
+path = "tools/generate.py"
+sha256 = "sha256:9db44ab81da1bd696acbc15e983d1a2193dfcdefdf2051fe91e65ed63cb1b4b3"
+
+[[sources.files]]
+path = "tools/install_copilot.py"
+sha256 = "sha256:aa0d76116c590a553f59e1c07f6e7d44cecdd73925ae9209dc564698ebbdc224"
+
+[[sources.files]]
+path = "tools/install_opencode.py"
+sha256 = "sha256:4286b6e1887cd4dcf93f8a76643e318fd71b06e69f6f3e20eb3eb8fe33645a29"
+
+[[sources.files]]
+path = "tools/tests/conftest.py"
+sha256 = "sha256:42e6369aa161a122382fac7995efd75609513af1b5f36174f0c5eba6882e4700"
+
+[[sources.files]]
+path = "tools/tests/test_adapters.py"
+sha256 = "sha256:4099fd2a6a8b2aad4de2011657c153033d1ef5d3a34f646e411d01810a5404ef"
+
+[[sources.files]]
+path = "tools/tests/test_cli_smoke.py"
+sha256 = "sha256:27aea222a939fc7fb80be83aa9bae646cf979077061547a8bcfa1f230ec4d2cb"
+
+[[sources.files]]
+path = "tools/tests/test_doc_gardener.py"
+sha256 = "sha256:c8f9c1aa8550c985cb424c4db59d7e03b7bec2f7cc1cc70dc4ea9632da4c8b64"
+
+[[sources.files]]
+path = "tools/tests/test_install_copilot.py"
+sha256 = "sha256:7e801b5cc63e9e9376d86d2864d62f77d71ff0bfcb374e2a7af7a4d705101c12"
+
+[[sources.files]]
+path = "tools/tests/test_install_opencode.py"
+sha256 = "sha256:084e1730f9151c90ea226f0e7c53c85d5a38902044d8f1ee26eae8205fc1410e"
+
+[[sources.files]]
+path = "tools/tests/test_real_world.py"
+sha256 = "sha256:cc9fb1f8c82e5f6d3b9168b2ff965f6ecf6444541d5aff3516ddd18264d6af5c"
+
+[[sources.files]]
+path = "tools/tests/test_round_trip.py"
+sha256 = "sha256:452ee8f781b9bc2671592ae5ffa66c2b2550ee6178a8606d6e08607e737fac11"
+
+[[sources.files]]
+path = "tools/tests/test_validate_generated.py"
+sha256 = "sha256:a63f1949c8e10551787ae41054fda7e79b0ca296ba55651a89272868bb83f202"
+
+[[sources.files]]
+path = "tools/validate_generated.py"
+sha256 = "sha256:2da264f4792ab2190164bd237d85d04fe1b9413f443dffe57ddb287691847006"
+
+[[sources.files]]
+path = "tools/yt-design-extractor/pyproject.toml"
+sha256 = "sha256:3f5a5e81a8ae3079690808ee19571dcdd9f542655d1c6c83d80f5ad2ffbfefca"
+
+[[sources.files]]
+path = "tools/yt-design-extractor/uv.lock"
+sha256 = "sha256:0b6996a99b88502318d83fafa3f120e11bd02e6f52a9427f4f7e792c4a23046d"
+
+[[sources.files]]
+path = "tools/yt-design-extractor/yt-design-extractor.py"
+sha256 = "sha256:3a978b35aa9dd36c869290159eed8e7fb41127e7ec73408f9ada7cd215518716"
+
+[packages]
+codex = "0.144.6"
+codex_integrity = "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be"
+codex_url = "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz"
+codex_size = 101269986
+skills_cli_version = "1.5.19"
+skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "curl"
+version = "7.88.1-10+deb12u15"
+integrity = "sha256:880d20cb636d2c36b2f57c58ab284b442a1680365b488d3e696c147c4d84ef25"
+
+[[packages.runtime]]
+name = "fish"
+version = "3.6.0-3.1+deb12u1"
+integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.runtime]]
+name = "zsh"
+version = "5.9-4+b15"
+integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bfba90"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:674c1fa64bddb33c569db9f74533642c564eca8a2d5292020ffa7c5966149c5a"

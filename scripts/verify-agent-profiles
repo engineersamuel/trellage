@@ -1,0 +1,987 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf 'Usage: scripts/verify-agent-profiles [--live]\n' >&2
+}
+
+live_mode=0
+case "$#" in
+  0) ;;
+  1)
+    if [ "$1" = '--live' ]; then
+      live_mode=1
+    else
+      usage
+      exit 2
+    fi
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
+
+printf '%s\n' \
+  '| Launcher | Profile | Package | Package skills | Visible skills | Sample | Static | Live |' \
+  '|---|---|---|---:|---:|---|---|---|'
+
+status=0
+
+report_error() {
+  printf 'verify-agent-profiles: %s\n' "$1" >&2
+  status=1
+}
+
+for required_command in jq cdx codex cpx grx; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    report_error "required command not found: $required_command"
+  fi
+done
+
+if ! command -v jq >/dev/null 2>&1; then
+  exit "$status"
+fi
+
+live_timeout_seconds=60
+if [ "$live_mode" -eq 1 ] \
+  && [ -n "${_VERIFY_AGENT_PROFILES_LIVE_TIMEOUT_SECONDS:-}" ]; then
+  if [[ "$_VERIFY_AGENT_PROFILES_LIVE_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] \
+    && [ "$_VERIFY_AGENT_PROFILES_LIVE_TIMEOUT_SECONDS" -le 300 ]; then
+    live_timeout_seconds="$_VERIFY_AGENT_PROFILES_LIVE_TIMEOUT_SECONDS"
+  else
+    report_error 'invalid internal live timeout setting'
+    exit "$status"
+  fi
+fi
+
+temp_parent="${TMPDIR:-/tmp}"
+temp_parent="${temp_parent%/}"
+[ -n "$temp_parent" ] || temp_parent='/'
+temp_dir="$(mktemp -d "$temp_parent/verify-agent-profiles.XXXXXX")" || {
+  report_error 'could not create temporary directory'
+  exit "$status"
+}
+case "$temp_dir" in
+  "$temp_parent"/verify-agent-profiles.*) ;;
+  *)
+    report_error 'mktemp returned an unexpected path'
+    exit "$status"
+    ;;
+esac
+if [ ! -d "$temp_dir" ] || [ -L "$temp_dir" ]; then
+  report_error 'mktemp returned an unsafe directory'
+  exit "$status"
+fi
+
+live_pid=''
+live_pgid=''
+live_process_timed_out=0
+launch_in_progress=0
+pending_signal_status=''
+live_launch_sequence=0
+
+valid_live_process_group() {
+  local launcher_pid="$live_pid"
+  local process_group="${live_pgid:-$live_pid}"
+  [[ "$launcher_pid" =~ ^[1-9][0-9]*$ ]] \
+    && [[ "$process_group" =~ ^[1-9][0-9]*$ ]] \
+    && [ "$launcher_pid" -eq "$process_group" ] \
+    && [ "$process_group" -ne "$$" ] \
+    && [ "$process_group" -ne "$PPID" ]
+}
+
+live_process_group_running() {
+  local process_group="${live_pgid:-$live_pid}"
+  kill -0 -- "-$process_group" 2>/dev/null
+}
+
+live_launcher_running() {
+  local job_pid
+  local jobs_file="$temp_dir/live-running-launcher"
+  [ -n "$live_pid" ] || return 1
+  jobs -pr >"$jobs_file"
+  while IFS= read -r job_pid || [ -n "$job_pid" ]; do
+    [ "$job_pid" = "$live_pid" ] && return 0
+  done <"$jobs_file"
+  return 1
+}
+
+reap_live_launcher_if_done() {
+  local job_pid
+  local launcher_running=0
+  local jobs_file="$temp_dir/live-running-jobs"
+  [ -n "$live_pid" ] || return 0
+  jobs -pr >"$jobs_file"
+  while IFS= read -r job_pid || [ -n "$job_pid" ]; do
+    if [ "$job_pid" = "$live_pid" ]; then
+      launcher_running=1
+      break
+    fi
+  done <"$jobs_file"
+  if [ "$launcher_running" -eq 0 ]; then
+    wait "$live_pid" 2>/dev/null || true
+    live_pid=''
+  fi
+}
+
+terminate_live_process_group() {
+  local process_group="${live_pgid:-$live_pid}"
+  local wait_attempt
+  [ -n "$live_pid" ] || return 0
+  if ! valid_live_process_group; then
+    live_pid=''
+    live_pgid=''
+    return
+  fi
+
+  kill -TERM -- "-$process_group" 2>/dev/null || true
+  for wait_attempt in {1..20}; do
+    reap_live_launcher_if_done
+    live_process_group_running || break
+    sleep 0.05
+  done
+  if live_process_group_running; then
+    kill -KILL -- "-$process_group" 2>/dev/null || true
+    for wait_attempt in {1..20}; do
+      reap_live_launcher_if_done
+      live_process_group_running || break
+      sleep 0.01
+    done
+  fi
+  if [ -n "$live_pid" ] && ! live_process_group_running; then
+    wait "$live_pid" 2>/dev/null || true
+  fi
+  live_pid=''
+  live_pgid=''
+}
+
+cleanup() {
+  local exit_status=$?
+  trap - EXIT HUP INT TERM
+  terminate_live_process_group
+  rm -rf -- "$temp_dir"
+  exit "$exit_status"
+}
+trap cleanup EXIT
+
+handle_signal() {
+  local signal_status="$1"
+  if [ "$launch_in_progress" -eq 1 ]; then
+    if [ -z "$pending_signal_status" ]; then
+      pending_signal_status="$signal_status"
+    fi
+    return
+  fi
+  trap - HUP INT TERM
+  terminate_live_process_group
+  exit "$signal_status"
+}
+trap 'handle_signal 129' HUP
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
+
+escape_cell() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\n'/\\n}"
+  value="${value//&/\\&}"
+  value="${value//|/\\|}"
+  value="${value//\`/\\\`}"
+  value="${value//\*/\\*}"
+  value="${value//\~/\\~}"
+  value="${value//_/\\_}"
+  value="${value//\[/\\[}"
+  value="${value//\]/\\]}"
+  value="${value//</\\<}"
+  value="${value//>/\\>}"
+  printf '%s' "$value"
+}
+
+emit_row() {
+  local launcher="$1"
+  local profile="$2"
+  local package="$3"
+  local package_skills="$4"
+  local visible_skills="$5"
+  local sample="$6"
+  local static_result="$7"
+  local live_result="$8"
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+    "$(escape_cell "$launcher")" \
+    "$(escape_cell "$profile")" \
+    "$(escape_cell "$package")" \
+    "$(escape_cell "$package_skills")" \
+    "$(escape_cell "$visible_skills")" \
+    "$(escape_cell "$sample")" \
+    "$(escape_cell "$static_result")" \
+    "$(escape_cell "$live_result")"
+}
+
+valid_profile_name() {
+  [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]
+}
+
+inventory_has_profile() {
+  awk -F '\t' -v expected="$1" '
+    $1 == expected { found = 1 }
+    END { exit !found }
+  ' "$2"
+}
+
+valid_skill_file() {
+  local skills_file="$1"
+  local skill
+  local count=0
+  while IFS= read -r skill || [ -n "$skill" ]; do
+    [ -n "$skill" ] || return 1
+    [[ "$skill" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]*$ ]] || return 1
+    count=$((count + 1))
+  done <"$skills_file"
+  [ "$count" -gt 0 ]
+}
+
+line_count() {
+  awk 'END { print NR + 0 }' "$1"
+}
+
+sample_skills() {
+  LC_ALL=C sort "$1" | awk '
+    NR > 1 && NR <= 5 { printf ", " }
+    NR <= 5 { printf "%s", $0 }
+    END { printf "\n" }
+  '
+}
+
+set_row_failure() {
+  if [ "$row_static" = 'pass' ]; then
+    row_static="fail: $1"
+  fi
+  status=1
+}
+
+set_live_failure() {
+  if [ "$row_live" = 'not run' ]; then
+    row_live="fail: $1"
+  fi
+  status=1
+}
+
+run_live_process() {
+  local input_file="$1"
+  local output_file="$2"
+  local error_file="$3"
+  local command_status
+  local live_deadline
+  local hold_attempt
+  local launch_prefix
+  local pre_spawn_marker
+  local release_file
+  local supervisor_waiting_marker
+  local supervisor_released
+  shift 3
+
+  live_launch_sequence=$((live_launch_sequence + 1))
+  launch_prefix="$temp_dir/live-launch.$live_launch_sequence"
+  pre_spawn_marker="$launch_prefix.pre-spawn"
+  release_file="$launch_prefix.release"
+  supervisor_waiting_marker="$launch_prefix.waiting"
+  pending_signal_status=''
+  live_process_timed_out=0
+  launch_in_progress=1
+  : >"$pre_spawn_marker"
+  if [ -f "$temp_dir/live-launch.hold-before-spawn" ]; then
+    for hold_attempt in {1..500}; do
+      [ -z "$pending_signal_status" ] || break
+      [ -f "$temp_dir/live-launch.hold-before-spawn" ] || break
+      sleep 0.01 || true
+    done
+    if [ -z "$pending_signal_status" ] \
+      && [ -f "$temp_dir/live-launch.hold-before-spawn" ]; then
+      launch_in_progress=0
+      return 124
+    fi
+  fi
+  if [ -n "$pending_signal_status" ]; then
+    command_status="$pending_signal_status"
+    launch_in_progress=0
+    exit "$command_status"
+  fi
+
+  set -m
+  (
+    trap '' HUP INT TERM
+    "$BASH" -c 'printf "%s\n" "$PPID"' >"$supervisor_waiting_marker"
+    supervisor_released=0
+    for hold_attempt in {1..500}; do
+      if [ ! -d "$temp_dir" ] || [ -L "$temp_dir" ]; then
+        exit 125
+      fi
+      if [ -f "$release_file" ]; then
+        supervisor_released=1
+        break
+      fi
+      sleep 0.01
+    done
+    [ "$supervisor_released" -eq 1 ] || exit 124
+    (
+      trap - HUP INT TERM
+      exec "$@" <"$input_file" >"$output_file" 2>"$error_file"
+    )
+    exit $?
+  ) &
+  live_pid=$!
+  live_pgid=$live_pid
+  set +m
+  if [ -f "$temp_dir/live-launch.hold-before-release" ]; then
+    for hold_attempt in {1..500}; do
+      [ -z "$pending_signal_status" ] || break
+      [ -f "$temp_dir/live-launch.hold-before-release" ] || break
+      sleep 0.01 || true
+    done
+    if [ -z "$pending_signal_status" ] \
+      && [ -f "$temp_dir/live-launch.hold-before-release" ]; then
+      launch_in_progress=0
+      terminate_live_process_group
+      return 124
+    fi
+  fi
+  if [ -n "$pending_signal_status" ]; then
+    command_status="$pending_signal_status"
+    launch_in_progress=0
+    terminate_live_process_group
+    exit "$command_status"
+  fi
+  launch_in_progress=0
+  if [ -n "$pending_signal_status" ]; then
+    command_status="$pending_signal_status"
+    terminate_live_process_group
+    exit "$command_status"
+  fi
+  : >"$release_file"
+  live_deadline=$((SECONDS + live_timeout_seconds))
+  while live_launcher_running; do
+    if [ "$SECONDS" -ge "$live_deadline" ]; then
+      live_process_timed_out=1
+      terminate_live_process_group
+      return 124
+    fi
+    sleep 0.05 || true
+  done
+  if wait "$live_pid"; then
+    command_status=0
+  else
+    command_status=$?
+  fi
+  terminate_live_process_group
+  return "$command_status"
+}
+
+ensure_live_schema() {
+  live_schema="$temp_dir/live-evidence.schema.json"
+  if [ ! -f "$live_schema" ]; then
+    jq -cn '{
+      type: "object",
+      additionalProperties: false,
+      required: ["launcher", "profile", "skills", "emptyPackageConfirmed"],
+      properties: {
+        launcher: {type: "string"},
+        profile: {type: "string"},
+        skills: {
+          type: "array",
+          maxItems: 5,
+          items: {type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$"}
+        },
+        emptyPackageConfirmed: {type: "boolean"}
+      }
+    }' >"$live_schema"
+  fi
+}
+
+prepare_live_probe() {
+  local launcher="$1"
+  local profile="$2"
+  local package="$3"
+  local source_skills="$4"
+  local expected_json
+  local empty_instruction
+
+  ensure_live_schema
+  live_expected_file="$temp_dir/live-$launcher-$profile-expected"
+  live_prompt_file="$temp_dir/live-$launcher-$profile-prompt"
+  LC_ALL=C sort -u "$source_skills" | awk 'NR <= 5 { print }' >"$live_expected_file"
+  expected_json="$(jq -Rn '[inputs]' <"$live_expected_file")"
+  if [ "$(line_count "$live_expected_file")" -eq 0 ]; then
+    empty_instruction="Set skills to [] and emptyPackageConfirmed to true only if no skill in your current context is attributed to cataloged package $package."
+  else
+    empty_instruction='Set emptyPackageConfirmed to false.'
+  fi
+  jq -nr \
+    --arg launcher "$launcher" \
+    --arg profile "$profile" \
+    --argjson expected "$expected_json" \
+    --arg empty "$empty_instruction" \
+    '"Use only your current system context. Do not read files, call tools, or use outside knowledge. Return only one JSON object with exactly these fields: launcher string, profile string, skills string array, and emptyPackageConfirmed boolean. Set launcher to \($launcher) and profile to \($profile). For each expected name, verify that exact name is present in your current system skill context. Return every verified expected name exactly once in skills and no others; do not copy a name that is absent from that context. Expected names: \($expected | tojson). \($empty)"' \
+    >"$live_prompt_file"
+}
+
+live_events_have_tool_use() {
+  jq -se '
+    any(.[].type?;
+      type == "string"
+      and (. == "tool_use" or startswith("tool."))
+    )
+    or any(.[].item?.type?;
+      type == "string"
+      and (
+        . == "command_execution"
+        or . == "mcp_tool_call"
+        or . == "dynamic_tool_call"
+        or . == "collab_tool_call"
+        or . == "computer_tool_call"
+        or . == "function_call"
+        or . == "web_search"
+        or . == "file_change"
+      )
+    )
+  ' "$1" >/dev/null 2>&1
+}
+
+validate_live_result() {
+  local launcher="$1"
+  local profile="$2"
+  local expected_file="$3"
+  local result_file="$4"
+  local actual_file="$temp_dir/live-$launcher-$profile-actual"
+  local expected
+  local occurrence_count
+  local expected_count
+  local actual_count
+
+  if ! jq -se '
+    length == 1 and (.[0]
+      | type == "object"
+      and (keys | sort == ["emptyPackageConfirmed", "launcher", "profile", "skills"])
+      and (.launcher | type == "string")
+      and (.profile | type == "string")
+      and (.emptyPackageConfirmed | type == "boolean")
+      and (.skills | type == "array")
+      and all(.skills[];
+        type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+      )
+    )
+  ' "$result_file" >/dev/null 2>&1; then
+    report_error "$launcher live evidence was malformed for $profile"
+    set_live_failure 'malformed evidence'
+    return
+  fi
+  if ! jq -e --arg launcher "$launcher" '.launcher == $launcher' \
+    "$result_file" >/dev/null 2>&1; then
+    report_error "$launcher live evidence selected the wrong launcher for $profile"
+    set_live_failure 'wrong launcher'
+    return
+  fi
+  if ! jq -e --arg profile "$profile" '.profile == $profile' \
+    "$result_file" >/dev/null 2>&1; then
+    report_error "$launcher live evidence selected the wrong profile for $profile"
+    set_live_failure 'wrong profile'
+    return
+  fi
+  jq -r '.skills[]' "$result_file" >"$actual_file"
+  if ! jq -e '.skills | length == (unique | length)' \
+    "$result_file" >/dev/null 2>&1; then
+    report_error "$launcher live evidence returned a duplicate skill for $profile"
+    set_live_failure 'duplicate skill'
+    return
+  fi
+  while IFS= read -r expected || [ -n "$expected" ]; do
+    occurrence_count="$(jq -r --arg expected "$expected" \
+      '[.skills[] | select(. == $expected)] | length' "$result_file")"
+    if [ "$occurrence_count" -eq 0 ]; then
+      report_error "$launcher live evidence omitted an expected skill for $profile"
+      set_live_failure 'missing skill'
+      return
+    fi
+  done <"$expected_file"
+  expected_count="$(line_count "$expected_file")"
+  actual_count="$(line_count "$actual_file")"
+  if [ "$expected_count" -eq 0 ]; then
+    if [ "$actual_count" -ne 0 ] \
+      || ! jq -e '.emptyPackageConfirmed == true' "$result_file" >/dev/null 2>&1; then
+      report_error "$launcher live evidence did not confirm the empty package for $profile"
+      set_live_failure 'empty package unconfirmed'
+    fi
+  elif [ "$actual_count" -ne "$expected_count" ]; then
+    report_error "$launcher live evidence returned an unexpected skill for $profile"
+    set_live_failure 'unexpected skill'
+  elif ! jq -e '.emptyPackageConfirmed == false' "$result_file" >/dev/null 2>&1; then
+    report_error "$launcher live evidence returned an invalid package confirmation for $profile"
+    set_live_failure 'malformed evidence'
+  fi
+}
+
+probe_codex_live() {
+  local profile="$1"
+  local package="$2"
+  local source_skills="$3"
+  local profile_home="${HOME%/}/.local/share/trellage/profiles/codex/$profile/home"
+  local events_file="$temp_dir/live-cdx-$profile-events.jsonl"
+  local result_file="$temp_dir/live-cdx-$profile-result.json"
+  local error_file="$temp_dir/live-cdx-$profile.stderr"
+  local command_status=0
+
+  prepare_live_probe cdx "$profile" "$package" "$source_skills"
+  CODEX_HOME="$profile_home" run_live_process \
+    "$live_prompt_file" "$events_file" "$error_file" \
+    codex exec \
+      --ephemeral \
+      --sandbox read-only \
+      --config 'approval_policy="never"' \
+      --output-schema "$live_schema" \
+      --json \
+      --output-last-message "$result_file" \
+      - || command_status=$?
+  if [ "$live_process_timed_out" -eq 1 ]; then
+    report_error "codex live probe timed out for $profile"
+    set_live_failure 'timeout'
+  elif [ "$command_status" -ne 0 ]; then
+    report_error "codex live probe failed for $profile (exit $command_status)"
+    set_live_failure 'command'
+  elif ! jq -se 'all(.[]; type == "object")' "$events_file" >/dev/null 2>&1; then
+    report_error "codex live event stream was malformed for $profile"
+    set_live_failure 'malformed evidence'
+  elif live_events_have_tool_use "$events_file"; then
+    report_error "codex live probe attempted tool use for $profile"
+    set_live_failure 'tool use'
+  else
+    validate_live_result cdx "$profile" "$live_expected_file" "$result_file"
+  fi
+}
+
+probe_cpx_live() {
+  local profile="$1"
+  local package="$2"
+  local source_skills="$3"
+  local events_file="$temp_dir/live-cpx-$profile-events.jsonl"
+  local result_file="$temp_dir/live-cpx-$profile-result.json"
+  local error_file="$temp_dir/live-cpx-$profile.stderr"
+  local prompt
+  local command_status=0
+
+  prepare_live_probe cpx "$profile" "$package" "$source_skills"
+  prompt="$(<"$live_prompt_file")"
+  run_live_process /dev/null "$events_file" "$error_file" \
+    cpx "$profile" \
+      --prompt "$prompt" \
+      --output-format json \
+      --no-ask-user \
+      --disable-builtin-mcps \
+      --available-tools= \
+      --no-remote \
+      --no-remote-export \
+      --no-auto-update \
+      --stream off || command_status=$?
+  if [ "$live_process_timed_out" -eq 1 ]; then
+    report_error "cpx live probe timed out for $profile"
+    set_live_failure 'timeout'
+  elif [ "$command_status" -ne 0 ]; then
+    report_error "cpx live probe failed for $profile (exit $command_status)"
+    set_live_failure 'command'
+  elif ! jq -se 'all(.[]; type == "object")' "$events_file" >/dev/null 2>&1; then
+    report_error "cpx live event stream was malformed for $profile"
+    set_live_failure 'malformed evidence'
+  elif live_events_have_tool_use "$events_file"; then
+    report_error "cpx live probe attempted tool use for $profile"
+    set_live_failure 'tool use'
+  elif ! jq -Rrsc '
+    [split("\n")[]
+      | fromjson?
+      | select(.type == "assistant.message" and (.data.content | type == "string"))
+      | .data.content
+    ][-1] // ""
+  ' "$events_file" >"$result_file" 2>/dev/null; then
+    report_error "cpx live evidence was malformed for $profile"
+    set_live_failure 'malformed evidence'
+  else
+    validate_live_result cpx "$profile" "$live_expected_file" "$result_file"
+  fi
+}
+
+probe_grx_live() {
+  local profile="$1"
+  local package="$2"
+  local source_skills="$3"
+  local result_file="$temp_dir/live-grx-$profile-result.json"
+  local error_file="$temp_dir/live-grx-$profile.stderr"
+  local prompt
+  local schema
+  local command_status=0
+
+  prepare_live_probe grx "$profile" "$package" "$source_skills"
+  prompt="$(<"$live_prompt_file")"
+  schema="$(<"$live_schema")"
+  run_live_process /dev/null "$result_file" "$error_file" \
+    grx "$profile" \
+      --single "$prompt" \
+      --json-schema "$schema" \
+      --output-format json \
+      --no-subagents \
+      --tools '' \
+      --deny MCPTool \
+      --disable-web-search \
+      --max-turns 1 \
+      --no-memory \
+      --permission-mode dontAsk || command_status=$?
+  if [ "$live_process_timed_out" -eq 1 ]; then
+    report_error "grx live probe timed out for $profile"
+    set_live_failure 'timeout'
+  elif [ "$command_status" -ne 0 ]; then
+    report_error "grx live probe failed for $profile (exit $command_status)"
+    set_live_failure 'command'
+  else
+    validate_live_result grx "$profile" "$live_expected_file" "$result_file"
+  fi
+}
+
+verify_codex_profiles() {
+  local list_output="$temp_dir/cdx-list"
+  local inventory="$temp_dir/codex-inventory"
+  local profile
+  local package
+  local json_file
+  local text_file
+  local skills_file
+  local section_count
+  local visible_count
+  local sample
+  local row_static
+  local row_live
+  local command_status
+
+  command -v cdx >/dev/null 2>&1 || return 0
+  command -v codex >/dev/null 2>&1 || return 0
+  discover_catalog cdx "$list_output" "$inventory" || return 0
+  if ! awk -F '\t' '
+    NR == 1 && $1 == "hve" && $2 == "hve-core-all@hve-core" { next }
+    NR == 2 && $1 == "superpowers" \
+      && $2 == "superpowers@superpowers-marketplace" { next }
+    { invalid = 1 }
+    END { exit invalid || NR != 2 }
+  ' "$inventory"; then
+    report_error 'cdx profile inventory does not match managed catalog'
+    return 0
+  fi
+
+  while IFS=$'\t' read -r profile package; do
+    json_file="$temp_dir/codex-$profile.json"
+    text_file="$temp_dir/codex-$profile-text"
+    skills_file="$temp_dir/codex-$profile-skills"
+    row_static='pass'
+    visible_count='?'
+    sample=''
+    row_live='not run'
+
+    command_status=0
+    cdx doctor "$profile" >"$temp_dir/codex-$profile-doctor" \
+      2>"$temp_dir/codex-$profile-doctor.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "cdx doctor failed for $profile (exit $command_status)"
+      set_row_failure 'doctor command'
+    fi
+    command_status=0
+    cdx "$profile" debug prompt-input 'profile verification' \
+      >"$json_file" 2>"$temp_dir/codex-$profile.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "Codex prompt-input failed for $profile (exit $command_status)"
+      set_row_failure 'prompt input command'
+    elif ! jq -se 'length == 1 and (.[0] | type == "array")' "$json_file" >/dev/null 2>&1; then
+      report_error "Codex prompt validation failed for $profile: expected one JSON message array"
+      set_row_failure 'invalid prompt JSON'
+    elif ! jq -r '
+      .[]?.content[]?
+      | select(type == "object" and .type == "input_text" and (.text | type == "string"))
+      | .text
+    ' "$json_file" >"$text_file" 2>/dev/null; then
+      report_error "Codex prompt validation failed for $profile: expected one JSON message array"
+      set_row_failure 'invalid prompt JSON'
+    else
+      section_count="$(grep -Fxc '### Available skills' "$text_file" || true)"
+      if [ "$section_count" -ne 1 ]; then
+        report_error "Codex skill-section validation failed for $profile: expected exactly one available-skills section"
+        set_row_failure 'available-skills section'
+      else
+        awk '
+          $0 == "### Available skills" { in_skills = 1; next }
+          in_skills && /^### / { exit }
+          in_skills && /^- / {
+            line = substr($0, 3)
+            separator = index(line, ": ")
+            if (separator > 1) print substr(line, 1, separator - 1)
+          }
+        ' "$text_file" >"$skills_file"
+        if ! valid_skill_file "$skills_file"; then
+          report_error "Codex skill inventory validation failed for $profile: expected at least one valid skill name"
+          set_row_failure 'invalid skill inventory'
+        else
+          visible_count="$(line_count "$skills_file")"
+          sample="$(sample_skills "$skills_file")"
+        fi
+      fi
+    fi
+    if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
+      probe_codex_live "$profile" "$package" "$skills_file"
+      if [ "$row_live" = 'not run' ]; then
+        row_live='pass'
+      fi
+    fi
+    emit_row cdx "$profile" "$package" n/a "$visible_count" "$sample" "$row_static" "$row_live"
+  done <"$inventory"
+}
+
+discover_catalog() {
+  local launcher="$1"
+  local output_file="$2"
+  local inventory_file="$3"
+  local line
+  local profile
+  local package
+  local count=0
+  local invalid=0
+  local command_status=0
+  : >"$inventory_file"
+
+  "$launcher" list >"$output_file" 2>"$temp_dir/$launcher-list.stderr" || command_status=$?
+  if [ "$command_status" -ne 0 ]; then
+    report_error "$launcher list failed (exit $command_status)"
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ -z "$line" ] || [ "${line//$'\t'/}" = "$line" ] \
+      || [ "${line#*$'\t'}" != "${line##*$'\t'}" ]; then
+      invalid=1
+      continue
+    fi
+    profile="${line%%$'\t'*}"
+    package="${line#*$'\t'}"
+    if [ -z "$profile" ] || [ -z "$package" ] || ! valid_profile_name "$profile" \
+      || printf '%s' "$package" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+      invalid=1
+      continue
+    fi
+    if inventory_has_profile "$profile" "$inventory_file"; then
+      report_error "duplicate $launcher profile: $profile"
+      invalid=1
+      continue
+    fi
+    printf '%s\t%s\n' "$profile" "$package" >>"$inventory_file"
+    count=$((count + 1))
+  done <"$output_file"
+  if [ "$invalid" -ne 0 ]; then
+    report_error "$launcher profile inventory is invalid"
+  fi
+  if [ "$count" -eq 0 ]; then
+    report_error "$launcher profile inventory is empty"
+    return 1
+  fi
+  LC_ALL=C sort -t $'\t' -k1,1 "$inventory_file" -o "$inventory_file"
+  return 0
+}
+
+verify_cpx_profiles() {
+  local list_output="$temp_dir/cpx-list"
+  local inventory="$temp_dir/cpx-inventory"
+  local profile
+  local package
+  local plugin_output
+  local plugin_names
+  local skills_json
+  local enabled_skills
+  local package_skill_names
+  local package_count
+  local visible_count
+  local sample
+  local row_static
+  local row_live
+  local command_status
+
+  command -v cpx >/dev/null 2>&1 || return 0
+  discover_catalog cpx "$list_output" "$inventory" || return 0
+  while IFS=$'\t' read -r profile package; do
+    row_static='pass'
+    package_count='?'
+    visible_count='?'
+    sample=''
+    row_live='not run'
+    plugin_output="$temp_dir/cpx-$profile-plugins"
+    plugin_names="$temp_dir/cpx-$profile-plugin-names"
+    skills_json="$temp_dir/cpx-$profile-skills.json"
+    enabled_skills="$temp_dir/cpx-$profile-enabled-skills"
+    package_skill_names="$temp_dir/cpx-$profile-package-skills"
+
+    command_status=0
+    cpx doctor "$profile" >"$temp_dir/cpx-$profile-doctor" \
+      2>"$temp_dir/cpx-$profile-doctor.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "cpx doctor failed for $profile (exit $command_status)"
+      set_row_failure 'doctor command'
+    fi
+    command_status=0
+    cpx "$profile" plugin list >"$plugin_output" \
+      2>"$temp_dir/cpx-$profile-plugin.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "cpx plugin list failed for $profile (exit $command_status)"
+      set_row_failure 'plugin command'
+    else
+      awk '
+        /^[[:space:]]*•[[:space:]]/ {
+          line = $0
+          sub(/^[[:space:]]*•[[:space:]]*/, "", line)
+          sub(/[[:space:]]+\(v[^)]*\)[[:space:]]*$/, "", line)
+          print line
+        }
+      ' "$plugin_output" >"$plugin_names"
+      if [ "$(line_count "$plugin_names")" -ne 1 ] \
+        || ! grep -Fxq -- "$package" "$plugin_names"; then
+        report_error "cpx package validation failed for $profile: cataloged package is not the sole installed plugin"
+        set_row_failure 'unexpected package'
+      fi
+    fi
+    command_status=0
+    cpx "$profile" skill list --json >"$skills_json" \
+      2>"$temp_dir/cpx-$profile-skills.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "cpx skill list failed for $profile (exit $command_status)"
+      set_row_failure 'skill command'
+    elif ! jq -se '
+      length == 1 and (.[0]
+        | type == "array"
+        and all(.[];
+          type == "object"
+          and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+          and (.source | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+          and (.enabled | type == "boolean")
+        )
+      )
+    ' "$skills_json" >/dev/null 2>&1; then
+      report_error "cpx skill inventory validation failed for $profile: expected one JSON array with valid skill fields"
+      set_row_failure 'invalid skill JSON'
+    else
+      jq -r '.[] | select(.enabled == true) | .name' "$skills_json" >"$enabled_skills"
+      jq -r '.[] | select(.enabled == true and .source == "plugin") | .name' \
+        "$skills_json" >"$package_skill_names"
+      visible_count="$(line_count "$enabled_skills")"
+      package_count="$(line_count "$package_skill_names")"
+      if [ "$package_count" -gt 0 ]; then
+        sample="$(sample_skills "$package_skill_names")"
+      fi
+    fi
+    if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
+      probe_cpx_live "$profile" "$package" "$package_skill_names"
+      if [ "$row_live" = 'not run' ]; then
+        row_live='pass'
+      fi
+    fi
+    emit_row cpx "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
+  done <"$inventory"
+}
+
+verify_grx_profiles() {
+  local list_output="$temp_dir/grx-list"
+  local inventory="$temp_dir/grx-inventory"
+  local profile
+  local package
+  local inspect_json
+  local package_skill_names
+  local package_count
+  local visible_count
+  local sample
+  local row_static
+  local row_live
+  local command_status
+
+  command -v grx >/dev/null 2>&1 || return 0
+  discover_catalog grx "$list_output" "$inventory" || return 0
+  while IFS=$'\t' read -r profile package; do
+    row_static='pass'
+    package_count='?'
+    visible_count='?'
+    sample=''
+    row_live='not run'
+    inspect_json="$temp_dir/grx-$profile-inspect.json"
+    package_skill_names="$temp_dir/grx-$profile-package-skills"
+
+    command_status=0
+    grx doctor "$profile" >"$temp_dir/grx-$profile-doctor" \
+      2>"$temp_dir/grx-$profile-doctor.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "grx doctor failed for $profile (exit $command_status)"
+      set_row_failure 'doctor command'
+    fi
+    command_status=0
+    grx "$profile" inspect --json >"$inspect_json" \
+      2>"$temp_dir/grx-$profile-inspect.stderr" || command_status=$?
+    if [ "$command_status" -ne 0 ]; then
+      report_error "grx inspect failed for $profile (exit $command_status)"
+      set_row_failure 'inspect command'
+    elif ! jq -se --arg package "$package" '
+      length == 1 and (.[0]
+        | type == "object"
+        and (.plugins | type == "array")
+        and (.skills | type == "array")
+        and all(.plugins[];
+          type == "object"
+          and (.name | type == "string" and length > 0)
+          and (.enabled | type == "boolean")
+        )
+        and all(.skills[];
+          type == "object"
+          and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+          and (.source | type == "object")
+          and (.source.type | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+          and (
+            .source.type != "plugin"
+            or (.source.plugin_name | type == "string" and length > 0)
+          )
+        )
+      )
+    ' "$inspect_json" >/dev/null 2>&1; then
+      report_error "grx inspect validation failed for $profile: expected one JSON object with plugin and skill arrays"
+      set_row_failure 'invalid inspect JSON'
+    elif ! jq -e --arg package "$package" \
+      '([.plugins[] | select(.name == $package and .enabled == true)] | length) == 1' \
+      "$inspect_json" >/dev/null 2>&1; then
+      report_error "grx package validation failed for $profile: cataloged package is not enabled exactly once"
+      set_row_failure 'unexpected package'
+    else
+      visible_count="$(jq -r '.skills | length' "$inspect_json")"
+      jq -r --arg package "$package" '
+        .skills[]
+        | select(.source.type == "plugin" and .source.plugin_name == $package)
+        | .name
+      ' "$inspect_json" >"$package_skill_names"
+      package_count="$(line_count "$package_skill_names")"
+      if [ "$package_count" -gt 0 ]; then
+        if ! valid_skill_file "$package_skill_names"; then
+          report_error "grx package skill validation failed for $profile: package skill names are invalid"
+          set_row_failure 'invalid skill inventory'
+          package_count='?'
+        else
+          sample="$(sample_skills "$package_skill_names")"
+        fi
+      fi
+    fi
+    if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
+      probe_grx_live "$profile" "$package" "$package_skill_names"
+      if [ "$row_live" = 'not run' ]; then
+        row_live='pass'
+      fi
+    fi
+    emit_row grx "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
+  done <"$inventory"
+}
+
+verify_codex_profiles
+verify_cpx_profiles
+verify_grx_profiles
+exit "$status"

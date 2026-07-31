@@ -1,0 +1,8 @@
+{
+  "printWidth": 120,
+  "proseWrap": "preserve",
+  "semi": false,
+  "singleQuote": false,
+  "sortImports": false,
+  "sortPackageJson": false
+}

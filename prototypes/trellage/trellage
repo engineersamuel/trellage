@@ -1,0 +1,858 @@
+#!/usr/bin/env bash
+set +x
+set -euo pipefail
+ulimit -c 0 2>/dev/null || true
+
+unset \
+  ambient_copilot_github_token ambient_gh_token ambient_github_token \
+  ambient_claude_code_oauth_token ambient_anthropic_api_key \
+  ambient_playwright_mcp_extension_token copilot_token secret_value secret_source_values
+ambient_copilot_github_token="${COPILOT_GITHUB_TOKEN-}"
+ambient_gh_token="${GH_TOKEN-}"
+ambient_github_token="${GITHUB_TOKEN-}"
+ambient_claude_code_oauth_token="${CLAUDE_CODE_OAUTH_TOKEN-}"
+ambient_anthropic_api_key="${ANTHROPIC_API_KEY-}"
+ambient_playwright_mcp_extension_token="${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}"
+unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
+  PLAYWRIGHT_MCP_EXTENSION_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
+  ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
+  CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+  AWS_SESSION_TOKEN AWS_PROFILE GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID \
+  CLOUD_ML_REGION AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
+unset HERDR_AGENT
+
+fail() {
+  printf 'trellage: %s\n' "$1" >&2
+  exit 1
+}
+
+discard_ambient_github_auth() {
+  ambient_copilot_github_token=
+  ambient_gh_token=
+  ambient_github_token=
+}
+
+discard_ambient_claude_auth() {
+  ambient_claude_code_oauth_token=
+  ambient_anthropic_api_key=
+  ambient_playwright_mcp_extension_token=
+}
+
+mode=new
+compiler_mode=false
+case "${1:-}" in
+  validate|lock|build|upgrade)
+    mode=compiler
+    compiler_mode=true
+    ;;
+esac
+
+profile_argument=
+auth_mode_argument=
+if [[ "$compiler_mode" == false ]]; then
+  parsed_arguments=()
+  while (( $# > 0 )); do
+    case "$1" in
+      --profile)
+        [[ -z "$profile_argument" ]] || fail '--profile may be specified only once'
+        [[ $# -ge 2 && -n "$2" ]] || fail '--profile requires a value'
+        profile_argument="$2"
+        shift 2
+        ;;
+      --profile=*)
+        [[ -z "$profile_argument" ]] || fail '--profile may be specified only once'
+        profile_argument="${1#--profile=}"
+        [[ -n "$profile_argument" ]] || fail '--profile requires a value'
+        shift
+        ;;
+      --auth-mode)
+        [[ -z "$auth_mode_argument" ]] || fail '--auth-mode may be specified only once'
+        [[ $# -ge 2 && -n "$2" ]] || fail '--auth-mode requires a value'
+        auth_mode_argument="$2"
+        shift 2
+        ;;
+      --auth-mode=*)
+        [[ -z "$auth_mode_argument" ]] || fail '--auth-mode may be specified only once'
+        auth_mode_argument="${1#--auth-mode=}"
+        [[ -n "$auth_mode_argument" ]] || fail '--auth-mode requires a value'
+        shift
+        ;;
+      *)
+        parsed_arguments+=("$1")
+        shift
+        ;;
+    esac
+  done
+  if [[ "${#parsed_arguments[@]}" -eq 0 ]]; then
+    set --
+  else
+    set -- "${parsed_arguments[@]}"
+  fi
+  if [[ "$#" -ge 1 ]]; then
+    case "$1" in
+      resume|shell|stop|doctor|destroy)
+        [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
+        mode="$1"
+        ;;
+    esac
+  fi
+fi
+
+case "$auth_mode_argument" in
+  ''|proxy|native|api-key) ;;
+  *) fail "unsupported --auth-mode: $auth_mode_argument" ;;
+esac
+
+case "$mode" in
+  new|resume|doctor) ;;
+  *) discard_ambient_github_auth; discard_ambient_claude_auth ;;
+esac
+
+source_path="${BASH_SOURCE[0]}"
+while [[ -L "$source_path" ]]; do
+  source_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+  link_target="$(readlink "$source_path")"
+  if [[ "$link_target" == /* ]]; then
+    source_path="$link_target"
+  else
+    source_path="$source_dir/$link_target"
+  fi
+done
+prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+
+case "${1:-}" in
+  validate|lock|build|upgrade)
+    discard_ambient_github_auth
+    [[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
+    exec node "$compiler" "$@"
+    ;;
+esac
+
+[[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
+metadata_args=(metadata)
+[[ -z "$profile_argument" ]] || metadata_args+=("$profile_argument")
+profile_metadata="$(node "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
+harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
+if [[ "$harness_kind" != copilot ]]; then
+  discard_ambient_github_auth
+fi
+if [[ "$harness_kind" != claude ]]; then
+  [[ -z "$auth_mode_argument" ]] || fail '--auth-mode is supported only for Claude profiles'
+  discard_ambient_claude_auth
+fi
+claude_auth_mode="${auth_mode_argument:-proxy}"
+profile_name="$(jq -er '.profile_name' <<<"$profile_metadata")" || fail 'profile metadata has no name'
+profile_hash="$(jq -er '.profile_hash' <<<"$profile_metadata")" || fail 'profile metadata has no hash'
+profile_path="$(jq -er '.profile_path' <<<"$profile_metadata")" || fail 'profile metadata has no path'
+profile_locked="$(jq -r '.locked' <<<"$profile_metadata")" || fail 'profile metadata has no lock state'
+profile_image="$(jq -er '.image' <<<"$profile_metadata")" || fail 'profile metadata has no image'
+build_command="$(jq -er '.build_command' <<<"$profile_metadata")" || fail 'profile metadata has no build command'
+secrets_provider="$(jq -er '.secrets_provider' <<<"$profile_metadata")" || fail 'profile metadata has no secrets provider'
+resolved_varlock_path="$(jq -r '.resolved_varlock_path // empty' <<<"$profile_metadata")"
+has_initial_prompt="$(jq -r '.has_initial_prompt' <<<"$profile_metadata")" || fail 'profile metadata has no prompt state'
+harness_executable="$(jq -er '.harness_executable' <<<"$profile_metadata")" || fail 'profile metadata has no executable'
+runtime_entry="$(jq -er '.runtime_entry' <<<"$profile_metadata")" || fail 'profile metadata has no runtime entry'
+default_network="$(jq -er '.default_network' <<<"$profile_metadata")" || fail 'profile metadata has no default network'
+auth_policy="$(jq -er '.auth_policy' <<<"$profile_metadata")" || fail 'profile metadata has no auth policy'
+resolved_version="$(jq -r '.resolved_version // empty' <<<"$profile_metadata")"
+case "$harness_kind" in
+  claude|codex|copilot) ;;
+  *) fail 'profile metadata has an unsupported harness kind' ;;
+esac
+[[ "$harness_executable" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || fail 'profile metadata has an unsafe harness executable'
+[[ "$runtime_entry" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || fail 'profile metadata has an unsafe runtime entry'
+prototype_owner="trellage-${harness_kind}"
+harness_args=()
+while IFS= read -r harness_arg; do
+  harness_args+=("$harness_arg")
+done < <(jq -r '.harness_args[]' <<<"$profile_metadata")
+secret_environment=()
+while IFS=$'\t' read -r secret_target secret_source; do
+  [[ -n "$secret_target" && -n "$secret_source" ]] || continue
+  secret_environment+=("$secret_target" "$secret_source")
+done < <(jq -r '.secret_environment | to_entries[] | [.key, .value] | @tsv' <<<"$profile_metadata")
+
+copilot_token=
+copilot_auth_source=login
+resolve_copilot_auth() {
+  local host
+  copilot_token=
+  copilot_auth_source=login
+  if [[ -n "$ambient_copilot_github_token" ]]; then
+    copilot_auth_source=COPILOT_GITHUB_TOKEN
+    [[ "$mode" == doctor ]] || copilot_token="$ambient_copilot_github_token"
+  elif [[ -n "$ambient_gh_token" ]]; then
+    copilot_auth_source=GH_TOKEN
+    [[ "$mode" == doctor ]] || copilot_token="$ambient_gh_token"
+  elif [[ -n "$ambient_github_token" ]]; then
+    copilot_auth_source=GITHUB_TOKEN
+    [[ "$mode" == doctor ]] || copilot_token="$ambient_github_token"
+  fi
+  discard_ambient_github_auth
+  if [[ "$copilot_auth_source" == login ]] && command -v gh >/dev/null 2>&1; then
+    host="${COPILOT_GH_HOST:-${GH_HOST:-github.com}}"
+    copilot_token="$(gh auth token --hostname "$host" 2>/dev/null)" || copilot_token=
+    [[ -z "$copilot_token" ]] || copilot_auth_source=gh
+  fi
+  if [[ "$mode" == doctor ]]; then
+    copilot_token=
+  fi
+}
+if [[ "$harness_kind" == copilot && "$auth_policy" == host-or-login \
+  && ( "$mode" == new || "$mode" == resume || "$mode" == doctor ) ]]; then
+  resolve_copilot_auth
+else
+  discard_ambient_github_auth
+fi
+
+claude_auth_source=proxy
+if [[ "$harness_kind" == claude ]]; then
+  case "$claude_auth_mode" in
+    proxy) claude_auth_source=proxy ;;
+    native)
+      if [[ -n "$ambient_claude_code_oauth_token" ]]; then
+        claude_auth_source=CLAUDE_CODE_OAUTH_TOKEN
+      else
+        claude_auth_source=login
+      fi
+      ;;
+    api-key)
+      [[ "$mode" != new && "$mode" != resume || -n "$ambient_anthropic_api_key" ]] \
+        || fail 'ANTHROPIC_API_KEY is required for --auth-mode api-key'
+      claude_auth_source=ANTHROPIC_API_KEY
+      ;;
+  esac
+  if [[ "$mode" != new && "$mode" != resume ]]; then
+    discard_ambient_claude_auth
+  fi
+else
+  discard_ambient_claude_auth
+fi
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+    return
+  fi
+  fail 'sha256sum or shasum is required'
+}
+
+if [[ "$mode" != stop && "$mode" != doctor && "$mode" != destroy ]]; then
+  [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
+fi
+if [[ "$mode" == doctor ]]; then
+  for dependency in git docker mise; do
+    if command -v "$dependency" >/dev/null 2>&1; then
+      printf 'dependency %s: available\n' "$dependency"
+    else
+      printf 'dependency %s: missing\n' "$dependency"
+    fi
+  done
+fi
+command -v git >/dev/null 2>&1 || fail 'git is required'
+command -v docker >/dev/null 2>&1 || fail 'docker is required'
+
+worktree_from_git="$(git rev-parse --show-toplevel 2>/dev/null)" \
+  || fail 'run trellage from a Git worktree'
+[[ -d "$worktree_from_git" ]] || fail 'Git returned a missing worktree path'
+worktree="$(cd "$worktree_from_git" && pwd -P)"
+worktree_name="$(basename "$worktree")"
+[[ "$worktree_name" != '.' && "$worktree_name" != '..' ]] \
+  || fail 'worktree name is not a safe mount segment'
+[[ "$worktree_name" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || fail "worktree name is not a safe mount segment: $worktree_name"
+
+resource_segment="$(printf '%s' "$worktree_name" \
+  | tr '[:upper:]' '[:lower:]' \
+  | sed -E 's/[^a-z0-9_.-]+/-/g; s/^[^a-z0-9]+//; s/[^a-z0-9]+$//')"
+[[ -n "$resource_segment" ]] || fail 'worktree name cannot form a Docker resource name'
+profile_segment="$(printf '%s' "$profile_name" \
+  | tr '[:upper:]' '[:lower:]' \
+  | sed -E 's/[^a-z0-9_.-]+/-/g; s/^[^a-z0-9]+//; s/[^a-z0-9]+$//')"
+[[ -n "$profile_segment" ]] || fail 'profile name cannot form a Docker resource name'
+path_hash="$(printf '%s' "$worktree" | sha256)"
+container_name="trellage-${harness_kind}-${profile_segment}-${resource_segment}-${path_hash:0:16}"
+state_volume="trellage-${harness_kind}-state-${profile_segment}-${resource_segment}-${path_hash:0:16}"
+mount_path="/mounts/$worktree_name"
+
+prototype_label='dev.trellage.prototype'
+worktree_label='dev.trellage.worktree'
+profile_label='dev.trellage.profile'
+prototype_format="{{ index .Config.Labels \"$prototype_label\" }}"
+worktree_format="{{ index .Config.Labels \"$worktree_label\" }}"
+profile_format="{{ index .Config.Labels \"$profile_label\" }}"
+resource_label_args=(
+  --label "$prototype_label=$prototype_owner"
+  --label "$worktree_label=$worktree"
+  --label "$profile_label=$profile_name"
+)
+volume_ownership_format="{{ printf \"%s\\t%s\\t%s\" (index .Labels \"$prototype_label\") (index .Labels \"$worktree_label\") (index .Labels \"$profile_label\") }}"
+mounts_format='{{ range .Mounts }}{{ printf "%s\t%s\t%s\t%s\t%t\n" .Type .Name .Source .Destination .RW }}{{ end }}'
+
+probe_container_presence() {
+  local listed_name
+  listed_name="$(docker container ls \
+    --all \
+    --filter "name=^/${container_name}\$" \
+    --format '{{.Names}}' 2>/dev/null)" || return 2
+  [[ -z "$listed_name" ]] && return 1
+  [[ "$listed_name" == "$container_name" ]] || return 2
+}
+
+probe_volume_presence() {
+  local listed_name
+  listed_name="$(docker volume ls \
+    --filter "name=^${state_volume}\$" \
+    --format '{{.Name}}' 2>/dev/null)" || return 2
+  [[ -z "$listed_name" ]] && return 1
+  [[ "$listed_name" == "$state_volume" ]] || return 2
+}
+
+probe_image_presence() {
+  local listed_image
+  listed_image="$(docker image ls \
+    --filter "reference=$image" \
+    --format '{{.Repository}}:{{.Tag}}' 2>/dev/null)" || return 2
+  [[ -z "$listed_image" ]] && return 1
+  [[ "$listed_image" == "$image" ]] || return 2
+}
+
+probe_network_presence() {
+  local listed_network
+  listed_network="$(docker network ls \
+    --filter "name=^${network}\$" \
+    --format '{{.Name}}' 2>/dev/null)" || return 2
+  [[ -z "$listed_network" ]] && return 1
+  [[ "$listed_network" == "$network" ]] || return 2
+}
+
+container_is_present() {
+  local probe_status
+  if probe_container_presence; then
+    return 0
+  else
+    probe_status="$?"
+  fi
+  if [[ "$probe_status" -eq 1 ]]; then
+    return 1
+  fi
+  fail "cannot determine Docker container presence: $container_name"
+}
+
+volume_is_present() {
+  local probe_status
+  if probe_volume_presence; then
+    return 0
+  else
+    probe_status="$?"
+  fi
+  if [[ "$probe_status" -eq 1 ]]; then
+    return 1
+  fi
+  fail "cannot determine Docker volume presence: $state_volume"
+}
+
+inspect_container() {
+  container_prototype="$(docker container inspect \
+    --format "$prototype_format" "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container ownership: $container_name"
+  [[ "$container_prototype" == "$prototype_owner" ]] \
+    || fail "refusing unrelated Docker container name collision: $container_name"
+  container_worktree="$(docker container inspect \
+    --format "$worktree_format" "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container worktree label: $container_name"
+  [[ "$container_worktree" == "$worktree" ]] \
+    || fail "refusing unrelated Docker container name collision: $container_name"
+  container_profile="$(docker container inspect \
+    --format "$profile_format" "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container profile label: $container_name"
+  [[ "$container_profile" == "$profile_name" ]] \
+    || fail "refusing Docker container profile collision: $container_name"
+  container_id="$(docker container inspect \
+    --format '{{ .Id }}' "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container ID: $container_name"
+  [[ -n "$container_id" ]] || fail "Docker container has an empty ID: $container_name"
+}
+
+validate_state_volume() {
+  local expected_ownership volume_ownership
+  volume_ownership="$(docker volume inspect \
+    --format "$volume_ownership_format" "$state_volume" 2>/dev/null)" \
+    || fail "cannot inspect Docker volume ownership: $state_volume"
+  expected_ownership="$prototype_owner"$'\t'"$worktree"$'\t'"$profile_name"
+  [[ "$volume_ownership" == "$expected_ownership" ]] \
+    || fail "refusing unrelated Docker volume name collision: $state_volume"
+}
+
+validate_container_mounts() {
+  local mounts expected_bind
+  mounts="$(docker container inspect \
+    --format "$mounts_format" "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container mounts: $container_name"
+  [[ "$(printf '%s\n' "$mounts" | awk 'NF { count++ } END { print count + 0 }')" -eq 2 ]] \
+    || fail "refusing Docker container with unexpected mounts: $container_name"
+  expected_bind=$'bind\t\t'"$worktree"$'\t'"$mount_path"$'\ttrue'
+  grep -Fqx "$expected_bind" <<<"$mounts" \
+    || fail "refusing Docker container with wrong worktree mount: $container_name"
+  awk -F '\t' -v volume="$state_volume" '
+    $1 == "volume" && $2 == volume && $3 != "" && $4 == "/home/agent" && $5 == "true" { found++ }
+    END { exit(found == 1 ? 0 : 1) }
+  ' <<<"$mounts" \
+    || fail "refusing Docker container with wrong state volume mount: $container_name"
+}
+
+image="${TRELLAGE_IMAGE:-$profile_image}"
+network="${TRELLAGE_NETWORK:-$default_network}"
+
+secret_args=()
+secret_source_names=()
+secret_source_values=()
+if [[ "$mode" == new || "$mode" == resume ]]; then
+  if [[ "$secrets_provider" == env ]]; then
+    while IFS= read -r secret_source; do
+      [[ -n "$secret_source" ]] || continue
+      if ! secret_value="$(printenv "$secret_source")" || [[ -z "$secret_value" ]]; then
+        fail "required host secret is missing: $secret_source"
+      fi
+      secret_source_names+=("$secret_source")
+      secret_source_values+=("$secret_value")
+    done < <(jq -r '.required_secrets[]' <<<"$profile_metadata")
+  fi
+fi
+secret_index=0
+while [[ "$secret_index" -lt "${#secret_environment[@]}" ]]; do
+  unset "${secret_environment[$secret_index]}" "${secret_environment[$((secret_index + 1))]}"
+  secret_index=$((secret_index + 2))
+done
+
+prepare_codex_secrets() {
+  secret_args=()
+  if [[ "$secrets_provider" == env ]]; then
+    local secret_index source_index secret_source secret_target secret_value
+    secret_index=0
+    while [[ "$secret_index" -lt "${#secret_environment[@]}" ]]; do
+      secret_target="${secret_environment[$secret_index]}"
+      secret_source="${secret_environment[$((secret_index + 1))]}"
+      secret_value=
+      source_index=0
+      while [[ "$source_index" -lt "${#secret_source_names[@]}" ]]; do
+        if [[ "${secret_source_names[$source_index]}" == "$secret_source" ]]; then
+          secret_value="${secret_source_values[$source_index]}"
+          break
+        fi
+        source_index=$((source_index + 1))
+      done
+      [[ -n "$secret_value" ]] || fail "required host secret is missing: $secret_source"
+      printf -v "$secret_target" '%s' "$secret_value"
+      export "$secret_target"
+      secret_args+=(--env "$secret_target")
+      secret_index=$((secret_index + 2))
+    done
+  elif [[ "$secrets_provider" == varlock ]]; then
+    while IFS= read -r secret_name; do
+      [[ -n "$secret_name" ]] || continue
+      secret_args+=(--env "$secret_name")
+    done < <(jq -r '.required_secrets[]' <<<"$profile_metadata")
+  fi
+}
+
+copilot_auth_args=()
+prepare_copilot_auth() {
+  copilot_auth_args=()
+  unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+  if [[ "$auth_policy" == host-or-login && -n "$copilot_token" ]]; then
+    COPILOT_GITHUB_TOKEN="$copilot_token"
+    export COPILOT_GITHUB_TOKEN
+    copilot_auth_args=(--env COPILOT_GITHUB_TOKEN)
+  fi
+}
+
+claude_auth_args=()
+prepare_claude_auth() {
+  claude_auth_args=()
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
+    ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
+    PLAYWRIGHT_MCP_EXTENSION_TOKEN
+  TRELLAGE_CLAUDE_AUTH_MODE="$claude_auth_mode"
+  export TRELLAGE_CLAUDE_AUTH_MODE
+  claude_auth_args+=(--env TRELLAGE_CLAUDE_AUTH_MODE)
+  case "$claude_auth_mode" in
+    proxy)
+      ANTHROPIC_AUTH_TOKEN=trellage-local-proxy
+      ANTHROPIC_BASE_URL=http://copilot-proxy-rs:8080
+      ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5
+      ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5
+      ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4.5
+      export ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_DEFAULT_OPUS_MODEL \
+        ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+      claude_auth_args+=(--env ANTHROPIC_AUTH_TOKEN --env ANTHROPIC_BASE_URL \
+        --env ANTHROPIC_DEFAULT_OPUS_MODEL --env ANTHROPIC_DEFAULT_SONNET_MODEL \
+        --env ANTHROPIC_DEFAULT_HAIKU_MODEL)
+      ;;
+    native)
+      if [[ -n "$ambient_claude_code_oauth_token" ]]; then
+        CLAUDE_CODE_OAUTH_TOKEN="$ambient_claude_code_oauth_token"
+        export CLAUDE_CODE_OAUTH_TOKEN
+        claude_auth_args+=(--env CLAUDE_CODE_OAUTH_TOKEN)
+      fi
+      ;;
+    api-key)
+      [[ -n "$ambient_anthropic_api_key" ]] || fail 'ANTHROPIC_API_KEY is required for --auth-mode api-key'
+      ANTHROPIC_API_KEY="$ambient_anthropic_api_key"
+      export ANTHROPIC_API_KEY
+      claude_auth_args+=(--env ANTHROPIC_API_KEY)
+      ;;
+  esac
+  if [[ -n "$ambient_playwright_mcp_extension_token" ]]; then
+    PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
+    export PLAYWRIGHT_MCP_EXTENSION_TOKEN
+    claude_auth_args+=(--env PLAYWRIGHT_MCP_EXTENSION_TOKEN)
+  fi
+  discard_ambient_claude_auth
+}
+
+if [[ "$mode" == doctor ]]; then
+  image_state=error
+  if probe_image_presence; then
+    image_state=available
+    if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
+      inspected_profile_hash="$(docker image inspect \
+        --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$image" 2>/dev/null)" \
+        || inspected_profile_hash=
+      [[ "$inspected_profile_hash" == "$profile_hash" ]] || image_state=stale
+    fi
+  else
+    probe_status="$?"
+    if [[ "$probe_status" -eq 1 ]]; then
+      image_state=absent
+    fi
+  fi
+  network_state=error
+  if probe_network_presence; then
+    network_state=available
+  else
+    probe_status="$?"
+    if [[ "$probe_status" -eq 1 ]]; then
+      network_state=absent
+    fi
+  fi
+
+  container_probe=error
+  if probe_container_presence; then
+    container_probe=present
+  else
+    probe_status="$?"
+    if [[ "$probe_status" -eq 1 ]]; then
+      container_probe=absent
+    fi
+  fi
+  volume_probe=error
+  if probe_volume_presence; then
+    volume_probe=present
+  else
+    probe_status="$?"
+    if [[ "$probe_status" -eq 1 ]]; then
+      volume_probe=absent
+    fi
+  fi
+
+  resource_state=absent
+  if [[ "$container_probe" == error || "$volume_probe" == error ]]; then
+    resource_state=error
+  elif [[ "$container_probe" == present && "$volume_probe" == present ]]; then
+    resource_state=error
+    if (inspect_container && validate_container_mounts) >/dev/null 2>&1; then
+      if (validate_state_volume) >/dev/null 2>&1; then
+        running="$(docker container inspect \
+          --format '{{ .State.Running }}' "$container_name" 2>/dev/null)" \
+          || running=error
+        case "$running" in
+          true) resource_state=running ;;
+          false) resource_state=stopped ;;
+        esac
+      fi
+    fi
+  elif [[ "$container_probe" == present || "$volume_probe" == present ]]; then
+    resource_state=error
+  fi
+
+  printf 'profile: %s (%s)\n' "$profile_name" "$profile_path"
+  printf 'harness kind: %s\n' "$harness_kind"
+  printf 'resolved version: %s\n' "${resolved_version:-unresolved}"
+  if [[ "$auth_policy" == host-or-login ]]; then
+    case "$copilot_auth_source" in
+      COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN) printf 'host auth: environment\n' ;;
+      gh) printf 'host auth: gh\n' ;;
+      *) printf 'host auth: login required\n' ;;
+    esac
+  fi
+  if [[ "$harness_kind" == claude ]]; then
+    printf 'auth mode: %s\n' "$claude_auth_mode"
+    case "$claude_auth_source" in
+      CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY) printf 'host auth: environment\n' ;;
+      login) printf 'host auth: login required\n' ;;
+      *) printf 'host auth: local proxy\n' ;;
+    esac
+  fi
+  printf 'profile lock: %s\n' "$profile_locked"
+  printf 'worktree: %s\n' "$worktree"
+  printf 'mount: %s\n' "$mount_path"
+  printf 'image: %s (%s)\n' "$image" "$image_state"
+  printf 'network: %s (%s)\n' "$network" "$network_state"
+  printf 'container: %s\n' "$container_name"
+  printf 'state volume: %s\n' "$state_volume"
+  printf 'state: %s\n' "$resource_state"
+  if [[ "$profile_locked" != true || "$image_state" != available ]]; then
+    printf 'build required: %s\n' "$build_command"
+  fi
+  exit 0
+fi
+
+codex_exec_prefix=(docker container exec)
+if [[ "$secrets_provider" == varlock && ( "$mode" == new || "$mode" == resume ) ]]; then
+  secret_filter="$(jq -r '.required_secrets | sort | join(",")' <<<"$profile_metadata")"
+  codex_exec_prefix=(
+    mise x varlock@1.11.0 -- varlock run
+    --path "$resolved_varlock_path"
+    --inject vars
+    --filter "$secret_filter"
+    -- docker container exec
+  )
+fi
+
+if [[ "$mode" == stop ]]; then
+  if ! container_is_present; then
+    exit 0
+  fi
+  inspect_container
+  volume_is_present || fail "Docker state volume is missing: $state_volume"
+  validate_state_volume
+  validate_container_mounts
+  running="$(docker container inspect \
+    --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container state: $container_name"
+  [[ "$running" == 'true' || "$running" == 'false' ]] \
+    || fail "Docker container has an invalid running state: $container_name"
+  if [[ "$running" == true ]]; then
+    docker container stop "$container_id" >/dev/null
+  fi
+  exit 0
+fi
+
+if [[ "$mode" == destroy ]]; then
+  printf 'container: %s\n' "$container_name"
+  printf 'state volume: %s\n' "$state_volume"
+  confirmation="destroy $container_name $state_volume"
+  printf 'type "%s" to confirm: ' "$confirmation"
+  if ! IFS= read -r reply; then
+    printf 'cancelled\n'
+    exit 0
+  fi
+  if [[ "$reply" != "$confirmation" ]]; then
+    printf 'cancelled\n'
+    exit 0
+  fi
+
+  container_present=false
+  volume_present=false
+  if container_is_present; then
+    container_present=true
+  fi
+  if volume_is_present; then
+    volume_present=true
+  fi
+  if [[ "$container_present" == true ]]; then
+    inspect_container
+    validate_container_mounts
+  fi
+  if [[ "$volume_present" == true ]]; then
+    validate_state_volume
+  fi
+
+  if [[ "$container_present" == true ]]; then
+    docker container rm --force "$container_id" >/dev/null
+  fi
+  if [[ "$volume_present" == true ]]; then
+    validate_state_volume
+    docker volume rm "$state_volume" >/dev/null
+  fi
+  exit 0
+fi
+
+[[ "$profile_locked" == true ]] \
+  || fail "profile image is missing or stale; run: $build_command"
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
+    fail "profile image is missing or stale; run: $build_command"
+  fi
+  fail "Docker image is unavailable: $image"
+fi
+if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
+  image_profile_hash="$(docker image inspect \
+    --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$image" 2>/dev/null)" \
+    || fail "cannot inspect Docker image profile hash: $image"
+  [[ "$image_profile_hash" == "$profile_hash" ]] \
+    || fail "profile image is missing or stale; run: $build_command"
+fi
+docker network inspect "$network" >/dev/null 2>&1 \
+  || fail "Docker network is unavailable: $network"
+expected_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
+  || fail "cannot inspect Docker image ID: $image"
+[[ -n "$expected_image_id" ]] || fail "Docker image has an empty ID: $image"
+
+reuse_container=false
+if container_is_present; then
+  inspect_container
+  volume_is_present || fail "Docker state volume is missing: $state_volume"
+  validate_state_volume
+  validate_container_mounts
+  container_image_id="$(docker container inspect \
+    --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container image: $container_name"
+  if [[ "$container_image_id" != "$expected_image_id" ]]; then
+    docker container rm --force "$container_id" >/dev/null
+    container_id=
+  else
+    reuse_container=true
+    running="$(docker container inspect \
+      --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
+      || fail "cannot inspect Docker container state: $container_name"
+    [[ "$running" == 'true' || "$running" == 'false' ]] \
+      || fail "Docker container has an invalid running state: $container_name"
+    if [[ "$running" != true ]]; then
+      docker container start "$container_id" >/dev/null
+    fi
+  fi
+fi
+if [[ "$reuse_container" != true ]]; then
+  if volume_is_present; then
+    validate_state_volume
+  else
+    created_volume="$(docker volume create \
+      "${resource_label_args[@]}" \
+      "$state_volume")"
+    [[ "$created_volume" == "$state_volume" ]] \
+      || fail "Docker created an unexpected state volume: $created_volume"
+    validate_state_volume \
+      || fail "Docker state volume could not be verified after creation: $state_volume"
+  fi
+  container_id="$(docker container create \
+    --name "$container_name" \
+    "${resource_label_args[@]}" \
+    --user '10001:10001' \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --pids-limit 256 \
+    --memory 2g \
+    --cpus 2 \
+    --tmpfs '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001' \
+    --mount "type=bind,src=$worktree,dst=$mount_path" \
+    --mount "type=volume,src=$state_volume,dst=/home/agent" \
+    --network "$network" \
+    --workdir "$mount_path" \
+    "$image" sleep infinity)"
+  [[ -n "$container_id" ]] || fail "Docker create returned an empty container ID: $container_name"
+  docker container start "$container_id" >/dev/null
+fi
+
+terminal_args=(--interactive --tty --env TERM=xterm-256color)
+case "${COLORTERM:-}" in
+  truecolor|24bit) terminal_args+=(--env COLORTERM=truecolor) ;;
+esac
+
+herdr_agent="$harness_executable"
+if [[ "$harness_kind" == copilot ]]; then
+  resume_command="exec $runtime_entry resume \$argv"
+  prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new \$argv -- \$prompt"
+  initial_prompt_command="set prompt (cat /usr/local/share/trellage/initial-prompt.md); exec $runtime_entry new \$argv -- \$prompt"
+  new_command="exec $runtime_entry new \$argv"
+else
+  resume_command="exec $runtime_entry resume $harness_executable \$argv"
+  prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new $harness_executable \$argv -- \$prompt"
+  initial_prompt_command="set prompt (cat /usr/local/share/trellage/initial-prompt.md); exec $runtime_entry new $harness_executable \$argv -- \$prompt"
+  new_command="exec $runtime_entry new $harness_executable \$argv"
+fi
+
+case "$mode" in
+  resume)
+    prepare_codex_secrets
+    if [[ "$harness_kind" == copilot ]]; then
+      prepare_copilot_auth
+    elif [[ "$harness_kind" == claude ]]; then
+      prepare_claude_auth
+    fi
+    HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+      "${terminal_args[@]}" \
+      ${secret_args[@]+"${secret_args[@]}"} \
+      ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+      ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+      --workdir "$mount_path" \
+      "$container_id" \
+      fish -Nlc "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
+    ;;
+  shell)
+    exec docker container exec \
+      "${terminal_args[@]}" \
+      --workdir "$mount_path" \
+      "$container_id" \
+      fish -Nlc 'exec fish -l' --
+    ;;
+esac
+
+if (( $# > 0 )); then
+  prompt="$*"
+  prepare_codex_secrets
+  if [[ "$harness_kind" == copilot ]]; then
+    prepare_copilot_auth
+  elif [[ "$harness_kind" == claude ]]; then
+    prepare_claude_auth
+  fi
+  HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+    "${terminal_args[@]}" \
+    ${secret_args[@]+"${secret_args[@]}"} \
+    ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+    ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+    --workdir "$mount_path" \
+    "$container_id" \
+    fish -Nlc "$prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt"
+fi
+
+if [[ "$has_initial_prompt" == true ]]; then
+  prepare_codex_secrets
+  if [[ "$harness_kind" == copilot ]]; then
+    prepare_copilot_auth
+  elif [[ "$harness_kind" == claude ]]; then
+    prepare_claude_auth
+  fi
+  HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+    "${terminal_args[@]}" \
+    ${secret_args[@]+"${secret_args[@]}"} \
+    ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+    ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+    --workdir "$mount_path" \
+    "$container_id" \
+    fish -Nlc "$initial_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"}
+fi
+
+prepare_codex_secrets
+if [[ "$harness_kind" == copilot ]]; then
+  prepare_copilot_auth
+elif [[ "$harness_kind" == claude ]]; then
+  prepare_claude_auth
+fi
+HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+  "${terminal_args[@]}" \
+  ${secret_args[@]+"${secret_args[@]}"} \
+  ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+  ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+  --workdir "$mount_path" \
+  "$container_id" \
+  fish -Nlc "$new_command" -- ${harness_args[@]+"${harness_args[@]}"}

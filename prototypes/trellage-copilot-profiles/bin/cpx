@@ -1,0 +1,417 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}"
+  local source_dir
+  local link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+
+  cd -P "$(dirname "$source_path")" && pwd
+}
+
+script_dir="$(resolve_script_dir)"
+catalog="${CPX_CATALOG:-$script_dir/../catalog.json}"
+profiles_root="$HOME/.local/share/trellage/profiles/copilot"
+
+die() {
+  printf 'cpx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  cpx setup PROFILE|--all
+  cpx PROFILE [COPILOT_ARGS...]
+  cpx list
+  cpx doctor PROFILE
+  cpx update --check PROFILE|--all
+  cpx update PROFILE|--all
+  cpx repair PROFILE
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+validate_catalog() {
+  [[ -f "$catalog" ]] || die "catalog not found: $catalog"
+  jq -e '
+    .schemaVersion == 1
+    and (.profiles | type == "object" and length > 0)
+    and all(.profiles | keys[]; test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+    and all(.profiles[];
+      (.marketplace | type == "string" and length > 0)
+      and (.marketplaceName | type == "string" and length > 0)
+      and (.manifestUrl | type == "string" and startswith("https://"))
+      and (.plugin | type == "string" and contains("@"))
+      and (.standaloneMcps | type == "array")
+    )
+  ' "$catalog" >/dev/null || die "invalid catalog: $catalog"
+}
+
+profile_exists() {
+  jq -e --arg profile "$1" '.profiles | has($profile)' "$catalog" >/dev/null
+}
+
+profile_name_is_safe() {
+  [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]
+}
+
+require_profile() {
+  profile_name_is_safe "$1" || die "unsafe profile name: $1"
+  profile_exists "$1" || die "unknown profile: $1"
+}
+
+profile_value() {
+  jq -r --arg profile "$1" --arg field "$2" '.profiles[$profile][$field]' "$catalog"
+}
+
+profile_home() {
+  printf '%s/%s/home\n' "$profiles_root" "$1"
+}
+
+profile_home_is_safe() {
+  local profile="$1"
+  local canonical_home
+  local canonical_profiles_root
+  local canonical_path
+  local path="$HOME"
+  local component
+
+  case "$HOME" in
+    /|'') return 1 ;;
+    /*) ;;
+    *) return 1 ;;
+  esac
+  case "$HOME/" in
+    */../*) return 1 ;;
+  esac
+  [[ -d "$HOME" && ! -L "$HOME" ]] || return 1
+  canonical_home="$(cd -P "$HOME" >/dev/null 2>&1 && pwd)" || return 1
+  [[ "$canonical_home" != '/' ]] || return 1
+  profile_name_is_safe "$profile" || return 1
+
+  for component in .local share trellage profiles copilot; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || return 1
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || return 1
+      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" || return 1
+      case "$canonical_path" in
+        "$canonical_home"|"$canonical_home"/*) ;;
+        *) return 1 ;;
+      esac
+    fi
+  done
+
+  if [[ -e "$profiles_root" ]]; then
+    canonical_profiles_root="$(cd -P "$profiles_root" >/dev/null 2>&1 && pwd)" || return 1
+    [[ "$canonical_profiles_root" == "$canonical_home/.local/share/trellage/profiles/copilot" ]] \
+      || return 1
+  else
+    canonical_profiles_root="$canonical_home/.local/share/trellage/profiles/copilot"
+  fi
+
+  for component in "$profile" home; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || return 1
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || return 1
+      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" || return 1
+      case "$canonical_path" in
+        "$canonical_profiles_root"/*) ;;
+        *) return 1 ;;
+      esac
+    fi
+  done
+}
+
+require_safe_profile_home() {
+  local profile="$1"
+
+  profile_home_is_safe "$profile" \
+    || die "unsafe profile home path: $(profile_home "$profile")"
+}
+
+prepare_profile_home() {
+  local profile="$1"
+  local path="$HOME"
+  local component
+
+  require_safe_profile_home "$profile"
+  for component in .local share trellage profiles copilot "$profile" home; do
+    path="$path/$component"
+    if [[ ! -e "$path" ]]; then
+      mkdir "$path" || die "failed to create profile home path: $path"
+    fi
+    [[ -d "$path" && ! -L "$path" ]] \
+      || die "unsafe profile home path: $(profile_home "$profile")"
+  done
+  require_safe_profile_home "$profile"
+  chmod 0700 "$(profile_home "$profile")" \
+    || die "failed to secure profile home: $(profile_home "$profile")"
+}
+
+run_copilot() {
+  local profile="$1"
+  shift
+  require_safe_profile_home "$profile"
+  COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
+}
+
+installed_version() {
+  local profile="$1"
+  local plugin="$2"
+  run_copilot "$profile" plugin list \
+    | sed -n "s/^[[:space:]]*• ${plugin} (v\\([^)]*\\)).*/\\1/p" \
+    | head -n 1
+}
+
+marketplace_available() {
+  local profile="$1"
+  local marketplace_name="$2"
+  run_copilot "$profile" plugin marketplace list \
+    | sed -n \
+      -e 's/^[[:space:]]*•[[:space:]]\([^[:space:]]*\).*/\1/p' \
+      -e 's/^[[:space:]]*◆[[:space:]]\([^[:space:]]*\).*/\1/p' \
+    | grep -Fxq -- "$marketplace_name"
+}
+
+ensure_marketplace() {
+  local profile="$1"
+  local marketplace
+  local marketplace_name
+  marketplace="$(profile_value "$profile" marketplace)"
+  marketplace_name="$(profile_value "$profile" marketplaceName)"
+
+  if marketplace_available "$profile" "$marketplace_name"; then
+    return
+  fi
+  if [[ "$marketplace_name" == 'awesome-copilot' ]]; then
+    die 'required built-in marketplace is unavailable: awesome-copilot'
+  fi
+  run_copilot "$profile" plugin marketplace add "$marketplace"
+}
+
+setup_profile() {
+  local profile="$1"
+  local plugin
+  local current_version
+  require_profile "$profile"
+  prepare_profile_home "$profile"
+  ensure_marketplace "$profile"
+  plugin="$(profile_value "$profile" plugin)"
+  current_version="$(installed_version "$profile" "$plugin")"
+  if [[ -z "$current_version" ]]; then
+    run_copilot "$profile" plugin install "$plugin"
+  fi
+  printf '%s: ready\n' "$profile"
+}
+
+for_selected_profiles() {
+  local selection="$1"
+  local callback="$2"
+  local profile
+
+  if [[ "$selection" == '--all' ]]; then
+    while IFS= read -r profile; do
+      "$callback" "$profile"
+    done < <(jq -r '.profiles | keys[]' "$catalog")
+    return
+  fi
+
+  "$callback" "$selection"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries[] | [.key, .value.plugin] | @tsv' "$catalog"
+}
+
+check_empty_mcp_file() {
+  local config_file="$1"
+  [[ -f "$config_file" ]] || return 0
+  jq -e '((.mcpServers // {}) | type == "object" and length == 0)' "$config_file" >/dev/null \
+    || die "standalone MCP configuration is not empty: $config_file"
+}
+
+doctor_profile() {
+  local profile="$1"
+  local home
+  local plugin
+  local version
+  require_profile "$profile"
+  require_command copilot
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  [[ -d "$home" ]] || die "profile is not set up: $profile"
+  plugin="$(profile_value "$profile" plugin)"
+  version="$(installed_version "$profile" "$plugin")"
+  [[ -n "$version" ]] || die "expected plugin is not installed: $plugin"
+  [[ "$(profile_value "$profile" standaloneMcps)" == '[]' ]] \
+    || die "catalog requests unsupported standalone MCPs: $profile"
+
+  if [[ -d "$home/skills" ]] && find "$home/skills" -mindepth 1 -print -quit | grep -q .; then
+    die "standalone skill configuration is not empty: $home/skills"
+  fi
+  check_empty_mcp_file "$home/mcp-config.json"
+  check_empty_mcp_file "$home/config/mcp-config.json"
+
+  printf '%s: healthy (plugin %s, version %s)\n' "$profile" "$plugin" "$version"
+}
+
+manifest_version() {
+  local profile="$1"
+  local manifest_url
+  local plugin
+  local plugin_name
+  manifest_url="$(profile_value "$profile" manifestUrl)"
+  plugin="$(profile_value "$profile" plugin)"
+  plugin_name="${plugin%%@*}"
+  curl -fsSL "$manifest_url" \
+    | jq -er --arg plugin "$plugin_name" '.plugins[] | select(.name == $plugin) | .version' \
+    | head -n 1
+}
+
+check_update_profile() {
+  local profile="$1"
+  local plugin
+  local current_version
+  local available_version
+  require_profile "$profile"
+  plugin="$(profile_value "$profile" plugin)"
+  if ! current_version="$(installed_version "$profile" "$plugin")"; then
+    printf 'cpx: failed to read installed plugin version for %s\n' "$profile" >&2
+    return 2
+  fi
+  if [[ -z "$current_version" ]]; then
+    printf '%s: not installed\n' "$profile"
+    return 1
+  fi
+  if ! available_version="$(manifest_version "$profile")"; then
+    printf 'cpx: failed to fetch or parse official manifest for %s\n' "$profile" >&2
+    return 2
+  fi
+  if [[ "$current_version" == "$available_version" ]]; then
+    printf '%s: current (%s)\n' "$profile" "$current_version"
+    return
+  fi
+  printf '%s: update available (%s -> %s)\n' "$profile" "$current_version" "$available_version"
+  return 1
+}
+
+check_updates() {
+  local selection="$1"
+  local profile
+  local profile_status
+  local status=0
+
+  if [[ "$selection" != '--all' ]]; then
+    check_update_profile "$selection" || status=$?
+    return "$status"
+  fi
+
+  while IFS= read -r profile; do
+    profile_status=0
+    check_update_profile "$profile" || profile_status=$?
+    if [[ "$profile_status" == 2 ]]; then
+      status=2
+    elif [[ "$profile_status" == 1 && "$status" == 0 ]]; then
+      status=1
+    elif [[ "$profile_status" != 0 && "$profile_status" != 1 ]]; then
+      status=2
+    fi
+  done < <(jq -r '.profiles | keys[]' "$catalog")
+  return "$status"
+}
+
+update_profile() {
+  local profile="$1"
+  local marketplace_name
+  local plugin
+  require_profile "$profile"
+  [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  marketplace_name="$(profile_value "$profile" marketplaceName)"
+  plugin="$(profile_value "$profile" plugin)"
+  run_copilot "$profile" plugin marketplace update "$marketplace_name"
+  run_copilot "$profile" plugin update "$plugin"
+  printf '%s: updated\n' "$profile"
+}
+
+repair_profile() {
+  local profile="$1"
+  local plugin
+  local version
+  require_profile "$profile"
+  prepare_profile_home "$profile"
+  ensure_marketplace "$profile"
+  plugin="$(profile_value "$profile" plugin)"
+  version="$(installed_version "$profile" "$plugin")"
+  if [[ -z "$version" ]]; then
+    run_copilot "$profile" plugin install "$plugin"
+  fi
+  doctor_profile "$profile"
+  printf '%s: repaired\n' "$profile"
+}
+
+require_command jq
+validate_catalog
+
+command_name="${1-}"
+[[ -n "$command_name" ]] || {
+  usage >&2
+  exit 2
+}
+shift
+
+case "$command_name" in
+  list)
+    [[ "$#" == 0 ]] || die 'list accepts no arguments'
+    list_profiles
+    ;;
+  setup)
+    [[ "$#" == 1 ]] || die 'setup requires PROFILE or --all'
+    require_command copilot
+    for_selected_profiles "$1" setup_profile
+    ;;
+  doctor)
+    [[ "$#" == 1 ]] || die 'doctor requires PROFILE'
+    doctor_profile "$1"
+    ;;
+  update)
+    require_command copilot
+    if [[ "${1-}" == '--check' ]]; then
+      [[ "$#" == 2 ]] || die 'update --check requires PROFILE or --all'
+      require_command curl
+      check_updates "$2"
+    else
+      [[ "$#" == 1 ]] || die 'update requires PROFILE or --all'
+      for_selected_profiles "$1" update_profile
+    fi
+    ;;
+  repair)
+    [[ "$#" == 1 ]] || die 'repair requires PROFILE'
+    require_command copilot
+    repair_profile "$1"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    require_profile "$command_name"
+    require_command copilot
+    require_safe_profile_home "$command_name"
+    exec env COPILOT_HOME="$(profile_home "$command_name")" copilot "$@"
+    ;;
+esac

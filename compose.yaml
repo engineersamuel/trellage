@@ -98,7 +98,7 @@ services:
         chgrp 10002 /workspace
         chmod 0710 /workspace
         chgrp -R 10002 "$${runtime_targets[@]}"
-        chmod -R g=rX,o= "$${runtime_targets[@]}"
+        chmod -R u=rwX,g=rX,o= "$${runtime_targets[@]}"
     volumes:
       - type: volume
         source: workspace

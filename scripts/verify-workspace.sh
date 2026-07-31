@@ -26,7 +26,7 @@ run_check typecheck npm run typecheck
 typecheck_status="$check_status"
 run_check lint npm run lint
 lint_status="$check_status"
-run_check build npm run build
+run_check build bash -c 'npm run build && chmod -R u=rwX,g=,o= dist'
 build_status="$check_status"
 run_check audit npm audit --omit=dev
 audit_status="$check_status"

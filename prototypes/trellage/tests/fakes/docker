@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
+
+if [[ "${FAKE_DOCKER_FAIL_ALL:-0}" == 1 ]]; then
+  exit 42
+fi
+
+if [[ "${1:-}" == image && "${2:-}" == inspect ]]; then
+  printf '%s\n' '[{"Config":{"User":"10001:10001","Cmd":["fish","-l"],"Env":["HOME=/home/agent","CODEX_HOME=/home/agent/.codex"]}}]'
+  exit 0
+fi
+
+container_output=
+for argument in "$@"; do
+  case "$argument" in
+    OUTPUT_DIR=*) container_output="${argument#OUTPUT_DIR=}" ;;
+  esac
+done
+
+if [[ -n "$container_output" ]]; then
+  host_output="$FAKE_PROTOTYPE_DIR/${container_output#/src/}"
+  mkdir -p "$host_output"
+  printf '{"manifests":[{"digest":"%s"}]}\n' \
+    "$FAKE_MANIFEST_DIGEST" >"$host_output/index.json"
+fi

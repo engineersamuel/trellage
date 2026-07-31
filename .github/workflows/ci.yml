@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/trellage-cli/package-lock.json
+      - name: Verify required system tools
+        run: command -v jq curl git make >/dev/null
+      - name: Configure publication author name
+        run: git config --local user.name 'Samuel Mendenhall'
+      - name: Configure publication author email
+        run: git config --local user.email '2019830+engineersamuel@users.noreply.github.com'
+      - name: Install profile compiler dependencies
+        run: npm ci --prefix packages/trellage-cli
+      - name: Install browser contract dependencies
+        run: npm ci --prefix tests/playwright
+      - name: Run full deterministic test and build suite
+        run: make test PUBLICATION_CONTRACT_ARGS=--tree-only

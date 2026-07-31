@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "awesome": {
+      "marketplace": "github/awesome-copilot",
+      "marketplaceName": "awesome-copilot",
+      "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
+      "plugin": "awesome-copilot@awesome-copilot",
+      "standaloneMcps": []
+    },
+    "hve": {
+      "marketplace": "microsoft/hve-core",
+      "marketplaceName": "hve-core",
+      "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+      "plugin": "hve-core-all@hve-core",
+      "standaloneMcps": []
+    },
+    "superpowers": {
+      "marketplace": "obra/superpowers-marketplace",
+      "marketplaceName": "superpowers-marketplace",
+      "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
+      "plugin": "superpowers@superpowers-marketplace",
+      "standaloneMcps": []
+    }
+  }
+}

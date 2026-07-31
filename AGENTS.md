@@ -1,0 +1,41 @@
+# Trellage Agent Guide
+
+Trellage compiles locked agent profiles and runs them in isolated Docker sandboxes.
+
+## Project overview
+
+- Profiles describe reproducible agent environments.
+- The CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
+- The comparison harness runs isolated coding-agent configurations against the same prompt.
+- Generated evidence is normalized for later grading; the harness does not select a winner.
+
+## Build and test
+
+- Run the full repository suite with `make test`.
+- Run profile compiler tests with `make profile-compiler`.
+- Run native profile matrix contracts with `make profile-matrix-test`.
+- Run static native profile verification with `make profile-matrix`.
+- Run Oxlint with `cd packages/trellage-cli && npm run lint`.
+- Check Oxfmt with `cd packages/trellage-cli && npm run format:check`.
+- Run the TypeScript compiler directly with `cd packages/trellage-cli && npm run check`.
+- Build the TypeScript package with `cd packages/trellage-cli && npm run build`.
+- Live profile probes require explicit `PROFILE_MATRIX_ARGS=--live` opt-in because they may consume paid quota.
+
+## Architecture
+
+- `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.
+- `prototypes/trellage` contains the installable shell launcher and runtime entrypoints.
+- `profiles` contains concrete locked profile definitions.
+- `scripts` contains repository orchestration and profile verification tools.
+- `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
+- `harnesses` contains comparison manifests consumed by `scripts/harness`.
+- `.agents` contains canonical cross-harness rules, hooks, and MCP configuration.
+- `.github` contains the GitHub Copilot instruction adapter and GitHub Actions workflow.
+
+## Conventions
+
+- Use Effect for TypeScript application logic where practical.
+- Preserve deterministic profile locks and isolated runtime state.
+- Keep static verification free of model inference and paid calls.
+- Do not weaken or skip repository contracts to make a change pass.
+- Keep changes scoped and preserve unrelated dirty-worktree edits.

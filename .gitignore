@@ -11,10 +11,10 @@
 /docs/superpowers/plans/
 /docs/superpowers/specs/
 .DS_Store
+.env
+.env.*
+!.env.example
 node_modules/
 playwright-report/
 test-results/
 results/
-.env
-.env.*
-!.env.example
