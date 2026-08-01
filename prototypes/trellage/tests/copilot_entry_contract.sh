@@ -75,6 +75,8 @@ create_linux_rootfs() {
       || fail "fixture host lacks required command: $command_name"
     copy_linux_binary "$command_path"
   done
+  mkdir -p "$root/rootfs/bin"
+  cp -L -- "$(command -v bash)" "$root/rootfs/bin/bash"
   python_stdlib="$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
   mkdir -p "$root/rootfs$(dirname "$python_stdlib")"
   cp -R -- "$python_stdlib" "$root/rootfs$python_stdlib"
@@ -86,6 +88,8 @@ create_linux_rootfs() {
   [[ -n "$assembled_elf_interpreter" \
     && -f "$root/rootfs$assembled_elf_interpreter" ]] \
     || fail 'fixture rootfs omitted the Bash ELF interpreter'
+  [[ -x "$root/rootfs/bin/bash" ]] \
+    || fail 'fixture rootfs omitted executable canonical /bin/bash'
 }
 
 create_fixture_image() {
