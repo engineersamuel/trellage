@@ -118,12 +118,60 @@ create_fixture_image() {
   fixture_image_created=true
 }
 
-assert_no_transaction_temps() {
-  if find "$runtime" -mindepth 1 \
-    \( -name '.hve-core.trellage-*' -o -name '.settings.json.trellage.*' \
-      -o -name '.managed-*.trellage.*' \) -print -quit | grep -q .; then
-    fail "$1 left a managed-state transaction temporary behind"
+transaction_temp_scan() {
+  local scan_root="$1"
+  docker run --rm \
+    --network none \
+    --read-only \
+    --user '10001:10001' \
+    --entrypoint /bin/bash \
+    --mount "type=bind,src=$scan_root,dst=/runtime,readonly" \
+    "$image_ref" -c '
+      match="$(find /runtime -mindepth 1 \
+        \( -name ".hve-core.trellage-*" \
+          -o -name ".settings.json.trellage.*" \
+          -o -name ".managed-*.trellage.*" \) -print -quit)" || exit 74
+      if [[ -n "$match" ]]; then
+        printf "%s\n" "$match"
+        exit 3
+      fi
+    '
+}
+
+assert_transaction_scanner_contract() {
+  local clean="$root/scan-clean"
+  local matched="$root/scan-matched"
+  local denied="$root/scan-denied"
+  local scan_status=0
+  mkdir -p "$clean" "$matched" "$denied"
+  chmod 777 "$clean" "$matched"
+  : >"$matched/.managed-probe.trellage.1"
+  chmod 700 "$denied"
+
+  transaction_temp_scan "$clean" >/dev/null 2>&1 \
+    || fail 'transaction temporary scanner rejected a clean tree'
+  scan_status=0
+  transaction_temp_scan "$matched" >/dev/null 2>&1 || scan_status=$?
+  [[ "$scan_status" -eq 3 ]] \
+    || fail "transaction temporary scanner returned $scan_status for a match"
+  if [[ "$(uname -s)" == Linux ]]; then
+    scan_status=0
+    transaction_temp_scan "$denied" >/dev/null 2>&1 || scan_status=$?
+    [[ "$scan_status" -eq 74 ]] \
+      || fail "transaction temporary scanner returned $scan_status for a find error"
   fi
+}
+
+assert_no_transaction_temps() {
+  local label="$1"
+  local scan_output scan_status=0
+  scan_output="$(transaction_temp_scan "$runtime" 2>&1)" || scan_status=$?
+  case "$scan_status" in
+    0) ;;
+    3) fail "$label left a managed-state transaction temporary behind" ;;
+    74) fail "$label transaction temporary scan failed: $scan_output" ;;
+    *) fail "$label transaction temporary scan exited $scan_status: $scan_output" ;;
+  esac
 }
 
 if [[ "${COPILOT_ENTRY_LINUX_ROOTFS_ONLY:-0}" == 1 ]]; then
@@ -175,6 +223,7 @@ FAKE_COPILOT
 chmod 755 "$fake_bin/copilot"
 
 create_fixture_image
+assert_transaction_scanner_contract
 
 run_entry() {
   local status=0

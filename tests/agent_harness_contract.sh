@@ -47,17 +47,28 @@ jq -e '.mcpServers["codebase-memory"].command == "codebase-memory-mcp"' \
 rg -q '\.agents/rules/trellage-cli\.md' .github/instructions/trellage-cli.instructions.md \
   || fail "GitHub instruction does not reference canonical generic rule"
 
+ci_tool_probe='for tool in jq curl git make fish rg; do command -v "$tool" >/dev/null; done'
 for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
   '          fetch-depth: 2' \
-  '        run: sudo apt-get install --yes --no-install-recommends ripgrep' \
-  '        run: command -v jq curl git make rg >/dev/null' \
+  '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
+  "        run: ${ci_tool_probe}" \
   '        run: npm ci --prefix packages/trellage-cli' \
   '        run: npm ci --prefix tests/playwright' \
   '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
     || fail "CI does not run the full deterministic contract: $required_ci_line"
 done
+if (
+  ci_tool_probe_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-ci-tool-probe.XXXXXX")"
+  trap 'rm -rf -- "${ci_tool_probe_root}"' EXIT
+  for tool in jq git make fish rg; do
+    ln -s /usr/bin/true "${ci_tool_probe_root}/${tool}"
+  done
+  PATH="${ci_tool_probe_root}" /bin/bash -e -c "${ci_tool_probe}"
+); then
+  fail 'CI system-tool probe does not fail when an intermediate tool is missing'
+fi
 if grep -Eq -- 'git config --local user\.(name|email)|PUBLICATION_CONTRACT_ARGS|publication-history-audit|--sanitized-history' \
   .github/workflows/ci.yml; then
   fail 'CI invokes contributor-specific or point-in-time publication assertions'
