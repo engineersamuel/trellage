@@ -1,0 +1,1328 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_script_dir() {
+  local source="${BASH_SOURCE[0]}"
+  local source_dir
+  local target
+
+  while [ -h "$source" ]; do
+    source_dir="$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)"
+    target="$(readlink "$source")"
+    case "$target" in
+      /*) source="$target" ;;
+      *) source="$source_dir/$target" ;;
+    esac
+  done
+
+  cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd
+}
+
+script_dir="$(resolve_script_dir)"
+catalog="${GRX_CATALOG:-$script_dir/../catalog.json}"
+profiles_root="${HOME%/}/.local/share/trellage/profiles/grok"
+grok_executable=""
+auth_stage=""
+auth_lock=""
+auth_lock_owned=""
+auth_backup=""
+auth_target=""
+auth_transaction_active=""
+update_check_error=""
+
+cleanup_auth_assets() {
+  case "$auth_stage" in
+    "$profiles_root"/*/home/.auth.*)
+      rm -f "$auth_stage" 2>/dev/null || :
+      ;;
+  esac
+  auth_stage=""
+
+  case "$auth_transaction_active" in
+    absent)
+      [ -n "$auth_target" ] && rm -f "$auth_target" 2>/dev/null || :
+      ;;
+    backup)
+      if [ -n "$auth_target" ] && [ -n "$auth_backup" ] \
+        && [ -f "$auth_backup" ] && [ ! -L "$auth_backup" ]; then
+        rm -f "$auth_target" 2>/dev/null || :
+        mv -f "$auth_backup" "$auth_target" 2>/dev/null || :
+      fi
+      ;;
+    placeholder)
+      [ -n "$auth_backup" ] && rm -f "$auth_backup" 2>/dev/null || :
+      ;;
+  esac
+  auth_backup=""
+  auth_target=""
+  auth_transaction_active=""
+
+  if [ -n "$update_check_error" ]; then
+    rm -f "$update_check_error" 2>/dev/null || :
+    update_check_error=""
+  fi
+
+  if [ -n "$auth_lock" ] && [ -f "$auth_lock" ] && [ ! -L "$auth_lock" ] \
+    && [ -n "$auth_lock_owned" ] && [ -f "$auth_lock_owned/token" ]; then
+    [ "$auth_lock" -ef "$auth_lock_owned/token" ] \
+      && rm -f "$auth_lock" 2>/dev/null || :
+  fi
+  if [ -n "$auth_lock_owned" ] && [ -d "$auth_lock_owned" ] && [ ! -L "$auth_lock_owned" ]; then
+    rm -f "$auth_lock_owned/released-lock" "$auth_lock_owned/token" \
+      "$auth_lock_owned/pid" 2>/dev/null || :
+    rmdir "$auth_lock_owned" 2>/dev/null || :
+  fi
+  auth_lock=""
+  auth_lock_owned=""
+}
+
+auth_signal_exit() {
+  local status="$1"
+
+  cleanup_auth_assets
+  trap - EXIT HUP INT TERM
+  exit "$status"
+}
+
+trap cleanup_auth_assets EXIT
+trap 'auth_signal_exit 129' HUP
+trap 'auth_signal_exit 130' INT
+trap 'auth_signal_exit 143' TERM
+
+die() {
+  printf 'grx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  printf '%s\n' \
+    'Usage:' \
+    '  grx setup PROFILE|--all' \
+    '  grx PROFILE [GROK_ARGS...]' \
+    '  grx list' \
+    '  grx doctor PROFILE' \
+    '  grx update --check PROFILE|--all' \
+    '  grx update PROFILE|--all' \
+    '  grx repair PROFILE'
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+single_json_document() {
+  jq -ces '
+    if length == 1 then .[0]
+    else error("expected exactly one JSON document")
+    end
+  ' "$@"
+}
+
+safe_relative_plugin_path() {
+  local path="$1"
+  local remaining
+  local segment
+
+  case "$path" in
+    ''|/*|*/|*//*|*\\*) return 1 ;;
+  esac
+
+  remaining="$path"
+  while :; do
+    case "$remaining" in
+      */*)
+        segment="${remaining%%/*}"
+        remaining="${remaining#*/}"
+        ;;
+      *)
+        segment="$remaining"
+        remaining=''
+        ;;
+    esac
+    case "$segment" in
+      ''|.|..) return 1 ;;
+    esac
+    [[ "$segment" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+    [ -n "$remaining" ] || break
+  done
+}
+
+direct_source_metadata() {
+  local source="$1"
+  local repository
+  local fragment=''
+  local owner
+  local repo
+
+  case "$source" in
+    *'#'*)
+      repository="${source%%#*}"
+      fragment="${source#*#}"
+      [ -n "$fragment" ] || return 1
+      case "$fragment" in
+        *'#'*) return 1 ;;
+      esac
+      safe_relative_plugin_path "$fragment" || return 1
+      ;;
+    *) repository="$source" ;;
+  esac
+
+  owner="${repository%%/*}"
+  repo="${repository#*/}"
+  [ "$owner" != "$repository" ] || return 1
+  case "$repo" in
+    ''|*/*) return 1 ;;
+  esac
+  case "$owner" in
+    ''|.|..) return 1 ;;
+  esac
+  case "$repo" in
+    .|..) return 1 ;;
+  esac
+  [[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
+  [[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
+
+  printf 'https://github.com/%s/%s\t%s\n' "$owner" "$repo" "$fragment"
+}
+
+resolve_grok() {
+  if [ -n "$grok_executable" ]; then
+    return
+  fi
+
+  require_command grok
+  grok_executable="$(command -v grok)"
+  [ -x "$grok_executable" ] || die 'required command not found: grok'
+}
+
+validate_catalog() {
+  local encoded_source
+  local source
+
+  [ -f "$catalog" ] || die "catalog not found: $catalog"
+  require_command jq
+
+  jq -se '
+    length == 1
+    and (.[0]
+      | (.schemaVersion == 1)
+      and (.profiles == {
+        "hve": {
+          "source": "microsoft/hve-core#plugins/hve-core-all",
+          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+          "plugin": "hve-core-all",
+          "standaloneMcps": []
+        },
+        "superpowers": {
+          "source": "obra/superpowers",
+          "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
+          "plugin": "superpowers",
+          "standaloneMcps": []
+        }
+      })
+      and (.profiles | (type == "object" and length > 0))
+      and all(.profiles | keys[]; test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+      and all(.profiles | keys[];
+        . as $profile
+        | (["setup", "list", "doctor", "update", "repair", "-h", "--help", "help"]
+          | index($profile)
+          | not)
+      )
+      and all(.profiles[];
+        ((.source | type) == "string" and (.source | length) > 0)
+        and (.source | explode | all(. >= 32 and . != 127))
+        and ((.plugin | type) == "string" and (.plugin | length) > 0)
+        and ((.manifestUrl | type) == "string" and (.manifestUrl | startswith("https://")))
+        and (.standaloneMcps == [])
+      )
+      and ([.profiles[].plugin] | length == (unique | length))
+    )
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+
+  while IFS= read -r encoded_source; do
+    source="$(printf '%s\n' "$encoded_source" | jq -er '
+      if type == "string" then . else error("source must be a string") end
+    ')" || die "invalid catalog: $catalog"
+    direct_source_metadata "$source" >/dev/null 2>&1 \
+      || die "invalid catalog: $catalog"
+  done < <(jq -sc '.[0].profiles[].source' "$catalog")
+}
+
+profile_exists() {
+  jq -e --arg profile "$1" '.profiles | has($profile)' "$catalog" >/dev/null 2>&1
+}
+
+require_profile() {
+  profile_exists "$1" || die "unknown profile: $1"
+}
+
+profile_value() {
+  jq -r --arg profile "$1" --arg key "$2" '.profiles[$profile][$key]' "$catalog"
+}
+
+profile_home() {
+  printf '%s/%s/home\n' "$profiles_root" "$1"
+}
+
+run_grok() {
+  local profile="$1"
+  shift
+
+  refresh_auth "$profile"
+  resolve_grok
+  env GROK_HOME="$(profile_home "$profile")" "$grok_executable" "$@"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries | sort_by(.key)[] | [.key, .value.plugin] | @tsv' "$catalog"
+}
+
+policy_content() {
+  cat <<'POLICY'
+fail_closed = true
+
+[compat.claude]
+skills = false
+rules = false
+agents = false
+mcps = false
+hooks = false
+sessions = false
+
+[compat.cursor]
+skills = false
+rules = false
+agents = false
+mcps = false
+hooks = false
+sessions = false
+
+[compat.codex]
+sessions = false
+
+[skills]
+ignore = ["~/.agents/skills", "~/.agents/commands"]
+POLICY
+}
+
+write_policy() {
+  local profile="$1"
+  local home
+  local target
+  local temporary
+
+  home="$(profile_home "$profile")"
+  target="$home/requirements.toml"
+  if [ -L "$target" ] || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
+    die "unsafe requirements path: $target"
+  fi
+
+  temporary="$(mktemp "$home/.requirements.toml.XXXXXX")" \
+    || die "could not create temporary policy in: $home"
+  policy_content >"$temporary"
+  chmod 0644 "$temporary"
+
+  if [ -f "$target" ] && cmp -s "$temporary" "$target"; then
+    chmod 0644 "$target"
+    rm -f "$temporary"
+  else
+    mv -f "$temporary" "$target"
+  fi
+}
+
+source_auth_is_readable() {
+  local source="$1"
+
+  [ -f "$source" ] \
+    && [ ! -L "$source" ] \
+    && [ -r "$source" ]
+}
+
+file_identity() {
+  local system_name value
+
+  system_name="$(uname -s 2>/dev/null)" || return 1
+  case "$system_name" in
+    Darwin) value="$(stat -f '%d:%i' "$1" 2>/dev/null)" || return 1 ;;
+    Linux) value="$(stat -c '%d:%i' "$1" 2>/dev/null)" || return 1 ;;
+    *) return 1 ;;
+  esac
+  case "$value" in ''|*[!0-9:]*) return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
+release_auth_lock() {
+  local lock_target
+
+  [ -n "$auth_lock" ] && [ -n "$auth_lock_owned" ] || return 0
+  [ -f "$auth_lock" ] && [ ! -L "$auth_lock" ] || return 1
+  [ "$auth_lock" -ef "$auth_lock_owned/token" ] || return 1
+  mv "$auth_lock" "$auth_lock_owned/released-lock" || return 1
+  if [ -n "${GRX_AUTH_TEST_RELEASE_MARKER:-}" ]; then
+    : >"$GRX_AUTH_TEST_RELEASE_MARKER"
+    while [ ! -e "$GRX_AUTH_TEST_RELEASE_MARKER.continue" ]; do sleep 0.05; done
+  fi
+  case "${GRX_AUTH_TEST_SIGNAL_LOCK_RELEASE:-}" in
+    HUP) kill -HUP "$$" ;; INT) kill -INT "$$" ;; TERM) kill -TERM "$$" ;;
+  esac
+  rm -f "$auth_lock_owned/released-lock" "$auth_lock_owned/token" \
+    "$auth_lock_owned/pid" || return 1
+  rmdir "$auth_lock_owned" || return 1
+  auth_lock=""
+  auth_lock_owned=""
+}
+
+acquire_auth_lock() {
+  local home="$1"
+  local attempts=0
+  local lock_identity_before='' lock_identity_after='' lock_identity_current=''
+  local lock_pid='' lock_target='' lock_target_valid=''
+
+  auth_lock="$home/.auth.lock"
+  auth_lock_owned="$(mktemp -d "$home/.auth.lock-owned.XXXXXX")" || return 1
+  printf '%s\n' "${auth_lock_owned##*/}" >"$auth_lock_owned/token" || return 1
+  printf '%s\n' "$$" >"$auth_lock_owned/pid" || return 1
+  case "${GRX_AUTH_TEST_SIGNAL_LOCK_ACQUIRE:-}" in
+    HUP) kill -HUP "$$" ;; INT) kill -INT "$$" ;; TERM) kill -TERM "$$" ;;
+  esac
+  while ! ln "$auth_lock_owned/token" "$auth_lock" 2>/dev/null; do
+    [ -n "${GRX_AUTH_TEST_WAITER_MARKER:-}" ] \
+      && : >"$GRX_AUTH_TEST_WAITER_MARKER"
+    if [ ! -e "$auth_lock" ] && [ ! -L "$auth_lock" ]; then
+      continue
+    fi
+    if [ ! -f "$auth_lock" ] || [ -L "$auth_lock" ]; then
+      printf 'grx: unsafe profile authentication lock path: %s\n' "$auth_lock" >&2
+      cleanup_auth_assets
+      return 1
+    fi
+    lock_identity_before="$(file_identity "$auth_lock" 2>/dev/null || :)"
+    [ -n "$lock_identity_before" ] || continue
+    lock_target="$(sed -n '1p' "$auth_lock" 2>/dev/null || :)"
+    lock_identity_after="$(file_identity "$auth_lock" 2>/dev/null || :)"
+    [ -n "$lock_identity_after" ] || continue
+    [ "$lock_identity_before" = "$lock_identity_after" ] || continue
+    case "$lock_target" in
+      .auth.lock-owned.*/*|'') lock_target_valid='' ;;
+      .auth.lock-owned.*) lock_target_valid='yes' ;;
+      *) lock_target_valid='' ;;
+    esac
+    if [ -z "$lock_target_valid" ]; then
+      lock_identity_current="$(file_identity "$auth_lock" 2>/dev/null || :)"
+      [ "$lock_identity_before" = "$lock_identity_current" ] || continue
+      cleanup_auth_assets
+      return 1
+    fi
+    if [ ! -f "$home/$lock_target/token" ] || [ -L "$home/$lock_target/token" ] \
+      || ! [ "$auth_lock" -ef "$home/$lock_target/token" ]; then
+      lock_identity_current="$(file_identity "$auth_lock" 2>/dev/null || :)"
+      [ "$lock_identity_before" = "$lock_identity_current" ] || continue
+      cleanup_auth_assets
+      return 1
+    fi
+    if [ -f "$home/$lock_target/pid" ] && [ ! -L "$home/$lock_target/pid" ]; then
+      lock_pid="$(sed -n '1p' "$home/$lock_target/pid" 2>/dev/null || :)"
+      case "$lock_pid" in ''|*[!0-9]*) ;; *)
+        if ! kill -0 "$lock_pid" 2>/dev/null; then
+          lock_identity_current="$(file_identity "$auth_lock" 2>/dev/null || :)"
+          [ "$lock_identity_before" = "$lock_identity_current" ] || continue
+          printf 'grx: stale profile authentication lock: %s\n' "$auth_lock" >&2
+          cleanup_auth_assets
+          return 1
+        fi ;;
+      esac
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 200 ]; then
+      printf 'grx: timed out waiting for profile authentication lock: %s\n' "$auth_lock" >&2
+      cleanup_auth_assets
+      return 1
+    fi
+    sleep 0.05
+  done
+}
+
+begin_auth_transaction() {
+  local target="$1" backup_placeholder
+  [ -n "$auth_transaction_active" ] && return 0
+  auth_target="$target"
+  if [ -f "$target" ]; then
+    backup_placeholder="$(mktemp "${target%/*}/.auth.backup.XXXXXX")" || return 1
+    auth_backup="$backup_placeholder"
+    auth_transaction_active='placeholder'
+    rm -f "$backup_placeholder" || return 1
+    auth_transaction_active='backup'
+    mv "$target" "$backup_placeholder" || return 1
+  else
+    auth_transaction_active='absent'
+  fi
+}
+
+commit_auth_transaction() {
+  [ -n "$auth_backup" ] && rm -f "$auth_backup"
+  auth_backup=""; auth_target=""; auth_transaction_active=""
+}
+
+refresh_auth() {
+  local profile="$1"
+  local home source target source_identity_before source_identity_after
+  local source_identity_verified
+  local attempts=0
+
+  home="$(profile_home "$profile")"
+  source="$HOME/.grok/auth.json"
+  target="$home/auth.json"
+
+  if ! profile_home_is_safe "$profile"; then
+    printf 'grx: unsafe profile home path: %s\n' "$home" >&2
+    return 1
+  fi
+  acquire_auth_lock "$home" || return 1
+
+  while [ "$attempts" -lt 20 ]; do
+    attempts=$((attempts + 1))
+    if ! source_auth_is_readable "$source"; then
+      printf 'grx: source authentication is missing or unreadable: %s\n' "$source" >&2
+      release_auth_lock || cleanup_auth_assets
+      return 1
+    fi
+    source_identity_before="$(file_identity "$source")" || {
+      printf 'grx: source authentication is missing or unreadable: %s\n' "$source" >&2
+      release_auth_lock || cleanup_auth_assets
+      return 1
+    }
+    if [ -L "$target" ] || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
+      printf 'grx: unsafe profile authentication path: %s\n' "$target" >&2
+      release_auth_lock || cleanup_auth_assets
+      return 1
+    fi
+    if [ -f "$target" ]; then
+      source_identity_after="$(file_identity "$source" 2>/dev/null || :)"
+      if [ "$source_identity_before" = "$source_identity_after" ] \
+        && cmp -s "$source" "$target"; then
+        source_identity_verified="$(file_identity "$source" 2>/dev/null || :)"
+        if [ "$source_identity_before" = "$source_identity_verified" ] \
+          && cmp -s "$source" "$target"; then
+          chmod 0600 "$target" || {
+            printf 'grx: failed to secure profile authentication\n' >&2
+            release_auth_lock || cleanup_auth_assets
+            return 1
+          }
+          commit_auth_transaction
+          release_auth_lock || {
+            printf 'grx: failed to release profile authentication lock\n' >&2
+            return 1
+          }
+          return 0
+        fi
+      fi
+    fi
+
+    auth_stage="$(mktemp "$home/.auth.XXXXXX")" || {
+      printf 'grx: failed to stage profile authentication\n' >&2
+      release_auth_lock || cleanup_auth_assets
+      return 1
+    }
+    chmod 0600 "$auth_stage" || {
+      printf 'grx: failed to secure staged authentication\n' >&2
+      cleanup_auth_assets
+      return 1
+    }
+    cp "$source" "$auth_stage" || {
+      printf 'grx: failed to copy profile authentication\n' >&2
+      cleanup_auth_assets
+      return 1
+    }
+    case "${GRX_AUTH_TEST_SIGNAL_AFTER_STAGE:-}" in
+      HUP) kill -HUP "$$" ;;
+      INT) kill -INT "$$" ;;
+      TERM) kill -TERM "$$" ;;
+    esac
+    source_identity_after="$(file_identity "$source" 2>/dev/null || :)"
+    if ! source_auth_is_readable "$source" \
+      || [ "$source_identity_before" != "$source_identity_after" ] \
+      || ! cmp -s "$source" "$auth_stage"; then
+      rm -f "$auth_stage"
+      auth_stage=""
+      continue
+    fi
+    if ! profile_home_is_safe "$profile" \
+      || [ -L "$target" ] \
+      || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
+      printf 'grx: unsafe profile authentication path: %s\n' "$target" >&2
+      cleanup_auth_assets
+      return 1
+    fi
+    begin_auth_transaction "$target" || { cleanup_auth_assets; return 1; }
+    rm -f "$target"
+    if ! mv -f "$auth_stage" "$target"; then
+      printf 'grx: failed to publish profile authentication\n' >&2
+      cleanup_auth_assets
+      return 1
+    fi
+    auth_stage=""
+    case "${GRX_AUTH_TEST_SIGNAL_AFTER_PUBLISH:-}" in
+      HUP) kill -HUP "$$" ;; INT) kill -INT "$$" ;; TERM) kill -TERM "$$" ;;
+    esac
+    source_identity_after="$(file_identity "$source" 2>/dev/null || :)"
+    if source_auth_is_readable "$source" \
+      && [ "$source_identity_before" = "$source_identity_after" ] \
+      && cmp -s "$source" "$target"; then
+      source_identity_verified="$(file_identity "$source" 2>/dev/null || :)"
+      if [ "$source_identity_before" = "$source_identity_verified" ] \
+        && cmp -s "$source" "$target"; then
+        commit_auth_transaction
+        release_auth_lock || {
+          printf 'grx: failed to release profile authentication lock\n' >&2
+          return 1
+        }
+        return 0
+      fi
+    fi
+  done
+
+  printf 'grx: source authentication did not stabilize: %s\n' "$source" >&2
+  cleanup_auth_assets
+  release_auth_lock || cleanup_auth_assets
+  return 1
+}
+
+file_mode() {
+  local system_name
+  local value
+
+  system_name="$(uname -s 2>/dev/null)" || return 1
+  case "$system_name" in
+    Darwin) value="$(stat -f '%Lp' "$1" 2>/dev/null)" || return 1 ;;
+    Linux) value="$(stat -c '%a' "$1" 2>/dev/null)" || return 1 ;;
+    *) return 1 ;;
+  esac
+  case "$value" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$value"
+}
+
+plugin_inventory() {
+  local profile="$1"
+
+  run_grok "$profile" plugin list --json \
+    | single_json_document 2>/dev/null
+}
+
+installed_version() {
+  local profile="$1"
+  local plugin="$2"
+  local source="$3"
+
+  plugin_inventory "$profile" \
+    | parse_installed_version "$profile" "$plugin" "$source"
+}
+
+parse_installed_version() {
+  local profile="$1"
+  local plugin="$2"
+  local source="$3"
+  local source_metadata
+  local canonical_source
+  local fragment
+  local inventory
+  local inventory_path
+  local inventory_version
+  local manifest
+  local manifest_document
+  local local_version
+
+  source_metadata="$(direct_source_metadata "$source")" || return 1
+  IFS=$'\t' read -r canonical_source fragment <<<"$source_metadata"
+  inventory="$(cat)" || return 1
+  inventory="$(printf '%s\n' "$inventory" | single_json_document 2>/dev/null)" \
+    || return 1
+
+  if printf '%s\n' "$inventory" \
+    | jq -e 'type == "array" and length == 0' >/dev/null 2>&1; then
+    printf '\n'
+    return 0
+  fi
+
+  printf '%s\n' "$inventory" | jq -e \
+    --arg plugin "$plugin" \
+    --arg directSource "$source" \
+    --arg canonicalSource "$canonical_source" '
+      type == "array"
+      and length == 1
+      and ((.[0] | type) == "object")
+      and (.[0].status == "installed")
+      and (.[0].name == $plugin)
+      and (.[0].source == $directSource or .[0].source == $canonicalSource)
+      and ((.[0].path | type) == "string")
+      and ((.[0].path | length) > 0)
+      and (.[0].path | explode | all(. >= 32 and . != 127))
+      and (
+        (.[0] | has("version") | not)
+        or .[0].version == null
+        or (
+          (.[0].version | type) == "string"
+          and (.[0].version | length) > 0
+          and (.[0].version | explode | all(. >= 32 and . != 127))
+        )
+      )
+    ' >/dev/null 2>&1 || return 1
+
+  inventory_path="$(printf '%s\n' "$inventory" | jq -er '.[0].path')" \
+    || return 1
+  inventory_version="$(printf '%s\n' "$inventory" | jq -r '.[0].version // empty')" \
+    || return 1
+
+  plugin_directory_is_safe "$profile" "$inventory_path" || return 1
+  manifest="$(local_plugin_manifest "$inventory_path" "$fragment")" || return 1
+  manifest_document="$(single_json_document "$manifest" 2>/dev/null)" \
+    || return 1
+  local_version="$(printf '%s\n' "$manifest_document" | jq -er \
+    --arg plugin "$plugin" --arg canonicalSource "$canonical_source" '
+    if type == "object"
+      and .name == $plugin
+      and ((.version | type) == "string")
+      and ((.version | length) > 0)
+      and (.version | explode | all(. >= 32 and . != 127))
+      and (
+        (has("repository") | not)
+        or .repository == null
+        or .repository == $canonicalSource
+      )
+    then .version
+    else error("installed plugin manifest does not match")
+    end
+  ' 2>/dev/null)" || return 1
+
+  if [ -n "$inventory_version" ] && [ "$inventory_version" != "$local_version" ]; then
+    return 1
+  fi
+  printf '%s\n' "$local_version"
+}
+
+plugin_directory_is_safe() {
+  local profile="$1"
+  local path="$2"
+  local home
+  local installed_root
+  local canonical_root
+  local canonical_path
+  local relative
+  local remaining
+  local segment
+  local current
+
+  case "$path" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  profile_home_is_safe "$profile" || return 1
+  home="$(profile_home "$profile")"
+  installed_root="$home/installed-plugins"
+  [ -d "$installed_root" ] && [ ! -L "$installed_root" ] || return 1
+  case "$path" in
+    "$installed_root"/*) ;;
+    *) return 1 ;;
+  esac
+
+  relative="${path#"$installed_root"/}"
+  case "$relative" in
+    ''|/*|*/|*//*) return 1 ;;
+  esac
+  current="$installed_root"
+  remaining="$relative"
+  while :; do
+    case "$remaining" in
+      */*)
+        segment="${remaining%%/*}"
+        remaining="${remaining#*/}"
+        ;;
+      *)
+        segment="$remaining"
+        remaining=''
+        ;;
+    esac
+    case "$segment" in
+      ''|.|..) return 1 ;;
+    esac
+    current="$current/$segment"
+    [ -d "$current" ] && [ ! -L "$current" ] || return 1
+    [ -n "$remaining" ] || break
+  done
+
+  canonical_root="$(cd -P "$installed_root" >/dev/null 2>&1 && pwd)" \
+    || return 1
+  canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" || return 1
+  case "$canonical_path" in
+    "$canonical_root"/*) ;;
+    *) return 1 ;;
+  esac
+}
+
+regular_file_is_safe_beneath() {
+  local root="$1"
+  local path="$2"
+  local relative
+  local remaining
+  local segment
+  local current
+  local canonical_root
+  local canonical_parent
+
+  case "$path" in
+    "$root"/*) ;;
+    *) return 1 ;;
+  esac
+  relative="${path#"$root"/}"
+  case "$relative" in
+    ''|/*|*/|*//*) return 1 ;;
+  esac
+
+  current="$root"
+  remaining="$relative"
+  while :; do
+    case "$remaining" in
+      */*)
+        segment="${remaining%%/*}"
+        remaining="${remaining#*/}"
+        current="$current/$segment"
+        case "$segment" in
+          ''|.|..) return 1 ;;
+        esac
+        [ -d "$current" ] && [ ! -L "$current" ] || return 1
+        ;;
+      *)
+        segment="$remaining"
+        case "$segment" in
+          ''|.|..) return 1 ;;
+        esac
+        current="$current/$segment"
+        [ -f "$current" ] && [ ! -L "$current" ] || return 1
+        break
+        ;;
+    esac
+  done
+
+  canonical_root="$(cd -P "$root" >/dev/null 2>&1 && pwd)" || return 1
+  canonical_parent="$(cd -P "$(dirname "$path")" >/dev/null 2>&1 && pwd)" \
+    || return 1
+  case "$canonical_parent" in
+    "$canonical_root"|"$canonical_root"/*) ;;
+    *) return 1 ;;
+  esac
+}
+
+local_plugin_manifest() {
+  local plugin_path="$1"
+  local fragment="$2"
+  local manifest
+  local candidate
+  local candidate_count=0
+
+  if [ -n "$fragment" ]; then
+    manifest="$plugin_path/$fragment/.github/plugin/plugin.json"
+    regular_file_is_safe_beneath "$plugin_path" "$manifest" || return 1
+    printf '%s\n' "$manifest"
+    return 0
+  fi
+
+  for candidate in \
+    "$plugin_path/.claude-plugin/plugin.json" \
+    "$plugin_path/.github/plugin/plugin.json"; do
+    if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+      candidate_count=$((candidate_count + 1))
+      manifest="$candidate"
+    fi
+  done
+  [ "$candidate_count" -eq 1 ] || return 1
+  regular_file_is_safe_beneath "$plugin_path" "$manifest" || return 1
+  printf '%s\n' "$manifest"
+}
+
+manifest_version() {
+  local profile="$1"
+  local manifest
+  local manifest_url
+  local plugin
+
+  manifest_url="$(profile_value "$profile" manifestUrl)"
+  plugin="$(profile_value "$profile" plugin)"
+  manifest="$(curl -fsSL "$manifest_url" 2>/dev/null \
+    | single_json_document 2>/dev/null)" || return 1
+  printf '%s\n' "$manifest" | jq -er --arg plugin "$plugin" '
+    if type != "object" then
+      error("manifest must be an object")
+    elif ((.plugins | type) != "array") then
+      error("manifest plugins must be an array")
+    else
+      [.plugins[] | select(type == "object") | select(.name == $plugin)]
+      | if (
+          length == 1
+          and ((.[0].version | type) == "string")
+          and ((.[0].version | length) > 0)
+          and (.[0].version | explode | all(. >= 32 and . != 127))
+        )
+        then .[0].version
+        else error("manifest must contain exactly one matching plugin version")
+        end
+    end
+  ' 2>/dev/null
+}
+
+check_empty_directory() {
+  local path="$1"
+  local first_entry
+  local find_status=0
+
+  [ ! -L "$path" ] || die "unsafe standalone capability directory: $path"
+  [ -e "$path" ] || return 0
+  [ -d "$path" ] || die "unsafe standalone capability directory: $path"
+  first_entry="$(find "$path" -mindepth 1 -print -quit 2>/dev/null)" || find_status=$?
+  [ "$find_status" -eq 0 ] \
+    || die "failed to inspect standalone capability directory: $path"
+  [ -z "$first_entry" ] \
+    || die "standalone capability directory is not empty: $path"
+}
+
+profile_home_is_safe() {
+  local profile="$1"
+  local canonical_home
+  local canonical_path
+  local path="$HOME"
+  local component
+
+  case "$HOME" in
+    /) return 1 ;;
+    /*) ;;
+    *) return 1 ;;
+  esac
+  [ -d "$HOME" ] && [ ! -L "$HOME" ] \
+    || return 1
+  canonical_home="$(cd -P "$HOME" >/dev/null 2>&1 && pwd)" \
+    || return 1
+
+  for component in .local share trellage profiles grok "$profile" home; do
+    path="$path/$component"
+    [ ! -L "$path" ] \
+      || return 1
+    if [ -e "$path" ]; then
+      [ -d "$path" ] \
+        || return 1
+      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" \
+        || return 1
+      case "$canonical_path" in
+        "$canonical_home"|"$canonical_home"/*) ;;
+        *) return 1 ;;
+      esac
+    fi
+  done
+}
+
+require_safe_profile_home() {
+  local profile="$1"
+
+  profile_home_is_safe "$profile" \
+    || die "unsafe profile home path: $(profile_home "$profile")"
+}
+
+prepare_profile() {
+  local profile="$1"
+  local home
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  if [ -L "$home" ] || { [ -e "$home" ] && [ ! -d "$home" ]; }; then
+    die "unsafe profile home: $home"
+  fi
+
+  mkdir -p "$home"
+  require_safe_profile_home "$profile"
+  chmod 0700 "$home"
+  write_policy "$profile"
+  refresh_auth "$profile"
+}
+
+ensure_plugin() {
+  local profile="$1"
+  local plugin
+  local source
+  local version
+
+  plugin="$(profile_value "$profile" plugin)"
+  source="$(profile_value "$profile" source)"
+  version="$(installed_version "$profile" "$plugin" "$source")"
+
+  if [ -z "$version" ]; then
+    run_grok "$profile" plugin install "$source" --trust
+  fi
+}
+
+validate_profile_capabilities() {
+  local profile="$1"
+  local plugin_mode="$2"
+  local inventory
+  local mcp_inventory
+  local plugin
+  local source
+  local version
+
+  case "$plugin_mode" in
+    required|allow-missing) ;;
+    *) die "invalid capability validation mode: $plugin_mode" ;;
+  esac
+
+  check_empty_directory "$(profile_home "$profile")/skills"
+  check_empty_directory "$(profile_home "$profile")/commands"
+
+  plugin="$(profile_value "$profile" plugin)"
+  source="$(profile_value "$profile" source)"
+  if ! inventory="$(plugin_inventory "$profile")"; then
+    die "failed to read installed plugin inventory: $profile"
+  fi
+  if ! version="$(printf '%s\n' "$inventory" \
+    | parse_installed_version "$profile" "$plugin" "$source" 2>/dev/null)"; then
+    die "installed plugin inventory does not match: $profile"
+  fi
+  case "$plugin_mode" in
+    required)
+      [ -n "$version" ] \
+        || die "installed plugin inventory does not match: $profile"
+      ;;
+    allow-missing) ;;
+  esac
+
+  if ! mcp_inventory="$(run_grok "$profile" mcp list --json \
+    | single_json_document 2>/dev/null)"; then
+    die "invalid MCP inventory for $profile"
+  fi
+  printf '%s\n' "$mcp_inventory" | jq -e '
+    type == "array"
+    and all(.[];
+      type == "object"
+      and ((.name | type) == "string" and (.name | length) > 0)
+      and (
+        .scope == "native"
+        or .scope == "plugin"
+        or .scope == "project"
+        or .scope == "repository"
+        or .scope == "user"
+      )
+      and ((.enabled | type) == "boolean")
+    )
+  ' >/dev/null 2>&1 \
+    || die "invalid MCP inventory for $profile"
+  validated_plugin_version="$version"
+}
+
+preflight_profile() {
+  local profile="$1"
+  local auth
+  local home
+  local policy
+  local source_auth="$HOME/.grok/auth.json"
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  auth="$home/auth.json"
+  policy="$home/requirements.toml"
+  if [ -e "$home" ] || [ -L "$home" ]; then
+    [ -d "$home" ] && [ ! -L "$home" ] \
+      || die "unsafe profile home: $home"
+  fi
+
+  if [ -e "$auth" ] || [ -L "$auth" ]; then
+    [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] \
+      || die "profile authentication is missing or unreadable: $profile"
+    [ "$(file_mode "$auth")" = '600' ] \
+      || die "profile authentication must have mode 0600: $profile"
+  else
+    [ -f "$source_auth" ] && [ ! -L "$source_auth" ] && [ -r "$source_auth" ] \
+      || die "source authentication is missing or unreadable: $source_auth"
+  fi
+
+  if [ -e "$policy" ] || [ -L "$policy" ]; then
+    [ -f "$policy" ] && [ ! -L "$policy" ] \
+      || die "unsafe requirements path: $policy"
+  fi
+  if [ ! -e "$home" ] && [ ! -L "$home" ]; then
+    return
+  fi
+  validate_profile_capabilities "$profile" allow-missing
+}
+
+doctor_profile() {
+  local profile="$1"
+  local home
+  local policy
+  local auth
+  local plugin
+  local version
+
+  require_profile "$profile"
+  resolve_grok
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  policy="$home/requirements.toml"
+  auth="$home/auth.json"
+  plugin="$(profile_value "$profile" plugin)"
+
+  [ -d "$home" ] && [ ! -L "$home" ] \
+    || die "profile is not set up: $profile"
+  [ "$(file_mode "$home")" = '700' ] \
+    || die "profile home must have mode 0700: $profile"
+  [ -f "$policy" ] && [ ! -L "$policy" ] \
+    || die "requirements policy is missing: $profile"
+  [ "$(file_mode "$policy")" = '644' ] \
+    || die "requirements policy must have mode 0644: $profile"
+  policy_content | cmp -s - "$policy" \
+    || die "requirements policy does not match: $profile"
+  [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] \
+    || die "profile authentication is missing or unreadable: $profile"
+  [ "$(file_mode "$auth")" = '600' ] \
+    || die "profile authentication must have mode 0600: $profile"
+  jq -e --arg profile "$profile" '.profiles[$profile].standaloneMcps == []' \
+    "$catalog" >/dev/null \
+    || die "catalog requests unsupported standalone MCPs: $profile"
+
+  validate_profile_capabilities "$profile" required
+  version="$validated_plugin_version"
+
+  printf '%s: healthy (plugin %s, version %s)\n' "$profile" "$plugin" "$version"
+}
+
+require_launch_ready() {
+  local profile="$1"
+  local auth
+  local home
+  local policy
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  policy="$home/requirements.toml"
+  auth="$home/auth.json"
+
+  [ -d "$home" ] && [ ! -L "$home" ] \
+    || die "profile is not set up: $profile"
+  [ "$(file_mode "$home")" = '700' ] \
+    || die "profile home must have mode 0700: $profile"
+  [ -f "$policy" ] && [ ! -L "$policy" ] \
+    || die "requirements policy is missing: $profile"
+  [ "$(file_mode "$policy")" = '644' ] \
+    || die "requirements policy must have mode 0644: $profile"
+  policy_content | cmp -s - "$policy" \
+    || die "requirements policy does not match: $profile"
+  [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] \
+    || die "profile authentication is missing or unreadable: $profile"
+  [ "$(file_mode "$auth")" = '600' ] \
+    || die "profile authentication must have mode 0600: $profile"
+  validate_profile_capabilities "$profile" required
+}
+
+setup_profile() {
+  local profile="$1"
+
+  preflight_profile "$profile"
+  prepare_profile "$profile"
+  ensure_plugin "$profile"
+  doctor_profile "$profile" >/dev/null
+  printf '%s: ready\n' "$profile"
+}
+
+repair_profile() {
+  local profile="$1"
+
+  preflight_profile "$profile"
+  prepare_profile "$profile"
+  ensure_plugin "$profile"
+  doctor_profile "$profile" >/dev/null
+  printf '%s: repaired\n' "$profile"
+}
+
+check_update_profile() {
+  local profile="$1"
+  local current_version
+  local home
+  local plugin
+  local source
+  local available_version
+
+  require_profile "$profile"
+  if ! profile_home_is_safe "$profile"; then
+    printf 'grx: unsafe profile home path: %s\n' "$(profile_home "$profile")" >&2
+    return 2
+  fi
+  home="$(profile_home "$profile")"
+  if [ ! -e "$home" ] && [ ! -L "$home" ]; then
+    printf '%s: not installed\n' "$profile"
+    return 1
+  fi
+  [ -d "$home" ] && [ ! -L "$home" ] || {
+    printf 'grx: failed to read installed plugin version for %s\n' "$profile" >&2
+    return 2
+  }
+
+  if ! refresh_auth "$profile"; then
+    return 2
+  fi
+
+  plugin="$(profile_value "$profile" plugin)"
+  source="$(profile_value "$profile" source)"
+  update_check_error="$(mktemp "${TMPDIR:-/tmp}/grx-update-check.XXXXXX")" || {
+    printf 'grx: failed to stage update-check diagnostics for %s\n' "$profile" >&2
+    return 2
+  }
+  if ! current_version="$(installed_version "$profile" "$plugin" "$source" \
+    2>"$update_check_error")"; then
+    if grep -Eq '^grx: .*(authentication|auth\.json)' "$update_check_error"; then
+      cat "$update_check_error" >&2
+    else
+      printf 'grx: failed to read installed plugin version for %s\n' "$profile" >&2
+    fi
+    rm -f "$update_check_error"
+    update_check_error=""
+    return 2
+  fi
+  rm -f "$update_check_error"
+  update_check_error=""
+  if [ -z "$current_version" ]; then
+    printf '%s: not installed\n' "$profile"
+    return 1
+  fi
+  if ! available_version="$(manifest_version "$profile")"; then
+    printf 'grx: failed to fetch or parse official manifest for %s\n' "$profile" >&2
+    return 2
+  fi
+  if [ "$current_version" = "$available_version" ]; then
+    printf '%s: current (%s)\n' "$profile" "$current_version"
+    return 0
+  fi
+
+  printf '%s: update available (%s -> %s)\n' \
+    "$profile" "$current_version" "$available_version"
+  return 1
+}
+
+check_updates() {
+  local selected="$1"
+  local aggregate_status=0
+  local profile
+  local profile_list
+  local profile_status
+
+  if [ "$selected" != '--all' ]; then
+    require_profile "$selected"
+    check_update_profile "$selected"
+    return $?
+  fi
+
+  profile_list="$(jq -r '.profiles | keys | sort[]' "$catalog")" \
+    || die 'failed to read profile list'
+  while IFS= read -r profile; do
+    profile_status=0
+    check_update_profile "$profile" || profile_status=$?
+    if [ "$profile_status" -eq 2 ]; then
+      aggregate_status=2
+    elif [ "$profile_status" -eq 1 ] && [ "$aggregate_status" -eq 0 ]; then
+      aggregate_status=1
+    fi
+  done <<<"$profile_list"
+
+  return "$aggregate_status"
+}
+
+update_profile() {
+  local profile="$1"
+  local home
+  local plugin
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  [ -d "$home" ] && [ ! -L "$home" ] \
+    || die "profile is not set up: $profile"
+
+  plugin="$(profile_value "$profile" plugin)"
+  validate_profile_capabilities "$profile" required
+  run_grok "$profile" plugin update "$plugin"
+  doctor_profile "$profile" >/dev/null
+  printf '%s: updated\n' "$profile"
+}
+
+for_selected_profiles() {
+  local selected="$1"
+  local action="$2"
+  local profile
+  local profile_list
+
+  if [ "$selected" = '--all' ]; then
+    profile_list="$(jq -r '.profiles | keys | sort[]' "$catalog")" \
+      || die 'failed to read profile list'
+    while IFS= read -r profile; do
+      "$action" "$profile"
+    done <<<"$profile_list"
+  else
+    require_profile "$selected"
+    "$action" "$selected"
+  fi
+}
+
+validate_catalog
+
+if [ "$#" -eq 0 ]; then
+  usage >&2
+  exit 2
+fi
+
+command_name="$1"
+shift
+
+case "$command_name" in
+  -h|--help|help)
+    usage
+    ;;
+  list)
+    [ "$#" -eq 0 ] || die 'list accepts no arguments'
+    list_profiles
+    ;;
+  setup)
+    [ "$#" -eq 1 ] || die 'setup requires PROFILE or --all'
+    resolve_grok
+    for_selected_profiles "$1" setup_profile
+    ;;
+  doctor)
+    [ "$#" -eq 1 ] || die 'doctor requires PROFILE'
+    doctor_profile "$1"
+    ;;
+  repair)
+    [ "$#" -eq 1 ] || die 'repair requires PROFILE'
+    resolve_grok
+    repair_profile "$1"
+    ;;
+  update)
+    if [ "${1:-}" = '--check' ]; then
+      [ "$#" -eq 2 ] || die 'update --check requires PROFILE or --all'
+      resolve_grok
+      require_command curl
+      check_updates "$2"
+    else
+      [ "$#" -eq 1 ] || die 'update requires PROFILE or --all'
+      resolve_grok
+      for_selected_profiles "$1" update_profile
+    fi
+    ;;
+  *)
+    require_launch_ready "$command_name"
+    resolve_grok
+    refresh_auth "$command_name"
+    exec env \
+      GROK_HOME="$(profile_home "$command_name")" \
+      GROK_MODELS_BASE_URL='http://127.0.0.1:8080/v1' \
+      GROK_DEFAULT_MODEL='grok-4.5' \
+      XAI_API_KEY='local-copilot-proxy' \
+      "$grok_executable" "$@"
+    ;;
+esac

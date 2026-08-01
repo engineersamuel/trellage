@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log="${FAKE_GH_LOG:?}"
+printf 'CALL\n' >>"$log"
+printf 'ENV\tCOPILOT_GITHUB_TOKEN=%s\n' "${COPILOT_GITHUB_TOKEN:+present}" >>"$log"
+printf 'ENV\tGH_TOKEN=%s\n' "${GH_TOKEN:+present}" >>"$log"
+printf 'ENV\tGITHUB_TOKEN=%s\n' "${GITHUB_TOKEN:+present}" >>"$log"
+for internal_name in \
+  ambient_copilot_github_token ambient_gh_token ambient_github_token \
+  copilot_token secret_value secret_source_values; do
+  [[ -z "${!internal_name:-}" ]] || internal_state=present
+  printf 'ENV\t%s=%s\n' "$internal_name" "${internal_state:-}" >>"$log"
+  internal_state=
+done
+printf 'ARG\t%s\n' "$@" >>"$log"
+
+[[ "${FAKE_GH_STATE:-success}" == success ]] || exit "${FAKE_GH_EXIT:-1}"
+[[ "${1:-}" == auth && "${2:-}" == token && "${3:-}" == --hostname && -n "${4:-}" ]] \
+  || exit 64
+printf '%s\n' "${FAKE_GH_TOKEN:-}"

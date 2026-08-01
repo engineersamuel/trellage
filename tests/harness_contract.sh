@@ -49,6 +49,15 @@ copilot_compose_json="$(
 )"
 
 jq -e '
+  .name == "trellage"
+  and .services.agent.image == "trellage-agent:local"
+  and .services.workspace_init.image == "trellage-agent:local"
+  and .services.app.image == "trellage-app:local"
+  and .services.data_init.image == "trellage-app:local"
+  and .services.workspace_publish.image == "trellage-app:local"
+' <<<"$compose_json" >/dev/null || fail 'default project and image identities are not Trellage'
+
+jq -e '
   .name == "isolation-probe"
   and .services.agent.image == "isolation-probe-agent:local"
   and .services.workspace_init.image == "isolation-probe-agent:local"
@@ -80,6 +89,10 @@ jq -e '.services.app.depends_on.workspace_publish.condition == "service_complete
 jq -e '.services.data_init.user == "0:0" and .services.data_init.cap_drop == ["ALL"] and .services.data_init.cap_add == ["CHOWN", "DAC_OVERRIDE", "FOWNER"]' <<<"$compose_json" >/dev/null || fail 'data initializer is not minimally privileged'
 jq -e '.services.workspace_publish.user == "0:0" and .services.workspace_publish.network_mode == "none" and .services.workspace_publish.cap_drop == ["ALL"] and .services.workspace_publish.cap_add == ["CHOWN", "DAC_OVERRIDE", "FOWNER"]' <<<"$compose_json" >/dev/null || fail 'runtime artifact publisher is not minimally privileged'
 jq -e '.services.workspace_publish.volumes | length == 1 and .[0].target == "/workspace" and .[0].type == "volume"' <<<"$compose_json" >/dev/null || fail 'runtime artifact publisher has unexpected mounts'
+jq -e '.services.workspace_publish.command | join("\n") | contains("chmod -R u=rwX,g=rX,o= \"$${runtime_targets[@]}\"")' \
+  <<<"$compose_json" >/dev/null || fail 'runtime artifact publisher does not grant only the app group read/search access'
+jq -e '.services.workspace_publish.command | join("\n") | contains("go=rX") | not' \
+  <<<"$compose_json" >/dev/null || fail 'runtime artifact publisher grants world read/search access'
 jq -e '.networks.copilot_proxy.external == true and .networks.copilot_proxy.name == "copilot-proxy-rs_default"' <<<"$compose_json" >/dev/null || fail 'proxy network is not the existing external network'
 
 jq -e '

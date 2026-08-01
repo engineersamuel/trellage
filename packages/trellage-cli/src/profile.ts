@@ -1,0 +1,444 @@
+import { createHash } from "node:crypto"
+import path from "node:path"
+import { readFile, realpath } from "node:fs/promises"
+
+import { parse } from "smol-toml"
+import { Data, Effect, ParseResult, Schema } from "effect"
+
+import { githubRepositoryError } from "./github-repository.js"
+
+const NonEmpty = Schema.String.pipe(Schema.minLength(1))
+const StringMap = Schema.Record({ key: NonEmpty, value: Schema.String })
+const SecretMap = Schema.Record({ key: NonEmpty, value: NonEmpty })
+
+const Tools = Schema.Struct({
+  allow: Schema.optional(Schema.Array(NonEmpty)),
+  deny: Schema.optional(Schema.Array(NonEmpty)),
+})
+
+const HttpMcp = Schema.Struct({
+  name: NonEmpty,
+  transport: Schema.Literal("http"),
+  url: NonEmpty,
+  required: Schema.optional(Schema.Boolean),
+  bearer_token_env: Schema.optional(NonEmpty),
+  headers: Schema.optional(StringMap),
+  headers_from_secret: Schema.optional(SecretMap),
+  tools: Schema.optional(Tools),
+})
+
+const StdioMcp = Schema.Struct({
+  name: NonEmpty,
+  transport: Schema.Literal("stdio"),
+  command: NonEmpty,
+  args: Schema.optional(Schema.Array(Schema.String)),
+  required: Schema.optional(Schema.Boolean),
+  env: Schema.optional(StringMap),
+  env_from_secret: Schema.optional(SecretMap),
+  tools: Schema.optional(Tools),
+})
+
+const Source = Schema.Struct({
+  repository: NonEmpty,
+  ref: NonEmpty,
+  select: Schema.Array(NonEmpty),
+})
+
+const CodexPlugin = Schema.Struct({
+  adapter: Schema.Literal("codex-native", "wshobson-agents"),
+  repository: NonEmpty,
+  ref: NonEmpty,
+  select: Schema.Array(NonEmpty),
+})
+
+const CopilotPlugin = Schema.Struct({
+  adapter: Schema.Literal("copilot-marketplace"),
+  repository: NonEmpty,
+  ref: NonEmpty,
+  marketplace: NonEmpty,
+  select: Schema.Array(NonEmpty),
+})
+
+const HyperresearchPlugin = Schema.Struct({
+  adapter: Schema.Literal("hyperresearch"),
+  repository: Schema.Literal("https://github.com/jordan-gibbs/hyperresearch.git"),
+  ref: NonEmpty,
+  select: Schema.Tuple(Schema.Literal("full")),
+})
+
+const Provider = Schema.Struct({
+  base_url: NonEmpty,
+  wire_api: Schema.Literal("responses", "chat"),
+  name: Schema.optional(NonEmpty),
+  request_max_retries: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+  stream_max_retries: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
+  stream_idle_timeout_ms: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+})
+
+const Codex = Schema.Struct({
+  model: NonEmpty,
+  reasoning_effort: Schema.Literal("minimal", "low", "medium", "high", "xhigh"),
+  model_provider: NonEmpty,
+  providers: Schema.Record({ key: NonEmpty, value: Provider }),
+})
+
+const Copilot = Schema.Struct({
+  auth: Schema.Literal("host-or-login"),
+})
+
+const Claude = Schema.Struct({
+  default_auth: Schema.Literal("proxy"),
+  model: Schema.Literal("claude-opus-5"),
+  gateway: NonEmpty,
+})
+
+const CommonHarness = {
+  version: NonEmpty,
+  args: Schema.optional(Schema.Array(Schema.String)),
+  initial_prompt: Schema.optional(NonEmpty),
+}
+
+const CodexHarness = Schema.Struct({
+  ...CommonHarness,
+  kind: Schema.Literal("codex"),
+  codex: Codex,
+})
+
+const CopilotHarness = Schema.Struct({
+  ...CommonHarness,
+  kind: Schema.Literal("copilot"),
+  copilot: Copilot,
+})
+
+const ClaudeHarness = Schema.Struct({
+  ...CommonHarness,
+  kind: Schema.Literal("claude"),
+  claude: Claude,
+})
+
+const Image = Schema.Struct({
+  platform: Schema.Literal("linux/arm64", "linux/amd64"),
+  base: NonEmpty,
+  shell: Schema.Literal("bash", "fish", "zsh"),
+  packages: Schema.Array(NonEmpty),
+})
+
+const Secrets = Schema.Struct({
+  provider: Schema.Literal("env", "varlock"),
+  required: Schema.Array(NonEmpty),
+  varlock_path: Schema.optional(NonEmpty),
+})
+
+const CommonProfile = {
+  schema: Schema.Literal(1),
+  name: NonEmpty,
+  image: Image,
+  skills: Schema.optional(Schema.Array(Source)),
+  mcps: Schema.optional(Schema.Array(Schema.Union(HttpMcp, StdioMcp))),
+  secrets: Schema.optional(Secrets),
+}
+
+const CodexProfileSchema = Schema.Struct({
+  ...CommonProfile,
+  harness: CodexHarness,
+  plugins: Schema.optional(Schema.Array(CodexPlugin)),
+})
+
+const CopilotProfileSchema = Schema.Struct({
+  ...CommonProfile,
+  harness: CopilotHarness,
+  plugins: Schema.optional(Schema.Array(CopilotPlugin)),
+})
+
+const ClaudeProfileSchema = Schema.Struct({
+  ...CommonProfile,
+  harness: ClaudeHarness,
+  plugins: Schema.Tuple(HyperresearchPlugin),
+})
+
+export const ProfileSchema = Schema.Union(CodexProfileSchema, CopilotProfileSchema, ClaudeProfileSchema)
+
+type DecodedProfile = Schema.Schema.Type<typeof ProfileSchema>
+type DecodedCodexProfile = Schema.Schema.Type<typeof CodexProfileSchema>
+type DecodedCopilotProfile = Schema.Schema.Type<typeof CopilotProfileSchema>
+type DecodedClaudeProfile = Schema.Schema.Type<typeof ClaudeProfileSchema>
+
+type NormalizedProfile<T extends DecodedProfile> = Omit<T, "skills" | "plugins" | "mcps" | "secrets"> & {
+  readonly skills: NonNullable<T["skills"]>
+  readonly plugins: NonNullable<T["plugins"]>
+  readonly mcps: NonNullable<T["mcps"]>
+  readonly secrets: NonNullable<T["secrets"]>
+}
+
+export type Mcp = NonNullable<DecodedProfile["mcps"]>[number]
+export type CodexProfile = NormalizedProfile<DecodedCodexProfile>
+export type CopilotProfile = NormalizedProfile<DecodedCopilotProfile>
+export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
+export type Profile = CodexProfile | CopilotProfile | ClaudeProfile
+
+export const isCodexProfile = (profile: Profile): profile is CodexProfile => profile.harness.kind === "codex"
+
+export const isCopilotProfile = (profile: Profile): profile is CopilotProfile => profile.harness.kind === "copilot"
+
+export const isClaudeProfile = (profile: Profile): profile is ClaudeProfile => profile.harness.kind === "claude"
+
+const isDecodedCodexProfile = (profile: DecodedProfile): profile is DecodedCodexProfile =>
+  profile.harness.kind === "codex"
+
+const isDecodedClaudeProfile = (profile: DecodedProfile): profile is DecodedClaudeProfile =>
+  profile.harness.kind === "claude"
+
+export interface ProfileDocument {
+  readonly path: string
+  readonly directory: string
+  readonly source: string
+  readonly profile: Profile
+  readonly resolvedInitialPrompt?: string
+  readonly initialPromptIntegrity?: string
+  readonly resolvedVarlockPath?: string
+}
+
+export class ProfileError extends Data.TaggedError("ProfileError")<{
+  readonly message: string
+}> {}
+
+const fail = (message: string): Effect.Effect<never, ProfileError> => Effect.fail(new ProfileError({ message }))
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const rejectUnsupportedCopilotSections = (raw: unknown): Effect.Effect<void, ProfileError> => {
+  if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "copilot") return Effect.void
+  if (Object.hasOwn(raw, "skills")) return fail("Copilot profiles do not support standalone skills")
+  if (Object.hasOwn(raw, "mcps")) return fail("Copilot profiles do not support MCPs")
+  if (Object.hasOwn(raw, "secrets")) return fail("Copilot profiles do not support declared secrets")
+  return Effect.void
+}
+
+const unique = (values: ReadonlyArray<string>, label: string): Effect.Effect<void, ProfileError> => {
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (seen.has(value)) return fail(`duplicate ${label}: ${value}`)
+    seen.add(value)
+  }
+  return Effect.void
+}
+
+const resolveContained = (directory: string, candidate: string, label: string): Effect.Effect<string, ProfileError> => {
+  if (path.isAbsolute(candidate)) return fail(`${label} must be profile-relative: ${candidate}`)
+  const resolved = path.resolve(directory, candidate)
+  const relative = path.relative(directory, resolved)
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return fail(`${label} escapes profile directory: ${candidate}`)
+  }
+  return Effect.tryPromise({
+    try: async () => {
+      const [realDirectory, realCandidate] = await Promise.all([realpath(directory), realpath(resolved)])
+      const realRelative = path.relative(realDirectory, realCandidate)
+      if (realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
+        throw new ProfileError({ message: `${label} escapes profile directory: ${candidate}` })
+      }
+      return realCandidate
+    },
+    catch: (cause) =>
+      cause instanceof ProfileError
+        ? cause
+        : new ProfileError({ message: `${label} cannot be resolved: ${candidate}` }),
+  })
+}
+
+const normalize = (profile: DecodedProfile): Profile =>
+  isDecodedCodexProfile(profile)
+    ? {
+        ...profile,
+        skills: profile.skills ?? [],
+        plugins: profile.plugins ?? [],
+        mcps: profile.mcps ?? [],
+        secrets: profile.secrets ?? { provider: "env", required: [] },
+      }
+    : isDecodedClaudeProfile(profile)
+      ? {
+          ...profile,
+          skills: profile.skills ?? [],
+          plugins: profile.plugins,
+          mcps: profile.mcps ?? [],
+          secrets: profile.secrets ?? { provider: "env", required: [] },
+        }
+      : {
+          ...profile,
+          skills: profile.skills ?? [],
+          plugins: profile.plugins ?? [],
+          mcps: profile.mcps ?? [],
+          secrets: profile.secrets ?? { provider: "env", required: [] },
+        }
+
+const validate = (
+  profile: Profile,
+  directory: string,
+): Effect.Effect<
+  Pick<ProfileDocument, "resolvedInitialPrompt" | "initialPromptIntegrity" | "resolvedVarlockPath">,
+  ProfileError
+> =>
+  Effect.gen(function* () {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(profile.name)) {
+      return yield* fail(`profile name is unsafe: ${profile.name}`)
+    }
+    if (isCodexProfile(profile)) {
+      if (!Object.hasOwn(profile.harness.codex.providers, profile.harness.codex.model_provider)) {
+        return yield* fail(`unknown model provider: ${profile.harness.codex.model_provider}`)
+      }
+    } else if (isCopilotProfile(profile)) {
+      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+        return yield* fail(`invalid Copilot version: ${profile.harness.version}`)
+      }
+      if (profile.skills.length > 0) return yield* fail("Copilot profiles do not support standalone skills")
+      if (profile.mcps.length > 0) return yield* fail("Copilot profiles do not support MCPs")
+      if (
+        profile.secrets.required.length > 0 ||
+        profile.secrets.provider !== "env" ||
+        profile.secrets.varlock_path !== undefined
+      ) {
+        return yield* fail("Copilot profiles do not support declared secrets")
+      }
+      const plugin = profile.plugins[0]
+      if (profile.plugins.length !== 1 || plugin === undefined) {
+        return yield* fail("Copilot profiles require exactly one marketplace plugin")
+      }
+      yield* unique(plugin.select, "selected asset")
+      if (plugin.select.length !== 1) {
+        return yield* fail("Copilot profiles require exactly one plugin selection")
+      }
+      yield* unique(
+        profile.plugins.map((candidate) => candidate.marketplace),
+        "Copilot marketplace",
+      )
+    } else {
+      if (profile.harness.version !== "2.1.218")
+        return yield* fail(`unsupported Claude version: ${profile.harness.version}`)
+      if (profile.image.platform !== "linux/arm64") return yield* fail("Claude Hyperresearch supports only linux/arm64")
+      if (profile.skills.length > 0) return yield* fail("Claude Hyperresearch does not support standalone skills")
+      if (profile.mcps.length > 0) return yield* fail("Claude Hyperresearch MCPs are managed by Trellage")
+      if (
+        profile.secrets.required.length > 0 ||
+        profile.secrets.provider !== "env" ||
+        profile.secrets.varlock_path !== undefined
+      ) {
+        return yield* fail("Claude Hyperresearch credentials are selected at launch")
+      }
+    }
+    for (const source of [...profile.skills, ...profile.plugins]) {
+      const repositoryError = githubRepositoryError(source.repository)
+      if (repositoryError !== undefined) {
+        return yield* fail(`${repositoryError}: ${source.repository}`)
+      }
+      yield* unique(source.select, "selected asset")
+    }
+    for (const skill of profile.skills) {
+      for (const selection of skill.select) {
+        if (selection !== "*" && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(selection)) {
+          return yield* fail(`unsafe selected asset: ${selection}`)
+        }
+      }
+    }
+    for (const plugin of profile.plugins) {
+      for (const selection of plugin.select) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(selection)) {
+          return yield* fail(`unsafe selected asset: ${selection}`)
+        }
+      }
+    }
+    yield* unique(
+      profile.mcps.map((mcp) => mcp.name),
+      "MCP name",
+    )
+    yield* unique(profile.secrets.required, "required secret")
+    for (const secret of profile.secrets.required) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) return yield* fail(`invalid secret environment name: ${secret}`)
+    }
+
+    const declared = new Set(profile.secrets.required)
+    const references: Array<string> = []
+    for (const mcp of profile.mcps) {
+      if (mcp.tools?.allow && mcp.tools.deny) {
+        const denied = new Set(mcp.tools.deny)
+        const overlap = mcp.tools.allow.find((tool) => denied.has(tool))
+        if (overlap !== undefined) return yield* fail(`MCP ${mcp.name} both allows and denies tool: ${overlap}`)
+      }
+      if (mcp.transport === "http") {
+        if (mcp.bearer_token_env) references.push(mcp.bearer_token_env)
+        references.push(...Object.values(mcp.headers_from_secret ?? {}))
+      } else {
+        for (const target of Object.keys(mcp.env_from_secret ?? {})) {
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(target)) return yield* fail(`invalid MCP environment name: ${target}`)
+          if (profile.secrets.provider === "varlock" && mcp.env_from_secret?.[target] !== target) {
+            return yield* fail(`varlock requires identical secret source and target names: ${target}`)
+          }
+        }
+        references.push(...Object.values(mcp.env_from_secret ?? {}))
+      }
+    }
+    for (const reference of references) {
+      if (!declared.has(reference)) return yield* fail(`undeclared secret reference: ${reference}`)
+    }
+
+    let resolvedInitialPrompt: string | undefined
+    let initialPromptIntegrity: string | undefined
+    if (profile.harness.initial_prompt) {
+      resolvedInitialPrompt = yield* resolveContained(directory, profile.harness.initial_prompt, "initial prompt")
+      initialPromptIntegrity = yield* Effect.tryPromise({
+        try: async () =>
+          `sha256:${createHash("sha256")
+            .update(await readFile(resolvedInitialPrompt!))
+            .digest("hex")}`,
+        catch: () => new ProfileError({ message: "initial prompt cannot be read" }),
+      })
+    }
+
+    let resolvedVarlockPath: string | undefined
+    if (profile.secrets.provider === "varlock") {
+      if (!profile.secrets.varlock_path) return yield* fail("varlock secrets require varlock_path")
+      resolvedVarlockPath = yield* resolveContained(directory, profile.secrets.varlock_path, "varlock path")
+    } else if (profile.secrets.varlock_path !== undefined) {
+      return yield* fail("varlock_path requires the varlock secrets provider")
+    }
+
+    return {
+      ...(resolvedInitialPrompt === undefined ? {} : { resolvedInitialPrompt }),
+      ...(initialPromptIntegrity === undefined ? {} : { initialPromptIntegrity }),
+      ...(resolvedVarlockPath === undefined ? {} : { resolvedVarlockPath }),
+    }
+  })
+
+export const parseProfile = (source: string, profilePath: string): Effect.Effect<ProfileDocument, ProfileError> =>
+  Effect.gen(function* () {
+    const raw = yield* Effect.try({
+      try: () => parse(source),
+      catch: (cause) => {
+        const detail = String(cause)
+        const prefix = detail.includes("redefine an already defined") ? "duplicate TOML key" : "invalid TOML"
+        return new ProfileError({ message: `${prefix}: ${detail}` })
+      },
+    })
+    yield* rejectUnsupportedCopilotSections(raw)
+    const decoded = yield* Schema.decodeUnknown(ProfileSchema)(raw, {
+      onExcessProperty: "error",
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProfileError({
+            message: ParseResult.TreeFormatter.formatErrorSync(cause),
+          }),
+      ),
+    )
+    const absolutePath = path.resolve(profilePath)
+    const directory = path.dirname(absolutePath)
+    const profile = normalize(decoded)
+    const resolved = yield* validate(profile, directory)
+    return {
+      path: absolutePath,
+      directory,
+      source,
+      profile,
+      ...resolved,
+    }
+  })

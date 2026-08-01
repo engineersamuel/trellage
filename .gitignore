@@ -3,7 +3,7 @@
 /.claude/
 /.hyperresearch/
 /.scratch/
-/research/runs/
+/research/
 /evidence/
 /codex-*.png
 /copilot-*.png
@@ -11,10 +11,10 @@
 /docs/superpowers/plans/
 /docs/superpowers/specs/
 .DS_Store
+.env
+.env.*
+!.env.example
 node_modules/
 playwright-report/
 test-results/
 results/
-.env
-.env.*
-!.env.example

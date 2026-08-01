@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'PWD\t%s\n' "$PWD" >>"${FAKE_GIT_LOG:?}"
+printf 'ENV\tCOPILOT_GITHUB_TOKEN=%s\n' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_GIT_LOG"
+printf 'ENV\tGH_TOKEN=%s\n' "${GH_TOKEN:+present}" >>"$FAKE_GIT_LOG"
+printf 'ENV\tGITHUB_TOKEN=%s\n' "${GITHUB_TOKEN:+present}" >>"$FAKE_GIT_LOG"
+for internal_name in \
+  ambient_copilot_github_token ambient_gh_token ambient_github_token \
+  copilot_token secret_value secret_source_values; do
+  [[ -z "${!internal_name:-}" ]] || internal_state=present
+  printf 'ENV\t%s=%s\n' "$internal_name" "${internal_state:-}" >>"$FAKE_GIT_LOG"
+  internal_state=
+done
+printf 'ARG\t%s\n' "$@" >>"$FAKE_GIT_LOG"
+
+[[ "$#" -eq 2 && "$1" == "rev-parse" && "$2" == "--show-toplevel" ]] || exit 64
+printf '%s\n' "${FAKE_GIT_ROOT:?}"

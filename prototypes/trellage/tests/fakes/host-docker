@@ -1,0 +1,426 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log="${FAKE_DOCKER_LOG:?}"
+if [[ ! -s "$log" || ! -f "$log.generation" ]]; then
+  printf '%s:%s\n' "$$" "$RANDOM" >"$log.generation"
+  printf '0\n' >"$log.container-label-inspect-count"
+fi
+IFS= read -r current_generation <"$log.generation"
+printf 'CALL\n' >>"$log"
+printf 'ENV\tHERDR_AGENT=%s\n' "${HERDR_AGENT:-}" >>"$log"
+printf 'ENV\tDOCS_TOKEN=%s\n' "${DOCS_TOKEN:+present}" >>"$log"
+copilot_token_state=
+if [[ -n "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+  copilot_token_state=present
+  if [[ -n "${FAKE_DOCKER_EXPECT_COPILOT_TOKEN_SHA256:-}" ]]; then
+    if command -v sha256sum >/dev/null 2>&1; then
+      copilot_token_hash="$(printf '%s' "$COPILOT_GITHUB_TOKEN" | sha256sum | awk '{print $1}')"
+    else
+      copilot_token_hash="$(printf '%s' "$COPILOT_GITHUB_TOKEN" | shasum -a 256 | awk '{print $1}')"
+    fi
+    [[ "$copilot_token_hash" != "$FAKE_DOCKER_EXPECT_COPILOT_TOKEN_SHA256" ]] \
+      || copilot_token_state=matched
+  fi
+fi
+printf 'ENV\tCOPILOT_GITHUB_TOKEN=%s\n' "$copilot_token_state" >>"$log"
+printf 'ENV\tGH_TOKEN=%s\n' "${GH_TOKEN:+present}" >>"$log"
+printf 'ENV\tGITHUB_TOKEN=%s\n' "${GITHUB_TOKEN:+present}" >>"$log"
+for internal_name in \
+  ambient_copilot_github_token ambient_gh_token ambient_github_token \
+  copilot_token secret_value secret_source_values; do
+  [[ -z "${!internal_name:-}" ]] || internal_state=present
+  printf 'ENV\t%s=%s\n' "$internal_name" "${internal_state:-}" >>"$log"
+  internal_state=
+done
+printf 'ARG\t%s\n' "$@" >>"$log"
+
+read_fake_state() {
+  local fallback="$1"
+  local state_file="$2"
+  if [[ -n "$state_file" ]]; then
+    head -n 1 "$state_file"
+    return
+  fi
+  printf '%s\n' "$fallback"
+}
+
+created_state_is_current() {
+  local resource="$1"
+  local generation_file="$log.$resource-generation"
+  local generation
+  [[ -f "$generation_file" ]] || return 1
+  IFS= read -r generation <"$generation_file"
+  [[ -n "$generation" && "$generation" == "$current_generation" ]]
+}
+
+persist_create_labels() {
+  local resource="$1"
+  shift
+  local labels_file="$log.$resource-labels"
+  local argument label key value
+  : >"$labels_file"
+  while (( $# > 0 )); do
+    argument="$1"
+    case "$argument" in
+      --label)
+        [[ $# -ge 2 ]] || exit 64
+        label="$2"
+        shift 2
+        ;;
+      --label=*)
+        label="${argument#--label=}"
+        shift
+        ;;
+      *)
+        shift
+        continue
+        ;;
+    esac
+    [[ "$label" == *=* ]] || exit 64
+    key="${label%%=*}"
+    value="${label#*=}"
+    printf '%s\t%s\n' "$key" "$value" >>"$labels_file"
+  done
+  printf '%s\n' "$current_generation" >"$log.$resource-generation"
+}
+
+created_label() {
+  local resource="$1"
+  local key="$2"
+  local labels_file="$log.$resource-labels"
+  awk -F '\t' -v expected="$key" '
+    $1 == expected {
+      print substr($0, length($1) + 2)
+      found = 1
+      exit
+    }
+    END { if (!found) print "" }
+  ' "$labels_file"
+}
+
+container_state="$(read_fake_state \
+  "${FAKE_DOCKER_CONTAINER_STATE:-absent}" \
+  "${FAKE_DOCKER_CONTAINER_STATE_FILE:-}")"
+volume_state="$(read_fake_state \
+  "${FAKE_DOCKER_VOLUME_STATE:-absent}" \
+  "${FAKE_DOCKER_VOLUME_STATE_FILE:-}")"
+if created_state_is_current container; then
+  container_state=created
+fi
+if [[ "$volume_state" == absent ]] && created_state_is_current volume; then
+  volume_state=created
+fi
+
+case "${1:-} ${2:-}" in
+  'container ls')
+    list_state="${FAKE_DOCKER_CONTAINER_LIST_STATE:-auto}"
+    if [[ "$list_state" == auto ]]; then
+      case "$container_state" in
+        absent) list_state=absent ;;
+        *) list_state=present ;;
+      esac
+    fi
+    case "$list_state" in
+      absent) ;;
+      error) exit "${FAKE_DOCKER_CONTAINER_LIST_ERROR_CODE:-72}" ;;
+      unexpected) printf 'unexpected-container\n' ;;
+      present)
+        filter=''
+        while [[ "$#" -gt 0 ]]; do
+          if [[ "$1" == --filter ]]; then
+            filter="${2:-}"
+            break
+          fi
+          shift
+        done
+        listed_name="${filter#name=^/}"
+        listed_name="${listed_name%\$}"
+        printf '%s\n' "$listed_name"
+        ;;
+      *) exit 65 ;;
+    esac
+    ;;
+  'volume ls')
+    list_state="${FAKE_DOCKER_VOLUME_LIST_STATE:-auto}"
+    if [[ "$list_state" == auto ]]; then
+      case "$volume_state" in
+        absent) list_state=absent ;;
+        *) list_state=present ;;
+      esac
+    fi
+    case "$list_state" in
+      absent) ;;
+      error) exit "${FAKE_DOCKER_VOLUME_LIST_ERROR_CODE:-73}" ;;
+      unexpected) printf 'unexpected-volume\n' ;;
+      present)
+        filter=''
+        while [[ "$#" -gt 0 ]]; do
+          if [[ "$1" == --filter ]]; then
+            filter="${2:-}"
+            break
+          fi
+          shift
+        done
+        listed_name="${filter#name=^}"
+        listed_name="${listed_name%\$}"
+        printf '%s\n' "$listed_name"
+        ;;
+      *) exit 65 ;;
+    esac
+    ;;
+  'image ls')
+    list_state="${FAKE_DOCKER_IMAGE_LIST_STATE:-auto}"
+    if [[ "$list_state" == auto ]]; then
+      if [[ "${FAKE_DOCKER_IMAGE_EXISTS:-1}" == 1 ]]; then
+        list_state=present
+      else
+        list_state=absent
+      fi
+    fi
+    case "$list_state" in
+      absent) ;;
+      error) exit "${FAKE_DOCKER_IMAGE_LIST_ERROR_CODE:-74}" ;;
+      unexpected) printf 'unexpected/image:tag\n' ;;
+      present)
+        filter=''
+        while [[ "$#" -gt 0 ]]; do
+          if [[ "$1" == --filter ]]; then
+            filter="${2:-}"
+            break
+          fi
+          shift
+        done
+        printf '%s\n' "${filter#reference=}"
+        ;;
+      *) exit 65 ;;
+    esac
+    ;;
+  'network ls')
+    list_state="${FAKE_DOCKER_NETWORK_LIST_STATE:-auto}"
+    if [[ "$list_state" == auto ]]; then
+      if [[ "${FAKE_DOCKER_NETWORK_EXISTS:-1}" == 1 ]]; then
+        list_state=present
+      else
+        list_state=absent
+      fi
+    fi
+    case "$list_state" in
+      absent) ;;
+      error) exit "${FAKE_DOCKER_NETWORK_LIST_ERROR_CODE:-75}" ;;
+      unexpected) printf 'unexpected-network\n' ;;
+      present)
+        filter=''
+        while [[ "$#" -gt 0 ]]; do
+          if [[ "$1" == --filter ]]; then
+            filter="${2:-}"
+            break
+          fi
+          shift
+        done
+        listed_name="${filter#name=^}"
+        listed_name="${listed_name%\$}"
+        printf '%s\n' "$listed_name"
+        ;;
+      *) exit 65 ;;
+    esac
+    ;;
+  'image inspect')
+    [[ "${FAKE_DOCKER_IMAGE_EXISTS:-1}" == 1 ]] || exit 1
+    if [[ "${3:-}" == --format ]]; then
+      case "${4:-}" in
+        *'.Id'*) printf '%s\n' "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ;;
+        *dev.trellage.profile.hash*)
+          [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
+            || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
+          if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 && "${5:-}" != "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ]]; then
+            printf 'sha256:%064d\n' 0
+            exit 0
+          fi
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+          ;;
+        *dev.trellage.runtime.hash*)
+          [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
+            || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
+          if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 && "${5:-}" != "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ]]; then
+            printf 'sha256:%064d\n' 0
+            exit 0
+          fi
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_RUNTIME_HASH:-}"
+          ;;
+      esac
+    fi
+    ;;
+  'network inspect')
+    [[ "${FAKE_DOCKER_NETWORK_EXISTS:-1}" == 1 ]]
+    ;;
+  'volume inspect')
+    case "$volume_state" in
+      absent) exit 1 ;;
+      error) exit "${FAKE_DOCKER_VOLUME_ERROR_CODE:-71}" ;;
+      created)
+        prototype="$(created_label volume dev.trellage.prototype)"
+        worktree="$(created_label volume dev.trellage.worktree)"
+        profile="$(created_label volume dev.trellage.profile)"
+        ;;
+      matching)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        ;;
+      matching-missing-profile)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-copilot}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile=
+        ;;
+      unrelated)
+        prototype='some-other-tool'
+        worktree='/tmp/not-this-worktree'
+        profile='unrelated'
+        ;;
+      *) exit 65 ;;
+    esac
+    case "${4:-}" in
+      *dev.trellage.prototype*dev.trellage.worktree*dev.trellage.profile*)
+        printf '%s\t%s\t%s\n' "$prototype" "$worktree" "$profile"
+        ;;
+      *dev.trellage.prototype*dev.trellage.worktree*)
+        printf '%s\t%s\n' "$prototype" "$worktree"
+        ;;
+      *dev.trellage.prototype*) printf '%s\n' "$prototype" ;;
+      *dev.trellage.worktree*) printf '%s\n' "$worktree" ;;
+      *dev.trellage.profile*) printf '%s\n' "$profile" ;;
+      *) exit 66 ;;
+    esac
+    ;;
+  'container inspect')
+    case "$container_state" in
+      absent) exit 1 ;;
+      error) exit "${FAKE_DOCKER_CONTAINER_ERROR_CODE:-70}" ;;
+      created)
+        prototype="$(created_label container dev.trellage.prototype)"
+        worktree="$(created_label container dev.trellage.worktree)"
+        profile="$(created_label container dev.trellage.profile)"
+        profile_hash="$(created_label container dev.trellage.profile.hash)"
+        runtime_hash="$(created_label container dev.trellage.runtime.hash)"
+        container_image="$(head -n 1 "$log.container-image")"
+        running="$(head -n 1 "$log.container-running")"
+        ;;
+      matching-running)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        running='true'
+        ;;
+      matching-stopped)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        running='false'
+        ;;
+      matching-running-missing-profile)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-copilot}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile=
+        running='true'
+        ;;
+      matching-worktree-prefix)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}|other"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        running='true'
+        ;;
+      matching-wrong-mount)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        running='true'
+        ;;
+      unrelated)
+        prototype='some-other-tool'
+        worktree='/tmp/not-this-worktree'
+        profile='unrelated'
+        running='true'
+        ;;
+      *) exit 65 ;;
+    esac
+    case "${4:-}" in
+      *dev.trellage.profile.hash*|*dev.trellage.runtime.hash*)
+        label_count_file="$log.container-label-inspect-count"
+        label_count=0
+        [[ ! -f "$label_count_file" ]] || label_count="$(head -n 1 "$label_count_file")"
+        label_count="$((label_count + 1))"
+        printf '%s\n' "$label_count" >"$label_count_file"
+        [[ "${FAKE_DOCKER_CONTAINER_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
+          || exit "${FAKE_DOCKER_CONTAINER_LABEL_ERROR_CODE:-76}"
+        [[ -z "${FAKE_DOCKER_CONTAINER_LABEL_INSPECT_FAIL_ON:-}" \
+          || "$label_count" -ne "$FAKE_DOCKER_CONTAINER_LABEL_INSPECT_FAIL_ON" ]] \
+          || exit "${FAKE_DOCKER_CONTAINER_LABEL_ERROR_CODE:-76}"
+        case "${4:-}" in
+          *dev.trellage.profile.hash*) printf '%s\n' "${profile_hash:-}" ;;
+          *) printf '%s\n' "${runtime_hash:-}" ;;
+        esac
+        ;;
+      *dev.trellage.prototype*) printf '%s\n' "$prototype" ;;
+      *dev.trellage.worktree*) printf '%s\n' "$worktree" ;;
+      *dev.trellage.profile*) printf '%s\n' "$profile" ;;
+      *'.Id'*) printf 'fake-container-id\n' ;;
+      *'.Image'*)
+        if [[ "$container_state" == created ]]; then
+          printf '%s\n' "$container_image"
+        else
+          printf '%s\n' "${FAKE_DOCKER_CONTAINER_IMAGE_ID:-fake-image-id}"
+        fi
+        ;;
+      *State.Running*) printf '%s\n' "$running" ;;
+      *'.Mounts'*)
+        if [[ "$container_state" == matching-wrong-mount ]]; then
+          printf 'bind\t\t%s\t%s\ttrue\n' "$worktree" "/mounts/$(basename "$worktree")"
+          printf 'volume\twrong-state-volume\t/var/lib/docker/volumes/wrong/_data\t/home/agent\ttrue\n'
+        else
+          printf 'bind\t\t%s\t%s\ttrue\n' "$worktree" "/mounts/$(basename "$worktree")"
+          printf 'volume\t%s\t/var/lib/docker/volumes/%s/_data\t/home/agent\ttrue\n' \
+            "${FAKE_DOCKER_STATE_VOLUME:?}" "${FAKE_DOCKER_STATE_VOLUME:?}"
+        fi
+        ;;
+      *) exit 66 ;;
+    esac
+    ;;
+  'volume create')
+    persist_create_labels volume "$@"
+    printf '%s\n' "${@: -1}"
+    ;;
+  'container create')
+    if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 ]]; then
+      for argument in "$@"; do
+        [[ "$argument" != "${FAKE_DOCKER_RACE_TAG:-}" ]] || exit 88
+      done
+    fi
+    persist_create_labels container "$@"
+    printf '%s\n' "${@: -3:1}" >"$log.container-image"
+    printf 'false\n' >"$log.container-running"
+    printf 'fake-container-id\n'
+    ;;
+  'container start')
+    if [[ "$container_state" == created ]]; then
+      printf 'true\n' >"$log.container-running"
+    fi
+    printf '%s\n' "${@: -1}"
+    ;;
+  'container stop')
+    if [[ "$container_state" == created ]]; then
+      printf 'false\n' >"$log.container-running"
+    fi
+    printf '%s\n' "${@: -1}"
+    ;;
+  'container rm') printf '%s\n' "${@: -1}" ;;
+  'volume rm') printf '%s\n' "${@: -1}" ;;
+  'container exec') exit "${FAKE_DOCKER_EXEC_EXIT:-0}" ;;
+  *) exit 64 ;;
+esac

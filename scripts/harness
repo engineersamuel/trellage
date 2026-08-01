@@ -226,7 +226,7 @@ run_all() {
   done
 
   if [[ -n "${resolved_copilot_token:-}" && -z "$copilot_secret_file" ]]; then
-    copilot_secret_file="$(mktemp "${TMPDIR:-/tmp}/sandbox-harness-copilot-token.XXXXXX")"
+    copilot_secret_file="$(mktemp "${TMPDIR:-/tmp}/trellage-copilot-token.XXXXXX")"
     chmod 0600 "$copilot_secret_file"
     printf '%s' "$resolved_copilot_token" >"$copilot_secret_file"
     unset resolved_copilot_token
@@ -442,7 +442,7 @@ collect_all() {
   output_root="$results_root/$harness_id/$run_id"
   [[ ! -e "$output_root" ]] || fail "result run already exists: $output_root" 73
 
-  collection_staging="$(mktemp -d "${TMPDIR:-/tmp}/sandbox-harness-collect.XXXXXX")"
+  collection_staging="$(mktemp -d "${TMPDIR:-/tmp}/trellage-collect.XXXXXX")"
   for contestant in "${contestants[@]}"; do
     contestant_id="$(jq -r '.id' <<<"$contestant")"
     experiment="$harness_id-$contestant_id"

@@ -1,4 +1,78 @@
-# Isolated Agent Evaluation Harness
+# Trellage
+
+Trellage compiles locked agent profiles and runs them in isolated Docker sandboxes while preserving host worktree and Herdr workflows. Install the CLI from `prototypes/trellage`; it defaults to `~/.local/bin/trellage`.
+
+## Trellage Quick Start
+
+```bash
+cd prototypes/trellage
+mise trust
+mise run install-trellage
+trellage validate /absolute/path/to/profile.toml
+trellage build --locked /absolute/path/to/profile.toml
+trellage --profile /absolute/path/to/profile.toml
+trellage resume --profile /absolute/path/to/profile.toml
+trellage doctor --profile /absolute/path/to/profile.toml
+trellage destroy --profile /absolute/path/to/profile.toml
+trellage upgrade /absolute/path/to/profile.toml
+```
+
+Bundled profiles can also be selected by directory name:
+
+```bash
+trellage validate claude-hyperresearch
+trellage build --locked claude-hyperresearch
+trellage --profile claude-hyperresearch
+```
+
+Trellage expands a bare name to `profiles/<name>/profile.toml`. Use a value ending in `.toml` or containing a path separator for an explicit path.
+
+Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) for one plain-text, non-interactive prompt; Trellage returns the native harness exit status:
+
+```bash
+trellage --profile codex-superpowers -p "hello"
+trellage --profile claude-hyperresearch -p "hello"
+trellage --profile copilot-hve -p "hello"
+```
+
+Profile source files are editable intent: a source `ref` may be a tag, branch, or commit selected by the author. `trellage lock` resolves every source to an immutable commit recorded in `profile.lock.toml`; reproducible builds use `--locked` and reject drift between the profile and lock.
+
+See [the Trellage prototype guide](prototypes/trellage/README.md) for profile locks, lifecycle details, Copilot with HVE Core, cleanup, and deterministic verification.
+
+## Native Host Launcher Installation
+
+The native profile launchers run agents directly on the host. They are separate from the Docker-based Trellage CLI and sandbox workflow above.
+
+Install all three launchers from the repository root:
+
+```bash
+(cd prototypes/trellage-codex-profiles && ./install.sh)
+(cd prototypes/trellage-copilot-profiles && ./install.sh)
+(cd prototypes/trellage-grok-profiles && ./install.sh)
+```
+
+The installers publish these commands and managed runtimes:
+
+- `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
+- `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
+- `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
+
+Their isolated profile homes are rooted at:
+
+```text
+~/.local/share/trellage/profiles/codex/<profile>/home/
+~/.local/share/trellage/profiles/copilot/<profile>/home/
+~/.local/share/trellage/profiles/grok/<profile>/home/
+```
+
+Managed Codex profiles use the local proxy by default. Native OpenAI authentication
+is an explicit per-launch opt-in:
+
+```sh
+cdx --native-auth hve exec "Review this repository"
+```
+
+## Generic Evaluation Harness
 
 This repository runs multiple coding-agent configurations against the same prompt without loading their plugins, skills, hooks, sessions, caches, or configuration into the host harness.
 
@@ -39,6 +113,48 @@ Open the live apps:
 
 - Codex + `wshobson/agents`: <http://127.0.0.1:4173>
 - Copilot + `awesome-copilot`: <http://127.0.0.1:4174>
+
+## Native Agent Profile Matrix
+
+Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. Live verification also requires paid model access.
+
+Run native non-inference verification in static mode:
+
+```bash
+scripts/verify-agent-profiles
+make profile-matrix
+```
+
+Static mode performs native profile discovery plus non-inference health, inventory, and context validation. It never invokes a model.
+
+All launchers are required; failures are not skips.
+
+Invoke every statically passing discovered profile in live mode:
+
+```bash
+scripts/verify-agent-profiles --live
+make profile-matrix PROFILE_MATRIX_ARGS=--live
+```
+
+Live mode invokes every statically passing discovered profile, may consume paid model quota, and may create product-local telemetry or state where a CLI lacks ephemeral mode.
+
+Run the focused contract with:
+
+```bash
+make profile-matrix-test
+```
+
+Codex discovery and static checks require the managed `cdx` launcher and its isolated profile roots under `~/.local/share/trellage/profiles/codex/<profile>/home`.
+
+Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
+
+Static verification performs no native marketplace/plugin mutation or live prompt and never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
+
+Exit statuses:
+
+- `0`: all required checks pass.
+- `1`: a required launcher is missing, or discovery, static verification, or live verification fails.
+- `2`: invalid usage.
 
 ## Native Copilot Authentication
 

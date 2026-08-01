@@ -1,0 +1,37 @@
+min_version = "2026.6.14"
+
+[tasks.validate]
+description = "Validate the bundled Trellage profile"
+run = "./trellage validate ../../profiles/codex-superpowers/profile.toml"
+
+[tasks.lock]
+description = "Resolve the bundled Trellage profile lock"
+run = "./trellage lock ../../profiles/codex-superpowers/profile.toml"
+
+[tasks.build]
+description = "Build the bundled locked OCI image"
+run = "./trellage build --locked ../../profiles/codex-superpowers/profile.toml"
+
+[tasks.copilot-build]
+description = "Build the locked Copilot HVE OCI image"
+run = "./trellage build --locked ../../profiles/copilot-hve/profile.toml"
+
+[tasks.install-trellage]
+description = "Install the user-local Trellage command"
+run = "./install-trellage.sh install"
+
+[tasks.uninstall-trellage-dry-run]
+description = "Preview removal of the user-local Trellage command"
+run = "./install-trellage.sh uninstall --dry-run"
+
+[tasks.uninstall-trellage]
+description = "Remove the user-local Trellage command installed by this prototype"
+run = "./install-trellage.sh uninstall"
+
+[tasks.smoke]
+description = "Build and run the bundled profile smoke verification"
+run = "./tests/smoke.sh"
+
+[tasks.copilot-smoke]
+description = "Run the locked Copilot HVE live smoke verification"
+run = "./tests/smoke.sh --copilot ../../profiles/copilot-hve/profile.toml"

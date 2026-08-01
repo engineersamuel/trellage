@@ -1,0 +1,9 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: profile compiler oxlint
+      run: npm --prefix packages/trellage-cli run lint
+    - name: harness config oxfmt
+      run: npm --prefix packages/trellage-cli run format:check
+    - name: profile compiler typecheck
+      run: npm --prefix packages/trellage-cli run check

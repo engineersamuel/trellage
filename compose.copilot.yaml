@@ -1,7 +1,7 @@
 services:
   copilot_agent:
     profiles: [tools]
-    image: ${EXPERIMENT_ID:-sandbox-harness}-agent:local
+    image: ${EXPERIMENT_ID:-trellage}-agent:local
     build:
       context: .
       dockerfile: Dockerfile.copilot-agent

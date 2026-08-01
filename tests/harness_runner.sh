@@ -30,7 +30,11 @@ set -euo pipefail
 token_state='absent'
 token_file="${HARNESS_COPILOT_TOKEN_FILE:-}"
 if [[ -n "$token_file" && -f "$token_file" ]]; then
-  token_mode="$(stat -f '%Lp' "$token_file")"
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) token_mode="$(stat -f '%Lp' "$token_file")" ;;
+    Linux) token_mode="$(stat -c '%a' "$token_file")" ;;
+    *) exit 1 ;;
+  esac
   [[ "$token_mode" == '600' ]] || token_state="unsafe-mode-$token_mode"
   [[ "$token_mode" != '600' ]] || token_state='set'
 fi

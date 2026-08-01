@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/microsoft/hve-core",
+  "commit": "130ab64338bb77e912e603693672c31f14bc60c6",
+  "path": "plugins/hve-core/.github/plugin/plugin.json",
+  "git_blob_sha1": "628cd9c935109142c915ec9d22cf82631d5f337d",
+  "upstream_bytes": 552,
+  "fixture_bytes": 553,
+  "normalization": "append exactly one trailing LF",
+  "version": "3.3.101"
+}

@@ -46,7 +46,7 @@ grep -Fq -- '--no-remote' scripts/run-copilot-agent.sh \
   || fail 'Copilot runner does not disable remote session control'
 
 if [[ "${BUILD_IMAGE_SMOKE:-0}" == '1' ]]; then
-  image='sandbox-harness-copilot-agent:test'
+  image='trellage-copilot-agent:test'
   docker build -f Dockerfile.copilot-agent -t "$image" .
   version_output="$(docker run --rm --entrypoint copilot "$image" --version)"
   grep -Fq 'GitHub Copilot CLI' <<<"$version_output" \

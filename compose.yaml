@@ -1,9 +1,9 @@
-name: ${EXPERIMENT_ID:-sandbox-harness}
+name: ${EXPERIMENT_ID:-trellage}
 
 services:
   workspace_init:
     profiles: [tools]
-    image: ${EXPERIMENT_ID:-sandbox-harness}-agent:local
+    image: ${EXPERIMENT_ID:-trellage}-agent:local
     user: "0:0"
     read_only: true
     cap_drop: [ALL]
@@ -22,7 +22,7 @@ services:
 
   agent:
     profiles: [tools]
-    image: ${EXPERIMENT_ID:-sandbox-harness}-agent:local
+    image: ${EXPERIMENT_ID:-trellage}-agent:local
     build:
       context: .
       dockerfile: Dockerfile.agent
@@ -51,7 +51,7 @@ services:
       - copilot_proxy
 
   data_init:
-    image: ${EXPERIMENT_ID:-sandbox-harness}-app:local
+    image: ${EXPERIMENT_ID:-trellage}-app:local
     user: "0:0"
     read_only: true
     cap_drop: [ALL]
@@ -69,7 +69,7 @@ services:
         target: /data
 
   workspace_publish:
-    image: ${EXPERIMENT_ID:-sandbox-harness}-app:local
+    image: ${EXPERIMENT_ID:-trellage}-app:local
     user: "0:0"
     read_only: true
     cap_drop: [ALL]
@@ -98,14 +98,14 @@ services:
         chgrp 10002 /workspace
         chmod 0710 /workspace
         chgrp -R 10002 "$${runtime_targets[@]}"
-        chmod -R g=rX,o= "$${runtime_targets[@]}"
+        chmod -R u=rwX,g=rX,o= "$${runtime_targets[@]}"
     volumes:
       - type: volume
         source: workspace
         target: /workspace
 
   app:
-    image: ${EXPERIMENT_ID:-sandbox-harness}-app:local
+    image: ${EXPERIMENT_ID:-trellage}-app:local
     build:
       context: .
       dockerfile: Dockerfile.app

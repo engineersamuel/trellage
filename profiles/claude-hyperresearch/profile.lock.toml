@@ -1,0 +1,1015 @@
+schema = 1
+source_date_epoch = 1784379906
+profile_hash = "sha256:762925f16b43e70978acd503b0308a4f8efb837f39f1241823ed73c80187bf31"
+
+[[sources]]
+kind = "plugin"
+adapter = "hyperresearch"
+repository = "https://github.com/jordan-gibbs/hyperresearch.git"
+ref = "main"
+select = ["full"]
+commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"
+integrity = "sha256:edd55d7720f6157b844b09bd9d69ff8963f6fd5f130b188685e7afa31d43b283"
+
+[[sources.files]]
+path = ".github/workflows/ci.yml"
+sha256 = "sha256:6f1de8f60f875d5f20ef2625f97931f3d8fa6058da63b5328486eebfdf99b040"
+
+[[sources.files]]
+path = ".github/workflows/publish.yml"
+sha256 = "sha256:06d1f62c8c4f7c889b11824439efb34a91471cb3763425a862d92361b1e8e55f"
+
+[[sources.files]]
+path = ".gitignore"
+sha256 = "sha256:6b278a83578c1a356c85048da0af33743927ac8bf444a2d5f45e6585b4d00957"
+
+[[sources.files]]
+path = "assets/_banner_src.png"
+sha256 = "sha256:fa85ad3e90a3a8df6b0d3000de83983bef6ecdbc7f75cb4a30b8e1b03032cc4e"
+
+[[sources.files]]
+path = "assets/_generate_banner.py"
+sha256 = "sha256:88b6cc44ce8305db1662d9c3a20640fd5054c5bcdc7308e86d05dfc621ff2eae"
+
+[[sources.files]]
+path = "assets/_generate_benchmark.py"
+sha256 = "sha256:ae16e489ef3953cff23ac10aeea4e966088bb40bfcbbdb9d617e22311fbbb23b"
+
+[[sources.files]]
+path = "assets/banner_social.png"
+sha256 = "sha256:7d353e27727dd76b0cdb889ce5d9844d92939564ee975d86f2504b8acb4d50c8"
+
+[[sources.files]]
+path = "assets/banner.png"
+sha256 = "sha256:5000a68b11884c6a527bfc8af7cfb4d8556fdaca174258008354c578c1ab3140"
+
+[[sources.files]]
+path = "assets/benchmark.png"
+sha256 = "sha256:dd97e797356c7a47600da4c9aeb1d9350f5d04d4d9e1f1cb25726eddaa679c39"
+
+[[sources.files]]
+path = "CHANGELOG.md"
+sha256 = "sha256:a0b36ca8d675d8f9d731f1937152a5cebfaaa103b81cec21ddb6f01851f747fc"
+
+[[sources.files]]
+path = "CONTRIBUTING.md"
+sha256 = "sha256:c3e3f3f851ca71d9b892b16ad636ab5cc42cc31f39f6535d1bf94f1ccf9bba23"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/phase-0-cleanup.md"
+sha256 = "sha256:ff76c92534fd91b5d38687a81c861445198420b7bece46da2cdde354f6c99b13"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/phase-1-config-profiles.md"
+sha256 = "sha256:eb1376913bb2f9fcd9868f897dfd4039f5ef64b97e030a1d3c292bc2a78ba16b"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/phase-2-source-ranking.md"
+sha256 = "sha256:1ee90097f02e72dc03c4c4782b01629c4fe04d49b541fb0b76842ef24386433e"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/phase-3-dissertation-scale.md"
+sha256 = "sha256:0e41b4dad436c60f0c8fc92e2547f22a11940471cdf8cfff20c22385372721c1"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/phase-4-chrome-lane.md"
+sha256 = "sha256:cf5423b358878ec38047b827d2ef83510847c61f294f01f7a0a958f3e23e8087"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/phase-5-verification.md"
+sha256 = "sha256:cdb24ef4e9eb757b816327706e5c8a04cd7795c5b8ce43d2350a2e8b2bb2aa78"
+
+[[sources.files]]
+path = "docs/roadmap-2.0/README.md"
+sha256 = "sha256:4dee3ea7735415be45b40242f132b5ad8e167cea285cd606f98276b6e0a6316d"
+
+[[sources.files]]
+path = "example-reports/rl-exploration-trajectory-planning.md"
+sha256 = "sha256:043b7256f324d61780280d55218b6af3447a629a565c2846eb5ef806042582b8"
+
+[[sources.files]]
+path = "LICENSE"
+sha256 = "sha256:4984af1c20d0cb81a6f5b081320a8c56dbde4bd3656d6aca2c671a15dfa6a3b6"
+
+[[sources.files]]
+path = "pyproject.toml"
+sha256 = "sha256:0f302610c9b025f23c1d43adc9cfa5d97409f314894302d32be32cb2bd78ed8a"
+
+[[sources.files]]
+path = "README.md"
+sha256 = "sha256:a23fc0f618d0fc4d0f74e61696db5cff2334f6ab390721ed63a4569d51a6f964"
+
+[[sources.files]]
+path = "src/hyperresearch/__init__.py"
+sha256 = "sha256:539dffd1df3c20c39fd14191c9a58134f32791e08ea4aea0e806e75f2e4cb8a5"
+
+[[sources.files]]
+path = "src/hyperresearch/__main__.py"
+sha256 = "sha256:96fcbf1d03f88f7321845e8be42eb870c7a40524fa266485cc1a95a6b3bc7127"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/__init__.py"
+sha256 = "sha256:00e57e79eed22821506c6ccbcdee24bff14fe6e37fb9018337d4d5e4db64087f"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/_output.py"
+sha256 = "sha256:1b1dfeb40616b0c81bf80f57f08b5bf84abae9fa38b225c354b7cc21bc0a3db5"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/archive.py"
+sha256 = "sha256:f116dced8c46663ee3d60607bf7338ac31df3625624c2d81c59395cb89fe2e7e"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/assets.py"
+sha256 = "sha256:dc727346e917c92f1101e5fa6e19c2174b7ce876e3a94d248b6d20990d0bed76"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/batch.py"
+sha256 = "sha256:badde2fe11af1a59ba400d52a0e0fa06d3ee2975858156f851933c6f44213c1b"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/citecheck_cmd.py"
+sha256 = "sha256:551d2b639fc6a31490330a882607a00a5c33311ee54c4235d73c7e737cac1a83"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/claims_cmd.py"
+sha256 = "sha256:0142a075bb65ecfa917f885a765b32fdcd2c0dfa727b55317875f93284dea6a8"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/config_cmd.py"
+sha256 = "sha256:d855323f5e60b2079be17f674ef5bad6bea1e4c34f23f72149a3010e01a55e01"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/dedup.py"
+sha256 = "sha256:58588c1c848eb4021b053427b3afa3601e0729f49b1d29af3ef0a953cb5ead45"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/embed_cmd.py"
+sha256 = "sha256:9508dfbcb15cd95510b8dbce876a1d4c3a0c3368773ec21f2f3030ecc7095470"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/escalation_cmd.py"
+sha256 = "sha256:941ea7de89d26bbda3453b8df3b0cac321a941a2cba1c1e1c148afb49e13226e"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/export.py"
+sha256 = "sha256:45defc48dbbd9877095b842d67c13b0997ec0fe39cee784ff611025ce1dba8f4"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/fetch_batch.py"
+sha256 = "sha256:cf9f7511f15aa260c2da4b02dc717f873d9ee503df9dd539f1a2d804e5e383fe"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/fetch.py"
+sha256 = "sha256:af08148eeedd7387fdaeef8f6facd87c29eab5b8f4e0636c675f7ae9afc31197"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/git_cmd.py"
+sha256 = "sha256:a6fa60ecbdce147a2c3696baa8dd7438c9516f379021ea2a4030aee24ae4ce6d"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/graph.py"
+sha256 = "sha256:85c4977ee9173a6ad04a944fc20207a1cdd06b5aac3b22533dd92d89d048b431"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/import_cmd.py"
+sha256 = "sha256:a92ef3cd42513743dd51123102abb268803578f1f5a2f1951adcb444a1994db1"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/index.py"
+sha256 = "sha256:9c1e2ea1c640eb9752fec9cd77c778c4f8146ea9b46883b5f10c7a9b5d81c893"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/install.py"
+sha256 = "sha256:817eb5c5668ed3d173186a267d4595c553a8b7ac74bc1a3c79537ca4544e98d9"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/levers_cmd.py"
+sha256 = "sha256:a41b52b1be322b534c12f3c24dc157c6b46629de804dacc7744c198efb29d876"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/link.py"
+sha256 = "sha256:d9f68b0b23ff825d3a5fcc2817b83b7014ccb3c6aba816cb8edbe9ce21dbd342"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/lint.py"
+sha256 = "sha256:2bbbf5f4538c08c9e0bf88bcf6b14277cbf51b845a97a987c3c8e2447da52cb8"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/main.py"
+sha256 = "sha256:0c47584ad8960569ee659087fa1bbd6243b3e4d7de9d33a85f7d45e2706aa1d9"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/mcp_cmd.py"
+sha256 = "sha256:d169f86ed201e92242dd278d26934ec994eab16eb32726ad9511389cd17464a5"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/note.py"
+sha256 = "sha256:974f578e59dbe0c5b6f05b5b48e0f730d0c9fc58fb205d2c74d2c8b6a8df5d77"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/profile_cmd.py"
+sha256 = "sha256:224b4d531b370dfb14407990386e871ab9019ae1e64c3a86788113b4c9d4dfcb"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/repair.py"
+sha256 = "sha256:cfea7ec2af3b5e6c7e65c3cf54d9efd54f2207dadbc96edc2014917993b03d57"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/research.py"
+sha256 = "sha256:0c106e2b30683168a81689d3d3d5e42c1eff5315bcc8114412fbf21f882977d1"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/run_cmd.py"
+sha256 = "sha256:03a8f967e181a24e1ccaa23f69de5cd82464a3e6d5d7957aa7e08aa464ec3d25"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/search.py"
+sha256 = "sha256:1dcbe6426fa5be5edc19fe1383b770bf4c297a65bd7a528c8543d8c3be28714c"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/serve.py"
+sha256 = "sha256:d0c6c93bdc579e1160c949785d4247c7971328befb21d3cd6e5b5d3a71504be4"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/setup.py"
+sha256 = "sha256:f2e9545e29319f71df66121d79bfc6f230dc05506d38e85b6e864a92c428d9ca"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/sources.py"
+sha256 = "sha256:8c67cb3a591cbe3ce53a390098b5c93f6c7f03d93c6adc802b05e9e44f679cd3"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/tag.py"
+sha256 = "sha256:44e55f8799923b72eed702e280c7614a9a8dfd999c627e1fc277a8db4863cb9a"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/template.py"
+sha256 = "sha256:1cfcb201b7cffd60d9557f453ab3c0e99544fa907c46a80c783f904e87a208cd"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/topic.py"
+sha256 = "sha256:11eb8a725c066d824c0e7df5a4aef298a89fb14aa3da6b8da12a68bd274ec3a7"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/vault_tag.py"
+sha256 = "sha256:a4c480bb99d3c2fc337b33579e2fec5616fb5a3d21d262832c8d4f1f6bdc4a0e"
+
+[[sources.files]]
+path = "src/hyperresearch/cli/watch.py"
+sha256 = "sha256:672da74714668ce761915f3f2f95feb04e857e0b8536c3f44d4df0049e179674"
+
+[[sources.files]]
+path = "src/hyperresearch/core/__init__.py"
+sha256 = "sha256:b437957060706b85856c2537184484afa8c40dfa9ed206bf00933cb5bd48fe7a"
+
+[[sources.files]]
+path = "src/hyperresearch/core/agent_docs.py"
+sha256 = "sha256:6b64be7d7343f2823a3d9e0adb6e4b48d206d3b5c6a0a1e3c3f44dbc74fa533d"
+
+[[sources.files]]
+path = "src/hyperresearch/core/citecheck.py"
+sha256 = "sha256:5c64b2789cc478460b6c0289f6edd93575253513763ae2c43d43b3c219c58b05"
+
+[[sources.files]]
+path = "src/hyperresearch/core/claims.py"
+sha256 = "sha256:b687354920e732fc7b5132656f6501de176fccca6a8936a5e0faf7956b63c789"
+
+[[sources.files]]
+path = "src/hyperresearch/core/config.py"
+sha256 = "sha256:33cc13cb15d81ef9e71f73d3d5ebfe66250d9c82dc25a4880b2ec92c5ec0de0c"
+
+[[sources.files]]
+path = "src/hyperresearch/core/db.py"
+sha256 = "sha256:10561fba116c062062e42f2705e4a46f7bdcdfbbdac3f3be472b4e879cfe51d7"
+
+[[sources.files]]
+path = "src/hyperresearch/core/embed.py"
+sha256 = "sha256:4a484d5fbe7fe9c9637034dce1711cdcf8f3df35a6e1053b92db9b964facf2aa"
+
+[[sources.files]]
+path = "src/hyperresearch/core/enrich.py"
+sha256 = "sha256:60176406c5f13ef8b9470b770bc13f56b749d6587b0968dfb8a971ab40055864"
+
+[[sources.files]]
+path = "src/hyperresearch/core/escalation.py"
+sha256 = "sha256:f81d0eb56dcaf82c8f278b0524ffbe686565aca7cd4ae6aa3a8eb9437d0feefb"
+
+[[sources.files]]
+path = "src/hyperresearch/core/fetcher.py"
+sha256 = "sha256:19001e3c036ea2ae25a4e78342aa93a94e42fa0a6cee4b67147a7fe61f7ba945"
+
+[[sources.files]]
+path = "src/hyperresearch/core/frontmatter.py"
+sha256 = "sha256:32e81dd575885148cda66a38f6fd9462207e2ab9ab1131b97dcebd2981518b8b"
+
+[[sources.files]]
+path = "src/hyperresearch/core/graphrank.py"
+sha256 = "sha256:a7dce0ba2edbcdacc18f163644cb5728573aaa34e0a569acbb2a717f2f391f50"
+
+[[sources.files]]
+path = "src/hyperresearch/core/hooks.py"
+sha256 = "sha256:c04440592eb264ce06b70739ec484a8015d68915a7d7ad230694a146f35b7b41"
+
+[[sources.files]]
+path = "src/hyperresearch/core/independence.py"
+sha256 = "sha256:6569f9862001f8d26e9d74b31f15024bd2dece42c96dde2c1e94dc7372e60106"
+
+[[sources.files]]
+path = "src/hyperresearch/core/levers.py"
+sha256 = "sha256:b6008f667a5d844b1e59bf2b6f7c794c39f077a1bf804e4c60dd07d6914ec6d3"
+
+[[sources.files]]
+path = "src/hyperresearch/core/linker.py"
+sha256 = "sha256:5d2cccc5ab5e7284793fe2df5ed7d620719f9b9c04e5b58a609a8b1eddb98b53"
+
+[[sources.files]]
+path = "src/hyperresearch/core/migrations.py"
+sha256 = "sha256:32a870b77535504621caf47f790ec1f34838a657da4d4ad1d58e35b57812c9ed"
+
+[[sources.files]]
+path = "src/hyperresearch/core/note.py"
+sha256 = "sha256:c128c4c1e3f5df0214011b277ddaafcec4509cfa296ae4435fde3ab398b8ae4f"
+
+[[sources.files]]
+path = "src/hyperresearch/core/patterns.py"
+sha256 = "sha256:51bf13d8b38e04b100a41112e86552e9e7c1e725debebac23ab2598f36171d26"
+
+[[sources.files]]
+path = "src/hyperresearch/core/profiles.py"
+sha256 = "sha256:50b53692eeb008a47f9bae9e17c58431f50ea5dbbe7b3bf8974c320e5f638bf5"
+
+[[sources.files]]
+path = "src/hyperresearch/core/quality.py"
+sha256 = "sha256:0c3fe52239f9f7dcf86732184557ffc0cec02ebdf480b4fc6202c649c083ed3d"
+
+[[sources.files]]
+path = "src/hyperresearch/core/render.py"
+sha256 = "sha256:d823359dfaadc7dfc8d31f2bd0e2308ec0c265a464c3c4adb7615d8d26c4e643"
+
+[[sources.files]]
+path = "src/hyperresearch/core/runs.py"
+sha256 = "sha256:2e01c56a8ba14b14161c160187d04d4f1595e440b716e5350fa75e0bcffffdef"
+
+[[sources.files]]
+path = "src/hyperresearch/core/scholar.py"
+sha256 = "sha256:9dec2b03109c85c2a58108b452a3b425570028f72f3d35b1a90ed00cd3bf48a7"
+
+[[sources.files]]
+path = "src/hyperresearch/core/similarity.py"
+sha256 = "sha256:61813841933fdd60d99e4a5edfd8893203271128c8a76cb36f1c98930318641f"
+
+[[sources.files]]
+path = "src/hyperresearch/core/sync.py"
+sha256 = "sha256:b30fa6fcce58f6cd3ac9d6248dce3a22175bbd7022477132f246d982264e4284"
+
+[[sources.files]]
+path = "src/hyperresearch/core/templates.py"
+sha256 = "sha256:56288c03f7da6dd243b435d4bf6c8e594d7e9ee499649a25936412c1649d2c6a"
+
+[[sources.files]]
+path = "src/hyperresearch/core/untrusted.py"
+sha256 = "sha256:4c699fbb260c9a85c78dea6e05ecf720a78696f7c5a65a15b822663dd7291449"
+
+[[sources.files]]
+path = "src/hyperresearch/core/vault.py"
+sha256 = "sha256:df2d18b0dde85333308fcaeb34553130f1273ab893c107407b14dfecb3690a7a"
+
+[[sources.files]]
+path = "src/hyperresearch/export/__init__.py"
+sha256 = "sha256:c66d084860a9963ee80e7f1c90931a9dc0356a24269b4d746ca493e54c293790"
+
+[[sources.files]]
+path = "src/hyperresearch/graph/__init__.py"
+sha256 = "sha256:8102b4c928306cb40ef5de6b7b6600ef0cc7f853ea3d809a059147741208cad3"
+
+[[sources.files]]
+path = "src/hyperresearch/indexgen/__init__.py"
+sha256 = "sha256:4301486a902aba7cdbab69e29703eb0ba49875532e8e0befbdc8acb664e66032"
+
+[[sources.files]]
+path = "src/hyperresearch/indexgen/generator.py"
+sha256 = "sha256:7e60afa4043dbcb5669db222ad96859b6544a6ea260ffb8fe373af60e5f076cb"
+
+[[sources.files]]
+path = "src/hyperresearch/mcp/__init__.py"
+sha256 = "sha256:e7b3dc996c978beff262e02d6099c2fc2438ccf4dcc77722b62e8bef778c561e"
+
+[[sources.files]]
+path = "src/hyperresearch/mcp/server.py"
+sha256 = "sha256:3f245c38cb1a5c47093a81661760048dbd182c2ca5478e775a105bb7d0241c77"
+
+[[sources.files]]
+path = "src/hyperresearch/models/__init__.py"
+sha256 = "sha256:d5e0614cd2caaf68f319b007625be2be88bc6277f3b4bd6c4afa0ef44e67490d"
+
+[[sources.files]]
+path = "src/hyperresearch/models/graph.py"
+sha256 = "sha256:b406e51598e0e1c224ac90877754a0fccd97dacdae78fb19cfafff042874ee05"
+
+[[sources.files]]
+path = "src/hyperresearch/models/note.py"
+sha256 = "sha256:94296ae05dc8ff439c98203de23480fdfe3b93faed6d55a27dc7c62d8576d1f8"
+
+[[sources.files]]
+path = "src/hyperresearch/models/output.py"
+sha256 = "sha256:1dd104ded06c4f5c73ce349407986f244d564d0a4182a778da64073b14ea8c29"
+
+[[sources.files]]
+path = "src/hyperresearch/models/search.py"
+sha256 = "sha256:757f55e686216b02921c0f5e68e90ca8b994cc4762df3a65db625c244257a596"
+
+[[sources.files]]
+path = "src/hyperresearch/py.typed"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "src/hyperresearch/search/__init__.py"
+sha256 = "sha256:0c7813a11ecf53dbe3bc68b755508e8037bb0ad702cb96aeb153c70ccb1517cd"
+
+[[sources.files]]
+path = "src/hyperresearch/search/filters.py"
+sha256 = "sha256:d8653207588a794c1273108f4d95715d2330b1b60a192a4482a40469c807e094"
+
+[[sources.files]]
+path = "src/hyperresearch/search/fts.py"
+sha256 = "sha256:e9732b0ed6d74cf000320fe0dad31c920a30b56abb4cccec9befea0ace7470a1"
+
+[[sources.files]]
+path = "src/hyperresearch/serve/__init__.py"
+sha256 = "sha256:60a3297608b7e75722e559662e638cff4c4b0a09622a07b7e273fe519de4d3f6"
+
+[[sources.files]]
+path = "src/hyperresearch/serve/renderer.py"
+sha256 = "sha256:60df3ed83a6f7006c58a57828f9ba2d54680d2e651f234b690e182b296c3ec67"
+
+[[sources.files]]
+path = "src/hyperresearch/serve/server.py"
+sha256 = "sha256:f0df28fe3b3946c7ea9c65679206dac0deeb67730841ab451b9b55a40afbd576"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/__init__.py"
+sha256 = "sha256:ddff284310929b50f30bc3e830cd5582dd0153c9eeaef2960d3d77b20a57f8a0"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-1-5-chapter-partition.md"
+sha256 = "sha256:cb6fe2977c368a94c37218d91639b3f8df0144e07fc54381b3fc93bb9b1a9759"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-1-decompose.md"
+sha256 = "sha256:3b43b90a3efcf54487b7af042d9bffecdefa4578f3fbf41196ce0adfe4ec12e9"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-10-triple-draft.md"
+sha256 = "sha256:eaee3dab963535a21f7d8ef8137b3d650d60b9a2ede7ec3edc7467bc7e982f05"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-11-synthesize.md"
+sha256 = "sha256:d6a284d483e1a0a98c515d2ad16d9e077c0119530463d89ce78d8c49f407feae"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-12-critics.md"
+sha256 = "sha256:d80399b5c58ae2fee5b61b4a3d1f4d6aca5b7aee0e8e5c959d9bba3b2ea98f18"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-13-gap-fetch.md"
+sha256 = "sha256:2a2a1c24de1f5d1cfdf7942f5767d0265579f3f39672a459503b4e9bcf37f9fd"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-14-5-cite-check.md"
+sha256 = "sha256:4795842e5862fc5693868c5108e71cb19a6eea09179f969cbdfe0ee68f545b84"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-14-patcher.md"
+sha256 = "sha256:05b110d0a73e6a31aa930177fbc3cdb951b8e211639c9a18f5d53b02a80b1a3f"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-15-polish.md"
+sha256 = "sha256:3ed5d58e47470817b3b4848e1647acf3d029cfcae60a1caeb2c9aec35ef5a02a"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-16-readability-audit.md"
+sha256 = "sha256:141684ddb1e8428d9dcda90cb2b4d5d42a3dfdeaa6b111748c484d243e2ee9e7"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-2-width-sweep.md"
+sha256 = "sha256:5480b8a99b9f8a9de606f20e03ece7531436dd0dbebd8d577c13f82659b8dc2b"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-3-contradiction-graph.md"
+sha256 = "sha256:c4422c2edaeefcb3d32b62663ac5d73949282bf9e84c6bf617bfa30a850244b3"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-4-loci-analysis.md"
+sha256 = "sha256:dfcbef2d8e2e7222a31eb7edbc820c63344296cf9ad9006e13614fc925745b25"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-5-depth-investigation.md"
+sha256 = "sha256:fa6a85e678486e0b5b44b69a083adb8eb5b662e95126a547d684d25d2f3f5ee7"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-6-cross-locus-reconcile.md"
+sha256 = "sha256:d65c53575928df634257a9ac4d36187a84e4c4025cf20635fdbbc8647683d9c2"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-7-source-tensions.md"
+sha256 = "sha256:9c85a5d3f41167a14ea5295fe72820e84a8d099d797cf7798910314d3662ffe9"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-8-corpus-critic.md"
+sha256 = "sha256:0e543f8970843d87e1f0e3b1e347ce12110b7fde3d6d652c4bb0c9a4f96f4076"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch-9-evidence-digest.md"
+sha256 = "sha256:3d73d75dac1737bf71b64bf08f10526907622783bdb35e6304589f23e691a001"
+
+[[sources.files]]
+path = "src/hyperresearch/skills/hyperresearch.md"
+sha256 = "sha256:907a3c67c4e36cfdc16547d075ece64d067e6c7ba60f4e6e12c0a6ff917990ea"
+
+[[sources.files]]
+path = "src/hyperresearch/web/__init__.py"
+sha256 = "sha256:1c0101b85f5da879d7f7a954967c348ef03a312a212391710fcc845424fa5ddc"
+
+[[sources.files]]
+path = "src/hyperresearch/web/base.py"
+sha256 = "sha256:7549d2ea0c7f3ec18d15cf03fbe1274c0c2a9e2d7ca2da5e32093e105e8a0a86"
+
+[[sources.files]]
+path = "src/hyperresearch/web/builtin.py"
+sha256 = "sha256:2e7162f2309d75763f0a6033579ad2f377151b29115544c25d6612cc93b22a9b"
+
+[[sources.files]]
+path = "src/hyperresearch/web/crawl4ai_provider.py"
+sha256 = "sha256:38db8077aecfc504bada2b633bfdd30539e06008f72fb6977709c320016d0772"
+
+[[sources.files]]
+path = "src/hyperresearch/web/exa_provider.py"
+sha256 = "sha256:522320a285a1608580c049b8a7dfdec011a6d37b55f769f95bd3c814ae6a0ec3"
+
+[[sources.files]]
+path = "src/hyperresearch/web/tavily_provider.py"
+sha256 = "sha256:e57d01b0ca619d43a0b27887b4494b190dda8a7a03a66e4f12559bf8632ea3a9"
+
+[[sources.files]]
+path = "tests/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/conftest.py"
+sha256 = "sha256:df308ec1d505caf29407943f6a39e2856c24b660beb5287e66e32b706f559373"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/browser_fetcher_agent.md"
+sha256 = "sha256:3652154f1a151f76fd3bf58d28399d02bddbbe868ca7fe9c6d205c17900727a0"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/cite_checker_agent.md"
+sha256 = "sha256:ad756ec28e9d286048f1ebd6d21114f998845865a75f5cc535c2e46d65a4398b"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/depth_critic_agent.md"
+sha256 = "sha256:a6da904ccda386d7faffb17c28a148bf5141b7cb610083cdda8a8ab75154165f"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/depth_investigator_agent.md"
+sha256 = "sha256:5afcfcd7cbdf9c1843d7c00c6831c13c17b9df56f016325a628b801a1e82adaf"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/dialectic_critic_agent.md"
+sha256 = "sha256:836e042d85bb663f79771299e1733be6fc1b8203a053648915fb9bd169d69696"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/instruction_critic_agent.md"
+sha256 = "sha256:a58c692b628500056bc5eff5104cece872e7572d229da86c922ea11efba2394d"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/loci_analyst_agent.md"
+sha256 = "sha256:ef3a944ce81313139948c893aaa9bb6ddb37e8801902cbbadb6a23c55caf2d75"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/readability_reformatter_agent.md"
+sha256 = "sha256:1919f2f6233dd3290d37861d93888fafd8131185b36f4119b80962e589e96100"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/researcher_agent.md"
+sha256 = "sha256:7f072aa058c95df828bfe11c26213dcad5cb519375a0963d64faa7e8d899c3b5"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/agents/width_critic_agent.md"
+sha256 = "sha256:18fb7bfae64a1954f0eaa0163d989c78e3d230d20a6f8a207d0c1aef1cabbc58"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-10-triple-draft.md"
+sha256 = "sha256:7e9583ab590ba85eb29cac49a409e5120600d7f36e4fb9f7555866466a35e990"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-13-gap-fetch.md"
+sha256 = "sha256:ab061f891ecf3da0f9b2bf9bac354e3330d1f32d521f59b9740d40da13275bf3"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-16-readability-audit.md"
+sha256 = "sha256:3d7c8336fa5691a0a6a0e9fafe8ee1b56223bbb2389f1518174e3aeaf8548b8c"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-2-width-sweep.md"
+sha256 = "sha256:780e0fce87db82a55382613d4910c62e2a9c9132c22a9fe536d970ee58224914"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-4-loci-analysis.md"
+sha256 = "sha256:40a03a141ff824494df97e0f80c335b00be2210b04cb3a8c9025ac3d435250c7"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-5-depth-investigation.md"
+sha256 = "sha256:a2c780cc72df6bc91a95258c47729825e929691f87947142f8869d52915f3035"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch-9-evidence-digest.md"
+sha256 = "sha256:f8dff5ecb820d5a88eeef64c749a6813f899ca4fa472faea9f34ff37f7d6db4c"
+
+[[sources.files]]
+path = "tests/fixtures/golden_prompts/skills/hyperresearch.md"
+sha256 = "sha256:66aa5f8914749dfe55b45f50cfa5484ce032046e58dd978b1d63ea6e88a8cb12"
+
+[[sources.files]]
+path = "tests/test_cli/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/test_cli/test_archive.py"
+sha256 = "sha256:24034d76313da1e8d71b6ca057a42992ec433f15bbe8105e71f5492c42871cac"
+
+[[sources.files]]
+path = "tests/test_cli/test_commands.py"
+sha256 = "sha256:0c3dc9c803820c4d01ae56f0a15dfeb9a7efa264543865388981fa33e3f22cdd"
+
+[[sources.files]]
+path = "tests/test_cli/test_fetch_batch.py"
+sha256 = "sha256:4fc9d3dbf2e72e255633228bf1b8cbf22887751419297aa80000c1a33e77d90d"
+
+[[sources.files]]
+path = "tests/test_cli/test_install_profile.py"
+sha256 = "sha256:aa6ed615828da21d9e7be74e0e1118cb06db39d92c75a4072f32ef34e64db09d"
+
+[[sources.files]]
+path = "tests/test_cli/test_lint.py"
+sha256 = "sha256:a2f0c36277c07e7fb60a20a5303c79294d95f8438f7344a757b941e0e83ce545"
+
+[[sources.files]]
+path = "tests/test_cli/test_note_ops.py"
+sha256 = "sha256:23bf545aa395bd17c90cdf2b768e334d9ea80d24cc80f31edb35b04fbf6d744e"
+
+[[sources.files]]
+path = "tests/test_cli/test_vault_tag.py"
+sha256 = "sha256:d9c81ae1626e58a8e4670d7d9202712c2be627293b57b82269f2d4303d04b93d"
+
+[[sources.files]]
+path = "tests/test_core/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/test_core/test_claims_and_embed.py"
+sha256 = "sha256:0d90ac6203c1519a7f6470fb572977cee1661834fbc1f7c0a7cffbf9ff5b967b"
+
+[[sources.files]]
+path = "tests/test_core/test_config_sections.py"
+sha256 = "sha256:83dcd01ccb2ecdc0031b3cd41319c6f940c3de0c94e2e2faaf6e79edb4209c5e"
+
+[[sources.files]]
+path = "tests/test_core/test_dissertation_profile.py"
+sha256 = "sha256:2eccb4d0ec2500af8afa316b3956051ffcab3df6a230c6c2389562785241bb5f"
+
+[[sources.files]]
+path = "tests/test_core/test_escalation.py"
+sha256 = "sha256:34dcb0d44ec300ed68a59c3ebbcc2cf9c9be98814260454f03ce38a661541b52"
+
+[[sources.files]]
+path = "tests/test_core/test_frontmatter.py"
+sha256 = "sha256:912855e03bfd516e51babb338877b1b80f8334f52dfedd1df92273ddb97eb694"
+
+[[sources.files]]
+path = "tests/test_core/test_hooks.py"
+sha256 = "sha256:7726adf9e567ec4b2daaa5780cff78455fa41724a18b3e9fd78d0ef802076126"
+
+[[sources.files]]
+path = "tests/test_core/test_levers.py"
+sha256 = "sha256:08477c750db3c42fc0e1dcd9b9c10ff21b8f401d4bda66cec0e9836b9f251dcc"
+
+[[sources.files]]
+path = "tests/test_core/test_note.py"
+sha256 = "sha256:e1664ccd2bfda2b5f1423800c3c59e51706e142ab2125c0ba9bc75e6543e67c7"
+
+[[sources.files]]
+path = "tests/test_core/test_packaging.py"
+sha256 = "sha256:f91da15a88d1f491e969bac19928c4800ff7917e63811a8d8e377cc5e3026183"
+
+[[sources.files]]
+path = "tests/test_core/test_patterns.py"
+sha256 = "sha256:e030d9109ba0274601029f393d303a3c3bc4ad534d429f20d1dd458dac15e4cd"
+
+[[sources.files]]
+path = "tests/test_core/test_profiles.py"
+sha256 = "sha256:63c67a964c0db77c57b2bff8bb20539e97fdd6382f0053d681db544bedfb96b8"
+
+[[sources.files]]
+path = "tests/test_core/test_prompt_golden.py"
+sha256 = "sha256:b4508c7a996680d5b93a2b52284cacf1a7fc62d84952805da4a6d07f3c726388"
+
+[[sources.files]]
+path = "tests/test_core/test_render.py"
+sha256 = "sha256:fdcefd9d9df3165dc17839aa02f228ec529a3c2f536fec428a7539699d81715b"
+
+[[sources.files]]
+path = "tests/test_core/test_runs.py"
+sha256 = "sha256:9d8ce7bacc597afd16571a5da465661990f9d69cf96c3d9f823d60c379611f67"
+
+[[sources.files]]
+path = "tests/test_core/test_scholar_enrichment.py"
+sha256 = "sha256:0c85ab54457f216118990caf84eadcfabde7a07cbb77dc0dc10391ca7764eff1"
+
+[[sources.files]]
+path = "tests/test_core/test_source_ranking.py"
+sha256 = "sha256:531a9e7caceae6058b39a18c726dc5180152137fb264817988290010b5255624"
+
+[[sources.files]]
+path = "tests/test_core/test_sync.py"
+sha256 = "sha256:1c3da7673206ee619ffd794218580c2885ff045db84e92113e9912a3c77dbbda"
+
+[[sources.files]]
+path = "tests/test_core/test_untrusted.py"
+sha256 = "sha256:07fdc2942dd11f9ee7523c45de7e1167b355391d709f95d1887175432e25442f"
+
+[[sources.files]]
+path = "tests/test_core/test_vault.py"
+sha256 = "sha256:4dfda1cde646141c9fc394b6152e60daf397e84e7d30576bdb837113866b7a60"
+
+[[sources.files]]
+path = "tests/test_core/test_verification.py"
+sha256 = "sha256:2f8d9b648accde656d0728908b7ee79ef09d703a723780f3cb0fbfe465154958"
+
+[[sources.files]]
+path = "tests/test_graph/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/test_graph/test_links.py"
+sha256 = "sha256:99b6e6ebcaeaee959d73f18bde5778aeca189e1a7d2efbfce7cb12e123c5a5b0"
+
+[[sources.files]]
+path = "tests/test_search/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/test_search/test_fts.py"
+sha256 = "sha256:bfd8dc5c901b87a3b75206a75dc442155af00762450d3c326a415d0a83f5a932"
+
+[[sources.files]]
+path = "tests/test_web/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/test_web/test_crawl4ai_stealth.py"
+sha256 = "sha256:4d25b523617bfb55535ebbb5d8c0b7c92006072aa232c3095667de74c5320473"
+
+[[sources.files]]
+path = "tests/test_web/test_exa_provider.py"
+sha256 = "sha256:fcfbf46ef73daf77801892c73803137c0b60d7d537083661da5a06ec1c56e639"
+
+[[sources.files]]
+path = "tests/test_web/test_fetch_many_fallback.py"
+sha256 = "sha256:6dc8e15fae8ccd0c5899ce91b10589d7aa0ab90e7e3e79797f2859fa89287d91"
+
+[[sources.files]]
+path = "tests/test_web/test_fetch_settings.py"
+sha256 = "sha256:6a6d2d10e2f10130c20762bfe154ae9532c8e8908bfed73dd4a2eb37c0988cf4"
+
+[[sources.files]]
+path = "tests/test_web/test_junk_detection.py"
+sha256 = "sha256:279e3d37ceb597eb2e859c5ddfacc711c14962ba920ff643ab28f8d31bfbb8bf"
+
+[[sources.files]]
+path = "tests/test_web/test_pdf_diagnostics.py"
+sha256 = "sha256:c5af84d571b871a849e241ea71e3fbb3b3aeeedbacac537e98bf73f96ab9a4ba"
+
+[[sources.files]]
+path = "tests/test_web/test_tavily_provider.py"
+sha256 = "sha256:d6c81e045c2a62ba4f13c5c631a548f02c2cae5eb5676f77af8fca969ce8f602"
+
+[packages]
+python_lock_integrity = "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6"
+
+[packages.harness]
+kind = "claude"
+selector = "2.1.218"
+version = "2.1.218"
+integrity = "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8"
+url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz"
+size = 22971
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "curl"
+version = "7.88.1-10+deb12u15"
+integrity = "sha256:880d20cb636d2c36b2f57c58ab284b442a1680365b488d3e696c147c4d84ef25"
+
+[[packages.runtime]]
+name = "fish"
+version = "3.6.0-3.1+deb12u1"
+integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.runtime]]
+name = "libasound2"
+version = "1.2.8-1+b1"
+integrity = "sha256:9fa889400fcee4b92c8f4a2fafbb7f2cd33444d9ec1665a71002ab67c06114bb"
+
+[[packages.runtime]]
+name = "libatk-bridge2.0-0"
+version = "2.46.0-5"
+integrity = "sha256:3f2229723e1f8337282f74c44f139eda2aab5829fc0bca9adb2976f3a8d83b44"
+
+[[packages.runtime]]
+name = "libatk1.0-0"
+version = "2.46.0-5"
+integrity = "sha256:c7508adb33e42c35b516e8456d801d5d246e36f1ebb2f1ebb8d2ce7a70ce1d2b"
+
+[[packages.runtime]]
+name = "libcairo2"
+version = "1.16.0-7"
+integrity = "sha256:48b5c5ae1972ea0757c6285463d611d0ca32c9c808957961e5c7924126f30289"
+
+[[packages.runtime]]
+name = "libcups2"
+version = "2.4.2-3+deb12u9"
+integrity = "sha256:41c9220d57d9eb3b5245f17038c830053f12176f6eef611c6f6941fcbf6d507f"
+
+[[packages.runtime]]
+name = "libdbus-1-3"
+version = "1.14.10-1~deb12u1"
+integrity = "sha256:2a423794f44ee756f70fda67c6e47b15afe3dd22cd69e51f5d14d2ec9538f806"
+
+[[packages.runtime]]
+name = "libgbm1"
+version = "22.3.6-1+deb12u2"
+integrity = "sha256:f5c8fdddbf365259d74af270fb10f30d7fddb3fbe7b2ff62f0fdd556f8db0dc8"
+
+[[packages.runtime]]
+name = "libglib2.0-0"
+version = "2.74.6-2+deb12u9"
+integrity = "sha256:61d92fffada7e27fc0ed9d23e047b45bca3b2e3bfe1a918f4ec16559282859f4"
+
+[[packages.runtime]]
+name = "libnspr4"
+version = "2:4.35-1"
+integrity = "sha256:3aa6bc5a1a3f83627f735b9712eed74ed2c345ae9148e9d876887a97982ae28d"
+
+[[packages.runtime]]
+name = "libnss3"
+version = "2:3.87.1-1+deb12u3"
+integrity = "sha256:0b5bc3d95e6c18cf6685e6688875bb7077607b8715a9edf3194b0afe83f7f157"
+
+[[packages.runtime]]
+name = "libpango-1.0-0"
+version = "1.50.12+ds-1"
+integrity = "sha256:88afa1481f9e520a3068e85dad776ed09a3751c7638a877333af6cec927db3ee"
+
+[[packages.runtime]]
+name = "libx11-6"
+version = "2:1.8.4-2+deb12u2"
+integrity = "sha256:d1d533e983582282a9ea82c87ac5ce715a9b67bd6d1acbd2439a11c63c36549b"
+
+[[packages.runtime]]
+name = "libxcb1"
+version = "1.15-1"
+integrity = "sha256:041d9a68415c3ccf3ce8f4f8b88e4bbfb5dc1f0d97013c6ef8423e620ea50f84"
+
+[[packages.runtime]]
+name = "libxcomposite1"
+version = "1:0.4.5-1"
+integrity = "sha256:cfe39326fdb822e9d060ed5eb3f95b14459dd6b73793c5290000f9b27f8bad37"
+
+[[packages.runtime]]
+name = "libxdamage1"
+version = "1:1.1.6-1"
+integrity = "sha256:489d20cf78c8ee4428f3e26c5b3edcd87a71b5beb6bed992c45f47c6d01a1c92"
+
+[[packages.runtime]]
+name = "libxext6"
+version = "2:1.3.4-1+b1"
+integrity = "sha256:5e9c0ad606eb4674c645fe8e0e64330c47d2729f7a59ed569848610efd5d5b62"
+
+[[packages.runtime]]
+name = "libxfixes3"
+version = "1:6.0.0-2"
+integrity = "sha256:d47bda8fed01b19b41d503e2df05d9166c58e30e2376f2f8784ceb7a834befe6"
+
+[[packages.runtime]]
+name = "libxkbcommon0"
+version = "1.5.0-1"
+integrity = "sha256:ec518d8a19796a399ab95e7bc4dfbb6bd2ed8e151f77b222df26208db412d852"
+
+[[packages.runtime]]
+name = "libxrandr2"
+version = "2:1.5.2-2+b1"
+integrity = "sha256:f0bc7f79fee182caae176652fdb1bf349d13b9591b10ad4dc1c896521da8e49f"
+
+[[packages.runtime]]
+name = "zsh"
+version = "5.9-4+b15"
+integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bfba90"
+
+[[packages.artifacts]]
+name = "node"
+version = "22.17.0"
+integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+[[packages.artifacts]]
+name = "python"
+version = "3.13.14"
+integrity = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+
+[[packages.artifacts]]
+name = "claude-code-linux-arm64"
+version = "2.1.218"
+integrity = "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619"
+url = "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz"
+size = 84159749
+
+[[packages.artifacts]]
+name = "playwright-mcp"
+version = "0.0.78"
+integrity = "sha256:cfff0fd8eae3ac3bcb39827861298cb6b483a8d72e3c558e7991658ed3d22562"
+url = "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.78.tgz"
+size = 22503
+
+[[packages.artifacts]]
+name = "playwright"
+version = "1.62.0-alpha-1783623505000"
+integrity = "sha256:738aa4e5602f023b68dbad49cf6bd93e8f2aa14277831109458de1262fad557a"
+url = "https://registry.npmjs.org/playwright/-/playwright-1.62.0-alpha-1783623505000.tgz"
+size = 892437
+
+[[packages.artifacts]]
+name = "playwright-core"
+version = "1.62.0-alpha-1783623505000"
+integrity = "sha256:a5412aee4ac779f1c662272f77fd5fe716218cf555c222a301f089447f49b24c"
+url = "https://registry.npmjs.org/playwright-core/-/playwright-core-1.62.0-alpha-1783623505000.tgz"
+size = 2866354
+
+[[packages.artifacts]]
+name = "chromium"
+version = "1228"
+integrity = "sha256:ec044b50ed065adeb4c5ffdb42d1529901cbaf897cdf542bfef8af01d6e0cc79"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-linux-arm64.zip"
+size = 196280473
+
+[[packages.artifacts]]
+name = "chromium-headless-shell"
+version = "1228"
+integrity = "sha256:1652929a70f4afb17aca36fce073fb7ed22262d16825be761b0801972f43ac4f"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-headless-shell-linux-arm64.zip"
+size = 115342043
+
+[[packages.artifacts]]
+name = "obscura"
+version = "v0.1.11"
+integrity = "sha256:d535324d44724cdfec16e500d0335903bca5c6a446e736b351691ee7e39debb4"
+url = "https://github.com/h4ckf0r0day/obscura/releases/download/v0.1.11/obscura-aarch64-linux-stealth.tar.gz"
+size = 52716812
+
+[[packages.artifacts]]
+name = "builder-oci"
+version = "jdxcode/mise"
+integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
+url = "oci://docker.io/jdxcode/mise"
+
+[[packages.artifacts]]
+name = "skopeo-oci"
+version = "stable"
+integrity = "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
+url = "oci://quay.io/skopeo/stable"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:f4f78e4d8830f354d56c1dc00327ed79767ee51ba0517dc6c7f80d489b1c6247"

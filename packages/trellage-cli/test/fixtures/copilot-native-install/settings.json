@@ -1,0 +1,16 @@
+{
+  "extraKnownMarketplaces": {
+    "hve-core": {
+      "source": {
+        "source": "directory",
+        "path": "__HVE_SOURCE__"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "hve-core@hve-core": true
+  },
+  "unmanaged": {
+    "mustNotSurvive": true
+  }
+}

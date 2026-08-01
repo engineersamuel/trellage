@@ -1,0 +1,296 @@
+import { Effect } from "effect"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+import type { GitHubSourceRequest } from "../src/github-cache.js"
+
+const mocks = vi.hoisted(() => ({
+  requests: [] as Array<GitHubSourceRequest>,
+  releaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
+  marketplaceRequests: [] as Array<{
+    readonly directory: string
+    readonly marketplace: string
+    readonly selections: ReadonlyArray<string>
+  }>,
+}))
+
+vi.mock("../src/github-cache.js", async () => {
+  const { Effect } = await import("effect")
+  return {
+    resolveGitHubSource: (_cache: string, request: GitHubSourceRequest) => {
+      mocks.requests.push(request)
+      return Effect.succeed({
+        ...request,
+        commit: "a".repeat(40),
+        directory: "/cache/source",
+        integrity: `sha256:${"b".repeat(64)}`,
+        files: [],
+      })
+    },
+  }
+})
+
+vi.mock("../src/copilot-release.js", async () => {
+  const { Effect } = await import("effect")
+  return {
+    resolveCopilotRelease: (selector: string, platform: string) => {
+      mocks.releaseRequests.push({ selector, platform })
+      return Effect.succeed({
+        kind: "copilot" as const,
+        selector,
+        version: "1.0.75",
+        integrity: "sha256:0911f12dd816f612d27c4a360d4f00b62d933845a98d6c913e8d7400a69c6809",
+        url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
+        size: 106111479,
+      })
+    },
+  }
+})
+
+vi.mock("../src/copilot-plugin.js", async () => {
+  const { Effect } = await import("effect")
+  return {
+    readCopilotMarketplace: (directory: string, marketplace: string, selections: ReadonlyArray<string>) => {
+      mocks.marketplaceRequests.push({ directory, marketplace, selections })
+      return Effect.succeed(Object.freeze(Object.assign(Object.create(null), { "hve-core": "3.3.101" })))
+    },
+  }
+})
+
+import { productionResolvers } from "../src/resolvers.js"
+
+describe("production package resolutions", () => {
+  beforeEach(() => {
+    mocks.requests.length = 0
+    mocks.releaseRequests.length = 0
+    mocks.marketplaceRequests.length = 0
+  })
+
+  it("locks Debian package archive SHA-256 values rather than synthetic name hashes", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolvePackages({
+        kind: "codex",
+        selector: "0.144.6",
+        platform: "linux/arm64",
+        packages: ["bash", "jq"],
+        needsSkillsCli: true,
+      }),
+    )
+
+    expect(result.harness).toEqual({
+      kind: "codex",
+      selector: "0.144.6",
+      version: "0.144.6",
+      integrity: "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
+      url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
+      size: 101269986,
+    })
+    expect(result.runtime).toEqual([
+      {
+        name: "bash",
+        version: "5.2.15-2+b13",
+        integrity: "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385",
+      },
+      {
+        name: "jq",
+        version: "1.6-2.1+deb12u2",
+        integrity: "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99",
+      },
+    ])
+  })
+
+  it("resolves an exact Copilot release and preserves runtime package locks", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolvePackages({
+        kind: "copilot",
+        selector: "latest",
+        platform: "linux/arm64",
+        packages: ["bash"],
+        needsSkillsCli: false,
+      }),
+    )
+
+    expect(result).toEqual({
+      harness: {
+        kind: "copilot",
+        selector: "latest",
+        version: "1.0.75",
+        integrity: "sha256:0911f12dd816f612d27c4a360d4f00b62d933845a98d6c913e8d7400a69c6809",
+        url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
+        size: 106111479,
+      },
+      runtime: [
+        {
+          name: "bash",
+          version: "5.2.15-2+b13",
+          integrity: "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385",
+        },
+      ],
+    })
+    expect(mocks.releaseRequests).toEqual([{ selector: "latest", platform: "linux/arm64" }])
+  })
+
+  it("locks the verified Claude, Python, browser, Obscura, and OCI artifacts", async () => {
+    const browserPackages = [
+      "libasound2",
+      "libatk-bridge2.0-0",
+      "libatk1.0-0",
+      "libcairo2",
+      "libcups2",
+      "libdbus-1-3",
+      "libgbm1",
+      "libglib2.0-0",
+      "libnspr4",
+      "libnss3",
+      "libpango-1.0-0",
+      "libx11-6",
+      "libxcb1",
+      "libxcomposite1",
+      "libxdamage1",
+      "libxext6",
+      "libxfixes3",
+      "libxkbcommon0",
+      "libxrandr2",
+    ]
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolvePackages({
+        kind: "claude",
+        selector: "2.1.218",
+        platform: "linux/arm64",
+        packages: ["bash", ...browserPackages],
+        needsSkillsCli: false,
+      }),
+    )
+
+    expect(result.harness).toMatchObject({
+      kind: "claude",
+      selector: "2.1.218",
+      version: "2.1.218",
+    })
+    expect(result.python_lock_integrity).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(result.runtime).toEqual(
+      expect.arrayContaining([
+        {
+          name: "libglib2.0-0",
+          version: "2.74.6-2+deb12u9",
+          integrity: "sha256:61d92fffada7e27fc0ed9d23e047b45bca3b2e3bfe1a918f4ec16559282859f4",
+        },
+        {
+          name: "libnss3",
+          version: "2:3.87.1-1+deb12u3",
+          integrity: "sha256:0b5bc3d95e6c18cf6685e6688875bb7077607b8715a9edf3194b0afe83f7f157",
+        },
+        {
+          name: "libgbm1",
+          version: "22.3.6-1+deb12u2",
+          integrity: "sha256:f5c8fdddbf365259d74af270fb10f30d7fddb3fbe7b2ff62f0fdd556f8db0dc8",
+        },
+      ]),
+    )
+    expect(result.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "node",
+          version: "22.17.0",
+          integrity: "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4",
+        }),
+        expect.objectContaining({
+          name: "python",
+          version: "3.13.14",
+          integrity: "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9",
+        }),
+        expect.objectContaining({ name: "playwright-mcp", version: "0.0.78" }),
+        expect.objectContaining({
+          name: "chromium",
+          version: "1228",
+          integrity: "sha256:ec044b50ed065adeb4c5ffdb42d1529901cbaf897cdf542bfef8af01d6e0cc79",
+        }),
+        expect.objectContaining({
+          name: "chromium-headless-shell",
+          version: "1228",
+          integrity: "sha256:1652929a70f4afb17aca36fce073fb7ed22262d16825be761b0801972f43ac4f",
+          url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-headless-shell-linux-arm64.zip",
+          size: 115342043,
+        }),
+        expect.objectContaining({
+          name: "obscura",
+          version: "v0.1.11",
+          integrity: "sha256:d535324d44724cdfec16e500d0335903bca5c6a446e736b351691ee7e39debb4",
+        }),
+        expect.objectContaining({
+          name: "builder-oci",
+          integrity: "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff",
+        }),
+        expect.objectContaining({
+          name: "skopeo-oci",
+          integrity: "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4",
+        }),
+      ]),
+    )
+  })
+
+  it.each(["constructor", "toString", "__proto__"])("rejects prototype runtime package key %j", async (name) => {
+    await expect(
+      Effect.runPromise(
+        productionResolvers("/tmp/cache").resolvePackages({
+          kind: "codex",
+          selector: "0.144.6",
+          platform: "linux/arm64",
+          packages: [name],
+          needsSkillsCli: false,
+        }),
+      ),
+    ).rejects.toThrow(new RegExp(`unsupported runtime package: ${name}`))
+  })
+
+  it("resolves Codex sources through the strict source cache", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolveSource({
+        kind: "skill",
+        repository: "https://github.com/obra/superpowers.git",
+        ref: "v6.2.0",
+        select: ["*"],
+        update: false,
+      }),
+    )
+
+    expect(result.commit).toBe("a".repeat(40))
+    expect(mocks.requests).toEqual([
+      expect.objectContaining({
+        include: ["skills"],
+        inventoryPolicy: {},
+      }),
+    ])
+  })
+
+  it("resolves Copilot source through the full cache before reading marketplace metadata", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolveSource({
+        kind: "plugin",
+        adapter: "copilot-marketplace",
+        marketplace: "hve-core",
+        repository: "https://github.com/microsoft/hve-core.git",
+        ref: "main",
+        select: ["hve-core"],
+        update: false,
+      }),
+    )
+
+    expect(result).toMatchObject({
+      commit: "a".repeat(40),
+      plugin_versions: { "hve-core": "3.3.101" },
+    })
+    expect(mocks.requests).toEqual([
+      expect.objectContaining({
+        include: [],
+        inventoryPolicy: { allowSymlinks: true },
+      }),
+    ])
+    expect(mocks.marketplaceRequests).toEqual([
+      {
+        directory: "/cache/source",
+        marketplace: "hve-core",
+        selections: ["hve-core"],
+      },
+    ])
+  })
+})

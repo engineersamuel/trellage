@@ -29,6 +29,15 @@ printf 'fixture output for %s\n' "$*"
 if [[ "$*" == 'run lint' ]]; then
   exit "${FAKE_LINT_STATUS:-0}"
 fi
+if [[ "$*" == 'run build' ]]; then
+  mkdir -p "$HARNESS_WORKSPACE_ROOT/dist/public"
+  printf '%s\n' '<!doctype html>' >"$HARNESS_WORKSPACE_ROOT/dist/public/index.html"
+  printf '%s\n' 'body {}' >"$HARNESS_WORKSPACE_ROOT/dist/public/styles.css"
+  chmod 0750 "$HARNESS_WORKSPACE_ROOT/dist" "$HARNESS_WORKSPACE_ROOT/dist/public"
+  chmod 0640 \
+    "$HARNESS_WORKSPACE_ROOT/dist/public/index.html" \
+    "$HARNESS_WORKSPACE_ROOT/dist/public/styles.css"
+fi
 EOF
 chmod 0555 "$fake_bin/npm"
 
@@ -69,5 +78,11 @@ export FAKE_LINT_STATUS=0
 "$checker" >/dev/null
 jq -e '.overall == "passed" and ([.install, .test, .typecheck, .lint, .build, .audit, .prune, .productionTree] | all(. == 0))' \
   "$checks" >/dev/null || fail 'passing checks were not recorded'
+[[ -z "$(find "$workspace/dist" -type d ! -perm -0700 -print -quit)" ]] \
+  || fail 'build output directories are not owner-accessible'
+[[ -z "$(find "$workspace/dist" -type f ! -perm -0600 -print -quit)" ]] \
+  || fail 'build output files are not owner-readable'
+[[ -z "$(find "$workspace/dist" \( -perm -0001 -o -perm -0002 -o -perm -0004 \) -print -quit)" ]] \
+  || fail 'build output grants world access'
 
 printf 'workspace checks: PASS\n'
