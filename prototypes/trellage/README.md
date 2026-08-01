@@ -79,7 +79,8 @@ trellage doctor
 Run these commands inside the Git worktree that should be mounted:
 
 ```bash
-trellage [--profile PROFILE] [PROMPT]
+trellage [--profile PROFILE]
+trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage resume|shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
@@ -87,6 +88,7 @@ trellage build [--locked] [PROFILE]
 
 trellage                    # new interactive Codex conversation
 trellage "<prompt>"         # new conversation with an explicit prompt
+trellage -p "<prompt>"      # one non-interactive prompt with plain-text output
 trellage resume             # native resume
 trellage shell              # recovery Fish without secrets
 trellage stop               # preserve state
@@ -101,6 +103,14 @@ trellage --profile claude-hyperresearch
 ```
 
 A bare name resolves to `profiles/<name>/profile.toml`; explicit `.toml` and path arguments continue to resolve from the current directory.
+
+Bare profile launches remain interactive. Portable `-p` and `--prompt` run one prompt without a TTY and return the native harness status. Trellage translates this to `codex exec`, `claude -p`, or `copilot -p`:
+
+```bash
+trellage --profile codex-superpowers -p "hello"
+trellage --profile claude-hyperresearch -p "hello"
+trellage --profile copilot-hve -p "hello"
+```
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
 `trellage` invocation starts a new native session.

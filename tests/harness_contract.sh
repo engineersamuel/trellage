@@ -49,6 +49,15 @@ copilot_compose_json="$(
 )"
 
 jq -e '
+  .name == "trellage"
+  and .services.agent.image == "trellage-agent:local"
+  and .services.workspace_init.image == "trellage-agent:local"
+  and .services.app.image == "trellage-app:local"
+  and .services.data_init.image == "trellage-app:local"
+  and .services.workspace_publish.image == "trellage-app:local"
+' <<<"$compose_json" >/dev/null || fail 'default project and image identities are not Trellage'
+
+jq -e '
   .name == "isolation-probe"
   and .services.agent.image == "isolation-probe-agent:local"
   and .services.workspace_init.image == "isolation-probe-agent:local"

@@ -162,6 +162,16 @@ claude_command="$1"
 shift
 case "$mode" in
   new) claude_args=("$@") ;;
+  prompt)
+    claude_args=()
+    while (( $# > 0 )) && [[ "$1" != -- ]]; do
+      claude_args+=("$1")
+      shift
+    done
+    [[ "$#" -eq 2 && "$1" == -- && -n "$2" ]] \
+      || fail 'prompt mode requires exactly one prompt after --'
+    claude_args+=(-p "$2")
+    ;;
   resume) claude_args=(--continue "$@") ;;
   passthrough) exec "$claude_command" "$@" ;;
   *) fail "unsupported Claude launch mode: $mode" ;;

@@ -28,6 +28,28 @@ scan_legacy_identity() {
   esac
 }
 
+scan_public_branding() {
+  local scan_status
+  if rg -n -F 'sandbox-harness' "$@"; then
+    scan_status=0
+  else
+    scan_status=$?
+  fi
+
+  case "$scan_status" in
+    0)
+      printf 'trellage identity contract: legacy public product branding matched\n' >&2
+      return 1
+      ;;
+    1) return 0 ;;
+    *)
+      printf 'trellage identity contract: public brand rg audit failed with status %s\n' \
+        "$scan_status" >&2
+      return "$scan_status"
+      ;;
+  esac
+}
+
 [[ -d "$repo_root/packages/trellage-cli" ]] || fail 'compiler package path is missing'
 [[ ! -e "$repo_root/packages/harness-cli" ]] || fail 'legacy compiler package path remains'
 [[ -d "$repo_root/prototypes/trellage-codex-profiles" ]] \
@@ -68,7 +90,9 @@ grep -Fqx $'\tbash prototypes/trellage-grok-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Grok profiles target is stale'
 
 audit_error_output="$(mktemp "${TMPDIR:-/tmp}/trellage-identity-audit-error.XXXXXX")"
-trap 'rm -f -- "$audit_error_output"' EXIT
+public_brand_error_output="$(mktemp "${TMPDIR:-/tmp}/trellage-public-brand-audit-error.XXXXXX")"
+public_brand_match_input="$(mktemp "${TMPDIR:-/tmp}/trellage-public-brand-audit-match.XXXXXX")"
+trap 'rm -f -- "$audit_error_output" "$public_brand_error_output" "$public_brand_match_input"' EXIT
 if scan_legacy_identity "$repo_root/.missing-trellage-audit-path" \
   >"$audit_error_output" 2>&1; then
   fail 'identity audit accepted an rg operational error as clean'
@@ -80,6 +104,31 @@ fi
 grep -Fq 'trellage identity contract: rg audit failed with status ' \
   "$audit_error_output" \
   || fail 'identity audit did not report its rg operational error'
+
+printf '%s%s\n' 'sandbox-' 'harness' >"$public_brand_match_input"
+if scan_public_branding "$public_brand_match_input" \
+  >"$public_brand_error_output" 2>&1; then
+  fail 'public brand audit accepted legacy product branding'
+else
+  public_brand_match_status=$?
+fi
+[[ "$public_brand_match_status" -eq 1 ]] \
+  || fail 'public brand audit did not classify a legacy match as a contract failure'
+grep -Fq 'trellage identity contract: legacy public product branding matched' \
+  "$public_brand_error_output" \
+  || fail 'public brand audit did not report its legacy match'
+
+if scan_public_branding "$repo_root/.missing-trellage-public-brand-audit-path" \
+  >"$public_brand_error_output" 2>&1; then
+  fail 'public brand audit accepted an rg operational error as clean'
+else
+  public_brand_error_status=$?
+fi
+[[ "$public_brand_error_status" -ge 2 ]] \
+  || fail 'public brand audit collapsed an rg operational error into a clean or match status'
+grep -Fq 'trellage identity contract: public brand rg audit failed with status ' \
+  "$public_brand_error_output" \
+  || fail 'public brand audit did not report its rg operational error'
 
 scan_legacy_identity \
   "$repo_root/packages/trellage-cli/src" \
@@ -97,5 +146,14 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage-grok-profiles" \
   "$repo_root/Makefile" \
   || fail 'legacy product identity remains or the operational audit failed'
+
+scan_public_branding \
+  "$repo_root/compose.yaml" \
+  "$repo_root/compose.copilot.yaml" \
+  "$repo_root/scripts/harness" \
+  "$repo_root/tests/playwright/package.json" \
+  "$repo_root/tests/playwright/package-lock.json" \
+  "$repo_root/tests/copilot_agent_image.sh" \
+  || fail 'legacy product branding remains or the public root audit failed'
 
 printf 'trellage identity contract: PASS\n'

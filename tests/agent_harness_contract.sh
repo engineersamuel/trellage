@@ -51,16 +51,15 @@ for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
   '          fetch-depth: 2' \
   '        run: command -v jq curl git make >/dev/null' \
-  "        run: git config --local user.name 'Samuel Mendenhall'" \
-  "        run: git config --local user.email '2019830+engineersamuel@users.noreply.github.com'" \
   '        run: npm ci --prefix packages/trellage-cli' \
   '        run: npm ci --prefix tests/playwright' \
-  '        run: make test PUBLICATION_CONTRACT_ARGS=--tree-only'; do
+  '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
     || fail "CI does not run the full deterministic contract: $required_ci_line"
 done
-if grep -Fxq '        run: make test' .github/workflows/ci.yml; then
-  fail 'CI invokes point-in-time publication topology assertions'
+if grep -Eq -- 'git config --local user\.(name|email)|PUBLICATION_CONTRACT_ARGS|publication-history-audit|--sanitized-history' \
+  .github/workflows/ci.yml; then
+  fail 'CI invokes contributor-specific or point-in-time publication assertions'
 fi
 if grep -Eq -- 'PROFILE_MATRIX_ARGS=--live|make compare|docker compose (build|up|run)' \
   .github/workflows/ci.yml; then

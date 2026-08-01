@@ -24,13 +24,9 @@ jobs:
           cache-dependency-path: packages/trellage-cli/package-lock.json
       - name: Verify required system tools
         run: command -v jq curl git make >/dev/null
-      - name: Configure publication author name
-        run: git config --local user.name 'Samuel Mendenhall'
-      - name: Configure publication author email
-        run: git config --local user.email '2019830+engineersamuel@users.noreply.github.com'
       - name: Install profile compiler dependencies
         run: npm ci --prefix packages/trellage-cli
       - name: Install browser contract dependencies
         run: npm ci --prefix tests/playwright
       - name: Run full deterministic test and build suite
-        run: make test PUBLICATION_CONTRACT_ARGS=--tree-only
+        run: make test

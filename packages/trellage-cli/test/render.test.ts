@@ -1,9 +1,13 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 
 import { renderCodexConfig, renderMiseConfig } from "../src/render.js"
 import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
+import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
 
 const source = `
 schema = 1
@@ -95,6 +99,20 @@ select = ["full"]
 const profile = Effect.runSync(parseProfile(source, "/profile/profile.toml")).profile
 const copilotProfile = Effect.runSync(parseProfile(copilotSource, "/profile/copilot.toml")).profile
 const claudeProfile = Effect.runSync(parseProfile(claudeSource, "/profile/claude.toml")).profile
+const runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "trellage-render-runtime-"))
+afterAll(() => rm(runtimeRoot, { recursive: true, force: true }))
+const runtimePaths = {
+  codexEntry: path.join(runtimeRoot, "runtime-entry.sh"),
+  copilotEntry: path.join(runtimeRoot, "runtime-copilot-entry.sh"),
+  finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
+  claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
+  hyperresearchRequirements: path.join(runtimeRoot, "requirements.lock"),
+  claudeBrowserAgent: path.join(runtimeRoot, "browser-agent.md"),
+}
+await Promise.all(Object.values(runtimePaths).map((file) => writeFile(file, file)))
+const codexRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("codex", runtimePaths))
+const copilotRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", runtimePaths))
+const claudeRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("claude", runtimePaths))
 const lock = (kind: "claude" | "codex" | "copilot"): ProfileLock => ({
   schema: 1,
   source_date_epoch: 1784379906,
@@ -145,6 +163,7 @@ describe("golden rendering", () => {
     const rendered = renderMiseConfig(copilotProfile, lock("copilot"), {
       baseReference: "docker.io/library/node@sha256:base",
       imageTag: "trellage-profile-copilot-hve:locked",
+      runtimeSupport: copilotRuntime,
     })
 
     expect(rendered).toContain(`[tools."http:copilot"]
@@ -168,6 +187,12 @@ rename_exe = "copilot"`)
       .toContain('"/usr/local/bin/trellage-copilot-entry" = { source = "runtime-copilot-entry.sh", mode = "copy" }')
     expect.soft(rendered).toContain('"dev.trellage.harness.kind" = "copilot"')
     expect.soft(rendered).toContain('"dev.trellage.copilot.version" = "1.0.75"')
+    expect.soft(rendered).toContain(`"dev.trellage.runtime.hash" = "${copilotRuntime.hash}"`)
+    const runtimeEntry = copilotRuntime.files.find((file) => file.role === "runtime-copilot-entry")!
+    expect
+      .soft(rendered)
+      .toContain(`"${runtimeEntry.destination}" = { source = "${runtimeEntry.buildContextPath}", mode = "copy" }`)
+    expect(runtimeEntry.mode).toBe(0o755)
     expect.soft(rendered).not.toContain("dev.sandbox-harness")
     expect.soft(rendered).not.toContain("/usr/local/share/harness")
     expect.soft(rendered).not.toContain("harness-copilot-entry")
@@ -213,6 +238,7 @@ rename_exe = "copilot"`)
     const rendered = renderMiseConfig(claudeProfile, lock("claude"), {
       baseReference: "docker.io/library/node@sha256:base",
       imageTag: "trellage-profile-claude-hyperresearch:locked",
+      runtimeSupport: claudeRuntime,
     })
 
     expect(rendered).toContain('node = "22.17.0"')
@@ -236,6 +262,7 @@ rename_exe = "copilot"`)
     const rendered = renderMiseConfig(profile, lock("codex"), {
       baseReference: "docker.io/library/node@sha256:base",
       imageTag: "trellage-profile-golden:locked",
+      runtimeSupport: codexRuntime,
     })
 
     expect(rendered).toContain('version = "0.144.6"')

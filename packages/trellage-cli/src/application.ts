@@ -1,6 +1,5 @@
 import { execFile, spawn } from "node:child_process"
-import { constants } from "node:fs"
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -16,6 +15,7 @@ import { createBuildContext, type PluginGenerator, type RuntimeSupport, type Ski
 import { parseProfile, type ProfileDocument } from "./profile.js"
 import { productionResolvers } from "./resolvers.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
+import { createRuntimeSupportSnapshot, type RuntimeSupportSnapshot } from "./runtime-support.js"
 
 const execFilePromise = promisify(execFile)
 const builderImage = "docker.io/jdxcode/mise@sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
@@ -135,43 +135,6 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
 
 const io = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ApplicationError> =>
   Effect.tryPromise({ try: operation, catch: (cause) => new ApplicationError({ message, cause }) })
-
-const verifyRuntimeSupport = (
-  document: ProfileDocument,
-  runtimeSupport: RuntimeSupport,
-): Effect.Effect<void, ApplicationError> => {
-  const label =
-    document.profile.harness.kind === "codex"
-      ? "Codex"
-      : document.profile.harness.kind === "copilot"
-        ? "Copilot"
-        : "Claude"
-  const files =
-    document.profile.harness.kind === "codex"
-      ? [["codexEntry", runtimeSupport.codexEntry] as const]
-      : document.profile.harness.kind === "copilot"
-        ? [
-            ["copilotEntry", runtimeSupport.copilotEntry] as const,
-            ["finalizeCopilotSeed", runtimeSupport.finalizeCopilotSeed] as const,
-          ]
-        : [
-            ["claudeEntry", runtimeSupport.claudeEntry] as const,
-            ["hyperresearchRequirements", runtimeSupport.hyperresearchRequirements] as const,
-            ["claudeBrowserAgent", runtimeSupport.claudeBrowserAgent] as const,
-          ]
-  return Effect.forEach(
-    files,
-    ([name, candidate]) => {
-      const message = `${label} runtime support ${name} must be a regular readable file: ${candidate ?? "missing"}`
-      return io(message, async () => {
-        if (candidate === undefined) throw new Error(message)
-        if (!(await stat(candidate)).isFile()) throw new Error(message)
-        await access(candidate, constants.R_OK)
-      })
-    },
-    { concurrency: 1 },
-  ).pipe(Effect.asVoid)
-}
 
 export const adjacentLockPath = (profilePath: string): string => {
   const extension = path.extname(profilePath)
@@ -446,7 +409,7 @@ const buildCandidateImage = (
   lock: ProfileLock,
   image: string,
   xdgCacheHome: string,
-  runtimeSupport: RuntimeSupport,
+  runtimeSupport: RuntimeSupportSnapshot,
 ): Effect.Effect<string, ApplicationError> =>
   Effect.gen(function* () {
     const directories = yield* Effect.forEach(
@@ -533,7 +496,10 @@ const defaultCacheHome = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), "
 
 export const LiveUpgradeServices: UpgradeServices = {
   buildCandidate: (document, lock, image) =>
-    buildCandidateImage(document, lock, image, defaultCacheHome, defaultRuntimeSupport),
+    createRuntimeSupportSnapshot(document.profile.harness.kind, defaultRuntimeSupport).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+      Effect.flatMap((snapshot) => buildCandidateImage(document, lock, image, defaultCacheHome, snapshot)),
+    ),
   imageExists: liveImageExists,
   tagImage: (source, destination) => run("docker", ["image", "tag", source, destination]),
   removeImage: (image) =>
@@ -641,7 +607,9 @@ export const upgradeProfile = (
 ): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    yield* verifyRuntimeSupport(document, runtimeSupport)
+    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(document.profile.harness.kind, runtimeSupport).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
     const canonical = `trellage-profile-${document.profile.name}:locked`
     const candidate = `trellage-profile-${document.profile.name}:candidate-${process.pid}`
     const backup = `trellage-profile-${document.profile.name}:backup-${process.pid}`
@@ -650,7 +618,7 @@ export const upgradeProfile = (
         ? {
             ...LiveUpgradeServices,
             buildCandidate: (profile: ProfileDocument, lock: ProfileLock, image: string) =>
-              buildCandidateImage(profile, lock, image, xdgCacheHome, runtimeSupport),
+              buildCandidateImage(profile, lock, image, xdgCacheHome, runtimeSnapshot),
           }
         : services
 
@@ -776,15 +744,16 @@ export const buildProfile = (
 ): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
+    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(document.profile.harness.kind, runtimeSupport).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
     const current = yield* loadLock(profilePath)
     let lock: ProfileLock
     if (locked) {
       lock = yield* requireLocked(document, current).pipe(
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
-      yield* verifyRuntimeSupport(document, runtimeSupport)
     } else {
-      yield* verifyRuntimeSupport(document, runtimeSupport)
       lock = yield* compileLock(document, current, false, productionResolvers(xdgCacheHome)).pipe(
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
@@ -811,7 +780,7 @@ export const buildProfile = (
       document,
       lock,
       directories,
-      runtimeSupport,
+      runtimeSnapshot,
       temporaryParent,
       skillGenerator,
       pluginGenerator,
@@ -845,6 +814,9 @@ export const profileMetadata = (
     const hash = profileHash(document)
     const ready = lockIsReady(document, lock)
     const harnessKind = document.profile.harness.kind
+    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(harnessKind, defaultRuntimeSupport).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
     const isCopilot = harnessKind === "copilot"
     const isClaude = harnessKind === "claude"
     const secretEnvironment: Record<string, string> = Object.fromEntries(
@@ -858,6 +830,7 @@ export const profileMetadata = (
       profile_path: document.path,
       profile_name: document.profile.name,
       profile_hash: hash,
+      runtime_hash: runtimeSnapshot.hash,
       image: `trellage-profile-${document.profile.name}:locked`,
       locked: ready,
       build_command: `trellage build --locked ${document.path}`,

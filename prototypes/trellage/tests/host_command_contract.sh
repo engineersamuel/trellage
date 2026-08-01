@@ -18,6 +18,10 @@ ln -s "$prototype_dir/tests/fakes/host-git" "$fake_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
 
 real_node="$(command -v node)"
+runtime_hash="$($real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
+  "$prototype_dir/../../profiles/codex-superpowers/profile.toml" | jq -er '.runtime_hash')"
+export FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash"
+export FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash"
 host_node_log="$test_root/host-node.log"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
@@ -74,10 +78,12 @@ ln -s "$copilot_fake_bin/node" "$no_gh_bin/node"
 : >"$copilot_profile"
 jq -n \
   --arg profile "$copilot_profile" \
+  --arg runtime_hash "$runtime_hash" \
   '{
     profile_path: $profile,
     profile_name: "copilot-hve-test",
     profile_hash: "sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971",
+    runtime_hash: $runtime_hash,
     image: "trellage-profile-copilot-hve-test:locked",
     locked: true,
     build_command: ("trellage build " + $profile),
@@ -219,6 +225,16 @@ assert_terminal_contract() {
     || fail 'arbitrary host TERM reached Docker'
 }
 
+assert_prompt_is_detached() {
+  local log="$1"
+  ! grep -Fqx $'ARG\t--interactive' "$log" \
+    || fail 'portable prompt allocated interactive Docker stdin'
+  ! grep -Fqx $'ARG\t--tty' "$log" \
+    || fail 'portable prompt allocated a Docker TTY'
+  ! grep -Eq $'ARG\t(TERM|COLORTERM)=' "$log" \
+    || fail 'portable prompt injected terminal environment'
+}
+
 assert_codex_exec_hint() {
   local log="$1"
   [[ "$(grep -Fxc $'ENV\tHERDR_AGENT=codex' "$log")" -eq 1 ]] \
@@ -322,9 +338,11 @@ test_new_container_from_subdirectory() {
 
   [[ "$(grep -Fxc $'ARG\t--mount' "$docker_log")" -eq 2 ]] \
     || fail 'container must receive exactly the worktree and state mounts'
-  [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 6 ]] \
-    || fail 'Codex container and volume must receive only exact ownership labels'
+  [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 8 ]] \
+    || fail 'Codex container and volume must receive exact ownership and container integrity labels'
   assert_arg "$docker_log" 'dev.trellage.profile=codex-superpowers'
+  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971"
+  assert_arg "$docker_log" "dev.trellage.runtime.hash=$runtime_hash"
   [[ "$(grep -Fxc $'ARG\t--network' "$docker_log")" -eq 1 ]] \
     || fail 'container must receive exactly one network'
   ! grep -Eq $'ARG\t.*(docker\.sock|herdr)' "$docker_log" \
@@ -389,6 +407,141 @@ test_bare_command_has_no_prompt() {
   grep -Fqx $'ARG\tfake-container-id' "$docker_log" \
     || fail 'running container was not attached by immutable ID'
   printf 'Trellage host test: PASS: bare command injects no prompt\n'
+}
+
+test_portable_prompt_mode_is_noninteractive_and_literal() {
+  local worktree="$test_root/portable-prompt-worktree"
+  local docker_log="$test_root/portable-prompt.docker.log"
+  local state_volume prompt
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  prompt='literal $(touch /tmp/not-executed) prompt'
+
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers -p "$prompt"
+
+  grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry prompt codex $argv -- $prompt' "$docker_log" \
+    || fail 'portable prompt did not use the Codex runtime prompt boundary'
+  [[ "$(tail -n 1 "$docker_log")" == $'ARG\t'"$prompt" ]] \
+    || fail 'portable prompt text was not passed as one literal argument'
+  assert_prompt_is_detached "$docker_log"
+  printf 'Trellage host test: PASS: portable prompt is noninteractive and literal\n'
+}
+
+test_portable_prompt_is_detached_for_each_harness() {
+  local worktree="$test_root/portable-prompt-harness-worktree"
+  local docker_log="$test_root/portable-prompt-harness.docker.log"
+  local claude_variant="$test_root/portable-prompt-claude.json"
+  local state_volume
+  mkdir -p "$worktree"
+
+  state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
+  : >"$docker_log"
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TERM=host-term COLORTERM=truecolor TRELLAGE_IMAGE='test/copilot:locked' \
+      "$prototype_dir/trellage" -p 'Copilot prompt'
+  grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-copilot-entry prompt $argv -- $prompt' "$docker_log" \
+    || fail 'portable Copilot prompt did not use its runtime prompt boundary'
+  assert_prompt_is_detached "$docker_log"
+
+  jq \
+    '.profile_name = "claude-hyperresearch"
+      | .image = "trellage-profile-claude-hyperresearch:locked"
+      | .harness_kind = "claude"
+      | .harness_executable = "claude"
+      | .runtime_entry = "trellage-claude-entry"
+      | .default_network = "copilot-proxy-rs_default"
+      | .auth_policy = "claude-explicit"
+      | .harness_args = []' \
+    "$copilot_metadata" >"$claude_variant"
+  state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
+  : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-hyperresearch FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TERM=host-term COLORTERM=truecolor TRELLAGE_IMAGE='test/claude:locked' \
+      "$prototype_dir/trellage" -p 'Claude prompt'
+  grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-claude-entry prompt claude $argv -- $prompt' "$docker_log" \
+    || fail 'portable Claude prompt did not use its runtime prompt boundary'
+  assert_prompt_is_detached "$docker_log"
+  printf 'Trellage host test: PASS: all portable prompt launches are detached\n'
+}
+
+test_portable_prompt_parser_contract() {
+  local worktree="$test_root/portable-prompt-parser-worktree"
+  local docker_log="$test_root/portable-prompt-parser.docker.log"
+  local state_volume output status
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  for prompt_form in '-p' '--prompt' '--prompt=long-form-equals'; do
+    : >"$docker_log"
+    if [[ "$prompt_form" == -p ]]; then
+      launch_args=(-p 'short form value' --profile codex-superpowers)
+      expected_prompt='short form value'
+    elif [[ "$prompt_form" == --prompt ]]; then
+      launch_args=(--profile codex-superpowers --prompt 'long form value')
+      expected_prompt='long form value'
+    else
+      launch_args=(--profile codex-superpowers "$prompt_form")
+      expected_prompt='long-form-equals'
+    fi
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      run_non_tty "$worktree" "$docker_log" "$worktree" \
+        "$prototype_dir/trellage" "${launch_args[@]}"
+    [[ "$(tail -n 1 "$docker_log")" == $'ARG\t'"$expected_prompt" ]] \
+      || fail "$prompt_form did not preserve its prompt as one argument"
+  done
+
+  while IFS='|' read -r expected arguments; do
+    : >"$docker_log"
+    status=0
+    read -r -a rejected_args <<<"$arguments"
+    output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" "${rejected_args[@]}" 2>&1)" || status=$?
+    [[ "$status" -ne 0 ]] || fail "invalid prompt form succeeded: $arguments"
+    grep -Fq "trellage: $expected" <<<"$output" \
+      || fail "invalid prompt form had the wrong diagnostic: $arguments"
+    assert_no_mutation "$docker_log"
+  done <<'CASES'
+--prompt requires a non-empty value|-p
+--prompt requires a non-empty value|--prompt
+--prompt requires a non-empty value|--prompt=
+--prompt may be specified only once|-p first --prompt second
+--prompt may be specified only once|--prompt first --prompt=second
+--prompt may be specified only once|--prompt=first -p second
+--prompt cannot be combined with positional arguments|resume -p hello
+--prompt cannot be combined with positional arguments|-p hello resume
+--prompt cannot be combined with positional arguments|shell --prompt hello
+--prompt cannot be combined with positional arguments|stop --prompt=hello
+--prompt cannot be combined with positional arguments|doctor -p hello
+--prompt cannot be combined with positional arguments|destroy --prompt hello
+--prompt cannot be combined with positional arguments|positional -p hello
+--prompt is not supported for compiler commands|build --prompt hello
+--prompt is not supported for compiler commands|validate -p hello
+--prompt is not supported for compiler commands|lock --prompt hello
+--prompt is not supported for compiler commands|upgrade --prompt=hello
+CASES
+
+  : >"$docker_log"
+  status=0
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_EXEC_EXIT=37 \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p 'status propagation' >/dev/null 2>&1 \
+    || status=$?
+  [[ "$status" -eq 37 ]] || fail 'portable prompt changed the harness exit status'
+  printf 'Trellage host test: PASS: portable prompt parser forms and errors\n'
 }
 
 test_stopped_and_collision_behavior() {
@@ -1226,7 +1379,8 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
   state_volume="$(resource_names "$worktree" secret-test | tail -n 1)"
   : >"$docker_log"
 
-  if FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+  if FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=secret-test \
     run_tty "$worktree" "$docker_log" "$worktree" \
       env TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
@@ -1236,7 +1390,8 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
   [[ ! -s "$docker_log" ]] || fail 'missing secret mutated or inspected Docker state'
 
   : >"$docker_log"
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+  FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=secret-test \
     run_tty "$worktree" "$docker_log" "$worktree" \
       env DOCS_TOKEN='top-secret-value' TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
@@ -1255,6 +1410,27 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
     END { exit(found == 1 ? 0 : 1) }
   ' "$docker_log" || fail 'secret entered an intermediate Docker child environment'
   ! grep -Fq 'top-secret-value' "$docker_log" || fail 'secret value entered Docker arguments or logs'
+
+  : >"$docker_log"
+  FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=secret-test \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      env DOCS_TOKEN='prompt-secret-value' TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
+      "$prototype_dir/trellage" --profile "$profile" -p 'secret prompt'
+  awk '
+    $0 == "CALL" { secret = first = second = ""; next }
+    /^ENV\tDOCS_TOKEN=/ { secret = $0; next }
+    /^ARG\t/ && first == "" { first = $0; next }
+    /^ARG\t/ && second == "" {
+      second = $0
+      if (secret == "ENV\tDOCS_TOKEN=present" && !(first == "ARG\tcontainer" && second == "ARG\texec")) exit 1
+      if (secret == "ENV\tDOCS_TOKEN=present") found++
+    }
+    END { exit(found == 1 ? 0 : 1) }
+  ' "$docker_log" || fail 'prompt secret entered an intermediate Docker child environment'
+  ! grep -Fq 'prompt-secret-value' "$docker_log" \
+    || fail 'prompt secret value entered Docker arguments or logs'
   printf 'Trellage host test: PASS: env secrets reach only final Codex exec\n'
 }
 
@@ -1286,7 +1462,8 @@ env_from_secret = { DOCS_TOKEN = "DOCS_TOKEN" }\
   : >"$docker_log"
   : >"$mise_log"
 
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+  FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=varlock-test \
     FAKE_MISE_LOG="$mise_log" \
     run_tty "$worktree" "$docker_log" "$worktree" \
@@ -1322,6 +1499,190 @@ test_stale_image_label_requires_exact_build() {
     || fail 'stale image did not print the exact build command'
   assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: stale image label requires exact build\n'
+}
+
+test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
+  local worktree="$test_root/stale-runtime-worktree"
+  local docker_log="$test_root/stale-runtime.docker.log"
+  local output state_volume
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+
+  assert_override_label_stale() {
+    local variable="$1"
+    local value="$2"
+    local label="$3"
+    : >"$docker_log"
+    if output="$(
+      export "$variable=$value"
+      run_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE='test/override:locked' TRELLAGE_NETWORK='test_proxy_net' \
+        "$prototype_dir/trellage" 2>&1
+    )"; then
+      fail "explicit image override accepted $label"
+    fi
+    grep -Fq 'profile image is missing or stale; run:' <<<"$output" \
+      || fail "explicit image override $label did not require a rebuild"
+    assert_no_mutation "$docker_log"
+
+    : >"$docker_log"
+    output="$(
+      export "$variable=$value"
+      FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+        FAKE_DOCKER_CONTAINER_STATE=absent \
+        run_non_tty "$worktree" "$docker_log" "$worktree" \
+          env TRELLAGE_IMAGE='test/override:locked' "$prototype_dir/trellage" doctor
+    )"
+    grep -Fqx 'image: test/override:locked (stale)' <<<"$output" \
+      || fail "doctor accepted explicit image override $label"
+    assert_no_mutation "$docker_log"
+  }
+
+  assert_override_label_stale FAKE_DOCKER_IMAGE_PROFILE_HASH \
+    "sha256:$(printf '1%.0s' {1..64})" 'with a mismatched profile label'
+  assert_override_label_stale FAKE_DOCKER_IMAGE_PROFILE_HASH '' 'with a missing profile label'
+  assert_override_label_stale FAKE_DOCKER_IMAGE_RUNTIME_HASH \
+    "sha256:$(printf '2%.0s' {1..64})" 'with a mismatched runtime label'
+  assert_override_label_stale FAKE_DOCKER_IMAGE_RUNTIME_HASH '' 'with a missing runtime label'
+
+  : >"$docker_log"
+  FAKE_DOCKER_RETAG_RACE=1 FAKE_DOCKER_RACE_TAG='test/race:latest' \
+    FAKE_DOCKER_IMAGE_ID='sha256:resolved-image-id' \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/race:latest' TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+  assert_arg "$docker_log" 'sha256:resolved-image-id'
+  [[ "$(grep -Fxc $'ARG\ttest/race:latest' "$docker_log")" -eq 1 ]] \
+    || fail 'mutable image tag was reused after immutable ID resolution'
+  image_verification_line="$(grep -n -F $'ARG\t{{ .Image }}' "$docker_log" | tail -n 1 | cut -d: -f1)"
+  start_line="$(grep -n -F $'ARG\tstart' "$docker_log" | tail -n 1 | cut -d: -f1)"
+  [[ -n "$image_verification_line" && -n "$start_line" && "$image_verification_line" -lt "$start_line" ]] \
+    || fail 'created container image ID was not verified before start'
+
+  : >"$docker_log"
+  if output="$(FAKE_DOCKER_CONTAINER_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=unrelated FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" 2>&1)"; then
+    fail 'stale container bypassed colliding state-volume validation'
+  fi
+  grep -Fq 'refusing unrelated Docker volume name collision:' <<<"$output" \
+    || fail 'stale container did not preserve state-volume collision diagnostic'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  if output="$(FAKE_DOCKER_CONTAINER_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-wrong-mount \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" 2>&1)"; then
+    fail 'stale container bypassed exact mount validation'
+  fi
+  grep -Fq 'refusing Docker container with wrong state volume mount:' <<<"$output" \
+    || fail 'stale container did not preserve mount collision diagnostic'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_CONTAINER_LABEL_INSPECT_ERROR=1 \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fqx 'state: error' <<<"$output" \
+    || fail 'doctor collapsed container label inspection error into stale'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR=1 \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fq ' (error)' <<<"$(grep '^image:' <<<"$output")" \
+    || fail 'doctor collapsed image label inspection error into stale'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_CONTAINER_LABEL_INSPECT_FAIL_ON=3 \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fqx 'state: error' <<<"$output" \
+    || fail 'doctor collapsed second-pass container label inspection error into stale'
+  assert_no_mutation "$docker_log"
+
+  for invalid_field in profile_hash runtime_hash; do
+    invalid_metadata="$test_root/invalid-$invalid_field.json"
+    jq --arg field "$invalid_field" '.[$field] = "not-a-sha256"' "$copilot_metadata" >"$invalid_metadata"
+    : >"$docker_log"
+    if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_metadata" \
+      run_copilot_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor 2>&1)"; then
+      fail "invalid $invalid_field metadata was accepted"
+    fi
+    grep -Fq "profile metadata has an invalid ${invalid_field%_hash} hash" <<<"$output" \
+      || fail "invalid $invalid_field metadata had the wrong diagnostic"
+    [[ ! -s "$docker_log" ]] || fail "invalid $invalid_field reached Docker"
+  done
+
+  if output="$(FAKE_DOCKER_IMAGE_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage" 2>&1)"; then
+    fail 'stale same-name runtime image was accepted'
+  fi
+  grep -Fq 'profile image is missing or stale; run:' <<<"$output" \
+    || fail 'stale runtime image did not require an exact rebuild'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  FAKE_DOCKER_CONTAINER_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+  grep -Fqx $'ARG\trm' "$docker_log" || fail 'stale runtime container was not replaced'
+  grep -Fqx $'ARG\tcreate' "$docker_log" || fail 'stale runtime container replacement was not created'
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_IMAGE_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fq ' (stale)' <<<"$(grep '^image:' <<<"$output")" \
+    || fail 'doctor did not report a stale runtime image'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_IMAGE_RUNTIME_HASH= \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fq ' (stale)' <<<"$(grep '^image:' <<<"$output")" \
+    || fail 'doctor did not report a missing runtime image label as stale'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_CONTAINER_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fqx 'state: stale' <<<"$output" || fail 'doctor did not report a stale runtime container'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_CONTAINER_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fqx 'state: stale' <<<"$output" || fail 'doctor did not report a stale profile container hash'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_CONTAINER_RUNTIME_HASH= \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
+  grep -Fqx 'state: stale' <<<"$output" || fail 'doctor did not report a missing runtime container label as stale'
+  assert_no_mutation "$docker_log"
+  printf 'Trellage host test: PASS: stale runtime labels are rejected read-only\n'
 }
 
 test_rebuild_replaces_container_and_preserves_profile_state() {
@@ -2222,6 +2583,20 @@ test_command_diagnostics_use_trellage_prefix() {
   printf 'Trellage host test: PASS: command diagnostics use trellage prefix\n'
 }
 
+if [[ "${TRELLAGE_HOST_PROMPT_ONLY:-}" == 1 ]]; then
+  test_resume_uses_native_thread_without_prompt_replay
+  test_bare_command_has_no_prompt
+  test_portable_prompt_mode_is_noninteractive_and_literal
+  test_portable_prompt_is_detached_for_each_harness
+  test_portable_prompt_parser_contract
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_RUNTIME_IDENTITY_ONLY:-}" == 1 ]]; then
+  test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
+  exit 0
+fi
+
 test_claude_launch_allows_empty_harness_args
 test_upgrade_delegates_to_effect_cli
 test_compiler_commands_scrub_copilot_auth
@@ -2243,6 +2618,9 @@ test_command_diagnostics_use_trellage_prefix
 test_new_container_from_subdirectory
 test_resume_uses_native_thread_without_prompt_replay
 test_bare_command_has_no_prompt
+test_portable_prompt_mode_is_noninteractive_and_literal
+test_portable_prompt_is_detached_for_each_harness
+test_portable_prompt_parser_contract
 test_stopped_and_collision_behavior
 test_volume_collision_and_mount_validation
 test_shell_and_stop_modes
@@ -2257,4 +2635,5 @@ test_destroy_revalidates_after_confirmation
 test_env_secrets_reach_only_final_codex_exec
 test_varlock_secrets_reach_only_final_codex_exec
 test_stale_image_label_requires_exact_build
+test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
 test_rebuild_replaces_container_and_preserves_profile_state

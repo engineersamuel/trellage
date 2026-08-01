@@ -27,6 +27,14 @@ trellage --profile claude-hyperresearch
 
 Trellage expands a bare name to `profiles/<name>/profile.toml`. Use a value ending in `.toml` or containing a path separator for an explicit path.
 
+Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) for one plain-text, non-interactive prompt; Trellage returns the native harness exit status:
+
+```bash
+trellage --profile codex-superpowers -p "hello"
+trellage --profile claude-hyperresearch -p "hello"
+trellage --profile copilot-hve -p "hello"
+```
+
 Profile source files are editable intent: a source `ref` may be a tag, branch, or commit selected by the author. `trellage lock` resolves every source to an immutable commit recorded in `profile.lock.toml`; reproducible builds use `--locked` and reject drift between the profile and lock.
 
 See [the Trellage prototype guide](prototypes/trellage/README.md) for profile locks, lifecycle details, Copilot with HVE Core, cleanup, and deterministic verification.

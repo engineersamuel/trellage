@@ -273,6 +273,7 @@ describe("profile metadata", () => {
       resolved_version: null,
     })
     expect.soft(metadata.image).toBe("trellage-profile-copilot-hve:locked")
+    expect.soft(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect.soft(metadata.build_command).toContain("trellage build --locked")
     expect.soft(metadata.runtime_entry).toBe("trellage-copilot-entry")
     const applicationSource = await readFile(fileURLToPath(new URL("../src/application.ts", import.meta.url)), "utf8")

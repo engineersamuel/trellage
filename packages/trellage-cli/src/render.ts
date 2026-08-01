@@ -7,6 +7,7 @@ import {
   type Profile,
 } from "./profile.js"
 import type { ProfileLock } from "./lock.js"
+import type { RuntimeSupportSnapshot } from "./runtime-support.js"
 
 const quote = (value: string): string => JSON.stringify(value)
 const array = (values: ReadonlyArray<string>): string => `[${values.map(quote).join(", ")}]`
@@ -66,7 +67,14 @@ export const renderCodexConfig = (profile: Profile): string => {
 export interface MiseRenderOptions {
   readonly baseReference: string
   readonly imageTag: string
+  readonly runtimeSupport: RuntimeSupportSnapshot
   readonly packageVersions?: Readonly<Record<string, string>>
+}
+
+const renderRuntimeDotfile = (options: MiseRenderOptions, role: string): string => {
+  const file = options.runtimeSupport.files.find((candidate) => candidate.role === role)
+  if (file === undefined || file.mode !== 0o755) throw new Error(`runtime support is missing executable ${role}`)
+  return `${quote(file.destination)} = { source = ${quote(file.buildContextPath)}, mode = "copy" }`
 }
 
 const renderPackages = (profile: Profile, options: MiseRenderOptions): string =>
@@ -103,6 +111,7 @@ TMPDIR = "/tmp"
 "dev.trellage.prototype" = "trellage"
 "dev.trellage.profile" = ${quote(profile.name)}
 "dev.trellage.profile.hash" = ${quote(lock.profile_hash)}
+"dev.trellage.runtime.hash" = ${quote(options.runtimeSupport.hash)}
 ${labels.join("\n")}
 `
 
@@ -124,7 +133,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.codex/config.toml" = { source = "codex-config.toml", mode = "copy" }
 "/home/agent/.codex/skills" = { source = "assets/skills", mode = "copy" }
 "/home/agent/.codex/agents" = { source = "assets/agents", mode = "copy" }
-"/usr/local/bin/trellage-codex-entry" = { source = "runtime-entry.sh", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -156,7 +165,7 @@ ${renderBootstrap(profile, options)}
 [dotfiles]
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 "/usr/local/share/trellage/copilot-seed" = { source = "copilot-seed", mode = "copy" }
-"/usr/local/bin/trellage-copilot-entry" = { source = "runtime-copilot-entry.sh", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-copilot-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -193,7 +202,7 @@ ${renderBootstrap(profile, options)}
 "/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }
 "/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }
 "/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }
-"/usr/local/bin/trellage-claude-entry" = { source = "runtime-claude-entry.sh", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-claude-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 

@@ -10,6 +10,14 @@ import { hasLegacySourceProvenance, type ProfileLock } from "./lock.js"
 import type { ProfileDocument } from "./profile.js"
 import { renderCodexConfig, renderMiseConfig } from "./render.js"
 import { materializeClaudeAssets } from "./claude-materialize.js"
+import {
+  createRuntimeSupportSnapshot,
+  isRuntimeSupportSnapshot,
+  runtimeSupportFile,
+  type RuntimeSupportPaths,
+  type RuntimeSupportSnapshot,
+  writeRuntimeSupportSnapshot,
+} from "./runtime-support.js"
 
 export type PluginGenerator = (
   sourceDirectory: string,
@@ -23,14 +31,7 @@ export type SkillGenerator = (
   destination: string,
 ) => Effect.Effect<void, unknown>
 
-export interface RuntimeSupport {
-  readonly codexEntry: string
-  readonly copilotEntry: string
-  readonly finalizeCopilotSeed: string
-  readonly claudeEntry?: string
-  readonly hyperresearchRequirements?: string
-  readonly claudeBrowserAgent?: string
-}
+export type RuntimeSupport = RuntimeSupportPaths
 
 export interface ClaudeMaterializeRequest {
   readonly sourceDirectory: string
@@ -100,7 +101,7 @@ export const createBuildContext = (
   document: ProfileDocument,
   lock: ProfileLock,
   sourceDirectories: ReadonlyArray<string>,
-  runtimeSupport: RuntimeSupport | string,
+  runtimeSupport: RuntimeSupportSnapshot | RuntimeSupport | string,
   temporaryParent: string,
   generateSkills: SkillGenerator,
   generatePlugin: PluginGenerator,
@@ -114,21 +115,13 @@ export const createBuildContext = (
         }),
       )
     }
-    if (document.profile.harness.kind === "copilot" && typeof runtimeSupport === "string") {
+    if (document.profile.harness.kind !== "codex" && typeof runtimeSupport === "string") {
       return yield* Effect.fail(
         new MaterializeError({
           message: "Copilot build context materialization is not implemented",
         }),
       )
     }
-    const support: RuntimeSupport =
-      typeof runtimeSupport === "string"
-        ? {
-            codexEntry: runtimeSupport,
-            copilotEntry: "",
-            finalizeCopilotSeed: "",
-          }
-        : runtimeSupport
     const harnessPackage = lock.packages.harness
     if (sourceDirectories.length !== lock.sources.length) {
       return yield* Effect.fail(new MaterializeError({ message: "resolved source count does not match lock" }))
@@ -193,9 +186,22 @@ export const createBuildContext = (
           new MaterializeError({ message: "Claude build requires one matching Hyperresearch source" }),
         )
       }
-      if (!support.claudeEntry || !support.hyperresearchRequirements || !support.claudeBrowserAgent) {
-        return yield* Effect.fail(new MaterializeError({ message: "Claude runtime support is incomplete" }))
-      }
+    }
+
+    const support = yield* (
+      isRuntimeSupportSnapshot(runtimeSupport)
+        ? Effect.succeed(runtimeSupport)
+        : createRuntimeSupportSnapshot(
+            document.profile.harness.kind,
+            typeof runtimeSupport === "string"
+              ? { codexEntry: runtimeSupport, copilotEntry: "", finalizeCopilotSeed: "" }
+              : runtimeSupport,
+          )
+    ).pipe(Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })))
+    if (support.harnessKind !== document.profile.harness.kind) {
+      return yield* Effect.fail(
+        new MaterializeError({ message: "runtime support snapshot harness kind does not match profile" }),
+      )
     }
 
     const initialPromptPath = document.resolvedInitialPrompt
@@ -219,6 +225,9 @@ export const createBuildContext = (
       mkdtemp(path.join(temporaryParent, "trellage-build-")),
     )
     const build = Effect.gen(function* () {
+      yield* writeRuntimeSupportSnapshot(support, context).pipe(
+        Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
+      )
       if (document.profile.harness.kind === "codex") {
         yield* io("cannot initialize build context", () =>
           Promise.all([
@@ -238,12 +247,14 @@ export const createBuildContext = (
       }
 
       if (document.profile.harness.kind === "claude") {
+        const requirements = runtimeSupportFile(support, "hyperresearch-requirements")
+        const browserAgent = runtimeSupportFile(support, "claude-browser-agent")
         yield* materializeClaude({
           sourceDirectory: sourceDirectories[0]!,
           context,
           lock,
-          requirementsPath: support.hyperresearchRequirements!,
-          browserAgentPath: support.claudeBrowserAgent!,
+          requirementsPath: path.join(context, requirements.buildContextPath),
+          browserAgentPath: path.join(context, browserAgent.buildContextPath),
         }).pipe(
           Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })),
         )
@@ -326,6 +337,7 @@ fi
             baseReference,
             imageTag,
             packageVersions,
+            runtimeSupport: support,
           }),
         )
         await writeFile(path.join(context, "profile.lock.toml"), renderLock(lock))
@@ -379,14 +391,8 @@ url = ${JSON.stringify(harnessPackage.url)}
 `,
         )
         await writeFile(path.join(context, "workspace.keep"), "")
-        if (document.profile.harness.kind === "codex") {
-          await cp(support.codexEntry, path.join(context, "runtime-entry.sh"))
-        } else if (document.profile.harness.kind === "copilot") {
+        if (document.profile.harness.kind === "copilot") {
           await mkdir(path.join(context, "copilot-seed"), { recursive: true })
-          await cp(support.copilotEntry, path.join(context, "runtime-copilot-entry.sh"))
-          await cp(support.finalizeCopilotSeed, path.join(context, "finalize-copilot-seed.mjs"))
-        } else {
-          await cp(support.claudeEntry!, path.join(context, "runtime-claude-entry.sh"))
         }
         if (initialPromptBytes !== undefined) {
           await writeFile(path.join(context, "initial-prompt.md"), initialPromptBytes)

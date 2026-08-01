@@ -236,7 +236,7 @@ describe("GitHubCopilotReleaseClient", () => {
       redirect: "error",
       headers: expect.objectContaining({
         Accept: "application/vnd.github+json",
-        "User-Agent": "sandbox-harness",
+        "User-Agent": "trellage",
       }),
     })
   })

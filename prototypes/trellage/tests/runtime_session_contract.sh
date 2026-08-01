@@ -112,6 +112,27 @@ test_codex_home_precedence
 thread_id='019f93af-41dd-7333-9bea-d8edc20760e5'
 : >"$test_root/codex.log"
 FAKE_CODEX_CREATE_SESSION=1 FAKE_CODEX_THREAD_ID="$thread_id" \
+  run_entry prompt codex --dangerously-bypass-approvals-and-sandbox -- 'hello $(false)'
+expected_prompt_args=$'ARG\texec\nARG\t--dangerously-bypass-approvals-and-sandbox\nARG\t--\nARG\thello $(false)'
+[[ "$(cat "$test_root/codex.log")" == "$expected_prompt_args" ]] \
+  || fail 'portable prompt was not translated to exact native Codex exec argv'
+[[ "$(cat "$test_root/codex-home/.trellage-codex/last-thread-id")" == "$thread_id" ]] \
+  || fail 'Codex prompt mode did not retain native session tracking'
+printf 'Trellage runtime session test: PASS: portable prompt uses native Codex exec\n'
+
+rm -rf "$test_root/codex-home"
+: >"$test_root/codex.log"
+prompt_status=0
+FAKE_CODEX_CREATE_SESSION=1 FAKE_CODEX_THREAD_ID="$thread_id" FAKE_CODEX_EXIT=27 \
+  run_entry prompt codex --dangerously-bypass-approvals-and-sandbox -- 'failed prompt' \
+  || prompt_status=$?
+[[ "$prompt_status" -eq 27 ]] \
+  || fail "Codex prompt mode changed native status 27 to $prompt_status"
+printf 'Trellage runtime session test: PASS: portable prompt preserves native failure status\n'
+
+rm -rf "$test_root/codex-home"
+: >"$test_root/codex.log"
+FAKE_CODEX_CREATE_SESSION=1 FAKE_CODEX_THREAD_ID="$thread_id" \
   run_entry new codex -- 'original startup prompt'
 [[ "$(cat "$test_root/codex-home/.trellage-codex/last-thread-id")" == "$thread_id" ]] \
   || fail 'new native thread ID was not recorded'

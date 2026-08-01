@@ -86,6 +86,24 @@ case "$harness_kind" in
     grep -Eq '^plugin_versions = \{ "hve-core" = "[0-9]+\.[0-9]+\.[0-9]+" \}$' "$lock" \
       || fail 'HVE Core plugin version is not exact'
     ;;
+  claude)
+    runtime_entry="$prototype_dir/runtime-claude-entry.sh"
+    [[ -f "$runtime_entry" ]] || fail "missing required file: $runtime_entry"
+    [[ "$profile_name" == claude-hyperresearch ]] || fail 'Claude profile name is not exact'
+    [[ "$(jq -r '.harness_executable' <<<"$metadata")" == claude ]] \
+      || fail 'Claude executable metadata is not exact'
+    [[ "$(jq -r '.runtime_entry' <<<"$metadata")" == trellage-claude-entry ]] \
+      || fail 'Claude runtime entry metadata is not exact'
+    [[ "$(jq -r '.auth_policy' <<<"$metadata")" == claude-explicit ]] \
+      || fail 'Claude auth policy metadata is not exact'
+    [[ "$(locked_value '[packages.harness]' kind)" == claude ]] \
+      || fail 'Claude lock kind is not exact'
+    [[ "$(locked_value '[packages.harness]' version)" == 2.1.218 ]] \
+      || fail 'Claude version is not exact'
+    grep -Fqx 'adapter = "hyperresearch"' "$lock" || fail 'Hyperresearch adapter is not locked'
+    grep -Fqx 'commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"' "$lock" \
+      || fail 'Hyperresearch commit is not exact'
+    ;;
   *) fail "unsupported harness kind: $harness_kind" ;;
 esac
 
@@ -93,6 +111,9 @@ if [[ "${STATIC_ONLY:-0}" == 1 ]]; then
   printf 'Trellage image contract: PASS (static: %s)\n' "$profile_name"
   exit 0
 fi
+
+[[ "$harness_kind" != claude ]] \
+  || fail 'live Claude image contract is not implemented; use STATIC_ONLY=1'
 
 IMAGE_REF="${IMAGE_REF:-$image_name}"
 [[ "$IMAGE_REF" == "$image_name" ]] \

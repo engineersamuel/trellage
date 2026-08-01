@@ -687,9 +687,12 @@ done
 prompt=
 if (( $# > 0 )); then
   shift
-  [[ "$mode" == new ]] || fail "$mode does not accept a prompt"
-  [[ "$#" -eq 1 ]] || fail 'new mode requires exactly one prompt after --'
+  [[ "$mode" == new || "$mode" == prompt ]] || fail "$mode does not accept a prompt"
+  [[ "$#" -eq 1 && -n "$1" ]] \
+    || fail "$mode mode requires exactly one non-empty prompt after --"
   prompt="$1"
+elif [[ "$mode" == prompt ]]; then
+  fail 'prompt mode requires exactly one non-empty prompt after --'
 fi
 
 read_only_probe=false
@@ -722,6 +725,12 @@ case "$mode" in
       export COPILOT_GITHUB_TOKEN="$inherited_copilot_github_token"
     fi
     exec copilot "${harness_args[@]}" --continue
+    ;;
+  prompt)
+    if [[ -n "$inherited_copilot_github_token" ]]; then
+      export COPILOT_GITHUB_TOKEN="$inherited_copilot_github_token"
+    fi
+    exec copilot "${harness_args[@]}" -p "$prompt"
     ;;
   *) fail "unsupported mode: $mode" ;;
 esac

@@ -1,5 +1,5 @@
 {
-  "name": "sandbox-harness-playwright",
+  "name": "@trellage/playwright-tests",
   "private": true,
   "version": "0.0.0",
   "scripts": {

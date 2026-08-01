@@ -3,18 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-mode='full'
+mode='tree'
 case "$#" in
   0) ;;
   1)
-    [[ "$1" == '--tree-only' ]] || {
-      printf 'usage: tests/publication_contract.sh [--tree-only]\n' >&2
+    [[ "$1" == '--sanitized-history' ]] || {
+      printf 'usage: tests/publication_contract.sh [--sanitized-history]\n' >&2
       exit 2
     }
-    mode='tree-only'
+    mode='sanitized-history'
     ;;
   *)
-    printf 'usage: tests/publication_contract.sh [--tree-only]\n' >&2
+    printf 'usage: tests/publication_contract.sh [--sanitized-history]\n' >&2
     exit 2
     ;;
 esac
@@ -23,12 +23,6 @@ fail() {
   printf 'publication contract: FAIL: %s\n' "$1" >&2
   exit 1
 }
-
-[ "$(git config --local --get user.name || true)" = 'Samuel Mendenhall' ] \
-  || fail 'repo-local user.name must be Samuel Mendenhall'
-[ "$(git config --local --get user.email || true)" = \
-  '2019830+engineersamuel@users.noreply.github.com' ] \
-  || fail 'repo-local user.email must be 2019830+engineersamuel@users.noreply.github.com'
 
 [[ -f LICENSE ]] || fail 'MIT LICENSE is missing'
 grep -Fxq 'MIT License' LICENSE || fail 'LICENSE is not MIT'
@@ -41,7 +35,7 @@ jq -e '
   || fail 'profile compiler package identity or MIT license changed'
 
 for required_ignore in \
-  '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/runs/' '/evidence/' \
+  '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/' '/evidence/' \
   '/codex-*.png' '/copilot-*.png' '/CLAUDE.md' \
   '/docs/superpowers/plans/' '/docs/superpowers/specs/' \
   '.env' '.env.*' '!.env.example'; do
@@ -50,7 +44,7 @@ for required_ignore in \
 done
 
 for forbidden_path in \
-  '.claude' '.hyperresearch' '.scratch' 'research/runs' 'evidence' \
+  '.claude' '.hyperresearch' '.scratch' 'research' 'evidence' \
   'harnesses/rsu-decision-side-by-side' 'docs/superpowers/plans' \
   'docs/superpowers/specs' '.agents/skills'; do
   if git ls-files -- "$forbidden_path" "$forbidden_path/**" | grep -q .; then
@@ -74,15 +68,18 @@ if git grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za
   fail 'obvious secret material is tracked'
 fi
 
-if git log --all --format='%ae%n%ce' | grep -Eq '@[^[:space:]]*\.local$'; then
-  fail 'forbidden local author or committer email'
-fi
-
-[ "$(git log --all --format='%an <%ae>%n%cn <%ce>' | sort -u)" = \
-  'Samuel Mendenhall <2019830+engineersamuel@users.noreply.github.com>' ] \
-  || fail 'unexpected commit identity'
-
-if [[ "$mode" == 'full' ]]; then
+if [[ "$mode" == 'sanitized-history' ]]; then
+  [ "$(git config --local --get user.name || true)" = 'Samuel Mendenhall' ] \
+    || fail 'repo-local user.name must be Samuel Mendenhall'
+  [ "$(git config --local --get user.email || true)" = \
+    '2019830+engineersamuel@users.noreply.github.com' ] \
+    || fail 'repo-local user.email must be 2019830+engineersamuel@users.noreply.github.com'
+  if git log --all --format='%ae%n%ce' | grep -Eq '@[^[:space:]]*\.local$'; then
+    fail 'forbidden local author or committer email'
+  fi
+  [ "$(git log --all --format='%an <%ae>%n%cn <%ce>' | sort -u)" = \
+    'Samuel Mendenhall <2019830+engineersamuel@users.noreply.github.com>' ] \
+    || fail 'unexpected commit identity'
   [ "$(git rev-list --all --count)" -eq 2 ] || fail 'history must contain exactly two commits'
   [ "$(git rev-list --max-parents=0 --all | wc -l | tr -d ' ')" -eq 1 ] \
     || fail 'history must contain exactly one root commit'

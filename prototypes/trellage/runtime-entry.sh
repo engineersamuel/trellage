@@ -95,6 +95,22 @@ worktree="$(pwd -P)"
 mode="$1"
 case "$mode" in
   new|resume|passthrough) shift ;;
+  prompt)
+    shift
+    [[ "$#" -gt 0 ]] || fail 'prompt mode requires a Codex command'
+    prompt_command="$1"
+    shift
+    prompt_args=()
+    while (( $# > 0 )) && [[ "$1" != -- ]]; do
+      prompt_args+=("$1")
+      shift
+    done
+    [[ "$#" -eq 2 && "$1" == -- && -n "$2" ]] \
+      || fail 'prompt mode requires exactly one prompt after --'
+    prompt="$2"
+    set -- "$prompt_command" exec "${prompt_args[@]}" -- "$prompt"
+    mode=new
+    ;;
   *) mode=passthrough ;;
 esac
 [[ "$#" -gt 0 ]] || fail 'a command is required'

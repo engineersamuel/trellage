@@ -4,6 +4,7 @@ set -euo pipefail
 log="${FAKE_DOCKER_LOG:?}"
 if [[ ! -s "$log" || ! -f "$log.generation" ]]; then
   printf '%s:%s\n' "$$" "$RANDOM" >"$log.generation"
+  printf '0\n' >"$log.container-label-inspect-count"
 fi
 IFS= read -r current_generation <"$log.generation"
 printf 'CALL\n' >>"$log"
@@ -104,7 +105,7 @@ container_state="$(read_fake_state \
 volume_state="$(read_fake_state \
   "${FAKE_DOCKER_VOLUME_STATE:-absent}" \
   "${FAKE_DOCKER_VOLUME_STATE_FILE:-}")"
-if [[ "$container_state" == absent ]] && created_state_is_current container; then
+if created_state_is_current container; then
   container_state=created
 fi
 if [[ "$volume_state" == absent ]] && created_state_is_current volume; then
@@ -230,7 +231,22 @@ case "${1:-} ${2:-}" in
       case "${4:-}" in
         *'.Id'*) printf '%s\n' "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ;;
         *dev.trellage.profile.hash*)
-          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+          [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
+            || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
+          if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 && "${5:-}" != "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ]]; then
+            printf 'sha256:%064d\n' 0
+            exit 0
+          fi
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+          ;;
+        *dev.trellage.runtime.hash*)
+          [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
+            || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
+          if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 && "${5:-}" != "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ]]; then
+            printf 'sha256:%064d\n' 0
+            exit 0
+          fi
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_RUNTIME_HASH:-}"
           ;;
       esac
     fi
@@ -285,18 +301,25 @@ case "${1:-} ${2:-}" in
         prototype="$(created_label container dev.trellage.prototype)"
         worktree="$(created_label container dev.trellage.worktree)"
         profile="$(created_label container dev.trellage.profile)"
+        profile_hash="$(created_label container dev.trellage.profile.hash)"
+        runtime_hash="$(created_label container dev.trellage.runtime.hash)"
+        container_image="$(head -n 1 "$log.container-image")"
         running="$(head -n 1 "$log.container-running")"
         ;;
       matching-running)
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='true'
         ;;
       matching-stopped)
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='false'
         ;;
       matching-running-missing-profile)
@@ -315,6 +338,8 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='true'
         ;;
       unrelated)
@@ -326,11 +351,33 @@ case "${1:-} ${2:-}" in
       *) exit 65 ;;
     esac
     case "${4:-}" in
+      *dev.trellage.profile.hash*|*dev.trellage.runtime.hash*)
+        label_count_file="$log.container-label-inspect-count"
+        label_count=0
+        [[ ! -f "$label_count_file" ]] || label_count="$(head -n 1 "$label_count_file")"
+        label_count="$((label_count + 1))"
+        printf '%s\n' "$label_count" >"$label_count_file"
+        [[ "${FAKE_DOCKER_CONTAINER_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
+          || exit "${FAKE_DOCKER_CONTAINER_LABEL_ERROR_CODE:-76}"
+        [[ -z "${FAKE_DOCKER_CONTAINER_LABEL_INSPECT_FAIL_ON:-}" \
+          || "$label_count" -ne "$FAKE_DOCKER_CONTAINER_LABEL_INSPECT_FAIL_ON" ]] \
+          || exit "${FAKE_DOCKER_CONTAINER_LABEL_ERROR_CODE:-76}"
+        case "${4:-}" in
+          *dev.trellage.profile.hash*) printf '%s\n' "${profile_hash:-}" ;;
+          *) printf '%s\n' "${runtime_hash:-}" ;;
+        esac
+        ;;
       *dev.trellage.prototype*) printf '%s\n' "$prototype" ;;
       *dev.trellage.worktree*) printf '%s\n' "$worktree" ;;
       *dev.trellage.profile*) printf '%s\n' "$profile" ;;
       *'.Id'*) printf 'fake-container-id\n' ;;
-      *'.Image'*) printf '%s\n' "${FAKE_DOCKER_CONTAINER_IMAGE_ID:-fake-image-id}" ;;
+      *'.Image'*)
+        if [[ "$container_state" == created ]]; then
+          printf '%s\n' "$container_image"
+        else
+          printf '%s\n' "${FAKE_DOCKER_CONTAINER_IMAGE_ID:-fake-image-id}"
+        fi
+        ;;
       *State.Running*) printf '%s\n' "$running" ;;
       *'.Mounts'*)
         if [[ "$container_state" == matching-wrong-mount ]]; then
@@ -350,7 +397,13 @@ case "${1:-} ${2:-}" in
     printf '%s\n' "${@: -1}"
     ;;
   'container create')
+    if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 ]]; then
+      for argument in "$@"; do
+        [[ "$argument" != "${FAKE_DOCKER_RACE_TAG:-}" ]] || exit 88
+      done
+    fi
     persist_create_labels container "$@"
+    printf '%s\n' "${@: -3:1}" >"$log.container-image"
     printf 'false\n' >"$log.container-running"
     printf 'fake-container-id\n'
     ;;

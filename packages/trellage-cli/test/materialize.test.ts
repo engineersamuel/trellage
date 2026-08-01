@@ -23,6 +23,7 @@ import {
   type SkillGenerator,
 } from "../src/materialize.js"
 import { profileHash, type ProfileLock, type SourceLock } from "../src/lock.js"
+import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
 import { parseProfile } from "../src/profile.js"
 
 const temporaryRoots: Array<string> = []
@@ -887,8 +888,21 @@ select = ["hve-core"]
       copilotEntry,
       finalizeCopilotSeed: finalizer,
     }
+    await writeFile(support.codexEntry, "codex fixture\n")
+    const wrongHarnessSnapshot = await Effect.runPromise(createRuntimeSupportSnapshot("codex", support))
+    await expect(
+      Effect.runPromise(
+        createBuildContext(document, lock, [hve], wrongHarnessSnapshot, root, unused, unused).pipe(Effect.flip),
+      ),
+    ).resolves.toMatchObject({
+      _tag: "MaterializeError",
+      message: "runtime support snapshot harness kind does not match profile",
+    })
+    const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", support))
+    await writeFile(copilotEntry, "mutated after snapshot\n")
+    await writeFile(finalizer, "mutated finalizer after snapshot\n")
 
-    const context = await Effect.runPromise(createBuildContext(document, lock, [hve], support, root, unused, unused))
+    const context = await Effect.runPromise(createBuildContext(document, lock, [hve], snapshot, root, unused, unused))
 
     await expect(
       readFile(path.join(context, "hve-core", "plugins", "hve-core", "commands", "review.md"), "utf8"),

@@ -46,9 +46,18 @@ case "${1:-}" in
     compiler_mode=true
     ;;
 esac
+if [[ "$compiler_mode" == true ]]; then
+  for compiler_argument in "$@"; do
+    case "$compiler_argument" in
+      -p|--prompt|--prompt=*) fail '--prompt is not supported for compiler commands' ;;
+    esac
+  done
+fi
 
 profile_argument=
 auth_mode_argument=
+prompt_argument=
+prompt_argument_set=false
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
   while (( $# > 0 )); do
@@ -77,6 +86,20 @@ if [[ "$compiler_mode" == false ]]; then
         [[ -n "$auth_mode_argument" ]] || fail '--auth-mode requires a value'
         shift
         ;;
+      -p|--prompt)
+        [[ "$prompt_argument_set" == false ]] || fail '--prompt may be specified only once'
+        [[ $# -ge 2 && -n "$2" ]] || fail '--prompt requires a non-empty value'
+        prompt_argument="$2"
+        prompt_argument_set=true
+        shift 2
+        ;;
+      --prompt=*)
+        [[ "$prompt_argument_set" == false ]] || fail '--prompt may be specified only once'
+        prompt_argument="${1#--prompt=}"
+        [[ -n "$prompt_argument" ]] || fail '--prompt requires a non-empty value'
+        prompt_argument_set=true
+        shift
+        ;;
       *)
         parsed_arguments+=("$1")
         shift
@@ -88,7 +111,10 @@ if [[ "$compiler_mode" == false ]]; then
   else
     set -- "${parsed_arguments[@]}"
   fi
-  if [[ "$#" -ge 1 ]]; then
+  if [[ "$prompt_argument_set" == true ]]; then
+    [[ "$#" -eq 0 ]] || fail '--prompt cannot be combined with positional arguments'
+    mode=prompt
+  elif [[ "$#" -ge 1 ]]; then
     case "$1" in
       resume|shell|stop|doctor|destroy)
         [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
@@ -104,7 +130,7 @@ case "$auth_mode_argument" in
 esac
 
 case "$mode" in
-  new|resume|doctor) ;;
+  new|prompt|resume|doctor) ;;
   *) discard_ambient_github_auth; discard_ambient_claude_auth ;;
 esac
 
@@ -144,6 +170,9 @@ fi
 claude_auth_mode="${auth_mode_argument:-proxy}"
 profile_name="$(jq -er '.profile_name' <<<"$profile_metadata")" || fail 'profile metadata has no name'
 profile_hash="$(jq -er '.profile_hash' <<<"$profile_metadata")" || fail 'profile metadata has no hash'
+runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile metadata has no runtime hash'
+[[ "$profile_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid profile hash'
+[[ "$runtime_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid runtime hash'
 profile_path="$(jq -er '.profile_path' <<<"$profile_metadata")" || fail 'profile metadata has no path'
 profile_locked="$(jq -r '.locked' <<<"$profile_metadata")" || fail 'profile metadata has no lock state'
 profile_image="$(jq -er '.image' <<<"$profile_metadata")" || fail 'profile metadata has no image'
@@ -202,7 +231,7 @@ resolve_copilot_auth() {
   fi
 }
 if [[ "$harness_kind" == copilot && "$auth_policy" == host-or-login \
-  && ( "$mode" == new || "$mode" == resume || "$mode" == doctor ) ]]; then
+  && ( "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ) ]]; then
   resolve_copilot_auth
 else
   discard_ambient_github_auth
@@ -220,12 +249,12 @@ if [[ "$harness_kind" == claude ]]; then
       fi
       ;;
     api-key)
-      [[ "$mode" != new && "$mode" != resume || -n "$ambient_anthropic_api_key" ]] \
+      [[ "$mode" != new && "$mode" != prompt && "$mode" != resume || -n "$ambient_anthropic_api_key" ]] \
         || fail 'ANTHROPIC_API_KEY is required for --auth-mode api-key'
       claude_auth_source=ANTHROPIC_API_KEY
       ;;
   esac
-  if [[ "$mode" != new && "$mode" != resume ]]; then
+  if [[ "$mode" != new && "$mode" != prompt && "$mode" != resume ]]; then
     discard_ambient_claude_auth
   fi
 else
@@ -244,7 +273,7 @@ sha256() {
   fail 'sha256sum or shasum is required'
 }
 
-if [[ "$mode" != stop && "$mode" != doctor && "$mode" != destroy ]]; then
+if [[ "$mode" != prompt && "$mode" != stop && "$mode" != doctor && "$mode" != destroy ]]; then
   [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
 fi
 if [[ "$mode" == doctor ]]; then
@@ -285,13 +314,21 @@ mount_path="/mounts/$worktree_name"
 prototype_label='dev.trellage.prototype'
 worktree_label='dev.trellage.worktree'
 profile_label='dev.trellage.profile'
+profile_hash_label='dev.trellage.profile.hash'
+runtime_hash_label='dev.trellage.runtime.hash'
 prototype_format="{{ index .Config.Labels \"$prototype_label\" }}"
 worktree_format="{{ index .Config.Labels \"$worktree_label\" }}"
 profile_format="{{ index .Config.Labels \"$profile_label\" }}"
+profile_hash_format="{{ index .Config.Labels \"$profile_hash_label\" }}"
+runtime_hash_format="{{ index .Config.Labels \"$runtime_hash_label\" }}"
 resource_label_args=(
   --label "$prototype_label=$prototype_owner"
   --label "$worktree_label=$worktree"
   --label "$profile_label=$profile_name"
+)
+container_integrity_label_args=(
+  --label "$profile_hash_label=$profile_hash"
+  --label "$runtime_hash_label=$runtime_hash"
 )
 volume_ownership_format="{{ printf \"%s\\t%s\\t%s\" (index .Labels \"$prototype_label\") (index .Labels \"$worktree_label\") (index .Labels \"$profile_label\") }}"
 mounts_format='{{ range .Mounts }}{{ printf "%s\t%s\t%s\t%s\t%t\n" .Type .Name .Source .Destination .RW }}{{ end }}'
@@ -375,10 +412,29 @@ inspect_container() {
     || fail "cannot inspect Docker container profile label: $container_name"
   [[ "$container_profile" == "$profile_name" ]] \
     || fail "refusing Docker container profile collision: $container_name"
+  container_profile_hash="$(docker container inspect \
+    --format "$profile_hash_format" "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container profile hash: $container_name"
+  container_runtime_hash="$(docker container inspect \
+    --format "$runtime_hash_format" "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container runtime hash: $container_name"
   container_id="$(docker container inspect \
     --format '{{ .Id }}' "$container_name" 2>/dev/null)" \
     || fail "cannot inspect Docker container ID: $container_name"
   [[ -n "$container_id" ]] || fail "Docker container has an empty ID: $container_name"
+}
+
+container_is_current() {
+  [[ "$container_profile_hash" == "$profile_hash" && "$container_runtime_hash" == "$runtime_hash" ]]
+}
+
+container_labels_are_current() {
+  local inspected_profile_hash inspected_runtime_hash
+  inspected_profile_hash="$(docker container inspect \
+    --format "$profile_hash_format" "$container_name" 2>/dev/null)" || return 2
+  inspected_runtime_hash="$(docker container inspect \
+    --format "$runtime_hash_format" "$container_name" 2>/dev/null)" || return 2
+  [[ "$inspected_profile_hash" == "$profile_hash" && "$inspected_runtime_hash" == "$runtime_hash" ]]
 }
 
 validate_state_volume() {
@@ -414,7 +470,7 @@ network="${TRELLAGE_NETWORK:-$default_network}"
 secret_args=()
 secret_source_names=()
 secret_source_values=()
-if [[ "$mode" == new || "$mode" == resume ]]; then
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
   if [[ "$secrets_provider" == env ]]; then
     while IFS= read -r secret_source; do
       [[ -n "$secret_source" ]] || continue
@@ -521,12 +577,26 @@ prepare_claude_auth() {
 if [[ "$mode" == doctor ]]; then
   image_state=error
   if probe_image_presence; then
-    image_state=available
-    if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
-      inspected_profile_hash="$(docker image inspect \
-        --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$image" 2>/dev/null)" \
-        || inspected_profile_hash=
-      [[ "$inspected_profile_hash" == "$profile_hash" ]] || image_state=stale
+    resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
+      || resolved_image_id=
+    if [[ -n "$resolved_image_id" ]]; then
+      image_state=available
+      image_profile_inspection=error
+      image_runtime_inspection=error
+      if inspected_profile_hash="$(docker image inspect \
+        --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$resolved_image_id" 2>/dev/null)"; then
+        image_profile_inspection=ok
+      fi
+      if inspected_runtime_hash="$(docker image inspect \
+        --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)"; then
+        image_runtime_inspection=ok
+      fi
+      if [[ "$image_profile_inspection" != ok || "$image_runtime_inspection" != ok ]]; then
+        image_state=error
+      elif [[ "$inspected_profile_hash" != "$profile_hash" \
+        || "$inspected_runtime_hash" != "$runtime_hash" ]]; then
+        image_state=stale
+      fi
     fi
   else
     probe_status="$?"
@@ -568,8 +638,17 @@ if [[ "$mode" == doctor ]]; then
     resource_state=error
   elif [[ "$container_probe" == present && "$volume_probe" == present ]]; then
     resource_state=error
-    if (inspect_container && validate_container_mounts) >/dev/null 2>&1; then
-      if (validate_state_volume) >/dev/null 2>&1; then
+    if (inspect_container && validate_container_mounts && validate_state_volume) >/dev/null 2>&1; then
+      container_label_state=error
+      if container_labels_are_current; then
+        container_label_state=current
+      else
+        container_label_status="$?"
+        [[ "$container_label_status" -ne 1 ]] || container_label_state=stale
+      fi
+      if [[ "$container_label_state" == stale ]]; then
+        resource_state=stale
+      elif [[ "$container_label_state" == current ]]; then
         running="$(docker container inspect \
           --format '{{ .State.Running }}' "$container_name" 2>/dev/null)" \
           || running=error
@@ -616,7 +695,8 @@ if [[ "$mode" == doctor ]]; then
 fi
 
 codex_exec_prefix=(docker container exec)
-if [[ "$secrets_provider" == varlock && ( "$mode" == new || "$mode" == resume ) ]]; then
+if [[ "$secrets_provider" == varlock \
+  && ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) ]]; then
   secret_filter="$(jq -r '.required_secrets | sort | join(",")' <<<"$profile_metadata")"
   codex_exec_prefix=(
     mise x varlock@1.11.0 -- varlock run
@@ -688,23 +768,26 @@ fi
 
 [[ "$profile_locked" == true ]] \
   || fail "profile image is missing or stale; run: $build_command"
-if ! docker image inspect "$image" >/dev/null 2>&1; then
+resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" || resolved_image_id=
+if [[ -z "$resolved_image_id" ]]; then
   if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
     fail "profile image is missing or stale; run: $build_command"
   fi
   fail "Docker image is unavailable: $image"
 fi
-if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
-  image_profile_hash="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$image" 2>/dev/null)" \
-    || fail "cannot inspect Docker image profile hash: $image"
-  [[ "$image_profile_hash" == "$profile_hash" ]] \
-    || fail "profile image is missing or stale; run: $build_command"
-fi
+image_profile_hash="$(docker image inspect \
+  --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$resolved_image_id" 2>/dev/null)" \
+  || fail "cannot inspect Docker image profile hash: $image"
+[[ "$image_profile_hash" == "$profile_hash" ]] \
+  || fail "profile image is missing or stale; run: $build_command"
+image_runtime_hash="$(docker image inspect \
+  --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)" \
+  || fail "cannot inspect Docker image runtime hash: $image"
+[[ "$image_runtime_hash" == "$runtime_hash" ]] \
+  || fail "profile image is missing or stale; run: $build_command"
 docker network inspect "$network" >/dev/null 2>&1 \
   || fail "Docker network is unavailable: $network"
-expected_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
-  || fail "cannot inspect Docker image ID: $image"
+expected_image_id="$resolved_image_id"
 [[ -n "$expected_image_id" ]] || fail "Docker image has an empty ID: $image"
 
 reuse_container=false
@@ -713,21 +796,26 @@ if container_is_present; then
   volume_is_present || fail "Docker state volume is missing: $state_volume"
   validate_state_volume
   validate_container_mounts
-  container_image_id="$(docker container inspect \
-    --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
-    || fail "cannot inspect Docker container image: $container_name"
-  if [[ "$container_image_id" != "$expected_image_id" ]]; then
+  if ! container_is_current; then
     docker container rm --force "$container_id" >/dev/null
     container_id=
   else
-    reuse_container=true
-    running="$(docker container inspect \
-      --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
-      || fail "cannot inspect Docker container state: $container_name"
-    [[ "$running" == 'true' || "$running" == 'false' ]] \
-      || fail "Docker container has an invalid running state: $container_name"
-    if [[ "$running" != true ]]; then
-      docker container start "$container_id" >/dev/null
+    container_image_id="$(docker container inspect \
+      --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
+      || fail "cannot inspect Docker container image: $container_name"
+    if [[ "$container_image_id" != "$expected_image_id" ]]; then
+      docker container rm --force "$container_id" >/dev/null
+      container_id=
+    else
+      reuse_container=true
+      running="$(docker container inspect \
+        --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
+        || fail "cannot inspect Docker container state: $container_name"
+      [[ "$running" == 'true' || "$running" == 'false' ]] \
+        || fail "Docker container has an invalid running state: $container_name"
+      if [[ "$running" != true ]]; then
+        docker container start "$container_id" >/dev/null
+      fi
     fi
   fi
 fi
@@ -746,6 +834,7 @@ if [[ "$reuse_container" != true ]]; then
   container_id="$(docker container create \
     --name "$container_name" \
     "${resource_label_args[@]}" \
+    "${container_integrity_label_args[@]}" \
     --user '10001:10001' \
     --read-only \
     --cap-drop ALL \
@@ -758,8 +847,15 @@ if [[ "$reuse_container" != true ]]; then
     --mount "type=volume,src=$state_volume,dst=/home/agent" \
     --network "$network" \
     --workdir "$mount_path" \
-    "$image" sleep infinity)"
+    "$expected_image_id" sleep infinity)"
   [[ -n "$container_id" ]] || fail "Docker create returned an empty container ID: $container_name"
+  created_container_image_id="$(docker container inspect \
+    --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect created Docker container image: $container_name"
+  if [[ "$created_container_image_id" != "$expected_image_id" ]]; then
+    docker container rm --force "$container_id" >/dev/null
+    fail "Docker created container from an unexpected image: $container_name"
+  fi
   docker container start "$container_id" >/dev/null
 fi
 
@@ -772,16 +868,33 @@ herdr_agent="$harness_executable"
 if [[ "$harness_kind" == copilot ]]; then
   resume_command="exec $runtime_entry resume \$argv"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new \$argv -- \$prompt"
+  portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt \$argv -- \$prompt"
   initial_prompt_command="set prompt (cat /usr/local/share/trellage/initial-prompt.md); exec $runtime_entry new \$argv -- \$prompt"
   new_command="exec $runtime_entry new \$argv"
 else
   resume_command="exec $runtime_entry resume $harness_executable \$argv"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new $harness_executable \$argv -- \$prompt"
+  portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt $harness_executable \$argv -- \$prompt"
   initial_prompt_command="set prompt (cat /usr/local/share/trellage/initial-prompt.md); exec $runtime_entry new $harness_executable \$argv -- \$prompt"
   new_command="exec $runtime_entry new $harness_executable \$argv"
 fi
 
 case "$mode" in
+  prompt)
+    prepare_codex_secrets
+    if [[ "$harness_kind" == copilot ]]; then
+      prepare_copilot_auth
+    elif [[ "$harness_kind" == claude ]]; then
+      prepare_claude_auth
+    fi
+    HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+      ${secret_args[@]+"${secret_args[@]}"} \
+      ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+      ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+      --workdir "$mount_path" \
+      "$container_id" \
+      fish -Nlc "$portable_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
+    ;;
   resume)
     prepare_codex_secrets
     if [[ "$harness_kind" == copilot ]]; then

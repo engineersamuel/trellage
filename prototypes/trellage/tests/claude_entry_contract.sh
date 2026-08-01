@@ -51,7 +51,9 @@ while (($#)); do
   shift
 done
 cp "$config" "$CLAUDE_CONFIG_OUT"
+printf '%s\n' "$config" >"${CLAUDE_CONFIG_PATH_OUT:?}"
 env | LC_ALL=C sort >"$CLAUDE_ENV_OUT"
+exit "${CLAUDE_EXIT:-0}"
 SH
 chmod +x "$fake_bin/claude"
 
@@ -64,7 +66,7 @@ TRELLAGE_CLAUDE_HOME="$runtime" \
 TRELLAGE_CLAUDE_AUTH_MODE=proxy \
 PLAYWRIGHT_MCP_EXTENSION_TOKEN=browser-secret \
 ANTHROPIC_AUTH_TOKEN=proxy-sentinel \
-CLAUDE_ARGS_OUT="$args_out" CLAUDE_CONFIG_OUT="$config_out" CLAUDE_ENV_OUT="$env_out" \
+CLAUDE_ARGS_OUT="$args_out" CLAUDE_CONFIG_OUT="$config_out" CLAUDE_CONFIG_PATH_OUT="$root/config-path" CLAUDE_ENV_OUT="$env_out" \
   "$entry" new claude -- --print hello
 
 grep -Fqx 'new skill' "$runtime/skills/hyperresearch/SKILL.md"
@@ -95,6 +97,53 @@ if [[ "$dangerous_line" -ge "$separator_line" ]]; then
   exit 1
 fi
 
+prompt_args_out="$root/prompt-args"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$runtime" \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+PLAYWRIGHT_MCP_EXTENSION_TOKEN=prompt-browser-secret \
+CLAUDE_CODE_OAUTH_TOKEN=poison-oauth \
+ANTHROPIC_API_KEY=poison-api-key \
+ANTHROPIC_AUTH_TOKEN=proxy-sentinel \
+CLAUDE_ARGS_OUT="$prompt_args_out" CLAUDE_CONFIG_OUT="$root/prompt-config" CLAUDE_CONFIG_PATH_OUT="$root/prompt-config-path" CLAUDE_ENV_OUT="$root/prompt-env" \
+  "$entry" prompt claude --profile-argument -- 'hello $(false)'
+expected_prompt_args=$'--profile-argument\n-p\nhello $(false)'
+[[ "$(tail -n 3 "$prompt_args_out")" == "$expected_prompt_args" ]] || {
+  printf 'Claude prompt mode did not use exact native -p argv\n' >&2
+  exit 1
+}
+grep -Fqx 'ANTHROPIC_AUTH_TOKEN=proxy-sentinel' "$root/prompt-env"
+! grep -Fq 'CLAUDE_CODE_OAUTH_TOKEN=poison-oauth' "$root/prompt-env"
+! grep -Fq 'ANTHROPIC_API_KEY=poison-api-key' "$root/prompt-env"
+grep -Fqx 'PLAYWRIGHT_MCP_EXTENSION_TOKEN=prompt-browser-secret' "$root/prompt-env"
+! grep -Fq 'prompt-browser-secret' "$prompt_args_out" "$root/prompt-config"
+prompt_config_path="$(cat "$root/prompt-config-path")"
+[[ ! -e "$prompt_config_path" ]] || {
+  printf 'Claude prompt mode did not remove its MCP configuration\n' >&2
+  exit 1
+}
+
+prompt_status=0
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$runtime" \
+TRELLAGE_CLAUDE_AUTH_MODE=native \
+CLAUDE_CODE_OAUTH_TOKEN=native-sentinel \
+CLAUDE_EXIT=31 \
+CLAUDE_ARGS_OUT="$root/status-args" CLAUDE_CONFIG_OUT="$root/status-config" CLAUDE_CONFIG_PATH_OUT="$root/status-config-path" CLAUDE_ENV_OUT="$root/status-env" \
+  "$entry" prompt claude -- 'status prompt' || prompt_status=$?
+[[ "$prompt_status" -eq 31 ]] || {
+  printf 'Claude prompt mode changed native status 31 to %s\n' "$prompt_status" >&2
+  exit 1
+}
+grep -Fqx 'CLAUDE_CODE_OAUTH_TOKEN=native-sentinel' "$root/status-env"
+status_config_path="$(cat "$root/status-config-path")"
+[[ ! -e "$status_config_path" ]] || {
+  printf 'Claude failed prompt did not remove its MCP configuration\n' >&2
+  exit 1
+}
+
 no_token_config="$root/no-token-config"
 warning="$root/warning"
 printf 'keep settings\n' >"$runtime/settings.json"
@@ -102,7 +151,7 @@ PATH="$fake_bin:$PATH" \
 TRELLAGE_CLAUDE_SEED_HOME="$seed" \
 TRELLAGE_CLAUDE_HOME="$runtime" \
 TRELLAGE_CLAUDE_AUTH_MODE=native \
-CLAUDE_ARGS_OUT="$root/no-token-args" CLAUDE_CONFIG_OUT="$no_token_config" CLAUDE_ENV_OUT="$root/no-token-env" \
+CLAUDE_ARGS_OUT="$root/no-token-args" CLAUDE_CONFIG_OUT="$no_token_config" CLAUDE_CONFIG_PATH_OUT="$root/no-token-config-path" CLAUDE_ENV_OUT="$root/no-token-env" \
   "$entry" new claude --print hello 2>"$warning"
 ! grep -Fq '"playwright"' "$no_token_config"
 grep -Fq '"obscura"' "$no_token_config"
@@ -114,7 +163,7 @@ printf 'skills/hyperresearch/missing.md\n' >"$seed/managed-paths.txt"
 if PATH="$fake_bin:$PATH" \
   TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
   TRELLAGE_CLAUDE_AUTH_MODE=native \
-  CLAUDE_ARGS_OUT="$root/fail-args" CLAUDE_CONFIG_OUT="$root/fail-config" CLAUDE_ENV_OUT="$root/fail-env" \
+  CLAUDE_ARGS_OUT="$root/fail-args" CLAUDE_CONFIG_OUT="$root/fail-config" CLAUDE_CONFIG_PATH_OUT="$root/fail-config-path" CLAUDE_ENV_OUT="$root/fail-env" \
   "$entry" new claude --print hello >/dev/null 2>&1; then
   printf 'expected invalid managed seed to fail\n' >&2
   exit 1

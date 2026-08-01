@@ -38,7 +38,7 @@ export const GitHubCopilotReleaseClient: CopilotReleaseClient = {
             redirect: "error",
             headers: {
               Accept: "application/vnd.github+json",
-              "User-Agent": "sandbox-harness",
+              "User-Agent": "trellage",
             },
           }),
         catch: () => new CopilotReleaseError({ message: "GitHub release request failed" }),

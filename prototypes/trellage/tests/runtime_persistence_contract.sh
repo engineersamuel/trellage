@@ -84,7 +84,8 @@ create_fake_copilot() {
     '  printf "present\n" >"$TRELLAGE_TEST_OUTPUT/token-presence"' \
     'else' \
     '  printf "absent\n" >"$TRELLAGE_TEST_OUTPUT/token-presence"' \
-    'fi' >"$fake_bin/copilot"
+    'fi' \
+    'exit "${TRELLAGE_TEST_COPILOT_EXIT:-0}"' >"$fake_bin/copilot"
   chmod 755 "$fake_bin/copilot"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
@@ -199,14 +200,22 @@ create_fake_copilot() {
 
 run_copilot_sync() {
   local fixture="$1"
+  shift
   local output_dir="${TRELLAGE_TEST_OUTPUT_DIR:-$fixture/output}"
   local log_file="${TRELLAGE_TEST_LOG:-$fixture/runtime.log}"
   local fault_env=()
+  local entry_args=(new)
+  if (( $# > 0 )); then
+    entry_args=("$@")
+  fi
   if [[ -n "${TRELLAGE_TEST_MV_MODE:-}" ]]; then
     fault_env+=(--env "TRELLAGE_TEST_MV_MODE=$TRELLAGE_TEST_MV_MODE")
   fi
   if [[ -n "${TRELLAGE_TEST_FAULT_MODE:-}" ]]; then
     fault_env+=(--env "TRELLAGE_TEST_FAULT_MODE=$TRELLAGE_TEST_FAULT_MODE")
+  fi
+  if [[ -n "${TRELLAGE_TEST_COPILOT_EXIT:-}" ]]; then
+    fault_env+=(--env "TRELLAGE_TEST_COPILOT_EXIT=$TRELLAGE_TEST_COPILOT_EXIT")
   fi
   docker run --rm \
     --network none \
@@ -225,7 +234,7 @@ run_copilot_sync() {
     --env 'HARNESS_TEST_OUTPUT=/legacy-test-output-must-not-be-used' \
     --env 'COPILOT_GITHUB_TOKEN=persistence-contract-secret' \
     ${fault_env[@]+"${fault_env[@]}"} \
-    "$image_ref" /test/runtime-copilot-entry.sh new \
+    "$image_ref" /test/runtime-copilot-entry.sh "${entry_args[@]}" \
     >"$log_file" 2>&1
 }
 
@@ -498,12 +507,26 @@ run_copilot_persistence_contract() {
   local runtime="$fixture/runtime"
   local before_inode after_inode control_file control_target
   local first_repair_pid second_repair_pid first_repair_status second_repair_status
-  local reader_pid
+  local reader_pid prompt_status
   mkdir -p "$runtime" "$fixture/output"
   create_copilot_seed "$fixture/seed"
   create_fake_copilot "$fixture/fake-bin"
 
   run_copilot_sync "$fixture"
+  run_copilot_sync "$fixture" prompt --allow-all -- 'hello $(false)'
+  printf '%s\0' --allow-all -p 'hello $(false)' >"$fixture/expected-prompt-argv"
+  cmp -s "$fixture/output/argv" "$fixture/expected-prompt-argv" \
+    || fail 'portable prompt did not use exact native Copilot -p argv'
+  [[ "$(cat "$fixture/output/token-presence")" == present ]] \
+    || fail 'portable prompt did not forward selected Copilot auth'
+  prompt_status=0
+  TRELLAGE_TEST_COPILOT_EXIT=41 \
+    run_copilot_sync "$fixture" prompt --allow-all -- 'status prompt' \
+    || prompt_status=$?
+  [[ "$prompt_status" -eq 41 ]] \
+    || fail 'portable prompt did not preserve the Copilot exit status'
+  printf 'Trellage persistence test: PASS: portable prompt uses native Copilot -p\n'
+
   mkdir -p "$runtime/sessions" \
     "$runtime/installed-plugins/other-market/other-plugin"
   printf 'login-session-fixture\n' >"$runtime/config.json"
