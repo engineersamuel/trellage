@@ -123,7 +123,11 @@ done
   || refuse "refusing non-writable or non-searchable owned runtime directory: $runtime_bin"
 
 file_mode() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) stat -f '%Lp' "$1" ;;
+    Linux) stat -c '%a' "$1" ;;
+    *) return 1 ;;
+  esac
 }
 
 install_root_mode="$(file_mode "$install_root")"

@@ -259,7 +259,11 @@ install_root_mode=''
 runtime_bin_mode=''
 
 file_mode() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) stat -f '%Lp' "$1" ;;
+    Linux) stat -c '%a' "$1" ;;
+    *) return 1 ;;
+  esac
 }
 
 if [ -d "$install_root" ]; then
