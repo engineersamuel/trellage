@@ -22,8 +22,10 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: packages/trellage-cli/package-lock.json
+      - name: Install required system tools
+        run: sudo apt-get install --yes --no-install-recommends ripgrep
       - name: Verify required system tools
-        run: command -v jq curl git make >/dev/null
+        run: command -v jq curl git make rg >/dev/null
       - name: Install profile compiler dependencies
         run: npm ci --prefix packages/trellage-cli
       - name: Install browser contract dependencies

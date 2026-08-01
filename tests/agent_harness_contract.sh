@@ -50,7 +50,8 @@ rg -q '\.agents/rules/trellage-cli\.md' .github/instructions/trellage-cli.instru
 for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
   '          fetch-depth: 2' \
-  '        run: command -v jq curl git make >/dev/null' \
+  '        run: sudo apt-get install --yes --no-install-recommends ripgrep' \
+  '        run: command -v jq curl git make rg >/dev/null' \
   '        run: npm ci --prefix packages/trellage-cli' \
   '        run: npm ci --prefix tests/playwright' \
   '        run: make test'; do
