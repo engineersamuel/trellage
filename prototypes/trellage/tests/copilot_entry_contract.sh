@@ -199,25 +199,55 @@ run_entry() {
   return "$status"
 }
 
+read_output_file() {
+  local output_file="$1"
+  case "$output_file" in
+    argv|env) ;;
+    *) fail "unsupported fixture output file: $output_file" ;;
+  esac
+  docker run --rm \
+    --network none \
+    --read-only \
+    --user '10001:10001' \
+    --entrypoint /bin/bash \
+    --mount "type=bind,src=$output,dst=/test-output,readonly" \
+    "$image_ref" -c 'cat -- "/test-output/$1"' -- "$output_file"
+}
+
+output_file_mode() {
+  if stat -f '%Lp' "$1" >/dev/null 2>&1; then
+    stat -f '%Lp' "$1"
+  else
+    stat -c '%a' "$1"
+  fi
+}
+
 prompt='literal $(touch /tmp/not-executed) prompt'
 COPILOT_GITHUB_TOKEN='selected-token' GH_TOKEN='poison-gh' GITHUB_TOKEN='poison-github' \
   run_entry prompt --allow-all -- "$prompt"
 expected_prompt_argv=$'--allow-all\n-p\nliteral $(touch /tmp/not-executed) prompt'
-[[ "$(cat "$output/argv")" == "$expected_prompt_argv" ]] \
+prompt_argv="$(read_output_file argv)"
+prompt_env="$(read_output_file env)"
+[[ "$(output_file_mode "$output/argv")" == 600 \
+  && "$(output_file_mode "$output/env")" == 600 ]] \
+  || fail 'Copilot fixture output did not preserve mode 0600'
+[[ "$prompt_argv" == "$expected_prompt_argv" ]] \
   || fail 'prompt mode did not map the exact prompt to Copilot -p argv'
-grep -Fqx 'COPILOT_GITHUB_TOKEN=selected-token' "$output/env" \
+grep -Fqx 'COPILOT_GITHUB_TOKEN=selected-token' <<<"$prompt_env" \
   || fail 'prompt mode did not preserve selected Copilot authentication'
-grep -Fqx 'GH_TOKEN=' "$output/env" \
+grep -Fqx 'GH_TOKEN=' <<<"$prompt_env" \
   || fail 'prompt mode exposed ambient GH_TOKEN'
-grep -Fqx 'GITHUB_TOKEN=' "$output/env" \
+grep -Fqx 'GITHUB_TOKEN=' <<<"$prompt_env" \
   || fail 'prompt mode exposed ambient GITHUB_TOKEN'
 
 assert_no_transaction_temps 'successful prompt mode'
 
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --allow-all
-[[ "$(cat "$output/argv")" == '--allow-all' ]] \
+interactive_argv="$(read_output_file argv)"
+interactive_env="$(read_output_file env)"
+[[ "$interactive_argv" == '--allow-all' ]] \
   || fail 'bare new mode was not left interactive without a prompt flag'
-grep -Fqx 'COPILOT_GITHUB_TOKEN=' "$output/env" \
+grep -Fqx 'COPILOT_GITHUB_TOKEN=' <<<"$interactive_env" \
   || fail 'bare new mode invented Copilot authentication'
 
 status=0
