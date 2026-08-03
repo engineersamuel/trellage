@@ -806,6 +806,27 @@ test_false_tmpfs_metadata_precedes_mutation() {
   printf 'Trellage host test: PASS: false tmpfs metadata precedes mutation\n'
 }
 
+test_null_tmpfs_metadata_precedes_mutation() {
+  local worktree="$test_root/null-tmpfs-metadata"
+  local docker_log="$test_root/null-tmpfs-metadata.docker.log"
+  local invalid_variant="$test_root/null-tmpfs-metadata.json"
+  local output
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq '.tmpfs_size = null' "$copilot_metadata" >"$invalid_variant"
+
+  if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" 2>&1)"; then
+    fail 'null tmpfs metadata was accepted'
+  fi
+  grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
+    || fail 'null tmpfs metadata diagnostic is missing'
+  [[ ! -s "$docker_log" ]] || fail 'null tmpfs metadata reached Docker'
+  printf 'Trellage host test: PASS: null tmpfs metadata precedes mutation\n'
+}
+
 test_legacy_tmpfs_metadata_defaults_at_launch() {
   local worktree="$test_root/legacy-tmpfs-metadata"
   local docker_log="$test_root/legacy-tmpfs-metadata.docker.log"
@@ -2748,6 +2769,7 @@ test_terminal_environment_and_agent_tagging
 test_validation_precedes_mutation
 test_invalid_tmpfs_metadata_precedes_mutation
 test_false_tmpfs_metadata_precedes_mutation
+test_null_tmpfs_metadata_precedes_mutation
 test_legacy_tmpfs_metadata_defaults_at_launch
 test_requires_tty_and_returns_exec_status
 test_doctor_reports_status_without_mutation_or_secrets
