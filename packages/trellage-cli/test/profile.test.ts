@@ -101,6 +101,26 @@ describe("parseProfile", () => {
     expect(result.directory).toBe("/profiles/example")
   })
 
+  it("defaults the runtime tmpfs size", async () => {
+    const result = await decode(profile())
+
+    expect(result.profile.runtime).toEqual({ tmpfs_size: "256m" })
+  })
+
+  it("decodes an explicit runtime tmpfs size", async () => {
+    const result = await decode(claudeProfile('[runtime]\ntmpfs_size = "2g"'))
+
+    expect(result.profile.runtime).toEqual({ tmpfs_size: "2g" })
+  })
+
+  it.each(["0m", "256", "2G", "1.5g", "2g,exec", "-1g"])("rejects invalid runtime tmpfs size %s", async (tmpfsSize) => {
+    await expect(decode(profile(`[runtime]\ntmpfs_size = "${tmpfsSize}"`))).rejects.toThrow(/tmpfs_size|pattern/i)
+  })
+
+  it("rejects unknown runtime fields", async () => {
+    await expect(decode(profile('[runtime]\ntmpfs_size = "256m"\nunexpected = true'))).rejects.toThrow(/unexpected/)
+  })
+
   it("decodes the Copilot HVE profile", async () => {
     const result = await decode(copilotProfile())
 
