@@ -830,6 +830,7 @@ export const profileMetadata = (
       profile_path: document.path,
       profile_name: document.profile.name,
       profile_hash: hash,
+      tmpfs_size: document.profile.runtime.tmpfs_size,
       runtime_hash: runtimeSnapshot.hash,
       image: `trellage-profile-${document.profile.name}:locked`,
       locked: ready,
