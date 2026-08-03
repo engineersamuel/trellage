@@ -26,6 +26,7 @@ jq -e '
     "PushNotification", "RemoteTrigger", "ReportFindings", "ScheduleWakeup",
     "CronCreate", "CronDelete", "CronList"
   ]
+  and .skipDangerousModePermissionPrompt == true
   and .disableRemoteControl == true
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
@@ -219,6 +220,7 @@ fi
 export CLAUDE_CONFIG_DIR="$runtime_home"
 set +e
 "$claude_command" --dangerously-skip-permissions \
+  --settings "$default_settings" \
   --mcp-config "$mcp_config" --strict-mcp-config "${claude_args[@]}"
 claude_status=$?
 set -e

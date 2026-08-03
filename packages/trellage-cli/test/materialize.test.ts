@@ -112,6 +112,7 @@ describe("Hyperresearch seed normalization", () => {
           "CronList",
         ],
       },
+      skipDangerousModePermissionPrompt: true,
       disableRemoteControl: true,
       disableClaudeAiConnectors: true,
       disableArtifact: true,

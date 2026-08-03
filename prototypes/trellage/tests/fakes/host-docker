@@ -26,6 +26,7 @@ fi
 printf 'ENV\tCOPILOT_GITHUB_TOKEN=%s\n' "$copilot_token_state" >>"$log"
 printf 'ENV\tGH_TOKEN=%s\n' "${GH_TOKEN:+present}" >>"$log"
 printf 'ENV\tGITHUB_TOKEN=%s\n' "${GITHUB_TOKEN:+present}" >>"$log"
+printf 'ENV\tPLAYWRIGHT_MCP_EXTENSION_TOKEN=%s\n' "${PLAYWRIGHT_MCP_EXTENSION_TOKEN:+present}" >>"$log"
 for internal_name in \
   ambient_copilot_github_token ambient_gh_token ambient_github_token \
   copilot_token secret_value secret_source_values; do

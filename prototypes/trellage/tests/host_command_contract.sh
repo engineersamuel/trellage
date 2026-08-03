@@ -5,6 +5,7 @@ prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-host-test.XXXXXX")"
 test_root="$(cd "$test_root" && pwd -P)"
 trap 'rm -rf -- "$test_root"' EXIT
+export TRELLAGE_ENVIRONMENT=off
 
 fail() {
   printf 'Trellage host test: FAIL: %s\n' "$1" >&2
@@ -811,6 +812,9 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   grep -Fqx 'dependency git: available' <<<"$output" || fail 'doctor omitted Git status'
   grep -Fqx 'dependency docker: available' <<<"$output" || fail 'doctor omitted Docker status'
   grep -Eq '^dependency mise: (available|missing)$' <<<"$output" || fail 'doctor omitted mise status'
+  grep -Fqx 'environment: disabled' <<<"$output" || fail 'doctor omitted disabled environment status'
+  grep -Fqx "environment path: $HOME/.config/trellage" <<<"$output" \
+    || fail 'doctor omitted the default environment path'
   grep -Fqx "worktree: $worktree" <<<"$output" || fail 'doctor omitted canonical worktree'
   grep -Fqx 'mount: /mounts/doctor-worktree' <<<"$output" || fail 'doctor omitted mount path'
   grep -Fqx 'image: test/image:doctor (absent)' <<<"$output" || fail 'doctor omitted absent image'
@@ -1439,7 +1443,6 @@ test_varlock_secrets_reach_only_final_codex_exec() {
   local profile="$test_root/varlock.toml"
   local lock="$test_root/varlock.lock.toml"
   local docker_log="$test_root/varlock.docker.log"
-  local mise_log="$test_root/varlock.mise.log"
   local state_volume profile_hash
   mkdir -p "$worktree"
   sed \
@@ -1460,26 +1463,78 @@ env_from_secret = { DOCS_TOKEN = "DOCS_TOKEN" }\
   rm -f "$lock.bak"
   state_volume="$(resource_names "$worktree" varlock-test | tail -n 1)"
   : >"$docker_log"
-  : >"$mise_log"
+  printf 'DOCS_TOKEN=varlock-file-secret\n' >"$test_root/.env"
+  chmod 600 "$test_root/.env"
 
   FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=varlock-test \
-    FAKE_MISE_LOG="$mise_log" \
     run_tty "$worktree" "$docker_log" "$worktree" \
       env DOCS_TOKEN='ambient-must-not-leak' TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
       "$prototype_dir/trellage" --profile "$profile"
 
-  ! grep -Fqx $'ENV\tDOCS_TOKEN=present' "$docker_log" \
-    || fail 'Varlock secret entered an intermediate Docker child environment'
-  grep -Fqx $'ENV\tDOCS_TOKEN=' "$mise_log" \
-    || fail 'ambient secret reached the final Varlock process'
-  for expected in 'x' 'varlock@1.11.0' 'varlock' 'run' '--inject' 'vars' '--filter' 'DOCS_TOKEN' '--path' "$test_root"; do
-    grep -Fqx $'ARG\t'"$expected" "$mise_log" || fail "missing Varlock argument: $expected"
-  done
-  ! grep -Fq 'ambient-must-not-leak' "$docker_log" "$mise_log" \
+  awk '
+    $0 == "CALL" { secret = first = second = ""; next }
+    /^ENV\tDOCS_TOKEN=/ { secret = $0; next }
+    /^ARG\t/ && first == "" { first = $0; next }
+    /^ARG\t/ && second == "" {
+      second = $0
+      if (secret == "ENV\tDOCS_TOKEN=present" && !(first == "ARG\tcontainer" && second == "ARG\texec")) exit 1
+      if (secret == "ENV\tDOCS_TOKEN=present") found++
+    }
+    END { exit(found == 1 ? 0 : 1) }
+  ' "$docker_log" || fail 'Varlock secret did not reach only the final Docker exec'
+  ! grep -Fq 'ambient-must-not-leak' "$docker_log" \
     || fail 'Varlock secret value entered logs'
-  printf 'Trellage host test: PASS: Varlock injection is pinned and final-exec-only\n'
+  printf 'Trellage host test: PASS: bundled Varlock injection is final-exec-only\n'
+}
+
+test_global_varlock_bootstrap_supplies_claude_browser_token() {
+  local worktree="$test_root/global-varlock-claude"
+  local docker_log="$test_root/global-varlock-claude.docker.log"
+  local claude_variant="$test_root/global-varlock-claude.json"
+  local config_directory="$test_root/global-varlock-config"
+  local state_volume
+  mkdir -p "$worktree" "$config_directory"
+  chmod 700 "$config_directory"
+  printf '# @sensitive\nPLAYWRIGHT_MCP_EXTENSION_TOKEN=\n' >"$config_directory/.env.schema"
+  printf 'PLAYWRIGHT_MCP_EXTENSION_TOKEN=browser-from-varlock\n' >"$config_directory/.env.local"
+  chmod 600 "$config_directory/.env.local"
+  jq \
+    '.profile_name = "claude-hyperresearch"
+      | .image = "trellage-profile-claude-hyperresearch:locked"
+      | .harness_kind = "claude"
+      | .harness_executable = "claude"
+      | .runtime_entry = "trellage-claude-entry"
+      | .default_network = "copilot-proxy-rs_default"
+      | .auth_policy = "claude-explicit"
+      | .harness_args = []' \
+    "$copilot_metadata" >"$claude_variant"
+  state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
+  : >"$docker_log"
+
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-hyperresearch FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_ENVIRONMENT=on TRELLAGE_CONFIG="$config_directory/config.toml" \
+      TRELLAGE_IMAGE='test/claude:locked' "$prototype_dir/trellage" -p 'browser token probe'
+
+  awk '
+    $0 == "CALL" { token = first = second = ""; next }
+    /^ENV\tPLAYWRIGHT_MCP_EXTENSION_TOKEN=/ { token = $0; next }
+    /^ARG\t/ && first == "" { first = $0; next }
+    /^ARG\t/ && second == "" {
+      second = $0
+      if (token == "ENV\tPLAYWRIGHT_MCP_EXTENSION_TOKEN=present" && !(first == "ARG\tcontainer" && second == "ARG\texec")) exit 1
+      if (token == "ENV\tPLAYWRIGHT_MCP_EXTENSION_TOKEN=present") found++
+    }
+    END { exit(found == 1 ? 0 : 1) }
+  ' "$docker_log" || fail 'global Varlock browser token did not reach only the final Claude exec'
+  ! grep -Fq 'browser-from-varlock' "$docker_log" "$copilot_node_log" \
+    || fail 'global Varlock browser token value entered logs'
+  printf 'Trellage host test: PASS: global Varlock bootstrap supplies Claude browser token\n'
 }
 
 test_stale_image_label_requires_exact_build() {
@@ -2634,6 +2689,7 @@ test_destroy_is_idempotent_and_collision_safe
 test_destroy_revalidates_after_confirmation
 test_env_secrets_reach_only_final_codex_exec
 test_varlock_secrets_reach_only_final_codex_exec
+test_global_varlock_bootstrap_supplies_claude_browser_token
 test_stale_image_label_requires_exact_build
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
 test_rebuild_replaces_container_and_preserves_profile_state

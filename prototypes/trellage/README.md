@@ -74,6 +74,45 @@ From any Git worktree, inspect dependencies, canonical paths, image, proxy netwo
 trellage doctor
 ```
 
+Doctor also reports whether automatic Varlock environment loading is disabled, ready, or has no configured source.
+
+## Automatic Environment Loading
+
+Trellage automatically runs new, prompt, and resume launches through its bundled Varlock version when a user environment source exists. Callers still invoke `trellage` directly; shells, scripts, editors, and other applications do not prefix the command with `varlock`.
+
+The default source is `$XDG_CONFIG_HOME/trellage`, or `~/.config/trellage` when `XDG_CONFIG_HOME` is unset. No config file is required. If that directory has no `.env` files, loading is a silent no-op. A typical setup is:
+
+```bash
+install -d -m 700 ~/.config/trellage
+printf '%s\n' \
+  '# @sensitive' \
+  'PLAYWRIGHT_MCP_EXTENSION_TOKEN=' \
+  >~/.config/trellage/.env.schema
+printf '%s\n' \
+  'PLAYWRIGHT_MCP_EXTENSION_TOKEN=replace-with-token' \
+  >~/.config/trellage/.env.local
+chmod 600 ~/.config/trellage/.env.local
+```
+
+The next `trellage --profile claude-hyperresearch` launch receives `PLAYWRIGHT_MCP_EXTENSION_TOKEN` before Trellage selects Claude MCPs, so Playwright and Obscura are both exposed. Existing process environment values take precedence, which preserves explicit credentials supplied by automation.
+
+Keep secret values out of `config.toml`. Use it only to control loading:
+
+```toml
+[environment]
+provider = "varlock"
+enabled = true
+path = "~/.config/trellage"
+required = false
+strict_permissions = true
+```
+
+`strict_permissions = true` is the default. Trellage rejects symlinked environment sources, non-regular `.env` entries, group/world-accessible environment directories, group/world-accessible secret-bearing files, and any config or environment file writable by group or other users. `.env.schema`, `.env.example`, `.env.sample`, and `.env.template` may remain publicly readable because they must not contain values. Set `required = true` when an application must fail closed if the source is absent.
+
+For stronger local-at-rest protection, use Varlock device-local encryption in `.env.local`, or a noninteractive secret-provider plugin. Do not use `varlock(prompt)` in unattended launches: provision the encrypted payload or provider credentials before the application invokes Trellage.
+
+Set `TRELLAGE_CONFIG` to an alternate config file. Set `TRELLAGE_ENVIRONMENT=off` for an explicit per-process bypass, or `TRELLAGE_ENVIRONMENT=on` to override `enabled = false`. Automatic loading applies only to new, prompt, and resume launches; lifecycle and compiler commands do not load secrets.
+
 ## Use
 
 Run these commands inside the Git worktree that should be mounted:
@@ -120,6 +159,8 @@ share one container and durable profile volume.
 so reserve it for recovery after interactive sessions have exited.
 
 New and resumed sessions run Codex with `--dangerously-bypass-approvals-and-sandbox`; Docker is the external sandbox. `trellage shell` does not start or label a Codex process.
+
+Claude Hyperresearch runs with `bypassPermissions` inside the same external Docker sandbox. Trellage supplies `skipDangerousModePermissionPrompt = true` as a session-level managed setting, so Claude starts without asking users or non-interactive callers to acknowledge the bypass-mode warning.
 
 ## Copilot with HVE Core
 
