@@ -649,6 +649,7 @@ for heading in \
   '## Deterministic Smoke Verification' \
   '## Install' \
   '## Doctor' \
+  '## Automatic Environment Loading' \
   '## Use' \
   '## Copilot with HVE Core' \
   '## Ten-step Herdr Human Test' \
@@ -658,6 +659,18 @@ for heading in \
   '## Verdict' \
   '## Smallest Next Experiment'; do
   require_heading "$heading"
+done
+
+for qualification in \
+  'automatically runs new, prompt, and resume launches through its bundled Varlock version' \
+  'do not prefix the command with `varlock`' \
+  '`~/.config/trellage`' \
+  '`PLAYWRIGHT_MCP_EXTENSION_TOKEN`' \
+  '`strict_permissions = true`' \
+  '`TRELLAGE_CONFIG`' \
+  '`TRELLAGE_ENVIRONMENT=off`' \
+  'Do not use `varlock(prompt)` in unattended launches'; do
+  require_section_text '## Automatic Environment Loading' "$qualification"
 done
 
 for command in \

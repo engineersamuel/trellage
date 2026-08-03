@@ -21,6 +21,8 @@ unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROP
   CLOUD_ML_REGION AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
 unset HERDR_AGENT
 
+trellage_arguments=("$@")
+
 fail() {
   printf 'trellage: %s\n' "$1" >&2
   exit 1
@@ -146,6 +148,42 @@ while [[ -L "$source_path" ]]; do
 done
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
 compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
+
+[[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
+environment_metadata=
+environment_enabled=
+environment_source_present=
+environment_path=
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ]]; then
+  environment_metadata="$(node "$compiler" environment)" || fail 'environment configuration resolution failed'
+  environment_enabled="$(jq -r '.enabled' <<<"$environment_metadata")" \
+    || fail 'environment metadata has no enabled state'
+  environment_source_present="$(jq -r '.source_present' <<<"$environment_metadata")" \
+    || fail 'environment metadata has no source state'
+  environment_path="$(jq -er '.path' <<<"$environment_metadata")" \
+    || fail 'environment metadata has no path'
+  [[ "$environment_enabled" == true || "$environment_enabled" == false ]] \
+    || fail 'environment metadata has an invalid enabled state'
+  [[ "$environment_source_present" == true || "$environment_source_present" == false ]] \
+    || fail 'environment metadata has an invalid source state'
+  if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) \
+    && "$environment_enabled" == true && "$environment_source_present" == true \
+    && "${_TRELLAGE_VARLOCK_BOOTSTRAPPED:-}" != 1 ]]; then
+    [[ -x "$varlock" ]] \
+      || fail "Varlock is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm install"
+    [[ -z "$ambient_copilot_github_token" ]] || export COPILOT_GITHUB_TOKEN="$ambient_copilot_github_token"
+    [[ -z "$ambient_gh_token" ]] || export GH_TOKEN="$ambient_gh_token"
+    [[ -z "$ambient_github_token" ]] || export GITHUB_TOKEN="$ambient_github_token"
+    [[ -z "$ambient_claude_code_oauth_token" ]] \
+      || export CLAUDE_CODE_OAUTH_TOKEN="$ambient_claude_code_oauth_token"
+    [[ -z "$ambient_anthropic_api_key" ]] || export ANTHROPIC_API_KEY="$ambient_anthropic_api_key"
+    [[ -z "$ambient_playwright_mcp_extension_token" ]] \
+      || export PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
+    export _TRELLAGE_VARLOCK_BOOTSTRAPPED=1
+    exec "$varlock" run --inject vars --path "$environment_path" -- "$source_path" "${trellage_arguments[@]}"
+  fi
+fi
 
 case "${1:-}" in
   validate|lock|build|upgrade)
@@ -155,7 +193,6 @@ case "${1:-}" in
     ;;
 esac
 
-[[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
 metadata_args=(metadata)
 [[ -z "$profile_argument" ]] || metadata_args+=("$profile_argument")
 profile_metadata="$(node "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
@@ -664,6 +701,14 @@ if [[ "$mode" == doctor ]]; then
 
   printf 'profile: %s (%s)\n' "$profile_name" "$profile_path"
   printf 'harness kind: %s\n' "$harness_kind"
+  if [[ "$environment_enabled" != true ]]; then
+    printf 'environment: disabled\n'
+  elif [[ "$environment_source_present" == true ]]; then
+    printf 'environment: varlock (ready)\n'
+  else
+    printf 'environment: varlock (no source)\n'
+  fi
+  printf 'environment path: %s\n' "$environment_path"
   printf 'resolved version: %s\n' "${resolved_version:-unresolved}"
   if [[ "$auth_policy" == host-or-login ]]; then
     case "$copilot_auth_source" in
@@ -699,7 +744,7 @@ if [[ "$secrets_provider" == varlock \
   && ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) ]]; then
   secret_filter="$(jq -r '.required_secrets | sort | join(",")' <<<"$profile_metadata")"
   codex_exec_prefix=(
-    mise x varlock@1.11.0 -- varlock run
+    "$varlock" run
     --path "$resolved_varlock_path"
     --inject vars
     --filter "$secret_filter"

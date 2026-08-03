@@ -18,6 +18,7 @@ import {
   sanitizeNpmRegistry,
   upgradeProfile,
 } from "./application.js"
+import { environmentMetadata } from "./environment.js"
 import { selectProfilePath } from "./selection.js"
 
 const execFilePromise = promisify(execFile)
@@ -131,9 +132,13 @@ const metadata = Command.make("metadata", { profile: profileArgument }, ({ profi
   ),
 )
 
+const environment = Command.make("environment", {}, () =>
+  environmentMetadata().pipe(Effect.flatMap((result) => Console.log(JSON.stringify(result)))),
+)
+
 const root = Command.make("trellage-profile", {}, () =>
-  Console.log("Use validate, lock, build, upgrade, or metadata."),
-).pipe(Command.withSubcommands([validate, lock, build, upgrade, metadata]))
+  Console.log("Use validate, lock, build, upgrade, metadata, or environment."),
+).pipe(Command.withSubcommands([validate, lock, build, upgrade, metadata, environment]))
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 

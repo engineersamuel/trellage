@@ -29,6 +29,7 @@ export const claudeDefaultSettings = {
       "CronList",
     ],
   },
+  skipDangerousModePermissionPrompt: true,
   disableRemoteControl: true,
   disableClaudeAiConnectors: true,
   disableArtifact: true,

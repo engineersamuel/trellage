@@ -35,6 +35,81 @@ trellage --profile claude-hyperresearch -p "hello"
 trellage --profile copilot-hve -p "hello"
 ```
 
+## Automatic Varlock Environment Loading
+
+Trellage bundles Varlock and uses it automatically for new, prompt, and resume launches when a user environment source exists. Always invoke `trellage` directly:
+
+```bash
+trellage --profile claude-hyperresearch
+trellage --profile claude-hyperresearch -p "research this topic"
+trellage resume --profile claude-hyperresearch
+```
+
+Do not prefix these commands with `varlock`. This keeps the same interface for terminals, scripts, editors, Herdr, and other applications invoking Trellage.
+
+### Default files
+
+The default environment directory is `$XDG_CONFIG_HOME/trellage`, or `~/.config/trellage` when `XDG_CONFIG_HOME` is unset:
+
+```text
+~/.config/trellage/
+├── config.toml
+├── .env.schema
+└── .env.local
+```
+
+No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without Varlock. To supply the Claude Hyperresearch browser extension token:
+
+```dotenv
+# ~/.config/trellage/.env.schema
+# @sensitive
+PLAYWRIGHT_MCP_EXTENSION_TOKEN=
+```
+
+```dotenv
+# ~/.config/trellage/.env.local
+PLAYWRIGHT_MCP_EXTENSION_TOKEN=replace-with-token
+```
+
+Protect the directory and value file:
+
+```bash
+chmod 700 ~/.config/trellage
+chmod 600 ~/.config/trellage/.env.local
+```
+
+On launch, Trellage resolves the Varlock source before it captures host credentials. The resolved `PLAYWRIGHT_MCP_EXTENSION_TOKEN` is then forwarded only to the final Claude process, allowing the profile to expose both Playwright and Obscura. Existing process environment values take precedence over file values, so explicit credentials supplied by automation remain authoritative.
+
+### Configuration
+
+Keep secret values out of `config.toml`; it controls loading policy only:
+
+```toml
+[environment]
+provider = "varlock"
+enabled = true
+path = "~/.config/trellage"
+required = false
+strict_permissions = true
+```
+
+- `enabled`: enables automatic loading. Defaults to `true`.
+- `path`: selects a Varlock file or directory. Relative paths resolve from `config.toml`.
+- `required`: fails the launch when the source is absent or has no `.env` files. Defaults to `false`.
+- `strict_permissions`: rejects insecure directories and secret-bearing files. Defaults to `true`.
+
+Trellage rejects symlinked sources, non-regular `.env` entries, group/world-writable configuration, and group/world-accessible secret-bearing files. For unattended applications, provision values before launch; do not use `varlock(prompt)`. Device-local encryption or a noninteractive Varlock secret-provider plugin can protect values at rest.
+
+Use `TRELLAGE_CONFIG` to select another config file. Use `TRELLAGE_ENVIRONMENT=off` for a per-process bypass or `TRELLAGE_ENVIRONMENT=on` to override `enabled = false`. Compiler and lifecycle commands do not load secrets.
+
+Check the resolved state without printing values:
+
+```bash
+trellage doctor --profile claude-hyperresearch
+```
+
+Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.
+
 Profile source files are editable intent: a source `ref` may be a tag, branch, or commit selected by the author. `trellage lock` resolves every source to an immutable commit recorded in `profile.lock.toml`; reproducible builds use `--locked` and reject drift between the profile and lock.
 
 See [the Trellage prototype guide](prototypes/trellage/README.md) for profile locks, lifecycle details, Copilot with HVE Core, cleanup, and deterministic verification.

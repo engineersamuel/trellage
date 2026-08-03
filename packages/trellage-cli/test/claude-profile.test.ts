@@ -16,6 +16,7 @@ const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 describe("authored Claude Hyperresearch profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
     expect(claudeDefaultSettings.permissions.defaultMode).toBe("bypassPermissions")
+    expect(claudeDefaultSettings.skipDangerousModePermissionPrompt).toBe(true)
   })
 
   it("cites and selects the exact upstream adapter contract", async () => {

@@ -30,6 +30,7 @@ cat >"$seed/default-settings.json" <<'JSON'
       "CronList"
     ]
   },
+  "skipDangerousModePermissionPrompt": true,
   "disableRemoteControl": true,
   "disableClaudeAiConnectors": true,
   "disableArtifact": true
@@ -79,6 +80,7 @@ jq -e '
     "PushNotification", "RemoteTrigger", "ReportFindings", "ScheduleWakeup",
     "CronCreate", "CronDelete", "CronList"
   ]
+  and .skipDangerousModePermissionPrompt == true
   and .disableRemoteControl == true
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
@@ -89,10 +91,13 @@ grep -Fq '"obscura"' "$config_out"
 ! grep -Fq 'browser-secret' "$config_out"
 grep -Fq 'PLAYWRIGHT_MCP_EXTENSION_TOKEN=browser-secret' "$env_out"
 grep -Fqx -- '--dangerously-skip-permissions' "$args_out"
+grep -Fqx -- '--settings' "$args_out"
+grep -Fqx -- "$seed/default-settings.json" "$args_out"
 grep -Fq -- '--mcp-config' "$args_out"
 dangerous_line="$(grep -nFx -- '--dangerously-skip-permissions' "$args_out" | cut -d: -f1)"
+settings_line="$(grep -nFx -- '--settings' "$args_out" | cut -d: -f1)"
 separator_line="$(grep -nFx -- '--' "$args_out" | cut -d: -f1)"
-if [[ "$dangerous_line" -ge "$separator_line" ]]; then
+if [[ "$dangerous_line" -ge "$separator_line" || "$settings_line" -ge "$separator_line" ]]; then
   printf 'managed Claude flags must precede the user argument separator\n' >&2
   exit 1
 fi

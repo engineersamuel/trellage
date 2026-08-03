@@ -23,7 +23,8 @@
     "effect": "3.22.0",
     "proper-lockfile": "4.1.2",
     "skills": "1.5.19",
-    "smol-toml": "1.7.0"
+    "smol-toml": "1.7.0",
+    "varlock": "1.13.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
