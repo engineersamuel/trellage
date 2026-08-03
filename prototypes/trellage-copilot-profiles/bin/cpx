@@ -171,6 +171,32 @@ run_copilot() {
   COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
 }
 
+has_explicit_permission() {
+  local argument
+
+  for argument in "$@"; do
+    case "$argument" in
+      --) return 1 ;;
+      --allow-all|--yolo|--allow-all-tools|--allow-all-paths|--allow-all-urls|--disallow-temp-dir) return 0 ;;
+      --allow-tool|--allow-tool=*|--allow-url|--allow-url=*|--deny-tool|--deny-tool=*|--deny-url|--deny-url=*|--add-dir|--add-dir=*) return 0 ;;
+    esac
+  done
+
+  return 1
+}
+
+launch_profile() {
+  local profile="$1"
+  shift
+  local copilot_args=("$@")
+
+  if ! has_explicit_permission "${copilot_args[@]}"; then
+    copilot_args=(--allow-all "${copilot_args[@]}")
+  fi
+
+  exec env COPILOT_HOME="$(profile_home "$profile")" copilot "${copilot_args[@]}"
+}
+
 installed_version() {
   local profile="$1"
   local plugin="$2"
@@ -412,6 +438,6 @@ case "$command_name" in
     require_profile "$command_name"
     require_command copilot
     require_safe_profile_home "$command_name"
-    exec env COPILOT_HOME="$(profile_home "$command_name")" copilot "$@"
+    launch_profile "$command_name" "$@"
     ;;
 esac

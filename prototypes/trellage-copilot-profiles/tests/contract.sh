@@ -102,7 +102,7 @@ printf '\tnative_auth=%s\n' "$FAKE_COPILOT_NATIVE_AUTH_FILE" >>"$FAKE_COPILOT_LO
 
 installed="$COPILOT_HOME/fake-state/plugins"
 marketplaces="$COPILOT_HOME/fake-state/marketplaces"
-if [[ "${1-}" == '--fixture-capability-inventory' ]]; then
+if [[ "${1-} ${2-}" == '--allow-all --fixture-capability-inventory' ]]; then
   if [[ -f "$installed" ]]; then
     while IFS=$'\t' read -r plugin _version; do
       printf 'plugin:%s\n' "$plugin"
@@ -366,12 +366,12 @@ actual_hve_launch="$(sed -n '1p' "$fake_copilot_argv_log")"
 expected_superpowers_home="$HOME/.local/share/trellage/profiles/copilot/superpowers/home"
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" superpowers --model 'gpt-5.5' --prompt 'two words' -- '--literal'
+  "$prototype_root/bin/cpx" superpowers --model 'gpt-5.5' --prompt 'two words' -- '--deny-tool'
 ) >"$fixture_root/superpowers-launch.out"
 expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--model", "gpt-5.5", "--prompt", "two words", "--", "--literal"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--model", "gpt-5.5", "--prompt", "two words", "--", "--deny-tool"]}')"
 actual_superpowers_launch="$(sed -n '2p' "$fake_copilot_argv_log")"
 [[ "$actual_superpowers_launch" == "$expected_superpowers_launch" ]] \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
@@ -379,15 +379,50 @@ actual_superpowers_launch="$(sed -n '2p' "$fake_copilot_argv_log")"
 expected_awesome_home="$HOME/.local/share/trellage/profiles/copilot/awesome/home"
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" awesome --prompt 'find useful skills' --model 'gpt-5.5'
+  "$prototype_root/bin/cpx" awesome --prompt 'find useful skills' --deny-url=example.com --model 'gpt-5.5'
 ) >"$fixture_root/awesome-launch.out"
 expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--prompt", "find useful skills", "--model", "gpt-5.5"]}')"
+  '{home: $home, cwd: $cwd, args: ["--prompt", "find useful skills", "--deny-url=example.com", "--model", "gpt-5.5"]}')"
 actual_awesome_launch="$(sed -n '3p' "$fake_copilot_argv_log")"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
+
+permission_argument_vectors=(
+  '--allow-all'
+  '--yolo'
+  '--allow-all-tools'
+  '--allow-all-paths'
+  '--allow-all-urls'
+  '--allow-tool=write'
+  $'--allow-tool\twrite'
+  '--allow-url=example.com'
+  $'--allow-url\texample.com'
+  '--deny-tool=shell(git push)'
+  $'--deny-tool\tshell(git push)'
+  '--deny-url=example.com'
+  $'--deny-url\texample.com'
+  '--add-dir=/tmp'
+  $'--add-dir\t/tmp'
+  '--disallow-temp-dir'
+)
+
+for permission_argument_vector in "${permission_argument_vectors[@]}"; do
+  IFS=$'\t' read -r -a permission_args <<<"$permission_argument_vector"
+  (
+    cd "$worktree"
+    "$prototype_root/bin/cpx" hve "${permission_args[@]}" --prompt 'permission contract'
+  ) >"$fixture_root/permission-launch.out"
+  actual_permission_launch="$(tail -n 1 "$fake_copilot_argv_log")"
+  expected_permission_launch="$(jq -cn \
+    --arg home "$expected_hve_home" \
+    --arg cwd "$worktree" \
+    --args '{home: $home, cwd: $cwd, args: $ARGS.positional}' \
+    -- "${permission_args[@]}" --prompt 'permission contract')"
+  [[ "$actual_permission_launch" == "$expected_permission_launch" ]] \
+    || fail "explicit permission arguments changed: $permission_argument_vector"
+done
 
 # Setup, doctor, and launch must reject a profile home symlink that escapes the
 # managed profile root without invoking Copilot or mutating the link target.
@@ -549,7 +584,7 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
 
-[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '6' ]] \
+[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '22' ]] \
   || fail 'launch performed implicit setup or update mutation'
 
 list_output="$fixture_root/list.out"
@@ -557,7 +592,7 @@ list_output="$fixture_root/list.out"
 assert_contains $'hve\thve-core-all@hve-core' "$list_output"
 assert_contains $'superpowers\tsuperpowers@superpowers-marketplace' "$list_output"
 assert_contains $'awesome\tawesome-copilot@awesome-copilot' "$list_output"
-[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '6' ]] \
+[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '22' ]] \
   || fail 'list invoked Copilot'
 
 mkdir -p "$expected_hve_home/fake-state"
