@@ -222,6 +222,10 @@ runtime_entry="$(jq -er '.runtime_entry' <<<"$profile_metadata")" || fail 'profi
 default_network="$(jq -er '.default_network' <<<"$profile_metadata")" || fail 'profile metadata has no default network'
 auth_policy="$(jq -er '.auth_policy' <<<"$profile_metadata")" || fail 'profile metadata has no auth policy'
 resolved_version="$(jq -r '.resolved_version // empty' <<<"$profile_metadata")"
+tmpfs_size="$(jq -r '.tmpfs_size // "256m"' <<<"$profile_metadata")" \
+  || fail 'profile metadata has no tmpfs size'
+[[ "$tmpfs_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
+  || fail 'profile metadata has an invalid tmpfs size'
 case "$harness_kind" in
   claude|codex|copilot) ;;
   *) fail 'profile metadata has an unsupported harness kind' ;;
@@ -887,7 +891,7 @@ if [[ "$reuse_container" != true ]]; then
     --pids-limit 256 \
     --memory 2g \
     --cpus 2 \
-    --tmpfs '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001' \
+    --tmpfs "/tmp:rw,noexec,nosuid,nodev,size=${tmpfs_size},uid=10001,gid=10001" \
     --mount "type=bind,src=$worktree,dst=$mount_path" \
     --mount "type=volume,src=$state_volume,dst=/home/agent" \
     --network "$network" \
