@@ -245,7 +245,7 @@ describe("profile metadata", () => {
   it("omits the resolved harness version when the same-kind lock is not ready", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-metadata-stale-lock-"))
     const profilePath = path.join(root, "profile.toml")
-    const source = copilotSource.replace('name = "copilot"', 'name = "copilot-hve"\n[runtime]\ntmpfs_size = "256m"')
+    const source = copilotSource.replace('name = "copilot"', 'name = "copilot-hve"')
     await writeFile(profilePath, source)
     const document = await Effect.runPromise(parseProfile(source, profilePath))
     const files = [{ kind: "file" as const, path: "plugins/example/plugin.json", sha256: digest("f") }]
