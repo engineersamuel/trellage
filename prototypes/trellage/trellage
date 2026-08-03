@@ -222,7 +222,7 @@ runtime_entry="$(jq -er '.runtime_entry' <<<"$profile_metadata")" || fail 'profi
 default_network="$(jq -er '.default_network' <<<"$profile_metadata")" || fail 'profile metadata has no default network'
 auth_policy="$(jq -er '.auth_policy' <<<"$profile_metadata")" || fail 'profile metadata has no auth policy'
 resolved_version="$(jq -r '.resolved_version // empty' <<<"$profile_metadata")"
-tmpfs_size="$(jq -r '.tmpfs_size // "256m"' <<<"$profile_metadata")" \
+tmpfs_size="$(jq -r 'if .tmpfs_size == null then "256m" else .tmpfs_size end' <<<"$profile_metadata")" \
   || fail 'profile metadata has no tmpfs size'
 [[ "$tmpfs_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
   || fail 'profile metadata has an invalid tmpfs size'
