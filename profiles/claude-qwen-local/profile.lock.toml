@@ -1,6 +1,6 @@
 schema = 1
 source_date_epoch = 1784379906
-profile_hash = "sha256:c7be8723f62bbe66846ed78b1e7342d53f6ca081e77e67c7570370fb1dc9a9b6"
+profile_hash = "sha256:1f22f617c0c6aa7fbfd4656c7e1a068fbc0ca81c5baea23cf1b918e0fd816043"
 sources = []
 
 [packages]
@@ -22,6 +22,11 @@ integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac0
 name = "ca-certificates"
 version = "20230311+deb12u1"
 integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "gh"
+version = "2.23.0+dfsg1-1"
+integrity = "sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12"
 
 [[packages.runtime]]
 name = "git"
@@ -61,4 +66,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:bb465eb19cca0dd0d23c68dcecc595d6c62d1ff6d2eb9e891442a52081a5f091"
+final_digest = "sha256:2b17019b3d4c1cf7d74706a40c9e8b660bc0a434c442ca764ce32566b4452125"

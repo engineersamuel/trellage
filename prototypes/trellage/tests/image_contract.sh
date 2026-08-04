@@ -107,7 +107,7 @@ case "$harness_kind" in
   claude)
     runtime_entry="$prototype_dir/runtime-claude-entry.sh"
     [[ -f "$runtime_entry" ]] || fail "missing required file: $runtime_entry"
-    [[ "$profile_name" == claude-hyperresearch ]] || fail 'Claude profile name is not exact'
+    [[ "$profile_name" == claude-* ]] || fail 'Claude profile name is not exact'
     [[ "$(jq -r '.harness_executable' <<<"$metadata")" == claude ]] \
       || fail 'Claude executable metadata is not exact'
     [[ "$(jq -r '.runtime_entry' <<<"$metadata")" == trellage-claude-entry ]] \
@@ -118,9 +118,11 @@ case "$harness_kind" in
       || fail 'Claude lock kind is not exact'
     [[ "$(locked_value '[packages.harness]' version)" == 2.1.218 ]] \
       || fail 'Claude version is not exact'
-    grep -Fqx 'adapter = "hyperresearch"' "$lock" || fail 'Hyperresearch adapter is not locked'
-    grep -Fqx 'commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"' "$lock" \
-      || fail 'Hyperresearch commit is not exact'
+    if [[ "$profile_name" == claude-hyperresearch ]]; then
+      grep -Fqx 'adapter = "hyperresearch"' "$lock" || fail 'Hyperresearch adapter is not locked'
+      grep -Fqx 'commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"' "$lock" \
+        || fail 'Hyperresearch commit is not exact'
+    fi
     ;;
   pi)
     runtime_entry="$prototype_dir/runtime-pi-entry.sh"
