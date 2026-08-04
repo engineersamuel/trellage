@@ -75,6 +75,7 @@ const runMetadata = async (
 describe("CLI identity and failure reporting", () => {
   it("uses Trellage identity and prints the full failure cause tree", () => {
     expect.soft(cliSource).toContain('Command.make("trellage-profile"')
+    expect.soft(cliSource).toContain('Command.make("choices"')
     expect.soft(cliSource).toContain('name: "Trellage profile compiler"')
     expect.soft(cliSource).toContain("process.env.TRELLAGE_PROFILE")
     expect.soft(cliSource).not.toContain("process.env.HARNESS_PROFILE")

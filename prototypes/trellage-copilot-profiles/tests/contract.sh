@@ -162,6 +162,7 @@ case "${1-} ${2-}" in
       exit 66
     fi
     if [[ -f "$installed" ]]; then
+      printf 'Installed plugins:\n'
       while IFS=$'\t' read -r plugin version; do
         printf '  • %s (v%s)\n' "$plugin" "$version"
       done <"$installed"
@@ -190,6 +191,23 @@ case "${1-} ${2-}" in
     esac
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
+    ;;
+  'skill list')
+    [[ "${3-}" == '--json' && -f "$installed" ]] || exit 67
+    IFS=$'\t' read -r plugin version <"$installed"
+    plugin_name="${plugin%%@*}"
+    marketplace_name="${plugin#*@}"
+    jq -cn --arg root "$COPILOT_HOME/installed-plugins/$marketplace_name/$plugin_name/" '[
+      {name:"package-one",description:"Package skill",source:"plugin",path:($root + "skills/package-one"),enabled:true},
+      {name:"package-two",description:"Package skill",source:"plugin",path:($root + "skills/package-two"),enabled:true},
+      {name:"builtin-one",description:"Built-in skill",source:"builtin",path:"/fixture/builtin-one",enabled:true}
+    ]'
+    exit 0
+    ;;
+  'mcp list')
+    [[ "${3-}" == '--json' ]] || exit 68
+    printf '%s\n' '{"mcpServers":{"docs":{"type":"stdio"},"files":{"type":"stdio"}}}'
+    exit 0
     ;;
 esac
 
@@ -288,6 +306,7 @@ jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["awesome", "hve", "superpowers"]
   and .profiles.awesome == {
+    "description": "GitHub-curated general-purpose agents, prompts, instructions, and skills for coding, review, documentation, testing, and platform tasks.",
     "marketplace": "github/awesome-copilot",
     "marketplaceName": "awesome-copilot",
     "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
@@ -295,6 +314,7 @@ jq -e '
     "standaloneMcps": []
   }
   and .profiles.hve == {
+    "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
     "marketplace": "microsoft/hve-core",
     "marketplaceName": "hve-core",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
@@ -302,6 +322,7 @@ jq -e '
     "standaloneMcps": []
   }
   and .profiles.superpowers == {
+    "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
     "marketplace": "obra/superpowers-marketplace",
     "marketplaceName": "superpowers-marketplace",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
@@ -592,6 +613,26 @@ list_output="$fixture_root/list.out"
 assert_contains $'hve\thve-core-all@hve-core' "$list_output"
 assert_contains $'superpowers\tsuperpowers@superpowers-marketplace' "$list_output"
 assert_contains $'awesome\tawesome-copilot@awesome-copilot' "$list_output"
+json_list_output="$fixture_root/list.json"
+"$launcher" list --json >"$json_list_output"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cpx"
+  and .harness == "copilot"
+  and [.profiles[].name] == ["awesome", "hve", "superpowers"]
+  and all(.profiles[]; (.description | type == "string" and length > 0))
+  and .profiles[0].plugin == "awesome-copilot@awesome-copilot"
+  and .profiles[0].source == null
+  and .profiles[0].marketplace == {
+    "kind": "built-in",
+    "source": "github/awesome-copilot",
+    "name": "awesome-copilot",
+    "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json"
+  }
+  and .profiles[0].standaloneMcps == []
+  and .profiles[1].marketplace.kind == "git"
+  and .profiles[2].standaloneMcps == []
+' "$json_list_output" >/dev/null || fail 'JSON list output differs'
 [[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '22' ]] \
   || fail 'list invoked Copilot'
 
@@ -602,6 +643,16 @@ printf '%s\t%s\n' 'hve-core-preview' 'fixture/hve-core-preview' \
 assert_contains 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log"
 assert_contains 'args=plugin install hve-core-all@hve-core ' "$fake_copilot_log"
 [[ -f "$expected_hve_home/fake-state/plugins" ]] || fail 'setup did not use isolated profile state'
+mkdir -p \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-one" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-two" \
+  "$expected_hve_home/installed-plugins/unrelated/unrelated/skills/not-selected"
+printf '%s\n' '# Package one' \
+  >"$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-one/SKILL.md"
+printf '%s\n' '# Package two' \
+  >"$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-two/SKILL.md"
+printf '%s\n' '# Unrelated package' \
+  >"$expected_hve_home/installed-plugins/unrelated/unrelated/skills/not-selected/SKILL.md"
 [[ ! -e "$HOME/.copilot/plugins/hve-core-all@hve-core" ]] \
   || fail 'setup leaked into global Copilot state'
 marketplace_add_count="$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")"
@@ -612,6 +663,41 @@ marketplace_add_count="$(grep -Fc 'args=plugin marketplace add microsoft/hve-cor
 doctor_output="$fixture_root/doctor.out"
 "$launcher" doctor hve >"$doctor_output"
 assert_contains 'hve: healthy' "$doctor_output"
+inventory_output="$fixture_root/inventory.json"
+"$launcher" inventory hve --json >"$inventory_output"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cpx"
+  and .harness == "copilot"
+  and .profile == "hve"
+  and .readiness == "healthy"
+  and .plugins == [{name:"hve-core-all@hve-core",version:"3.3.101"}]
+  and .skills == {packageCount:2,visibleCount:3}
+  and .mcps == ["docs","files"]
+' "$inventory_output" >/dev/null || fail 'healthy inventory output differs'
+mv "$expected_hve_home/installed-plugins/hve-core/hve-core-all" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core-all.safe"
+ln -s "$expected_hve_home/installed-plugins/unrelated/unrelated" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core-all"
+if "$launcher" inventory hve --json \
+  >"$fixture_root/symlink-plugin-root.out" 2>"$fixture_root/symlink-plugin-root.err"; then
+  fail 'inventory accepted a redirected selected plugin root'
+fi
+assert_contains 'invalid installed plugin root for hve' \
+  "$fixture_root/symlink-plugin-root.err"
+rm "$expected_hve_home/installed-plugins/hve-core/hve-core-all"
+mv "$expected_hve_home/installed-plugins/hve-core/hve-core-all.safe" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core-all"
+rm -rf "$HOME/.local/share/trellage/profiles/copilot/awesome"
+"$launcher" inventory awesome --json >"$fixture_root/not-setup-inventory.json"
+jq -e '
+  .profile == "awesome"
+  and .readiness == "not-setup"
+  and .plugins == []
+  and .skills == {packageCount:null,visibleCount:null}
+  and .mcps == []
+' "$fixture_root/not-setup-inventory.json" >/dev/null \
+  || fail 'not-setup inventory output differs'
 mkdir -p "$expected_hve_home/skills/personal"
 if "$launcher" doctor hve >"$fixture_root/doctor-skill.out" 2>"$fixture_root/doctor-skill.err"; then
   fail 'doctor accepted a standalone profile skill'

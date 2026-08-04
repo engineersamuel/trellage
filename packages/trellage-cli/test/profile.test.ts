@@ -11,6 +11,7 @@ import { isClaudeProfile, isCodexProfile, isCopilotProfile, parseProfile } from 
 const profile = (extra = "") => `
 schema = 1
 name = "codex-superpowers"
+description = "Codex test profile"
 
 [harness]
 kind = "codex"
@@ -50,6 +51,7 @@ select = ["hve-core"]
 const copilotProfile = (extra = "") => `
 schema = 1
 name = "copilot-hve"
+description = "Copilot test profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -68,6 +70,7 @@ ${extra}
 const claudeProfile = (extra = "") => `
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude test profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
@@ -91,6 +94,13 @@ ${extra}
 const decode = (source: string) => Effect.runPromise(parseProfile(source, "/profiles/example/profile.toml"))
 
 describe("parseProfile", () => {
+  it.each([
+    ["missing", profile().replace('description = "Codex test profile"\n', "")],
+    ["empty", profile().replace('description = "Codex test profile"', 'description = ""')],
+  ])("rejects a %s profile description", async (_label, input) => {
+    await expect(decode(input)).rejects.toThrow(/description|length/i)
+  })
+
   it("decodes a strict Codex profile", async () => {
     const result = await decode(profile())
 

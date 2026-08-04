@@ -37,6 +37,17 @@ printf '%s\n' \
   '  internal_state=' \
   'done' \
   'printf '\''ARG\t%s\n'\'' "$@" >>"$FAKE_NODE_LOG"' \
+  'if [[ "${2:-}" == choices && -n "${FAKE_PROFILE_CHOICES:-}" ]]; then' \
+  '  exec cat "$FAKE_PROFILE_CHOICES"' \
+  'fi' \
+  'if [[ "${2:-}" == metadata && -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
+  '  exec cat "$FAKE_PROFILE_METADATA"' \
+  'fi' \
+  'if [[ "${1:-}" == */terminal-picker.mjs && -n "${FAKE_PICKER_INPUT:-}" ]]; then' \
+  '  cat >"$FAKE_PICKER_INPUT"' \
+  '  printf '\''0\n'\''' \
+  '  exit 0' \
+  'fi' \
   'exec "$FAKE_REAL_NODE" "$@"' \
   >"$fake_bin/node"
 chmod +x "$fake_bin/node"
@@ -83,7 +94,7 @@ jq -n \
   '{
     profile_path: $profile,
     profile_name: "copilot-hve-test",
-    profile_hash: "sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971",
+    profile_hash: "sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb",
     runtime_hash: $runtime_hash,
     image: "trellage-profile-copilot-hve-test:locked",
     locked: true,
@@ -343,7 +354,7 @@ test_new_container_from_subdirectory() {
   [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 8 ]] \
     || fail 'Codex container and volume must receive exact ownership and container integrity labels'
   assert_arg "$docker_log" 'dev.trellage.profile=codex-superpowers'
-  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971"
+  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb"
   assert_arg "$docker_log" "dev.trellage.runtime.hash=$runtime_hash"
   [[ "$(grep -Fxc $'ARG\t--network' "$docker_log")" -eq 1 ]] \
     || fail 'container must receive exactly one network'
@@ -1885,6 +1896,92 @@ test_upgrade_delegates_to_effect_cli() {
   printf 'Trellage host test: PASS: upgrade delegates to Effect CLI\n'
 }
 
+test_interactive_profile_selection() {
+  local worktree="$test_root/interactive-profile"
+  local docker_log="$test_root/interactive-profile.docker.log"
+  local choices="$test_root/interactive-profile-choices.json"
+  local metadata="$test_root/interactive-profile-metadata.json"
+  local picker_input="$test_root/interactive-picker-input.json"
+  local profile="$prototype_dir/../../profiles/codex-superpowers/profile.toml"
+  local output profile_hash status=0
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata "$profile" \
+    | jq '.locked = true | .image = "test/image:locked"' >"$metadata"
+  profile_hash="$(jq -er '.profile_hash' "$metadata")"
+  jq -n --arg profile "$profile" '[
+    {
+      value: $profile,
+      name: "cap",
+      description: ("Interactive\u0001 " + ("x" * 1200)),
+      harness: { kind: "codex", version: "v", model: "g" },
+      skills: [{ repository: "skills", ref: "v1", select: ["s1", "s2"] }],
+      plugins: [{
+        adapter: "test",
+        repository: "plugins",
+        ref: "v1",
+        select: ["p1"]
+      }],
+      mcps: [{ name: "m1" }]
+    }
+  ]' >"$choices"
+
+  : >"$host_node_log"
+  printf '\n' | FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
+    FAKE_PICKER_INPUT="$picker_input" \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
+      "$prototype_dir/trellage" --interactive
+  jq -e '
+    .choices[0]
+    | .label == "cap / codex"
+      and (.description | startswith("Interactive  ") and length == 1213)
+      and (.details
+        | contains("Declared profile — harness codex v, model g")
+          and contains("plugins 1: p1")
+          and contains("skill selections 2: s1, s2")
+          and contains("MCPs 1: m1"))
+      and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
+  ' "$picker_input" >/dev/null \
+    || fail 'interactive choice omitted concise label, description, or declared details'
+  grep -Fqx $'ARG\tchoices' "$host_node_log" \
+    || fail 'interactive launch did not request compiler choices'
+  grep -Fqx $'ARG\t'"$profile" "$host_node_log" \
+    || fail 'interactive launch did not feed the selected profile into metadata resolution'
+  grep -Fqx $'ARG\texec' "$docker_log" \
+    || fail 'interactive selection did not continue through the existing launch flow'
+
+  output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" -i 2>&1)" || status=$?
+  [[ "$status" -eq 1 ]] || fail "non-TTY interactive launch returned $status instead of 1"
+  grep -Fqx 'trellage: interactive profile selection requires an interactive terminal' <<<"$output" \
+    || fail 'non-TTY interactive launch did not report the terminal requirement'
+
+  output="$("$prototype_dir/trellage" --profile "$profile" -i 2>&1)" && \
+    fail 'interactive launch accepted --profile'
+  grep -Fqx 'trellage: --profile cannot be combined with --interactive' <<<"$output" \
+    || fail 'interactive --profile conflict diagnostic is incorrect'
+
+  output="$("$prototype_dir/trellage" resume --interactive 2>&1)" && \
+    fail 'resume accepted --interactive'
+  grep -Fqx 'trellage: --interactive is not supported for resume' <<<"$output" \
+    || fail 'interactive lifecycle diagnostic is incorrect'
+
+  output="$("$prototype_dir/trellage" validate --interactive 2>&1)" && \
+    fail 'compiler command accepted --interactive'
+  grep -Fqx 'trellage: --interactive is not supported for compiler commands' <<<"$output" \
+    || fail 'interactive compiler diagnostic is incorrect'
+
+  status=0
+  printf '\033' | FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -i >/dev/null 2>&1 || status=$?
+  [[ "$status" -eq 130 ]] \
+    || fail "interactive cancellation returned $status instead of 130"
+  printf 'Trellage host test: PASS: interactive profile selection\n'
+}
+
 test_compiler_commands_scrub_copilot_auth() {
   local fake_node_bin="$test_root/compiler-auth-node-bin"
   local node_log="$test_root/compiler-auth-node.log"
@@ -1933,6 +2030,7 @@ test_copilot_metadata_contract() {
   printf '%s\n' \
     'schema = 1' \
     'name = "copilot-hve-test"' \
+    'description = "Copilot host metadata contract profile"' \
     '[harness]' \
     'kind = "copilot"' \
     'version = "latest"' \
@@ -2738,8 +2836,14 @@ if [[ "${TRELLAGE_HOST_RUNTIME_IDENTITY_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_INTERACTIVE_ONLY:-}" == 1 ]]; then
+  test_interactive_profile_selection
+  exit 0
+fi
+
 test_claude_launch_allows_empty_harness_args
 test_upgrade_delegates_to_effect_cli
+test_interactive_profile_selection
 test_compiler_commands_scrub_copilot_auth
 test_copilot_metadata_contract
 test_host_docker_created_labels_round_trip_without_defaults

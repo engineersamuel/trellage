@@ -52,6 +52,7 @@ if [[ "$compiler_mode" == true ]]; then
   for compiler_argument in "$@"; do
     case "$compiler_argument" in
       -p|--prompt|--prompt=*) fail '--prompt is not supported for compiler commands' ;;
+      -i|--interactive|--interactive=*) fail '--interactive is not supported for compiler commands' ;;
     esac
   done
 fi
@@ -60,6 +61,7 @@ profile_argument=
 auth_mode_argument=
 prompt_argument=
 prompt_argument_set=false
+interactive=false
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
   while (( $# > 0 )); do
@@ -102,6 +104,14 @@ if [[ "$compiler_mode" == false ]]; then
         prompt_argument_set=true
         shift
         ;;
+      -i|--interactive)
+        [[ "$interactive" == false ]] || fail '--interactive may be specified only once'
+        interactive=true
+        shift
+        ;;
+      --interactive=*)
+        fail '--interactive does not accept a value'
+        ;;
       *)
         parsed_arguments+=("$1")
         shift
@@ -122,6 +132,13 @@ if [[ "$compiler_mode" == false ]]; then
         [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
         mode="$1"
         ;;
+    esac
+  fi
+  if [[ "$interactive" == true ]]; then
+    [[ -z "$profile_argument" ]] || fail '--profile cannot be combined with --interactive'
+    case "$mode" in
+      new|prompt) ;;
+      *) fail "--interactive is not supported for $mode" ;;
     esac
   fi
 fi
@@ -149,6 +166,7 @@ done
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
 compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
+picker="$prototype_dir/../shared/terminal-picker.mjs"
 
 [[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
 environment_metadata=
@@ -192,6 +210,47 @@ case "${1:-}" in
     exec node "$compiler" "$@"
     ;;
 esac
+
+if [[ "$interactive" == true ]]; then
+  [[ -t 0 && -t 1 ]] || fail 'interactive profile selection requires an interactive terminal'
+  [[ -f "$picker" ]] || fail "terminal picker is unavailable: $picker"
+  profile_choices="$(node "$compiler" choices)" || fail 'profile choices resolution failed'
+  picker_input="$(jq -ce '
+    def counted($label; $items):
+      ($items | length) as $count
+      | $label + " " + ($count | tostring)
+        + (if $count == 0 then "" else ": " + ($items | join(", ")) end);
+    {
+      prompt: "Select a Trellage profile",
+      choices: to_entries | map({
+        id: (.key | tostring),
+        label: ((.value.name + " / " + .value.harness.kind) | .[:500]),
+        description: (.value.description | gsub("[[:cntrl:]]"; " ") | .[:4000]),
+        details: (
+          (
+            "Declared profile — harness " + .value.harness.kind
+            + " " + .value.harness.version
+            + (if .value.harness.model then ", model " + .value.harness.model else "" end)
+            + "; " + counted("plugins"; [.value.plugins[].select[]])
+            + "; " + counted("skill selections"; [.value.skills[].select[]])
+            + "; " + counted("MCPs"; [.value.mcps[].name])
+          )
+          | gsub("[[:cntrl:]]"; " ")
+          | .[:8000]
+        )
+      })
+    }
+  ' <<<"$profile_choices")" || fail 'profile choices are invalid'
+  picker_status=0
+  selected_choice="$(node "$picker" <<<"$picker_input")" || picker_status=$?
+  if [[ "$picker_status" -ne 0 ]]; then
+    exit "$picker_status"
+  fi
+  profile_argument="$(jq -er --arg choice "$selected_choice" \
+    '.[$choice | tonumber].value' <<<"$profile_choices")" \
+    || fail 'terminal picker returned an invalid profile selection'
+  [[ -n "$profile_argument" ]] || fail 'terminal picker returned an empty profile path'
+fi
 
 metadata_args=(metadata)
 [[ -z "$profile_argument" ]] || metadata_args+=("$profile_argument")

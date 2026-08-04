@@ -158,6 +158,7 @@ readme_commands="$(awk '
 ' "$readme")"
 expected_readme_commands="$(printf '%s\n' \
   'grx list' \
+  'grx inventory hve --json' \
   'grx setup hve' \
   'grx setup superpowers' \
   'grx setup --all' \
@@ -176,12 +177,14 @@ jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["hve", "superpowers"]
   and .profiles.hve == {
+    "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
     "source": "microsoft/hve-core#plugins/hve-core-all",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
     "plugin": "hve-core-all",
     "standaloneMcps": []
   }
   and .profiles.superpowers == {
+    "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
     "source": "obra/superpowers",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
     "plugin": "superpowers",
@@ -202,6 +205,28 @@ fake_bin="$fixture_root/fake-bin"
 fake_grok_log="$fixture_root/fake-grok.log"
 mkdir -p "$fixture_home" "$fake_bin"
 : >"$fake_grok_log"
+
+HOME="$fixture_home" "$prototype_root/bin/grx" list >"$fixture_root/list.out" \
+  || fail 'list failed'
+cmp -s "$fixture_root/list.out" <(printf '%s\n' \
+  $'hve\thve-core-all' \
+  $'superpowers\tsuperpowers') \
+  || fail 'list output differs'
+HOME="$fixture_home" "$prototype_root/bin/grx" list --json >"$fixture_root/list.json" \
+  || fail 'JSON list failed'
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "grx"
+  and .harness == "grok"
+  and [.profiles[].name] == ["hve", "superpowers"]
+  and all(.profiles[]; (.description | type == "string" and length > 0))
+  and .profiles[0].plugin == "hve-core-all"
+  and .profiles[0].source == "microsoft/hve-core#plugins/hve-core-all"
+  and .profiles[0].marketplace == null
+  and .profiles[0].standaloneMcps == []
+  and .profiles[1].source == "obra/superpowers"
+  and .profiles[1].standaloneMcps == []
+' "$fixture_root/list.json" >/dev/null || fail 'JSON list output differs'
 
 real_jq="$(command -v jq)"
 export REAL_JQ="$real_jq"
@@ -287,6 +312,8 @@ write_native_plugin() {
     --arg repository "$repo_url" \
     '{name:$name,version:$version,repository:$repository}' \
     >"$manifest"
+  mkdir -p "$installed_path/skills/package-one"
+  printf '%s\n' '# Package one' >"$installed_path/skills/package-one/SKILL.md"
   jq -cn \
     --arg name "$name" \
     --arg repoKey "$repo_key" \
@@ -521,7 +548,10 @@ if [ "${1:-}" = 'inspect' ] && [ "${2:-}" = '--json' ]; then
     };
     {
       skills: ([
-        active("plugin-skill"; "plugin"; ($grokHome + "/installed-plugins/plugin/skills/plugin-skill")),
+        (active("plugin-skill"; "plugin"; ($grokHome + "/installed-plugins/plugin/skills/plugin-skill"))
+          | .source.plugin_name = "hve-core-all"),
+        (active("support-skill"; "plugin"; ($grokHome + "/installed-plugins/support-plugin/skills/support"))
+          | .source.plugin_name = "support-plugin"),
         active("repository-grok-skill"; "repository"; ($repository + "/.grok/skills/grok-skill")),
         active("repository-agents-skill"; "repository"; ($repository + "/.agents/skills/agents-skill"))
       ]
@@ -552,6 +582,12 @@ if [ "${1:-}" = 'inspect' ] && [ "${2:-}" = '--json' ]; then
         path: ($grokHome + "/installed-plugins/hve-core-fixture"),
         enabled: true,
         provides: {skills: 1, agents: 1, hooks: false, mcpServers: 0}
+      }, {
+        name: "support-plugin",
+        scope: "user",
+        path: ($grokHome + "/installed-plugins/support-plugin"),
+        enabled: true,
+        provides: {skills: 1, agents: 0, hooks: false, mcpServers: 0}
       }, {
         name: "repository-plugin",
         scope: "project",
@@ -706,6 +742,7 @@ help_output="$fixture_root/help.out"
 assert_line '  grx setup PROFILE|--all' "$help_output"
 assert_line '  grx PROFILE [GROK_ARGS...]' "$help_output"
 assert_line '  grx list' "$help_output"
+assert_line '  grx list --json' "$help_output"
 assert_line '  grx doctor PROFILE' "$help_output"
 assert_line '  grx update --check PROFILE|--all' "$help_output"
 assert_line '  grx update PROFILE|--all' "$help_output"
@@ -896,6 +933,33 @@ if ! jq -s -e 'all(.[];
 )' "$fake_grok_log" >/dev/null; then
   fail 'setup received proxy routing variables'
 fi
+./bin/grx inventory hve --json >"$fixture_root/inventory-hve.json"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "grx"
+  and .harness == "grok"
+  and .profile == "hve"
+  and .readiness == "healthy"
+  and .plugins == [
+    {name:"hve-core-all",version:"3.3.101"},
+    {name:"support-plugin",version:"unknown"}
+  ]
+  and .skills == {packageCount:1,visibleCount:8}
+  and .mcps == ["native-mcp","plugin-mcp","repository-mcp"]
+' "$fixture_root/inventory-hve.json" >/dev/null \
+  || {
+    cat "$fixture_root/inventory-hve.json" >&2
+    fail 'Grok inventory output differs'
+  }
+./bin/grx inventory superpowers --json >"$fixture_root/inventory-not-setup.json"
+jq -e '
+  .profile == "superpowers"
+  and .readiness == "not-setup"
+  and .plugins == []
+  and .skills == {packageCount:null,visibleCount:null}
+  and .mcps == []
+' "$fixture_root/inventory-not-setup.json" >/dev/null \
+  || fail 'Grok not-setup inventory differs'
 
 mkdir -p "$hve_home/sessions" "$hve_home/mcp-state"
 printf 'session sentinel\n' >"$hve_home/sessions/keep"

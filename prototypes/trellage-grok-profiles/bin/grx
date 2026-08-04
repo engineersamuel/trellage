@@ -100,6 +100,8 @@ usage() {
     '  grx setup PROFILE|--all' \
     '  grx PROFILE [GROK_ARGS...]' \
     '  grx list' \
+    '  grx list --json' \
+    '  grx inventory PROFILE --json' \
     '  grx doctor PROFILE' \
     '  grx update --check PROFILE|--all' \
     '  grx update PROFILE|--all' \
@@ -208,12 +210,14 @@ validate_catalog() {
       | (.schemaVersion == 1)
       and (.profiles == {
         "hve": {
+          "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
           "source": "microsoft/hve-core#plugins/hve-core-all",
           "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
           "plugin": "hve-core-all",
           "standaloneMcps": []
         },
         "superpowers": {
+          "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
           "source": "obra/superpowers",
           "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
           "plugin": "superpowers",
@@ -231,6 +235,7 @@ validate_catalog() {
       and all(.profiles[];
         ((.source | type) == "string" and (.source | length) > 0)
         and (.source | explode | all(. >= 32 and . != 127))
+        and ((.description | type) == "string" and (.description | length) > 0)
         and ((.plugin | type) == "string" and (.plugin | length) > 0)
         and ((.manifestUrl | type) == "string" and (.manifestUrl | startswith("https://")))
         and (.standaloneMcps == [])
@@ -273,8 +278,39 @@ run_grok() {
   env GROK_HOME="$(profile_home "$profile")" "$grok_executable" "$@"
 }
 
+run_grok_read_only() {
+  local profile="$1"
+  shift
+
+  resolve_grok
+  env GROK_HOME="$(profile_home "$profile")" "$grok_executable" "$@"
+}
+
 list_profiles() {
   jq -r '.profiles | to_entries | sort_by(.key)[] | [.key, .value.plugin] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "grx",
+      harness: "grok",
+      profiles: [
+        .profiles
+        | to_entries
+        | sort_by(.key)[]
+        | {
+            name: .key,
+            description: .value.description,
+            plugin: .value.plugin,
+            source: .value.source,
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
 }
 
 policy_content() {
@@ -1093,6 +1129,175 @@ doctor_profile() {
   printf '%s: healthy (plugin %s, version %s)\n' "$profile" "$plugin" "$version"
 }
 
+not_ready_inventory() {
+  local profile="$1"
+  local readiness="$2"
+
+  jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: "grx",
+    harness: "grok",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile_files_are_healthy() {
+  local profile="$1"
+  local home policy auth
+
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  policy="$home/requirements.toml"
+  auth="$home/auth.json"
+  [ -d "$home" ] && [ ! -L "$home" ] || return 1
+  [ "$(file_mode "$home")" = '700' ] || return 1
+  [ -f "$policy" ] && [ ! -L "$policy" ] || return 1
+  [ "$(file_mode "$policy")" = '644' ] || return 1
+  policy_content | cmp -s - "$policy" || return 1
+  [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] || return 1
+  [ "$(file_mode "$auth")" = '600' ]
+}
+
+inventory_profile() {
+  local profile="$1"
+  local home plugin source plugin_inventory_json plugin_root version inspect_json plugins skills package_count mcps
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  if [ ! -d "$home" ]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  if ! inventory_profile_files_are_healthy "$profile"; then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+
+  plugin="$(profile_value "$profile" plugin)"
+  source="$(profile_value "$profile" source)"
+  plugin_inventory_json="$(run_grok_read_only "$profile" plugin list --json \
+    | single_json_document 2>/dev/null)" \
+    || die "failed to read installed plugin inventory: $profile"
+  version="$(printf '%s\n' "$plugin_inventory_json" \
+    | parse_installed_version "$profile" "$plugin" "$source" 2>/dev/null)" \
+    || die "invalid installed plugin inventory: $profile"
+  [ -n "$version" ] || die "invalid installed plugin inventory: $profile"
+  plugin_root="$(printf '%s\n' "$plugin_inventory_json" | jq -er '.[0].path')" \
+    || die "invalid installed plugin inventory: $profile"
+  plugin_directory_is_safe "$profile" "$plugin_root" \
+    || die "invalid installed plugin root: $profile"
+  package_count="$(find "$plugin_root" -type f -name SKILL.md \
+    -exec printf '.\n' \; 2>/dev/null | awk 'END { print NR }')" \
+    || die "failed to count installed plugin skills: $profile"
+  case "$package_count" in ''|*[!0-9]*) die "invalid installed plugin skill count: $profile" ;; esac
+
+  inspect_json="$(run_grok_read_only "$profile" inspect --json \
+    | single_json_document 2>/dev/null)" \
+    || die "failed to read visible skill inventory: $profile"
+  plugins="$(printf '%s\n' "$inspect_json" | jq -ce \
+    --arg package "$plugin" --arg version "$version" '
+    if type == "object"
+      and (.plugins | type == "array")
+      and (.skills | type == "array")
+      and (.agents | type == "array")
+      and (.hooks | type == "array")
+      and (.mcpServers | type == "array")
+      and (.externalCompat | type == "object")
+      and (.externalCompat.cells | type == "array")
+      and all(.plugins[];
+        type == "object"
+        and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+        and (.scope | type == "string" and length > 0)
+        and (.enabled | type == "boolean"))
+    then .externalCompat.cells as $cells
+    | (
+      [
+        (.skills[] | {entry: ., surface: "skills"}),
+        (.agents[] | {entry: ., surface: "agents"}),
+        (.hooks[] | {entry: ., surface: "hooks"}),
+        (.mcpServers[] | {entry: ., surface: "mcps"})
+        | .surface as $surface
+        | select(
+            .entry.source.type == "plugin"
+            and (.entry.source.plugin_name | type == "string" and length > 0)
+            and .entry.disabled != true
+            and .entry.enabled != false
+            and .entry.compatibilityStatus != "disabled"
+            and (
+              (.entry.vendor // "") as $vendor
+              | $vendor == ""
+                or ([$cells[] | select(
+                  .vendor == $vendor and .surface == $surface and .enabled == false
+                )] | length) == 0
+            )
+          )
+        | .entry.source.plugin_name
+      ] | unique
+    ) as $involved
+    | [
+        .plugins[]
+        | .name as $name
+        | select(
+            .enabled
+            and .scope == "user"
+            and ($name == $package or ($involved | index($name)) != null)
+          )
+        | {name, version: (if .name == $package then $version else "unknown" end)}
+      ] | unique_by(.name) | sort_by(.name)
+    else error("invalid inspect inventory")
+    end
+  ' 2>/dev/null)" || die "invalid enabled plugin inventory for $profile"
+  printf '%s\n' "$plugins" | jq -e --arg package "$plugin" \
+    'map(select(.name == $package)) | length == 1' >/dev/null \
+    || die "cataloged plugin missing from enabled inventory: $profile"
+  skills="$(printf '%s\n' "$inspect_json" | jq -ce \
+    --argjson packageCount "$package_count" '
+    if type == "object"
+      and (.skills | type == "array")
+      and all(.skills[];
+        type == "object"
+        and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$")))
+    then {packageCount: $packageCount, visibleCount: (.skills | length)}
+    else error("invalid inspect inventory")
+    end
+  ' 2>/dev/null)" || die "invalid visible inventory for $profile"
+
+  mcps="$(run_grok_read_only "$profile" mcp list --json \
+    | single_json_document 2>/dev/null)" \
+    || die "failed to read MCP inventory: $profile"
+  mcps="$(printf '%s\n' "$mcps" | jq -ce '
+    if type == "array"
+      and all(.[];
+        type == "object"
+        and (.name | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and (.enabled | type == "boolean"))
+    then [.[] | select(.enabled) | .name] | unique | sort
+    else error("invalid MCP inventory")
+    end
+  ' 2>/dev/null)" || die "invalid MCP inventory for $profile"
+
+  jq -cn \
+    --arg profile "$profile" \
+    --argjson plugins "$plugins" \
+    --argjson skills "$skills" \
+    --argjson mcps "$mcps" \
+    '{
+      schemaVersion: 1,
+      launcher: "grx",
+      harness: "grok",
+      profile: $profile,
+      readiness: "healthy",
+      plugins: $plugins,
+      skills: $skills,
+      mcps: $mcps
+    }'
+}
+
 require_launch_ready() {
   local profile="$1"
   local auth
@@ -1285,8 +1490,18 @@ case "$command_name" in
     usage
     ;;
   list)
-    [ "$#" -eq 0 ] || die 'list accepts no arguments'
-    list_profiles
+    if [ "$#" -eq 0 ]; then
+      list_profiles
+    elif [ "$#" -eq 1 ] && [ "$1" = '--json' ]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory)
+    [ "$#" -eq 2 ] && [ "$2" = '--json' ] \
+      || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
     ;;
   setup)
     [ "$#" -eq 1 ] || die 'setup requires PROFILE or --all'

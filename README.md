@@ -10,6 +10,7 @@ mise trust
 mise run install-trellage
 trellage validate /absolute/path/to/profile.toml
 trellage build --locked /absolute/path/to/profile.toml
+trellage -i
 trellage --profile /absolute/path/to/profile.toml
 trellage resume --profile /absolute/path/to/profile.toml
 trellage doctor --profile /absolute/path/to/profile.toml
@@ -26,6 +27,27 @@ trellage --profile claude-hyperresearch
 ```
 
 Trellage expands a bare name to `profiles/<name>/profile.toml`. Use a value ending in `.toml` or containing a path separator for an explicit path.
+
+Use `trellage -i` or `trellage --interactive` to choose a profile before a new
+launch:
+
+```bash
+trellage -i
+trellage -i -p "hello"
+```
+
+The picker combines valid profiles bundled with the installed Trellage source
+tree and valid `<current-worktree>/profiles/<directory>/profile.toml` files into
+one name-sorted list. A current-worktree profile with the same declared name
+replaces the bundled choice. Rows stay concise. The highlighted detail pane
+shows the full description plus declared harness version/model, selected plugin
+names, skill selections/count, and MCP names/count. The profile remains the
+source of truth for those declarations; they are not installed inventory.
+
+Interactive selection requires a terminal and cannot be combined with
+`--profile`, resume, lifecycle, or compiler commands. Escape or Ctrl-C cancels
+with status `130`. Selection does not install, update, lock, or build a profile;
+the chosen profile continues through the normal launch checks.
 
 Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) for one plain-text, non-interactive prompt; Trellage returns the native harness exit status:
 
@@ -124,6 +146,7 @@ Install all three launchers from the repository root:
 (cd prototypes/trellage-codex-profiles && ./install.sh)
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
 (cd prototypes/trellage-grok-profiles && ./install.sh)
+(cd prototypes/trellage-router && ./install.sh)
 ```
 
 The installers publish these commands and managed runtimes:
@@ -131,6 +154,7 @@ The installers publish these commands and managed runtimes:
 - `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
 - `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
 - `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
+- `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
 
 Their isolated profile homes are rooted at:
 
@@ -146,6 +170,25 @@ is an explicit per-launch opt-in:
 ```sh
 cdx --native-auth hve exec "Review this repository"
 ```
+
+After all three native launchers and `trx` are installed, use one flat
+harness/profile picker:
+
+```bash
+trx -i
+trx -i --model gpt-5
+```
+
+`trx` reads the launchers' declared catalogs and read-only installed inventory.
+Rows show only `harness / profile`; the highlighted detail pane shows readiness,
+installed plugin names/versions, exact selected-package `SKILL.md` count,
+broader CLI-visible entry count, and enabled MCP names/count. Package counts
+come only from launcher-validated selected plugin roots or cache paths;
+`visibleCount` preserves each native CLI's broader inventory semantics. `trx`
+requires a TTY; Escape or Ctrl-C returns `130`. It does not set up, repair,
+update, call a model, use the network, or mutate profile state. Native profiles
+run directly on the host and are
+state-isolation conveniences, not security boundaries.
 
 ## Generic Evaluation Harness
 

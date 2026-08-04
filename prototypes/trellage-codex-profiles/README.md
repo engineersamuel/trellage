@@ -43,6 +43,7 @@ retain the old function until it reloads.
 
 ```sh
 cdx list
+cdx inventory hve --json
 cdx setup hve
 cdx setup superpowers
 cdx setup --all
@@ -56,6 +57,21 @@ cdx update hve
 cdx update --all
 cdx repair hve
 ```
+
+Use `cdx list --json` for the stable machine-readable catalog, including
+launcher, harness, plugin, source, marketplace, and standalone MCP metadata.
+These are catalog declarations, not proof that profile setup or installed
+plugin state is healthy. Use `cdx doctor PROFILE` for that validation.
+`cdx inventory PROFILE --json` is read-only. It reports readiness, installed
+plugins/versions, exact package skills counted as `SKILL.md` files beneath the
+selected plugin's validated cache paths, broader CLI-visible entries from static
+`debug prompt-input`, and MCP names. Unrelated marketplace caches are never
+scanned.
+
+After installing `cpx`, `cdx`, `grx`, and the
+[`trx` router](../trellage-router/README.md), run `trx -i` for one flat
+harness/profile picker. `trx` forwards remaining arguments to `cdx` unchanged
+after selection and never performs setup, repair, or update.
 
 Profile launch always passes
 `--dangerously-bypass-approvals-and-sandbox`. This disables Codex approvals and

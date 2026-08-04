@@ -1,5 +1,6 @@
 schema = 1
 name = "copilot-hve"
+description = "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows."
 
 [harness]
 kind = "copilot"

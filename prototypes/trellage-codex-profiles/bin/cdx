@@ -56,6 +56,8 @@ usage() {
     '' \
     'Commands:' \
     '  list' \
+    '  list --json' \
+    '  inventory PROFILE --json' \
     '  setup PROFILE|--all' \
     '  doctor PROFILE' \
     '  update --check PROFILE|--all' \
@@ -72,32 +74,65 @@ validate_catalog() {
       "schemaVersion": 1,
       "profiles": {
         "hve": {
+          "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
           "marketplaceKind": "local-adapter",
           "marketplaceSource": "marketplaces/hve-core",
           "marketplaceName": "hve-core",
           "upstreamRepository": "https://github.com/microsoft/hve-core.git",
           "upstreamSkillsPath": ".github/skills",
           "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
-          "plugin": "hve-core-all@hve-core"
+          "plugin": "hve-core-all@hve-core",
+          "standaloneMcps": []
         },
         "superpowers": {
+          "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
           "marketplaceKind": "git",
           "marketplaceSource": "obra/superpowers-marketplace",
           "marketplaceName": "superpowers-marketplace",
           "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
-          "plugin": "superpowers@superpowers-marketplace"
+          "plugin": "superpowers@superpowers-marketplace",
+          "standaloneMcps": []
         }
       }
     }
   ' "$catalog" >/dev/null || die "invalid catalog: $catalog"
   catalog_cache="$(jq -r '
     .profiles | to_entries[] | .key as $profile |
-    .value | to_entries[] | [$profile, .key, .value] | @tsv
+    .value | to_entries[] | select(.value | type == "string") |
+    [$profile, .key, .value] | @tsv
   ' "$catalog")" || die "invalid catalog: $catalog"
 }
 
 list_profiles() {
   jq -r '.profiles | to_entries[] | [.key, .value.plugin] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "cdx",
+      harness: "codex",
+      profiles: [
+        .profiles
+        | to_entries
+        | sort_by(.key)[]
+        | {
+            name: .key,
+            description: .value.description,
+            plugin: .value.plugin,
+            source: null,
+            marketplace: {
+              kind: .value.marketplaceKind,
+              source: .value.marketplaceSource,
+              name: .value.marketplaceName,
+              manifestUrl: .value.manifestUrl
+            },
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
 }
 
 require_profile() {
@@ -1312,10 +1347,11 @@ safe_relative_directory_within() {
   existing_directory_is_within "$root" "$path"
 }
 
-selected_git_plugin_cache_status() {
+selected_plugin_cache_skill_count() {
   local profile="$1" input="$2"
   local plugin marketplace name version home cache manifest skills_paths skills_path
-  local found_skill=no
+  local path_count
+  local skill_count=0
 
   plugin="$(catalog_value "$profile" plugin)"
   marketplace="$(catalog_value "$profile" marketplaceName)"
@@ -1354,14 +1390,19 @@ selected_git_plugin_cache_status() {
   while IFS= read -r skills_path; do
     safe_relative_directory_within "$cache" "$skills_path" || return 1
     case "$skills_path" in ./*) skills_path="${skills_path#./}" ;; esac
-    if [ -n "$(find "$cache/$skills_path" -type f -name SKILL.md \
-      -print -quit 2>/dev/null)" ]; then
-      found_skill=yes
-    fi
+    path_count="$(find "$cache/$skills_path" -type f -name SKILL.md \
+      -exec printf '.\n' \; 2>/dev/null | awk 'END { print NR }')" || return 1
+    case "$path_count" in ''|*[!0-9]*) return 1 ;; esac
+    skill_count=$((skill_count + path_count))
   done <<EOF
 $skills_paths
 EOF
-  [ "$found_skill" = yes ]
+  [ "$skill_count" -gt 0 ] || return 1
+  printf '%s\n' "$skill_count"
+}
+
+selected_git_plugin_cache_status() {
+  selected_plugin_cache_skill_count "$@" >/dev/null
 }
 
 inventory_file() {
@@ -1520,6 +1561,135 @@ doctor_profile() {
     require_git_marketplace_primed "$profile"
   fi
   printf '%s: healthy\n' "$profile"
+}
+
+not_ready_inventory() {
+  local profile="$1" readiness="$2"
+
+  jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: "cdx",
+    harness: "codex",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile() {
+  local profile="$1"
+  local home plugin_file plugins package_count mcp_inventory prompt_input skill_names visible_count
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  if [ ! -d "$home" ]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  if ! (doctor_profile "$profile" >/dev/null 2>&1); then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+
+  validate_profile_paths "$profile"
+  resolve_codex
+  inventory_file
+  plugin_file="$created_temp"
+  read_plugin_inventory "$profile" "$plugin_file" || {
+    remove_owned_temp "$plugin_file"
+    die "failed to read plugin inventory: $profile"
+  }
+  plugin_inventory_status "$profile" "$plugin_file"
+  [ "$?" -eq 0 ] || {
+    remove_owned_temp "$plugin_file"
+    die "invalid plugin inventory for $profile"
+  }
+  package_count="$(selected_plugin_cache_skill_count "$profile" "$plugin_file")" || {
+    remove_owned_temp "$plugin_file"
+    die "selected plugin cache is invalid: $profile; run: cdx repair $profile"
+  }
+  plugins="$(jq -ce '
+    if type == "object"
+      and keys == ["available", "installed"]
+      and (.installed | type == "array")
+      and all(.installed[];
+        type == "object"
+        and (.pluginId | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and (.version | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and (.installed == true)
+        and (.enabled | type == "boolean"))
+    then [.installed[] | select(.enabled) | {name: .pluginId, version}] | sort_by(.name)
+    else error("invalid plugin inventory")
+    end
+  ' "$plugin_file" 2>/dev/null)" || {
+    remove_owned_temp "$plugin_file"
+    die "invalid plugin inventory for $profile"
+  }
+  remove_owned_temp "$plugin_file" || die 'failed to clean plugin inventory'
+
+  mcp_inventory="$(env CODEX_HOME="$home" "$codex_executable" mcp list --json)" \
+    || die "failed to read MCP inventory: $profile"
+  mcp_inventory="$(printf '%s\n' "$mcp_inventory" | jq -ce '
+    if type == "array"
+      and all(.[];
+        type == "object"
+        and (.name | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and ((has("enabled") | not) or (.enabled | type == "boolean")))
+    then [.[] | select(.enabled != false) | .name] | unique | sort
+    else error("invalid MCP inventory")
+    end
+  ' 2>/dev/null)" || die "invalid MCP inventory for $profile"
+
+  prompt_input="$(env CODEX_HOME="$home" "$codex_executable" debug prompt-input inventory)" \
+    || die "failed to read visible skill inventory: $profile"
+  skill_names="$(printf '%s\n' "$prompt_input" | jq -re '
+    [
+      .[]?.content[]?
+      | select(type == "object" and .type == "input_text" and (.text | type == "string"))
+      | .text
+    ]
+    | if length == 0 then error("missing prompt text") else join("\n") end
+  ' 2>/dev/null | awk '
+    $0 == "### Available skills" {
+      sections += 1
+      in_skills = 1
+      next
+    }
+    in_skills && /^### / { in_skills = 0 }
+    in_skills && /^- [A-Za-z0-9][A-Za-z0-9._:-]*: .* \(file: [^)]+\)$/ {
+      line = substr($0, 3)
+      separator = index(line, ": ")
+      if (separator > 1) print substr(line, 1, separator - 1)
+    }
+    END { if (sections != 1) exit 1 }
+  ')" || die "invalid visible skill inventory for $profile"
+  [ -n "$skill_names" ] \
+    || die "invalid visible skill inventory for $profile"
+  if ! printf '%s\n' "$skill_names" \
+    | awk 'NF == 0 || $0 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]*$/ { exit 1 }'; then
+    die "invalid visible skill inventory for $profile"
+  fi
+  visible_count="$(printf '%s\n' "$skill_names" | awk 'END { print NR }')"
+
+  jq -cn \
+    --arg profile "$profile" \
+    --argjson plugins "$plugins" \
+    --argjson packageCount "$package_count" \
+    --argjson visibleCount "$visible_count" \
+    --argjson mcps "$mcp_inventory" \
+    '{
+      schemaVersion: 1,
+      launcher: "cdx",
+      harness: "codex",
+      profile: $profile,
+      readiness: "healthy",
+      plugins: $plugins,
+      skills: {packageCount: $packageCount, visibleCount: $visibleCount},
+      mcps: $mcps
+    }'
 }
 
 repair_profile() {
@@ -2063,7 +2233,7 @@ case "$command" in
     [ "$#" -ge 2 ] || { usage >&2; exit 2; }
     profile="$2"
     case "$profile" in
-      list|setup|doctor|update|repair|--help|-h)
+      list|inventory|setup|doctor|update|repair|--help|-h)
         usage >&2
         exit 2
         ;;
@@ -2075,8 +2245,19 @@ case "$command" in
     ;;
   list )
     validate_catalog
-    [ "$#" -eq 1 ] || die 'list takes no arguments'
-    list_profiles
+    if [ "$#" -eq 1 ]; then
+      list_profiles
+    elif [ "$#" -eq 2 ] && [ "$2" = '--json' ]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory )
+    validate_catalog
+    [ "$#" -eq 3 ] && [ "$3" = '--json' ] \
+      || die 'usage: cdx inventory PROFILE --json'
+    inventory_profile "$2"
     ;;
   setup )
     validate_catalog

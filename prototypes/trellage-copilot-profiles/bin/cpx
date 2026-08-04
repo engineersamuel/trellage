@@ -34,6 +34,8 @@ Usage:
   cpx setup PROFILE|--all
   cpx PROFILE [COPILOT_ARGS...]
   cpx list
+  cpx list --json
+  cpx inventory PROFILE --json
   cpx doctor PROFILE
   cpx update --check PROFILE|--all
   cpx update PROFILE|--all
@@ -47,17 +49,37 @@ require_command() {
 
 validate_catalog() {
   [[ -f "$catalog" ]] || die "catalog not found: $catalog"
-  jq -e '
-    .schemaVersion == 1
-    and (.profiles | type == "object" and length > 0)
-    and all(.profiles | keys[]; test("^[a-z0-9]+(-[a-z0-9]+)*$"))
-    and all(.profiles[];
-      (.marketplace | type == "string" and length > 0)
-      and (.marketplaceName | type == "string" and length > 0)
-      and (.manifestUrl | type == "string" and startswith("https://"))
-      and (.plugin | type == "string" and contains("@"))
-      and (.standaloneMcps | type == "array")
-    )
+  jq -se '
+    length == 1
+    and .[0] == {
+      "schemaVersion": 1,
+      "profiles": {
+        "awesome": {
+          "description": "GitHub-curated general-purpose agents, prompts, instructions, and skills for coding, review, documentation, testing, and platform tasks.",
+          "marketplace": "github/awesome-copilot",
+          "marketplaceName": "awesome-copilot",
+          "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
+          "plugin": "awesome-copilot@awesome-copilot",
+          "standaloneMcps": []
+        },
+        "hve": {
+          "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
+          "marketplace": "microsoft/hve-core",
+          "marketplaceName": "hve-core",
+          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+          "plugin": "hve-core-all@hve-core",
+          "standaloneMcps": []
+        },
+        "superpowers": {
+          "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
+          "marketplace": "obra/superpowers-marketplace",
+          "marketplaceName": "superpowers-marketplace",
+          "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
+          "plugin": "superpowers@superpowers-marketplace",
+          "standaloneMcps": []
+        }
+      }
+    }
   ' "$catalog" >/dev/null || die "invalid catalog: $catalog"
 }
 
@@ -265,6 +287,199 @@ list_profiles() {
   jq -r '.profiles | to_entries[] | [.key, .value.plugin] | @tsv' "$catalog"
 }
 
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "cpx",
+      harness: "copilot",
+      profiles: [
+        .profiles
+        | to_entries
+        | sort_by(.key)[]
+        | {
+            name: .key,
+            description: .value.description,
+            plugin: .value.plugin,
+            source: null,
+            marketplace: {
+              kind: (if .value.marketplaceName == "awesome-copilot" then "built-in" else "git" end),
+              source: .value.marketplace,
+              name: .value.marketplaceName,
+              manifestUrl: .value.manifestUrl
+            },
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+not_ready_inventory() {
+  local profile="$1"
+  local readiness="$2"
+
+  jq -cn \
+    --arg profile "$profile" \
+    --arg readiness "$readiness" \
+    '{
+      schemaVersion: 1,
+      launcher: "cpx",
+      harness: "copilot",
+      profile: $profile,
+      readiness: $readiness,
+      plugins: [],
+      skills: {packageCount: null, visibleCount: null},
+      mcps: []
+    }'
+}
+
+count_package_skills() {
+  local profile="$1"
+  local plugin_root="$2"
+  local home
+  local installed_root
+  local canonical_installed_root
+  local canonical_plugin_root
+  local relative
+  local remaining
+  local segment
+  local current
+
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  installed_root="$home/installed-plugins"
+  [[ -d "$installed_root" && ! -L "$installed_root" ]] || return 1
+  case "$plugin_root" in
+    "$installed_root"/*) ;;
+    *) return 1 ;;
+  esac
+
+  relative="${plugin_root#"$installed_root"/}"
+  case "$relative" in
+    ''|/*|*/|*//*) return 1 ;;
+  esac
+  current="$installed_root"
+  remaining="$relative"
+  while :; do
+    segment="${remaining%%/*}"
+    case "$segment" in ''|.|..) return 1 ;; esac
+    current="$current/$segment"
+    [[ -d "$current" && ! -L "$current" ]] || return 1
+    [[ "$remaining" == */* ]] || break
+    remaining="${remaining#*/}"
+  done
+
+  canonical_installed_root="$(cd -P "$installed_root" >/dev/null 2>&1 && pwd)" || return 1
+  canonical_plugin_root="$(cd -P "$plugin_root" >/dev/null 2>&1 && pwd)" || return 1
+  case "$canonical_plugin_root" in
+    "$canonical_installed_root"/*) ;;
+    *) return 1 ;;
+  esac
+
+  find "$plugin_root" -type f -name SKILL.md -exec printf '.\n' \; 2>/dev/null \
+    | awk 'END { print NR }'
+}
+
+inventory_profile() {
+  local profile="$1"
+  local home
+  local plugin
+  local plugin_name
+  local marketplace_name
+  local plugin_root
+  local plugin_output
+  local plugins
+  local skills
+  local package_count
+  local mcps
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  if [[ ! -d "$home" ]]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  require_command copilot
+  if ! (doctor_profile "$profile" >/dev/null 2>&1); then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+
+  plugin="$(profile_value "$profile" plugin)"
+  plugin_name="${plugin%%@*}"
+  marketplace_name="$(profile_value "$profile" marketplaceName)"
+  plugin_root="$home/installed-plugins/$marketplace_name/$plugin_name"
+
+  plugin_output="$(run_copilot "$profile" plugin list)" \
+    || die "failed to read plugin inventory: $profile"
+  plugins="$(printf '%s\n' "$plugin_output" | jq -Rse '
+    split("\n")
+    | map(select(length > 0))
+    | if .[0] != "Installed plugins:" then error("invalid plugin heading") else .[1:] end
+    | map(
+        capture("^  • (?<name>[^[:cntrl:]]+) \\(v(?<version>[^()[:cntrl:]]+)\\)$")
+        | select(.name | length > 0)
+        | select(.version | length > 0)
+      )
+    | if length == 0 then error("empty plugin inventory") else . end
+  ' 2>/dev/null)" || die "invalid plugin inventory for $profile"
+
+  skills="$(run_copilot "$profile" skill list --json)" \
+    || die "failed to read skill inventory: $profile"
+  skills="$(printf '%s\n' "$skills" | jq -ce '
+    if type == "array"
+      and all(.[];
+        type == "object"
+        and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+        and (.source | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+        and (.path | type == "string" and length > 0 and startswith("/"))
+        and (.enabled | type == "boolean"))
+    then {
+      visibleCount: ([.[] | select(.enabled)] | length)
+    }
+    else error("invalid skill inventory")
+    end
+  ' 2>/dev/null)" || die "invalid skill inventory for $profile"
+  package_count="$(count_package_skills "$profile" "$plugin_root")" \
+    || die "invalid installed plugin root for $profile"
+  [[ "$package_count" =~ ^[0-9]+$ ]] \
+    || die "invalid installed plugin skill count for $profile"
+  skills="$(printf '%s\n' "$skills" | jq -c \
+    --argjson packageCount "$package_count" \
+    '. + {packageCount: $packageCount}')" \
+    || die "invalid skill inventory for $profile"
+
+  mcps="$(run_copilot "$profile" mcp list --json)" \
+    || die "failed to read MCP inventory: $profile"
+  mcps="$(printf '%s\n' "$mcps" | jq -ce '
+    if type == "object"
+      and keys == ["mcpServers"]
+      and (.mcpServers | type == "object")
+      and all(.mcpServers | keys[]; test("^[^[:cntrl:]]+$"))
+    then [.mcpServers | to_entries[] | select(.value.disabled != true) | .key] | sort
+    else error("invalid MCP inventory")
+    end
+  ' 2>/dev/null)" || die "invalid MCP inventory for $profile"
+
+  jq -cn \
+    --arg profile "$profile" \
+    --argjson plugins "$plugins" \
+    --argjson skills "$skills" \
+    --argjson mcps "$mcps" \
+    '{
+      schemaVersion: 1,
+      launcher: "cpx",
+      harness: "copilot",
+      profile: $profile,
+      readiness: "healthy",
+      plugins: $plugins,
+      skills: $skills,
+      mcps: $mcps
+    }'
+}
+
 check_empty_mcp_file() {
   local config_file="$1"
   [[ -f "$config_file" ]] || return 0
@@ -403,8 +618,17 @@ shift
 
 case "$command_name" in
   list)
-    [[ "$#" == 0 ]] || die 'list accepts no arguments'
-    list_profiles
+    if [[ "$#" == 0 ]]; then
+      list_profiles
+    elif [[ "$#" == 1 && "$1" == '--json' ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory)
+    [[ "$#" == 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
     ;;
   setup)
     [[ "$#" == 1 ]] || die 'setup requires PROFILE or --all'

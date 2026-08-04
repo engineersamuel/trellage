@@ -1,6 +1,6 @@
 schema = 1
 source_date_epoch = 1784379906
-profile_hash = "sha256:13ca7046654c56b55794e7e712791c2039adb1b42b35585c9c363271bd10c298"
+profile_hash = "sha256:0fd6890887e227e4c2c016134a775d4eb6314b4d4c523fe30580acf223033c8b"
 
 [[sources]]
 kind = "plugin"
@@ -13112,4 +13112,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:dfd33726432e5b02244f66c3c95fdcc0ebd770a7c5ff578cab3f8095dbfc2883"
+final_digest = "sha256:b718dee0c5f0dc0e166587eb1ad33b0aa7059f98af4f21cf2db0650b9794aba2"
