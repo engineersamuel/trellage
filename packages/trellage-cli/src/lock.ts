@@ -15,7 +15,7 @@ interface LegacyLockProvenance {
 
 export interface SourceLock {
   readonly kind: "skill" | "plugin"
-  readonly adapter?: "codex-native" | "copilot-marketplace" | "hyperresearch" | "wshobson-agents"
+  readonly adapter?: "codex-native" | "copilot-marketplace" | "hyperresearch" | "omp-native" | "wshobson-agents"
   readonly marketplace?: string
   readonly plugin_versions?: Readonly<Record<string, string>>
   readonly repository: string
@@ -45,6 +45,14 @@ export type HarnessPackageLock =
     }
   | {
       readonly kind: "claude"
+      readonly selector: string
+      readonly version: string
+      readonly integrity: string
+      readonly url: string
+      readonly size: number
+    }
+  | {
+      readonly kind: "pi"
       readonly selector: string
       readonly version: string
       readonly integrity: string
@@ -124,7 +132,7 @@ export interface SourceResolution {
 export interface LockResolvers {
   readonly resolveSource: (request: {
     readonly kind: "skill" | "plugin"
-    readonly adapter?: "codex-native" | "copilot-marketplace" | "hyperresearch" | "wshobson-agents"
+    readonly adapter?: "codex-native" | "copilot-marketplace" | "hyperresearch" | "omp-native" | "wshobson-agents"
     readonly marketplace?: string
     readonly repository: string
     readonly ref: string
@@ -133,7 +141,7 @@ export interface LockResolvers {
     readonly update: boolean
   }) => Effect.Effect<SourceResolution, unknown>
   readonly resolvePackages: (request: {
-    readonly kind: "claude" | "codex" | "copilot"
+    readonly kind: "claude" | "codex" | "copilot" | "pi"
     readonly selector: string
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
@@ -172,6 +180,7 @@ const sameSource = (current: SourceLock, requested: SourceRequest): boolean =>
 const sourceRequests = (document: ProfileDocument): Array<SourceRequest> => [
   ...document.profile.skills.map((skill) => ({
     kind: "skill" as const,
+    ...(skill.adapter === undefined ? {} : { adapter: skill.adapter }),
     repository: skill.repository,
     ref: skill.ref,
     select: skill.select,
@@ -238,13 +247,20 @@ const lockSemanticError = (
     return "final OCI digest is invalid"
   }
   const harness = current.packages.harness
-  const harnessLabel = harness.kind === "codex" ? "Codex" : harness.kind === "copilot" ? "Copilot" : "Claude"
+  const harnessLabel =
+    harness.kind === "codex"
+      ? "Codex"
+      : harness.kind === "copilot"
+        ? "Copilot"
+        : harness.kind === "pi"
+          ? "Pi"
+          : "Claude"
   if (harness.kind !== document.profile.harness.kind) return "harness package kind does not match profile"
   if (harness.selector.length === 0) return `${harnessLabel} package selector is missing`
-  if (harness.kind === "copilot") {
-    if (!stableSemverPattern.test(harness.version)) return "Copilot package version is not stable"
+  if (harness.kind === "copilot" || harness.kind === "pi") {
+    if (!stableSemverPattern.test(harness.version)) return `${harnessLabel} package version is not stable`
   } else if (!exactSemverPattern.test(harness.version)) {
-    return "Codex package version is not exact"
+    return `${harnessLabel} package version is not exact`
   }
   if (harness.selector !== "latest" && harness.version !== harness.selector) {
     return "explicit harness selector does not match resolved version"
@@ -254,6 +270,11 @@ const lockSemanticError = (
       document.profile.image.platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
     const expected = `https://github.com/github/copilot-cli/releases/download/v${harness.version}/${asset}`
     if (harness.url !== expected) return "Copilot package artifact URL is invalid"
+  }
+  if (harness.kind === "pi") {
+    const asset = document.profile.image.platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
+    const expected = `https://github.com/can1357/oh-my-pi/releases/download/v${harness.version}/${asset}`
+    if (harness.url !== expected) return "Pi package artifact URL is invalid"
   }
   if (!sha256Pattern.test(harness.integrity)) {
     return `${harnessLabel} package integrity is missing or invalid`
@@ -306,7 +327,7 @@ const lockSemanticError = (
   } else if (current.packages.artifacts !== undefined || current.packages.python_lock_integrity !== undefined) {
     return "Claude artifact locks require the Claude harness"
   }
-  const needsSkillsCli = document.profile.skills.length > 0
+  const needsSkillsCli = document.profile.harness.kind === "codex" && document.profile.skills.length > 0
   if (needsSkillsCli && !current.packages.skills_cli_version) return "Skills CLI version is missing"
   if (
     current.packages.skills_cli_version !== undefined &&
@@ -340,7 +361,11 @@ const lockSemanticError = (
     if (commitPattern.test(source.ref) && source.ref !== source.commit) {
       return `exact source ref does not match commit: ${source.repository}`
     }
-    if (source.kind === "skill" ? source.adapter !== undefined : source.adapter === undefined) {
+    if (
+      source.kind === "skill"
+        ? source.adapter !== undefined && source.adapter !== "omp-native"
+        : source.adapter === undefined || source.adapter === "omp-native"
+    ) {
       return `source adapter is incompatible with source kind: ${source.repository}`
     }
     if (source.adapter === "copilot-marketplace") {
@@ -494,7 +519,7 @@ export const compileLock = (
         selector: document.profile.harness.version,
         platform: document.profile.image.platform,
         packages: document.profile.image.packages,
-        needsSkillsCli: document.profile.skills.length > 0,
+        needsSkillsCli: document.profile.harness.kind === "codex" && document.profile.skills.length > 0,
       })
       .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause })))
     const base = yield* resolvers

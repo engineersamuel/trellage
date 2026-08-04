@@ -214,6 +214,118 @@ describe("locked Chromium materialization", () => {
 })
 
 describe("atomic build context", () => {
+  it("materializes the locked standalone Pi executable and isolated runtime state", async () => {
+    const root = await temporaryRoot("trellage-materialize-pi-")
+    const ompSource = path.join(root, "oh-my-pi")
+    for (const skill of ["semantic-compression", "system-prompts", "tool-prompt-optimization"]) {
+      const skillDirectory = path.join(ompSource, ".omp", "skills", skill)
+      await mkdir(skillDirectory, { recursive: true })
+      await writeFile(
+        path.join(skillDirectory, "SKILL.md"),
+        `---\nname: ${skill}\ndescription: ${skill} test skill\n---\n\n# ${skill}\n`,
+      )
+    }
+    const sourceFiles = await Effect.runPromise(inventoryDirectory(ompSource))
+    const document = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "pi-oh-my-pi"
+description = "Oh My Pi profile"
+[harness]
+kind = "pi"
+version = "latest"
+args = ["--yolo"]
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[skills]]
+adapter = "omp-native"
+repository = "https://github.com/can1357/oh-my-pi.git"
+ref = "v17.2.6"
+select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
+`,
+        path.join(root, "profile.toml"),
+      ),
+    )
+    const lock: ProfileLock = {
+      schema: 1,
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [
+        {
+          kind: "skill",
+          adapter: "omp-native",
+          repository: "https://github.com/can1357/oh-my-pi.git",
+          ref: "v17.2.6",
+          select: ["semantic-compression", "system-prompts", "tool-prompt-optimization"],
+          commit: "a".repeat(40),
+          integrity: `sha256:${"c".repeat(64)}`,
+          files: sourceFiles,
+        },
+      ],
+      packages: {
+        harness: {
+          kind: "pi",
+          selector: "latest",
+          version: "17.2.6",
+          integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
+          url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
+          size: 157526160,
+        },
+        runtime: [{ name: "bash", version: "5.2.15", integrity: `sha256:${"d".repeat(64)}` }],
+      },
+      image: {
+        base: document.profile.image.base,
+        base_digest: `sha256:${"b".repeat(64)}`,
+      },
+    }
+    const piEntry = path.join(root, "runtime-pi-entry.sh")
+    await writeFile(piEntry, '#!/bin/bash\nexec omp "$@"\n')
+    const support: RuntimeSupport = {
+      codexEntry: path.join(root, "unused-codex-entry.sh"),
+      copilotEntry: path.join(root, "unused-copilot-entry.sh"),
+      piEntry,
+      finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
+    }
+    const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("pi", support))
+    await writeFile(piEntry, "mutated after snapshot\n")
+    const unused = () => Effect.fail("unexpected generator call")
+
+    const context = await Effect.runPromise(
+      createBuildContext(document, lock, [ompSource], snapshot, root, unused, unused),
+    )
+
+    await expect(readFile(path.join(context, "runtime-pi-entry.sh"), "utf8")).resolves.toContain('exec omp "$@"')
+    await expect(readFile(path.join(context, "pi-config.yml"), "utf8")).resolves.toBe(
+      "startup:\n  checkUpdate: false\nmarketplace:\n  autoUpdate: off\n",
+    )
+    await expect(readFile(path.join(context, "pi-seed", "managed-skills.txt"), "utf8")).resolves.toBe(
+      "semantic-compression\nsystem-prompts\ntool-prompt-optimization\n",
+    )
+    await expect(
+      readFile(path.join(context, "pi-seed", "skills", "semantic-compression", "SKILL.md"), "utf8"),
+    ).resolves.toContain("semantic-compression test skill")
+    const miseConfig = await readFile(path.join(context, "mise.toml"), "utf8")
+    expect(miseConfig).toContain('rename_exe = "omp"')
+    expect(miseConfig).toContain('PI_CODING_AGENT_DIR = "/home/agent/.omp/agent"')
+    expect(miseConfig).toContain('OMP_SKIP_SETUP = "1"')
+    expect(miseConfig).toContain('"/usr/local/share/trellage/pi-seed" = { source = "pi-seed", mode = "copy" }')
+    expect(miseConfig).toContain('"dev.trellage.pi.implementation" = "oh-my-pi"')
+    expect(miseConfig).toContain('"dev.trellage.pi.version" = "17.2.6"')
+    const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
+    expect(miseLock).toContain('[[tools."http:pi"]]')
+    expect(miseLock).toContain('rename_exe = "omp"')
+    expect(miseLock).toContain('url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64"')
+  })
+
   it("delegates Claude Hyperresearch assets to the focused materializer", async () => {
     const root = await temporaryRoot("trellage-materialize-claude-")
     const document = await Effect.runPromise(

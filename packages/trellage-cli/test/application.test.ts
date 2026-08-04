@@ -75,6 +75,7 @@ const contentIntegrity = (content: string) => `sha256:${createHash("sha256").upd
 const runtimeSupport = (root: string) => ({
   codexEntry: path.join(root, "runtime-entry.sh"),
   copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
+  piEntry: path.join(root, "runtime-pi-entry.sh"),
   finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
 })
 
@@ -166,6 +167,49 @@ const copilotLock = (profile_hash: string): ProfileLock => ({
       integrity: digest("c"),
       url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
       size: 1024,
+    },
+    runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+  },
+  image: {
+    base: "node:22.17.0-bookworm-slim",
+    base_digest: digest("b"),
+    final_digest: digest("e"),
+  },
+})
+
+const piSource = `
+schema = 1
+name = "pi-oh-my-pi"
+description = "Oh My Pi profile"
+[harness]
+kind = "pi"
+version = "latest"
+args = ["--yolo"]
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+`
+
+const piLock = (profile_hash: string): ProfileLock => ({
+  schema: 1,
+  source_date_epoch: 1784379906,
+  profile_hash,
+  sources: [],
+  packages: {
+    harness: {
+      kind: "pi",
+      selector: "latest",
+      version: "17.2.6",
+      integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
+      url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
+      size: 157526160,
     },
     runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
   },
@@ -308,6 +352,25 @@ describe("profile metadata", () => {
 
     const metadata = await Effect.runPromise(profileMetadata(profilePath))
     expect(metadata.tmpfs_size).toBe("2g")
+  })
+
+  it("reports Pi runtime identity and bridge networking from a ready lock", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-pi-"))
+    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"))
+
+    const metadata = await Effect.runPromise(profileMetadata(profilePath))
+
+    expect(metadata).toMatchObject({
+      harness_kind: "pi",
+      harness_executable: "omp",
+      image: "trellage-profile-pi-oh-my-pi:locked",
+      locked: true,
+      resolved_version: "17.2.6",
+      runtime_entry: "trellage-pi-entry",
+      default_network: "bridge",
+      auth_policy: "host-or-login",
+    })
+    expect(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
   })
 })
 
@@ -897,6 +960,14 @@ describe("locked builder command", () => {
 
     expect(builderScript(document, lock)).toBe(
       'mise install --locked http:codex@0.144.6; codex_dir="$(mise where http:codex@0.144.6)"; rm -f "$codex_dir/metadata.json"; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
+    )
+  })
+
+  it("installs the exact locked Pi executable before the OCI build", async () => {
+    const document = await Effect.runPromise(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
+
+    expect(builderScript(document, piLock(profileHash(document)))).toBe(
+      'mise install --locked http:pi@17.2.6; pi_dir="$(mise where http:pi@17.2.6)"; rm -f "$pi_dir/metadata.json"; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     )
   })
 

@@ -1,0 +1,88 @@
+schema = 1
+source_date_epoch = 1784379906
+profile_hash = "sha256:072e38daec9991082cfcf5eb7f40606def6d73a710c61f6dad599e3022e4bf5b"
+
+[[sources]]
+kind = "skill"
+adapter = "omp-native"
+repository = "https://github.com/can1357/oh-my-pi.git"
+ref = "v17.2.7"
+select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
+commit = "a5090f1f81cf0ac072fbd1ec949eebe6bbbc23a9"
+integrity = "sha256:4c8aeaf3a7e5ac00844f909fac8a67b31f7b1a0c7a2cdc1aa82ec8683324b6ee"
+
+[[sources.files]]
+path = ".omp/skills/semantic-compression/SKILL.md"
+sha256 = "sha256:d71b1d40cac60ff670ea0abf8d0e77435fa3b4edad425976db47e70a20ffaa2d"
+
+[[sources.files]]
+path = ".omp/skills/system-prompts/SKILL.md"
+sha256 = "sha256:c9efc90862748f4a064f66ee41b2851428fcb51fa5f547a905c9fbc03237d211"
+
+[[sources.files]]
+path = ".omp/skills/system-prompts/small-models.md"
+sha256 = "sha256:aaf89ef493584735d6bdbf4c93d244e432f9ac409aed7091aa618e3bd6c50e68"
+
+[[sources.files]]
+path = ".omp/skills/tool-prompt-optimization/scripts/probe-builtin.ts"
+sha256 = "sha256:3d1f922f5fc2cdcdbc0ec0ab7250a10e1c974bf176feacada629028c93a98123"
+executable = true
+
+[[sources.files]]
+path = ".omp/skills/tool-prompt-optimization/scripts/probe.ts"
+sha256 = "sha256:bf72989b0719f9e85639992e175d7c6edc2d183a4cf3a07ff46d384df7ddedf6"
+executable = true
+
+[[sources.files]]
+path = ".omp/skills/tool-prompt-optimization/SKILL.md"
+sha256 = "sha256:7bb8bbd6a4b188699998d16e5aaedccab1c43afb4b532c992094d083da368831"
+
+[packages]
+
+[packages.harness]
+kind = "pi"
+selector = "17.2.7"
+version = "17.2.7"
+integrity = "sha256:12c9659c033f190655f9530379de5542590fe03dd6aac3d023c152c83922f2a1"
+url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.7/omp-linux-arm64"
+size = 157395088
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "curl"
+version = "7.88.1-10+deb12u15"
+integrity = "sha256:880d20cb636d2c36b2f57c58ab284b442a1680365b488d3e696c147c4d84ef25"
+
+[[packages.runtime]]
+name = "fish"
+version = "3.6.0-3.1+deb12u1"
+integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.runtime]]
+name = "zsh"
+version = "5.9-4+b15"
+integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bfba90"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:33cd90db4c8addcd956aeb47bf91351e1dfd3108e378151847658c8fb136cbe2"

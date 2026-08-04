@@ -81,6 +81,9 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
   if (harness.kind === "claude") {
     return `mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
   }
+  if (harness.kind === "pi") {
+    return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
+  }
 
   const profilePlugin = document.profile.plugins[0]
   const source = lock.sources[0]
@@ -474,6 +477,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-copilot-entry.sh",
   ),
+  piEntry: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/runtime-pi-entry.sh",
+  ),
   finalizeCopilotSeed: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/finalize-copilot-seed.mjs",
@@ -819,6 +826,7 @@ export const profileMetadata = (
     )
     const isCopilot = harnessKind === "copilot"
     const isClaude = harnessKind === "claude"
+    const isPi = harnessKind === "pi"
     const secretEnvironment: Record<string, string> = Object.fromEntries(
       document.profile.secrets.required.map((name) => [name, name]),
     )
@@ -842,10 +850,22 @@ export const profileMetadata = (
       resolved_varlock_path: document.resolvedVarlockPath ?? null,
       has_initial_prompt: document.resolvedInitialPrompt !== undefined,
       harness_kind: harnessKind,
-      harness_executable: harnessKind,
-      runtime_entry: isCopilot ? "trellage-copilot-entry" : isClaude ? "trellage-claude-entry" : "trellage-codex-entry",
-      default_network: isCopilot ? "bridge" : "copilot-proxy-rs_default",
-      auth_policy: isCopilot ? document.profile.harness.copilot.auth : isClaude ? "claude-explicit" : "profile-secrets",
+      harness_executable: isPi ? "omp" : harnessKind,
+      runtime_entry: isCopilot
+        ? "trellage-copilot-entry"
+        : isClaude
+          ? "trellage-claude-entry"
+          : isPi
+            ? "trellage-pi-entry"
+            : "trellage-codex-entry",
+      default_network: isCopilot || isPi ? "bridge" : "copilot-proxy-rs_default",
+      auth_policy: isCopilot
+        ? document.profile.harness.copilot.auth
+        : isPi
+          ? document.profile.harness.pi.auth
+          : isClaude
+            ? "claude-explicit"
+            : "profile-secrets",
       resolved_version: ready && lock?.packages.harness.kind === harnessKind ? lock.packages.harness.version : null,
     }
   })

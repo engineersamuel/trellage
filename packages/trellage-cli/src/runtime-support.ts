@@ -9,6 +9,7 @@ import type { Profile } from "./profile.js"
 export interface RuntimeSupportPaths {
   readonly codexEntry: string
   readonly copilotEntry: string
+  readonly piEntry?: string
   readonly finalizeCopilotSeed: string
   readonly claudeEntry?: string
   readonly hyperresearchRequirements?: string
@@ -108,6 +109,16 @@ const selectedFiles = (harnessKind: Profile["harness"]["kind"]): ReadonlyArray<S
           mode: 0o644,
         },
       ]
+    case "pi":
+      return [
+        {
+          property: "piEntry",
+          role: "runtime-pi-entry",
+          destination: "/usr/local/bin/trellage-pi-entry",
+          buildContextPath: "runtime-pi-entry.sh",
+          mode: 0o755,
+        },
+      ]
   }
 }
 
@@ -149,7 +160,8 @@ export const createRuntimeSupportSnapshot = (
   opener: RuntimeSupportOpener = open,
 ): Effect.Effect<RuntimeSupportSnapshot, RuntimeSupportError> =>
   Effect.gen(function* () {
-    const label = harnessKind === "codex" ? "Codex" : harnessKind === "copilot" ? "Copilot" : "Claude"
+    const label =
+      harnessKind === "codex" ? "Codex" : harnessKind === "copilot" ? "Copilot" : harnessKind === "pi" ? "Pi" : "Claude"
     const files = yield* Effect.forEach(
       selectedFiles(harnessKind),
       (selected) => {

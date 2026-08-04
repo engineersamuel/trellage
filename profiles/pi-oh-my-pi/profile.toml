@@ -1,0 +1,26 @@
+schema = 1
+name = "pi-oh-my-pi"
+description = "Oh My Pi with native GitHub Copilot authentication and bundled OMP skills"
+
+[harness]
+kind = "pi"
+version = "17.2.7"
+args = ["--yolo"]
+
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "ca-certificates", "curl", "fish", "git", "jq", "zsh"]
+
+[[skills]]
+adapter = "omp-native"
+repository = "https://github.com/can1357/oh-my-pi.git"
+ref = "v17.2.7"
+select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]

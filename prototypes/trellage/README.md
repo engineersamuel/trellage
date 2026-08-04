@@ -2,11 +2,11 @@
 
 ## Prototype Question and Scope
 
-Trellage runs Codex inside a locked, profile-compiled Docker sandbox while preserving Herdr detection, conversations, and recovery shells. Declarative TOML profiles select the Codex configuration and bundled capabilities.
+Trellage runs coding harnesses inside locked, profile-compiled Docker sandboxes while preserving Herdr detection, conversations, and recovery shells. Declarative TOML profiles select the harness configuration and bundled capabilities.
 
 ## Prerequisites and Setup
 
-Use an Apple Silicon host with Git, Docker, `jq`, and mise. Docker must provide the locked base images and the existing `copilot-proxy-rs_default` network. From `prototypes/trellage`:
+Use an Apple Silicon host with Git, Docker, `jq`, and mise. Codex and Claude profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi profiles use Docker `bridge`. From `prototypes/trellage`:
 
 ```bash
 mise trust
@@ -171,6 +171,7 @@ Bare profile launches remain interactive. Portable `-p` and `--prompt` run one p
 trellage --profile codex-superpowers -p "hello"
 trellage --profile claude-hyperresearch -p "hello"
 trellage --profile copilot-hve -p "hello"
+trellage --profile pi-oh-my-pi -p "hello"
 ```
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
@@ -205,6 +206,42 @@ For a launch or resume, host authentication precedence is `COPILOT_GITHUB_TOKEN`
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
 Locked builds never refresh mutable selectors. Upgrades never happen automatically. Run the explicit one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to resolve, build, and adopt an upgrade.
+
+## Pi with Oh My Pi
+
+The `pi-oh-my-pi` profile installs the standalone `omp` executable from
+`can1357/oh-my-pi`. OMP is not GitHub Copilot CLI: this profile selects OMP's
+native `github-copilot` provider and pins model `gpt-5.6-terra`. It also seeds
+the three native skills published under the matching OMP release's
+`.omp/skills`: `semantic-compression`, `system-prompts`, and
+`tool-prompt-optimization`.
+
+```bash
+trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"
+trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage doctor --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage destroy --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+```
+
+Prompt mode translates to OMP `--print`; interactive launch uses a new native
+OMP session; resume uses OMP `--continue` for the current worktree. All modes force
+`github-copilot/gpt-5.6-terra` and preserve OMP's exit status.
+
+Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
+`GITHUB_TOKEN`, then `gh auth token`, then OMP's native interactive login. A
+resolved host token is forwarded only as `COPILOT_GITHUB_TOKEN` to the final
+OMP process. If no host token exists, OMP login and session state persist in
+the isolated profile/worktree state volume at `/home/agent/.omp/agent`. No host
+`.omp`, `.copilot`, or GitHub CLI configuration directory is mounted or baked.
+
+The profile uses Docker `bridge` and does not require `copilot-proxy-rs`.
+`profile.toml` pins the same release for the OMP executable and native skills.
+`profile.lock.toml` pins the source commit and inventory, architecture-specific
+raw asset URL, size, GitHub-provided SHA-256 digest, and final OCI digest.
+Managed skills are refreshed into the persistent state volume on every launch.
 
 ## Ten-step Herdr Human Test
 

@@ -104,6 +104,25 @@ case "$harness_kind" in
     grep -Fqx 'commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"' "$lock" \
       || fail 'Hyperresearch commit is not exact'
     ;;
+  pi)
+    runtime_entry="$prototype_dir/runtime-pi-entry.sh"
+    [[ -f "$runtime_entry" ]] || fail "missing required file: $runtime_entry"
+    [[ "$profile_name" == pi-oh-my-pi ]] || fail 'Pi profile name is not exact'
+    [[ "$(jq -r '.harness_executable' <<<"$metadata")" == omp ]] \
+      || fail 'Pi executable metadata is not exact'
+    [[ "$(jq -r '.runtime_entry' <<<"$metadata")" == trellage-pi-entry ]] \
+      || fail 'Pi runtime entry metadata is not exact'
+    [[ "$(jq -r '.default_network' <<<"$metadata")" == bridge ]] \
+      || fail 'Pi network metadata is not exact'
+    [[ "$(jq -r '.auth_policy' <<<"$metadata")" == host-or-login ]] \
+      || fail 'Pi auth policy metadata is not exact'
+    [[ "$(locked_value '[packages.harness]' kind)" == pi ]] \
+      || fail 'Pi lock kind is not exact'
+    [[ "$(locked_value '[packages.harness]' selector)" == "$(locked_value '[packages.harness]' version)" ]] \
+      || fail 'Pi lock selector is not pinned to the OMP version'
+    grep -Eq '^url = "https://github.com/can1357/oh-my-pi/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/omp-linux-arm64"$' "$lock" \
+      || fail 'Pi release asset identity is not exact'
+    ;;
   *) fail "unsupported harness kind: $harness_kind" ;;
 esac
 
@@ -123,7 +142,7 @@ IMAGE_REF="${IMAGE_REF:-$image_name}"
 image_config="$(docker image inspect "$IMAGE_REF")"
 case "$harness_kind" in
   codex) locked_version="$(locked_value '[packages]' codex)" ;;
-  copilot) locked_version="$(locked_value '[packages.harness]' version)" ;;
+  copilot|pi) locked_version="$(locked_value '[packages.harness]' version)" ;;
 esac
 [[ "$locked_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]] \
   || fail 'harness version is not exact in the lock'
@@ -147,6 +166,15 @@ jq -e \
       and (.[0].Config.Env | any(. == "COPILOT_AUTO_UPDATE=false"))
       and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
       and (.[0].Config.Env | all(startswith("CODEX_HOME=") | not))
+    elif $kind == "pi" then
+      .[0].Config.Labels["dev.trellage.harness.kind"] == $kind
+      and .[0].Config.Labels["dev.trellage.pi.implementation"] == "oh-my-pi"
+      and .[0].Config.Labels["dev.trellage.pi.version"] == $version
+      and (.[0].Config.Env | any(. == "PI_CODING_AGENT_DIR=/home/agent/.omp/agent"))
+      and (.[0].Config.Env | any(. == "OMP_SKIP_SETUP=1"))
+      and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
+      and (.[0].Config.Env | all(startswith("COPILOT_HOME=") | not))
+      and (.[0].Config.Env | all(startswith("CODEX_HOME=") | not))
     else
       .[0].Config.Labels["dev.trellage.codex.version"] == $version
       and (.[0].Config.Env | any(. == "CODEX_HOME=/home/agent/.codex"))
@@ -155,7 +183,7 @@ jq -e \
   || fail 'image config violates exact labels, user, shell, home, version, or secret contract'
 
 inspect_and_history="$(printf '%s\n' "$image_config"; docker history --no-trunc --format '{{.CreatedBy}} {{.Comment}}' "$IMAGE_REF")"
-! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot)-entry|(^|[/[:space:]])harness-(codex|copilot)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
+! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|pi)-entry|(^|[/[:space:]])harness-(codex|copilot|pi)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
   || fail 'image inspect or history contains auth, host, temporary, build, or old-brand data'
 
 if [[ "$harness_kind" == copilot ]]; then
@@ -208,6 +236,47 @@ if [[ "$harness_kind" == copilot ]]; then
       ! find "$COPILOT_HOME" "$XDG_CACHE_HOME" -type f -exec grep -alF "$auth_canary" {} + | grep -q .
     ' -- "$locked_version" "$hve_version" \
     || fail 'Copilot executable, entry, seed, HVE, path, auth, or Codex-isolation probe failed'
+elif [[ "$harness_kind" == pi ]]; then
+  docker run --rm \
+    --network none \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+    --tmpfs /home/agent:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+    --env 'COPILOT_GITHUB_TOKEN=trellage-image-contract-auth-canary' \
+    --entrypoint bash \
+    "$IMAGE_REF" -ceu '
+      locked_version="$1"
+      auth_canary="${COPILOT_GITHUB_TOKEN:?}"
+      test "$(id -u):$(id -g)" = 10001:10001
+      test "$PI_CODING_AGENT_DIR" = /home/agent/.omp/agent
+      test "$OMP_SKIP_SETUP" = 1
+      test "$(command -v omp)" = "/mise/installs/http-pi/$locked_version/omp"
+      test -x /usr/local/bin/trellage-pi-entry
+      test -f /usr/local/share/trellage/pi-config.yml
+      test -f /usr/local/share/trellage/pi-seed/managed-skills.txt
+      grep -Fqx "  checkUpdate: false" /usr/local/share/trellage/pi-config.yml
+      grep -Fqx "  autoUpdate: off" /usr/local/share/trellage/pi-config.yml
+      test "$(cat /usr/local/share/trellage/pi-seed/managed-skills.txt)" = "$(printf "%s\n" semantic-compression system-prompts tool-prompt-optimization)"
+      for skill in semantic-compression system-prompts tool-prompt-optimization; do
+        test -f "/usr/local/share/trellage/pi-seed/skills/$skill/SKILL.md"
+      done
+      test "$(omp --version)" = "omp/$locked_version"
+      omp --config /usr/local/share/trellage/pi-config.yml --help >/dev/null
+      omp --config /usr/local/share/trellage/pi-config.yml models github-copilot --json \
+        | jq -e '\''.. | strings | select(. == "gpt-5.6-terra")'\'' >/dev/null
+      test ! -e /usr/local/share/harness
+      test ! -e /usr/local/bin/harness-pi-entry
+      test ! -e /home/agent/.copilot
+      test ! -e /home/agent/.config/gh
+      trellage-pi-entry new --version >/tmp/pi-version
+      test "$(cat /tmp/pi-version)" = "omp/$locked_version"
+      test -d "$PI_CODING_AGENT_DIR"
+      test "$(cat "$PI_CODING_AGENT_DIR/.trellage-managed-skills")" = "$(printf "%s\n" semantic-compression system-prompts tool-prompt-optimization)"
+      for skill in semantic-compression system-prompts tool-prompt-optimization; do
+        test -f "$PI_CODING_AGENT_DIR/skills/$skill/SKILL.md"
+      done
+      ! find /home/agent -type f -exec grep -alF "$auth_canary" {} + | grep -q .
+    ' -- "$locked_version" || fail 'Pi executable, entry, state, update, auth, or isolation probe failed'
 else
   docker run --rm \
     --read-only \

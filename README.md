@@ -55,6 +55,7 @@ Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) fo
 trellage --profile codex-superpowers -p "hello"
 trellage --profile claude-hyperresearch -p "hello"
 trellage --profile copilot-hve -p "hello"
+trellage --profile pi-oh-my-pi -p "hello"
 ```
 
 ## Automatic Varlock Environment Loading
@@ -135,6 +136,35 @@ Doctor reports `environment: varlock (ready)` when `.env.local` is available and
 Profile source files are editable intent: a source `ref` may be a tag, branch, or commit selected by the author. `trellage lock` resolves every source to an immutable commit recorded in `profile.lock.toml`; reproducible builds use `--locked` and reject drift between the profile and lock.
 
 See [the Trellage prototype guide](prototypes/trellage/README.md) for profile locks, lifecycle details, Copilot with HVE Core, cleanup, and deterministic verification.
+
+## Pi with Oh My Pi
+
+The bundled `pi-oh-my-pi` profile runs the standalone `omp` executable from
+`can1357/oh-my-pi`. It is distinct from GitHub Copilot CLI: OMP uses its native
+`github-copilot` provider with model `gpt-5.6-terra`. The profile also locks and
+seeds OMP's `semantic-compression`, `system-prompts`, and
+`tool-prompt-optimization` skills into the isolated OMP state directory.
+
+```bash
+trellage validate pi-oh-my-pi
+trellage build --locked pi-oh-my-pi
+trellage --profile pi-oh-my-pi
+trellage --profile pi-oh-my-pi -p "review this repository"
+trellage resume --profile pi-oh-my-pi
+trellage doctor --profile pi-oh-my-pi
+```
+
+Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`,
+then `gh auth token`. Without a host token, OMP can complete its native GitHub
+Copilot login interactively. Host tokens are forwarded only to the OMP process;
+login and session state persist in the isolated profile/worktree state volume
+under `/home/agent/.omp/agent`. The profile uses Docker `bridge`, not
+`copilot-proxy-rs_default`.
+
+The editable profile pins the same OMP release tag for both the executable and
+its native skills. `profile.lock.toml` records the exact source commit, source
+inventory, release asset URL, size, GitHub SHA-256 digest, and built OCI digest.
+Locked builds never resolve a newer release.
 
 ## Native Host Launcher Installation
 
