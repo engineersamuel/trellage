@@ -99,7 +99,8 @@ jq -n \
     runtime_entry: "trellage-copilot-entry",
     default_network: "bridge",
     auth_policy: "host-or-login",
-    resolved_version: "1.0.75"
+    resolved_version: "1.0.75",
+    tmpfs_size: "256m"
   }' >"$copilot_metadata"
 : >"$copilot_node_log"
 : >"$copilot_gh_log"
@@ -761,6 +762,89 @@ test_validation_precedes_mutation() {
   fi
   assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: validation precedes mutation\n'
+}
+
+test_invalid_tmpfs_metadata_precedes_mutation() {
+  local worktree="$test_root/invalid-tmpfs-metadata"
+  local docker_log="$test_root/invalid-tmpfs-metadata.docker.log"
+  local invalid_variant="$test_root/invalid-tmpfs-metadata.json"
+  local output
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq '.tmpfs_size = "2g,exec"' "$copilot_metadata" >"$invalid_variant"
+
+  if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" 2>&1)"; then
+    fail 'invalid tmpfs metadata was accepted'
+  fi
+  grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
+    || fail 'invalid tmpfs metadata diagnostic is missing'
+  [[ ! -s "$docker_log" ]] || fail 'invalid tmpfs metadata reached Docker'
+  printf 'Trellage host test: PASS: invalid tmpfs metadata precedes mutation\n'
+}
+
+test_false_tmpfs_metadata_precedes_mutation() {
+  local worktree="$test_root/false-tmpfs-metadata"
+  local docker_log="$test_root/false-tmpfs-metadata.docker.log"
+  local invalid_variant="$test_root/false-tmpfs-metadata.json"
+  local output
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq '.tmpfs_size = false' "$copilot_metadata" >"$invalid_variant"
+
+  if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" 2>&1)"; then
+    fail 'false tmpfs metadata was accepted'
+  fi
+  grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
+    || fail 'false tmpfs metadata diagnostic is missing'
+  [[ ! -s "$docker_log" ]] || fail 'false tmpfs metadata reached Docker'
+  printf 'Trellage host test: PASS: false tmpfs metadata precedes mutation\n'
+}
+
+test_null_tmpfs_metadata_precedes_mutation() {
+  local worktree="$test_root/null-tmpfs-metadata"
+  local docker_log="$test_root/null-tmpfs-metadata.docker.log"
+  local invalid_variant="$test_root/null-tmpfs-metadata.json"
+  local output
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq '.tmpfs_size = null' "$copilot_metadata" >"$invalid_variant"
+
+  if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" 2>&1)"; then
+    fail 'null tmpfs metadata was accepted'
+  fi
+  grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
+    || fail 'null tmpfs metadata diagnostic is missing'
+  [[ ! -s "$docker_log" ]] || fail 'null tmpfs metadata reached Docker'
+  printf 'Trellage host test: PASS: null tmpfs metadata precedes mutation\n'
+}
+
+test_legacy_tmpfs_metadata_defaults_at_launch() {
+  local worktree="$test_root/legacy-tmpfs-metadata"
+  local docker_log="$test_root/legacy-tmpfs-metadata.docker.log"
+  local legacy_variant="$test_root/legacy-tmpfs-metadata.json"
+  local state_volume
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq 'del(.tmpfs_size)' "$copilot_metadata" >"$legacy_variant"
+  state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
+
+  FAKE_HARNESS_METADATA_OVERRIDE="$legacy_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage"
+  assert_arg "$docker_log" '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001'
+  printf 'Trellage host test: PASS: legacy tmpfs metadata defaults at launch\n'
 }
 
 test_requires_tty_and_returns_exec_status() {
@@ -2069,19 +2153,21 @@ test_claude_launch_allows_empty_harness_args() {
       | .runtime_entry = "trellage-claude-entry"
       | .default_network = "copilot-proxy-rs_default"
       | .auth_policy = "claude-explicit"
-      | .harness_args = []' \
+      | .harness_args = []
+      | .tmpfs_size = "2g"' \
     "$copilot_metadata" >"$claude_variant"
   state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
 
   FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
     FAKE_DOCKER_PROFILE=claude-hyperresearch FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_copilot_tty "$worktree" "$docker_log" "$worktree" \
       env TRELLAGE_IMAGE='test/claude:locked' "$prototype_dir/trellage" \
     || fail 'Claude launch rejected an empty harness argument list'
   grep -Fqx $'ENV\tHERDR_AGENT=claude' "$docker_log" \
     || fail 'Claude launch did not reach its final container exec'
+  assert_arg "$docker_log" '/tmp:rw,noexec,nosuid,nodev,size=2g,uid=10001,gid=10001'
   printf 'Trellage host test: PASS: Claude launch allows empty harness args\n'
 }
 
@@ -2681,6 +2767,10 @@ test_volume_collision_and_mount_validation
 test_shell_and_stop_modes
 test_terminal_environment_and_agent_tagging
 test_validation_precedes_mutation
+test_invalid_tmpfs_metadata_precedes_mutation
+test_false_tmpfs_metadata_precedes_mutation
+test_null_tmpfs_metadata_precedes_mutation
+test_legacy_tmpfs_metadata_defaults_at_launch
 test_requires_tty_and_returns_exec_status
 test_doctor_reports_status_without_mutation_or_secrets
 test_stop_rejects_collisions_and_wrong_mounts

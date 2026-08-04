@@ -276,9 +276,34 @@ describe("profile metadata", () => {
     expect.soft(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect.soft(metadata.build_command).toContain("trellage build --locked")
     expect.soft(metadata.runtime_entry).toBe("trellage-copilot-entry")
+    expect.soft(metadata.tmpfs_size).toBe("256m")
     const applicationSource = await readFile(fileURLToPath(new URL("../src/application.ts", import.meta.url)), "utf8")
     expect.soft(applicationSource).toContain('path.join(xdgCacheHome, "trellage",')
     expect.soft(applicationSource).not.toContain('path.join(xdgCacheHome, "harness",')
+  })
+
+  it("reports configured tmpfs size", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "harness-metadata-tmpfs-size-"))
+    const profilePath = path.join(root, "profile.toml")
+    const source = copilotSource.replace(
+      'name = "copilot"',
+      'name = "copilot-tmpfs-size"\n[runtime]\ntmpfs_size = "2g"',
+    )
+    await writeFile(profilePath, source)
+    const document = await Effect.runPromise(parseProfile(source, profilePath))
+    const files = [{ kind: "file" as const, path: "plugins/example/plugin.json", sha256: digest("f") }]
+    const lock = {
+      ...copilotLock(profileHash(document)),
+      sources: copilotLock(profileHash(document)).sources.map((source) => ({
+        ...source,
+        integrity: treeIntegrity(files),
+        files,
+      })),
+    } satisfies ProfileLock
+    await writeFile(path.join(root, "profile.lock.toml"), renderLock(lock))
+
+    const metadata = await Effect.runPromise(profileMetadata(profilePath))
+    expect(metadata.tmpfs_size).toBe("2g")
   })
 })
 

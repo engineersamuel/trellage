@@ -8,6 +8,7 @@ import { Data, Effect, ParseResult, Schema } from "effect"
 import { githubRepositoryError } from "./github-repository.js"
 
 const NonEmpty = Schema.String.pipe(Schema.minLength(1))
+const TmpfsSize = Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*(?:k|m|g)$/))
 const StringMap = Schema.Record({ key: NonEmpty, value: Schema.String })
 const SecretMap = Schema.Record({ key: NonEmpty, value: NonEmpty })
 
@@ -129,10 +130,15 @@ const Secrets = Schema.Struct({
   varlock_path: Schema.optional(NonEmpty),
 })
 
+const Runtime = Schema.Struct({
+  tmpfs_size: Schema.optional(TmpfsSize),
+})
+
 const CommonProfile = {
   schema: Schema.Literal(1),
   name: NonEmpty,
   image: Image,
+  runtime: Schema.optional(Runtime),
   skills: Schema.optional(Schema.Array(Source)),
   mcps: Schema.optional(Schema.Array(Schema.Union(HttpMcp, StdioMcp))),
   secrets: Schema.optional(Secrets),
@@ -163,7 +169,8 @@ type DecodedCodexProfile = Schema.Schema.Type<typeof CodexProfileSchema>
 type DecodedCopilotProfile = Schema.Schema.Type<typeof CopilotProfileSchema>
 type DecodedClaudeProfile = Schema.Schema.Type<typeof ClaudeProfileSchema>
 
-type NormalizedProfile<T extends DecodedProfile> = Omit<T, "skills" | "plugins" | "mcps" | "secrets"> & {
+type NormalizedProfile<T extends DecodedProfile> = Omit<T, "runtime" | "skills" | "plugins" | "mcps" | "secrets"> & {
+  readonly runtime: { readonly tmpfs_size: string }
   readonly skills: NonNullable<T["skills"]>
   readonly plugins: NonNullable<T["plugins"]>
   readonly mcps: NonNullable<T["mcps"]>
@@ -251,6 +258,7 @@ const normalize = (profile: DecodedProfile): Profile =>
   isDecodedCodexProfile(profile)
     ? {
         ...profile,
+        runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
         skills: profile.skills ?? [],
         plugins: profile.plugins ?? [],
         mcps: profile.mcps ?? [],
@@ -259,6 +267,7 @@ const normalize = (profile: DecodedProfile): Profile =>
     : isDecodedClaudeProfile(profile)
       ? {
           ...profile,
+          runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
           skills: profile.skills ?? [],
           plugins: profile.plugins,
           mcps: profile.mcps ?? [],
@@ -266,6 +275,7 @@ const normalize = (profile: DecodedProfile): Profile =>
         }
       : {
           ...profile,
+          runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
           skills: profile.skills ?? [],
           plugins: profile.plugins ?? [],
           mcps: profile.mcps ?? [],
