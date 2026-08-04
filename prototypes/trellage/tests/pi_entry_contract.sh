@@ -10,6 +10,13 @@ fixture_source_pulled=false
 
 cleanup() {
   local status=$?
+  if [[ -d "$root" ]] && docker image inspect "$fixture_source_ref" >/dev/null 2>&1; then
+    docker run --rm \
+      --network none \
+      --entrypoint /bin/chmod \
+      --mount "type=bind,src=$root,dst=/cleanup" \
+      "$fixture_source_ref" -R a+rwX /cleanup >/dev/null 2>&1 || true
+  fi
   if [[ "$fixture_source_pulled" == true ]]; then
     docker image rm "$fixture_source_ref" >/dev/null 2>&1 || true
   fi
