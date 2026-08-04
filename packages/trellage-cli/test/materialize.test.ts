@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import {
   managedClaudeFiles,
+  materializeClaudeAssets,
   materializeChromiumArchives,
   normalizeHyperresearchSeed,
 } from "../src/claude-materialize.js"
@@ -156,6 +157,55 @@ describe("Hyperresearch seed normalization", () => {
       "run /usr/local/bin/hyperresearch note show; keep /private/tmp/unrelated\n",
     )
     await expect(readFile(skill, "utf8")).resolves.toBe("invoke /usr/local/bin/hyperresearch\n")
+  })
+})
+
+describe("native Claude marketplace materialization", () => {
+  it("copies only the verified locked source and creates common seed settings", async () => {
+    const root = await temporaryRoot("trellage-claude-marketplace-materialize-")
+    const source = path.join(root, "source")
+    const context = path.join(root, "context")
+    await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+    await mkdir(path.join(source, "skills", "writer"), { recursive: true })
+    await mkdir(context)
+    await writeFile(path.join(source, ".claude-plugin", "marketplace.json"), '{"name":"social-media-skills"}\n')
+    await writeFile(path.join(source, "skills", "writer", "SKILL.md"), "# Writer\n")
+    const files = await Effect.runPromise(inventoryDirectory(source))
+
+    await Effect.runPromise(
+      materializeClaudeAssets({
+        adapter: "claude-marketplace",
+        sourceDirectories: [source],
+        context,
+        lock: {
+          sources: [
+            {
+              adapter: "claude-marketplace",
+              marketplace: "social-media-skills",
+              plugin_versions: { "social-media-skills": "1.0.0" },
+              select: ["social-media-skills"],
+              commit: "a".repeat(40),
+              files,
+            },
+          ],
+          packages: {},
+        } as unknown as ProfileLock,
+      }),
+    )
+
+    await expect(
+      readFile(path.join(context, "claude-marketplace-0", "skills", "writer", "SKILL.md"), "utf8"),
+    ).resolves.toBe("# Writer\n")
+    await expect(readFile(path.join(context, "claude-marketplaces.json"), "utf8")).resolves.toContain(
+      '"marketplace": "social-media-skills"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
+      '"defaultMode": "bypassPermissions"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-onboarding.json"), "utf8")).resolves.toContain(
+      '"hasCompletedOnboarding": true',
+    )
+    await expect(readFile(path.join(context, "hyperresearch-wrapper.sh"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 })
 
@@ -480,14 +530,16 @@ select = ["full"]
     const entry = path.join(root, "runtime-claude-entry.sh")
     const requirements = path.join(root, "requirements.lock")
     const browserAgent = path.join(root, "browser-agent.md")
+    const claudeFinalizer = path.join(root, "finalize-claude-seed.mjs")
     await writeFile(entry, "#!/bin/sh\n")
     await writeFile(requirements, "pydantic==2.13.4 --hash=sha256:test\n")
     await writeFile(browserAgent, "browser adapter\n")
+    await writeFile(claudeFinalizer, "// finalizer\n")
     const calls: Array<string> = []
     const materializeClaude: ClaudeMaterializer = (request) =>
       Effect.tryPromise({
         try: async () => {
-          calls.push(request.sourceDirectory)
+          calls.push(...request.sourceDirectories)
           await mkdir(path.join(request.context, "hyperresearch-site"), { recursive: true })
           await mkdir(path.join(request.context, "claude-seed"), { recursive: true })
           await mkdir(path.join(request.context, "chromium-1228"), { recursive: true })
@@ -508,6 +560,7 @@ select = ["full"]
           codexEntry: path.join(root, "unused-codex.sh"),
           copilotEntry: path.join(root, "unused-copilot.sh"),
           finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
+          finalizeClaudeSeed: claudeFinalizer,
           claudeEntry: entry,
           hyperresearchRequirements: requirements,
           claudeBrowserAgent: browserAgent,

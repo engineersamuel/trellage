@@ -5,12 +5,17 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { builderScript, profileMetadata } from "../src/application.js"
-import { claudeDefaultSettings } from "../src/claude-materialize.js"
+import { claudeDefaultOnboarding, claudeDefaultSettings } from "../src/claude-materialize.js"
+import { parseLock } from "../src/lock-file.js"
 import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/claude-hyperresearch/profile.toml", import.meta.url))
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
+const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social-media/profile.toml", import.meta.url))
+const socialLockPath = fileURLToPath(
+  new URL("../../../profiles/claude-social-media/profile.lock.toml", import.meta.url),
+)
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 
@@ -18,6 +23,12 @@ describe("authored Claude Hyperresearch profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
     expect(claudeDefaultSettings.permissions.defaultMode).toBe("bypassPermissions")
     expect(claudeDefaultSettings.skipDangerousModePermissionPrompt).toBe(true)
+    expect(claudeDefaultOnboarding).toEqual({
+      hasCompletedOnboarding: true,
+      lastOnboardingVersion: "2.1.218",
+      theme: "dark",
+      shiftEnterKeyBindingInstalled: true,
+    })
   })
 
   it("cites and selects the exact upstream adapter contract", async () => {
@@ -75,7 +86,18 @@ describe("authored Claude Hyperresearch profile", () => {
       schema: 1,
       source_date_epoch: 1784379906,
       profile_hash: `sha256:${"a".repeat(64)}`,
-      sources: [],
+      sources: [
+        {
+          kind: "plugin",
+          adapter: "hyperresearch",
+          repository: "https://github.com/jordan-gibbs/hyperresearch.git",
+          ref: "main",
+          select: ["full"],
+          commit: "d".repeat(40),
+          integrity: `sha256:${"e".repeat(64)}`,
+          files: [],
+        },
+      ],
       packages: {
         harness: {
           kind: "claude",
@@ -106,6 +128,70 @@ describe("authored Claude Hyperresearch profile", () => {
     expect(source).toContain('"hyperresearch-requirements.lock"')
     expect(source).toContain("claudeBrowserAgent: path.join(")
     expect(source).toContain('"hyperresearch-browser-fetcher.md"')
+    expect(source).toContain(
+      'finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs")',
+    )
+  })
+})
+
+describe("authored Claude social media profile", () => {
+  it("selects the attributed native marketplace plugins without an unsolicited startup prompt", async () => {
+    const [source, lockSource] = await Promise.all([
+      readFile(socialProfilePath, "utf8"),
+      readFile(socialLockPath, "utf8"),
+    ])
+    const document = await Effect.runPromise(parseProfile(source, socialProfilePath))
+    const lock = await Effect.runPromise(parseLock(lockSource))
+
+    expect(source).toContain("# Upstream project: https://github.com/charlie947/social-media-skills")
+    expect(source).toContain("# Upstream project: https://github.com/blader/humanizer")
+    expect(document.profile.plugins).toEqual([
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        marketplace: "social-media-skills",
+        select: ["social-media-skills"],
+      }),
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        marketplace: "humanizer",
+        select: ["humanizer"],
+      }),
+    ])
+    expect(document.profile.secrets.required).toEqual([])
+    expect(document.resolvedInitialPrompt).toBeUndefined()
+    expect(document.profile.harness.initial_prompt).toBeUndefined()
+    expect(lock.sources[0]).toMatchObject({
+      adapter: "claude-marketplace",
+      marketplace: "social-media-skills",
+      plugin_versions: { "social-media-skills": "1.0.0" },
+      commit: "94f72ea2ece388fa30ef49a26fb2e6fd2109e0b1",
+    })
+    expect(lock.sources[0]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(17)
+    expect(lock.sources[1]).toMatchObject({
+      adapter: "claude-marketplace",
+      marketplace: "humanizer",
+      plugin_versions: { humanizer: "2.9.1" },
+      commit: "523374dee72d67c7b2b5f858ea0094ffda49c3ac",
+    })
+    expect(lock.sources[1]?.files.filter(({ path }) => path === "SKILL.md")).toHaveLength(1)
+    expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual([
+      "node",
+      "claude-code-linux-arm64",
+      "builder-oci",
+      "skopeo-oci",
+    ])
+  })
+
+  it("forwards optional integration variables only to final Claude execution", async () => {
+    const source = await readFile(launcherPath, "utf8")
+
+    expect(source).toContain('ambient_apify_api_token="${APIFY_API_TOKEN-}"')
+    expect(source).toContain('ambient_google_ai_api_key="${GOOGLE_AI_API_KEY-}"')
+    expect(source).toContain("claude_auth_args+=(--env APIFY_API_TOKEN)")
+    expect(source).toContain("claude_auth_args+=(--env GOOGLE_AI_API_KEY)")
+    const createBlock = source.slice(source.indexOf("docker container create"), source.indexOf("terminal_args=("))
+    expect(createBlock).not.toMatch(/APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
+    expect(source).toContain('${claude_auth_args[@]+"${claude_auth_args[@]}"}')
   })
 })
 

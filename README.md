@@ -25,6 +25,9 @@ Bundled profiles can also be selected by directory name:
 trellage validate claude-hyperresearch
 trellage build --locked claude-hyperresearch
 trellage --profile claude-hyperresearch
+trellage validate claude-social-media
+trellage build --locked claude-social-media
+trellage --profile claude-social-media
 ```
 
 Trellage expands a bare name to `profiles/<name>/profile.toml`. Use a value ending in `.toml` or containing a path separator for an explicit path.
@@ -55,9 +58,33 @@ Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) fo
 ```bash
 trellage --profile codex-superpowers -p "hello"
 trellage --profile claude-hyperresearch -p "hello"
+trellage --profile claude-social-media -p "draft a LinkedIn post"
 trellage --profile copilot-hve -p "hello"
 trellage --profile pi-oh-my-pi -p "hello"
 ```
+
+### Claude social media skills
+
+`claude-social-media` installs every skill from
+[`charlie947/social-media-skills`](https://github.com/charlie947/social-media-skills)
+through Claude Code's native marketplace plugin flow. Core skills need no credentials.
+`APIFY_API_TOKEN` optionally enables Apify-backed workflows, and
+`GOOGLE_AI_API_KEY` optionally enables API-backed Google AI workflows.
+
+Set values securely outside the repository, export the variable names, then launch:
+
+```bash
+export APIFY_API_TOKEN
+export GOOGLE_AI_API_KEY
+trellage --profile claude-social-media
+```
+
+Trellage forwards only variables that are present to the final Claude process;
+neither variable is required or stored in the profile or lock.
+
+Trellage also completes Claude Code's first-run onboarding with the dark theme. Later
+theme changes and unrelated Claude user state are preserved. The current mounted
+worktree is pre-approved as trusted inside the isolated container.
 
 ## Automatic Varlock Environment Loading
 

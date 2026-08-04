@@ -30,6 +30,7 @@ const runtimeSupport = {
   copilotEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-copilot-entry.sh"),
   piEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-pi-entry.sh"),
   finalizeCopilotSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-copilot-seed.mjs"),
+  finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs"),
   claudeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-claude-entry.sh"),
   hyperresearchRequirements: path.join(
     repositoryRoot,

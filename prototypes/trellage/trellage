@@ -6,15 +6,18 @@ ulimit -c 0 2>/dev/null || true
 unset \
   ambient_copilot_github_token ambient_gh_token ambient_github_token \
   ambient_claude_code_oauth_token ambient_anthropic_api_key \
-  ambient_playwright_mcp_extension_token copilot_token secret_value secret_source_values
+  ambient_playwright_mcp_extension_token ambient_apify_api_token ambient_google_ai_api_key \
+  copilot_token secret_value secret_source_values
 ambient_copilot_github_token="${COPILOT_GITHUB_TOKEN-}"
 ambient_gh_token="${GH_TOKEN-}"
 ambient_github_token="${GITHUB_TOKEN-}"
 ambient_claude_code_oauth_token="${CLAUDE_CODE_OAUTH_TOKEN-}"
 ambient_anthropic_api_key="${ANTHROPIC_API_KEY-}"
 ambient_playwright_mcp_extension_token="${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}"
+ambient_apify_api_token="${APIFY_API_TOKEN-}"
+ambient_google_ai_api_key="${GOOGLE_AI_API_KEY-}"
 unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
-  PLAYWRIGHT_MCP_EXTENSION_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
+  PLAYWRIGHT_MCP_EXTENSION_TOKEN APIFY_API_TOKEN GOOGLE_AI_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
   ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
   TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID \
   CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
@@ -39,6 +42,8 @@ discard_ambient_claude_auth() {
   ambient_claude_code_oauth_token=
   ambient_anthropic_api_key=
   ambient_playwright_mcp_extension_token=
+  ambient_apify_api_token=
+  ambient_google_ai_api_key=
 }
 
 mode=new
@@ -209,6 +214,8 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
     [[ -z "$ambient_anthropic_api_key" ]] || export ANTHROPIC_API_KEY="$ambient_anthropic_api_key"
     [[ -z "$ambient_playwright_mcp_extension_token" ]] \
       || export PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
+    [[ -z "$ambient_apify_api_token" ]] || export APIFY_API_TOKEN="$ambient_apify_api_token"
+    [[ -z "$ambient_google_ai_api_key" ]] || export GOOGLE_AI_API_KEY="$ambient_google_ai_api_key"
     export _TRELLAGE_VARLOCK_BOOTSTRAPPED=1
     exec "$varlock" run --inject vars --path "$environment_path" -- "$source_path" "${trellage_arguments[@]}"
   fi
@@ -559,6 +566,27 @@ container_is_current() {
   [[ "$container_profile_hash" == "$profile_hash" && "$container_runtime_hash" == "$runtime_hash" ]]
 }
 
+remove_stale_container() {
+  local running main_pid processes
+  running="$(docker container inspect --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container state: $container_name"
+  [[ "$running" == true || "$running" == false ]] \
+    || fail "Docker container has an invalid running state: $container_name"
+  if [[ "$running" == true ]]; then
+    main_pid="$(docker container inspect --format '{{ .State.Pid }}' "$container_id" 2>/dev/null)" \
+      || fail "cannot inspect Docker container PID: $container_name"
+    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || fail "Docker container has an invalid PID: $container_name"
+    processes="$(docker container top "$container_id" -eo pid,ppid,comm 2>/dev/null)" \
+      || fail "cannot inspect Docker container processes: $container_name"
+    if awk -v main_pid="$main_pid" 'NR > 1 && $1 != main_pid { found = 1 } END { exit(found ? 0 : 1) }' \
+      <<<"$processes"; then
+      fail "profile container is stale but has an active session; exit it and retry: $container_name"
+    fi
+  fi
+  docker container rm --force "$container_id" >/dev/null
+  container_id=
+}
+
 container_labels_are_current() {
   local inspected_profile_hash inspected_runtime_hash
   inspected_profile_hash="$(docker container inspect \
@@ -666,7 +694,7 @@ prepare_claude_auth() {
   claude_auth_args=()
   unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
     ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
-    PLAYWRIGHT_MCP_EXTENSION_TOKEN
+    PLAYWRIGHT_MCP_EXTENSION_TOKEN APIFY_API_TOKEN GOOGLE_AI_API_KEY
   TRELLAGE_CLAUDE_AUTH_MODE="$claude_auth_mode"
   TRELLAGE_CLAUDE_MODE="$claude_mode"
   export TRELLAGE_CLAUDE_AUTH_MODE TRELLAGE_CLAUDE_MODE
@@ -702,6 +730,16 @@ prepare_claude_auth() {
     PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
     export PLAYWRIGHT_MCP_EXTENSION_TOKEN
     claude_auth_args+=(--env PLAYWRIGHT_MCP_EXTENSION_TOKEN)
+  fi
+  if [[ -n "$ambient_apify_api_token" ]]; then
+    APIFY_API_TOKEN="$ambient_apify_api_token"
+    export APIFY_API_TOKEN
+    claude_auth_args+=(--env APIFY_API_TOKEN)
+  fi
+  if [[ -n "$ambient_google_ai_api_key" ]]; then
+    GOOGLE_AI_API_KEY="$ambient_google_ai_api_key"
+    export GOOGLE_AI_API_KEY
+    claude_auth_args+=(--env GOOGLE_AI_API_KEY)
   fi
   discard_ambient_claude_auth
 }
@@ -827,7 +865,11 @@ if [[ "$mode" == doctor ]]; then
   printf 'network: %s (%s)\n' "$network" "$network_state"
   printf 'container: %s\n' "$container_name"
   printf 'state volume: %s\n' "$state_volume"
-  printf 'state: %s\n' "$resource_state"
+  if [[ "$resource_state" == absent ]]; then
+    printf 'state: absent (created on first launch)\n'
+  else
+    printf 'state: %s\n' "$resource_state"
+  fi
   if [[ "$profile_locked" != true || "$image_state" != available ]]; then
     printf 'build required: %s\n' "$build_command"
   fi
@@ -937,15 +979,13 @@ if container_is_present; then
   validate_state_volume
   validate_container_mounts
   if ! container_is_current; then
-    docker container rm --force "$container_id" >/dev/null
-    container_id=
+    remove_stale_container
   else
     container_image_id="$(docker container inspect \
       --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
       || fail "cannot inspect Docker container image: $container_name"
     if [[ "$container_image_id" != "$expected_image_id" ]]; then
-      docker container rm --force "$container_id" >/dev/null
-      container_id=
+      remove_stale_container
     else
       reuse_container=true
       running="$(docker container inspect \

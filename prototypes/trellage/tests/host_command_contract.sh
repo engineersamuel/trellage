@@ -95,7 +95,7 @@ jq -n \
   '{
     profile_path: $profile,
     profile_name: "copilot-hve-test",
-    profile_hash: "sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb",
+    profile_hash: "sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd",
     runtime_hash: $runtime_hash,
     image: "trellage-profile-copilot-hve-test:locked",
     locked: true,
@@ -384,7 +384,7 @@ test_new_container_from_subdirectory() {
   [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 8 ]] \
     || fail 'Codex container and volume must receive exact ownership and container integrity labels'
   assert_arg "$docker_log" 'dev.trellage.profile=codex-superpowers'
-  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb"
+  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd"
   assert_arg "$docker_log" "dev.trellage.runtime.hash=$runtime_hash"
   [[ "$(grep -Fxc $'ARG\t--network' "$docker_log")" -eq 1 ]] \
     || fail 'container must receive exactly one network'
@@ -637,6 +637,38 @@ test_stopped_and_collision_behavior() {
   fi
   assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: stopped reuse and collision rejection\n'
+}
+
+test_stale_container_preserves_active_sessions() {
+  local worktree="$test_root/stale-active-worktree"
+  local docker_log="$test_root/stale-active.docker.log"
+  local state_volume output
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+
+  if output="$(
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_CONTAINER_RUNTIME_HASH=sha256:stale \
+      FAKE_DOCKER_ACTIVE_SESSION=1 \
+      run_non_tty "$worktree" "$docker_log" "$worktree" \
+        "$prototype_dir/trellage" -p test 2>&1
+  )"; then
+    fail 'stale container replacement killed an active session'
+  fi
+  grep -Fq 'profile container is stale but has an active session; exit it and retry' <<<"$output" \
+    || fail 'stale active session did not produce a clear diagnostic'
+  ! grep -Fqx $'ARG\trm' "$docker_log" || fail 'stale active container was removed'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_CONTAINER_RUNTIME_HASH=sha256:stale \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test
+  grep -Fqx $'ARG\trm' "$docker_log" || fail 'idle stale container was not replaced'
+  printf 'Trellage host test: PASS: stale containers preserve active sessions\n'
 }
 
 test_volume_collision_and_mount_validation() {
@@ -964,7 +996,8 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   grep -Fqx 'network: test_doctor_net (absent)' <<<"$output" || fail 'doctor omitted absent network'
   grep -Fqx "container: $container_name" <<<"$output" || fail 'doctor omitted exact container'
   grep -Fqx "state volume: $state_volume" <<<"$output" || fail 'doctor omitted exact volume'
-  grep -Fqx 'state: absent' <<<"$output" || fail 'doctor omitted absent state'
+  grep -Fqx 'state: absent (created on first launch)' <<<"$output" \
+    || fail 'doctor omitted first-launch guidance for absent state'
   ! grep -Fq 'doctor-secret-value' <<<"$output" || fail 'doctor exposed an environment secret'
   assert_no_mutation "$docker_log"
 
@@ -3051,6 +3084,7 @@ test_portable_prompt_mode_is_noninteractive_and_literal
 test_portable_prompt_is_detached_for_each_harness
 test_portable_prompt_parser_contract
 test_stopped_and_collision_behavior
+test_stale_container_preserves_active_sessions
 test_volume_collision_and_mount_validation
 test_shell_and_stop_modes
 test_terminal_environment_and_agent_tagging

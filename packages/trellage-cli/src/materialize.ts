@@ -34,11 +34,12 @@ export type SkillGenerator = (
 export type RuntimeSupport = RuntimeSupportPaths
 
 export interface ClaudeMaterializeRequest {
-  readonly sourceDirectory: string
+  readonly adapter: "claude-marketplace" | "hyperresearch"
+  readonly sourceDirectories: ReadonlyArray<string>
   readonly context: string
   readonly lock: ProfileLock
-  readonly requirementsPath: string
-  readonly browserAgentPath: string
+  readonly requirementsPath?: string
+  readonly browserAgentPath?: string
 }
 
 export type ClaudeMaterializer = (request: ClaudeMaterializeRequest) => Effect.Effect<void, unknown>
@@ -166,27 +167,23 @@ export const createBuildContext = (
         )
       }
     }
-    if (document.profile.harness.kind === "claude") {
-      const claudeMode = document.profile.harness.claude.mode ?? "hyperresearch"
-      const profilePlugin = document.profile.plugins[0]
-      const source = lock.sources[0]
-      if (
-        claudeMode === "hyperresearch" &&
-        (document.profile.plugins.length !== 1 ||
-          lock.sources.length !== 1 ||
-          sourceDirectories.length !== 1 ||
-          profilePlugin === undefined ||
+    if (document.profile.harness.kind === "claude" && document.profile.plugins.length > 0) {
+      if (document.profile.plugins.length !== lock.sources.length || lock.sources.length !== sourceDirectories.length) {
+        return yield* Effect.fail(new MaterializeError({ message: "Claude build requires matching plugin sources" }))
+      }
+      for (let index = 0; index < document.profile.plugins.length; index += 1) {
+        const profilePlugin = document.profile.plugins[index]!
+        const source = lock.sources[index]
+        if (
           source === undefined ||
           source.kind !== "plugin" ||
-          source.adapter !== "hyperresearch" ||
-          profilePlugin.adapter !== "hyperresearch" ||
+          source.adapter !== profilePlugin.adapter ||
           source.repository !== profilePlugin.repository ||
           source.ref !== profilePlugin.ref ||
-          JSON.stringify(source.select) !== JSON.stringify(profilePlugin.select))
-      ) {
-        return yield* Effect.fail(
-          new MaterializeError({ message: "Claude build requires one matching Hyperresearch source" }),
-        )
+          JSON.stringify(source.select) !== JSON.stringify(profilePlugin.select)
+        ) {
+          return yield* Effect.fail(new MaterializeError({ message: "Claude build requires matching plugin sources" }))
+        }
       }
     }
 
@@ -198,7 +195,11 @@ export const createBuildContext = (
             typeof runtimeSupport === "string"
               ? { codexEntry: runtimeSupport, copilotEntry: "", finalizeCopilotSeed: "" }
               : runtimeSupport,
-            undefined,
+            document.profile.harness.kind === "claude" &&
+              (document.profile.plugins[0]?.adapter === "claude-marketplace" ||
+                document.profile.plugins[0]?.adapter === "hyperresearch")
+              ? document.profile.plugins[0].adapter
+              : undefined,
             document.profile.harness.kind === "claude"
               ? (document.profile.harness.claude.mode ?? "hyperresearch")
               : "hyperresearch",
@@ -252,18 +253,26 @@ export const createBuildContext = (
         )
       }
 
-      if (
-        document.profile.harness.kind === "claude" &&
-        (document.profile.harness.claude.mode ?? "hyperresearch") === "hyperresearch"
-      ) {
-        const requirements = runtimeSupportFile(support, "hyperresearch-requirements")
-        const browserAgent = runtimeSupportFile(support, "claude-browser-agent")
+      if (document.profile.harness.kind === "claude" && document.profile.plugins.length > 0) {
+        const adapter = document.profile.plugins[0]?.adapter
+        if (adapter !== "hyperresearch" && adapter !== "claude-marketplace") {
+          return yield* Effect.fail(new MaterializeError({ message: "unsupported Claude plugin adapter" }))
+        }
+        const requirements =
+          adapter === "hyperresearch" ? runtimeSupportFile(support, "hyperresearch-requirements") : undefined
+        const browserAgent =
+          adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
         yield* materializeClaude({
-          sourceDirectory: sourceDirectories[0]!,
+          adapter,
+          sourceDirectories,
           context,
           lock,
-          requirementsPath: path.join(context, requirements.buildContextPath),
-          browserAgentPath: path.join(context, browserAgent.buildContextPath),
+          ...(requirements === undefined
+            ? {}
+            : { requirementsPath: path.join(context, requirements.buildContextPath) }),
+          ...(browserAgent === undefined
+            ? {}
+            : { browserAgentPath: path.join(context, browserAgent.buildContextPath) }),
         }).pipe(
           Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })),
         )
@@ -389,6 +398,25 @@ fi
         const executable = harnessPackage.kind
         const installedExecutable = harnessPackage.kind === "pi" ? "omp" : executable
         const misePlatform = document.profile.image.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
+        const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
+        const claudePythonLock = claudeMarketplace
+          ? ""
+          : `[[tools.python]]
+version = "3.13.14"
+backend = "core:python"
+
+[tools.python."platforms.${misePlatform}"]
+checksum = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+`
+        const claudePlaywrightLock = claudeMarketplace
+          ? ""
+          : `[[tools."npm:@playwright/mcp"]]
+version = "0.0.78"
+backend = "npm:@playwright/mcp"
+`
         await writeFile(
           path.join(context, "mise.lock"),
           harnessPackage.kind === "claude" &&
@@ -404,15 +432,7 @@ backend = "core:node"
 checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
 url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
 
-[[tools.python]]
-version = "3.13.14"
-backend = "core:python"
-
-[tools.python."platforms.${misePlatform}"]
-checksum = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
-provenance = "github-attestations"
-
+${claudePythonLock}
 [[tools."npm:@anthropic-ai/claude-code"]]
 version = "2.1.218"
 backend = "npm:@anthropic-ai/claude-code"
@@ -420,9 +440,7 @@ backend = "npm:@anthropic-ai/claude-code"
 [tools."npm:@anthropic-ai/claude-code".options]
 npm_args = "--ignore-scripts=false"
 
-[[tools."npm:@playwright/mcp"]]
-version = "0.0.78"
-backend = "npm:@playwright/mcp"
+${claudePlaywrightLock}
 `
             : harnessPackage.kind === "claude"
               ? `# @generated by Trellage profile compiler

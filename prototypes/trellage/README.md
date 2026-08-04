@@ -147,6 +147,8 @@ For a profile bundled in this repository, use its directory name instead of an a
 ```bash
 trellage build --locked claude-hyperresearch
 trellage --profile claude-hyperresearch
+trellage build --locked claude-social-media
+trellage --profile claude-social-media
 ```
 
 A bare name resolves to `profiles/<name>/profile.toml`; explicit `.toml` and path arguments continue to resolve from the current directory.
@@ -172,6 +174,7 @@ Bare profile launches remain interactive. Portable `-p` and `--prompt` run one p
 ```bash
 trellage --profile codex-superpowers -p "hello"
 trellage --profile claude-hyperresearch -p "hello"
+trellage --profile claude-social-media -p "draft a LinkedIn post"
 trellage --profile copilot-hve -p "hello"
 trellage --profile pi-oh-my-pi -p "hello"
 ```
@@ -189,6 +192,27 @@ so reserve it for recovery after interactive sessions have exited.
 New and resumed sessions run Codex with `--dangerously-bypass-approvals-and-sandbox`; Docker is the external sandbox. `trellage shell` does not start or label a Codex process.
 
 Claude Hyperresearch runs with `bypassPermissions` inside the same external Docker sandbox. Trellage supplies `skipDangerousModePermissionPrompt = true` as a session-level managed setting, so Claude starts without asking users or non-interactive callers to acknowledge the bypass-mode warning.
+
+Claude Social Media installs every bundled skill from
+[`charlie947/social-media-skills`](https://github.com/charlie947/social-media-skills)
+as `social-media-skills@social-media-skills` through Claude Code's native marketplace.
+Core skills need no credentials. `APIFY_API_TOKEN` optionally enables Apify-backed
+workflows, and `GOOGLE_AI_API_KEY` optionally enables API-backed Google AI workflows.
+Set values securely outside the repository, export the variable names, and launch:
+
+```bash
+export APIFY_API_TOKEN
+export GOOGLE_AI_API_KEY
+trellage --profile claude-social-media
+```
+
+Trellage forwards only present variables to the final Claude process and never records
+their values in the profile, lock, image, or persistent Claude seed.
+
+The managed Claude seed completes first-run onboarding with the dark theme. Runtime
+synchronization fills only missing onboarding fields, preserving later user choices
+and unrelated Claude state. The current mounted worktree is pre-approved as trusted
+inside the isolated container.
 
 ## Copilot with HVE Core
 

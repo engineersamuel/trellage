@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { profileHash } from "../src/lock.js"
-import { isClaudeProfile, isCodexProfile, isCopilotProfile, isPiProfile, parseProfile } from "../src/profile.js"
+import { isClaudeProfile, isCodexProfile, isCopilotProfile, parseProfile } from "../src/profile.js"
 
 const profile = (extra = "") => `
 schema = 1
@@ -91,47 +91,28 @@ select = ["full"]
 ${extra}
 `
 
-const piProfile = (extra = "") => `
+const claudeMarketplaceProfile = (extra = "") => `
 schema = 1
-name = "pi-oh-my-pi"
-description = "Oh My Pi profile"
-[harness]
-kind = "pi"
-version = "latest"
-args = ["--yolo"]
-[harness.pi]
-implementation = "oh-my-pi"
-provider = "github-copilot"
-model = "gpt-5.6-terra"
-auth = "host-or-login"
-[image]
-platform = "linux/arm64"
-base = "node:22.17.0-bookworm-slim"
-shell = "fish"
-packages = ["bash", "fish", "git", "jq"]
-${extra}
-`
-
-const coreClaudeProfile = (model = "qwen3.6-35b-a3b-local", extra = "") => `
-schema = 1
-name = "claude-qwen-local"
-description = "Claude Qwen local profile"
+name = "claude-social-media"
+description = "Claude marketplace test profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
 [harness.claude]
-mode = "core"
 default_auth = "proxy"
-model = "${model}"
+model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
-opus_model = "${model}"
-sonnet_model = "${model}"
-haiku_model = "${model}"
 [image]
 platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
-packages = ["bash", "ca-certificates", "fish", "git", "jq"]
+packages = ["bash", "ca-certificates", "curl", "fish", "git", "jq", "zsh"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/charlie947/social-media-skills.git"
+ref = "main"
+marketplace = "social-media-skills"
+select = ["social-media-skills"]
 ${extra}
 `
 
@@ -207,116 +188,64 @@ describe("parseProfile", () => {
     ])
   })
 
-  it("decodes a strict Oh My Pi profile", async () => {
+  it("decodes a native Claude marketplace profile", async () => {
     const result = await decode(
-      piProfile(`[[skills]]
-adapter = "omp-native"
-repository = "https://github.com/can1357/oh-my-pi.git"
-ref = "v17.2.6"
-select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]`),
-    )
-
-    expect(isPiProfile(result.profile)).toBe(true)
-    if (!isPiProfile(result.profile)) throw new Error("expected Pi profile")
-    expect(result.profile.harness.pi).toEqual({
-      implementation: "oh-my-pi",
-      provider: "github-copilot",
-      model: "gpt-5.6-terra",
-      auth: "host-or-login",
-    })
-    expect(result.profile.skills).toEqual([
-      {
-        adapter: "omp-native",
-        repository: "https://github.com/can1357/oh-my-pi.git",
-        ref: "v17.2.6",
-        select: ["semantic-compression", "system-prompts", "tool-prompt-optimization"],
-      },
-    ])
-    expect(result.profile.plugins).toEqual([])
-    expect(result.profile.mcps).toEqual([])
-  })
-
-  it.each([
-    ["implementation", 'implementation = "badlogic-pi"'],
-    ["provider", 'provider = "openai"'],
-    ["model", 'model = "gpt-5.5"'],
-    ["auth", 'auth = "token"'],
-  ])("rejects unsupported Pi %s", async (field, replacement) => {
-    const input = piProfile().replace(
-      field === "implementation"
-        ? 'implementation = "oh-my-pi"'
-        : field === "provider"
-          ? 'provider = "github-copilot"'
-          : field === "model"
-            ? 'model = "gpt-5.6-terra"'
-            : 'auth = "host-or-login"',
-      replacement,
-    )
-
-    await expect(decode(input)).rejects.toThrow(new RegExp(field, "i"))
-  })
-
-  it.each([
-    ["standalone plugins", "plugins = []"],
-    ["MCPs", "mcps = []"],
-    ["declared secrets", '[secrets]\nprovider = "env"\nrequired = []'],
-  ])("rejects Pi profiles with unsupported %s", async (_label, declaration) => {
-    const input = piProfile().replace('name = "pi-oh-my-pi"', `name = "pi-oh-my-pi"\n${declaration}`)
-
-    await expect(decode(input)).rejects.toThrow(/Pi profiles do not support/i)
-  })
-
-  it("rejects non-OMP Pi skill sources", async () => {
-    await expect(
-      decode(
-        piProfile(`[[skills]]
-repository = "https://github.com/example/skills.git"
+      claudeMarketplaceProfile(`
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/blader/humanizer.git"
 ref = "main"
-select = ["example"]`),
-      ),
-    ).rejects.toThrow(/OMP native repository/i)
-  })
-
-  it.each(["preview", "1.2", "v17.2.6"])("rejects invalid Pi version %s", async (version) => {
-    await expect(decode(piProfile().replace('version = "latest"', `version = "${version}"`))).rejects.toThrow(
-      /Pi version/i,
+marketplace = "humanizer"
+select = ["humanizer"]
+`),
     )
-  })
-
-  it("rejects wrong-harness sections on Pi", async () => {
-    await expect(decode(piProfile('[harness.copilot]\nauth = "host-or-login"'))).rejects.toThrow(/copilot/i)
-  })
-
-  it("decodes an arbitrary non-empty Claude model in core mode with zero plugins", async () => {
-    const result = await decode(coreClaudeProfile("vendor model+custom"))
 
     expect(isClaudeProfile(result.profile)).toBe(true)
-    if (!isClaudeProfile(result.profile)) throw new Error("expected Claude profile")
-    expect(result.profile.harness.claude).toEqual({
-      mode: "core",
-      default_auth: "proxy",
-      model: "vendor model+custom",
-      gateway: "http://copilot-proxy-rs:8080",
-      opus_model: "vendor model+custom",
-      sonnet_model: "vendor model+custom",
-      haiku_model: "vendor model+custom",
-    })
-    expect(result.profile.plugins).toEqual([])
+    expect(result.profile.plugins).toEqual([
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        marketplace: "social-media-skills",
+        select: ["social-media-skills"],
+      }),
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        marketplace: "humanizer",
+        select: ["humanizer"],
+      }),
+    ])
+    expect(result.profile.secrets.required).toEqual([])
   })
 
-  it("rejects an empty Claude model", async () => {
-    await expect(decode(coreClaudeProfile(""))).rejects.toThrow(/model/i)
-  })
-
-  it("rejects managed plugins in Claude core mode", async () => {
+  it("rejects mixing Hyperresearch with Claude marketplace plugins", async () => {
     await expect(
       decode(
-        coreClaudeProfile(
-          "qwen3.6-35b-a3b-local",
-          `[[plugins]]\nadapter = "hyperresearch"\nrepository = "https://github.com/jordan-gibbs/hyperresearch.git"\nref = "main"\nselect = ["full"]`,
-        ),
+        claudeProfile(`
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/blader/humanizer.git"
+ref = "main"
+marketplace = "humanizer"
+select = ["humanizer"]
+`),
       ),
-    ).rejects.toThrow(/core.*plugins/i)
+    ).rejects.toThrow(/cannot be combined/)
+  })
+
+  it.each([
+    ["empty selection", claudeMarketplaceProfile().replace('select = ["social-media-skills"]', "select = []")],
+    [
+      "duplicate selection",
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills", "social-media-skills"]',
+      ),
+    ],
+    [
+      "unsafe marketplace",
+      claudeMarketplaceProfile().replace('marketplace = "social-media-skills"', 'marketplace = "../outside"'),
+    ],
+  ])("rejects invalid native Claude marketplace shape: %s", async (_label, input) => {
+    await expect(decode(input)).rejects.toThrow(/Claude|marketplace|selection|duplicate/i)
   })
 
   it.each([

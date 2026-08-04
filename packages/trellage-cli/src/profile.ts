@@ -61,6 +61,14 @@ const CopilotPlugin = Schema.Struct({
   select: Schema.Array(NonEmpty),
 })
 
+const ClaudeMarketplacePlugin = Schema.Struct({
+  adapter: Schema.Literal("claude-marketplace"),
+  repository: NonEmpty,
+  ref: NonEmpty,
+  marketplace: NonEmpty,
+  select: Schema.Array(NonEmpty),
+})
+
 const HyperresearchPlugin = Schema.Struct({
   adapter: Schema.Literal("hyperresearch"),
   repository: Schema.Literal("https://github.com/jordan-gibbs/hyperresearch.git"),
@@ -178,7 +186,7 @@ const CopilotProfileSchema = Schema.Struct({
 const ClaudeProfileSchema = Schema.Struct({
   ...CommonProfile,
   harness: ClaudeHarness,
-  plugins: Schema.optional(Schema.Array(HyperresearchPlugin)),
+  plugins: Schema.optional(Schema.Array(Schema.Union(HyperresearchPlugin, ClaudeMarketplacePlugin))),
 })
 
 const PiProfileSchema = Schema.Struct({
@@ -381,44 +389,36 @@ const validate = (
     } else if (isClaudeProfile(profile)) {
       if (profile.harness.version !== "2.1.218")
         return yield* fail(`unsupported Claude version: ${profile.harness.version}`)
-      if (profile.image.platform !== "linux/arm64") return yield* fail("Claude Hyperresearch supports only linux/arm64")
-      if (profile.skills.length > 0) return yield* fail("Claude Hyperresearch does not support standalone skills")
-      if (profile.mcps.length > 0) return yield* fail("Claude Hyperresearch MCPs are managed by Trellage")
-      const claudeMode = profile.harness.claude.mode ?? "hyperresearch"
-      if (claudeMode === "core" && profile.plugins.length > 0) {
-        return yield* fail("Claude core profiles do not support managed plugins")
-      }
-      if (claudeMode === "hyperresearch" && profile.plugins.length !== 1) {
-        return yield* fail("Claude Hyperresearch profiles require exactly one managed plugin")
-      }
+      if (profile.image.platform !== "linux/arm64") return yield* fail("Claude profiles support only linux/arm64")
+      if (profile.skills.length > 0) return yield* fail("Claude profiles do not support standalone skills")
+      if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
       if (
         profile.secrets.required.length > 0 ||
         profile.secrets.provider !== "env" ||
         profile.secrets.varlock_path !== undefined
       ) {
-        return yield* fail("Claude Hyperresearch credentials are selected at launch")
+        return yield* fail("Claude credentials are selected at launch")
       }
-    } else {
-      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-        return yield* fail(`invalid Pi version: ${profile.harness.version}`)
+      if (profile.plugins.length === 0 && profile.harness.claude.mode !== "core") {
+        return yield* fail("Claude profiles require at least one plugin")
       }
-      if (profile.plugins.length > 0) return yield* fail("Pi profiles do not support standalone plugins")
-      if (profile.skills.length > 1) return yield* fail("Pi profiles support at most one OMP native skill source")
-      const skillSource = profile.skills[0]
-      if (
-        skillSource !== undefined &&
-        (skillSource.adapter !== "omp-native" || skillSource.repository !== "https://github.com/can1357/oh-my-pi.git")
-      ) {
-        return yield* fail("Pi skill source must use the OMP native repository")
+      const hyperresearch = profile.plugins.filter((plugin) => plugin.adapter === "hyperresearch")
+      if (hyperresearch.length > 0 && profile.plugins.length !== 1) {
+        return yield* fail("Hyperresearch cannot be combined with Claude marketplace plugins")
       }
-      if (profile.mcps.length > 0) return yield* fail("Pi profiles do not support MCPs")
-      if (
-        profile.secrets.required.length > 0 ||
-        profile.secrets.provider !== "env" ||
-        profile.secrets.varlock_path !== undefined
-      ) {
-        return yield* fail("Pi profiles do not support declared secrets")
+      for (const plugin of profile.plugins) {
+        if (plugin.adapter === "claude-marketplace") {
+          if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plugin.marketplace)) {
+            return yield* fail(`Claude marketplace name is unsafe: ${plugin.marketplace}`)
+          }
+          yield* unique(plugin.select, "selected asset")
+          if (plugin.select.length === 0) return yield* fail("Claude marketplace plugin selection is empty")
+        }
       }
+      yield* unique(
+        profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace").map((plugin) => plugin.marketplace),
+        "Claude marketplace",
+      )
     }
     for (const source of [...profile.skills, ...profile.plugins]) {
       const repositoryError = githubRepositoryError(source.repository)

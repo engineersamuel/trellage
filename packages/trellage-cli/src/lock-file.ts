@@ -136,7 +136,14 @@ const StringRecordSchema = Schema.Record({ key: Text, value: Schema.String })
 const SourceSchema = Schema.Struct({
   kind: Schema.Literal("skill", "plugin"),
   adapter: Schema.optional(
-    Schema.Literal("codex-native", "wshobson-agents", "copilot-marketplace", "hyperresearch", "omp-native"),
+    Schema.Literal(
+      "claude-marketplace",
+      "codex-native",
+      "wshobson-agents",
+      "copilot-marketplace",
+      "hyperresearch",
+      "omp-native",
+    ),
   ),
   marketplace: Schema.optional(Text),
   plugin_versions: Schema.optional(StringRecordSchema),

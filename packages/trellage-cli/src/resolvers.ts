@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 
+import { ClaudePluginError, readClaudeMarketplace } from "./claude-plugin.js"
 import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
 import { resolveCopilotRelease } from "./copilot-release.js"
 import { resolveGitHubSource } from "./github-cache.js"
@@ -80,14 +81,21 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
         integrity: cached.integrity,
         files: cached.files,
       }
-      if (request.adapter !== "copilot-marketplace") return resolution
+      if (request.adapter !== "copilot-marketplace" && request.adapter !== "claude-marketplace") return resolution
       if (request.marketplace === undefined) {
-        return yield* Effect.fail(new CopilotPluginError({ message: "Copilot marketplace selection is missing" }))
+        return yield* Effect.fail(
+          request.adapter === "copilot-marketplace"
+            ? new CopilotPluginError({ message: "Copilot marketplace selection is missing" })
+            : new ClaudePluginError({ message: "Claude marketplace selection is missing" }),
+        )
       }
-      const plugin_versions = yield* readCopilotMarketplace(cached.directory, request.marketplace, request.select)
+      const plugin_versions =
+        request.adapter === "copilot-marketplace"
+          ? yield* readCopilotMarketplace(cached.directory, request.marketplace, request.select)
+          : yield* readClaudeMarketplace(cached.directory, request.marketplace, request.select)
       return { ...resolution, plugin_versions }
     }),
-  resolvePackages: ({ kind, selector, platform, packages, needsSkillsCli, claudeMode }) =>
+  resolvePackages: ({ kind, selector, platform, packages, needsSkillsCli, claudeAdapter }) =>
     Effect.gen(function* () {
       const runtime = []
       for (const name of packages) {
@@ -129,87 +137,88 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
                     size: 101269986,
                   }
                 })
+      const claudeCommonArtifacts = [
+        {
+          name: "node",
+          version: "22.17.0",
+          integrity: "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4",
+          url: "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz",
+        },
+        {
+          name: "claude-code-linux-arm64",
+          version: "2.1.218",
+          integrity: "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619",
+          url: "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz",
+          size: 84159749,
+        },
+        {
+          name: "builder-oci",
+          version: "jdxcode/mise",
+          integrity: "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff",
+          url: "oci://docker.io/jdxcode/mise",
+        },
+        {
+          name: "skopeo-oci",
+          version: "stable",
+          integrity: "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4",
+          url: "oci://quay.io/skopeo/stable",
+        },
+      ]
       const artifacts =
         kind === "claude"
-          ? [
-              {
-                name: "node",
-                version: "22.17.0",
-                integrity: "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4",
-                url: "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz",
-              },
-              {
-                name: "python",
-                version: "3.13.14",
-                integrity: "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9",
-                url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
-              },
-              {
-                name: "claude-code-linux-arm64",
-                version: "2.1.218",
-                integrity: "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619",
-                url: "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz",
-                size: 84159749,
-              },
-              {
-                name: "playwright-mcp",
-                version: "0.0.78",
-                integrity: "sha256:cfff0fd8eae3ac3bcb39827861298cb6b483a8d72e3c558e7991658ed3d22562",
-                url: "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.78.tgz",
-                size: 22503,
-              },
-              {
-                name: "playwright",
-                version: "1.62.0-alpha-1783623505000",
-                integrity: "sha256:738aa4e5602f023b68dbad49cf6bd93e8f2aa14277831109458de1262fad557a",
-                url: "https://registry.npmjs.org/playwright/-/playwright-1.62.0-alpha-1783623505000.tgz",
-                size: 892437,
-              },
-              {
-                name: "playwright-core",
-                version: "1.62.0-alpha-1783623505000",
-                integrity: "sha256:a5412aee4ac779f1c662272f77fd5fe716218cf555c222a301f089447f49b24c",
-                url: "https://registry.npmjs.org/playwright-core/-/playwright-core-1.62.0-alpha-1783623505000.tgz",
-                size: 2866354,
-              },
-              {
-                name: "chromium",
-                version: "1228",
-                integrity: "sha256:ec044b50ed065adeb4c5ffdb42d1529901cbaf897cdf542bfef8af01d6e0cc79",
-                url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-linux-arm64.zip",
-                size: 196280473,
-              },
-              {
-                name: "chromium-headless-shell",
-                version: "1228",
-                integrity: "sha256:1652929a70f4afb17aca36fce073fb7ed22262d16825be761b0801972f43ac4f",
-                url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-headless-shell-linux-arm64.zip",
-                size: 115342043,
-              },
-              {
-                name: "obscura",
-                version: "v0.1.11",
-                integrity: "sha256:d535324d44724cdfec16e500d0335903bca5c6a446e736b351691ee7e39debb4",
-                url: "https://github.com/h4ckf0r0day/obscura/releases/download/v0.1.11/obscura-aarch64-linux-stealth.tar.gz",
-                size: 52716812,
-              },
-              {
-                name: "builder-oci",
-                version: "jdxcode/mise",
-                integrity: "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff",
-                url: "oci://docker.io/jdxcode/mise",
-              },
-              {
-                name: "skopeo-oci",
-                version: "stable",
-                integrity: "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4",
-                url: "oci://quay.io/skopeo/stable",
-              },
-            ].filter(
-              ({ name }) =>
-                claudeMode !== "core" ||
-                ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"].includes(name),
-            )
+          ? claudeAdapter === "hyperresearch"
+            ? [
+                ...claudeCommonArtifacts,
+                {
+                  name: "python",
+                  version: "3.13.14",
+                  integrity: "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9",
+                  url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+                },
+                {
+                  name: "playwright-mcp",
+                  version: "0.0.78",
+                  integrity: "sha256:cfff0fd8eae3ac3bcb39827861298cb6b483a8d72e3c558e7991658ed3d22562",
+                  url: "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.78.tgz",
+                  size: 22503,
+                },
+                {
+                  name: "playwright",
+                  version: "1.62.0-alpha-1783623505000",
+                  integrity: "sha256:738aa4e5602f023b68dbad49cf6bd93e8f2aa14277831109458de1262fad557a",
+                  url: "https://registry.npmjs.org/playwright/-/playwright-1.62.0-alpha-1783623505000.tgz",
+                  size: 892437,
+                },
+                {
+                  name: "playwright-core",
+                  version: "1.62.0-alpha-1783623505000",
+                  integrity: "sha256:a5412aee4ac779f1c662272f77fd5fe716218cf555c222a301f089447f49b24c",
+                  url: "https://registry.npmjs.org/playwright-core/-/playwright-core-1.62.0-alpha-1783623505000.tgz",
+                  size: 2866354,
+                },
+                {
+                  name: "chromium",
+                  version: "1228",
+                  integrity: "sha256:ec044b50ed065adeb4c5ffdb42d1529901cbaf897cdf542bfef8af01d6e0cc79",
+                  url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-linux-arm64.zip",
+                  size: 196280473,
+                },
+                {
+                  name: "chromium-headless-shell",
+                  version: "1228",
+                  integrity: "sha256:1652929a70f4afb17aca36fce073fb7ed22262d16825be761b0801972f43ac4f",
+                  url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-headless-shell-linux-arm64.zip",
+                  size: 115342043,
+                },
+                {
+                  name: "obscura",
+                  version: "v0.1.11",
+                  integrity: "sha256:d535324d44724cdfec16e500d0335903bca5c6a446e736b351691ee7e39debb4",
+                  url: "https://github.com/h4ckf0r0day/obscura/releases/download/v0.1.11/obscura-aarch64-linux-stealth.tar.gz",
+                  size: 52716812,
+                },
+              ]
+            : claudeCommonArtifacts
           : undefined
       return {
         harness,
@@ -225,11 +234,11 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
           ? {}
           : {
               artifacts,
-              ...(claudeMode === "core"
-                ? {}
-                : {
+              ...(claudeAdapter === "hyperresearch"
+                ? {
                     python_lock_integrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
-                  }),
+                  }
+                : {}),
             }),
       }
     }),

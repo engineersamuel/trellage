@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
     readonly marketplace: string
     readonly selections: ReadonlyArray<string>
   }>,
+  claudeMarketplaceRequests: [] as Array<{
+    readonly directory: string
+    readonly marketplace: string
+    readonly selections: ReadonlyArray<string>
+  }>,
 }))
 
 vi.mock("../src/github-cache.js", async () => {
@@ -74,6 +79,17 @@ vi.mock("../src/copilot-plugin.js", async () => {
   }
 })
 
+vi.mock("../src/claude-plugin.js", async () => {
+  const { Effect } = await import("effect")
+  return {
+    ClaudePluginError: class ClaudePluginError extends Error {},
+    readClaudeMarketplace: (directory: string, marketplace: string, selections: ReadonlyArray<string>) => {
+      mocks.claudeMarketplaceRequests.push({ directory, marketplace, selections })
+      return Effect.succeed(Object.freeze(Object.assign(Object.create(null), { "social-media-skills": "1.0.0" })))
+    },
+  }
+})
+
 import { productionResolvers } from "../src/resolvers.js"
 
 describe("production package resolutions", () => {
@@ -82,6 +98,7 @@ describe("production package resolutions", () => {
     mocks.releaseRequests.length = 0
     mocks.piReleaseRequests.length = 0
     mocks.marketplaceRequests.length = 0
+    mocks.claudeMarketplaceRequests.length = 0
   })
 
   it("locks Debian package archive SHA-256 values rather than synthetic name hashes", async () => {
@@ -177,6 +194,7 @@ describe("production package resolutions", () => {
         platform: "linux/arm64",
         packages: ["bash", ...browserPackages],
         needsSkillsCli: false,
+        claudeAdapter: "hyperresearch",
       }),
     )
 
@@ -248,50 +266,19 @@ describe("production package resolutions", () => {
     )
   })
 
-  it("resolves an exact Oh My Pi release and preserves runtime package locks", async () => {
-    const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolvePackages({
-        kind: "pi",
-        selector: "latest",
-        platform: "linux/arm64",
-        packages: ["bash"],
-        needsSkillsCli: false,
-      }),
-    )
-
-    expect(result).toEqual({
-      harness: {
-        kind: "pi",
-        selector: "latest",
-        version: "17.2.6",
-        integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
-        url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
-        size: 157526160,
-      },
-      runtime: [
-        {
-          name: "bash",
-          version: "5.2.15-2+b13",
-          integrity: "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385",
-        },
-      ],
-    })
-    expect(mocks.piReleaseRequests).toEqual([{ selector: "latest", platform: "linux/arm64" }])
-  })
-
-  it("locks only the Claude core toolchain and build provenance in core mode", async () => {
+  it("locks only common Claude artifacts for a native marketplace profile", async () => {
     const result = await Effect.runPromise(
       productionResolvers("/tmp/cache").resolvePackages({
         kind: "claude",
         selector: "2.1.218",
         platform: "linux/arm64",
-        packages: ["bash", "ca-certificates", "fish", "git", "jq"],
+        packages: ["bash", "git", "jq"],
         needsSkillsCli: false,
-        claudeMode: "core",
+        claudeAdapter: "claude-marketplace",
       }),
     )
 
-    expect(result.artifacts?.map((artifact) => artifact.name)).toEqual([
+    expect(result.artifacts?.map(({ name }) => name)).toEqual([
       "node",
       "claude-code-linux-arm64",
       "builder-oci",
@@ -351,6 +338,7 @@ describe("production package resolutions", () => {
       commit: "a".repeat(40),
       plugin_versions: { "hve-core": "3.3.101" },
     })
+
     expect(mocks.requests).toEqual([
       expect.objectContaining({
         include: [],
@@ -362,6 +350,38 @@ describe("production package resolutions", () => {
         directory: "/cache/source",
         marketplace: "hve-core",
         selections: ["hve-core"],
+      },
+    ])
+  })
+
+  it("resolves Claude marketplace source through the full strict cache", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolveSource({
+        kind: "plugin",
+        adapter: "claude-marketplace",
+        marketplace: "social-media-skills",
+        repository: "https://github.com/charlie947/social-media-skills.git",
+        ref: "main",
+        select: ["social-media-skills"],
+        update: false,
+      }),
+    )
+
+    expect(result).toMatchObject({
+      commit: "a".repeat(40),
+      plugin_versions: { "social-media-skills": "1.0.0" },
+    })
+    expect(mocks.requests).toEqual([
+      expect.objectContaining({
+        include: [],
+        inventoryPolicy: {},
+      }),
+    ])
+    expect(mocks.claudeMarketplaceRequests).toEqual([
+      {
+        directory: "/cache/source",
+        marketplace: "social-media-skills",
+        selections: ["social-media-skills"],
       },
     ])
   })

@@ -183,51 +183,26 @@ ${renderOci(
 const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "claude") throw new Error("profile and lock harness kinds do not match")
-  if ((profile.harness.claude.mode ?? "hyperresearch") === "core") {
-    return `min_version = "2026.6.14"
-
-[tools]
-node = "22.17.0"
-"npm:@anthropic-ai/claude-code" = { version = ${quote(harness.version)}, npm_args = "--ignore-scripts=false" }
-
-${renderBootstrap(profile, options)}
-
-[dotfiles]
-"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
-"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
-${renderRuntimeDotfile(options, "runtime-claude-entry")}
-"/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
-${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
-
-${renderOci(
-  profile,
-  lock,
-  options,
-  ['CLAUDE_CONFIG_DIR = "/home/agent/.claude"'],
-  ['"dev.trellage.harness.kind" = "claude"', `"dev.trellage.claude.version" = ${quote(harness.version)}`],
-  "/home/agent/.cache",
-)}`
-  }
+  const hyperresearch = profile.plugins[0]?.adapter === "hyperresearch"
   return `min_version = "2026.6.14"
 
 [tools]
 node = "22.17.0"
-python = "3.13.14"
 "npm:@anthropic-ai/claude-code" = { version = ${quote(harness.version)}, npm_args = "--ignore-scripts=false" }
-"npm:@playwright/mcp" = "0.0.78"
+${hyperresearch ? 'python = "3.13.14"\n"npm:@playwright/mcp" = "0.0.78"' : ""}
 
 ${renderBootstrap(profile, options)}
 
 [dotfiles]
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
-"/opt/trellage/hyperresearch-site" = { source = "hyperresearch-site", mode = "copy" }
-"/usr/local/bin/hyperresearch" = { source = "hyperresearch-wrapper.sh", mode = "copy" }
-"/usr/local/bin/hpr" = { source = "hyperresearch-wrapper.sh", mode = "copy" }
+${hyperresearch ? '"/opt/trellage/hyperresearch-site" = { source = "hyperresearch-site", mode = "copy" }' : ""}
+${hyperresearch ? '"/usr/local/bin/hyperresearch" = { source = "hyperresearch-wrapper.sh", mode = "copy" }' : ""}
+${hyperresearch ? '"/usr/local/bin/hpr" = { source = "hyperresearch-wrapper.sh", mode = "copy" }' : ""}
 "/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
-"/ms-playwright/chromium-1228" = { source = "chromium-1228", mode = "copy" }
-"/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }
-"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }
-"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }
+${hyperresearch ? '"/ms-playwright/chromium-1228" = { source = "chromium-1228", mode = "copy" }' : ""}
+${hyperresearch ? '"/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }' : ""}
+${hyperresearch ? '"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }' : ""}
+${hyperresearch ? '"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-claude-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
@@ -238,13 +213,15 @@ ${renderOci(
   options,
   [
     'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
-    'PYTHONPATH = "/opt/trellage/hyperresearch-site"',
-    'PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"',
+    `TRELLAGE_CLAUDE_RUNTIME_MODE = "${hyperresearch ? "hyperresearch" : "native-plugin"}"`,
+    ...(hyperresearch
+      ? ['PYTHONPATH = "/opt/trellage/hyperresearch-site"', 'PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"']
+      : []),
   ],
   [
     '"dev.trellage.harness.kind" = "claude"',
     `"dev.trellage.claude.version" = ${quote(harness.version)}`,
-    '"dev.trellage.hyperresearch.version" = "0.9.1"',
+    ...(hyperresearch ? ['"dev.trellage.hyperresearch.version" = "0.9.1"'] : []),
   ],
   "/home/agent/.cache",
 )}`
