@@ -696,7 +696,7 @@ find_newest_session() {
   local workspace_file stored_cwd session_id newest_file= newest_id=
   while IFS= read -r -d '' workspace_file; do
     [[ -f "$workspace_file" && ! -L "$workspace_file" ]] || continue
-    stored_cwd="$(sed -n 's/^cwd: //p' "$workspace_file" | head -n 1)"
+    stored_cwd="$(sed -n 's/^cwd: //p; /^cwd: /q' "$workspace_file")"
     case "$stored_cwd" in
       "$expected_cwd"|"'$expected_cwd'"|"\"$expected_cwd\"") ;;
       *) continue ;;
