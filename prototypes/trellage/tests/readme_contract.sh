@@ -652,6 +652,7 @@ for heading in \
   '## Automatic Environment Loading' \
   '## Use' \
   '## Copilot with HVE Core' \
+  '## Pi with Oh My Pi' \
   '## Ten-step Herdr Human Test' \
   '## Cleanup' \
   '## Safety Boundary' \
@@ -699,7 +700,14 @@ for command in \
   'trellage resume --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage doctor --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage destroy --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
-  'trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml'; do
+  'trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml' \
+  'trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
+  'trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
+  'trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
+  'trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"' \
+  'trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
+  'trellage doctor --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
+  'trellage destroy --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml'; do
   require_command "$command"
 done
 
@@ -720,6 +728,22 @@ for qualification in \
   'HVE Core and HVE Core All are different products' \
   'Upgrades never happen automatically'; do
   require_section_text '## Copilot with HVE Core' "$qualification"
+done
+
+for qualification in \
+  'standalone `omp` executable from' \
+  'OMP is not GitHub Copilot CLI' \
+  '`github-copilot` provider' \
+  '`gpt-5.6-terra`' \
+  'Prompt mode translates to OMP `--print`' \
+  'resume uses OMP `--resume`' \
+  '`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`' \
+  'forwarded only as `COPILOT_GITHUB_TOKEN`' \
+  '`/home/agent/.omp/agent`' \
+  'No host' \
+  'Docker `bridge`' \
+  'GitHub-provided SHA-256 digest'; do
+  require_section_text '## Pi with Oh My Pi' "$qualification"
 done
 
 for qualification in \

@@ -30,6 +30,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
   const paths = {
     codexEntry: path.join(root, "runtime-entry.sh"),
     copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
+    piEntry: path.join(root, "runtime-pi-entry.sh"),
     finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
     claudeEntry: path.join(root, "runtime-claude-entry.sh"),
     hyperresearchRequirements: path.join(root, "hyperresearch-requirements.lock"),
@@ -38,6 +39,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
   await Promise.all([
     writeFile(paths.codexEntry, "codex-entry\n"),
     writeFile(paths.copilotEntry, "copilot-entry\n"),
+    writeFile(paths.piEntry, "pi-entry\n"),
     writeFile(paths.finalizeCopilotSeed, "copilot-finalizer\n"),
     writeFile(paths.claudeEntry, "claude-entry\n"),
     writeFile(paths.hyperresearchRequirements, "requirements\n"),
@@ -53,6 +55,7 @@ describe("runtime support snapshots", () => {
     const codex = await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))
     const copilot = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", paths))
     const claude = await Effect.runPromise(createRuntimeSupportSnapshot("claude", paths))
+    const pi = await Effect.runPromise(createRuntimeSupportSnapshot("pi", paths))
 
     expect(codex.files.map((file) => file.role)).toEqual(["runtime-entry"])
     expect(copilot.files.map((file) => file.role)).toEqual(["runtime-copilot-entry", "finalize-copilot-seed"])
@@ -61,6 +64,7 @@ describe("runtime support snapshots", () => {
       "hyperresearch-requirements",
       "claude-browser-agent",
     ])
+    expect(pi.files.map((file) => file.role)).toEqual(["runtime-pi-entry"])
     expect(claude.files[1]?.destination).toBe("/src/.runtime-support/hyperresearch-requirements.lock")
     expect(codex.hash).toBe("sha256:ef6c9fce95dcc3ccd9eaeb94b9611f332d30e539e8570cc99b4d0dd07c652b64")
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).toBe(codex.hash)
@@ -141,6 +145,7 @@ describe("runtime support snapshots", () => {
       ["codex", ["codexEntry"]],
       ["copilot", ["copilotEntry", "finalizeCopilotSeed"]],
       ["claude", ["claudeEntry", "hyperresearchRequirements", "claudeBrowserAgent"]],
+      ["pi", ["piEntry"]],
     ] as const
     for (const [kind, properties] of cases) {
       for (const property of properties) {

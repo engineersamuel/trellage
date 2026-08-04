@@ -67,6 +67,12 @@ if ! validate_output="$("$installed" validate "$profile")"; then
 fi
 [[ "$validate_output" == "valid: $profile" ]] \
   || fail 'installed symlink returned unexpected profile validation output'
+pi_profile="$(cd "$prototype_dir/../../profiles/pi-oh-my-pi" && pwd -P)/profile.toml"
+if ! validate_output="$("$installed" validate "$pi_profile")"; then
+  fail 'installed symlink could not validate the bundled Pi profile'
+fi
+[[ "$validate_output" == "valid: $pi_profile" ]] \
+  || fail 'installed symlink returned unexpected Pi profile validation output'
 if ! dry_run_output="$(TRELLAGE_INSTALL_DIR="$test_root/bin" \
   "$prototype_dir/install-trellage.sh" uninstall --dry-run)"; then
   fail 'direct uninstall dry-run failed for its owned symlink'

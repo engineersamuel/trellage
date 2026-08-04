@@ -256,7 +256,7 @@ metadata_args=(metadata)
 [[ -z "$profile_argument" ]] || metadata_args+=("$profile_argument")
 profile_metadata="$(node "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
 harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
-if [[ "$harness_kind" != copilot ]]; then
+if [[ "$harness_kind" != copilot && "$harness_kind" != pi ]]; then
   discard_ambient_github_auth
 fi
 if [[ "$harness_kind" != claude ]]; then
@@ -286,7 +286,7 @@ tmpfs_size="$(jq -r 'if has("tmpfs_size") then .tmpfs_size else "256m" end' <<<"
 [[ "$tmpfs_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
   || fail 'profile metadata has an invalid tmpfs size'
 case "$harness_kind" in
-  claude|codex|copilot) ;;
+  claude|codex|copilot|pi) ;;
   *) fail 'profile metadata has an unsupported harness kind' ;;
 esac
 [[ "$harness_executable" =~ ^[A-Za-z0-9._-]+$ ]] \
@@ -330,7 +330,7 @@ resolve_copilot_auth() {
     copilot_token=
   fi
 }
-if [[ "$harness_kind" == copilot && "$auth_policy" == host-or-login \
+if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login \
   && ( "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ) ]]; then
   resolve_copilot_auth
 else
@@ -973,7 +973,7 @@ case "${COLORTERM:-}" in
 esac
 
 herdr_agent="$harness_executable"
-if [[ "$harness_kind" == copilot ]]; then
+if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
   resume_command="exec $runtime_entry resume \$argv"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new \$argv -- \$prompt"
   portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt \$argv -- \$prompt"
@@ -990,7 +990,7 @@ fi
 case "$mode" in
   prompt)
     prepare_codex_secrets
-    if [[ "$harness_kind" == copilot ]]; then
+    if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
       prepare_copilot_auth
     elif [[ "$harness_kind" == claude ]]; then
       prepare_claude_auth
@@ -1005,7 +1005,7 @@ case "$mode" in
     ;;
   resume)
     prepare_codex_secrets
-    if [[ "$harness_kind" == copilot ]]; then
+    if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
       prepare_copilot_auth
     elif [[ "$harness_kind" == claude ]]; then
       prepare_claude_auth
@@ -1031,7 +1031,7 @@ esac
 if (( $# > 0 )); then
   prompt="$*"
   prepare_codex_secrets
-  if [[ "$harness_kind" == copilot ]]; then
+  if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
     prepare_copilot_auth
   elif [[ "$harness_kind" == claude ]]; then
     prepare_claude_auth
@@ -1048,7 +1048,7 @@ fi
 
 if [[ "$has_initial_prompt" == true ]]; then
   prepare_codex_secrets
-  if [[ "$harness_kind" == copilot ]]; then
+  if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
     prepare_copilot_auth
   elif [[ "$harness_kind" == claude ]]; then
     prepare_claude_auth
@@ -1064,7 +1064,7 @@ if [[ "$has_initial_prompt" == true ]]; then
 fi
 
 prepare_codex_secrets
-if [[ "$harness_kind" == copilot ]]; then
+if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
   prepare_copilot_auth
 elif [[ "$harness_kind" == claude ]]; then
   prepare_claude_auth

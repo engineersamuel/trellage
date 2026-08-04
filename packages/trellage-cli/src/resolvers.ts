@@ -4,6 +4,7 @@ import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
 import { resolveCopilotRelease } from "./copilot-release.js"
 import { resolveGitHubSource } from "./github-cache.js"
 import type { LockResolvers } from "./lock.js"
+import { resolvePiRelease } from "./pi-release.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
 
 const versions: Readonly<Record<string, string>> = {
@@ -101,31 +102,33 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
       const harness =
         kind === "copilot"
           ? yield* resolveCopilotRelease(selector, platform)
-          : kind === "claude"
-            ? yield* Effect.gen(function* () {
-                if (selector !== "2.1.218") return yield* Effect.fail(`unsupported Claude version: ${selector}`)
-                if (platform !== "linux/arm64") return yield* Effect.fail(`unsupported Claude platform: ${platform}`)
-                return {
-                  kind: "claude" as const,
-                  selector,
-                  version: selector,
-                  integrity: "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8",
-                  url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-                  size: 22971,
-                }
-              })
-            : yield* Effect.gen(function* () {
-                if (selector !== "0.144.6") return yield* Effect.fail(`unsupported Codex version: ${selector}`)
-                if (platform !== "linux/arm64") return yield* Effect.fail(`unsupported Codex platform: ${platform}`)
-                return {
-                  kind: "codex" as const,
-                  selector,
-                  version: selector,
-                  integrity: "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
-                  url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
-                  size: 101269986,
-                }
-              })
+          : kind === "pi"
+            ? yield* resolvePiRelease(selector, platform)
+            : kind === "claude"
+              ? yield* Effect.gen(function* () {
+                  if (selector !== "2.1.218") return yield* Effect.fail(`unsupported Claude version: ${selector}`)
+                  if (platform !== "linux/arm64") return yield* Effect.fail(`unsupported Claude platform: ${platform}`)
+                  return {
+                    kind: "claude" as const,
+                    selector,
+                    version: selector,
+                    integrity: "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8",
+                    url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
+                    size: 22971,
+                  }
+                })
+              : yield* Effect.gen(function* () {
+                  if (selector !== "0.144.6") return yield* Effect.fail(`unsupported Codex version: ${selector}`)
+                  if (platform !== "linux/arm64") return yield* Effect.fail(`unsupported Codex platform: ${platform}`)
+                  return {
+                    kind: "codex" as const,
+                    selector,
+                    version: selector,
+                    integrity: "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
+                    url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
+                    size: 101269986,
+                  }
+                })
       const artifacts =
         kind === "claude"
           ? [

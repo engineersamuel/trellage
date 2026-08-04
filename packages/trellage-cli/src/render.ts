@@ -1,6 +1,7 @@
 import {
   isClaudeProfile,
   isCodexProfile,
+  isPiProfile,
   type ClaudeProfile,
   type CodexProfile,
   type Mcp,
@@ -224,9 +225,49 @@ ${renderOci(
 )}`
 }
 
+const renderPiMiseConfig = (profile: Profile, lock: ProfileLock, options: MiseRenderOptions): string => {
+  const harness = lock.packages.harness
+  if (profile.harness.kind !== "pi" || harness.kind !== "pi") {
+    throw new Error("profile and lock harness kinds do not match")
+  }
+  return `min_version = "2026.6.14"
+
+[tools."http:pi"]
+version = ${quote(harness.version)}
+url = ${quote(harness.url)}
+checksum = ${quote(harness.integrity)}
+size = ${quote(String(harness.size))}
+rename_exe = "omp"
+
+${renderBootstrap(profile, options)}
+
+[dotfiles]
+"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
+"/usr/local/share/trellage/pi-config.yml" = { source = "pi-config.yml", mode = "copy" }
+"/usr/local/share/trellage/pi-seed" = { source = "pi-seed", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-pi-entry")}
+"/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
+${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
+
+${renderOci(
+  profile,
+  lock,
+  options,
+  ['PI_CODING_AGENT_DIR = "/home/agent/.omp/agent"', 'OMP_SKIP_SETUP = "1"'],
+  [
+    '"dev.trellage.harness.kind" = "pi"',
+    '"dev.trellage.pi.implementation" = "oh-my-pi"',
+    `"dev.trellage.pi.version" = ${quote(harness.version)}`,
+  ],
+  "/home/agent/.cache",
+)}`
+}
+
 export const renderMiseConfig = (profile: Profile, lock: ProfileLock, options: MiseRenderOptions): string =>
   isCodexProfile(profile)
     ? renderCodexMiseConfig(profile, lock, options)
     : isClaudeProfile(profile)
       ? renderClaudeMiseConfig(profile, lock, options)
-      : renderCopilotMiseConfig(profile, lock, options)
+      : isPiProfile(profile)
+        ? renderPiMiseConfig(profile, lock, options)
+        : renderCopilotMiseConfig(profile, lock, options)

@@ -63,6 +63,26 @@ marketplace = "hve-core"
 select = ["hve-core"]
 `
 
+const piSource = `
+schema = 1
+name = "pi-oh-my-pi"
+description = "Oh My Pi profile"
+[harness]
+kind = "pi"
+version = "latest"
+args = ["--yolo"]
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+`
+
 const document = (model?: string) => Effect.runSync(parseProfile(source(model), "/profiles/test/profile.toml"))
 
 const copilotDocument = (platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
@@ -72,6 +92,8 @@ const copilotDocument = (platform: "linux/arm64" | "linux/amd64" = "linux/arm64"
       "/profiles/copilot/profile.toml",
     ),
   )
+
+const piDocument = () => Effect.runSync(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
 const commit = (character: string) => character.repeat(40)
@@ -162,6 +184,36 @@ const completeCopilotLock = (platform: "linux/arm64" | "linux/amd64" = "linux/ar
         integrity: digest("c"),
         url: `https://github.com/github/copilot-cli/releases/download/v1.0.75/${asset}`,
         size: 1024,
+      },
+      runtime: profile.profile.image.packages.map((name) => ({
+        name,
+        version: `1.0-${name}`,
+        integrity: digest("d"),
+      })),
+    },
+    image: {
+      base: profile.profile.image.base,
+      base_digest: digest("b"),
+      final_digest: digest("e"),
+    },
+  }
+}
+
+const completePiLock = (): ProfileLock => {
+  const profile = piDocument()
+  return {
+    schema: 1,
+    source_date_epoch: 1784379906,
+    profile_hash: profileHash(profile),
+    sources: [],
+    packages: {
+      harness: {
+        kind: "pi",
+        selector: "latest",
+        version: "17.2.6",
+        integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
+        url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
+        size: 157526160,
       },
       runtime: profile.profile.image.packages.map((name) => ({
         name,
@@ -392,6 +444,17 @@ select = ["full"]
     expect(parsed).toEqual(lock)
     expect(Object.getPrototypeOf(parsed.sources[0]!.plugin_versions!)).toBeNull()
     expect(Object.isFrozen(parsed.sources[0]!.plugin_versions!)).toBe(true)
+  })
+
+  it("round-trips a source-free Pi lock with the canonical OMP release asset", async () => {
+    const lock = completePiLock()
+    const rendered = renderLock(lock)
+
+    expect(rendered).toContain("sources = []")
+    expect(rendered).toContain('kind = "pi"')
+    expect(rendered).toContain('url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64"')
+    await expect(Effect.runPromise(parseLock(rendered))).resolves.toEqual(lock)
+    await expect(Effect.runPromise(requireLocked(piDocument(), lock))).resolves.toEqual(lock)
   })
 
   it("normalizes handcrafted plugin version tables deterministically", async () => {

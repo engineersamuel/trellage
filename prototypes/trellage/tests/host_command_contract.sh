@@ -56,6 +56,7 @@ export FAKE_NODE_LOG="$host_node_log"
 export FAKE_REAL_NODE="$real_node"
 copilot_fake_bin="$test_root/copilot-fake-bin"
 copilot_metadata="$test_root/copilot-metadata.json"
+pi_metadata="$test_root/pi-metadata.json"
 copilot_profile="$test_root/copilot-profile.toml"
 copilot_node_log="$test_root/copilot-node.log"
 copilot_gh_log="$test_root/copilot-gh.log"
@@ -113,6 +114,30 @@ jq -n \
     resolved_version: "1.0.75",
     tmpfs_size: "256m"
   }' >"$copilot_metadata"
+jq -n \
+  --arg profile "$copilot_profile" \
+  --arg runtime_hash "$runtime_hash" \
+  '{
+    profile_path: $profile,
+    profile_name: "pi-oh-my-pi-test",
+    profile_hash: "sha256:a8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1972",
+    runtime_hash: $runtime_hash,
+    image: "trellage-profile-pi-oh-my-pi-test:locked",
+    locked: true,
+    build_command: ("trellage build " + $profile),
+    harness_args: ["--yolo"],
+    secrets_provider: "env",
+    required_secrets: [],
+    secret_environment: {},
+    resolved_varlock_path: null,
+    has_initial_prompt: false,
+    harness_kind: "pi",
+    harness_executable: "omp",
+    runtime_entry: "trellage-pi-entry",
+    default_network: "bridge",
+    auth_policy: "host-or-login",
+    resolved_version: "17.2.6"
+  }' >"$pi_metadata"
 : >"$copilot_node_log"
 : >"$copilot_gh_log"
 
@@ -2506,6 +2531,70 @@ test_copilot_auth_precedence_and_leakage() {
   printf 'Trellage host test: PASS: Copilot auth precedence and leakage contracts hold\n'
 }
 
+test_pi_host_auth_dispatch_and_doctor() {
+  local worktree="$test_root/pi-host-auth"
+  local docker_log="$test_root/pi-host-auth.docker.log"
+  local state_volume expected_hash output pi_profile_hash
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" pi-oh-my-pi-test pi | tail -n 1)"
+  expected_hash="$(printf '%s' 'pi-host-token-canary' | shasum -a 256 | awk '{print $1}')"
+  pi_profile_hash="$(jq -r '.profile_hash' "$pi_metadata")"
+  : >"$docker_log"
+  : >"$copilot_node_log"
+  : >"$copilot_gh_log"
+
+  output="$(FAKE_HARNESS_METADATA_OVERRIDE="$pi_metadata" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=pi-oh-my-pi-test FAKE_DOCKER_PROTOTYPE=trellage-pi \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$pi_profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$pi_profile_hash" \
+    FAKE_DOCKER_EXPECT_COPILOT_TOKEN_SHA256="$expected_hash" \
+    run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+      env COPILOT_GITHUB_TOKEN='pi-host-token-canary' \
+      GH_TOKEN='pi-poison-gh' GITHUB_TOKEN='pi-poison-github' \
+      TRELLAGE_IMAGE='test/pi:locked' "$prototype_dir/trellage" 2>&1)"
+  ! grep -Fq 'pi-host-token-canary' <<<"$output" \
+    || fail 'Pi launch printed selected Copilot authentication'
+  assert_copilot_auth_forwarding "$docker_log" "$copilot_node_log"
+  grep -Fqx $'ARG\texec trellage-pi-entry new $argv' "$docker_log" \
+    || fail 'Pi launch did not dispatch through the Pi runtime entry'
+  grep -Fqx $'ENV\tHERDR_AGENT=omp' "$docker_log" \
+    || fail 'Pi launch did not select the OMP host agent hint'
+
+  : >"$docker_log"
+  output="$(FAKE_HARNESS_METADATA_OVERRIDE="$pi_metadata" \
+    FAKE_DOCKER_PROFILE=pi-oh-my-pi-test FAKE_DOCKER_PROTOTYPE=trellage-pi \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$pi_profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$pi_profile_hash" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env FAKE_GH_TOKEN='pi-doctor-auth-canary' TRELLAGE_IMAGE='test/pi:doctor' \
+      "$prototype_dir/trellage" doctor 2>&1)"
+  grep -Fqx 'harness kind: pi' <<<"$output" || fail 'doctor omitted Pi harness kind'
+  grep -Fqx 'resolved version: 17.2.6' <<<"$output" || fail 'doctor omitted exact Pi version'
+  grep -Fqx 'host auth: gh' <<<"$output" || fail 'doctor omitted Pi gh auth readiness'
+  grep -Fqx 'network: bridge (available)' <<<"$output" || fail 'doctor omitted Pi bridge network'
+  ! grep -Fq 'pi-doctor-auth-canary' <<<"$output" || fail 'doctor printed a Pi token value'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  : >"$copilot_gh_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$pi_metadata" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=pi-oh-my-pi-test FAKE_DOCKER_PROTOTYPE=trellage-pi \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$pi_profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$pi_profile_hash" \
+    run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+      env COPILOT_GITHUB_TOKEN='' GH_TOKEN='' GITHUB_TOKEN='' FAKE_GH_STATE=failure \
+      TRELLAGE_IMAGE='test/pi:locked' "$prototype_dir/trellage"
+  ! grep -Fqx $'ARG\tCOPILOT_GITHUB_TOKEN' "$docker_log" \
+    || fail 'Pi login fallback forwarded an empty token'
+  grep -Fqx $'ARG\texec trellage-pi-entry new $argv' "$docker_log" \
+    || fail 'Pi login fallback did not launch native OMP login flow'
+  printf 'Trellage host test: PASS: Pi auth, dispatch, and doctor contracts hold\n'
+}
+
 test_copilot_launches_when_gh_is_genuinely_absent() {
   local worktree="$test_root/copilot-auth-no-gh"
   local docker_log="$test_root/copilot-auth-no-gh.docker.log"
@@ -2841,6 +2930,11 @@ if [[ "${TRELLAGE_HOST_INTERACTIVE_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_PI_ONLY:-}" == 1 ]]; then
+  test_pi_host_auth_dispatch_and_doctor
+  exit 0
+fi
+
 test_claude_launch_allows_empty_harness_args
 test_upgrade_delegates_to_effect_cli
 test_interactive_profile_selection
@@ -2853,6 +2947,7 @@ test_runtime_dispatch_uses_metadata
 test_copilot_lifecycle_identity_and_runtime
 test_copilot_rebuild_shell_and_doctor
 test_copilot_auth_precedence_and_leakage
+test_pi_host_auth_dispatch_and_doctor
 test_copilot_launches_when_gh_is_genuinely_absent
 test_copilot_auth_isolated_across_create_start_stop_destroy
 test_codex_scrubs_github_auth_before_children

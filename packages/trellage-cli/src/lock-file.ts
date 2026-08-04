@@ -30,6 +30,7 @@ export const renderLock = (lock: ProfileLock): string => {
     `source_date_epoch = ${lock.source_date_epoch}`,
     `profile_hash = ${quote(lock.profile_hash)}`,
   ]
+  if (lock.sources.length === 0) lines.push("sources = []")
   for (const [sourceIndex, source] of lock.sources.entries()) {
     lines.push("", "[[sources]]", `kind = ${quote(source.kind)}`)
     if (source.adapter) lines.push(`adapter = ${quote(source.adapter)}`)
@@ -78,6 +79,7 @@ export const renderLock = (lock: ProfileLock): string => {
   if (
     lock.packages.harness.kind === "claude" ||
     lock.packages.harness.kind === "copilot" ||
+    lock.packages.harness.kind === "pi" ||
     (lock.packages.harness.kind === "codex" && !hasLegacyPackageProvenance(lock))
   ) {
     lines.push(
@@ -133,7 +135,9 @@ const InventoryEntrySchema = Schema.Union(LegacyFileSchema, TypedFileSchema, Sym
 const StringRecordSchema = Schema.Record({ key: Text, value: Schema.String })
 const SourceSchema = Schema.Struct({
   kind: Schema.Literal("skill", "plugin"),
-  adapter: Schema.optional(Schema.Literal("codex-native", "wshobson-agents", "copilot-marketplace", "hyperresearch")),
+  adapter: Schema.optional(
+    Schema.Literal("codex-native", "wshobson-agents", "copilot-marketplace", "hyperresearch", "omp-native"),
+  ),
   marketplace: Schema.optional(Text),
   plugin_versions: Schema.optional(StringRecordSchema),
   repository: Text,
@@ -170,6 +174,14 @@ const HarnessPackageSchema = Schema.Union(
   }),
   Schema.Struct({
     kind: Schema.Literal("claude"),
+    selector: Text,
+    version: Text,
+    integrity: Text,
+    url: Text,
+    size: Schema.Number.pipe(Schema.positive()),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("pi"),
     selector: Text,
     version: Text,
     integrity: Text,

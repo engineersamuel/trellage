@@ -40,6 +40,7 @@ const StdioMcp = Schema.Struct({
 })
 
 const Source = Schema.Struct({
+  adapter: Schema.optional(Schema.Literal("omp-native")),
   repository: NonEmpty,
   ref: NonEmpty,
   select: Schema.Array(NonEmpty),
@@ -93,6 +94,13 @@ const Claude = Schema.Struct({
   gateway: NonEmpty,
 })
 
+const Pi = Schema.Struct({
+  implementation: Schema.Literal("oh-my-pi"),
+  provider: Schema.Literal("github-copilot"),
+  model: Schema.Literal("gpt-5.6-terra"),
+  auth: Schema.Literal("host-or-login"),
+})
+
 const CommonHarness = {
   version: NonEmpty,
   args: Schema.optional(Schema.Array(Schema.String)),
@@ -115,6 +123,12 @@ const ClaudeHarness = Schema.Struct({
   ...CommonHarness,
   kind: Schema.Literal("claude"),
   claude: Claude,
+})
+
+const PiHarness = Schema.Struct({
+  ...CommonHarness,
+  kind: Schema.Literal("pi"),
+  pi: Pi,
 })
 
 const Image = Schema.Struct({
@@ -163,12 +177,24 @@ const ClaudeProfileSchema = Schema.Struct({
   plugins: Schema.Tuple(HyperresearchPlugin),
 })
 
-export const ProfileSchema = Schema.Union(CodexProfileSchema, CopilotProfileSchema, ClaudeProfileSchema)
+const PiProfileSchema = Schema.Struct({
+  ...CommonProfile,
+  harness: PiHarness,
+  plugins: Schema.optional(Schema.Array(CodexPlugin)),
+})
+
+export const ProfileSchema = Schema.Union(
+  CodexProfileSchema,
+  CopilotProfileSchema,
+  ClaudeProfileSchema,
+  PiProfileSchema,
+)
 
 type DecodedProfile = Schema.Schema.Type<typeof ProfileSchema>
 type DecodedCodexProfile = Schema.Schema.Type<typeof CodexProfileSchema>
 type DecodedCopilotProfile = Schema.Schema.Type<typeof CopilotProfileSchema>
 type DecodedClaudeProfile = Schema.Schema.Type<typeof ClaudeProfileSchema>
+type DecodedPiProfile = Schema.Schema.Type<typeof PiProfileSchema>
 
 type NormalizedProfile<T extends DecodedProfile> = Omit<T, "runtime" | "skills" | "plugins" | "mcps" | "secrets"> & {
   readonly runtime: { readonly tmpfs_size: string }
@@ -182,7 +208,8 @@ export type Mcp = NonNullable<DecodedProfile["mcps"]>[number]
 export type CodexProfile = NormalizedProfile<DecodedCodexProfile>
 export type CopilotProfile = NormalizedProfile<DecodedCopilotProfile>
 export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
-export type Profile = CodexProfile | CopilotProfile | ClaudeProfile
+export type PiProfile = NormalizedProfile<DecodedPiProfile>
+export type Profile = CodexProfile | CopilotProfile | ClaudeProfile | PiProfile
 
 export const isCodexProfile = (profile: Profile): profile is CodexProfile => profile.harness.kind === "codex"
 
@@ -190,11 +217,15 @@ export const isCopilotProfile = (profile: Profile): profile is CopilotProfile =>
 
 export const isClaudeProfile = (profile: Profile): profile is ClaudeProfile => profile.harness.kind === "claude"
 
+export const isPiProfile = (profile: Profile): profile is PiProfile => profile.harness.kind === "pi"
+
 const isDecodedCodexProfile = (profile: DecodedProfile): profile is DecodedCodexProfile =>
   profile.harness.kind === "codex"
 
 const isDecodedClaudeProfile = (profile: DecodedProfile): profile is DecodedClaudeProfile =>
   profile.harness.kind === "claude"
+
+const isDecodedPiProfile = (profile: DecodedProfile): profile is DecodedPiProfile => profile.harness.kind === "pi"
 
 export interface ProfileDocument {
   readonly path: string
@@ -220,6 +251,14 @@ const rejectUnsupportedCopilotSections = (raw: unknown): Effect.Effect<void, Pro
   if (Object.hasOwn(raw, "skills")) return fail("Copilot profiles do not support standalone skills")
   if (Object.hasOwn(raw, "mcps")) return fail("Copilot profiles do not support MCPs")
   if (Object.hasOwn(raw, "secrets")) return fail("Copilot profiles do not support declared secrets")
+  return Effect.void
+}
+
+const rejectUnsupportedPiSections = (raw: unknown): Effect.Effect<void, ProfileError> => {
+  if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "pi") return Effect.void
+  if (Object.hasOwn(raw, "plugins")) return fail("Pi profiles do not support standalone plugins")
+  if (Object.hasOwn(raw, "mcps")) return fail("Pi profiles do not support MCPs")
+  if (Object.hasOwn(raw, "secrets")) return fail("Pi profiles do not support declared secrets")
   return Effect.void
 }
 
@@ -274,14 +313,23 @@ const normalize = (profile: DecodedProfile): Profile =>
           mcps: profile.mcps ?? [],
           secrets: profile.secrets ?? { provider: "env", required: [] },
         }
-      : {
-          ...profile,
-          runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-          skills: profile.skills ?? [],
-          plugins: profile.plugins ?? [],
-          mcps: profile.mcps ?? [],
-          secrets: profile.secrets ?? { provider: "env", required: [] },
-        }
+      : isDecodedPiProfile(profile)
+        ? {
+            ...profile,
+            runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
+            skills: profile.skills ?? [],
+            plugins: profile.plugins ?? [],
+            mcps: profile.mcps ?? [],
+            secrets: profile.secrets ?? { provider: "env", required: [] },
+          }
+        : {
+            ...profile,
+            runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
+            skills: profile.skills ?? [],
+            plugins: profile.plugins ?? [],
+            mcps: profile.mcps ?? [],
+            secrets: profile.secrets ?? { provider: "env", required: [] },
+          }
 
 const validate = (
   profile: Profile,
@@ -297,6 +345,9 @@ const validate = (
     if (isCodexProfile(profile)) {
       if (!Object.hasOwn(profile.harness.codex.providers, profile.harness.codex.model_provider)) {
         return yield* fail(`unknown model provider: ${profile.harness.codex.model_provider}`)
+      }
+      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
+        return yield* fail("Codex skill sources do not support adapters")
       }
     } else if (isCopilotProfile(profile)) {
       if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
@@ -323,7 +374,7 @@ const validate = (
         profile.plugins.map((candidate) => candidate.marketplace),
         "Copilot marketplace",
       )
-    } else {
+    } else if (isClaudeProfile(profile)) {
       if (profile.harness.version !== "2.1.218")
         return yield* fail(`unsupported Claude version: ${profile.harness.version}`)
       if (profile.image.platform !== "linux/arm64") return yield* fail("Claude Hyperresearch supports only linux/arm64")
@@ -335,6 +386,27 @@ const validate = (
         profile.secrets.varlock_path !== undefined
       ) {
         return yield* fail("Claude Hyperresearch credentials are selected at launch")
+      }
+    } else {
+      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+        return yield* fail(`invalid Pi version: ${profile.harness.version}`)
+      }
+      if (profile.plugins.length > 0) return yield* fail("Pi profiles do not support standalone plugins")
+      if (profile.skills.length > 1) return yield* fail("Pi profiles support at most one OMP native skill source")
+      const skillSource = profile.skills[0]
+      if (
+        skillSource !== undefined &&
+        (skillSource.adapter !== "omp-native" || skillSource.repository !== "https://github.com/can1357/oh-my-pi.git")
+      ) {
+        return yield* fail("Pi skill source must use the OMP native repository")
+      }
+      if (profile.mcps.length > 0) return yield* fail("Pi profiles do not support MCPs")
+      if (
+        profile.secrets.required.length > 0 ||
+        profile.secrets.provider !== "env" ||
+        profile.secrets.varlock_path !== undefined
+      ) {
+        return yield* fail("Pi profiles do not support declared secrets")
       }
     }
     for (const source of [...profile.skills, ...profile.plugins]) {
@@ -431,6 +503,7 @@ export const parseProfile = (source: string, profilePath: string): Effect.Effect
       },
     })
     yield* rejectUnsupportedCopilotSections(raw)
+    yield* rejectUnsupportedPiSections(raw)
     const decoded = yield* Schema.decodeUnknown(ProfileSchema)(raw, {
       onExcessProperty: "error",
     }).pipe(

@@ -118,7 +118,7 @@ export const createBuildContext = (
     if (document.profile.harness.kind !== "codex" && typeof runtimeSupport === "string") {
       return yield* Effect.fail(
         new MaterializeError({
-          message: "Copilot build context materialization is not implemented",
+          message: "non-Codex build context materialization requires a runtime support bundle",
         }),
       )
     }
@@ -260,6 +260,27 @@ export const createBuildContext = (
         )
       }
 
+      if (document.profile.harness.kind === "pi") {
+        const seed = path.join(context, "pi-seed")
+        const skills = path.join(seed, "skills")
+        yield* io("cannot initialize Pi seed", () => mkdir(skills, { recursive: true }))
+        const sourceIndex = lock.sources.findIndex(
+          (source) => source.kind === "skill" && source.adapter === "omp-native",
+        )
+        const managedSkills: Array<string> = []
+        if (sourceIndex >= 0) {
+          const source = lock.sources[sourceIndex]!
+          const sourceDirectory = sourceDirectories[sourceIndex]!
+          for (const selection of [...source.select].sort()) {
+            yield* copy(path.join(sourceDirectory, ".omp", "skills", selection), path.join(skills, selection))
+            managedSkills.push(selection)
+          }
+        }
+        yield* io("cannot write Pi managed skill manifest", () =>
+          writeFile(path.join(seed, "managed-skills.txt"), managedSkills.map((name) => `${name}\n`).join("")),
+        )
+      }
+
       for (let index = 0; document.profile.harness.kind === "codex" && index < lock.sources.length; index += 1) {
         const sourceLock = lock.sources[index]!
         const sourceDirectory = sourceDirectories[index]!
@@ -342,6 +363,7 @@ fi
         )
         await writeFile(path.join(context, "profile.lock.toml"), renderLock(lock))
         const executable = harnessPackage.kind
+        const installedExecutable = harnessPackage.kind === "pi" ? "omp" : executable
         const misePlatform = document.profile.image.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
         await writeFile(
           path.join(context, "mise.lock"),
@@ -383,7 +405,7 @@ version = ${JSON.stringify(harnessPackage.version)}
 backend = "http:${executable}"
 
 [tools."http:${executable}".options]
-rename_exe = "${executable}"
+rename_exe = "${installedExecutable}"
 
 [tools."http:${executable}"."platforms.${misePlatform}"]
 checksum = ${JSON.stringify(harnessPackage.integrity)}
@@ -391,6 +413,12 @@ url = ${JSON.stringify(harnessPackage.url)}
 `,
         )
         await writeFile(path.join(context, "workspace.keep"), "")
+        if (document.profile.harness.kind === "pi") {
+          await writeFile(
+            path.join(context, "pi-config.yml"),
+            "startup:\n  checkUpdate: false\nmarketplace:\n  autoUpdate: off\n",
+          )
+        }
         if (document.profile.harness.kind === "copilot") {
           await mkdir(path.join(context, "copilot-seed"), { recursive: true })
         }

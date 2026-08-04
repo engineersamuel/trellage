@@ -99,14 +99,36 @@ ref = "main"
 select = ["full"]
 `
 
+const piSource = `
+schema = 1
+name = "pi-oh-my-pi"
+description = "Oh My Pi profile"
+[harness]
+kind = "pi"
+version = "latest"
+args = ["--yolo"]
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "git", "jq"]
+`
+
 const profile = Effect.runSync(parseProfile(source, "/profile/profile.toml")).profile
 const copilotProfile = Effect.runSync(parseProfile(copilotSource, "/profile/copilot.toml")).profile
 const claudeProfile = Effect.runSync(parseProfile(claudeSource, "/profile/claude.toml")).profile
+const piProfile = Effect.runSync(parseProfile(piSource, "/profile/pi.toml")).profile
 const runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "trellage-render-runtime-"))
 afterAll(() => rm(runtimeRoot, { recursive: true, force: true }))
 const runtimePaths = {
   codexEntry: path.join(runtimeRoot, "runtime-entry.sh"),
   copilotEntry: path.join(runtimeRoot, "runtime-copilot-entry.sh"),
+  piEntry: path.join(runtimeRoot, "runtime-pi-entry.sh"),
   finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
   claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
   hyperresearchRequirements: path.join(runtimeRoot, "requirements.lock"),
@@ -116,7 +138,8 @@ await Promise.all(Object.values(runtimePaths).map((file) => writeFile(file, file
 const codexRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("codex", runtimePaths))
 const copilotRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", runtimePaths))
 const claudeRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("claude", runtimePaths))
-const lock = (kind: "claude" | "codex" | "copilot"): ProfileLock => ({
+const piRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("pi", runtimePaths))
+const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
   schema: 1,
   source_date_epoch: 1784379906,
   profile_hash: `sha256:${"a".repeat(64)}`,
@@ -141,14 +164,23 @@ const lock = (kind: "claude" | "codex" | "copilot"): ProfileLock => ({
               url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
               size: 106111479,
             }
-          : {
-              kind,
-              selector: "2.1.218",
-              version: "2.1.218",
-              integrity: `sha256:${"d".repeat(64)}`,
-              url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-              size: 22971,
-            },
+          : kind === "pi"
+            ? {
+                kind,
+                selector: "latest",
+                version: "17.2.6",
+                integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
+                url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
+                size: 157526160,
+              }
+            : {
+                kind,
+                selector: "2.1.218",
+                version: "2.1.218",
+                integrity: `sha256:${"d".repeat(64)}`,
+                url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
+                size: 22971,
+              },
     runtime: [],
   },
   image: {
@@ -235,6 +267,29 @@ rename_exe = "copilot"`)
       env_http_headers = { Authorization = \"DOCS_TOKEN\" }
       "
     `)
+  })
+
+  it("renders locked Oh My Pi runtime identity and isolated state", () => {
+    const rendered = renderMiseConfig(piProfile, lock("pi"), {
+      baseReference: "docker.io/library/node@sha256:base",
+      imageTag: "trellage-profile-pi-oh-my-pi:locked",
+      runtimeSupport: piRuntime,
+    })
+
+    expect(rendered).toContain('[tools."http:pi"]')
+    expect(rendered).toContain('rename_exe = "omp"')
+    expect(rendered).toContain('PI_CODING_AGENT_DIR = "/home/agent/.omp/agent"')
+    expect(rendered).toContain('OMP_SKIP_SETUP = "1"')
+    expect(rendered).toContain('XDG_CACHE_HOME = "/home/agent/.cache"')
+    expect(rendered).toContain('"/usr/local/bin/trellage-pi-entry" = { source = "runtime-pi-entry.sh", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/share/trellage/pi-config.yml" = { source = "pi-config.yml", mode = "copy" }',
+    )
+    expect(rendered).toContain('"/usr/local/share/trellage/pi-seed" = { source = "pi-seed", mode = "copy" }')
+    expect(rendered).toContain('"dev.trellage.harness.kind" = "pi"')
+    expect(rendered).toContain('"dev.trellage.pi.implementation" = "oh-my-pi"')
+    expect(rendered).toContain('"dev.trellage.pi.version" = "17.2.6"')
+    expect(rendered).not.toMatch(/COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN/)
   })
 
   it("renders the locked Claude toolchain and managed seed without credentials", () => {

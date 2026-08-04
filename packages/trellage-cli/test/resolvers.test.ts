@@ -6,6 +6,7 @@ import type { GitHubSourceRequest } from "../src/github-cache.js"
 const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
   releaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
+  piReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   marketplaceRequests: [] as Array<{
     readonly directory: string
     readonly marketplace: string
@@ -46,6 +47,23 @@ vi.mock("../src/copilot-release.js", async () => {
   }
 })
 
+vi.mock("../src/pi-release.js", async () => {
+  const { Effect } = await import("effect")
+  return {
+    resolvePiRelease: (selector: string, platform: string) => {
+      mocks.piReleaseRequests.push({ selector, platform })
+      return Effect.succeed({
+        kind: "pi" as const,
+        selector,
+        version: "17.2.6",
+        integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
+        url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
+        size: 157526160,
+      })
+    },
+  }
+})
+
 vi.mock("../src/copilot-plugin.js", async () => {
   const { Effect } = await import("effect")
   return {
@@ -62,6 +80,7 @@ describe("production package resolutions", () => {
   beforeEach(() => {
     mocks.requests.length = 0
     mocks.releaseRequests.length = 0
+    mocks.piReleaseRequests.length = 0
     mocks.marketplaceRequests.length = 0
   })
 
@@ -166,6 +185,7 @@ describe("production package resolutions", () => {
       selector: "2.1.218",
       version: "2.1.218",
     })
+
     expect(result.python_lock_integrity).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(result.runtime).toEqual(
       expect.arrayContaining([
@@ -226,6 +246,37 @@ describe("production package resolutions", () => {
         }),
       ]),
     )
+  })
+
+  it("resolves an exact Oh My Pi release and preserves runtime package locks", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolvePackages({
+        kind: "pi",
+        selector: "latest",
+        platform: "linux/arm64",
+        packages: ["bash"],
+        needsSkillsCli: false,
+      }),
+    )
+
+    expect(result).toEqual({
+      harness: {
+        kind: "pi",
+        selector: "latest",
+        version: "17.2.6",
+        integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
+        url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
+        size: 157526160,
+      },
+      runtime: [
+        {
+          name: "bash",
+          version: "5.2.15-2+b13",
+          integrity: "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385",
+        },
+      ],
+    })
+    expect(mocks.piReleaseRequests).toEqual([{ selector: "latest", platform: "linux/arm64" }])
   })
 
   it.each(["constructor", "toString", "__proto__"])("rejects prototype runtime package key %j", async (name) => {
