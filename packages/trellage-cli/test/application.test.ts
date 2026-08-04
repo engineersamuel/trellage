@@ -287,10 +287,12 @@ describe("profile metadata", () => {
   it("reports configured tmpfs size", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-metadata-tmpfs-size-"))
     const profilePath = path.join(root, "profile.toml")
-    const source = copilotSource.replace(
-      'name = "copilot"',
-      'name = "copilot-tmpfs-size"\n[runtime]\ntmpfs_size = "2g"',
-    )
+    const source = copilotSource
+      .replace('name = "copilot"', 'name = "copilot-tmpfs-size"')
+      .replace(
+        'description = "Copilot application profile"',
+        'description = "Copilot application profile"\n[runtime]\ntmpfs_size = "2g"',
+      )
     await writeFile(profilePath, source)
     const document = await Effect.runPromise(parseProfile(source, profilePath))
     const files = [{ kind: "file" as const, path: "plugins/example/plugin.json", sha256: digest("f") }]
