@@ -238,7 +238,7 @@ case "${1:-} ${2:-}" in
             printf 'sha256:%064d\n' 0
             exit 0
           fi
-          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
           ;;
         *dev.trellage.runtime.hash*)
           [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
@@ -311,7 +311,7 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
-        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='true'
         ;;
@@ -319,7 +319,7 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
-        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='false'
         ;;
@@ -339,7 +339,7 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
-        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='true'
         ;;

@@ -141,6 +141,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["hve", "superpowers"]
+  and .profiles.hve.description == "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows."
   and .profiles.hve.marketplaceKind == "local-adapter"
   and .profiles.hve.marketplaceSource == "marketplaces/hve-core"
   and .profiles.hve.marketplaceName == "hve-core"
@@ -148,11 +149,14 @@ jq -e '
   and .profiles.hve.upstreamSkillsPath == ".github/skills"
   and .profiles.hve.manifestUrl == "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
   and .profiles.hve.plugin == "hve-core-all@hve-core"
+  and .profiles.hve.standaloneMcps == []
+  and .profiles.superpowers.description == "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly."
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
   and .profiles.superpowers.marketplaceName == "superpowers-marketplace"
   and .profiles.superpowers.manifestUrl == "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json"
   and .profiles.superpowers.plugin == "superpowers@superpowers-marketplace"
+  and .profiles.superpowers.standaloneMcps == []
 ' "$catalog" >/dev/null || fail 'catalog contract failed'
 
 fixture_profiles="$fixture_root/profiles"
@@ -170,6 +174,27 @@ cmp -s "$fixture_root/list.out" <(printf '%s\n' \
   $'hve\thve-core-all@hve-core' \
   $'superpowers\tsuperpowers@superpowers-marketplace') \
   || fail 'list output differs'
+
+HOME="$fixture_root/home" "$fixture_launcher" list --json >"$fixture_root/list.json" \
+  || fail 'JSON list failed'
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cdx"
+  and .harness == "codex"
+  and [.profiles[].name] == ["hve", "superpowers"]
+  and all(.profiles[]; (.description | type == "string" and length > 0))
+  and .profiles[0].plugin == "hve-core-all@hve-core"
+  and .profiles[0].source == null
+  and .profiles[0].marketplace == {
+    "kind": "local-adapter",
+    "source": "marketplaces/hve-core",
+    "name": "hve-core",
+    "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
+  }
+  and .profiles[0].standaloneMcps == []
+  and .profiles[1].marketplace.kind == "git"
+  and .profiles[1].standaloneMcps == []
+' "$fixture_root/list.json" >/dev/null || fail 'JSON list output differs'
 
 if HOME="$fixture_root/home" "$fixture_launcher" >"$fixture_root/bare.out" 2>&1; then
   fail 'bare cdx unexpectedly succeeded'
@@ -409,6 +434,12 @@ case "$*" in
       : >"$FAKE_CODEX_ARM_ADAPTER_SWAP"
     fi
     ;;
+  'mcp list --json')
+    jq -cn '[{name:"docs",enabled:true},{name:"disabled",enabled:false}]'
+    ;;
+  'debug prompt-input inventory')
+    jq -cn '[{role:"user",content:[{type:"input_text",text:"### Available skills\n- alpha: First (file: r0/alpha/SKILL.md)\n- beta: Second (file: r1/beta/SKILL.md)\n- Not a skill: explanatory bullet\n### Instructions\nStatic inventory"}]}]'
+    ;;
   plugin\ add\ *\ --json)
     if [ "${FAKE_CODEX_FAIL_MUTATION:-}" = 'plugin-add' ]; then
       printf '%s\n' 'native plugin add failed: simulated Codex diagnostic' >&2
@@ -642,6 +673,8 @@ printf '%s\n' \
   '' \
   'Commands:' \
   '  list' \
+  '  list --json' \
+  '  inventory PROFILE --json' \
   '  setup PROFILE|--all' \
   '  doctor PROFILE' \
   '  update --check PROFILE|--all' \
@@ -1555,9 +1588,59 @@ EOF
 cmp -s "$expected_config" "$hve_home/config.toml" || fail 'initial managed config differs'
 [ "$(file_mode "$hve_home")" = '700' ] || fail 'hve home mode is not 0700'
 [ "$(file_mode "$hve_home/config.toml")" = '600' ] || fail 'hve config mode is not 0600'
+hve_cache="$hve_home/plugins/cache/hve-core/hve-core-all/3.3.101"
+mkdir -p "$hve_cache/.codex-plugin" \
+  "$hve_cache/.github/skills/package-one" \
+  "$hve_cache/.github/skills/package-two" \
+  "$hve_home/plugins/cache/hve-core/unrelated/9.9.9/skills/not-selected"
+printf '%s\n' '{"name":"hve-core-all","version":"3.3.101","skills":"./.github/skills"}' \
+  >"$hve_cache/.codex-plugin/plugin.json"
+printf '%s\n' '# Package one' >"$hve_cache/.github/skills/package-one/SKILL.md"
+printf '%s\n' '# Package two' >"$hve_cache/.github/skills/package-two/SKILL.md"
+printf '%s\n' '# Unrelated package' \
+  >"$hve_home/plugins/cache/hve-core/unrelated/9.9.9/skills/not-selected/SKILL.md"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor hve \
   >"$fixture_root/doctor-hve.out" || fail 'doctor hve failed'
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" inventory hve --json \
+  >"$fixture_root/inventory-hve.json" || fail 'inventory hve failed'
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cdx"
+  and .harness == "codex"
+  and .profile == "hve"
+  and .readiness == "healthy"
+  and .plugins == [{name:"hve-core-all@hve-core",version:"3.3.101"}]
+  and .skills == {packageCount:2,visibleCount:2}
+  and .mcps == ["docs"]
+' "$fixture_root/inventory-hve.json" >/dev/null \
+  || fail 'Codex inventory output differs'
+mv "$hve_cache" "$hve_cache.safe"
+ln -s "$hve_home/plugins/cache/hve-core/unrelated/9.9.9" "$hve_cache"
+if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  "$fixture_launcher" inventory hve --json \
+  >"$fixture_root/inventory-hve-symlink.out" \
+  2>"$fixture_root/inventory-hve-symlink.err"; then
+  fail 'Codex inventory accepted a redirected selected plugin cache'
+fi
+grep -F -- 'selected plugin cache is invalid: hve' \
+  "$fixture_root/inventory-hve-symlink.err" >/dev/null \
+  || fail 'Codex redirected-cache diagnostic differs'
+rm "$hve_cache"
+mv "$hve_cache.safe" "$hve_cache"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  "$fixture_launcher" inventory superpowers --json \
+  >"$fixture_root/inventory-not-setup.json" || fail 'not-setup inventory failed'
+jq -e '
+  .profile == "superpowers"
+  and .readiness == "not-setup"
+  and .plugins == []
+  and .skills == {packageCount:null,visibleCount:null}
+  and .mcps == []
+' "$fixture_root/inventory-not-setup.json" >/dev/null \
+  || fail 'Codex not-setup inventory differs'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'doctor created host authentication'
 auth_is_absent "$hve_home/auth.json" || fail 'doctor created profile authentication'

@@ -1,5 +1,6 @@
 schema = 1
 name = "codex-superpowers"
+description = "Codex environment combining Superpowers' planning, TDD, debugging, and review workflows with full-stack orchestration agents."
 
 [harness]
 kind = "codex"

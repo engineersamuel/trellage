@@ -66,6 +66,10 @@ mise run install-trellage
 
 Set `TRELLAGE_INSTALL_DIR` to override the destination directory. The installer refuses to overwrite another command or symlink and never creates a `harness` compatibility link.
 
+The command remains linked to this prototype directory. Bundled profile
+discovery therefore uses the `profiles/` directory in this Trellage source
+tree; moving or deleting the source tree breaks the installed link.
+
 ## Doctor
 
 From any Git worktree, inspect dependencies, canonical paths, image, proxy network, exact container and state-volume names, and lifecycle state without requiring a TTY:
@@ -120,12 +124,14 @@ Run these commands inside the Git worktree that should be mounted:
 ```bash
 trellage [--profile PROFILE]
 trellage [--profile PROFILE] -p|--prompt PROMPT
+trellage -i|--interactive [-p|--prompt PROMPT]
 trellage resume|shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
 trellage build [--locked] [PROFILE]
 
 trellage                    # new interactive Codex conversation
+trellage -i                 # select a profile, then start its interactive harness
 trellage "<prompt>"         # new conversation with an explicit prompt
 trellage -p "<prompt>"      # one non-interactive prompt with plain-text output
 trellage resume             # native resume
@@ -142,6 +148,22 @@ trellage --profile claude-hyperresearch
 ```
 
 A bare name resolves to `profiles/<name>/profile.toml`; explicit `.toml` and path arguments continue to resolve from the current directory.
+
+`trellage -i` and `trellage --interactive` discover valid immediate child
+profiles from both the bundled source-tree `profiles/` directory and the current
+Git worktree's `profiles/` directory. Choices are sorted by declared profile
+name. A current-worktree profile overrides a bundled profile with the same
+declared name; duplicate canonical paths and invalid profiles are omitted. Each
+row shows only the declared name and harness. The highlighted detail pane shows
+the full description plus declared harness version/model, selected plugin names,
+skill selections/count, and MCP names/count. These are declarations in the
+selected `profile.toml`, not runtime inventory claims.
+
+The picker requires interactive stdin and stdout. It cannot be combined with
+`--profile`, resume, lifecycle, or compiler commands. Escape or Ctrl-C restores
+the terminal and exits `130`. `trellage -i -p "prompt"` uses a TTY only for
+selection, then runs the selected harness through the ordinary portable prompt
+path. Selection never locks, builds, upgrades, or otherwise mutates a profile.
 
 Bare profile launches remain interactive. Portable `-p` and `--prompt` run one prompt without a TTY and return the native harness status. Trellage translates this to `codex exec`, `claude -p`, or `copilot -p`:
 

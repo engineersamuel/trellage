@@ -36,6 +36,7 @@ profile home. Authentication is refreshed from the host login before use.
 
 ```sh
 grx list
+grx inventory hve --json
 grx setup hve
 grx setup superpowers
 grx setup --all
@@ -48,6 +49,22 @@ grx update hve
 grx update --all
 grx repair hve
 ```
+
+Use `grx list --json` for the stable machine-readable catalog, including
+launcher, harness, plugin, source, marketplace, and standalone MCP metadata.
+These are catalog declarations, not proof that profile setup or installed
+plugin state is healthy. Use `grx doctor PROFILE` for that validation.
+`grx inventory PROFILE --json` is read-only. It reports readiness, the validated
+cataloged plugin/version, every enabled user plugin reported by `inspect --json`,
+exact package skills counted as `SKILL.md` files beneath the cataloged plugin's
+safely validated installed root, broader CLI-visible entries, and enabled MCP
+names. Non-cataloged enabled plugins use version `"unknown"` when Grok does not
+report a version.
+
+After installing `cpx`, `cdx`, `grx`, and the
+[`trx` router](../trellage-router/README.md), run `trx -i` for one flat
+harness/profile picker. `trx` forwards remaining arguments to `grx` unchanged
+after selection and never performs setup, repair, or update.
 
 `setup` creates a profile home and installs its cataloged plugin. Launching with
 `grx hve` or `grx superpowers` never installs or updates anything. Version

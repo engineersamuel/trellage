@@ -41,6 +41,7 @@ afterEach(async () => {
 const profileSource = (prompt = "") => `
 schema = 1
 name = "materialize"
+description = "Materialize test profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -220,6 +221,7 @@ describe("atomic build context", () => {
         `
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude materialize profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
@@ -330,6 +332,7 @@ select = ["full"]
         `
 schema = 1
 name = "legacy-codex"
+description = "Legacy Codex materialize profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -544,6 +547,7 @@ final_digest = "sha256:final"
         `
 schema = 1
 name = "copilot-legacy-mode"
+description = "Legacy Copilot materialize profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -742,6 +746,7 @@ select = ["hve-core"]
         `
 schema = 1
 name = "prompt-change"
+description = "Prompt change profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -812,6 +817,7 @@ packages = ["bash"]
         `
 schema = 1
 name = "copilot"
+description = "Copilot materialize profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -948,6 +954,7 @@ select = ["hve-core"]
         `
 schema = 1
 name = "copilot-amd64"
+description = "Copilot AMD64 materialize profile"
 [harness]
 kind = "copilot"
 version = "latest"

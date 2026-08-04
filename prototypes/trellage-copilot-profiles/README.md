@@ -38,6 +38,7 @@ The checked-in profiles are `awesome`, `hve`, and `superpowers`.
 
 ```bash
 cpx list
+cpx inventory hve --json
 cpx setup awesome
 cpx setup hve
 cpx setup --all
@@ -54,6 +55,22 @@ cpx update --all
 cpx repair hve
 ```
 
+Use `cpx list --json` for the stable machine-readable catalog, including
+launcher, harness, plugin, source, marketplace, and standalone MCP metadata.
+These are catalog declarations, not proof that profile setup or installed
+plugin state is healthy. Use `cpx doctor PROFILE` for that validation.
+`cpx inventory PROFILE --json` is read-only. It reports readiness, installed
+plugins/versions, exact package skills counted as `SKILL.md` files beneath the
+safely validated selected plugin root, broader CLI-visible inventory entries,
+and MCP names. `visibleCount` reflects Copilot's enabled `skill list` entries;
+that native surface may include commands, so Trellage does not call it a package
+skill count.
+
+After installing `cpx`, `cdx`, `grx`, and the
+[`trx` router](../trellage-router/README.md), run `trx -i` for one flat
+harness/profile picker. `trx` forwards remaining arguments to `cpx` unchanged
+after selection and never performs setup, repair, or update.
+
 `update --check` compares the installed plugin version reported by Copilot with
 the official marketplace manifest. Launch and check never install or update a
 plugin. Updates are explicit and use native Copilot marketplace/plugin commands.
@@ -62,6 +79,11 @@ The checked-in [`catalog.json`](catalog.json) declares marketplaces, official
 manifest URLs, plugins, and the empty standalone MCP lists. Installed Copilot
 state is authoritative; there is no repository lock file. Built-in,
 plugin-contributed, and repository-scoped capabilities remain available.
+
+Profile homes isolate Copilot state, not host access. Selected agents and
+plugins run with the host permissions available to Copilot and can read or
+change the current repository and other reachable resources. Use trusted
+repositories and plugins.
 
 ## Test
 

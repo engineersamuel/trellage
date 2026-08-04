@@ -19,6 +19,7 @@ import { parseProfile } from "../src/profile.js"
 const source = (model = "gpt-5.5") => `
 schema = 1
 name = "test"
+description = "Lock test profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -43,6 +44,7 @@ select = ["*"]
 const copilotSource = `
 schema = 1
 name = "copilot-hve"
+description = "Copilot lock profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -182,6 +184,7 @@ describe("lock inventory compatibility", () => {
         `
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude lock profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
@@ -230,6 +233,7 @@ select = ["full"]
         `
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude lock profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
@@ -273,6 +277,7 @@ select = ["full"]
         `
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude lock profile"
 [harness]
 kind = "claude"
 version = "2.1.218"

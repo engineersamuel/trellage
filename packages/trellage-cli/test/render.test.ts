@@ -12,6 +12,7 @@ import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
 const source = `
 schema = 1
 name = "golden"
+description = "Golden render profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -56,6 +57,7 @@ required = ["DOCS_TOKEN"]
 const copilotSource = `
 schema = 1
 name = "copilot-hve"
+description = "Copilot render profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -77,6 +79,7 @@ select = ["hve-core"]
 const claudeSource = `
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude render profile"
 [harness]
 kind = "claude"
 version = "2.1.218"

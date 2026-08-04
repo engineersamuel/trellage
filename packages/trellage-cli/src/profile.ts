@@ -137,6 +137,7 @@ const Runtime = Schema.Struct({
 const CommonProfile = {
   schema: Schema.Literal(1),
   name: NonEmpty,
+  description: NonEmpty,
   image: Image,
   runtime: Schema.optional(Runtime),
   skills: Schema.optional(Schema.Array(Source)),

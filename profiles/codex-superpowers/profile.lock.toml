@@ -1,6 +1,6 @@
 schema = 1
 source_date_epoch = 1784379906
-profile_hash = "sha256:c8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1971"
+profile_hash = "sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd"
 
 [[sources]]
 kind = "skill"
@@ -585,4 +585,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:bd6b62b3f1f7bd7087e4db980a48453e8402fddaf162ddfe5d46c279689c588b"
+final_digest = "sha256:a1439feb7d263168307e5b0a7c8beaf2a88488eaf1de2fff3e0f12c0b01b018d"

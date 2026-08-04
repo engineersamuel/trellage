@@ -120,6 +120,7 @@ const writeReadyProfile = async (root: string, source: string, lock: Omit<Profil
 const copilotSource = `
 schema = 1
 name = "copilot"
+description = "Copilot application profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -178,6 +179,7 @@ const copilotLock = (profile_hash: string): ProfileLock => ({
 const codexSource = `
 schema = 1
 name = "codex-upgrade"
+description = "Codex upgrade profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -1081,6 +1083,7 @@ describe("non-locked build lock persistence", () => {
     const source = `
 schema = 1
 name = "legacy-codex"
+description = "Legacy Codex profile"
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -1223,6 +1226,7 @@ describe("locked build source policy", () => {
     const source = `
 schema = 1
 name = "copilot"
+description = "Copilot metadata profile"
 [harness]
 kind = "copilot"
 version = "latest"
@@ -1340,6 +1344,7 @@ select = ["hve-core"]
     const source = `
 schema = 1
 name = "codex"
+description = "Codex metadata profile"
 [harness]
 kind = "codex"
 version = "0.144.6"

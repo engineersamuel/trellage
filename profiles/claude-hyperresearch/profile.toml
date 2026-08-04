@@ -1,5 +1,6 @@
 schema = 1
 name = "claude-hyperresearch"
+description = "Claude Opus research environment for multi-step web investigation, browser automation, source synthesis, and cited reports."
 
 [harness]
 kind = "claude"

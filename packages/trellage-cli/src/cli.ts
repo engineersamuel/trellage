@@ -19,6 +19,7 @@ import {
   upgradeProfile,
 } from "./application.js"
 import { environmentMetadata } from "./environment.js"
+import { discoverProfileChoices } from "./profile-discovery.js"
 import { selectProfilePath } from "./selection.js"
 
 const execFilePromise = promisify(execFile)
@@ -50,14 +51,17 @@ const profileArgument = Args.text({ name: "profile" }).pipe(Args.optional)
 const update = Options.boolean("update")
 const locked = Options.boolean("locked")
 
+const currentGitWorktree = (cwd: string) =>
+  Effect.tryPromise({
+    try: async () =>
+      (await execFilePromise("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" })).stdout.trim(),
+    catch: () => undefined,
+  }).pipe(Effect.orElseSucceed(() => undefined))
+
 const selectedProfile = (argument: Option.Option<string>) =>
   Effect.gen(function* () {
     const cwd = process.cwd()
-    const worktree = yield* Effect.tryPromise({
-      try: async () =>
-        (await execFilePromise("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" })).stdout.trim(),
-      catch: () => undefined,
-    }).pipe(Effect.orElseSucceed(() => cwd))
+    const worktree = (yield* currentGitWorktree(cwd)) ?? cwd
     return yield* selectProfilePath({
       ...(Option.isSome(argument) ? { explicit: argument.value } : {}),
       ...(process.env.TRELLAGE_PROFILE ? { environment: process.env.TRELLAGE_PROFILE } : {}),
@@ -136,9 +140,20 @@ const environment = Command.make("environment", {}, () =>
   environmentMetadata().pipe(Effect.flatMap((result) => Console.log(JSON.stringify(result)))),
 )
 
+const choices = Command.make("choices", {}, () =>
+  Effect.gen(function* () {
+    const worktree = yield* currentGitWorktree(process.cwd())
+    const result = yield* discoverProfileChoices({
+      bundled: bundledProfiles,
+      ...(worktree === undefined ? {} : { worktree: path.join(worktree, "profiles") }),
+    })
+    yield* Console.log(JSON.stringify(result))
+  }),
+)
+
 const root = Command.make("trellage-profile", {}, () =>
-  Console.log("Use validate, lock, build, upgrade, metadata, or environment."),
-).pipe(Command.withSubcommands([validate, lock, build, upgrade, metadata, environment]))
+  Console.log("Use validate, lock, build, upgrade, metadata, environment, or choices."),
+).pipe(Command.withSubcommands([validate, lock, build, upgrade, metadata, environment, choices]))
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 
