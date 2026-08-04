@@ -16,6 +16,7 @@ ambient_playwright_mcp_extension_token="${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}"
 unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
   PLAYWRIGHT_MCP_EXTENSION_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
   ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
+  TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID \
   CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
   AWS_SESSION_TOKEN AWS_PROFILE GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID \
   CLOUD_ML_REGION AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
@@ -62,6 +63,7 @@ auth_mode_argument=
 prompt_argument=
 prompt_argument_set=false
 interactive=false
+resume_session_id=
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
   while (( $# > 0 )); do
@@ -129,7 +131,16 @@ if [[ "$compiler_mode" == false ]]; then
   elif [[ "$#" -ge 1 ]]; then
     case "$1" in
       resume|shell|stop|doctor|destroy)
-        [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
+        if [[ "$1" == resume ]]; then
+          [[ "$#" -le 2 ]] || fail 'resume accepts at most one session ID'
+          if [[ "$#" -eq 2 ]]; then
+            resume_session_id="$2"
+            [[ "$resume_session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] \
+              || fail 'resume session ID must be a UUID'
+          fi
+        else
+          [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
+        fi
         mode="$1"
         ;;
     esac
@@ -285,6 +296,26 @@ tmpfs_size="$(jq -r 'if has("tmpfs_size") then .tmpfs_size else "256m" end' <<<"
   || fail 'profile metadata has no tmpfs size'
 [[ "$tmpfs_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
   || fail 'profile metadata has an invalid tmpfs size'
+claude_mode=
+claude_gateway=
+claude_opus_model=
+claude_sonnet_model=
+claude_haiku_model=
+if [[ "$harness_kind" == claude ]]; then
+  claude_mode="$(jq -er '.claude_mode' <<<"$profile_metadata")" || fail 'profile metadata has no Claude mode'
+  claude_gateway="$(jq -er '.claude_gateway' <<<"$profile_metadata")" || fail 'profile metadata has no Claude gateway'
+  claude_opus_model="$(jq -er '.claude_opus_model | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
+    || fail 'profile metadata has no Claude Opus route'
+  claude_sonnet_model="$(jq -er '.claude_sonnet_model | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
+    || fail 'profile metadata has no Claude Sonnet route'
+  claude_haiku_model="$(jq -er '.claude_haiku_model | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
+    || fail 'profile metadata has no Claude Haiku route'
+  case "$claude_mode" in
+    core|hyperresearch) ;;
+    *) fail 'profile metadata has an unsupported Claude mode' ;;
+  esac
+  [[ "$claude_gateway" =~ ^https?://[^[:space:]]+$ ]] || fail 'profile metadata has an invalid Claude gateway'
+fi
 case "$harness_kind" in
   claude|codex|copilot|pi) ;;
   *) fail 'profile metadata has an unsupported harness kind' ;;
@@ -637,15 +668,16 @@ prepare_claude_auth() {
     ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
     PLAYWRIGHT_MCP_EXTENSION_TOKEN
   TRELLAGE_CLAUDE_AUTH_MODE="$claude_auth_mode"
-  export TRELLAGE_CLAUDE_AUTH_MODE
-  claude_auth_args+=(--env TRELLAGE_CLAUDE_AUTH_MODE)
+  TRELLAGE_CLAUDE_MODE="$claude_mode"
+  export TRELLAGE_CLAUDE_AUTH_MODE TRELLAGE_CLAUDE_MODE
+  claude_auth_args+=(--env TRELLAGE_CLAUDE_AUTH_MODE --env TRELLAGE_CLAUDE_MODE)
   case "$claude_auth_mode" in
     proxy)
       ANTHROPIC_AUTH_TOKEN=trellage-local-proxy
-      ANTHROPIC_BASE_URL=http://copilot-proxy-rs:8080
-      ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5
-      ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5
-      ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4.5
+      ANTHROPIC_BASE_URL="$claude_gateway"
+      ANTHROPIC_DEFAULT_OPUS_MODEL="$claude_opus_model"
+      ANTHROPIC_DEFAULT_SONNET_MODEL="$claude_sonnet_model"
+      ANTHROPIC_DEFAULT_HAIKU_MODEL="$claude_haiku_model"
       export ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_DEFAULT_OPUS_MODEL \
         ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
       claude_auth_args+=(--env ANTHROPIC_AUTH_TOKEN --env ANTHROPIC_BASE_URL \
@@ -666,7 +698,7 @@ prepare_claude_auth() {
       claude_auth_args+=(--env ANTHROPIC_API_KEY)
       ;;
   esac
-  if [[ -n "$ambient_playwright_mcp_extension_token" ]]; then
+  if [[ "$claude_mode" == hyperresearch && -n "$ambient_playwright_mcp_extension_token" ]]; then
     PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
     export PLAYWRIGHT_MCP_EXTENSION_TOKEN
     claude_auth_args+=(--env PLAYWRIGHT_MCP_EXTENSION_TOKEN)
@@ -972,8 +1004,32 @@ case "${COLORTERM:-}" in
   truecolor|24bit) terminal_args+=(--env COLORTERM=truecolor) ;;
 esac
 
+resume_hint_args=()
+if [[ "$mode" == new || "$mode" == resume ]]; then
+  TRELLAGE_RESUME_PROFILE="$profile_path"
+  export TRELLAGE_RESUME_PROFILE
+  resume_hint_args+=(--env TRELLAGE_RESUME_PROFILE)
+fi
+if [[ -n "$resume_session_id" ]]; then
+  TRELLAGE_RESUME_SESSION_ID="$resume_session_id"
+  export TRELLAGE_RESUME_SESSION_ID
+  resume_hint_args+=(--env TRELLAGE_RESUME_SESSION_ID)
+fi
+
 herdr_agent="$harness_executable"
-if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
+runtime_shell=fish
+runtime_shell_args=(-Nlc)
+interactive_shell_command='exec fish -l'
+if [[ "$harness_kind" == claude && "$claude_mode" == core ]]; then
+  runtime_shell=bash
+  runtime_shell_args=(-c)
+  interactive_shell_command='exec bash -l'
+  resume_command="exec $runtime_entry resume $harness_executable \"\$@\""
+  prompt_command="args=(\"\$@\"); prompt=\"\${args[-1]}\"; unset 'args[-1]'; exec $runtime_entry new $harness_executable \"\${args[@]}\" -- \"\$prompt\""
+  portable_prompt_command="args=(\"\$@\"); prompt=\"\${args[-1]}\"; unset 'args[-1]'; exec $runtime_entry prompt $harness_executable \"\${args[@]}\" -- \"\$prompt\""
+  initial_prompt_command="prompt=\"\$(cat /usr/local/share/trellage/initial-prompt.md)\"; exec $runtime_entry new $harness_executable \"\$@\" -- \"\$prompt\""
+  new_command="exec $runtime_entry new $harness_executable \"\$@\""
+elif [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
   resume_command="exec $runtime_entry resume \$argv"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new \$argv -- \$prompt"
   portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt \$argv -- \$prompt"
@@ -999,9 +1055,10 @@ case "$mode" in
       ${secret_args[@]+"${secret_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+      ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
       --workdir "$mount_path" \
       "$container_id" \
-      fish -Nlc "$portable_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
+      "$runtime_shell" "${runtime_shell_args[@]}" "$portable_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
     ;;
   resume)
     prepare_codex_secrets
@@ -1015,16 +1072,17 @@ case "$mode" in
       ${secret_args[@]+"${secret_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+      ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
       --workdir "$mount_path" \
       "$container_id" \
-      fish -Nlc "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
+      "$runtime_shell" "${runtime_shell_args[@]}" "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
     ;;
   shell)
     exec docker container exec \
       "${terminal_args[@]}" \
       --workdir "$mount_path" \
       "$container_id" \
-      fish -Nlc 'exec fish -l' --
+      "$runtime_shell" "${runtime_shell_args[@]}" "$interactive_shell_command" --
     ;;
 esac
 
@@ -1041,9 +1099,10 @@ if (( $# > 0 )); then
     ${secret_args[@]+"${secret_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+    ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
     --workdir "$mount_path" \
     "$container_id" \
-    fish -Nlc "$prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt"
+    "$runtime_shell" "${runtime_shell_args[@]}" "$prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt"
 fi
 
 if [[ "$has_initial_prompt" == true ]]; then
@@ -1058,9 +1117,10 @@ if [[ "$has_initial_prompt" == true ]]; then
     ${secret_args[@]+"${secret_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+    ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
     --workdir "$mount_path" \
     "$container_id" \
-    fish -Nlc "$initial_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"}
+    "$runtime_shell" "${runtime_shell_args[@]}" "$initial_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"}
 fi
 
 prepare_codex_secrets
@@ -1074,6 +1134,7 @@ HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
   ${secret_args[@]+"${secret_args[@]}"} \
   ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
   ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+  ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
   --workdir "$mount_path" \
   "$container_id" \
-  fish -Nlc "$new_command" -- ${harness_args[@]+"${harness_args[@]}"}
+  "$runtime_shell" "${runtime_shell_args[@]}" "$new_command" -- ${harness_args[@]+"${harness_args[@]}"}

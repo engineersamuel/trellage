@@ -133,11 +133,16 @@ printf 'Trellage runtime session test: PASS: portable prompt preserves native fa
 rm -rf "$test_root/codex-home"
 : >"$test_root/codex.log"
 FAKE_CODEX_CREATE_SESSION=1 FAKE_CODEX_THREAD_ID="$thread_id" \
-  run_entry new codex -- 'original startup prompt'
+  TRELLAGE_RESUME_PROFILE=/tmp/codex-superpowers/profile.toml \
+  run_entry new codex -- 'original startup prompt' >"$test_root/new-output"
 [[ "$(cat "$test_root/codex-home/.trellage-codex/last-thread-id")" == "$thread_id" ]] \
   || fail 'new native thread ID was not recorded'
 grep -Fqx $'ARG\toriginal startup prompt' "$test_root/codex.log" \
   || fail 'new startup prompt was not passed literally'
+grep -Fqx \
+  "trellage resume --profile /tmp/codex-superpowers/profile.toml $thread_id" \
+  "$test_root/new-output" \
+  || fail 'Codex exit did not print exact Trellage resume command'
 
 : >"$test_root/codex.log"
 run_entry resume codex
@@ -146,6 +151,17 @@ grep -Fqx $'ARG\t'"$thread_id" "$test_root/codex.log" || fail 'recorded native t
 ! grep -Fq 'original startup prompt' "$test_root/codex.log" \
   || fail 'resume replayed original startup prompt'
 printf 'Trellage runtime session test: PASS: record and native resume argv\n'
+
+: >"$test_root/codex.log"
+exact_thread_id='019f93af-41dd-7333-9bea-d8edc20760e7'
+jq -nc --arg id "$exact_thread_id" --arg cwd "$worktree" \
+  '{type:"session_meta",payload:{id:$id,cwd:$cwd}}' \
+  >"$test_root/codex-home/sessions/2026/07/24/rollout-exact.jsonl"
+TRELLAGE_RESUME_SESSION_ID="$exact_thread_id" run_entry resume codex
+expected_exact_resume=$'ARG\tresume\nARG\t'"$exact_thread_id"
+[[ "$(cat "$test_root/codex.log")" == "$expected_exact_resume" ]] \
+  || fail 'exact Codex resume did not use the requested native thread ID'
+printf 'Trellage runtime session test: PASS: exact native resume argv\n'
 
 rm -rf "$test_root/codex-home"
 : >"$test_root/codex.log"

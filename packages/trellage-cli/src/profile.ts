@@ -89,9 +89,13 @@ const Copilot = Schema.Struct({
 })
 
 const Claude = Schema.Struct({
+  mode: Schema.optional(Schema.Literal("core", "hyperresearch")),
   default_auth: Schema.Literal("proxy"),
-  model: Schema.Literal("claude-opus-5"),
+  model: NonEmpty,
   gateway: NonEmpty,
+  opus_model: Schema.optional(NonEmpty),
+  sonnet_model: Schema.optional(NonEmpty),
+  haiku_model: Schema.optional(NonEmpty),
 })
 
 const Pi = Schema.Struct({
@@ -174,7 +178,7 @@ const CopilotProfileSchema = Schema.Struct({
 const ClaudeProfileSchema = Schema.Struct({
   ...CommonProfile,
   harness: ClaudeHarness,
-  plugins: Schema.Tuple(HyperresearchPlugin),
+  plugins: Schema.optional(Schema.Array(HyperresearchPlugin)),
 })
 
 const PiProfileSchema = Schema.Struct({
@@ -309,7 +313,7 @@ const normalize = (profile: DecodedProfile): Profile =>
           ...profile,
           runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
           skills: profile.skills ?? [],
-          plugins: profile.plugins,
+          plugins: profile.plugins ?? [],
           mcps: profile.mcps ?? [],
           secrets: profile.secrets ?? { provider: "env", required: [] },
         }
@@ -380,6 +384,13 @@ const validate = (
       if (profile.image.platform !== "linux/arm64") return yield* fail("Claude Hyperresearch supports only linux/arm64")
       if (profile.skills.length > 0) return yield* fail("Claude Hyperresearch does not support standalone skills")
       if (profile.mcps.length > 0) return yield* fail("Claude Hyperresearch MCPs are managed by Trellage")
+      const claudeMode = profile.harness.claude.mode ?? "hyperresearch"
+      if (claudeMode === "core" && profile.plugins.length > 0) {
+        return yield* fail("Claude core profiles do not support managed plugins")
+      }
+      if (claudeMode === "hyperresearch" && profile.plugins.length !== 1) {
+        return yield* fail("Claude Hyperresearch profiles require exactly one managed plugin")
+      }
       if (
         profile.secrets.required.length > 0 ||
         profile.secrets.provider !== "env" ||

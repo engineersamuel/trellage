@@ -230,6 +230,61 @@ const completePiLock = (): ProfileLock => {
 }
 
 describe("lock inventory compatibility", () => {
+  it("accepts a source-free Claude core lock without Python or browser artifacts", async () => {
+    const claudeDocument = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "claude-qwen-local"
+description = "Claude Qwen local profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+mode = "core"
+default_auth = "proxy"
+model = "qwen3.6-35b-a3b-local"
+gateway = "http://copilot-proxy-rs:8080"
+opus_model = "qwen3.6-35b-a3b-local"
+sonnet_model = "qwen3.6-35b-a3b-local"
+haiku_model = "qwen3.6-35b-a3b-local"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "ca-certificates", "fish", "git", "jq"]
+`,
+        "/profiles/claude-qwen-local/profile.toml",
+      ),
+    )
+    const baseResolvers = fakeResolvers(commit("1"), [])
+    const resolvers: LockResolvers = {
+      ...baseResolvers,
+      resolvePackages: (request) =>
+        baseResolvers.resolvePackages(request).pipe(
+          Effect.map((packages) => ({
+            ...packages,
+            runtime: request.packages.map((name) => ({ name, version: "1.0.0", integrity: digest("d") })),
+            artifacts: ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"].map((name) => ({
+              name,
+              version: "1.0.0",
+              integrity: digest("a"),
+              url: "https://example.test/artifact",
+              size: 1,
+            })),
+          })),
+        ),
+    }
+
+    const resolved = await Effect.runPromise(compileLock(claudeDocument, undefined, false, resolvers))
+    const locked = { ...resolved, image: { ...resolved.image, final_digest: digest("e") } }
+    const parsed = await Effect.runPromise(parseLock(renderLock(locked)))
+
+    expect(locked.sources).toEqual([])
+    expect(locked.packages.python_lock_integrity).toBeUndefined()
+    await expect(Effect.runPromise(requireLocked(claudeDocument, parsed))).resolves.toEqual(locked)
+  })
+
   it("round-trips exact Claude auxiliary artifact identities", async () => {
     const claudeDocument = await Effect.runPromise(
       parseProfile(

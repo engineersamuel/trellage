@@ -246,6 +246,7 @@ assert_docker_env() {
 assert_terminal_contract() {
   local log="$1"
   local expected_colorterm="${2:-}"
+  local expected_resume_profile="${3:-false}"
   local expected_env_count=1
   assert_docker_env "$log" 'TERM=xterm-256color'
   if [[ -n "$expected_colorterm" ]]; then
@@ -254,6 +255,10 @@ assert_terminal_contract() {
   else
     ! grep -Eq $'ARG\tCOLORTERM=' "$log" \
       || fail 'unsupported COLORTERM reached Docker'
+  fi
+  if [[ "$expected_resume_profile" == true ]]; then
+    expected_env_count=$((expected_env_count + 1))
+    assert_docker_env "$log" TRELLAGE_RESUME_PROFILE
   fi
   [[ "$(grep -Fxc $'ARG\t--env' "$log")" -eq "$expected_env_count" ]] \
     || fail 'Docker received an unexpected terminal environment'
@@ -411,6 +416,17 @@ test_resume_uses_native_thread_without_prompt_replay() {
     || fail 'resume replayed the new-session startup path'
 
   : >"$docker_log"
+  local resume_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" resume "$resume_session_id"
+  assert_arg "$docker_log" TRELLAGE_RESUME_SESSION_ID
+  assert_arg "$docker_log" TRELLAGE_RESUME_PROFILE
+  grep -Fqx $'ARG\texec trellage-codex-entry resume codex $argv' "$docker_log" \
+    || fail 'exact resume did not delegate native thread selection to runtime helper'
+
+  : >"$docker_log"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     run_tty "$worktree" "$docker_log" "$worktree" \
@@ -497,6 +513,11 @@ test_portable_prompt_is_detached_for_each_harness() {
       | .runtime_entry = "trellage-claude-entry"
       | .default_network = "copilot-proxy-rs_default"
       | .auth_policy = "claude-explicit"
+      | .claude_mode = "hyperresearch"
+      | .claude_gateway = "http://copilot-proxy-rs:8080"
+      | .claude_opus_model = "claude-opus-5"
+      | .claude_sonnet_model = "claude-sonnet-5"
+      | .claude_haiku_model = "claude-haiku-4.5"
       | .harness_args = []' \
     "$copilot_metadata" >"$claude_variant"
   state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
@@ -569,6 +590,8 @@ test_portable_prompt_parser_contract() {
 --prompt is not supported for compiler commands|validate -p hello
 --prompt is not supported for compiler commands|lock --prompt hello
 --prompt is not supported for compiler commands|upgrade --prompt=hello
+resume session ID must be a UUID|resume not-a-session-id
+resume accepts at most one session ID|resume 5b3664c0-9954-4526-8aab-d3d2c177798d 45f2aaf8-1064-4162-bc09-58808d5819d8
 CASES
 
   : >"$docker_log"
@@ -713,7 +736,7 @@ test_terminal_environment_and_agent_tagging() {
     run_tty "$worktree" "$docker_log" "$worktree" \
       env TERM=host-term COLORTERM=truecolor NO_COLOR=1 TERM_PROGRAM=host-terminal \
       "$prototype_dir/trellage" resume
-  assert_terminal_contract "$docker_log" truecolor
+  assert_terminal_contract "$docker_log" truecolor true
   assert_codex_exec_hint "$docker_log"
   grep -Fqx $'ARG\texec trellage-codex-entry resume codex $argv' "$docker_log" \
     || fail 'resume lacks Codex bypass flag before thread selection'
@@ -724,7 +747,7 @@ test_terminal_environment_and_agent_tagging() {
     run_tty "$worktree" "$docker_log" "$worktree" \
       env TERM=host-term COLORTERM=24bit NO_COLOR=1 TERM_PROGRAM=host-terminal \
       "$prototype_dir/trellage" 'literal $(touch /tmp/not-executed) prompt'
-  assert_terminal_contract "$docker_log" truecolor
+  assert_terminal_contract "$docker_log" truecolor true
   assert_codex_exec_hint "$docker_log"
   grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry new codex $argv -- $prompt' "$docker_log" \
     || fail 'prompted new lacks Codex bypass flag before prompt boundary'
@@ -737,7 +760,7 @@ test_terminal_environment_and_agent_tagging() {
     run_tty "$worktree" "$docker_log" "$worktree" \
       env TERM=host-term COLORTERM=unsupported NO_COLOR=1 TERM_PROGRAM=host-terminal \
       "$prototype_dir/trellage"
-  assert_terminal_contract "$docker_log"
+  assert_terminal_contract "$docker_log" '' true
   assert_codex_exec_hint "$docker_log"
   grep -Fqx $'ARG\texec trellage-codex-entry new codex $argv' "$docker_log" \
     || fail 'bare new lacks Codex bypass flag'
@@ -1628,6 +1651,11 @@ test_global_varlock_bootstrap_supplies_claude_browser_token() {
       | .runtime_entry = "trellage-claude-entry"
       | .default_network = "copilot-proxy-rs_default"
       | .auth_policy = "claude-explicit"
+      | .claude_mode = "hyperresearch"
+      | .claude_gateway = "http://copilot-proxy-rs:8080"
+      | .claude_opus_model = "claude-opus-5"
+      | .claude_sonnet_model = "claude-sonnet-5"
+      | .claude_haiku_model = "claude-haiku-4.5"
       | .harness_args = []' \
     "$copilot_metadata" >"$claude_variant"
   state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
@@ -2277,6 +2305,11 @@ test_claude_launch_allows_empty_harness_args() {
       | .default_network = "copilot-proxy-rs_default"
       | .auth_policy = "claude-explicit"
       | .harness_args = []
+      | .claude_mode = "hyperresearch"
+      | .claude_gateway = "http://copilot-proxy-rs:8080"
+      | .claude_opus_model = "claude-opus-5"
+      | .claude_sonnet_model = "claude-sonnet-5"
+      | .claude_haiku_model = "claude-haiku-4.5"
       | .tmpfs_size = "2g"' \
     "$copilot_metadata" >"$claude_variant"
   state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
@@ -2292,6 +2325,56 @@ test_claude_launch_allows_empty_harness_args() {
     || fail 'Claude launch did not reach its final container exec'
   assert_arg "$docker_log" '/tmp:rw,noexec,nosuid,nodev,size=2g,uid=10001,gid=10001'
   printf 'Trellage host test: PASS: Claude launch allows empty harness args\n'
+}
+
+test_claude_core_injects_exact_metadata_routing_only_at_final_exec() {
+  local worktree="$test_root/claude-core-routing"
+  local docker_log="$test_root/claude-core-routing.docker.log"
+  local claude_variant="$test_root/claude-core-routing.json"
+  local state_volume
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq \
+    '.profile_name = "claude-qwen-local"
+      | .image = "trellage-profile-claude-qwen-local:locked"
+      | .harness_kind = "claude"
+      | .harness_executable = "claude"
+      | .runtime_entry = "trellage-claude-entry"
+      | .default_network = "copilot-proxy-rs_default"
+      | .auth_policy = "claude-explicit"
+      | .claude_mode = "core"
+      | .claude_gateway = "http://copilot-proxy-rs:8080"
+      | .claude_opus_model = "qwen3.6-35b-a3b-local"
+      | .claude_sonnet_model = "qwen3.6-35b-a3b-local"
+      | .claude_haiku_model = "qwen3.6-35b-a3b-local"
+      | .harness_args = []' \
+    "$copilot_metadata" >"$claude_variant"
+  state_volume="$(resource_names "$worktree" claude-qwen-local claude | tail -n 1)"
+
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-qwen-local FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    FAKE_DOCKER_EXPECT_CLAUDE_MODE=core \
+    FAKE_DOCKER_EXPECT_CLAUDE_GATEWAY=http://copilot-proxy-rs:8080 \
+    FAKE_DOCKER_EXPECT_CLAUDE_OPUS_MODEL=qwen3.6-35b-a3b-local \
+    FAKE_DOCKER_EXPECT_CLAUDE_SONNET_MODEL=qwen3.6-35b-a3b-local \
+    FAKE_DOCKER_EXPECT_CLAUDE_HAIKU_MODEL=qwen3.6-35b-a3b-local \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env PLAYWRIGHT_MCP_EXTENSION_TOKEN=browser-poison TRELLAGE_IMAGE='test/claude:locked' \
+      "$prototype_dir/trellage" -p 'literal Qwen -p'
+
+  [[ "$(grep -Fxc $'ENV\tCLAUDE_PROXY_ROUTING=matched' "$docker_log")" -eq 1 ]] \
+    || fail 'exact Qwen gateway and alias routing did not reach only the final Claude exec'
+  ! grep -Fq $'ENV\tPLAYWRIGHT_MCP_EXTENSION_TOKEN=present' "$docker_log" \
+    || fail 'Claude core mode forwarded a browser credential'
+  grep -Fqx $'ARG\tbash' "$docker_log" \
+    || fail 'Claude core mode did not use its Python-free Bash runtime'
+  grep -Fqx $'ARG\t-c' "$docker_log" \
+    || fail 'Claude core mode used a login shell that resets the locked tool PATH'
+  [[ "$(tail -n 1 "$docker_log")" == $'ARG\tliteral Qwen -p' ]] \
+    || fail 'Claude core prompt was not passed literally'
+  printf 'Trellage host test: PASS: Claude core injects exact metadata routing only at final exec\n'
 }
 
 test_copilot_lifecycle_identity_and_runtime() {
@@ -2935,7 +3018,13 @@ if [[ "${TRELLAGE_HOST_PI_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_CLAUDE_CORE_ONLY:-}" == 1 ]]; then
+  test_claude_core_injects_exact_metadata_routing_only_at_final_exec
+  exit 0
+fi
+
 test_claude_launch_allows_empty_harness_args
+test_claude_core_injects_exact_metadata_routing_only_at_final_exec
 test_upgrade_delegates_to_effect_cli
 test_interactive_profile_selection
 test_compiler_commands_scrub_copilot_auth

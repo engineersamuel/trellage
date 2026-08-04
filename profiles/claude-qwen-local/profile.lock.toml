@@ -1,0 +1,64 @@
+schema = 1
+source_date_epoch = 1784379906
+profile_hash = "sha256:c7be8723f62bbe66846ed78b1e7342d53f6ca081e77e67c7570370fb1dc9a9b6"
+sources = []
+
+[packages]
+
+[packages.harness]
+kind = "claude"
+selector = "2.1.218"
+version = "2.1.218"
+integrity = "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8"
+url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz"
+size = 22971
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.artifacts]]
+name = "node"
+version = "22.17.0"
+integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+[[packages.artifacts]]
+name = "claude-code-linux-arm64"
+version = "2.1.218"
+integrity = "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619"
+url = "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz"
+size = 84159749
+
+[[packages.artifacts]]
+name = "builder-oci"
+version = "jdxcode/mise"
+integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
+url = "oci://docker.io/jdxcode/mise"
+
+[[packages.artifacts]]
+name = "skopeo-oci"
+version = "stable"
+integrity = "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
+url = "oci://quay.io/skopeo/stable"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:bb465eb19cca0dd0d23c68dcecc595d6c62d1ff6d2eb9e891442a52081a5f091"

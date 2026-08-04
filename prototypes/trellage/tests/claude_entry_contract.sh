@@ -51,9 +51,21 @@ while (($#)); do
   if [[ "$1" == --mcp-config ]]; then config="$2"; break; fi
   shift
 done
-cp "$config" "$CLAUDE_CONFIG_OUT"
-printf '%s\n' "$config" >"${CLAUDE_CONFIG_PATH_OUT:?}"
+if [[ -n "$config" ]]; then
+  cp "$config" "$CLAUDE_CONFIG_OUT"
+  printf '%s\n' "$config" >"${CLAUDE_CONFIG_PATH_OUT:?}"
+else
+  : >"$CLAUDE_CONFIG_OUT"
+  printf 'none\n' >"${CLAUDE_CONFIG_PATH_OUT:?}"
+fi
 env | LC_ALL=C sort >"$CLAUDE_ENV_OUT"
+if [[ -n "${CLAUDE_CREATE_SESSION_ID-}" ]]; then
+  session_dir="$CLAUDE_CONFIG_DIR/projects/test-project"
+  mkdir -p "$session_dir"
+  jq -nc --arg id "$CLAUDE_CREATE_SESSION_ID" --arg cwd "$PWD" \
+    '{type:"user",sessionId:$id,cwd:$cwd}' \
+    >"$session_dir/$CLAUDE_CREATE_SESSION_ID.jsonl"
+fi
 exit "${CLAUDE_EXIT:-0}"
 SH
 chmod +x "$fake_bin/claude"
@@ -146,6 +158,75 @@ grep -Fqx 'CLAUDE_CODE_OAUTH_TOKEN=native-sentinel' "$root/status-env"
 status_config_path="$(cat "$root/status-config-path")"
 [[ ! -e "$status_config_path" ]] || {
   printf 'Claude failed prompt did not remove its MCP configuration\n' >&2
+  exit 1
+}
+
+core_runtime="$root/core-home/.claude"
+core_status=0
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$core_runtime" \
+TRELLAGE_CLAUDE_MODE=core \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+PLAYWRIGHT_MCP_EXTENSION_TOKEN=core-browser-poison \
+ANTHROPIC_AUTH_TOKEN=core-proxy-token \
+ANTHROPIC_BASE_URL=http://copilot-proxy-rs:8080 \
+ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.6-35b-a3b-local \
+ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.6-35b-a3b-local \
+ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-35b-a3b-local \
+CLAUDE_EXIT=37 \
+CLAUDE_ARGS_OUT="$root/core-args" CLAUDE_CONFIG_OUT="$root/core-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/core-config-path" CLAUDE_ENV_OUT="$root/core-env" \
+  "$entry" prompt claude -- 'literal core -p' || core_status=$?
+[[ "$core_status" -eq 37 ]] || {
+  printf 'Claude core prompt changed native status 37 to %s\n' "$core_status" >&2
+  exit 1
+}
+! grep -Fq -- '--mcp-config' "$root/core-args"
+grep -Fqx 'none' "$root/core-config-path"
+! grep -Fq 'PLAYWRIGHT_MCP_EXTENSION_TOKEN=' "$root/core-env"
+grep -Fqx 'ANTHROPIC_BASE_URL=http://copilot-proxy-rs:8080' "$root/core-env"
+grep -Fqx 'ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.6-35b-a3b-local' "$root/core-env"
+grep -Fqx 'ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.6-35b-a3b-local' "$root/core-env"
+grep -Fqx 'ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-35b-a3b-local' "$root/core-env"
+[[ "$(tail -n 2 "$root/core-args")" == $'-p\nliteral core -p' ]]
+
+resume_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$core_runtime" \
+TRELLAGE_CLAUDE_MODE=core \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+TRELLAGE_RESUME_SESSION_ID="$resume_session_id" \
+ANTHROPIC_AUTH_TOKEN=core-proxy-token \
+CLAUDE_ARGS_OUT="$root/resume-args" CLAUDE_CONFIG_OUT="$root/resume-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/resume-config-path" CLAUDE_ENV_OUT="$root/resume-env" \
+  "$entry" resume claude
+[[ "$(tail -n 2 "$root/resume-args")" == $'--resume\n'"$resume_session_id" ]] || {
+  printf 'Claude exact resume did not use native --resume ID argv\n' >&2
+  exit 1
+}
+
+hint_output="$root/resume-hint-output"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$core_runtime" \
+TRELLAGE_CLAUDE_MODE=core \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+TRELLAGE_RESUME_PROFILE=/tmp/claude-qwen-local/profile.toml \
+CLAUDE_CREATE_SESSION_ID="$resume_session_id" \
+ANTHROPIC_AUTH_TOKEN=core-proxy-token \
+CLAUDE_ARGS_OUT="$root/hint-args" CLAUDE_CONFIG_OUT="$root/hint-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/hint-config-path" CLAUDE_ENV_OUT="$root/hint-env" \
+  "$entry" new claude --test-interactive >"$hint_output"
+grep -Fqx 'Resume this conversation:' "$hint_output" || {
+  printf 'Claude exit did not print resume guidance\n' >&2
+  exit 1
+}
+grep -Fqx \
+  "trellage resume --profile /tmp/claude-qwen-local/profile.toml $resume_session_id" \
+  "$hint_output" || {
+  printf 'Claude exit did not print exact Trellage resume command\n' >&2
   exit 1
 }
 

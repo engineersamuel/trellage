@@ -691,6 +691,7 @@ for command in \
   'trellage' \
   'trellage "<prompt>"' \
   'trellage resume' \
+  'trellage resume SESSION_ID' \
   'trellage shell' \
   'trellage stop' \
   'trellage destroy' \
@@ -714,6 +715,8 @@ done
 for qualification in \
   'Multiple Codex sessions can run concurrently for the same worktree' \
   '`trellage resume` selects the newest recorded native session' \
+  'session ID to select an exact conversation' \
+  'prints a copyable exact resume command' \
   '`trellage stop` stops the shared container and terminates every active session for that profile and worktree'; do
   require_section_text '## Use' "$qualification"
 done
@@ -952,6 +955,7 @@ for command in \
   'trellage validate /absolute/path/to/profile.toml' \
   'trellage build --locked /absolute/path/to/profile.toml' \
   'trellage --profile /absolute/path/to/profile.toml' \
+  'trellage resume --profile /absolute/path/to/profile.toml SESSION_ID' \
   'trellage resume --profile /absolute/path/to/profile.toml' \
   'trellage doctor --profile /absolute/path/to/profile.toml' \
   'trellage destroy --profile /absolute/path/to/profile.toml' \

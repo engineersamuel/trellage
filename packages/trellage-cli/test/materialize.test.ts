@@ -326,6 +326,95 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
     expect(miseLock).toContain('url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64"')
   })
 
+  it("materializes a source-free Claude core lane without Python or browser tooling", async () => {
+    const root = await temporaryRoot("trellage-materialize-claude-core-")
+    const document = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "claude-qwen-local"
+description = "Claude Qwen local profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+mode = "core"
+default_auth = "proxy"
+model = "qwen3.6-35b-a3b-local"
+gateway = "http://copilot-proxy-rs:8080"
+opus_model = "qwen3.6-35b-a3b-local"
+sonnet_model = "qwen3.6-35b-a3b-local"
+haiku_model = "qwen3.6-35b-a3b-local"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "bash"
+packages = ["bash", "ca-certificates", "git", "jq"]
+`,
+        path.join(root, "profile.toml"),
+      ),
+    )
+    const lock: ProfileLock = {
+      schema: 1,
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [],
+      packages: {
+        harness: {
+          kind: "claude",
+          selector: "2.1.218",
+          version: "2.1.218",
+          integrity: `sha256:${"a".repeat(64)}`,
+          url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
+          size: 22971,
+        },
+        runtime: [],
+        artifacts: ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"].map((name) => ({
+          name,
+          version: "1.0.0",
+          integrity: `sha256:${"b".repeat(64)}`,
+          url: "https://example.test/artifact",
+          size: 1,
+        })),
+      },
+      image: { base: document.profile.image.base, base_digest: `sha256:${"c".repeat(64)}` },
+    }
+    const claudeEntry = path.join(root, "runtime-claude-entry.sh")
+    await writeFile(claudeEntry, "#!/bin/sh\n")
+    const unused = () => Effect.fail("unexpected generator call")
+    let materializerCalled = false
+
+    const context = await Effect.runPromise(
+      createBuildContext(
+        document,
+        lock,
+        [],
+        {
+          codexEntry: path.join(root, "unused-codex-entry.sh"),
+          copilotEntry: path.join(root, "unused-copilot-entry.sh"),
+          piEntry: path.join(root, "unused-pi-entry.sh"),
+          finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
+          claudeEntry,
+        },
+        root,
+        unused,
+        unused,
+        () => {
+          materializerCalled = true
+          return Effect.void
+        },
+      ),
+    )
+
+    expect(materializerCalled).toBe(false)
+    await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
+      '"bypassPermissions"',
+    )
+    const mise = await readFile(path.join(context, "mise.toml"), "utf8")
+    const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
+    expect(`${mise}\n${miseLock}`).not.toMatch(/python|playwright|chromium|obscura|hyperresearch/i)
+  })
+
   it("delegates Claude Hyperresearch assets to the focused materializer", async () => {
     const root = await temporaryRoot("trellage-materialize-claude-")
     const document = await Effect.runPromise(

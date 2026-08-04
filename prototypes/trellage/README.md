@@ -125,7 +125,8 @@ Run these commands inside the Git worktree that should be mounted:
 trellage [--profile PROFILE]
 trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage -i|--interactive [-p|--prompt PROMPT]
-trellage resume|shell|stop|doctor|destroy [--profile PROFILE]
+trellage resume [SESSION_ID] [--profile PROFILE]
+trellage shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
 trellage build [--locked] [PROFILE]
@@ -134,7 +135,8 @@ trellage                    # new interactive Codex conversation
 trellage -i                 # select a profile, then start its interactive harness
 trellage "<prompt>"         # new conversation with an explicit prompt
 trellage -p "<prompt>"      # one non-interactive prompt with plain-text output
-trellage resume             # native resume
+trellage resume             # resume the latest native conversation
+trellage resume SESSION_ID  # resume one exact native conversation
 trellage shell              # recovery Fish without secrets
 trellage stop               # preserve state
 trellage destroy            # confirmed profile/worktree cleanup
@@ -176,8 +178,11 @@ trellage --profile pi-oh-my-pi -p "hello"
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
 `trellage` invocation starts a new native session.
-`trellage resume` selects the newest recorded native session. All sessions
-share one container and durable profile volume.
+`trellage resume` selects the newest recorded native session. Pass a native
+session ID to select an exact conversation; Trellage maps that ID to each
+harness's native resume syntax. After an interactive session exits, Trellage
+prints a copyable exact resume command. All sessions share one container and
+durable profile volume.
 `trellage stop` stops the shared container and terminates every active session for that profile and worktree,
 so reserve it for recovery after interactive sessions have exited.
 

@@ -12,10 +12,60 @@ fail() {
 seed_home="${TRELLAGE_CLAUDE_SEED_HOME:-/usr/local/share/trellage/claude-seed}"
 runtime_home="${TRELLAGE_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-/home/agent/.claude}}"
 auth_mode="${TRELLAGE_CLAUDE_AUTH_MODE:-proxy}"
+claude_mode="${TRELLAGE_CLAUDE_MODE:-hyperresearch}"
+resume_profile="${TRELLAGE_RESUME_PROFILE-}"
+resume_session_id="${TRELLAGE_RESUME_SESSION_ID-}"
+unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID
+if [[ -n "$resume_session_id" \
+  && ! "$resume_session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+  fail 'resume session ID must be a UUID'
+fi
+
+valid_session_id() {
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
+}
+
+session_id_for_worktree() {
+  local session_file="$1"
+  local expected_cwd="$2"
+  jq -er --arg cwd "$expected_cwd" \
+    'select(.cwd == $cwd and (.sessionId | type == "string")) | .sessionId' \
+    "$session_file" 2>/dev/null | head -n 1
+}
+
+find_newest_session() {
+  local expected_cwd="$1"
+  local session_file session_id newest_file= newest_id=
+  while IFS= read -r -d '' session_file; do
+    [[ -f "$session_file" && ! -L "$session_file" ]] || continue
+    session_id="$(session_id_for_worktree "$session_file" "$expected_cwd" || true)"
+    valid_session_id "$session_id" || continue
+    if [[ -z "$newest_file" || "$session_file" -nt "$newest_file" \
+      || ( ! "$newest_file" -nt "$session_file" && "$session_file" > "$newest_file" ) ]]; then
+      newest_file="$session_file"
+      newest_id="$session_id"
+    fi
+  done < <(find "$runtime_home/projects" -type f -name '*.jsonl' -print0 2>/dev/null)
+  [[ -n "$newest_id" ]] || return 1
+  printf '%s\n' "$newest_id"
+}
+
+print_resume_hint() {
+  local session_id="$1"
+  [[ -n "$resume_profile" ]] || return 0
+  printf '\nResume this conversation:\n'
+  printf 'trellage resume --profile %q %q\n' "$resume_profile" "$session_id"
+}
+case "$claude_mode" in
+  core|hyperresearch) ;;
+  *) fail "unsupported Claude profile mode: $claude_mode" ;;
+esac
 [[ "$seed_home" == /* && "$runtime_home" == /* ]] || fail 'Claude homes must be absolute paths'
 [[ -d "$seed_home" && ! -L "$seed_home" ]] || fail "missing baked Claude seed: $seed_home"
-[[ -f "$seed_home/managed-paths.txt" && ! -L "$seed_home/managed-paths.txt" ]] \
-  || fail 'baked Claude managed-path manifest is missing or unsafe'
+if [[ "$claude_mode" == hyperresearch ]]; then
+  [[ -f "$seed_home/managed-paths.txt" && ! -L "$seed_home/managed-paths.txt" ]] \
+    || fail 'baked Claude managed-path manifest is missing or unsafe'
+fi
 default_settings="$seed_home/default-settings.json"
 [[ -f "$default_settings" && ! -L "$default_settings" ]] \
   || fail 'baked Claude default settings are missing or unsafe'
@@ -34,6 +84,18 @@ jq -e '
 mkdir -p "$runtime_home"
 [[ -d "$runtime_home" && ! -L "$runtime_home" ]] || fail 'Claude runtime home must be a directory'
 
+if [[ "$claude_mode" == core ]]; then
+  settings="$runtime_home/settings.json"
+  if [[ ! -e "$settings" && ! -L "$settings" ]]; then
+    settings_tmp="$runtime_home/.settings.json.trellage.$$"
+    cp -- "$default_settings" "$settings_tmp"
+    chmod 600 "$settings_tmp"
+    mv -n -- "$settings_tmp" "$settings"
+    rm -f -- "$settings_tmp"
+  fi
+fi
+
+if [[ "$claude_mode" == hyperresearch ]]; then
 validate_managed_path() {
   local candidate="$1"
   [[ -n "$candidate" && "$candidate" != /* && "$candidate" != *'//'*
@@ -155,6 +217,7 @@ rm -rf -- "$transaction"
 rm -rf -- "$lock_dir"
 lock_active=false
 trap - EXIT HUP INT TERM
+fi
 
 [[ "$#" -ge 2 ]] || fail 'mode and Claude command are required'
 mode="$1"
@@ -173,12 +236,19 @@ case "$mode" in
       || fail 'prompt mode requires exactly one prompt after --'
     claude_args+=(-p "$2")
     ;;
-  resume) claude_args=(--continue "$@") ;;
+  resume)
+    if [[ -n "$resume_session_id" ]]; then
+      claude_args=(--resume "$resume_session_id" "$@")
+    else
+      claude_args=(--continue "$@")
+    fi
+    ;;
   passthrough) exec "$claude_command" "$@" ;;
   *) fail "unsupported Claude launch mode: $mode" ;;
 esac
 
 browser_token="${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}"
+[[ "$claude_mode" == hyperresearch ]] || browser_token=
 oauth_token="${CLAUDE_CODE_OAUTH_TOKEN-}"
 api_key="${ANTHROPIC_API_KEY-}"
 proxy_token="${ANTHROPIC_AUTH_TOKEN-}"
@@ -207,23 +277,36 @@ else
   unset PLAYWRIGHT_MCP_EXTENSION_TOKEN
 fi
 
-mcp_config="$(mktemp "${TMPDIR:-/tmp}/trellage-claude-mcp.XXXXXX.json")"
-cleanup_mcp() { rm -f -- "$mcp_config"; }
-trap cleanup_mcp EXIT HUP INT TERM
-if [[ -n "$browser_token" ]]; then
-  printf '%s\n' '{"mcpServers":{"playwright":{"command":"playwright-mcp","args":["--extension"]},"obscura":{"command":"obscura","args":["mcp","--stealth"]}}}' >"$mcp_config"
-else
-  printf 'trellage-claude-entry: Playwright extension token is absent; exposing Obscura only\n' >&2
-  printf '%s\n' '{"mcpServers":{"obscura":{"command":"obscura","args":["mcp","--stealth"]}}}' >"$mcp_config"
+mcp_config=
+cleanup_mcp() { [[ -z "$mcp_config" ]] || rm -f -- "$mcp_config"; }
+managed_args=(--dangerously-skip-permissions --settings "$default_settings")
+if [[ "$claude_mode" == hyperresearch ]]; then
+  mcp_config="$(mktemp "${TMPDIR:-/tmp}/trellage-claude-mcp.XXXXXX.json")"
+  trap cleanup_mcp EXIT HUP INT TERM
+  if [[ -n "$browser_token" ]]; then
+    printf '%s\n' '{"mcpServers":{"playwright":{"command":"playwright-mcp","args":["--extension"]},"obscura":{"command":"obscura","args":["mcp","--stealth"]}}}' >"$mcp_config"
+  else
+    printf 'trellage-claude-entry: Playwright extension token is absent; exposing Obscura only\n' >&2
+    printf '%s\n' '{"mcpServers":{"obscura":{"command":"obscura","args":["mcp","--stealth"]}}}' >"$mcp_config"
+  fi
+  managed_args+=(--mcp-config "$mcp_config" --strict-mcp-config)
 fi
 
 export CLAUDE_CONFIG_DIR="$runtime_home"
 set +e
-"$claude_command" --dangerously-skip-permissions \
-  --settings "$default_settings" \
-  --mcp-config "$mcp_config" --strict-mcp-config "${claude_args[@]}"
+"$claude_command" "${managed_args[@]}" "${claude_args[@]}"
 claude_status=$?
 set -e
 cleanup_mcp
 trap - EXIT HUP INT TERM
+if [[ -n "$resume_profile" ]]; then
+  if [[ -n "$resume_session_id" ]]; then
+    completed_session_id="$resume_session_id"
+  else
+    completed_session_id="$(find_newest_session "$(pwd -P)" || true)"
+  fi
+  if [[ -n "$completed_session_id" ]]; then
+    print_resume_hint "$completed_session_id"
+  fi
+fi
 exit "$claude_status"

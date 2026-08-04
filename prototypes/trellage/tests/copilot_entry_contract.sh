@@ -218,6 +218,12 @@ printf '%s\n' "$@" >"$TRELLAGE_TEST_OUTPUT/argv"
 printf 'COPILOT_GITHUB_TOKEN=%s\n' "${COPILOT_GITHUB_TOKEN-}" >"$TRELLAGE_TEST_OUTPUT/env"
 printf 'GH_TOKEN=%s\n' "${GH_TOKEN-}" >>"$TRELLAGE_TEST_OUTPUT/env"
 printf 'GITHUB_TOKEN=%s\n' "${GITHUB_TOKEN-}" >>"$TRELLAGE_TEST_OUTPUT/env"
+if [[ -n "${TRELLAGE_TEST_CREATE_SESSION_ID-}" ]]; then
+  session_dir="$COPILOT_HOME/session-state/$TRELLAGE_TEST_CREATE_SESSION_ID"
+  mkdir -p "$session_dir"
+  printf 'id: %s\ncwd: %s\n' "$TRELLAGE_TEST_CREATE_SESSION_ID" "$PWD" \
+    >"$session_dir/workspace.yaml"
+fi
 exit "${TRELLAGE_TEST_COPILOT_EXIT:-0}"
 FAKE_COPILOT
 chmod 755 "$fake_bin/copilot"
@@ -244,6 +250,9 @@ run_entry() {
     --env "GH_TOKEN=${GH_TOKEN-}" \
     --env "GITHUB_TOKEN=${GITHUB_TOKEN-}" \
     --env "TRELLAGE_TEST_COPILOT_EXIT=${TRELLAGE_TEST_COPILOT_EXIT-}" \
+    --env "TRELLAGE_TEST_CREATE_SESSION_ID=${TRELLAGE_TEST_CREATE_SESSION_ID-}" \
+    --env "TRELLAGE_RESUME_PROFILE=${TRELLAGE_RESUME_PROFILE-}" \
+    --env "TRELLAGE_RESUME_SESSION_ID=${TRELLAGE_RESUME_SESSION_ID-}" \
     "$image_ref" /test/runtime-copilot-entry.sh "$@" || status=$?
   return "$status"
 }
@@ -298,6 +307,27 @@ interactive_env="$(read_output_file env)"
   || fail 'bare new mode was not left interactive without a prompt flag'
 grep -Fqx 'COPILOT_GITHUB_TOKEN=' <<<"$interactive_env" \
   || fail 'bare new mode invented Copilot authentication'
+
+resume_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+TRELLAGE_RESUME_SESSION_ID="$resume_session_id" \
+  COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
+  run_entry resume --allow-all
+exact_resume_argv="$(read_output_file argv)"
+[[ "$exact_resume_argv" == $'--allow-all\n--resume='"$resume_session_id" ]] \
+  || fail 'exact resume did not map to Copilot --resume=ID argv'
+
+hint_output="$(
+  TRELLAGE_RESUME_PROFILE=/tmp/copilot-hve/profile.toml \
+  TRELLAGE_TEST_CREATE_SESSION_ID="$resume_session_id" \
+  COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
+    run_entry new --allow-all
+)"
+grep -Fqx 'Resume this conversation:' <<<"$hint_output" \
+  || fail 'Copilot exit did not print resume guidance'
+grep -Fqx \
+  "trellage resume --profile /tmp/copilot-hve/profile.toml $resume_session_id" \
+  <<<"$hint_output" \
+  || fail 'Copilot exit did not print exact Trellage resume command'
 
 status=0
 COPILOT_GITHUB_TOKEN='selected-token' TRELLAGE_TEST_COPILOT_EXIT=29 \

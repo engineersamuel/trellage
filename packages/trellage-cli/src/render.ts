@@ -183,6 +183,31 @@ ${renderOci(
 const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "claude") throw new Error("profile and lock harness kinds do not match")
+  if ((profile.harness.claude.mode ?? "hyperresearch") === "core") {
+    return `min_version = "2026.6.14"
+
+[tools]
+node = "22.17.0"
+"npm:@anthropic-ai/claude-code" = { version = ${quote(harness.version)}, npm_args = "--ignore-scripts=false" }
+
+${renderBootstrap(profile, options)}
+
+[dotfiles]
+"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
+"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-claude-entry")}
+"/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
+${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
+
+${renderOci(
+  profile,
+  lock,
+  options,
+  ['CLAUDE_CONFIG_DIR = "/home/agent/.claude"'],
+  ['"dev.trellage.harness.kind" = "claude"', `"dev.trellage.claude.version" = ${quote(harness.version)}`],
+  "/home/agent/.cache",
+)}`
+  }
   return `min_version = "2026.6.14"
 
 [tools]

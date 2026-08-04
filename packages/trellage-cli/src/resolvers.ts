@@ -87,7 +87,7 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
       const plugin_versions = yield* readCopilotMarketplace(cached.directory, request.marketplace, request.select)
       return { ...resolution, plugin_versions }
     }),
-  resolvePackages: ({ kind, selector, platform, packages, needsSkillsCli }) =>
+  resolvePackages: ({ kind, selector, platform, packages, needsSkillsCli, claudeMode }) =>
     Effect.gen(function* () {
       const runtime = []
       for (const name of packages) {
@@ -205,7 +205,11 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
                 integrity: "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4",
                 url: "oci://quay.io/skopeo/stable",
               },
-            ]
+            ].filter(
+              ({ name }) =>
+                claudeMode !== "core" ||
+                ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"].includes(name),
+            )
           : undefined
       return {
         harness,
@@ -221,7 +225,11 @@ export const productionResolvers = (xdgCacheHome: string): LockResolvers => ({
           ? {}
           : {
               artifacts,
-              python_lock_integrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
+              ...(claudeMode === "core"
+                ? {}
+                : {
+                    python_lock_integrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
+                  }),
             }),
       }
     }),

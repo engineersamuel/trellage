@@ -12,6 +12,7 @@ trellage validate /absolute/path/to/profile.toml
 trellage build --locked /absolute/path/to/profile.toml
 trellage -i
 trellage --profile /absolute/path/to/profile.toml
+trellage resume --profile /absolute/path/to/profile.toml SESSION_ID
 trellage resume --profile /absolute/path/to/profile.toml
 trellage doctor --profile /absolute/path/to/profile.toml
 trellage destroy --profile /absolute/path/to/profile.toml
