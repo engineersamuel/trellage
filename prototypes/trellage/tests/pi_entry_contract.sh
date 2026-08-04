@@ -30,13 +30,13 @@ mkdir -p \
   "$root/pi-seed/skills/semantic-compression" \
   "$root/pi-seed/skills/system-prompts" \
   "$root/pi-seed/skills/tool-prompt-optimization"
-chmod -R 777 "$root/home" "$root/output"
 printf 'stale-managed\n' >"$root/home/.omp/agent/.trellage-managed-skills"
 printf 'stale\n' >"$root/home/.omp/agent/skills/stale-managed/SKILL.md"
 printf '%s\n' semantic-compression system-prompts tool-prompt-optimization >"$root/pi-seed/managed-skills.txt"
 for skill in semantic-compression system-prompts tool-prompt-optimization; do
   printf '%s\n' "---" "name: $skill" "description: $skill fixture" "---" >"$root/pi-seed/skills/$skill/SKILL.md"
 done
+chmod -R 777 "$root/home" "$root/output"
 
 cat >"$root/fake-bin/omp" <<'FAKE_OMP'
 #!/usr/bin/env bash
