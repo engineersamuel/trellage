@@ -739,7 +739,7 @@ for qualification in \
   '`github-copilot` provider' \
   '`gpt-5.6-terra`' \
   'Prompt mode translates to OMP `--print`' \
-  'resume uses OMP `--resume`' \
+  'resume uses OMP `--continue`' \
   '`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`' \
   'forwarded only as `COPILOT_GITHUB_TOKEN`' \
   '`/home/agent/.omp/agent`' \
@@ -750,7 +750,7 @@ for qualification in \
 done
 
 for qualification in \
-  'requires Bash, Docker, Git, jq, and mise' \
+  'requires Bash, Docker, Git, `gh`, jq, and mise' \
   'existing `copilot-proxy-rs_default` network and reachable proxy service' \
   'performs a fresh locked image build' \
   'usually takes 5-10 minutes' \
@@ -760,6 +760,16 @@ for qualification in \
   'removes its temporary containers, volumes, bind directories, and installer directory' \
   'retains the built image, proxy, network, Herdr, repository worktrees, and unrelated resources'; do
   require_section_text '## Deterministic Smoke Verification' "$qualification"
+done
+
+for qualification in \
+  'Every profile image includes `gh`' \
+  'writable Git common directory' \
+  'GH_CONFIG_DIR' \
+  'GIT_CONFIG_GLOBAL' \
+  '`GH_TOKEN` is never passed to the agent process' \
+  'temporary configuration disappears when the container stops'; do
+  require_section_text '## GitHub CLI Delivery' "$qualification"
 done
 
 for qualification in \

@@ -342,6 +342,30 @@ while IFS=$'\t' read -r secret_target secret_source; do
   secret_environment+=("$secret_target" "$secret_source")
 done < <(jq -r '.secret_environment | to_entries[] | [.key, .value] | @tsv' <<<"$profile_metadata")
 
+github_cli_host="${GH_HOST:-github.com}"
+github_cli_token=
+github_cli_auth_source=login
+resolve_github_cli_auth() {
+  github_cli_token=
+  github_cli_auth_source=login
+  if [[ -n "$ambient_gh_token" ]]; then
+    github_cli_auth_source=GH_TOKEN
+    [[ "$mode" == doctor ]] || github_cli_token="$ambient_gh_token"
+  elif [[ -n "$ambient_github_token" ]]; then
+    github_cli_auth_source=GITHUB_TOKEN
+    [[ "$mode" == doctor ]] || github_cli_token="$ambient_github_token"
+  elif [[ -n "$ambient_copilot_github_token" ]]; then
+    github_cli_auth_source=COPILOT_GITHUB_TOKEN
+    [[ "$mode" == doctor ]] || github_cli_token="$ambient_copilot_github_token"
+  elif command -v gh >/dev/null 2>&1; then
+    github_cli_token="$(gh auth token --hostname "$github_cli_host" 2>/dev/null)" || github_cli_token=
+    [[ -z "$github_cli_token" ]] || github_cli_auth_source=gh
+  fi
+  if [[ "$mode" == doctor ]]; then
+    github_cli_token=
+  fi
+}
+
 copilot_token=
 copilot_auth_source=login
 resolve_copilot_auth() {
@@ -360,7 +384,7 @@ resolve_copilot_auth() {
   fi
   discard_ambient_github_auth
   if [[ "$copilot_auth_source" == login ]] && command -v gh >/dev/null 2>&1; then
-    host="${COPILOT_GH_HOST:-${GH_HOST:-github.com}}"
+    host="${COPILOT_GH_HOST:-$github_cli_host}"
     copilot_token="$(gh auth token --hostname "$host" 2>/dev/null)" || copilot_token=
     [[ -z "$copilot_token" ]] || copilot_auth_source=gh
   fi
@@ -368,11 +392,19 @@ resolve_copilot_auth() {
     copilot_token=
   fi
 }
+
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == shell || "$mode" == doctor ]]; then
+  resolve_github_cli_auth
+fi
 if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login \
   && ( "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ) ]]; then
   resolve_copilot_auth
 else
   discard_ambient_github_auth
+fi
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == shell ]]; then
+  [[ -n "$github_cli_token" ]] \
+    || fail "GitHub CLI authentication unavailable: set GH_TOKEN or GITHUB_TOKEN, or run gh auth login for $github_cli_host"
 fi
 
 claude_auth_source=proxy
@@ -430,6 +462,15 @@ worktree_from_git="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || fail 'run trellage from a Git worktree'
 [[ -d "$worktree_from_git" ]] || fail 'Git returned a missing worktree path'
 worktree="$(cd "$worktree_from_git" && pwd -P)"
+git_common_dir="$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null)" \
+  || fail 'cannot resolve Git common directory'
+if [[ "$git_common_dir" != /* ]]; then
+  git_common_dir="$worktree/$git_common_dir"
+fi
+git_common_dir="$(cd -P -- "$git_common_dir" >/dev/null 2>&1 && pwd -P)" \
+  || fail 'cannot resolve Git common directory'
+[[ -d "$git_common_dir" && ! -L "$git_common_dir" ]] \
+  || fail "unsafe Git common directory: $git_common_dir"
 worktree_name="$(basename "$worktree")"
 [[ "$worktree_name" != '.' && "$worktree_name" != '..' ]] \
   || fail 'worktree name is not a safe mount segment'
@@ -606,21 +647,33 @@ validate_state_volume() {
     || fail "refusing unrelated Docker volume name collision: $state_volume"
 }
 
-validate_container_mounts() {
-  local mounts expected_bind
+container_mount_state() {
+  local mounts expected_worktree expected_git count
   mounts="$(docker container inspect \
-    --format "$mounts_format" "$container_id" 2>/dev/null)" \
-    || fail "cannot inspect Docker container mounts: $container_name"
-  [[ "$(printf '%s\n' "$mounts" | awk 'NF { count++ } END { print count + 0 }')" -eq 2 ]] \
-    || fail "refusing Docker container with unexpected mounts: $container_name"
-  expected_bind=$'bind\t\t'"$worktree"$'\t'"$mount_path"$'\ttrue'
-  grep -Fqx "$expected_bind" <<<"$mounts" \
-    || fail "refusing Docker container with wrong worktree mount: $container_name"
+    --format "$mounts_format" "$container_id" 2>/dev/null)" || return 2
+  count="$(printf '%s\n' "$mounts" | awk 'NF { count++ } END { print count + 0 }')"
+  [[ "$count" == 2 || "$count" == 3 ]] || return 1
+  expected_worktree=$'bind\t\t'"$worktree"$'\t'"$mount_path"$'\ttrue'
+  grep -Fqx "$expected_worktree" <<<"$mounts" || return 1
   awk -F '\t' -v volume="$state_volume" '
     $1 == "volume" && $2 == volume && $3 != "" && $4 == "/home/agent" && $5 == "true" { found++ }
     END { exit(found == 1 ? 0 : 1) }
-  ' <<<"$mounts" \
-    || fail "refusing Docker container with wrong state volume mount: $container_name"
+  ' <<<"$mounts" || return 1
+  if [[ "$count" == 2 ]]; then
+    printf 'legacy\n'
+    return
+  fi
+  expected_git=$'bind\t\t'"$git_common_dir"$'\t'"$git_common_dir"$'\ttrue'
+  grep -Fqx "$expected_git" <<<"$mounts" || return 1
+  printf 'current\n'
+}
+
+validate_container_mounts() {
+  local state
+  state="$(container_mount_state)" \
+    || fail "refusing Docker container with unexpected mounts: $container_name"
+  [[ "$state" == current || "$state" == legacy ]] \
+    || fail "refusing Docker container with unexpected mounts: $container_name"
 }
 
 image="${TRELLAGE_IMAGE:-$profile_image}"
@@ -676,7 +729,29 @@ prepare_codex_secrets() {
       secret_args+=(--env "$secret_name")
     done < <(jq -r '.required_secrets[]' <<<"$profile_metadata")
   fi
+
 }
+github_cli_args=()
+prepare_github_cli_auth() {
+  local config_dir=/tmp/trellage-gh
+  local git_config="$config_dir/gitconfig"
+
+  github_cli_args=(--env "GH_CONFIG_DIR=$config_dir" --env "GIT_CONFIG_GLOBAL=$git_config")
+  printf '%s\n' "$github_cli_token" | docker container exec --interactive \
+    --user '10001:10001' \
+    --env "GH_CONFIG_DIR=$config_dir" \
+    --env "GIT_CONFIG_GLOBAL=$git_config" \
+    --env "GH_HOST=$github_cli_host" \
+    "$container_id" \
+    sh -ceu '
+      rm -rf -- "$GH_CONFIG_DIR"
+      install -d -m 700 "$GH_CONFIG_DIR"
+      gh auth login --hostname "$GH_HOST" --with-token
+      gh auth setup-git "$GH_HOST"
+      gh auth status --hostname "$GH_HOST" >/dev/null
+    ' || fail 'cannot configure ephemeral GitHub CLI authentication'
+}
+
 
 copilot_auth_args=()
 prepare_copilot_auth() {
@@ -843,6 +918,11 @@ if [[ "$mode" == doctor ]]; then
   fi
   printf 'environment path: %s\n' "$environment_path"
   printf 'resolved version: %s\n' "${resolved_version:-unresolved}"
+  case "$github_cli_auth_source" in
+    GH_TOKEN|GITHUB_TOKEN|COPILOT_GITHUB_TOKEN) printf 'GitHub CLI auth: environment\n' ;;
+    gh) printf 'GitHub CLI auth: gh\n' ;;
+    *) printf 'GitHub CLI auth: login required\n' ;;
+  esac
   if [[ "$auth_policy" == host-or-login ]]; then
     case "$copilot_auth_source" in
       COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN) printf 'host auth: environment\n' ;;
@@ -978,8 +1058,11 @@ if container_is_present; then
   volume_is_present || fail "Docker state volume is missing: $state_volume"
   validate_state_volume
   validate_container_mounts
-  if ! container_is_current; then
+  mount_state="$(container_mount_state)" \
+    || fail "refusing Docker container with unexpected mounts: $container_name"
+  if [[ "$mount_state" == legacy ]] || ! container_is_current; then
     remove_stale_container
+    container_id=
   else
     container_image_id="$(docker container inspect \
       --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
@@ -1024,6 +1107,7 @@ if [[ "$reuse_container" != true ]]; then
     --cpus 2 \
     --tmpfs "/tmp:rw,noexec,nosuid,nodev,size=${tmpfs_size},uid=10001,gid=10001" \
     --mount "type=bind,src=$worktree,dst=$mount_path" \
+    --mount "type=bind,src=$git_common_dir,dst=$git_common_dir" \
     --mount "type=volume,src=$state_volume,dst=/home/agent" \
     --network "$network" \
     --workdir "$mount_path" \
@@ -1037,6 +1121,9 @@ if [[ "$reuse_container" != true ]]; then
     fail "Docker created container from an unexpected image: $container_name"
   fi
   docker container start "$container_id" >/dev/null
+fi
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == shell ]]; then
+  prepare_github_cli_auth
 fi
 
 terminal_args=(--interactive --tty --env TERM=xterm-256color)
@@ -1092,6 +1179,7 @@ case "$mode" in
       prepare_claude_auth
     fi
     HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+      "${github_cli_args[@]}" \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1109,6 +1197,7 @@ case "$mode" in
     fi
     HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
       "${terminal_args[@]}" \
+      "${github_cli_args[@]}" \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1120,6 +1209,7 @@ case "$mode" in
   shell)
     exec docker container exec \
       "${terminal_args[@]}" \
+      "${github_cli_args[@]}" \
       --workdir "$mount_path" \
       "$container_id" \
       "$runtime_shell" "${runtime_shell_args[@]}" "$interactive_shell_command" --
@@ -1136,6 +1226,7 @@ if (( $# > 0 )); then
   fi
   HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
     "${terminal_args[@]}" \
+    "${github_cli_args[@]}" \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1154,6 +1245,7 @@ if [[ "$has_initial_prompt" == true ]]; then
   fi
   HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
     "${terminal_args[@]}" \
+    "${github_cli_args[@]}" \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1171,6 +1263,7 @@ elif [[ "$harness_kind" == claude ]]; then
 fi
 HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
   "${terminal_args[@]}" \
+  "${github_cli_args[@]}" \
   ${secret_args[@]+"${secret_args[@]}"} \
   ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
   ${claude_auth_args[@]+"${claude_auth_args[@]}"} \

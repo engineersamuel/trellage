@@ -43,6 +43,24 @@ grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$lock" \
 ! grep -Eq '(/[U]sers/|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-)' "$profile" "$lock" \
   || fail 'host, temporary, or build path is embedded in profile inputs'
 
+runtime_package_locked() {
+  local name="$1" version="$2" integrity="$3"
+  awk -v name="$name" -v version="$version" -v integrity="$integrity" '
+    /^\[\[packages\.runtime\]\]/ { if (package_name == name && package_version == version && package_integrity == integrity) found = 1; in_runtime = 1; package_name = package_version = package_integrity = ""; next }
+    in_runtime && /^\[/ {
+      if (package_name == name && package_version == version && package_integrity == integrity) found = 1
+      in_runtime = 0
+    }
+    in_runtime && $0 == "name = \"" name "\"" { package_name = name }
+    in_runtime && $0 == "version = \"" version "\"" { package_version = version }
+    in_runtime && $0 == "integrity = \"" integrity "\"" { package_integrity = integrity }
+    END { if (package_name == name && package_version == version && package_integrity == integrity) found = 1; exit(found ? 0 : 1) }
+  ' "$lock"
+}
+
+runtime_package_locked gh 2.23.0+dfsg1-1 sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12 \
+  || fail 'GitHub CLI runtime package is not locked'
+
 locked_value() {
   local section="$1"
   local key="$2"

@@ -784,7 +784,28 @@ describe("compileLock", () => {
     const profilePath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.toml", import.meta.url))
     const lockPath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.lock.toml", import.meta.url))
     const legacyProfileSource = await readFile(profilePath, "utf8")
-    const legacyLock = await Effect.runPromise(parseLock(await readFile(lockPath, "utf8")))
+    const currentLock = await Effect.runPromise(parseLock(await readFile(lockPath, "utf8")))
+    const currentSource = currentLock.sources[0]!
+    const legacyFiles = currentSource.files.map((file, index) =>
+      index === 0 && file.kind === "file" ? { ...file, executable: true as const } : file,
+    )
+    const legacyLock = await Effect.runPromise(
+      parseLock(
+        renderLock({
+          ...currentLock,
+          sources: [
+            {
+              ...currentSource,
+              files: legacyFiles,
+              integrity: treeIntegrity(
+                legacyFiles.map((file) => ({ path: file.path, sha256: "sha256" in file ? file.sha256 : "" })),
+              ),
+            },
+            ...currentLock.sources.slice(1),
+          ],
+        }),
+      ),
+    )
     const changedDocument = await Effect.runPromise(
       parseProfile(legacyProfileSource.replace('model = "gpt-5.5"', 'model = "gpt-5.6"'), profilePath),
     )

@@ -407,6 +407,7 @@ case "${1:-} ${2:-}" in
           printf 'volume\twrong-state-volume\t/var/lib/docker/volumes/wrong/_data\t/home/agent\ttrue\n'
         else
           printf 'bind\t\t%s\t%s\ttrue\n' "$worktree" "/mounts/$(basename "$worktree")"
+          printf 'bind\t\t%s\t%s\ttrue\n' "$worktree/.git" "$worktree/.git"
           printf 'volume\t%s\t/var/lib/docker/volumes/%s/_data\t/home/agent\ttrue\n' \
             "${FAKE_DOCKER_STATE_VOLUME:?}" "${FAKE_DOCKER_STATE_VOLUME:?}"
         fi

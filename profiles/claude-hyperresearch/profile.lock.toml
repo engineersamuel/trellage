@@ -1,6 +1,6 @@
 schema = 1
 source_date_epoch = 1784379906
-profile_hash = "sha256:6e748a4a192a5cee31e202ca55f63ccb92a3d904f16f488888875c47c038224f"
+profile_hash = "sha256:cac74bf878d468e3895d400c76365e1c87852a11a57dffb0bad26b5dbe6ac3da"
 
 [[sources]]
 kind = "plugin"
@@ -827,6 +827,11 @@ version = "3.6.0-3.1+deb12u1"
 integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
 
 [[packages.runtime]]
+name = "gh"
+version = "2.23.0+dfsg1-1"
+integrity = "sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12"
+
+[[packages.runtime]]
 name = "git"
 version = "1:2.39.5-0+deb12u3"
 integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
@@ -1012,4 +1017,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:3c0cdb51e206c3611bfee9283d36433a099b09ebe4f2bc9fdcb1b1addafd6cd4"
+final_digest = "sha256:fddb7b3368ccd21790b1bc76fe9c316deb0f1c8aba1a42ffaab5bb715f54dc2f"

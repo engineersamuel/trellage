@@ -32,6 +32,16 @@ Trellage compiles locked agent profiles and runs them in isolated Docker sandbox
 - `.agents` contains canonical cross-harness rules, hooks, and MCP configuration.
 - `.github` contains the GitHub Copilot instruction adapter and GitHub Actions workflow.
 
+## GitHub delivery
+
+- Every profile image MUST declare the `gh` runtime package.
+- Launch Trellage from a valid Git worktree.
+- Trellage mounts writable worktree and common Git metadata.
+- `gh` auth is ephemeral under the container `/tmp` tmpfs.
+- NEVER bake, persist, log, or mount host GitHub credentials.
+- Use `git` and `gh` only for explicit user-authorized delivery.
+- Verify scope, tests, PR state, and merge result before reporting delivery.
+
 ## Conventions
 
 - Use Effect for TypeScript application logic where practical.

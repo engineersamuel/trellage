@@ -1,6 +1,6 @@
 schema = 1
 source_date_epoch = 1784379906
-profile_hash = "sha256:0fd6890887e227e4c2c016134a775d4eb6314b4d4c523fe30580acf223033c8b"
+profile_hash = "sha256:1378fe9714846a146fd0c87c6fa036e976f5c4b592c7b57aa9dbe64811a029c5"
 
 [[sources]]
 kind = "plugin"
@@ -13069,10 +13069,10 @@ sha256 = "sha256:be565ec0c1edbae2f2cdc78e5da6bd896e13772b4a3ba1c8d36810904812837
 [packages.harness]
 kind = "copilot"
 selector = "latest"
-version = "1.0.75"
-integrity = "sha256:0911f12dd816f612d27c4a360d4f00b62d933845a98d6c913e8d7400a69c6809"
-url = "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz"
-size = 106111479
+version = "1.0.78"
+integrity = "sha256:e7d8dd1829d8096ade9876977c49a574b1851c730c71b4f2f5039b4d6ed39ba4"
+url = "https://github.com/github/copilot-cli/releases/download/v1.0.78/copilot-linux-arm64.tar.gz"
+size = 110628046
 
 [[packages.runtime]]
 name = "bash"
@@ -13095,6 +13095,11 @@ version = "3.6.0-3.1+deb12u1"
 integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
 
 [[packages.runtime]]
+name = "gh"
+version = "2.23.0+dfsg1-1"
+integrity = "sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12"
+
+[[packages.runtime]]
 name = "git"
 version = "1:2.39.5-0+deb12u3"
 integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
@@ -13112,4 +13117,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:4dac44470129441557f2afa022d2c272009783143995963e3f9cb0e0f4b54e95"
+final_digest = "sha256:a249f7302fb4f52f456b60333d2fcd515bd03cf3ec2aa3aab187a17552df8610"
