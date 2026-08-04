@@ -91,6 +91,16 @@ export CODEX_HOME="$runtime_home"
 metadata_dir="$runtime_home/.trellage-codex"
 thread_file="$metadata_dir/last-thread-id"
 worktree="$(pwd -P)"
+resume_profile="${TRELLAGE_RESUME_PROFILE-}"
+requested_thread_id="${TRELLAGE_RESUME_SESSION_ID-}"
+unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID
+
+print_resume_hint() {
+  local thread_id="$1"
+  [[ -n "$resume_profile" ]] || return 0
+  printf '\nResume this conversation:\n'
+  printf 'trellage resume --profile %q %q\n' "$resume_profile" "$thread_id"
+}
 
 mode="$1"
 case "$mode" in
@@ -124,7 +134,13 @@ umask 077
 mkdir -p "$metadata_dir"
 
 if [[ "$mode" == resume ]]; then
-  if [[ -f "$thread_file" ]]; then
+  if [[ -n "$requested_thread_id" ]]; then
+    valid_thread_id "$requested_thread_id" || missing_session
+    find_session_by_id "$worktree" "$requested_thread_id" || missing_session
+    thread_id="$requested_thread_id"
+    record_thread_id "$thread_id" \
+      || fail 'selected native session but could not record its thread ID' 74
+  elif [[ -f "$thread_file" ]]; then
     thread_id="$(sed -n '1p' "$thread_file")"
     valid_thread_id "$thread_id" || missing_session
     find_session_by_id "$worktree" "$thread_id" || missing_session
@@ -134,7 +150,12 @@ if [[ "$mode" == resume ]]; then
     record_thread_id "$thread_id" \
       || fail 'recovered native session but could not record its thread ID' 74
   fi
-  exec "$@" resume "$thread_id"
+  set +e
+  "$@" resume "$thread_id"
+  codex_status=$?
+  set -e
+  print_resume_hint "$thread_id"
+  exit "$codex_status"
 fi
 
 marker="$metadata_dir/.session-start.$$"
@@ -158,6 +179,9 @@ metadata_status=0
 if [[ -n "$thread_id" ]] && ! record_thread_id "$thread_id"; then
   printf 'trellage-codex-entry: native session exists but its thread ID could not be recorded\n' >&2
   metadata_status=74
+fi
+if [[ -n "$thread_id" ]]; then
+  print_resume_hint "$thread_id"
 fi
 
 if [[ "$codex_status" -ne 0 ]]; then

@@ -10,6 +10,7 @@ import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/claude-hyperresearch/profile.toml", import.meta.url))
+const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 
@@ -37,6 +38,11 @@ describe("authored Claude Hyperresearch profile", () => {
       runtime_entry: "trellage-claude-entry",
       default_network: "copilot-proxy-rs_default",
       auth_policy: "claude-explicit",
+      claude_mode: "hyperresearch",
+      claude_gateway: "http://copilot-proxy-rs:8080",
+      claude_opus_model: "claude-opus-5",
+      claude_sonnet_model: "claude-sonnet-5",
+      claude_haiku_model: "claude-haiku-4.5",
     })
     expect(JSON.stringify(metadata)).not.toMatch(/TOKEN|API_KEY|secret value/i)
   })
@@ -50,9 +56,15 @@ describe("authored Claude Hyperresearch profile", () => {
     expect(source).toContain("ambient_anthropic_api_key")
     expect(source).toContain("ambient_playwright_mcp_extension_token")
     expect(source).toContain("prepare_claude_auth")
-    expect(source).toContain("ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5")
-    expect(source).toContain("ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5")
-    expect(source).toContain("ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4.5")
+    expect(source).toContain("claude_gateway")
+    expect(source).toContain("claude_opus_model")
+    expect(source).toContain("claude_sonnet_model")
+    expect(source).toContain("claude_haiku_model")
+    expect(source).toContain('ANTHROPIC_BASE_URL="$claude_gateway"')
+    expect(source).toContain('ANTHROPIC_DEFAULT_OPUS_MODEL="$claude_opus_model"')
+    expect(source).toContain('ANTHROPIC_DEFAULT_SONNET_MODEL="$claude_sonnet_model"')
+    expect(source).toContain('ANTHROPIC_DEFAULT_HAIKU_MODEL="$claude_haiku_model"')
+    expect(source).not.toContain("ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5")
     expect(source.indexOf("docker container create")).toBeLessThan(source.lastIndexOf("prepare_claude_auth"))
   })
 
@@ -94,5 +106,28 @@ describe("authored Claude Hyperresearch profile", () => {
     expect(source).toContain('"hyperresearch-requirements.lock"')
     expect(source).toContain("claudeBrowserAgent: path.join(")
     expect(source).toContain('"hyperresearch-browser-fetcher.md"')
+  })
+})
+
+describe("authored standalone Claude Qwen profile", () => {
+  it("declares a source-free core profile without Python or browser tooling", async () => {
+    const source = await readFile(qwenProfilePath, "utf8")
+
+    expect(source).toContain('name = "claude-qwen-local"')
+    expect(source).toContain('mode = "core"')
+    expect(source).toContain('model = "qwen3.6-35b-a3b-local"')
+    expect(source).not.toMatch(/\[\[plugins\]\]|\[\[mcps\]\]|python|playwright|chromium|obscura/i)
+  })
+
+  it("publishes the exact local gateway and Qwen alias routes", async () => {
+    const metadata = await Effect.runPromise(profileMetadata(qwenProfilePath))
+
+    expect(metadata).toMatchObject({
+      claude_mode: "core",
+      claude_gateway: "http://copilot-proxy-rs:8080",
+      claude_opus_model: "qwen3.6-35b-a3b-local",
+      claude_sonnet_model: "qwen3.6-35b-a3b-local",
+      claude_haiku_model: "qwen3.6-35b-a3b-local",
+    })
   })
 })

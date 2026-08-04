@@ -76,6 +76,14 @@ describe("runtime support snapshots", () => {
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).not.toBe(original)
   })
 
+  it("captures only the Claude runtime entry in core mode", async () => {
+    const { paths } = await fixtures()
+
+    const core = await Effect.runPromise(createRuntimeSupportSnapshot("claude", paths, undefined, "core"))
+
+    expect(core.files.map((file) => file.role)).toEqual(["runtime-claude-entry"])
+  })
+
   it("keeps captured bytes immutable after source mutation", async () => {
     const { paths } = await fixtures()
     const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))

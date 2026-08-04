@@ -112,6 +112,29 @@ packages = ["bash", "fish", "git", "jq"]
 ${extra}
 `
 
+const coreClaudeProfile = (model = "qwen3.6-35b-a3b-local", extra = "") => `
+schema = 1
+name = "claude-qwen-local"
+description = "Claude Qwen local profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+mode = "core"
+default_auth = "proxy"
+model = "${model}"
+gateway = "http://copilot-proxy-rs:8080"
+opus_model = "${model}"
+sonnet_model = "${model}"
+haiku_model = "${model}"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "ca-certificates", "fish", "git", "jq"]
+${extra}
+`
+
 const decode = (source: string) => Effect.runPromise(parseProfile(source, "/profiles/example/profile.toml"))
 
 describe("parseProfile", () => {
@@ -262,6 +285,38 @@ select = ["example"]`),
 
   it("rejects wrong-harness sections on Pi", async () => {
     await expect(decode(piProfile('[harness.copilot]\nauth = "host-or-login"'))).rejects.toThrow(/copilot/i)
+  })
+
+  it("decodes an arbitrary non-empty Claude model in core mode with zero plugins", async () => {
+    const result = await decode(coreClaudeProfile("vendor model+custom"))
+
+    expect(isClaudeProfile(result.profile)).toBe(true)
+    if (!isClaudeProfile(result.profile)) throw new Error("expected Claude profile")
+    expect(result.profile.harness.claude).toEqual({
+      mode: "core",
+      default_auth: "proxy",
+      model: "vendor model+custom",
+      gateway: "http://copilot-proxy-rs:8080",
+      opus_model: "vendor model+custom",
+      sonnet_model: "vendor model+custom",
+      haiku_model: "vendor model+custom",
+    })
+    expect(result.profile.plugins).toEqual([])
+  })
+
+  it("rejects an empty Claude model", async () => {
+    await expect(decode(coreClaudeProfile(""))).rejects.toThrow(/model/i)
+  })
+
+  it("rejects managed plugins in Claude core mode", async () => {
+    await expect(
+      decode(
+        coreClaudeProfile(
+          "qwen3.6-35b-a3b-local",
+          `[[plugins]]\nadapter = "hyperresearch"\nrepository = "https://github.com/jordan-gibbs/hyperresearch.git"\nref = "main"\nselect = ["full"]`,
+        ),
+      ),
+    ).rejects.toThrow(/core.*plugins/i)
   })
 
   it.each([

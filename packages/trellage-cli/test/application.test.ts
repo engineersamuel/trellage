@@ -899,6 +899,48 @@ describe("transactional profile upgrade", () => {
 })
 
 describe("locked builder command", () => {
+  it("removes the builder image tool defaults before installing a Claude core lane", async () => {
+    const source = `
+schema = 1
+name = "claude-qwen-local"
+description = "Claude Qwen local profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+mode = "core"
+default_auth = "proxy"
+model = "qwen3.6-35b-a3b-local"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+`
+    const document = await Effect.runPromise(parseProfile(source, "/tmp/claude-qwen-local/profile.toml"))
+    const lock: ProfileLock = {
+      schema: 1,
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [],
+      packages: {
+        harness: {
+          kind: "claude",
+          selector: "2.1.218",
+          version: "2.1.218",
+          integrity: digest("c"),
+          url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
+          size: 1024,
+        },
+        runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+      },
+      image: { base: document.profile.image.base, base_digest: digest("b") },
+    }
+
+    expect(builderScript(document, lock)).toMatch(/^rm -f \/mise\/config\.toml; mise install --locked;/)
+  })
+
   it("installs and verifies the exact locked Copilot plugin before finalizing the seed", async () => {
     const document = await Effect.runPromise(parseProfile(copilotSource, "/tmp/copilot/profile.toml"))
     const script = builderScript(document, copilotLock(profileHash(document)))

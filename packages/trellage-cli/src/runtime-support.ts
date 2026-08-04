@@ -56,7 +56,10 @@ interface CapturedSnapshot {
 
 const capturedSnapshots = new WeakMap<RuntimeSupportSnapshot, CapturedSnapshot>()
 
-const selectedFiles = (harnessKind: Profile["harness"]["kind"]): ReadonlyArray<SelectedFile> => {
+const selectedFiles = (
+  harnessKind: Profile["harness"]["kind"],
+  claudeMode: "core" | "hyperresearch" = "hyperresearch",
+): ReadonlyArray<SelectedFile> => {
   switch (harnessKind) {
     case "codex":
       return [
@@ -86,14 +89,16 @@ const selectedFiles = (harnessKind: Profile["harness"]["kind"]): ReadonlyArray<S
         },
       ]
     case "claude":
+      const entry: SelectedFile = {
+        property: "claudeEntry",
+        role: "runtime-claude-entry",
+        destination: "/usr/local/bin/trellage-claude-entry",
+        buildContextPath: "runtime-claude-entry.sh",
+        mode: 0o755,
+      }
+      if (claudeMode === "core") return [entry]
       return [
-        {
-          property: "claudeEntry",
-          role: "runtime-claude-entry",
-          destination: "/usr/local/bin/trellage-claude-entry",
-          buildContextPath: "runtime-claude-entry.sh",
-          mode: 0o755,
-        },
+        entry,
         {
           property: "hyperresearchRequirements",
           role: "hyperresearch-requirements",
@@ -158,12 +163,13 @@ export const createRuntimeSupportSnapshot = (
   harnessKind: Profile["harness"]["kind"],
   paths: RuntimeSupportPaths,
   opener: RuntimeSupportOpener = open,
+  claudeMode: "core" | "hyperresearch" = "hyperresearch",
 ): Effect.Effect<RuntimeSupportSnapshot, RuntimeSupportError> =>
   Effect.gen(function* () {
     const label =
       harnessKind === "codex" ? "Codex" : harnessKind === "copilot" ? "Copilot" : harnessKind === "pi" ? "Pi" : "Claude"
     const files = yield* Effect.forEach(
-      selectedFiles(harnessKind),
+      selectedFiles(harnessKind, claudeMode),
       (selected) => {
         const candidate = paths[selected.property]
         const message = `${label} runtime support ${selected.property} must be a regular readable file: ${candidate ?? "missing"}`

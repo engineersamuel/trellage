@@ -146,6 +146,7 @@ export interface LockResolvers {
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
     readonly needsSkillsCli: boolean
+    readonly claudeMode?: "core" | "hyperresearch"
   }) => Effect.Effect<PackageLock, unknown>
   readonly resolveBase: (request: {
     readonly reference: string
@@ -306,23 +307,44 @@ const lockSemanticError = (
     }
   }
   if (harness.kind === "claude") {
-    if (!sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
+    const claudeMode = document.profile.harness.kind === "claude" ? document.profile.harness.claude.mode : undefined
+    if (claudeMode !== "core" && !sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
       return "Python dependency lock integrity is missing or invalid"
     }
-    for (const name of [
-      "node",
-      "python",
-      "claude-code-linux-arm64",
-      "playwright-mcp",
-      "playwright",
-      "playwright-core",
-      "chromium",
-      "chromium-headless-shell",
-      "obscura",
-      "builder-oci",
-      "skopeo-oci",
-    ]) {
+    if (claudeMode === "core" && current.packages.python_lock_integrity !== undefined) {
+      return "Claude core locks do not include Python dependency provenance"
+    }
+    const requiredArtifacts =
+      claudeMode === "core"
+        ? ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"]
+        : [
+            "node",
+            "python",
+            "claude-code-linux-arm64",
+            "playwright-mcp",
+            "playwright",
+            "playwright-core",
+            "chromium",
+            "chromium-headless-shell",
+            "obscura",
+            "builder-oci",
+            "skopeo-oci",
+          ]
+    for (const name of requiredArtifacts) {
       if (!artifactNames.has(name)) return `required Claude artifact is missing: ${name}`
+    }
+    if (claudeMode === "core") {
+      for (const name of [
+        "python",
+        "playwright-mcp",
+        "playwright",
+        "playwright-core",
+        "chromium",
+        "chromium-headless-shell",
+        "obscura",
+      ]) {
+        if (artifactNames.has(name)) return `Claude core lock contains forbidden artifact: ${name}`
+      }
     }
   } else if (current.packages.artifacts !== undefined || current.packages.python_lock_integrity !== undefined) {
     return "Claude artifact locks require the Claude harness"
@@ -520,6 +542,9 @@ export const compileLock = (
         platform: document.profile.image.platform,
         packages: document.profile.image.packages,
         needsSkillsCli: document.profile.harness.kind === "codex" && document.profile.skills.length > 0,
+        ...(document.profile.harness.kind === "claude"
+          ? { claudeMode: document.profile.harness.claude.mode ?? "hyperresearch" }
+          : {}),
       })
       .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause })))
     const base = yield* resolvers

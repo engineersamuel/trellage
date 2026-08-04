@@ -679,6 +679,63 @@ verify_seed
 [[ "$#" -gt 0 ]] || fail 'a mode is required'
 mode="$1"
 shift
+resume_profile="${TRELLAGE_RESUME_PROFILE-}"
+resume_session_id="${TRELLAGE_RESUME_SESSION_ID-}"
+unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID
+if [[ -n "$resume_session_id" \
+  && ! "$resume_session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+  fail 'resume session ID must be a UUID'
+fi
+
+valid_session_id() {
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
+}
+
+find_newest_session() {
+  local expected_cwd="$1"
+  local workspace_file stored_cwd session_id newest_file= newest_id=
+  while IFS= read -r -d '' workspace_file; do
+    [[ -f "$workspace_file" && ! -L "$workspace_file" ]] || continue
+    stored_cwd="$(sed -n 's/^cwd: //p' "$workspace_file" | head -n 1)"
+    case "$stored_cwd" in
+      "$expected_cwd"|"'$expected_cwd'"|"\"$expected_cwd\"") ;;
+      *) continue ;;
+    esac
+    session_id="$(basename "$(dirname "$workspace_file")")"
+    valid_session_id "$session_id" || continue
+    if [[ -z "$newest_file" || "$workspace_file" -nt "$newest_file" \
+      || ( ! "$newest_file" -nt "$workspace_file" && "$workspace_file" > "$newest_file" ) ]]; then
+      newest_file="$workspace_file"
+      newest_id="$session_id"
+    fi
+  done < <(find "$runtime_home/session-state" -type f -name workspace.yaml -print0 2>/dev/null)
+  [[ -n "$newest_id" ]] || return 1
+  printf '%s\n' "$newest_id"
+}
+
+print_resume_hint() {
+  local session_id="$1"
+  [[ -n "$resume_profile" ]] || return 0
+  printf '\nResume this conversation:\n'
+  printf 'trellage resume --profile %q %q\n' "$resume_profile" "$session_id"
+}
+
+run_interactive_copilot() {
+  local completed_session_id= status
+  set +e
+  copilot "$@"
+  status=$?
+  set -e
+  if [[ -n "$resume_session_id" ]]; then
+    completed_session_id="$resume_session_id"
+  else
+    completed_session_id="$(find_newest_session "$(pwd -P)" || true)"
+  fi
+  if [[ -n "$completed_session_id" ]]; then
+    print_resume_hint "$completed_session_id"
+  fi
+  exit "$status"
+}
 harness_args=()
 while (( $# > 0 )) && [[ "$1" != -- ]]; do
   harness_args+=("$1")
@@ -717,14 +774,17 @@ case "$mode" in
     if [[ "$read_only_probe" != true && -n "$inherited_copilot_github_token" ]]; then
       export COPILOT_GITHUB_TOKEN="$inherited_copilot_github_token"
     fi
-    if (( $# > 0 )); then exec copilot "${harness_args[@]}" -i "$prompt"; fi
-    exec copilot "${harness_args[@]}"
+    if (( $# > 0 )); then run_interactive_copilot "${harness_args[@]}" -i "$prompt"; fi
+    run_interactive_copilot "${harness_args[@]}"
     ;;
   resume)
     if [[ -n "$inherited_copilot_github_token" ]]; then
       export COPILOT_GITHUB_TOKEN="$inherited_copilot_github_token"
     fi
-    exec copilot "${harness_args[@]}" --continue
+    if [[ -n "$resume_session_id" ]]; then
+      run_interactive_copilot "${harness_args[@]}" "--resume=$resume_session_id"
+    fi
+    run_interactive_copilot "${harness_args[@]}" --continue
     ;;
   prompt)
     if [[ -n "$inherited_copilot_github_token" ]]; then

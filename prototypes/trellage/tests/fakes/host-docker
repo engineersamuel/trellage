@@ -27,6 +27,18 @@ printf 'ENV\tCOPILOT_GITHUB_TOKEN=%s\n' "$copilot_token_state" >>"$log"
 printf 'ENV\tGH_TOKEN=%s\n' "${GH_TOKEN:+present}" >>"$log"
 printf 'ENV\tGITHUB_TOKEN=%s\n' "${GITHUB_TOKEN:+present}" >>"$log"
 printf 'ENV\tPLAYWRIGHT_MCP_EXTENSION_TOKEN=%s\n' "${PLAYWRIGHT_MCP_EXTENSION_TOKEN:+present}" >>"$log"
+claude_routing_state=
+if [[ -n "${FAKE_DOCKER_EXPECT_CLAUDE_GATEWAY:-}" ]]; then
+  claude_routing_state=present
+  if [[ "${TRELLAGE_CLAUDE_MODE:-}" == "${FAKE_DOCKER_EXPECT_CLAUDE_MODE:-}" \
+    && "${ANTHROPIC_BASE_URL:-}" == "$FAKE_DOCKER_EXPECT_CLAUDE_GATEWAY" \
+    && "${ANTHROPIC_DEFAULT_OPUS_MODEL:-}" == "${FAKE_DOCKER_EXPECT_CLAUDE_OPUS_MODEL:-}" \
+    && "${ANTHROPIC_DEFAULT_SONNET_MODEL:-}" == "${FAKE_DOCKER_EXPECT_CLAUDE_SONNET_MODEL:-}" \
+    && "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" == "${FAKE_DOCKER_EXPECT_CLAUDE_HAIKU_MODEL:-}" ]]; then
+    claude_routing_state=matched
+  fi
+fi
+printf 'ENV\tCLAUDE_PROXY_ROUTING=%s\n' "$claude_routing_state" >>"$log"
 for internal_name in \
   ambient_copilot_github_token ambient_gh_token ambient_github_token \
   copilot_token secret_value secret_source_values; do

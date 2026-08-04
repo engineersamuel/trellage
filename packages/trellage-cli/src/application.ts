@@ -79,7 +79,11 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     return `mise install --locked ${tool}; codex_dir=\"$(mise where ${tool})\"; rm -f \"$codex_dir/metadata.json\"; ${build}`
   }
   if (harness.kind === "claude") {
-    return `mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
+    const isolateCoreTools =
+      document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
+        ? "rm -f /mise/config.toml; "
+        : ""
+    return `${isolateCoreTools}mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
   }
   if (harness.kind === "pi") {
     return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
@@ -500,10 +504,19 @@ const defaultRuntimeSupport: RuntimeSupport = {
 }
 
 const defaultCacheHome = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache")
+const claudeRuntimeMode = (document: ProfileDocument): "core" | "hyperresearch" =>
+  document.profile.harness.kind === "claude"
+    ? (document.profile.harness.claude.mode ?? "hyperresearch")
+    : "hyperresearch"
 
 export const LiveUpgradeServices: UpgradeServices = {
   buildCandidate: (document, lock, image) =>
-    createRuntimeSupportSnapshot(document.profile.harness.kind, defaultRuntimeSupport).pipe(
+    createRuntimeSupportSnapshot(
+      document.profile.harness.kind,
+      defaultRuntimeSupport,
+      undefined,
+      claudeRuntimeMode(document),
+    ).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       Effect.flatMap((snapshot) => buildCandidateImage(document, lock, image, defaultCacheHome, snapshot)),
     ),
@@ -614,9 +627,12 @@ export const upgradeProfile = (
 ): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(document.profile.harness.kind, runtimeSupport).pipe(
-      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-    )
+    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
+      document.profile.harness.kind,
+      runtimeSupport,
+      undefined,
+      claudeRuntimeMode(document),
+    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     const canonical = `trellage-profile-${document.profile.name}:locked`
     const candidate = `trellage-profile-${document.profile.name}:candidate-${process.pid}`
     const backup = `trellage-profile-${document.profile.name}:backup-${process.pid}`
@@ -751,9 +767,12 @@ export const buildProfile = (
 ): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(document.profile.harness.kind, runtimeSupport).pipe(
-      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-    )
+    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
+      document.profile.harness.kind,
+      runtimeSupport,
+      undefined,
+      claudeRuntimeMode(document),
+    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     const current = yield* loadLock(profilePath)
     let lock: ProfileLock
     if (locked) {
@@ -821,12 +840,16 @@ export const profileMetadata = (
     const hash = profileHash(document)
     const ready = lockIsReady(document, lock)
     const harnessKind = document.profile.harness.kind
-    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(harnessKind, defaultRuntimeSupport).pipe(
-      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-    )
+    const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
+      harnessKind,
+      defaultRuntimeSupport,
+      undefined,
+      claudeRuntimeMode(document),
+    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     const isCopilot = harnessKind === "copilot"
     const isClaude = harnessKind === "claude"
     const isPi = harnessKind === "pi"
+    const claude = document.profile.harness.kind === "claude" ? document.profile.harness.claude : undefined
     const secretEnvironment: Record<string, string> = Object.fromEntries(
       document.profile.secrets.required.map((name) => [name, name]),
     )
@@ -867,5 +890,14 @@ export const profileMetadata = (
             ? "claude-explicit"
             : "profile-secrets",
       resolved_version: ready && lock?.packages.harness.kind === harnessKind ? lock.packages.harness.version : null,
+      ...(claude === undefined
+        ? {}
+        : {
+            claude_mode: claude.mode ?? "hyperresearch",
+            claude_gateway: claude.gateway,
+            claude_opus_model: claude.opus_model ?? "claude-opus-5",
+            claude_sonnet_model: claude.sonnet_model ?? "claude-sonnet-5",
+            claude_haiku_model: claude.haiku_model ?? "claude-haiku-4.5",
+          }),
     }
   })

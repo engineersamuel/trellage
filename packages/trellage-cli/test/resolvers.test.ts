@@ -279,6 +279,27 @@ describe("production package resolutions", () => {
     expect(mocks.piReleaseRequests).toEqual([{ selector: "latest", platform: "linux/arm64" }])
   })
 
+  it("locks only the Claude core toolchain and build provenance in core mode", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache").resolvePackages({
+        kind: "claude",
+        selector: "2.1.218",
+        platform: "linux/arm64",
+        packages: ["bash", "ca-certificates", "fish", "git", "jq"],
+        needsSkillsCli: false,
+        claudeMode: "core",
+      }),
+    )
+
+    expect(result.artifacts?.map((artifact) => artifact.name)).toEqual([
+      "node",
+      "claude-code-linux-arm64",
+      "builder-oci",
+      "skopeo-oci",
+    ])
+    expect(result.python_lock_integrity).toBeUndefined()
+  })
+
   it.each(["constructor", "toString", "__proto__"])("rejects prototype runtime package key %j", async (name) => {
     await expect(
       Effect.runPromise(
