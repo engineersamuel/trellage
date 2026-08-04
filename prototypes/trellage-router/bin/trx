@@ -193,61 +193,25 @@ read_inventory() {
   printf '%s\n' "$output"
 }
 
-read_inventories() {
-  local launcher="$1"
-  local harness="$2"
-  local executable="$3"
-  local catalog_json="$4"
-  local profile
-  local inventories=()
-
-  while IFS= read -r profile; do
-    inventories+=("$(read_inventory "$launcher" "$harness" "$executable" "$profile")")
-  done < <(jq -r '.profiles[].name' <<<"$catalog_json")
-  printf '%s\n' "${inventories[@]}" | jq -cs '.'
-}
 
 build_choices() {
   jq -cn \
     --argjson cpxCatalog "$1" \
-    --argjson cpxInventory "$2" \
-    --argjson cdxCatalog "$3" \
-    --argjson cdxInventory "$4" \
-    --argjson grxCatalog "$5" \
-    --argjson grxInventory "$6" '
-    def counted($label; $items):
-      ($items | length) as $count
-      | $label + " " + ($count | tostring)
-        + (if $count == 0 then "" else ": " + ($items | join(", ")) end);
-    def count_or_unavailable($label; $count):
-      $label + " " + (if $count == null then "unavailable" else ($count | tostring) end);
-    def plugin_label:
-      .name + " " + .version;
-    def pair($catalog; $inventories):
-      $catalog.profiles[]
-      | . as $profile
-      | ($inventories | map(select(.profile == $profile.name))) as $matches
-      | if ($matches | length) != 1 then error("inventory/profile mismatch") else
-          ($matches[0]) as $inventory
-          | {
-              id: ($catalog.launcher + ":" + $profile.name),
-              label: ($catalog.harness + " / " + $profile.name),
-              description: $profile.description,
-              details: (
-                "Readiness: " + $inventory.readiness
-                + "; " + counted("installed plugins"; [$inventory.plugins[] | plugin_label])
-                + "; " + count_or_unavailable("package skills"; $inventory.skills.packageCount)
-                + "; " + count_or_unavailable("CLI-visible entries"; $inventory.skills.visibleCount)
-                + "; " + counted("MCPs"; $inventory.mcps)
-              )
-            }
-        end;
+    --argjson cdxCatalog "$2" \
+    --argjson grxCatalog "$3" '
+    def pair($catalog):
+      $catalog.profiles[] | {
+        id: ($catalog.launcher + ":" + .name),
+        label: ($catalog.harness + " / " + .name),
+        description,
+        details: "Readiness and installed inventory are checked after selection."
+      };
     {
       prompt: "Select a Trellage harness/profile",
       choices: [
-        pair($cpxCatalog; $cpxInventory),
-        pair($cdxCatalog; $cdxInventory),
-        pair($grxCatalog; $grxInventory)
+        pair($cpxCatalog),
+        pair($cdxCatalog),
+        pair($grxCatalog)
       ]
     }
   '
@@ -301,23 +265,7 @@ grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-pr
 cpx_catalog="$(read_catalog cpx copilot "$cpx")"
 cdx_catalog="$(read_catalog cdx codex "$cdx")"
 grx_catalog="$(read_catalog grx grok "$grx")"
-exec 3< <(read_inventories cpx copilot "$cpx" "$cpx_catalog")
-exec 4< <(read_inventories cdx codex "$cdx" "$cdx_catalog")
-exec 5< <(read_inventories grx grok "$grx" "$grx_catalog")
-cpx_inventory="$(cat <&3)"
-cdx_inventory="$(cat <&4)"
-grx_inventory="$(cat <&5)"
-exec 3<&- 4<&- 5<&-
-jq -e 'type == "array"' <<<"$cpx_inventory" >/dev/null \
-  || die 'could not read cpx inventories'
-jq -e 'type == "array"' <<<"$cdx_inventory" >/dev/null \
-  || die 'could not read cdx inventories'
-jq -e 'type == "array"' <<<"$grx_inventory" >/dev/null \
-  || die 'could not read grx inventories'
-choices="$(build_choices \
-  "$cpx_catalog" "$cpx_inventory" \
-  "$cdx_catalog" "$cdx_inventory" \
-  "$grx_catalog" "$grx_inventory")" \
+choices="$(build_choices "$cpx_catalog" "$cdx_catalog" "$grx_catalog")" \
   || die 'could not build profile choices'
 
 selection=''
@@ -331,12 +279,27 @@ fi
 launcher="${selection%%:*}"
 profile="${selection#*:}"
 case "$launcher" in
-  cpx) selected_launcher="$cpx" ;;
-  cdx) selected_launcher="$cdx" ;;
-  grx) selected_launcher="$grx" ;;
+  cpx)
+    selected_launcher="$cpx"
+    selected_catalog="$cpx_catalog"
+    selected_harness=copilot
+    ;;
+  cdx)
+    selected_launcher="$cdx"
+    selected_catalog="$cdx_catalog"
+    selected_harness=codex
+    ;;
+  grx)
+    selected_launcher="$grx"
+    selected_catalog="$grx_catalog"
+    selected_harness=grok
+    ;;
   *) die 'terminal picker returned an invalid launcher' ;;
 esac
 [[ "$profile" != "$selection" && "$profile" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
   || die 'terminal picker returned an invalid profile'
-
+jq -e --arg profile "$profile" '.profiles | map(.name) | index($profile) != null' \
+  <<<"$selected_catalog" >/dev/null \
+  || die 'terminal picker returned an unknown profile'
+read_inventory "$launcher" "$selected_harness" "$selected_launcher" "$profile" >/dev/null
 exec "$selected_launcher" "$profile" "$@"

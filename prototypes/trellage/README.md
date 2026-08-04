@@ -6,7 +6,7 @@ Trellage runs coding harnesses inside locked, profile-compiled Docker sandboxes 
 
 ## Prerequisites and Setup
 
-Use an Apple Silicon host with Git, Docker, `jq`, and mise. Codex and Claude profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi profiles use Docker `bridge`. From `prototypes/trellage`:
+Use an Apple Silicon host with Git, Docker, `gh`, `jq`, and mise. Authenticate `gh` with a repository-scoped credential before launching a profile. Codex and Claude profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi profiles use Docker `bridge`. From `prototypes/trellage`:
 
 ```bash
 mise trust
@@ -35,7 +35,7 @@ Only an explicit update refreshes unchanged Git refs:
 ./trellage lock --update ../../profiles/codex-superpowers/profile.toml
 ```
 
-Profiles and adjacent locks are committed. Resolved source content is integrity-checked under the Trellage cache beneath `$XDG_CACHE_HOME` and is safe to delete. Credentials remain host-side and are never copied into build inputs.
+Profiles and adjacent locks are committed. Resolved source content is integrity-checked under the Trellage cache beneath `$XDG_CACHE_HOME` and is safe to delete. Credentials never enter build inputs.
 
 ## Build
 
@@ -47,7 +47,7 @@ Build the locked Linux ARM64 OCI image, verify its manifest digest, and import i
 
 ## Deterministic Smoke Verification
 
-The deterministic smoke verification requires Bash, Docker, Git, jq, and mise. Docker must provide the existing `copilot-proxy-rs_default` network and reachable proxy service. Run it from this directory:
+The deterministic smoke verification requires Bash, Docker, Git, `gh`, jq, and mise. Docker must provide the existing `copilot-proxy-rs_default` network and reachable proxy service. Run it from this directory:
 
 ```bash
 mise run smoke
@@ -214,6 +214,14 @@ synchronization fills only missing onboarding fields, preserving later user choi
 and unrelated Claude state. The current mounted worktree is pre-approved as trusted
 inside the isolated container.
 
+## GitHub CLI Delivery
+
+Every profile image includes `gh`. Launching or opening a recovery shell requires host GitHub authentication from `GH_TOKEN`, `GITHUB_TOKEN`, `COPILOT_GITHUB_TOKEN`, or `gh auth token`.
+
+Trellage mounts the current worktree and its writable Git common directory. This preserves linked-worktree metadata, so agents can commit, push, create pull requests, and enable auto-merge when the host credential permits it.
+
+For each active session, Trellage configures `gh` in the container `/tmp` tmpfs and passes only `GH_CONFIG_DIR` and `GIT_CONFIG_GLOBAL` to the agent. `GH_TOKEN` is never passed to the agent process, written to the state volume, baked into images, or logged. The temporary configuration disappears when the container stops.
+
 ## Copilot with HVE Core
 
 Bare `trellage` remains the Codex profile. The Copilot profile runs GitHub Copilot CLI. HVE installs natively as `hve-core@hve-core`. This profile selects HVE Core, not HVE Core All: HVE Core and HVE Core All are different products, and HVE Core All is not installed.
@@ -262,9 +270,10 @@ OMP session; resume uses OMP `--continue` for the current worktree. All modes fo
 Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
 `GITHUB_TOKEN`, then `gh auth token`, then OMP's native interactive login. A
 resolved host token is forwarded only as `COPILOT_GITHUB_TOKEN` to the final
-OMP process. If no host token exists, OMP login and session state persist in
-the isolated profile/worktree state volume at `/home/agent/.omp/agent`. No host
-`.omp`, `.copilot`, or GitHub CLI configuration directory is mounted or baked.
+OMP process. The ephemeral `gh` configuration is separate from OMP state. If
+no host token exists, OMP login and session state persist in the isolated
+profile/worktree state volume at `/home/agent/.omp/agent`. No host `.omp`,
+`.copilot`, or GitHub CLI configuration directory is mounted or baked.
 
 The profile uses Docker `bridge` and does not require `copilot-proxy-rs`.
 `profile.toml` pins the same release for the OMP executable and native skills.
@@ -308,9 +317,9 @@ Dry-run changes nothing. Real uninstall removes only the exact owned `trellage` 
 
 ## Safety Boundary
 
-The container is non-root, read-only, capability-free, and resource-limited. The only host-backed mounts are the current worktree read-write and its owned `/home/agent` state volume. The container also receives a private `/tmp` tmpfs with `noexec`, `nosuid`, and `nodev`. Host-visible Docker exec uses the supported `HERDR_AGENT=codex` hint. `HERDR_AGENT=codex is host-only wrapper metadata`. The hint is not passed into the container. Herdr is not installed or mounted in the container. No bridge, socket, or plugin was added for Herdr.
+The container is non-root, read-only, capability-free, and resource-limited. The only host-backed mounts are the current worktree, its writable Git common directory, and its owned `/home/agent` state volume. The container also receives a private `/tmp` tmpfs with `noexec`, `nosuid`, and `nodev`; GitHub CLI credentials exist only in that tmpfs. Host-visible Docker exec uses the supported `HERDR_AGENT=codex` hint. `HERDR_AGENT=codex is host-only wrapper metadata`. The hint is not passed into the container. Herdr is not installed or mounted in the container. No bridge, socket, or plugin was added for Herdr.
 
-Resource names include the profile, normalized worktree basename, and a canonical-path hash. Ownership labels and exact mounts are revalidated before stop, attach, or removal; collisions with unrelated Docker resources fail closed. Rebuilt images replace stale containers while retaining the profile/worktree state volume.
+Resource names include the profile, normalized worktree basename, and a canonical-path hash. Ownership labels and exact mounts are revalidated before stop, attach, or removal; collisions with unrelated Docker resources fail closed. Legacy managed containers without the Git common-directory mount are recreated while preserving the profile/worktree state volume. Rebuilt images replace stale containers while retaining the profile/worktree state volume.
 
 ## Observations
 

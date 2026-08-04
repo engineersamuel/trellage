@@ -155,10 +155,12 @@ run_tty() {
   local docker_log="$2"
   local git_root="$3"
   shift 3
+  mkdir -p "$git_root/.git"
   (
     cd "$work_dir"
     script -q -e /dev/null env \
       PATH="$fake_bin:$PATH" \
+      GH_TOKEN=host-contract-gh-token \
       FAKE_DOCKER_LOG="$docker_log" \
       FAKE_GIT_LOG="$test_root/git.log" \
       FAKE_GIT_ROOT="$git_root" \
@@ -321,9 +323,11 @@ run_non_tty() {
   local docker_log="$2"
   local git_root="$3"
   shift 3
+  mkdir -p "$git_root/.git"
   (
     cd "$work_dir"
     env \
+      GH_TOKEN=host-contract-gh-token \
       PATH="$fake_bin:$PATH" \
       FAKE_DOCKER_LOG="$docker_log" \
       FAKE_GIT_LOG="$test_root/git.log" \
@@ -367,6 +371,7 @@ test_new_container_from_subdirectory() {
   assert_arg "$docker_log" '2g'
   assert_arg "$docker_log" '--cpus'
   assert_arg "$docker_log" '2'
+  assert_arg "$docker_log" "type=bind,src=$worktree/.git,dst=$worktree/.git"
   assert_arg "$docker_log" '--tmpfs'
   assert_arg "$docker_log" '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001'
   assert_arg "$docker_log" "type=bind,src=$worktree,dst=$mount_path"
@@ -376,11 +381,16 @@ test_new_container_from_subdirectory() {
   assert_arg "$docker_log" "$mount_path"
   assert_arg "$docker_log" 'fish'
   assert_arg "$docker_log" '-Nlc'
-  assert_arg "$docker_log" 'set prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry new codex $argv -- $prompt'
+  [[ "$(grep -Fxc $'ARG\t--mount' "$docker_log")" -eq 3 ]] \
+    || fail 'container must receive worktree, Git metadata, and state mounts'
   assert_arg "$docker_log" 'fix $(touch /tmp/not-executed) with spaces'
+  assert_docker_env "$docker_log" 'GH_CONFIG_DIR=/tmp/trellage-gh'
+  assert_docker_env "$docker_log" 'GIT_CONFIG_GLOBAL=/tmp/trellage-gh/gitconfig'
+  grep -Fq 'gh auth login --hostname "$GH_HOST" --with-token' "$docker_log" \
+    || fail 'GitHub CLI session was not configured from standard input'
+  ! grep -Fq $'ARG\tGH_TOKEN=host-contract-gh-token' "$docker_log" \
+    || fail 'GitHub token was passed directly to the agent container'
 
-  [[ "$(grep -Fxc $'ARG\t--mount' "$docker_log")" -eq 2 ]] \
-    || fail 'container must receive exactly the worktree and state mounts'
   [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 8 ]] \
     || fail 'Codex container and volume must receive exact ownership and container integrity labels'
   assert_arg "$docker_log" 'dev.trellage.profile=codex-superpowers'

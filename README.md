@@ -85,7 +85,6 @@ neither variable is required or stored in the profile or lock.
 Trellage also completes Claude Code's first-run onboarding with the dark theme. Later
 theme changes and unrelated Claude user state are preserved. The current mounted
 worktree is pre-approved as trusted inside the isolated container.
-
 ## Automatic Varlock Environment Loading
 
 Trellage bundles Varlock and uses it automatically for new, prompt, and resume launches when a user environment source exists. Always invoke `trellage` directly:
@@ -237,16 +236,15 @@ trx -i
 trx -i --model gpt-5
 ```
 
-`trx` reads the launchers' declared catalogs and read-only installed inventory.
-Rows show only `harness / profile`; the highlighted detail pane shows readiness,
-installed plugin names/versions, exact selected-package `SKILL.md` count,
-broader CLI-visible entry count, and enabled MCP names/count. Package counts
-come only from launcher-validated selected plugin roots or cache paths;
-`visibleCount` preserves each native CLI's broader inventory semantics. `trx`
-requires a TTY; Escape or Ctrl-C returns `130`. It does not set up, repair,
-update, call a model, use the network, or mutate profile state. Native profiles
-run directly on the host and are
-state-isolation conveniences, not security boundaries.
+`trx` reads the launchers' declared catalogs before opening the picker, so rows
+show only `harness / profile` and the detail pane shows the catalog description.
+After selection, it validates that profile's read-only installed inventory before
+launching. Package counts come only from launcher-validated selected plugin roots
+or cache paths; `visibleCount` preserves each native CLI's broader inventory
+semantics. `trx` requires a TTY; Escape or Ctrl-C returns `130`. It does not set
+up, repair, update, call a model, use the network, or mutate profile state.
+Native profiles run directly on the host and are state-isolation conveniences,
+not security boundaries.
 
 ## Generic Evaluation Harness
 

@@ -14,5 +14,12 @@ for internal_name in \
 done
 printf 'ARG\t%s\n' "$@" >>"$FAKE_GIT_LOG"
 
-[[ "$#" -eq 2 && "$1" == "rev-parse" && "$2" == "--show-toplevel" ]] || exit 64
-printf '%s\n' "${FAKE_GIT_ROOT:?}"
+if [[ "$#" -eq 2 && "$1" == rev-parse && "$2" == --show-toplevel ]]; then
+  printf '%s\n' "${FAKE_GIT_ROOT:?}"
+  exit 0
+fi
+if [[ "$#" -eq 4 && "$1" == -C && "$3" == rev-parse && "$4" == --git-common-dir ]]; then
+  printf '%s\n' "${FAKE_GIT_COMMON_DIR:-${FAKE_GIT_ROOT:?}/.git}"
+  exit 0
+fi
+exit 64

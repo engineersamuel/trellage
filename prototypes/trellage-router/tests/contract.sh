@@ -7,6 +7,7 @@ fixture_home="$fixture_root/home"
 fixture_bin="$fixture_home/.local/bin"
 runtime_parent="$fixture_home/.local/share/trellage"
 argument_log="$fixture_root/arguments.bin"
+inventory_log="$fixture_root/inventory.log"
 
 cleanup() {
   if [[ "${TRX_KEEP_FIXTURE-}" == 1 ]]; then
@@ -77,6 +78,9 @@ if [[ "${1-} ${2-}" == 'list --json' ]]; then
 fi
 if [[ "${1-}" == inventory && "${3-}" == --json ]]; then
   launcher="$(basename "$0")"
+  if [[ -n "${TRX_INVENTORY_LOG-}" ]]; then
+    printf '%s:%s\n' "$launcher" "$2" >>"$TRX_INVENTORY_LOG"
+  fi
   if [[ "${TRX_MALFORMED_INVENTORY_LAUNCHER-}" == "$launcher" ]]; then
     printf '%s\n' '{"schemaVersion":1,"readiness":"healthy"}'
     exit 0
@@ -150,6 +154,7 @@ writeFileSync(process.env.TRX_PICKER_INPUT, readFileSync(0))
 process.stdout.write("cpx:cpx-p\n")
 EOF
 TRX_ARGUMENT_LOG="$argument_log" \
+  TRX_INVENTORY_LOG="$inventory_log" \
   TRX_PICKER_INPUT="$fixture_root/picker-input.json" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/select.out" \
   '\r' '' "$fixture_bin/trx" --interactive \
@@ -159,14 +164,12 @@ jq -e '
   .choices[0]
   | .label == "copilot / cpx-p"
     and (.description | length == 1200)
-    and (.details
-      | contains("Readiness: healthy; installed plugins 1: cpx-plug 1.2.3")
-        and contains("package skills 2")
-        and contains("CLI-visible entries 4")
-        and contains("MCPs 2: docs, files"))
+    and (.details == "Readiness and installed inventory are checked after selection.")
     and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
 ' "$fixture_root/picker-input.json" >/dev/null \
-  || fail 'router choice omitted concise label, description, or installed inventory'
+  || fail 'router choice omitted concise catalog data or deferred inventory status'
+[[ "$(<"$inventory_log")" == 'cpx:cpx-p' ]] \
+  || fail 'router read inventory before selection or for an unselected profile'
 mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
 python3 - "$argument_log" <<'PY' || fail 'arguments were not forwarded unchanged'
 import pathlib
@@ -214,7 +217,7 @@ mv "$fixture_root/cdx.catalog" "$runtime_parent/cdx/catalog.json"
 status=0
 TRX_MALFORMED_INVENTORY_LAUNCHER=cdx \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/invalid-inventory.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\x1b[B\r' '' "$fixture_bin/trx" -i || status=$?
 [[ "$status" == 1 ]] || fail "invalid inventory exited $status instead of 1"
 assert_contains 'invalid inventory from cdx for cdx-p' "$fixture_root/invalid-inventory.out"
 

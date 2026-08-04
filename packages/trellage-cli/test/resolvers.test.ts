@@ -107,7 +107,7 @@ describe("production package resolutions", () => {
         kind: "codex",
         selector: "0.144.6",
         platform: "linux/arm64",
-        packages: ["bash", "jq"],
+        packages: ["bash", "gh", "jq"],
         needsSkillsCli: true,
       }),
     )
@@ -125,6 +125,11 @@ describe("production package resolutions", () => {
         name: "bash",
         version: "5.2.15-2+b13",
         integrity: "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385",
+      },
+      {
+        name: "gh",
+        version: "2.23.0+dfsg1-1",
+        integrity: "sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12",
       },
       {
         name: "jq",
