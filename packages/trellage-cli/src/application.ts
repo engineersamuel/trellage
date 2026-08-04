@@ -79,11 +79,66 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     return `mise install --locked ${tool}; codex_dir=\"$(mise where ${tool})\"; rm -f \"$codex_dir/metadata.json\"; ${build}`
   }
   if (harness.kind === "claude") {
-    const isolateCoreTools =
-      document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
-        ? "rm -f /mise/config.toml; "
-        : ""
-    return `${isolateCoreTools}mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
+    if (document.profile.plugins.length === 0) {
+      const isolateCoreTools =
+        document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
+          ? "rm -f /mise/config.toml; "
+          : ""
+      return `${isolateCoreTools}mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
+    }
+    const plugin = document.profile.plugins[0]
+    const source = lock.sources[0]
+    if (
+      plugin?.adapter === "hyperresearch" &&
+      source?.adapter === "hyperresearch" &&
+      document.profile.plugins.length === 1 &&
+      lock.sources.length === 1
+    ) {
+      return `mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
+    }
+    if (document.profile.plugins.length === 0 || document.profile.plugins.length !== lock.sources.length) {
+      return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
+    }
+    const nativeEnvironment =
+      "HOME=/src/claude-builder-home CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 NO_COLOR=1 TERM=dumb"
+    const marketplaceCommands: Array<string> = []
+    for (let index = 0; index < document.profile.plugins.length; index += 1) {
+      const marketplacePlugin = document.profile.plugins[index]!
+      const marketplaceSource = lock.sources[index]
+      const versions =
+        marketplaceSource?.plugin_versions === undefined ? [] : Object.entries(marketplaceSource.plugin_versions)
+      if (
+        marketplacePlugin.adapter !== "claude-marketplace" ||
+        marketplaceSource?.adapter !== "claude-marketplace" ||
+        marketplaceSource.marketplace !== marketplacePlugin.marketplace ||
+        marketplaceSource.repository !== marketplacePlugin.repository ||
+        marketplaceSource.ref !== marketplacePlugin.ref ||
+        JSON.stringify(marketplaceSource.select) !== JSON.stringify(marketplacePlugin.select) ||
+        versions.length !== marketplacePlugin.select.length ||
+        versions.some(([name, version]) => !safeIdentifierPattern.test(name) || !safeLockedVersionPattern.test(version))
+      ) {
+        return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
+      }
+      marketplaceCommands.push(
+        `${nativeEnvironment} "$claude_bin" plugin marketplace add /src/claude-marketplace-${index}`,
+        ...marketplacePlugin.select.map(
+          (selection) =>
+            `${nativeEnvironment} "$claude_bin" plugin install ${selection}@${marketplacePlugin.marketplace} --scope user`,
+        ),
+      )
+    }
+    return [
+      "mise install --locked node@22.17.0 npm:@anthropic-ai/claude-code@2.1.218",
+      'claude_dir="$(mise where npm:@anthropic-ai/claude-code@2.1.218)"',
+      'claude_bin="$claude_dir/bin/claude"',
+      '[ -x "$claude_bin" ]',
+      'node_bin="$(mise where node@22.17.0)/bin/node"',
+      '[ -x "$node_bin" ]',
+      "find /mise/installs -name metadata.json -type f -delete",
+      ...marketplaceCommands,
+      '"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json',
+      build,
+    ].join("; ")
   }
   if (harness.kind === "pi") {
     return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
@@ -489,6 +544,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/finalize-copilot-seed.mjs",
   ),
+  finalizeClaudeSeed: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/finalize-claude-seed.mjs",
+  ),
   claudeEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-claude-entry.sh",
@@ -509,12 +568,18 @@ const claudeRuntimeMode = (document: ProfileDocument): "core" | "hyperresearch" 
     ? (document.profile.harness.claude.mode ?? "hyperresearch")
     : "hyperresearch"
 
+const runtimeAdapter = (document: ProfileDocument): "claude-marketplace" | "hyperresearch" | undefined => {
+  if (document.profile.harness.kind !== "claude") return undefined
+  const adapter = document.profile.plugins[0]?.adapter
+  return adapter === "claude-marketplace" || adapter === "hyperresearch" ? adapter : undefined
+}
+
 export const LiveUpgradeServices: UpgradeServices = {
   buildCandidate: (document, lock, image) =>
     createRuntimeSupportSnapshot(
       document.profile.harness.kind,
       defaultRuntimeSupport,
-      undefined,
+      runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
@@ -630,7 +695,7 @@ export const upgradeProfile = (
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       document.profile.harness.kind,
       runtimeSupport,
-      undefined,
+      runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     const canonical = `trellage-profile-${document.profile.name}:locked`
@@ -770,7 +835,7 @@ export const buildProfile = (
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       document.profile.harness.kind,
       runtimeSupport,
-      undefined,
+      runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     const current = yield* loadLock(profilePath)
@@ -843,7 +908,7 @@ export const profileMetadata = (
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       harnessKind,
       defaultRuntimeSupport,
-      undefined,
+      runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     const isCopilot = harnessKind === "copilot"

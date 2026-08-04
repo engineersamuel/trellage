@@ -11,6 +11,7 @@ export interface RuntimeSupportPaths {
   readonly copilotEntry: string
   readonly piEntry?: string
   readonly finalizeCopilotSeed: string
+  readonly finalizeClaudeSeed?: string
   readonly claudeEntry?: string
   readonly hyperresearchRequirements?: string
   readonly claudeBrowserAgent?: string
@@ -55,9 +56,11 @@ interface CapturedSnapshot {
 }
 
 const capturedSnapshots = new WeakMap<RuntimeSupportSnapshot, CapturedSnapshot>()
+type ClaudeRuntimeAdapter = "claude-marketplace" | "hyperresearch"
 
 const selectedFiles = (
   harnessKind: Profile["harness"]["kind"],
+  claudeAdapter?: ClaudeRuntimeAdapter,
   claudeMode: "core" | "hyperresearch" = "hyperresearch",
 ): ReadonlyArray<SelectedFile> => {
   switch (harnessKind) {
@@ -96,23 +99,34 @@ const selectedFiles = (
         buildContextPath: "runtime-claude-entry.sh",
         mode: 0o755,
       }
-      if (claudeMode === "core") return [entry]
+      if (claudeMode === "core" && claudeAdapter === undefined) return [entry]
       return [
         entry,
         {
-          property: "hyperresearchRequirements",
-          role: "hyperresearch-requirements",
-          destination: "/src/.runtime-support/hyperresearch-requirements.lock",
-          buildContextPath: ".runtime-support/hyperresearch-requirements.lock",
+          property: "finalizeClaudeSeed",
+          role: "finalize-claude-seed",
+          destination: "/src/finalize-claude-seed.mjs",
+          buildContextPath: "finalize-claude-seed.mjs",
           mode: 0o644,
         },
-        {
-          property: "claudeBrowserAgent",
-          role: "claude-browser-agent",
-          destination: "/usr/local/share/trellage/claude-seed/agents/hyperresearch-browser-fetcher.md",
-          buildContextPath: ".runtime-support/hyperresearch-browser-fetcher.md",
-          mode: 0o644,
-        },
+        ...(claudeAdapter === "claude-marketplace"
+          ? []
+          : [
+              {
+                property: "hyperresearchRequirements" as const,
+                role: "hyperresearch-requirements",
+                destination: "/src/.runtime-support/hyperresearch-requirements.lock",
+                buildContextPath: ".runtime-support/hyperresearch-requirements.lock",
+                mode: 0o644,
+              },
+              {
+                property: "claudeBrowserAgent" as const,
+                role: "claude-browser-agent",
+                destination: "/usr/local/share/trellage/claude-seed/agents/hyperresearch-browser-fetcher.md",
+                buildContextPath: ".runtime-support/hyperresearch-browser-fetcher.md",
+                mode: 0o644,
+              },
+            ]),
       ]
     case "pi":
       return [
@@ -162,14 +176,16 @@ const runtimeHash = (files: ReadonlyArray<CapturedFile>): string => {
 export const createRuntimeSupportSnapshot = (
   harnessKind: Profile["harness"]["kind"],
   paths: RuntimeSupportPaths,
-  opener: RuntimeSupportOpener = open,
+  selection: RuntimeSupportOpener | ClaudeRuntimeAdapter | undefined = open,
   claudeMode: "core" | "hyperresearch" = "hyperresearch",
 ): Effect.Effect<RuntimeSupportSnapshot, RuntimeSupportError> =>
   Effect.gen(function* () {
+    const opener = typeof selection === "function" ? selection : open
+    const claudeAdapter = typeof selection === "string" ? selection : undefined
     const label =
       harnessKind === "codex" ? "Codex" : harnessKind === "copilot" ? "Copilot" : harnessKind === "pi" ? "Pi" : "Claude"
     const files = yield* Effect.forEach(
-      selectedFiles(harnessKind, claudeMode),
+      selectedFiles(harnessKind, claudeAdapter, claudeMode),
       (selected) => {
         const candidate = paths[selected.property]
         const message = `${label} runtime support ${selected.property} must be a regular readable file: ${candidate ?? "missing"}`

@@ -1,0 +1,246 @@
+schema = 1
+source_date_epoch = 1784379906
+profile_hash = "sha256:c7bb2e7489afb2e7c33b33560cbd8e43cd6cc776393832d30b54d80a41a090cb"
+
+[[sources]]
+kind = "plugin"
+adapter = "claude-marketplace"
+marketplace = "social-media-skills"
+plugin_versions = { "social-media-skills" = "1.0.0" }
+repository = "https://github.com/charlie947/social-media-skills.git"
+ref = "main"
+select = ["social-media-skills"]
+commit = "94f72ea2ece388fa30ef49a26fb2e6fd2109e0b1"
+integrity = "sha256:c558ffbd5b4a4cd17adb0b29a89e2843e2f4bde5f93076c9f5dad8e153be1e09"
+
+[[sources.files]]
+path = ".claude-plugin/marketplace.json"
+sha256 = "sha256:0d08e6c27b3a67c4a1dc505f599ef0e4349aeea8d08d319df976e1070a67537c"
+
+[[sources.files]]
+path = ".gitignore"
+sha256 = "sha256:57f0ec1d0ce6d39b9b6fd2ff1af1dc43f4d575de6c70b82b5bc3262747a6812e"
+
+[[sources.files]]
+path = "assets/banner.svg"
+sha256 = "sha256:f2df0f19da4dd5fccccd949e080dbecc22fc793c7fd5aea687ec8fce7a3d9812"
+
+[[sources.files]]
+path = "CONTRIBUTING.md"
+sha256 = "sha256:d06341790f430fe024f299b658f48eefba701990ba779ae5c2a3634e317e295b"
+
+[[sources.files]]
+path = "LICENSE"
+sha256 = "sha256:ed17713237d18555a34c208bf0cb1ce347faa937731d509e265ce91be660e218"
+
+[[sources.files]]
+path = "README.md"
+sha256 = "sha256:e54f1165ebbdc07a52cfac683079471217506fbf7de22b2a1dc94007888122bd"
+
+[[sources.files]]
+path = "skills/analytics-dashboard/SKILL.md"
+sha256 = "sha256:5000eec75f32a32a4b47adae376358d5196a4fd1cdcbfa088b7426728b14a73a"
+
+[[sources.files]]
+path = "skills/content-matrix/SKILL.md"
+sha256 = "sha256:dae28fbfc83e66afd2c8f90cb6eb396b0c0aaaddade999820b204dc273161ed6"
+
+[[sources.files]]
+path = "skills/gemini-carousel/SKILL.md"
+sha256 = "sha256:cc0bf2a52d41cf09bf7583bfe5342313480394d470687c15fa28cc1db16e26df"
+
+[[sources.files]]
+path = "skills/gemini-infographic/SKILL.md"
+sha256 = "sha256:c70149ea8de4231e0596cb86629a10de5d13d9a087ac167ba91288e5e2eab077"
+
+[[sources.files]]
+path = "skills/graphic-designer/SKILL.md"
+sha256 = "sha256:b4f9340cb18e2656e15ca4ae5dce65d354be1ac65096c0c21621f162e3795249"
+
+[[sources.files]]
+path = "skills/hook-generator/SKILL.md"
+sha256 = "sha256:efe43558494cec04cf3dd1080c0e5560fee8cae1093f3082d2f7f2f1525e6e27"
+
+[[sources.files]]
+path = "skills/newsletter-voice/references/archetypes.md"
+sha256 = "sha256:f4c4da5347934d044f3c8405c517815d2bfd5bf449db8843b38775e7432c4b11"
+
+[[sources.files]]
+path = "skills/newsletter-voice/SKILL.md"
+sha256 = "sha256:a122375740244c650aba0379534930dd029f79542597bb2a422ae537ea5474f6"
+
+[[sources.files]]
+path = "skills/niche-research/SKILL.md"
+sha256 = "sha256:18595b0aa62b816b20937e6598583b79f1bfde0935d665372b064445e1fab3b0"
+
+[[sources.files]]
+path = "skills/pinned-comment/SKILL.md"
+sha256 = "sha256:6b8ce5659538671359859a090c56f0e4db70382b1e33f70c2c98a474c7572edc"
+
+[[sources.files]]
+path = "skills/post-formatter/SKILL.md"
+sha256 = "sha256:9af34ac7b8936dce15f6f7076bfcd06cd0bbac16ca35b6eaa81625e665685bc8"
+
+[[sources.files]]
+path = "skills/post-scorer/SKILL.md"
+sha256 = "sha256:af5bb39f8a6608986a760da21e395a18780c8cba7d16de7efd993a095f4ed25e"
+
+[[sources.files]]
+path = "skills/post-writer/SKILL.md"
+sha256 = "sha256:a0c91645648df1cb933489fd3ef0c50fed196661c5374d95dadf637407866c1f"
+
+[[sources.files]]
+path = "skills/profile-optimizer/SKILL.md"
+sha256 = "sha256:60df83fae4ac5a6222b264d4f3d18cad290ba3f38c4cd129fad680ece4a11668"
+
+[[sources.files]]
+path = "skills/quote-post/SKILL.md"
+sha256 = "sha256:91dd47f93652e4021157bb7fb99252f9f4a113613e7c357bd3894538b26606d6"
+
+[[sources.files]]
+path = "skills/reels-scripting/SKILL.md"
+sha256 = "sha256:639f380857a0063b11602a799c7de6d1f16bbab70dab3a12ce1d4f3c5f104b71"
+
+[[sources.files]]
+path = "skills/voice-builder/references/sample-content.md"
+sha256 = "sha256:a4f5c914c7424c8423848ccf3b03545eca57dbf403bef8b35cfe4130a391d6a4"
+
+[[sources.files]]
+path = "skills/voice-builder/SKILL.md"
+sha256 = "sha256:7f47bd4b5c131331be274abed100d21e4021aa7d90ac29802f18f39891de2b5a"
+
+[[sources.files]]
+path = "skills/youtube-thumbnail/SKILL.md"
+sha256 = "sha256:8a14346d43a07136d96c39ab117990009b7bc865bf1e75db3c5c0053468b75aa"
+
+[[sources.files]]
+path = "validate-skills.sh"
+sha256 = "sha256:c4d67cccf19076fc57a2227640c899671fa13d7e566ca27259113321ac74bb75"
+executable = true
+
+[[sources.files]]
+path = "VERSIONS.md"
+sha256 = "sha256:28ee22d15d65e3db0536e9413c32a76cffa1ac62245821cc6f9e6d4a51bc0e1b"
+
+[[sources]]
+kind = "plugin"
+adapter = "claude-marketplace"
+marketplace = "humanizer"
+plugin_versions = { "humanizer" = "2.9.1" }
+repository = "https://github.com/blader/humanizer.git"
+ref = "main"
+select = ["humanizer"]
+commit = "523374dee72d67c7b2b5f858ea0094ffda49c3ac"
+integrity = "sha256:98d1d5c1a3f61b750b38002a9296c1bb565595dc891d4cbae508e8092954f3f1"
+
+[[sources.files]]
+path = ".claude-plugin/marketplace.json"
+sha256 = "sha256:141736822a343ca0b605d7a9298fef4b692a69368215338df76efb876af442e4"
+
+[[sources.files]]
+path = ".claude-plugin/plugin.json"
+sha256 = "sha256:f31bf57f37eabb0d4e2eab4deb4f69bf64cc4db164d4809cc57f8c9502aa4eb8"
+
+[[sources.files]]
+path = ".github/workflows/validate.yml"
+sha256 = "sha256:4ee5852335371388b4a621e2a1e5d0115b3046d214ff2b43377a2422e77a4185"
+
+[[sources.files]]
+path = "AGENTS.md"
+sha256 = "sha256:9394319b85795f13527b6462ac660d8e59ac43dd0e84f2bb2c3a1891e62ad402"
+
+[[sources.files]]
+path = "agents/openai.yaml"
+sha256 = "sha256:7b4289413ca3de49c7efc2798ac230e7ae563a6bd7eadf799ee5b2d75c261d25"
+
+[[sources.files]]
+path = "LICENSE"
+sha256 = "sha256:4ac4810254ab36d45419141aeb8e69bf50652cfafe5b2dab947d06d44e5cbf96"
+
+[[sources.files]]
+path = "README.md"
+sha256 = "sha256:cb771a5ac98040b72ea1479f25bedec9e619c85f8b1493c205105a3b714a9d86"
+
+[[sources.files]]
+path = "scripts/validate-package.py"
+sha256 = "sha256:d2c5496ca73a8ce2d3f0cad6681724170d8566bef54d36dfc1e5d3972597b614"
+executable = true
+
+[[sources.files]]
+path = "SKILL.md"
+sha256 = "sha256:70938f3cce25970e1ded5fdd194b755c03f1e4e4fa76820958ce78f86b677b1a"
+
+[packages]
+
+[packages.harness]
+kind = "claude"
+selector = "2.1.218"
+version = "2.1.218"
+integrity = "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8"
+url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz"
+size = 22971
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "curl"
+version = "7.88.1-10+deb12u15"
+integrity = "sha256:880d20cb636d2c36b2f57c58ab284b442a1680365b488d3e696c147c4d84ef25"
+
+[[packages.runtime]]
+name = "fish"
+version = "3.6.0-3.1+deb12u1"
+integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.runtime]]
+name = "zsh"
+version = "5.9-4+b15"
+integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bfba90"
+
+[[packages.artifacts]]
+name = "node"
+version = "22.17.0"
+integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+[[packages.artifacts]]
+name = "claude-code-linux-arm64"
+version = "2.1.218"
+integrity = "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619"
+url = "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz"
+size = 84159749
+
+[[packages.artifacts]]
+name = "builder-oci"
+version = "jdxcode/mise"
+integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
+url = "oci://docker.io/jdxcode/mise"
+
+[[packages.artifacts]]
+name = "skopeo-oci"
+version = "stable"
+integrity = "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
+url = "oci://quay.io/skopeo/stable"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:f5b05fb95d116dd2c0360b3cf02e425c22441f3140faa658c5f9e00a751ed322"

@@ -99,6 +99,30 @@ ref = "main"
 select = ["full"]
 `
 
+const claudeMarketplaceSource = `
+schema = 1
+name = "claude-social-media"
+description = "Claude marketplace render profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+platform = "linux/arm64"
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "git", "jq"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/charlie947/social-media-skills.git"
+ref = "main"
+marketplace = "social-media-skills"
+select = ["social-media-skills"]
+`
+
 const piSource = `
 schema = 1
 name = "pi-oh-my-pi"
@@ -123,6 +147,9 @@ const profile = Effect.runSync(parseProfile(source, "/profile/profile.toml")).pr
 const copilotProfile = Effect.runSync(parseProfile(copilotSource, "/profile/copilot.toml")).profile
 const claudeProfile = Effect.runSync(parseProfile(claudeSource, "/profile/claude.toml")).profile
 const piProfile = Effect.runSync(parseProfile(piSource, "/profile/pi.toml")).profile
+const claudeMarketplaceProfile = Effect.runSync(
+  parseProfile(claudeMarketplaceSource, "/profile/claude-marketplace.toml"),
+).profile
 const runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "trellage-render-runtime-"))
 afterAll(() => rm(runtimeRoot, { recursive: true, force: true }))
 const runtimePaths = {
@@ -130,6 +157,7 @@ const runtimePaths = {
   copilotEntry: path.join(runtimeRoot, "runtime-copilot-entry.sh"),
   piEntry: path.join(runtimeRoot, "runtime-pi-entry.sh"),
   finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
+  finalizeClaudeSeed: path.join(runtimeRoot, "finalize-claude-seed.mjs"),
   claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
   hyperresearchRequirements: path.join(runtimeRoot, "requirements.lock"),
   claudeBrowserAgent: path.join(runtimeRoot, "browser-agent.md"),
@@ -138,6 +166,9 @@ await Promise.all(Object.values(runtimePaths).map((file) => writeFile(file, file
 const codexRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("codex", runtimePaths))
 const copilotRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", runtimePaths))
 const claudeRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("claude", runtimePaths))
+const claudeMarketplaceRuntime = await Effect.runPromise(
+  createRuntimeSupportSnapshot("claude", runtimePaths, "claude-marketplace"),
+)
 const piRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("pi", runtimePaths))
 const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
   schema: 1,
@@ -314,6 +345,18 @@ rename_exe = "copilot"`)
     )
     expect(rendered).toContain('"dev.trellage.harness.kind" = "claude"')
     expect(rendered).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|PLAYWRIGHT_MCP_EXTENSION_TOKEN/)
+  })
+
+  it("renders native Claude marketplace images without Hyperresearch assets", () => {
+    const rendered = renderMiseConfig(claudeMarketplaceProfile, lock("claude"), {
+      baseReference: "docker.io/library/node@sha256:base",
+      imageTag: "trellage-profile-claude-social-media:locked",
+      runtimeSupport: claudeMarketplaceRuntime,
+    })
+
+    expect(rendered).toContain('TRELLAGE_CLAUDE_RUNTIME_MODE = "native-plugin"')
+    expect(rendered).toContain('"/usr/local/share/trellage/claude-seed"')
+    expect(rendered).not.toMatch(/hyperresearch|playwright|chromium|obscura|PYTHONPATH/)
   })
 
   it("renders locked mise OCI input", () => {

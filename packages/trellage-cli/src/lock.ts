@@ -15,7 +15,13 @@ interface LegacyLockProvenance {
 
 export interface SourceLock {
   readonly kind: "skill" | "plugin"
-  readonly adapter?: "codex-native" | "copilot-marketplace" | "hyperresearch" | "omp-native" | "wshobson-agents"
+  readonly adapter?:
+    | "claude-marketplace"
+    | "codex-native"
+    | "copilot-marketplace"
+    | "hyperresearch"
+    | "omp-native"
+    | "wshobson-agents"
   readonly marketplace?: string
   readonly plugin_versions?: Readonly<Record<string, string>>
   readonly repository: string
@@ -132,7 +138,13 @@ export interface SourceResolution {
 export interface LockResolvers {
   readonly resolveSource: (request: {
     readonly kind: "skill" | "plugin"
-    readonly adapter?: "codex-native" | "copilot-marketplace" | "hyperresearch" | "omp-native" | "wshobson-agents"
+    readonly adapter?:
+      | "claude-marketplace"
+      | "codex-native"
+      | "copilot-marketplace"
+      | "hyperresearch"
+      | "omp-native"
+      | "wshobson-agents"
     readonly marketplace?: string
     readonly repository: string
     readonly ref: string
@@ -146,7 +158,7 @@ export interface LockResolvers {
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
     readonly needsSkillsCli: boolean
-    readonly claudeMode?: "core" | "hyperresearch"
+    readonly claudeAdapter?: "claude-marketplace" | "hyperresearch"
   }) => Effect.Effect<PackageLock, unknown>
   readonly resolveBase: (request: {
     readonly reference: string
@@ -307,33 +319,14 @@ const lockSemanticError = (
     }
   }
   if (harness.kind === "claude") {
-    const claudeMode = document.profile.harness.kind === "claude" ? document.profile.harness.claude.mode : undefined
-    if (claudeMode !== "core" && !sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
-      return "Python dependency lock integrity is missing or invalid"
-    }
-    if (claudeMode === "core" && current.packages.python_lock_integrity !== undefined) {
-      return "Claude core locks do not include Python dependency provenance"
-    }
-    const requiredArtifacts =
-      claudeMode === "core"
-        ? ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"]
-        : [
-            "node",
-            "python",
-            "claude-code-linux-arm64",
-            "playwright-mcp",
-            "playwright",
-            "playwright-core",
-            "chromium",
-            "chromium-headless-shell",
-            "obscura",
-            "builder-oci",
-            "skopeo-oci",
-          ]
-    for (const name of requiredArtifacts) {
+    const claudeAdapter = document.profile.harness.kind === "claude" ? document.profile.plugins[0]?.adapter : undefined
+    for (const name of ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"]) {
       if (!artifactNames.has(name)) return `required Claude artifact is missing: ${name}`
     }
-    if (claudeMode === "core") {
+    if (claudeAdapter === "hyperresearch") {
+      if (!sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
+        return "Python dependency lock integrity is missing or invalid"
+      }
       for (const name of [
         "python",
         "playwright-mcp",
@@ -343,8 +336,10 @@ const lockSemanticError = (
         "chromium-headless-shell",
         "obscura",
       ]) {
-        if (artifactNames.has(name)) return `Claude core lock contains forbidden artifact: ${name}`
+        if (!artifactNames.has(name)) return `required Claude artifact is missing: ${name}`
       }
+    } else if (current.packages.python_lock_integrity !== undefined) {
+      return "Python dependency lock requires Hyperresearch"
     }
   } else if (current.packages.artifacts !== undefined || current.packages.python_lock_integrity !== undefined) {
     return "Claude artifact locks require the Claude harness"
@@ -390,35 +385,36 @@ const lockSemanticError = (
     ) {
       return `source adapter is incompatible with source kind: ${source.repository}`
     }
-    if (source.adapter === "copilot-marketplace") {
-      if (!source.marketplace) return `Copilot marketplace is missing: ${source.repository}`
+    if (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace") {
+      const label = source.adapter === "copilot-marketplace" ? "Copilot" : "Claude"
+      if (!source.marketplace) return `${label} marketplace is missing: ${source.repository}`
       if (source.marketplace !== requestedSources[sourceIndex]?.marketplace) {
-        return `Copilot marketplace does not match profile: ${source.repository}`
+        return `${label} marketplace does not match profile: ${source.repository}`
       }
       const versions = source.plugin_versions
-      if (versions === undefined) return `Copilot plugin versions are missing: ${source.repository}`
+      if (versions === undefined) return `${label} plugin versions are missing: ${source.repository}`
       for (const key of source.select) {
-        if (!isSafePluginKey(key)) return `Copilot plugin version key is unsafe: ${key}`
+        if (!isSafePluginKey(key)) return `${label} plugin version key is unsafe: ${key}`
       }
       const keys = Object.keys(versions)
       for (const key of keys) {
-        if (!isSafePluginKey(key)) return `Copilot plugin version key is unsafe: ${key}`
+        if (!isSafePluginKey(key)) return `${label} plugin version key is unsafe: ${key}`
       }
       const sortedKeys = [...keys].sort((left, right) => left.localeCompare(right, "en"))
       if (JSON.stringify(keys) !== JSON.stringify(sortedKeys)) {
-        return `Copilot plugin version keys are not sorted: ${source.repository}`
+        return `${label} plugin version keys are not sorted: ${source.repository}`
       }
       const selected = [...source.select].sort((left, right) => left.localeCompare(right, "en"))
       if (JSON.stringify(keys) !== JSON.stringify(selected)) {
-        return `Copilot plugin version keys do not match selections: ${source.repository}`
+        return `${label} plugin version keys do not match selections: ${source.repository}`
       }
       for (const key of keys) {
         if (!exactSemverPattern.test(versions[key] ?? "")) {
-          return `Copilot plugin version is not exact: ${key}`
+          return `${label} plugin version is not exact: ${key}`
         }
       }
     } else if (source.marketplace !== undefined || source.plugin_versions !== undefined) {
-      return `Copilot marketplace fields require copilot-marketplace: ${source.repository}`
+      return `marketplace fields require a marketplace adapter: ${source.repository}`
     }
     const seen = new Set<string>()
     let previous = ""
@@ -535,6 +531,12 @@ export const compileLock = (
       current !== undefined && lockSemanticError(document, current, false) === undefined ? current : undefined
     if (validCurrent !== undefined && lockMatchesProfile(document, validCurrent) && !update) return validCurrent
     const sources = yield* resolveSources(document, validCurrent, update, resolvers)
+    const claudeAdapter =
+      document.profile.harness.kind === "claude" &&
+      (document.profile.plugins[0]?.adapter === "hyperresearch" ||
+        document.profile.plugins[0]?.adapter === "claude-marketplace")
+        ? document.profile.plugins[0].adapter
+        : undefined
     const packages = yield* resolvers
       .resolvePackages({
         kind: document.profile.harness.kind,
@@ -542,9 +544,7 @@ export const compileLock = (
         platform: document.profile.image.platform,
         packages: document.profile.image.packages,
         needsSkillsCli: document.profile.harness.kind === "codex" && document.profile.skills.length > 0,
-        ...(document.profile.harness.kind === "claude"
-          ? { claudeMode: document.profile.harness.claude.mode ?? "hyperresearch" }
-          : {}),
+        ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
       })
       .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause })))
     const base = yield* resolvers

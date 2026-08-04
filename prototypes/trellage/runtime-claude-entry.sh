@@ -13,6 +13,7 @@ seed_home="${TRELLAGE_CLAUDE_SEED_HOME:-/usr/local/share/trellage/claude-seed}"
 runtime_home="${TRELLAGE_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-/home/agent/.claude}}"
 auth_mode="${TRELLAGE_CLAUDE_AUTH_MODE:-proxy}"
 claude_mode="${TRELLAGE_CLAUDE_MODE:-hyperresearch}"
+runtime_mode="${TRELLAGE_CLAUDE_RUNTIME_MODE:-$claude_mode}"
 resume_profile="${TRELLAGE_RESUME_PROFILE-}"
 resume_session_id="${TRELLAGE_RESUME_SESSION_ID-}"
 unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID
@@ -56,19 +57,20 @@ print_resume_hint() {
   printf '\nResume this conversation:\n'
   printf 'trellage resume --profile %q %q\n' "$resume_profile" "$session_id"
 }
-case "$claude_mode" in
-  core|hyperresearch) ;;
-  *) fail "unsupported Claude profile mode: $claude_mode" ;;
-esac
 [[ "$seed_home" == /* && "$runtime_home" == /* ]] || fail 'Claude homes must be absolute paths'
+[[ "$runtime_mode" == core || "$runtime_mode" == hyperresearch || "$runtime_mode" == native-plugin ]] \
+  || fail "unsupported Claude runtime mode: $runtime_mode"
 [[ -d "$seed_home" && ! -L "$seed_home" ]] || fail "missing baked Claude seed: $seed_home"
-if [[ "$claude_mode" == hyperresearch ]]; then
+if [[ "$runtime_mode" != core ]]; then
   [[ -f "$seed_home/managed-paths.txt" && ! -L "$seed_home/managed-paths.txt" ]] \
     || fail 'baked Claude managed-path manifest is missing or unsafe'
 fi
 default_settings="$seed_home/default-settings.json"
 [[ -f "$default_settings" && ! -L "$default_settings" ]] \
   || fail 'baked Claude default settings are missing or unsafe'
+default_onboarding="$seed_home/default-onboarding.json"
+[[ -f "$default_onboarding" && ! -L "$default_onboarding" ]] \
+  || fail 'baked Claude onboarding defaults are missing or unsafe'
 jq -e '
   .permissions.defaultMode == "bypassPermissions"
   and .permissions.deny == [
@@ -81,8 +83,24 @@ jq -e '
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
 ' "$default_settings" >/dev/null || fail 'baked Claude default settings are invalid'
+jq -e '
+  type == "object"
+  and keys == [
+    "hasCompletedOnboarding",
+    "lastOnboardingVersion",
+    "shiftEnterKeyBindingInstalled",
+    "theme"
+  ]
+  and .hasCompletedOnboarding == true
+  and .lastOnboardingVersion == "2.1.218"
+  and .shiftEnterKeyBindingInstalled == true
+  and .theme == "dark"
+' "$default_onboarding" >/dev/null || fail 'baked Claude onboarding defaults are invalid'
 mkdir -p "$runtime_home"
 [[ -d "$runtime_home" && ! -L "$runtime_home" ]] || fail 'Claude runtime home must be a directory'
+global_state="$runtime_home/.claude.json"
+workspace="$(pwd -P)"
+[[ "$workspace" == /* ]] || fail 'Claude workspace must be an absolute path'
 
 if [[ "$claude_mode" == core ]]; then
   settings="$runtime_home/settings.json"
@@ -95,7 +113,7 @@ if [[ "$claude_mode" == core ]]; then
   fi
 fi
 
-if [[ "$claude_mode" == hyperresearch ]]; then
+if [[ "$runtime_mode" != core ]]; then
 validate_managed_path() {
   local candidate="$1"
   [[ -n "$candidate" && "$candidate" != /* && "$candidate" != *'//'*
@@ -103,13 +121,37 @@ validate_managed_path() {
     && "$candidate" != */. && "$candidate" != */.. && "$candidate" != *'/./'* && "$candidate" != *'/../'*
     && "$candidate" != *'\'* ]] || return 1
   case "$candidate" in
-    skills/hyperresearch|skills/hyperresearch/*|agents/hyperresearch-*.md) ;;
+    skills/hyperresearch|skills/hyperresearch/*|agents/hyperresearch-*.md|plugins/installed_plugins.json) ;;
+    plugins/cache/*)
+      [[ "$candidate" =~ ^plugins/cache/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9.+-]*/.+$ ]] \
+        || return 1
+      ;;
     *) return 1 ;;
   esac
 }
 
-manifest="$runtime_home/.trellage-hyperresearch-managed"
-lock_dir="$runtime_home/.trellage-hyperresearch.lock"
+ensure_runtime_parent() {
+  local candidate="$1"
+  local parent="${candidate%/*}"
+  local current="$runtime_home"
+  local segment
+  [[ "$parent" != "$candidate" ]] || return 0
+  IFS=/ read -r -a parent_segments <<<"$parent"
+  for segment in "${parent_segments[@]}"; do
+    current="$current/$segment"
+    [[ ! -L "$current" ]] || return 1
+    if [[ -e "$current" ]]; then
+      [[ -d "$current" ]] || return 1
+    else
+      mkdir "$current" || return 1
+      [[ -d "$current" && ! -L "$current" ]] || return 1
+    fi
+  done
+}
+
+manifest="$runtime_home/.trellage-claude-managed"
+legacy_manifest="$runtime_home/.trellage-hyperresearch-managed"
+lock_dir="$runtime_home/.trellage-claude.lock"
 lock_active=false
 for _attempt in {1..200}; do
   if mkdir "$lock_dir" 2>/dev/null; then
@@ -137,27 +179,46 @@ while IFS= read -r managed_path; do
     || fail "missing managed Claude seed file: $managed_path"
 done <"$new_manifest"
 
-transaction="$runtime_home/.trellage-hyperresearch-transaction.$$"
+transaction="$runtime_home/.trellage-claude-transaction.$$"
 backup="$transaction/backup"
 placed="$transaction/placed"
 mkdir -p "$backup"
 : >"$placed"
 transaction_active=true
 settings_created=false
+settings_replaced=false
+marketplaces_created=false
+marketplaces_replaced=false
+global_state_created=false
+global_state_replaced=false
 
 rollback_sync() {
   local managed_path
+  if [[ "$global_state_created" == true ]]; then
+    rm -f -- "$global_state"
+  elif [[ "$global_state_replaced" == true && -f "$backup/.claude.json" ]]; then
+    mv -f -- "$backup/.claude.json" "$global_state" 2>/dev/null || true
+  fi
   if [[ "$settings_created" == true ]]; then
     rm -f -- "$runtime_home/settings.json"
+  elif [[ "$settings_replaced" == true && -f "$backup/settings.json" ]]; then
+    mv -f -- "$backup/settings.json" "$runtime_home/settings.json" 2>/dev/null || true
+  fi
+  if [[ "$marketplaces_created" == true ]]; then
+    rm -f -- "$runtime_home/plugins/known_marketplaces.json"
+  elif [[ "$marketplaces_replaced" == true && -f "$backup/plugins/known_marketplaces.json" ]]; then
+    mv -f -- "$backup/plugins/known_marketplaces.json" \
+      "$runtime_home/plugins/known_marketplaces.json" 2>/dev/null || true
   fi
   while IFS= read -r managed_path; do
     [[ -n "$managed_path" ]] || continue
+    ensure_runtime_parent "$managed_path" || continue
     rm -f -- "$runtime_home/$managed_path"
   done <"$placed" 2>/dev/null || true
   if [[ -d "$backup" ]]; then
     while IFS= read -r -d '' restored; do
       managed_path="${restored#"$backup/"}"
-      mkdir -p "$(dirname "$runtime_home/$managed_path")"
+      ensure_runtime_parent "$managed_path" || continue
       mv -f -- "$restored" "$runtime_home/$managed_path" 2>/dev/null || true
     done < <(find "$backup" -type f -print0 2>/dev/null)
   fi
@@ -172,25 +233,32 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT HUP INT TERM
 
-if [[ -f "$manifest" && ! -L "$manifest" ]]; then
+prior_manifest="$manifest"
+if [[ ! -e "$prior_manifest" && ! -L "$prior_manifest" && -f "$legacy_manifest" && ! -L "$legacy_manifest" ]]; then
+  prior_manifest="$legacy_manifest"
+fi
+if [[ -f "$prior_manifest" && ! -L "$prior_manifest" ]]; then
   while IFS= read -r managed_path; do
     validate_managed_path "$managed_path" || fail "unsafe prior managed Claude path: $managed_path"
+    ensure_runtime_parent "$managed_path" \
+      || fail "managed Claude destination parent is unsafe: $managed_path"
     if [[ -e "$runtime_home/$managed_path" || -L "$runtime_home/$managed_path" ]]; then
       [[ -f "$runtime_home/$managed_path" && ! -L "$runtime_home/$managed_path" ]] \
         || fail "managed Claude destination is unsafe: $managed_path"
       mkdir -p "$backup/$(dirname "$managed_path")"
       mv -- "$runtime_home/$managed_path" "$backup/$managed_path"
     fi
-  done <"$manifest"
-elif [[ -e "$manifest" || -L "$manifest" ]]; then
+  done <"$prior_manifest"
+elif [[ -e "$prior_manifest" || -L "$prior_manifest" ]]; then
   fail 'Claude managed-path manifest is unsafe'
 fi
 
 while IFS= read -r managed_path; do
   destination="$runtime_home/$managed_path"
+  ensure_runtime_parent "$managed_path" \
+    || fail "managed Claude destination parent is unsafe: $managed_path"
   [[ ! -e "$destination" && ! -L "$destination" ]] \
     || fail "managed Claude destination collides with an unmanaged path: $managed_path"
-  mkdir -p "$(dirname "$destination")"
   temporary="$(dirname "$destination")/.trellage.$(basename "$destination").$$"
   cp -- "$seed_home/$managed_path" "$temporary"
   mv -- "$temporary" "$destination"
@@ -208,11 +276,100 @@ if [[ ! -e "$settings" && ! -L "$settings" ]]; then
     settings_created=true
   fi
 fi
-manifest_tmp="$runtime_home/.trellage-hyperresearch-managed.$$"
+plugin_settings="$seed_home/plugin-settings.json"
+if [[ -e "$plugin_settings" || -L "$plugin_settings" ]]; then
+  [[ -f "$plugin_settings" && ! -L "$plugin_settings" ]] \
+    || fail 'baked Claude plugin settings are unsafe'
+  jq -e '
+    type == "object"
+    and keys == ["enabledPlugins"]
+    and (.enabledPlugins | type == "object")
+    and ([.enabledPlugins[]] | all(. == true))
+    and ([.enabledPlugins | keys[]] | all(test("^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$")))
+  ' "$plugin_settings" >/dev/null || fail 'baked Claude plugin settings are invalid'
+  [[ -f "$settings" && ! -L "$settings" ]] || fail 'Claude settings must be a regular file'
+  jq -e 'type == "object"' "$settings" >/dev/null || fail 'Claude settings are invalid'
+  if [[ "$settings_created" == false ]]; then
+    cp -- "$settings" "$backup/settings.json"
+    settings_replaced=true
+  fi
+  settings_tmp="$runtime_home/.settings.json.trellage.$$"
+  jq -S --slurpfile plugin "$plugin_settings" \
+    '.enabledPlugins = ((.enabledPlugins // {}) + $plugin[0].enabledPlugins)' \
+    "$settings" >"$settings_tmp"
+  chmod 600 "$settings_tmp"
+  mv -f -- "$settings_tmp" "$settings"
+fi
+plugin_marketplaces="$seed_home/plugin-marketplaces.json"
+if [[ -e "$plugin_marketplaces" || -L "$plugin_marketplaces" ]]; then
+  [[ -f "$plugin_marketplaces" && ! -L "$plugin_marketplaces" ]] \
+    || fail 'baked Claude plugin marketplaces are unsafe'
+  jq -e '
+    type == "object"
+    and length > 0
+    and ([to_entries[] |
+      (.key | test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+      and (.value | type == "object" and keys == ["installLocation", "source"])
+      and (.value.source | type == "object" and keys == ["path", "source"])
+      and .value.source.source == "directory"
+      and (.value.source.path | type == "string" and startswith("/home/agent/.claude/plugins/cache/"))
+      and .value.installLocation == .value.source.path
+    ] | all)
+  ' "$plugin_marketplaces" >/dev/null || fail 'baked Claude plugin marketplaces are invalid'
+  ensure_runtime_parent "plugins/known_marketplaces.json" \
+    || fail 'Claude marketplace destination parent is unsafe'
+  marketplace_registry="$runtime_home/plugins/known_marketplaces.json"
+  if [[ -e "$marketplace_registry" || -L "$marketplace_registry" ]]; then
+    [[ -f "$marketplace_registry" && ! -L "$marketplace_registry" ]] \
+      || fail 'Claude marketplace registry must be a regular file'
+    jq -e 'type == "object"' "$marketplace_registry" >/dev/null \
+      || fail 'Claude marketplace registry is invalid'
+    mkdir -p "$backup/plugins"
+    cp -- "$marketplace_registry" "$backup/plugins/known_marketplaces.json"
+    marketplaces_replaced=true
+  else
+    printf '{}\n' >"$marketplace_registry"
+    chmod 600 "$marketplace_registry"
+    marketplaces_created=true
+  fi
+  marketplaces_tmp="$runtime_home/plugins/.known_marketplaces.json.trellage.$$"
+  jq -S --slurpfile managed "$plugin_marketplaces" \
+    '. + $managed[0]' "$marketplace_registry" >"$marketplaces_tmp"
+  chmod 600 "$marketplaces_tmp"
+  mv -f -- "$marketplaces_tmp" "$marketplace_registry"
+fi
+if [[ -e "$global_state" || -L "$global_state" ]]; then
+  [[ -f "$global_state" && ! -L "$global_state" ]] \
+    || fail 'Claude global state must be a regular file'
+  jq -e 'type == "object"' "$global_state" >/dev/null || fail 'Claude global state is invalid'
+  cp -- "$global_state" "$backup/.claude.json"
+  global_state_replaced=true
+  global_state_tmp="$runtime_home/.claude.json.trellage.$$"
+  jq -S --arg workspace "$workspace" --slurpfile defaults "$default_onboarding" '
+    $defaults[0] + .
+    | .projects = (
+        (.projects // {})
+        | .[$workspace] = ((.[$workspace] // {}) + {"hasTrustDialogAccepted": true})
+      )
+  ' "$global_state" >"$global_state_tmp"
+else
+  global_state_tmp="$runtime_home/.claude.json.trellage.$$"
+  jq -S --arg workspace "$workspace" '
+    .projects = {($workspace): {"hasTrustDialogAccepted": true}}
+  ' "$default_onboarding" >"$global_state_tmp"
+  global_state_created=true
+fi
+chmod 600 "$global_state_tmp"
+mv -f -- "$global_state_tmp" "$global_state"
+manifest_tmp="$runtime_home/.trellage-claude-managed.$$"
 cp -- "$new_manifest" "$manifest_tmp"
 mv -f -- "$manifest_tmp" "$manifest"
+rm -f -- "$legacy_manifest"
 transaction_active=false
 settings_created=false
+settings_replaced=false
+global_state_created=false
+global_state_replaced=false
 rm -rf -- "$transaction"
 rm -rf -- "$lock_dir"
 lock_active=false
@@ -248,7 +405,7 @@ case "$mode" in
 esac
 
 browser_token="${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}"
-[[ "$claude_mode" == hyperresearch ]] || browser_token=
+[[ "$runtime_mode" == hyperresearch ]] || browser_token=
 oauth_token="${CLAUDE_CODE_OAUTH_TOKEN-}"
 api_key="${ANTHROPIC_API_KEY-}"
 proxy_token="${ANTHROPIC_AUTH_TOKEN-}"
@@ -277,11 +434,11 @@ else
   unset PLAYWRIGHT_MCP_EXTENSION_TOKEN
 fi
 
-mcp_config=
-cleanup_mcp() { [[ -z "$mcp_config" ]] || rm -f -- "$mcp_config"; }
+export CLAUDE_CONFIG_DIR="$runtime_home"
 managed_args=(--dangerously-skip-permissions --settings "$default_settings")
-if [[ "$claude_mode" == hyperresearch ]]; then
+if [[ "$runtime_mode" == hyperresearch ]]; then
   mcp_config="$(mktemp "${TMPDIR:-/tmp}/trellage-claude-mcp.XXXXXX.json")"
+  cleanup_mcp() { rm -f -- "$mcp_config"; }
   trap cleanup_mcp EXIT HUP INT TERM
   if [[ -n "$browser_token" ]]; then
     printf '%s\n' '{"mcpServers":{"playwright":{"command":"playwright-mcp","args":["--extension"]},"obscura":{"command":"obscura","args":["mcp","--stealth"]}}}' >"$mcp_config"
@@ -291,14 +448,14 @@ if [[ "$claude_mode" == hyperresearch ]]; then
   fi
   managed_args+=(--mcp-config "$mcp_config" --strict-mcp-config)
 fi
-
-export CLAUDE_CONFIG_DIR="$runtime_home"
 set +e
 "$claude_command" "${managed_args[@]}" "${claude_args[@]}"
 claude_status=$?
 set -e
-cleanup_mcp
-trap - EXIT HUP INT TERM
+if [[ "$runtime_mode" == hyperresearch ]]; then
+  cleanup_mcp
+  trap - EXIT HUP INT TERM
+fi
 if [[ -n "$resume_profile" ]]; then
   if [[ -n "$resume_session_id" ]]; then
     completed_session_id="$resume_session_id"

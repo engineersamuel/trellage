@@ -56,7 +56,7 @@ const safeRelativePath = (value: string): boolean => {
   )
 }
 
-class DuplicateJsonKeyError extends Error {}
+export class DuplicateJsonKeyError extends Error {}
 
 type JsonFrame =
   | {
@@ -69,7 +69,7 @@ type JsonFrame =
       state: "valueOrEnd" | "value" | "commaOrEnd"
     }
 
-const assertNoDuplicateJsonKeys = (source: string): void => {
+export const assertNoDuplicateJsonKeys = (source: string): void => {
   if (source.length > maxJsonCharacters) throw new Error("JSON input is too large")
   const frames: Array<JsonFrame> = []
   let index = 0

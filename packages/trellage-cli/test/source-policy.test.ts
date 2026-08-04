@@ -25,6 +25,18 @@ describe("source inclusion policy", () => {
     expect(sourceInventoryPolicy(source)).toEqual({ allowSymlinks: true })
   })
 
+  it("selects the complete repository without symlinks for Claude marketplaces", () => {
+    const source = {
+      kind: "plugin",
+      adapter: "claude-marketplace",
+      marketplace: "social-media-skills",
+      select: ["social-media-skills"],
+    } as const
+
+    expect(sourceIncludes(source)).toEqual([])
+    expect(sourceInventoryPolicy(source)).toEqual({})
+  })
+
   it("keeps symlinks disabled for every other source", () => {
     expect(sourceInventoryPolicy({ kind: "skill", select: ["*"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "codex-native", select: ["one"] })).toEqual({})

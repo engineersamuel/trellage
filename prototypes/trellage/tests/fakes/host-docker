@@ -48,6 +48,14 @@ for internal_name in \
 done
 printf 'ARG\t%s\n' "$@" >>"$log"
 
+default_profile_hash() {
+  if [[ -n "${FAKE_HARNESS_METADATA:-}" && -f "$FAKE_HARNESS_METADATA" ]]; then
+    jq -er '.profile_hash | strings | select(test("^sha256:[0-9a-f]{64}$"))' "$FAKE_HARNESS_METADATA" 2>/dev/null \
+      && return
+  fi
+  printf '%s\n' 'sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd'
+}
+
 read_fake_state() {
   local fallback="$1"
   local state_file="$2"
@@ -250,7 +258,7 @@ case "${1:-} ${2:-}" in
             printf 'sha256:%064d\n' 0
             exit 0
           fi
-          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-$(default_profile_hash)}"
           ;;
         *dev.trellage.runtime.hash*)
           [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
@@ -323,7 +331,7 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
-        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='true'
         ;;
@@ -331,7 +339,7 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
-        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='false'
         ;;
@@ -351,7 +359,7 @@ case "${1:-} ${2:-}" in
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
-        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-sha256:905a2e19f1c63647f967a0e6e130dbc25081d0e7781ba8eb90a90a4906a996fb}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         running='true'
         ;;
@@ -392,6 +400,7 @@ case "${1:-} ${2:-}" in
         fi
         ;;
       *State.Running*) printf '%s\n' "$running" ;;
+      *State.Pid*) printf '100\n' ;;
       *'.Mounts'*)
         if [[ "$container_state" == matching-wrong-mount ]]; then
           printf 'bind\t\t%s\t%s\ttrue\n' "$worktree" "/mounts/$(basename "$worktree")"
@@ -431,6 +440,13 @@ case "${1:-} ${2:-}" in
       printf 'false\n' >"$log.container-running"
     fi
     printf '%s\n' "${@: -1}"
+    ;;
+  'container top')
+    printf 'PID PPID COMMAND\n'
+    printf '100 0 sleep\n'
+    if [[ "${FAKE_DOCKER_ACTIVE_SESSION:-0}" == 1 ]]; then
+      printf '101 100 claude\n'
+    fi
     ;;
   'container rm') printf '%s\n' "${@: -1}" ;;
   'volume rm') printf '%s\n' "${@: -1}" ;;

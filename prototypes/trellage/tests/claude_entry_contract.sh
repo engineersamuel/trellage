@@ -36,6 +36,14 @@ cat >"$seed/default-settings.json" <<'JSON'
   "disableArtifact": true
 }
 JSON
+cat >"$seed/default-onboarding.json" <<'JSON'
+{
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.218",
+  "theme": "dark",
+  "shiftEnterKeyBindingInstalled": true
+}
+JSON
 printf 'old skill\n' >"$runtime/skills/hyperresearch/SKILL.md"
 printf 'keep auth\n' >"$runtime/.credentials.json"
 printf 'keep history\n' >"$runtime/history.jsonl"
@@ -97,6 +105,16 @@ jq -e '
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
 ' "$runtime/settings.json" >/dev/null
+jq -e '
+  .hasCompletedOnboarding == true
+  and .lastOnboardingVersion == "2.1.218"
+  and .theme == "dark"
+  and .shiftEnterKeyBindingInstalled == true
+' "$runtime/.claude.json" >/dev/null
+workspace="$(pwd -P)"
+jq -e --arg workspace "$workspace" \
+  '.projects[$workspace].hasTrustDialogAccepted == true' \
+  "$runtime/.claude.json" >/dev/null
 grep -Fqx 'keep unrelated' "$runtime/unrelated/file"
 grep -Fq '"playwright"' "$config_out"
 grep -Fq '"obscura"' "$config_out"
@@ -256,5 +274,133 @@ if PATH="$fake_bin:$PATH" \
 fi
 grep -Fqx 'before rollback' "$runtime/skills/hyperresearch/SKILL.md"
 grep -Fqx 'keep settings' "$runtime/settings.json"
+
+native_seed="$root/native-seed"
+native_runtime="$root/native-home/.claude"
+plugin_root="$native_seed/plugins/cache/social-media-skills/social-media-skills/1.0.0"
+mkdir -p "$plugin_root/skills/post-writer" "$native_runtime"
+printf '# Post writer\n' >"$plugin_root/skills/post-writer/SKILL.md"
+cat >"$native_seed/plugins/installed_plugins.json" <<'JSON'
+{
+  "version": 2,
+  "plugins": {
+    "social-media-skills@social-media-skills": [
+      {
+        "scope": "user",
+        "installPath": "/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0",
+        "version": "1.0.0",
+        "gitCommitSha": "94f72ea2ece388fa30ef49a26fb2e6fd2109e0b1"
+      }
+    ]
+  }
+}
+JSON
+cat >"$native_seed/plugin-marketplaces.json" <<'JSON'
+{
+  "social-media-skills": {
+    "source": {
+      "source": "directory",
+      "path": "/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0"
+    },
+    "installLocation": "/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0"
+  }
+}
+JSON
+cat >"$native_seed/plugin-settings.json" <<'JSON'
+{
+  "enabledPlugins": {
+    "social-media-skills@social-media-skills": true
+  }
+}
+JSON
+cp "$seed/default-settings.json" "$native_seed/default-settings.json"
+cp "$seed/default-onboarding.json" "$native_seed/default-onboarding.json"
+printf '%s\n' \
+  plugins/cache/social-media-skills/social-media-skills/1.0.0/skills/post-writer/SKILL.md \
+  plugins/installed_plugins.json | LC_ALL=C sort >"$native_seed/managed-paths.txt"
+printf '{"theme":"dark"}\n' >"$native_runtime/settings.json"
+mkdir -p "$native_runtime/plugins"
+cat >"$native_runtime/plugins/known_marketplaces.json" <<'JSON'
+{
+  "claude-plugins-official": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official"
+    },
+    "installLocation": "/home/agent/.claude/plugins/marketplaces/claude-plugins-official"
+  }
+}
+JSON
+printf 'keep native auth\n' >"$native_runtime/.credentials.json"
+native_warning="$root/native-warning"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$native_seed" \
+TRELLAGE_CLAUDE_HOME="$native_runtime" \
+TRELLAGE_CLAUDE_AUTH_MODE=native \
+TRELLAGE_CLAUDE_RUNTIME_MODE=native-plugin \
+APIFY_API_TOKEN=apify-sentinel \
+GOOGLE_AI_API_KEY=google-sentinel \
+CLAUDE_ARGS_OUT="$root/native-args" CLAUDE_CONFIG_OUT="$root/native-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/native-config-path" CLAUDE_ENV_OUT="$root/native-env" \
+  "$entry" new claude --print hello 2>"$native_warning"
+grep -Fqx '# Post writer' \
+  "$native_runtime/plugins/cache/social-media-skills/social-media-skills/1.0.0/skills/post-writer/SKILL.md"
+grep -Fqx 'keep native auth' "$native_runtime/.credentials.json"
+jq -e '
+  .theme == "dark"
+  and .enabledPlugins["social-media-skills@social-media-skills"] == true
+' "$native_runtime/settings.json" >/dev/null
+jq -e '
+  .["social-media-skills"].source.source == "directory"
+  and .["social-media-skills"].source.path
+    == "/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0"
+  and .["social-media-skills"].installLocation
+    == "/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0"
+  and .["claude-plugins-official"].source.repo == "anthropics/claude-plugins-official"
+' "$native_runtime/plugins/known_marketplaces.json" >/dev/null
+grep -Fqx 'APIFY_API_TOKEN=apify-sentinel' "$root/native-env"
+grep -Fqx 'GOOGLE_AI_API_KEY=google-sentinel' "$root/native-env"
+! grep -Fq -- '--mcp-config' "$root/native-args"
+[[ ! -s "$root/native-config" ]]
+[[ ! -s "$native_warning" ]]
+printf '{"theme":"light","preserve":"user-state"}\n' >"$native_runtime/.claude.json"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$native_seed" \
+TRELLAGE_CLAUDE_HOME="$native_runtime" \
+TRELLAGE_CLAUDE_AUTH_MODE=native \
+TRELLAGE_CLAUDE_RUNTIME_MODE=native-plugin \
+CLAUDE_ARGS_OUT="$root/native-second-args" CLAUDE_CONFIG_OUT="$root/native-second-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/native-second-config-path" CLAUDE_ENV_OUT="$root/native-second-env" \
+  "$entry" new claude --print hello
+jq -e '
+  .hasCompletedOnboarding == true
+  and .lastOnboardingVersion == "2.1.218"
+  and .theme == "light"
+  and .shiftEnterKeyBindingInstalled == true
+  and .preserve == "user-state"
+' "$native_runtime/.claude.json" >/dev/null
+jq -e --arg workspace "$workspace" \
+  '.projects[$workspace].hasTrustDialogAccepted == true' \
+  "$native_runtime/.claude.json" >/dev/null
+
+hostile_runtime="$root/hostile-home/.claude"
+hostile_outside="$root/hostile-outside"
+mkdir -p "$hostile_runtime" "$hostile_outside"
+ln -s "$hostile_outside" "$hostile_runtime/plugins"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$native_seed" \
+  TRELLAGE_CLAUDE_HOME="$hostile_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  TRELLAGE_CLAUDE_RUNTIME_MODE=native-plugin \
+  CLAUDE_ARGS_OUT="$root/hostile-args" CLAUDE_CONFIG_OUT="$root/hostile-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/hostile-config-path" CLAUDE_ENV_OUT="$root/hostile-env" \
+  "$entry" new claude --print hello >/dev/null 2>&1; then
+  printf 'expected symlinked Claude plugin parent to fail\n' >&2
+  exit 1
+fi
+[[ -z "$(find "$hostile_outside" -mindepth 1 -print -quit)" ]] || {
+  printf 'Claude seed synchronization escaped through a parent symlink\n' >&2
+  exit 1
+}
 
 printf 'claude entry contract: PASS\n'

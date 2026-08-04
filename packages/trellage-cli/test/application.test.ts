@@ -899,31 +899,67 @@ describe("transactional profile upgrade", () => {
 })
 
 describe("locked builder command", () => {
-  it("removes the builder image tool defaults before installing a Claude core lane", async () => {
+  it("installs locked native Claude marketplace plugins before finalizing the seed", async () => {
     const source = `
 schema = 1
-name = "claude-qwen-local"
-description = "Claude Qwen local profile"
+name = "claude-social-media"
+description = "Claude marketplace test profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
 [harness.claude]
-mode = "core"
 default_auth = "proxy"
-model = "qwen3.6-35b-a3b-local"
+model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
 platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
-packages = ["bash"]
+packages = ["bash", "git", "jq"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/charlie947/social-media-skills.git"
+ref = "main"
+marketplace = "social-media-skills"
+select = ["social-media-skills"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/blader/humanizer.git"
+ref = "main"
+marketplace = "humanizer"
+select = ["humanizer"]
 `
-    const document = await Effect.runPromise(parseProfile(source, "/tmp/claude-qwen-local/profile.toml"))
+    const document = await Effect.runPromise(parseProfile(source, "/profiles/claude-social-media/profile.toml"))
     const lock: ProfileLock = {
       schema: 1,
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
-      sources: [],
+      sources: [
+        {
+          kind: "plugin",
+          adapter: "claude-marketplace",
+          marketplace: "social-media-skills",
+          plugin_versions: { "social-media-skills": "1.0.0" },
+          repository: "https://github.com/charlie947/social-media-skills.git",
+          ref: "main",
+          select: ["social-media-skills"],
+          commit: "a".repeat(40),
+          integrity: digest("b"),
+          files: [],
+        },
+        {
+          kind: "plugin",
+          adapter: "claude-marketplace",
+          marketplace: "humanizer",
+          plugin_versions: { humanizer: "2.9.1" },
+          repository: "https://github.com/blader/humanizer.git",
+          ref: "main",
+          select: ["humanizer"],
+          commit: "e".repeat(40),
+          integrity: digest("f"),
+          files: [],
+        },
+      ],
       packages: {
         harness: {
           kind: "claude",
@@ -931,14 +967,25 @@ packages = ["bash"]
           version: "2.1.218",
           integrity: digest("c"),
           url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-          size: 1024,
+          size: 22971,
         },
-        runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+        runtime: [],
       },
-      image: { base: document.profile.image.base, base_digest: digest("b") },
+      image: { base: "node:22.17.0-bookworm-slim", base_digest: digest("d") },
     }
 
-    expect(builderScript(document, lock)).toMatch(/^rm -f \/mise\/config\.toml; mise install --locked;/)
+    const script = builderScript(document, lock)
+
+    expect(script).toContain("mise install --locked node@22.17.0 npm:@anthropic-ai/claude-code@2.1.218")
+    expect(script).toContain(
+      "CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+    )
+    expect(script).toContain("plugin marketplace add /src/claude-marketplace-0")
+    expect(script).toContain("plugin marketplace add /src/claude-marketplace-1")
+    expect(script).toContain("plugin install social-media-skills@social-media-skills --scope user")
+    expect(script).toContain("plugin install humanizer@humanizer --scope user")
+    expect(script).toContain("/src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json")
+    expect(script).not.toMatch(/hyperresearch|playwright|obscura|APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
   })
 
   it("installs and verifies the exact locked Copilot plugin before finalizing the seed", async () => {

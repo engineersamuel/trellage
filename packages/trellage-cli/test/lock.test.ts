@@ -230,59 +230,112 @@ const completePiLock = (): ProfileLock => {
 }
 
 describe("lock inventory compatibility", () => {
-  it("accepts a source-free Claude core lock without Python or browser artifacts", async () => {
-    const claudeDocument = await Effect.runPromise(
+  it("round-trips and accepts a complete native Claude marketplace lock", async () => {
+    const profile = await Effect.runPromise(
       parseProfile(
         `
 schema = 1
-name = "claude-qwen-local"
-description = "Claude Qwen local profile"
+name = "claude-social-media"
+description = "Claude marketplace test profile"
 [harness]
 kind = "claude"
 version = "2.1.218"
 [harness.claude]
-mode = "core"
 default_auth = "proxy"
-model = "qwen3.6-35b-a3b-local"
+model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
-opus_model = "qwen3.6-35b-a3b-local"
-sonnet_model = "qwen3.6-35b-a3b-local"
-haiku_model = "qwen3.6-35b-a3b-local"
 [image]
 platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
-packages = ["bash", "ca-certificates", "fish", "git", "jq"]
+packages = ["bash"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/charlie947/social-media-skills.git"
+ref = "main"
+marketplace = "social-media-skills"
+select = ["social-media-skills"]
 `,
-        "/profiles/claude-qwen-local/profile.toml",
+        "/profiles/claude-social-media/profile.toml",
       ),
     )
-    const baseResolvers = fakeResolvers(commit("1"), [])
-    const resolvers: LockResolvers = {
-      ...baseResolvers,
-      resolvePackages: (request) =>
-        baseResolvers.resolvePackages(request).pipe(
-          Effect.map((packages) => ({
-            ...packages,
-            runtime: request.packages.map((name) => ({ name, version: "1.0.0", integrity: digest("d") })),
-            artifacts: ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"].map((name) => ({
-              name,
-              version: "1.0.0",
-              integrity: digest("a"),
-              url: "https://example.test/artifact",
-              size: 1,
-            })),
-          })),
-        ),
+    const files = [
+      {
+        kind: "file" as const,
+        path: ".claude-plugin/marketplace.json",
+        sha256: digest("f"),
+      },
+    ]
+    const lock: ProfileLock = {
+      schema: 1,
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(profile),
+      sources: [
+        {
+          kind: "plugin",
+          adapter: "claude-marketplace",
+          marketplace: "social-media-skills",
+          plugin_versions: { "social-media-skills": "1.0.0" },
+          repository: "https://github.com/charlie947/social-media-skills.git",
+          ref: "main",
+          select: ["social-media-skills"],
+          commit: commit("a"),
+          integrity: treeIntegrity(files),
+          files,
+        },
+      ],
+      packages: {
+        harness: {
+          kind: "claude",
+          selector: "2.1.218",
+          version: "2.1.218",
+          integrity: digest("c"),
+          url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
+          size: 22971,
+        },
+        runtime: [{ name: "bash", version: "5.2.15-2+b13", integrity: digest("d") }],
+        artifacts: [
+          {
+            name: "node",
+            version: "22.17.0",
+            integrity: digest("1"),
+            url: "https://example.test/node.tar.gz",
+          },
+          {
+            name: "claude-code-linux-arm64",
+            version: "2.1.218",
+            integrity: digest("2"),
+            url: "https://example.test/claude-native.tgz",
+          },
+          {
+            name: "builder-oci",
+            version: "jdxcode/mise",
+            integrity: digest("3"),
+            url: "oci://docker.io/jdxcode/mise",
+          },
+          {
+            name: "skopeo-oci",
+            version: "stable",
+            integrity: digest("4"),
+            url: "oci://quay.io/skopeo/stable",
+          },
+        ],
+      },
+      image: {
+        base: "node:22.17.0-bookworm-slim",
+        base_digest: digest("b"),
+        final_digest: digest("e"),
+      },
     }
 
-    const resolved = await Effect.runPromise(compileLock(claudeDocument, undefined, false, resolvers))
-    const locked = { ...resolved, image: { ...resolved.image, final_digest: digest("e") } }
-    const parsed = await Effect.runPromise(parseLock(renderLock(locked)))
+    const parsed = await Effect.runPromise(parseLock(renderLock(lock)))
 
-    expect(locked.sources).toEqual([])
-    expect(locked.packages.python_lock_integrity).toBeUndefined()
-    await expect(Effect.runPromise(requireLocked(claudeDocument, parsed))).resolves.toEqual(locked)
+    await expect(Effect.runPromise(requireLocked(profile, parsed))).resolves.toBe(parsed)
+    expect(parsed.sources[0]).toMatchObject({
+      adapter: "claude-marketplace",
+      plugin_versions: { "social-media-skills": "1.0.0" },
+    })
+    expect(parsed.packages.python_lock_integrity).toBeUndefined()
   })
 
   it("round-trips exact Claude auxiliary artifact identities", async () => {
