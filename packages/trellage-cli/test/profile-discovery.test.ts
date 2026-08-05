@@ -23,7 +23,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -68,6 +67,7 @@ tools = { allow = ["search"], deny = ["delete"] }
       value: "/profiles/detailed/profile.toml",
       name: "detailed",
       description: "Detailed profile",
+      supported_platforms: [],
       harness: { kind: "codex", version: "0.144.6", model: "gpt-5.5" },
       skills: [
         {
@@ -135,5 +135,18 @@ describe("profile discovery", () => {
 
     expect(choices).toHaveLength(1)
     expect(choices[0]?.name).toBe("only")
+  })
+
+  it("projects one profile with its platform-lock inventory", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-profile-platforms-"))
+    const bundled = path.join(root, "profiles")
+    const profilePath = await writeProfile(bundled, "portable", codexProfile("portable", "Portable profile"))
+    await writeFile(path.join(path.dirname(profilePath), "profile.linux-arm64.lock.toml"), "")
+    await writeFile(path.join(path.dirname(profilePath), "profile.linux-amd64.lock.toml"), "")
+
+    const choices = await Effect.runPromise(discoverProfileChoices({ bundled }))
+
+    expect(choices).toHaveLength(1)
+    expect(choices[0]?.supported_platforms).toEqual(["linux/arm64", "linux/amd64"])
   })
 })

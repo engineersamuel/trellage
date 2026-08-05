@@ -14,7 +14,7 @@ const profilePath = fileURLToPath(new URL("../../../profiles/claude-hyperresearc
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
 const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social-media/profile.toml", import.meta.url))
 const socialLockPath = fileURLToPath(
-  new URL("../../../profiles/claude-social-media/profile.lock.toml", import.meta.url),
+  new URL("../../../profiles/claude-social-media/profile.linux-arm64.lock.toml", import.meta.url),
 )
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
@@ -41,7 +41,7 @@ describe("authored Claude Hyperresearch profile", () => {
   })
 
   it("publishes Claude-specific runtime metadata without credentials", async () => {
-    const metadata = await Effect.runPromise(profileMetadata(profilePath))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
 
     expect(metadata).toMatchObject({
       harness_kind: "claude",
@@ -84,6 +84,7 @@ describe("authored Claude Hyperresearch profile", () => {
     const document = await Effect.runPromise(parseProfile(source, profilePath))
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: `sha256:${"a".repeat(64)}`,
       sources: [
@@ -206,7 +207,7 @@ describe("authored standalone Claude Qwen profile", () => {
   })
 
   it("publishes the exact local gateway and Qwen alias routes", async () => {
-    const metadata = await Effect.runPromise(profileMetadata(qwenProfilePath))
+    const metadata = await Effect.runPromise(profileMetadata(qwenProfilePath, "linux/arm64"))
 
     expect(metadata).toMatchObject({
       claude_mode: "core",

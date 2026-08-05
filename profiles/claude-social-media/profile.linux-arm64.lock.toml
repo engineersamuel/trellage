@@ -1,6 +1,7 @@
 schema = 1
+platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:b0d156d1c9aa27c10b448cc6c7551221a5ccec67c15a84d6a77a9d2acdca2eb5"
+profile_hash = "sha256:879bc8e25d20f00b645c6ccc985470834c3d3ceaa4620cd2d7a5f9f9c0e60936"
 
 [[sources]]
 kind = "plugin"
@@ -248,4 +249,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:69441a37e91bc4f47627a6bc0a76f72d267868128b09ff995698d41955c9ceb5"
+final_digest = "sha256:67f0da9c97de63013f4acca71ca63644a8770af8957971f18a96922f9924693a"

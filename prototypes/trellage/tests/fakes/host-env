@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+write_fixture_config() {
+  local directory="$1"
+  local destination="$directory/.trellage-fixture-env"
+  local temporary="$destination.tmp-$$-$RANDOM"
+  local has_fixture_values=false
+  while IFS= read -r name; do
+    if [[ "$has_fixture_values" == false ]]; then
+      : >"$temporary"
+      has_fixture_values=true
+    fi
+    printf 'export %q=%q\n' "$name" "${!name}" >>"$temporary"
+  done < <(compgen -A variable FAKE_)
+  [[ "$has_fixture_values" == false ]] || mv -f "$temporary" "$destination"
+}
+
+IFS=: read -r -a path_entries <<<"${PATH:-}"
+for directory in "${path_entries[@]}"; do
+  [[ -d "$directory" && -w "$directory" ]] || continue
+  if [[ -e "$directory/docker" || -e "$directory/node" || -e "$directory/gh" ]]; then
+    write_fixture_config "$directory"
+  fi
+done
+
+exec /usr/bin/env "$@"

@@ -4,6 +4,7 @@ import { Data, Effect, ParseResult, Schema } from "effect"
 import {
   hasLegacyPackageProvenance,
   hasLegacySourceProvenance,
+  markPersistedLock,
   markParsedLegacyProvenance,
   type ProfileLock,
 } from "./lock.js"
@@ -27,6 +28,7 @@ const sortedFrozenRecord = (values: Readonly<Record<string, string>>): Readonly<
 export const renderLock = (lock: ProfileLock): string => {
   const lines = [
     "schema = 1",
+    `platform = ${quote(lock.platform)}`,
     `source_date_epoch = ${lock.source_date_epoch}`,
     `profile_hash = ${quote(lock.profile_hash)}`,
   ]
@@ -215,6 +217,7 @@ const PackageSchema = Schema.Struct({
 })
 const LockSchema = Schema.Struct({
   schema: Schema.Literal(1),
+  platform: Schema.Literal("linux/arm64", "linux/amd64"),
   source_date_epoch: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
   profile_hash: Text,
   sources: Schema.Array(SourceSchema),
@@ -290,7 +293,7 @@ export const parseLock = (source: string): Effect.Effect<ProfileLock, LockFileEr
                 runtime: value.packages.runtime,
               },
       } as ProfileLock
-      return legacySources === undefined ? lock : markParsedLegacyProvenance(lock, legacySources)
+      return markPersistedLock(legacySources === undefined ? lock : markParsedLegacyProvenance(lock, legacySources))
     }),
     Effect.mapError((cause) =>
       cause instanceof LockFileError

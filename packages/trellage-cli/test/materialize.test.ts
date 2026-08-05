@@ -55,7 +55,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish"]
@@ -292,7 +291,6 @@ provider = "github-copilot"
 model = "gpt-5.6-terra"
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -307,6 +305,7 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
     )
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [
@@ -396,7 +395,6 @@ opus_model = "qwen3.6-35b-a3b-local"
 sonnet_model = "qwen3.6-35b-a3b-local"
 haiku_model = "qwen3.6-35b-a3b-local"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "bash"
 packages = ["bash", "ca-certificates", "git", "jq"]
@@ -406,6 +404,7 @@ packages = ["bash", "ca-certificates", "git", "jq"]
     )
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [],
@@ -481,7 +480,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -500,6 +498,7 @@ select = ["full"]
     const files = await Effect.runPromise(inventoryDirectory(checkout))
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [
@@ -598,7 +597,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -626,6 +624,7 @@ select = ["one"]
       .digest("hex")}`
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [
@@ -667,6 +666,7 @@ select = ["one"]
     const parsedLock = await Effect.runPromise(
       parseLock(`
 schema = 1
+platform = "linux/arm64"
 source_date_epoch = 1784379906
 profile_hash = ${JSON.stringify(lock.profile_hash)}
 
@@ -751,6 +751,7 @@ final_digest = "sha256:final"
     await chmod(path.join(directories[0]!, "skills", "one", "SKILL.md"), 0o755)
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: sourceLocks,
@@ -808,7 +809,6 @@ version = "latest"
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -837,6 +837,7 @@ select = ["hve-core"]
     await chmod(command, 0o755)
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [
@@ -914,6 +915,7 @@ select = ["hve-core"]
     }
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: sourceLocks,
@@ -1013,7 +1015,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -1023,6 +1024,7 @@ packages = ["bash"]
     )
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [],
@@ -1079,7 +1081,6 @@ initial_prompt = "./prompt.md"
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -1110,6 +1111,7 @@ select = ["hve-core"]
     const files = await Effect.runPromise(inventoryDirectory(hve, { allowSymlinks: true }))
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [
@@ -1215,7 +1217,6 @@ version = "latest"
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/amd64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -1235,6 +1236,7 @@ select = ["hve-core"]
     const files = await Effect.runPromise(inventoryDirectory(hve, { allowSymlinks: true }))
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/amd64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [

@@ -6,7 +6,7 @@ set -euo pipefail
 
 prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tests_dir="$prototype_dir/tests"
-image_ref="${IMAGE_REF:-trellage-profile-codex-superpowers:locked}"
+image_ref="${IMAGE_REF:-trellage-profile-codex-superpowers-linux-arm64:locked}"
 network='copilot-proxy-rs_default'
 prototype_label='dev.trellage.prototype'
 worktree_label='dev.trellage.worktree'

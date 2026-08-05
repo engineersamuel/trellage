@@ -28,7 +28,6 @@ base_url = "http://copilot-proxy-rs:8080/v1"
 wire_api = "responses"
 
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git"]
@@ -59,7 +58,6 @@ args = ["--allow-all"]
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git", "jq"]
@@ -79,7 +77,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "ca-certificates", "curl", "git", "jq"]
@@ -103,7 +100,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "ca-certificates", "curl", "fish", "git", "jq", "zsh"]
@@ -134,6 +130,12 @@ describe("parseProfile", () => {
     if (!isCodexProfile(result.profile)) throw new Error("expected Codex profile")
     expect(result.profile.harness.codex.providers.copilot_proxy?.wire_api).toBe("responses")
     expect(result.directory).toBe("/profiles/example")
+  })
+
+  it("rejects architecture in logical profile intent", async () => {
+    await expect(decode(profile().replace("[image]", '[image]\nplatform = "linux/arm64"'))).rejects.toThrow(
+      /platform|unexpected/i,
+    )
   })
 
   it("defaults the runtime tmpfs size", async () => {

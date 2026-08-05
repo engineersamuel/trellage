@@ -5,8 +5,11 @@ import { Data, Effect } from "effect"
 
 import type { InventoryEntry } from "./inventory.js"
 import type { ProfileDocument } from "./profile.js"
+import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.js"
+import { lockedArtifactError } from "./artifact-catalog.js"
 
 const legacySourceProvenance = Symbol("legacySourceProvenance")
+const persistedLockProvenance = Symbol("persistedLockProvenance")
 
 interface LegacyLockProvenance {
   readonly packages: true
@@ -91,6 +94,7 @@ export interface PackageLock {
 
 export interface ProfileLock {
   readonly schema: 1
+  readonly platform: Platform
   readonly source_date_epoch: number
   readonly profile_hash: string
   readonly sources: ReadonlyArray<SourceLock>
@@ -101,7 +105,20 @@ export interface ProfileLock {
     readonly final_digest?: string
   }
   readonly [legacySourceProvenance]?: LegacyLockProvenance
+  readonly [persistedLockProvenance]?: true
 }
+
+export const markPersistedLock = (lock: ProfileLock): ProfileLock => {
+  Object.defineProperty(lock, persistedLockProvenance, {
+    value: true,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  })
+  return lock
+}
+
+const isPersistedLock = (lock: ProfileLock): boolean => lock[persistedLockProvenance] === true
 
 export const markParsedLegacyProvenance = (lock: ProfileLock, sourceIndexes: ReadonlyArray<number>): ProfileLock => {
   Object.defineProperty(lock, legacySourceProvenance, {
@@ -125,7 +142,8 @@ export const withFinalDigest = (lock: ProfileLock, finalDigest: string): Profile
     image: { ...lock.image, final_digest: finalDigest },
   }
   const provenance = lock[legacySourceProvenance]
-  return provenance === undefined ? updated : markParsedLegacyProvenance(updated, provenance.sourceIndexes)
+  const preserved = provenance === undefined ? updated : markParsedLegacyProvenance(updated, provenance.sourceIndexes)
+  return isPersistedLock(lock) ? markPersistedLock(preserved) : preserved
 }
 
 export interface SourceResolution {
@@ -136,6 +154,7 @@ export interface SourceResolution {
 }
 
 export interface LockResolvers {
+  readonly platform: Platform
   readonly resolveSource: (request: {
     readonly kind: "skill" | "plugin"
     readonly adapter?:
@@ -252,7 +271,11 @@ const lockSemanticError = (
   document: ProfileDocument,
   current: ProfileLock,
   requireFinalDigest: boolean,
+  platform: Platform,
 ): string | undefined => {
+  if (current.platform !== platform) {
+    return `lock platform does not match Docker server: ${current.platform}`
+  }
   if (!sha256Pattern.test(current.profile_hash)) return "profile hash is invalid"
   if (!sha256Pattern.test(current.image.base_digest)) return "base image digest is invalid"
   if (requireFinalDigest && current.image.final_digest === undefined) return "final OCI digest is missing"
@@ -279,13 +302,12 @@ const lockSemanticError = (
     return "explicit harness selector does not match resolved version"
   }
   if (harness.kind === "copilot") {
-    const asset =
-      document.profile.image.platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
+    const asset = platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
     const expected = `https://github.com/github/copilot-cli/releases/download/v${harness.version}/${asset}`
     if (harness.url !== expected) return "Copilot package artifact URL is invalid"
   }
   if (harness.kind === "pi") {
-    const asset = document.profile.image.platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
+    const asset = platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
     const expected = `https://github.com/can1357/oh-my-pi/releases/download/v${harness.version}/${asset}`
     if (harness.url !== expected) return "Pi package artifact URL is invalid"
   }
@@ -455,7 +477,7 @@ const lockSemanticError = (
       if (source.integrity !== legacyIntegrity) return `source integrity mismatch: ${source.repository}`
     }
   }
-  return undefined
+  return isPersistedLock(current) ? lockedArtifactError(document, current, platform) : undefined
 }
 
 const lockMatchesProfile = (document: ProfileDocument, current: ProfileLock): boolean => {
@@ -472,10 +494,19 @@ const lockMatchesProfile = (document: ProfileDocument, current: ProfileLock): bo
   )
 }
 
-export const lockIsReady = (document: ProfileDocument, current: ProfileLock | undefined): boolean =>
-  current !== undefined &&
-  lockSemanticError(document, current, true) === undefined &&
-  lockMatchesProfile(document, current)
+export const lockIsReady = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  platform?: Platform,
+): boolean => {
+  if (current === undefined) return false
+  const selectedPlatform = platform ?? current.platform
+  return (
+    productionPlatforms.includes(selectedPlatform as "linux/arm64") &&
+    lockSemanticError(document, current, true, selectedPlatform) === undefined &&
+    lockMatchesProfile(document, current)
+  )
+}
 
 const resolveSources = (
   document: ProfileDocument,
@@ -526,9 +557,13 @@ export const compileLock = (
   resolvers: LockResolvers,
 ): Effect.Effect<ProfileLock, LockError> =>
   Effect.gen(function* () {
+    const platform = resolvers.platform
+    yield* assertProductionPlatform(platform).pipe(
+      Effect.mapError((cause) => new LockError({ message: cause.message, cause })),
+    )
     const hash = profileHash(document)
     const validCurrent =
-      current !== undefined && lockSemanticError(document, current, false) === undefined ? current : undefined
+      current !== undefined && lockSemanticError(document, current, false, platform) === undefined ? current : undefined
     if (validCurrent !== undefined && lockMatchesProfile(document, validCurrent) && !update) return validCurrent
     const sources = yield* resolveSources(document, validCurrent, update, resolvers)
     const claudeAdapter =
@@ -541,7 +576,7 @@ export const compileLock = (
       .resolvePackages({
         kind: document.profile.harness.kind,
         selector: document.profile.harness.version,
-        platform: document.profile.image.platform,
+        platform,
         packages: document.profile.image.packages,
         needsSkillsCli: document.profile.harness.kind === "codex" && document.profile.skills.length > 0,
         ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
@@ -550,11 +585,12 @@ export const compileLock = (
     const base = yield* resolvers
       .resolveBase({
         reference: document.profile.image.base,
-        platform: document.profile.image.platform,
+        platform,
       })
       .pipe(Effect.mapError((cause) => new LockError({ message: "base image resolution failed", cause })))
     return {
       schema: 1,
+      platform,
       source_date_epoch: 1784379906,
       profile_hash: hash,
       sources,
@@ -569,10 +605,18 @@ export const compileLock = (
 export const requireLocked = (
   document: ProfileDocument,
   current: ProfileLock | undefined,
+  platform?: Platform,
 ): Effect.Effect<ProfileLock, LockError> => {
   if (current === undefined) return Effect.fail(new LockError({ message: "missing lock" }))
+  const selectedPlatform = platform ?? current.platform
+  if (current.platform !== selectedPlatform) {
+    return Effect.fail(new LockError({ message: `lock platform does not match Docker server: ${current.platform}` }))
+  }
+  if (!productionPlatforms.includes(selectedPlatform as "linux/arm64")) {
+    return Effect.fail(new LockError({ message: `production artifacts are unavailable for ${selectedPlatform}` }))
+  }
   if (current.profile_hash !== profileHash(document)) return Effect.fail(new LockError({ message: "stale lock" }))
-  const semanticError = lockSemanticError(document, current, true)
+  const semanticError = lockSemanticError(document, current, true, selectedPlatform)
   if (semanticError !== undefined)
     return Effect.fail(new LockError({ message: `lock is incomplete or invalid: ${semanticError}` }))
   if (!lockMatchesProfile(document, current)) return Effect.fail(new LockError({ message: "incompatible lock" }))

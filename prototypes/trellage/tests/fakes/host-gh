@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+fixture_config="$(dirname "$0")/.trellage-fixture-env"
+[[ ! -f "$fixture_config" ]] || source "$fixture_config"
 
 log="${FAKE_GH_LOG:?}"
 printf 'CALL\n' >>"$log"
@@ -16,6 +18,9 @@ done
 printf 'ARG\t%s\n' "$@" >>"$log"
 
 [[ "${FAKE_GH_STATE:-success}" == success ]] || exit "${FAKE_GH_EXIT:-1}"
+if [[ "${1:-}" == auth && "${2:-}" == status && "${3:-}" == --hostname && -n "${4:-}" ]]; then
+  exit 0
+fi
 [[ "${1:-}" == auth && "${2:-}" == token && "${3:-}" == --hostname && -n "${4:-}" ]] \
   || exit 64
 printf '%s\n' "${FAKE_GH_TOKEN:-}"
