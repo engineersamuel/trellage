@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+
+set -u
+set -o pipefail
+
+root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+launcher="$root/bin/omp"
+installer="$root/install.sh"
+uninstaller="$root/uninstall.sh"
+
+fail() {
+  printf 'omp contract failed: %s\n' "$1" >&2
+  exit 1
+}
+
+for source_file in "$launcher" "$installer" "$uninstaller" "$root/README.md"; do
+  [[ -f "$source_file" ]] || fail "missing source file: $source_file"
+done
+
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-omp-contract.XXXXXX")" \
+  || fail 'could not create fixture root'
+case "$fixture_root" in
+  "${TMPDIR:-/tmp}"/trellage-omp-contract.*) ;;
+  *) fail "unsafe fixture root: $fixture_root" ;;
+esac
+trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
+
+fake_bin="$fixture_root/fake-bin"
+home="$fixture_root/home"
+mkdir -p "$fake_bin" "$home"
+
+cat >"$fake_bin/mise" <<'FAKE_MISE'
+#!/usr/bin/env bash
+set -u
+
+printf '%s\n' "$*" >>"$FAKE_MISE_LOG"
+tool='github:can1357/oh-my-pi'
+install_name='github-can1357-oh-my-pi'
+
+case "${1-}" in
+  latest)
+    [[ "${2-}" == "$tool" ]] || exit 90
+    printf '%s\n' "${FAKE_MISE_LATEST:-17.2.6}"
+    ;;
+  install)
+    spec="${2-}"
+    version="${spec#"$tool"@}"
+    [[ "$spec" == "$tool@$version" && "$version" != "$spec" ]] || exit 91
+    [[ "${FAKE_MISE_INSTALL_FAIL_VERSION-}" != "$version" ]] || exit 72
+    destination="$MISE_DATA_DIR/installs/$install_name/$version"
+    mkdir -p "$destination"
+    sed "s/@VERSION@/$version/g" "$FAKE_OMP_TEMPLATE" >"$destination/omp"
+    chmod 0755 "$destination/omp"
+    ;;
+  where)
+    spec="${2-}"
+    version="${spec#"$tool"@}"
+    destination="$MISE_DATA_DIR/installs/$install_name/$version"
+    [[ -x "$destination/omp" ]] || exit 1
+    printf '%s\n' "$destination"
+    ;;
+  *) exit 92 ;;
+esac
+FAKE_MISE
+chmod 0755 "$fake_bin/mise"
+
+cat >"$fixture_root/fake-omp-template" <<'FAKE_OMP'
+#!/usr/bin/env bash
+set -u
+
+if [[ "${1-}" == '--version' ]]; then
+  printf 'omp/%s\n' '@VERSION@'
+  exit 0
+fi
+
+if [[ "$#" -eq 0 ]]; then
+  config="$HOME/.omp/profiles/${OMP_PROFILE-}/agent/config.yml"
+  if ! grep -Fqx 'setupVersion: 1' "$config" \
+    || ! grep -Fqx '  setupWizard: false' "$config"; then
+    printf 'Choose your default model\n'
+    exit 64
+  fi
+fi
+
+jq -cn \
+  --arg version '@VERSION@' \
+  --arg profile "${OMP_PROFILE-}" \
+  --arg home "$HOME" \
+  --arg cwd "$PWD" \
+  '$ARGS.named + {args:$ARGS.positional}' \
+  --args -- "$@" >>"$FAKE_OMP_LOG"
+
+if [[ "${FAKE_OMP_WAIT_FOR_SIGNAL-}" == 1 ]]; then
+  trap 'printf "TERM\n" >>"$FAKE_OMP_SIGNAL_LOG"; exit 143' TERM
+  printf 'READY\n' >>"$FAKE_OMP_SIGNAL_LOG"
+  while :; do sleep 0.05; done
+fi
+
+exit "${FAKE_OMP_EXIT_STATUS:-0}"
+FAKE_OMP
+chmod 0755 "$fixture_root/fake-omp-template"
+
+cat >"$fake_bin/curl" <<'FAKE_CURL'
+#!/usr/bin/env bash
+set -u
+
+printf '%s\n' "$*" >>"$FAKE_CURL_LOG"
+url="${!#}"
+case "$url" in
+  http://127.0.0.1:8080/health)
+    [[ "${FAKE_PROXY_HEALTH:-ok}" == ok ]] || exit 22
+    printf '{"status":"ok"}\n'
+    ;;
+  http://127.0.0.1:8080/v1/models)
+    if [[ "${FAKE_PROXY_HAS_MODEL:-1}" == 1 ]]; then
+      printf '{"data":[{"id":"qwen3.6-35b-a3b-local"}]}\n'
+    else
+      printf '{"data":[{"id":"another-model"}]}\n'
+    fi
+    ;;
+  *) exit 93 ;;
+esac
+FAKE_CURL
+chmod 0755 "$fake_bin/curl"
+
+export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export HOME="$home"
+export FAKE_MISE_LOG="$fixture_root/mise.log"
+export FAKE_CURL_LOG="$fixture_root/curl.log"
+export FAKE_OMP_LOG="$fixture_root/omp.log"
+export FAKE_OMP_TEMPLATE="$fixture_root/fake-omp-template"
+export FAKE_OMP_SIGNAL_LOG="$fixture_root/signal.log"
+: >"$FAKE_MISE_LOG"
+: >"$FAKE_CURL_LOG"
+: >"$FAKE_OMP_LOG"
+
+"$installer" >"$fixture_root/install.out" || fail 'install failed'
+command_path="$HOME/.local/bin/omp"
+runtime_root="$HOME/.local/share/trellage/omp"
+profile_root="$HOME/.omp/profiles/trellage-qwen-local"
+agent_root="$profile_root/agent"
+
+[[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
+[[ "$(readlink "$command_path")" == "$runtime_root/bin/omp" ]] \
+  || fail 'command symlink target differs'
+
+"$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
+[[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'setup did not pin resolved version'
+[[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \
+  || fail 'setup did not materialize config.yml'
+[[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] \
+  || fail 'setup did not materialize models.yml'
+[[ -f "$profile_root/.managed-by-trellage-omp-profiles" ]] \
+  || fail 'setup did not mark profile ownership'
+
+model='copilot-proxy-rs/qwen3.6-35b-a3b-local'
+for role in default smol slow vision plan designer commit tiny task advisor; do
+  grep -Fqx "  $role: $model" "$agent_root/config.yml" \
+    || fail "config does not map role: $role"
+done
+grep -Fqx '  - copilot-proxy-rs/qwen3.6-35b-a3b-local' "$agent_root/config.yml" \
+  || fail 'config does not exclusively enable local Qwen'
+[[ "$(grep -Fc '  - ' "$agent_root/config.yml")" -eq 1 ]] \
+  || fail 'config enabled more than one model'
+grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" \
+  || fail 'config does not set explicit yolo approval mode'
+grep -Fqx 'setupVersion: 1' "$agent_root/config.yml" \
+  || fail 'config does not mark setup complete'
+grep -Fqx '  setupWizard: false' "$agent_root/config.yml" \
+  || fail 'config does not disable startup setup wizard'
+grep -Fqx '  copilot-proxy-rs:' "$agent_root/models.yml" \
+  || fail 'models config omitted provider'
+grep -Fqx '    baseUrl: http://127.0.0.1:8080/v1' "$agent_root/models.yml" \
+  || fail 'models config has wrong base URL'
+grep -Fqx '    api: openai-responses' "$agent_root/models.yml" \
+  || fail 'models config has wrong API'
+grep -Fqx '    auth: none' "$agent_root/models.yml" \
+  || fail 'models config requires auth'
+grep -Fqx '      type: openai-models-list' "$agent_root/models.yml" \
+  || fail 'models config omitted /v1/models discovery'
+! grep -Eiq 'api[_-]?key|token|secret|password' "$agent_root/config.yml" "$agent_root/models.yml" \
+  || fail 'managed config contains credential-shaped data'
+
+"$command_path" >"$fixture_root/bare-launch.out" 2>&1 \
+  || fail 'bare launch opened the model-selection wizard'
+! grep -Fq 'Choose your default model' "$fixture_root/bare-launch.out" \
+  || fail 'bare launch displayed the model-selection wizard'
+
+config_hash="$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')"
+models_hash="$(shasum -a 256 "$agent_root/models.yml" | awk '{print $1}')"
+"$command_path" setup >"$fixture_root/setup-again.out" || fail 'idempotent setup failed'
+[[ "$config_hash" == "$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')" ]] \
+  || fail 'idempotent setup changed config'
+[[ "$models_hash" == "$(shasum -a 256 "$agent_root/models.yml" | awk '{print $1}')" ]] \
+  || fail 'idempotent setup changed models config'
+
+printf 'profile session canary\n' >"$profile_root/reinstall-canary"
+"$installer" >"$fixture_root/reinstall.out" || fail 'idempotent reinstall failed'
+grep -Fqx 'profile session canary' "$profile_root/reinstall-canary" \
+  || fail 'reinstall changed profile state'
+[[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'reinstall changed pinned version'
+
+worktree="$fixture_root/worktree with spaces"
+mkdir -p "$worktree"
+worktree="$(CDPATH= cd -P -- "$worktree" && pwd -P)"
+(
+  cd "$worktree" || exit 1
+  "$command_path" -p 'Reply exactly OMP_LOCAL_OK' -- '--literal value'
+) || fail 'argument forwarding failed'
+expected_launch="$(jq -cn \
+  --arg home "$HOME" \
+  --arg cwd "$worktree" \
+  '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
+[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_launch" ]] \
+  || fail 'launch did not preserve profile, cwd, HOME, or exact arguments'
+
+if FAKE_OMP_EXIT_STATUS=37 "$command_path" --help >/dev/null 2>&1; then
+  fail 'launcher swallowed upstream failure'
+else
+  status=$?
+  [[ "$status" -eq 37 ]] || fail "launcher exit was $status, expected 37"
+fi
+
+if FAKE_OMP_EXIT_STATUS=38 "$command_path" -h >/dev/null 2>&1; then
+  fail 'launcher intercepted upstream short help'
+else
+  status=$?
+  [[ "$status" -eq 38 ]] || fail "short-help exit was $status, expected 38"
+fi
+
+FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" -p wait-for-signal &
+signal_pid=$!
+for _ in {1..100}; do
+  grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
+  sleep 0.02
+done
+grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null || fail 'signal fixture did not become ready'
+kill -TERM "$signal_pid"
+if wait "$signal_pid"; then
+  fail 'signaled launcher unexpectedly succeeded'
+else
+  status=$?
+  [[ "$status" -eq 143 ]] || fail "signaled launcher exit was $status, expected 143"
+fi
+grep -Fqx TERM "$FAKE_OMP_SIGNAL_LOG" || fail 'launcher did not preserve TERM delivery'
+
+state_before="$fixture_root/doctor.before"
+state_after="$fixture_root/doctor.after"
+find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$state_before"
+"$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed for healthy setup'
+find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$state_after"
+cmp -s "$state_before" "$state_after" || fail 'doctor mutated managed state'
+grep -Fqx 'omp doctor: OK (17.2.6, qwen3.6-35b-a3b-local)' "$fixture_root/doctor.out" \
+  || fail 'doctor success output differs'
+
+if FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/doctor-missing.out" 2>&1; then
+  fail 'doctor accepted missing local model'
+fi
+find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$state_after"
+cmp -s "$state_before" "$state_after" || fail 'failed doctor mutated managed state'
+
+FAKE_MISE_LATEST=17.2.7 "$command_path" update --check >"$fixture_root/check.out" \
+  || fail 'update check failed'
+grep -Fqx 'omp update: 17.2.6 -> 17.2.7 available' "$fixture_root/check.out" \
+  || fail 'update check output differs'
+[[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'update check changed pinned version'
+
+if FAKE_MISE_LATEST=17.2.7 FAKE_MISE_INSTALL_FAIL_VERSION=17.2.7 \
+  "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when mise failed'
+fi
+[[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'failed update replaced pinned version'
+
+FAKE_MISE_LATEST=17.2.7 "$command_path" update >"$fixture_root/update.out" \
+  || fail 'update failed'
+[[ "$(<"$runtime_root/version")" == '17.2.7' ]] || fail 'update did not publish new exact version'
+
+printf 'damaged managed config\n' >"$agent_root/config.yml"
+damaged_hash="$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')"
+if OMP_TEST_FAIL_AT=after-config "$command_path" repair >"$fixture_root/repair-rollback.out" 2>&1; then
+  fail 'injected repair publication failure unexpectedly succeeded'
+fi
+[[ "$damaged_hash" == "$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')" ]] \
+  || fail 'failed repair did not roll back config publication'
+"$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
+grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" || fail 'repair did not restore config'
+[[ "$(<"$runtime_root/version")" == '17.2.7' ]] || fail 'repair changed pinned version'
+
+unsafe_home="$fixture_root/unsafe-home"
+mkdir -p "$unsafe_home/.omp/profiles/trellage-qwen-local/agent"
+printf 'user-owned\n' >"$unsafe_home/.omp/profiles/trellage-qwen-local/agent/config.yml"
+if HOME="$unsafe_home" "$installer" >/dev/null \
+  && HOME="$unsafe_home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    FAKE_MISE_LOG="$FAKE_MISE_LOG" FAKE_OMP_TEMPLATE="$FAKE_OMP_TEMPLATE" \
+    "$unsafe_home/.local/bin/omp" setup >"$fixture_root/unsafe.out" 2>&1; then
+  fail 'setup replaced unrelated profile config'
+fi
+grep -Fqx 'user-owned' "$unsafe_home/.omp/profiles/trellage-qwen-local/agent/config.yml" \
+  || fail 'setup changed unrelated profile config'
+
+symlink_home="$fixture_root/symlink-home"
+mkdir -p "$symlink_home/.omp/profiles" "$fixture_root/symlink-target"
+ln -s "$fixture_root/symlink-target" "$symlink_home/.omp/profiles/trellage-qwen-local"
+HOME="$symlink_home" "$installer" >/dev/null || fail 'symlink fixture install failed'
+if HOME="$symlink_home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+  FAKE_MISE_LOG="$FAKE_MISE_LOG" FAKE_OMP_TEMPLATE="$FAKE_OMP_TEMPLATE" \
+  "$symlink_home/.local/bin/omp" setup >"$fixture_root/symlink.out" 2>&1; then
+  fail 'setup accepted symlinked profile path'
+fi
+[[ ! -e "$fixture_root/symlink-target/agent/config.yml" ]] \
+  || fail 'setup wrote through symlinked profile path'
+
+runtime_symlink_home="$fixture_root/runtime-symlink-home"
+mkdir -p "$runtime_symlink_home/.local/share/trellage" "$fixture_root/runtime-symlink-target"
+ln -s "$fixture_root/runtime-symlink-target" "$runtime_symlink_home/.local/share/trellage/omp"
+if HOME="$runtime_symlink_home" "$installer" >"$fixture_root/runtime-symlink.out" 2>&1; then
+  fail 'installer accepted symlinked runtime root'
+fi
+[[ -z "$(find "$fixture_root/runtime-symlink-target" -mindepth 1 -print -quit)" ]] \
+  || fail 'installer wrote through symlinked runtime root'
+
+printf 'session state\n' >"$profile_root/session-canary"
+"$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
+[[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstall left command'
+[[ ! -e "$runtime_root" && ! -L "$runtime_root" ]] || fail 'uninstall left runtime'
+grep -Fqx 'session state' "$profile_root/session-canary" || fail 'uninstall removed profile state'
+
+unowned_home="$fixture_root/unowned-home"
+mkdir -p "$unowned_home/.local/bin"
+printf 'unrelated\n' >"$unowned_home/.local/bin/omp"
+if HOME="$unowned_home" "$installer" >"$fixture_root/unowned.out" 2>&1; then
+  fail 'installer replaced unrelated command'
+fi
+grep -Fqx 'unrelated' "$unowned_home/.local/bin/omp" || fail 'installer changed unrelated command'
+
+bash -n "$launcher" "$installer" "$uninstaller" "$0" || fail 'bash syntax check failed'
+printf 'OMP native launcher contract: PASS\n'

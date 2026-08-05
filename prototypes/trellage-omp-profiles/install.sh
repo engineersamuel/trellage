@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ownership_value='trellage-omp-profiles-v1'
+
+refuse() {
+  printf 'omp install: %s\n' "$1" >&2
+  exit 1
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+source_dir="$(CDPATH= cd -P -- "$(dirname "$0")" && pwd)"
+home="${HOME-}"
+[[ "$home" == /* && "$home" != / && -d "$home" && ! -L "$home" ]] \
+  || refuse "unsafe HOME: $home"
+canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: $home"
+
+local_dir="$home/.local"
+share_dir="$local_dir/share"
+runtime_parent="$share_dir/trellage"
+install_root="$runtime_parent/omp"
+installed_launcher="$install_root/bin/omp"
+ownership_marker="$install_root/.managed-by-trellage-omp-profiles"
+command_dir="$local_dir/bin"
+command_path="$command_dir/omp"
+
+require_safe_directory() {
+  local path="$1" expected="$2" description="$3" canonical_path
+
+  if [[ -e "$path" || -L "$path" ]]; then
+    [[ -d "$path" && ! -L "$path" ]] || refuse "unsafe $description: $path"
+    canonical_path="$(canonical_directory "$path")" || refuse "cannot resolve $description: $path"
+    [[ "$canonical_path" == "$expected" ]] || refuse "redirected $description: $path"
+  fi
+}
+
+require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
+require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
+require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
+require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+
+runtime_owned=false
+if [[ -e "$install_root" || -L "$install_root" ]]; then
+  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
+  [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
+    || refuse "unowned runtime root: $install_root"
+  [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+    || refuse "unowned runtime root: $install_root"
+  runtime_owned=true
+fi
+
+if [[ -e "$command_path" || -L "$command_path" ]]; then
+  [[ "$runtime_owned" == true && -L "$command_path" ]] \
+    || refuse "unrelated command: $command_path"
+  [[ "$(readlink "$command_path")" == "$installed_launcher" ]] \
+    || refuse "unrelated command: $command_path"
+fi
+
+mkdir -p "$install_root/bin" "$command_dir"
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/omp/bin" 'runtime bin'
+[[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
+  || refuse "unsafe managed launcher: $installed_launcher"
+
+launcher_stage="$(mktemp "$install_root/bin/.omp.XXXXXX")"
+marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
+install -m 0755 "$source_dir/bin/omp" "$launcher_stage"
+printf '%s\n' "$ownership_value" >"$marker_stage"
+chmod 0600 "$marker_stage"
+mv -f "$launcher_stage" "$installed_launcher"
+mv -f "$marker_stage" "$ownership_marker"
+
+if [[ ! -L "$command_path" ]]; then
+  command_stage="$command_dir/.omp-command.$$"
+  [[ ! -e "$command_stage" && ! -L "$command_stage" ]] || refuse "unsafe command staging path: $command_stage"
+  ln -s "$installed_launcher" "$command_stage"
+  mv "$command_stage" "$command_path"
+fi
+
+printf 'Installed omp at %s\n' "$command_path"

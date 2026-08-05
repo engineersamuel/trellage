@@ -204,12 +204,14 @@ Locked builds never resolve a newer release.
 
 The native profile launchers run agents directly on the host. They are separate from the Docker-based Trellage CLI and sandbox workflow above.
 
-Install all three launchers from the repository root:
+Install the four agent launchers and optional profile router from the repository
+root:
 
 ```bash
 (cd prototypes/trellage-codex-profiles && ./install.sh)
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
 (cd prototypes/trellage-grok-profiles && ./install.sh)
+(cd prototypes/trellage-omp-profiles && ./install.sh)
 (cd prototypes/trellage-router && ./install.sh)
 ```
 
@@ -218,6 +220,7 @@ The installers publish these commands and managed runtimes:
 - `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
 - `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
 - `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
+- `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
 - `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
 
 Their isolated profile homes are rooted at:
@@ -226,7 +229,26 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/codex/<profile>/home/
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
 ~/.local/share/trellage/profiles/grok/<profile>/home/
+~/.omp/profiles/trellage-qwen-local/
 ```
+
+The native `omp` launcher is independent of the Docker `pi-oh-my-pi` profile.
+It pins a `mise`-resolved Oh My Pi release and routes every built-in model role
+to keyless `copilot-proxy-rs/qwen3.6-35b-a3b-local` on
+`http://127.0.0.1:8080/v1`:
+
+```bash
+omp setup
+omp doctor
+omp models copilot-proxy-rs
+omp -p "Reply exactly OMP_LOCAL_OK"
+omp update --check
+omp update
+omp repair
+```
+
+See the [native OMP guide](prototypes/trellage-omp-profiles/README.md) for
+ownership, update, repair, and uninstall behavior.
 
 Managed Codex profiles use the local proxy by default. Native OpenAI authentication
 is an explicit per-launch opt-in:
@@ -235,7 +257,7 @@ is an explicit per-launch opt-in:
 cdx --native-auth hve exec "Review this repository"
 ```
 
-After all three native launchers and `trx` are installed, use one flat
+After `cdx`, `cpx`, `grx`, and `trx` are installed, use one flat
 harness/profile picker:
 
 ```bash
