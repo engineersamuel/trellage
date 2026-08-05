@@ -246,19 +246,31 @@ Their isolated profile homes are rooted at:
 ```
 
 The native `omp` launcher is independent of the Docker `pi-oh-my-pi` profile.
-It pins a `mise`-resolved Oh My Pi release and routes every built-in model role
-to keyless `copilot-proxy-rs/qwen3.6-35b-a3b-local` on
-`http://127.0.0.1:8080/v1`:
+It pins a `mise`-resolved Oh My Pi release and provides two isolated profiles:
+`local` routes every built-in model role to keyless
+`copilot-proxy-rs/qwen3.6-35b-a3b-local` on
+`http://127.0.0.1:8080/v1`, while `copilot` uses OMP's native GitHub Copilot
+authentication and discovered models. It uses the same host-auth precedence as
+the container profile (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then
+`gh auth token`) and on macOS additionally falls back to the existing
+`copilot-cli` Keychain credential. It defaults to
+`github-copilot/gpt-5.6-sol:medium`:
 
 ```bash
 omp setup
+omp setup copilot
 omp doctor
+omp doctor copilot
 omp models copilot-proxy-rs
 omp -p "Reply exactly OMP_LOCAL_OK"
+omp copilot -p "Reply exactly OMP_COPILOT_OK"
 omp update --check
 omp update
 omp repair
 ```
+
+Bare `omp` remains an alias for the `local` profile. `trx -i` includes both
+`oh-my-pi / local` and `oh-my-pi / copilot`.
 
 See the [native OMP guide](prototypes/trellage-omp-profiles/README.md) for
 ownership, update, repair, and uninstall behavior.

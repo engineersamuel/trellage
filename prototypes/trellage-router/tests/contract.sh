@@ -51,7 +51,34 @@ create_native_launcher() {
 
   mkdir -p "$runtime/bin"
   printf '%s\n' "$marker_value" >"$runtime/$marker"
-  cat >"$runtime/catalog.json" <<EOF
+  if [[ "$launcher" == omp ]]; then
+    cat >"$runtime/catalog.json" <<EOF
+{
+  "schemaVersion": 1,
+  "launcher": "omp",
+  "harness": "oh-my-pi",
+  "profiles": [
+    {
+      "name": "copilot",
+      "description": "Native GitHub Copilot",
+      "plugin": null,
+      "source": null,
+      "marketplace": null,
+      "standaloneMcps": []
+    },
+    {
+      "name": "local",
+      "description": "Local Qwen",
+      "plugin": null,
+      "source": null,
+      "marketplace": null,
+      "standaloneMcps": []
+    }
+  ]
+}
+EOF
+  else
+    cat >"$runtime/catalog.json" <<EOF
 {
   "schemaVersion": 1,
   "launcher": "$launcher",
@@ -68,6 +95,7 @@ create_native_launcher() {
   ]
 }
 EOF
+  fi
   cat >"$runtime/bin/$launcher" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -121,6 +149,7 @@ EOF
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
 create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
+create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
 
 export HOME="$fixture_home"
 export PATH="$fixture_bin:/usr/bin:/bin"
@@ -171,6 +200,11 @@ jq -e '
     and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choice omitted concise catalog data or launch readiness status'
+jq -e '
+  [.choices[] | select(.label == "oh-my-pi / copilot" or .label == "oh-my-pi / local")]
+  | length == 2
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router choices omitted OMP profiles'
 [[ ! -e "$inventory_log" ]] \
   || fail 'router read diagnostic inventory before launching the selected profile'
 mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
@@ -180,6 +214,24 @@ import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
 expected = [b"cpx", b"cpx-p", b"two words", b"", b"--literal=*", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+cp "$runtime_parent/trx/lib/terminal-picker.mjs" "$fixture_root/terminal-picker.mjs"
+cat >"$runtime_parent/trx/lib/terminal-picker.mjs" <<'EOF'
+process.stdout.write("omp:copilot\n")
+EOF
+TRX_ARGUMENT_LOG="$argument_log" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/omp-select.out" \
+  '\r' '' "$fixture_bin/trx" -i '--native-copilot' \
+  || fail 'OMP interactive selection failed'
+mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
+python3 - "$argument_log" <<'PY' || fail 'OMP arguments were not forwarded unchanged'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"omp", b"copilot", b"--native-copilot", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
@@ -207,6 +259,14 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing.out" \
 [[ "$status" == 1 ]] || fail "missing launcher exited $status instead of 1"
 assert_contains 'required launcher not found on PATH: grx' "$fixture_root/missing.out"
 mv "$fixture_bin/grx.absent" "$fixture_bin/grx"
+
+mv "$fixture_bin/omp" "$fixture_bin/omp.absent"
+status=0
+python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-omp.out" \
+  '\r' '' "$fixture_bin/trx" -i || status=$?
+[[ "$status" == 1 ]] || fail "missing OMP launcher exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: omp' "$fixture_root/missing-omp.out"
+mv "$fixture_bin/omp.absent" "$fixture_bin/omp"
 
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.catalog"
 printf '{not-json}\n' >"$runtime_parent/cdx/catalog.json"
@@ -244,7 +304,8 @@ ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
-  && -x "$runtime_parent/grx/bin/grx" ]] || fail 'uninstaller changed native launchers'
+  && -x "$runtime_parent/grx/bin/grx" && -x "$runtime_parent/omp/bin/omp" ]] \
+  || fail 'uninstaller changed native launchers'
 assert_contains 'Uninstalled trx.' "$fixture_root/uninstall.out"
 
 printf 'trx contract: PASS\n'

@@ -73,6 +73,28 @@ if [[ "${1-}" == '--version' ]]; then
   exit 0
 fi
 
+if [[ "${1-} ${2-}" == 'models github-copilot' ]]; then
+  [[ "${FAKE_COPILOT_AUTH:-1}" == 1 \
+    && "${COPILOT_GITHUB_TOKEN-}" == host-copilot-token ]] || {
+    printf 'GitHub Copilot authentication required\n' >&2
+    exit 41
+  }
+  printf 'github-copilot/gpt-test\n'
+  printf 'github-copilot/gpt-5.6-sol\n'
+  exit 0
+fi
+
+if [[ "${OMP_PROFILE-}" == trellage-copilot-native \
+  && "${COPILOT_GITHUB_TOKEN-}" != host-copilot-token ]]; then
+  printf 'GitHub Copilot authentication required\n' >&2
+  exit 42
+fi
+if [[ "${OMP_PROFILE-}" == trellage-copilot-native \
+  && ( -n "${GH_TOKEN-}" || -n "${GITHUB_TOKEN-}" ) ]]; then
+  printf 'alternate GitHub tokens were not scrubbed\n' >&2
+  exit 43
+fi
+
 if [[ "$#" -eq 0 ]]; then
   config="$HOME/.omp/profiles/${OMP_PROFILE-}/agent/config.yml"
   if ! grep -Fqx 'setupVersion: 1' "$config" \
@@ -123,6 +145,28 @@ esac
 FAKE_CURL
 chmod 0755 "$fake_bin/curl"
 
+cat >"$fake_bin/security" <<'FAKE_SECURITY'
+#!/usr/bin/env bash
+set -u
+
+printf '%s\n' "$*" >>"$FAKE_SECURITY_LOG"
+[[ "$*" == 'find-generic-password -s copilot-cli -w' ]] || exit 94
+[[ "${FAKE_COPILOT_KEYCHAIN:-1}" == 1 ]] || exit 44
+printf 'host-copilot-token\n'
+FAKE_SECURITY
+chmod 0755 "$fake_bin/security"
+
+cat >"$fake_bin/gh" <<'FAKE_GH'
+#!/usr/bin/env bash
+set -u
+
+printf '%s\n' "$*" >>"$FAKE_GH_LOG"
+[[ "${1-} ${2-} ${3-}" == 'auth token --hostname' && -n "${4-}" ]] || exit 95
+[[ -n "${FAKE_GH_TOKEN-}" ]] || exit 1
+printf '%s\n' "$FAKE_GH_TOKEN"
+FAKE_GH
+chmod 0755 "$fake_bin/gh"
+
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
@@ -130,19 +174,37 @@ export FAKE_CURL_LOG="$fixture_root/curl.log"
 export FAKE_OMP_LOG="$fixture_root/omp.log"
 export FAKE_OMP_TEMPLATE="$fixture_root/fake-omp-template"
 export FAKE_OMP_SIGNAL_LOG="$fixture_root/signal.log"
+export FAKE_SECURITY_LOG="$fixture_root/security.log"
+export FAKE_GH_LOG="$fixture_root/gh.log"
 : >"$FAKE_MISE_LOG"
 : >"$FAKE_CURL_LOG"
 : >"$FAKE_OMP_LOG"
+: >"$FAKE_SECURITY_LOG"
+: >"$FAKE_GH_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
 command_path="$HOME/.local/bin/omp"
 runtime_root="$HOME/.local/share/trellage/omp"
+installed_catalog="$runtime_root/catalog.json"
 profile_root="$HOME/.omp/profiles/trellage-qwen-local"
 agent_root="$profile_root/agent"
+copilot_profile_root="$HOME/.omp/profiles/trellage-copilot-native"
+copilot_agent_root="$copilot_profile_root/agent"
 
 [[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
 [[ "$(readlink "$command_path")" == "$runtime_root/bin/omp" ]] \
   || fail 'command symlink target differs'
+cmp -s "$installed_catalog" "$root/catalog.json" \
+  || fail 'installer did not publish the OMP catalog'
+
+"$command_path" list --json >"$fixture_root/list.json" || fail 'JSON profile list failed'
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "omp"
+  and .harness == "oh-my-pi"
+  and [.profiles[].name] == ["copilot", "local"]
+  and all(.profiles[]; .plugin == null)
+' "$fixture_root/list.json" >/dev/null || fail 'JSON profile list differs'
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'setup did not pin resolved version'
@@ -181,6 +243,22 @@ grep -Fqx '      type: openai-models-list' "$agent_root/models.yml" \
 ! grep -Eiq 'api[_-]?key|token|secret|password' "$agent_root/config.yml" "$agent_root/models.yml" \
   || fail 'managed config contains credential-shaped data'
 
+"$command_path" setup copilot >"$fixture_root/setup-copilot.out" \
+  || fail 'Copilot setup failed'
+[[ -f "$copilot_agent_root/config.yml" && ! -L "$copilot_agent_root/config.yml" ]] \
+  || fail 'Copilot setup did not materialize config.yml'
+[[ -f "$copilot_agent_root/models.yml" && ! -L "$copilot_agent_root/models.yml" ]] \
+  || fail 'Copilot setup did not materialize models.yml'
+grep -Fqx 'providers: {}' "$copilot_agent_root/models.yml" \
+  || fail 'Copilot profile added a custom provider'
+! grep -Fq 'enabledModels:' "$copilot_agent_root/config.yml" \
+  || fail 'Copilot profile pinned discovered models'
+grep -Fqx '  default: github-copilot/gpt-5.6-sol:medium' \
+  "$copilot_agent_root/config.yml" \
+  || fail 'Copilot profile did not default to GPT-5.6 Sol medium'
+! grep -Fq 'copilot-proxy-rs' "$copilot_agent_root/config.yml" "$copilot_agent_root/models.yml" \
+  || fail 'Copilot profile depends on the local proxy'
+
 "$command_path" >"$fixture_root/bare-launch.out" 2>&1 \
   || fail 'bare launch opened the model-selection wizard'
 ! grep -Fq 'Choose your default model' "$fixture_root/bare-launch.out" \
@@ -213,6 +291,39 @@ expected_launch="$(jq -cn \
   '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_launch" ]] \
   || fail 'launch did not preserve profile, cwd, HOME, or exact arguments'
+
+(
+  cd "$worktree" || exit 1
+  "$command_path" local -p 'Reply exactly OMP_LOCAL_EXPLICIT'
+) || fail 'explicit local launch failed'
+expected_local_launch="$(jq -cn \
+  --arg home "$HOME" \
+  --arg cwd "$worktree" \
+  '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
+[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_local_launch" ]] \
+  || fail 'explicit local launch did not select the local profile'
+
+(
+  cd "$worktree" || exit 1
+  "$command_path" copilot -p 'Reply exactly OMP_COPILOT_OK'
+) || fail 'Copilot launch failed'
+expected_copilot_launch="$(jq -cn \
+  --arg home "$HOME" \
+  --arg cwd "$worktree" \
+  '{version:"17.2.6",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_COPILOT_OK"]}')"
+[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_copilot_launch" ]] \
+  || fail 'Copilot launch did not select the native Copilot profile'
+grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \
+  || fail 'Copilot launch did not inherit the host Copilot credential'
+
+GH_TOKEN=host-copilot-token GITHUB_TOKEN=poison-github \
+  FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot -p gh-env-auth \
+  || fail 'Copilot launch did not accept GH_TOKEN'
+FAKE_GH_TOKEN=host-copilot-token FAKE_COPILOT_KEYCHAIN=0 \
+  "$command_path" copilot -p gh-cli-auth \
+  || fail 'Copilot launch did not accept gh auth token'
+grep -Fqx 'auth token --hostname github.com' "$FAKE_GH_LOG" \
+  || fail 'Copilot launch did not use the container-compatible gh auth fallback'
 
 if FAKE_OMP_EXIT_STATUS=37 "$command_path" --help >/dev/null 2>&1; then
   fail 'launcher swallowed upstream failure'
@@ -252,6 +363,27 @@ find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$
 cmp -s "$state_before" "$state_after" || fail 'doctor mutated managed state'
 grep -Fqx 'omp doctor: OK (17.2.6, qwen3.6-35b-a3b-local)' "$fixture_root/doctor.out" \
   || fail 'doctor success output differs'
+
+proxy_calls_before="$(wc -l <"$FAKE_CURL_LOG" | tr -d ' ')"
+"$command_path" doctor copilot >"$fixture_root/doctor-copilot.out" \
+  || fail 'Copilot doctor failed for authenticated profile'
+grep -Fqx 'omp doctor copilot: OK (17.2.6, github-copilot)' \
+  "$fixture_root/doctor-copilot.out" || fail 'Copilot doctor success output differs'
+[[ "$(wc -l <"$FAKE_CURL_LOG" | tr -d ' ')" == "$proxy_calls_before" ]] \
+  || fail 'Copilot doctor contacted the local proxy'
+
+if FAKE_COPILOT_AUTH=0 "$command_path" doctor copilot \
+  >"$fixture_root/doctor-copilot-auth.out" 2>&1; then
+  fail 'Copilot doctor accepted missing authentication'
+fi
+grep -Fq 'run omp copilot auth-broker login github-copilot' \
+  "$fixture_root/doctor-copilot-auth.out" \
+  || fail 'Copilot doctor omitted authentication remediation'
+
+if FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot -p auth-required \
+  >"$fixture_root/launch-copilot-auth.out" 2>&1; then
+  fail 'Copilot launch accepted missing host authentication'
+fi
 
 if FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/doctor-missing.out" 2>&1; then
   fail 'doctor accepted missing local model'
@@ -320,10 +452,13 @@ fi
   || fail 'installer wrote through symlinked runtime root'
 
 printf 'session state\n' >"$profile_root/session-canary"
+printf 'copilot session state\n' >"$copilot_profile_root/session-canary"
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstall left command'
 [[ ! -e "$runtime_root" && ! -L "$runtime_root" ]] || fail 'uninstall left runtime'
 grep -Fqx 'session state' "$profile_root/session-canary" || fail 'uninstall removed profile state'
+grep -Fqx 'copilot session state' "$copilot_profile_root/session-canary" \
+  || fail 'uninstall removed Copilot profile state'
 
 unowned_home="$fixture_root/unowned-home"
 mkdir -p "$unowned_home/.local/bin"

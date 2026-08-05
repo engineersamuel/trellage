@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "copilot": {
+      "description": "Oh My Pi using native GitHub Copilot authentication and OMP-discovered Copilot models.",
+      "kind": "copilot",
+      "ompProfile": "trellage-copilot-native",
+      "plugin": null,
+      "standaloneMcps": []
+    },
+    "local": {
+      "description": "Oh My Pi using keyless copilot-proxy-rs access to the local qwen3.6-35b-a3b-local model.",
+      "kind": "local",
+      "ompProfile": "trellage-qwen-local",
+      "plugin": null,
+      "standaloneMcps": []
+    }
+  }
+}

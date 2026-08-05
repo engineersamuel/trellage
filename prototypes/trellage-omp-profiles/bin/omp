@@ -2,16 +2,32 @@
 
 set -euo pipefail
 
-profile_name='trellage-qwen-local'
-provider='copilot-proxy-rs'
-model_id='qwen3.6-35b-a3b-local'
-model_selector="$provider/$model_id"
-mise_tool='github:can1357/oh-my-pi'
-profile_marker_value='trellage-omp-profile-v1'
+readonly provider='copilot-proxy-rs'
+readonly model_id='qwen3.6-35b-a3b-local'
+readonly model_selector="$provider/$model_id"
+readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
+readonly mise_tool='github:can1357/oh-my-pi'
+readonly profile_marker_value='trellage-omp-profile-v1'
 
 die() {
   printf 'omp: %s\n' "$1" >&2
   exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  omp [OMP_ARGS...]
+  omp local [OMP_ARGS...]
+  omp copilot [OMP_ARGS...]
+  omp list [--json]
+  omp setup [local|copilot|--all]
+  omp doctor [local|copilot]
+  omp repair [local|copilot]
+  omp update [--check] [local|copilot|--all]
+
+Bare omp invocations use the local profile for backward compatibility.
+EOF
 }
 
 resolve_script_dir() {
@@ -32,10 +48,15 @@ resolve_script_dir() {
 script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
-version_file="$runtime_root/version"
-profile_root="$HOME/.omp/profiles/$profile_name"
-agent_root="$profile_root/agent"
-profile_marker="$profile_root/.managed-by-trellage-omp-profiles"
+readonly catalog="$runtime_root/catalog.json"
+readonly version_file="$runtime_root/version"
+
+profile_key=''
+profile_kind=''
+profile_name=''
+profile_root=''
+agent_root=''
+profile_marker=''
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
@@ -43,6 +64,72 @@ require_command() {
 
 canonical_directory() {
   CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+validate_catalog() {
+  [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
+    || die "invalid catalog: $catalog"
+  jq -e '
+    type == "object"
+    and keys == ["profiles", "schemaVersion"]
+    and .schemaVersion == 1
+    and (.profiles | type == "object" and keys == ["copilot", "local"])
+    and all(.profiles | to_entries[];
+      (.key | test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+      and (.value | type == "object")
+      and (.value | keys
+        == ["description", "kind", "ompProfile", "plugin", "standaloneMcps"])
+      and (.value.description
+        | type == "string"
+        and length > 0
+        and (test("[\u0000-\u001f\u007f-\u009f]") | not))
+      and (.value.kind == .key)
+      and (.value.ompProfile
+        | type == "string"
+        and test("^trellage-[a-z0-9]+(-[a-z0-9]+)*$"))
+      and .value.plugin == null
+      and (.value.standaloneMcps | type == "array" and length == 0))
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+}
+
+select_profile() {
+  local requested="$1"
+
+  jq -e --arg profile "$requested" '.profiles[$profile] != null' "$catalog" \
+    >/dev/null || die "unknown profile: $requested"
+  profile_key="$requested"
+  profile_kind="$(jq -r --arg profile "$requested" '.profiles[$profile].kind' "$catalog")"
+  profile_name="$(jq -r --arg profile "$requested" '.profiles[$profile].ompProfile' "$catalog")"
+  profile_root="$HOME/.omp/profiles/$profile_name"
+  agent_root="$profile_root/agent"
+  profile_marker="$profile_root/.managed-by-trellage-omp-profiles"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries | sort_by(.key)[] | [.key, .value.description] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "omp",
+      harness: "oh-my-pi",
+      profiles: [
+        .profiles
+        | to_entries
+        | sort_by(.key)[]
+        | {
+            name: .key,
+            description: .value.description,
+            plugin: .value.plugin,
+            source: null,
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
 }
 
 require_safe_home() {
@@ -89,7 +176,7 @@ profile_is_owned_or_empty() {
 require_owned_profile() {
   require_safe_profile_path
   [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
-    || die "profile is not managed; run omp setup: $profile_root"
+    || die "profile is not managed; run omp setup $profile_key"
   [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
     || die "profile ownership marker differs: $profile_marker"
 }
@@ -116,6 +203,9 @@ startup:
   setupWizard: false
 marketplace:
   autoUpdate: off
+EOF
+  if [[ "$profile_kind" == local ]]; then
+    cat <<EOF
 modelRoles:
   default: $model_selector
   smol: $model_selector
@@ -129,13 +219,22 @@ modelRoles:
   advisor: $model_selector
 enabledModels:
   - $model_selector
+EOF
+  else
+    cat <<EOF
+modelRoles:
+  default: $copilot_model_selector
+EOF
+  fi
+  cat <<'EOF'
 tools:
   approvalMode: yolo
 EOF
 }
 
 managed_models() {
-  cat <<EOF
+  if [[ "$profile_kind" == local ]]; then
+    cat <<EOF
 providers:
   $provider:
     baseUrl: http://127.0.0.1:8080/v1
@@ -144,6 +243,9 @@ providers:
     discovery:
       type: openai-models-list
 EOF
+  else
+    printf 'providers: {}\n'
+  fi
 }
 
 transaction_active=false
@@ -180,7 +282,7 @@ cleanup_profile_transaction() {
 }
 
 publish_managed_profile() {
-  local config_stage models_stage marker_stage
+  local config_stage models_stage marker_stage target
 
   prepare_profile_directories
   for target in "$agent_root/config.yml" "$agent_root/models.yml"; do
@@ -199,6 +301,9 @@ publish_managed_profile() {
   config_backup="$(mktemp "$agent_root/.config-backup.XXXXXX")"
   models_backup="$(mktemp "$agent_root/.models-backup.XXXXXX")"
   marker_backup="$(mktemp "$profile_root/.marker-backup.XXXXXX")"
+  config_existed=false
+  models_existed=false
+  marker_existed=false
   if [[ -e "$agent_root/config.yml" ]]; then
     config_existed=true
     cp -p "$agent_root/config.yml" "$config_backup"
@@ -250,7 +355,7 @@ read_pinned_version() {
   local version
 
   [[ -f "$version_file" && ! -L "$version_file" ]] \
-    || die 'OMP version is not pinned; run omp setup'
+    || die "OMP version is not pinned; run omp setup $profile_key"
   version="$(<"$version_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
@@ -260,7 +365,7 @@ installed_binary() {
   local version="$1" install_dir expected
 
   install_dir="$(mise_env where "$mise_tool@$version")" \
-    || die "OMP $version is not installed; run omp repair"
+    || die "OMP $version is not installed; run omp repair $profile_key"
   expected="$runtime_root/mise/installs/github-can1357-oh-my-pi/$version"
   [[ "$install_dir" == "$expected" ]] || die "mise returned unexpected OMP path: $install_dir"
   [[ -x "$install_dir/omp" && ! -L "$install_dir/omp" ]] \
@@ -271,7 +376,7 @@ installed_binary() {
 verify_binary_version() {
   local binary="$1" version="$2" actual
 
-  actual="$($binary --version)" || die "could not run OMP $version"
+  actual="$("$binary" --version)" || die "could not run OMP $version"
   [[ "$actual" == "omp/$version" ]] || die "OMP version differs: expected omp/$version, got $actual"
 }
 
@@ -299,9 +404,17 @@ verify_managed_profile() {
   [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] \
     || die "managed models config is missing: $agent_root/models.yml"
   cmp -s "$agent_root/config.yml" <(managed_config) \
-    || die 'managed config differs; run omp repair'
+    || die "managed config differs; run omp repair $profile_key"
   cmp -s "$agent_root/models.yml" <(managed_models) \
-    || die 'managed models config differs; run omp repair'
+    || die "managed models config differs; run omp repair $profile_key"
+}
+
+profile_ready_label() {
+  if [[ "$profile_kind" == local ]]; then
+    printf '%s\n' "$model_id"
+  else
+    printf '%s\n' 'github-copilot'
+  fi
 }
 
 setup_profile() {
@@ -316,7 +429,12 @@ setup_profile() {
   install_exact_version "$version"
   publish_managed_profile
   publish_version "$version"
-  printf 'omp setup: ready (%s, %s)\n' "$version" "$model_id"
+  if [[ "$profile_kind" == local ]]; then
+    printf 'omp setup: ready (%s, %s)\n' "$version" "$(profile_ready_label)"
+  else
+    printf 'omp setup %s: ready (%s, %s)\n' \
+      "$profile_key" "$version" "$(profile_ready_label)"
+  fi
 }
 
 repair_profile() {
@@ -326,7 +444,12 @@ repair_profile() {
   version="$(read_pinned_version)"
   install_exact_version "$version"
   publish_managed_profile
-  printf 'omp repair: restored (%s, %s)\n' "$version" "$model_id"
+  if [[ "$profile_kind" == local ]]; then
+    printf 'omp repair: restored (%s, %s)\n' "$version" "$(profile_ready_label)"
+  else
+    printf 'omp repair %s: restored (%s, %s)\n' \
+      "$profile_key" "$version" "$(profile_ready_label)"
+  fi
 }
 
 check_for_update() {
@@ -357,16 +480,10 @@ update_profile() {
   printf 'omp update: %s -> %s installed\n' "$current" "$latest"
 }
 
-doctor_profile() {
-  local version binary health models
+doctor_local() {
+  local health models
 
-  require_command mise
   require_command curl
-  require_command jq
-  version="$(read_pinned_version)"
-  verify_managed_profile
-  binary="$(installed_binary "$version")"
-  verify_binary_version "$binary" "$version"
   health="$(curl -fsS --max-time 5 http://127.0.0.1:8080/health)" \
     || die 'copilot-proxy-rs health check failed'
   jq -e '.status == "ok" or .status == "healthy"' <<<"$health" >/dev/null \
@@ -375,10 +492,60 @@ doctor_profile() {
     || die 'copilot-proxy-rs model discovery failed'
   jq -e --arg model "$model_id" '.data | any(.id == $model)' <<<"$models" >/dev/null \
     || die "copilot-proxy-rs model is missing: $model_id"
-  printf 'omp doctor: OK (%s, %s)\n' "$version" "$model_id"
 }
 
-launch_omp() {
+doctor_copilot() {
+  local binary="$1" output token
+
+  if token="$(resolve_copilot_token)"; then
+    output="$(
+      unset GH_TOKEN GITHUB_TOKEN
+      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
+      "$binary" models github-copilot 2>&1
+    )" || {
+      printf '%s\n' "$output" >&2
+      die 'GitHub Copilot authentication is unavailable; run omp copilot auth-broker login github-copilot'
+    }
+  elif ! output="$(OMP_PROFILE="$profile_name" \
+    "$binary" models github-copilot 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    die 'GitHub Copilot authentication is unavailable; run omp copilot auth-broker login github-copilot'
+  fi
+  [[ "$output" == *gpt-5.6-sol* ]] \
+    || die 'GitHub Copilot exposed no models; run omp copilot auth-broker login github-copilot'
+}
+
+resolve_copilot_token() {
+  local host token
+
+  if [[ -n "${COPILOT_GITHUB_TOKEN-}" ]]; then
+    printf '%s\n' "$COPILOT_GITHUB_TOKEN"
+    return
+  fi
+  if [[ -n "${GH_TOKEN-}" ]]; then
+    printf '%s\n' "$GH_TOKEN"
+    return
+  fi
+  if [[ -n "${GITHUB_TOKEN-}" ]]; then
+    printf '%s\n' "$GITHUB_TOKEN"
+    return
+  fi
+  if command -v gh >/dev/null 2>&1; then
+    host="${COPILOT_GH_HOST:-${GH_HOST:-github.com}}"
+    token="$(gh auth token --hostname "$host" 2>/dev/null)" || token=
+    if [[ -n "$token" ]]; then
+      printf '%s\n' "$token"
+      return
+    fi
+  fi
+  command -v security >/dev/null 2>&1 || return 1
+  token="$(security find-generic-password -s copilot-cli -w 2>/dev/null)" \
+    || return 1
+  [[ -n "$token" ]] || return 1
+  printf '%s\n' "$token"
+}
+
+doctor_profile() {
   local version binary
 
   require_command mise
@@ -386,30 +553,114 @@ launch_omp() {
   verify_managed_profile
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
+  if [[ "$profile_kind" == local ]]; then
+    doctor_local
+  else
+    doctor_copilot "$binary"
+  fi
+  if [[ "$profile_kind" == local ]]; then
+    printf 'omp doctor: OK (%s, %s)\n' "$version" "$(profile_ready_label)"
+  else
+    printf 'omp doctor %s: OK (%s, %s)\n' \
+      "$profile_key" "$version" "$(profile_ready_label)"
+  fi
+}
+
+launch_omp() {
+  local version binary token
+
+  require_command mise
+  version="$(read_pinned_version)"
+  verify_managed_profile
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  if [[ "$profile_kind" == copilot ]]; then
+    if token="$(resolve_copilot_token)"; then
+      unset GH_TOKEN GITHUB_TOKEN
+      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
+      exec "$binary" "$@"
+    fi
+  fi
   OMP_PROFILE="$profile_name" exec "$binary" "$@"
 }
 
-case "${1-}" in
+run_for_selection() {
+  local selection="$1" callback="$2"
+
+  if [[ "$selection" == '--all' ]]; then
+    select_profile local
+    "$callback"
+    select_profile copilot
+    "$callback"
+    return
+  fi
+  select_profile "$selection"
+  "$callback"
+}
+
+require_command jq
+validate_catalog
+
+command_name="${1-}"
+case "$command_name" in
+  help)
+    usage
+    ;;
+  list)
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      list_profiles
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
   setup)
-    [[ "$#" -eq 1 ]] || die 'setup takes no arguments'
-    setup_profile
+    shift
+    [[ "$#" -le 1 ]] || die 'setup accepts only local, copilot, or --all'
+    run_for_selection "${1-local}" setup_profile
     ;;
   doctor)
-    [[ "$#" -eq 1 ]] || die 'doctor takes no arguments'
+    shift
+    [[ "$#" -le 1 && "${1-local}" != --all ]] \
+      || die 'doctor accepts only local or copilot'
+    select_profile "${1-local}"
     doctor_profile
     ;;
   repair)
-    [[ "$#" -eq 1 ]] || die 'repair takes no arguments'
+    shift
+    [[ "$#" -le 1 && "${1-local}" != --all ]] \
+      || die 'repair accepts only local or copilot'
+    select_profile "${1-local}"
     repair_profile
     ;;
   update)
-    if [[ "$#" -eq 2 && "$2" == --check ]]; then
+    shift
+    check_only=false
+    selection=local
+    if [[ "${1-}" == --check ]]; then
+      check_only=true
+      shift
+    fi
+    [[ "$#" -le 1 ]] || die 'usage: omp update [--check] [local|copilot|--all]'
+    selection="${1-local}"
+    [[ "$selection" == local || "$selection" == copilot || "$selection" == --all ]] \
+      || die 'usage: omp update [--check] [local|copilot|--all]'
+    select_profile local
+    if [[ "$check_only" == true ]]; then
       check_for_update
-    elif [[ "$#" -eq 1 ]]; then
-      update_profile
     else
-      die 'usage: omp update [--check]'
+      update_profile
     fi
     ;;
-  *) launch_omp "$@" ;;
+  local|copilot)
+    select_profile "$command_name"
+    shift
+    launch_omp "$@"
+    ;;
+  *)
+    select_profile local
+    launch_omp "$@"
+    ;;
 esac
