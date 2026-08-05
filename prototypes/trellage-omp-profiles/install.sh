@@ -24,6 +24,7 @@ share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/omp"
 installed_launcher="$install_root/bin/omp"
+installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-omp-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/omp"
@@ -65,13 +66,18 @@ require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/om
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/omp/bin" 'runtime bin'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
   || refuse "unsafe managed launcher: $installed_launcher"
+[[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
+  || refuse "unsafe managed catalog: $installed_catalog"
 
 launcher_stage="$(mktemp "$install_root/bin/.omp.XXXXXX")"
+catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 install -m 0755 "$source_dir/bin/omp" "$launcher_stage"
+install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
+mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then
