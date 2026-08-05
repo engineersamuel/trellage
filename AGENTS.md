@@ -42,6 +42,16 @@ Trellage compiles locked agent profiles and runs them in isolated Docker sandbox
 - Use `git` and `gh` only for explicit user-authorized delivery.
 - Verify scope, tests, PR state, and merge result before reporting delivery.
 
+## Grok profile recovery
+
+- Applies ONLY to `grx`; `cdx` and `cpx` use different authentication.
+- `grx` auth readiness failure? Verify `~/.grok/auth.json` is readable, regular, non-symlink.
+- Valid source + missing profile `auth.json`? Run `grx repair PROFILE`, then `grx doctor PROFILE`.
+- Regular profile `auth.json` with incorrect permissions? Set mode `0600`, then repair and doctor.
+- Profile authentication symlink or non-regular path? Report it; NEVER alter it automatically.
+- NEVER run `grok login`, delete authentication paths, follow authentication symlinks, or weaken authentication permissions without explicit user authorization.
+- Repair or doctor failure? Report the exact diagnostic; NEVER substitute proxy or native authentication.
+
 ## Conventions
 
 - Use Effect for TypeScript application logic where practical.
