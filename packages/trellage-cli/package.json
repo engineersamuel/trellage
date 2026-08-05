@@ -8,7 +8,7 @@
     "trellage-profile": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "bash ../../scripts/build-profile-compiler.sh",
     "check": "tsc --noEmit",
     "format": "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --config .prettierrc.json 'packages/trellage-cli/src/*.ts' 'packages/trellage-cli/test/*.ts' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json",
     "format:check": "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --check --config .prettierrc.json 'packages/trellage-cli/src/*.ts' 'packages/trellage-cli/test/*.ts' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json",

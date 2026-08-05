@@ -17,7 +17,7 @@ agent-profile-hup-contract:
 	bash tests/agent_profile_hup_contract.sh
 
 profile-compiler:
-	cd packages/trellage-cli && npm run lint && npm run format:check && npm test && npm run check && npm run build
+	cd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test
 
 trellage-identity:
 	bash tests/trellage_identity_contract.sh

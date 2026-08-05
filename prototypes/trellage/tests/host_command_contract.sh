@@ -2071,10 +2071,11 @@ test_rebuild_replaces_container_and_preserves_profile_state() {
 }
 
 test_upgrade_delegates_to_effect_cli() {
-  local compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+  local compiler
   local fake_node_bin="$test_root/fake-node-bin"
   local node_log="$test_root/upgrade-node.log"
   local help_output real_node
+  compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
   real_node="$(command -v node)"
   help_output="$("$real_node" "$compiler" --help)"
   grep -Eq -- '- upgrade \[<profile>\]' <<<"$help_output" \
@@ -2116,6 +2117,32 @@ test_upgrade_delegates_to_effect_cli() {
   [[ "$(wc -l <"$node_log" | tr -d ' ')" -eq 3 ]] \
     || fail 'bulk upgrade delegation added unexpected arguments'
   printf 'Trellage host test: PASS: upgrade delegates to Effect CLI\n'
+}
+
+test_stale_profile_compiler_fails_with_rebuild_command() {
+  local fixture_root="$test_root/stale-profile-compiler"
+  local fixture_launcher="$fixture_root/prototypes/trellage/trellage"
+  local output status=0
+
+  mkdir -p \
+    "$fixture_root/prototypes/trellage" \
+    "$fixture_root/packages/trellage-cli/dist" \
+    "$fixture_root/scripts"
+  cp "$prototype_dir/trellage" "$fixture_launcher"
+  printf '%s\n' 'not executable compiler output' \
+    >"$fixture_root/packages/trellage-cli/dist/cli.js"
+  printf '%s\n' 'stale-fingerprint' \
+    >"$fixture_root/packages/trellage-cli/dist/.source-hash"
+  printf '%s\n' '#!/bin/sh' "printf '%s\\n' fresh-fingerprint" \
+    >"$fixture_root/scripts/profile-compiler-fingerprint.sh"
+  chmod +x "$fixture_launcher" "$fixture_root/scripts/profile-compiler-fingerprint.sh"
+
+  output="$(TRELLAGE_ENVIRONMENT=off "$fixture_launcher" upgrade all 2>&1)" || status=$?
+  [[ "$status" -eq 1 ]] || fail "stale profile compiler returned $status instead of 1"
+  grep -Fqx \
+    "trellage: profile compiler is stale; run: cd $fixture_root/packages/trellage-cli && npm run build" \
+    <<<"$output" || fail 'stale profile compiler diagnostic is not actionable'
+  printf 'Trellage host test: PASS: stale profile compiler fails with rebuild command\n'
 }
 
 test_interactive_profile_selection() {
@@ -3171,6 +3198,11 @@ test_command_diagnostics_use_trellage_prefix() {
   printf 'Trellage host test: PASS: command diagnostics use trellage prefix\n'
 }
 
+if [[ "${TRELLAGE_HOST_COMPILER_FRESHNESS_ONLY:-}" == 1 ]]; then
+  test_stale_profile_compiler_fails_with_rebuild_command
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_PROMPT_ONLY:-}" == 1 ]]; then
   test_resume_uses_native_thread_without_prompt_replay
   test_bare_command_has_no_prompt
@@ -3262,6 +3294,7 @@ fi
 
 test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
+test_stale_profile_compiler_fails_with_rebuild_command
 test_upgrade_delegates_to_effect_cli
 test_interactive_profile_selection
 test_compiler_commands_scrub_copilot_auth

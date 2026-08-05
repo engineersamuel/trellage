@@ -180,9 +180,23 @@ while [[ -L "$source_path" ]]; do
   fi
 done
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
-compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
+compiler="$compiler_package_dir/dist/cli.js"
+compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
+compiler_stamp="$compiler_package_dir/dist/.source-hash"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
 picker="$prototype_dir/../shared/terminal-picker.mjs"
+
+assert_profile_compiler_fresh() {
+  local actual_fingerprint expected_fingerprint
+  [[ -x "$compiler_fingerprint" ]] \
+    || fail "profile compiler fingerprint is unavailable: $compiler_fingerprint"
+  expected_fingerprint="$($compiler_fingerprint)" \
+    || fail 'profile compiler fingerprint calculation failed'
+  actual_fingerprint="$(head -n 1 "$compiler_stamp" 2>/dev/null || true)"
+  [[ "$actual_fingerprint" == "$expected_fingerprint" ]] \
+    || fail "profile compiler is stale; run: cd $compiler_package_dir && npm run build"
+}
 
 clean_child_environment=(env -i "PATH=$PATH")
 for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME DOCKER_CONFIG \
@@ -191,6 +205,7 @@ for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE
 done
 
 [[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
+assert_profile_compiler_fresh
 environment_metadata=
 environment_enabled=
 environment_source_present=

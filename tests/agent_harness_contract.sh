@@ -21,12 +21,17 @@ for required in \
   .github/instructions/trellage-cli.instructions.md \
   .eslintrc.json \
   .prettierrc.json \
+  scripts/build-profile-compiler.sh \
+  scripts/profile-compiler-fingerprint.sh \
   scripts/install-lefthook-hook.sh; do
   [[ -f "${required}" ]] || fail "missing ${required}"
 done
 
 [[ -x .agents/hooks/guard-shell.sh ]] || fail "guard hook is not executable"
 [[ -x .agents/hooks/check-edit.sh ]] || fail "edit hook is not executable"
+[[ -x scripts/build-profile-compiler.sh ]] || fail "profile compiler build script is not executable"
+[[ -x scripts/profile-compiler-fingerprint.sh ]] \
+  || fail "profile compiler fingerprint script is not executable"
 [[ -x scripts/install-lefthook-hook.sh ]] || fail "Lefthook installer is not executable"
 
 jq -e '
@@ -36,6 +41,7 @@ jq -e '
   .devDependencies.lefthook and
   (.scripts.lint | startswith("oxlint ")) and
   (.scripts["lint:fix"] | startswith("oxlint ")) and
+  .scripts.build == "bash ../../scripts/build-profile-compiler.sh" and
   .scripts.prepare == "bash ../../scripts/install-lefthook-hook.sh" and
   .scripts.format == "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --config .prettierrc.json '\''packages/trellage-cli/src/*.ts'\'' '\''packages/trellage-cli/test/*.ts'\'' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json" and
   .scripts["format:check"] == "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --check --config .prettierrc.json '\''packages/trellage-cli/src/*.ts'\'' '\''packages/trellage-cli/test/*.ts'\'' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json"
@@ -148,6 +154,7 @@ lefthook_custom_hooks="${lefthook_regression_root}/custom-hooks"
 mkdir -p "${lefthook_custom_hooks}"
 lefthook_custom_hooks="$(cd "${lefthook_custom_hooks}" && pwd -P)"
 mkdir -p "${lefthook_primary}/packages/trellage-cli"
+lefthook_primary="$(cd "${lefthook_primary}" && pwd -P)"
 git -C "${lefthook_primary}" init -q
 git -C "${lefthook_primary}" config user.name "Trellage Contract"
 git -C "${lefthook_primary}" config user.email "trellage-contract@example.invalid"
@@ -158,6 +165,8 @@ git -C "${lefthook_primary}" commit -qm "contract fixture"
 git -C "${lefthook_primary}" worktree add -q "${lefthook_linked}"
 mkdir -p "${lefthook_linked}/packages/trellage-cli"
 lefthook_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+post_merge_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-merge)"
+post_rewrite_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-rewrite)"
 [[ "${lefthook_hook}" == "${lefthook_custom_hooks}/pre-commit" ]] \
   || fail "Git did not resolve configured hooks path"
 (
@@ -166,9 +175,13 @@ lefthook_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --
 )
 
 [[ -x "${lefthook_hook}" ]] || fail "installer did not create executable effective pre-commit hook"
-if grep -Fq -- "${lefthook_linked}" "${lefthook_hook}"; then
-  fail "installed pre-commit hook embeds linked-worktree path"
-fi
+[[ -x "${post_merge_hook}" ]] || fail "installer did not create executable post-merge hook"
+[[ -x "${post_rewrite_hook}" ]] || fail "installer did not create executable post-rewrite hook"
+for installed_hook in "${lefthook_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
+  if grep -Fq -- "${lefthook_linked}" "${installed_hook}"; then
+    fail "installed Git hook embeds linked-worktree path: ${installed_hook}"
+  fi
+done
 
 git -C "${lefthook_primary}" worktree remove "${lefthook_linked}"
 lefthook_fake_dir="${lefthook_primary}/packages/trellage-cli/node_modules/.bin"
@@ -187,6 +200,25 @@ chmod +x "${lefthook_fake_dir}/lefthook"
 printf 'run\npre-commit\nforwarded\ntwo words\n' >"${lefthook_regression_root}/expected-args"
 cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
   || fail "installed pre-commit hook did not forward Lefthook command and arguments"
+
+npm_fake_dir="${lefthook_regression_root}/fake-npm"
+npm_args="${lefthook_regression_root}/npm-args"
+mkdir -p "${npm_fake_dir}"
+cat >"${npm_fake_dir}/npm" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"${NPM_CONTRACT_ARGS:?}"
+EOF
+chmod +x "${npm_fake_dir}/npm"
+for rebuild_hook in "${post_merge_hook}" "${post_rewrite_hook}"; do
+  (
+    cd "${lefthook_primary}"
+    PATH="${npm_fake_dir}:${PATH}" NPM_CONTRACT_ARGS="${npm_args}" "${rebuild_hook}"
+  )
+  printf '%s\n' --prefix "${lefthook_primary}/packages/trellage-cli" run build \
+    >"${lefthook_regression_root}/expected-npm-args"
+  cmp -s "${lefthook_regression_root}/expected-npm-args" "${npm_args}" \
+    || fail "installed rebuild hook did not rebuild the active worktree compiler"
+done
 
 rm -f -- "${lefthook_fake_dir}/lefthook"
 set +e
