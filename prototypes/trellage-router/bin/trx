@@ -140,60 +140,6 @@ read_catalog() {
   printf '%s\n' "$output"
 }
 
-read_inventory() {
-  local launcher="$1"
-  local harness="$2"
-  local executable="$3"
-  local profile="$4"
-  local output
-
-  if ! output="$("$executable" inventory "$profile" --json)"; then
-    die "$launcher inventory interface failed for $profile"
-  fi
-  jq -e \
-    --arg launcher "$launcher" \
-    --arg harness "$harness" \
-    --arg profile "$profile" '
-    type == "object"
-    and keys == ["harness", "launcher", "mcps", "plugins", "profile", "readiness", "schemaVersion", "skills"]
-    and .schemaVersion == 1
-    and .launcher == $launcher
-    and .harness == $harness
-    and .profile == $profile
-    and (.readiness == "healthy" or .readiness == "not-setup" or .readiness == "unhealthy")
-    and (.plugins | type == "array" and length <= 50)
-    and all(.plugins[];
-      type == "object"
-      and keys == ["name", "version"]
-      and (.name | type == "string" and length > 0 and length <= 128
-        and (test("[\u0000-\u001f\u007f-\u009f]") | not))
-      and (.version | type == "string" and length > 0 and length <= 128
-        and (test("[\u0000-\u001f\u007f-\u009f]") | not)))
-    and (.skills
-      | type == "object"
-      and keys == ["packageCount", "visibleCount"]
-      and (.packageCount == null or (.packageCount | type == "number" and floor == . and . >= 0))
-      and (.visibleCount == null or (.visibleCount | type == "number" and floor == . and . >= 0)))
-    and (.mcps | type == "array" and length <= 50)
-    and all(.mcps[];
-      type == "string" and length > 0 and length <= 128
-      and (test("[\u0000-\u001f\u007f-\u009f]") | not))
-    and (
-      if .readiness == "healthy" then
-        (.plugins | length > 0)
-        and .skills.packageCount != null
-        and (.skills.visibleCount != null)
-      else
-        .plugins == []
-        and .skills == {packageCount: null, visibleCount: null}
-        and .mcps == []
-      end
-    )
-  ' <<<"$output" >/dev/null || die "invalid inventory from $launcher for $profile"
-  printf '%s\n' "$output"
-}
-
-
 build_choices() {
   jq -cn \
     --argjson cpxCatalog "$1" \
@@ -204,7 +150,7 @@ build_choices() {
         id: ($catalog.launcher + ":" + .name),
         label: ($catalog.harness + " / " + .name),
         description,
-        details: "Readiness and installed inventory are checked after selection."
+        details: "The selected launcher checks readiness before starting."
       };
     {
       prompt: "Select a Trellage harness/profile",
@@ -282,17 +228,14 @@ case "$launcher" in
   cpx)
     selected_launcher="$cpx"
     selected_catalog="$cpx_catalog"
-    selected_harness=copilot
     ;;
   cdx)
     selected_launcher="$cdx"
     selected_catalog="$cdx_catalog"
-    selected_harness=codex
     ;;
   grx)
     selected_launcher="$grx"
     selected_catalog="$grx_catalog"
-    selected_harness=grok
     ;;
   *) die 'terminal picker returned an invalid launcher' ;;
 esac
@@ -301,5 +244,4 @@ esac
 jq -e --arg profile "$profile" '.profiles | map(.name) | index($profile) != null' \
   <<<"$selected_catalog" >/dev/null \
   || die 'terminal picker returned an unknown profile'
-read_inventory "$launcher" "$selected_harness" "$selected_launcher" "$profile" >/dev/null
 exec "$selected_launcher" "$profile" "$@"

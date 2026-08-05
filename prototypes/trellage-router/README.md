@@ -1,8 +1,8 @@
 # Trellage native profile router
 
 `trx` discovers the installed Trellage native launchers `cpx`, `cdx`, and
-`grx`, validates each launcher's machine-readable catalog and read-only
-installed inventory, and presents one flat interactive list.
+`grx`, validates each launcher's machine-readable catalog, and presents one
+flat interactive list.
 
 ## Install
 
@@ -45,22 +45,16 @@ repair. The selected launcher replaces `trx`, so child exit status and signals
 remain unchanged.
 
 `trx` fails closed if a launcher is absent, does not resolve to its owned
-runtime, has an invalid catalog, or emits an invalid inventory for the selected
-profile. The selected native launcher handles not-setup and unhealthy profiles.
-Interactive use requires stdin and stderr attached to a
-TTY; a non-TTY invocation exits `1`.
+runtime, or has an invalid catalog. The selected native launcher performs its
+own launch-time readiness checks and handles not-setup or unhealthy profiles.
+Interactive use requires stdin and stderr attached to a TTY; a non-TTY
+invocation exits `1`.
 
 Rows contain only `harness / profile`. The highlighted detail pane shows the
-full catalog description and that inventory will be checked after selection.
-The selected profile's read-only inventory is validated before launch; its
-readiness, installed plugin names/versions, exact selected-package `SKILL.md`
-count, broader CLI-visible entry count, and enabled MCP names/count remain
-available from the native launcher. Package counts come only from
-launcher-validated selected plugin roots or cache paths. `visibleCount`
-preserves each native CLI's broader inventory and must not be interpreted as a
-package skill count. Inventory collection performs no model call, network
-access, setup, repair, or mutation. `doctor` remains the full runtime health
-diagnostic.
+full catalog description and that the selected launcher checks readiness before
+starting. Diagnostic inventory remains available directly from each native
+launcher with `inventory PROFILE --json`; `trx` does not collect it on the
+launch path. `doctor` remains the full runtime health diagnostic.
 
 `trx` adds no containment. `cpx`, `cdx`, and `grx` still run their selected
 agents directly on the host with the permissions and safety behavior documented
