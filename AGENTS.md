@@ -1,11 +1,15 @@
 # Trellage Agent Guide
 
-Trellage compiles locked agent profiles and runs them in isolated Docker sandboxes.
+**Trellage Sandbox** compiles locked agent profiles and runs them in isolated
+Docker containers. **Trellage Native** runs profile launchers directly on the
+host. Examples: `trx`, `cpx`, `cdx`, and `grx`.
 
 ## Project overview
 
-- Profiles describe reproducible agent environments.
-- The CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
+- Trellage Sandbox profiles describe reproducible container environments.
+- The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
+- Trellage Native profiles isolate agent state but are not containers or security boundaries.
+- The `trx` router presents Trellage Native profiles. Examples: `cpx`, `cdx`, and `grx` launchers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
@@ -24,7 +28,8 @@ Trellage compiles locked agent profiles and runs them in isolated Docker sandbox
 ## Architecture
 
 - `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.
-- `prototypes/trellage` contains the installable shell launcher and runtime entrypoints.
+- `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
+- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles.
 - `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.

@@ -210,9 +210,12 @@ its native skills. The selected platform lock records the exact source commit, s
 inventory, release asset URL, size, GitHub SHA-256 digest, and built OCI digest.
 Locked builds never resolve a newer release.
 
-## Native Host Launcher Installation
+## Trellage Native (`trx`)
 
-The native profile launchers run agents directly on the host. They are separate from the Docker-based Trellage CLI and sandbox workflow above.
+Use **Trellage Sandbox** for the Docker-based CLI and isolated container
+profiles described above. Use **Trellage Native** for `trx` and its host-native
+profile launchers. Native launchers isolate agent state but run directly on the
+host.
 
 Install the four agent launchers and optional profile router from the repository
 root:
