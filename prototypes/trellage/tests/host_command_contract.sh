@@ -468,6 +468,33 @@ test_normalizes_docker_aarch64_server_platform() {
   printf 'Trellage host test: PASS: normalizes Docker aarch64 server platform\n'
 }
 
+test_adopts_legacy_arm64_state_without_platform_labels() {
+  local worktree="$test_root/legacy-platform-worktree"
+  local docker_log="$test_root/legacy-platform.docker.log"
+  local state_volume
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  FAKE_DOCKER_VOLUME_STATE=matching-legacy-platform \
+    FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-stopped-legacy-platform \
+    FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash" \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" 'resume legacy arm64 state'
+
+  [[ "$(grep -Fxc $'ARG\trm' "$docker_log")" -eq 1 ]] \
+    || fail 'legacy platform migration did not replace exactly one container'
+  [[ "$(grep -Fxc $'ARG\tcreate' "$docker_log")" -eq 1 ]] \
+    || fail 'legacy platform migration did not recreate exactly one container'
+  ! grep -Fqx $'ARG\tvolume create' "$docker_log" \
+    || fail 'legacy platform migration replaced the existing state volume'
+  ! grep -Fqx $'ARG\tvolume rm' "$docker_log" \
+    || fail 'legacy platform migration removed the existing state volume'
+  assert_arg "$docker_log" 'dev.trellage.platform=linux/arm64'
+  printf 'Trellage host test: PASS: adopts legacy ARM64 state without platform labels\n'
+}
+
 test_resume_uses_native_thread_without_prompt_replay() {
   local worktree="$test_root/literal-prompt-worktree"
   local docker_log="$test_root/literal-prompt.docker.log"
@@ -3179,6 +3206,11 @@ if [[ "${TRELLAGE_HOST_NEW_CONTAINER_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_LEGACY_PLATFORM_ONLY:-}" == 1 ]]; then
+  test_adopts_legacy_arm64_state_without_platform_labels
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_TERMINAL_ONLY:-}" == 1 ]]; then
   test_terminal_environment_and_agent_tagging
   exit 0
@@ -3239,6 +3271,7 @@ test_legacy_product_environment_is_ignored
 test_command_diagnostics_use_trellage_prefix
 test_new_container_from_subdirectory
 test_normalizes_docker_aarch64_server_platform
+test_adopts_legacy_arm64_state_without_platform_labels
 test_resume_uses_native_thread_without_prompt_replay
 test_bare_command_has_no_prompt
 test_portable_prompt_mode_is_noninteractive_and_literal

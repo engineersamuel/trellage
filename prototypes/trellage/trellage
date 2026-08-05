@@ -574,6 +574,7 @@ container_integrity_label_args=(
 )
 volume_ownership_format="{{ printf \"%s\\t%s\\t%s\\t%s\" (index .Labels \"$prototype_label\") (index .Labels \"$worktree_label\") (index .Labels \"$profile_label\") (index .Labels \"$platform_label\") }}"
 mounts_format='{{ range .Mounts }}{{ printf "%s\t%s\t%s\t%s\t%t\n" .Type .Name .Source .Destination .RW }}{{ end }}'
+container_platform_is_legacy=false
 
 probe_container_presence() {
   local listed_name
@@ -660,8 +661,13 @@ inspect_container() {
   container_platform="$(docker container inspect \
     --format "$platform_format" "$container_name" 2>/dev/null)" \
     || fail "cannot inspect Docker container platform: $container_name"
-  [[ "$container_platform" == "$docker_platform" ]] \
-    || fail "refusing Docker container platform collision: $container_name"
+  container_platform_is_legacy=false
+  if [[ -z "$container_platform" && "$docker_platform" == linux/arm64 ]]; then
+    container_platform_is_legacy=true
+  else
+    [[ "$container_platform" == "$docker_platform" ]] \
+      || fail "refusing Docker container platform collision: $container_name"
+  fi
   container_runtime_hash="$(docker container inspect \
     --format "$runtime_hash_format" "$container_name" 2>/dev/null)" \
     || fail "cannot inspect Docker container runtime hash: $container_name"
@@ -672,7 +678,9 @@ inspect_container() {
 }
 
 container_is_current() {
-  [[ "$container_profile_hash" == "$profile_hash" && "$container_runtime_hash" == "$runtime_hash" ]]
+  [[ "$container_platform_is_legacy" == false \
+    && "$container_profile_hash" == "$profile_hash" \
+    && "$container_runtime_hash" == "$runtime_hash" ]]
 }
 
 remove_stale_container() {
@@ -707,12 +715,14 @@ container_labels_are_current() {
 }
 
 validate_state_volume() {
-  local expected_ownership volume_ownership
+  local expected_ownership legacy_arm64_ownership volume_ownership
   volume_ownership="$(docker volume inspect \
     --format "$volume_ownership_format" "$state_volume" 2>/dev/null)" \
     || fail "cannot inspect Docker volume ownership: $state_volume"
   expected_ownership="$prototype_owner"$'\t'"$worktree"$'\t'"$profile_name"$'\t'"$docker_platform"
-  [[ "$volume_ownership" == "$expected_ownership" ]] \
+  [[ "$volume_ownership" == "$expected_ownership" ]] && return
+  legacy_arm64_ownership="$prototype_owner"$'\t'"$worktree"$'\t'"$profile_name"$'\t'
+  [[ "$docker_platform" == linux/arm64 && "$volume_ownership" == "$legacy_arm64_ownership" ]] \
     || fail "refusing unrelated Docker volume name collision: $state_volume"
 }
 

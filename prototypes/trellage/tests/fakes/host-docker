@@ -331,6 +331,12 @@ case "${1:-} ${2:-}" in
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
         platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
         ;;
+      matching-legacy-platform)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        platform=
+        ;;
       matching-missing-profile)
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-copilot}"
         worktree="${FAKE_GIT_ROOT:?}"
@@ -388,6 +394,15 @@ case "${1:-} ${2:-}" in
         profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
         platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
+        running='false'
+        ;;
+      matching-stopped-legacy-platform)
+        prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
+        worktree="${FAKE_GIT_ROOT:?}"
+        profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
+        runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        platform=
         running='false'
         ;;
       matching-running-missing-profile)
