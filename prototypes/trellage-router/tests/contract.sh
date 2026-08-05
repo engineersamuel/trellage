@@ -78,12 +78,9 @@ if [[ "${1-} ${2-}" == 'list --json' ]]; then
 fi
 if [[ "${1-}" == inventory && "${3-}" == --json ]]; then
   launcher="$(basename "$0")"
+  sleep "${TRX_INVENTORY_DELAY-0}"
   if [[ -n "${TRX_INVENTORY_LOG-}" ]]; then
     printf '%s:%s\n' "$launcher" "$2" >>"$TRX_INVENTORY_LOG"
-  fi
-  if [[ "${TRX_MALFORMED_INVENTORY_LAUNCHER-}" == "$launcher" ]]; then
-    printf '%s\n' '{"schemaVersion":1,"readiness":"healthy"}'
-    exit 0
   fi
   package_count=2
   jq -cn \
@@ -153,23 +150,29 @@ import { readFileSync, writeFileSync } from "node:fs"
 writeFileSync(process.env.TRX_PICKER_INPUT, readFileSync(0))
 process.stdout.write("cpx:cpx-p\n")
 EOF
+selection_started="$(python3 -c 'import time; print(time.monotonic_ns())')"
 TRX_ARGUMENT_LOG="$argument_log" \
+  TRX_INVENTORY_DELAY=4 \
   TRX_INVENTORY_LOG="$inventory_log" \
   TRX_PICKER_INPUT="$fixture_root/picker-input.json" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/select.out" \
   '\r' '' "$fixture_bin/trx" --interactive \
   'two words' '' '--literal=*' \
   || fail 'interactive selection failed'
+selection_finished="$(python3 -c 'import time; print(time.monotonic_ns())')"
+selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
+((selection_milliseconds < 2000)) \
+  || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq -e '
   .choices[0]
   | .label == "copilot / cpx-p"
     and (.description | length == 1200)
-    and (.details == "Readiness and installed inventory are checked after selection.")
+    and (.details == "The selected launcher checks readiness before starting.")
     and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
 ' "$fixture_root/picker-input.json" >/dev/null \
-  || fail 'router choice omitted concise catalog data or deferred inventory status'
-[[ "$(<"$inventory_log")" == 'cpx:cpx-p' ]] \
-  || fail 'router read inventory before selection or for an unselected profile'
+  || fail 'router choice omitted concise catalog data or launch readiness status'
+[[ ! -e "$inventory_log" ]] \
+  || fail 'router read diagnostic inventory before launching the selected profile'
 mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
 python3 - "$argument_log" <<'PY' || fail 'arguments were not forwarded unchanged'
 import pathlib
@@ -213,13 +216,6 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/invalid.out" \
 [[ "$status" == 1 ]] || fail "invalid catalog exited $status instead of 1"
 assert_contains 'invalid catalog from cdx' "$fixture_root/invalid.out"
 mv "$fixture_root/cdx.catalog" "$runtime_parent/cdx/catalog.json"
-
-status=0
-TRX_MALFORMED_INVENTORY_LAUNCHER=cdx \
-  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/invalid-inventory.out" \
-  '\x1b[B\r' '' "$fixture_bin/trx" -i || status=$?
-[[ "$status" == 1 ]] || fail "invalid inventory exited $status instead of 1"
-assert_contains 'invalid inventory from cdx for cdx-p' "$fixture_root/invalid-inventory.out"
 
 rm "$fixture_bin/cpx"
 cp "$runtime_parent/cpx/bin/cpx" "$fixture_root/unrelated-cpx"
