@@ -2103,6 +2103,18 @@ test_upgrade_delegates_to_effect_cli() {
     || fail 'upgrade profile path was not preserved during delegation'
   [[ "$(wc -l <"$node_log" | tr -d ' ')" -eq 4 ]] \
     || fail 'upgrade delegation added unexpected arguments'
+
+  : >"$node_log"
+  FAKE_NODE_LOG="$node_log" PATH="$fake_node_bin:$PATH" \
+    "$prototype_dir/trellage" upgrade all
+  [[ "$(sed -n '1p' "$node_log")" == $'ARG\t'"$compiler" ]] \
+    || fail 'bulk upgrade did not delegate to the profile compiler'
+  [[ "$(sed -n '2p' "$node_log")" == $'ARG\tupgrade' ]] \
+    || fail 'bulk upgrade command was not preserved during delegation'
+  [[ "$(sed -n '3p' "$node_log")" == $'ARG\tall' ]] \
+    || fail 'bulk upgrade selector was not preserved during delegation'
+  [[ "$(wc -l <"$node_log" | tr -d ' ')" -eq 3 ]] \
+    || fail 'bulk upgrade delegation added unexpected arguments'
   printf 'Trellage host test: PASS: upgrade delegates to Effect CLI\n'
 }
 

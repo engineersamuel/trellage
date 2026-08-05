@@ -17,6 +17,7 @@ trellage resume --profile /absolute/path/to/profile.toml
 trellage doctor --profile /absolute/path/to/profile.toml
 trellage destroy --profile /absolute/path/to/profile.toml
 trellage upgrade /absolute/path/to/profile.toml
+trellage upgrade all
 ```
 
 Bundled profiles can also be selected by directory name:
@@ -31,6 +32,15 @@ trellage --profile claude-social-media
 ```
 
 Trellage expands a bare name to `profiles/<name>/profile.toml`. Use a value ending in `.toml` or containing a path separator for an explicit path.
+
+`trellage upgrade all` discovers every valid bundled and current-worktree
+profile, applies current-worktree name overrides, and upgrades profiles
+sequentially in name order. Each profile refreshes its declared mutable source
+refs and `latest` harness selector, builds a candidate image, and atomically
+adopts the matching lock and image. A failed profile keeps its prior lock and
+image; remaining profiles continue, and the command exits nonzero after
+reporting all failures. Exact versions and immutable Git refs remain pinned by
+the profile.
 
 Use `trellage -i` or `trellage --interactive` to choose a profile before a new
 launch:

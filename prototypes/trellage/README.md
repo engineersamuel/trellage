@@ -132,6 +132,7 @@ trellage shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
 trellage build [--locked] [PROFILE]
+trellage upgrade [PROFILE|all]
 
 trellage                    # new interactive Codex conversation
 trellage -i                 # select a profile, then start its interactive harness
@@ -142,7 +143,18 @@ trellage resume SESSION_ID  # resume one exact native conversation
 trellage shell              # recovery Fish without secrets
 trellage stop               # preserve state
 trellage destroy            # confirmed profile/worktree cleanup
+trellage upgrade all         # transactionally upgrade every discovered profile
 ```
+
+`trellage upgrade all` uses the same bundled and current-worktree discovery as
+the interactive picker. Profiles run sequentially in declared-name order.
+Current-worktree profiles override bundled profiles with the same name. Each
+upgrade refreshes mutable Git refs, marketplace plugin versions, and harnesses
+declared with `version = "latest"`, then builds and atomically adopts the new
+lock and image. Exact versions and immutable refs stay pinned. If VPN or
+upstream access blocks one profile, its existing lock and image remain intact,
+the remaining profiles still run, and the command exits nonzero with a failure
+summary.
 
 For a profile bundled in this repository, use its directory name instead of an absolute path:
 

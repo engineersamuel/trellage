@@ -11,6 +11,7 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Cause, Console, Effect, Option } from "effect"
 
 import {
+  ApplicationError,
   buildProfile,
   compileProfileLock,
   loadProfile,
@@ -62,6 +63,11 @@ const currentGitWorktree = (cwd: string) =>
       (await execFilePromise("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" })).stdout.trim(),
     catch: () => undefined,
   }).pipe(Effect.orElseSucceed(() => undefined))
+
+const profileDiscoveryRoots = (worktree: string | undefined) => ({
+  bundled: bundledProfiles,
+  ...(worktree === undefined ? {} : { worktree: path.join(worktree, "profiles") }),
+})
 
 const selectedProfile = (argument: Option.Option<string>) =>
   Effect.gen(function* () {
@@ -141,13 +147,54 @@ const build = Command.make("build", { locked, profile: profileArgument }, ({ pro
   ),
 )
 
+const upgradeAllProfiles = (target: DockerTarget) =>
+  Effect.gen(function* () {
+    const worktree = yield* currentGitWorktree(process.cwd())
+    const profiles = yield* discoverProfileChoices(profileDiscoveryRoots(worktree)).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
+    if (profiles.length === 0) {
+      return yield* Effect.fail(new ApplicationError({ message: "no valid profiles found to upgrade" }))
+    }
+
+    const results = yield* Effect.forEach(
+      profiles,
+      (profile) =>
+        upgradeProfile(profile.value, cacheHome, runtimeSupport, target).pipe(
+          Effect.tap((result) => Console.log(`upgraded: ${profile.name} (${result.digest})`)),
+          Effect.match({
+            onFailure: (cause) => ({ profile, cause }),
+            onSuccess: () => undefined,
+          }),
+        ),
+      { concurrency: 1 },
+    )
+    const failures = results.filter((result) => result !== undefined)
+    for (const failure of failures) {
+      yield* Console.error(`upgrade failed: ${failure.profile.name}: ${failure.cause.message}`)
+    }
+    if (failures.length > 0) {
+      return yield* Effect.fail(
+        new ApplicationError({
+          message: `${failures.length}/${profiles.length} profile upgrades failed: ${failures
+            .map(({ profile }) => profile.name)
+            .join(", ")}`,
+        }),
+      )
+    }
+    return yield* Effect.void
+  })
+
 const upgrade = Command.make("upgrade", { profile: profileArgument }, ({ profile }) =>
-  withDockerTarget((target) =>
-    selectedResolvedProfile(profile, target.platform).pipe(
-      Effect.flatMap((selected) => upgradeProfile(selected, cacheHome, runtimeSupport, target)),
-      Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
-    ),
-  ),
+  Option.isSome(profile) && profile.value === "all"
+    ? withDockerTarget(upgradeAllProfiles)
+    : withDockerTarget((target) =>
+        selectedResolvedProfile(profile, target.platform).pipe(
+          Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+          Effect.flatMap((selected) => upgradeProfile(selected, cacheHome, runtimeSupport, target)),
+          Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
+        ),
+      ),
 )
 
 const metadata = Command.make("metadata", { profile: profileArgument }, ({ profile }) =>
@@ -166,10 +213,7 @@ const environment = Command.make("environment", {}, () =>
 const choices = Command.make("choices", {}, () =>
   Effect.gen(function* () {
     const worktree = yield* currentGitWorktree(process.cwd())
-    const result = yield* discoverProfileChoices({
-      bundled: bundledProfiles,
-      ...(worktree === undefined ? {} : { worktree: path.join(worktree, "profiles") }),
-    })
+    const result = yield* discoverProfileChoices(profileDiscoveryRoots(worktree))
     yield* Console.log(JSON.stringify(result))
   }),
 )
