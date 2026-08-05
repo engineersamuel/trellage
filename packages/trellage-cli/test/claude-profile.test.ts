@@ -16,6 +16,10 @@ const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social
 const socialLockPath = fileURLToPath(
   new URL("../../../profiles/claude-social-media/profile.linux-arm64.lock.toml", import.meta.url),
 )
+const blogProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))
+const blogLockPath = fileURLToPath(
+  new URL("../../../profiles/claude-blog/profile.linux-arm64.lock.toml", import.meta.url),
+)
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 
@@ -188,6 +192,41 @@ describe("authored Claude social media profile", () => {
     const createBlock = source.slice(source.indexOf("docker container create"), source.indexOf("terminal_args=("))
     expect(createBlock).not.toMatch(/APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
     expect(source).toContain('${claude_auth_args[@]+"${claude_auth_args[@]}"}')
+  })
+})
+
+describe("authored Claude Blog profile", () => {
+  it("routes Claude Opus 5 through copilot-proxy-rs and locks every published blog skill", async () => {
+    const [source, lockSource] = await Promise.all([readFile(blogProfilePath, "utf8"), readFile(blogLockPath, "utf8")])
+    const document = await Effect.runPromise(parseProfile(source, blogProfilePath))
+    const lock = await Effect.runPromise(parseLock(lockSource))
+
+    expect(source).toContain(
+      "# Upstream project and published skill catalog: https://github.com/AgriciDaniel/claude-blog",
+    )
+    expect(source).toContain("# Website catalog: https://claude-blog.md/skills")
+    expect(document.profile.harness.kind).toBe("claude")
+    if (document.profile.harness.kind !== "claude") throw new Error("expected Claude harness")
+    expect(document.profile.harness.claude).toMatchObject({
+      default_auth: "proxy",
+      model: "claude-opus-5",
+      gateway: "http://copilot-proxy-rs:8080",
+    })
+    expect(document.profile.plugins).toEqual([
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        repository: "https://github.com/AgriciDaniel/claude-blog.git",
+        marketplace: "agricidaniel-blog",
+        select: ["claude-blog"],
+      }),
+    ])
+    expect(lock.sources).toHaveLength(1)
+    expect(lock.sources[0]).toMatchObject({
+      adapter: "claude-marketplace",
+      marketplace: "agricidaniel-blog",
+      plugin_versions: { "claude-blog": "2.1.1" },
+    })
+    expect(lock.sources[0]?.files.filter(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path))).toHaveLength(32)
   })
 })
 
