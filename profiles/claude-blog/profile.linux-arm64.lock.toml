@@ -1,0 +1,3571 @@
+schema = 1
+platform = "linux/arm64"
+source_date_epoch = 1784379906
+profile_hash = "sha256:ccbe92daed580a92e96e79e0eaa61d328231ac596c6a3953d4f10fce190f0e8e"
+
+[[sources]]
+kind = "plugin"
+adapter = "claude-marketplace"
+marketplace = "agricidaniel-blog"
+plugin_versions = { "claude-blog" = "2.1.1" }
+repository = "https://github.com/AgriciDaniel/claude-blog.git"
+ref = "main"
+select = ["claude-blog"]
+commit = "aec971ac511370c6216cd93776c9cf2fec97b32a"
+integrity = "sha256:8a2cd9fdca129a78438a9a93ef7ea1b4ab5705e708e4570aa50848e8173859b2"
+
+[[sources.files]]
+path = ".claude-plugin/marketplace.json"
+sha256 = "sha256:7546890953fd3014b1e586480f2baa636ec42d62b907afefd33d3e05ebaa75b8"
+
+[[sources.files]]
+path = ".claude-plugin/plugin.json"
+sha256 = "sha256:98875cbfd45ca03e5f093dea871d75b6e4e1d29864cc04717ebb366c233c68f6"
+
+[[sources.files]]
+path = ".gitattributes"
+sha256 = "sha256:22dde704213d5b2ae2d9c2ee7ad366263b6764213e7959eef58e0d2b41f3a6be"
+
+[[sources.files]]
+path = ".github/CODE_OF_CONDUCT.md"
+sha256 = "sha256:d483adae2b94e3dc7358e9d4460c59dd0cc883334e0b22bd6f22ff09272a63f3"
+
+[[sources.files]]
+path = ".github/CODEOWNERS"
+sha256 = "sha256:c9bafa9ab6c8368d0c6877e5a35077477f5a8afb7dd364a54cb83dbb46f0fa3b"
+
+[[sources.files]]
+path = ".github/CONTRIBUTING.md"
+sha256 = "sha256:d4e9143a50cd7eec723307189bf0ebd20fc8978a250bdf61af64705cb85ec6c7"
+
+[[sources.files]]
+path = ".github/dependabot.yml"
+sha256 = "sha256:44e2887207e4c96d0864c7ecf310bb945687054f3583d367c3b54f83718f5fe8"
+
+[[sources.files]]
+path = ".github/FUNDING.yml"
+sha256 = "sha256:d3c9d91975536296df6c0a58b25b87ff3eafa6aa36583f4652306b64047000ee"
+
+[[sources.files]]
+path = ".github/ISSUE_TEMPLATE/bug_report.yml"
+sha256 = "sha256:ef1cd0e7bcb45aee2151f12f072511eedca480bb3fd01231a96b893cbb6126ec"
+
+[[sources.files]]
+path = ".github/ISSUE_TEMPLATE/config.yml"
+sha256 = "sha256:66896046b74f8e9a0ba8385931246ac0466fed41f92c8e4233d17e276770150e"
+
+[[sources.files]]
+path = ".github/ISSUE_TEMPLATE/feature_request.yml"
+sha256 = "sha256:d77fe0bc4276a588e1ad822a6574352d49bae97df51dd5127511c4920c0b2c54"
+
+[[sources.files]]
+path = ".github/pull_request_template.md"
+sha256 = "sha256:35a88579781a00617bfc2c250806a54e564a5e257bdddde3ebf3b45544a5b761"
+
+[[sources.files]]
+path = ".github/SECURITY.md"
+sha256 = "sha256:deab052188c7feb7884f7c376c8e0bb7560758401dc6a39fe42f7cf6c4cfd50f"
+
+[[sources.files]]
+path = ".github/SUPPORT.md"
+sha256 = "sha256:0c4a599b1b80df0e287e22bc3d2f2bcc0099275205a8b8348d5c6c487d70e31e"
+
+[[sources.files]]
+path = ".github/workflows/ci.yml"
+sha256 = "sha256:ebf4fd8c1948cb121a303d575dbe7fd1fd6a822e11c70a3a2e12d9465c1439e7"
+
+[[sources.files]]
+path = ".gitignore"
+sha256 = "sha256:d3f41867028e7dbb1eb161a799afef982384a8a5f160f04d82e911158baecf12"
+
+[[sources.files]]
+path = ".mcp.example.json"
+sha256 = "sha256:3740d508435e5be48cbe54f311be00a073e8e0ba17f73cae34c298629af958b5"
+
+[[sources.files]]
+path = ".pre-commit-config.yaml"
+sha256 = "sha256:3aff89e07b21cbfd3071ac77e8227c9db8832e1f976288588e06bf6f3e566c84"
+
+[[sources.files]]
+path = "agents/blog-researcher.md"
+sha256 = "sha256:b343b89fb97234a63f393efb09d6def7c186d3ca5587612cd5e359c8b6978ab2"
+
+[[sources.files]]
+path = "agents/blog-reviewer.md"
+sha256 = "sha256:5ea0b050b4d8b78cc70c749ba6fc37391770cab33c308376ff90470ecd1a01cf"
+
+[[sources.files]]
+path = "agents/blog-seo.md"
+sha256 = "sha256:6976e4a0c88bd6ff65d969266f0052b0d31f13bd7da0bd3e25f76a684cc77273"
+
+[[sources.files]]
+path = "agents/blog-translator.md"
+sha256 = "sha256:dffc5ee8557e47f4d2132cc57fc783840587a795ceeb6d0ca57e1d678ee3e862"
+
+[[sources.files]]
+path = "agents/blog-writer.md"
+sha256 = "sha256:1b510e2d8d206af9d3561e8e04a4fca9b1968c865e5bbabea21b103f900c58d7"
+
+[[sources.files]]
+path = "assets/blog-command-demo.gif"
+sha256 = "sha256:02e169a9f5ee1d90effa5c4acafeae376994deccdcc0833f1e3f966f9fad1362"
+
+[[sources.files]]
+path = "assets/blog-write-demo.gif"
+sha256 = "sha256:03ffb5ade325d151af107069b14353d77737e392c844112a29d7bc16c9068855"
+
+[[sources.files]]
+path = "assets/cover-blog.svg"
+sha256 = "sha256:f2e73ab8443ca82a7fb9c7f36665650d63e1ac66bdd31adb628306aba2563ad7"
+
+[[sources.files]]
+path = "assets/diagrams/01-architecture-B.svg"
+sha256 = "sha256:f9a98a673c5bce06bc891b4105acc3b4a68bd3fd62b546ba4a952a17ee682fdd"
+
+[[sources.files]]
+path = "assets/diagrams/02-pipeline-B.svg"
+sha256 = "sha256:752e67b228c2f83826aa4636e10d7d5bc1a64a37fdd0a3c98a2a4fadbece2788"
+
+[[sources.files]]
+path = "assets/diagrams/03-sub-skill-map-A.svg"
+sha256 = "sha256:242dc53ab361f8a1e7455fb95e25383d9f7df8a392542ef3fb43f802e78163a6"
+
+[[sources.files]]
+path = "assets/diagrams/04-framework-B.svg"
+sha256 = "sha256:e3589d397e3e4ef7616cc6323507bb03f133d250173f7998991a3c2cfb6e1769"
+
+[[sources.files]]
+path = "brain/_attachments/brain-relationship-map.svg"
+sha256 = "sha256:eac70ac099b4c9d18fcafcdbedb2a42f95bf95ca8294c9cb0cd2d992c09dce32"
+
+[[sources.files]]
+path = "brain/.claude-plugin/marketplace.json"
+sha256 = "sha256:47843c39a0f399ce6d38ce6f91df28dba25aa6f5f7b6752af0db92710baf9c00"
+
+[[sources.files]]
+path = "brain/.claude-plugin/plugin.json"
+sha256 = "sha256:2b4d57d60d4e6f3a1619a5f1ad1370b3e40dca293002427a2379d312f380583d"
+
+[[sources.files]]
+path = "brain/.github/CODEOWNERS"
+sha256 = "sha256:b999efc78e39438ec85bb48d2cc4bf4a95da3dcd94ecd0a4afd493e88c4a4ba1"
+
+[[sources.files]]
+path = "brain/.github/dependabot.yml"
+sha256 = "sha256:883b95e3be554fbadd92b315e4a8c6ea6ca688b64924e22dd61222b07f683507"
+
+[[sources.files]]
+path = "brain/.github/ISSUE_TEMPLATE/bug_report.yml"
+sha256 = "sha256:030bed4baff8d162ae1e11355f8f5e6514ae5b09f01b2077cfa6403ce146bf78"
+
+[[sources.files]]
+path = "brain/.github/ISSUE_TEMPLATE/config.yml"
+sha256 = "sha256:1f103c6a9dd07cd13a9a6f17ace6b813f47747eb9cb7e00488cb2073caaf91bb"
+
+[[sources.files]]
+path = "brain/.github/PULL_REQUEST_TEMPLATE.md"
+sha256 = "sha256:f41672c3d62b2a1eb142541806b8f45566eb82b5d989b13719759ecd6ea535b2"
+
+[[sources.files]]
+path = "brain/.github/workflows/ci.yml"
+sha256 = "sha256:7d32be49c92bbf5d2e2bde7f33d47bc000d1b77fc917b0054ff621e0957c9c99"
+
+[[sources.files]]
+path = "brain/.gitignore"
+sha256 = "sha256:01a207dd0837960e32ba6e60a5f59faf1e3d56dfabc9c067ca01927880e52121"
+
+[[sources.files]]
+path = "brain/.obsidian/graph.json"
+sha256 = "sha256:59e9dbecac9c2a39b5ba091a520166227f901668a93eb8747101845c9ffc6c6f"
+
+[[sources.files]]
+path = "brain/.raw/.manifest.json"
+sha256 = "sha256:a67cf620b8c90a25374e9fe3370ff2380615e7fa70a8019208dd3dff9cdf9a7e"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-brain-data/google-updates.json"
+sha256 = "sha256:9ca5e729bdf30f27b4e6d49139c4c50a128a4dc48e7791621515d6b800d7e86b"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/.claude-plugin/plugin.json"
+sha256 = "sha256:dc221172abee2ac0225de489fca80b1981c72bcc28d4c9664b7a575baf21be79"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/agents/blog-researcher.md"
+sha256 = "sha256:e9c403d5473c93e2e21fea57b2c2a479574a0761a5e409f4d918bf0331efafa9"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/agents/blog-reviewer.md"
+sha256 = "sha256:0f11374187fc298a0cf5c3b1940a0d06a286a8d3f46ff359708bda2dd75ff926"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/agents/blog-seo.md"
+sha256 = "sha256:be647a425def3e9a463df1c03e23bf2d8e566a457c1ece18dc02f0cdb3f4dec8"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/agents/blog-translator.md"
+sha256 = "sha256:d6b1787d5033cb4387481d2f1c03720a44eb1894b38b9044fbc004e7368d9412"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/agents/blog-writer.md"
+sha256 = "sha256:b26207d097319c934e271e58da1c09c1738692e5f9a066ac22eaf7cbb0d6d26f"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/CHANGELOG.md"
+sha256 = "sha256:078751d460f4b2d3cb598218b37bacc69de60298f3790f95c01ae758fe176ef4"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/CITATION.cff"
+sha256 = "sha256:dc627280f71ee5f08a95482ccba05f6caf3d6bd1ec251fe958b711c7118b3c3a"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/CLAUDE.md"
+sha256 = "sha256:8ae778a77436654ca0633903ded5c6a02914aeaf861133fa56ec809fa6798741"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/ARCHITECTURE.md"
+sha256 = "sha256:2e9e77508b869c122d969a62df9e3bc3833d14557b61bd93c80c311805ee7c32"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/COMMANDS.md"
+sha256 = "sha256:9e2ba10d2d85a543adb6a0b2feadd5541c987919c6ed917e87cb8d5932147601"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/CONTRIBUTORS.md"
+sha256 = "sha256:02fae9354f4b37f07223eaa935353b07a6c83dcb5461b25bd9900d35df5c63f6"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/DEMO.md"
+sha256 = "sha256:3a45b8f68f215595707c89690f3acadb5a986c18405fbd136a8c199670253f85"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/INSTALLATION.md"
+sha256 = "sha256:6736b08631a06550f1b2d6ae8b552ba860d40aa4e4b3437b7b617a2520f886e5"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/MCP-INTEGRATION.md"
+sha256 = "sha256:89c19e04fb238d084f48c0b97292985bbe5d1d2bdd1b937c3db0cd0347507eb6"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/PRIVACY.md"
+sha256 = "sha256:c315ebc345f47964c4caac7a42ed7fd5558f89ae98c71ba04ab8a1eb74ae9d00"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/PUBLISHING.md"
+sha256 = "sha256:d2df0b5d1598d7ef49f0da5c3192eca4072d293664db33d3da5a81c397f311a8"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/RELEASE_CHECKLIST.md"
+sha256 = "sha256:5d4c830389d44f2c5d9dcacd83ea40bedbc90b1a4733d979d722fa3242e211d1"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/TEMPLATES.md"
+sha256 = "sha256:496b252664ff19379ff4af593e5f01bb4959851bfc2dc74e91b34b858715c889"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/TODO.md"
+sha256 = "sha256:c4c918d4a6f42cd159ef666848f3a9da3c6bfeadf674744743129b176ece7074"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/docs/TROUBLESHOOTING.md"
+sha256 = "sha256:e5f44c126f5cb2e9a4973a57f06faa12fb2fcc0295ef99870d6f2c30d12f255d"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/LICENSE"
+sha256 = "sha256:1ed335ede0a9219040a4c72bfe8d9a8fe4d7315b0e99b9e23ce240d267ce82a9"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/NOTICE"
+sha256 = "sha256:d55d027b4e159c562dc7d96a6413174730dcdbd8bbf912829a4b65091d8ab4f8"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/README.md"
+sha256 = "sha256:5781219a887437c80f288b4229a007d350e30953c408e0c416069736d6246dcf"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/ai_citation_score.py"
+sha256 = "sha256:732dab452ecba5cc9424031fb55d994ff9ef96d7915ce3e5cb6664a9b4b93ab0"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/analyze_blog.py"
+sha256 = "sha256:1936cf63710ee37b90b9424cba82735ccf20d83ba9becb822daf468e244a239e"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/blog_hygiene.py"
+sha256 = "sha256:fb6c1caf0ae0818cc02a946ef65643a3db4529d251fd1e1c944bfcab963ae020"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/blog_preflight.py"
+sha256 = "sha256:d31c4a79b17826d62ff3ddeb088be66a0c89ae54294f0ffdcbe003bd611a3a5a"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/blog_render.py"
+sha256 = "sha256:b764527fa3d3c8add4389ff2edd500ca1f24de4dfb3c5ae1607bc4d656948b14"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/cognitive_load.py"
+sha256 = "sha256:acd51e54a1a20448b581b91b2a1c6cfc3f8450eb84993261bd0d0cbc6b07bf49"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/content_decay.py"
+sha256 = "sha256:1d7ea72cd50661ac2fe7c2ab5fdd71be8ff1effa16fd401d786cf22d7549d1be"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/discourse_research.py"
+sha256 = "sha256:fb168310eed1d856d27b5472fae6afc6a74e9de8df069a39d36875350e25d692"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/generate_hero.py"
+sha256 = "sha256:fbeb31db2facba87118fe5c141f028e720f803448337790663b511a304a22eaf"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/lint_prose.py"
+sha256 = "sha256:28a34ded79880d25bb19c9808c13d950b7ef00b22f52817a963d7a336ea888fe"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/load_untrusted_root.py"
+sha256 = "sha256:fff64fe01f1fbea13f6b76f94dc4c7ea70c83adc0b3bd070b431b79214ce7ae3"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/quality_gate.py"
+sha256 = "sha256:170740511f28cc3ba461a309eb1263cf8ffea997421b29402055c64355acb200"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/style_learn.py"
+sha256 = "sha256:6b3873f4a4c27928db7a5f80338a4211a20a460df4ed7385e3a4d8381d53f1b5"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/scripts/sync_flow.py"
+sha256 = "sha256:4e4459d42f884e7d8ecf9dfb01fe39ea6529f2f951198a521b87e800748f914f"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-analyze/SKILL.md"
+sha256 = "sha256:9ed6e115baf73ebe3eef05129d3dcc5d35e750399eb9ed5ffd35a3b19dfd1535"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-audio/SKILL.md"
+sha256 = "sha256:482ed5b7367c15466753e6d96f48e811c5628bf0bc5955d39f7ef91ee48ae18a"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-audit/SKILL.md"
+sha256 = "sha256:8ea0121c0daf6c535573df166d2f1e57fdda2aca987e75d7d228ba2f749e383b"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-brand/SKILL.md"
+sha256 = "sha256:67387b5f0dbb6056a6e3791cb250d10dfc7ad40fde8aee707b9d54a0012301c0"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-brief/SKILL.md"
+sha256 = "sha256:027e1e4c1ded81a5e0025265b7bb5df05e82ba9abc8d91c8f3ee5713e69d23fe"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-calendar/SKILL.md"
+sha256 = "sha256:49ad5eab021d7151866b92d8452d5dc9eba7b93b5e8da62964bb936e77f37f7d"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-cannibalization/SKILL.md"
+sha256 = "sha256:f9b73ebc79ddd3d243ecce574d970b86aaccde913b9c4037a36224d9de2252d3"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-chart/SKILL.md"
+sha256 = "sha256:31e72f074e1d0f89fdbd9e927db3d211f1e0b2cc5441a637eb6a84b0ffb94e62"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-cluster/SKILL.md"
+sha256 = "sha256:d91b61dda5bc471375e073bcfab27beeb9c6dc459ea8776574b98b078a501e8f"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-decay/SKILL.md"
+sha256 = "sha256:7371597aa5fe8a931a8c88d8de12a6b2e2d8224a51048c2597d79c445fc52776"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-discourse/SKILL.md"
+sha256 = "sha256:fd4cbf404f445a758a623604430e65d1aa8f21db52dcf095dc3a570ba6200151"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-factcheck/SKILL.md"
+sha256 = "sha256:3cf3639e2d6d5abc424a73c6ba9a494839addd82f0c589aef92b347f4ba944fa"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-flow/SKILL.md"
+sha256 = "sha256:fa84a93ad9814cf85a9584d3dd50fc17c36214bd13eb773f03135cd46edf85bc"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-geo/SKILL.md"
+sha256 = "sha256:7ffff398168afb328a7f5953d205ac5aeecbd2c7e49b3c6b4cdb57adf3157c98"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-google/SKILL.md"
+sha256 = "sha256:392453d75db5d1908716fcd2d57cb52f151eff2e40eddc26114769bb4d21c724"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-image/SKILL.md"
+sha256 = "sha256:b19d04b3cddc36158a8644ee189fbe0e33fbc026ab714c185dc7fb04205d5b8b"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-locale-audit/SKILL.md"
+sha256 = "sha256:df2b99d455ade5e77e64f38e4ab09431c99b977a94c965c870a39340457070d0"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-localize/SKILL.md"
+sha256 = "sha256:e609fe80bb823bf77906e1661bb3320853f05ff29a7f938c7d3a50d76763b8c1"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-multilingual/SKILL.md"
+sha256 = "sha256:23fcba3feb9194149f9315db9346dfb0fe0f41019a269892abd8ac7aabe64ae2"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-notebooklm/SKILL.md"
+sha256 = "sha256:22ca654bf5d311b1d75d3cba53fdc64846768bd4e9aaad4db911ae97d0875ab9"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-outline/SKILL.md"
+sha256 = "sha256:75858f8a28ab1ec165141b9475bd5102061c75f0e4e10a2146ee4fe6c649f1a1"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-persona/SKILL.md"
+sha256 = "sha256:c86e77e7f2e33c588dafcac786ebd08425f6dac5ad52d4fb541add69608f5c41"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-repurpose/SKILL.md"
+sha256 = "sha256:685f649bb4fd7669952c67fc706aca8d8d77e984f6ae1651d68a802d92047e75"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-rewrite/SKILL.md"
+sha256 = "sha256:3ca5ca45dd9a204e1a76d49a9519eb601cc8c6b208730460b8d7778f4b7b739e"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-schema/SKILL.md"
+sha256 = "sha256:32ad2c76bba9824dcb3cfdb79d81cc528a7c290e3345f0934b3c3df84561087d"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-seo-check/SKILL.md"
+sha256 = "sha256:c23529026e4f72f5133968f16268e520c97ee4de598a14f27509549325dae1dd"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-strategy/SKILL.md"
+sha256 = "sha256:7398900d15a1c7d6e5ba73cdfce353aa887a446eabb5900b54aaec693ab2e675"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-style/SKILL.md"
+sha256 = "sha256:b8d4277cecb77f7f0a29914e9796da1fc415f7ed1920e490f55a840d668185e0"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-taxonomy/SKILL.md"
+sha256 = "sha256:55a6af5a13216e2ecdcbd1a4c7bedef6ab9b3193378278d8450088f7725c0ea9"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-translate/SKILL.md"
+sha256 = "sha256:22c0d97b4c742c85aa0c4275bc8a742b7c56d912bcbab48ba551439c73ba8a50"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog-write/SKILL.md"
+sha256 = "sha256:bf100448d0ed2909982710c70055fe79e68e1b728d51be8d9161919dbd22ec11"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/ai-crawler-guide.md"
+sha256 = "sha256:c2c2e0f72aedbc014ae8bf668138b90daff83d0b4ec8d6dc1998d88e5fbf3d2c"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/ai-slop-detection.md"
+sha256 = "sha256:f7a1ed69db9d5087668974bbaed8f1cd5ee17b1a423bd64ad7579f468df8547f"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/blog-delivery-contract.md"
+sha256 = "sha256:292ea5b97eb96a8ec6fb0dd83d597bf81d4417390138479d7a7b731d93b5fb97"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/cognitive-load.md"
+sha256 = "sha256:ca0f994ef813328f6bb2ed78a9d63ae0982ab5503b7634e18bdc9707617bfd57"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/content-rules.md"
+sha256 = "sha256:2660dabbaac19430fcca082948a4ff6bb30d604d2acb74654a611f2fc6a7f326"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/content-templates.md"
+sha256 = "sha256:14c5fd0266736f49d67a24f4b5e0131e0272f7c4d5de8ba0b46c6c4568deb71d"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/cta-placement.md"
+sha256 = "sha256:2ab2b8ad6555e290c2bf96c7a78b7878152a04f40549bc3ff51d05630b99abe4"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/distribution-playbook.md"
+sha256 = "sha256:e9aea3436ab9089b5cd0783b40d0e928a305a88ae16defa4356e4db0370cf8ca"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/editorial-heuristics.md"
+sha256 = "sha256:af1f6e38ef05ddc4e0ca0ab5ecb5a1f74757625293fff52b7e49b3759fe2651f"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/eeat-signals.md"
+sha256 = "sha256:4f2c01e468eb44b78349623e95689fb31cacfe23ccea3d37948e0faa7fb112fd"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/flow-alignment.md"
+sha256 = "sha256:d90ce4897e1284c0ad060a558fe1abcbedf6aa7bebe4567570fc1378ba02d6b4"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/geo-optimization.md"
+sha256 = "sha256:adcafdbc542cc2385869b56dd88acae3d3631cbca9fb7f7787641b99f392987a"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/google-landscape-2026.md"
+sha256 = "sha256:3fcbfa542330280cfe8ece13bac652964536b1778418b2274260d315dec2bfd8"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/internal-linking.md"
+sha256 = "sha256:ca2bc275af1fe9cb41585a6ee46e696974995238f1279010ce3fa80763ed7d92"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/orchestration-details.md"
+sha256 = "sha256:797a7b292d23661b28d687972f252b76d815ed2c53b47fd0c0d0d0ab932b9787"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/platform-guides.md"
+sha256 = "sha256:ab62a67f66b23e8e6377394be8cecda25a22826860bbd2f64c0523f2b96be556"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/quality-scoring.md"
+sha256 = "sha256:e752e84467043bdc57329994fbd8b51971694620956c621bfef2cf1318101699"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/research-quality.md"
+sha256 = "sha256:88bbdde8e6877d8d79f63993566ff894b268933673685db6fa96fbe5847c81cd"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/schema-stack.md"
+sha256 = "sha256:e9613e729734308bc735a88debcdba0ebe96f4092f0eab2902c57461db808f24"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/synthesis-contract.md"
+sha256 = "sha256:fd341d8ac81aaf08db46ca0f0f1456d3a56503f2bbe0a6b27e9acb9360c8de3b"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/video-embeds.md"
+sha256 = "sha256:539bac1a090823a3c8f3413682608190cbcd3d01c76380b33c023d0dbf4503d2"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/references/visual-media.md"
+sha256 = "sha256:33d89ffdd7af39db262f026b7e942acd45e88b2a593597a063beee619cacde45"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/SKILL.md"
+sha256 = "sha256:9029d3566657f7529e6230c9409a470bcc58694c4150116ecb519f8323042135"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/case-study.md"
+sha256 = "sha256:67588a6f1c2843679a79cbb1b761de2dfe0aec0eb77fb847bf8b32b28de04b08"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/comparison.md"
+sha256 = "sha256:28088ecf672d34dc3f06113e31c3e348369b9086db666841539b6d0e590c8974"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/data-research.md"
+sha256 = "sha256:7ee1fd2570d835a612689f91e15823f235f5fe51dd232364f655c79d616a5acd"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/faq-knowledge.md"
+sha256 = "sha256:0506d0ec7132c4078d3eb305e181866618ba9d2da42c05ca989462d7c02f7ec5"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/how-to-guide.md"
+sha256 = "sha256:df19f91192911bc819c6c1b78b2415c852cbe4b1d4ca93c65252ce9af350e4dd"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/listicle.md"
+sha256 = "sha256:b8077066468b6a58f91c92450df4918d32477cf9bc90e41eacfbd1edafa0b43c"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/news-analysis.md"
+sha256 = "sha256:4fbcb1cacca332c366fdf64fddba9c62d79860b01b320ca721e5958bb0ccde27"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/pillar-page.md"
+sha256 = "sha256:b4b1f0bf832c2d6fcd9ce89c01a2e3e742a90381d0630b8f56cfeaf12d64c267"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/product-review.md"
+sha256 = "sha256:f96a0f1750823cb67e619b5b0fa80f5cd73a8ea077fdf2fb978a43aab95668b9"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/roundup.md"
+sha256 = "sha256:03d86e23cd47ee823a64458fef552758e5003ede496f8bae34531b4448ff507f"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/thought-leadership.md"
+sha256 = "sha256:111a6d8019796e2dff1132eda83fcc0094a93e57feecdae2ad0ee7092cefa718"
+
+[[sources.files]]
+path = "brain/.raw/sources/claude-blog-skill/skills/blog/templates/tutorial.md"
+sha256 = "sha256:0d4bb67dac2376cfcff792f32230110089570f3ff86941cf1bcc14c740e7694d"
+
+[[sources.files]]
+path = "brain/AGENTS.md"
+sha256 = "sha256:88cb8d90339cce36b63d1991868959d481e024d789d7a18a13fb82281431a528"
+
+[[sources.files]]
+path = "brain/agents/blog-cluster-curator.md"
+sha256 = "sha256:693db0537c6f33e4a2efaf73fefc94af1d57a958bb7dbc14061002b0b1eed55a"
+
+[[sources.files]]
+path = "brain/agents/blog-data-curator.md"
+sha256 = "sha256:350eb320842d3f60008e62e37750837207be797440fb5f2b854e7b5680069365"
+
+[[sources.files]]
+path = "brain/agents/blog-distribution-curator.md"
+sha256 = "sha256:5e8900597eff6efafdd0a5353094969efc4ab3bb5cf87ff8f39f3ed4dcd0ebb0"
+
+[[sources.files]]
+path = "brain/agents/blog-eeat-curator.md"
+sha256 = "sha256:0c76221f33d2e63251c67f087af50b2a3d67a9ab8e63057096d1c3da24cfef0f"
+
+[[sources.files]]
+path = "brain/agents/blog-flow-curator.md"
+sha256 = "sha256:6093cde2d90d5cef1fdb036167571dadbb0e570cd8923f710a720ad65dd9662b"
+
+[[sources.files]]
+path = "brain/agents/blog-geo-curator.md"
+sha256 = "sha256:4839156a4be3ab052762b84c3bd99d866a630bc14c34dbac90bdbd8eeb93ce13"
+
+[[sources.files]]
+path = "brain/agents/blog-monitoring-curator.md"
+sha256 = "sha256:c9e470bb2a8ec512f0faaf17988f426dc33461c29a24485b78c3f62d6d3dc372"
+
+[[sources.files]]
+path = "brain/agents/blog-multilingual-curator.md"
+sha256 = "sha256:d1e2cde3a15e63eb8dc37b3359ce4880bec87c4ecbf0a796c2424e85544cd273"
+
+[[sources.files]]
+path = "brain/agents/blog-persona-curator.md"
+sha256 = "sha256:21509558a88b010fc251e830b3240ad2dbcd28be28be43e6de70cd95c43fbb68"
+
+[[sources.files]]
+path = "brain/agents/blog-quality-curator.md"
+sha256 = "sha256:46df24a0b091db2dd8e093ce65ef7f1229a4c8050f621dcc99ce6f9a11737cb6"
+
+[[sources.files]]
+path = "brain/agents/blog-schema-curator.md"
+sha256 = "sha256:223dc36e5f2d25998ed8d6e3c3db6514b47bb1587c3b0b0d9140a7a3baa34f10"
+
+[[sources.files]]
+path = "brain/agents/blog-strategy-curator.md"
+sha256 = "sha256:8faaec3d4f8bdafc0b742739677a0881f8d3d35c027e7d721216e8dc82d58e0a"
+
+[[sources.files]]
+path = "brain/agents/blog-writing-curator.md"
+sha256 = "sha256:5b759d17ceb6e698bd60836e5c9b1ffe5f88b6beff18de9399014e11e2d9ad63"
+
+[[sources.files]]
+path = "brain/agents/claude-blog-secretary.md"
+sha256 = "sha256:2c6eafc57cf1b76cdc7de84333eca5110f0e8675c26d572031d941f03599261c"
+
+[[sources.files]]
+path = "brain/agents/workflow-coverage.md"
+sha256 = "sha256:29e0d52ac0aaa69ee0e55b027b4bfa362611563eaa552fa610f639591c08cde5"
+
+[[sources.files]]
+path = "brain/assets/svg/hero-frontispiece.svg"
+sha256 = "sha256:fd1bd63c2f079923a9388749d5ed26b6fd12fbda46fbd3d7856129926cc8a719"
+
+[[sources.files]]
+path = "brain/assets/template-brain/_attachments/brain-relationship-map.svg"
+sha256 = "sha256:b4bf1ff049f94380dd1cbbaac3ac6d683322c76de34e3349d9c46a3cbbfbbb00"
+
+[[sources.files]]
+path = "brain/assets/template-brain/_templates/decision.md"
+sha256 = "sha256:b8de407d6bf94676030d2070a95590f17e3428184f3318111ed3fc09af3494aa"
+
+[[sources.files]]
+path = "brain/assets/template-brain/_templates/source-note.md"
+sha256 = "sha256:6df40e843acafbadd5ef291e5740c50300be0a8f493815f79bb72b071fa4a30e"
+
+[[sources.files]]
+path = "brain/assets/template-brain/_templates/standard-note.md"
+sha256 = "sha256:32d6d77e2c5ea0ddc7f5c92b16a75e7f88cd5ec3e73c25ac630b41a1b04d3932"
+
+[[sources.files]]
+path = "brain/assets/template-brain/.obsidian/app.json"
+sha256 = "sha256:8ba9c4e1032bd2b110ccf3c0b7d5311b2487238a4fb7bd7f34a4d27455eee64b"
+
+[[sources.files]]
+path = "brain/assets/template-brain/.obsidian/appearance.json"
+sha256 = "sha256:57380a8b60bc8c7555e7c7e54b1ee034ee36de1e52562aa52ddfdfde566be410"
+
+[[sources.files]]
+path = "brain/assets/template-brain/.obsidian/core-plugins.json"
+sha256 = "sha256:e5e1ef428610976b639c37d2468c4de7d3e78e618824693a620a045600f2f211"
+
+[[sources.files]]
+path = "brain/assets/template-brain/.obsidian/graph.json"
+sha256 = "sha256:246924d404e61f3045b2ee6b190234796864f3d5edc5a7a266021487741e6cb1"
+
+[[sources.files]]
+path = "brain/assets/template-brain/.obsidian/snippets/brain.css"
+sha256 = "sha256:14666ea9fb1762103d662aad7365a960b969671d583c3a67c8cc864348cec3fd"
+
+[[sources.files]]
+path = "brain/assets/template-brain/.raw/.manifest.json"
+sha256 = "sha256:ae4b2230de1d68d57a067ac5cec5831356e1ba0ad67857431db4b1642419c4a2"
+
+[[sources.files]]
+path = "brain/assets/template-brain/CODEX.md"
+sha256 = "sha256:46e9f245a1a203895b01127deef4b6853b0ed4950185f00ac67727574ce3f9b0"
+
+[[sources.files]]
+path = "brain/assets/template-brain/README.md"
+sha256 = "sha256:23ab7bb2d6c9b337d733364b69796bd397262882f0e80de5604efbc27a341348"
+
+[[sources.files]]
+path = "brain/assets/template-brain/shipping-rules.md"
+sha256 = "sha256:31124d0dd54a81cf6562022685c8a3ce26e1255287f9676e8ac1ffdc1fac24c4"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/accounts/_index.md"
+sha256 = "sha256:1d68987e7bb429c9ae991fb76a55d64779e7834e2042dc8d92b69b4204893ce5"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/canvases/_index.md"
+sha256 = "sha256:a6da83bad84bc9e789024cf2a3550b5f039187eaadb45b080daa3defaa77947d"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/canvases/main.canvas"
+sha256 = "sha256:e21e709fe7fad806e3012acc132fa2299eefbed52a36ad9db9a174d7db0b6acf"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/canvases/Onboarding Canvas.canvas"
+sha256 = "sha256:e21e709fe7fad806e3012acc132fa2299eefbed52a36ad9db9a174d7db0b6acf"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/concepts/_index.md"
+sha256 = "sha256:f743ec7d912fd5d55d1a25249cb49542d0e61b044440823d38bfc2ae060c4b57"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/concepts/Best Practices Kernel.md"
+sha256 = "sha256:e412bfed361f9c83bcc8a4a9aebc86936cd0686957e0b2473e56c61ca7e6fd07"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/decisions/_index.md"
+sha256 = "sha256:2ea55b931d1e2703f73d6b9dbd34d1e817c8cbc9ddf522516b13fbac606a2efe"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/decisions/Approval Queue.md"
+sha256 = "sha256:9932c05c3887fc6068ddc99ca53505a4beed1bd002fd632b653204e484bbfe19"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/deliverables/_index.md"
+sha256 = "sha256:0da146ff55f4481ac0343ebc1b33ab0ef69cb5078b3b126d1c0755941401b0aa"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/deliverables/Action Roadmap.md"
+sha256 = "sha256:454b4e11e3413a99645ea2684d806c7240cafed3aec3d637d48165093dec01e3"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/deliverables/Health Scorecard.md"
+sha256 = "sha256:28e35e836e44419996b17730696e7d97f0896af9c1a13dfa9e2c50cc61620aa2"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/entities/_index.md"
+sha256 = "sha256:1a5a625beece62e7acffcca83ff5849dff857f23a6049699997cf2cdb161c72f"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/experiments/_index.md"
+sha256 = "sha256:984825850557107ecda1c60a5f2cff3e515195782568f454ad6f093696722d14"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/flows/_index.md"
+sha256 = "sha256:ed9ed9983d948fe074a194a0c679b47e3550cf0110c3af751b0b29481f92263b"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/flows/Reporting Workflow.md"
+sha256 = "sha256:a250d08cb7d252653ef8dd9d7fee26e862db5b54b06e524b65b4e13da13ba348"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/flows/Research Refresh Workflow.md"
+sha256 = "sha256:77e09ad10cd4ded5fe9211bac079f3bb61470fb472b4127758d80495f0fbfb63"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/flows/Source Intake Workflow.md"
+sha256 = "sha256:3920370ee4546d6e0277d51364e35944ddf5058e21b4894a12460585ca2d70d0"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/flows/Synthesis Workflow.md"
+sha256 = "sha256:381c895aeb6f1554a1f569981efa245087869e653b7e39fbd71d1a63b6f70d69"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/gaps/_index.md"
+sha256 = "sha256:1cf4e71555c0e57f94c92b5689bb8d9fc7a3e048ed2e168b3026654a9f3a93f3"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/hot.md"
+sha256 = "sha256:02abf7f34882549b444659b0ac1b2a7d9dd5f99a82b66e3c0b8d195caffc3875"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/index.md"
+sha256 = "sha256:18b10cffdeaf5312041c871e90e695be488b88eec731d88fb94f30ce37943d4e"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/log.md"
+sha256 = "sha256:4f35b843a4f55034b6a6e600e2bc72c557c5c2f12f0f3c4bbc5bcae4a7a67e78"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/meta/dashboard.md"
+sha256 = "sha256:81cee57040c4a835acae37841cf94201ef86d10be2805996dc61b5f0cf823895"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/meta/Start Here.md"
+sha256 = "sha256:0297fe9717fe2dc22262fcb7a79385e6a096d95bf9b5e7bc662d621a62f70d77"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/overview.md"
+sha256 = "sha256:d664d47f6e5a61a0a751128e236d1de435bce7c03b266f7c74f0bbc9091b10c9"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/platforms/_index.md"
+sha256 = "sha256:0408a214c39b9f89f3f01402cb533876221ef57c31ae6d9de6ed02f5bec80985"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/questions/_index.md"
+sha256 = "sha256:159483dc53efeda381bca2a7fc4ca3eb901cfa690b43c39df50067e2fa5a6ee2"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/reports/_index.md"
+sha256 = "sha256:30aa537e3a9260d798670a4dac2afd7cd81956ac39e2c3230b66ba1524d65232"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/reports/Weekly Report.md"
+sha256 = "sha256:b42d2e004ed3bab772c91df3ac81ebdecae9205a6803bb03b9a46b9f638dc2c3"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/sources/_index.md"
+sha256 = "sha256:832ca36324fdf2e89cbb972d16607ae934ce558e072048cef80983e4b033613f"
+
+[[sources.files]]
+path = "brain/assets/template-brain/wiki/sources/Source Manifest Guide.md"
+sha256 = "sha256:749d783b0eb45455b7877a59f1f0c7ae1dc3a9b124e935ccd0929d234d1a8a7d"
+
+[[sources.files]]
+path = "brain/CHANGELOG.md"
+sha256 = "sha256:35f1d7d62f65f1f41404ef74937556f329e5f4c4c4a9ffbb6a65eaaab9f6b030"
+
+[[sources.files]]
+path = "brain/claude_blog_brain/__init__.py"
+sha256 = "sha256:98ccfc419e6ca4bfacf467625558dd1501d4b774015f4059620c40f69d811ad0"
+
+[[sources.files]]
+path = "brain/claude_blog_brain/__main__.py"
+sha256 = "sha256:9db74feb31653aa7028ab831a0843a1e259585d87b5119b918e5abe7f1309819"
+
+[[sources.files]]
+path = "brain/claude_blog_brain/cli.py"
+sha256 = "sha256:3dff11e070cbe3dd7219c6d1b0c1e981c4874318fdae171f167b2d65a1569847"
+
+[[sources.files]]
+path = "brain/CLAUDE.md"
+sha256 = "sha256:82309060291dcd4dc38e7218c56db0184efc68c5d41349489c3b4d89430b9f0e"
+
+[[sources.files]]
+path = "brain/CODEX.md"
+sha256 = "sha256:46e9f245a1a203895b01127deef4b6853b0ed4950185f00ac67727574ce3f9b0"
+
+[[sources.files]]
+path = "brain/CONTRIBUTING.md"
+sha256 = "sha256:da5ae92100560bb58c6ebdf28f88d3c1c552bf9cb3770303218ab7bea158dafe"
+
+[[sources.files]]
+path = "brain/data/google-updates.json"
+sha256 = "sha256:9ca5e729bdf30f27b4e6d49139c4c50a128a4dc48e7791621515d6b800d7e86b"
+
+[[sources.files]]
+path = "brain/docs/OPERATOR_KIT.md"
+sha256 = "sha256:44325cecc8dc85ce0b3d564faef9cb837ba05296bebcc1979b93946588f0fc07"
+
+[[sources.files]]
+path = "brain/docs/PRODUCT_BOUNDARIES.md"
+sha256 = "sha256:dbd69d62a1b95cf72528e9746c72a2fd4cd729fa47bd76d01d5f2f28ca57cebb"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/_attachments/brain-relationship-map.svg"
+sha256 = "sha256:b4bf1ff049f94380dd1cbbaac3ac6d683322c76de34e3349d9c46a3cbbfbbb00"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/_templates/decision.md"
+sha256 = "sha256:61490be219a6f48aa5a2dbfb2bd516c1b8a41121a3a3b1e0c284906fdb2026b8"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/_templates/source-note.md"
+sha256 = "sha256:cbc0d8593b230891593488b15b173c2255f776cb2bb89de06ba9065815f21124"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/_templates/standard-note.md"
+sha256 = "sha256:6878fca64d773afd036b70bd4ee41d6db29ac3159094cdf7cbf24b0a8f7cac2f"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.obsidian/app.json"
+sha256 = "sha256:8ba9c4e1032bd2b110ccf3c0b7d5311b2487238a4fb7bd7f34a4d27455eee64b"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.obsidian/appearance.json"
+sha256 = "sha256:57380a8b60bc8c7555e7c7e54b1ee034ee36de1e52562aa52ddfdfde566be410"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.obsidian/core-plugins.json"
+sha256 = "sha256:e5e1ef428610976b639c37d2468c4de7d3e78e618824693a620a045600f2f211"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.obsidian/graph.json"
+sha256 = "sha256:246924d404e61f3045b2ee6b190234796864f3d5edc5a7a266021487741e6cb1"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.obsidian/snippets/brain.css"
+sha256 = "sha256:14666ea9fb1762103d662aad7365a960b969671d583c3a67c8cc864348cec3fd"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.raw/.manifest.json"
+sha256 = "sha256:179c6778d753a513a5c9ef8020267f3470fcd6413124e712b938bf1f6aee47e5"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/.raw/sources/sample-source.md"
+sha256 = "sha256:9927f31d619695c9e6d81a2696f3ef83e1fbdffc733a40ba2bfbbb39bd89a8dc"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/CODEX.md"
+sha256 = "sha256:46e9f245a1a203895b01127deef4b6853b0ed4950185f00ac67727574ce3f9b0"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/README.md"
+sha256 = "sha256:23ab7bb2d6c9b337d733364b69796bd397262882f0e80de5604efbc27a341348"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/shipping-rules.md"
+sha256 = "sha256:31124d0dd54a81cf6562022685c8a3ce26e1255287f9676e8ac1ffdc1fac24c4"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/weekly-report.html"
+sha256 = "sha256:4aa3782b4fd62265d22349ba717dbefdf80fda316d6a94c9e75bcb8ba3166fa5"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/accounts/_index.md"
+sha256 = "sha256:1fef86ff3a8f5184081090cfc7a42c8c5d379dcb3f290b4b9049f37eaee433c8"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/canvases/_index.md"
+sha256 = "sha256:4c5d093cda26f42a00fee3673692afb258155af4b6489e5fcdb8f1dc9881585d"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/canvases/main.canvas"
+sha256 = "sha256:e21e709fe7fad806e3012acc132fa2299eefbed52a36ad9db9a174d7db0b6acf"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/canvases/Onboarding Canvas.canvas"
+sha256 = "sha256:e21e709fe7fad806e3012acc132fa2299eefbed52a36ad9db9a174d7db0b6acf"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/concepts/_index.md"
+sha256 = "sha256:c74f4d5aa8b1fb42e57e1b15052afa10badc09c7f725f8aa78d1bd90ba3e54ad"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/concepts/Best Practices Kernel.md"
+sha256 = "sha256:606d4d6ac49ad8d4432e3753b59399a16ae35ef7aa0a1849630460729772c9b9"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/decisions/_index.md"
+sha256 = "sha256:71b3cc010ea993a8987dfb41429b59b1aa170dd551fe48ece4b53523f8e53191"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/decisions/Approval Queue.md"
+sha256 = "sha256:efe265bff2a20d68621922f1e5d7742cddc242e408039e504ffb9bf88c721155"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/deliverables/_index.md"
+sha256 = "sha256:bf236d7bfdf9fb9d10d00f78170f76b75922d739241d6ea2a0a3cad087777571"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/deliverables/Action Roadmap.md"
+sha256 = "sha256:a1a6ac802b7410a58bd63f4e116ee3ae941dc1bb123991e42ff038def553253b"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/deliverables/Health Scorecard.md"
+sha256 = "sha256:c2be3cd2edd275f6f627187cbf0be00f464f690cc5d33a40f5a8e61c6476d89a"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/entities/_index.md"
+sha256 = "sha256:d95d0bb829b2dd95df13e018b95ec83da8493b16e1792b13eba8f1d7b72ec933"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/experiments/_index.md"
+sha256 = "sha256:5935a6268ed0e87a97df6be2b358b1a258e1a6d81bd54a253af5326288adb6d8"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/flows/_index.md"
+sha256 = "sha256:10dff925d4d3cf65894bc944a4383c2756ba822323f8595fcf44205f5b9a38b4"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/flows/Reporting Workflow.md"
+sha256 = "sha256:ebe56c29516865e6a0cc6b7af220eba5de45d77e9505131b3b3cde855c4ce316"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/flows/Research Refresh Workflow.md"
+sha256 = "sha256:cd03fd703e3d5141a82147ef119ac31d4cdcc791963c798221fd9832bb9b2ebe"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/flows/Source Intake Workflow.md"
+sha256 = "sha256:24cda87d25ea128d623d9e5f7f9c20c2df27fa07f43f8287c46631d72e5be02e"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/flows/Synthesis Workflow.md"
+sha256 = "sha256:ac992ce9a366c5e01c7d3dbd7dbeaaf6b451053a118667c762fe90153cebafdf"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/gaps/_index.md"
+sha256 = "sha256:eb1de5937da37b758de9771ebe8aa17ba231da1a018964989ccb57b51ebdb091"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/hot.md"
+sha256 = "sha256:3819993d40b5b1fb894173f9edec1de69bcdf5157f5e84ec1b9c3481f184d793"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/index.md"
+sha256 = "sha256:ec7b41811f0e20e3923880b8d6ab371f752120993ce68a59e01f4a6cecf1a6d3"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/log.md"
+sha256 = "sha256:0ceed05c818a7b42f95f8cd126f0848e3531eb8ee1d8eb4036cc5990f717fcf6"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/meta/dashboard.md"
+sha256 = "sha256:08e8e0d0a95553883ce767be040b3cd59044c49cb18c843aa1d3f8c2e2e21dba"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/meta/Start Here.md"
+sha256 = "sha256:2a5ec5b0065569d4f9258dccbaf495ee5f4f617dee7f0b595bb21a2481291250"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/overview.md"
+sha256 = "sha256:234cf46dccc571fe7c5cfb9ed294e55c0206bfb8e0ad5d582d1b67df21549b65"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/platforms/_index.md"
+sha256 = "sha256:736aaec526a9b5443c6e09449e18a94ec996a2e49ab75aa99d0e48e43ccf7884"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/questions/_index.md"
+sha256 = "sha256:c16f57a3cd393482a5e7315706912c8edb642e7111886d528276a8418996189f"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/reports/_index.md"
+sha256 = "sha256:b745f446d54252ef424369c3d290d9361303b698524392c54d249b5ce7b01de0"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/reports/Weekly Report.md"
+sha256 = "sha256:bc011dadfb5c9e19d8bdeffcb52f8ed6f4e2eca1a0319935fb5f39744303b510"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/sources/_index.md"
+sha256 = "sha256:e2d2fd4827dc21545e21c7c3c00ca0450fa22394952ab48386b82990869a7c17"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/sources/sample-source.md"
+sha256 = "sha256:c55e96922dc9fe067e46663618fc9a919974385f8e558a9cd070c9e4b8e5a040"
+
+[[sources.files]]
+path = "brain/examples/sample-vault/wiki/sources/Source Manifest Guide.md"
+sha256 = "sha256:59eba0865f99fcb5d4e1a4ded96d3e19ad2f46d116648a9d4cb7cbab30244cfe"
+
+[[sources.files]]
+path = "brain/GEMINI.md"
+sha256 = "sha256:96e58e66c90ee81b3d3b719d2ba9507ebfae13bcf8be56659251cc9a7f9fde84"
+
+[[sources.files]]
+path = "brain/install.sh"
+sha256 = "sha256:1ce7f4bac1e93f9ada60512be9448d02065069756bf848dae7e82568d24b3555"
+executable = true
+
+[[sources.files]]
+path = "brain/LICENSE"
+sha256 = "sha256:fd1b082eb35b3284584209f82ee341f6b753b319b900c690eb0b46d694f3df94"
+
+[[sources.files]]
+path = "brain/pyproject.toml"
+sha256 = "sha256:01725b5629f9fdd2ff83585e451c85e1c034fde21ce248cafcc4851c6764d546"
+
+[[sources.files]]
+path = "brain/README.md"
+sha256 = "sha256:cdcfd4a4b90f7f21ab37ea5476818ccae9d8d16813a6ea095fd8febeccf3e577"
+
+[[sources.files]]
+path = "brain/references/adapter-manifest.json"
+sha256 = "sha256:93811237192dfb25d524e9bf75542a2c4ae859317126b5cc30685143537b4c43"
+
+[[sources.files]]
+path = "brain/references/adapter-plan.md"
+sha256 = "sha256:4f2d4d490b5d9db60535aef2d61c0083dac630f5609dec5f366686c1e4f38794"
+
+[[sources.files]]
+path = "brain/references/canon/_index.md"
+sha256 = "sha256:b0a9b46b11290d179407e6ff07cb0f4af7beff92e95218cbd6c325f46affb19d"
+
+[[sources.files]]
+path = "brain/references/canon/001-google-search-essentials.md"
+sha256 = "sha256:74a46c96c16a7f83d94459a397d317c3ba7dc07c16d3ef127444583c6d34da29"
+
+[[sources.files]]
+path = "brain/references/canon/002-search-quality-rater-guidelines.md"
+sha256 = "sha256:8aa1a571e1bb983f0e28ca40c16884ed41e021545d195baa3c3b4c6ce2cb3f54"
+
+[[sources.files]]
+path = "brain/references/canon/003-structured-data-general-guidelines.md"
+sha256 = "sha256:c041a2e5024e953dcbb166e5221df7fced9283f2759deecb395be2049e789d92"
+
+[[sources.files]]
+path = "brain/references/canon/004-spam-policies.md"
+sha256 = "sha256:b46f589a38f05eebcde400b77dda9a383c2e1e076b739d04ee01a9a4ea3c7650"
+
+[[sources.files]]
+path = "brain/references/canon/005-generative-ai-optimization-guide.md"
+sha256 = "sha256:2bb47128918a5b439ccb0d5a6b513f95f1ba8bb1ff0bab5560c49f7c799c5f88"
+
+[[sources.files]]
+path = "brain/references/canon/006-helpful-people-first-content.md"
+sha256 = "sha256:251204db45dab8a6e6493b4496881d0ed80eb9eaf0c7d8e5a614af0154d38a94"
+
+[[sources.files]]
+path = "brain/references/canon/007-core-web-vitals-inp.md"
+sha256 = "sha256:b9d13f8fc8e12abad0125b5d20b6a5db73e045a8fc0af0d252f9adfc1e5a21e8"
+
+[[sources.files]]
+path = "brain/references/canon/008-faqpage-deprecation.md"
+sha256 = "sha256:a2f8f7e25c29f7de0778e65e95efd1588cacc53c18c11f930121f4f1952c2124"
+
+[[sources.files]]
+path = "brain/references/canon/009-ai-features-your-website.md"
+sha256 = "sha256:61864a57309cf75d83d8ce18c9c750ff119a4e54d7ef0883729fcc95c6ff765a"
+
+[[sources.files]]
+path = "brain/references/canon/010-search-console-gen-ai-reports.md"
+sha256 = "sha256:ed9b6d22516093d7f7774404bf28b41854eff2d8b67c0fbaaa96dc2fd8ac677a"
+
+[[sources.files]]
+path = "brain/references/claim-ledger.md"
+sha256 = "sha256:1a5bb2b0b7d920ae0e8ea4b9d34555f4739c5e4e42425e3d094ce0020ce50a13"
+
+[[sources.files]]
+path = "brain/references/CONFIDENCE_TAGS.md"
+sha256 = "sha256:7387d4d3023a7f5ac21819889cced352d8e565ba71cf26cbb0df7a4d27b24420"
+
+[[sources.files]]
+path = "brain/references/current-requirements.md"
+sha256 = "sha256:14df314fabafde25e561b976d34f5eab0500b1663257b0d62a950d307cfe7b39"
+
+[[sources.files]]
+path = "brain/references/market-research.md"
+sha256 = "sha256:02a0f89569a9e9edac65daeb678a42f0fecdb25eafdd416a6a9cf33b9a8b7c43"
+
+[[sources.files]]
+path = "brain/references/product-spec.md"
+sha256 = "sha256:19a96ebda0da5cce75bc4c794b383cf34141f517834ee57bd4f0df3ad1320cc4"
+
+[[sources.files]]
+path = "brain/references/README.md"
+sha256 = "sha256:11f9ce7239bfaef25bc4d2f1c5b8de75b3db6b46be3d977cd1dbf7bd87b2226f"
+
+[[sources.files]]
+path = "brain/references/research-plan.md"
+sha256 = "sha256:333da5ae2dc58c1a88d28f4c6946e2847eb751f357eaec52d10ead78c5975e48"
+
+[[sources.files]]
+path = "brain/references/safety-gates.md"
+sha256 = "sha256:003f90781c701e5790421fc84d64f143bc661940a291f37579dae1364d3a9e87"
+
+[[sources.files]]
+path = "brain/references/source-ledger.json"
+sha256 = "sha256:19ce0ecab2bc515f9edd96353f7b320f3a6a2202fa7e18e2fb6782aceeda53db"
+
+[[sources.files]]
+path = "brain/references/source-manifest-template.md"
+sha256 = "sha256:d6070ecde6d699663dbdb6a13ade3fd765cf29f650baeb9d1efbbd93fa6eee4e"
+
+[[sources.files]]
+path = "brain/references/source-map.md"
+sha256 = "sha256:44a1738931f16be590f0a37a2ed8ca6e56e8e7f65e360aff5cd26a29fb14a3a7"
+
+[[sources.files]]
+path = "brain/RELEASE_CHECKLIST.md"
+sha256 = "sha256:3d8b841cc9b06ec2d3aa7df5ba6fb9c118fa2adf9aabebf20c0d2a12c3c5eb85"
+
+[[sources.files]]
+path = "brain/schemas/blog-post-input.schema.json"
+sha256 = "sha256:ed3dcee591da75dca746577ceb38e755109b52c904ed2962c22f61a6d10c7900"
+
+[[sources.files]]
+path = "brain/schemas/geo-citation-audit-input.schema.json"
+sha256 = "sha256:06d0182f3e5a6151ac37d4b46037181f2d455a972a7cb7b5077753b3071f28be"
+
+[[sources.files]]
+path = "brain/schemas/topic-cluster-input.schema.json"
+sha256 = "sha256:b90b0209f90107a7e2b39263d62803c8d4ca3180339121117569a086c6dff7c3"
+
+[[sources.files]]
+path = "brain/scripts/audit_brain.py"
+sha256 = "sha256:174c05dbc72b0b36e1382448e769fa46550f43c0c394f751f31ef2e0ff7548f8"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/build_demo_vault.py"
+sha256 = "sha256:b9166f69cc8ee90b5473ceeb8a1e1829a096c10302ee1313aa21f4b96772c2fa"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/generate_vault_visuals.py"
+sha256 = "sha256:6377f94ada9238f1898c4fbf07971dad05e6bf3200c7b477625fc5ad0f7f0763"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/guide_next_action.py"
+sha256 = "sha256:71611891d777db2437c4f201b4f711b12e10582b76fde23c4ef79bfac1462a90"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/ingest_blog_input.py"
+sha256 = "sha256:87a63e53e557fdd7180b1dd96f4ad177d6efde9c0e31c77e37219aa927133c91"
+
+[[sources.files]]
+path = "brain/scripts/ingest_geo_citation_audit.py"
+sha256 = "sha256:351d8551c0f94db44ebd08c5fc74598f3d5b0dba49b0a294f65261c5abecfb6a"
+
+[[sources.files]]
+path = "brain/scripts/ingest_source.py"
+sha256 = "sha256:b60621d24a6481c1a06b59fda63c580fc663529e32410f21b5e18167ccc60f6c"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/ingest_topic_cluster_input.py"
+sha256 = "sha256:d059ca596ea7e6769388deb6e4e5d45fcfe337d716391ec6e0aa04ad0a5c8ce0"
+
+[[sources.files]]
+path = "brain/scripts/lint_vault.py"
+sha256 = "sha256:f607e046b6ab4046c8ddedc5d21e8425e884a9a73104c1b4e0fa0caec8ae51b7"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/package_release.py"
+sha256 = "sha256:16e61eb66dd39617c510070f16b7eca4dfcb87c59f48f7bfc7906ee3d49efe05"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/render_blog_report.py"
+sha256 = "sha256:2c844bdae01d460d389ab3c7417518f67b880360f52662ce06d09245cff65882"
+
+[[sources.files]]
+path = "brain/scripts/render_brain_report.py"
+sha256 = "sha256:5dd038e0c59abbec7299d870663e3cbc4b55132041351ef80660f2249a079a4d"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/render_geo_citation_report.py"
+sha256 = "sha256:44bebddf79e96469f6577bb60b159122a133450e08f78734d7eb6b33d2738e4d"
+
+[[sources.files]]
+path = "brain/scripts/render_topic_cluster_report.py"
+sha256 = "sha256:bdd6a83d07818fa991c6d0a6e8a198ffdc5f9bb1bee39efe9a6ed369a81a0f47"
+
+[[sources.files]]
+path = "brain/scripts/scaffold_vault.py"
+sha256 = "sha256:71bf41df98e053ae7d24b8b9400a4514312800fd2efa1ba8733c5006ae1af44a"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/synthesize_blog_plan.py"
+sha256 = "sha256:04231263d5b23b375c105330e3ee084dba78c9c9b78b445359f6477ddcb3e3ad"
+
+[[sources.files]]
+path = "brain/scripts/synthesize_brain.py"
+sha256 = "sha256:2c8b906b4a5cf396f5ec16c3924db829babaff6850d03b490e46ca3e6c1d1811"
+executable = true
+
+[[sources.files]]
+path = "brain/scripts/synthesize_geo_citation_readiness.py"
+sha256 = "sha256:069b1c4dc8c359fcf9ee32c304b8ac644b04d7a0036a508c9eb36d4b67ebddb4"
+
+[[sources.files]]
+path = "brain/scripts/synthesize_topic_cluster.py"
+sha256 = "sha256:01302a922a68a82638c9a97d6049a01e2d3e263cac32c782cd3c896d0e2424a3"
+
+[[sources.files]]
+path = "brain/SECURITY.md"
+sha256 = "sha256:7e3c40343a9f71d6b3ffad07ab3c244fdee8b60ae12d00383f28c4c06b83d9b3"
+
+[[sources.files]]
+path = "brain/shipping-rules.md"
+sha256 = "sha256:31124d0dd54a81cf6562022685c8a3ce26e1255287f9676e8ac1ffdc1fac24c4"
+
+[[sources.files]]
+path = "brain/SKILL.md"
+sha256 = "sha256:2fd3b999ea11034e77c850864a83831fe8cfec43cc757258ed9f089f773ade76"
+
+[[sources.files]]
+path = "brain/specs/claude-blog-brain.yaml"
+sha256 = "sha256:c461600995d8c23fa37151379725be0e15850faf71fd2d370f3b8e298391b0ac"
+
+[[sources.files]]
+path = "brain/SUPPORT.md"
+sha256 = "sha256:50b5d999faf81bd3de59647f938bc3f86427476baf241e1e87c93afa0520ca39"
+
+[[sources.files]]
+path = "brain/tests/fixtures/sample-blog-post.json"
+sha256 = "sha256:2180cbf3fc25c2f99626c38cf92265001ba1b418ee24e445e636e6417acf5ed6"
+
+[[sources.files]]
+path = "brain/tests/fixtures/sample-geo-citation-audit.json"
+sha256 = "sha256:ca3d06ac32978ca52d989ce03936a11ee4688a87e2373c3f9f8e1ea68133494e"
+
+[[sources.files]]
+path = "brain/tests/fixtures/sample-source.md"
+sha256 = "sha256:9927f31d619695c9e6d81a2696f3ef83e1fbdffc733a40ba2bfbbb39bd89a8dc"
+
+[[sources.files]]
+path = "brain/tests/fixtures/sample-topic-cluster-plan.json"
+sha256 = "sha256:aaacd8ca2787fd48a54744629445eb3fa77ca3d169ae329e3d82290207f0c217"
+
+[[sources.files]]
+path = "brain/tests/fixtures/sample-vault.sha256"
+sha256 = "sha256:4ee8e897c432c74474b2bc7863fc606e91659d48ece2c4382d2505988cdd5461"
+
+[[sources.files]]
+path = "brain/tests/test_blog_adapters.py"
+sha256 = "sha256:79de4bf5a232aaff40169ef1c272881661d386df91385f630a021fbbf3efab52"
+
+[[sources.files]]
+path = "brain/tests/test_domain_adapters.py"
+sha256 = "sha256:e2a6b0579bc6066875fa72f0e0f0bbdf49aa64ed6b8b09813a03070b1843b5a4"
+
+[[sources.files]]
+path = "brain/tests/test_pipeline.py"
+sha256 = "sha256:ef2b1aa81c075f64b8ae1f287b1ed35542d8c66109ea0a44c350d10d5c82fd4c"
+
+[[sources.files]]
+path = "brain/tests/test_wiki_substance.py"
+sha256 = "sha256:795d3f42e5c80e545d21fa544180cb8c518f7dfad849663d463e269d55eb5ef1"
+
+[[sources.files]]
+path = "brain/THIRD_PARTY_NOTICES.md"
+sha256 = "sha256:042527bb32931653e184649eb193b4340b22270e25a8b8661bc0a3bc76a4951f"
+
+[[sources.files]]
+path = "brain/uninstall.sh"
+sha256 = "sha256:05ba1346c85cedd26bd9daff497e81d954d1150e779a5517b1deb7fd1d03649a"
+executable = true
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/_index.md"
+sha256 = "sha256:f8d410d3c9d591e21f2ce505d2f7495dcc2e32f2303d50e7d4db119090f6f12c"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Brief Risk Notes.md"
+sha256 = "sha256:83eb889abe622f3eb1a2db252d2ae46b1c8d77e6e867132c8e5e10ed2fffb39d"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Brief Source Pack.md"
+sha256 = "sha256:75043f79e6f978184f6ffaa06295a961cb9fd844b902554b41cd8274276ac293"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Brief To Draft Handoff.md"
+sha256 = "sha256:1229d48b457e30b585042b1b9ac0bc86aa50ee9931174ff85a7c1651fe32ece7"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Competitive Pattern Notes.md"
+sha256 = "sha256:8e0a9a11617ee8e0f6777ca714f9d52085be06da7b13feeba4c38be9a44807c6"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Evidence Block Requirements.md"
+sha256 = "sha256:be361486d5b9903181203d5a2d357faf7c718dd1ab0664cf23123649b4f1227b"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Heading Hierarchy Rules.md"
+sha256 = "sha256:9317a64c6090b01b641c8f56d1eb7837ec470476200a9cd83df3b4039ba2a9c6"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Outline QA Checklist.md"
+sha256 = "sha256:ac7cfcdf696cc35eed671bdf554d5c20b7b4b45b55c06be0df9be69d1cc3127c"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Reader Job Statement.md"
+sha256 = "sha256:e3cec4cedbdac9eac28d47f414b3464b17e34ee07724389d59d5c4db75e7ea7a"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/Search Intent Classification.md"
+sha256 = "sha256:4e025cb287ac78038289d83128902ce39b6c197831c781a94204455626681f3e"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/SERP Brief Input Contract.md"
+sha256 = "sha256:c0674c007fb09e73facc669eaeeac2ec574a7cb8c6760a3bfa77fba4d956e55b"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/SERP Observation Ledger.md"
+sha256 = "sha256:73cc5cfa6f39b8757218a04b767918b9bab55e425df84caf84b3e499ef853892"
+
+[[sources.files]]
+path = "brain/wiki/briefs-outlines/SERP-Informed Briefs and Outlines.md"
+sha256 = "sha256:a0a9d93b03b1db3e6363cea1328dceadc97b0f8ea5d874815c9bde6a1e7633c7"
+
+[[sources.files]]
+path = "brain/wiki/clusters/_index.md"
+sha256 = "sha256:5fc413dff108d225d79a50a76361e499f66614f11c732b3c825fd26aec37ffab"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Cannibalization Review.md"
+sha256 = "sha256:1e5a5d31fb086dc1d93ab7b6868dde1d08b948b65d14d05502f4befd5dd40001"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Cluster Canonical Page Rules.md"
+sha256 = "sha256:55a134bd1e9781303e6914ee889ff2931a097320662c6496272ae7a5671ca3e2"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Cluster Gap Analysis.md"
+sha256 = "sha256:bb654635be48e9ec590812c4ad91e11a491e3774a1f41da57a3ea90f4cb39efb"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Cluster Hub Selection.md"
+sha256 = "sha256:59a3371054095353110085aa93d2dd2cf3640395a2aa42c59dd3a1a394b7722c"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Cluster Performance Score.md"
+sha256 = "sha256:3166b35dec04241cbc9d91f2264f68b10ed49790cd8577299aa4be1f5a546eb2"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Cluster Refresh Cadence.md"
+sha256 = "sha256:68171b335d3b97992fd9e7ac5a30f4ab607ab1c105caa71704e3209a2d26d543"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Entity Extraction Workflow.md"
+sha256 = "sha256:5bcdcbd1ee62e697d834eeafae2669bb396c738561f3be199803f9dd6daaaf2c"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Intent Coverage Matrix.md"
+sha256 = "sha256:a6f43c4e2fdc1c97f318188bba0d42ef40733e525906585f74fb88e14fa52ef0"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Internal Link Matrix.md"
+sha256 = "sha256:4ffd4612702a37b9aa23e2a66fa3754761d02e9f9a96ebe47edd3d8a51d9504b"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Semantic Topic Clusters.md"
+sha256 = "sha256:b308a9b0879caa8091c95838a71a18b373b1b2db8e3c322496ef7ff24027144b"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Spoke Note Inventory.md"
+sha256 = "sha256:9b0ccc85462eed6fd62dc0a3d53c64b134d017803f572105fa2e5bcc70c38bfc"
+
+[[sources.files]]
+path = "brain/wiki/clusters/Topical Authority Caveats.md"
+sha256 = "sha256:dbbf6b49cddb46206d815f381340a43d275eb9355eb5081514df103138c22094"
+
+[[sources.files]]
+path = "brain/wiki/concepts/_index.md"
+sha256 = "sha256:7acf651d4a958272f063959716794067b8e590c3a3c17a587aef3582bdd99a8a"
+
+[[sources.files]]
+path = "brain/wiki/concepts/AI Mode Query Share Context.md"
+sha256 = "sha256:84c98101c58ba5d89d69557b9d2f3fb6c3bf062199fbb95e29d24451315fa338"
+
+[[sources.files]]
+path = "brain/wiki/concepts/AI Overview CTR Interpretation.md"
+sha256 = "sha256:9a886fe5d0431ea8585e04cfd351a89b3099ee5e61be335c3297f19e73a0c812"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Citation And Click Forecasting.md"
+sha256 = "sha256:34f6c819ddb5b7f5be1ce0bca5db2b81bd7c482b368b3450071d72063d0d4ad4"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Citation Readiness Decision Tree.md"
+sha256 = "sha256:c8414e5523a9091049f920cc2a0d4a32fe545a2105571bfa1a8a98b0ebf5a154"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Classic SEO And GEO Tradeoffs.md"
+sha256 = "sha256:9a296f99ef309856403211b2465f9718fc034dfcbd013c0c8429dda9660480ee"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Dual Optimization Briefing Checklist.md"
+sha256 = "sha256:2a1f58c41aa26b45cccb25a36cf271e82573030b20ae0f749b0dd24f9c30286e"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Dual Optimization Risk Register.md"
+sha256 = "sha256:8694df42e425a181b71f4e8870cc7ab5f2500ad008971dc46d52179b5260f3bd"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Dual Optimization.md"
+sha256 = "sha256:0b217d0f68273247ea113352d66f8eb1a57eaee93574aa4f118ecfc6818ffbd2"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Market Average Versus First Party Data.md"
+sha256 = "sha256:1ffefa5c620ed77ec9ffe69483796a30d0fafb93dcda59fc059fe56062e143be"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Reader Value Versus Extraction Value.md"
+sha256 = "sha256:d680309525a16d23bd862f88e46c941a060e6206331db5d9b21d05c56708f8b9"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Search Visibility Versus Citation Exposure.md"
+sha256 = "sha256:bb222b8253e6e41619c366ca522f66d732f3cbe4591b3c05700b2593e02ebcbe"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Visibility Metrics For Blog Programs.md"
+sha256 = "sha256:e18b1f2d51c891b027c06f63a8525b4af4bab3a7ab7787fc25aea2db42f3ec09"
+
+[[sources.files]]
+path = "brain/wiki/concepts/Zero Click Planning Baseline.md"
+sha256 = "sha256:9873c0c180cb3ea133425d4d298aede956894487a59b92814035c9863bdb8a5b"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/_index.md"
+sha256 = "sha256:2a053acf51f5f3996de6e09ded4051df8edc8d9c9517c63ebe081fe2f8f2974f"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Credential Boundary Rules.md"
+sha256 = "sha256:f1601210ecd28d567f88d960bf96b3985192047cd1cff422dc7766e172775171"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Data Confidence Labels.md"
+sha256 = "sha256:8f0d53d5eb81bb26c982a07c8b53bafa4aaf10c23220ae33300255c0556e776c"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/First Party Versus Market Data.md"
+sha256 = "sha256:ffacf76a02de7e1ddb7a2bc8c740461f0614de23a8b9c2386dbcf6733f503eb5"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/GA4 Blog Engagement Metrics.md"
+sha256 = "sha256:e080c23d17c82cb3b9413ac13022801dc7798f2e39d20f645d4e953f4c5ac7f9"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Generative AI Performance Reporting.md"
+sha256 = "sha256:ccbcdb1941c3108758f02729f19759b048c8683c92e6d4445aaa6552f048af8f"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Google Data Integrations.md"
+sha256 = "sha256:56f2ee178ce818a8137f82eb70a363c9a78f8a473f26216e9a917ec1ca822848"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/GSC Search Analytics Query Plan.md"
+sha256 = "sha256:45169e00e961b882e3c00b77a8c4bd0810f2a70da1572bd9398a721562396dff"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Metric Export Schema.md"
+sha256 = "sha256:b60318924e841df6ac28c644370b2de7f6dded8b7cce364b9fabb4ce4922cf1e"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Missing Data Disclosure.md"
+sha256 = "sha256:68c830cfc55ebe680842cae85d4e993207316cfdce82bb8681a61d9958146ef2"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Page URL Canonical Data Checks.md"
+sha256 = "sha256:60bbb549293a5a34d1da7f257fe8801652919f673a32f855fe0b0aa15434be59"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Query Dimension Hygiene.md"
+sha256 = "sha256:aeea4c7331335753b62ef823fff5ee3dd7823f86df818dfb095ab57cc4d82320"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/Read Only Data Access Pattern.md"
+sha256 = "sha256:cd1288e74de7e728d29630e01533f6924a73f45b0101c170cd280b63d861e040"
+
+[[sources.files]]
+path = "brain/wiki/data-integrations/URL Inspection Evidence Plan.md"
+sha256 = "sha256:b8eb2a20a7a3c3e8326e9591b51540bb3d40d77e9488a5354f7ac5c77f1efb45"
+
+[[sources.files]]
+path = "brain/wiki/decisions/_index.md"
+sha256 = "sha256:375d5fec5757db2d9d9d35cde2088893b038793bc5acc5c81eed7be5202f89ed"
+
+[[sources.files]]
+path = "brain/wiki/decisions/FAQPage Rich Result Policy.md"
+sha256 = "sha256:b2b8880259e0b8ea039381bace0ed481f23dbb76e2daf31910f28fb6fcb9a3fa"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/_index.md"
+sha256 = "sha256:b793d3ac131836b1e6cae10a3392edb20431039777979755d253816356a397df"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Audio Narration Production Checklist.md"
+sha256 = "sha256:a7ea472db61c7e524009845d2fd87718ff280464196b284921b565c29d0174a2"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Blog Analyzer Score Report.md"
+sha256 = "sha256:bac308ab656214ee770d95a441f89e26f387a41558a97cf897a1a7041de2482d"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Blog Chart Specification.md"
+sha256 = "sha256:abe32b9f8076741f27913f482c96d2210961c30bb00b1591352a1afa7d14e9b9"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Blog Image Brief And Disclosure Checklist.md"
+sha256 = "sha256:f5a7378a5b1df67ec09aa28905ab172a89208a693417d2a6223813eabb11c09a"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Blog Rewrite Refresh Plan.md"
+sha256 = "sha256:b8b6041fcef515ebacb90ba08c734cc1acdf186ced1c7661c23d8e64cf2640ef"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Blog Strategy Architecture Blueprint.md"
+sha256 = "sha256:827059a4c1b2b4c14f403648c35fedb42b1794c8bd9d573cd28fb13de7b20739"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Blog Write Article Contract.md"
+sha256 = "sha256:e51a188a0ec951436d05628c3e83f851ca8c95bae95df67e0fe22a33de476d6a"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Brand Context Contract.md"
+sha256 = "sha256:1f67d5d583d86e85ab7b475fdb55f74ed458861ce3979e748b441418661b2a19"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Cannibalization Resolution Matrix.md"
+sha256 = "sha256:b5e27a1f86dc371993cdef62b57df248bd0af8fce9f77f6a0da79835d5cba843"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Content Brief Output Contract.md"
+sha256 = "sha256:83a4c6128b0b65bf5c11e3e31ce5220d94ef8a8001ee4abe0f6c10391189ce40"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Content Decay Triage Register.md"
+sha256 = "sha256:ee33e01bd05901d459f8cbaeaccbf7549337268c0b14f1e2bbadbc254fd94f19"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Content Template Selection Matrix.md"
+sha256 = "sha256:a17e61fd2f0bc9ae810242474df99ed218efcfcdee1ceec23a3de312d9e458a5"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Discourse Research Brief Contract.md"
+sha256 = "sha256:b4ad8eb5819437b67e5828c1bbcb070c31edfc7d5dd0832aba239209bbe9bbc0"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Editorial Calendar Planning Matrix.md"
+sha256 = "sha256:a3b532bfe3a348005c10ee9cbdcb51ad0aa003b3175663fec17f62db018e5c89"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Factcheck Claim Register.md"
+sha256 = "sha256:93c183c5922f8eefce6e6e3d693a52a58e82e93d906121fb4a86a58703ea42d2"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/FLOW Stage Prompt Map.md"
+sha256 = "sha256:88e6c592c7201da5567ee28f437b9b6ca0945b515a3257a309dd75e767bb28e5"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Full Site Blog Audit Report.md"
+sha256 = "sha256:71d059c387ce36f2664e34d7c924ae426f16acc175c8211ac623a8d306b43520"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/GEO Citation Readiness Register.md"
+sha256 = "sha256:96a6193dc54a6c911cde63ab100fe1aa729a1785a0bf75eb5ba6b6d60fa7d334"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Google API Evidence Matrix.md"
+sha256 = "sha256:94dcd37e7a791bfc4be26f4dd030a05705771e28f212fc5486ae59c42229bcce"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/grand-audit-upgrade-deliverables-output.txt"
+sha256 = "sha256:d8c83c4262faab427df822196f99d88b8850ee7403603a9e3c1b103e9478c33d"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Locale Audit Coverage Matrix.md"
+sha256 = "sha256:251d4e473b3f0ee1213bc74e84ec3ad0c44f04c95d74233debbfc64dc636278e"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Localization Adaptation Checklist.md"
+sha256 = "sha256:7f077f77ad05e7be503239b9975663d5b69e8c399f36efed68e49cc8beeacbf6"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Multilingual Publishing Runbook.md"
+sha256 = "sha256:17868f53db7128b7d2f59d93d1c12d56ee8d037e8209d3f77b7167b99c9ff2e6"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/NotebookLM Research Brief Contract.md"
+sha256 = "sha256:dc58a2bb975292dafa14209ab5fffc81ca4606826021144ee08460cd0de7bfe4"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Persona Profile Contract.md"
+sha256 = "sha256:59415f23f7eb2b5e55ed3c6fb45a824784f20a788d95a5c9af2e46b7dc32c85d"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Platform Output Formatting Matrix.md"
+sha256 = "sha256:95763488a7bd386e45da8879f0dadf8df56311f73901c56a479ff6b8d137722d"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Repurposing Asset Matrix.md"
+sha256 = "sha256:9206b503ba64484f3371a2248cda18b4c0b42aa322620d5186e5f6988d9a693d"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Schema Generation Output Contract.md"
+sha256 = "sha256:1071f47cf92878503c91cc4972293c8c3c4aabefc6f98181f7533b784066bbf4"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Semantic Cluster Execution Plan.md"
+sha256 = "sha256:116a74ae2ce07fb8ab7a984e7fe28284f853fefbb1c9bf7478e42d4a3be8c37e"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/SEO Check Validation Checklist.md"
+sha256 = "sha256:51ff2750360d955e7a2f918284ed758d2d124fc42ccc26d834f6cb8e9252c284"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/SERP Outline Output Contract.md"
+sha256 = "sha256:241d5b42e806809a2e62f08dc5f06984d5b484e4e24977b52fcb916dfddb226e"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Style Learning Voice Profile.md"
+sha256 = "sha256:e236da9f8f7f14771b928344ba7358109ac9eff449edf1a7d1986335f3a50573"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Taxonomy Governance Matrix.md"
+sha256 = "sha256:d7e424a87e4d1beba61e8c92637dffc5a75d52773e2d50ee8180f3a6b7243ca0"
+
+[[sources.files]]
+path = "brain/wiki/deliverables/Translation QA Matrix.md"
+sha256 = "sha256:f6f195d8f1acf2f4af532abaf95d4fdca87579a90f0807b8928ba4ad299cf3d6"
+
+[[sources.files]]
+path = "brain/wiki/distribution/_index.md"
+sha256 = "sha256:0f0b25d96a7cb6c0dabf3ae20cd226b59500b378bd82781b6c7caa59690b49f5"
+
+[[sources.files]]
+path = "brain/wiki/distribution/AI Referral Reporting.md"
+sha256 = "sha256:69fd072910fe756953330a4fa17f7c7670df7db93f38ed3c1127543af2277058"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Canonical Attribution Rules.md"
+sha256 = "sha256:d98f98c8c8cee29777a92216bb7d0a599ac16dece97e7d80c3c8a6a126a79cca"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Channel Asset Inventory.md"
+sha256 = "sha256:ae427ce1704b1bc8aa29e6acf8f16e75befd8137bc3768d68c0855d22c31ce61"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Community Post Adaptation.md"
+sha256 = "sha256:c072a080bd3eff4de3927c9d07102c12177e11ebab8b7dc5add3f7b4568539df"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Distribution and Repurposing.md"
+sha256 = "sha256:bceb50a078e26b27580fadfff597847f6d23e87b31bc4fa7e9cf63ff55176c6a"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Distribution Measurement Plan.md"
+sha256 = "sha256:66d214af6e2c7597e5df3f515cfb3f78ba33be8501adb51859e678d5b21c611f"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Email Newsletter Adaptation.md"
+sha256 = "sha256:e0907d2f456d2895cda1626d5db8093dca163d061f43f03db7cc75969861f507"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Owned Audience Loop.md"
+sha256 = "sha256:9c1b27147e5349fc5f685801398a82177f3e035259ce8ea85858d66d82a795bd"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Podcast Brief Adaptation.md"
+sha256 = "sha256:477f31dbc3344fda53c54bc7e93672e7323ea7df752625bf1a58b98b4225987b"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Repurposing Source Fidelity.md"
+sha256 = "sha256:8486d5a2c166b146efa03a0a8c6fbe240e2064522ba6018186650bc8f75eeb93"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Social Thread Adaptation.md"
+sha256 = "sha256:d7260db6424380815b54fd65216b34018cbdb4bd3259d0dfbdcfb447bc1afd1b"
+
+[[sources.files]]
+path = "brain/wiki/distribution/Video Script Adaptation.md"
+sha256 = "sha256:dc5e77b003cf017820c1e5e2372021fec516b00f11406c582ebc58c172bc0be2"
+
+[[sources.files]]
+path = "brain/wiki/eeat/_index.md"
+sha256 = "sha256:eb1fd7f63d500f02062ae829c02da2a6c31282c01fe64d3c3dab002bb04cf04a"
+
+[[sources.files]]
+path = "brain/wiki/eeat/AI Assisted Content Accountability.md"
+sha256 = "sha256:8ba475fd200b30b392197ed422279d6cb5d7f4b97e1418cf9438065c00b7ecca"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Author Bio Requirements.md"
+sha256 = "sha256:2071c3cf30239d659aadc8eea2447f81159d15df32143d30b105bafab72f8305"
+
+[[sources.files]]
+path = "brain/wiki/eeat/E-E-A-T for Blog Content.md"
+sha256 = "sha256:b72ba549d7949291851ede5d8f865e96175d71ba838feb205852649a6a9a187b"
+
+[[sources.files]]
+path = "brain/wiki/eeat/E-E-A-T Review Rubric.md"
+sha256 = "sha256:9682dc488f185747e7f8a915124270ecf50847f1dbfaa280ed309206f51489ea"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Editorial Transparency Checklist.md"
+sha256 = "sha256:b4294a9922f85d614ebf64fb4721328c86b363a2a4192d771ad7d317c6a3052b"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Experience Evidence Checklist.md"
+sha256 = "sha256:8d0723e9834361558219cc894628b10b173d37cdd732120a5673b93d65f292fa"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Reputation Research Workflow.md"
+sha256 = "sha256:e9833abf63977e9e714a65691a4522251ec64f2a112f575ed4523f3374fc99e7"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Reviewer And Expert Review Rules.md"
+sha256 = "sha256:58bb431ddcbf1494f4121db1173e3ac0fda5b39991dfd1a1466baeb9166dd5f5"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Source Quality Ladder.md"
+sha256 = "sha256:8fd3e61a778849b47e0fd3110e16cbe01fcb2246e8434d1d8ea113d94ee838b4"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Trust Signal Inventory.md"
+sha256 = "sha256:6f7aa8220895ec0fa752aa27158453dfe639b8de812bf4dd4580a47a1c33a7c1"
+
+[[sources.files]]
+path = "brain/wiki/eeat/Value Less AI Content Warnings.md"
+sha256 = "sha256:ba1126966032b7c9806700a5e90d9da86e010fd62d118dfa842806b3f21078c2"
+
+[[sources.files]]
+path = "brain/wiki/eeat/YMYL Adjacent Blog Policy.md"
+sha256 = "sha256:6d27fbdd7259c426aee489caea0dda37b6f4eb631e324c6627147f68d4d29bf7"
+
+[[sources.files]]
+path = "brain/wiki/eeat/YMYL Escalation Matrix.md"
+sha256 = "sha256:63fdb73a37a0a550b90673a295008535d69cd03cc9bfa8e70d41974cd54cc5d4"
+
+[[sources.files]]
+path = "brain/wiki/entities/_index.md"
+sha256 = "sha256:08f5470fd73ed2dac63ecb5c03937d9416ecd4c18677dba29e3cb204b5de1949"
+
+[[sources.files]]
+path = "brain/wiki/entities/Google Search Central.md"
+sha256 = "sha256:c4d302832988f41faf064ba2ed22f0515501d077204d6e75383525d25ee91ee9"
+
+[[sources.files]]
+path = "brain/wiki/flow/_index.md"
+sha256 = "sha256:a93b5132edda4107d135b0d62df6c155597b3cafabe2c8989c981b60ac688d0e"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Approval Queue.md"
+sha256 = "sha256:be9c4644521411d0f1feca0a62b62787c88ff21a7009e30684f34b9878f10666"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Brief Stage.md"
+sha256 = "sha256:16ba645f668e2b91973f753ebed50b2c327980bcbdd7ea7f88baddec05b34ad8"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Confidence Tags.md"
+sha256 = "sha256:1c29c6a8e30e35b45e79714412d00d2acaddcd8e25699d53be5ced739c6d8ecb"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Draft Stage.md"
+sha256 = "sha256:1309eebe561dca509edf3943dd9c3ab6247547e66a4ba1060901b0f74b3421c5"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Factcheck Stage.md"
+sha256 = "sha256:0f9a833781d316e060421a5c76b562ebd1fe1dcdd1250af0d7503c6baa47d828"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Framework.md"
+sha256 = "sha256:ccf280b73064ea6605de03af799fb3fb0856b7116d27dc467cb5547d1d8c70e3"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Read Only Boundary.md"
+sha256 = "sha256:5e91d5264e70c5d505c1b864ae86db4b9fee2571bb89b792e485b0757903aa7f"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Report Stage.md"
+sha256 = "sha256:ef5793c4256793a4bdffc393b32bc35035d4c3314f44b3504ca8b0936fdd9837"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Review Stage.md"
+sha256 = "sha256:1aa124f213781e65ddc3ad4cb6442d6d47486c56b5d613f48a2af02f74e22521"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Rewrite Stage.md"
+sha256 = "sha256:207547f61164753d89e3c8b32c4c2e2680c84b5c92029ce1e5184917b07e3e5c"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Rollback Notes.md"
+sha256 = "sha256:40937bbbfcbae9019399fb5a92cc7ef66fa57d994eb8232362a90537699facf5"
+
+[[sources.files]]
+path = "brain/wiki/flow/FLOW Source Intake.md"
+sha256 = "sha256:3f0ef18a5e6e84ab27ac19c3fe1bd30cf59465068f08ef687cd5cdae394c9c60"
+
+[[sources.files]]
+path = "brain/wiki/flow/grand-audit-upgrade-flow-output.txt"
+sha256 = "sha256:9363518e3cfa09713b51e5b1e715adabd662180625edf8c3df3023fd626af4b3"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/_index.md"
+sha256 = "sha256:f42f5e72667e34d1105750579284d1d9b7391b8012c27c19afc9a8c0d91a3995"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/AI Citation Mechanics.md"
+sha256 = "sha256:e1cfbf674201cdded2617aaf46c8ae09560a5654558189f128b12674a65e488d"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/AI Crawler Accessibility.md"
+sha256 = "sha256:6c972dbaefd3dc37aae46559b91fbe74f0cb500013e5f95358ea7f2317c5db75"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/AI Feature Preview Controls.md"
+sha256 = "sha256:59eec99eef3d7a58c7924824b6d01fc9784ecbe1e9757f68902f6dac89df74eb"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/AI Mode Citation Review.md"
+sha256 = "sha256:88457e8354ea4b3355e6fc00d40a69a8f594e1a6bfff3dda341555ffe5ffd5f3"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/AI Overview Citation Review.md"
+sha256 = "sha256:72e17adc484ea2e2581ba76529c06ffad80a711304ad39e692bae5233d998ec5"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Answer Block Extraction Test.md"
+sha256 = "sha256:56644045def6b726ca085e2684aa717a5ce13664b01fd72513fb8bc2a09efa52"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Assistant Answer Surface Map.md"
+sha256 = "sha256:bb346f2aa129cd137ffc90e51c971b281c50aaaa96db63403f6b65d0ff7a1afb"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Citation Exposure Metrics.md"
+sha256 = "sha256:fd309aa6c05525ccfd9189a005f451454dc5e5e78104963040017e5c195efcf5"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Entity Clarity For AI Answers.md"
+sha256 = "sha256:2186a4cd00ed5a56fdd59184825d01bd8da7e20d9c5cb438c84d20a83dabc999"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Generative Search Measurement Plan.md"
+sha256 = "sha256:4b34c87638c182ce24069d9cc91eed855efc83d31ffc38fd5ca31a60657a1882"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/GEO Risk Register.md"
+sha256 = "sha256:c357336e4dae6121deb33f1422b52be9952cc9c23f9790087cd46e21d8c0cb1f"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/grand-audit-upgrade-geo-aeo-output.txt"
+sha256 = "sha256:0f96fdbaf46c077f9b7e98b7e8ba2747142144fc768588b9d557e2b5db59b07b"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/llms.txt Caveat Note.md"
+sha256 = "sha256:e29287949f4c85a9917185cab4a7cf4b41fab0221422ee395da47a3733490cb3"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Passage Citability Checklist.md"
+sha256 = "sha256:e7b0cea0fdd4bb09893fc01f9d8ff6dc99a3232949c4c5937ba8ab9821deec8b"
+
+[[sources.files]]
+path = "brain/wiki/geo-aeo/Source Proximity Pattern.md"
+sha256 = "sha256:4707acf07a4ff2e9bcfa045984dccbb2ba916390fa721b989a016f3e47e36d11"
+
+[[sources.files]]
+path = "brain/wiki/hot.md"
+sha256 = "sha256:d3993daec33fcfdad19672e284746704d167453e6152e3653fa7a10c6f8bf43f"
+
+[[sources.files]]
+path = "brain/wiki/index.md"
+sha256 = "sha256:95b7bc98350ab1ed150fcb0383adcca49eb95dcb7e4afa0862562b310c1d5a7f"
+
+[[sources.files]]
+path = "brain/wiki/log.md"
+sha256 = "sha256:22e7579abd67956bcdaeecf1d6302103f2f2e222b587ab996e934ebf0aa700fe"
+
+[[sources.files]]
+path = "brain/wiki/media/_index.md"
+sha256 = "sha256:326ba0d47bba1ce96a6b81f0c514dcc3eb69daf00e8d2108b9673cf148a58cf9"
+
+[[sources.files]]
+path = "brain/wiki/media/Alt Text Standards.md"
+sha256 = "sha256:263e03806ca61dcf9bf8bf7bc1773e91ce7bdc4981a00bc2ace2d46c59a862a3"
+
+[[sources.files]]
+path = "brain/wiki/media/Audio Summary Rules.md"
+sha256 = "sha256:0c9f3bcde2f2b3e68cfc3a73c6c8e0a8262717be43fd9328d119d30774e579ae"
+
+[[sources.files]]
+path = "brain/wiki/media/Chart Source Requirements.md"
+sha256 = "sha256:d06efedc582e4312c1838098bfdbc8828fd251533010033deaeca3ec16034d09"
+
+[[sources.files]]
+path = "brain/wiki/media/Data Visualization Review.md"
+sha256 = "sha256:3ad942a87f3d5e2a82f87bc699cce042fe7e32d734990476e72e7f9291538b6c"
+
+[[sources.files]]
+path = "brain/wiki/media/deepening-report.txt"
+sha256 = "sha256:ac0014baff76eaf69c85eeb401f4e3dc71fe3b66d4ee9048183505a72e717428"
+
+[[sources.files]]
+path = "brain/wiki/media/Generated Media Disclosure Notes.md"
+sha256 = "sha256:231d656fc939c652022cac1299dfa3f9369026f059595d52ceb43c34f4f1d007"
+
+[[sources.files]]
+path = "brain/wiki/media/Image Selection Rules.md"
+sha256 = "sha256:0d6d4792cdd932bf9cf404b198d77ce5e6a7cf425fd312040dc12eddc0f7382d"
+
+[[sources.files]]
+path = "brain/wiki/media/Image Sitemap Notes.md"
+sha256 = "sha256:6217efaddaec2a5c61c90bd56c98095825f61b328fdb266a578f3d0d4eea2da0"
+
+[[sources.files]]
+path = "brain/wiki/media/Images Audio and Charts.md"
+sha256 = "sha256:cd205e2900b192b2f2e0cf576ab8050a11797fc49ba614ebcd97b23eb00fbb59"
+
+[[sources.files]]
+path = "brain/wiki/media/Media Accessibility Checklist.md"
+sha256 = "sha256:73772c6c7af845ec516b09076a303e5e26e3d795174ed311b2e36919fe609040"
+
+[[sources.files]]
+path = "brain/wiki/media/Media QA For Blog Posts.md"
+sha256 = "sha256:11567e6341a1b1114b0798fa50b744ae02d975a3555820ed64477fd0f8770328"
+
+[[sources.files]]
+path = "brain/wiki/media/Media Repurposing Matrix.md"
+sha256 = "sha256:428cef7ef4e621e8a6f235bfc2d02562a3f253f4b9847bc918155775d443bc55"
+
+[[sources.files]]
+path = "brain/wiki/media/VideoObject Checklist.md"
+sha256 = "sha256:a18d7d9258128a34c3ae9c45b4f856c3f09254e0baa7d4637c43a1e50e442063"
+
+[[sources.files]]
+path = "brain/wiki/media/Visual Claim Review.md"
+sha256 = "sha256:77b799897aaec3dfa6b0976b6894566be82d4ab2745c36e563e80e0a7140cb08"
+
+[[sources.files]]
+path = "brain/wiki/meta/_index.md"
+sha256 = "sha256:186d3998a86b62614c4c90a9122cff115dac4e90d54548745cb4781994827dc8"
+
+[[sources.files]]
+path = "brain/wiki/meta/CONVENTIONS.md"
+sha256 = "sha256:ea7b90683698fd15fa1ed55618f2bb31c9c1ece22f4cbc04e4ca38b24de8fb17"
+
+[[sources.files]]
+path = "brain/wiki/meta/dashboard.md"
+sha256 = "sha256:b89ce204d32497476ce142090b122ad04817892e6dd817893b1d12344b5f217d"
+
+[[sources.files]]
+path = "brain/wiki/meta/Start Here.md"
+sha256 = "sha256:9beec7096e8e8442876fc63643af543b2f7f557d4f29979350d3dd0a1b792b6d"
+
+[[sources.files]]
+path = "brain/wiki/meta/Tag Taxonomy.md"
+sha256 = "sha256:a7297c9308ae025598e8bf90ce2fef80109d20344123e73528622e03ef50725e"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/_index.md"
+sha256 = "sha256:211419103804b72d845b09e9e82848d725656d895baf688572910108dd78d1b7"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/2024 Google Update Timeline.md"
+sha256 = "sha256:9b60261195f1308e91f4f643bd086202376556126b79a4c92e15a3f52d293f94"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/2025 Google Update Timeline.md"
+sha256 = "sha256:69bc71947ea8839ff5594d23155eebd152a7e00e9108d2502effa748958beefd"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/2026 Google Update Timeline.md"
+sha256 = "sha256:b181a72ad52163334f514ef67c3cda6c3f1c5f6df87914aaa2d87cc551dddc5b"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/AI Search Update Watch.md"
+sha256 = "sha256:f94e226380f06648ab83d65c81483530b06f53308b35bf3709ef32b046b5a3f1"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Confirmed Update Entry Template.md"
+sha256 = "sha256:be7aaec13efba6a148ec927451d8ded039d4d15bee42151253808f4416263f10"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Core Update Response Playbook.md"
+sha256 = "sha256:9f55a3dbd4535fdc0b0762d4dfeead78c17389c942cd9989c144a864f5b158aa"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Google Algorithm Update Ledger.md"
+sha256 = "sha256:dedfe7974017bc818071517910f4639d3f63bfdb0df446dca15777e2a075ad9f"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/grand-audit-upgrade-monitoring-output.txt"
+sha256 = "sha256:a279a7a18e6838566a08fc34df7302835bf3c2f85a0e297c21fb83dbf16b39be"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Monthly Source Refresh.md"
+sha256 = "sha256:1284adc07ca40c7ef11a68985a133e0f4c440d5c6a1bf128a6a527b47ee9152b"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/QRG Revision Watch.md"
+sha256 = "sha256:58abb13d5b0671f9d0ff80241748cb0f357c50466651e6109089207460e01009"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Schema Deprecation Watch.md"
+sha256 = "sha256:9f4b6349bff0140d609c870c1dedf11e7f0801bf8bf01982a70096a4e29bbd93"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Spam Update Response Playbook.md"
+sha256 = "sha256:0b98a7dbee2a2c80b32e71c8ce65ebab3ccc26d72d01b08400e926d934f72531"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Unverified Volatility Quarantine.md"
+sha256 = "sha256:5cb6d1ea5c19c59c04ad97372132c8c8da279e8c7f91884728f7a489baf010aa"
+
+[[sources.files]]
+path = "brain/wiki/monitoring/Update Impact Review.md"
+sha256 = "sha256:0286ef70f3173b9aec6707b4e3cf0f431e864154c8e6528f8830be1818244f6c"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/_index.md"
+sha256 = "sha256:dec7cfa1fd4cd4f644f1a3860c05d1d9f4ae9f63023800ac977b04df3c6d66be"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Cross Locale Internal Linking.md"
+sha256 = "sha256:81f22af9b828b0ce3c4bead8427523edb62beb6a486911c675209a58c91cc012"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/grand-audit-upgrade-multilingual-output.txt"
+sha256 = "sha256:e5849c0ba6d793d006d45fb1a228b92b787641abb58df326deb176649b39bd10"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Hreflang Checklist.md"
+sha256 = "sha256:ec26f5105d15a1bf7c030b1b20d03a728af5ea49e2bb4cdbf7d942228afa6090"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Locale Intent Research.md"
+sha256 = "sha256:9414a2ff4b3dc50a9e72d6baed38baa5c68a8c1a37aa5f95f2c52bb817f26cc8"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Locale Launch QA.md"
+sha256 = "sha256:7b23ab3f2c1226990f1bcc29c60755b3a9b1dbc785ba0f9a4965925190c062f9"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Locale Review Workflow.md"
+sha256 = "sha256:9b7e98348a4e933430ba1a4bdfa7ca6a36ce339c3d9859e07d70c8304c40ccd7"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Localized Source Requirements.md"
+sha256 = "sha256:18ef82cbbbf7090cdfac959807d4f963bc1ad6721a31f2f333ee3930dea5c525"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Machine Translation Risk Notes.md"
+sha256 = "sha256:4fb1ac6382c5df7d43c0188501ffc17801f84a5a3cc83ff374dd33c2cb19f9fa"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Multilingual Publishing.md"
+sha256 = "sha256:c3b4517a402fdc19a73e3466e6300f50fbed59e24f990ea98ce791a06da97c01"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Multilingual Refresh Cadence.md"
+sha256 = "sha256:60e4999ba3d913046c99253f5ac11ae9c12b5c72c7e7770c7d43b8dff2cba6b0"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Multilingual Schema Rules.md"
+sha256 = "sha256:36674dede55c9242988e664e7e64fbb256a76a41195e7c9d7b0577f63b9a75b4"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Regional Legal And YMYL Escalation.md"
+sha256 = "sha256:cd384a885a31fa25e24b94de0e529da0cce93b62970acfdfac8ab9da229d2b89"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/Translation Versus Localization.md"
+sha256 = "sha256:1a713a3b3e41cd061fdc3dbeca45181501085432c856f21ec9780f54574f9453"
+
+[[sources.files]]
+path = "brain/wiki/multilingual/x-default Handling.md"
+sha256 = "sha256:9a6d8d562e66d180a81b6b126ad19e725df84c7a336e81a3f154bfd01de74b5b"
+
+[[sources.files]]
+path = "brain/wiki/overview.md"
+sha256 = "sha256:ef328fcab09202a727cb9798a4413f549446790f792a3bc19f504f7da21efea1"
+
+[[sources.files]]
+path = "brain/wiki/personas/_index.md"
+sha256 = "sha256:fcde052b8d2c303849db2e1ea37ea0ebdbbc12e5818cf0a65c777d85bc60c8c9"
+
+[[sources.files]]
+path = "brain/wiki/personas/Audience Persona Template.md"
+sha256 = "sha256:867612c9fcfe357f82505c0708257d7137e5cac50b3f18adbf7c42ea9e5bc7c8"
+
+[[sources.files]]
+path = "brain/wiki/personas/Banned Claims And Phrases.md"
+sha256 = "sha256:81ea9190aae79d2bde2ef5d502d5568dc512babccaf961e6a9c45d8a76c16bfe"
+
+[[sources.files]]
+path = "brain/wiki/personas/Brand Voice Inventory.md"
+sha256 = "sha256:458a17a9a9f3d5dc64cc0967d13001da4d4540807fbee76f554ccff6bee112e6"
+
+[[sources.files]]
+path = "brain/wiki/personas/Distribution Voice Adaptation.md"
+sha256 = "sha256:4d0ec269fdb419a086b4f97e2ca2d6a0ccfa6293cb7fd493547efc6ebae81e1a"
+
+[[sources.files]]
+path = "brain/wiki/personas/Example Selection Rules.md"
+sha256 = "sha256:796296bc59c596eaf317a2caa8201ef7d795ebbb71f6b8221cd88448f39e74f9"
+
+[[sources.files]]
+path = "brain/wiki/personas/grand-audit-upgrade-personas-output.txt"
+sha256 = "sha256:88b9e1805599216df698ecaaeb1008865216659654ad6f7b5729a55c8e5c75cc"
+
+[[sources.files]]
+path = "brain/wiki/personas/Locale Voice Adaptation.md"
+sha256 = "sha256:99350e79406eaa94f07a15ea766f9e7ecbccd8881332d4e4c156eb9ef1f62109"
+
+[[sources.files]]
+path = "brain/wiki/personas/Persona Evidence Packet.md"
+sha256 = "sha256:aeff23265a07826ce6f190904cd0e6a88c85f5d6e4921d34309aa47c4387fff6"
+
+[[sources.files]]
+path = "brain/wiki/personas/Readability Review.md"
+sha256 = "sha256:7a78f620b2223a154461e7656434a7e68981f966487de3c01e8ec47d5a825779"
+
+[[sources.files]]
+path = "brain/wiki/personas/Terminology Control List.md"
+sha256 = "sha256:6070b74cf30b566292518d828765ffb22e3f7ee80c0e4274cd045f86eccc2bea"
+
+[[sources.files]]
+path = "brain/wiki/personas/Tone By Funnel Stage.md"
+sha256 = "sha256:53c486522ed00f7dfb76b68a024366b787a51dc1dcbd305627d3111c263b79aa"
+
+[[sources.files]]
+path = "brain/wiki/personas/Voice and Style.md"
+sha256 = "sha256:9bfe7c1008bdd2ec213e524524d8553b0fc2f5ab5371be02024ee585b534ea5c"
+
+[[sources.files]]
+path = "brain/wiki/personas/Voice Drift Audit.md"
+sha256 = "sha256:c569ee33a5c4cbcf58e1623b375fda993b56b86e9635b669915672fe3a4315fe"
+
+[[sources.files]]
+path = "brain/wiki/personas/YMYL Tone Guardrails.md"
+sha256 = "sha256:1fea611911aa07c1b63448f8229c86d60fefa0b8014d724eda4068e2f70288c1"
+
+[[sources.files]]
+path = "brain/wiki/platforms/_index.md"
+sha256 = "sha256:8523019dff40d5a225d190b622e4564a0f829919b0ceed18add0ecc5ca95c61b"
+
+[[sources.files]]
+path = "brain/wiki/platforms/WordPress.md"
+sha256 = "sha256:8284ae935220764de6a45840af1b9dc7edce2ef94425e5742321f578b086f3f5"
+
+[[sources.files]]
+path = "brain/wiki/quality/_index.md"
+sha256 = "sha256:2fa2ec6fc82c28280cc74d445bf215eea2643c75e46b115738282ee4116cd71b"
+
+[[sources.files]]
+path = "brain/wiki/quality/AI Citation Readiness Subscore.md"
+sha256 = "sha256:1b82fbbf38ce65d8adf64a9ce737ab54e82cfb4a1ed6491080a2fb8c3d38ba16"
+
+[[sources.files]]
+path = "brain/wiki/quality/Blog Quality Score.md"
+sha256 = "sha256:dee7862e7619ec28b820749d9910d2d4ed0970dc864b316a38d948a098dc18a5"
+
+[[sources.files]]
+path = "brain/wiki/quality/Content Quality Subscore.md"
+sha256 = "sha256:7b66f7f00cf6ea852440a2e02292c1eaf4c08b1862e9036581575351bb53bc44"
+
+[[sources.files]]
+path = "brain/wiki/quality/Delivery Contract Gate.md"
+sha256 = "sha256:c049421397e6d5fda80ac1f653ee4833406ff3b74c7784ea8aa5884c1b46c7d9"
+
+[[sources.files]]
+path = "brain/wiki/quality/E-E-A-T Trust Subscore.md"
+sha256 = "sha256:980d110798a277041fc5cc9340ca7427a42c3143a8530a4e8105b2afb93f6777"
+
+[[sources.files]]
+path = "brain/wiki/quality/grand-audit-upgrade-quality-output.txt"
+sha256 = "sha256:d8abae16dfafac02aec32dab9ab01dde4e104e121643a46d3529e3007990d9ab"
+
+[[sources.files]]
+path = "brain/wiki/quality/Quality Gate Failure Modes.md"
+sha256 = "sha256:697841f7290200d9cdc95260be082ebf19181c04c0f9ab1fff2fef1b27cf4d8b"
+
+[[sources.files]]
+path = "brain/wiki/quality/Quality Review Evidence Log.md"
+sha256 = "sha256:f78b9440e702327ca860366070623237ba710e900d6a86b99187a9e1e0e2d0f0"
+
+[[sources.files]]
+path = "brain/wiki/quality/Quality Score Rubric.md"
+sha256 = "sha256:8eb76e5e5503d50e5f6551d61ad47cf1b636677040c5aa80bc73cc592757a0e6"
+
+[[sources.files]]
+path = "brain/wiki/quality/Recommendation Confidence Labels.md"
+sha256 = "sha256:ae7dbebc6ad57eeacd214b24b661d106df233b8b5f73cc2ffcbe54d42839b1d5"
+
+[[sources.files]]
+path = "brain/wiki/quality/Rollback Note Patterns.md"
+sha256 = "sha256:af7a2935406d91950a729f8912fcc67cfd455c093c6cad79cc176c2d57c93c21"
+
+[[sources.files]]
+path = "brain/wiki/quality/SEO Intent Subscore.md"
+sha256 = "sha256:62e315e2d02883617f7227d8aca93a5a054a770c06cbf0acca6fb5941ae78042"
+
+[[sources.files]]
+path = "brain/wiki/quality/Technical Schema Subscore.md"
+sha256 = "sha256:da51d71c405be627d1c3a70f61901c96bd8d3df9835c3b5339761e170f55de3d"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/_index.md"
+sha256 = "sha256:e04eabad7c64f303579eaaa58f5e787d5c607ce0d97bd7062ccdfe7a0c5868f9"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Content Consolidation Rules.md"
+sha256 = "sha256:43ab9db99819addc1a056c76613da24b93e46a7571576f7b966ea815bf999098"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Content Decay Detection.md"
+sha256 = "sha256:10af186a53f94a23f79f7188c61863b696755661a2bdb9f312b0b2013f695f97"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Decay Segment Prioritization.md"
+sha256 = "sha256:83a044e722daf8ac8c0fa0aa64002add2699951e2c16334d10b7d16470d18467"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Freshness and Content Decay.md"
+sha256 = "sha256:a4cab7fd405a3898418d6a304760b9b4b4924374209a5609bf4df19a5ecda7c9"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/grand-audit-upgrade-rewriting-output.txt"
+sha256 = "sha256:fd39d1d6dbfa42499267a44224e9e0b21142ea1c762763d76ba459db2b805eeb"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Historical Performance Review.md"
+sha256 = "sha256:6570de281a8d94817c4c7c7666d4282219d0d8c81f28ab6ae376a8c71b2f5a03"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Intent Drift Audit.md"
+sha256 = "sha256:efd864c1bbd573333f71540ecd79de59a2e2e4cee7715f8361acfeb787221a7c"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Pruning Advisory Checklist.md"
+sha256 = "sha256:cecb4069cad4cfe43dac8c54468500982c3208188034a68821d7f5a81e8c080c"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Refresh Versus Rewrite Decision.md"
+sha256 = "sha256:508e4228e6881ee433a53b7485e3ab8694a26a128de1e0aef164ea45ba4bd127"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Rewrite QA Checklist.md"
+sha256 = "sha256:16fe7925b9be877c94b064eec677907505be093cb47a48e7e9cbea94d5d8f535"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Rewrite Rollback Notes.md"
+sha256 = "sha256:38ce7c1fb95f3ec53efeb08ea1d85c6a11fb883c05f9e34a45c24a7924d7947a"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Source Refresh Workflow.md"
+sha256 = "sha256:6e2f856b6dda9a5a3f653941d61399a1e4cededb7975e871a2e4a70e4b92c6dc"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Stale Claim Register.md"
+sha256 = "sha256:f8391c3f44a907bd9aeecb2e29351596bfdad8f4ac0f9a8679ee991e41eee208"
+
+[[sources.files]]
+path = "brain/wiki/rewriting/Update Timestamp Policy.md"
+sha256 = "sha256:e2997fc9f1f358c67e41ce3fa5fb90f00508097bc03ed5c45f76434b3167a853"
+
+[[sources.files]]
+path = "brain/wiki/schema/_index.md"
+sha256 = "sha256:d02997d671b61ea89bae0c71d7263a5b895325199ddfa8f1a1e6acf58dca45b7"
+
+[[sources.files]]
+path = "brain/wiki/schema/Article Schema Baseline.md"
+sha256 = "sha256:c134346a7690082cccd2b702ce172bd0c6aca6ae7cd4d1783b0cba5570022c15"
+
+[[sources.files]]
+path = "brain/wiki/schema/Author Person Markup.md"
+sha256 = "sha256:72184214a9a6559c6cf31be540d2c7f53fbaba2315de3280363284c18f80356a"
+
+[[sources.files]]
+path = "brain/wiki/schema/Blog Schema Stack.md"
+sha256 = "sha256:d953107c4bbe5709a591c519bb63e05f9fce020a472086284ff5e4ad4b7ddbe8"
+
+[[sources.files]]
+path = "brain/wiki/schema/BlogPosting Versus Article.md"
+sha256 = "sha256:a3aed92619146a1ed647982006a14e016d60d16d8c7d18efa4734c9f2a47735c"
+
+[[sources.files]]
+path = "brain/wiki/schema/BreadcrumbList For Blogs.md"
+sha256 = "sha256:1dacdcc18194f4062e9af87793e8b25a247c31ebf2c181b704a7ccc35249a112"
+
+[[sources.files]]
+path = "brain/wiki/schema/grand-audit-upgrade-schema-output.txt"
+sha256 = "sha256:efbff4fe6f3d9b7ee4592d5e5ed55fdb0fe94f762dc253b0b8a751e74bb81b95"
+
+[[sources.files]]
+path = "brain/wiki/schema/JSON-LD Publishing Checklist.md"
+sha256 = "sha256:41a0991d662e4e9c749eb5713cd81949a3beec17863eeec2d44b3a893bfd57ba"
+
+[[sources.files]]
+path = "brain/wiki/schema/Organization Entity Graph.md"
+sha256 = "sha256:23b89fad4b6c536c6022476df1fb08228a27118b613832a4ce90c5bd7739fb08"
+
+[[sources.files]]
+path = "brain/wiki/schema/Product Mentions In Blog Schema.md"
+sha256 = "sha256:df436816a596b7d239c00e0ec23e2b00acf87e6729dada94bbab9688fc5818f4"
+
+[[sources.files]]
+path = "brain/wiki/schema/Schema And E-E-A-T Alignment.md"
+sha256 = "sha256:24a3076a1fd99bfa34ff66116fbb9f8f1832b34f0e055b330122ab31b6d4322f"
+
+[[sources.files]]
+path = "brain/wiki/schema/Schema Validation Workflow.md"
+sha256 = "sha256:e9c2a057425a9acb4a9a394ef65da60d7cd761b1a294490781a8b6eb75147596"
+
+[[sources.files]]
+path = "brain/wiki/schema/Structured Data Deprecation Register.md"
+sha256 = "sha256:a09d579a701f6cadaba02d5e7e7c63c27c9705096692ede9929748b6f2e6ac1f"
+
+[[sources.files]]
+path = "brain/wiki/schema/VideoObject For Blog Posts.md"
+sha256 = "sha256:2977287a0e6cbad63b9d197bc8065b4fa2b3ccb1f90dedbf579fd36654e6f281"
+
+[[sources.files]]
+path = "brain/wiki/schema/Visible Q And A Without FAQ Rich Results.md"
+sha256 = "sha256:8974b83868d2d20df1c0726ee28db6fdfc92d57a47844f0affee90639f7ee1da"
+
+[[sources.files]]
+path = "brain/wiki/sources/_index.md"
+sha256 = "sha256:0d29bbd585fc6f00660e632fcd36176d59d0e8fee533b2d49077b37cfc059c5d"
+
+[[sources.files]]
+path = "brain/wiki/sources/Canon Notes Map.md"
+sha256 = "sha256:dc11825ce20322d3be622194c83c670f3930f4d83de2f1806a5caf06fec3045e"
+
+[[sources.files]]
+path = "brain/wiki/sources/Claim To Source Mapping.md"
+sha256 = "sha256:09ba38e465d0d716d8e5610479a07444401ec44b201bf857567ba244ec6225fa"
+
+[[sources.files]]
+path = "brain/wiki/sources/Claim Verification Flow.md"
+sha256 = "sha256:07d1d77ed4e221e01e73d5fd17214256c13b56ce99a80dc8d5dc3350dce75b74"
+
+[[sources.files]]
+path = "brain/wiki/sources/Current Requirements Digest.md"
+sha256 = "sha256:39d41e1e4ceae68aae3b535c85ec8876c9e6c086db0262e9a97925b987aab783"
+
+[[sources.files]]
+path = "brain/wiki/sources/Evidence Gap Register.md"
+sha256 = "sha256:9832385f1239911433365b2a969543c331a8ff1de4fadbac05b0819923eef5bb"
+
+[[sources.files]]
+path = "brain/wiki/sources/Google Source Priority Ladder.md"
+sha256 = "sha256:dcbdb192da20ad1b00bfce1b0da7d229f727b4ad8753cb10b51e7d35db943bb5"
+
+[[sources.files]]
+path = "brain/wiki/sources/grand-audit-upgrade-sources-output.txt"
+sha256 = "sha256:82d07b5512da7099c2b2991b599fec72349b9f82ba2b0db02b9dc8bc7e3813ce"
+
+[[sources.files]]
+path = "brain/wiki/sources/Practitioner Source Caveats.md"
+sha256 = "sha256:943dafc0a4f8bf604a45c39d8c6633c4517c5c1b9bbce12ebab9093204d9d905"
+
+[[sources.files]]
+path = "brain/wiki/sources/Primary Study Source Rules.md"
+sha256 = "sha256:b054dc2beffcd71e7820e9efe56d254a786b9b75027f9d99bf62e8f16e82c268"
+
+[[sources.files]]
+path = "brain/wiki/sources/Research Pack Index.md"
+sha256 = "sha256:7025968d832c3e2173238a59f2b5ebf556034ccef0c20ffc605c2eb95ebf452b"
+
+[[sources.files]]
+path = "brain/wiki/sources/Research Release Gate Notes.md"
+sha256 = "sha256:34d60ea89847ecc4df9636f9272a0f842e1880e23760a04124e4cf2c51564ea6"
+
+[[sources.files]]
+path = "brain/wiki/sources/research-pack-2026-07-06.md"
+sha256 = "sha256:c42ac41227a522f4ffe9311aeb6d62963c76c8adcf68a3bd2dcda17b71f20a40"
+
+[[sources.files]]
+path = "brain/wiki/sources/Source Confidence Labels.md"
+sha256 = "sha256:ce089e267c13c31a9d8a283068400c201fc401f5ba32baf381243746650d5eb9"
+
+[[sources.files]]
+path = "brain/wiki/sources/Source Ledger Reading Guide.md"
+sha256 = "sha256:d4243abe43d6cec599283c092fa5864a05cbc5320291b32cad4f35396b34757e"
+
+[[sources.files]]
+path = "brain/wiki/sources/Source Refresh Cadence.md"
+sha256 = "sha256:53d50377acdb9a3249c3c024ab67e29439a46bec1dffcfbb02b319fae759f5e6"
+
+[[sources.files]]
+path = "brain/wiki/sources/Source URL Canonicalization.md"
+sha256 = "sha256:75a0ff3f7e0c0c130bc82988da908cffe76195a8fad37dd7871d9b600d2087d7"
+
+[[sources.files]]
+path = "brain/wiki/writing/_index.md"
+sha256 = "sha256:ca2e7c4da559afef8f83bc55a657429832c48e45f07cbef6f7179bb212fb89a6"
+
+[[sources.files]]
+path = "brain/wiki/writing/6-Pillar Dual Optimization.md"
+sha256 = "sha256:6a37fe8ded471d5aab980a5588a365dc761ab7e1be993377bb98c871c7cba839"
+
+[[sources.files]]
+path = "brain/wiki/writing/Answer First Section Pattern.md"
+sha256 = "sha256:6cfc7cf896216eea3f4f5671d6d5cd697be1d0d57046c34256af95d51d708341"
+
+[[sources.files]]
+path = "brain/wiki/writing/Blog Conclusion Patterns.md"
+sha256 = "sha256:92498723d2f2b2b04cd5a5a2a874f2bb2787b3f939f789558207d1f94e027105"
+
+[[sources.files]]
+path = "brain/wiki/writing/Blog Introduction Patterns.md"
+sha256 = "sha256:7c30f2642ddd499d76eb3e0d0f16500316e2bbcc730c4cb106d2e3c73d41a3b3"
+
+[[sources.files]]
+path = "brain/wiki/writing/Citation Ready Paragraphs.md"
+sha256 = "sha256:9b5523ae4877942358e8726c92cc2e540d17aa619e9e706f3916cd34c219a853"
+
+[[sources.files]]
+path = "brain/wiki/writing/Claim Source Pairing Pattern.md"
+sha256 = "sha256:0b268c95b87e2b1eff400ed8b24c3c2b13b6b40ce96d161d77607d168bcf3cfa"
+
+[[sources.files]]
+path = "brain/wiki/writing/Evidence Density For Blog Posts.md"
+sha256 = "sha256:cce42841bc546b91e35c52a4aad309a8ddd13ee4a174c3bc57e2a735dbe88ae9"
+
+[[sources.files]]
+path = "brain/wiki/writing/Experience Signal Placement.md"
+sha256 = "sha256:8ce08e8300d899b1ea2ff4eae003b99f4f5435c3c16948856c12f818aa94f0ce"
+
+[[sources.files]]
+path = "brain/wiki/writing/grand-audit-upgrade-writing-output.txt"
+sha256 = "sha256:8f2175a9b463229dd67a647035f03b367784c2b0c5373d0fa0f9b5b0a728bdb8"
+
+[[sources.files]]
+path = "brain/wiki/writing/Information Gain Checklist.md"
+sha256 = "sha256:62500cd59a0145d9dab61319a2fa1b268dcf3f0e64cf030b4127359065cd942c"
+
+[[sources.files]]
+path = "brain/wiki/writing/Intent Fit Writing Pass.md"
+sha256 = "sha256:501dd97060dfcf2b5ee799ba1891792cb865222f5fceee9295d226a23ca3cb88"
+
+[[sources.files]]
+path = "brain/wiki/writing/Internal Link Placement Rules.md"
+sha256 = "sha256:946474608348fd71755da06ab4642d6df25494a45d66ce1c41d5a0648da11241"
+
+[[sources.files]]
+path = "brain/wiki/writing/Reader Satisfaction Test.md"
+sha256 = "sha256:27634ed27ec4e27ab871e8e29053f58804929769830a8ac9409d967577b00da2"
+
+[[sources.files]]
+path = "brain/wiki/writing/Six Pillar Editing Rubric.md"
+sha256 = "sha256:afaac07c7258a1df7ece8ab3314a70fceb02e0b56de907c059c5c95558b980b7"
+
+[[sources.files]]
+path = "branding/final.html"
+sha256 = "sha256:ac0af094a488de51cffe57c3ddee8e9cd75b406de9f4099fb7a34ccfef5b387f"
+
+[[sources.files]]
+path = "branding/README.md"
+sha256 = "sha256:cdbfecf4f29a8342a94efc26094c575dc7859d79a7f7df380549d48df1e13999"
+
+[[sources.files]]
+path = "branding/scripts/generate_diagrams.py"
+sha256 = "sha256:765e3a02eaf50ce5d34a8702f32689e7d193b099ef9d3787f1ba3e5cec9b8b1b"
+
+[[sources.files]]
+path = "CHANGELOG.md"
+sha256 = "sha256:512410953314d47f9655244a3396765b7a824dbebaed78d5b7659472d0dd0702"
+
+[[sources.files]]
+path = "CITATION.cff"
+sha256 = "sha256:50f78db4928e47d80b5843efbd747825266c02e45b20d47580e901caab1a3fa0"
+
+[[sources.files]]
+path = "CLAUDE.md"
+sha256 = "sha256:8d74f129c405528d95e5dbdf3e27083fbb89eebc7d212e5c64ec4ae4c20da018"
+
+[[sources.files]]
+path = "data/google-updates.json"
+sha256 = "sha256:fe1d03b33e3a640f327738a3a425600919223a329dbbf006800e8e79a53c583b"
+
+[[sources.files]]
+path = "docs/ARCHITECTURE.md"
+sha256 = "sha256:c6aa0d95d33fddd116a38304bc4359d88c023c444a70fa228f0424267d2a94c1"
+
+[[sources.files]]
+path = "docs/COMMANDS.md"
+sha256 = "sha256:0cececab4d9b9a8b4f527372d12384b8fd7807916d74ec4391f89f805a5f7b50"
+
+[[sources.files]]
+path = "docs/CONTRIBUTORS.md"
+sha256 = "sha256:02fae9354f4b37f07223eaa935353b07a6c83dcb5461b25bd9900d35df5c63f6"
+
+[[sources.files]]
+path = "docs/DEMO.md"
+sha256 = "sha256:7ea6b2afd5baa483397970763414ed710d038a7fb1b558588b4ca7a7e46a47ce"
+
+[[sources.files]]
+path = "docs/INSTALLATION.md"
+sha256 = "sha256:b4ac150dd4ea804625e393936951aa6a657e4dcbf84e9f758de84f22d7e60a64"
+
+[[sources.files]]
+path = "docs/MCP-INTEGRATION.md"
+sha256 = "sha256:279eb0c73d9602aefd435fe47c60246bdc9d1ad0e0ca89293c89ab0a87b73c52"
+
+[[sources.files]]
+path = "docs/PRIVACY.md"
+sha256 = "sha256:48caf1bdb2a99e30704ded5fdafad2c7700d15525ad2a88e269bb123f698ffdc"
+
+[[sources.files]]
+path = "docs/PUBLISHING.md"
+sha256 = "sha256:e4c9f6728a31db01453a004ad4bbba84dcbc6682bae810d6ee2cf90975c8c95b"
+
+[[sources.files]]
+path = "docs/RELEASE_CHECKLIST.md"
+sha256 = "sha256:5d4c830389d44f2c5d9dcacd83ea40bedbc90b1a4733d979d722fa3242e211d1"
+
+[[sources.files]]
+path = "docs/TEMPLATES.md"
+sha256 = "sha256:2c645eb9413cf89b080fef8ac00c9a19a99f2bb7cb7807cdbd2feec4541f79b7"
+
+[[sources.files]]
+path = "docs/TODO.md"
+sha256 = "sha256:c18fb986d445f5c98cec2de3a6c3f3bf4c2f87a3dc284514f94469f5ce6fb877"
+
+[[sources.files]]
+path = "docs/TROUBLESHOOTING.md"
+sha256 = "sha256:b57b29c601c416f30f6a1e153867504fae10f62d012b1bd00aa97901d8e565e6"
+
+[[sources.files]]
+path = "install.ps1"
+sha256 = "sha256:0893f15fdaebaa5d8d391a03712c67d76c7bd032ce15182c40e50e5cf562be9e"
+
+[[sources.files]]
+path = "install.sh"
+sha256 = "sha256:b4fcd5aa6767529bc8d11017699bd8211519c93b0d6c28c5cf032f76ada98381"
+executable = true
+
+[[sources.files]]
+path = "LICENSE"
+sha256 = "sha256:1ed335ede0a9219040a4c72bfe8d9a8fe4d7315b0e99b9e23ce240d267ce82a9"
+
+[[sources.files]]
+path = "NOTICE"
+sha256 = "sha256:d55d027b4e159c562dc7d96a6413174730dcdbd8bbf912829a4b65091d8ab4f8"
+
+[[sources.files]]
+path = "pyproject.toml"
+sha256 = "sha256:3880adc2fffc2c045434b6d04c7447dfbe6f50257912e462b39748ffffc3b6cc"
+
+[[sources.files]]
+path = "README.md"
+sha256 = "sha256:77d2085a657d75ccd2ede8b22d95c62712f138c7cf06bdb29faa96c39bcaae96"
+
+[[sources.files]]
+path = "requirements.lock"
+sha256 = "sha256:46ba09d1a1f8d2bcbce497a9c5be08b237e630cfe8a8cacfe3bfbbe8659d3b52"
+
+[[sources.files]]
+path = "requirements.txt"
+sha256 = "sha256:15daea3a13951807bf0f9d7dba257434f8caa4335a30e0127e5568ba6af1234a"
+
+[[sources.files]]
+path = "scripts/ai_citation_score.py"
+sha256 = "sha256:43ded191f35d50da4b21ea3fe8adf85c691b54db241880acd531651963918877"
+
+[[sources.files]]
+path = "scripts/analyze_blog.py"
+sha256 = "sha256:3417a53f8c2c61db80c7d8fd79507af31a3d93d06410bda55d685a381b2e6de1"
+executable = true
+
+[[sources.files]]
+path = "scripts/blog_hygiene.py"
+sha256 = "sha256:fb6c1caf0ae0818cc02a946ef65643a3db4529d251fd1e1c944bfcab963ae020"
+
+[[sources.files]]
+path = "scripts/blog_preflight.py"
+sha256 = "sha256:f2d363ff3d60100464561e4087f4063677f390d757851b58776d30f7a1f57cf5"
+
+[[sources.files]]
+path = "scripts/blog_render.py"
+sha256 = "sha256:b764527fa3d3c8add4389ff2edd500ca1f24de4dfb3c5ae1607bc4d656948b14"
+
+[[sources.files]]
+path = "scripts/cognitive_load.py"
+sha256 = "sha256:acd51e54a1a20448b581b91b2a1c6cfc3f8450eb84993261bd0d0cbc6b07bf49"
+
+[[sources.files]]
+path = "scripts/consistency_check.py"
+sha256 = "sha256:9e413bbdbe471658d9e919958b926f81dd69865d343db9e05970d7232356b82a"
+
+[[sources.files]]
+path = "scripts/content_decay.py"
+sha256 = "sha256:1d7ea72cd50661ac2fe7c2ab5fdd71be8ff1effa16fd401d786cf22d7549d1be"
+
+[[sources.files]]
+path = "scripts/dependency_smoke.py"
+sha256 = "sha256:73c537cabae891375a139100e6efc4accd09e7d428874981d04772065df073e3"
+
+[[sources.files]]
+path = "scripts/discourse_research.py"
+sha256 = "sha256:ff16e0eb1cc3c8abac4c970ada1884ccebc49416fa2fd0b2e1ffaf514d2801aa"
+
+[[sources.files]]
+path = "scripts/generate_hero.py"
+sha256 = "sha256:6cc7068794477ac481f772698bd44d266a76d1877634b6d7f1e8576fde276ac4"
+
+[[sources.files]]
+path = "scripts/lint_prose.py"
+sha256 = "sha256:28a34ded79880d25bb19c9808c13d950b7ef00b22f52817a963d7a336ea888fe"
+
+[[sources.files]]
+path = "scripts/load_untrusted_root.py"
+sha256 = "sha256:fff64fe01f1fbea13f6b76f94dc4c7ea70c83adc0b3bd070b431b79214ce7ae3"
+
+[[sources.files]]
+path = "scripts/quality_gate.py"
+sha256 = "sha256:170740511f28cc3ba461a309eb1263cf8ffea997421b29402055c64355acb200"
+
+[[sources.files]]
+path = "scripts/style_learn.py"
+sha256 = "sha256:6b3873f4a4c27928db7a5f80338a4211a20a460df4ed7385e3a4d8381d53f1b5"
+
+[[sources.files]]
+path = "scripts/sync_flow.py"
+sha256 = "sha256:4e4459d42f884e7d8ecf9dfb01fe39ea6529f2f951198a521b87e800748f914f"
+
+[[sources.files]]
+path = "scripts/validate_public_release.py"
+sha256 = "sha256:bb057cbe666b53e07db41a99422f49e4dba6ddaf32ad33c1fed90ada7fbe2cdf"
+
+[[sources.files]]
+path = "skills/blog-analyze/SKILL.md"
+sha256 = "sha256:a0256d77fa9c0eccbfd26f21ccc50795902b39bd4f3a4b512bae4b8a9177d1be"
+
+[[sources.files]]
+path = "skills/blog-audio/references/voices.md"
+sha256 = "sha256:a43085b27660a02cb149d805ca8db5aa030d08c94e27331c294c7960482a8168"
+
+[[sources.files]]
+path = "skills/blog-audio/scripts/__init__.py"
+sha256 = "sha256:f035fa7f2922bce0800a2c8f1592163d643e4fde757158f061cefe954e95ca67"
+
+[[sources.files]]
+path = "skills/blog-audio/scripts/generate_audio.py"
+sha256 = "sha256:2a025d743aa42e2332f6436042b6e43c2ddd54a5a0704a79dbf94e0e0df1685f"
+
+[[sources.files]]
+path = "skills/blog-audio/scripts/requirements.lock"
+sha256 = "sha256:12b56fe9e30ffb432a34fd7c8fd00435200817980a9a365dde34f8b198c9d53e"
+
+[[sources.files]]
+path = "skills/blog-audio/scripts/requirements.txt"
+sha256 = "sha256:39d9fe4652988b678babb1dba4665921e976ca4c0472bc8a22b18f0237810c71"
+
+[[sources.files]]
+path = "skills/blog-audio/scripts/run.py"
+sha256 = "sha256:e5c8ba1b27ce186326698cf838edfc506cc35c36498581e1be2b57ddaa416242"
+
+[[sources.files]]
+path = "skills/blog-audio/scripts/setup_environment.py"
+sha256 = "sha256:52e7ae33fa5e89660f48c615ebcf65bf11a361b0d96da0c671ccd0b98fe1945c"
+
+[[sources.files]]
+path = "skills/blog-audio/SKILL.md"
+sha256 = "sha256:27d6e9337a80e271127f40ff975dc9fe906071548a8c70164ded3dd75a755e67"
+
+[[sources.files]]
+path = "skills/blog-audit/SKILL.md"
+sha256 = "sha256:e9c8808b7f4ccfea5f445893579d281e87cc37e8bc5c6f0934ba258ccd1e4b93"
+
+[[sources.files]]
+path = "skills/blog-brand/SKILL.md"
+sha256 = "sha256:673d0e64bf074cd8de3086386f05652716bb3c2ef43f5a14ce003f7435237b58"
+
+[[sources.files]]
+path = "skills/blog-brief/SKILL.md"
+sha256 = "sha256:a992bf619b0ac32f45b4e6879eb225446cfb0e54334b6aabd35ea6ab35ce5e0a"
+
+[[sources.files]]
+path = "skills/blog-calendar/SKILL.md"
+sha256 = "sha256:b83374a9835030949c240f91fd6de01f15e6c4a14849a4c54e2244f37fb2567b"
+
+[[sources.files]]
+path = "skills/blog-cannibalization/SKILL.md"
+sha256 = "sha256:f9b73ebc79ddd3d243ecce574d970b86aaccde913b9c4037a36224d9de2252d3"
+
+[[sources.files]]
+path = "skills/blog-chart/scripts/generate_chart_svg.py"
+sha256 = "sha256:32ef0a13b97c879121a5e2809dc65a2cb55c4743a2ec60a8baef8134b9f63e0c"
+
+[[sources.files]]
+path = "skills/blog-chart/SKILL.md"
+sha256 = "sha256:a0e9a5999333668b6eedecf57578984c46a94b46da74c21717812299840cfd6c"
+
+[[sources.files]]
+path = "skills/blog-cluster/references/cluster-architecture.md"
+sha256 = "sha256:20cec194ac746bc857055ffa567a3806b074434c472bbc9005b922db0944f6b0"
+
+[[sources.files]]
+path = "skills/blog-cluster/references/execution-workflow.md"
+sha256 = "sha256:1f23a4d66cc6f63edd0e70a57c06153bd5e97f9037a7cdd7b3688292e48bcf29"
+
+[[sources.files]]
+path = "skills/blog-cluster/references/semantic-clustering.md"
+sha256 = "sha256:81c9730b79d59d6fe75a97d86709c015a7240ead9f31384f0927e8134e767461"
+
+[[sources.files]]
+path = "skills/blog-cluster/SKILL.md"
+sha256 = "sha256:3fc39c706a3dd620b34e76217969ef4977e8e60b6ae7564c9d30ab4f3b1c76c6"
+
+[[sources.files]]
+path = "skills/blog-decay/SKILL.md"
+sha256 = "sha256:7371597aa5fe8a931a8c88d8de12a6b2e2d8224a51048c2597d79c445fc52776"
+
+[[sources.files]]
+path = "skills/blog-discourse/scripts/discourse_research.py"
+sha256 = "sha256:232dd30c6e91a83ab169c0798c372bde6ea723273f54dd2f503cf392ef2c3a87"
+
+[[sources.files]]
+path = "skills/blog-discourse/SKILL.md"
+sha256 = "sha256:b7e30c2666076bcebfef746b7ba14be4c533c642b7bef287e6e636b741e38e2a"
+
+[[sources.files]]
+path = "skills/blog-factcheck/SKILL.md"
+sha256 = "sha256:b8dd61f0d5480dfb31f9fd4d12a4909ade41fdc489bb1de5248a17455e1c1765"
+
+[[sources.files]]
+path = "skills/blog-flow/references/bibliography.md"
+sha256 = "sha256:48e7813662dd84a92b91fb5ef433a97da1e569f6f86e6959f3c2e59bbf85c924"
+
+[[sources.files]]
+path = "skills/blog-flow/references/flow-framework.md"
+sha256 = "sha256:4e654aafe95e5a0e322cf18a01cc240c2f02a1154ac17e92add232872f78962f"
+
+[[sources.files]]
+path = "skills/blog-flow/references/flow-prompts.lock"
+sha256 = "sha256:711d20cc3c47709505c190819e9d076ed8aa56479a757e7ca1e99131a62024d7"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/find/content-planning-for-topical-relevance-prompt.md"
+sha256 = "sha256:9b2aab25c21547167f4bb6badc8a7ef3d6411b7addccda5de42c5f102e295f9b"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/find/content-prioritization-prompt.md"
+sha256 = "sha256:7f82500eee43f13c3b93f9f7f7b0270c8878e60177cda4f0ee288cfac4d3a655"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/find/keyword-research-prompt.md"
+sha256 = "sha256:c5529e292663d95c155319d9decc43534814e718298d0190320a6e92c9a0ed18"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/find/keyword-variations-for-topical-relevance-prompt.md"
+sha256 = "sha256:b650ed30e94e7138b2b6e1457f8e0d28c6765fc97c9438ade2a340f632e8b517"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/find/prompt-audience-avatar.md"
+sha256 = "sha256:62c5847878890a6b540012db0e29afda6cd511264e428242cb51a48e45ff03f1"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/leverage/backlink-competition-prompt.md"
+sha256 = "sha256:cb148a3d698152d98cb63fe0c15ce1caf8488d858afb822d54d972e7f25c1c21"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/ai-detector-test-follow-up-prompt.md"
+sha256 = "sha256:c749937b806da105e3514be11a3f0e6d98605d8ab5ad5d5beed4ef676d11021b"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/ai-supporting-pages-rewrite-prompt.md"
+sha256 = "sha256:462f4221ba7fd24a84ae732ee79d91eedd1c850f8eb312e8cf2b39d1f867138c"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/basic-prompt.md"
+sha256 = "sha256:d984730765d5276bf10084ad40e854fa9058c894249bd760338d1f12c4e951e2"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/blog-post-outline-prompt.md"
+sha256 = "sha256:17b4dd82121f1914e0b08cfa14a483ff03ac49a0c03c351013c39cab8893e742"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/blog-post-writing-prompt.md"
+sha256 = "sha256:9a45d9765d98349d31b2961080e0222d9e41f90f062ca9eef6ebbcc3ee8c7a29"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/claude-prompt-1.md"
+sha256 = "sha256:36bb200c02f31f29fdfd0791d4e9e76ec073eeafa4d49ab7a9440a0b09a35072"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/claude-prompt-2.md"
+sha256 = "sha256:ac5e96dfdf0a7a05c7aba648d6ed8eeecb215b1ff61215ba916907752aacfba5"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/ctr-audit-prompt.md"
+sha256 = "sha256:3ddb7665f720b6dddbaef4b4ce114ea5cf81d78fbdd960a6b0b9407afe2b60f5"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/follow-up-prompt-1.md"
+sha256 = "sha256:e314979fe161797349169606e7d22dd495bf4a857d5999f9e633028dae15acc7"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/follow-up-prompt-2.md"
+sha256 = "sha256:31b58c5ce1acd0fadf46d34c29959f81b88feb819a7d50fa630226fdfa0bf37c"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/follow-up-prompt.md"
+sha256 = "sha256:add172a3798a7108c9a5983474e74a88f0d675523a305dabb460b0c37c2cae60"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/paa-question-rewording-prompt.md"
+sha256 = "sha256:7efe4cc586725ffb229dafdb27673ce4e1818aa51f5317ebf9788c4921262474"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/prompt-core-30-content-audit.md"
+sha256 = "sha256:1c352400687d41c6f775e72f2ccd69a92cae2c4329c9080edf918e6eb9245084"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/property-content-with-authority-audit-prompt.md"
+sha256 = "sha256:d60dcbe5899c15a991e242e11eec25175244a5f5514dfe524265d6eb21e84382"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/reddit-claude-prompt.md"
+sha256 = "sha256:be3e1c0cada8cd1c8e161391657fb31cc6dce121d1cfd0fb1c7eca9f7e3ae545"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/schema-prompt-1.md"
+sha256 = "sha256:8301cc7ebe7b5ff56f2f33997dc0d1658faf926066ef08122025552f3e1ec000"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/step-1-the-chatgpt-discovery-prompt.md"
+sha256 = "sha256:6bb1b93f145938bc137a0296d02abdb599d0a35b27c58e5a8a15be76088d778f"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/step-2-the-follow-up-qualifying-prompt.md"
+sha256 = "sha256:cc7a08cf4b62a973e18e62f1700017ac03fb68e2dde1d54335b73d04c76682e4"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/technical-audit-prompt.md"
+sha256 = "sha256:90e4a87501931f3bfe43ba54c2c91d45607da43c73df52305e391350de5cb90e"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/visibility-follow-up-prompt.md"
+sha256 = "sha256:21c6a2d30a54b41fe9134f8c08d72d77a9a98cb3496d99285d17239dde4aef8b"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/optimize/visibility-prompt.md"
+sha256 = "sha256:8dc3883a11fc46012dfe6d57dec13909f4b392992745b8b0001be4c0fc68993c"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/README.md"
+sha256 = "sha256:4441433d01f810580313854721edca56a96492695f8c8c4403061ca7466b99cd"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/win/bofu-page-brief-generator.md"
+sha256 = "sha256:608fa79a2baecf4829f64b6ef699b5f0164c74e1d52973afa280cdb11054c31d"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/win/conversion-audit-prompt.md"
+sha256 = "sha256:1ed348a1e364110161b5d89aef4fb8ae7d429e7ed836d6e0e306270cf7e80063"
+
+[[sources.files]]
+path = "skills/blog-flow/references/prompts/win/dual-surface-content-scorecard.md"
+sha256 = "sha256:9b8996cb72a1cd07ccd966e7402366a1a31483e07819d7093ef941f160824e28"
+
+[[sources.files]]
+path = "skills/blog-flow/scripts/sync_flow.py"
+sha256 = "sha256:af9529e2a5fad14aa3445092c180f4b83dc48e703e704b6ec71fcf8f0fdb7f74"
+
+[[sources.files]]
+path = "skills/blog-flow/SKILL.md"
+sha256 = "sha256:b3a642aa89b657d16c0c10472a3e57ec250f8e519d859758500cedddc29b9b80"
+
+[[sources.files]]
+path = "skills/blog-geo/SKILL.md"
+sha256 = "sha256:650a39d02aaa03cd4083286ec6f0346bef2268a732ede0b26f24a6a967149b90"
+
+[[sources.files]]
+path = "skills/blog-google/assets/templates/cwv-audit-report.md"
+sha256 = "sha256:94e81dd051757c8fe588756206eb83cc2d1c3907a76610862f01a1bcd1c2ac5d"
+
+[[sources.files]]
+path = "skills/blog-google/assets/templates/gsc-performance-report.md"
+sha256 = "sha256:0e11d334bde19d36fdbe6769633f3f81b2584014c394217434b5f0214f378843"
+
+[[sources.files]]
+path = "skills/blog-google/assets/templates/indexation-status-report.md"
+sha256 = "sha256:afc337905d82f83659a229382432876edba9bd9af6e589b3e4de4786974f13b3"
+
+[[sources.files]]
+path = "skills/blog-google/references/api-reference.md"
+sha256 = "sha256:c128c117e2fba0e6af5012c540c6996982f27d2e040d8abdbffdd27ecd0577a6"
+
+[[sources.files]]
+path = "skills/blog-google/references/auth-setup.md"
+sha256 = "sha256:aab207479bde594791215d0b5e25570f10a0908e76e1438054e125b2ac582348"
+
+[[sources.files]]
+path = "skills/blog-google/references/rate-limits-quotas.md"
+sha256 = "sha256:8ab54974bf45e575dc015f414da74104a0fee7f04ed83caaca754802c4a37ae1"
+
+[[sources.files]]
+path = "skills/blog-google/references/search-currentness.md"
+sha256 = "sha256:d229d16d0d7cb63082a5d98b86e28aed8a2e54a237a600d7c390425b1bf86c42"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/crux_history.py"
+sha256 = "sha256:ba113ee7fd0206e6d9486d1fa80bb6799572d91f1afe8d5ec72f3094b7ea0b09"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/ga4_report.py"
+sha256 = "sha256:6b2108de4e946d9b5235057fff92c2f383965b4544b600b2cef4a7b1e179063d"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/google_auth.py"
+sha256 = "sha256:f59efe54c4441c191528716a1fd1871391ed51d59735c322bbe4356fd49296bd"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/google_report.py"
+sha256 = "sha256:23a16465daa5f355f6fd49327474b097fcacdb98355119c8b10a9311d4e1c77c"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/gsc_inspect.py"
+sha256 = "sha256:85ab423d1da0ed2135afae39f604fc7dac1e192521c63565a8cb57a8fb562bb2"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/gsc_query.py"
+sha256 = "sha256:b909fd8e38a88f2ac55a1585de3bac40e6b84ac1115905084bf9d1f0ee5bb167"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/indexing_notify.py"
+sha256 = "sha256:06d88bf13dda4cfa260e6a5a6e79a752f2ee194674efd35d6edf08f4bda7a50d"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/keyword_planner.py"
+sha256 = "sha256:c1abc75af57ecff328b4bc29cd2e22db3e9bac9b48a74983b9ec313d7c094849"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/nlp_analyze.py"
+sha256 = "sha256:dda9ab56a0ffda90a52af4d32a79ee168b92e40fab9e0dc3564e3906886aa58f"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/pagespeed_check.py"
+sha256 = "sha256:ab530e2919aba38dec4ac01cbe38aef94121259454be1211854ae793e9b4bf47"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/requirements.lock"
+sha256 = "sha256:5dba489b37ca128e3d8d3739626febb0a7b171ec5463cfc1c4e2366e0f6925a4"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/requirements.txt"
+sha256 = "sha256:51ebf99b98fdd3e631a09f2e045ecbe0dc0f28de85ec3ebd7404d78f2a1bc7ad"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/run.py"
+sha256 = "sha256:50c4b9256d6969a1dc46aace5807db5a9b3b9d056a924b3de88eedcda8b7b432"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/setup_environment.py"
+sha256 = "sha256:dd898df6dfe900d51eb2ffbcabd8a20d69fd9c7fed18d37cfeebed94875f68c3"
+
+[[sources.files]]
+path = "skills/blog-google/scripts/youtube_search.py"
+sha256 = "sha256:2a4065a2ba2638a6c3130b2fd2e9e79a61f9583375fe607cf797ab5bad64583b"
+
+[[sources.files]]
+path = "skills/blog-google/SKILL.md"
+sha256 = "sha256:8abdea21419d364dbfe556db1953cdd012731a1c00d8f50eadfccb90bd42c222"
+
+[[sources.files]]
+path = "skills/blog-image/references/gemini-models.md"
+sha256 = "sha256:27f57846e615cb936129e8151db25428702eae6e33fc3b58143c723f8235d195"
+
+[[sources.files]]
+path = "skills/blog-image/references/mcp-tools.md"
+sha256 = "sha256:c3c2d9a0489e7e085bc8e50d20443be0a312ad72951f89844b3bf1db1746abff"
+
+[[sources.files]]
+path = "skills/blog-image/references/prompt-engineering-blog.md"
+sha256 = "sha256:fec0398f634960656542812c8659aa98b601ca802ea1d3fc837ecc6795bcf82c"
+
+[[sources.files]]
+path = "skills/blog-image/scripts/setup_image_mcp.py"
+sha256 = "sha256:454375fc2e2f63e50e1634fe392a09c1cb0e645ca4c9ef559247bf4c64afd038"
+
+[[sources.files]]
+path = "skills/blog-image/scripts/validate_image_setup.py"
+sha256 = "sha256:2e4a753eb32f5617f155a93a1cf9ce9c6f8d454fb6fbc21e33e689054679e483"
+
+[[sources.files]]
+path = "skills/blog-image/SKILL.md"
+sha256 = "sha256:f5cb3abe7b21003080e8a83e404cccdcf7837093bcbc90bc7274a091e95e59d0"
+
+[[sources.files]]
+path = "skills/blog-locale-audit/SKILL.md"
+sha256 = "sha256:891a51aed0bd31fa7ece519d1c5ab8d3ddae3bc565b565a3327a80e319415b20"
+
+[[sources.files]]
+path = "skills/blog-localize/SKILL.md"
+sha256 = "sha256:ed2e37f572b3d61178db8668c98f3241d3d2fb9b94afcf4ed3f2f01d124e45bd"
+
+[[sources.files]]
+path = "skills/blog-multilingual/SKILL.md"
+sha256 = "sha256:c679f9125893a5a2335c5c9dba6598f895fad3e1dfb2dfb2100f9c7593c7b7d1"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/references/commands.md"
+sha256 = "sha256:102a339858bd6d8618f41334ec41a71f96b3bef0e37d7ffd48556c5b7a6d2a59"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/references/troubleshooting.md"
+sha256 = "sha256:9c115f9f754dee48fead6db6d4f81bd10566fb60750897032e5cbc2c473827bd"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/__init__.py"
+sha256 = "sha256:27573cd87e40b5d9d979b9a27bd429023d5c3727989ae326032329dc7fbda86e"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/ask_question.py"
+sha256 = "sha256:915518f663ff99cf1db58d23fa2b06a1558be1f9b0d9f6f1cba3fc4c92eff062"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/auth_manager.py"
+sha256 = "sha256:bfc46c75044b81f5eea150d47ff5b0c0a80934b8128a66b030a957d988bae69d"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/browser_session.py"
+sha256 = "sha256:fe962aaaaeb7e56bacba9b940617b07b51d1558b2d7b5680fe744ebc46d4dda7"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/browser_utils.py"
+sha256 = "sha256:90d708bb69950dfe6ec537eb439851538e6b58f53c8e40d4d29fb03f013a257f"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/cleanup_manager.py"
+sha256 = "sha256:17b5c20de80dff533d74199e30c490065aa6a05e679118a5a45532dd4fd363a0"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/config.py"
+sha256 = "sha256:8d5ef252d7252a148e6857848f24f3c0152ee314c2fb0af9f4f1fcddd4bc8cf7"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/notebook_manager.py"
+sha256 = "sha256:cf830d19ccb29bf3a9b26133f38268bd1826c1410e2cf5aec7bbc385d08d30ee"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/requirements.lock"
+sha256 = "sha256:8f493636bcb932578fea0f82fb13b9900543d9b2c9f4ce5c2b72af1a6d0885f0"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/requirements.txt"
+sha256 = "sha256:0d164b7d0f2a1286e5026717dee2f12ccb11eb87409db13d157348eff407b081"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/run.py"
+sha256 = "sha256:d393918fb8979bf6304f0cb8404917c48eecd19a820028b06259b3d8d7b8fc16"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/scripts/setup_environment.py"
+sha256 = "sha256:5a90e53bd48ce6b89b9648b51104f1e6b535f95435dca2aaa7197914625ae1a6"
+
+[[sources.files]]
+path = "skills/blog-notebooklm/SKILL.md"
+sha256 = "sha256:287c07423a30360b86a98f0a239804f115db1fd712530b7402e18fd08efb1ad1"
+
+[[sources.files]]
+path = "skills/blog-outline/SKILL.md"
+sha256 = "sha256:86633a92c1cbfaf8c4797bacb1a7e5413b9de054820aa710b282e2587ea3bbdb"
+
+[[sources.files]]
+path = "skills/blog-persona/references/personas/.gitkeep"
+sha256 = "sha256:ae2ca9b6a4143482438ecdc292a13acba58860c369ffcc6804afcd4ed2de03e6"
+
+[[sources.files]]
+path = "skills/blog-persona/SKILL.md"
+sha256 = "sha256:c86e77e7f2e33c588dafcac786ebd08425f6dac5ad52d4fb541add69608f5c41"
+
+[[sources.files]]
+path = "skills/blog-repurpose/SKILL.md"
+sha256 = "sha256:7504750bc45aa2a0cc3c2deef58738328cd28fc634f01e5c95b72394a234024a"
+
+[[sources.files]]
+path = "skills/blog-rewrite/SKILL.md"
+sha256 = "sha256:57f82cd2bdf68447e8612fc329b16c4ff76614d94e5c33a26f1d09d0b9de068a"
+
+[[sources.files]]
+path = "skills/blog-schema/SKILL.md"
+sha256 = "sha256:38beb31b1bcc4454b9d994e056ae060631d2a9626ee8b4cd006c1cdd6a2a88c3"
+
+[[sources.files]]
+path = "skills/blog-seo-check/SKILL.md"
+sha256 = "sha256:41a922ab74ef91f4dffb1bfd20c707acd1910fe0b568f6b695fd7477eabf3941"
+
+[[sources.files]]
+path = "skills/blog-strategy/SKILL.md"
+sha256 = "sha256:de99ccfd75c10f46821a2f5ec53f05077ad31abf3ab7c2be2f8a9d1dc387ecce"
+
+[[sources.files]]
+path = "skills/blog-style/SKILL.md"
+sha256 = "sha256:b8d4277cecb77f7f0a29914e9796da1fc415f7ed1920e490f55a840d668185e0"
+
+[[sources.files]]
+path = "skills/blog-taxonomy/SKILL.md"
+sha256 = "sha256:55a6af5a13216e2ecdcbd1a4c7bedef6ab9b3193378278d8450088f7725c0ea9"
+
+[[sources.files]]
+path = "skills/blog-translate/references/cultural-adaptation.md"
+sha256 = "sha256:27518514f76e38db0dae970ea8ffc5226351f6af346eceb2f0ef4f5661c334ba"
+
+[[sources.files]]
+path = "skills/blog-translate/references/translation-rules.md"
+sha256 = "sha256:163a899f678aa1aa29ea8b07f0d3cf6e038c4ae8e2d686f8a506d2f8a6cdbb79"
+
+[[sources.files]]
+path = "skills/blog-translate/SKILL.md"
+sha256 = "sha256:49d4f776793d68702b3c69cd4c2974f91af1c5a65bf5b7d49bf941b57b50fb62"
+
+[[sources.files]]
+path = "skills/blog-write/references/delivery.md"
+sha256 = "sha256:e66aee9580652279badef206cb4bccd6fe02fe8e70a771d117f1c32503069201"
+
+[[sources.files]]
+path = "skills/blog-write/SKILL.md"
+sha256 = "sha256:523bb06666235df94920de3eb7eb4d3e17c09e33c5ab7b39cfe196e29a4a5bc4"
+
+[[sources.files]]
+path = "skills/blog/references/ai-crawler-guide.md"
+sha256 = "sha256:dd637426004b99ddc5c2c96bc49da9e0e9d79fa5d2ea985ffe4443ae50bd61ed"
+
+[[sources.files]]
+path = "skills/blog/references/ai-slop-detection.md"
+sha256 = "sha256:32f24bc6c3a064f2f54da589eac4f880256afe6a8545382c2bac615e3f0bc407"
+
+[[sources.files]]
+path = "skills/blog/references/blog-delivery-contract.md"
+sha256 = "sha256:1ee9c185a69d086e521109b4e445bc8199572a4a7b06dc9c5d64e9f6ca25895a"
+
+[[sources.files]]
+path = "skills/blog/references/cognitive-load.md"
+sha256 = "sha256:ca0f994ef813328f6bb2ed78a9d63ae0982ab5503b7634e18bdc9707617bfd57"
+
+[[sources.files]]
+path = "skills/blog/references/content-rules.md"
+sha256 = "sha256:93838dafb909991c176f4331963323a5737613f37610e2feea18fe1b229be453"
+
+[[sources.files]]
+path = "skills/blog/references/content-templates.md"
+sha256 = "sha256:37f4699c4bd79c53429481154470a181cf3c9e6f955209365f1a4f0a6e3b1d5d"
+
+[[sources.files]]
+path = "skills/blog/references/cta-placement.md"
+sha256 = "sha256:2ab2b8ad6555e290c2bf96c7a78b7878152a04f40549bc3ff51d05630b99abe4"
+
+[[sources.files]]
+path = "skills/blog/references/distribution-playbook.md"
+sha256 = "sha256:9f23c80e8468cc461997f0b08bc77c35440f2ce32db2bf2e026080bd01de6eeb"
+
+[[sources.files]]
+path = "skills/blog/references/editorial-heuristics.md"
+sha256 = "sha256:8f7b31e9db91e5ac3bd66f4d81c013bb0655fe6b744971715ac68ead1cbd5e9e"
+
+[[sources.files]]
+path = "skills/blog/references/eeat-signals.md"
+sha256 = "sha256:ed0aea4025076cda88281eac01aeb875a2ed5e0232ddf2c964c05887532b86fe"
+
+[[sources.files]]
+path = "skills/blog/references/flow-alignment.md"
+sha256 = "sha256:d9febf9d512f42ce39e5d51d944e7ca07f2ab682a8268618b47bc4ac022b466d"
+
+[[sources.files]]
+path = "skills/blog/references/geo-optimization.md"
+sha256 = "sha256:8e13668c4107a9ed707f86726916206047ba00da6d23cfb6b10ddb751b34efaa"
+
+[[sources.files]]
+path = "skills/blog/references/google-landscape-2026.md"
+sha256 = "sha256:3328fe77e51f5eaff3993a73a4e1a065540a7a9b4415d98ac1dd12ed9d4fe1f0"
+
+[[sources.files]]
+path = "skills/blog/references/internal-linking.md"
+sha256 = "sha256:ca2bc275af1fe9cb41585a6ee46e696974995238f1279010ce3fa80763ed7d92"
+
+[[sources.files]]
+path = "skills/blog/references/orchestration-details.md"
+sha256 = "sha256:0f46434c3a87647f49eaf6e0f113751bf51f87d37416851b4cd69a49bafc2ae7"
+
+[[sources.files]]
+path = "skills/blog/references/platform-guides.md"
+sha256 = "sha256:cd3f400809efa8d6f2d021f7c2e639474ea33989c61472d46c474ee7ab940284"
+
+[[sources.files]]
+path = "skills/blog/references/quality-scoring.md"
+sha256 = "sha256:ab563a355938159fdbb66e3966b0864eb8197c883cd07ad70ef1d9f88e436967"
+
+[[sources.files]]
+path = "skills/blog/references/research-quality.md"
+sha256 = "sha256:7942a5a40a33eea5711592987fb6cacac29460662e23c1bb0d9a35555ce37f4d"
+
+[[sources.files]]
+path = "skills/blog/references/schema-stack.md"
+sha256 = "sha256:61958878a5789e792738cdf571828935727a4a8304d4b271c3a762c1197c4114"
+
+[[sources.files]]
+path = "skills/blog/references/synthesis-contract.md"
+sha256 = "sha256:bc358388a210e083429b9233c5087103bdc111a2974a93c3dfcb5cb3e7866cb6"
+
+[[sources.files]]
+path = "skills/blog/references/video-embeds.md"
+sha256 = "sha256:da2dd1128fdbd412186c6175a9d6de4d77af540adda357fbba3dc12c667fc615"
+
+[[sources.files]]
+path = "skills/blog/references/visual-media.md"
+sha256 = "sha256:cf972559ef46e4a712d19289fd18577a8364ed8732561940093b0a56070c7be5"
+
+[[sources.files]]
+path = "skills/blog/SKILL.md"
+sha256 = "sha256:19baaee9989f1334e7df86d7e3fd4a604feab76939c667b05dc89de486330478"
+
+[[sources.files]]
+path = "skills/blog/templates/case-study.md"
+sha256 = "sha256:44d383f52cda7b6927cabd5c62e3b3a24d653ba3bc21d780154dc2991516fb15"
+
+[[sources.files]]
+path = "skills/blog/templates/comparison.md"
+sha256 = "sha256:342e346a0554e9f5053176a7872094402a610c4ce99c99a9b91c276ec30b9099"
+
+[[sources.files]]
+path = "skills/blog/templates/data-research.md"
+sha256 = "sha256:438fddb2f2ff52a2cc21ac40663cd94687c9e926d33b16f01ebc0740eff7bdee"
+
+[[sources.files]]
+path = "skills/blog/templates/faq-knowledge.md"
+sha256 = "sha256:b7fbcfa2df520432bbb35e6b131614ff9d8bef8ad051f0211ba7c08d09bed270"
+
+[[sources.files]]
+path = "skills/blog/templates/how-to-guide.md"
+sha256 = "sha256:78b622fe51166717584acbd1c3e7c6dbb941879b6f926cc2f0a931e2f4d28cd6"
+
+[[sources.files]]
+path = "skills/blog/templates/listicle.md"
+sha256 = "sha256:b4af2351da7a9b530d81021d687afd2baa90847986107f7329f3f02d72d60195"
+
+[[sources.files]]
+path = "skills/blog/templates/news-analysis.md"
+sha256 = "sha256:e146115478ca33a51e6b6afb8dc6ed5fa906b8fd9bd118727e40835e60a4187d"
+
+[[sources.files]]
+path = "skills/blog/templates/pillar-page.md"
+sha256 = "sha256:e8409dec628cf8ac99969ae7d3e9f283d1a2c239d364041619d8ee3a7ca8ede4"
+
+[[sources.files]]
+path = "skills/blog/templates/product-review.md"
+sha256 = "sha256:f206e506194e705f34fba995efd225180ed1a3cfb414a134c040860987de3143"
+
+[[sources.files]]
+path = "skills/blog/templates/roundup.md"
+sha256 = "sha256:15bce96ce2475823102154e6684ef1a165cdd21190247ee79de9371e7aab2c21"
+
+[[sources.files]]
+path = "skills/blog/templates/thought-leadership.md"
+sha256 = "sha256:2d4516afa8ec22aad71395d1888413350748bdc084a585ee3b6dbdcb522e3d97"
+
+[[sources.files]]
+path = "skills/blog/templates/tutorial.md"
+sha256 = "sha256:0bf0453ecbb407bf097233c3f02d7584dcaa0b13b9ae97f83163db6f304973ad"
+
+[[sources.files]]
+path = "tests/conftest.py"
+sha256 = "sha256:a6113451fe6f39d55e2c475a353e0d9d8a262f0f527dd2a009d7b5ae72762a77"
+
+[[sources.files]]
+path = "tests/evaluations.json"
+sha256 = "sha256:e85f587de16ae152ad16bb1b04d2ef12f1b40e919808ad0059e1b225ae98fcf3"
+
+[[sources.files]]
+path = "tests/fixtures/blog_fail.md"
+sha256 = "sha256:ed4e92b5a79e0e01f59ea1de9d4fd4d18422fd22743023a06e0932b4c3e89f88"
+
+[[sources.files]]
+path = "tests/fixtures/blog_pass.md"
+sha256 = "sha256:e9ce0393fca26b582dfa041050a98916cfa787d347ea15430be52046f4424ccf"
+
+[[sources.files]]
+path = "tests/fixtures/gsc_current.json"
+sha256 = "sha256:8f9ba5d3f74e26f5a17c06e4f7a0f81ea111346ff362161e5aa802e6c8a963b6"
+
+[[sources.files]]
+path = "tests/fixtures/gsc_previous.json"
+sha256 = "sha256:f8744044c44ca799fa3684380dbf5089c7872f42304a0b4bb79534a6a269178a"
+
+[[sources.files]]
+path = "tests/test_ai_citation_score.py"
+sha256 = "sha256:d868c43ba2d9fbdcf17d9d61eb9c2bb3ecefe3f84fa7cf8679d3ed55742ffe0c"
+
+[[sources.files]]
+path = "tests/test_analyze_blog.py"
+sha256 = "sha256:04bb94b8d5dc9005c65fac6016f93f920bf9ade158120de3167e3d34b18bd7b8"
+
+[[sources.files]]
+path = "tests/test_blog_chart_generator.py"
+sha256 = "sha256:16b9d44526dc986abcfe4352545151f8f6ec1adeccf0850db9d7e8359b27cb73"
+
+[[sources.files]]
+path = "tests/test_blog_delivery_contract.py"
+sha256 = "sha256:8e651cd4cb11d681e0f3fc4a274e09af33df07400e48be00f384929cb4dec3b5"
+
+[[sources.files]]
+path = "tests/test_blog_hygiene.py"
+sha256 = "sha256:a6891fb064cceaef80d0de6b7e3f472348449473661e28364b095f4734afe58d"
+
+[[sources.files]]
+path = "tests/test_cognitive_load.py"
+sha256 = "sha256:0a0e2b448a5d1609a5e6f1982f95411cc0f4dbd0905945ed5797fe7bee2acf07"
+
+[[sources.files]]
+path = "tests/test_command_coherence.py"
+sha256 = "sha256:c31119c812660064af397f900f41a47dd5443bd17891c6be645c51db6c728cdf"
+
+[[sources.files]]
+path = "tests/test_content_decay.py"
+sha256 = "sha256:6e1a1c33c62f51128d5b16ec6e4add91c99572a9b2b1658bc110d0d78a2a0d79"
+
+[[sources.files]]
+path = "tests/test_discourse_research.py"
+sha256 = "sha256:836fc60b1f4eda9eb1af356ed1f86d2408a2769216dd55e2df4a0618bc8a4440"
+
+[[sources.files]]
+path = "tests/test_generate_hero_ssrf.py"
+sha256 = "sha256:9c6ccd0d82956a35b25160b30f06efd89797e3c036d7f895767f9096df940f91"
+
+[[sources.files]]
+path = "tests/test_google_search_behavior.py"
+sha256 = "sha256:b2a70004b3283ecc3d7dcbea73a686d36ca5ed310467455244524bbfc96d648d"
+
+[[sources.files]]
+path = "tests/test_google_updates_ledger.py"
+sha256 = "sha256:b2c14a5a7a8d17365830b11277ef0b915d8ae14458d103940e2228b8b05de29d"
+
+[[sources.files]]
+path = "tests/test_installer_sync.py"
+sha256 = "sha256:81c2c4b1ab75df3651ee5f1265f65c3ca242b4f0a49ddb4cedb49cf009a33b3c"
+
+[[sources.files]]
+path = "tests/test_iteration_counter.py"
+sha256 = "sha256:45fb229781e223035beccd97f237f6de3cd8db99d87f205a7b81cedc72d26b4e"
+
+[[sources.files]]
+path = "tests/test_lint_prose.py"
+sha256 = "sha256:5d1ba7cec6deeb30cfe337828af9aa18847e08f12af5aaa597ccaf530fc62653"
+
+[[sources.files]]
+path = "tests/test_load_untrusted_root.py"
+sha256 = "sha256:01e6ef0849424125b6b84bbfb367d4a8591a3994aa9f572861a30e2fdc79d886"
+
+[[sources.files]]
+path = "tests/test_plugin_manifest.py"
+sha256 = "sha256:223291e0130fbc904486d2cf56a6173d76dcb0e83286d25eb4d28d114f99646b"
+
+[[sources.files]]
+path = "tests/test_preflight_http_head_no_redirect.py"
+sha256 = "sha256:69f88a33f01b6b01a8b092fb08ec26244fc6188688213509d7d19a382313e62f"
+
+[[sources.files]]
+path = "tests/test_quality_gate.py"
+sha256 = "sha256:98bc5579be5e3874146f37fda6d00e1a0467dd7a0056ade453603a1f843465e3"
+
+[[sources.files]]
+path = "tests/test_release_safeguards.py"
+sha256 = "sha256:15a69c53848327849aae2481e7b68e727d4a5e0eae3edc37e29993a6883cc145"
+
+[[sources.files]]
+path = "tests/test_review_nonce.py"
+sha256 = "sha256:16067b6a5c1e76648fe2a76ac1237ff8729274b34cdf2505aaa2f7915d03eb31"
+
+[[sources.files]]
+path = "tests/test_security_guardrails.py"
+sha256 = "sha256:787853577a411f74b836656425a317fa4e6f1d3fa226539afb03862c65d0c134"
+
+[[sources.files]]
+path = "tests/test_security_v1_8_0.py"
+sha256 = "sha256:1f36bc30ec903da6ddc02b61e4561c997981c235e033b5525824bb7a7e36e9bc"
+
+[[sources.files]]
+path = "tests/test_style_learn.py"
+sha256 = "sha256:e9b294f1ffd0fcddfd3f1309f2ea4e5a0663e36d662273f5337127d25aebdca2"
+
+[[sources.files]]
+path = "tests/test_version_coherence.py"
+sha256 = "sha256:16306d80df8f7719d3970a807bcd291cf2966f0df2dad013a8422b5dc59c63d3"
+
+[[sources.files]]
+path = "uninstall.ps1"
+sha256 = "sha256:5e5e61cd16abce741c7c35788b2db29075a3f51f91bffb41461d3c95c1fc5d88"
+
+[[sources.files]]
+path = "uninstall.sh"
+sha256 = "sha256:de76b83365eefe892c870ecf250b3fe4c049e8a574872419cb40e48b2cb71542"
+executable = true
+
+[[sources.files]]
+path = "uv.lock"
+sha256 = "sha256:af8f233b66f475f857ffbe7f81083b5b3a406fb81ac7a7cda94f03a430dc1a83"
+
+[packages]
+
+[packages.harness]
+kind = "claude"
+selector = "latest"
+version = "2.1.222"
+integrity = "sha256:68c8d31e3cf81d4e0f608900c866b8bb2f0e2645e89d0917ce8a23f2ec277587"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz"
+size = 88123930
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "curl"
+version = "7.88.1-10+deb12u15"
+integrity = "sha256:880d20cb636d2c36b2f57c58ab284b442a1680365b488d3e696c147c4d84ef25"
+
+[[packages.runtime]]
+name = "fish"
+version = "3.6.0-3.1+deb12u1"
+integrity = "sha256:d55844785d95a3ba9f128c87ad319ae4f4fe4a10d4463f3555cbc3293995840a"
+
+[[packages.runtime]]
+name = "gh"
+version = "2.23.0+dfsg1-1"
+integrity = "sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.runtime]]
+name = "zsh"
+version = "5.9-4+b15"
+integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bfba90"
+
+[[packages.artifacts]]
+name = "node"
+version = "22.17.0"
+integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+[[packages.artifacts]]
+name = "builder-oci"
+version = "jdxcode/mise"
+integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
+url = "oci://docker.io/jdxcode/mise"
+
+[[packages.artifacts]]
+name = "skopeo-oci"
+version = "stable"
+integrity = "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
+url = "oci://quay.io/skopeo/stable"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:e78ab21e04922add26bfcef41ede0a028bed45ae91728515e5cdc938e003256d"
