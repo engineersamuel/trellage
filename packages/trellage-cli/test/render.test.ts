@@ -29,7 +29,6 @@ request_max_retries = 3
 stream_max_retries = 5
 stream_idle_timeout_ms = 300000
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git"]
@@ -64,7 +63,6 @@ version = "latest"
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git", "jq"]
@@ -88,7 +86,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "git", "jq"]
@@ -111,7 +108,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "git", "jq"]
@@ -137,7 +133,6 @@ provider = "github-copilot"
 model = "gpt-5.6-terra"
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "git", "jq"]
@@ -172,6 +167,7 @@ const claudeMarketplaceRuntime = await Effect.runPromise(
 const piRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("pi", runtimePaths))
 const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
   schema: 1,
+  platform: "linux/arm64",
   source_date_epoch: 1784379906,
   profile_hash: `sha256:${"a".repeat(64)}`,
   sources: [],
@@ -245,6 +241,7 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }')
     expect.soft(rendered).toContain('"dev.trellage.prototype" = "trellage"')
     expect.soft(rendered).toContain('"dev.trellage.profile"')
+    expect.soft(rendered).toContain('"dev.trellage.platform" = "linux/arm64"')
     expect
       .soft(rendered)
       .toContain('"/usr/local/share/trellage/copilot-seed" = { source = "copilot-seed", mode = "copy" }')

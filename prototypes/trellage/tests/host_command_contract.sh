@@ -17,6 +17,7 @@ mkdir -p "$fake_bin"
 ln -s "$prototype_dir/tests/fakes/host-docker" "$fake_bin/docker"
 ln -s "$prototype_dir/tests/fakes/host-git" "$fake_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
+ln -s "$prototype_dir/tests/fakes/host-env" "$fake_bin/env"
 
 real_node="$(command -v node)"
 runtime_hash="$($real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
@@ -27,6 +28,8 @@ host_node_log="$test_root/host-node.log"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
+  'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+  '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tGH_TOKEN=%s\n'\'' "${GH_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -65,6 +68,8 @@ ln -s "$prototype_dir/tests/fakes/host-gh" "$copilot_fake_bin/gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
+  'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+  '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tGH_TOKEN=%s\n'\'' "${GH_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -81,9 +86,10 @@ printf '%s\n' \
 chmod +x "$copilot_fake_bin/node"
 no_gh_bin="$test_root/no-gh-bin"
 mkdir -p "$no_gh_bin"
-for utility in bash env jq awk sed tr shasum dirname basename readlink head grep cat cut sleep; do
+for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv; do
   ln -s "$(command -v "$utility")" "$no_gh_bin/$utility"
 done
+ln -s "$prototype_dir/tests/fakes/host-env" "$no_gh_bin/env"
 ln -s "$prototype_dir/tests/fakes/host-docker" "$no_gh_bin/docker"
 ln -s "$prototype_dir/tests/fakes/host-git" "$no_gh_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$no_gh_bin/mise"
@@ -96,6 +102,7 @@ jq -n \
     profile_path: $profile,
     profile_name: "copilot-hve-test",
     profile_hash: "sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd",
+    platform: "linux/arm64",
     runtime_hash: $runtime_hash,
     image: "trellage-profile-copilot-hve-test:locked",
     locked: true,
@@ -121,6 +128,7 @@ jq -n \
     profile_path: $profile,
     profile_name: "pi-oh-my-pi-test",
     profile_hash: "sha256:a8f03f553835e2bece7ca36446fc5d2189e51c3590c7dd6cb35c8f9f63ed1972",
+    platform: "linux/arm64",
     runtime_hash: $runtime_hash,
     image: "trellage-profile-pi-oh-my-pi-test:locked",
     locked: true,
@@ -223,8 +231,10 @@ assert_create_label() {
   local resource="$2"
   local label="$3"
   awk -v resource="$resource" -v expected="ARG\t$label" '
-    $0 == "CALL" { argument = 0; first = second = previous = ""; next }
+    $0 == "CALL" { argument = 0; skip_host = 0; first = second = previous = ""; next }
     /^ARG\t/ {
+      if (argument == 0 && $0 == "ARG\t--host") { skip_host = 1; next }
+      if (skip_host == 1) { skip_host = 0; next }
       argument++
       if (argument == 1) first = $0
       if (argument == 2) second = $0
@@ -262,8 +272,19 @@ assert_terminal_contract() {
     expected_env_count=$((expected_env_count + 1))
     assert_docker_env "$log" TRELLAGE_RESUME_PROFILE
   fi
-  [[ "$(grep -Fxc $'ARG\t--env' "$log")" -eq "$expected_env_count" ]] \
-    || fail 'Docker received an unexpected terminal environment'
+  if grep -Fq $'ARG\tGH_CONFIG_DIR=/tmp/trellage-gh' "$log"; then
+    expected_env_count=$((expected_env_count + 2))
+  fi
+  awk -v expected="$expected_env_count" '
+    function validate_agent_exec() {
+      if (agent && environment_count != expected) exit 1
+      if (agent) found++
+    }
+    $0 == "CALL" { validate_agent_exec(); agent = environment_count = 0; next }
+    $0 == "ARG\t--env" { environment_count++; next }
+    /^ARG\t.*trellage-[a-z-]+-entry/ || $0 == "ARG\texec fish -l" { agent = 1 }
+    END { validate_agent_exec(); exit(found == 1 ? 0 : 1) }
+  ' "$log" || fail 'Docker received an unexpected terminal environment'
   ! grep -Eq $'ARG\t(NO_COLOR|TERM_PROGRAM|HERDR_AGENT)=' "$log" \
     || fail 'unsupported host environment reached Docker'
   ! grep -Fqx $'ARG\tTERM=host-term' "$log" \
@@ -272,8 +293,15 @@ assert_terminal_contract() {
 
 assert_prompt_is_detached() {
   local log="$1"
-  ! grep -Fqx $'ARG\t--interactive' "$log" \
-    || fail 'portable prompt allocated interactive Docker stdin'
+  awk '
+    function reject_interactive_prompt() {
+      if (interactive && prompt) exit 1
+    }
+    $0 == "CALL" { reject_interactive_prompt(); interactive = prompt = 0; next }
+    $0 == "ARG\t--interactive" { interactive = 1; next }
+    /^ARG\t.*trellage-[a-z-]+-entry prompt/ { prompt = 1 }
+    END { reject_interactive_prompt() }
+  ' "$log" || fail 'portable prompt agent exec allocated interactive Docker stdin'
   ! grep -Fqx $'ARG\t--tty' "$log" \
     || fail 'portable prompt allocated a Docker TTY'
   ! grep -Eq $'ARG\t(TERM|COLORTERM)=' "$log" \
@@ -391,14 +419,15 @@ test_new_container_from_subdirectory() {
   ! grep -Fq $'ARG\tGH_TOKEN=host-contract-gh-token' "$docker_log" \
     || fail 'GitHub token was passed directly to the agent container'
 
-  [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 8 ]] \
+  [[ "$(grep -Fxc $'ARG\t--label' "$docker_log")" -eq 10 ]] \
     || fail 'Codex container and volume must receive exact ownership and container integrity labels'
   assert_arg "$docker_log" 'dev.trellage.profile=codex-superpowers'
-  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd"
+  assert_arg "$docker_log" 'dev.trellage.platform=linux/arm64'
+  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:62404b7266dfa833082abd9f7cd40d694fe755dfed126c323b57b542e77b9124"
   assert_arg "$docker_log" "dev.trellage.runtime.hash=$runtime_hash"
   [[ "$(grep -Fxc $'ARG\t--network' "$docker_log")" -eq 1 ]] \
     || fail 'container must receive exactly one network'
-  ! grep -Eq $'ARG\t.*(docker\.sock|herdr)' "$docker_log" \
+  ! grep -Eq $'ARG\ttype=(bind|volume).*(docker\.sock|herdr\.sock|/run/herdr|/var/run/herdr)' "$docker_log" \
     || fail 'forbidden host resource was mounted'
 
   create_line="$(grep -n -F $'ARG\tcreate' "$docker_log" | head -n 1 | cut -d: -f1)"
@@ -607,7 +636,7 @@ CASES
   : >"$docker_log"
   status=0
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_EXEC_EXIT=37 \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_AGENT_EXEC_EXIT=37 \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       "$prototype_dir/trellage" -p 'status propagation' >/dev/null 2>&1 \
     || status=$?
@@ -845,7 +874,7 @@ test_validation_precedes_mutation() {
   if run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"; then
     fail 'unsafe mount segment was accepted'
   fi
-  [[ ! -s "$docker_log" ]] || fail 'unsafe worktree reached Docker'
+  assert_no_mutation "$docker_log"
 
   worktree="$test_root/valid-worktree"
   mkdir -p "$worktree"
@@ -865,6 +894,26 @@ test_validation_precedes_mutation() {
   printf 'Trellage host test: PASS: validation precedes mutation\n'
 }
 
+test_docker_server_change_precedes_mutation() {
+  local worktree="$test_root/docker-server-change"
+  local docker_log="$test_root/docker-server-change.docker.log"
+  local output state_volume
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  if output="$(FAKE_DOCKER_SERVER_CHANGE_ON_INFO_CALL=4 \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" 2>&1)"; then
+    fail 'Docker server change was accepted before mutation'
+  fi
+  grep -Fq 'trellage: Docker server changed during operation' <<<"$output" \
+    || fail 'Docker server change diagnostic is missing'
+  assert_no_mutation "$docker_log"
+  printf 'Trellage host test: PASS: Docker server changes fail before mutation\n'
+}
+
 test_invalid_tmpfs_metadata_precedes_mutation() {
   local worktree="$test_root/invalid-tmpfs-metadata"
   local docker_log="$test_root/invalid-tmpfs-metadata.docker.log"
@@ -882,7 +931,7 @@ test_invalid_tmpfs_metadata_precedes_mutation() {
   fi
   grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
     || fail 'invalid tmpfs metadata diagnostic is missing'
-  [[ ! -s "$docker_log" ]] || fail 'invalid tmpfs metadata reached Docker'
+  assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: invalid tmpfs metadata precedes mutation\n'
 }
 
@@ -903,7 +952,7 @@ test_false_tmpfs_metadata_precedes_mutation() {
   fi
   grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
     || fail 'false tmpfs metadata diagnostic is missing'
-  [[ ! -s "$docker_log" ]] || fail 'false tmpfs metadata reached Docker'
+  assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: false tmpfs metadata precedes mutation\n'
 }
 
@@ -924,7 +973,7 @@ test_null_tmpfs_metadata_precedes_mutation() {
   fi
   grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
     || fail 'null tmpfs metadata diagnostic is missing'
-  [[ ! -s "$docker_log" ]] || fail 'null tmpfs metadata reached Docker'
+  assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: null tmpfs metadata precedes mutation\n'
 }
 
@@ -962,13 +1011,13 @@ test_requires_tty_and_returns_exec_status() {
   ); then
     fail 'non-interactive invocation was accepted'
   fi
-  [[ ! -s "$docker_log" ]] || fail 'non-interactive invocation reached Docker'
+  assert_no_mutation "$docker_log"
 
   : >"$docker_log"
   local state_volume
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   if FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_EXEC_EXIT=23 \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_AGENT_EXEC_EXIT=23 \
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"; then
     fail 'Docker exec exit status was swallowed'
   else
@@ -1102,7 +1151,7 @@ test_stop_rejects_collisions_and_wrong_mounts() {
   )"; then
     fail 'stop accepted wrong mounts'
   fi
-  grep -Fq 'refusing Docker container with wrong state volume mount' <<<"$output" \
+  grep -Fq 'refusing Docker container with unexpected mounts' <<<"$output" \
     || fail 'stop did not explicitly reject wrong mounts'
   assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: stop rejects collisions and wrong mounts\n'
@@ -1166,7 +1215,9 @@ test_destroy_requires_exact_confirmation_and_removes_in_order() {
   volume_rm_line="$(grep -n -F $'ARG\t'"$state_volume" "$docker_log" | tail -n 1 | cut -d: -f1)"
   [[ "$container_rm_line" -lt "$volume_rm_line" ]] || fail 'destroy removed volume before container'
   awk '
-    $0 == "CALL" { call_number++; first = second = ""; next }
+    $0 == "CALL" { call_number++; first = second = ""; skip_host = 0; next }
+    $0 == "ARG\t--host" && first == "" { skip_host = 1; next }
+    skip_host == 1 { skip_host = 0; next }
     /^ARG\t/ && first == "" { first = $0; next }
     /^ARG\t/ && second == "" {
       second = $0
@@ -1174,8 +1225,8 @@ test_destroy_requires_exact_confirmation_and_removes_in_order() {
       if (first == "ARG\tvolume" && second == "ARG\tinspect") volume_inspect = call_number
       if (first == "ARG\tvolume" && second == "ARG\trm") volume_rm = call_number
     }
-    END { exit(volume_inspect == container_rm + 1 && volume_rm == volume_inspect + 1 ? 0 : 1) }
-  ' "$docker_log" || fail 'destroy did not revalidate volume ownership immediately before removal'
+    END { exit(container_rm < volume_inspect && volume_inspect < volume_rm ? 0 : 1) }
+  ' "$docker_log" || fail 'destroy did not revalidate volume ownership before removal'
   awk '
     $0 == "CALL" { first = ""; next }
     /^ARG\t/ && first == "" { first = $0; next }
@@ -1334,7 +1385,9 @@ test_destroy_revalidates_after_confirmation() {
     attempts=$((attempts + 1))
   done
   [[ "$prompt_seen" == true ]] || fail 'destroy did not present confirmation prompt'
-  [[ ! -s "$docker_log" ]] || preconfirmation_docker_calls=true
+  if grep -Eq $'^ARG\t(container|volume|image|network)$' "$docker_log"; then
+    preconfirmation_docker_calls=true
+  fi
 
   printf 'unrelated\n' >"$container_state_file"
   printf 'unrelated\n' >"$volume_state_file"
@@ -1353,7 +1406,7 @@ test_destroy_revalidates_after_confirmation() {
 test_resource_identity_isolates_codex_and_copilot_profiles() {
   local worktree="$test_root/profile-worktree"
   local profile_one="$test_root/one.toml"
-  local profile_one_lock="$test_root/one.lock.toml"
+  local profile_one_lock="$test_root/one.linux-arm64.lock.toml"
   local profile_two="$test_root/two.toml"
   local docker_log="$test_root/profile-identity.docker.log"
   local copilot_one="$test_root/copilot-one.json"
@@ -1387,7 +1440,7 @@ test_resource_identity_isolates_codex_and_copilot_profiles() {
   profile_one_hash="$("$real_node" \
     "$prototype_dir/../../packages/trellage-cli/dist/cli.js" \
     metadata "$profile_one" | jq -r '.profile_hash')"
-  cp "$prototype_dir/../../profiles/codex-superpowers/profile.lock.toml" "$profile_one_lock"
+  cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$profile_one_lock"
   sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_one_hash\"/" "$profile_one_lock"
   rm -f "$profile_one_lock.bak"
 
@@ -1547,7 +1600,7 @@ test_codex_profile_resources_reuse_running_and_stopped_state() {
 test_env_secrets_reach_only_final_codex_exec() {
   local worktree="$test_root/secret-worktree"
   local profile="$test_root/secret.toml"
-  local lock="$test_root/secret.lock.toml"
+  local lock="$test_root/secret.linux-arm64.lock.toml"
   local docker_log="$test_root/secret.docker.log"
   local state_volume profile_hash
   mkdir -p "$worktree"
@@ -1562,7 +1615,7 @@ command = "local-mcp"\
 env_from_secret = { TOKEN = "DOCS_TOKEN" }\
 ' \
     "$prototype_dir/../../profiles/codex-superpowers/profile.toml" >"$profile"
-  cp "$prototype_dir/../../profiles/codex-superpowers/profile.lock.toml" "$lock"
+  cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$lock"
   profile_hash="$(shasum -a 256 "$profile" | awk '{print "sha256:" $1}')"
   sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" "$lock"
   rm -f "$lock.bak"
@@ -1577,7 +1630,8 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
       "$prototype_dir/trellage" --profile "$profile" >/dev/null 2>&1; then
     fail 'missing required profile secret was accepted'
   fi
-  [[ ! -s "$docker_log" ]] || fail 'missing secret mutated or inspected Docker state'
+  ! grep -Eq $'^ARG\t(container|volume|image|network)$' "$docker_log" \
+    || fail 'missing secret mutated or inspected Docker state'
 
   : >"$docker_log"
   FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
@@ -1627,7 +1681,7 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
 test_varlock_secrets_reach_only_final_codex_exec() {
   local worktree="$test_root/varlock-worktree"
   local profile="$test_root/varlock.toml"
-  local lock="$test_root/varlock.lock.toml"
+  local lock="$test_root/varlock.linux-arm64.lock.toml"
   local docker_log="$test_root/varlock.docker.log"
   local state_volume profile_hash
   mkdir -p "$worktree"
@@ -1643,7 +1697,7 @@ command = "local-mcp"\
 env_from_secret = { DOCS_TOKEN = "DOCS_TOKEN" }\
 ' \
     "$prototype_dir/../../profiles/codex-superpowers/profile.toml" >"$profile"
-  cp "$prototype_dir/../../profiles/codex-superpowers/profile.lock.toml" "$lock"
+  cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$lock"
   profile_hash="$(shasum -a 256 "$profile" | awk '{print "sha256:" $1}')"
   sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" "$lock"
   rm -f "$lock.bak"
@@ -1825,7 +1879,7 @@ test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" 2>&1)"; then
     fail 'stale container bypassed exact mount validation'
   fi
-  grep -Fq 'refusing Docker container with wrong state volume mount:' <<<"$output" \
+  grep -Fq 'refusing Docker container with unexpected mounts:' <<<"$output" \
     || fail 'stale container did not preserve mount collision diagnostic'
   assert_no_mutation "$docker_log"
 
@@ -1866,7 +1920,7 @@ test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
     fi
     grep -Fq "profile metadata has an invalid ${invalid_field%_hash} hash" <<<"$output" \
       || fail "invalid $invalid_field metadata had the wrong diagnostic"
-    [[ ! -s "$docker_log" ]] || fail "invalid $invalid_field reached Docker"
+    assert_no_mutation "$docker_log"
   done
 
   if output="$(FAKE_DOCKER_IMAGE_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
@@ -1970,9 +2024,12 @@ test_upgrade_delegates_to_effect_cli() {
     || fail 'Effect CLI help does not list upgrade'
 
   mkdir -p "$fake_node_bin"
+  ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
   printf '%s\n' \
     '#!/bin/sh' \
     'set -eu' \
+    'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+    '[ ! -f "$fixture_config" ] || . "$fixture_config"' \
     'printf '\''ARG\t%s\n'\'' "$@" >"$FAKE_NODE_LOG"' \
     >"$fake_node_bin/node"
   chmod +x "$fake_node_bin/node"
@@ -2083,9 +2140,12 @@ test_compiler_commands_scrub_copilot_auth() {
   local node_log="$test_root/compiler-auth-node.log"
   local command
   mkdir -p "$fake_node_bin"
+  ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
+    'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+    '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
     'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
     'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
     'printf '\''ENV\tGH_TOKEN=%s\n'\'' "${GH_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -2120,7 +2180,7 @@ test_compiler_commands_scrub_copilot_auth() {
 test_copilot_metadata_contract() {
   local fixture="$test_root/copilot-metadata-fixture"
   local profile="$fixture/profile.toml"
-  local lock="$fixture/profile.lock.toml"
+  local lock="$fixture/profile.linux-arm64.lock.toml"
   local metadata compiler profile_hash source_integrity
   mkdir -p "$fixture"
   printf '%s\n' \
@@ -2134,7 +2194,6 @@ test_copilot_metadata_contract() {
     '[harness.copilot]' \
     'auth = "host-or-login"' \
     '[image]' \
-    'platform = "linux/arm64"' \
     'base = "node:22.17.0-bookworm-slim"' \
     'shell = "fish"' \
     'packages = []' \
@@ -2149,6 +2208,7 @@ test_copilot_metadata_contract() {
   source_integrity="$(printf '%s' '[{"kind":"file","path":"plugins/hve-core/SKILL.md","sha256":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}]' | shasum -a 256 | awk '{print "sha256:" $1}')"
   printf '%s\n' \
     'schema = 1' \
+    'platform = "linux/arm64"' \
     'source_date_epoch = 1784379906' \
     "profile_hash = \"$profile_hash\"" \
     '[[sources]]' \
@@ -2177,7 +2237,7 @@ test_copilot_metadata_contract() {
     'size = 106111479' \
     '[image]' \
     'base = "node:22.17.0-bookworm-slim"' \
-    'base_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' \
+    'base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"' \
     'final_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' >"$lock"
   metadata="$($real_node "$compiler" metadata "$profile")"
 
@@ -2522,11 +2582,16 @@ test_copilot_rebuild_shell_and_doctor() {
     || fail 'Copilot token reached recovery shell Docker process'
   ! grep -Fqx $'ARG\tCOPILOT_GITHUB_TOKEN' "$docker_log" \
     || fail 'Copilot token was forwarded to recovery shell'
+  ! grep -Fq 'GH_CONFIG_DIR=/tmp/trellage-gh' "$docker_log" \
+    || fail 'GitHub CLI credentials were prepared for recovery shell'
+  ! grep -Fq 'gh auth login --hostname "$GH_HOST" --with-token' "$docker_log" \
+    || fail 'GitHub CLI login ran for recovery shell'
+  assert_github_auth_scrubbed_from_child_log 'Copilot recovery shell Docker child' "$docker_log"
   assert_no_agent_hint "$docker_log"
 
   : >"$docker_log"
   output="$(run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-    env FAKE_GH_TOKEN='doctor-auth-canary' TRELLAGE_IMAGE='test/copilot:doctor' \
+    env -u GH_TOKEN FAKE_GH_TOKEN='doctor-auth-canary' TRELLAGE_IMAGE='test/copilot:doctor' \
     "$prototype_dir/trellage" doctor 2>&1)"
   grep -Fqx 'harness kind: copilot' <<<"$output" \
     || fail 'doctor omitted Copilot harness kind'
@@ -2694,7 +2759,7 @@ test_pi_host_auth_dispatch_and_doctor() {
     FAKE_DOCKER_IMAGE_PROFILE_HASH="$pi_profile_hash" \
     FAKE_DOCKER_CONTAINER_PROFILE_HASH="$pi_profile_hash" \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-      env FAKE_GH_TOKEN='pi-doctor-auth-canary' TRELLAGE_IMAGE='test/pi:doctor' \
+      env -u GH_TOKEN FAKE_GH_TOKEN='pi-doctor-auth-canary' TRELLAGE_IMAGE='test/pi:doctor' \
       "$prototype_dir/trellage" doctor 2>&1)"
   grep -Fqx 'harness kind: pi' <<<"$output" || fail 'doctor omitted Pi harness kind'
   grep -Fqx 'resolved version: 17.2.6' <<<"$output" || fail 'doctor omitted exact Pi version'
@@ -2737,7 +2802,7 @@ test_copilot_launches_when_gh_is_genuinely_absent() {
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env PATH="$no_gh_bin" \
+      env -u GH_TOKEN PATH="$no_gh_bin" \
       FAKE_HARNESS_METADATA="$copilot_metadata" \
       FAKE_NODE_LOG="$copilot_node_log" \
       FAKE_REAL_NODE="$real_node" \
@@ -2975,14 +3040,14 @@ test_copilot_gh_host_precedence() {
     FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
     FAKE_DOCKER_EXPECT_COPILOT_TOKEN_SHA256="$expected_hash" \
     run_copilot_tty "$worktree" "$docker_log" "$worktree" \
-      env "${poisoned_internal_auth_env[@]}" \
+      env -u GH_TOKEN "${poisoned_internal_auth_env[@]}" \
       COPILOT_GH_HOST='copilot.example.test' GH_HOST='gh.example.test' \
       FAKE_GH_TOKEN='enterprise-host-canary' TRELLAGE_IMAGE='test/copilot:locked' \
       "$prototype_dir/trellage"
   grep -Fqx $'ARG\tcopilot.example.test' "$copilot_gh_log" \
     || fail 'COPILOT_GH_HOST did not override GH_HOST'
-  ! grep -Fqx $'ARG\tgh.example.test' "$copilot_gh_log" \
-    || fail 'GH_HOST overrode COPILOT_GH_HOST'
+  [[ "$(grep -E $'^ARG\t' "$copilot_gh_log" | tail -n 1)" == $'ARG\tcopilot.example.test' ]] \
+    || fail 'GH_HOST overrode COPILOT_GH_HOST for Copilot auth'
   assert_internal_auth_scrubbed_from_child_log 'gh fallback' "$copilot_gh_log"
   assert_copilot_auth_forwarding "$docker_log" "$copilot_node_log"
   printf 'Trellage host test: PASS: COPILOT_GH_HOST overrides GH_HOST\n'
@@ -3046,7 +3111,13 @@ if [[ "${TRELLAGE_HOST_PROMPT_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_PROMPT_PARSER_ONLY:-}" == 1 ]]; then
+  test_portable_prompt_parser_contract
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_RUNTIME_IDENTITY_ONLY:-}" == 1 ]]; then
+  test_docker_server_change_precedes_mutation
   test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
   exit 0
 fi
@@ -3058,6 +3129,55 @@ fi
 
 if [[ "${TRELLAGE_HOST_PI_ONLY:-}" == 1 ]]; then
   test_pi_host_auth_dispatch_and_doctor
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_RECOVERY_SHELL_ONLY:-}" == 1 ]]; then
+  test_copilot_rebuild_shell_and_doctor
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_COPILOT_AUTH_ONLY:-}" == 1 ]]; then
+  test_copilot_auth_precedence_and_leakage
+  test_copilot_launches_when_gh_is_genuinely_absent
+  test_copilot_gh_host_precedence
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_NEW_CONTAINER_ONLY:-}" == 1 ]]; then
+  test_new_container_from_subdirectory
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_TERMINAL_ONLY:-}" == 1 ]]; then
+  test_terminal_environment_and_agent_tagging
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_VALIDATION_ONLY:-}" == 1 ]]; then
+  test_validation_precedes_mutation
+  test_invalid_tmpfs_metadata_precedes_mutation
+  test_false_tmpfs_metadata_precedes_mutation
+  test_null_tmpfs_metadata_precedes_mutation
+  test_requires_tty_and_returns_exec_status
+  test_stop_rejects_collisions_and_wrong_mounts
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_DESTROY_ONLY:-}" == 1 ]]; then
+  test_destroy_requires_exact_confirmation_and_removes_in_order
+  test_destroy_is_idempotent_and_collision_safe
+  test_destroy_revalidates_after_confirmation
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_TAIL_ONLY:-}" == 1 ]]; then
+  test_env_secrets_reach_only_final_codex_exec
+  test_varlock_secrets_reach_only_final_codex_exec
+  test_global_varlock_bootstrap_supplies_claude_browser_token
+  test_stale_image_label_requires_exact_build
+  test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
+  test_rebuild_replaces_container_and_preserves_profile_state
   exit 0
 fi
 

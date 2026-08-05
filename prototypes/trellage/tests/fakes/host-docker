@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+fixture_config="$(dirname "$0")/.trellage-fixture-env"
+[[ ! -f "$fixture_config" ]] || source "$fixture_config"
 
 log="${FAKE_DOCKER_LOG:?}"
 if [[ ! -s "$log" || ! -f "$log.generation" ]]; then
@@ -48,12 +50,48 @@ for internal_name in \
 done
 printf 'ARG\t%s\n' "$@" >>"$log"
 
+if [[ "${1:-}" == --host ]]; then
+  [[ $# -ge 3 ]] || exit 64
+  shift 2
+fi
+case "${1:-} ${2:-}" in
+  'context show')
+    printf '%s\n' fake-context
+    exit 0
+    ;;
+  'context inspect')
+    printf '%s\n' unix:///tmp/trellage-fake-docker.sock
+    exit 0
+    ;;
+  'info --format')
+    server_info_count_file="$log.server-info-count"
+    server_info_count=0
+    [[ ! -f "$server_info_count_file" ]] || server_info_count="$(head -n 1 "$server_info_count_file")"
+    server_info_count="$((server_info_count + 1))"
+    printf '%s\n' "$server_info_count" >"$server_info_count_file"
+    if [[ "$server_info_count" -eq "${FAKE_DOCKER_SERVER_CHANGE_ON_INFO_CALL:-0}" ]]; then
+      if [[ "${3:-}" == $'{{.ID}}\n{{.OSType}}/{{.Architecture}}' ]]; then
+        printf '%s\n%s\n' changed-server-id linux/amd64
+      else
+        printf '%s\n' linux/amd64
+      fi
+    elif [[ "${3:-}" == $'{{.ID}}\n{{.OSType}}/{{.Architecture}}' ]]; then
+      printf '%s\n%s\n' fake-server-id linux/arm64
+    elif [[ "${3:-}" == '{{.ID}}' ]]; then
+      printf '%s\n' fake-server-id
+    else
+      printf '%s\n' linux/arm64
+    fi
+    exit 0
+    ;;
+esac
+
 default_profile_hash() {
   if [[ -n "${FAKE_HARNESS_METADATA:-}" && -f "$FAKE_HARNESS_METADATA" ]]; then
     jq -er '.profile_hash | strings | select(test("^sha256:[0-9a-f]{64}$"))' "$FAKE_HARNESS_METADATA" 2>/dev/null \
       && return
   fi
-  printf '%s\n' 'sha256:a0f20c294ed9c92e463d3555300e4144752d944bf721124ed1dc85f700a231dd'
+  printf '%s\n' 'sha256:62404b7266dfa833082abd9f7cd40d694fe755dfed126c323b57b542e77b9124'
 }
 
 read_fake_state() {
@@ -269,6 +307,7 @@ case "${1:-} ${2:-}" in
           fi
           printf '%s\n' "${FAKE_DOCKER_IMAGE_RUNTIME_HASH:-}"
           ;;
+        *dev.trellage.platform*) printf '%s\n' "${FAKE_DOCKER_PLATFORM:-linux/arm64}" ;;
       esac
     fi
     ;;
@@ -283,27 +322,31 @@ case "${1:-} ${2:-}" in
         prototype="$(created_label volume dev.trellage.prototype)"
         worktree="$(created_label volume dev.trellage.worktree)"
         profile="$(created_label volume dev.trellage.profile)"
+        platform="$(created_label volume dev.trellage.platform)"
         ;;
       matching)
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-codex}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
+        platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
         ;;
       matching-missing-profile)
         prototype="${FAKE_DOCKER_PROTOTYPE:-trellage-copilot}"
         worktree="${FAKE_GIT_ROOT:?}"
         profile=
+        platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
         ;;
       unrelated)
         prototype='some-other-tool'
         worktree='/tmp/not-this-worktree'
         profile='unrelated'
+        platform='linux/arm64'
         ;;
       *) exit 65 ;;
     esac
     case "${4:-}" in
-      *dev.trellage.prototype*dev.trellage.worktree*dev.trellage.profile*)
-        printf '%s\t%s\t%s\n' "$prototype" "$worktree" "$profile"
+      *dev.trellage.prototype*dev.trellage.worktree*dev.trellage.profile*dev.trellage.platform*)
+        printf '%s\t%s\t%s\t%s\n' "$prototype" "$worktree" "$profile" "$platform"
         ;;
       *dev.trellage.prototype*dev.trellage.worktree*)
         printf '%s\t%s\n' "$prototype" "$worktree"
@@ -323,6 +366,7 @@ case "${1:-} ${2:-}" in
         worktree="$(created_label container dev.trellage.worktree)"
         profile="$(created_label container dev.trellage.profile)"
         profile_hash="$(created_label container dev.trellage.profile.hash)"
+        platform="$(created_label container dev.trellage.platform)"
         runtime_hash="$(created_label container dev.trellage.runtime.hash)"
         container_image="$(head -n 1 "$log.container-image")"
         running="$(head -n 1 "$log.container-running")"
@@ -333,6 +377,7 @@ case "${1:-} ${2:-}" in
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
         profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
         running='true'
         ;;
       matching-stopped)
@@ -341,6 +386,7 @@ case "${1:-} ${2:-}" in
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
         profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
         running='false'
         ;;
       matching-running-missing-profile)
@@ -361,6 +407,7 @@ case "${1:-} ${2:-}" in
         profile="${FAKE_DOCKER_PROFILE:-codex-superpowers}"
         profile_hash="${FAKE_DOCKER_CONTAINER_PROFILE_HASH:-$(default_profile_hash)}"
         runtime_hash="${FAKE_DOCKER_CONTAINER_RUNTIME_HASH:-}"
+        platform="${FAKE_DOCKER_PLATFORM:-linux/arm64}"
         running='true'
         ;;
       unrelated)
@@ -390,6 +437,7 @@ case "${1:-} ${2:-}" in
         ;;
       *dev.trellage.prototype*) printf '%s\n' "$prototype" ;;
       *dev.trellage.worktree*) printf '%s\n' "$worktree" ;;
+      *dev.trellage.platform*) printf '%s\n' "${platform:-}" ;;
       *dev.trellage.profile*) printf '%s\n' "$profile" ;;
       *'.Id'*) printf 'fake-container-id\n' ;;
       *'.Image'*)
@@ -451,6 +499,15 @@ case "${1:-} ${2:-}" in
     ;;
   'container rm') printf '%s\n' "${@: -1}" ;;
   'volume rm') printf '%s\n' "${@: -1}" ;;
-  'container exec') exit "${FAKE_DOCKER_EXEC_EXIT:-0}" ;;
+  'container exec')
+    if [[ -n "${FAKE_DOCKER_AGENT_EXEC_EXIT:-}" ]]; then
+      for argument in "$@"; do
+        if [[ "$argument" == *trellage-*-entry* ]]; then
+          exit "$FAKE_DOCKER_AGENT_EXEC_EXIT"
+        fi
+      done
+    fi
+    exit "${FAKE_DOCKER_EXEC_EXIT:-0}"
+    ;;
   *) exit 64 ;;
 esac

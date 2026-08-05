@@ -103,7 +103,7 @@ describe("production package resolutions", () => {
 
   it("locks Debian package archive SHA-256 values rather than synthetic name hashes", async () => {
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolvePackages({
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
         kind: "codex",
         selector: "0.144.6",
         platform: "linux/arm64",
@@ -141,7 +141,7 @@ describe("production package resolutions", () => {
 
   it("resolves an exact Copilot release and preserves runtime package locks", async () => {
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolvePackages({
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
         kind: "copilot",
         selector: "latest",
         platform: "linux/arm64",
@@ -193,7 +193,7 @@ describe("production package resolutions", () => {
       "libxrandr2",
     ]
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolvePackages({
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
         kind: "claude",
         selector: "2.1.218",
         platform: "linux/arm64",
@@ -273,7 +273,7 @@ describe("production package resolutions", () => {
 
   it("locks only common Claude artifacts for a native marketplace profile", async () => {
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolvePackages({
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
         kind: "claude",
         selector: "2.1.218",
         platform: "linux/arm64",
@@ -295,7 +295,7 @@ describe("production package resolutions", () => {
   it.each(["constructor", "toString", "__proto__"])("rejects prototype runtime package key %j", async (name) => {
     await expect(
       Effect.runPromise(
-        productionResolvers("/tmp/cache").resolvePackages({
+        productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
           kind: "codex",
           selector: "0.144.6",
           platform: "linux/arm64",
@@ -308,7 +308,7 @@ describe("production package resolutions", () => {
 
   it("resolves Codex sources through the strict source cache", async () => {
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolveSource({
+      productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
         kind: "skill",
         repository: "https://github.com/obra/superpowers.git",
         ref: "v6.2.0",
@@ -328,7 +328,7 @@ describe("production package resolutions", () => {
 
   it("resolves Copilot source through the full cache before reading marketplace metadata", async () => {
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolveSource({
+      productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
         kind: "plugin",
         adapter: "copilot-marketplace",
         marketplace: "hve-core",
@@ -361,7 +361,7 @@ describe("production package resolutions", () => {
 
   it("resolves Claude marketplace source through the full strict cache", async () => {
     const result = await Effect.runPromise(
-      productionResolvers("/tmp/cache").resolveSource({
+      productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
         kind: "plugin",
         adapter: "claude-marketplace",
         marketplace: "social-media-skills",

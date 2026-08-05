@@ -28,6 +28,7 @@ const resolveRequestedProfile = (
   requested: string,
 ): Effect.Effect<string, ProfileSelectionError> =>
   Effect.gen(function* () {
+    if (/^https:\/\/github\.com\//.test(requested)) return requested
     if (!isProfileName(requested)) return fromCwd(selection.cwd, requested)
     const candidate = path.join(selection.profiles, requested, "profile.toml")
     if (yield* selection.exists(candidate)) return candidate

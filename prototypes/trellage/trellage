@@ -184,13 +184,20 @@ compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
 picker="$prototype_dir/../shared/terminal-picker.mjs"
 
+clean_child_environment=(env -i "PATH=$PATH")
+for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME DOCKER_CONFIG \
+  TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE HTTP_PROXY HTTPS_PROXY NO_PROXY SSL_CERT_FILE SSL_CERT_DIR; do
+  [[ -z "${!environment_name-}" ]] || clean_child_environment+=("$environment_name=${!environment_name}")
+done
+
 [[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
 environment_metadata=
 environment_enabled=
 environment_source_present=
 environment_path=
 if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ]]; then
-  environment_metadata="$(node "$compiler" environment)" || fail 'environment configuration resolution failed'
+  environment_metadata="$("${clean_child_environment[@]}" node "$compiler" environment)" \
+    || fail 'environment configuration resolution failed'
   environment_enabled="$(jq -r '.enabled' <<<"$environment_metadata")" \
     || fail 'environment metadata has no enabled state'
   environment_source_present="$(jq -r '.source_present' <<<"$environment_metadata")" \
@@ -225,14 +232,15 @@ case "${1:-}" in
   validate|lock|build|upgrade)
     discard_ambient_github_auth
     [[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
-    exec node "$compiler" "$@"
+    exec "${clean_child_environment[@]}" node "$compiler" "$@"
     ;;
 esac
 
 if [[ "$interactive" == true ]]; then
   [[ -t 0 && -t 1 ]] || fail 'interactive profile selection requires an interactive terminal'
   [[ -f "$picker" ]] || fail "terminal picker is unavailable: $picker"
-  profile_choices="$(node "$compiler" choices)" || fail 'profile choices resolution failed'
+  profile_choices="$("${clean_child_environment[@]}" node "$compiler" choices)" \
+    || fail 'profile choices resolution failed'
   picker_input="$(jq -ce '
     def counted($label; $items):
       ($items | length) as $count
@@ -272,11 +280,53 @@ fi
 
 metadata_args=(metadata)
 [[ -z "$profile_argument" ]] || metadata_args+=("$profile_argument")
-profile_metadata="$(node "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
-harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
-if [[ "$harness_kind" != copilot && "$harness_kind" != pi ]]; then
-  discard_ambient_github_auth
+docker_discovery() {
+  local docker_environment=("${clean_child_environment[@]}")
+  [[ -z "${DOCKER_HOST-}" ]] || docker_environment+=("DOCKER_HOST=$DOCKER_HOST")
+  [[ -z "${DOCKER_CONTEXT-}" ]] || docker_environment+=("DOCKER_CONTEXT=$DOCKER_CONTEXT")
+  "${docker_environment[@]}" docker "$@"
+}
+if [[ -n "${DOCKER_HOST-}" ]]; then
+  docker_endpoint="$DOCKER_HOST"
+else
+  docker_context="$(docker_discovery context show 2>/dev/null)" || fail 'cannot capture Docker context'
+  docker_endpoint="$(docker_discovery context inspect "$docker_context" --format '{{ (index .Endpoints "docker").Host }}' 2>/dev/null)" \
+    || fail 'cannot capture Docker endpoint'
 fi
+[[ "$docker_endpoint" == unix://* ]] || fail "Docker endpoint must be Unix: ${docker_endpoint:-missing}"
+export DOCKER_HOST="$docker_endpoint"
+unset DOCKER_CONTEXT
+docker() {
+  if [[ "${1:-}" == --host ]]; then
+    shift 2
+  fi
+  command docker --host "$docker_endpoint" "$@"
+}
+docker_platform="$(docker_discovery --host "$docker_endpoint" info --format '{{.OSType}}/{{.Architecture}}' 2>/dev/null)" \
+  || fail 'cannot inspect Docker server platform'
+docker_platform="${docker_platform/linux\/aarch64/linux\/arm64}"
+docker_platform="${docker_platform/linux\/x86_64/linux\/amd64}"
+case "$docker_platform" in
+  linux/arm64|linux/amd64) ;;
+  *) fail "unsupported Docker server platform: ${docker_platform:-unknown}" ;;
+esac
+docker_server_id="$(docker_discovery --host "$docker_endpoint" info --format '{{.ID}}' 2>/dev/null)" \
+  || fail 'cannot capture Docker server identity'
+[[ -n "$docker_server_id" ]] || fail 'Docker server identity is empty'
+verify_docker_server() {
+  local current_platform current_server_id
+  current_platform="$(docker info --format '{{.OSType}}/{{.Architecture}}' 2>/dev/null)" \
+    || fail 'Docker server changed during operation'
+  current_platform="${current_platform/linux\/aarch64/linux\/arm64}"
+  current_platform="${current_platform/linux\/x86_64/linux\/amd64}"
+  current_server_id="$(docker info --format '{{.ID}}' 2>/dev/null)" \
+    || fail 'Docker server changed during operation'
+  [[ "$current_platform" == "$docker_platform" && "$current_server_id" == "$docker_server_id" ]] \
+    || fail 'Docker server changed during operation'
+}
+profile_metadata="$("${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+  node "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
+harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
 if [[ "$harness_kind" != claude ]]; then
   [[ -z "$auth_mode_argument" ]] || fail '--auth-mode is supported only for Claude profiles'
   discard_ambient_claude_auth
@@ -290,6 +340,8 @@ runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile
 profile_path="$(jq -er '.profile_path' <<<"$profile_metadata")" || fail 'profile metadata has no path'
 profile_locked="$(jq -r '.locked' <<<"$profile_metadata")" || fail 'profile metadata has no lock state'
 profile_image="$(jq -er '.image' <<<"$profile_metadata")" || fail 'profile metadata has no image'
+metadata_platform="$(jq -er '.platform' <<<"$profile_metadata")" || fail 'profile metadata has no platform'
+[[ "$metadata_platform" == "$docker_platform" ]] || fail 'profile metadata selected a different Docker platform'
 build_command="$(jq -er '.build_command' <<<"$profile_metadata")" || fail 'profile metadata has no build command'
 secrets_provider="$(jq -er '.secrets_provider' <<<"$profile_metadata")" || fail 'profile metadata has no secrets provider'
 resolved_varlock_path="$(jq -r '.resolved_varlock_path // empty' <<<"$profile_metadata")"
@@ -358,8 +410,12 @@ resolve_github_cli_auth() {
     github_cli_auth_source=COPILOT_GITHUB_TOKEN
     [[ "$mode" == doctor ]] || github_cli_token="$ambient_copilot_github_token"
   elif command -v gh >/dev/null 2>&1; then
-    github_cli_token="$(gh auth token --hostname "$github_cli_host" 2>/dev/null)" || github_cli_token=
-    [[ -z "$github_cli_token" ]] || github_cli_auth_source=gh
+    if [[ "$mode" == doctor ]]; then
+      gh auth status --hostname "$github_cli_host" >/dev/null 2>&1 && github_cli_auth_source=gh
+    else
+      github_cli_token="$(gh auth token --hostname "$github_cli_host" 2>/dev/null)" || github_cli_token=
+      [[ -z "$github_cli_token" ]] || github_cli_auth_source=gh
+    fi
   fi
   if [[ "$mode" == doctor ]]; then
     github_cli_token=
@@ -385,26 +441,23 @@ resolve_copilot_auth() {
   discard_ambient_github_auth
   if [[ "$copilot_auth_source" == login ]] && command -v gh >/dev/null 2>&1; then
     host="${COPILOT_GH_HOST:-$github_cli_host}"
-    copilot_token="$(gh auth token --hostname "$host" 2>/dev/null)" || copilot_token=
-    [[ -z "$copilot_token" ]] || copilot_auth_source=gh
+    if [[ "$mode" == doctor ]]; then
+      gh auth status --hostname "$host" >/dev/null 2>&1 && copilot_auth_source=gh
+    else
+      copilot_token="$(gh auth token --hostname "$host" 2>/dev/null)" || copilot_token=
+      [[ -z "$copilot_token" ]] || copilot_auth_source=gh
+    fi
   fi
   if [[ "$mode" == doctor ]]; then
     copilot_token=
   fi
 }
 
-if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == shell || "$mode" == doctor ]]; then
+if [[ "$mode" == doctor ]]; then
   resolve_github_cli_auth
-fi
-if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login \
-  && ( "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ) ]]; then
-  resolve_copilot_auth
-else
-  discard_ambient_github_auth
-fi
-if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == shell ]]; then
-  [[ -n "$github_cli_token" ]] \
-    || fail "GitHub CLI authentication unavailable: set GH_TOKEN or GITHUB_TOKEN, or run gh auth login for $github_cli_host"
+  if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ]]; then
+    resolve_copilot_auth
+  fi
 fi
 
 claude_auth_source=proxy
@@ -494,22 +547,25 @@ prototype_label='dev.trellage.prototype'
 worktree_label='dev.trellage.worktree'
 profile_label='dev.trellage.profile'
 profile_hash_label='dev.trellage.profile.hash'
+platform_label='dev.trellage.platform'
 runtime_hash_label='dev.trellage.runtime.hash'
 prototype_format="{{ index .Config.Labels \"$prototype_label\" }}"
 worktree_format="{{ index .Config.Labels \"$worktree_label\" }}"
 profile_format="{{ index .Config.Labels \"$profile_label\" }}"
 profile_hash_format="{{ index .Config.Labels \"$profile_hash_label\" }}"
+platform_format="{{ index .Config.Labels \"$platform_label\" }}"
 runtime_hash_format="{{ index .Config.Labels \"$runtime_hash_label\" }}"
 resource_label_args=(
   --label "$prototype_label=$prototype_owner"
   --label "$worktree_label=$worktree"
   --label "$profile_label=$profile_name"
+  --label "$platform_label=$docker_platform"
 )
 container_integrity_label_args=(
   --label "$profile_hash_label=$profile_hash"
   --label "$runtime_hash_label=$runtime_hash"
 )
-volume_ownership_format="{{ printf \"%s\\t%s\\t%s\" (index .Labels \"$prototype_label\") (index .Labels \"$worktree_label\") (index .Labels \"$profile_label\") }}"
+volume_ownership_format="{{ printf \"%s\\t%s\\t%s\\t%s\" (index .Labels \"$prototype_label\") (index .Labels \"$worktree_label\") (index .Labels \"$profile_label\") (index .Labels \"$platform_label\") }}"
 mounts_format='{{ range .Mounts }}{{ printf "%s\t%s\t%s\t%s\t%t\n" .Type .Name .Source .Destination .RW }}{{ end }}'
 
 probe_container_presence() {
@@ -594,6 +650,11 @@ inspect_container() {
   container_profile_hash="$(docker container inspect \
     --format "$profile_hash_format" "$container_name" 2>/dev/null)" \
     || fail "cannot inspect Docker container profile hash: $container_name"
+  container_platform="$(docker container inspect \
+    --format "$platform_format" "$container_name" 2>/dev/null)" \
+    || fail "cannot inspect Docker container platform: $container_name"
+  [[ "$container_platform" == "$docker_platform" ]] \
+    || fail "refusing Docker container platform collision: $container_name"
   container_runtime_hash="$(docker container inspect \
     --format "$runtime_hash_format" "$container_name" 2>/dev/null)" \
     || fail "cannot inspect Docker container runtime hash: $container_name"
@@ -624,6 +685,7 @@ remove_stale_container() {
       fail "profile container is stale but has an active session; exit it and retry: $container_name"
     fi
   fi
+  verify_docker_server
   docker container rm --force "$container_id" >/dev/null
   container_id=
 }
@@ -642,7 +704,7 @@ validate_state_volume() {
   volume_ownership="$(docker volume inspect \
     --format "$volume_ownership_format" "$state_volume" 2>/dev/null)" \
     || fail "cannot inspect Docker volume ownership: $state_volume"
-  expected_ownership="$prototype_owner"$'\t'"$worktree"$'\t'"$profile_name"
+  expected_ownership="$prototype_owner"$'\t'"$worktree"$'\t'"$profile_name"$'\t'"$docker_platform"
   [[ "$volume_ownership" == "$expected_ownership" ]] \
     || fail "refusing unrelated Docker volume name collision: $state_volume"
 }
@@ -983,6 +1045,7 @@ if [[ "$mode" == stop ]]; then
   [[ "$running" == 'true' || "$running" == 'false' ]] \
     || fail "Docker container has an invalid running state: $container_name"
   if [[ "$running" == true ]]; then
+    verify_docker_server
     docker container stop "$container_id" >/dev/null
   fi
   exit 0
@@ -1019,10 +1082,12 @@ if [[ "$mode" == destroy ]]; then
   fi
 
   if [[ "$container_present" == true ]]; then
+    verify_docker_server
     docker container rm --force "$container_id" >/dev/null
   fi
   if [[ "$volume_present" == true ]]; then
     validate_state_volume
+    verify_docker_server
     docker volume rm "$state_volume" >/dev/null
   fi
   exit 0
@@ -1046,6 +1111,11 @@ image_runtime_hash="$(docker image inspect \
   --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)" \
   || fail "cannot inspect Docker image runtime hash: $image"
 [[ "$image_runtime_hash" == "$runtime_hash" ]] \
+  || fail "profile image is missing or stale; run: $build_command"
+image_platform="$(docker image inspect \
+  --format '{{ index .Config.Labels "dev.trellage.platform" }}' "$resolved_image_id" 2>/dev/null)" \
+  || fail "cannot inspect Docker image platform: $image"
+[[ "$image_platform" == "$docker_platform" ]] \
   || fail "profile image is missing or stale; run: $build_command"
 docker network inspect "$network" >/dev/null 2>&1 \
   || fail "Docker network is unavailable: $network"
@@ -1077,6 +1147,7 @@ if container_is_present; then
       [[ "$running" == 'true' || "$running" == 'false' ]] \
         || fail "Docker container has an invalid running state: $container_name"
       if [[ "$running" != true ]]; then
+        verify_docker_server
         docker container start "$container_id" >/dev/null
       fi
     fi
@@ -1086,6 +1157,7 @@ if [[ "$reuse_container" != true ]]; then
   if volume_is_present; then
     validate_state_volume
   else
+    verify_docker_server
     created_volume="$(docker volume create \
       "${resource_label_args[@]}" \
       "$state_volume")"
@@ -1094,6 +1166,7 @@ if [[ "$reuse_container" != true ]]; then
     validate_state_volume \
       || fail "Docker state volume could not be verified after creation: $state_volume"
   fi
+  verify_docker_server
   container_id="$(docker container create \
     --name "$container_name" \
     "${resource_label_args[@]}" \
@@ -1120,9 +1193,22 @@ if [[ "$reuse_container" != true ]]; then
     docker container rm --force "$container_id" >/dev/null
     fail "Docker created container from an unexpected image: $container_name"
   fi
+  verify_docker_server
   docker container start "$container_id" >/dev/null
 fi
-if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == shell ]]; then
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
+  resolve_github_cli_auth
+  if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ]]; then
+    resolve_copilot_auth
+  else
+    discard_ambient_github_auth
+  fi
+  if [[ -z "$github_cli_token" \
+    && ! ( ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ) ]]; then
+    fail "GitHub CLI authentication unavailable: set GH_TOKEN or GITHUB_TOKEN, or run gh auth login for $github_cli_host"
+  fi
+fi
+if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) && -n "$github_cli_token" ]]; then
   prepare_github_cli_auth
 fi
 
@@ -1179,7 +1265,7 @@ case "$mode" in
       prepare_claude_auth
     fi
     HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
-      "${github_cli_args[@]}" \
+      ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1197,7 +1283,7 @@ case "$mode" in
     fi
     HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
       "${terminal_args[@]}" \
-      "${github_cli_args[@]}" \
+      ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1209,7 +1295,7 @@ case "$mode" in
   shell)
     exec docker container exec \
       "${terminal_args[@]}" \
-      "${github_cli_args[@]}" \
+      ${github_cli_args[@]+"${github_cli_args[@]}"} \
       --workdir "$mount_path" \
       "$container_id" \
       "$runtime_shell" "${runtime_shell_args[@]}" "$interactive_shell_command" --
@@ -1226,7 +1312,7 @@ if (( $# > 0 )); then
   fi
   HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
     "${terminal_args[@]}" \
-    "${github_cli_args[@]}" \
+    ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1245,7 +1331,7 @@ if [[ "$has_initial_prompt" == true ]]; then
   fi
   HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
     "${terminal_args[@]}" \
-    "${github_cli_args[@]}" \
+    ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
@@ -1263,7 +1349,7 @@ elif [[ "$harness_kind" == claude ]]; then
 fi
 HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
   "${terminal_args[@]}" \
-  "${github_cli_args[@]}" \
+  ${github_cli_args[@]+"${github_cli_args[@]}"} \
   ${secret_args[@]+"${secret_args[@]}"} \
   ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
   ${claude_auth_args[@]+"${claude_auth_args[@]}"} \

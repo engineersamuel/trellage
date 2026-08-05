@@ -397,7 +397,7 @@ fi
         await writeFile(path.join(context, "profile.lock.toml"), renderLock(lock))
         const executable = harnessPackage.kind
         const installedExecutable = harnessPackage.kind === "pi" ? "omp" : executable
-        const misePlatform = document.profile.image.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
+        const misePlatform = lock.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
         const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
         const claudePythonLock = claudeMarketplace
           ? ""

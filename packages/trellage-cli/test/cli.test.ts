@@ -23,6 +23,20 @@ vi.mock("@effect/platform-node", async (importOriginal) => {
   }
 })
 
+vi.mock("../src/docker-target.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/docker-target.js")>()
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    ...actual,
+    captureDockerTarget: () =>
+      EffectModule.succeed({
+        endpoint: "unix:///tmp/trellage-cli-test.sock",
+        serverId: "trellage-cli-test-server",
+        platform: "linux/arm64" as const,
+      }),
+  }
+})
+
 vi.mock("../src/application.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/application.js")>()
   const { Effect } = await import("effect")

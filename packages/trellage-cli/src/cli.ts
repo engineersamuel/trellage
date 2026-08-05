@@ -21,6 +21,9 @@ import {
 import { environmentMetadata } from "./environment.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
 import { selectProfilePath } from "./selection.js"
+import { captureDockerTarget, type DockerTarget } from "./docker-target.js"
+import { assertProductionPlatform, type Platform } from "./platform.js"
+import { resolveProfileReference } from "./profile-reference.js"
 
 const execFilePromise = promisify(execFile)
 
@@ -97,44 +100,62 @@ const configuredNpmRegistry = Effect.tryPromise({
   catch: () => undefined,
 }).pipe(Effect.orElseSucceed(() => undefined))
 
+const withDockerTarget = <A, E>(operation: (target: DockerTarget) => Effect.Effect<A, E>) =>
+  captureDockerTarget().pipe(
+    Effect.flatMap((target) => assertProductionPlatform(target.platform).pipe(Effect.zipRight(operation(target)))),
+  )
+
+const selectedResolvedProfile = (argument: Option.Option<string>, platform: Platform) =>
+  selectedProfile(argument).pipe(Effect.flatMap((reference) => resolveProfileReference(reference, platform, cacheHome)))
+
 const validate = Command.make("validate", { profile: profileArgument }, ({ profile }) =>
-  selectedProfile(profile).pipe(
-    Effect.flatMap(loadProfile),
-    Effect.flatMap((document) => Console.log(`valid: ${document.path}`)),
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap(loadProfile),
+      Effect.flatMap((document) => Console.log(`valid: ${document.path}`)),
+    ),
   ),
 )
 
 const lock = Command.make("lock", { update, profile: profileArgument }, ({ profile, update: updateLock }) =>
-  selectedProfile(profile).pipe(
-    Effect.flatMap((selected) => compileProfileLock(selected, updateLock, cacheHome)),
-    Effect.flatMap((result) => Console.log(`locked: ${result.profile_hash}`)),
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) => compileProfileLock(selected, updateLock, cacheHome, target.platform)),
+      Effect.flatMap((result) => Console.log(`locked: ${result.profile_hash} (${target.platform})`)),
+    ),
   ),
 )
 
 const build = Command.make("build", { locked, profile: profileArgument }, ({ profile, locked: lockedBuild }) =>
-  selectedProfile(profile).pipe(
-    Effect.flatMap((selected) =>
-      configuredNpmRegistry.pipe(
-        Effect.flatMap((npmRegistry) =>
-          buildProfile(selected, lockedBuild, cacheHome, runtimeSupport, undefined, npmRegistry),
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) =>
+        configuredNpmRegistry.pipe(
+          Effect.flatMap((npmRegistry) =>
+            buildProfile(selected, lockedBuild, cacheHome, runtimeSupport, target, undefined, npmRegistry),
+          ),
         ),
       ),
+      Effect.flatMap((result) => Console.log(`built: ${result.image} (${result.digest})`)),
     ),
-    Effect.flatMap((result) => Console.log(`built: ${result.image} (${result.digest})`)),
   ),
 )
 
 const upgrade = Command.make("upgrade", { profile: profileArgument }, ({ profile }) =>
-  selectedProfile(profile).pipe(
-    Effect.flatMap((selected) => upgradeProfile(selected, cacheHome, runtimeSupport)),
-    Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) => upgradeProfile(selected, cacheHome, runtimeSupport, target)),
+      Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
+    ),
   ),
 )
 
 const metadata = Command.make("metadata", { profile: profileArgument }, ({ profile }) =>
-  selectedProfile(profile).pipe(
-    Effect.flatMap(profileMetadata),
-    Effect.flatMap((result) => Console.log(JSON.stringify(result))),
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) => profileMetadata(selected, target.platform)),
+      Effect.flatMap((result) => Console.log(JSON.stringify(result))),
+    ),
   ),
 )
 

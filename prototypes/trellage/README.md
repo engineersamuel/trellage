@@ -35,15 +35,17 @@ Only an explicit update refreshes unchanged Git refs:
 ./trellage lock --update ../../profiles/codex-superpowers/profile.toml
 ```
 
-Profiles and adjacent locks are committed. Resolved source content is integrity-checked under the Trellage cache beneath `$XDG_CACHE_HOME` and is safe to delete. Credentials never enter build inputs.
+Profiles and adjacent platform locks are committed. Trellage binds the operation to one local Unix Docker endpoint and refuses endpoint or server changes before mutation. Native ARM64 is the only production platform today. AMD64 is recognized for future lock selection but rejected before downloads or Docker mutation until its artifact catalog and lock are complete. Resolved source content is integrity-checked under the Trellage cache beneath `$XDG_CACHE_HOME` and is safe to delete. Credentials never enter build inputs.
 
 ## Build
 
-Build the locked Linux ARM64 OCI image, verify its manifest digest, and import it as `trellage-profile-codex-superpowers:locked`:
+Build the lock for the local Docker server platform, verify its manifest digest, and import the platform-qualified image:
 
 ```bash
 ./trellage build --locked ../../profiles/codex-superpowers/profile.toml
 ```
+
+The current production tag is `trellage-profile-codex-superpowers-linux-arm64:locked`.
 
 ## Deterministic Smoke Verification
 
@@ -277,7 +279,7 @@ profile/worktree state volume at `/home/agent/.omp/agent`. No host `.omp`,
 
 The profile uses Docker `bridge` and does not require `copilot-proxy-rs`.
 `profile.toml` pins the same release for the OMP executable and native skills.
-`profile.lock.toml` pins the source commit and inventory, architecture-specific
+The selected `profile.linux-<architecture>.lock.toml` pins the source commit and inventory, architecture-specific
 raw asset URL, size, GitHub-provided SHA-256 digest, and final OCI digest.
 Managed skills are refreshed into the persistent state volume on every launch.
 

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
 
 import {
   compileLock,
@@ -31,7 +32,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish"]
@@ -51,7 +51,6 @@ version = "latest"
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git", "jq"]
@@ -77,7 +76,6 @@ provider = "github-copilot"
 model = "gpt-5.6-terra"
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -85,13 +83,8 @@ packages = ["bash"]
 
 const document = (model?: string) => Effect.runSync(parseProfile(source(model), "/profiles/test/profile.toml"))
 
-const copilotDocument = (platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
-  Effect.runSync(
-    parseProfile(
-      copilotSource.replace('platform = "linux/arm64"', `platform = "${platform}"`),
-      "/profiles/copilot/profile.toml",
-    ),
-  )
+const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
+  Effect.runSync(parseProfile(copilotSource, "/profiles/copilot/profile.toml"))
 
 const piDocument = () => Effect.runSync(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
 
@@ -105,6 +98,7 @@ const fakeResolvers = (
   calls: Array<string>,
   options: { readonly copilotVersion?: string; readonly pluginVersion?: string } = {},
 ): LockResolvers => ({
+  platform: "linux/arm64",
   resolveSource: (request) =>
     Effect.sync(() => {
       calls.push(`source:${request.ref}`)
@@ -136,21 +130,28 @@ const fakeResolvers = (
           kind: request.kind,
           selector: request.selector,
           version,
-          integrity: digest("c"),
+          integrity: request.kind === "codex" ? arm64ArtifactCatalog.codex.integrity : digest("c"),
           url:
             request.kind === "copilot"
               ? `https://github.com/github/copilot-cli/releases/download/v${version}/${copilotAsset}`
-              : `https://example.test/${request.kind}-${request.selector}.tar.gz`,
-          size: 1024,
+              : request.kind === "codex"
+                ? arm64ArtifactCatalog.codex.url
+                : `https://example.test/${request.kind}-${request.selector}.tar.gz`,
+          size: request.kind === "codex" ? arm64ArtifactCatalog.codex.size : 1024,
         },
         ...(request.needsSkillsCli ? { skills_cli_version: "1.5.19", skills_cli_integrity: "sha512-dGVzdA==" } : {}),
-        runtime: request.packages.map((name) => ({ name, version: `1.0-${name}`, integrity: digest("d") })),
+        runtime: request.packages.map((name) => ({
+          name,
+          version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
+          integrity:
+            arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
+        })),
       }
     }),
   resolveBase: (request) =>
     Effect.sync(() => {
       calls.push("base")
-      return { reference: request.reference, digest: digest("b") }
+      return { reference: request.reference, digest: arm64ArtifactCatalog.base.digest }
     }),
 })
 
@@ -160,6 +161,7 @@ const completeCopilotLock = (platform: "linux/arm64" | "linux/amd64" = "linux/ar
   const files = [{ kind: "file" as const, path: "plugins/hve-core/SKILL.md", sha256: digest("f") }]
   return {
     schema: 1,
+    platform,
     source_date_epoch: 1784379906,
     profile_hash: profileHash(profile),
     sources: [
@@ -203,6 +205,7 @@ const completePiLock = (): ProfileLock => {
   const profile = piDocument()
   return {
     schema: 1,
+    platform: "linux/arm64",
     source_date_epoch: 1784379906,
     profile_hash: profileHash(profile),
     sources: [],
@@ -230,6 +233,12 @@ const completePiLock = (): ProfileLock => {
 }
 
 describe("lock inventory compatibility", () => {
+  it("rejects a persisted lock without platform identity", async () => {
+    const rendered = renderLock(completeCopilotLock()).replace('platform = "linux/arm64"\n', "")
+
+    await expect(Effect.runPromise(parseLock(rendered))).rejects.toThrow(/platform.*missing|\["platform"\]/i)
+  })
+
   it("round-trips and accepts a complete native Claude marketplace lock", async () => {
     const profile = await Effect.runPromise(
       parseProfile(
@@ -245,7 +254,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -268,6 +276,7 @@ select = ["social-media-skills"]
     ]
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(profile),
       sources: [
@@ -288,42 +297,20 @@ select = ["social-media-skills"]
         harness: {
           kind: "claude",
           selector: "2.1.218",
-          version: "2.1.218",
-          integrity: digest("c"),
-          url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-          size: 22971,
+          ...arm64ArtifactCatalog.claude,
         },
-        runtime: [{ name: "bash", version: "5.2.15-2+b13", integrity: digest("d") }],
-        artifacts: [
+        runtime: [
           {
-            name: "node",
-            version: "22.17.0",
-            integrity: digest("1"),
-            url: "https://example.test/node.tar.gz",
-          },
-          {
-            name: "claude-code-linux-arm64",
-            version: "2.1.218",
-            integrity: digest("2"),
-            url: "https://example.test/claude-native.tgz",
-          },
-          {
-            name: "builder-oci",
-            version: "jdxcode/mise",
-            integrity: digest("3"),
-            url: "oci://docker.io/jdxcode/mise",
-          },
-          {
-            name: "skopeo-oci",
-            version: "stable",
-            integrity: digest("4"),
-            url: "oci://quay.io/skopeo/stable",
+            name: "bash",
+            version: arm64ArtifactCatalog.runtimeVersions.bash,
+            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
           },
         ],
+        artifacts: arm64ArtifactCatalog.fixedArtifacts,
       },
       image: {
         base: "node:22.17.0-bookworm-slim",
-        base_digest: digest("b"),
+        base_digest: arm64ArtifactCatalog.base.digest,
         final_digest: digest("e"),
       },
     }
@@ -353,7 +340,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -402,7 +388,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -431,6 +416,67 @@ select = ["full"]
     await expect(Effect.runPromise(requireLocked(claudeDocument, tampered))).rejects.toThrow(/artifact integrity/i)
   })
 
+  it("rejects a persisted Hyperresearch lock when an exact auxiliary artifact identity is changed", async () => {
+    const claudeDocument = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "claude-hyperresearch"
+description = "Claude lock profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[plugins]]
+adapter = "hyperresearch"
+repository = "https://github.com/jordan-gibbs/hyperresearch.git"
+ref = "main"
+select = ["full"]
+`,
+        "/profiles/claude/profile.toml",
+      ),
+    )
+    const resolved = await Effect.runPromise(
+      compileLock(claudeDocument, undefined, false, fakeResolvers(commit("1"), [])),
+    )
+    const artifacts = [...arm64ArtifactCatalog.fixedArtifacts, ...arm64ArtifactCatalog.hyperresearchArtifacts].map(
+      (artifact) => (artifact.name === "obscura" ? { ...artifact, integrity: digest("f") } : artifact),
+    )
+    const tampered: ProfileLock = {
+      ...resolved,
+      packages: {
+        ...resolved.packages,
+        harness: { kind: "claude", selector: "2.1.218", ...arm64ArtifactCatalog.claude },
+        runtime: [
+          {
+            name: "bash",
+            version: arm64ArtifactCatalog.runtimeVersions.bash,
+            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+          },
+        ],
+        artifacts,
+        python_lock_integrity: arm64ArtifactCatalog.hyperresearchPythonLockIntegrity,
+      },
+      image: {
+        base: arm64ArtifactCatalog.base.reference,
+        base_digest: arm64ArtifactCatalog.base.digest,
+        final_digest: digest("e"),
+      },
+    }
+    const persisted = await Effect.runPromise(parseLock(renderLock(tampered)))
+
+    await expect(Effect.runPromise(requireLocked(claudeDocument, persisted))).rejects.toThrow(
+      /artifact does not match platform catalog: obscura/,
+    )
+  })
+
   it("rejects a Claude lock that predates the locked Chromium headless shell", async () => {
     const claudeDocument = await Effect.runPromise(
       parseProfile(
@@ -446,7 +492,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -588,7 +633,9 @@ select = ["full"]
 
   it("accepts a parsed historical file-only lock with legacy inventory integrity", async () => {
     const profilePath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.toml", import.meta.url))
-    const lockPath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.lock.toml", import.meta.url))
+    const lockPath = fileURLToPath(
+      new URL("../../../profiles/codex-superpowers/profile.linux-arm64.lock.toml", import.meta.url),
+    )
     const profileSource = await readFile(profilePath, "utf8")
     const serialized = await readFile(lockPath, "utf8")
     const historicalDocument = await Effect.runPromise(parseProfile(profileSource, profilePath))
@@ -782,7 +829,9 @@ select = ["full"]
 describe("compileLock", () => {
   it("re-resolves genuine legacy sources when only profile content changes", async () => {
     const profilePath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.toml", import.meta.url))
-    const lockPath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.lock.toml", import.meta.url))
+    const lockPath = fileURLToPath(
+      new URL("../../../profiles/codex-superpowers/profile.linux-arm64.lock.toml", import.meta.url),
+    )
     const legacyProfileSource = await readFile(profilePath, "utf8")
     const currentLock = await Effect.runPromise(parseLock(await readFile(lockPath, "utf8")))
     const currentSource = currentLock.sources[0]!
@@ -820,13 +869,7 @@ describe("compileLock", () => {
             commit: /^[0-9a-f]{40}$/.test(request.ref) ? request.ref : resolution.commit,
           })),
         ),
-      resolvePackages: (request) =>
-        baseResolvers.resolvePackages(request).pipe(
-          Effect.map((packages) => ({
-            ...packages,
-            runtime: packages.runtime.map((entry) => ({ ...entry, version: "1.0.0" })),
-          })),
-        ),
+      resolvePackages: baseResolvers.resolvePackages,
     }
 
     const compiled = await Effect.runPromise(compileLock(changedDocument, legacyLock, false, resolvers))
@@ -887,12 +930,22 @@ describe("compileLock", () => {
     await expect(Effect.runPromise(requireLocked(profile, lock))).resolves.toBe(lock)
   })
 
-  it("accepts the canonical x64 Copilot artifact for an amd64 profile", async () => {
+  it("recognizes the canonical x64 lock shape but rejects unsupported AMD64 production", async () => {
     const profile = copilotDocument("linux/amd64")
     const lock = completeCopilotLock("linux/amd64")
 
-    expect(lockIsReady(profile, lock)).toBe(true)
-    await expect(Effect.runPromise(requireLocked(profile, lock))).resolves.toBe(lock)
+    expect(lockIsReady(profile, lock, "linux/amd64")).toBe(false)
+    await expect(Effect.runPromise(requireLocked(profile, lock, "linux/amd64"))).rejects.toThrow(
+      /production artifacts are unavailable/,
+    )
+  })
+
+  it("rejects a lock selected for a different Docker server platform", async () => {
+    const profile = copilotDocument()
+    const lock = completeCopilotLock("linux/arm64")
+
+    expect(lockIsReady(profile, lock, "linux/amd64")).toBe(false)
+    await expect(Effect.runPromise(requireLocked(profile, lock, "linux/amd64"))).rejects.toThrow(/lock platform/)
   })
 
   it.each(["1.0.75-alpha.1", "1.0.75+build.1"])("rejects non-stable Copilot lock version %j", async (version) => {
@@ -1025,7 +1078,7 @@ describe("compileLock", () => {
 
     expect(first).toEqual(second)
     expect(first.sources[0]?.commit).toBe(commit("a"))
-    expect(first.image.base_digest).toBe(digest("b"))
+    expect(first.image.base_digest).toBe(arm64ArtifactCatalog.base.digest)
     expect(first.image.final_digest).toBeUndefined()
     expect(first.source_date_epoch).toBe(1784379906)
     expect(calls).toEqual(["source:v6.2.0", "packages", "base"])

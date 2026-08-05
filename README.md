@@ -160,7 +160,14 @@ trellage doctor --profile claude-hyperresearch
 
 Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.
 
-Profile source files are editable intent: a source `ref` may be a tag, branch, or commit selected by the author. `trellage lock` resolves every source to an immutable commit recorded in `profile.lock.toml`; reproducible builds use `--locked` and reject drift between the profile and lock.
+Profile source files are architecture-neutral editable intent. Production locks currently support native ARM64 only. `trellage` recognizes AMD64 for future lock selection, but rejects it before downloads or Docker mutation until a complete AMD64 artifact catalog and lock are available. `trellage lock` resolves sources and native artifacts only for the Docker server platform. Reproducible builds use `--locked` and reject profile, platform, artifact, or digest drift.
+
+A GitHub blob URL also works for locked builds and launches. Trellage resolves the revision once and fetches the profile and selected sibling lock from that same commit:
+
+```bash
+trellage build --locked https://github.com/engineersamuel/trellage/blob/v1.0.0/profiles/copilot-hve/profile.toml
+trellage --profile https://github.com/engineersamuel/trellage/blob/v1.0.0/profiles/copilot-hve/profile.toml
+```
 
 See [the Trellage prototype guide](prototypes/trellage/README.md) for profile locks, lifecycle details, Copilot with HVE Core, cleanup, and deterministic verification.
 
@@ -189,7 +196,7 @@ under `/home/agent/.omp/agent`. The profile uses Docker `bridge`, not
 `copilot-proxy-rs_default`.
 
 The editable profile pins the same OMP release tag for both the executable and
-its native skills. `profile.lock.toml` records the exact source commit, source
+its native skills. The selected platform lock records the exact source commit, source
 inventory, release asset URL, size, GitHub SHA-256 digest, and built OCI digest.
 Locked builds never resolve a newer release.
 

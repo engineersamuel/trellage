@@ -2,6 +2,7 @@ import { readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 
 import { Data, Effect, Option } from "effect"
+import type { Platform } from "./platform.js"
 
 import {
   isClaudeProfile,
@@ -50,6 +51,7 @@ export interface ProfileChoice {
   readonly value: string
   readonly name: string
   readonly description: string
+  readonly supported_platforms: ReadonlyArray<Platform>
   readonly harness: {
     readonly kind: Profile["harness"]["kind"]
     readonly version: string
@@ -75,6 +77,7 @@ type ProfileOrigin = "bundled" | "worktree"
 interface DiscoveredProfile {
   readonly origin: ProfileOrigin
   readonly document: ProfileDocument
+  readonly supportedPlatforms: ReadonlyArray<Platform>
 }
 
 const model = (profile: Profile): string | undefined =>
@@ -98,13 +101,17 @@ const projectMcp = (mcp: Mcp): ProfileChoiceMcp => {
     : { ...common, transport: "stdio", command: mcp.command, args: mcp.args ?? [] }
 }
 
-export const projectProfileChoice = (document: ProfileDocument): ProfileChoice => {
+export const projectProfileChoice = (
+  document: ProfileDocument,
+  supportedPlatforms: ReadonlyArray<Platform> = [],
+): ProfileChoice => {
   const profile = document.profile
   const profileModel = model(profile)
   return {
     value: document.path,
     name: profile.name,
     description: profile.description,
+    supported_platforms: supportedPlatforms,
     harness: {
       kind: profile.harness.kind,
       version: profile.harness.version,
@@ -151,7 +158,14 @@ const loadCandidate = (
     })
     if (source === undefined) return Option.none()
     const document = yield* parseProfile(source, canonicalPath).pipe(Effect.option)
-    return Option.map(document, (parsed) => ({ origin, document: parsed }))
+    const entries = yield* Effect.tryPromise({
+      try: () => readdir(path.dirname(canonicalPath)),
+      catch: () => [] as Array<string>,
+    })
+    const supportedPlatforms = (["linux/arm64", "linux/amd64"] as const).filter((platform) =>
+      entries.includes(`profile.${platform.replace("/", "-")}.lock.toml`),
+    )
+    return Option.map(document, (parsed) => ({ origin, document: parsed, supportedPlatforms }))
   }).pipe(Effect.orElseSucceed(() => Option.none()))
 
 const discoverRoot = (
@@ -199,6 +213,6 @@ export const discoverProfileChoices = (
     }
 
     return [...byPath.values()]
-      .map(({ document }) => projectProfileChoice(document))
+      .map(({ document, supportedPlatforms }) => projectProfileChoice(document, supportedPlatforms))
       .sort((left, right) => left.name.localeCompare(right.name, "en"))
   })

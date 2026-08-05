@@ -814,7 +814,7 @@ for qualification in \
   require_section_text '## Prerequisites and Setup' "$qualification"
 done
 
-require_section_text '## Build' 'trellage-profile-codex-superpowers:locked'
+require_section_text '## Build' 'trellage-profile-codex-superpowers-linux-arm64:locked'
 require_section_text '## Install' '`~/.local/bin/trellage`'
 require_section_text '## Install' '`TRELLAGE_INSTALL_DIR`'
 

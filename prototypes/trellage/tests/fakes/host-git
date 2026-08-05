@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+fixture_config="$(dirname "$0")/.trellage-fixture-env"
+[[ ! -f "$fixture_config" ]] || source "$fixture_config"
 
 printf 'PWD\t%s\n' "$PWD" >>"${FAKE_GIT_LOG:?}"
 printf 'ENV\tCOPILOT_GITHUB_TOKEN=%s\n' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_GIT_LOG"

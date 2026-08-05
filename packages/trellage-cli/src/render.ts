@@ -112,6 +112,7 @@ TMPDIR = "/tmp"
 "dev.trellage.prototype" = "trellage"
 "dev.trellage.profile" = ${quote(profile.name)}
 "dev.trellage.profile.hash" = ${quote(lock.profile_hash)}
+"dev.trellage.platform" = ${quote(lock.platform)}
 "dev.trellage.runtime.hash" = ${quote(options.runtimeSupport.hash)}
 ${labels.join("\n")}
 `

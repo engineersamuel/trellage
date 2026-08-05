@@ -13,9 +13,11 @@ import { parseLock, renderLock } from "./lock-file.js"
 import { compileLock, lockIsReady, profileHash, requireLocked, withFinalDigest, type ProfileLock } from "./lock.js"
 import { createBuildContext, type PluginGenerator, type RuntimeSupport, type SkillGenerator } from "./materialize.js"
 import { parseProfile, type ProfileDocument } from "./profile.js"
+import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
 import { productionResolvers } from "./resolvers.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
 import { createRuntimeSupportSnapshot, type RuntimeSupportSnapshot } from "./runtime-support.js"
+import { dockerHostArguments, dockerSocketPath, verifyDockerTarget, type DockerTarget } from "./docker-target.js"
 
 const execFilePromise = promisify(execFile)
 const builderImage = "docker.io/jdxcode/mise@sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
@@ -198,10 +200,7 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
 const io = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ApplicationError> =>
   Effect.tryPromise({ try: operation, catch: (cause) => new ApplicationError({ message, cause }) })
 
-export const adjacentLockPath = (profilePath: string): string => {
-  const extension = path.extname(profilePath)
-  return `${profilePath.slice(0, extension.length === 0 ? undefined : -extension.length)}.lock.toml`
-}
+export const adjacentLockPath = platformLockPath
 
 export const loadProfile = (profilePath: string): Effect.Effect<ProfileDocument, ApplicationError> =>
   io(`cannot read profile: ${profilePath}`, () => readFile(profilePath, "utf8")).pipe(
@@ -211,8 +210,11 @@ export const loadProfile = (profilePath: string): Effect.Effect<ProfileDocument,
     ),
   )
 
-export const loadLock = (profilePath: string): Effect.Effect<ProfileLock | undefined, ApplicationError> => {
-  const lockPath = adjacentLockPath(profilePath)
+export const loadLock = (
+  profilePath: string,
+  platform: Platform,
+): Effect.Effect<ProfileLock | undefined, ApplicationError> => {
+  const lockPath = adjacentLockPath(profilePath, platform)
   return Effect.tryPromise({
     try: async () => {
       try {
@@ -236,8 +238,12 @@ export const loadLock = (profilePath: string): Effect.Effect<ProfileLock | undef
 }
 
 let atomicWriteSequence = 0
-const writeLockBytes = (profilePath: string, contents: string): Effect.Effect<void, ApplicationError> => {
-  const destination = adjacentLockPath(profilePath)
+const writeLockBytes = (
+  profilePath: string,
+  platform: Platform,
+  contents: string,
+): Effect.Effect<void, ApplicationError> => {
+  const destination = adjacentLockPath(profilePath, platform)
   const temporary = `${destination}.tmp-${process.pid}-${atomicWriteSequence++}`
   return io(`cannot write lock: ${destination}`, async () => {
     await writeFile(temporary, contents, { flag: "wx" })
@@ -246,10 +252,13 @@ const writeLockBytes = (profilePath: string, contents: string): Effect.Effect<vo
 }
 
 export const writeLock = (profilePath: string, lock: ProfileLock): Effect.Effect<void, ApplicationError> =>
-  writeLockBytes(profilePath, renderLock(lock))
+  writeLockBytes(profilePath, lock.platform, renderLock(lock))
 
-const readLockBytes = (profilePath: string): Effect.Effect<string | undefined, ApplicationError> => {
-  const lockPath = adjacentLockPath(profilePath)
+const readLockBytes = (
+  profilePath: string,
+  platform: Platform,
+): Effect.Effect<string | undefined, ApplicationError> => {
+  const lockPath = adjacentLockPath(profilePath, platform)
   return Effect.tryPromise({
     try: async () => {
       try {
@@ -266,8 +275,8 @@ const readLockBytes = (profilePath: string): Effect.Effect<string | undefined, A
 const upgradeFileServices = {
   readLockBytes,
   writeLockBytes,
-  removeLock: (profilePath: string): Effect.Effect<void, ApplicationError> => {
-    const lockPath = adjacentLockPath(profilePath)
+  removeLock: (profilePath: string, platform: Platform): Effect.Effect<void, ApplicationError> => {
+    const lockPath = adjacentLockPath(profilePath, platform)
     return io(`cannot remove lock: ${lockPath}`, () => rm(lockPath, { force: true }))
   },
 }
@@ -276,11 +285,12 @@ export const compileProfileLock = (
   profilePath: string,
   update: boolean,
   xdgCacheHome: string,
+  platform: Platform,
 ): Effect.Effect<ProfileLock, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const current = yield* loadLock(profilePath)
-    const lock = yield* compileLock(document, current, update, productionResolvers(xdgCacheHome)).pipe(
+    const current = yield* loadLock(profilePath, platform)
+    const lock = yield* compileLock(document, current, update, productionResolvers(xdgCacheHome, platform)).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
     if (lock !== current) yield* writeLock(profilePath, lock)
@@ -377,26 +387,37 @@ const skillGenerator: SkillGenerator = (sourceDirectory, selections, destination
     },
   )
 
-type CommandRunner = typeof run
+export type CommandRunner = typeof run
+
+export interface DockerServices {
+  readonly run: CommandRunner
+  readonly verify: (target: DockerTarget) => Effect.Effect<void, ApplicationError>
+}
 
 const buildOci = (
   context: string,
   imageTag: string,
   document: ProfileDocument,
   lock: ProfileLock,
+  target: DockerTarget,
+  docker: DockerServices,
   expectedDigest?: string,
-  execute: CommandRunner = run,
   npmRegistry?: string,
 ): Effect.Effect<string, ApplicationError> =>
   Effect.gen(function* () {
     const output = path.join(context, "oci")
-    yield* execute(
+    const platform = lock.platform
+    if (platform !== target.platform) {
+      return yield* Effect.fail(new ApplicationError({ message: "lock platform does not match Docker target" }))
+    }
+    yield* docker.verify(target)
+    yield* docker.run(
       "docker",
-      [
+      dockerHostArguments(target, [
         "run",
         "--rm",
         "--platform",
-        document.profile.image.platform,
+        platform,
         "--user",
         "0:0",
         "--env",
@@ -427,7 +448,7 @@ const buildOci = (
         builderImage,
         "-ceu",
         builderScript(document, lock),
-      ],
+      ]),
       { stdio: "inherit" },
     )
     const index = yield* io("cannot read built OCI index", () => readFile(path.join(output, "index.json"), "utf8"))
@@ -445,22 +466,23 @@ const buildOci = (
         }),
       )
     }
-    yield* execute(
+    yield* docker.verify(target)
+    yield* docker.run(
       "docker",
-      [
+      dockerHostArguments(target, [
         "run",
         "--rm",
         "--platform",
-        document.profile.image.platform,
+        platform,
         "--mount",
         `type=bind,src=${context},dst=/work,readonly`,
         "--mount",
-        "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock",
+        `type=bind,src=${dockerSocketPath(target)},dst=/var/run/docker.sock`,
         skopeoImage,
         "copy",
         "oci:/work/oci",
         `docker-daemon:${imageTag}`,
-      ],
+      ]),
       { stdio: "inherit" },
     )
     return digest
@@ -472,6 +494,8 @@ const buildCandidateImage = (
   image: string,
   xdgCacheHome: string,
   runtimeSupport: RuntimeSupportSnapshot,
+  target: DockerTarget,
+  docker: DockerServices,
 ): Effect.Effect<string, ApplicationError> =>
   Effect.gen(function* () {
     const directories = yield* Effect.forEach(
@@ -500,7 +524,7 @@ const buildCandidateImage = (
       skillGenerator,
       pluginGenerator,
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    return yield* buildOci(context, image, document, lock).pipe(
+    return yield* buildOci(context, image, document, lock, target, docker).pipe(
       Effect.ensuring(
         io("cannot clean build context", () => rm(context, { recursive: true, force: true })).pipe(Effect.ignore),
       ),
@@ -513,11 +537,15 @@ const isMissingImageError = (cause: unknown): boolean => {
   return /No such image|No such object|does not exist/i.test(detail)
 }
 
-const liveImageExists = (image: string): Effect.Effect<boolean, ApplicationError> =>
+const liveImageExists = (target: DockerTarget, image: string): Effect.Effect<boolean, ApplicationError> =>
   Effect.tryPromise({
     try: async (signal) => {
       try {
-        await execFilePromise("docker", ["image", "inspect", image], { maxBuffer: 32 * 1024 * 1024, signal })
+        await Effect.runPromise(verifyDockerTarget(target))
+        await execFilePromise("docker", dockerHostArguments(target, ["image", "inspect", image]), {
+          maxBuffer: 32 * 1024 * 1024,
+          signal,
+        })
         return true
       } catch (cause) {
         if (isMissingImageError(cause)) return false
@@ -574,7 +602,15 @@ const runtimeAdapter = (document: ProfileDocument): "claude-marketplace" | "hype
   return adapter === "claude-marketplace" || adapter === "hyperresearch" ? adapter : undefined
 }
 
-export const LiveUpgradeServices: UpgradeServices = {
+const liveDockerServices: DockerServices = {
+  run,
+  verify: (target) =>
+    verifyDockerTarget(target).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    ),
+}
+
+const liveUpgradeServices = (target: DockerTarget): UpgradeServices => ({
   buildCandidate: (document, lock, image) =>
     createRuntimeSupportSnapshot(
       document.profile.harness.kind,
@@ -583,22 +619,31 @@ export const LiveUpgradeServices: UpgradeServices = {
       claudeRuntimeMode(document),
     ).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-      Effect.flatMap((snapshot) => buildCandidateImage(document, lock, image, defaultCacheHome, snapshot)),
+      Effect.flatMap((snapshot) =>
+        buildCandidateImage(document, lock, image, defaultCacheHome, snapshot, target, liveDockerServices),
+      ),
     ),
-  imageExists: liveImageExists,
-  tagImage: (source, destination) => run("docker", ["image", "tag", source, destination]),
+  imageExists: (image) => liveImageExists(target, image),
+  tagImage: (source, destination) =>
+    liveDockerServices
+      .verify(target)
+      .pipe(Effect.zipRight(run("docker", dockerHostArguments(target, ["image", "tag", source, destination])))),
   removeImage: (image) =>
     Effect.tryPromise({
       try: async (signal) => {
         try {
-          await execFilePromise("docker", ["image", "rm", "--force", image], { maxBuffer: 32 * 1024 * 1024, signal })
+          await Effect.runPromise(verifyDockerTarget(target))
+          await execFilePromise("docker", dockerHostArguments(target, ["image", "rm", "--force", image]), {
+            maxBuffer: 32 * 1024 * 1024,
+            signal,
+          })
         } catch (cause) {
           if (!isMissingImageError(cause)) throw cause
         }
       },
       catch: (cause) => new ApplicationError({ message: `cannot remove owned image: ${image}`, cause }),
     }),
-}
+})
 
 const applicationError = (cause: unknown): ApplicationError =>
   cause instanceof ApplicationError
@@ -688,9 +733,11 @@ export const upgradeProfile = (
   profilePath: string,
   xdgCacheHome: string,
   runtimeSupport: RuntimeSupport,
-  services: UpgradeServices = LiveUpgradeServices,
+  target: DockerTarget,
+  services?: UpgradeServices,
 ): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
   Effect.gen(function* () {
+    const platform = target.platform
     const document = yield* loadProfile(profilePath)
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       document.profile.harness.kind,
@@ -698,33 +745,37 @@ export const upgradeProfile = (
       runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const canonical = `trellage-profile-${document.profile.name}:locked`
-    const candidate = `trellage-profile-${document.profile.name}:candidate-${process.pid}`
-    const backup = `trellage-profile-${document.profile.name}:backup-${process.pid}`
+    const identity = `${document.profile.name}-${platformIdentity(platform)}`
+    const canonical = `trellage-profile-${identity}:locked`
+    const candidate = `trellage-profile-${identity}:candidate-${process.pid}`
+    const backup = `trellage-profile-${identity}:backup-${process.pid}`
     const activeServices =
-      services === LiveUpgradeServices
+      services === undefined
         ? {
-            ...LiveUpgradeServices,
+            ...liveUpgradeServices(target),
             buildCandidate: (profile: ProfileDocument, lock: ProfileLock, image: string) =>
-              buildCandidateImage(profile, lock, image, xdgCacheHome, runtimeSnapshot),
+              buildCandidateImage(profile, lock, image, xdgCacheHome, runtimeSnapshot, target, liveDockerServices),
           }
         : services
 
     return yield* Effect.acquireUseRelease(
-      acquireUpgradeLease(xdgCacheHome, document.profile.name),
+      acquireUpgradeLease(xdgCacheHome, `${document.profile.name}-${platformIdentity(platform)}`),
       (lease) =>
         Effect.raceFirst(
           Effect.gen(function* () {
-            const originalLockBytes = yield* upgradeFileServices.readLockBytes(profilePath)
+            const originalLockBytes = yield* upgradeFileServices.readLockBytes(profilePath, platform)
             const current = yield* originalLockBytes === undefined
               ? Effect.succeed(undefined)
               : parseLock(originalLockBytes).pipe(
                   Effect.map((lock) => lock as ProfileLock | undefined),
                   Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
                 )
-            const candidateLock = yield* compileLock(document, current, true, productionResolvers(xdgCacheHome)).pipe(
-              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-            )
+            const candidateLock = yield* compileLock(
+              document,
+              current,
+              true,
+              productionResolvers(xdgCacheHome, platform),
+            ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
             let candidateAttempted = false
             let backupAttempted = false
             let backupSucceeded = false
@@ -751,7 +802,7 @@ export const upgradeProfile = (
                   canonicalAttempted = true
                   yield* activeServices.tagImage(candidate, canonical)
                   lockWriteAttempted = true
-                  yield* upgradeFileServices.writeLockBytes(profilePath, renderLock(finalLock))
+                  yield* upgradeFileServices.writeLockBytes(profilePath, platform, renderLock(finalLock))
                   committed = true
                   return { image: canonical, digest }
                 }).pipe(
@@ -761,8 +812,8 @@ export const upgradeProfile = (
                     if (lockWriteAttempted) {
                       compensation.push(
                         originalLockBytes === undefined
-                          ? upgradeFileServices.removeLock(profilePath)
-                          : upgradeFileServices.writeLockBytes(profilePath, originalLockBytes),
+                          ? upgradeFileServices.removeLock(profilePath, platform)
+                          : upgradeFileServices.writeLockBytes(profilePath, platform, originalLockBytes),
                       )
                     }
                     if (canonicalAttempted) {
@@ -827,10 +878,12 @@ export const buildProfile = (
   locked: boolean,
   xdgCacheHome: string,
   runtimeSupport: RuntimeSupport,
-  execute: CommandRunner = run,
+  target: DockerTarget,
+  docker: DockerServices = liveDockerServices,
   npmRegistry?: string,
 ): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
   Effect.gen(function* () {
+    const platform = target.platform
     const document = yield* loadProfile(profilePath)
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       document.profile.harness.kind,
@@ -838,14 +891,14 @@ export const buildProfile = (
       runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const current = yield* loadLock(profilePath)
+    const current = yield* loadLock(profilePath, platform)
     let lock: ProfileLock
     if (locked) {
-      lock = yield* requireLocked(document, current).pipe(
+      lock = yield* requireLocked(document, current, platform).pipe(
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
     } else {
-      lock = yield* compileLock(document, current, false, productionResolvers(xdgCacheHome)).pipe(
+      lock = yield* compileLock(document, current, false, productionResolvers(xdgCacheHome, platform)).pipe(
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
     }
@@ -876,14 +929,15 @@ export const buildProfile = (
       skillGenerator,
       pluginGenerator,
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const image = `trellage-profile-${document.profile.name}:locked`
+    const image = `trellage-profile-${document.profile.name}-${platformIdentity(platform)}:locked`
     const digest = yield* buildOci(
       context,
       image,
       document,
       lock,
+      target,
+      docker,
       locked ? lock.image.final_digest : undefined,
-      execute,
       npmRegistry,
     ).pipe(
       Effect.ensuring(
@@ -898,12 +952,13 @@ export const buildProfile = (
 
 export const profileMetadata = (
   profilePath: string,
+  platform: Platform,
 ): Effect.Effect<Readonly<Record<string, unknown>>, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const lock = yield* loadLock(profilePath)
+    const lock = yield* loadLock(profilePath, platform)
     const hash = profileHash(document)
-    const ready = lockIsReady(document, lock)
+    const ready = lockIsReady(document, lock, platform)
     const harnessKind = document.profile.harness.kind
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       harnessKind,
@@ -928,7 +983,8 @@ export const profileMetadata = (
       profile_hash: hash,
       tmpfs_size: document.profile.runtime.tmpfs_size,
       runtime_hash: runtimeSnapshot.hash,
-      image: `trellage-profile-${document.profile.name}:locked`,
+      platform,
+      image: `trellage-profile-${document.profile.name}-${platformIdentity(platform)}:locked`,
       locked: ready,
       build_command: `trellage build --locked ${document.path}`,
       harness_args: document.profile.harness.args ?? [],

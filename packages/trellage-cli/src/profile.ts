@@ -144,7 +144,6 @@ const PiHarness = Schema.Struct({
 })
 
 const Image = Schema.Struct({
-  platform: Schema.Literal("linux/arm64", "linux/amd64"),
   base: NonEmpty,
   shell: Schema.Literal("bash", "fish", "zsh"),
   packages: Schema.Array(NonEmpty),
@@ -389,7 +388,6 @@ const validate = (
     } else if (isClaudeProfile(profile)) {
       if (profile.harness.version !== "2.1.218")
         return yield* fail(`unsupported Claude version: ${profile.harness.version}`)
-      if (profile.image.platform !== "linux/arm64") return yield* fail("Claude profiles support only linux/arm64")
       if (profile.skills.length > 0) return yield* fail("Claude profiles do not support standalone skills")
       if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
       if (

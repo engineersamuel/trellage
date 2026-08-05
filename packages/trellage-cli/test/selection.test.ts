@@ -44,4 +44,10 @@ describe("profile precedence", () => {
       'profile "missing-profile" not found; searched: /repo/profiles/missing-profile/profile.toml',
     )
   })
+
+  it("preserves a GitHub blob profile reference", async () => {
+    const reference = "https://github.com/engineersamuel/trellage/blob/v1.0.0/profiles/copilot-hve/profile.toml"
+
+    await expect(Effect.runPromise(selectProfilePath({ ...base, explicit: reference }))).resolves.toBe(reference)
+  })
 })

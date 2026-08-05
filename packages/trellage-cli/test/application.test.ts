@@ -10,6 +10,7 @@ import { Cause, Effect, Exit } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { GitHubSourceRequest } from "../src/github-cache.js"
+import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
 
 const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
@@ -24,7 +25,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return {
     ...actual,
     rename: async (source: Parameters<typeof actual.rename>[0], destination: Parameters<typeof actual.rename>[1]) => {
-      if (String(destination).endsWith("profile.lock.toml")) {
+      if (String(destination).endsWith("profile.linux-arm64.lock.toml")) {
         mocks.lockRenameEvents?.push("write:lock")
         if (mocks.failLockRenames > 0) {
           mocks.failLockRenames -= 1
@@ -60,6 +61,8 @@ import {
   profileMetadata,
   sanitizeNpmRegistry,
   upgradeProfile,
+  type CommandRunner,
+  type DockerServices,
   type UpgradeServices,
 } from "../src/application.js"
 import { renderLock } from "../src/lock-file.js"
@@ -67,6 +70,12 @@ import { profileHash, requireLocked, type ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
+const arm64Target = {
+  endpoint: "unix:///tmp/trellage-test-docker.sock",
+  serverId: "trellage-test-server",
+  platform: "linux/arm64",
+} as const
+const dockerServices = (run: CommandRunner): DockerServices => ({ run, verify: () => Effect.void })
 const execFilePromise = promisify(execFile)
 const treeIntegrity = (files: ReadonlyArray<unknown>) =>
   `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`
@@ -114,7 +123,10 @@ const writeReadyProfile = async (root: string, source: string, lock: Omit<Profil
   const profilePath = path.join(root, "profile.toml")
   await writeFile(profilePath, source)
   const document = await Effect.runPromise(parseProfile(source, profilePath))
-  await writeFile(path.join(root, "profile.lock.toml"), renderLock({ ...lock, profile_hash: profileHash(document) }))
+  await writeFile(
+    path.join(root, "profile.linux-arm64.lock.toml"),
+    renderLock({ ...lock, platform: "linux/arm64", profile_hash: profileHash(document) }),
+  )
   return profilePath
 }
 
@@ -129,7 +141,6 @@ args = ["$(touch /tmp/profile-injection)", "COPILOT_GITHUB_TOKEN=secret"]
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -143,6 +154,7 @@ select = ["hve-core"]
 
 const copilotLock = (profile_hash: string): ProfileLock => ({
   schema: 1,
+  platform: "linux/arm64",
   source_date_epoch: 1784379906,
   profile_hash,
   sources: [
@@ -168,11 +180,17 @@ const copilotLock = (profile_hash: string): ProfileLock => ({
       url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
       size: 1024,
     },
-    runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+    runtime: [
+      {
+        name: "bash",
+        version: arm64ArtifactCatalog.runtimeVersions.bash,
+        integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+      },
+    ],
   },
   image: {
     base: "node:22.17.0-bookworm-slim",
-    base_digest: digest("b"),
+    base_digest: arm64ArtifactCatalog.base.digest,
     final_digest: digest("e"),
   },
 })
@@ -191,7 +209,6 @@ provider = "github-copilot"
 model = "gpt-5.6-terra"
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -199,6 +216,7 @@ packages = ["bash"]
 
 const piLock = (profile_hash: string): ProfileLock => ({
   schema: 1,
+  platform: "linux/arm64",
   source_date_epoch: 1784379906,
   profile_hash,
   sources: [],
@@ -211,11 +229,17 @@ const piLock = (profile_hash: string): ProfileLock => ({
       url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
       size: 157526160,
     },
-    runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+    runtime: [
+      {
+        name: "bash",
+        version: arm64ArtifactCatalog.runtimeVersions.bash,
+        integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+      },
+    ],
   },
   image: {
     base: "node:22.17.0-bookworm-slim",
-    base_digest: digest("b"),
+    base_digest: arm64ArtifactCatalog.base.digest,
     final_digest: digest("e"),
   },
 })
@@ -235,7 +259,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -247,6 +270,7 @@ select = ["*"]
 
 const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock => ({
   schema: 1,
+  platform: "linux/arm64",
   source_date_epoch: 1784379906,
   profile_hash,
   sources: [
@@ -310,15 +334,15 @@ describe("profile metadata", () => {
         },
       },
     } satisfies ProfileLock
-    await writeFile(path.join(root, "profile.lock.toml"), renderLock(staleLock))
+    await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(staleLock))
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
     expect(metadata).toMatchObject({
       harness_kind: "copilot",
       locked: false,
       resolved_version: null,
     })
-    expect.soft(metadata.image).toBe("trellage-profile-copilot-hve:locked")
+    expect.soft(metadata.image).toBe("trellage-profile-copilot-hve-linux-arm64:locked")
     expect.soft(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect.soft(metadata.build_command).toContain("trellage build --locked")
     expect.soft(metadata.runtime_entry).toBe("trellage-copilot-entry")
@@ -348,9 +372,9 @@ describe("profile metadata", () => {
         files,
       })),
     } satisfies ProfileLock
-    await writeFile(path.join(root, "profile.lock.toml"), renderLock(lock))
+    await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(lock))
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
     expect(metadata.tmpfs_size).toBe("2g")
   })
 
@@ -358,12 +382,12 @@ describe("profile metadata", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-pi-"))
     const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"))
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
 
     expect(metadata).toMatchObject({
       harness_kind: "pi",
       harness_executable: "omp",
-      image: "trellage-profile-pi-oh-my-pi:locked",
+      image: "trellage-profile-pi-oh-my-pi-linux-arm64:locked",
       locked: true,
       resolved_version: "17.2.6",
       runtime_entry: "trellage-pi-entry",
@@ -390,13 +414,13 @@ describe("transactional profile upgrade", () => {
     const profilePath = path.join(root, "profile.toml")
     await writeFile(profilePath, codexSource)
     const document = await Effect.runPromise(parseProfile(codexSource, profilePath))
-    await writeFile(path.join(root, "profile.lock.toml"), renderLock(codexLock(profileHash(document))))
+    await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(codexLock(profileHash(document))))
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
 
-    const canonical = "trellage-profile-codex-upgrade:locked"
-    const candidate = `trellage-profile-codex-upgrade:candidate-${process.pid}`
-    const backup = `trellage-profile-codex-upgrade:backup-${process.pid}`
+    const canonical = "trellage-profile-codex-upgrade-linux-arm64:locked"
+    const candidate = `trellage-profile-codex-upgrade-linux-arm64:candidate-${process.pid}`
+    const backup = `trellage-profile-codex-upgrade-linux-arm64:backup-${process.pid}`
     const builtDigest = digest("9")
     const events: Array<string> = []
     const services: UpgradeServices = {
@@ -423,10 +447,12 @@ describe("transactional profile upgrade", () => {
     mocks.sourceFiles = [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }]
     mocks.lockRenameEvents = events
 
-    await expect(Effect.runPromise(upgradeProfile(profilePath, root, support, services))).resolves.toEqual({
-      image: canonical,
-      digest: builtDigest,
-    })
+    await expect(Effect.runPromise(upgradeProfile(profilePath, root, support, arm64Target, services))).resolves.toEqual(
+      {
+        image: canonical,
+        digest: builtDigest,
+      },
+    )
     mocks.sourceFiles = []
     expect(events).toEqual([
       `build:${candidate}:undefined`,
@@ -438,7 +464,7 @@ describe("transactional profile upgrade", () => {
       `remove:${backup}`,
     ])
     const finalLock = codexLock(profileHash(document), builtDigest)
-    expect(await readFile(path.join(root, "profile.lock.toml"), "utf8")).toBe(renderLock(finalLock))
+    expect(await readFile(path.join(root, "profile.linux-arm64.lock.toml"), "utf8")).toBe(renderLock(finalLock))
     expect(events.join(" ")).not.toMatch(/container|volume|state/i)
   })
 
@@ -448,7 +474,7 @@ describe("transactional profile upgrade", () => {
     await writeFile(profilePath, source)
     const document = await Effect.runPromise(parseProfile(source, profilePath))
     const original = renderLock(codexLock(profileHash(document)))
-    await writeFile(path.join(root, "profile.lock.toml"), original)
+    await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), original)
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
     mocks.sourceFiles = [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }]
@@ -457,10 +483,10 @@ describe("transactional profile upgrade", () => {
       profilePath,
       support,
       original,
-      lockPath: path.join(root, "profile.lock.toml"),
-      canonical: "trellage-profile-codex-upgrade:locked",
-      candidate: `trellage-profile-codex-upgrade:candidate-${process.pid}`,
-      backup: `trellage-profile-codex-upgrade:backup-${process.pid}`,
+      lockPath: path.join(root, "profile.linux-arm64.lock.toml"),
+      canonical: "trellage-profile-codex-upgrade-linux-arm64:locked",
+      candidate: `trellage-profile-codex-upgrade-linux-arm64:candidate-${process.pid}`,
+      backup: `trellage-profile-codex-upgrade-linux-arm64:backup-${process.pid}`,
     }
   }
 
@@ -497,6 +523,7 @@ describe("transactional profile upgrade", () => {
           fixture.profilePath,
           fixture.root,
           runtimeSupport(path.join(fixture.root, "missing-support")),
+          arm64Target,
           services,
         ),
       ),
@@ -533,7 +560,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/base image resolution failed/)
     expect(events).toEqual([])
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
@@ -556,7 +583,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/candidate build failed/)
     expect(events).toEqual([`build:${fixture.candidate}`, `remove:${fixture.candidate}`])
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
@@ -579,7 +606,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/backup tag failed/)
     expect(events).toEqual([
       `tag:${fixture.canonical}->${fixture.backup}`,
@@ -614,7 +641,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/canonical tag failed/)
     expect(images.get(fixture.canonical)).toBe(oldImage)
     expect(images.has(fixture.candidate)).toBe(false)
@@ -646,7 +673,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/cannot write lock/)
     expect(writes).toHaveLength(2)
     expect(images.get(fixture.canonical)).toBe(oldImage)
@@ -668,7 +695,7 @@ describe("transactional profile upgrade", () => {
     }
 
     const exit = await Effect.runPromiseExit(
-      upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services),
+      upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services),
     )
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isSuccess(exit)) throw new Error("expected upgrade failure")
@@ -696,7 +723,7 @@ describe("transactional profile upgrade", () => {
     mocks.failLockRenames = 1
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/cannot write lock/)
     expect(images.has(fixture.canonical)).toBe(false)
     await expect(readFile(fixture.lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
@@ -725,7 +752,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/upgrade committed but cleanup failed/)
     expect(images.get(fixture.canonical)).toBe("sha256:candidate-image")
     expect(await readFile(fixture.lockPath, "utf8")).toContain(`final_digest = "${builtDigest}"`)
@@ -752,7 +779,7 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow()
     expect(images.get(fixture.canonical)).toBe(oldImage)
     expect(images.has(fixture.candidate)).toBe(false)
@@ -807,7 +834,10 @@ describe("transactional profile upgrade", () => {
         await waitUntil(async () => {
           const resultPath = path.join(contentionRoot, "result-two")
           if (!(await pathExists(resultPath))) return false
-          return (await readFile(resultPath, "utf8")) === "failure:upgrade already active for profile: codex-upgrade"
+          return (
+            (await readFile(resultPath, "utf8")) ===
+            "failure:upgrade already active for profile: codex-upgrade-linux-arm64"
+          )
         }, "contention contender did not report ELOCKED while winner held the lease")
       } finally {
         await writeFile(path.join(contentionRoot, "release"), "release")
@@ -827,7 +857,7 @@ describe("transactional profile upgrade", () => {
       )
 
       expect(entries).toEqual(["one"])
-      expect(results).toEqual(["success", "failure:upgrade already active for profile: codex-upgrade"])
+      expect(results).toEqual(["success", "failure:upgrade already active for profile: codex-upgrade-linux-arm64"])
     },
     20_000,
   )
@@ -859,7 +889,7 @@ describe("transactional profile upgrade", () => {
 
       let result = "success"
       try {
-        await Effect.runPromise(upgradeProfile(profilePath, path.dirname(profilePath), support, services))
+        await Effect.runPromise(upgradeProfile(profilePath, path.dirname(profilePath), support, arm64Target, services))
       } catch (cause) {
         result = `failure:${String((cause as { readonly message?: unknown }).message ?? cause)}`
       }
@@ -888,10 +918,12 @@ describe("transactional profile upgrade", () => {
       tagImage: () => Effect.void,
       removeImage: () => Effect.void,
     }
-    const first = Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services))
+    const first = Effect.runPromise(
+      upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services),
+    )
     await started
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, services)),
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/upgrade already active/)
     releaseBuild()
     await expect(first).resolves.toEqual({ image: fixture.canonical, digest: digest("9") })
@@ -912,7 +944,6 @@ default_auth = "proxy"
 model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "git", "jq"]
@@ -932,6 +963,7 @@ select = ["humanizer"]
     const document = await Effect.runPromise(parseProfile(source, "/profiles/claude-social-media/profile.toml"))
     const lock: ProfileLock = {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
       sources: [
@@ -1257,7 +1289,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -1276,6 +1307,7 @@ select = []
     const sourceHash = contentIntegrity(sourceContent)
     const legacyIntegrity = treeIntegrity([{ path: sourcePath, sha256: sourceHash }])
     const historical = `schema = 1
+platform = "linux/arm64"
 source_date_epoch = 1784379906
 profile_hash = "${profileHash(document)}"
 
@@ -1308,9 +1340,9 @@ base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
 final_digest = "${oldDigest}"
 `
-    const lockPath = path.join(root, "profile.lock.toml")
+    const lockPath = path.join(root, "profile.linux-arm64.lock.toml")
     await writeFile(lockPath, historical)
-    const parsedHistorical = await Effect.runPromise(loadLock(profilePath))
+    const parsedHistorical = await Effect.runPromise(loadLock(profilePath, "linux/arm64"))
     const original = renderLock(parsedHistorical!)
     expect(original).toContain('[packages]\ncodex = "0.144.6"')
     expect(original).not.toContain("[packages.harness]")
@@ -1335,14 +1367,16 @@ final_digest = "${oldDigest}"
         )
       })
 
-    await expect(Effect.runPromise(buildProfile(profilePath, false, root, support, execute))).resolves.toEqual({
-      image: "trellage-profile-legacy-codex:locked",
+    await expect(
+      Effect.runPromise(buildProfile(profilePath, false, root, support, arm64Target, dockerServices(execute))),
+    ).resolves.toEqual({
+      image: "trellage-profile-legacy-codex-linux-arm64:locked",
       digest: builtDigest,
     })
     const expected = original.replace(oldDigest, builtDigest)
     const persisted = await readFile(lockPath, "utf8")
     expect(persisted).toBe(expected)
-    const reloaded = await Effect.runPromise(loadLock(profilePath))
+    const reloaded = await Effect.runPromise(loadLock(profilePath, "linux/arm64"))
     await expect(Effect.runPromise(requireLocked(document, reloaded))).resolves.toBe(reloaded)
     expect(renderLock(reloaded!)).toBe(expected)
   })
@@ -1372,12 +1406,12 @@ describe("locked build source policy", () => {
 
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
-    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support))).rejects.toThrow(
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
       /Copilot runtime support.*regular readable file/,
     )
     expect(mocks.requests).toEqual([])
     await writeFile(support.copilotEntry, "#!/bin/sh\n")
-    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support))).rejects.toThrow(
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
       /Copilot runtime support finalizeCopilotSeed.*regular readable file/,
     )
     expect(mocks.requests).toEqual([])
@@ -1395,7 +1429,6 @@ version = "latest"
 [harness.copilot]
 auth = "host-or-login"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -1416,6 +1449,7 @@ select = ["hve-core"]
     ]
     const profilePath = await writeReadyProfile(root, source, {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       sources: [
         {
@@ -1440,11 +1474,17 @@ select = ["hve-core"]
           url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
           size: 1024,
         },
-        runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+        runtime: [
+          {
+            name: "bash",
+            version: arm64ArtifactCatalog.runtimeVersions.bash,
+            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+          },
+        ],
       },
       image: {
         base: "node:22.17.0-bookworm-slim",
-        base_digest: digest("b"),
+        base_digest: arm64ArtifactCatalog.base.digest,
         final_digest: digest("e"),
       },
     })
@@ -1483,9 +1523,17 @@ select = ["hve-core"]
 
     await expect(
       Effect.runPromise(
-        buildProfile(profilePath, true, root, support, execute, "https://packagefeedproxy.microsoft.io/npm/"),
+        buildProfile(
+          profilePath,
+          true,
+          root,
+          support,
+          arm64Target,
+          dockerServices(execute),
+          "https://packagefeedproxy.microsoft.io/npm/",
+        ),
       ),
-    ).resolves.toEqual({ image: "trellage-profile-copilot:locked", digest: digest("e") })
+    ).resolves.toEqual({ image: "trellage-profile-copilot-linux-arm64:locked", digest: digest("e") })
     expect(runnerOptions).toEqual([
       expect.objectContaining({ stdio: "inherit" }),
       expect.objectContaining({ stdio: "inherit" }),
@@ -1518,7 +1566,6 @@ model_provider = "proxy"
 base_url = "http://proxy:8080/v1"
 wire_api = "responses"
 [image]
-platform = "linux/arm64"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
@@ -1536,6 +1583,7 @@ select = ["*"]
     ]
     const profilePath = await writeReadyProfile(root, source, {
       schema: 1,
+      platform: "linux/arm64",
       source_date_epoch: 1784379906,
       sources: [
         {
@@ -1552,29 +1600,32 @@ select = ["*"]
         harness: {
           kind: "codex",
           selector: "0.144.6",
-          version: "0.144.6",
-          integrity: digest("c"),
-          url: "https://example.test/codex.tar.gz",
-          size: 1024,
+          ...arm64ArtifactCatalog.codex,
         },
         skills_cli_version: "1.5.19",
         skills_cli_integrity: "sha512-dGVzdA==",
-        runtime: [{ name: "bash", version: "5.2.15", integrity: digest("d") }],
+        runtime: [
+          {
+            name: "bash",
+            version: arm64ArtifactCatalog.runtimeVersions.bash,
+            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+          },
+        ],
       },
       image: {
         base: "node:22.17.0-bookworm-slim",
-        base_digest: digest("b"),
+        base_digest: arm64ArtifactCatalog.base.digest,
         final_digest: digest("e"),
       },
     })
 
     const support = runtimeSupport(root)
-    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support))).rejects.toThrow(
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
       /Codex runtime support codexEntry.*regular readable file/,
     )
     expect(mocks.requests).toEqual([])
     await writeFile(support.codexEntry, "#!/bin/sh\n")
-    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support))).rejects.toThrow(
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
       /source inventory mismatch/,
     )
     expect(mocks.requests).toEqual([
