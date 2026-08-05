@@ -438,6 +438,36 @@ test_new_container_from_subdirectory() {
   printf 'Trellage host test: PASS: secure new container from subdirectory\n'
 }
 
+test_normalizes_docker_aarch64_server_platform() {
+  local worktree="$test_root/aarch64-platform-worktree"
+  local docker_log="$test_root/aarch64-platform.docker.log"
+  local output_log="$test_root/aarch64-platform.output.log"
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  : >"$output_log"
+
+  # Docker Desktop on Apple Silicon reports Architecture=aarch64. The launcher must
+  # normalize that to linux/arm64 without inserting a literal backslash (bash
+  # ${var/pat/repl} treats \/ in the replacement as backslash + slash).
+  if ! run_tty "$worktree" "$docker_log" "$worktree" \
+    env TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
+    FAKE_DOCKER_INFO_PLATFORM='linux/aarch64' \
+    "$prototype_dir/trellage" 'echo aarch64-ok' >"$output_log" 2>&1
+  then
+    if grep -Fq 'unsupported Docker server platform: linux\/arm64' "$output_log"; then
+      fail 'Docker aarch64 was corrupted to linux\/arm64 during platform normalization'
+    fi
+    fail "trellage failed to accept Docker server platform linux/aarch64: $(cat "$output_log")"
+  fi
+
+  assert_arg "$docker_log" 'dev.trellage.platform=linux/arm64'
+  ! grep -Fq 'linux\/arm64' "$docker_log" \
+    || fail 'Docker labels must not contain a backslash-escaped platform'
+  ! grep -Fq 'linux/aarch64' "$docker_log" \
+    || fail 'Docker labels must use canonical linux/arm64, not raw aarch64'
+  printf 'Trellage host test: PASS: normalizes Docker aarch64 server platform\n'
+}
+
 test_resume_uses_native_thread_without_prompt_replay() {
   local worktree="$test_root/literal-prompt-worktree"
   local docker_log="$test_root/literal-prompt.docker.log"
@@ -3208,6 +3238,7 @@ test_copilot_gh_host_precedence
 test_legacy_product_environment_is_ignored
 test_command_diagnostics_use_trellage_prefix
 test_new_container_from_subdirectory
+test_normalizes_docker_aarch64_server_platform
 test_resume_uses_native_thread_without_prompt_replay
 test_bare_command_has_no_prompt
 test_portable_prompt_mode_is_noninteractive_and_literal
