@@ -66,6 +66,7 @@ case "${1:-} ${2:-}" in
   'info --format')
     server_info_count_file="$log.server-info-count"
     server_info_count=0
+    info_platform="${FAKE_DOCKER_INFO_PLATFORM:-linux/arm64}"
     [[ ! -f "$server_info_count_file" ]] || server_info_count="$(head -n 1 "$server_info_count_file")"
     server_info_count="$((server_info_count + 1))"
     printf '%s\n' "$server_info_count" >"$server_info_count_file"
@@ -76,11 +77,11 @@ case "${1:-} ${2:-}" in
         printf '%s\n' linux/amd64
       fi
     elif [[ "${3:-}" == $'{{.ID}}\n{{.OSType}}/{{.Architecture}}' ]]; then
-      printf '%s\n%s\n' fake-server-id linux/arm64
+      printf '%s\n%s\n' fake-server-id "$info_platform"
     elif [[ "${3:-}" == '{{.ID}}' ]]; then
       printf '%s\n' fake-server-id
     else
-      printf '%s\n' linux/arm64
+      printf '%s\n' "$info_platform"
     fi
     exit 0
     ;;

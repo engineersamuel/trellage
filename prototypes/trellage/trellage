@@ -302,10 +302,18 @@ docker() {
   fi
   command docker --host "$docker_endpoint" "$@"
 }
+normalize_docker_platform() {
+  # Prefer case over ${var/pat/repl}: bash treats \/ in the replacement as a
+  # literal backslash, which corrupted linux/aarch64 into linux\/arm64.
+  case "$1" in
+    linux/aarch64) printf '%s\n' linux/arm64 ;;
+    linux/x86_64) printf '%s\n' linux/amd64 ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
 docker_platform="$(docker_discovery --host "$docker_endpoint" info --format '{{.OSType}}/{{.Architecture}}' 2>/dev/null)" \
   || fail 'cannot inspect Docker server platform'
-docker_platform="${docker_platform/linux\/aarch64/linux\/arm64}"
-docker_platform="${docker_platform/linux\/x86_64/linux\/amd64}"
+docker_platform="$(normalize_docker_platform "$docker_platform")"
 case "$docker_platform" in
   linux/arm64|linux/amd64) ;;
   *) fail "unsupported Docker server platform: ${docker_platform:-unknown}" ;;
@@ -317,8 +325,7 @@ verify_docker_server() {
   local current_platform current_server_id
   current_platform="$(docker info --format '{{.OSType}}/{{.Architecture}}' 2>/dev/null)" \
     || fail 'Docker server changed during operation'
-  current_platform="${current_platform/linux\/aarch64/linux\/arm64}"
-  current_platform="${current_platform/linux\/x86_64/linux\/amd64}"
+  current_platform="$(normalize_docker_platform "$current_platform")"
   current_server_id="$(docker info --format '{{.ID}}' 2>/dev/null)" \
     || fail 'Docker server changed during operation'
   [[ "$current_platform" == "$docker_platform" && "$current_server_id" == "$docker_server_id" ]] \
