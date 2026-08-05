@@ -216,6 +216,7 @@ launch_profile() {
     copilot_args=(--allow-all "${copilot_args[@]}")
   fi
 
+  require_no_forbidden_superpowers "$profile"
   exec env COPILOT_HOME="$(profile_home "$profile")" copilot "${copilot_args[@]}"
 }
 
@@ -225,6 +226,175 @@ installed_version() {
   run_copilot "$profile" plugin list \
     | sed -n "s/^[[:space:]]*• ${plugin} (v\\([^)]*\\)).*/\\1/p" \
     | head -n 1
+}
+
+plugin_inventory_snapshot() {
+  local profile="$1" inventory
+
+  inventory="$(run_copilot "$profile" plugin list)" || return 2
+  printf '%s\n' "$inventory" | awk '
+    /^No plugins installed$/ { empty += 1; next }
+    /^Installed plugins:$/ { header += 1; next }
+    /^[[:space:]]*• [A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)? \(v[^()[:cntrl:]]+\)( \((enabled|disabled)\))?$/ { plugins += 1; next }
+    /^[[:space:]]*$/ { next }
+    { invalid = 1 }
+    END {
+      if (invalid) exit 1
+      if (empty) exit(empty != 1 || header != 0 || plugins != 0)
+      exit(header != 1)
+    }
+  ' || return 2
+  printf '%s\n' "$inventory"
+}
+
+normalize_github_source() {
+  printf '%s\n' "$1" | sed -E \
+    -e 's#^git\+##I' \
+    -e 's#^https://github\.com/##I' \
+    -e 's#^ssh://git@github\.com/##I' \
+    -e 's#^git@github\.com:##I' \
+    -e 's#^github:##I' \
+    -e 's#^github\.com/##I' \
+    -e 's#/*$##' \
+    -e 's#\.git$##I' \
+    | tr '[:upper:]' '[:lower:]'
+}
+
+active_plugin_root() {
+  local profile="$1" selector="$2" home installed_root root name marketplace canonical_home canonical_root
+
+  home="$(profile_home "$profile")"
+  installed_root="$home/installed-plugins"
+  [[ -d "$installed_root" && ! -L "$installed_root" ]] || return 2
+  name="${selector%%@*}"
+  if [[ "$selector" == *@* ]]; then
+    marketplace="${selector#*@}"
+    [[ -d "$installed_root/$marketplace" && ! -L "$installed_root/$marketplace" ]] \
+      || return 2
+    root="$installed_root/$marketplace/$name"
+  else
+    root="$installed_root/$name"
+  fi
+  [[ -e "$root" || -L "$root" ]] || return 1
+  [[ -d "$root" && ! -L "$root" ]] || return 2
+  canonical_home="$(cd "$installed_root" 2>/dev/null && pwd -P)" || return 2
+  canonical_root="$(cd "$root" 2>/dev/null && pwd -P)" || return 2
+  [[ "$canonical_root" == "$canonical_home"/* ]] || return 2
+  printf '%s\n' "$root"
+}
+
+plugin_manifest_is_superpowers() {
+  local root="$1" manifest='' candidate source name
+
+  for candidate in \
+    "$root/.claude-plugin/plugin.json" \
+    "$root/.github/plugin/plugin.json" \
+    "$root/plugin.json"; do
+    if [[ -e "$candidate" || -L "$candidate" ]]; then
+      [[ -f "$candidate" && ! -L "$candidate" ]] || return 2
+      case "$candidate" in
+        */.claude-plugin/plugin.json)
+          [[ -d "$root/.claude-plugin" && ! -L "$root/.claude-plugin" ]] || return 2
+          ;;
+        */.github/plugin/plugin.json)
+          [[ -d "$root/.github" && ! -L "$root/.github" \
+            && -d "$root/.github/plugin" && ! -L "$root/.github/plugin" ]] || return 2
+          ;;
+      esac
+      [[ -z "$manifest" ]] || return 2
+      manifest="$candidate"
+    fi
+  done
+  [[ -n "$manifest" ]] || return 3
+  jq -e '
+    type == "object"
+    and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+    and ((has("repository") | not) or .repository == null or (.repository | type == "string") or (.repository | type == "object" and (.url | type == "string")))
+    and ((has("source") | not) or .source == null or (.source | type == "string") or (.source | type == "object" and (.url | type == "string")))
+  ' "$manifest" >/dev/null 2>&1 || return 2
+  name="$(jq -r '.name' "$manifest")" || return 2
+  source="$(jq -r '
+    if (.repository | type) == "object" then .repository.url
+    elif (.repository | type) == "string" then .repository
+    elif (.source | type) == "object" then .source.url
+    elif (.source | type) == "string" then .source
+    else empty end
+  ' "$manifest")" || return 2
+  [[ "$name" == superpowers ]] && return 0
+  [[ -n "$source" ]] || return 1
+  [[ "$(normalize_github_source "$source")" == obra/superpowers ]]
+}
+
+forbidden_superpowers_plugins_from_snapshot() {
+  local profile="$1" inventory="$2" selector root status=0 matches='' selected
+
+  [[ "$profile" != superpowers ]] || return 1
+  selected="$(profile_value "$profile" plugin)"
+  while IFS= read -r selector; do
+    [[ -n "$selector" ]] || continue
+    if [[ "${selector%%@*}" == superpowers ]]; then
+      matches+="$selector"$'\n'
+      continue
+    fi
+    [[ "$selector" != "$selected" ]] || continue
+    root="$(active_plugin_root "$profile" "$selector")" || status=$?
+    case "$status" in
+      0)
+        plugin_manifest_is_superpowers "$root" || status=$?
+        case "$status" in
+          0) matches+="$selector"$'\n' ;;
+          1) ;;
+          *) return 2 ;;
+        esac
+        ;;
+      1) return 2 ;;
+      *) return 2 ;;
+    esac
+    status=0
+  done < <(printf '%s\n' "$inventory" | sed -n -E \
+    's/^[[:space:]]*• ([A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?) \(v[^)]*\)( \((enabled|disabled)\))?$/\1/p')
+  [[ -n "$matches" ]] || return 1
+  printf '%s' "$matches" | LC_ALL=C sort -u
+}
+
+forbidden_superpowers_plugins() {
+  local profile="$1" inventory
+
+  inventory="$(plugin_inventory_snapshot "$profile")" || return $?
+  forbidden_superpowers_plugins_from_snapshot "$profile" "$inventory"
+}
+
+require_no_forbidden_superpowers() {
+  local profile="$1" status=0
+
+  [[ "$profile" != superpowers ]] || return 0
+  forbidden_superpowers_plugins "$profile" >/dev/null || status=$?
+  case "$status" in
+    0) die "forbidden Superpowers plugin is installed: $profile; run: cpx repair $profile" ;;
+    1) ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
+}
+
+remove_forbidden_superpowers() {
+  local profile="$1"
+  local plugins
+  local status=0
+  local plugin
+
+  plugins="$(forbidden_superpowers_plugins "$profile")" || status=$?
+  case "$status" in
+    0) ;;
+    1) return ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
+  while IFS= read -r plugin; do
+    [[ "$plugin" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?$ ]] \
+      || die "invalid forbidden Superpowers plugin selector: $profile"
+    run_copilot "$profile" plugin uninstall "$plugin" \
+      || die "failed to remove forbidden Superpowers plugin: $profile"
+  done <<<"$plugins"
+  require_no_forbidden_superpowers "$profile"
 }
 
 marketplace_available() {
@@ -259,6 +429,7 @@ setup_profile() {
   local current_version
   require_profile "$profile"
   prepare_profile_home "$profile"
+  remove_forbidden_superpowers "$profile"
   ensure_marketplace "$profile"
   plugin="$(profile_value "$profile" plugin)"
   current_version="$(installed_version "$profile" "$plugin")"
@@ -497,6 +668,7 @@ doctor_profile() {
   require_safe_profile_home "$profile"
   home="$(profile_home "$profile")"
   [[ -d "$home" ]] || die "profile is not set up: $profile"
+  require_no_forbidden_superpowers "$profile"
   plugin="$(profile_value "$profile" plugin)"
   version="$(installed_version "$profile" "$plugin")"
   [[ -n "$version" ]] || die "expected plugin is not installed: $plugin"
@@ -596,6 +768,7 @@ repair_profile() {
   local version
   require_profile "$profile"
   prepare_profile_home "$profile"
+  remove_forbidden_superpowers "$profile"
   ensure_marketplace "$profile"
   plugin="$(profile_value "$profile" plugin)"
   version="$(installed_version "$profile" "$plugin")"

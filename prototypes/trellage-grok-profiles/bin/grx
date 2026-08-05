@@ -686,28 +686,31 @@ parse_installed_version() {
     --arg directSource "$source" \
     --arg canonicalSource "$canonical_source" '
       type == "array"
-      and length == 1
-      and ((.[0] | type) == "object")
-      and (.[0].status == "installed")
-      and (.[0].name == $plugin)
-      and (.[0].source == $directSource or .[0].source == $canonicalSource)
-      and ((.[0].path | type) == "string")
-      and ((.[0].path | length) > 0)
-      and (.[0].path | explode | all(. >= 32 and . != 127))
+      and ([.[] | select(.name == $plugin and (.source == $directSource or .source == $canonicalSource))] | length) == 1
+      and ([.[] | select(.name == $plugin and (.source == $directSource or .source == $canonicalSource))][0] as $p |
+        ($p | type) == "object"
+      and ($p.status == "installed")
+      and (($p.path | type) == "string")
+      and (($p.path | length) > 0)
+      and ($p.path | explode | all(. >= 32 and . != 127))
       and (
-        (.[0] | has("version") | not)
-        or .[0].version == null
+        ($p | has("version") | not)
+        or $p.version == null
         or (
-          (.[0].version | type) == "string"
-          and (.[0].version | length) > 0
-          and (.[0].version | explode | all(. >= 32 and . != 127))
+          ($p.version | type) == "string"
+          and ($p.version | length) > 0
+          and ($p.version | explode | all(. >= 32 and . != 127))
         )
-      )
+      ))
     ' >/dev/null 2>&1 || return 1
 
-  inventory_path="$(printf '%s\n' "$inventory" | jq -er '.[0].path')" \
+  inventory_path="$(printf '%s\n' "$inventory" | jq -er \
+    --arg plugin "$plugin" --arg directSource "$source" --arg canonicalSource "$canonical_source" \
+    '[.[] | select(.name == $plugin and (.source == $directSource or .source == $canonicalSource))][0].path')" \
     || return 1
-  inventory_version="$(printf '%s\n' "$inventory" | jq -r '.[0].version // empty')" \
+  inventory_version="$(printf '%s\n' "$inventory" | jq -r \
+    --arg plugin "$plugin" --arg directSource "$source" --arg canonicalSource "$canonical_source" \
+    '[.[] | select(.name == $plugin and (.source == $directSource or .source == $canonicalSource))][0].version // empty')" \
     || return 1
 
   plugin_directory_is_safe "$profile" "$inventory_path" || return 1
@@ -995,9 +998,80 @@ ensure_plugin() {
   fi
 }
 
+validated_plugin_inventory() {
+  local profile="$1" inventory
+
+  inventory="$(plugin_inventory "$profile")" || return 2
+  printf '%s\n' "$inventory" | jq -e '
+    type == "array"
+    and all(.[].name; type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+    and all(.[].status; . == "installed")
+    and all(.[].source; type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+    and all(.[].path; type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+  ' >/dev/null 2>&1 || return 2
+  printf '%s\n' "$inventory"
+}
+
+forbidden_superpowers_names_from_inventory() {
+  local profile="$1" inventory="$2"
+
+  [ "$profile" != superpowers ] || return 1
+  printf '%s\n' "$inventory" | jq -er '
+    def normalized_source:
+      ascii_downcase
+      | sub("^git\\+"; "")
+      | sub("^https://github\\.com/"; "")
+      | sub("^ssh://git@github\\.com/"; "")
+      | sub("^git@github\\.com:"; "")
+      | sub("^github:"; "")
+      | sub("^github\\.com/"; "")
+      | sub("/+$"; "")
+      | sub("\\.git$"; "");
+    [.[] | select(.name == "superpowers" or (.source | normalized_source) == "obra/superpowers") | .name]
+    | unique | sort | if length == 0 then empty else .[] end
+  '
+}
+
+require_no_forbidden_superpowers_from_inventory() {
+  local profile="$1" inventory="$2"
+
+  [ "$profile" != superpowers ] || return 0
+  if forbidden_superpowers_names_from_inventory "$profile" "$inventory" >/dev/null; then
+    die "forbidden Superpowers plugin is installed: $profile; run: grx repair $profile"
+  fi
+}
+
+require_no_forbidden_superpowers() {
+  local profile="$1" inventory
+
+  inventory="$(validated_plugin_inventory "$profile")" \
+    || die "failed to read installed plugin inventory: $profile"
+  require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
+}
+
+remove_forbidden_superpowers() {
+  local profile="$1" inventory names name
+
+  [ "$profile" != superpowers ] || return 0
+  [ -d "$(profile_home "$profile")" ] || return 0
+  inventory="$(validated_plugin_inventory "$profile")" \
+    || die "failed to read installed plugin inventory: $profile"
+  names="$(forbidden_superpowers_names_from_inventory "$profile" "$inventory")" || :
+  if [ -n "$names" ]; then
+    while IFS= read -r name; do
+      run_grok "$profile" plugin uninstall "$name" --yes \
+        || die "failed to remove forbidden Superpowers plugin: $profile"
+    done <<<"$names"
+  fi
+  inventory="$(validated_plugin_inventory "$profile")" \
+    || die "failed to read installed plugin inventory: $profile"
+  require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
+}
+
 validate_profile_capabilities() {
   local profile="$1"
   local plugin_mode="$2"
+  local supplied_inventory="${3-}"
   local inventory
   local mcp_inventory
   local plugin
@@ -1014,7 +1088,9 @@ validate_profile_capabilities() {
 
   plugin="$(profile_value "$profile" plugin)"
   source="$(profile_value "$profile" source)"
-  if ! inventory="$(plugin_inventory "$profile")"; then
+  if [ -n "$supplied_inventory" ]; then
+    inventory="$supplied_inventory"
+  elif ! inventory="$(validated_plugin_inventory "$profile")"; then
     die "failed to read installed plugin inventory: $profile"
   fi
   if ! version="$(printf '%s\n' "$inventory" \
@@ -1095,7 +1171,7 @@ doctor_profile() {
   local policy
   local auth
   local plugin
-  local version
+  local version inventory
 
   require_profile "$profile"
   resolve_grok
@@ -1123,7 +1199,10 @@ doctor_profile() {
     "$catalog" >/dev/null \
     || die "catalog requests unsupported standalone MCPs: $profile"
 
-  validate_profile_capabilities "$profile" required
+  inventory="$(validated_plugin_inventory "$profile")" \
+    || die "failed to read installed plugin inventory: $profile"
+  require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
+  validate_profile_capabilities "$profile" required "$inventory"
   version="$validated_plugin_version"
 
   printf '%s: healthy (plugin %s, version %s)\n' "$profile" "$plugin" "$version"
@@ -1302,7 +1381,7 @@ require_launch_ready() {
   local profile="$1"
   local auth
   local home
-  local policy
+  local policy inventory
 
   require_profile "$profile"
   require_safe_profile_home "$profile"
@@ -1324,13 +1403,17 @@ require_launch_ready() {
     || die "profile authentication is missing or unreadable: $profile"
   [ "$(file_mode "$auth")" = '600' ] \
     || die "profile authentication must have mode 0600: $profile"
-  validate_profile_capabilities "$profile" required
+  inventory="$(validated_plugin_inventory "$profile")" \
+    || die "failed to read installed plugin inventory: $profile"
+  require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
+  validate_profile_capabilities "$profile" required "$inventory"
 }
 
 setup_profile() {
   local profile="$1"
 
   preflight_profile "$profile"
+  remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null
@@ -1341,6 +1424,7 @@ repair_profile() {
   local profile="$1"
 
   preflight_profile "$profile"
+  remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null

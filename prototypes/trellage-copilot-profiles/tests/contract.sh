@@ -75,16 +75,16 @@ set -euo pipefail
   printf 'fixture native authentication was copied into COPILOT_HOME\n' >&2
   exit 78
 }
-if [[ "${FAKE_COPILOT_FAILURE_HOME-}" == "$COPILOT_HOME" ]]; then
+if [[ "${FAKE_COPILOT_FAILURE_HOME-}" == "$COPILOT_HOME" && "${1-}" != plugin ]]; then
   printf '%s' "${FAKE_COPILOT_FAILURE_STDOUT-}"
   printf '%s' "${FAKE_COPILOT_FAILURE_STDERR-}" >&2
   exit "${FAKE_COPILOT_FAILURE_STATUS:?FAKE_COPILOT_FAILURE_STATUS must be set}"
 fi
-if [[ "${FAKE_COPILOT_BINARY_STDERR_HOME-}" == "$COPILOT_HOME" ]]; then
+if [[ "${FAKE_COPILOT_BINARY_STDERR_HOME-}" == "$COPILOT_HOME" && "${1-}" != plugin ]]; then
   printf 'binary\0stderr\n' >&2
   exit 42
 fi
-if [[ -n "${FAKE_COPILOT_SIGNAL_PID_FILE-}" ]]; then
+if [[ -n "${FAKE_COPILOT_SIGNAL_PID_FILE-}" && "${1-}" != plugin ]]; then
   printf '%s\n' "$$" >"$FAKE_COPILOT_SIGNAL_PID_FILE"
   trap 'exit 143' TERM
   while :; do
@@ -191,6 +191,13 @@ case "${1-} ${2-}" in
     esac
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
+    ;;
+  'plugin uninstall')
+    plugin="${3:?plugin required}"
+    if [[ -f "$installed" ]]; then
+      awk -F '\t' -v plugin="$plugin" '$1 != plugin' "$installed" >"$installed.next"
+      mv "$installed.next" "$installed"
+    fi
     ;;
   'skill list')
     [[ "${3-}" == '--json' && -f "$installed" ]] || exit 67
@@ -380,7 +387,7 @@ expected_hve_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
   '{home: $home, cwd: $cwd, args: ["--prompt", "hello world", "--allow-tool", "git status"]}')"
-actual_hve_launch="$(sed -n '1p' "$fake_copilot_argv_log")"
+actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '1p')"
 [[ "$actual_hve_launch" == "$expected_hve_launch" ]] \
   || fail 'hve launch did not preserve the exact ordered argument vector'
 
@@ -393,7 +400,7 @@ expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
   --arg cwd "$worktree" \
   '{home: $home, cwd: $cwd, args: ["--allow-all", "--model", "gpt-5.5", "--prompt", "two words", "--", "--deny-tool"]}')"
-actual_superpowers_launch="$(sed -n '2p' "$fake_copilot_argv_log")"
+actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '2p')"
 [[ "$actual_superpowers_launch" == "$expected_superpowers_launch" ]] \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
 
@@ -406,7 +413,7 @@ expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
   --arg cwd "$worktree" \
   '{home: $home, cwd: $cwd, args: ["--prompt", "find useful skills", "--deny-url=example.com", "--model", "gpt-5.5"]}')"
-actual_awesome_launch="$(sed -n '3p' "$fake_copilot_argv_log")"
+actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
 
@@ -605,7 +612,7 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
 
-[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '22' ]] \
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '22' ]] \
   || fail 'launch performed implicit setup or update mutation'
 
 list_output="$fixture_root/list.out"
@@ -633,7 +640,7 @@ jq -e '
   and .profiles[1].marketplace.kind == "git"
   and .profiles[2].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
-[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == '22' ]] \
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '22' ]] \
   || fail 'list invoked Copilot'
 
 mkdir -p "$expected_hve_home/fake-state"
@@ -783,6 +790,43 @@ assert_contains $'awesome-copilot@awesome-copilot\t1.1.0' \
   "$expected_awesome_home/fake-state/plugins"
 [[ "$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")" == "$awesome_marketplace_add_count" ]] \
   || fail 'setup --all registered the built-in awesome marketplace'
+
+printf '%s\n' $'superpowers@superpowers-marketplace\t6.2.0' \
+  >>"$expected_hve_home/fake-state/plugins"
+if "$launcher" doctor hve >"$fixture_root/hve-superpowers-doctor.out" \
+  2>"$fixture_root/hve-superpowers-doctor.err"; then
+  fail 'doctor accepted Superpowers in the HVE profile'
+fi
+assert_contains 'cpx: forbidden Superpowers plugin is installed: hve; run: cpx repair hve' \
+  "$fixture_root/hve-superpowers-doctor.err"
+"$launcher" repair hve >"$fixture_root/hve-superpowers-repair.out"
+assert_not_contains 'superpowers@' "$expected_hve_home/fake-state/plugins"
+assert_contains $'hve-core-all@hve-core\t3.3.101' \
+  "$expected_hve_home/fake-state/plugins"
+
+mkdir -p "$expected_hve_home/installed-plugins/custom/renamed/.claude-plugin"
+printf '%s\n' \
+  '{"name":"renamed","repository":"git@github.com:obra/superpowers.git"}' \
+  >"$expected_hve_home/installed-plugins/custom/renamed/.claude-plugin/plugin.json"
+printf '%s\n' \
+  $'superpowers\t6.2.0' \
+  $'renamed@custom\t6.2.0' \
+  >>"$expected_hve_home/fake-state/plugins"
+launch_calls_before="$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")"
+if "$launcher" hve --prompt contaminated \
+  >"$fixture_root/hve-contaminated-launch.out" \
+  2>"$fixture_root/hve-contaminated-launch.err"; then
+  fail 'ordinary launch accepted direct and source-renamed Superpowers plugins'
+fi
+assert_contains 'cpx: forbidden Superpowers plugin is installed: hve; run: cpx repair hve' \
+  "$fixture_root/hve-contaminated-launch.err"
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == "$launch_calls_before" ]] \
+  || fail 'contaminated launch started the underlying Copilot agent'
+"$launcher" setup hve >"$fixture_root/hve-multiple-superpowers-setup.out"
+assert_not_contains $'superpowers\t' "$expected_hve_home/fake-state/plugins"
+assert_not_contains $'renamed@custom\t' "$expected_hve_home/fake-state/plugins"
+assert_contains $'hve-core-all@hve-core\t3.3.101' \
+  "$expected_hve_home/fake-state/plugins"
 
 for profile in awesome hve superpowers; do
   "$launcher" doctor "$profile" >"$fixture_root/$profile-native-auth-doctor.out"

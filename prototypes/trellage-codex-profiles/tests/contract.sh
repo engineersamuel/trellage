@@ -417,7 +417,14 @@ case "$*" in
       cat "$FAKE_CODEX_PLUGIN_OVERRIDE"
       [ "${FAKE_CODEX_PLUGIN_OVERRIDE_ONCE:-}" != 1 ] || rm -f "$FAKE_CODEX_PLUGIN_OVERRIDE"
     elif [ "$profile" = hve ] && [ -f "$state/plugin" ]; then
-      jq -cn --arg root "$FAKE_HVE_ADAPTER_ROOT" '{installed:[{pluginId:"hve-core-all@hve-core",name:"hve-core-all",marketplaceName:"hve-core",version:"3.3.101",installed:true,enabled:true,source:{source:"git",url:"https://github.com/microsoft/hve-core.git",ref:"main"},marketplaceSource:{sourceType:"local",source:$root},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}],available:[]}'
+      jq -cn --arg root "$FAKE_HVE_ADAPTER_ROOT" \
+        --argjson forbidden "$([ -f "$state/forbidden-superpowers" ] && printf true || printf false)" \
+        --argjson direct "$([ -f "$state/forbidden-superpowers-direct" ] && printf true || printf false)" \
+        --argjson renamed "$([ -f "$state/forbidden-superpowers-renamed" ] && printf true || printf false)" \
+        '{installed:([{pluginId:"hve-core-all@hve-core",name:"hve-core-all",marketplaceName:"hve-core",version:"3.3.101",installed:true,enabled:true,source:{source:"git",url:"https://github.com/microsoft/hve-core.git",ref:"main"},marketplaceSource:{sourceType:"local",source:$root},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}]
+          + (if $forbidden then [{pluginId:"superpowers@openai-curated",name:"superpowers",marketplaceName:"openai-curated",version:"6.2.0",installed:true,enabled:true,source:{source:"git",url:"https://github.com/obra/superpowers.git"},marketplaceSource:{sourceType:"git",source:"openai/plugins"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)
+          + (if $direct then [{pluginId:"superpowers",name:"superpowers",marketplaceName:null,version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"obra/superpowers"},marketplaceSource:null,installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)
+          + (if $renamed then [{pluginId:"workflow-kit@custom",name:"workflow-kit",marketplaceName:"custom",version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"git@github.com:obra/superpowers.git"},marketplaceSource:{sourceType:"git",source:"custom/plugins"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)),available:[]}'
     elif [ "$profile" = superpowers ] \
       && { [ -f "$state/plugin" ] || [ -f "$state/unrelated-same-marketplace" ]; }; then
       if [ -f "$state/plugin" ] && [ -f "$state/unrelated-same-marketplace" ]; then
@@ -457,7 +464,12 @@ case "$*" in
     ;;
   plugin\ remove\ *\ --json)
     [ "${FAKE_CODEX_FAIL_MUTATION:-}" != 'plugin-remove' ] || exit 73
-    rm -f "$state/plugin"
+    case "${3:-}" in
+      superpowers@openai-curated) rm -f "$state/forbidden-superpowers" ;;
+      superpowers) rm -f "$state/forbidden-superpowers-direct" ;;
+      workflow-kit@custom) rm -f "$state/forbidden-superpowers-renamed" ;;
+      *) rm -f "$state/plugin" ;;
+    esac
     if [ "$profile" = superpowers ]; then
       rm -rf "$CODEX_HOME/plugins/cache/superpowers-marketplace/superpowers/6.2.0"
     fi
@@ -708,7 +720,8 @@ if grep -F -e 'host-only-secret' -e 'mcp_servers.host-only' -e 'must-not-copy' \
 fi
 
 jq -se '
-  .[0].args == ["plugin","marketplace","list","--json"]
+  any(.[]; .args == ["plugin","marketplace","list","--json"])
+  and any(.[]; .args == ["plugin","list","--json"])
   and any(.[]; .args == ["plugin","marketplace","add",$adapter,"--json"])
   and any(.[]; .args == ["plugin","add","hve-core-all@hve-core","--json"])
 ' --arg adapter "$fake_adapter_root" \
@@ -1602,6 +1615,61 @@ printf '%s\n' '# Unrelated package' \
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor hve \
   >"$fixture_root/doctor-hve.out" || fail 'doctor hve failed'
+: >"$fake_state/hve/forbidden-superpowers"
+if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor hve \
+  >"$fixture_root/doctor-hve-superpowers.out" \
+  2>"$fixture_root/doctor-hve-superpowers.err"; then
+  fail 'doctor accepted Superpowers in the HVE profile'
+fi
+grep -F -- 'cdx: forbidden Superpowers plugin is installed: hve; run: cdx repair hve' \
+  "$fixture_root/doctor-hve-superpowers.err" >/dev/null \
+  || fail 'Codex forbidden-Superpowers diagnostic differs'
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair hve \
+  >"$fixture_root/repair-hve-superpowers.out" \
+  || fail 'repair did not remove forbidden Superpowers from HVE'
+[ ! -e "$fake_state/hve/forbidden-superpowers" ] \
+  || fail 'repair preserved forbidden Superpowers in HVE'
+: >"$fake_state/hve/forbidden-superpowers-direct"
+: >"$fake_state/hve/forbidden-superpowers-renamed"
+launches_before="$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+  "$fixture_root/fake-codex.log")"
+mkdir -p "$fixture_root/home/.codex"
+printf '%s\n' '{"tokens":{"access_token":"contamination-check"}}' \
+  >"$fixture_root/home/.codex/auth.json"
+chmod 0600 "$fixture_root/home/.codex/auth.json"
+export FAKE_CODEX_LOGIN_STATUS=0
+for contaminated_launch in proxy native; do
+  contaminated_args=(hve --version)
+  [ "$contaminated_launch" = proxy ] \
+    || contaminated_args=(--native-auth hve --version)
+  if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    "$fixture_launcher" "${contaminated_args[@]}" \
+    >"$fixture_root/$contaminated_launch-contaminated.out" \
+    2>"$fixture_root/$contaminated_launch-contaminated.err"; then
+    fail "$contaminated_launch launch accepted direct/source-renamed Superpowers"
+  fi
+  grep -F -- 'cdx: forbidden Superpowers plugin is installed: hve; run: cdx repair hve' \
+    "$fixture_root/$contaminated_launch-contaminated.err" >/dev/null \
+    || fail "$contaminated_launch forbidden-Superpowers diagnostic differs"
+done
+unset FAKE_CODEX_LOGIN_STATUS
+rm "$fixture_root/home/.codex/auth.json"
+[ -e "$fake_state/hve/forbidden-superpowers-direct" ] \
+  && [ -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
+  || fail 'contaminated launch mutated installed plugins'
+[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+  "$fixture_root/fake-codex.log")" = "$launches_before" ] \
+  || fail 'contaminated launch started the underlying Codex agent'
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair hve \
+  >"$fixture_root/repair-hve-multiple-superpowers.out" \
+  || fail 'repair did not remove all forbidden Superpowers variants'
+[ ! -e "$fake_state/hve/forbidden-superpowers-direct" ] \
+  && [ ! -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
+  || fail 'repair preserved a forbidden Superpowers variant'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" inventory hve --json \
   >"$fixture_root/inventory-hve.json" || fail 'inventory hve failed'
@@ -2944,6 +3012,35 @@ FAKE_CODEX_MARKETPLACE_OVERRIDE="$inventory_bad" \
 jq -se 'all(.[]; (.args | join(" ") | test(" add | remove | upgrade ") | not))' \
   "$fixture_root/fake-codex.log" >/dev/null || fail 'wrong marketplace source caused mutation'
 
+: >"$fake_state/hve/forbidden-superpowers-direct"
+: >"$fixture_root/fake-codex.log"
+FAKE_CODEX_MARKETPLACE_OVERRIDE="$inventory_bad" \
+  assert_command_fails marketplace-contamination-atomic env HOME="$fixture_root/home" \
+    PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    "$fixture_launcher" repair hve
+[ -e "$fake_state/hve/forbidden-superpowers-direct" ] \
+  || fail 'invalid marketplace caused forbidden-plugin mutation'
+jq -se 'all(.[]; (.args | join(" ") | test(" add | remove | upgrade ") | not))' \
+  "$fixture_root/fake-codex.log" >/dev/null \
+  || fail 'invalid marketplace with contamination caused native mutation'
+rm "$fake_state/hve/forbidden-superpowers-direct"
+
+atomic_bad_plugin="$fixture_root/atomic-bad-selected-plugin.json"
+jq '.installed[0].version = "wrong" | .installed += [{pluginId:"superpowers",name:"superpowers",marketplaceName:null,version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"obra/superpowers"},marketplaceSource:null,installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}]' \
+  "$valid_hve_plugin" >"$atomic_bad_plugin"
+: >"$fake_state/hve/forbidden-superpowers-direct"
+: >"$fixture_root/fake-codex.log"
+FAKE_CODEX_PLUGIN_OVERRIDE="$atomic_bad_plugin" \
+  assert_command_fails plugin-contamination-atomic env HOME="$fixture_root/home" \
+    PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    "$fixture_launcher" repair hve
+[ -e "$fake_state/hve/forbidden-superpowers-direct" ] \
+  || fail 'invalid selected plugin caused forbidden-plugin mutation'
+jq -se 'all(.[]; (.args | join(" ") | test(" add | remove | upgrade ") | not))' \
+  "$fixture_root/fake-codex.log" >/dev/null \
+  || fail 'invalid selected plugin with contamination caused native mutation'
+rm "$fake_state/hve/forbidden-superpowers-direct"
+
 for marketplace_case in missing duplicate wrong-name wrong-kind; do
   case "$marketplace_case" in
     missing) printf '%s\n' '{"marketplaces":[]}' >"$inventory_bad" ;;
@@ -3534,6 +3631,12 @@ jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
       codexHome: $profile,
       home: $home,
       cwd: $cwd,
+      args: ["plugin","list","--json"]
+    },
+    {
+      codexHome: $profile,
+      home: $home,
+      cwd: $cwd,
       args: [
         "--dangerously-bypass-approvals-and-sandbox",
         "-c", "model_provider=\"openai\"",
@@ -3607,7 +3710,7 @@ for native_tree_case in HUP:129 INT:130 TERM:143; do
     || fail "could not send $native_tree_signal to native launcher"
   native_tree_wait=0
   while [ ! -f "$native_tree_dir/cleanup-ready" ] \
-    && [ "$native_tree_wait" -lt 100 ]; do
+    && [ "$native_tree_wait" -lt 200 ]; do
     sleep 0.05
     native_tree_wait=$((native_tree_wait + 1))
   done
@@ -3992,8 +4095,9 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" hve --version \
   || fail 'launch with preserved profile authentication failed'
 assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
 jq -se '
-  length == 1
-  and .[0].args == ["--dangerously-bypass-approvals-and-sandbox","--version"]
+  length == 2
+  and .[0].args == ["plugin","list","--json"]
+  and .[1].args == ["--dangerously-bypass-approvals-and-sandbox","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \
