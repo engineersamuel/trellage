@@ -1,0 +1,415 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+profile_name='trellage-qwen-local'
+provider='copilot-proxy-rs'
+model_id='qwen3.6-35b-a3b-local'
+model_selector="$provider/$model_id"
+mise_tool='github:can1357/oh-my-pi'
+profile_marker_value='trellage-omp-profile-v1'
+
+die() {
+  printf 'omp: %s\n' "$1" >&2
+  exit 1
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve runtime root'
+version_file="$runtime_root/version"
+profile_root="$HOME/.omp/profiles/$profile_name"
+agent_root="$profile_root/agent"
+profile_marker="$profile_root/.managed-by-trellage-omp-profiles"
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+require_safe_home() {
+  local canonical_home
+
+  [[ "$HOME" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die "unsafe HOME: $HOME"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+}
+
+require_safe_profile_path() {
+  local path="$HOME" component canonical_home canonical_path
+
+  require_safe_home
+  canonical_home="$(canonical_directory "$HOME")"
+  for component in .omp profiles "$profile_name" agent; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe profile path: $path"
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || die "unsafe profile path: $path"
+      canonical_path="$(canonical_directory "$path")" || die "cannot resolve profile path: $path"
+      case "$canonical_path" in
+        "$canonical_home"/*) ;;
+        *) die "redirected profile path: $path" ;;
+      esac
+    fi
+  done
+}
+
+profile_is_owned_or_empty() {
+  local existing
+
+  if [[ -e "$profile_marker" || -L "$profile_marker" ]]; then
+    [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+    [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] || return 1
+    return 0
+  fi
+  [[ ! -e "$profile_root" ]] && return 0
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  [[ -z "$existing" ]]
+}
+
+require_owned_profile() {
+  require_safe_profile_path
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
+    || die "profile is not managed; run omp setup: $profile_root"
+  [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
+    || die "profile ownership marker differs: $profile_marker"
+}
+
+prepare_profile_directories() {
+  local path="$HOME" component
+
+  require_safe_profile_path
+  profile_is_owned_or_empty || die "refusing unrelated existing profile files: $profile_root"
+  for component in .omp profiles "$profile_name" agent; do
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+  chmod 0700 "$profile_root" "$agent_root"
+  require_safe_profile_path
+}
+
+managed_config() {
+  cat <<EOF
+setupVersion: 1
+startup:
+  checkUpdate: false
+  setupWizard: false
+marketplace:
+  autoUpdate: off
+modelRoles:
+  default: $model_selector
+  smol: $model_selector
+  slow: $model_selector
+  vision: $model_selector
+  plan: $model_selector
+  designer: $model_selector
+  commit: $model_selector
+  tiny: $model_selector
+  task: $model_selector
+  advisor: $model_selector
+enabledModels:
+  - $model_selector
+tools:
+  approvalMode: yolo
+EOF
+}
+
+managed_models() {
+  cat <<EOF
+providers:
+  $provider:
+    baseUrl: http://127.0.0.1:8080/v1
+    api: openai-responses
+    auth: none
+    discovery:
+      type: openai-models-list
+EOF
+}
+
+transaction_active=false
+config_backup=''
+models_backup=''
+marker_backup=''
+config_existed=false
+models_existed=false
+marker_existed=false
+
+restore_target() {
+  local target="$1" backup="$2" existed="$3" staged
+
+  if [[ "$existed" == true && -f "$backup" ]]; then
+    staged="$(mktemp "$(dirname "$target")/.omp-rollback.XXXXXX")" || return
+    cp -p "$backup" "$staged" && mv -f "$staged" "$target"
+    return
+  fi
+  rm -f -- "$target"
+}
+
+rollback_profile_transaction() {
+  [[ "$transaction_active" == true ]] || return 0
+  restore_target "$agent_root/config.yml" "$config_backup" "$config_existed"
+  restore_target "$agent_root/models.yml" "$models_backup" "$models_existed"
+  restore_target "$profile_marker" "$marker_backup" "$marker_existed"
+}
+
+cleanup_profile_transaction() {
+  rm -f -- "$config_backup" "$models_backup" "$marker_backup"
+  config_backup=''
+  models_backup=''
+  marker_backup=''
+}
+
+publish_managed_profile() {
+  local config_stage models_stage marker_stage
+
+  prepare_profile_directories
+  for target in "$agent_root/config.yml" "$agent_root/models.yml"; do
+    [[ ! -L "$target" && ( ! -e "$target" || -f "$target" ) ]] \
+      || die "unsafe managed profile file: $target"
+  done
+
+  config_stage="$(mktemp "$agent_root/.config.yml.XXXXXX")"
+  models_stage="$(mktemp "$agent_root/.models.yml.XXXXXX")"
+  marker_stage="$(mktemp "$profile_root/.profile-marker.XXXXXX")"
+  managed_config >"$config_stage"
+  managed_models >"$models_stage"
+  printf '%s\n' "$profile_marker_value" >"$marker_stage"
+  chmod 0600 "$config_stage" "$models_stage" "$marker_stage"
+
+  config_backup="$(mktemp "$agent_root/.config-backup.XXXXXX")"
+  models_backup="$(mktemp "$agent_root/.models-backup.XXXXXX")"
+  marker_backup="$(mktemp "$profile_root/.marker-backup.XXXXXX")"
+  if [[ -e "$agent_root/config.yml" ]]; then
+    config_existed=true
+    cp -p "$agent_root/config.yml" "$config_backup"
+  fi
+  if [[ -e "$agent_root/models.yml" ]]; then
+    models_existed=true
+    cp -p "$agent_root/models.yml" "$models_backup"
+  fi
+  if [[ -e "$profile_marker" ]]; then
+    marker_existed=true
+    cp -p "$profile_marker" "$marker_backup"
+  fi
+
+  transaction_active=true
+  trap 'rollback_profile_transaction; cleanup_profile_transaction' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  mv -f "$config_stage" "$agent_root/config.yml"
+  [[ "${OMP_TEST_FAIL_AT-}" != after-config ]] || die 'injected failure after config publication'
+  mv -f "$models_stage" "$agent_root/models.yml"
+  [[ "${OMP_TEST_FAIL_AT-}" != after-models ]] || die 'injected failure after models publication'
+  mv -f "$marker_stage" "$profile_marker"
+  transaction_active=false
+  cleanup_profile_transaction
+  trap - EXIT HUP INT TERM
+}
+
+require_exact_version() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid OMP version: $1"
+}
+
+mise_env() {
+  MISE_DATA_DIR="$runtime_root/mise" \
+    MISE_CACHE_DIR="$runtime_root/cache" \
+    MISE_CONFIG_DIR="$runtime_root/mise-config" \
+    mise "$@"
+}
+
+resolve_latest_version() {
+  local version
+
+  version="$(mise_env latest "$mise_tool")" || die 'could not resolve latest eligible OMP release'
+  require_exact_version "$version"
+  printf '%s\n' "$version"
+}
+
+read_pinned_version() {
+  local version
+
+  [[ -f "$version_file" && ! -L "$version_file" ]] \
+    || die 'OMP version is not pinned; run omp setup'
+  version="$(<"$version_file")"
+  require_exact_version "$version"
+  printf '%s\n' "$version"
+}
+
+installed_binary() {
+  local version="$1" install_dir expected
+
+  install_dir="$(mise_env where "$mise_tool@$version")" \
+    || die "OMP $version is not installed; run omp repair"
+  expected="$runtime_root/mise/installs/github-can1357-oh-my-pi/$version"
+  [[ "$install_dir" == "$expected" ]] || die "mise returned unexpected OMP path: $install_dir"
+  [[ -x "$install_dir/omp" && ! -L "$install_dir/omp" ]] \
+    || die "OMP executable is missing: $install_dir/omp"
+  printf '%s/omp\n' "$install_dir"
+}
+
+verify_binary_version() {
+  local binary="$1" version="$2" actual
+
+  actual="$($binary --version)" || die "could not run OMP $version"
+  [[ "$actual" == "omp/$version" ]] || die "OMP version differs: expected omp/$version, got $actual"
+}
+
+install_exact_version() {
+  local version="$1" binary
+
+  mise_env install "$mise_tool@$version" || die "mise could not install OMP $version"
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+}
+
+publish_version() {
+  local version="$1" staged
+
+  staged="$(mktemp "$runtime_root/.version.XXXXXX")" || die 'could not stage OMP version'
+  printf '%s\n' "$version" >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$version_file"
+}
+
+verify_managed_profile() {
+  require_owned_profile
+  [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \
+    || die "managed config is missing: $agent_root/config.yml"
+  [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] \
+    || die "managed models config is missing: $agent_root/models.yml"
+  cmp -s "$agent_root/config.yml" <(managed_config) \
+    || die 'managed config differs; run omp repair'
+  cmp -s "$agent_root/models.yml" <(managed_models) \
+    || die 'managed models config differs; run omp repair'
+}
+
+setup_profile() {
+  local version
+
+  require_command mise
+  if [[ -e "$version_file" || -L "$version_file" ]]; then
+    version="$(read_pinned_version)"
+  else
+    version="$(resolve_latest_version)"
+  fi
+  install_exact_version "$version"
+  publish_managed_profile
+  publish_version "$version"
+  printf 'omp setup: ready (%s, %s)\n' "$version" "$model_id"
+}
+
+repair_profile() {
+  local version
+
+  require_command mise
+  version="$(read_pinned_version)"
+  install_exact_version "$version"
+  publish_managed_profile
+  printf 'omp repair: restored (%s, %s)\n' "$version" "$model_id"
+}
+
+check_for_update() {
+  local current latest
+
+  require_command mise
+  current="$(read_pinned_version)"
+  latest="$(resolve_latest_version)"
+  if [[ "$current" == "$latest" ]]; then
+    printf 'omp update: %s is current\n' "$current"
+    return
+  fi
+  printf 'omp update: %s -> %s available\n' "$current" "$latest"
+}
+
+update_profile() {
+  local current latest
+
+  require_command mise
+  current="$(read_pinned_version)"
+  latest="$(resolve_latest_version)"
+  if [[ "$current" == "$latest" ]]; then
+    printf 'omp update: %s is current\n' "$current"
+    return
+  fi
+  install_exact_version "$latest"
+  publish_version "$latest"
+  printf 'omp update: %s -> %s installed\n' "$current" "$latest"
+}
+
+doctor_profile() {
+  local version binary health models
+
+  require_command mise
+  require_command curl
+  require_command jq
+  version="$(read_pinned_version)"
+  verify_managed_profile
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  health="$(curl -fsS --max-time 5 http://127.0.0.1:8080/health)" \
+    || die 'copilot-proxy-rs health check failed'
+  jq -e '.status == "ok" or .status == "healthy"' <<<"$health" >/dev/null \
+    || die 'copilot-proxy-rs health response is invalid'
+  models="$(curl -fsS --max-time 5 http://127.0.0.1:8080/v1/models)" \
+    || die 'copilot-proxy-rs model discovery failed'
+  jq -e --arg model "$model_id" '.data | any(.id == $model)' <<<"$models" >/dev/null \
+    || die "copilot-proxy-rs model is missing: $model_id"
+  printf 'omp doctor: OK (%s, %s)\n' "$version" "$model_id"
+}
+
+launch_omp() {
+  local version binary
+
+  require_command mise
+  version="$(read_pinned_version)"
+  verify_managed_profile
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  OMP_PROFILE="$profile_name" exec "$binary" "$@"
+}
+
+case "${1-}" in
+  setup)
+    [[ "$#" -eq 1 ]] || die 'setup takes no arguments'
+    setup_profile
+    ;;
+  doctor)
+    [[ "$#" -eq 1 ]] || die 'doctor takes no arguments'
+    doctor_profile
+    ;;
+  repair)
+    [[ "$#" -eq 1 ]] || die 'repair takes no arguments'
+    repair_profile
+    ;;
+  update)
+    if [[ "$#" -eq 2 && "$2" == --check ]]; then
+      check_for_update
+    elif [[ "$#" -eq 1 ]]; then
+      update_profile
+    else
+      die 'usage: omp update [--check]'
+    fi
+    ;;
+  *) launch_omp "$@" ;;
+esac
