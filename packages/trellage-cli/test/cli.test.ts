@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest"
 const cliHarness = vi.hoisted(() => ({
   main: undefined as unknown,
   selected: [] as Array<string>,
+  upgraded: [] as Array<string>,
 }))
 
 vi.mock("@effect/platform-node", async (importOriginal) => {
@@ -47,6 +48,28 @@ vi.mock("../src/application.js", async (importOriginal) => {
         cliHarness.selected.push(profilePath)
         return {}
       }),
+    upgradeProfile: (profilePath: string) =>
+      Effect.gen(function* () {
+        cliHarness.upgraded.push(profilePath)
+        if (profilePath === "/profiles/beta/profile.toml") {
+          return yield* Effect.fail(new actual.ApplicationError({ message: "VPN blocked beta" }))
+        }
+        return { image: `image:${path.basename(path.dirname(profilePath))}`, digest: "sha256:updated" }
+      }),
+  }
+})
+
+vi.mock("../src/profile-discovery.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/profile-discovery.js")>()
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    ...actual,
+    discoverProfileChoices: () =>
+      EffectModule.succeed([
+        { name: "alpha", value: "/profiles/alpha/profile.toml" },
+        { name: "beta", value: "/profiles/beta/profile.toml" },
+        { name: "gamma", value: "/profiles/gamma/profile.toml" },
+      ]),
   }
 })
 
@@ -86,6 +109,28 @@ const runMetadata = async (
   }
 }
 
+const runUpgradeAll = async (): Promise<{
+  readonly upgraded: ReadonlyArray<string>
+  readonly exitCode: number | undefined
+}> => {
+  const originalArgv = process.argv
+  const originalExitCode = process.exitCode
+  try {
+    process.argv = [process.execPath, "trellage-profile", "upgrade", "all"]
+    process.exitCode = undefined
+    cliHarness.main = undefined
+    cliHarness.upgraded = []
+    vi.resetModules()
+    await import("../src/cli.js")
+    if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
+    await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
+    return { upgraded: [...cliHarness.upgraded], exitCode: process.exitCode }
+  } finally {
+    process.argv = originalArgv
+    process.exitCode = originalExitCode
+  }
+}
+
 describe("CLI identity and failure reporting", () => {
   it("uses Trellage identity and prints the full failure cause tree", () => {
     expect.soft(cliSource).toContain('Command.make("trellage-profile"')
@@ -118,5 +163,12 @@ describe("CLI identity and failure reporting", () => {
     const selected = await runMetadata([], { harness: "legacy.toml" })
     expect(selected).toHaveLength(1)
     expect(selected[0]).not.toBe(legacy)
+  })
+
+  it("upgrades every discovered profile and reports failure after continuing", async () => {
+    await expect(runUpgradeAll()).resolves.toEqual({
+      upgraded: ["/profiles/alpha/profile.toml", "/profiles/beta/profile.toml", "/profiles/gamma/profile.toml"],
+      exitCode: 1,
+    })
   })
 })

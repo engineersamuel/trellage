@@ -695,6 +695,7 @@ for command in \
   'trellage shell' \
   'trellage stop' \
   'trellage destroy' \
+  'trellage upgrade all' \
   'trellage validate /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage build --locked /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
