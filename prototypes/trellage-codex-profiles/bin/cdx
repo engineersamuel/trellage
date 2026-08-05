@@ -1429,6 +1429,12 @@ require_plugin_inventory() {
   plugin_inventory_status "$profile" "$file"
   status=$?
   [ "$status" -eq 0 ] || die "invalid selected plugin inventory: $profile"
+  complete_plugin_inventory_is_safe "$profile" "$file" \
+    || die "invalid plugin inventory: $profile"
+  if forbidden_superpowers_plugin_ids "$profile" "$file" >/dev/null; then
+    remove_owned_temp "$file" || :
+    die "forbidden Superpowers plugin is installed: $profile; run: cdx repair $profile"
+  fi
   if [ "$(catalog_value "$profile" marketplaceKind)" = git ]; then
     selected_git_plugin_cache_status "$profile" "$file" \
       || die "selected plugin cache is invalid: $profile; run: cdx repair $profile"
@@ -1436,9 +1442,113 @@ require_plugin_inventory() {
   remove_owned_temp "$file" || die 'failed to clean plugin inventory'
 }
 
+complete_plugin_inventory_is_safe() {
+  local profile="$1" file="$2" home paths path
+
+  home="$(profile_home "$profile")"
+  jq -se '
+    length == 1
+    and (.[0] | type) == "object"
+    and (.[0] | keys) == ["available", "installed"]
+    and (.[0].available | type) == "array"
+    and (.[0].installed | type) == "array"
+    and all(.[0].installed[];
+      type == "object"
+      and (.pluginId | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?$"))
+      and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+      and (.version | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+      and .installed == true
+      and (.enabled | type == "boolean")
+      and (.source | type == "object")
+      and (.source.url | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+      and (.marketplaceName == null or (.marketplaceName | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$")))
+      and (.marketplaceSource == null or (.marketplaceSource | type == "object"))
+      and (.installPolicy | type == "string")
+      and (.authPolicy | type == "string")
+      and ((has("installedPath") | not) or (.installedPath | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))))
+  ' "$file" >/dev/null 2>&1 || return 1
+  paths="$(jq -sr '.[0].installed[] | select(has("installedPath")) | .installedPath' "$file")" \
+    || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    existing_directory_is_within "$home" "$path" || return 1
+  done <<EOF
+$paths
+EOF
+}
+
+forbidden_superpowers_plugin_ids() {
+  local profile="$1" file="$2" ids status=0
+
+  [ "$profile" != superpowers ] || return 1
+  ids="$(jq -sr '
+    if length == 1
+      and (.[0] | type) == "object"
+      and (.[0].installed | type) == "array"
+      and all(.[0].installed[];
+        (type == "object") and
+        (.pluginId | type == "string") and
+        (.name | type == "string"))
+    then [.[0].installed[] |
+      select(
+        .name == "superpowers"
+        or (
+          .source.url
+          | ascii_downcase
+          | sub("^git\\+"; "")
+          | sub("^https://github\\.com/"; "")
+          | sub("^ssh://git@github\\.com/"; "")
+          | sub("^git@github\\.com:"; "")
+          | sub("^github:"; "")
+          | sub("^github\\.com/"; "")
+          | sub("/+$"; "")
+          | sub("\\.git$"; "")
+        ) == "obra/superpowers"
+      ) |
+      .pluginId] | unique[]
+    else error("invalid plugin inventory")
+    end
+  ' "$file" 2>/dev/null)" || status=2
+  [ "$status" -eq 0 ] || return "$status"
+  [ -n "$ids" ] || return 1
+  printf '%s\n' "$ids"
+}
+
+remove_forbidden_superpowers() {
+  local profile="$1" file="$2" ids status=0 plugin
+
+  ids="$(forbidden_superpowers_plugin_ids "$profile" "$file")" || status=$?
+  case "$status" in
+    0) ;;
+    1) return 0 ;;
+    *) die "failed to read plugin inventory: $profile" ;;
+  esac
+  while IFS= read -r plugin; do
+    case "$plugin" in
+      ''|[!A-Za-z0-9]*|*@*@*|*[!A-Za-z0-9._@+-]* )
+        die "invalid forbidden Superpowers plugin selector: $profile" ;;
+    esac
+    run_codex_mutation "$profile" plugin remove "$plugin" --json \
+      || die "failed to remove forbidden Superpowers plugin: $profile"
+  done <<EOF
+$ids
+EOF
+}
+
+require_forbidden_superpowers_removed() {
+  local profile="$1" file="$2" status=0
+
+  forbidden_superpowers_plugin_ids "$profile" "$file" >/dev/null || status=$?
+  case "$status" in
+    0) die "failed to remove forbidden Superpowers plugin: $profile" ;;
+    1) ;;
+    *) die "failed to read plugin inventory: $profile" ;;
+  esac
+}
+
 ensure_profile_lifecycle() {
   local profile="$1" repair_wrong="$2"
-  local marketplace_file plugin_file marketplace_status plugin_status kind source plugin
+  local marketplace_file plugin_file marketplace_status plugin_status forbidden_status kind source plugin
   local revision_primed=no allow_selected=no
 
   inventory_file
@@ -1456,6 +1566,8 @@ ensure_profile_lifecycle() {
     remove_owned_temp "$plugin_file" || :
     die "failed to read plugin inventory: $profile"
   }
+  complete_plugin_inventory_is_safe "$profile" "$plugin_file" \
+    || die "invalid plugin inventory: $profile"
   plugin_inventory_status "$profile" "$plugin_file"; plugin_status=$?
   [ "$marketplace_status" -le 1 ] \
     || die "invalid selected marketplace inventory: $profile"
@@ -1471,6 +1583,32 @@ ensure_profile_lifecycle() {
       || die "selected plugin cache is invalid: $profile; run: cdx repair $profile" ;;
     *) die "invalid selected plugin inventory: $profile" ;;
   esac
+  forbidden_status=0
+  forbidden_superpowers_plugin_ids "$profile" "$plugin_file" >/dev/null \
+    || forbidden_status=$?
+  case "$forbidden_status" in
+    0)
+      [ "$plugin_status" -eq 0 ] || [ "$plugin_status" -eq 1 ] \
+        || die "invalid selected plugin inventory: $profile"
+      remove_forbidden_superpowers "$profile" "$plugin_file"
+      ;;
+    1) ;;
+    *) die "failed to read plugin inventory: $profile" ;;
+  esac
+  if [ "$forbidden_status" -eq 0 ]; then
+    read_plugin_inventory "$profile" "$plugin_file" \
+      || die "failed to read plugin inventory: $profile"
+    complete_plugin_inventory_is_safe "$profile" "$plugin_file" \
+      || die "invalid plugin inventory: $profile"
+    require_forbidden_superpowers_removed "$profile" "$plugin_file"
+    plugin_inventory_status "$profile" "$plugin_file"; plugin_status=$?
+    case "$plugin_status" in
+      0|1) ;;
+      3|4) [ "$repair_wrong" = yes ] \
+        || die "invalid selected plugin inventory: $profile" ;;
+      *) die "invalid selected plugin inventory: $profile" ;;
+    esac
+  fi
   plugin="$(catalog_value "$profile" plugin)"
 
   if [ "$kind" = git ]; then
@@ -2189,6 +2327,7 @@ run_proxy_launch() {
   acquire_profile_launch_lock "$profile"
   require_profile_config "$profile"
   resolve_codex
+  [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
   run_codex_child "$profile" no "$@"
   status=$?
   release_profile_launch_lock || release_status=1
@@ -2205,8 +2344,10 @@ run_native_launch() {
   require_profile_home_ready "$profile"
   acquire_profile_launch_lock "$profile"
   require_profile_config "$profile"
+  resolve_codex
   require_host_native_login "$profile"
   require_safe_host_native_auth_source "$profile"
+  [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
   refresh_auth "$profile"
   run_codex_child "$profile" yes "$@"
   status=$?

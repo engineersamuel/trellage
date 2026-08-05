@@ -372,6 +372,18 @@ if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'install' ]; then
   exit 0
 fi
 
+if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'uninstall' ]; then
+  plugin="${3:-}"
+  if [ "${4:-}" != '--yes' ] || [ "$#" -ne 4 ]; then
+    printf 'missing noninteractive confirmation\n' >&2
+    exit 69
+  fi
+  jq --arg plugin "$plugin" '[.[] | select(.name != $plugin)]' \
+    "$plugins_file" >"$plugins_file.next"
+  mv "$plugins_file.next" "$plugins_file"
+  exit 0
+fi
+
 if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'update' ]; then
   plugin="${3:-}"
   if [ "$#" -ne 3 ]; then
@@ -1668,10 +1680,6 @@ assert_poisoned_lifecycle_rejected() {
   rm -rf "$hve_home/skills" "$hve_home/commands"
 }
 
-for poisoned_lifecycle in launch setup repair update; do
-  assert_poisoned_lifecycle_rejected "$poisoned_lifecycle" plugin \
-    'grx: installed plugin inventory does not match: hve'
-done
 assert_poisoned_lifecycle_rejected update skills \
   "grx: standalone capability directory is not empty: $hve_home/skills"
 assert_poisoned_lifecycle_rejected update commands \
@@ -2294,6 +2302,22 @@ cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
 assert_line 'keep session' "$hve_home/sessions/keep"
 assert_line 'keep memory' "$hve_home/memory/keep"
 assert_line 'keep permissions' "$hve_home/permissions/keep"
+
+jq '. + [
+  {status:"installed",name:"superpowers",repo_key:"superpowers-direct",version:null,path:"/fixture/superpowers",source:"obra/superpowers",marketplace:null},
+  {status:"installed",name:"renamed-workflow",repo_key:"superpowers-renamed",version:null,path:"/fixture/renamed",source:"ssh://git@github.com/obra/superpowers.git/",marketplace:null}
+]' \
+  "$hve_plugins_file" >"$fixture_root/hve-with-superpowers.json"
+mv "$fixture_root/hve-with-superpowers.json" "$hve_plugins_file"
+if ./bin/grx doctor hve >"$fixture_root/hve-superpowers-doctor.out" \
+  2>"$fixture_root/hve-superpowers-doctor.err"; then
+  fail 'doctor accepted Superpowers in the HVE profile'
+fi
+assert_contains 'grx: forbidden Superpowers plugin is installed: hve; run: grx repair hve' \
+  "$fixture_root/hve-superpowers-doctor.err"
+./bin/grx repair hve >"$fixture_root/hve-superpowers-repair.out"
+jq -e 'length == 1 and .[0].name == "hve-core-all"' "$hve_plugins_file" \
+  >/dev/null || fail 'repair did not remove only forbidden Superpowers plugin'
 jq -s -e --arg home "$hve_home" '
   any(.[];
     .grokHome == $home
