@@ -4,6 +4,11 @@
 repository and host development environment available. The profiles are
 `hve` and `superpowers`.
 
+The catalog intentionally excludes `awesome-copilot`. Older direct Grok
+installations could treat its Copilot-wide instruction files as global Grok
+instructions, including a thought-logging workflow that paused after each phase
+and could end with no user-visible response.
+
 ## Prerequisites and installation
 
 - Grok Build CLI 0.2.112 or later (tested with 0.2.112).

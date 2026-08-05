@@ -1,6 +1,7 @@
-# Trellage native profile router
+# Trellage Native profile router
 
-`trx` discovers the installed Trellage native launchers `cpx`, `cdx`, and
+**Trellage Native** is the host-native profile family. Its `trx` router
+discovers the installed launchers `cpx`, `cdx`, and
 `grx`, validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
 
