@@ -1168,6 +1168,11 @@ select = ["humanizer"]
     const script = builderScript(document, lock)
 
     expect(script).toContain("mise install --locked node@22.17.0 http:claude@2.1.218")
+    expect(script).toContain('claude_metadata="$claude_dir/metadata.json"')
+    expect(script).toContain(
+      'sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"',
+    )
+    expect(script).toContain('find /mise/installs -name metadata.json -type f ! -path "$claude_metadata" -delete')
     expect(script).toContain(
       "CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
     )

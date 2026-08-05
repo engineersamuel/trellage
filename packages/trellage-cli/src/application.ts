@@ -90,12 +90,21 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     return `mise install --locked ${tool}; codex_dir=\"$(mise where ${tool})\"; rm -f \"$codex_dir/metadata.json\"; ${build}`
   }
   if (harness.kind === "claude") {
+    const claudeDirectory = `claude_dir="$(mise where ${tool})"`
+    const normalizeClaudeMetadata = [
+      'claude_metadata="$claude_dir/metadata.json"',
+      '[ -f "$claude_metadata" ]',
+      `grep -Eq '^  "extracted_at": [0-9]+,$' "$claude_metadata"`,
+      `sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"`,
+      `grep -Fqx "  \\"extracted_at\\": $SOURCE_DATE_EPOCH," "$claude_metadata"`,
+      `find /mise/installs -name metadata.json -type f ! -path "$claude_metadata" -delete`,
+    ].join("; ")
     if (document.profile.plugins.length === 0) {
       const isolateCoreTools =
         document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
           ? "rm -f /mise/config.toml; "
           : ""
-      return `${isolateCoreTools}mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
+      return `${isolateCoreTools}mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
     }
     const plugin = document.profile.plugins[0]
     const source = lock.sources[0]
@@ -105,7 +114,7 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       document.profile.plugins.length === 1 &&
       lock.sources.length === 1
     ) {
-      return `mise install --locked; find /mise/installs -name metadata.json -type f -delete; ${build}`
+      return `mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
     }
     if (document.profile.plugins.length === 0 || document.profile.plugins.length !== lock.sources.length) {
       return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
@@ -140,12 +149,12 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     }
     return [
       `mise install --locked node@22.17.0 ${tool}`,
-      `claude_dir="$(mise where ${tool})"`,
+      claudeDirectory,
       'claude_bin="$claude_dir/claude"',
       '[ -x "$claude_bin" ]',
       'node_bin="$(mise where node@22.17.0)/bin/node"',
       '[ -x "$node_bin" ]',
-      "find /mise/installs -name metadata.json -type f -delete",
+      normalizeClaudeMetadata,
       ...marketplaceCommands,
       `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harness.version}`,
       build,
