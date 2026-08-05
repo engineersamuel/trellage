@@ -23,9 +23,9 @@ describe("authored Claude Hyperresearch profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
     expect(claudeDefaultSettings.permissions.defaultMode).toBe("bypassPermissions")
     expect(claudeDefaultSettings.skipDangerousModePermissionPrompt).toBe(true)
-    expect(claudeDefaultOnboarding).toEqual({
+    expect(claudeDefaultOnboarding("2.1.222")).toEqual({
       hasCompletedOnboarding: true,
-      lastOnboardingVersion: "2.1.218",
+      lastOnboardingVersion: "2.1.222",
       theme: "dark",
       shiftEnterKeyBindingInstalled: true,
     })
@@ -175,12 +175,7 @@ describe("authored Claude social media profile", () => {
       commit: "523374dee72d67c7b2b5f858ea0094ffda49c3ac",
     })
     expect(lock.sources[1]?.files.filter(({ path }) => path === "SKILL.md")).toHaveLength(1)
-    expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual([
-      "node",
-      "claude-code-linux-arm64",
-      "builder-oci",
-      "skopeo-oci",
-    ])
+    expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
 
   it("forwards optional integration variables only to final Claude execution", async () => {

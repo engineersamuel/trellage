@@ -293,11 +293,7 @@ const lockSemanticError = (
           : "Claude"
   if (harness.kind !== document.profile.harness.kind) return "harness package kind does not match profile"
   if (harness.selector.length === 0) return `${harnessLabel} package selector is missing`
-  if (harness.kind === "copilot" || harness.kind === "pi") {
-    if (!stableSemverPattern.test(harness.version)) return `${harnessLabel} package version is not stable`
-  } else if (!exactSemverPattern.test(harness.version)) {
-    return `${harnessLabel} package version is not exact`
-  }
+  if (!stableSemverPattern.test(harness.version)) return `${harnessLabel} package version is not stable`
   if (harness.selector !== "latest" && harness.version !== harness.selector) {
     return "explicit harness selector does not match resolved version"
   }
@@ -310,6 +306,17 @@ const lockSemanticError = (
     const asset = platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
     const expected = `https://github.com/can1357/oh-my-pi/releases/download/v${harness.version}/${asset}`
     if (harness.url !== expected) return "Pi package artifact URL is invalid"
+  }
+  if (harness.kind === "claude") {
+    const asset = platform === "linux/arm64" ? "claude-linux-arm64.tar.gz" : "claude-linux-x64.tar.gz"
+    const expected = `https://github.com/anthropics/claude-code/releases/download/v${harness.version}/${asset}`
+    if (harness.url !== expected) return "Claude package artifact URL is invalid"
+  }
+  if (harness.kind === "codex") {
+    const asset =
+      platform === "linux/arm64" ? "codex-aarch64-unknown-linux-musl.tar.gz" : "codex-x86_64-unknown-linux-musl.tar.gz"
+    const expected = `https://github.com/openai/codex/releases/download/rust-v${harness.version}/${asset}`
+    if (harness.url !== expected) return "Codex package artifact URL is invalid"
   }
   if (!sha256Pattern.test(harness.integrity)) {
     return `${harnessLabel} package integrity is missing or invalid`
@@ -342,7 +349,7 @@ const lockSemanticError = (
   }
   if (harness.kind === "claude") {
     const claudeAdapter = document.profile.harness.kind === "claude" ? document.profile.plugins[0]?.adapter : undefined
-    for (const name of ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"]) {
+    for (const name of ["node", "builder-oci", "skopeo-oci"]) {
       if (!artifactNames.has(name)) return `required Claude artifact is missing: ${name}`
     }
     if (claudeAdapter === "hyperresearch") {

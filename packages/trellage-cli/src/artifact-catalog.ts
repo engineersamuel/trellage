@@ -76,13 +76,6 @@ const fixedArtifacts: ReadonlyArray<ArtifactLock> = [
     url: "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz",
   },
   {
-    name: "claude-code-linux-arm64",
-    version: "2.1.218",
-    integrity: "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619",
-    url: "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz",
-    size: 84159749,
-  },
-  {
     name: "builder-oci",
     version: "jdxcode/mise",
     integrity: "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff",
@@ -155,18 +148,6 @@ export const arm64ArtifactCatalog = {
   },
   runtimeVersions,
   runtimeIntegrities,
-  codex: {
-    version: "0.144.6",
-    integrity: "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
-    url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
-    size: 101269986,
-  },
-  claude: {
-    version: "2.1.218",
-    integrity: "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8",
-    url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-    size: 22971,
-  },
   fixedArtifacts,
   hyperresearchArtifacts,
   hyperresearchPythonLockIntegrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
@@ -201,15 +182,6 @@ export const lockedArtifactError = (
     }
   }
   const harness = lock.packages.harness
-  const fixedHarness = harness.kind === "codex" ? catalog.codex : harness.kind === "claude" ? catalog.claude : undefined
-  if (
-    fixedHarness !== undefined &&
-    (harness.version !== fixedHarness.version ||
-      harness.integrity !== fixedHarness.integrity ||
-      harness.url !== fixedHarness.url ||
-      harness.size !== fixedHarness.size)
-  )
-    return `${harness.kind} package does not match platform catalog`
   if (harness.kind === "claude") {
     const actual = new Map((lock.packages.artifacts ?? []).map((artifact) => [artifact.name, artifact]))
     const adapter = document.profile.plugins[0]?.adapter

@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:c93ca6a94ce470781104d15431e9e219fa157eccf2ea64878020ced5581d2258"
+profile_hash = "sha256:4a9216e1b29ee66c642f27b6ecb86761738632ad096f56ca830c125ae5f0fa7c"
 
 [[sources]]
 kind = "plugin"
@@ -9,8 +9,8 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["full"]
-commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"
-integrity = "sha256:edd55d7720f6157b844b09bd9d69ff8963f6fd5f130b188685e7afa31d43b283"
+commit = "15010c5142244b88265f7abadf7b7aa1a8237fde"
+integrity = "sha256:cd96b04e838936c1e6ae736da0b60d6b88b6f4d39fd108da7baaaaec7470202e"
 
 [[sources.files]]
 path = ".github/workflows/ci.yml"
@@ -50,7 +50,7 @@ sha256 = "sha256:dd97e797356c7a47600da4c9aeb1d9350f5d04d4d9e1f1cb25726eddaa679c3
 
 [[sources.files]]
 path = "CHANGELOG.md"
-sha256 = "sha256:a0b36ca8d675d8f9d731f1937152a5cebfaaa103b81cec21ddb6f01851f747fc"
+sha256 = "sha256:4c5cc6e1e67effbd67c002bacbf46068135f67991390bc8bda6fb898aa1b9a44"
 
 [[sources.files]]
 path = "CONTRIBUTING.md"
@@ -94,15 +94,15 @@ sha256 = "sha256:4984af1c20d0cb81a6f5b081320a8c56dbde4bd3656d6aca2c671a15dfa6a3b
 
 [[sources.files]]
 path = "pyproject.toml"
-sha256 = "sha256:0f302610c9b025f23c1d43adc9cfa5d97409f314894302d32be32cb2bd78ed8a"
+sha256 = "sha256:95736af68d5ca532fcc6b4b7dc21277a597c9d2a76d9b5967632e82f90a5c8ef"
 
 [[sources.files]]
 path = "README.md"
-sha256 = "sha256:a23fc0f618d0fc4d0f74e61696db5cff2334f6ab390721ed63a4569d51a6f964"
+sha256 = "sha256:3985e56d29003bcc26a82afe2b9806f2ae281fc57d88c921720d2f90ad05a194"
 
 [[sources.files]]
 path = "src/hyperresearch/__init__.py"
-sha256 = "sha256:539dffd1df3c20c39fd14191c9a58134f32791e08ea4aea0e806e75f2e4cb8a5"
+sha256 = "sha256:c3e45807c79b58f9f07afb2bd9ac9147848763293f8985c2769b5dfb092652db"
 
 [[sources.files]]
 path = "src/hyperresearch/__main__.py"
@@ -158,11 +158,11 @@ sha256 = "sha256:45defc48dbbd9877095b842d67c13b0997ec0fe39cee784ff611025ce1dba8f
 
 [[sources.files]]
 path = "src/hyperresearch/cli/fetch_batch.py"
-sha256 = "sha256:cf9f7511f15aa260c2da4b02dc717f873d9ee503df9dd539f1a2d804e5e383fe"
+sha256 = "sha256:860d7cc53d933aac7326c23d58ad2309f8791f26f3af4c6b4a0eb0175fe60b7b"
 
 [[sources.files]]
 path = "src/hyperresearch/cli/fetch.py"
-sha256 = "sha256:af08148eeedd7387fdaeef8f6facd87c29eab5b8f4e0636c675f7ae9afc31197"
+sha256 = "sha256:8163ffe35848d14ee85ad108ccda971e015e55734b916c22723e49765d44665b"
 
 [[sources.files]]
 path = "src/hyperresearch/cli/git_cmd.py"
@@ -182,7 +182,7 @@ sha256 = "sha256:9c1e2ea1c640eb9752fec9cd77c778c4f8146ea9b46883b5f10c7a9b5d81c89
 
 [[sources.files]]
 path = "src/hyperresearch/cli/install.py"
-sha256 = "sha256:817eb5c5668ed3d173186a267d4595c553a8b7ac74bc1a3c79537ca4544e98d9"
+sha256 = "sha256:46d059fc4af36c82a4f3bb5b8df8d5fd9e218ed8edb07a91bc1ff7d5ba280e6d"
 
 [[sources.files]]
 path = "src/hyperresearch/cli/levers_cmd.py"
@@ -206,7 +206,7 @@ sha256 = "sha256:d169f86ed201e92242dd278d26934ec994eab16eb32726ad9511389cd17464a
 
 [[sources.files]]
 path = "src/hyperresearch/cli/note.py"
-sha256 = "sha256:974f578e59dbe0c5b6f05b5b48e0f730d0c9fc58fb205d2c74d2c8b6a8df5d77"
+sha256 = "sha256:4b7ce4e8ee5cb43f9f329b9a5d8fd31779f88831d79398781b537bc03ce67101"
 
 [[sources.files]]
 path = "src/hyperresearch/cli/profile_cmd.py"
@@ -234,7 +234,7 @@ sha256 = "sha256:d0c6c93bdc579e1160c949785d4247c7971328befb21d3cd6e5b5d3a71504be
 
 [[sources.files]]
 path = "src/hyperresearch/cli/setup.py"
-sha256 = "sha256:f2e9545e29319f71df66121d79bfc6f230dc05506d38e85b6e864a92c428d9ca"
+sha256 = "sha256:a775555d216c18649042ff714a6436c0810a7a296dea3536c35cbd423f25e734"
 
 [[sources.files]]
 path = "src/hyperresearch/cli/sources.py"
@@ -266,7 +266,7 @@ sha256 = "sha256:b437957060706b85856c2537184484afa8c40dfa9ed206bf00933cb5bd48fe7
 
 [[sources.files]]
 path = "src/hyperresearch/core/agent_docs.py"
-sha256 = "sha256:6b64be7d7343f2823a3d9e0adb6e4b48d206d3b5c6a0a1e3c3f44dbc74fa533d"
+sha256 = "sha256:0a9428b2dfa2f835897d4acb107c7a07a51132761648ca1ef17c05cbed12b9ee"
 
 [[sources.files]]
 path = "src/hyperresearch/core/citecheck.py"
@@ -278,11 +278,11 @@ sha256 = "sha256:b687354920e732fc7b5132656f6501de176fccca6a8936a5e0faf7956b63c78
 
 [[sources.files]]
 path = "src/hyperresearch/core/config.py"
-sha256 = "sha256:33cc13cb15d81ef9e71f73d3d5ebfe66250d9c82dc25a4880b2ec92c5ec0de0c"
+sha256 = "sha256:7a4c56e166081d5a9262eea25a99b520eb4e18cb8c1c4b80c90e97ad0f99d264"
 
 [[sources.files]]
 path = "src/hyperresearch/core/db.py"
-sha256 = "sha256:10561fba116c062062e42f2705e4a46f7bdcdfbbdac3f3be472b4e879cfe51d7"
+sha256 = "sha256:105deb94f1ba1a24ceb32689b67d2ec4ab1deb306e8626c444495da1cb85c657"
 
 [[sources.files]]
 path = "src/hyperresearch/core/embed.py"
@@ -310,7 +310,7 @@ sha256 = "sha256:a7dce0ba2edbcdacc18f163644cb5728573aaa34e0a569acbb2a717f2f391f5
 
 [[sources.files]]
 path = "src/hyperresearch/core/hooks.py"
-sha256 = "sha256:c04440592eb264ce06b70739ec484a8015d68915a7d7ad230694a146f35b7b41"
+sha256 = "sha256:e7f787d8c2dc6075231b38ede01e263ddbcf1e5e58a2e6108b8f266cc33e86a2"
 
 [[sources.files]]
 path = "src/hyperresearch/core/independence.py"
@@ -326,11 +326,15 @@ sha256 = "sha256:5d2cccc5ab5e7284793fe2df5ed7d620719f9b9c04e5b58a609a8b1eddb98b5
 
 [[sources.files]]
 path = "src/hyperresearch/core/migrations.py"
-sha256 = "sha256:32a870b77535504621caf47f790ec1f34838a657da4d4ad1d58e35b57812c9ed"
+sha256 = "sha256:a6c4188a7a075bbbac44b2986f33aa547b9821d60368499871e4c357ec2ac740"
 
 [[sources.files]]
 path = "src/hyperresearch/core/note.py"
-sha256 = "sha256:c128c4c1e3f5df0214011b277ddaafcec4509cfa296ae4435fde3ab398b8ae4f"
+sha256 = "sha256:5f978a9822a4ea6ebaca23ffd0161a5f80b488d963e78a66aa04835d2e05a28c"
+
+[[sources.files]]
+path = "src/hyperresearch/core/oa.py"
+sha256 = "sha256:1525e51085f1b6c0f3d16a7f60c00f8ec9b7f2020233572dfe22c34872cc26e8"
 
 [[sources.files]]
 path = "src/hyperresearch/core/patterns.py"
@@ -338,7 +342,7 @@ sha256 = "sha256:51bf13d8b38e04b100a41112e86552e9e7c1e725debebac23ab2598f36171d2
 
 [[sources.files]]
 path = "src/hyperresearch/core/profiles.py"
-sha256 = "sha256:50b53692eeb008a47f9bae9e17c58431f50ea5dbbe7b3bf8974c320e5f638bf5"
+sha256 = "sha256:75b3e12c926be7da8f554c12b195779fd158035367d87711894d5181fa64fc5e"
 
 [[sources.files]]
 path = "src/hyperresearch/core/quality.py"
@@ -350,11 +354,11 @@ sha256 = "sha256:d823359dfaadc7dfc8d31f2bd0e2308ec0c265a464c3c4adb7615d8d26c4e64
 
 [[sources.files]]
 path = "src/hyperresearch/core/runs.py"
-sha256 = "sha256:2e01c56a8ba14b14161c160187d04d4f1595e440b716e5350fa75e0bcffffdef"
+sha256 = "sha256:83d17c7246aa4d24ec929a6bef3443d711816754cb5c5f5f639e5029358c5432"
 
 [[sources.files]]
 path = "src/hyperresearch/core/scholar.py"
-sha256 = "sha256:9dec2b03109c85c2a58108b452a3b425570028f72f3d35b1a90ed00cd3bf48a7"
+sha256 = "sha256:2bd569a95a1e15e594f6dcd8094be9ce75015cda00680a702496999e5fcd05c3"
 
 [[sources.files]]
 path = "src/hyperresearch/core/similarity.py"
@@ -362,7 +366,7 @@ sha256 = "sha256:61813841933fdd60d99e4a5edfd8893203271128c8a76cb36f1c98930318641
 
 [[sources.files]]
 path = "src/hyperresearch/core/sync.py"
-sha256 = "sha256:b30fa6fcce58f6cd3ac9d6248dce3a22175bbd7022477132f246d982264e4284"
+sha256 = "sha256:839e452bc45bc42c8a18d2afc49a19084d7bf73a03d0999dfc714c242b696076"
 
 [[sources.files]]
 path = "src/hyperresearch/core/templates.py"
@@ -410,7 +414,7 @@ sha256 = "sha256:b406e51598e0e1c224ac90877754a0fccd97dacdae78fb19cfafff042874ee0
 
 [[sources.files]]
 path = "src/hyperresearch/models/note.py"
-sha256 = "sha256:94296ae05dc8ff439c98203de23480fdfe3b93faed6d55a27dc7c62d8576d1f8"
+sha256 = "sha256:ff2cb3812351dbcdc0eb45460eea2a86c4949dcd3a5ab27251fe1a5c5591d1f0"
 
 [[sources.files]]
 path = "src/hyperresearch/models/output.py"
@@ -442,11 +446,11 @@ sha256 = "sha256:60a3297608b7e75722e559662e638cff4c4b0a09622a07b7e273fe519de4d3f
 
 [[sources.files]]
 path = "src/hyperresearch/serve/renderer.py"
-sha256 = "sha256:60df3ed83a6f7006c58a57828f9ba2d54680d2e651f234b690e182b296c3ec67"
+sha256 = "sha256:56adc502d5e31fa6999e983a2b77ebf9fdb0db8ba255bfe8ec9b77e63535949b"
 
 [[sources.files]]
 path = "src/hyperresearch/serve/server.py"
-sha256 = "sha256:f0df28fe3b3946c7ea9c65679206dac0deeb67730841ab451b9b55a40afbd576"
+sha256 = "sha256:cdd254cd8556564083fb207bc32d32cb4d40c2c098cbd7c355eb2bb90e4f1315"
 
 [[sources.files]]
 path = "src/hyperresearch/skills/__init__.py"
@@ -558,7 +562,7 @@ sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85
 
 [[sources.files]]
 path = "tests/conftest.py"
-sha256 = "sha256:df308ec1d505caf29407943f6a39e2856c24b660beb5287e66e32b706f559373"
+sha256 = "sha256:148b6283444418673a053e3fefd95cb990091d30ed33918c229e728e1c14cdfc"
 
 [[sources.files]]
 path = "tests/fixtures/golden_prompts/agents/browser_fetcher_agent.md"
@@ -649,6 +653,10 @@ path = "tests/test_cli/test_fetch_batch.py"
 sha256 = "sha256:4fc9d3dbf2e72e255633228bf1b8cbf22887751419297aa80000c1a33e77d90d"
 
 [[sources.files]]
+path = "tests/test_cli/test_install_browser.py"
+sha256 = "sha256:ffeaaf133a68ce58f2825e5cb04e7ae513212d3e8b8e076d4b1f9a3cd7f5d300"
+
+[[sources.files]]
 path = "tests/test_cli/test_install_profile.py"
 sha256 = "sha256:aa6ed615828da21d9e7be74e0e1118cb06db39d92c75a4072f32ef34e64db09d"
 
@@ -659,6 +667,10 @@ sha256 = "sha256:a2f0c36277c07e7fb60a20a5303c79294d95f8438f7344a757b941e0e83ce54
 [[sources.files]]
 path = "tests/test_cli/test_note_ops.py"
 sha256 = "sha256:23bf545aa395bd17c90cdf2b768e334d9ea80d24cc80f31edb35b04fbf6d744e"
+
+[[sources.files]]
+path = "tests/test_cli/test_oa_fetch.py"
+sha256 = "sha256:3d19d9a734e78bf3b33554b654acffeef0cd0dddec6237920ab5777fd34d6a43"
 
 [[sources.files]]
 path = "tests/test_cli/test_vault_tag.py"
@@ -690,7 +702,7 @@ sha256 = "sha256:912855e03bfd516e51babb338877b1b80f8334f52dfedd1df92273ddb97eb69
 
 [[sources.files]]
 path = "tests/test_core/test_hooks.py"
-sha256 = "sha256:7726adf9e567ec4b2daaa5780cff78455fa41724a18b3e9fd78d0ef802076126"
+sha256 = "sha256:c72d4ddc961ad4c59e5c3e9c90737f896ab7b54a5950615278724736dcaab575"
 
 [[sources.files]]
 path = "tests/test_core/test_levers.py"
@@ -698,7 +710,11 @@ sha256 = "sha256:08477c750db3c42fc0e1dcd9b9c10ff21b8f401d4bda66cec0e9836b9f251dc
 
 [[sources.files]]
 path = "tests/test_core/test_note.py"
-sha256 = "sha256:e1664ccd2bfda2b5f1423800c3c59e51706e142ab2125c0ba9bc75e6543e67c7"
+sha256 = "sha256:04cafd0dcfb4f245dc47cbfc29fce25998db06c829da868e2218150c458a9c2d"
+
+[[sources.files]]
+path = "tests/test_core/test_oa_recovery.py"
+sha256 = "sha256:6e1e9c7b3672fe70e0f3caaf8acdebb37cd23a22da80ff41bba95079bcd17596"
 
 [[sources.files]]
 path = "tests/test_core/test_packaging.py"
@@ -710,7 +726,7 @@ sha256 = "sha256:e030d9109ba0274601029f393d303a3c3bc4ad534d429f20d1dd458dac15e4c
 
 [[sources.files]]
 path = "tests/test_core/test_profiles.py"
-sha256 = "sha256:63c67a964c0db77c57b2bff8bb20539e97fdd6382f0053d681db544bedfb96b8"
+sha256 = "sha256:78dffb5416481b27fbe11bcd1b42cba809c458dc069ba482e910e40c19ac0c57"
 
 [[sources.files]]
 path = "tests/test_core/test_prompt_golden.py"
@@ -734,7 +750,7 @@ sha256 = "sha256:531a9e7caceae6058b39a18c726dc5180152137fb264817988290010b525562
 
 [[sources.files]]
 path = "tests/test_core/test_sync.py"
-sha256 = "sha256:1c3da7673206ee619ffd794218580c2885ff045db84e92113e9912a3c77dbbda"
+sha256 = "sha256:3f8fb5bfe836e1fe63cefaa1d312106c9a309f43bf9a7793a3000589976dd97c"
 
 [[sources.files]]
 path = "tests/test_core/test_untrusted.py"
@@ -746,7 +762,7 @@ sha256 = "sha256:4dfda1cde646141c9fc394b6152e60daf397e84e7d30576bdb837113866b7a6
 
 [[sources.files]]
 path = "tests/test_core/test_verification.py"
-sha256 = "sha256:2f8d9b648accde656d0728908b7ee79ef09d703a723780f3cb0fbfe465154958"
+sha256 = "sha256:8d442f5d987067b8e6a92bdf77227f9457433c046dda9e250cc61dce8f8a6b30"
 
 [[sources.files]]
 path = "tests/test_graph/__init__.py"
@@ -763,6 +779,14 @@ sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85
 [[sources.files]]
 path = "tests/test_search/test_fts.py"
 sha256 = "sha256:bfd8dc5c901b87a3b75206a75dc442155af00762450d3c326a415d0a83f5a932"
+
+[[sources.files]]
+path = "tests/test_serve/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/test_serve/test_xss.py"
+sha256 = "sha256:192642125b69f75697457a5548dfb1cb3647acba869502b93e49cda2620f9db4"
 
 [[sources.files]]
 path = "tests/test_web/__init__.py"
@@ -801,11 +825,11 @@ python_lock_integrity = "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91
 
 [packages.harness]
 kind = "claude"
-selector = "2.1.218"
-version = "2.1.218"
-integrity = "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8"
-url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz"
-size = 22971
+selector = "latest"
+version = "2.1.222"
+integrity = "sha256:68c8d31e3cf81d4e0f608900c866b8bb2f0e2645e89d0917ce8a23f2ec277587"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz"
+size = 88123930
 
 [[packages.runtime]]
 name = "bash"
@@ -949,17 +973,22 @@ integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc
 url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
 
 [[packages.artifacts]]
+name = "builder-oci"
+version = "jdxcode/mise"
+integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
+url = "oci://docker.io/jdxcode/mise"
+
+[[packages.artifacts]]
+name = "skopeo-oci"
+version = "stable"
+integrity = "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
+url = "oci://quay.io/skopeo/stable"
+
+[[packages.artifacts]]
 name = "python"
 version = "3.13.14"
 integrity = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
 url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
-
-[[packages.artifacts]]
-name = "claude-code-linux-arm64"
-version = "2.1.218"
-integrity = "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619"
-url = "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz"
-size = 84159749
 
 [[packages.artifacts]]
 name = "playwright-mcp"
@@ -1003,19 +1032,7 @@ integrity = "sha256:d535324d44724cdfec16e500d0335903bca5c6a446e736b351691ee7e39d
 url = "https://github.com/h4ckf0r0day/obscura/releases/download/v0.1.11/obscura-aarch64-linux-stealth.tar.gz"
 size = 52716812
 
-[[packages.artifacts]]
-name = "builder-oci"
-version = "jdxcode/mise"
-integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
-url = "oci://docker.io/jdxcode/mise"
-
-[[packages.artifacts]]
-name = "skopeo-oci"
-version = "stable"
-integrity = "sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
-url = "oci://quay.io/skopeo/stable"
-
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:db825b68667408bb27dbb2a03ea161a2b3eeab22c79a6e1b3366cb256e8e9edb"
+final_digest = "sha256:f1ef39d6ce8773ce1793cb3667a3ecbc8ef907f3f70d72cace48c88a32ee0982"

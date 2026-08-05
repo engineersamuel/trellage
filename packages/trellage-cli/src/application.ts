@@ -10,7 +10,15 @@ import lockfile from "proper-lockfile"
 
 import { resolveGitHubSource } from "./github-cache.js"
 import { parseLock, renderLock } from "./lock-file.js"
-import { compileLock, lockIsReady, profileHash, requireLocked, withFinalDigest, type ProfileLock } from "./lock.js"
+import {
+  compileLock,
+  lockIsReady,
+  profileHash,
+  requireLocked,
+  withFinalDigest,
+  type LockResolvers,
+  type ProfileLock,
+} from "./lock.js"
 import { createBuildContext, type PluginGenerator, type RuntimeSupport, type SkillGenerator } from "./materialize.js"
 import { parseProfile, type ProfileDocument } from "./profile.js"
 import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
@@ -55,6 +63,7 @@ export interface UpgradeServices {
     document: ProfileDocument,
     lock: ProfileLock,
     image: string,
+    npmRegistry?: string,
   ) => Effect.Effect<string, ApplicationError>
   readonly imageExists: (image: string) => Effect.Effect<boolean, ApplicationError>
   readonly tagImage: (source: string, destination: string) => Effect.Effect<void, ApplicationError>
@@ -130,15 +139,15 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       )
     }
     return [
-      "mise install --locked node@22.17.0 npm:@anthropic-ai/claude-code@2.1.218",
-      'claude_dir="$(mise where npm:@anthropic-ai/claude-code@2.1.218)"',
-      'claude_bin="$claude_dir/bin/claude"',
+      `mise install --locked node@22.17.0 ${tool}`,
+      `claude_dir="$(mise where ${tool})"`,
+      'claude_bin="$claude_dir/claude"',
       '[ -x "$claude_bin" ]',
       'node_bin="$(mise where node@22.17.0)/bin/node"',
       '[ -x "$node_bin" ]',
       "find /mise/installs -name metadata.json -type f -delete",
       ...marketplaceCommands,
-      '"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json',
+      `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harness.version}`,
       build,
     ].join("; ")
   }
@@ -432,6 +441,14 @@ const buildOci = (
         "MISE_CACHE_DIR=/tmp/mise-cache",
         "--env",
         "MISE_YES=1",
+        "--env",
+        "npm_config_fetch_retries=5",
+        "--env",
+        "npm_config_fetch_retry_factor=2",
+        "--env",
+        "npm_config_fetch_retry_mintimeout=1000",
+        "--env",
+        "npm_config_fetch_retry_maxtimeout=10000",
         ...(npmRegistry === undefined ? [] : ["--env", `npm_config_registry=${npmRegistry}`]),
         "--env",
         `SOURCE_DATE_EPOCH=${lock.source_date_epoch}`,
@@ -496,6 +513,7 @@ const buildCandidateImage = (
   runtimeSupport: RuntimeSupportSnapshot,
   target: DockerTarget,
   docker: DockerServices,
+  npmRegistry?: string,
 ): Effect.Effect<string, ApplicationError> =>
   Effect.gen(function* () {
     const directories = yield* Effect.forEach(
@@ -524,7 +542,7 @@ const buildCandidateImage = (
       skillGenerator,
       pluginGenerator,
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    return yield* buildOci(context, image, document, lock, target, docker).pipe(
+    return yield* buildOci(context, image, document, lock, target, docker, undefined, npmRegistry).pipe(
       Effect.ensuring(
         io("cannot clean build context", () => rm(context, { recursive: true, force: true })).pipe(Effect.ignore),
       ),
@@ -611,7 +629,7 @@ const liveDockerServices: DockerServices = {
 }
 
 const liveUpgradeServices = (target: DockerTarget): UpgradeServices => ({
-  buildCandidate: (document, lock, image) =>
+  buildCandidate: (document, lock, image, npmRegistry) =>
     createRuntimeSupportSnapshot(
       document.profile.harness.kind,
       defaultRuntimeSupport,
@@ -620,7 +638,7 @@ const liveUpgradeServices = (target: DockerTarget): UpgradeServices => ({
     ).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       Effect.flatMap((snapshot) =>
-        buildCandidateImage(document, lock, image, defaultCacheHome, snapshot, target, liveDockerServices),
+        buildCandidateImage(document, lock, image, defaultCacheHome, snapshot, target, liveDockerServices, npmRegistry),
       ),
     ),
   imageExists: (image) => liveImageExists(target, image),
@@ -649,6 +667,83 @@ const applicationError = (cause: unknown): ApplicationError =>
   cause instanceof ApplicationError
     ? cause
     : new ApplicationError({ message: String((cause as { readonly message?: unknown })?.message ?? cause), cause })
+
+const transientUpgradeError = (cause: unknown): boolean => {
+  const seen = new Set<unknown>()
+  const details: Array<string> = []
+  const visit = (candidate: unknown): void => {
+    if (candidate === null || candidate === undefined || seen.has(candidate)) return
+    seen.add(candidate)
+    if (typeof candidate === "string") {
+      details.push(candidate)
+      return
+    }
+    if (typeof candidate !== "object") return
+    const record = candidate as Record<string, unknown>
+    for (const key of ["message", "code", "stderr", "stdout"]) {
+      if (typeof record[key] === "string") details.push(record[key])
+    }
+    visit(record.cause)
+  }
+  visit(cause)
+  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|ECONNREFUSED|socket (?:disconnected|hang up)|network|TLS connection|HTTP (?:408|425|429|5\d\d)|temporary failure|timed out/i.test(
+    details.join("\n"),
+  )
+}
+
+const retryUpgradeStep = <A, E, R>(operation: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  operation.pipe(Effect.retry({ times: 2, while: transientUpgradeError }))
+
+const upgradeResolvers = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  base: LockResolvers,
+  fallbacks: Array<string>,
+): LockResolvers => {
+  const canFallback = current !== undefined && lockIsReady(document, current, base.platform)
+  return {
+    ...base,
+    resolveSource: (request) =>
+      retryUpgradeStep(base.resolveSource(request)).pipe(
+        Effect.catchAll((cause) => {
+          if (!canFallback || !request.update || request.previousCommit === undefined) return Effect.fail(cause)
+          return retryUpgradeStep(base.resolveSource({ ...request, update: false })).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                fallbacks.push(`source ${request.repository}@${request.ref} -> ${request.previousCommit}`)
+              }),
+            ),
+          )
+        }),
+      ),
+    resolvePackages: (request) =>
+      retryUpgradeStep(base.resolvePackages(request)).pipe(
+        Effect.catchAll((cause) => {
+          if (
+            !canFallback ||
+            current.packages.harness.kind !== request.kind ||
+            current.packages.harness.selector !== request.selector
+          ) {
+            return Effect.fail(cause)
+          }
+          return Effect.sync(() => {
+            fallbacks.push(`harness ${request.kind}@${request.selector} -> ${current.packages.harness.version}`)
+            return current.packages
+          })
+        }),
+      ),
+    resolveBase: (request) =>
+      retryUpgradeStep(base.resolveBase(request)).pipe(
+        Effect.catchAll((cause) => {
+          if (!canFallback || current.image.base !== request.reference) return Effect.fail(cause)
+          return Effect.sync(() => {
+            fallbacks.push(`base ${request.reference} -> ${current.image.base_digest}`)
+            return { reference: current.image.base, digest: current.image.base_digest }
+          })
+        }),
+      ),
+  }
+}
 
 const collectCauses = (
   operations: ReadonlyArray<Effect.Effect<void, ApplicationError>>,
@@ -735,7 +830,11 @@ export const upgradeProfile = (
   runtimeSupport: RuntimeSupport,
   target: DockerTarget,
   services?: UpgradeServices,
-): Effect.Effect<{ readonly image: string; readonly digest: string }, ApplicationError> =>
+  npmRegistry?: string,
+): Effect.Effect<
+  { readonly image: string; readonly digest: string; readonly fallbacks: ReadonlyArray<string> },
+  ApplicationError
+> =>
   Effect.gen(function* () {
     const platform = target.platform
     const document = yield* loadProfile(profilePath)
@@ -753,8 +852,17 @@ export const upgradeProfile = (
       services === undefined
         ? {
             ...liveUpgradeServices(target),
-            buildCandidate: (profile: ProfileDocument, lock: ProfileLock, image: string) =>
-              buildCandidateImage(profile, lock, image, xdgCacheHome, runtimeSnapshot, target, liveDockerServices),
+            buildCandidate: (profile: ProfileDocument, lock: ProfileLock, image: string, registry?: string) =>
+              buildCandidateImage(
+                profile,
+                lock,
+                image,
+                xdgCacheHome,
+                runtimeSnapshot,
+                target,
+                liveDockerServices,
+                registry,
+              ),
           }
         : services
 
@@ -770,12 +878,16 @@ export const upgradeProfile = (
                   Effect.map((lock) => lock as ProfileLock | undefined),
                   Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
                 )
-            const candidateLock = yield* compileLock(
+            const fallbacks: Array<string> = []
+            const resolvers = upgradeResolvers(
               document,
               current,
-              true,
               productionResolvers(xdgCacheHome, platform),
-            ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
+              fallbacks,
+            )
+            const candidateLock = yield* compileLock(document, current, true, resolvers).pipe(
+              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+            )
             let candidateAttempted = false
             let backupAttempted = false
             let backupSucceeded = false
@@ -786,7 +898,9 @@ export const upgradeProfile = (
 
             const transaction = Effect.gen(function* () {
               candidateAttempted = true
-              const digest = yield* activeServices.buildCandidate(document, candidateLock, candidate)
+              const digest = yield* retryUpgradeStep(
+                activeServices.buildCandidate(document, candidateLock, candidate, npmRegistry),
+              )
               const finalLock: ProfileLock = {
                 ...candidateLock,
                 image: { ...candidateLock.image, final_digest: digest },
@@ -804,7 +918,7 @@ export const upgradeProfile = (
                   lockWriteAttempted = true
                   yield* upgradeFileServices.writeLockBytes(profilePath, platform, renderLock(finalLock))
                   committed = true
-                  return { image: canonical, digest }
+                  return { image: canonical, digest, fallbacks }
                 }).pipe(
                   Effect.catchAllCause((primaryCause) => {
                     if (!canonicalAttempted && !lockWriteAttempted) return Effect.failCause(primaryCause)

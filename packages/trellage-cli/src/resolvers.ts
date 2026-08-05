@@ -1,7 +1,9 @@
 import { Effect } from "effect"
 
 import { arm64ArtifactCatalog } from "./artifact-catalog.js"
+import { resolveClaudeRelease } from "./claude-release.js"
 import { ClaudePluginError, readClaudeMarketplace } from "./claude-plugin.js"
+import { resolveCodexRelease } from "./codex-release.js"
 import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
 import { resolveCopilotRelease } from "./copilot-release.js"
 import { resolveGitHubSource } from "./github-cache.js"
@@ -61,26 +63,8 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
           : kind === "pi"
             ? yield* resolvePiRelease(selector, requestedPlatform)
             : kind === "claude"
-              ? yield* Effect.gen(function* () {
-                  if (selector !== "2.1.218") return yield* Effect.fail(`unsupported Claude version: ${selector}`)
-                  if (requestedPlatform !== "linux/arm64")
-                    return yield* Effect.fail(`unsupported Claude platform: ${requestedPlatform}`)
-                  return {
-                    kind: "claude" as const,
-                    selector,
-                    ...arm64ArtifactCatalog.claude,
-                  }
-                })
-              : yield* Effect.gen(function* () {
-                  if (selector !== "0.144.6") return yield* Effect.fail(`unsupported Codex version: ${selector}`)
-                  if (requestedPlatform !== "linux/arm64")
-                    return yield* Effect.fail(`unsupported Codex platform: ${requestedPlatform}`)
-                  return {
-                    kind: "codex" as const,
-                    selector,
-                    ...arm64ArtifactCatalog.codex,
-                  }
-                })
+              ? yield* resolveClaudeRelease(selector, requestedPlatform)
+              : yield* resolveCodexRelease(selector, requestedPlatform)
       const claudeCommonArtifacts = [...arm64ArtifactCatalog.fixedArtifacts]
       const artifacts =
         kind === "claude"

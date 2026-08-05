@@ -205,8 +205,8 @@ const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
                 selector: "2.1.218",
                 version: "2.1.218",
                 integrity: `sha256:${"d".repeat(64)}`,
-                url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-                size: 22971,
+                url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+                size: 88123930,
               },
     runtime: [],
   },
@@ -329,9 +329,8 @@ rename_exe = "copilot"`)
 
     expect(rendered).toContain('node = "22.17.0"')
     expect(rendered).toContain('python = "3.13.14"')
-    expect(rendered).toContain(
-      '"npm:@anthropic-ai/claude-code" = { version = "2.1.218", npm_args = "--ignore-scripts=false" }',
-    )
+    expect(rendered).toContain('[tools."http:claude"]')
+    expect(rendered).toContain('rename_exe = "claude"')
     expect(rendered).toContain('"npm:@playwright/mcp" = "0.0.78"')
     expect(rendered).toContain('"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }')
     expect(rendered).toContain(

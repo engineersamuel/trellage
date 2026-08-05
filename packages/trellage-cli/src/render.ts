@@ -189,8 +189,14 @@ const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, optio
 
 [tools]
 node = "22.17.0"
-"npm:@anthropic-ai/claude-code" = { version = ${quote(harness.version)}, npm_args = "--ignore-scripts=false" }
 ${hyperresearch ? 'python = "3.13.14"\n"npm:@playwright/mcp" = "0.0.78"' : ""}
+
+[tools."http:claude"]
+version = ${quote(harness.version)}
+url = ${quote(harness.url)}
+checksum = ${quote(harness.integrity)}
+size = ${quote(String(harness.size))}
+rename_exe = "claude"
 
 ${renderBootstrap(profile, options)}
 

@@ -354,6 +354,9 @@ const validate = (
       return yield* fail(`profile name is unsafe: ${profile.name}`)
     }
     if (isCodexProfile(profile)) {
+      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+        return yield* fail(`invalid Codex version: ${profile.harness.version}`)
+      }
       if (!Object.hasOwn(profile.harness.codex.providers, profile.harness.codex.model_provider)) {
         return yield* fail(`unknown model provider: ${profile.harness.codex.model_provider}`)
       }
@@ -386,8 +389,9 @@ const validate = (
         "Copilot marketplace",
       )
     } else if (isClaudeProfile(profile)) {
-      if (profile.harness.version !== "2.1.218")
-        return yield* fail(`unsupported Claude version: ${profile.harness.version}`)
+      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+        return yield* fail(`invalid Claude version: ${profile.harness.version}`)
+      }
       if (profile.skills.length > 0) return yield* fail("Claude profiles do not support standalone skills")
       if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
       if (
@@ -417,6 +421,8 @@ const validate = (
         profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace").map((plugin) => plugin.marketplace),
         "Claude marketplace",
       )
+    } else if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+      return yield* fail(`invalid Pi version: ${profile.harness.version}`)
     }
     for (const source of [...profile.skills, ...profile.plugins]) {
       const repositoryError = githubRepositoryError(source.repository)

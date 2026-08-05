@@ -85,6 +85,8 @@ case "$harness_kind" in
       || fail 'Superpowers commit is not exact'
     grep -Fqx 'commit = "c4b82b0ad771190355eb8e204b1329732a18449a"' "$lock" \
       || fail 'compatibility plugin commit is not exact'
+    [[ "$(locked_value '[packages.harness]' selector)" == latest ]] \
+      || fail 'Codex lock selector is not upgradeable'
     ;;
   copilot)
     runtime_entry="$prototype_dir/runtime-copilot-entry.sh"
@@ -116,12 +118,13 @@ case "$harness_kind" in
       || fail 'Claude auth policy metadata is not exact'
     [[ "$(locked_value '[packages.harness]' kind)" == claude ]] \
       || fail 'Claude lock kind is not exact'
-    [[ "$(locked_value '[packages.harness]' version)" == 2.1.218 ]] \
-      || fail 'Claude version is not exact'
+    [[ "$(locked_value '[packages.harness]' selector)" == latest ]] \
+      || fail 'Claude lock selector is not upgradeable'
+    [[ "$(locked_value '[packages.harness]' version)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+      || fail 'Claude version is not exact stable semver'
     if [[ "$profile_name" == claude-hyperresearch ]]; then
       grep -Fqx 'adapter = "hyperresearch"' "$lock" || fail 'Hyperresearch adapter is not locked'
-      grep -Fqx 'commit = "183443aefec8d0444f4b53095cee17bf77ad5fb2"' "$lock" \
-        || fail 'Hyperresearch commit is not exact'
+      grep -Eq '^commit = "[0-9a-f]{40}"$' "$lock" || fail 'Hyperresearch commit is not exact'
     fi
     ;;
   pi)
@@ -138,8 +141,8 @@ case "$harness_kind" in
       || fail 'Pi auth policy metadata is not exact'
     [[ "$(locked_value '[packages.harness]' kind)" == pi ]] \
       || fail 'Pi lock kind is not exact'
-    [[ "$(locked_value '[packages.harness]' selector)" == "$(locked_value '[packages.harness]' version)" ]] \
-      || fail 'Pi lock selector is not pinned to the OMP version'
+    [[ "$(locked_value '[packages.harness]' selector)" == latest ]] \
+      || fail 'Pi lock selector is not upgradeable'
     grep -Eq '^url = "https://github.com/can1357/oh-my-pi/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/omp-linux-arm64"$' "$lock" \
       || fail 'Pi release asset identity is not exact'
     ;;
@@ -160,10 +163,7 @@ IMAGE_REF="${IMAGE_REF:-$image_name}"
 [[ "$IMAGE_REF" == trellage-profile-*:locked ]] \
   || fail "live image reference is not a locked Trellage profile tag: $IMAGE_REF"
 image_config="$(docker image inspect "$IMAGE_REF")"
-case "$harness_kind" in
-  codex) locked_version="$(locked_value '[packages]' codex)" ;;
-  copilot|pi) locked_version="$(locked_value '[packages.harness]' version)" ;;
-esac
+locked_version="$(locked_value '[packages.harness]' version)"
 [[ "$locked_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]] \
   || fail 'harness version is not exact in the lock'
 

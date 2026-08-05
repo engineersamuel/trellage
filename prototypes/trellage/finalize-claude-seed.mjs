@@ -9,13 +9,6 @@ const versionPattern =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 const commitPattern = /^[0-9a-f]{40}$/
 const dangerousIdentifiers = new Set(["__proto__", "prototype", "constructor"])
-const onboardingDefaults = {
-  hasCompletedOnboarding: true,
-  lastOnboardingVersion: "2.1.218",
-  theme: "dark",
-  shiftEnterKeyBindingInstalled: true,
-}
-
 const fail = (message) => {
   throw new Error(message)
 }
@@ -85,9 +78,21 @@ const inventory = async (root, prefix = "") => {
 }
 
 const main = async () => {
-  const [seed, manifestPath, ...extra] = process.argv.slice(2)
-  if (seed === undefined || manifestPath === undefined || extra.length > 0) {
-    fail("usage: finalize-claude-seed <seed> <marketplaces.json>")
+  const [seed, manifestPath, harnessVersion, ...extra] = process.argv.slice(2)
+  if (
+    seed === undefined ||
+    manifestPath === undefined ||
+    harnessVersion === undefined ||
+    !versionPattern.test(harnessVersion) ||
+    extra.length > 0
+  ) {
+    fail("usage: finalize-claude-seed <seed> <marketplaces.json> <harness-version>")
+  }
+  const onboardingDefaults = {
+    hasCompletedOnboarding: true,
+    lastOnboardingVersion: harnessVersion,
+    theme: "dark",
+    shiftEnterKeyBindingInstalled: true,
   }
   const manifest = await readJson(manifestPath, "locked Claude marketplace manifest")
   if (

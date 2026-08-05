@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:879bc8e25d20f00b645c6ccc985470834c3d3ceaa4620cd2d7a5f9f9c0e60936"
+profile_hash = "sha256:297c6a77b5e7652d573bfa183d66a85408dad80eb0f059fe24b6b6c8e6f3603f"
 
 [[sources]]
 kind = "plugin"
@@ -175,11 +175,11 @@ sha256 = "sha256:70938f3cce25970e1ded5fdd194b755c03f1e4e4fa76820958ce78f86b677b1
 
 [packages.harness]
 kind = "claude"
-selector = "2.1.218"
-version = "2.1.218"
-integrity = "sha256:3a434c8bcb493e9ca87315d9aa6064835c5987e8fbc85c181bb76157dd5c45d8"
-url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz"
-size = 22971
+selector = "latest"
+version = "2.1.222"
+integrity = "sha256:68c8d31e3cf81d4e0f608900c866b8bb2f0e2645e89d0917ce8a23f2ec277587"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz"
+size = 88123930
 
 [[packages.runtime]]
 name = "bash"
@@ -228,13 +228,6 @@ integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc
 url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
 
 [[packages.artifacts]]
-name = "claude-code-linux-arm64"
-version = "2.1.218"
-integrity = "sha256:1d3cb5e12f0b653929e34ba046a7ba0a4f5c01eb25ea57b478dbac27e4af9619"
-url = "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.218.tgz"
-size = 84159749
-
-[[packages.artifacts]]
 name = "builder-oci"
 version = "jdxcode/mise"
 integrity = "sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
@@ -249,4 +242,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:67f0da9c97de63013f4acca71ca63644a8770af8957971f18a96922f9924693a"
+final_digest = "sha256:0b701cf6f9f4b08d5d2f460d5f6b2a79280591a82491d8c33e93ae12c9f4f335"

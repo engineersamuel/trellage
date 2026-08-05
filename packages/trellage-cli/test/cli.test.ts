@@ -9,6 +9,7 @@ const cliHarness = vi.hoisted(() => ({
   main: undefined as unknown,
   selected: [] as Array<string>,
   upgraded: [] as Array<string>,
+  registries: [] as Array<string | undefined>,
 }))
 
 vi.mock("@effect/platform-node", async (importOriginal) => {
@@ -48,9 +49,17 @@ vi.mock("../src/application.js", async (importOriginal) => {
         cliHarness.selected.push(profilePath)
         return {}
       }),
-    upgradeProfile: (profilePath: string) =>
+    upgradeProfile: (
+      profilePath: string,
+      _cacheHome: string,
+      _runtimeSupport: unknown,
+      _target: unknown,
+      _services: unknown,
+      npmRegistry: string | undefined,
+    ) =>
       Effect.gen(function* () {
         cliHarness.upgraded.push(profilePath)
+        cliHarness.registries.push(npmRegistry)
         if (profilePath === "/profiles/beta/profile.toml") {
           return yield* Effect.fail(new actual.ApplicationError({ message: "VPN blocked beta" }))
         }
@@ -111,6 +120,7 @@ const runMetadata = async (
 
 const runUpgradeAll = async (): Promise<{
   readonly upgraded: ReadonlyArray<string>
+  readonly registries: ReadonlyArray<string | undefined>
   readonly exitCode: number | undefined
 }> => {
   const originalArgv = process.argv
@@ -120,11 +130,16 @@ const runUpgradeAll = async (): Promise<{
     process.exitCode = undefined
     cliHarness.main = undefined
     cliHarness.upgraded = []
+    cliHarness.registries = []
     vi.resetModules()
     await import("../src/cli.js")
     if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
     await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
-    return { upgraded: [...cliHarness.upgraded], exitCode: process.exitCode }
+    return {
+      upgraded: [...cliHarness.upgraded],
+      registries: [...cliHarness.registries],
+      exitCode: process.exitCode,
+    }
   } finally {
     process.argv = originalArgv
     process.exitCode = originalExitCode
@@ -168,6 +183,7 @@ describe("CLI identity and failure reporting", () => {
   it("upgrades every discovered profile and reports failure after continuing", async () => {
     await expect(runUpgradeAll()).resolves.toEqual({
       upgraded: ["/profiles/alpha/profile.toml", "/profiles/beta/profile.toml", "/profiles/gamma/profile.toml"],
+      registries: expect.arrayContaining([expect.any(String)]),
       exitCode: 1,
     })
   })

@@ -122,22 +122,39 @@ const fakeResolvers = (
   resolvePackages: (request) =>
     Effect.sync(() => {
       calls.push("packages")
-      const version = request.kind === "copilot" ? (options.copilotVersion ?? "1.0.75") : request.selector
+      const version =
+        request.kind === "copilot"
+          ? (options.copilotVersion ?? "1.0.75")
+          : request.selector === "latest"
+            ? request.kind === "claude"
+              ? "2.1.222"
+              : request.kind === "codex"
+                ? "0.146.1"
+                : "17.2.9"
+            : request.selector
       const copilotAsset =
         request.platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
+      const claudeAsset = request.platform === "linux/arm64" ? "claude-linux-arm64.tar.gz" : "claude-linux-x64.tar.gz"
+      const codexAsset =
+        request.platform === "linux/arm64"
+          ? "codex-aarch64-unknown-linux-musl.tar.gz"
+          : "codex-x86_64-unknown-linux-musl.tar.gz"
+      const piAsset = request.platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
       return {
         harness: {
           kind: request.kind,
           selector: request.selector,
           version,
-          integrity: request.kind === "codex" ? arm64ArtifactCatalog.codex.integrity : digest("c"),
+          integrity: digest("c"),
           url:
             request.kind === "copilot"
               ? `https://github.com/github/copilot-cli/releases/download/v${version}/${copilotAsset}`
               : request.kind === "codex"
-                ? arm64ArtifactCatalog.codex.url
-                : `https://example.test/${request.kind}-${request.selector}.tar.gz`,
-          size: request.kind === "codex" ? arm64ArtifactCatalog.codex.size : 1024,
+                ? `https://github.com/openai/codex/releases/download/rust-v${version}/${codexAsset}`
+                : request.kind === "claude"
+                  ? `https://github.com/anthropics/claude-code/releases/download/v${version}/${claudeAsset}`
+                  : `https://github.com/can1357/oh-my-pi/releases/download/v${version}/${piAsset}`,
+          size: 1024,
         },
         ...(request.needsSkillsCli ? { skills_cli_version: "1.5.19", skills_cli_integrity: "sha512-dGVzdA==" } : {}),
         runtime: request.packages.map((name) => ({
@@ -297,7 +314,10 @@ select = ["social-media-skills"]
         harness: {
           kind: "claude",
           selector: "2.1.218",
-          ...arm64ArtifactCatalog.claude,
+          version: "2.1.218",
+          integrity: digest("c"),
+          url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+          size: 88123930,
         },
         runtime: [
           {
@@ -453,7 +473,14 @@ select = ["full"]
       ...resolved,
       packages: {
         ...resolved.packages,
-        harness: { kind: "claude", selector: "2.1.218", ...arm64ArtifactCatalog.claude },
+        harness: {
+          kind: "claude",
+          selector: "2.1.218",
+          version: "2.1.218",
+          integrity: digest("c"),
+          url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+          size: 88123930,
+        },
         runtime: [
           {
             name: "bash",
@@ -510,7 +537,6 @@ select = ["full"]
     const artifacts = [
       "node",
       "python",
-      "claude-code-linux-arm64",
       "playwright-mcp",
       "playwright",
       "playwright-core",
@@ -1176,7 +1202,7 @@ describe("compileLock", () => {
       image: { ...pending.image, final_digest: digest("c") },
     }
 
-    await expect(Effect.runPromise(requireLocked(document(), incomplete))).rejects.toThrow(/Codex package URL/)
+    await expect(Effect.runPromise(requireLocked(document(), incomplete))).rejects.toThrow(/Codex package.*URL/)
   })
 
   it("rejects a locked profile without a Codex archive size", async () => {

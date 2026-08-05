@@ -4,7 +4,7 @@ description = "Claude Code with social media and Humanizer marketplace plugins"
 
 [harness]
 kind = "claude"
-version = "2.1.218"
+version = "latest"
 
 [harness.claude]
 default_auth = "proxy"

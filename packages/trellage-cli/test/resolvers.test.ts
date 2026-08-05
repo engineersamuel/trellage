@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
   releaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   piReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
+  claudeReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
+  codexReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   marketplaceRequests: [] as Array<{
     readonly directory: string
     readonly marketplace: string
@@ -69,6 +71,42 @@ vi.mock("../src/pi-release.js", async () => {
   }
 })
 
+vi.mock("../src/claude-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveClaudeRelease: (selector: string, platform: string) => {
+      mocks.claudeReleaseRequests.push({ selector, platform })
+      const version = selector === "latest" ? "2.1.222" : selector
+      return EffectModule.succeed({
+        kind: "claude" as const,
+        selector,
+        version,
+        integrity: `sha256:${"c".repeat(64)}`,
+        url: `https://github.com/anthropics/claude-code/releases/download/v${version}/claude-linux-arm64.tar.gz`,
+        size: 88123930,
+      })
+    },
+  }
+})
+
+vi.mock("../src/codex-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveCodexRelease: (selector: string, platform: string) => {
+      mocks.codexReleaseRequests.push({ selector, platform })
+      const version = selector === "latest" ? "0.146.1" : selector
+      return EffectModule.succeed({
+        kind: "codex" as const,
+        selector,
+        version,
+        integrity: `sha256:${"d".repeat(64)}`,
+        url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
+        size: 105647055,
+      })
+    },
+  }
+})
+
 vi.mock("../src/copilot-plugin.js", async () => {
   const { Effect } = await import("effect")
   return {
@@ -97,6 +135,8 @@ describe("production package resolutions", () => {
     mocks.requests.length = 0
     mocks.releaseRequests.length = 0
     mocks.piReleaseRequests.length = 0
+    mocks.claudeReleaseRequests.length = 0
+    mocks.codexReleaseRequests.length = 0
     mocks.marketplaceRequests.length = 0
     mocks.claudeMarketplaceRequests.length = 0
   })
@@ -116,9 +156,9 @@ describe("production package resolutions", () => {
       kind: "codex",
       selector: "0.144.6",
       version: "0.144.6",
-      integrity: "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
+      integrity: `sha256:${"d".repeat(64)}`,
       url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
-      size: 101269986,
+      size: 105647055,
     })
     expect(result.runtime).toEqual([
       {
@@ -208,6 +248,7 @@ describe("production package resolutions", () => {
       selector: "2.1.218",
       version: "2.1.218",
     })
+    expect(mocks.claudeReleaseRequests).toEqual([{ selector: "2.1.218", platform: "linux/arm64" }])
 
     expect(result.python_lock_integrity).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(result.runtime).toEqual(
@@ -283,12 +324,7 @@ describe("production package resolutions", () => {
       }),
     )
 
-    expect(result.artifacts?.map(({ name }) => name)).toEqual([
-      "node",
-      "claude-code-linux-arm64",
-      "builder-oci",
-      "skopeo-oci",
-    ])
+    expect(result.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
     expect(result.python_lock_integrity).toBeUndefined()
   })
 

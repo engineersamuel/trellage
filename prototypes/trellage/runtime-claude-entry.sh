@@ -92,7 +92,8 @@ jq -e '
     "theme"
   ]
   and .hasCompletedOnboarding == true
-  and .lastOnboardingVersion == "2.1.218"
+  and (.lastOnboardingVersion | type == "string")
+  and (.lastOnboardingVersion | test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
   and .shiftEnterKeyBindingInstalled == true
   and .theme == "dark"
 ' "$default_onboarding" >/dev/null || fail 'baked Claude onboarding defaults are invalid'

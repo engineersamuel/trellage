@@ -4,7 +4,7 @@ description = "Oh My Pi with native GitHub Copilot authentication and bundled OM
 
 [harness]
 kind = "pi"
-version = "17.2.7"
+version = "latest"
 args = ["--yolo"]
 
 [harness.pi]
@@ -21,5 +21,5 @@ packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
 [[skills]]
 adapter = "omp-native"
 repository = "https://github.com/can1357/oh-my-pi.git"
-ref = "v17.2.7"
+ref = "main"
 select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]

@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
   sourceDirectory: "/definitely-missing-harness-source",
   sourceFiles: [] as Array<{ readonly kind: "file"; readonly path: string; readonly sha256: string }>,
+  failUnlockedSourceResolutions: 0,
+  failPackageResolutions: 0,
   failLockRenames: 0,
   lockRenameEvents: undefined as Array<string> | undefined,
 }))
@@ -42,6 +44,10 @@ vi.mock("../src/github-cache.js", async () => {
   return {
     resolveGitHubSource: (_cache: string, request: GitHubSourceRequest) => {
       mocks.requests.push(request)
+      if (request.lockedCommit === undefined && mocks.failUnlockedSourceResolutions > 0) {
+        mocks.failUnlockedSourceResolutions -= 1
+        return Effect.fail(new Error("ECONNRESET while resolving latest source"))
+      }
       return Effect.succeed({
         ...request,
         commit: request.lockedCommit ?? "a".repeat(40),
@@ -49,6 +55,64 @@ vi.mock("../src/github-cache.js", async () => {
         integrity: treeIntegrity(mocks.sourceFiles),
         files: mocks.sourceFiles,
       })
+    },
+  }
+})
+
+vi.mock("../src/claude-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveClaudeRelease: (selector: string) => {
+      const version = selector === "latest" ? "2.1.222" : selector
+      return EffectModule.succeed({
+        kind: "claude" as const,
+        selector,
+        version,
+        integrity: digest("c"),
+        url: `https://github.com/anthropics/claude-code/releases/download/v${version}/claude-linux-arm64.tar.gz`,
+        size: 88123930,
+      })
+    },
+  }
+})
+
+vi.mock("../src/codex-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveCodexRelease: (selector: string) => {
+      const version = selector === "latest" ? "0.146.1" : selector
+      return EffectModule.succeed({
+        kind: "codex" as const,
+        selector,
+        version,
+        integrity:
+          selector === "latest"
+            ? "sha256:05de65ee7b6bd02038e720cc313941d5ec6794718e4261bd28fd83b93fe34d43"
+            : "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
+        url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
+        size: selector === "latest" ? 105647055 : 101269986,
+      })
+    },
+  }
+})
+
+vi.mock("../src/resolvers.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/resolvers.js")>()
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    ...actual,
+    productionResolvers: (...args: Parameters<typeof actual.productionResolvers>) => {
+      const base = actual.productionResolvers(...args)
+      return {
+        ...base,
+        resolvePackages: (request: Parameters<typeof base.resolvePackages>[0]) => {
+          if (mocks.failPackageResolutions > 0) {
+            mocks.failPackageResolutions -= 1
+            return EffectModule.fail(new Error("HTTP 503 while resolving latest harness"))
+          }
+          return base.resolvePackages(request)
+        },
+      }
     },
   }
 })
@@ -400,6 +464,8 @@ describe("profile metadata", () => {
 
 describe("transactional profile upgrade", () => {
   beforeEach(() => {
+    mocks.failUnlockedSourceResolutions = 0
+    mocks.failPackageResolutions = 0
     mocks.failLockRenames = 0
     mocks.lockRenameEvents = undefined
   })
@@ -451,6 +517,7 @@ describe("transactional profile upgrade", () => {
       {
         image: canonical,
         digest: builtDigest,
+        fallbacks: [],
       },
     )
     mocks.sourceFiles = []
@@ -491,6 +558,98 @@ describe("transactional profile upgrade", () => {
   }
 
   const failed = (message: string) => Effect.fail(new ApplicationError({ message }))
+
+  it("retries candidate builds and forwards the configured npm registry", async () => {
+    const fixture = await prepare()
+    const registries: Array<string | undefined> = []
+    let attempts = 0
+    const services: UpgradeServices = {
+      buildCandidate: (_document, _lock, _image, npmRegistry) =>
+        Effect.suspend(() => {
+          attempts += 1
+          registries.push(npmRegistry)
+          return attempts < 3
+            ? Effect.fail(new ApplicationError({ message: "ECONNRESET during npm install" }))
+            : Effect.succeed(digest("9"))
+        }),
+      imageExists: () => Effect.succeed(false),
+      tagImage: () => Effect.void,
+      removeImage: () => Effect.void,
+    }
+
+    await expect(
+      Effect.runPromise(
+        upgradeProfile(
+          fixture.profilePath,
+          fixture.root,
+          fixture.support,
+          arm64Target,
+          services,
+          "https://packagefeedproxy.microsoft.io/npm/",
+        ),
+      ),
+    ).resolves.toEqual({ image: fixture.canonical, digest: digest("9"), fallbacks: [] })
+    expect(attempts).toBe(3)
+    expect(registries).toEqual([
+      "https://packagefeedproxy.microsoft.io/npm/",
+      "https://packagefeedproxy.microsoft.io/npm/",
+      "https://packagefeedproxy.microsoft.io/npm/",
+    ])
+  })
+
+  it("falls back to the verified locked source after latest resolution retries are exhausted", async () => {
+    const fixture = await prepare()
+    const builtLocks: Array<ProfileLock> = []
+    mocks.requests.length = 0
+    mocks.failUnlockedSourceResolutions = 3
+    const services: UpgradeServices = {
+      buildCandidate: (_document, lock) =>
+        Effect.sync(() => {
+          builtLocks.push(lock)
+          return digest("9")
+        }),
+      imageExists: () => Effect.succeed(false),
+      tagImage: () => Effect.void,
+      removeImage: () => Effect.void,
+    }
+
+    await expect(
+      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
+    ).resolves.toEqual({
+      image: fixture.canonical,
+      digest: digest("9"),
+      fallbacks: [`source https://github.com/obra/superpowers.git@v6.2.0 -> ${"a".repeat(40)}`],
+    })
+    expect(mocks.requests).toEqual([
+      expect.not.objectContaining({ lockedCommit: expect.anything() }),
+      expect.not.objectContaining({ lockedCommit: expect.anything() }),
+      expect.not.objectContaining({ lockedCommit: expect.anything() }),
+      expect.objectContaining({ lockedCommit: "a".repeat(40) }),
+    ])
+    expect(builtLocks[0]?.sources[0]?.commit).toBe("a".repeat(40))
+  })
+
+  it("falls back to the verified harness when latest package resolution remains inaccessible", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "harness-upgrade-package-fallback-"))
+    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"))
+    const support = runtimeSupport(root)
+    await writeFile(support.piEntry, "#!/bin/sh\n")
+    mocks.failPackageResolutions = 3
+    const services: UpgradeServices = {
+      buildCandidate: () => Effect.succeed(digest("9")),
+      imageExists: () => Effect.succeed(false),
+      tagImage: () => Effect.void,
+      removeImage: () => Effect.void,
+    }
+
+    await expect(Effect.runPromise(upgradeProfile(profilePath, root, support, arm64Target, services))).resolves.toEqual(
+      {
+        image: "trellage-profile-pi-oh-my-pi-linux-arm64:locked",
+        digest: digest("9"),
+        fallbacks: ["harness pi@latest -> 17.2.6"],
+      },
+    )
+  })
 
   it("preflights runtime support before resolution or image mutation", async () => {
     const fixture = await prepare()
@@ -926,7 +1085,7 @@ describe("transactional profile upgrade", () => {
       Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
     ).rejects.toThrow(/upgrade already active/)
     releaseBuild()
-    await expect(first).resolves.toEqual({ image: fixture.canonical, digest: digest("9") })
+    await expect(first).resolves.toEqual({ image: fixture.canonical, digest: digest("9"), fallbacks: [] })
   })
 })
 
@@ -998,8 +1157,8 @@ select = ["humanizer"]
           selector: "2.1.218",
           version: "2.1.218",
           integrity: digest("c"),
-          url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-          size: 22971,
+          url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+          size: 88123930,
         },
         runtime: [],
       },
@@ -1008,7 +1167,7 @@ select = ["humanizer"]
 
     const script = builderScript(document, lock)
 
-    expect(script).toContain("mise install --locked node@22.17.0 npm:@anthropic-ai/claude-code@2.1.218")
+    expect(script).toContain("mise install --locked node@22.17.0 http:claude@2.1.218")
     expect(script).toContain(
       "CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
     )
@@ -1016,7 +1175,7 @@ select = ["humanizer"]
     expect(script).toContain("plugin marketplace add /src/claude-marketplace-1")
     expect(script).toContain("plugin install social-media-skills@social-media-skills --scope user")
     expect(script).toContain("plugin install humanizer@humanizer --scope user")
-    expect(script).toContain("/src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json")
+    expect(script).toContain("/src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json 2.1.218")
     expect(script).not.toMatch(/hyperresearch|playwright|obscura|APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
   })
 
@@ -1540,6 +1699,9 @@ select = ["hve-core"]
     ])
     expect(scripts).toHaveLength(1)
     expect(builderArgs).toContain("npm_config_registry=https://packagefeedproxy.microsoft.io/npm/")
+    expect(builderArgs).toContain("npm_config_fetch_retries=5")
+    expect(builderArgs).toContain("npm_config_fetch_retry_mintimeout=1000")
+    expect(builderArgs).toContain("npm_config_fetch_retry_maxtimeout=10000")
     expect(scripts[0]).toContain('"$copilot_bin" plugin install hve-core@hve-core')
     expect(mocks.requests).toEqual([
       expect.objectContaining({
@@ -1600,7 +1762,10 @@ select = ["*"]
         harness: {
           kind: "codex",
           selector: "0.144.6",
-          ...arm64ArtifactCatalog.codex,
+          version: "0.144.6",
+          integrity: digest("c"),
+          url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
+          size: 101269986,
         },
         skills_cli_version: "1.5.19",
         skills_cli_integrity: "sha512-dGVzdA==",

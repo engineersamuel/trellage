@@ -4,7 +4,7 @@ description = "Codex environment combining Superpowers' planning, TDD, debugging
 
 [harness]
 kind = "codex"
-version = "0.144.6"
+version = "latest"
 args = ["--dangerously-bypass-approvals-and-sandbox"]
 
 [harness.codex]

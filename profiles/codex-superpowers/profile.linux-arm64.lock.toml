@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:62404b7266dfa833082abd9f7cd40d694fe755dfed126c323b57b542e77b9124"
+profile_hash = "sha256:59a71a7d9db288480f316bfc76f382390862d5cb4db900c33576073e5555d5a2"
 
 [[sources]]
 kind = "skill"
@@ -684,11 +684,11 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 
 [packages.harness]
 kind = "codex"
-selector = "0.144.6"
-version = "0.144.6"
-integrity = "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be"
-url = "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz"
-size = 101269986
+selector = "latest"
+version = "0.146.1"
+integrity = "sha256:05de65ee7b6bd02038e720cc313941d5ec6794718e4261bd28fd83b93fe34d43"
+url = "https://github.com/openai/codex/releases/download/rust-v0.146.1/codex-aarch64-unknown-linux-musl.tar.gz"
+size = 105647055
 
 [[packages.runtime]]
 name = "bash"
@@ -733,4 +733,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:3a39134b2a980e63c09468e9178aeab48d6b2c9529b97515f45228c97f34698c"
+final_digest = "sha256:271cb63d57db99a86fe155af4c266272e81c77cf77ca1f585226eedd6decbd69"

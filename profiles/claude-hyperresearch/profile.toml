@@ -4,7 +4,7 @@ description = "Claude Opus research environment for multi-step web investigation
 
 [harness]
 kind = "claude"
-version = "2.1.218"
+version = "latest"
 
 [harness.claude]
 default_auth = "proxy"

@@ -12,6 +12,7 @@ import {
   managedClaudeFiles,
   materializeClaudeAssets,
   materializeChromiumArchives,
+  materializeHyperresearchPackage,
   normalizeHyperresearchSeed,
 } from "../src/claude-materialize.js"
 import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
@@ -157,6 +158,26 @@ describe("Hyperresearch seed normalization", () => {
     )
     await expect(readFile(skill, "utf8")).resolves.toBe("invoke /usr/local/bin/hyperresearch\n")
   })
+
+  it("materializes the locked pure-Python package without fetching build dependencies", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-package-")
+    const source = path.join(root, "source")
+    const sitePackages = path.join(root, "site-packages")
+    const executable = path.join(root, "venv", "bin", "hyperresearch")
+    await mkdir(path.join(source, "src", "hyperresearch"), { recursive: true })
+    await mkdir(sitePackages, { recursive: true })
+    await mkdir(path.dirname(executable), { recursive: true })
+    await writeFile(path.join(source, "src", "hyperresearch", "__main__.py"), "print('ready')\n")
+
+    await Effect.runPromise(materializeHyperresearchPackage(source, sitePackages, executable))
+
+    await expect(readFile(path.join(sitePackages, "hyperresearch", "__main__.py"), "utf8")).resolves.toBe(
+      "print('ready')\n",
+    )
+    await expect(readFile(executable, "utf8")).resolves.toBe(
+      '#!/bin/sh\nexec "$(dirname "$0")/python" -m hyperresearch "$@"\n',
+    )
+  })
 })
 
 describe("native Claude marketplace materialization", () => {
@@ -187,7 +208,17 @@ describe("native Claude marketplace materialization", () => {
               files,
             },
           ],
-          packages: {},
+          packages: {
+            harness: {
+              kind: "claude",
+              selector: "latest",
+              version: "2.1.222",
+              integrity: `sha256:${"a".repeat(64)}`,
+              url: "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz",
+              size: 88123930,
+            },
+            runtime: [],
+          },
         } as unknown as ProfileLock,
       }),
     )
@@ -414,11 +445,11 @@ packages = ["bash", "ca-certificates", "git", "jq"]
           selector: "2.1.218",
           version: "2.1.218",
           integrity: `sha256:${"a".repeat(64)}`,
-          url: "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.218.tgz",
-          size: 22971,
+          url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+          size: 88123930,
         },
         runtime: [],
-        artifacts: ["node", "claude-code-linux-arm64", "builder-oci", "skopeo-oci"].map((name) => ({
+        artifacts: ["node", "builder-oci", "skopeo-oci"].map((name) => ({
           name,
           version: "1.0.0",
           integrity: `sha256:${"b".repeat(64)}`,
@@ -458,6 +489,9 @@ packages = ["bash", "ca-certificates", "git", "jq"]
     expect(materializerCalled).toBe(false)
     await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
       '"bypassPermissions"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-onboarding.json"), "utf8")).resolves.toContain(
+      '"lastOnboardingVersion": "2.1.218"',
     )
     const mise = await readFile(path.join(context, "mise.toml"), "utf8")
     const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
@@ -576,7 +610,8 @@ select = ["full"]
     await expect(readFile(path.join(context, "hyperresearch-wrapper.sh"), "utf8")).resolves.toBe("#!/bin/sh\n")
     const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
     expect(miseLock).toContain("[[tools.python]]")
-    expect(miseLock).toContain('[tools."npm:@anthropic-ai/claude-code".options]\nnpm_args = "--ignore-scripts=false"')
+    expect(miseLock).toContain('[[tools."http:claude"]]')
+    expect(miseLock).toContain('rename_exe = "claude"')
   })
   it("materializes a legacy Codex lock from a self-verified executable source", async () => {
     const root = await temporaryRoot("harness-materialize-legacy-codex-")

@@ -105,7 +105,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await execFilePromise(process.execPath, [finalizer, seed, manifest])
+      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
 
       const registry = await readFile(path.join(seed, "plugins", "installed_plugins.json"), "utf8")
       expect(registry).toContain("/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0")
@@ -116,7 +116,7 @@ describe("readClaudeMarketplace", () => {
         `${JSON.stringify(
           {
             hasCompletedOnboarding: true,
-            lastOnboardingVersion: "2.1.218",
+            lastOnboardingVersion: "2.1.222",
             theme: "dark",
             shiftEnterKeyBindingInstalled: true,
           },

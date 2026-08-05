@@ -190,6 +190,12 @@ describe("parseProfile", () => {
     ])
   })
 
+  it("accepts latest as a Claude harness release selector", async () => {
+    const result = await decode(claudeProfile().replace('version = "2.1.218"', 'version = "latest"'))
+
+    expect(result.profile.harness.version).toBe("latest")
+  })
+
   it("decodes a native Claude marketplace profile", async () => {
     const result = await decode(
       claudeMarketplaceProfile(`

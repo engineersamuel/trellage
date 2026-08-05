@@ -39,7 +39,7 @@ JSON
 cat >"$seed/default-onboarding.json" <<'JSON'
 {
   "hasCompletedOnboarding": true,
-  "lastOnboardingVersion": "2.1.218",
+  "lastOnboardingVersion": "2.1.222",
   "theme": "dark",
   "shiftEnterKeyBindingInstalled": true
 }
@@ -107,7 +107,7 @@ jq -e '
 ' "$runtime/settings.json" >/dev/null
 jq -e '
   .hasCompletedOnboarding == true
-  and .lastOnboardingVersion == "2.1.218"
+  and .lastOnboardingVersion == "2.1.222"
   and .theme == "dark"
   and .shiftEnterKeyBindingInstalled == true
 ' "$runtime/.claude.json" >/dev/null
@@ -374,7 +374,7 @@ CLAUDE_CONFIG_PATH_OUT="$root/native-second-config-path" CLAUDE_ENV_OUT="$root/n
   "$entry" new claude --print hello
 jq -e '
   .hasCompletedOnboarding == true
-  and .lastOnboardingVersion == "2.1.218"
+  and .lastOnboardingVersion == "2.1.222"
   and .theme == "light"
   and .shiftEnterKeyBindingInstalled == true
   and .preserve == "user-state"

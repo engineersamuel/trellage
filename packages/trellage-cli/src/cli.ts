@@ -147,7 +147,13 @@ const build = Command.make("build", { locked, profile: profileArgument }, ({ pro
   ),
 )
 
-const upgradeAllProfiles = (target: DockerTarget) =>
+const reportUpgradeFallbacks = (fallbacks: ReadonlyArray<string>) =>
+  Effect.forEach(fallbacks, (fallback) => Console.log(`upgrade fallback: ${fallback}`), {
+    concurrency: 1,
+    discard: true,
+  })
+
+const upgradeAllProfiles = (target: DockerTarget, npmRegistry?: string) =>
   Effect.gen(function* () {
     const worktree = yield* currentGitWorktree(process.cwd())
     const profiles = yield* discoverProfileChoices(profileDiscoveryRoots(worktree)).pipe(
@@ -160,7 +166,8 @@ const upgradeAllProfiles = (target: DockerTarget) =>
     const results = yield* Effect.forEach(
       profiles,
       (profile) =>
-        upgradeProfile(profile.value, cacheHome, runtimeSupport, target).pipe(
+        upgradeProfile(profile.value, cacheHome, runtimeSupport, target, undefined, npmRegistry).pipe(
+          Effect.tap((result) => reportUpgradeFallbacks(result.fallbacks)),
           Effect.tap((result) => Console.log(`upgraded: ${profile.name} (${result.digest})`)),
           Effect.match({
             onFailure: (cause) => ({ profile, cause }),
@@ -187,11 +194,20 @@ const upgradeAllProfiles = (target: DockerTarget) =>
 
 const upgrade = Command.make("upgrade", { profile: profileArgument }, ({ profile }) =>
   Option.isSome(profile) && profile.value === "all"
-    ? withDockerTarget(upgradeAllProfiles)
+    ? withDockerTarget((target) =>
+        configuredNpmRegistry.pipe(Effect.flatMap((npmRegistry) => upgradeAllProfiles(target, npmRegistry))),
+      )
     : withDockerTarget((target) =>
         selectedResolvedProfile(profile, target.platform).pipe(
           Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-          Effect.flatMap((selected) => upgradeProfile(selected, cacheHome, runtimeSupport, target)),
+          Effect.flatMap((selected) =>
+            configuredNpmRegistry.pipe(
+              Effect.flatMap((npmRegistry) =>
+                upgradeProfile(selected, cacheHome, runtimeSupport, target, undefined, npmRegistry),
+              ),
+            ),
+          ),
+          Effect.tap((result) => reportUpgradeFallbacks(result.fallbacks)),
           Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
         ),
       ),

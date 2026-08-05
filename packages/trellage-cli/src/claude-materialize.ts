@@ -36,12 +36,12 @@ export const claudeDefaultSettings = {
   disableArtifact: true,
 } as const
 
-export const claudeDefaultOnboarding = {
+export const claudeDefaultOnboarding = (version: string) => ({
   hasCompletedOnboarding: true,
-  lastOnboardingVersion: "2.1.218",
+  lastOnboardingVersion: version,
   theme: "dark",
   shiftEnterKeyBindingInstalled: true,
-} as const
+})
 
 export class ClaudeMaterializeError extends Data.TaggedError("ClaudeMaterializeError")<{
   readonly message: string
@@ -209,6 +209,25 @@ export const normalizeHyperresearchSeed = (
     }
   })
 
+export const materializeHyperresearchPackage = (
+  sourceDirectory: string,
+  sitePackages: string,
+  executable?: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  attempt("cannot materialize Hyperresearch Python package", async () => {
+    await cp(path.join(sourceDirectory, "src", "hyperresearch"), path.join(sitePackages, "hyperresearch"), {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      verbatimSymlinks: true,
+    })
+    if (executable !== undefined) {
+      await writeFile(executable, '#!/bin/sh\nexec "$(dirname "$0")/python" -m hyperresearch "$@"\n', {
+        mode: 0o755,
+      })
+    }
+  })
+
 const materializeClaudeMarketplaceAssets = (
   request: ClaudeMaterializeRequest,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
@@ -264,9 +283,11 @@ const materializeClaudeMarketplaceAssets = (
         writeFile(path.join(seed, "default-settings.json"), `${JSON.stringify(claudeDefaultSettings, null, 2)}\n`, {
           mode: 0o644,
         }),
-        writeFile(path.join(seed, "default-onboarding.json"), `${JSON.stringify(claudeDefaultOnboarding, null, 2)}\n`, {
-          mode: 0o644,
-        }),
+        writeFile(
+          path.join(seed, "default-onboarding.json"),
+          `${JSON.stringify(claudeDefaultOnboarding(request.lock.packages.harness.version), null, 2)}\n`,
+          { mode: 0o644 },
+        ),
         writeFile(
           path.join(request.context, "claude-marketplaces.json"),
           `${JSON.stringify({ marketplaces }, null, 2)}\n`,
@@ -316,19 +337,7 @@ const materializeHyperresearchAssets = (
           "-r",
           requirementsPath,
         ])
-        yield* run("mise", [
-          ...uv,
-          "pip",
-          "install",
-          "--target",
-          pythonSite,
-          "--python-version",
-          "3.13",
-          "--python-platform",
-          "aarch64-manylinux_2_28",
-          "--no-deps",
-          request.sourceDirectories[0]!,
-        ])
+        yield* materializeHyperresearchPackage(request.sourceDirectories[0]!, pythonSite)
 
         const hostVenv = path.join(staging, "host-venv")
         yield* run("mise", [...uv, "venv", "--python", "3.13", hostVenv])
@@ -343,15 +352,28 @@ const materializeHyperresearchAssets = (
           "-r",
           requirementsPath,
         ])
-        yield* run("mise", [
-          ...uv,
-          "pip",
-          "install",
-          "--python",
-          hostPython,
-          "--no-deps",
+        const hostSitePackages = (yield* run(hostPython, [
+          "-c",
+          "import site; print(site.getsitepackages()[0])",
+        ])).trim()
+        const resolvedHostVenv = yield* attempt("cannot resolve Hyperresearch host venv", () => realpath(hostVenv))
+        const resolvedHostSitePackages = yield* attempt("cannot resolve Hyperresearch host site-packages", () =>
+          realpath(hostSitePackages),
+        )
+        if (
+          !path.isAbsolute(hostSitePackages) ||
+          (resolvedHostSitePackages !== resolvedHostVenv &&
+            !resolvedHostSitePackages.startsWith(`${resolvedHostVenv}${path.sep}`))
+        ) {
+          return yield* Effect.fail(
+            new ClaudeMaterializeError({ message: "Hyperresearch host site-packages escaped the staging venv" }),
+          )
+        }
+        yield* materializeHyperresearchPackage(
           request.sourceDirectories[0]!,
-        ])
+          resolvedHostSitePackages,
+          path.join(hostVenv, "bin", "hyperresearch"),
+        )
         const installHome = path.join(staging, "seed-home")
         yield* attempt("cannot create Claude seed home", () => mkdir(installHome, { recursive: true }))
         yield* run(hostPython, ["-m", "hyperresearch", "install", "--global", "--profile", "full"], {
@@ -378,7 +400,7 @@ const materializeHyperresearchAssets = (
           )
           await writeFile(
             path.join(seed, "default-onboarding.json"),
-            `${JSON.stringify(claudeDefaultOnboarding, null, 2)}\n`,
+            `${JSON.stringify(claudeDefaultOnboarding(request.lock.packages.harness.version), null, 2)}\n`,
             { mode: 0o644 },
           )
         })
