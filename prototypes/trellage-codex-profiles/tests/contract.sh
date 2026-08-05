@@ -3732,6 +3732,13 @@ for native_tree_case in HUP:129 INT:130 TERM:143; do
     || fail "$native_tree_signal native process-tree exit was $native_tree_status, expected $native_tree_expected_status"
   [ -f "$native_tree_dir/child-signaled" ] \
     || fail "$native_tree_signal did not reach native direct child"
+  native_tree_wait=0
+  while { [ ! -f "$native_tree_dir/grandchild-signaled" ] \
+    || kill -0 "$native_tree_grandchild_pid" 2>/dev/null; } \
+    && [ "$native_tree_wait" -lt 100 ]; do
+    sleep 0.05
+    native_tree_wait=$((native_tree_wait + 1))
+  done
   [ -f "$native_tree_dir/grandchild-signaled" ] \
     || fail "$native_tree_signal did not reach native grandchild"
   if kill -0 "$native_tree_grandchild_pid" 2>/dev/null; then
