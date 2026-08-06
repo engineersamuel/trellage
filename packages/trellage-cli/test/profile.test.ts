@@ -172,6 +172,58 @@ describe("parseProfile", () => {
     })
   })
 
+  it.each([
+    ["Codex", profile()],
+    ["Copilot", copilotProfile()],
+    ["Claude", claudeProfile()],
+  ])("accepts a generic always-on skill for %s", async (_label, input) => {
+    const result = await decode(
+      `${input}
+[[skills]]
+repository = "https://github.com/example/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
+`,
+    )
+
+    expect(result.profile.skills).toContainEqual(
+      expect.objectContaining({ repository: "https://github.com/example/caveman.git", always_on: true }),
+    )
+  })
+
+  it("accepts a generic always-on Pi skill alongside native skills", async () => {
+    const result = await decode(`
+schema = 1
+name = "pi-test"
+description = "Pi test profile"
+[harness]
+kind = "pi"
+version = "latest"
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[skills]]
+adapter = "omp-native"
+repository = "https://github.com/example/native-skills.git"
+ref = "v1"
+select = ["native"]
+[[skills]]
+repository = "https://github.com/example/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
+`)
+
+    expect(result.profile.skills).toHaveLength(2)
+  })
+
   it("decodes a strict Claude Hyperresearch profile", async () => {
     const result = await decode(claudeProfile())
 
@@ -278,10 +330,6 @@ select = ["humanizer"]
 
   it.each([
     ["Codex section", '[harness.codex]\nmodel = "gpt-5.5"'],
-    [
-      "standalone skills",
-      '[[skills]]\nrepository = "https://github.com/example/skills.git"\nref = "main"\nselect = ["one"]',
-    ],
     ["MCPs", '[[mcps]]\nname = "docs"\ntransport = "http"\nurl = "https://example.test/mcp"'],
     ["declared secrets", '[secrets]\nprovider = "env"\nrequired = ["TOKEN"]'],
   ])("rejects Copilot profiles with unsupported %s", async (_label, extra) => {
@@ -289,13 +337,75 @@ select = ["humanizer"]
   })
 
   it.each([
-    ["standalone skills", "skills = []", /standalone skills/i],
     ["MCPs", "mcps = []", /do not support MCPs/i],
     ["declared secrets", '[secrets]\nprovider = "env"\nrequired = []', /declared secrets/i],
   ])("rejects an explicitly empty Copilot %s section", async (_label, declaration, error) => {
     const input = copilotProfile().replace('name = "copilot-hve"', `name = "copilot-hve"\n${declaration}`)
 
     await expect(decode(input)).rejects.toThrow(error)
+  })
+
+  it.each([
+    ["Codex", profile()],
+    ["Copilot", copilotProfile()],
+    ["Claude", claudeProfile()],
+  ])("rejects adapter-backed skills for %s", async (_label, input) => {
+    await expect(
+      decode(
+        `${input}
+[[skills]]
+adapter = "omp-native"
+repository = "https://github.com/example/skills.git"
+ref = "v1"
+select = ["one"]
+`,
+      ),
+    ).rejects.toThrow(/adapter/i)
+  })
+
+  it("rejects always_on on an adapter-backed Pi skill", async () => {
+    await expect(
+      decode(`
+schema = 1
+name = "pi-test"
+description = "Pi test profile"
+[harness]
+kind = "pi"
+version = "latest"
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[skills]]
+adapter = "omp-native"
+repository = "https://github.com/example/native-skills.git"
+ref = "v1"
+select = ["native"]
+always_on = true
+`),
+    ).rejects.toThrow(/always_on/i)
+  })
+
+  it("rejects duplicate standalone skill selections across sources", async () => {
+    await expect(
+      decode(
+        profile(`
+[[skills]]
+repository = "https://github.com/example/first-skills.git"
+ref = "v1"
+select = ["one"]
+[[skills]]
+repository = "https://github.com/example/other-skills.git"
+ref = "v1"
+select = ["one"]
+`),
+      ),
+    ).rejects.toThrow(/duplicate selected standalone skill: one/i)
   })
 
   it("rejects adapters used with the wrong harness kind", async () => {

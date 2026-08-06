@@ -30,6 +30,12 @@ repository = "https://github.com/obra/superpowers.git"
 ref = "v6.2.0"
 select = ["*"]
 
+[[skills]]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
+
 [[plugins]]
 adapter = "wshobson-agents"
 repository = "https://github.com/wshobson/agents.git"

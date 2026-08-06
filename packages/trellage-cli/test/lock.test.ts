@@ -907,6 +907,7 @@ describe("compileLock", () => {
 
     expect(calls.filter((call) => call.startsWith("source:"))).toEqual([
       "source:v6.2.0",
+      "source:v1.10.0",
       "source:c4b82b0ad771190355eb8e204b1329732a18449a",
     ])
     expect(compiled.sources.every((source) => source.integrity === treeIntegrity(source.files))).toBe(true)

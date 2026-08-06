@@ -23,3 +23,9 @@ adapter = "omp-native"
 repository = "https://github.com/can1357/oh-my-pi.git"
 ref = "main"
 select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
+
+[[skills]]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true

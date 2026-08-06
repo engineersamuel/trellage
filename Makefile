@@ -1,8 +1,8 @@
-.PHONY: test publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
+.PHONY: test publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
-test: publication-contract publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+test: publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
 
 publication-contract:
 	bash tests/publication_contract.sh
@@ -15,6 +15,9 @@ publication-contract-self-test:
 
 agent-profile-hup-contract:
 	bash tests/agent_profile_hup_contract.sh
+
+caveman-profile-contract:
+	bash tests/caveman_profile_contract.sh
 
 profile-compiler:
 	cd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test

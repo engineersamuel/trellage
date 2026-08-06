@@ -8,10 +8,12 @@ entry="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/runtime-claude-entry.sh"
 seed="$root/seed"
 runtime="$root/home/.claude"
 fake_bin="$root/bin"
-mkdir -p "$seed/skills/hyperresearch" "$seed/agents" "$runtime/skills/hyperresearch" "$runtime/unrelated" "$fake_bin"
+mkdir -p "$seed/skills/hyperresearch" "$seed/skills/caveman" "$seed/agents" "$runtime/skills/hyperresearch" "$runtime/skills/user-skill" "$runtime/unrelated" "$fake_bin"
 printf 'new skill\n' >"$seed/skills/hyperresearch/SKILL.md"
+printf 'ACTIVE EVERY RESPONSE\n' >"$seed/skills/caveman/SKILL.md"
+printf 'ACTIVE EVERY RESPONSE\n' >"$seed/CLAUDE.md"
 printf 'new agent\n' >"$seed/agents/hyperresearch-browser-fetcher.md"
-printf '%s\n' skills/hyperresearch/SKILL.md agents/hyperresearch-browser-fetcher.md | LC_ALL=C sort >"$seed/managed-paths.txt"
+printf '%s\n' CLAUDE.md skills/caveman/SKILL.md skills/hyperresearch/SKILL.md agents/hyperresearch-browser-fetcher.md | LC_ALL=C sort >"$seed/managed-paths.txt"
 cat >"$seed/default-settings.json" <<'JSON'
 {
   "permissions": {
@@ -47,6 +49,7 @@ JSON
 printf 'old skill\n' >"$runtime/skills/hyperresearch/SKILL.md"
 printf 'keep auth\n' >"$runtime/.credentials.json"
 printf 'keep history\n' >"$runtime/history.jsonl"
+printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
 printf 'keep unrelated\n' >"$runtime/unrelated/file"
 printf 'skills/hyperresearch/SKILL.md\n' >"$runtime/.trellage-hyperresearch-managed"
 
@@ -91,6 +94,8 @@ CLAUDE_ARGS_OUT="$args_out" CLAUDE_CONFIG_OUT="$config_out" CLAUDE_CONFIG_PATH_O
   "$entry" new claude -- --print hello
 
 grep -Fqx 'new skill' "$runtime/skills/hyperresearch/SKILL.md"
+grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/skills/caveman/SKILL.md"
+grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/CLAUDE.md"
 grep -Fqx 'keep auth' "$runtime/.credentials.json"
 grep -Fqx 'keep history' "$runtime/history.jsonl"
 jq -e '
@@ -116,6 +121,7 @@ jq -e --arg workspace "$workspace" \
   '.projects[$workspace].hasTrustDialogAccepted == true' \
   "$runtime/.claude.json" >/dev/null
 grep -Fqx 'keep unrelated' "$runtime/unrelated/file"
+grep -Fqx 'keep user skill' "$runtime/skills/user-skill/SKILL.md"
 grep -Fq '"playwright"' "$config_out"
 grep -Fq '"obscura"' "$config_out"
 ! grep -Fq 'browser-secret' "$config_out"

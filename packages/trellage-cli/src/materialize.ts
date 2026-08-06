@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import { Data, Effect } from "effect"
@@ -9,7 +9,12 @@ import { renderLock } from "./lock-file.js"
 import { hasLegacySourceProvenance, type ProfileLock } from "./lock.js"
 import type { ProfileDocument } from "./profile.js"
 import { renderCodexConfig, renderMiseConfig } from "./render.js"
-import { claudeDefaultOnboarding, claudeDefaultSettings, materializeClaudeAssets } from "./claude-materialize.js"
+import {
+  claudeDefaultOnboarding,
+  claudeDefaultSettings,
+  managedClaudeFiles,
+  materializeClaudeAssets,
+} from "./claude-materialize.js"
 import {
   createRuntimeSupportSnapshot,
   isRuntimeSupportSnapshot,
@@ -64,6 +69,113 @@ const copy = (source: string, destination: string): Effect.Effect<void, Material
       errorOnExist: true,
       verbatimSymlinks: true,
     })
+  })
+
+interface GeneratedSkill {
+  readonly name: string
+  readonly alwaysOn: boolean
+  readonly instructions: string
+}
+
+const verifyGeneratedSkillDirectory = (directory: string, name: string): Effect.Effect<string, MaterializeError> =>
+  io(`generated skill is unsafe: ${name}`, async () => {
+    const visit = async (candidate: string): Promise<void> => {
+      const status = await lstat(candidate)
+      if (status.isSymbolicLink()) throw new Error("symlink")
+      if (status.isDirectory()) {
+        for (const entry of (await readdir(candidate)).sort((left, right) => left.localeCompare(right, "en"))) {
+          await visit(path.join(candidate, entry))
+        }
+      } else if (!status.isFile()) {
+        throw new Error("unsupported entry")
+      }
+    }
+    const skill = path.join(directory, name)
+    const skillFile = path.join(skill, "SKILL.md")
+    const [skillStatus, skillFileStatus] = await Promise.all([lstat(skill), lstat(skillFile)])
+    if (!skillStatus.isDirectory() || skillStatus.isSymbolicLink()) throw new Error("skill root")
+    if (!skillFileStatus.isFile() || skillFileStatus.isSymbolicLink()) throw new Error("SKILL.md")
+    await visit(skill)
+    const instructions = await readFile(skillFile, "utf8")
+    if (instructions.includes("\r")) throw new Error("SKILL.md must use LF line endings")
+    return instructions
+  })
+
+const renderAlwaysOnInstructions = (skills: ReadonlyArray<GeneratedSkill>): string =>
+  skills
+    .filter((skill) => skill.alwaysOn)
+    .sort((left, right) => left.name.localeCompare(right.name, "en"))
+    .map((skill) => `# Trellage managed always-on skill: ${skill.name}\n\n${skill.instructions}\n`)
+    .join("")
+
+const materializeGenericSkills = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  sourceDirectories: ReadonlyArray<string>,
+  context: string,
+  destination: string,
+  generateSkills: SkillGenerator,
+): Effect.Effect<ReadonlyArray<GeneratedSkill>, MaterializeError> =>
+  Effect.gen(function* () {
+    const candidates = document.profile.skills
+      .map((skill, index) => ({
+        skill,
+        source: lock.sources[index],
+        sourceDirectory: sourceDirectories[index],
+      }))
+      .filter((candidate) => candidate.skill.adapter === undefined)
+      .sort(
+        (left, right) =>
+          (left.source?.repository ?? "").localeCompare(right.source?.repository ?? "", "en") ||
+          (left.source?.ref ?? "").localeCompare(right.source?.ref ?? "", "en") ||
+          JSON.stringify(left.source?.select).localeCompare(JSON.stringify(right.source?.select), "en"),
+      )
+    const generatedSkills: Array<GeneratedSkill> = []
+    for (const candidate of candidates) {
+      const { skill, source, sourceDirectory } = candidate
+      if (
+        source === undefined ||
+        sourceDirectory === undefined ||
+        source.kind !== "skill" ||
+        source.adapter !== undefined ||
+        source.repository !== skill.repository ||
+        source.ref !== skill.ref ||
+        JSON.stringify(source.select) !== JSON.stringify(skill.select)
+      ) {
+        return yield* Effect.fail(new MaterializeError({ message: "generic skill source does not match lock" }))
+      }
+      const generated = path.join(
+        context,
+        `.skills-generated-${createHash("sha256")
+          .update(`${source.repository}\u0000${source.ref}\u0000${JSON.stringify(source.select)}`)
+          .digest("hex")}`,
+      )
+      yield* io("cannot create skills generation directory", () => mkdir(generated, { recursive: true }))
+      yield* generateSkills(
+        sourceDirectory,
+        [...source.select].sort((left, right) => left.localeCompare(right, "en")),
+        generated,
+      ).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Skills CLI generation failed", cause })))
+      const skillRoot = path.join(generated, ".agents", "skills")
+      const actual = yield* io("cannot enumerate Skills CLI output", () => readdir(skillRoot))
+      const expected = [...source.select].sort((left, right) => left.localeCompare(right, "en"))
+      actual.sort((left, right) => left.localeCompare(right, "en"))
+      if (
+        (expected.includes("*") && actual.length === 0) ||
+        (!expected.includes("*") && JSON.stringify(actual) !== JSON.stringify(expected))
+      ) {
+        return yield* Effect.fail(
+          new MaterializeError({ message: "Skills CLI output does not match locked selections" }),
+        )
+      }
+      for (const name of actual) {
+        const instructions = yield* verifyGeneratedSkillDirectory(skillRoot, name)
+        yield* copy(path.join(skillRoot, name), path.join(destination, name))
+        generatedSkills.push({ name, alwaysOn: skill.always_on === true, instructions })
+      }
+      yield* io("cannot remove skills generation staging", () => rm(generated, { recursive: true, force: true }))
+    }
+    return generatedSkills
   })
 
 const copyCodexTree = (source: string, context: string): Effect.Effect<void, MaterializeError> =>
@@ -145,11 +257,11 @@ export const createBuildContext = (
     }
     if (document.profile.harness.kind === "copilot") {
       const profilePlugin = document.profile.plugins[0]
-      const source = lock.sources[0]
+      const sourceIndex = document.profile.skills.length
+      const source = lock.sources[sourceIndex]
       if (
         document.profile.plugins.length !== 1 ||
-        lock.sources.length !== 1 ||
-        sourceDirectories.length !== 1 ||
+        lock.sources.length !== sourceIndex + 1 ||
         profilePlugin === undefined ||
         !("marketplace" in profilePlugin) ||
         source === undefined ||
@@ -168,12 +280,16 @@ export const createBuildContext = (
       }
     }
     if (document.profile.harness.kind === "claude" && document.profile.plugins.length > 0) {
-      if (document.profile.plugins.length !== lock.sources.length || lock.sources.length !== sourceDirectories.length) {
+      const sourceOffset = document.profile.skills.length
+      if (
+        document.profile.plugins.length !== lock.sources.length - sourceOffset ||
+        lock.sources.length !== sourceDirectories.length
+      ) {
         return yield* Effect.fail(new MaterializeError({ message: "Claude build requires matching plugin sources" }))
       }
       for (let index = 0; index < document.profile.plugins.length; index += 1) {
         const profilePlugin = document.profile.plugins[index]!
-        const source = lock.sources[index]
+        const source = lock.sources[sourceOffset + index]
         if (
           source === undefined ||
           source.kind !== "plugin" ||
@@ -245,8 +361,11 @@ export const createBuildContext = (
       }
 
       if (document.profile.harness.kind === "copilot") {
-        yield* copy(sourceDirectories[0]!, path.join(context, "hve-core"))
-        yield* verifyInventory(path.join(context, "hve-core"), lock.sources[0]!.files, { allowSymlinks: true }).pipe(
+        const sourceIndex = document.profile.skills.length
+        yield* copy(sourceDirectories[sourceIndex]!, path.join(context, "hve-core"))
+        yield* verifyInventory(path.join(context, "hve-core"), lock.sources[sourceIndex]!.files, {
+          allowSymlinks: true,
+        }).pipe(
           Effect.mapError(
             (cause) => new MaterializeError({ message: "copied Copilot source inventory mismatch", cause }),
           ),
@@ -264,9 +383,9 @@ export const createBuildContext = (
           adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
         yield* materializeClaude({
           adapter,
-          sourceDirectories,
+          sourceDirectories: sourceDirectories.slice(document.profile.skills.length),
           context,
-          lock,
+          lock: { ...lock, sources: lock.sources.slice(document.profile.skills.length) },
           ...(requirements === undefined
             ? {}
             : { requirementsPath: path.join(context, requirements.buildContextPath) }),
@@ -285,18 +404,13 @@ export const createBuildContext = (
         const sourceIndex = lock.sources.findIndex(
           (source) => source.kind === "skill" && source.adapter === "omp-native",
         )
-        const managedSkills: Array<string> = []
         if (sourceIndex >= 0) {
           const source = lock.sources[sourceIndex]!
           const sourceDirectory = sourceDirectories[sourceIndex]!
           for (const selection of [...source.select].sort()) {
             yield* copy(path.join(sourceDirectory, ".omp", "skills", selection), path.join(skills, selection))
-            managedSkills.push(selection)
           }
         }
-        yield* io("cannot write Pi managed skill manifest", () =>
-          writeFile(path.join(seed, "managed-skills.txt"), managedSkills.map((name) => `${name}\n`).join("")),
-        )
       }
 
       if (
@@ -318,25 +432,69 @@ export const createBuildContext = (
         })
       }
 
-      for (let index = 0; document.profile.harness.kind === "codex" && index < lock.sources.length; index += 1) {
+      const genericDestination =
+        document.profile.harness.kind === "codex"
+          ? path.join(context, "assets", "skills")
+          : document.profile.harness.kind === "copilot"
+            ? path.join(context, "copilot-seed", "skills")
+            : document.profile.harness.kind === "claude"
+              ? path.join(context, "claude-seed", "skills")
+              : path.join(context, "pi-seed", "skills")
+      yield* io("cannot initialize generic skill destination", () => mkdir(genericDestination, { recursive: true }))
+      const generatedSkills = yield* materializeGenericSkills(
+        document,
+        lock,
+        sourceDirectories,
+        context,
+        genericDestination,
+        generateSkills,
+      )
+      const alwaysOnInstructions = renderAlwaysOnInstructions(generatedSkills)
+      if (alwaysOnInstructions.length > 0) {
+        const destination =
+          document.profile.harness.kind === "codex"
+            ? path.join(context, "assets", "AGENTS.md")
+            : document.profile.harness.kind === "copilot"
+              ? path.join(context, "copilot-seed", "copilot-instructions.md")
+              : document.profile.harness.kind === "claude"
+                ? path.join(context, "claude-seed", "CLAUDE.md")
+                : path.join(context, "pi-seed", "APPEND_SYSTEM.md")
+        yield* io("cannot write managed always-on instructions", () => writeFile(destination, alwaysOnInstructions))
+      }
+      if (document.profile.harness.kind === "claude") {
+        const manifest = yield* io("cannot enumerate managed Claude seed", () =>
+          managedClaudeFiles(path.join(context, "claude-seed")),
+        )
+        yield* io("cannot write managed Claude seed manifest", () =>
+          writeFile(path.join(context, "claude-seed", "managed-paths.txt"), `${manifest.join("\n")}\n`),
+        )
+      }
+      if (document.profile.harness.kind === "pi") {
+        const managedNames = [
+          ...lock.sources
+            .filter((source) => source.kind === "skill" && source.adapter === "omp-native")
+            .flatMap((source) => source.select),
+          ...generatedSkills.map((skill) => skill.name),
+        ].sort((left, right) => left.localeCompare(right, "en"))
+        if (new Set(managedNames).size !== managedNames.length) {
+          return yield* Effect.fail(new MaterializeError({ message: "managed Pi skill names collide" }))
+        }
+        yield* io("cannot write Pi managed skill manifest", () =>
+          writeFile(
+            path.join(context, "pi-seed", "managed-skills.txt"),
+            managedNames.map((name) => `${name}\n`).join(""),
+          ),
+        )
+      }
+
+      for (
+        let index = document.profile.skills.length;
+        document.profile.harness.kind === "codex" && index < lock.sources.length;
+        index += 1
+      ) {
         const sourceLock = lock.sources[index]!
         const sourceDirectory = sourceDirectories[index]!
-        if (sourceLock.kind === "skill") {
-          const generated = path.join(context, `.skills-generated-${index}`)
-          yield* io("cannot create skills generation directory", () => mkdir(generated, { recursive: true }))
-          yield* generateSkills(sourceDirectory, sourceLock.select, generated).pipe(
-            Effect.mapError((cause) => new MaterializeError({ message: "Skills CLI generation failed", cause })),
-          )
-          const skillRoot = path.join(generated, ".agents", "skills")
-          const entries = yield* io("cannot enumerate Skills CLI output", () =>
-            import("node:fs/promises").then(({ readdir }) => readdir(skillRoot)),
-          )
-          for (const selection of entries.sort()) {
-            yield* copy(path.join(skillRoot, selection), path.join(context, "assets", "skills", selection))
-          }
-          yield* io("cannot remove skills generation staging", () => rm(generated, { recursive: true, force: true }))
-          continue
-        }
+        if (sourceLock.kind === "skill") continue
         if (sourceLock.adapter === "codex-native") {
           for (const selection of sourceLock.select) {
             yield* copyCodexTree(path.join(sourceDirectory, "plugins", selection, ".codex"), context)

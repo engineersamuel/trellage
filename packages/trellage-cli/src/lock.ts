@@ -373,7 +373,7 @@ const lockSemanticError = (
   } else if (current.packages.artifacts !== undefined || current.packages.python_lock_integrity !== undefined) {
     return "Claude artifact locks require the Claude harness"
   }
-  const needsSkillsCli = document.profile.harness.kind === "codex" && document.profile.skills.length > 0
+  const needsSkillsCli = document.profile.skills.some((skill) => skill.adapter === undefined)
   if (needsSkillsCli && !current.packages.skills_cli_version) return "Skills CLI version is missing"
   if (
     current.packages.skills_cli_version !== undefined &&
@@ -585,7 +585,7 @@ export const compileLock = (
         selector: document.profile.harness.version,
         platform,
         packages: document.profile.image.packages,
-        needsSkillsCli: document.profile.harness.kind === "codex" && document.profile.skills.length > 0,
+        needsSkillsCli: document.profile.skills.some((skill) => skill.adapter === undefined),
         ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
       })
       .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause })))

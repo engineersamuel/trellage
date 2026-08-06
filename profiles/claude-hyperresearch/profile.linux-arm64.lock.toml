@@ -1,7 +1,103 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:4a9216e1b29ee66c642f27b6ecb86761738632ad096f56ca830c125ae5f0fa7c"
+profile_hash = "sha256:2ab5eaa4962f6b41ee150fdefe826482cb305d0145ed0c4c99f7141d472fcb88"
+
+[[sources]]
+kind = "skill"
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+commit = "fcf7663366c217dc8f334a11028de52ed950ceab"
+integrity = "sha256:79ad78f5dda894ab83c8d7d7c79374855d74b151810113e4c363251e4e2a9374"
+
+[[sources.files]]
+path = "skills/cavecrew/README.md"
+sha256 = "sha256:e13d08785f72d305de1ac1fa9a49c349332bb4e2f6a24a06efd20144c36c4dc9"
+
+[[sources.files]]
+path = "skills/cavecrew/SKILL.md"
+sha256 = "sha256:b74f374f6aae6e9a31e78e7d876860406fe5833378e9298536edf176c12f379b"
+
+[[sources.files]]
+path = "skills/caveman-commit/README.md"
+sha256 = "sha256:a2e82924b487fc1845114c247b47c2d3c2d1bd60f90bbfa60e9831319eb964fa"
+
+[[sources.files]]
+path = "skills/caveman-commit/SKILL.md"
+sha256 = "sha256:58db7b8efab911a629c26e7132517d9076e4e3645009eb604cb8c25663477841"
+
+[[sources.files]]
+path = "skills/caveman-compress/README.md"
+sha256 = "sha256:53d4a5ee500c4d6e0e78d717e81f88fb6d850b377c7b015cb8df3c2c69bf7ea9"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/__init__.py"
+sha256 = "sha256:429c3e1c5cc5b9705f28d77f303c728304ae68693913ad3d5ce9b5a44c8ee40f"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/__main__.py"
+sha256 = "sha256:6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/benchmark.py"
+sha256 = "sha256:6ff5098db623154161503595e3ef513516d1d47bed7c264c7e0378581945767b"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/cli.py"
+sha256 = "sha256:17edb6b425adc0ea04e35f1e90dfe318ba4232a1b815c5ff7d6cff7d574efea6"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/compress.py"
+sha256 = "sha256:638dacb2a45a8283f6188ebd8b98280cf322d33f9712c8afdac28ad0aa6db6ce"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/detect.py"
+sha256 = "sha256:0c68b6500dac582b53a0b02fa8949b34901dd859ee940b8004e7b54164c15e2b"
+
+[[sources.files]]
+path = "skills/caveman-compress/scripts/validate.py"
+sha256 = "sha256:6098687a5fa374dc22b886452af6792f3aaa60855c4032e035ea1228dae253c7"
+
+[[sources.files]]
+path = "skills/caveman-compress/SECURITY.md"
+sha256 = "sha256:7393f90a3a9953251554a68ad2daef273d8d656d050e2ad47a483e76c8223b2d"
+
+[[sources.files]]
+path = "skills/caveman-compress/SKILL.md"
+sha256 = "sha256:3167d62440eee99c0e5b224d7f8b8ebcfe37efba38bc5bbee24f0d00da72a688"
+
+[[sources.files]]
+path = "skills/caveman-help/README.md"
+sha256 = "sha256:5fcfa700fbf6c07259db74bc6bb602f4590623c86b754b153061cf82b59c48ee"
+
+[[sources.files]]
+path = "skills/caveman-help/SKILL.md"
+sha256 = "sha256:ae18884d30b7ddccaefc9612cf73645d9e1eaf18b44d3c36e398b9706f183c1e"
+
+[[sources.files]]
+path = "skills/caveman-review/README.md"
+sha256 = "sha256:a06403b2722a069a9a2b0011772ae73296e68b4e46ace2f4b42b4ea546052b64"
+
+[[sources.files]]
+path = "skills/caveman-review/SKILL.md"
+sha256 = "sha256:9ef09065f26b9781275b5a4775e14870e331fab833efb2a2aa33f3205a2b83c3"
+
+[[sources.files]]
+path = "skills/caveman-stats/README.md"
+sha256 = "sha256:018433f804ea8b6530c6b9a4cbb6e1a56edf730573fa980aa3a6b8dea0713951"
+
+[[sources.files]]
+path = "skills/caveman-stats/SKILL.md"
+sha256 = "sha256:b78227f62898b0360d21f2a94d48e9d7a80629cb879cc7b7f9b45b4a241eba90"
+
+[[sources.files]]
+path = "skills/caveman/README.md"
+sha256 = "sha256:9369b69197e5d07e0c56679f9fc346f3539f58537c17f4e804a44612f086dc73"
+
+[[sources.files]]
+path = "skills/caveman/SKILL.md"
+sha256 = "sha256:daf9cec496ebd039809d8236f99f17fa1b4beaadf8ce4e2d532d0da51d70afce"
 
 [[sources]]
 kind = "plugin"
@@ -821,15 +917,17 @@ path = "tests/test_web/test_tavily_provider.py"
 sha256 = "sha256:d6c81e045c2a62ba4f13c5c631a548f02c2cae5eb5676f77af8fca969ce8f602"
 
 [packages]
+skills_cli_version = "1.5.19"
+skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
 python_lock_integrity = "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6"
 
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.222"
-integrity = "sha256:68c8d31e3cf81d4e0f608900c866b8bb2f0e2645e89d0917ce8a23f2ec277587"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz"
-size = 88123930
+version = "2.1.223"
+integrity = "sha256:e6a7ce80f57317c9121d429fe2bcc7b5b82cd901863c3f33754589dcc99d0460"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.223/claude-linux-arm64.tar.gz"
+size = 88475173
 
 [[packages.runtime]]
 name = "bash"
@@ -1035,4 +1133,4 @@ size = 52716812
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:2ef86f3386d8abb985d39c390134f1827be9f24833433318f20f20acbd1435fd"
+final_digest = "sha256:2596e11cd21bbc22446f42e3da92011ce4b93fa89f1ae48e70221fe71e2cdbdd"

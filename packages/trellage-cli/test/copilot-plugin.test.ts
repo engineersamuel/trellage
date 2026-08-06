@@ -712,6 +712,25 @@ describe("finalize-copilot-seed", () => {
     await expectFinalSeed(left.seed)
   })
 
+  it("retains generic skills and managed global instructions in the finalized seed", async () => {
+    const fixture = await nativeSeed()
+    await mkdir(path.join(fixture.seed, "skills", "caveman"), { recursive: true })
+    await writeFile(path.join(fixture.seed, "skills", "caveman", "SKILL.md"), "ACTIVE EVERY RESPONSE\n")
+    await writeFile(path.join(fixture.seed, "copilot-instructions.md"), "ACTIVE EVERY RESPONSE\n")
+
+    await runFinalizer(fixture.seed)
+
+    const managed = await readFile(path.join(fixture.seed, "managed-files.txt"), "utf8")
+    expect(managed).toContain("skills/caveman/SKILL.md\n")
+    expect(managed).toContain("copilot-instructions.md\n")
+    await expect(readFile(path.join(fixture.seed, "skills", "caveman", "SKILL.md"), "utf8")).resolves.toBe(
+      "ACTIVE EVERY RESPONSE\n",
+    )
+    await expect(readFile(path.join(fixture.seed, "copilot-instructions.md"), "utf8")).resolves.toBe(
+      "ACTIVE EVERY RESPONSE\n",
+    )
+  })
+
   it("records every plugin file and directory with its observed mode without mutating the tree", async () => {
     const restrictive = await nativeSeed()
     const permissive = await nativeSeed()

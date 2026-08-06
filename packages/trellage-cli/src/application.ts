@@ -106,17 +106,21 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
           : ""
       return `${isolateCoreTools}mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
     }
+    const pluginSourceOffset = document.profile.skills.length
     const plugin = document.profile.plugins[0]
-    const source = lock.sources[0]
+    const source = lock.sources[pluginSourceOffset]
     if (
       plugin?.adapter === "hyperresearch" &&
       source?.adapter === "hyperresearch" &&
       document.profile.plugins.length === 1 &&
-      lock.sources.length === 1
+      lock.sources.length === pluginSourceOffset + 1
     ) {
       return `mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
     }
-    if (document.profile.plugins.length === 0 || document.profile.plugins.length !== lock.sources.length) {
+    if (
+      document.profile.plugins.length === 0 ||
+      document.profile.plugins.length !== lock.sources.length - pluginSourceOffset
+    ) {
       return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
     }
     const nativeEnvironment =
@@ -124,7 +128,7 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     const marketplaceCommands: Array<string> = []
     for (let index = 0; index < document.profile.plugins.length; index += 1) {
       const marketplacePlugin = document.profile.plugins[index]!
-      const marketplaceSource = lock.sources[index]
+      const marketplaceSource = lock.sources[pluginSourceOffset + index]
       const versions =
         marketplaceSource?.plugin_versions === undefined ? [] : Object.entries(marketplaceSource.plugin_versions)
       if (
@@ -164,13 +168,14 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
   }
 
+  const pluginSourceOffset = document.profile.skills.length
   const profilePlugin = document.profile.plugins[0]
-  const source = lock.sources[0]
+  const source = lock.sources[pluginSourceOffset]
   const selected = profilePlugin?.select[0]
   const versions = source?.plugin_versions === undefined ? [] : Object.entries(source.plugin_versions)
   if (
     document.profile.plugins.length !== 1 ||
-    lock.sources.length !== 1 ||
+    lock.sources.length !== pluginSourceOffset + 1 ||
     profilePlugin === undefined ||
     !("marketplace" in profilePlugin) ||
     profilePlugin.select.length !== 1 ||

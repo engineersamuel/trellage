@@ -237,6 +237,24 @@ const main = async () => {
   const normalizedPlugins = Object.create(null)
   const normalizedMarketplaces = Object.create(null)
   const managed = []
+  const genericSkills = path.join(seed, "skills")
+  try {
+    const skillsStatus = await lstat(genericSkills)
+    if (!skillsStatus.isDirectory() || skillsStatus.isSymbolicLink()) fail("generated Claude skills are unsafe")
+    managed.push(...(await inventory(genericSkills, "skills")).map(({ path: managedPath }) => managedPath))
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error
+  }
+  const instructions = path.join(seed, "CLAUDE.md")
+  try {
+    const instructionsStatus = await lstat(instructions)
+    if (!instructionsStatus.isFile() || instructionsStatus.isSymbolicLink()) {
+      fail("generated Claude instructions are unsafe")
+    }
+    managed.push("CLAUDE.md")
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error
+  }
   for (const { marketplace, source, commit, selections } of marketplaces) {
     const sourceInventory = await inventory(source)
     let marketplaceInstallPath
@@ -314,10 +332,12 @@ const main = async () => {
   const allowed = new Set([
     "default-onboarding.json",
     "default-settings.json",
+    "CLAUDE.md",
     "managed-paths.txt",
     "plugin-marketplaces.json",
     "plugin-settings.json",
     "plugins",
+    "skills",
   ])
   for (const entry of await readdir(seed)) {
     if (!allowed.has(entry)) fail(`unexpected generated Claude state: ${entry}`)

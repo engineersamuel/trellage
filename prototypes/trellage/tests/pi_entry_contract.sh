@@ -33,16 +33,23 @@ fail() {
 mkdir -p \
   "$root/fake-bin" \
   "$root/home/.omp/agent/skills/stale-managed" \
+  "$root/home/.omp/agent/skills/user-skill" \
   "$root/output" \
+  "$root/pi-seed/skills/caveman" \
   "$root/pi-seed/skills/semantic-compression" \
   "$root/pi-seed/skills/system-prompts" \
   "$root/pi-seed/skills/tool-prompt-optimization"
 printf 'stale-managed\n' >"$root/home/.omp/agent/.trellage-managed-skills"
 printf 'stale\n' >"$root/home/.omp/agent/skills/stale-managed/SKILL.md"
-printf '%s\n' semantic-compression system-prompts tool-prompt-optimization >"$root/pi-seed/managed-skills.txt"
-for skill in semantic-compression system-prompts tool-prompt-optimization; do
+printf 'keep user skill\n' >"$root/home/.omp/agent/skills/user-skill/SKILL.md"
+printf '%s\n' caveman semantic-compression system-prompts tool-prompt-optimization | LC_ALL=C sort >"$root/pi-seed/managed-skills.txt"
+for skill in caveman semantic-compression system-prompts tool-prompt-optimization; do
   printf '%s\n' "---" "name: $skill" "description: $skill fixture" "---" >"$root/pi-seed/skills/$skill/SKILL.md"
 done
+printf 'ACTIVE EVERY RESPONSE\n' >>"$root/pi-seed/skills/caveman/SKILL.md"
+printf 'ACTIVE EVERY RESPONSE\n' >"$root/pi-seed/APPEND_SYSTEM.md"
+cp -R "$root/pi-seed/skills/caveman" "$root/home/.omp/agent/skills/caveman"
+cp "$root/pi-seed/APPEND_SYSTEM.md" "$root/home/.omp/agent/APPEND_SYSTEM.md"
 chmod -R 777 "$root/home" "$root/output"
 
 cat >"$root/fake-bin/omp" <<'FAKE_OMP'
@@ -100,13 +107,19 @@ grep -Fqx 'PI_CODING_AGENT_DIR=/home/agent/.omp/agent' "$root/output/env" \
 [[ -d "$root/home/.omp/agent" ]] || fail 'OMP state directory did not persist in the state mount'
 [[ ! -e "$root/home/.omp/agent/skills/stale-managed" ]] \
   || fail 'stale managed OMP skill was not removed'
-for skill in semantic-compression system-prompts tool-prompt-optimization; do
+for skill in caveman semantic-compression system-prompts tool-prompt-optimization; do
   [[ -f "$root/home/.omp/agent/skills/$skill/SKILL.md" ]] \
     || fail "managed OMP skill was not seeded: $skill"
 done
 [[ "$(cat "$root/home/.omp/agent/.trellage-managed-skills")" == \
-  $'semantic-compression\nsystem-prompts\ntool-prompt-optimization' ]] \
+  $'caveman\nsemantic-compression\nsystem-prompts\ntool-prompt-optimization' ]] \
   || fail 'managed OMP skill manifest was not refreshed'
+grep -Fqx 'ACTIVE EVERY RESPONSE' "$root/home/.omp/agent/skills/caveman/SKILL.md" \
+  || fail 'managed Caveman skill did not retain its persistence marker'
+grep -Fqx 'ACTIVE EVERY RESPONSE' "$root/home/.omp/agent/APPEND_SYSTEM.md" \
+  || fail 'managed Pi instructions did not retain Caveman persistence marker'
+grep -Fqx 'keep user skill' "$root/home/.omp/agent/skills/user-skill/SKILL.md" \
+  || fail 'Pi synchronization replaced unrelated user state'
 
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --yolo
 expected_new_argv=$'--provider\ngithub-copilot\n--model\ngpt-5.6-terra\n--config\n/usr/local/share/trellage/pi-config.yml\n--yolo'

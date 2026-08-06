@@ -37,6 +37,22 @@ directory_is_exact() {
   [[ "$(realpath -e -- "$candidate")" == "$candidate" ]] || return 1
 }
 
+skill_tree_matches() {
+  local source="$1"
+  local destination="$2"
+  local index
+  local -a source_files=() destination_files=()
+  [[ -d "$source" && ! -L "$source" && -d "$destination" && ! -L "$destination" ]] || return 1
+  [[ -z "$(find "$source" "$destination" -type l -print -quit)" ]] || return 1
+  mapfile -d '' -t source_files < <(cd "$source" && find . -type f -print0 | LC_ALL=C sort -z)
+  mapfile -d '' -t destination_files < <(cd "$destination" && find . -type f -print0 | LC_ALL=C sort -z)
+  [[ ${#source_files[@]} -eq ${#destination_files[@]} ]] || return 1
+  for index in "${!source_files[@]}"; do
+    [[ "${source_files[$index]}" == "${destination_files[$index]}" ]] || return 1
+    cmp -s -- "$source/${source_files[$index]}" "$destination/${destination_files[$index]}" || return 1
+  done
+}
+
 managed_ancestor_chain_is_safe() {
   local root="$1"
   local relative
@@ -197,16 +213,27 @@ validate_managed_path() {
     && "$managed_path" != *'\'* ]] \
     || fail "unsafe managed seed path: $managed_path"
   case "$managed_path" in
-    managed-lock.json|managed-settings.json|installed-plugins/hve-core/hve-core/*) ;;
+    managed-lock.json|managed-settings.json|copilot-instructions.md|installed-plugins/hve-core/hve-core/*) ;;
+    skills/*)
+      [[ "$managed_path" =~ ^skills/[A-Za-z0-9][A-Za-z0-9._-]*/.+$ ]] \
+        || fail "unexpected managed seed path: $managed_path"
+      ;;
     *) fail "unexpected managed seed path: $managed_path" ;;
   esac
 }
 
 actual_managed_files() {
-  local root="$1"
+  local root="$1" skill_name
   (
     cd "$root"
     find installed-plugins/hve-core/hve-core -type f -print
+    if [[ -f managed-files.txt && ! -L managed-files.txt ]]; then
+      while IFS= read -r skill_name; do
+        [[ -d "skills/$skill_name" && ! -L "skills/$skill_name" ]] || exit 1
+        find "skills/$skill_name" -type f -print
+      done < <(managed_skill_names managed-files.txt)
+    fi
+    if [[ -f copilot-instructions.md && ! -L copilot-instructions.md ]]; then printf '%s\n' copilot-instructions.md; fi
     printf '%s\n' managed-lock.json managed-settings.json
   ) | LC_ALL=C sort
 }
@@ -225,6 +252,17 @@ verify_managed_tree() {
   [[ -z "$(find "$plugin" -type l -print -quit)" ]] || return 1
   [[ -z "$(find "$plugin" -mindepth 1 ! -type d ! -type f -print -quit)" ]] \
     || return 1
+  if [[ -e "$root/skills" || -L "$root/skills" ]]; then
+    [[ -d "$root/skills" && ! -L "$root/skills" ]] || return 1
+    while IFS= read -r managed_skill; do
+      [[ -d "$root/skills/$managed_skill" && ! -L "$root/skills/$managed_skill" ]] || return 1
+      [[ -z "$(find "$root/skills/$managed_skill" -type l -print -quit)" ]] || return 1
+      [[ -z "$(find "$root/skills/$managed_skill" -mindepth 1 ! -type d ! -type f -print -quit)" ]] || return 1
+    done < <(managed_skill_names "$files")
+  fi
+  if [[ -e "$root/copilot-instructions.md" || -L "$root/copilot-instructions.md" ]]; then
+    [[ -f "$root/copilot-instructions.md" && ! -L "$root/copilot-instructions.md" ]] || return 1
+  fi
   while IFS= read -r managed_path; do
     validate_managed_path "$managed_path"
     [[ -f "$root/$managed_path" && ! -L "$root/$managed_path" ]] || return 1
@@ -308,6 +346,85 @@ verify_plugin_copy() {
   done <"$seed_home/managed.sha256"
 }
 
+managed_skill_names() {
+  local manifest="$1"
+  sed -n 's#^skills/\([A-Za-z0-9][A-Za-z0-9._-]*\)/.*$#\1#p' "$manifest" | LC_ALL=C sort -u
+}
+
+sync_generic_state() {
+  local runtime_skills="$runtime_home/skills"
+  local prior_manifest="$runtime_home/managed-files.txt"
+  local prior_instruction=false
+  local skill_name source destination temporary
+  local -a prior_skills=() desired_skills=()
+  runtime_root_is_unchanged || fail 'Copilot runtime home changed before generic skill synchronization'
+  if [[ -f "$prior_manifest" && ! -L "$prior_manifest" ]]; then
+    while IFS= read -r managed_path; do
+      validate_managed_path "$managed_path"
+      [[ "$managed_path" == copilot-instructions.md ]] && prior_instruction=true
+    done <"$prior_manifest"
+    mapfile -t prior_skills < <(managed_skill_names "$prior_manifest")
+  elif [[ -e "$prior_manifest" || -L "$prior_manifest" ]]; then
+    fail 'prior Copilot managed-file manifest is unsafe'
+  fi
+  mapfile -t desired_skills < <(managed_skill_names "$seed_home/managed-files.txt")
+  if [[ ${#desired_skills[@]} -gt 0 ]]; then
+    if [[ -e "$runtime_skills" || -L "$runtime_skills" ]]; then
+      [[ -d "$runtime_skills" && ! -L "$runtime_skills" ]] \
+        || fail 'Copilot managed skills path must be a directory without symlinks'
+    else
+      mkdir -- "$runtime_skills"
+    fi
+    [[ "$(realpath -e -- "$runtime_skills")" == "$runtime_skills" ]] \
+      || fail 'Copilot managed skills path escaped the runtime home'
+  fi
+  for skill_name in "${prior_skills[@]}"; do
+    destination="$runtime_skills/$skill_name"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      [[ -d "$destination" && ! -L "$destination" ]] \
+        || fail "managed Copilot skill destination is unsafe: $skill_name"
+      rm -rf -- "$destination"
+    fi
+  done
+  for skill_name in "${desired_skills[@]}"; do
+    source="$seed_home/skills/$skill_name"
+    destination="$runtime_skills/$skill_name"
+    [[ -d "$source" && ! -L "$source" && -z "$(find "$source" -type l -print -quit)" ]] \
+      || fail "baked Copilot skill is unsafe: $skill_name"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      skill_tree_matches "$source" "$destination" \
+        || fail "managed Copilot skill collides with unmanaged state: $skill_name"
+      rm -rf -- "$destination"
+    fi
+    temporary="$runtime_skills/.${skill_name}.trellage-stage"
+    [[ ! -e "$temporary" && ! -L "$temporary" ]] \
+      || fail "managed Copilot skill stage already exists: $skill_name"
+    cp -R -- "$source" "$temporary"
+    mv -T -- "$temporary" "$destination"
+  done
+  source="$seed_home/copilot-instructions.md"
+  destination="$runtime_home/copilot-instructions.md"
+  if [[ -e "$source" || -L "$source" ]]; then
+    [[ -f "$source" && ! -L "$source" ]] || fail 'baked Copilot instructions are unsafe'
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      [[ -f "$destination" && ! -L "$destination" ]] \
+        || fail 'managed Copilot instructions collide with unmanaged state'
+      if [[ "$prior_instruction" != true ]]; then
+        cmp -s -- "$source" "$destination" \
+          || fail 'managed Copilot instructions collide with unmanaged state'
+      fi
+    fi
+    temporary="$runtime_home/.copilot-instructions.md.trellage-stage"
+    [[ ! -e "$temporary" && ! -L "$temporary" ]] || fail 'managed Copilot instruction stage already exists'
+    cp -- "$source" "$temporary"
+    mv -f -- "$temporary" "$destination"
+  elif [[ "$prior_instruction" == true ]]; then
+    [[ -f "$destination" && ! -L "$destination" ]] || fail 'managed Copilot instructions are unsafe'
+    rm -f -- "$destination"
+  fi
+  runtime_root_is_unchanged || fail 'Copilot runtime home changed during generic skill synchronization'
+}
+
 merge_managed_settings() {
   local settings="$runtime_home/settings.json"
   local temporary settings_existed=0 settings_identity= settings_mode=600
@@ -377,6 +494,47 @@ merge_managed_settings() {
   managed_temporary=
 }
 
+ensure_workspace_trusted() {
+  local workspace config temporary config_mode=600
+  workspace="$(pwd -P)"
+  [[ "$workspace" == /* ]] || fail 'Copilot workspace must be an absolute path'
+  config="$runtime_home/config.json"
+  runtime_root_is_unchanged \
+    || fail 'Copilot runtime home changed before workspace trust update'
+  if [[ -e "$config" || -L "$config" ]]; then
+    [[ -f "$config" && ! -L "$config" ]] \
+      || fail 'Copilot config must be a regular file'
+    config_mode="$(stat -c '%a' -- "$config")"
+  fi
+  temporary="$(mktemp "$runtime_home/.config.json.trellage.XXXXXX")"
+  if [[ -f "$config" ]]; then
+    jq --arg workspace "$workspace" '
+      if type != "object" then error("config root must be an object")
+      elif ((.trustedFolders // []) | type) != "array" then
+        error("trustedFolders must be an array")
+      elif ([.trustedFolders[]? | type] | all(. == "string") | not) then
+        error("trustedFolders entries must be strings")
+      else
+        .trustedFolders = (
+          (.trustedFolders // []) as $folders
+          | if ($folders | index($workspace)) == null
+            then $folders + [$workspace]
+            else $folders
+            end
+        )
+      end
+    ' "$config" >"$temporary" \
+      || fail 'Copilot config cannot record the trusted workspace'
+  else
+    jq -n --arg workspace "$workspace" '{trustedFolders: [$workspace]}' >"$temporary" \
+      || fail 'Copilot config cannot initialize the trusted workspace'
+  fi
+  chmod "$config_mode" "$temporary"
+  runtime_root_is_unchanged \
+    || fail 'Copilot runtime home changed during workspace trust update'
+  mv -f -- "$temporary" "$config"
+}
+
 atomic_copy_control() {
   local name="$1"
   local destination="$runtime_home/$name"
@@ -439,7 +597,7 @@ managed_temporary=
 
 reserved_managed_temp_name_is_valid() {
   local name="$1"
-  [[ "$name" =~ ^\.(settings\.json|managed-lock\.json|managed-settings\.json|managed-files\.txt|managed\.sha256)\.trellage\.[A-Za-z0-9]{6}$ ]]
+  [[ "$name" =~ ^\.(settings\.json|config\.json|managed-lock\.json|managed-settings\.json|managed-files\.txt|managed\.sha256)\.trellage\.[A-Za-z0-9]{6}$ ]]
 }
 
 remove_reserved_managed_temp() {
@@ -467,6 +625,7 @@ sweep_reserved_managed_temps() {
     || fail 'Copilot runtime home changed before temporary-file recovery'
   for prefix in \
     settings.json \
+    config.json \
     managed-lock.json \
     managed-settings.json \
     managed-files.txt \
@@ -652,6 +811,7 @@ sync_managed_state() {
   fi
   transaction_active=0
 
+  sync_generic_state
   merge_managed_settings
   atomic_copy_control managed-lock.json
   atomic_copy_control managed-settings.json
@@ -766,6 +926,9 @@ acquire_runtime_lock
 sweep_reserved_managed_temps
 if ! current_state_is_valid; then
   sync_managed_state
+fi
+if [[ "$read_only_probe" != true ]]; then
+  ensure_workspace_trusted
 fi
 release_runtime_lock
 

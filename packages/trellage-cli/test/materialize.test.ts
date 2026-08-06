@@ -64,6 +64,7 @@ packages = ["bash", "fish"]
 repository = "https://github.com/example/skills.git"
 ref = "v1"
 select = ["one"]
+always_on = true
 [[plugins]]
 adapter = "codex-native"
 repository = "https://github.com/example/native.git"
@@ -1179,6 +1180,9 @@ select = ["hve-core"]
     expect.soft(path.basename(context)).toMatch(/^trellage-build-/)
     await expect(readFile(path.join(context, "assets", "skills", "one", "SKILL.md"), "utf8")).resolves.toBe(
       "# Generated One\n",
+    )
+    await expect(readFile(path.join(context, "assets", "AGENTS.md"), "utf8")).resolves.toContain(
+      "# Trellage managed always-on skill: one\n\n# Generated One\n",
     )
     await expect(readFile(path.join(context, "assets", "agents", "native.toml"), "utf8")).resolves.toContain("native")
     await expect(readFile(path.join(context, "assets", "skills", "compat", "SKILL.md"), "utf8")).resolves.toBe(

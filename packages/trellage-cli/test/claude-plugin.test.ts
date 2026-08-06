@@ -66,6 +66,9 @@ describe("readClaudeMarketplace", () => {
       await writeFile(path.join(source, ".claude-plugin", "marketplace.json"), `${JSON.stringify(valid)}\n`)
       await writeFile(path.join(source, "skills", "writer", "SKILL.md"), "# Writer\n")
       await cp(source, cache, { recursive: true })
+      await mkdir(path.join(seed, "skills", "caveman"), { recursive: true })
+      await writeFile(path.join(seed, "skills", "caveman", "SKILL.md"), "ACTIVE EVERY RESPONSE\n")
+      await writeFile(path.join(seed, "CLAUDE.md"), "ACTIVE EVERY RESPONSE\n")
       await mkdir(path.join(seed, "backups"))
       await writeFile(path.join(seed, "default-settings.json"), "{}\n")
       await writeFile(path.join(seed, ".claude.json"), '{"machineID":"transient"}\n')
@@ -142,6 +145,9 @@ describe("readClaudeMarketplace", () => {
       const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
       expect(managed).toContain("plugins/cache/social-media-skills/social-media-skills/1.0.0/skills/writer/SKILL.md")
       expect(managed).toContain("plugins/installed_plugins.json")
+      expect(managed).toContain("skills/caveman/SKILL.md")
+      expect(managed).toContain("CLAUDE.md")
+      expect(managed).not.toContain("[object Object]")
     })
 
     it("accepts relative in-tree skill symlinks when comparing installed plugin inventory", async () => {

@@ -114,7 +114,7 @@ if [[ "$claude_mode" == core ]]; then
   fi
 fi
 
-if [[ "$runtime_mode" != core ]]; then
+if [[ "$runtime_mode" != core || -s "$seed_home/managed-paths.txt" ]]; then
 validate_managed_path() {
   local candidate="$1"
   [[ -n "$candidate" && "$candidate" != /* && "$candidate" != *'//'*
@@ -122,7 +122,10 @@ validate_managed_path() {
     && "$candidate" != */. && "$candidate" != */.. && "$candidate" != *'/./'* && "$candidate" != *'/../'*
     && "$candidate" != *'\'* ]] || return 1
   case "$candidate" in
-    skills/hyperresearch|skills/hyperresearch/*|agents/hyperresearch-*.md|plugins/installed_plugins.json) ;;
+    CLAUDE.md|skills/hyperresearch|skills/hyperresearch/*|agents/hyperresearch-*.md|plugins/installed_plugins.json) ;;
+    skills/*)
+      [[ "$candidate" =~ ^skills/[A-Za-z0-9][A-Za-z0-9._-]*/.+$ ]] || return 1
+      ;;
     plugins/cache/*)
       [[ "$candidate" =~ ^plugins/cache/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9.+-]*/.+$ ]] \
         || return 1

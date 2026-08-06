@@ -187,10 +187,17 @@ runtime="$root/runtime"
 fake_bin="$root/fake-bin"
 output="$root/output"
 plugin="$seed/installed-plugins/hve-core/hve-core"
-mkdir -p "$plugin/.github/plugin" "$plugin/commands" "$runtime" "$fake_bin" "$output"
+mkdir -p "$plugin/.github/plugin" "$plugin/commands" "$seed/skills/caveman" "$runtime/skills/user-skill" "$runtime" "$fake_bin" "$output"
 chmod 777 "$runtime" "$output"
 printf '{"name":"hve-core","version":"3.3.101"}\n' >"$plugin/.github/plugin/plugin.json"
 printf 'managed review command\n' >"$plugin/commands/review.md"
+printf 'ACTIVE EVERY RESPONSE\n' >"$seed/skills/caveman/SKILL.md"
+printf 'ACTIVE EVERY RESPONSE\n' >"$seed/copilot-instructions.md"
+printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
+cp -R "$seed/skills/caveman" "$runtime/skills/caveman"
+cp "$seed/copilot-instructions.md" "$runtime/copilot-instructions.md"
+printf '{"keep":true,"trustedFolders":["/existing"]}\n' >"$runtime/config.json"
+chmod -R a+rwX "$runtime/skills"
 printf '{"schema":1,"marketplace":"hve-core","plugin":"hve-core","version":"3.3.101"}\n' \
   >"$seed/managed-lock.json"
 printf '%s\n' \
@@ -201,10 +208,12 @@ printf '%s\n' \
   '  "enabledPlugins": { "hve-core@hve-core": true }' \
   '}' >"$seed/managed-settings.json"
 printf '%s\n' \
+  'copilot-instructions.md' \
   'installed-plugins/hve-core/hve-core/.github/plugin/plugin.json' \
   'installed-plugins/hve-core/hve-core/commands/review.md' \
   'managed-lock.json' \
-  'managed-settings.json' >"$seed/managed-files.txt"
+  'managed-settings.json' \
+  'skills/caveman/SKILL.md' >"$seed/managed-files.txt"
 : >"$seed/managed.sha256"
 while IFS= read -r managed_path; do
   printf '%s  %s\n' "$(sha256_path "$seed/$managed_path")" "$managed_path" \
@@ -254,6 +263,13 @@ run_entry() {
     --env "TRELLAGE_RESUME_PROFILE=${TRELLAGE_RESUME_PROFILE-}" \
     --env "TRELLAGE_RESUME_SESSION_ID=${TRELLAGE_RESUME_SESSION_ID-}" \
     "$image_ref" /test/runtime-copilot-entry.sh "$@" || status=$?
+  docker run --rm \
+    --network none \
+    --user '0:0' \
+    --entrypoint /bin/bash \
+    --mount "type=bind,src=$runtime,dst=/fixture-runtime" \
+    "$image_ref" -c 'chmod -R a+rwX /fixture-runtime' \
+    || fail 'could not restore host access to Copilot runtime fixture state'
   return "$status"
 }
 
@@ -299,6 +315,17 @@ grep -Fqx 'GITHUB_TOKEN=' <<<"$prompt_env" \
   || fail 'prompt mode exposed ambient GITHUB_TOKEN'
 
 assert_no_transaction_temps 'successful prompt mode'
+grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/skills/caveman/SKILL.md" \
+  || fail 'managed Caveman skill was not synchronized'
+grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/copilot-instructions.md" \
+  || fail 'managed Copilot instructions were not synchronized'
+grep -Fqx 'keep user skill' "$runtime/skills/user-skill/SKILL.md" \
+  || fail 'Copilot synchronization replaced unrelated user state'
+jq -e '
+  .keep == true
+  and .trustedFolders == ["/existing", "/"]
+' "$runtime/config.json" >/dev/null \
+  || fail 'Copilot workspace trust was not persisted without changing existing config'
 
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --allow-all
 interactive_argv="$(read_output_file argv)"
@@ -334,5 +361,24 @@ COPILOT_GITHUB_TOKEN='selected-token' TRELLAGE_TEST_COPILOT_EXIT=29 \
   run_entry prompt --allow-all -- 'native status' || status=$?
 [[ "$status" -eq 29 ]] || fail "prompt mode changed Copilot status 29 to $status"
 assert_no_transaction_temps 'failed prompt mode'
+
+jq -e '.trustedFolders == ["/existing", "/"]' "$runtime/config.json" >/dev/null \
+  || fail 'repeated Copilot launches duplicated the trusted workspace'
+
+printf 'not-json\n' >"$runtime/config.json"
+if run_entry prompt --allow-all -- 'malformed config'; then
+  fail 'malformed Copilot config was accepted'
+fi
+assert_no_transaction_temps 'malformed config rejection'
+
+printf '{"trustedFolders":[]}\n' >"$runtime/config-target.json"
+rm -f "$runtime/config.json"
+ln -s config-target.json "$runtime/config.json"
+if run_entry prompt --allow-all -- 'symlinked config'; then
+  fail 'symlinked Copilot config was accepted'
+fi
+[[ "$(cat "$runtime/config-target.json")" == '{"trustedFolders":[]}' ]] \
+  || fail 'symlinked Copilot config target was modified'
+assert_no_transaction_temps 'symlinked config rejection'
 
 printf 'Copilot entry contract: PASS\n'

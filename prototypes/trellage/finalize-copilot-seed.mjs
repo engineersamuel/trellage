@@ -520,6 +520,70 @@ const inventoryPlugin = async (seed, installed, forbiddenBuildPaths, plugin, exp
   return managedEntries
 }
 
+const inventoryGenericSkills = async (seed, forbiddenBuildPaths) => {
+  const skills = path.join(seed, "skills")
+  if (await pathIsMissing(skills)) return []
+  const rootStatus = await lstat(skills)
+  if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) fail("generic skills path must be a directory")
+  const root = await realpath(skills)
+  const entries = []
+  const visit = async (directory, relativeDirectory) => {
+    const children = await readdir(directory, { withFileTypes: true })
+    children.sort((left, right) => lexical(left.name, right.name))
+    for (const child of children) {
+      const absolute = path.join(directory, child.name)
+      const relative = path.posix.join(relativeDirectory, child.name)
+      if (
+        controlCharacterPattern.test(relative) ||
+        relative.includes("\\") ||
+        relative.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+      ) {
+        fail(`unsafe generic skill path: ${relative}`)
+      }
+      const status = await lstat(absolute)
+      if (status.isSymbolicLink()) fail(`generic skill symlink rejected: ${relative}`)
+      const resolved = await realpath(absolute)
+      if (!inside(root, resolved)) fail(`generic skill path escapes seed: ${relative}`)
+      if (status.isDirectory()) {
+        await visit(absolute, relative)
+      } else if (status.isFile()) {
+        const content = await readFile(absolute)
+        if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
+          fail(`temporary build root leaked in generic skill: ${relative}`)
+        }
+        entries.push({
+          path: path.posix.join("skills", relative),
+          kind: "file",
+          mode: modeString(status.mode),
+          sha256: sha256(content),
+        })
+      } else {
+        fail(`unsupported generic skill entry: ${relative}`)
+      }
+    }
+  }
+  for (const name of await readdir(skills)) safeIdentifier(name, "generic skill")
+  await visit(skills, "")
+  return entries
+}
+
+const inventoryGenericInstructions = async (seed, forbiddenBuildPaths) => {
+  const instructions = path.join(seed, "copilot-instructions.md")
+  if (await pathIsMissing(instructions)) return []
+  const status = await lstat(instructions)
+  if (!status.isFile() || status.isSymbolicLink()) fail("generic Copilot instructions must be a regular file")
+  const content = await readFile(instructions)
+  if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
+    fail("temporary build root leaked in generic Copilot instructions")
+  }
+  return [{
+    path: "copilot-instructions.md",
+    kind: "file",
+    mode: modeString(status.mode),
+    sha256: sha256(content),
+  }]
+}
+
 const readStageState = async (seed, seedIdentity, name) => {
   const stage = path.join(seed, name)
   const status = await lstat(stage)
@@ -594,6 +658,8 @@ const validateSeedTree = async (seed, marketplace, plugin, forbiddenBuildPaths) 
     "settings.json",
     "config.json",
     "installed-plugins",
+    "skills",
+    "copilot-instructions.md",
     ...outputNames,
     lockName,
     recoveryName,
@@ -610,7 +676,7 @@ const validateSeedTree = async (seed, marketplace, plugin, forbiddenBuildPaths) 
       if (name === recoveryName && isMissing(error)) continue
       throw error
     }
-    if (name === "installed-plugins") {
+    if (name === "installed-plugins" || name === "skills") {
       if (!status.isDirectory() || status.isSymbolicLink()) fail(`${name} must be a directory`)
       continue
     }
@@ -755,12 +821,17 @@ const main = async () => {
     const installedReal = await realpath(installed)
     if (!inside(seed, installedReal)) fail("installed plugin path escapes seed")
     const pluginEntries = await inventoryPlugin(seed, installedReal, forbiddenBuildPaths, plugin, expectedVersion)
+    const genericEntries = [
+      ...await inventoryGenericSkills(seed, forbiddenBuildPaths),
+      ...await inventoryGenericInstructions(seed, forbiddenBuildPaths),
+    ]
+    const managedEntries = [...pluginEntries, ...genericEntries].sort((left, right) => lexical(left.path, right.path))
     const marker = {
       schema: 1,
       marketplace,
       plugin,
       version: expectedVersion,
-      files: pluginEntries,
+      files: managedEntries,
     }
     if (settingsFile === undefined) {
       assertExactJson(JSON.parse(await readFile(path.join(seed, "managed-lock.json"), "utf8")), marker, "managed-lock.json")
@@ -768,7 +839,7 @@ const main = async () => {
 
     const settingsBuffer = json(managed)
     const lockBuffer = json(marker)
-    const pluginFiles = pluginEntries.filter((entry) => entry.kind === "file")
+    const pluginFiles = managedEntries.filter((entry) => entry.kind === "file")
     const managedFiles = [
       ...pluginFiles.map((entry) => entry.path),
       "managed-lock.json",
