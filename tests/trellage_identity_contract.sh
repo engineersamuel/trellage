@@ -59,6 +59,7 @@ scan_public_branding() {
 [[ ! -e "$repo_root/prototypes/trellage-profiles" ]] \
   || fail 'ambiguous legacy Copilot profiles prototype path remains'
 [[ -d "$repo_root/prototypes/trellage-grok-profiles" ]] || fail 'Grok profiles prototype path is missing'
+[[ -d "$repo_root/prototypes/trellage-jcode-profiles" ]] || fail 'jcode profile prototype path is missing'
 [[ ! -e "$repo_root/prototypes/harness-profiles" ]] || fail 'legacy Copilot profiles prototype path remains'
 [[ ! -e "$repo_root/prototypes/harness-grok-profiles" ]] || fail 'legacy Grok profiles prototype path remains'
 [[ -x "$repo_root/prototypes/trellage/trellage" ]] || fail 'Trellage command is missing'
@@ -76,7 +77,7 @@ grep -Fq 'cd prototypes/trellage' "$repo_root/Makefile" \
   || fail 'Makefile prototype path is stale'
 grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Claude entry contract'
-for target in native-codex-profiles native-copilot-profiles native-grok-profiles; do
+for target in native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^test:.* ${target}( |$)" "$repo_root/Makefile" \
@@ -88,6 +89,8 @@ grep -Fqx $'\tbash prototypes/trellage-copilot-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Copilot profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-grok-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Grok profiles target is stale'
+grep -Fqx $'\tbash prototypes/trellage-jcode-profiles/tests/contract.sh' \
+  "$repo_root/Makefile" || fail 'Makefile jcode profile target is stale'
 
 audit_error_output="$(mktemp "${TMPDIR:-/tmp}/trellage-identity-audit-error.XXXXXX")"
 public_brand_error_output="$(mktemp "${TMPDIR:-/tmp}/trellage-public-brand-audit-error.XXXXXX")"
@@ -144,6 +147,7 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage-codex-profiles" \
   "$repo_root/prototypes/trellage-copilot-profiles" \
   "$repo_root/prototypes/trellage-grok-profiles" \
+  "$repo_root/prototypes/trellage-jcode-profiles" \
   "$repo_root/Makefile" \
   || fail 'legacy product identity remains or the operational audit failed'
 

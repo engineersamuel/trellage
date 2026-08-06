@@ -297,6 +297,10 @@ launching. Package counts come only from launcher-validated selected plugin root
 or cache paths; `visibleCount` preserves each native CLI's broader inventory
 semantics. `trx` requires a TTY; Escape or Ctrl-C returns `130`. It does not set
 up, repair, update, call a model, use the network, or mutate profile state.
+The native `jcx` launcher runs jcode against `copilot-proxy-rs`, defaulting to
+`gpt-5.6-sol` with `medium` reasoning in an isolated `JCODE_HOME`. Install and
+manage it from `prototypes/trellage-jcode-profiles`.
+
 Native profiles run directly on the host and are state-isolation conveniences,
 not security boundaries.
 
@@ -344,7 +348,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. Live verification also requires paid model access.
+Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `jcx` launcher has its own contract and router integration but is not yet part of the plugin-oriented profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 

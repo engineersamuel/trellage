@@ -1,8 +1,8 @@
-.PHONY: test publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-omp-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
+.PHONY: test publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
-test: publication-contract publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-omp-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+test: publication-contract publication-contract-self-test agent-profile-hup-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
 
 publication-contract:
 	bash tests/publication_contract.sh
@@ -42,6 +42,9 @@ native-copilot-profiles:
 
 native-grok-profiles:
 	bash prototypes/trellage-grok-profiles/tests/contract.sh
+
+native-jcode-profile:
+	bash prototypes/trellage-jcode-profiles/tests/contract.sh
 
 native-omp-profile:
 	bash prototypes/trellage-omp-profiles/tests/contract.sh

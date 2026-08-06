@@ -146,7 +146,8 @@ build_choices() {
     --argjson cpxCatalog "$1" \
     --argjson cdxCatalog "$2" \
     --argjson grxCatalog "$3" \
-    --argjson ompCatalog "$4" '
+    --argjson jcxCatalog "$4" \
+    --argjson ompCatalog "$5" '
     def pair($catalog):
       $catalog.profiles[] | {
         id: ($catalog.launcher + ":" + .name),
@@ -160,6 +161,7 @@ build_choices() {
         pair($cpxCatalog),
         pair($cdxCatalog),
         pair($grxCatalog),
+        pair($jcxCatalog),
         pair($ompCatalog)
       ]
     }
@@ -210,13 +212,15 @@ runtime="$(canonical_directory "$script_dir/..")" || die 'cannot resolve trx run
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v1)"
 grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
+jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v1)"
 
 cpx_catalog="$(read_catalog cpx copilot "$cpx")"
 cdx_catalog="$(read_catalog cdx codex "$cdx")"
 grx_catalog="$(read_catalog grx grok "$grx")"
+jcx_catalog="$(read_catalog jcx jcode "$jcx")"
 omp_catalog="$(read_catalog omp oh-my-pi "$omp")"
-choices="$(build_choices "$cpx_catalog" "$cdx_catalog" "$grx_catalog" "$omp_catalog")" \
+choices="$(build_choices "$cpx_catalog" "$cdx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog")" \
   || die 'could not build profile choices'
 
 selection=''
@@ -241,6 +245,10 @@ case "$launcher" in
   grx)
     selected_launcher="$grx"
     selected_catalog="$grx_catalog"
+    ;;
+  jcx)
+    selected_launcher="$jcx"
+    selected_catalog="$jcx_catalog"
     ;;
   omp)
     selected_launcher="$omp"
