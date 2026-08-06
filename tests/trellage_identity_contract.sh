@@ -82,7 +82,7 @@ grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Ma
 for target in native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
-  grep -Eq "^test:.* ${target}( |$)" "$repo_root/Makefile" \
+  grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
 grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/contract.sh' \
