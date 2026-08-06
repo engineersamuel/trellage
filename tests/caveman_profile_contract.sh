@@ -8,10 +8,10 @@ fail() {
   exit 1
 }
 
-expected_profiles=$'profiles/claude-blog/profile.toml\nprofiles/claude-hyperresearch/profile.toml\nprofiles/claude-qwen-local/profile.toml\nprofiles/claude-social-media/profile.toml\nprofiles/codex-superpowers/profile.toml\nprofiles/copilot-hve/profile.toml\nprofiles/pi-oh-my-pi/profile.toml'
+expected_profiles=$'profiles/claude-blog/profile.toml\nprofiles/claude-council/profile.toml\nprofiles/claude-hyperresearch/profile.toml\nprofiles/claude-qwen-local/profile.toml\nprofiles/claude-social-media/profile.toml\nprofiles/codex-superpowers/profile.toml\nprofiles/copilot-hve/profile.toml\nprofiles/pi-oh-my-pi/profile.toml'
 actual_profiles="$(find profiles -mindepth 2 -maxdepth 2 -name profile.toml -type f | LC_ALL=C sort)"
 [[ "$actual_profiles" == "$expected_profiles" ]] \
-  || fail 'bundled profiles must be the seven Caveman-protected profiles'
+  || fail 'every bundled profile must be Caveman-protected'
 
 has_caveman_skill() {
   local profile="$1"

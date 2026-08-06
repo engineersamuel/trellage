@@ -248,7 +248,7 @@ describe("authored Claude Blog profile", () => {
 })
 
 describe("authored Claude council profile", () => {
-  it("routes Claude Opus 5 through copilot-proxy-rs with council and caveman plugins enabled", async () => {
+  it("routes Claude Opus 5 through copilot-proxy-rs with Caveman always on", async () => {
     const [source, lockSource] = await Promise.all([
       readFile(councilProfilePath, "utf8"),
       readFile(councilLockPath, "utf8"),
@@ -265,6 +265,14 @@ describe("authored Claude council profile", () => {
       model: "claude-opus-5",
       gateway: "http://copilot-proxy-rs:8080",
     })
+    expect(document.profile.skills).toEqual([
+      expect.objectContaining({
+        repository: "https://github.com/JuliusBrussee/caveman.git",
+        ref: "v1.10.0",
+        select: ["caveman"],
+        always_on: true,
+      }),
+    ])
     expect(document.profile.plugins).toEqual([
       expect.objectContaining({
         adapter: "claude-marketplace",
@@ -281,17 +289,28 @@ describe("authored Claude council profile", () => {
         select: ["caveman"],
       }),
     ])
-    expect(lock.sources).toHaveLength(2)
-    expect(lock.sources[0]).toMatchObject({
+    expect(lock.sources).toHaveLength(3)
+    const skillSource = lock.sources.find(({ kind }) => kind === "skill")
+    expect(skillSource).toMatchObject({
+      repository: "https://github.com/JuliusBrussee/caveman.git",
+      commit: "fcf7663366c217dc8f334a11028de52ed950ceab",
+    })
+    const councilSource = lock.sources.find(
+      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "council-of-high-intelligence",
+    )
+    expect(councilSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "council-of-high-intelligence",
       plugin_versions: { council: "1.2.0" },
       commit: "79c349bdbbb02b6c58c7f108734410e703dc71ca",
     })
     expect(
-      lock.sources[0]?.files.some((file) => file.kind === "symlink" && file.path === "skills/council/SKILL.md"),
+      councilSource?.files.some((file) => file.kind === "symlink" && file.path === "skills/council/SKILL.md"),
     ).toBe(true)
-    expect(lock.sources[1]).toMatchObject({
+    const cavemanPluginSource = lock.sources.find(
+      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "caveman",
+    )
+    expect(cavemanPluginSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "caveman",
       plugin_versions: { caveman: "1.10.0" },
