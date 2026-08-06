@@ -134,7 +134,7 @@ export const createBuildContext = (
         hasLegacySourceProvenance(lock, index) &&
         hasLegacyInventoryIntegrity(source)
       yield* verifyInventory(sourceDirectories[index]!, source.files, {
-        allowSymlinks: source.adapter === "copilot-marketplace",
+        allowSymlinks: source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace",
         verifyExecutableBits: !legacyCodexInventory,
       }).pipe(
         Effect.mapError(

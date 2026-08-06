@@ -20,6 +20,10 @@ const blogProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/pro
 const blogLockPath = fileURLToPath(
   new URL("../../../profiles/claude-blog/profile.linux-arm64.lock.toml", import.meta.url),
 )
+const councilProfilePath = fileURLToPath(new URL("../../../profiles/claude-council/profile.toml", import.meta.url))
+const councilLockPath = fileURLToPath(
+  new URL("../../../profiles/claude-council/profile.linux-arm64.lock.toml", import.meta.url),
+)
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 
@@ -227,6 +231,60 @@ describe("authored Claude Blog profile", () => {
       plugin_versions: { "claude-blog": "2.1.1" },
     })
     expect(lock.sources[0]?.files.filter(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path))).toHaveLength(32)
+  })
+})
+
+describe("authored Claude council profile", () => {
+  it("routes Claude Opus 5 through copilot-proxy-rs with council and caveman plugins enabled", async () => {
+    const [source, lockSource] = await Promise.all([
+      readFile(councilProfilePath, "utf8"),
+      readFile(councilLockPath, "utf8"),
+    ])
+    const document = await Effect.runPromise(parseProfile(source, councilProfilePath))
+    const lock = await Effect.runPromise(parseLock(lockSource))
+
+    expect(source).toContain("# Upstream project: https://github.com/0xNyk/council-of-high-intelligence")
+    expect(source).toContain("# Upstream project: https://github.com/JuliusBrussee/caveman")
+    expect(document.profile.harness.kind).toBe("claude")
+    if (document.profile.harness.kind !== "claude") throw new Error("expected Claude harness")
+    expect(document.profile.harness.claude).toMatchObject({
+      default_auth: "proxy",
+      model: "claude-opus-5",
+      gateway: "http://copilot-proxy-rs:8080",
+    })
+    expect(document.profile.plugins).toEqual([
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
+        ref: "v1.2.0",
+        marketplace: "council-of-high-intelligence",
+        select: ["council"],
+      }),
+      expect.objectContaining({
+        adapter: "claude-marketplace",
+        repository: "https://github.com/JuliusBrussee/caveman.git",
+        ref: "v1.10.0",
+        marketplace: "caveman",
+        select: ["caveman"],
+      }),
+    ])
+    expect(lock.sources).toHaveLength(2)
+    expect(lock.sources[0]).toMatchObject({
+      adapter: "claude-marketplace",
+      marketplace: "council-of-high-intelligence",
+      plugin_versions: { council: "1.2.0" },
+      commit: "79c349bdbbb02b6c58c7f108734410e703dc71ca",
+    })
+    expect(
+      lock.sources[0]?.files.some((file) => file.kind === "symlink" && file.path === "skills/council/SKILL.md"),
+    ).toBe(true)
+    expect(lock.sources[1]).toMatchObject({
+      adapter: "claude-marketplace",
+      marketplace: "caveman",
+      plugin_versions: { caveman: "1.10.0" },
+      commit: "fcf7663366c217dc8f334a11028de52ed950ceab",
+    })
+    expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
 })
 

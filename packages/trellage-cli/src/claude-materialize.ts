@@ -48,6 +48,69 @@ export class ClaudeMaterializeError extends Data.TaggedError("ClaudeMaterializeE
   readonly cause?: unknown
 }> {}
 
+const exactPluginVersion =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+
+/**
+ * After inventory verification, stamp locked plugin versions into the build-context
+ * marketplace copy so `claude plugin install` registers the same version finalize expects.
+ * Upstream may omit versions (e.g. caveman); the lock holds the ref-derived fallback.
+ * Must run only after verifyInventory against the pristine locked tree.
+ */
+export const stampClaudeMarketplaceVersions = async (
+  marketplaceRoot: string,
+  pluginVersions: Readonly<Record<string, string>>,
+): Promise<void> => {
+  const marketplacePath = path.join(marketplaceRoot, ".claude-plugin", "marketplace.json")
+  const marketplaceSource = await readFile(marketplacePath, "utf8")
+  const marketplace = JSON.parse(marketplaceSource) as {
+    plugins?: Array<{ name?: string; version?: string; [key: string]: unknown }>
+    [key: string]: unknown
+  }
+  if (!Array.isArray(marketplace.plugins)) {
+    throw new Error("Claude marketplace metadata plugins array is missing")
+  }
+  const remaining = new Set(Object.keys(pluginVersions))
+  for (const plugin of marketplace.plugins) {
+    if (typeof plugin.name !== "string" || !remaining.has(plugin.name)) continue
+    const locked = pluginVersions[plugin.name]!
+    if (!exactPluginVersion.test(locked)) {
+      throw new Error(`Claude plugin locked version is not exact: ${plugin.name}`)
+    }
+    const existing = plugin.version
+    if (existing !== undefined && existing !== locked) {
+      throw new Error(
+        `Claude plugin version conflict for ${plugin.name}: marketplace has ${existing}, lock has ${locked}`,
+      )
+    }
+    plugin.version = locked
+    remaining.delete(plugin.name)
+  }
+  if (remaining.size > 0) {
+    throw new Error(`Claude plugin versions missing from marketplace metadata: ${[...remaining].sort().join(", ")}`)
+  }
+  await writeFile(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`, { mode: 0o644 })
+
+  const pluginManifestPath = path.join(marketplaceRoot, ".claude-plugin", "plugin.json")
+  try {
+    const pluginSource = await readFile(pluginManifestPath, "utf8")
+    const pluginManifest = JSON.parse(pluginSource) as { name?: string; version?: string; [key: string]: unknown }
+    if (typeof pluginManifest.name === "string" && Object.hasOwn(pluginVersions, pluginManifest.name)) {
+      const locked = pluginVersions[pluginManifest.name]!
+      const existing = pluginManifest.version
+      if (existing !== undefined && existing !== locked) {
+        throw new Error(
+          `Claude plugin.json version conflict for ${pluginManifest.name}: has ${existing}, lock has ${locked}`,
+        )
+      }
+      pluginManifest.version = locked
+      await writeFile(pluginManifestPath, `${JSON.stringify(pluginManifest, null, 2)}\n`, { mode: 0o644 })
+    }
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+  }
+}
+
 const attempt = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ClaudeMaterializeError> =>
   Effect.tryPromise({ try: operation, catch: (cause) => new ClaudeMaterializeError({ message, cause }) })
 
@@ -252,6 +315,7 @@ const materializeClaudeMarketplaceAssets = (
       ) {
         return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace lock is invalid" }))
       }
+      const pluginVersions = source.plugin_versions
       const marketplace = path.join(request.context, `claude-marketplace-${index}`)
       yield* attempt("cannot copy Claude marketplace source", () =>
         cp(sourceDirectory, marketplace, {
@@ -261,10 +325,13 @@ const materializeClaudeMarketplaceAssets = (
           verbatimSymlinks: true,
         }),
       )
-      yield* verifyInventory(marketplace, source.files).pipe(
+      yield* verifyInventory(marketplace, source.files, { allowSymlinks: true }).pipe(
         Effect.mapError(
           (cause) => new ClaudeMaterializeError({ message: "copied Claude marketplace inventory mismatch", cause }),
         ),
+      )
+      yield* attempt("cannot stamp locked Claude marketplace plugin versions", () =>
+        stampClaudeMarketplaceVersions(marketplace, pluginVersions),
       )
       marketplaces.push({
         marketplace: source.marketplace,
@@ -272,7 +339,7 @@ const materializeClaudeMarketplaceAssets = (
         commit: source.commit,
         plugins: source.select.map((plugin) => ({
           plugin,
-          version: source.plugin_versions![plugin]!,
+          version: pluginVersions[plugin]!,
         })),
       })
     }

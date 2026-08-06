@@ -2,7 +2,7 @@ import { Effect } from "effect"
 
 import { arm64ArtifactCatalog } from "./artifact-catalog.js"
 import { resolveClaudeRelease } from "./claude-release.js"
-import { ClaudePluginError, readClaudeMarketplace } from "./claude-plugin.js"
+import { ClaudePluginError, pluginVersionFromRef, readClaudeMarketplace } from "./claude-plugin.js"
 import { resolveCodexRelease } from "./codex-release.js"
 import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
 import { resolveCopilotRelease } from "./copilot-release.js"
@@ -38,10 +38,17 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
             : new ClaudePluginError({ message: "Claude marketplace selection is missing" }),
         )
       }
-      const plugin_versions =
-        request.adapter === "copilot-marketplace"
-          ? yield* readCopilotMarketplace(cached.directory, request.marketplace, request.select)
-          : yield* readClaudeMarketplace(cached.directory, request.marketplace, request.select)
+      if (request.adapter === "copilot-marketplace") {
+        const plugin_versions = yield* readCopilotMarketplace(cached.directory, request.marketplace, request.select)
+        return { ...resolution, plugin_versions }
+      }
+      const versionFallback = pluginVersionFromRef(request.ref)
+      const plugin_versions = yield* readClaudeMarketplace(
+        cached.directory,
+        request.marketplace,
+        request.select,
+        versionFallback === undefined ? undefined : { versionFallback },
+      )
       return { ...resolution, plugin_versions }
     }),
   resolvePackages: ({ kind, selector, platform: requestedPlatform, packages, needsSkillsCli, claudeAdapter }) =>
