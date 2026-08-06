@@ -5,6 +5,7 @@ prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readme="$prototype_dir/README.md"
 root_readme="$prototype_dir/../../README.md"
 mise_config="$prototype_dir/mise.toml"
+root_mise_config="$prototype_dir/../../mise.toml"
 smoke_runner="$prototype_dir/tests/smoke.sh"
 runtime_startup_contract="$prototype_dir/tests/runtime_startup_contract.sh"
 runtime_persistence_contract="$prototype_dir/tests/runtime_persistence_contract.sh"
@@ -631,6 +632,16 @@ require_live_resource_contracts
 [[ "$(sed -n '1p' "$readme")" == '# Trellage' ]] \
   || fail 'prototype README title is not Trellage'
 
+[[ -f "$root_mise_config" ]] || fail 'repository root mise.toml does not exist'
+grep -Fqx '_.path = "./prototypes/trellage"' "$root_mise_config" \
+  || fail 'repository root mise.toml does not prepend worktree-local Trellage'
+has_exact_mise_task "$root_mise_config" trellage \
+  'Run the repository worktree Trellage command' './prototypes/trellage/trellage' \
+  || fail 'missing repository-root tasks.trellage definition'
+
+has_exact_mise_task "$mise_config" trellage \
+  'Run the current worktree Trellage command' './trellage' \
+  || fail 'missing exact tasks.trellage definition'
 has_exact_mise_task "$mise_config" install-trellage \
   'Install the user-local Trellage command' './install-trellage.sh install' \
   || fail 'missing exact tasks.install-trellage definition'
@@ -687,6 +698,7 @@ for command in \
   'mise run install-trellage' \
   'mise run uninstall-trellage-dry-run' \
   'mise run uninstall-trellage' \
+  'mise run trellage -- validate prime-agent' \
   'trellage doctor' \
   'trellage' \
   'trellage "<prompt>"' \
@@ -814,10 +826,21 @@ for qualification in \
   'npm run build'; do
   require_section_text '## Prerequisites and Setup' "$qualification"
 done
+require_section_text '## Install' 'repository root'
+require_section_text '## Install' 'current worktree profile first'
+has_exact_bash_command "$root_readme" 'mise run trellage -- validate prime-agent' \
+  || fail 'root README omits repository-root Trellage task'
+section_contains_text "$root_readme" '## Trellage Quick Start' 'worktree-local `trellage`' \
+  || fail 'root README omits automatic worktree-local Trellage activation'
+section_contains_text "$root_readme" '## Trellage Quick Start' 'checks the current worktree first' \
+  || fail 'root README omits worktree-first profile precedence'
 
 require_section_text '## Build' 'trellage-profile-codex-superpowers-linux-arm64:locked'
 require_section_text '## Install' '`~/.local/bin/trellage`'
 require_section_text '## Install' '`TRELLAGE_INSTALL_DIR`'
+require_section_text '## Install' 'linked Trellage worktree'
+require_section_text '## Install' 'using current worktree command'
+require_section_text '## Install' '`mise run trellage --`'
 
 has_valid_numbered_section "$readme" '## Ten-step Herdr Human Test' \
   || fail 'human-test section must contain exactly steps 1 through 10'

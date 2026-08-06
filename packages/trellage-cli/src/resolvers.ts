@@ -9,6 +9,7 @@ import { resolveCopilotRelease } from "./copilot-release.js"
 import { resolveGitHubSource } from "./github-cache.js"
 import type { LockResolvers } from "./lock.js"
 import { resolvePiRelease } from "./pi-release.js"
+import { resolvePrimeRelease } from "./prime-release.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
 
 const versions: Readonly<Record<string, string>> = arm64ArtifactCatalog.runtimeVersions
@@ -69,9 +70,11 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
           ? yield* resolveCopilotRelease(selector, requestedPlatform)
           : kind === "pi"
             ? yield* resolvePiRelease(selector, requestedPlatform)
-            : kind === "claude"
-              ? yield* resolveClaudeRelease(selector, requestedPlatform)
-              : yield* resolveCodexRelease(selector, requestedPlatform)
+            : kind === "prime"
+              ? yield* resolvePrimeRelease(selector, requestedPlatform)
+              : kind === "claude"
+                ? yield* resolveClaudeRelease(selector, requestedPlatform)
+                : yield* resolveCodexRelease(selector, requestedPlatform)
       const claudeCommonArtifacts = [...arm64ArtifactCatalog.fixedArtifacts]
       const artifacts =
         kind === "claude"

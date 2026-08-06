@@ -10,6 +10,7 @@ export interface RuntimeSupportPaths {
   readonly codexEntry: string
   readonly copilotEntry: string
   readonly piEntry?: string
+  readonly primeEntry?: string
   readonly finalizeCopilotSeed: string
   readonly finalizeClaudeSeed?: string
   readonly claudeEntry?: string
@@ -138,6 +139,16 @@ const selectedFiles = (
           mode: 0o755,
         },
       ]
+    case "prime":
+      return [
+        {
+          property: "primeEntry",
+          role: "runtime-prime-entry",
+          destination: "/usr/local/bin/trellage-prime-entry",
+          buildContextPath: "runtime-prime-entry.sh",
+          mode: 0o755,
+        },
+      ]
   }
 }
 
@@ -183,7 +194,15 @@ export const createRuntimeSupportSnapshot = (
     const opener = typeof selection === "function" ? selection : open
     const claudeAdapter = typeof selection === "string" ? selection : undefined
     const label =
-      harnessKind === "codex" ? "Codex" : harnessKind === "copilot" ? "Copilot" : harnessKind === "pi" ? "Pi" : "Claude"
+      harnessKind === "codex"
+        ? "Codex"
+        : harnessKind === "copilot"
+          ? "Copilot"
+          : harnessKind === "pi"
+            ? "Pi"
+            : harnessKind === "prime"
+              ? "Prime"
+              : "Claude"
     const files = yield* Effect.forEach(
       selectedFiles(harnessKind, claudeAdapter, claudeMode),
       (selected) => {

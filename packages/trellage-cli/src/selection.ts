@@ -30,11 +30,15 @@ const resolveRequestedProfile = (
   Effect.gen(function* () {
     if (/^https:\/\/github\.com\//.test(requested)) return requested
     if (!isProfileName(requested)) return fromCwd(selection.cwd, requested)
-    const candidate = path.join(selection.profiles, requested, "profile.toml")
-    if (yield* selection.exists(candidate)) return candidate
+    const worktreeCandidate = path.join(selection.worktree, "profiles", requested, "profile.toml")
+    if (yield* selection.exists(worktreeCandidate)) return worktreeCandidate
+    const bundledCandidate = path.join(selection.profiles, requested, "profile.toml")
+    if (bundledCandidate !== worktreeCandidate && (yield* selection.exists(bundledCandidate))) return bundledCandidate
+    const searched =
+      bundledCandidate === worktreeCandidate ? worktreeCandidate : `${worktreeCandidate}, ${bundledCandidate}`
     return yield* Effect.fail(
       new ProfileSelectionError({
-        message: `profile "${requested}" not found; searched: ${candidate}`,
+        message: `profile "${requested}" not found; searched: ${searched}`,
       }),
     )
   })

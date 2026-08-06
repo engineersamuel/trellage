@@ -2,9 +2,11 @@ import {
   isClaudeProfile,
   isCodexProfile,
   isPiProfile,
+  isPrimeProfile,
   type ClaudeProfile,
   type CodexProfile,
   type Mcp,
+  type PrimeProfile,
   type Profile,
 } from "./profile.js"
 import type { ProfileLock } from "./lock.js"
@@ -273,6 +275,40 @@ ${renderOci(
 )}`
 }
 
+const renderPrimeMiseConfig = (profile: PrimeProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "prime") throw new Error("profile and lock harness kinds do not match")
+  return `min_version = "2026.6.14"
+
+[tools]
+node = "22.17.0"
+
+${renderBootstrap(profile, options)}
+
+[dotfiles]
+"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
+"/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }
+"/usr/local/bin/prime-agent" = { source = "prime-agent-wrapper.sh", mode = "copy" }
+"/usr/local/share/trellage/prime-seed" = { source = "prime-seed", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-prime-entry")}
+"/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
+${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
+
+${renderOci(
+  profile,
+  lock,
+  options,
+  [
+    'PRIME_AGENT_CODING_AGENT_DIR = "/home/agent/.prime/agent"',
+    'PI_OFFLINE = "1"',
+    'PI_SKIP_VERSION_CHECK = "1"',
+    'PRIME_AGENT_INSTALL_UV = "1"',
+  ],
+  ['"dev.trellage.harness.kind" = "prime"', `"dev.trellage.prime.version" = ${quote(harness.version)}`],
+  "/home/agent/.cache",
+)}`
+}
+
 export const renderMiseConfig = (profile: Profile, lock: ProfileLock, options: MiseRenderOptions): string =>
   isCodexProfile(profile)
     ? renderCodexMiseConfig(profile, lock, options)
@@ -280,4 +316,6 @@ export const renderMiseConfig = (profile: Profile, lock: ProfileLock, options: M
       ? renderClaudeMiseConfig(profile, lock, options)
       : isPiProfile(profile)
         ? renderPiMiseConfig(profile, lock, options)
-        : renderCopilotMiseConfig(profile, lock, options)
+        : isPrimeProfile(profile)
+          ? renderPrimeMiseConfig(profile, lock, options)
+          : renderCopilotMiseConfig(profile, lock, options)

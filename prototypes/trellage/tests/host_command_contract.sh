@@ -60,6 +60,7 @@ export FAKE_REAL_NODE="$real_node"
 copilot_fake_bin="$test_root/copilot-fake-bin"
 copilot_metadata="$test_root/copilot-metadata.json"
 pi_metadata="$test_root/pi-metadata.json"
+prime_metadata="$test_root/prime-metadata.json"
 copilot_profile="$test_root/copilot-profile.toml"
 copilot_node_log="$test_root/copilot-node.log"
 copilot_gh_log="$test_root/copilot-gh.log"
@@ -146,6 +147,35 @@ jq -n \
     auth_policy: "host-or-login",
     resolved_version: "17.2.6"
   }' >"$pi_metadata"
+jq -n \
+  --arg profile "$copilot_profile" \
+  --arg runtime_hash "$runtime_hash" \
+  '{
+    profile_path: $profile,
+    profile_name: "prime-agent-test",
+    profile_hash: "sha256:3da7cb07bfb12473820ef2f23b03d4b6b08c329b65a3990107335402874536ab",
+    platform: "linux/arm64",
+    runtime_hash: $runtime_hash,
+    image: "trellage-profile-prime-agent-test:locked",
+    locked: true,
+    build_command: ("trellage build " + $profile),
+    harness_args: ["--unsafe"],
+    secrets_provider: "env",
+    required_secrets: [],
+    secret_environment: {},
+    resolved_varlock_path: null,
+    has_initial_prompt: false,
+    harness_kind: "prime",
+    harness_executable: "prime-agent",
+    runtime_entry: "trellage-prime-entry",
+    default_network: "copilot-proxy-rs_default",
+    auth_policy: "proxy",
+    resolved_version: "0.7.0",
+    tmpfs_size: "256m",
+    prime_provider: "copilot-proxy-rs",
+    prime_model: "claude-opus-5",
+    prime_base_url: "http://copilot-proxy-rs:8080"
+  }' >"$prime_metadata"
 : >"$copilot_node_log"
 : >"$copilot_gh_log"
 
@@ -2882,6 +2912,69 @@ test_pi_host_auth_dispatch_and_doctor() {
   printf 'Trellage host test: PASS: Pi auth, dispatch, and doctor contracts hold\n'
 }
 
+test_prime_proxy_dispatch_and_metadata_validation() {
+  local worktree="$test_root/prime-proxy-dispatch"
+  local docker_log="$test_root/prime-proxy-dispatch.docker.log"
+  local invalid_metadata="$test_root/prime-invalid-metadata.json"
+  local state_volume profile_hash output field
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" prime-agent-test prime | tail -n 1)"
+  profile_hash="$(jq -r '.profile_hash' "$prime_metadata")"
+  : >"$docker_log"
+
+  FAKE_HARNESS_METADATA_OVERRIDE="$prime_metadata" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=prime-agent-test FAKE_DOCKER_PROTOTYPE=trellage-prime \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env ANTHROPIC_API_KEY=prime-anthropic-poison OPENAI_API_KEY=prime-openai-poison \
+      COPILOT_GITHUB_TOKEN=prime-copilot-poison GH_TOKEN=prime-gh-cli-token GITHUB_TOKEN=prime-github-poison \
+      TRELLAGE_IMAGE='test/prime:locked' "$prototype_dir/trellage" -p 'Prime literal $(not-executed)'
+
+  assert_arg "$docker_log" copilot-proxy-rs_default
+  grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-prime-entry prompt $argv -- $prompt' "$docker_log" \
+    || fail 'Prime prompt did not dispatch through its runtime entry'
+  grep -Fqx $'ARG\t--unsafe' "$docker_log" || fail 'Prime harness arguments were not preserved'
+  [[ "$(tail -n 1 "$docker_log")" == $'ARG\tPrime literal $(not-executed)' ]] \
+    || fail 'Prime prompt was not passed as one literal argument'
+  [[ "$(grep -Fxc $'ENV\tHERDR_AGENT=prime-agent' "$docker_log")" -eq 1 ]] \
+    || fail 'Prime launch did not select the prime-agent host hint'
+  assert_docker_env "$docker_log" 'GH_CONFIG_DIR=/tmp/trellage-gh'
+  ! grep -Eq $'ARG\t(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN)(=|$)' "$docker_log" \
+    || fail 'Prime launch forwarded a model or GitHub token directly'
+  assert_prompt_is_detached "$docker_log"
+
+  : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$prime_metadata" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=prime-agent-test FAKE_DOCKER_PROTOTYPE=trellage-prime \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+      env GH_TOKEN=prime-gh-cli-token TRELLAGE_IMAGE='test/prime:locked' \
+      "$prototype_dir/trellage" resume 123e4567-e89b-12d3-a456-426614174000
+  grep -Fqx $'ARG\texec trellage-prime-entry resume $argv' "$docker_log" \
+    || fail 'Prime resume did not delegate native session selection to its runtime entry'
+  assert_docker_env "$docker_log" TRELLAGE_RESUME_SESSION_ID
+
+  for field in prime_provider prime_model prime_base_url auth_policy; do
+    jq --arg field "$field" '.[$field] = "invalid"' "$prime_metadata" >"$invalid_metadata"
+    : >"$docker_log"
+    if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_metadata" \
+      run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+        "$prototype_dir/trellage" doctor 2>&1)"; then
+      fail "invalid Prime $field metadata was accepted"
+    fi
+    grep -Fq 'profile metadata has an unsupported Prime' <<<"$output" \
+      || fail "invalid Prime $field metadata returned the wrong diagnostic"
+    assert_no_mutation "$docker_log"
+  done
+  printf 'Trellage host test: PASS: Prime proxy dispatch and metadata contracts hold\n'
+}
+
 test_copilot_launches_when_gh_is_genuinely_absent() {
   local worktree="$test_root/copilot-auth-no-gh"
   local docker_log="$test_root/copilot-auth-no-gh.docker.log"
@@ -3233,6 +3326,11 @@ if [[ "${TRELLAGE_HOST_PI_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_PRIME_ONLY:-}" == 1 ]]; then
+  test_prime_proxy_dispatch_and_metadata_validation
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_RECOVERY_SHELL_ONLY:-}" == 1 ]]; then
   test_copilot_rebuild_shell_and_doctor
   exit 0
@@ -3307,6 +3405,7 @@ test_copilot_lifecycle_identity_and_runtime
 test_copilot_rebuild_shell_and_doctor
 test_copilot_auth_precedence_and_leakage
 test_pi_host_auth_dispatch_and_doctor
+test_prime_proxy_dispatch_and_metadata_validation
 test_copilot_launches_when_gh_is_genuinely_absent
 test_copilot_auth_isolated_across_create_start_stop_destroy
 test_codex_scrubs_github_auth_before_children

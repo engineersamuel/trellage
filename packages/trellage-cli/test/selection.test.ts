@@ -8,6 +8,8 @@ describe("profile precedence", () => {
     "/work/.harness.toml",
     "/home/.config/harness/profile.toml",
     "/repo/profiles/claude-hyperresearch/profile.toml",
+    "/work/profiles/prime-agent/profile.toml",
+    "/repo/profiles/prime-agent/profile.toml",
   ])
   const exists = (candidate: string) => Effect.succeed(paths.has(candidate))
   const base = {
@@ -33,15 +35,21 @@ describe("profile precedence", () => {
     await expect(Effect.runPromise(selectProfilePath(base))).resolves.toBe("/bundle/profile.toml")
   })
 
+  it("prefers a bare profile name from the current worktree", async () => {
+    await expect(Effect.runPromise(selectProfilePath({ ...base, explicit: "prime-agent" }))).resolves.toBe(
+      "/work/profiles/prime-agent/profile.toml",
+    )
+  })
+
   it("resolves a bare explicit profile name from the bundled profiles directory", async () => {
     await expect(Effect.runPromise(selectProfilePath({ ...base, explicit: "claude-hyperresearch" }))).resolves.toBe(
       "/repo/profiles/claude-hyperresearch/profile.toml",
     )
   })
 
-  it("fails a missing bare profile name with the exact searched path", async () => {
+  it("fails a missing bare profile name with every searched path", async () => {
     await expect(Effect.runPromise(selectProfilePath({ ...base, explicit: "missing-profile" }))).rejects.toThrow(
-      'profile "missing-profile" not found; searched: /repo/profiles/missing-profile/profile.toml',
+      'profile "missing-profile" not found; searched: /work/profiles/missing-profile/profile.toml, /repo/profiles/missing-profile/profile.toml',
     )
   })
 

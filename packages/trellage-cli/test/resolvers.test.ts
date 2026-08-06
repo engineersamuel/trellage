@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
   releaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   piReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
+  primeReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   claudeReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   codexReleaseRequests: [] as Array<{ readonly selector: string; readonly platform: string }>,
   marketplaceRequests: [] as Array<{
@@ -67,6 +68,23 @@ vi.mock("../src/pi-release.js", async () => {
         integrity: "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453",
         url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
         size: 157526160,
+      })
+    },
+  }
+})
+
+vi.mock("../src/prime-release.js", async () => {
+  const { Effect } = await import("effect")
+  return {
+    resolvePrimeRelease: (selector: string, platform: string) => {
+      mocks.primeReleaseRequests.push({ selector, platform })
+      return Effect.succeed({
+        kind: "prime" as const,
+        selector,
+        version: "0.7.0",
+        integrity: "sha256:88b6578518c72cd51a825bc80f28e0fef9a64c67de4a7d6fd7afd7ca1b34da0b",
+        url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+        size: 9323789,
       })
     },
   }
@@ -149,6 +167,7 @@ describe("production package resolutions", () => {
     mocks.requests.length = 0
     mocks.releaseRequests.length = 0
     mocks.piReleaseRequests.length = 0
+    mocks.primeReleaseRequests.length = 0
     mocks.claudeReleaseRequests.length = 0
     mocks.codexReleaseRequests.length = 0
     mocks.marketplaceRequests.length = 0
@@ -193,6 +212,26 @@ describe("production package resolutions", () => {
     ])
   })
 
+  it("locks the Prime ripgrep search helper from Debian", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
+        kind: "prime",
+        selector: "0.7.0",
+        platform: "linux/arm64",
+        packages: ["ripgrep"],
+        needsSkillsCli: false,
+      }),
+    )
+
+    expect(result.runtime).toEqual([
+      {
+        name: "ripgrep",
+        version: "13.0.0-4+b2",
+        integrity: "sha256:82bd2ff67cedf892c1906d7ecd2831605ec1f8ad74825f576f5519a9c82a02a3",
+      },
+    ])
+  })
+
   it("resolves an exact Copilot release and preserves runtime package locks", async () => {
     const result = await Effect.runPromise(
       productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
@@ -222,6 +261,38 @@ describe("production package resolutions", () => {
       ],
     })
     expect(mocks.releaseRequests).toEqual([{ selector: "latest", platform: "linux/arm64" }])
+  })
+
+  it("resolves only the Prime release and preserves declared runtime package order", async () => {
+    const packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
+
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
+        kind: "prime",
+        selector: "latest",
+        platform: "linux/arm64",
+        packages,
+        needsSkillsCli: false,
+      }),
+    )
+
+    expect(result.harness).toEqual({
+      kind: "prime",
+      selector: "latest",
+      version: "0.7.0",
+      integrity: "sha256:88b6578518c72cd51a825bc80f28e0fef9a64c67de4a7d6fd7afd7ca1b34da0b",
+      url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+      size: 9323789,
+    })
+    expect(result.runtime.map(({ name }) => name)).toEqual(packages)
+    expect(
+      result.runtime.every(({ version, integrity }) => version.length > 0 && /^sha256:[0-9a-f]{64}$/.test(integrity)),
+    ).toBe(true)
+    expect(mocks.primeReleaseRequests).toEqual([{ selector: "latest", platform: "linux/arm64" }])
+    expect(mocks.releaseRequests).toEqual([])
+    expect(mocks.piReleaseRequests).toEqual([])
+    expect(mocks.claudeReleaseRequests).toEqual([])
+    expect(mocks.codexReleaseRequests).toEqual([])
   })
 
   it("locks the verified Claude, Python, browser, Obscura, and OCI artifacts", async () => {

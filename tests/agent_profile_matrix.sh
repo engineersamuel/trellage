@@ -124,15 +124,22 @@ if ! default_test_make_output="$(make --no-print-directory -n test 2>&1)"; then
   fail 'default test dry-run failed'
 fi
 default_test_make_output="$(normalize_make_output <<<"$default_test_make_output")"
-expected_default_test_make_output=$'bash tests/manifest_contract.sh\nbash tests/harness_contract.sh\nbash tests/agent_kit_adapter.sh\nbash tests/awesome_copilot_adapter.sh\nbash tests/copilot_agent_image.sh\nbash tests/harness_runner.sh\nbash tests/run_agent_session.sh\nbash tests/workspace_checks.sh\nbash tests/playwright_matrix.sh\nbash tests/evidence_contract.sh'
-if grep -Fqx 'profile-compiler:' Makefile; then
-  expected_default_test_make_output_with_claude=$'bash tests/publication_contract.sh\nbash tests/publication_contract_self_test.sh\nbash tests/agent_profile_hup_contract.sh\nbash tests/caveman_profile_contract.sh\ncd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test\nbash tests/trellage_identity_contract.sh\nbash tests/agent_harness_contract.sh\nbash prototypes/trellage/tests/claude_entry_contract.sh\nbash prototypes/trellage/tests/copilot_entry_contract.sh\nbash prototypes/trellage/tests/pi_entry_contract.sh\nbash prototypes/trellage-codex-profiles/tests/contract.sh\nbash prototypes/trellage-copilot-profiles/tests/contract.sh\nbash prototypes/trellage-grok-profiles/tests/contract.sh\nbash prototypes/trellage-jcode-profiles/tests/contract.sh\nbash prototypes/trellage-omp-profiles/tests/contract.sh\nbash prototypes/trellage-router/tests/contract.sh\n'"$expected_default_test_make_output"
-  expected_default_test_make_output=$'bash tests/publication_contract.sh\nbash tests/publication_contract_self_test.sh\nbash tests/agent_profile_hup_contract.sh\nbash tests/caveman_profile_contract.sh\ncd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test\nbash tests/trellage_identity_contract.sh\nbash tests/agent_harness_contract.sh\nbash prototypes/trellage-codex-profiles/tests/contract.sh\nbash prototypes/trellage-copilot-profiles/tests/contract.sh\nbash prototypes/trellage-grok-profiles/tests/contract.sh\nbash prototypes/trellage-jcode-profiles/tests/contract.sh\nbash prototypes/trellage-omp-profiles/tests/contract.sh\nbash prototypes/trellage-router/tests/contract.sh\n'"$expected_default_test_make_output"
+default_test_make_output="$(sed -E 's#^([^[:space:]]*/)?make #make #' \
+  <<<"$default_test_make_output")"
+expected_parallel_test_targets='publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence'
+expected_default_test_make_output="make --no-print-directory -j4 $expected_parallel_test_targets"$'\n'
+expected_default_test_make_output+=$'bash tests/publication_contract.sh\nbash tests/publication_contract_self_test.sh\nbash tests/agent_profile_hup_contract.sh\nbash tests/caveman_profile_contract.sh\ncd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test\nbash tests/trellage_identity_contract.sh\nbash tests/agent_harness_contract.sh\nbash prototypes/trellage/tests/claude_entry_contract.sh\ndocker image inspect "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af" >/dev/null 2>&1 || docker image pull "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af"\nbash prototypes/trellage/tests/copilot_entry_contract.sh\nbash prototypes/trellage/tests/pi_entry_contract.sh\nbash prototypes/trellage/tests/prime_entry_contract.sh\nbash prototypes/trellage-codex-profiles/tests/contract.sh\nbash prototypes/trellage-copilot-profiles/tests/contract.sh\nbash prototypes/trellage-grok-profiles/tests/contract.sh\nbash prototypes/trellage-jcode-profiles/tests/contract.sh\nbash prototypes/trellage-omp-profiles/tests/contract.sh\nbash tests/manifest_contract.sh\nbash tests/harness_contract.sh\nbash tests/agent_kit_adapter.sh\nbash tests/awesome_copilot_adapter.sh\nbash tests/copilot_agent_image.sh\nbash tests/harness_runner.sh\nbash tests/run_agent_session.sh\nbash tests/workspace_checks.sh\nbash tests/playwright_matrix.sh\nbash tests/evidence_contract.sh\nmake --no-print-directory native-profile-router\nbash prototypes/trellage-router/tests/contract.sh'
+[ "$default_test_make_output" = "$expected_default_test_make_output" ] \
+  || fail 'default test dry-run differs from the established parallel dependency graph'
+
+if ! serial_test_make_output="$(make --no-print-directory -n test TEST_JOBS=1 2>&1)"; then
+  fail 'serialized test dry-run failed'
 fi
-if [ "$default_test_make_output" != "$expected_default_test_make_output" ] \
-  && [ "$default_test_make_output" != "${expected_default_test_make_output_with_claude:-}" ]; then
-  fail 'default test dry-run differs from the established dependency graph'
-fi
+serial_test_make_output="$(normalize_make_output <<<"$serial_test_make_output")"
+serial_test_recipe="${serial_test_make_output%%$'\n'*}"
+serial_test_recipe="$(sed -E 's#^([^[:space:]]*/)?make #make #' <<<"$serial_test_recipe")"
+[ "$serial_test_recipe" = "make --no-print-directory -j1 $expected_parallel_test_targets" ] \
+  || fail 'TEST_JOBS does not control the parallel test worker count'
 
 readme_profile_matrix="$({
   awk '

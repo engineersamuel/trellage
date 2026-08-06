@@ -29,9 +29,33 @@ trellage --profile claude-hyperresearch
 trellage validate claude-social-media
 trellage build --locked claude-social-media
 trellage --profile claude-social-media
+trellage validate prime-agent
+trellage build --locked prime-agent
+trellage --profile prime-agent
 ```
 
-Trellage expands a bare name to `profiles/<name>/profile.toml`. Use a value ending in `.toml` or containing a path separator for an explicit path.
+A bare profile name checks the current worktree first at
+`profiles/<name>/profile.toml`, then falls back to the profile bundled with the
+deployed Trellage source. Use a value ending in `.toml` or containing a path
+separator for an explicit path.
+
+The repository-root `mise.toml` prepends `prototypes/trellage` to `PATH`, so an
+activated mise shell resolves a worktree-local `trellage` without changing
+directories. Trust the root config once; mise shares that trust with linked Git
+worktrees:
+
+```bash
+mise trust
+mise run trellage -- validate prime-agent
+trellage validate prime-agent
+```
+
+`mise run trellage --` is the explicit root-level escape hatch when a shell has
+not refreshed its mise environment. The installed `trellage` symlink provides
+the non-mise fallback: inside a linked Trellage worktree it automatically uses
+that worktree's `prototypes/trellage/trellage` and reports the selected path on
+stderr. Outside linked Trellage worktrees, it continues to use its deployed
+source tree.
 
 `trellage upgrade all` discovers every valid bundled and current-worktree
 profile, applies current-worktree name overrides, and upgrades profiles
@@ -72,6 +96,7 @@ trellage --profile claude-social-media -p "draft a LinkedIn post"
 trellage --profile claude-council -p "hello"
 trellage --profile copilot-hve -p "hello"
 trellage --profile pi-oh-my-pi -p "hello"
+trellage --profile prime-agent -p "hello"
 ```
 
 ### Claude council
@@ -196,6 +221,30 @@ trellage --profile https://github.com/engineersamuel/trellage/blob/v1.0.0/profil
 ```
 
 See [the Trellage prototype guide](prototypes/trellage/README.md) for profile locks, lifecycle details, Copilot with HVE Core, cleanup, and deterministic verification.
+
+## Prime Agent
+
+The bundled `prime-agent` profile installs Prime Agent from Prime Intellect's
+official stable release channel and locks the resolved versioned tarball, size,
+SHA-256 digest, and final Linux/arm64 OCI digest. It routes model traffic only
+through the host-managed `copilot-proxy-rs` service and fixes the provider and
+model to `copilot-proxy-rs` and `claude-opus-5`.
+
+```bash
+trellage validate prime-agent
+trellage build --locked prime-agent
+trellage --profile prime-agent
+trellage --profile prime-agent -p "review this repository"
+trellage resume --profile prime-agent
+trellage doctor --profile prime-agent
+```
+
+The proxy must already be reachable on Docker network
+`copilot-proxy-rs_default`. Prime receives no host model credentials; Trellage
+manages its Anthropic Messages provider seed under `/home/agent/.prime/agent`
+and preserves Prime sessions and other user state in the profile/worktree state
+volume. Every launch restores the managed provider definition so persisted
+edits cannot redirect this profile to another endpoint or model.
 
 ## Pi with Oh My Pi
 

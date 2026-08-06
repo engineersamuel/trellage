@@ -1,0 +1,8 @@
+min_version = "2026.6.14"
+
+[env]
+_.path = "./prototypes/trellage"
+
+[tasks.trellage]
+description = "Run the repository worktree Trellage command"
+run = "./prototypes/trellage/trellage"

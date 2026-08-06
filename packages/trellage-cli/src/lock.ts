@@ -68,6 +68,14 @@ export type HarnessPackageLock =
       readonly url: string
       readonly size: number
     }
+  | {
+      readonly kind: "prime"
+      readonly selector: string
+      readonly version: string
+      readonly integrity: string
+      readonly url: string
+      readonly size: number
+    }
 
 export interface ArtifactLock {
   readonly name: string
@@ -172,7 +180,7 @@ export interface LockResolvers {
     readonly update: boolean
   }) => Effect.Effect<SourceResolution, unknown>
   readonly resolvePackages: (request: {
-    readonly kind: "claude" | "codex" | "copilot" | "pi"
+    readonly kind: "claude" | "codex" | "copilot" | "pi" | "prime"
     readonly selector: string
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
@@ -290,7 +298,9 @@ const lockSemanticError = (
         ? "Copilot"
         : harness.kind === "pi"
           ? "Pi"
-          : "Claude"
+          : harness.kind === "prime"
+            ? "Prime"
+            : "Claude"
   if (harness.kind !== document.profile.harness.kind) return "harness package kind does not match profile"
   if (harness.selector.length === 0) return `${harnessLabel} package selector is missing`
   if (!stableSemverPattern.test(harness.version)) return `${harnessLabel} package version is not stable`
@@ -306,6 +316,10 @@ const lockSemanticError = (
     const asset = platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
     const expected = `https://github.com/can1357/oh-my-pi/releases/download/v${harness.version}/${asset}`
     if (harness.url !== expected) return "Pi package artifact URL is invalid"
+  }
+  if (harness.kind === "prime") {
+    const expected = `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v${harness.version}/prime-agent-${harness.version}.tgz`
+    if (harness.url !== expected) return "Prime package artifact URL is invalid"
   }
   if (harness.kind === "claude") {
     const asset = platform === "linux/arm64" ? "claude-linux-arm64.tar.gz" : "claude-linux-x64.tar.gz"

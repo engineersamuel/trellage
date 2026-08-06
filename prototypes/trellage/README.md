@@ -6,7 +6,7 @@ Trellage runs coding harnesses inside locked, profile-compiled Docker sandboxes 
 
 ## Prerequisites and Setup
 
-Use an Apple Silicon host with Git, Docker, `gh`, `jq`, and mise. Authenticate `gh` with a repository-scoped credential before launching a profile. Codex and Claude profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi profiles use Docker `bridge`. From `prototypes/trellage`:
+Use an Apple Silicon host with Git, Docker, `gh`, `jq`, and mise. Authenticate `gh` with a repository-scoped credential before launching a profile. Codex, Claude, and Prime profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi profiles use Docker `bridge`. From `prototypes/trellage`:
 
 ```bash
 mise trust
@@ -68,9 +68,33 @@ mise run install-trellage
 
 Set `TRELLAGE_INSTALL_DIR` to override the destination directory. The installer refuses to overwrite another command or symlink and never creates a `harness` compatibility link.
 
-The command remains linked to this prototype directory. Bundled profile
-discovery therefore uses the `profiles/` directory in this Trellage source
-tree; moving or deleting the source tree breaks the installed link.
+The command remains linked to this prototype directory. Outside the Trellage
+repository, bundled profile discovery therefore uses the `profiles/` directory
+in that installed source tree; moving or deleting the source tree breaks the
+installed link.
+
+Inside a linked Trellage worktree, invoking the installed symlink compares the
+current and installed Git common directories. When they match, it executes the
+regular executable at `prototypes/trellage/trellage` in the current worktree and
+prints `trellage: using current worktree command: ...` to stderr. A lookalike
+command in an unrelated repository is never executed. Invoking `./trellage`
+directly remains an explicit request for that exact checkout.
+
+The repository root contains a mise configuration that prepends this directory
+to `PATH`. After one `mise trust` in the main checkout, mise shares trust with
+linked worktrees; an activated shell can run `trellage` directly from the
+repository root. Bare profile names select the current worktree profile first,
+then fall back to the installed source tree.
+
+```bash
+mise trust
+mise run trellage -- validate prime-agent
+trellage validate prime-agent
+```
+
+Use root-level `mise run trellage --` followed by any normal Trellage arguments
+when the shell environment has not refreshed. The child task in this directory
+remains available for component-local development.
 
 ## Doctor
 
@@ -257,6 +281,31 @@ For a launch or resume, host authentication precedence is `COPILOT_GITHUB_TOKEN`
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
 Locked builds never refresh mutable selectors. Upgrades never happen automatically. Run the explicit one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to resolve, build, and adopt an upgrade.
+
+## Prime Agent
+
+The `prime-agent` profile installs the exact Prime Intellect stable release
+recorded in `profile.linux-arm64.lock.toml`. The lock pins the official
+versioned tarball URL, size, SHA-256 digest, runtime packages, base image, and
+final OCI digest. Locked rebuilds reject any resulting image drift.
+
+```bash
+trellage validate /absolute/path/to/profiles/prime-agent/profile.toml
+trellage build --locked /absolute/path/to/profiles/prime-agent/profile.toml
+trellage --profile /absolute/path/to/profiles/prime-agent/profile.toml
+trellage --profile /absolute/path/to/profiles/prime-agent/profile.toml -p "review this repository"
+trellage resume --profile /absolute/path/to/profiles/prime-agent/profile.toml
+trellage doctor --profile /absolute/path/to/profiles/prime-agent/profile.toml
+trellage destroy --profile /absolute/path/to/profiles/prime-agent/profile.toml
+```
+
+Every launch fixes Prime's custom provider to `copilot-proxy-rs`, its API to
+Anthropic Messages, its endpoint to `http://copilot-proxy-rs:8080`, and its
+model to `claude-opus-5`. The proxy and Docker network are host-managed
+prerequisites. No host Anthropic, OpenAI, Copilot, or GitHub token is forwarded
+to Prime; the separately prepared `GH_CONFIG_DIR` remains available for `gh`.
+Prime sessions and other user state persist under `/home/agent/.prime/agent`,
+while the managed provider file is restored atomically before each launch.
 
 ## Pi with Oh My Pi
 

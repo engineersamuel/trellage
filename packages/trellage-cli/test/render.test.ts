@@ -143,10 +143,29 @@ shell = "fish"
 packages = ["bash", "git", "jq"]
 `
 
+const primeSource = `
+schema = 1
+name = "prime-agent"
+description = "Prime Agent profile"
+[harness]
+kind = "prime"
+version = "latest"
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
+`
+
 const profile = Effect.runSync(parseProfile(source, "/profile/profile.toml")).profile
 const copilotProfile = Effect.runSync(parseProfile(copilotSource, "/profile/copilot.toml")).profile
 const claudeProfile = Effect.runSync(parseProfile(claudeSource, "/profile/claude.toml")).profile
 const piProfile = Effect.runSync(parseProfile(piSource, "/profile/pi.toml")).profile
+const primeProfile = Effect.runSync(parseProfile(primeSource, "/profile/prime.toml")).profile
 const claudeMarketplaceProfile = Effect.runSync(
   parseProfile(claudeMarketplaceSource, "/profile/claude-marketplace.toml"),
 ).profile
@@ -156,6 +175,7 @@ const runtimePaths = {
   codexEntry: path.join(runtimeRoot, "runtime-entry.sh"),
   copilotEntry: path.join(runtimeRoot, "runtime-copilot-entry.sh"),
   piEntry: path.join(runtimeRoot, "runtime-pi-entry.sh"),
+  primeEntry: path.join(runtimeRoot, "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
   finalizeClaudeSeed: path.join(runtimeRoot, "finalize-claude-seed.mjs"),
   claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
@@ -170,6 +190,7 @@ const claudeMarketplaceRuntime = await Effect.runPromise(
   createRuntimeSupportSnapshot("claude", runtimePaths, "claude-marketplace"),
 )
 const piRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("pi", runtimePaths))
+const primeRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("prime", runtimePaths))
 const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
   schema: 1,
   platform: "linux/arm64",
@@ -220,6 +241,29 @@ const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
     base_digest: `sha256:${"c".repeat(64)}`,
   },
 })
+
+const primeLock: ProfileLock = {
+  schema: 1,
+  platform: "linux/arm64",
+  source_date_epoch: 1784379906,
+  profile_hash: `sha256:${"a".repeat(64)}`,
+  sources: [],
+  packages: {
+    harness: {
+      kind: "prime",
+      selector: "latest",
+      version: "0.7.0",
+      integrity: "sha256:88b6578518c72cd51a825bc80f28e0fef9a64c67de4a7d6fd7afd7ca1b34da0b",
+      url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+      size: 9323789,
+    },
+    runtime: [],
+  },
+  image: {
+    base: "node:22.17.0-bookworm-slim",
+    base_digest: `sha256:${"c".repeat(64)}`,
+  },
+}
 
 describe("golden rendering", () => {
   it("rejects Copilot Codex-config rendering", () => {
@@ -323,6 +367,35 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('"dev.trellage.pi.implementation" = "oh-my-pi"')
     expect(rendered).toContain('"dev.trellage.pi.version" = "17.2.6"')
     expect(rendered).not.toMatch(/COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN/)
+  })
+
+  it("renders Prime Agent with only the locked provider seed and persistent Prime state", () => {
+    const rendered = renderMiseConfig(primeProfile, primeLock, {
+      baseReference: "docker.io/library/node@sha256:base",
+      imageTag: "trellage-profile-prime-agent:locked",
+      runtimeSupport: primeRuntime,
+    })
+
+    expect(rendered).toContain('node = "22.17.0"')
+    expect(rendered).not.toContain('[tools."http:prime"]')
+    expect(rendered).toContain(
+      '"/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }',
+    )
+    expect(rendered).toContain('"/usr/local/bin/prime-agent" = { source = "prime-agent-wrapper.sh", mode = "copy" }')
+    expect(rendered).toContain('"/usr/local/share/trellage/prime-seed" = { source = "prime-seed", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/bin/trellage-prime-entry" = { source = "runtime-prime-entry.sh", mode = "copy" }',
+    )
+    expect(rendered).toContain('PRIME_AGENT_CODING_AGENT_DIR = "/home/agent/.prime/agent"')
+    expect(rendered).toContain('PI_OFFLINE = "1"')
+    expect(rendered).toContain('PI_SKIP_VERSION_CHECK = "1"')
+    expect(rendered).toContain('PRIME_AGENT_INSTALL_UV = "1"')
+    expect(rendered).toContain('XDG_CACHE_HOME = "/home/agent/.cache"')
+    expect(rendered).toContain('"dev.trellage.harness.kind" = "prime"')
+    expect(rendered).toContain('"dev.trellage.prime.version" = "0.7.0"')
+    expect(rendered).not.toMatch(
+      /ANTHROPIC_API_KEY|OPENAI_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|CODEX_HOME|COPILOT_HOME|CLAUDE_CONFIG_DIR|PI_CODING_AGENT_DIR/,
+    )
   })
 
   it("renders the locked Claude toolchain and managed seed without credentials", () => {
