@@ -1214,30 +1214,42 @@ if [[ "$mode" == destroy ]]; then
   exit 0
 fi
 
+inspect_profile_image() {
+  resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
+    || resolved_image_id=
+  [[ -n "$resolved_image_id" ]] || return 1
+  image_profile_hash="$(docker image inspect \
+    --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$resolved_image_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker image profile hash: $image"
+  [[ "$image_profile_hash" == "$profile_hash" ]] || return 1
+  image_runtime_hash="$(docker image inspect \
+    --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker image runtime hash: $image"
+  [[ "$image_runtime_hash" == "$runtime_hash" ]] || return 1
+  image_platform="$(docker image inspect \
+    --format '{{ index .Config.Labels "dev.trellage.platform" }}' "$resolved_image_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker image platform: $image"
+  [[ "$image_platform" == "$docker_platform" ]]
+}
+
 [[ "$profile_locked" == true ]] \
   || fail "profile image is missing or stale; run: $build_command"
-resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" || resolved_image_id=
-if [[ -z "$resolved_image_id" ]]; then
-  if [[ -z "${TRELLAGE_IMAGE:-}" ]]; then
+if ! inspect_profile_image; then
+  if [[ -n "${TRELLAGE_IMAGE:-}" ]]; then
+    resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
+      || resolved_image_id=
+    [[ -n "$resolved_image_id" ]] \
+      || fail "Docker image is unavailable: $image"
     fail "profile image is missing or stale; run: $build_command"
   fi
-  fail "Docker image is unavailable: $image"
+  verify_docker_server
+  printf 'trellage: profile image is missing or stale; building automatically\n' >&2
+  "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+    node "$compiler" build --locked "$profile_path" \
+    || fail "automatic profile image build failed: $build_command"
+  inspect_profile_image \
+    || fail "profile image remains missing or stale after automatic build: $image"
 fi
-image_profile_hash="$(docker image inspect \
-  --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$resolved_image_id" 2>/dev/null)" \
-  || fail "cannot inspect Docker image profile hash: $image"
-[[ "$image_profile_hash" == "$profile_hash" ]] \
-  || fail "profile image is missing or stale; run: $build_command"
-image_runtime_hash="$(docker image inspect \
-  --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)" \
-  || fail "cannot inspect Docker image runtime hash: $image"
-[[ "$image_runtime_hash" == "$runtime_hash" ]] \
-  || fail "profile image is missing or stale; run: $build_command"
-image_platform="$(docker image inspect \
-  --format '{{ index .Config.Labels "dev.trellage.platform" }}' "$resolved_image_id" 2>/dev/null)" \
-  || fail "cannot inspect Docker image platform: $image"
-[[ "$image_platform" == "$docker_platform" ]] \
-  || fail "profile image is missing or stale; run: $build_command"
 docker network inspect "$network" >/dev/null 2>&1 \
   || fail "Docker network is unavailable: $network"
 expected_image_id="$resolved_image_id"
