@@ -44,6 +44,7 @@ const Source = Schema.Struct({
   repository: NonEmpty,
   ref: NonEmpty,
   select: Schema.Array(NonEmpty),
+  always_on: Schema.optional(Schema.Boolean),
 })
 
 const CodexPlugin = Schema.Struct({
@@ -259,7 +260,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const rejectUnsupportedCopilotSections = (raw: unknown): Effect.Effect<void, ProfileError> => {
   if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "copilot") return Effect.void
-  if (Object.hasOwn(raw, "skills")) return fail("Copilot profiles do not support standalone skills")
   if (Object.hasOwn(raw, "mcps")) return fail("Copilot profiles do not support MCPs")
   if (Object.hasOwn(raw, "secrets")) return fail("Copilot profiles do not support declared secrets")
   return Effect.void
@@ -367,7 +367,9 @@ const validate = (
       if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
         return yield* fail(`invalid Copilot version: ${profile.harness.version}`)
       }
-      if (profile.skills.length > 0) return yield* fail("Copilot profiles do not support standalone skills")
+      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
+        return yield* fail("Copilot skill sources do not support adapters")
+      }
       if (profile.mcps.length > 0) return yield* fail("Copilot profiles do not support MCPs")
       if (
         profile.secrets.required.length > 0 ||
@@ -392,7 +394,9 @@ const validate = (
       if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
         return yield* fail(`invalid Claude version: ${profile.harness.version}`)
       }
-      if (profile.skills.length > 0) return yield* fail("Claude profiles do not support standalone skills")
+      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
+        return yield* fail("Claude skill sources do not support adapters")
+      }
       if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
       if (
         profile.secrets.required.length > 0 ||
@@ -421,8 +425,13 @@ const validate = (
         profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace").map((plugin) => plugin.marketplace),
         "Claude marketplace",
       )
-    } else if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-      return yield* fail(`invalid Pi version: ${profile.harness.version}`)
+    } else {
+      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+        return yield* fail(`invalid Pi version: ${profile.harness.version}`)
+      }
+      if (profile.skills.some((skill) => skill.adapter !== undefined && skill.adapter !== "omp-native")) {
+        return yield* fail("Pi skill sources use an unsupported adapter")
+      }
     }
     for (const source of [...profile.skills, ...profile.plugins]) {
       const repositoryError = githubRepositoryError(source.repository)
@@ -432,11 +441,18 @@ const validate = (
       yield* unique(source.select, "selected asset")
     }
     for (const skill of profile.skills) {
+      if (skill.adapter !== undefined && skill.always_on === true) {
+        return yield* fail("always_on is only supported by generic skill sources")
+      }
       for (const selection of skill.select) {
         if (selection !== "*" && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(selection)) {
           return yield* fail(`unsafe selected asset: ${selection}`)
         }
       }
+      yield* unique(
+        profile.skills.flatMap((skill) => skill.select),
+        "selected standalone skill",
+      )
     }
     for (const plugin of profile.plugins) {
       for (const selection of plugin.select) {

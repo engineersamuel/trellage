@@ -97,13 +97,22 @@ describe("authored Claude Hyperresearch profile", () => {
       profile_hash: `sha256:${"a".repeat(64)}`,
       sources: [
         {
+          kind: "skill",
+          repository: "https://github.com/JuliusBrussee/caveman.git",
+          ref: "v1.10.0",
+          select: ["caveman"],
+          commit: "c".repeat(40),
+          integrity: `sha256:${"d".repeat(64)}`,
+          files: [],
+        },
+        {
           kind: "plugin",
           adapter: "hyperresearch",
           repository: "https://github.com/jordan-gibbs/hyperresearch.git",
           ref: "main",
           select: ["full"],
-          commit: "d".repeat(40),
-          integrity: `sha256:${"e".repeat(64)}`,
+          commit: "e".repeat(40),
+          integrity: `sha256:${"f".repeat(64)}`,
           files: [],
         },
       ],
@@ -169,20 +178,21 @@ describe("authored Claude social media profile", () => {
     expect(document.profile.secrets.required).toEqual([])
     expect(document.resolvedInitialPrompt).toBeUndefined()
     expect(document.profile.harness.initial_prompt).toBeUndefined()
-    expect(lock.sources[0]).toMatchObject({
+    const pluginOffset = document.profile.skills.length
+    expect(lock.sources[pluginOffset]).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "social-media-skills",
       plugin_versions: { "social-media-skills": "1.0.0" },
       commit: "94f72ea2ece388fa30ef49a26fb2e6fd2109e0b1",
     })
-    expect(lock.sources[0]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(17)
-    expect(lock.sources[1]).toMatchObject({
+    expect(lock.sources[pluginOffset]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(17)
+    expect(lock.sources[pluginOffset + 1]).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "humanizer",
       plugin_versions: { humanizer: "2.9.1" },
       commit: "523374dee72d67c7b2b5f858ea0094ffda49c3ac",
     })
-    expect(lock.sources[1]?.files.filter(({ path }) => path === "SKILL.md")).toHaveLength(1)
+    expect(lock.sources[pluginOffset + 1]?.files.filter(({ path }) => path === "SKILL.md")).toHaveLength(1)
     expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
 
@@ -224,13 +234,16 @@ describe("authored Claude Blog profile", () => {
         select: ["claude-blog"],
       }),
     ])
-    expect(lock.sources).toHaveLength(1)
-    expect(lock.sources[0]).toMatchObject({
+    const pluginOffset = document.profile.skills.length
+    expect(lock.sources).toHaveLength(pluginOffset + 1)
+    expect(lock.sources[pluginOffset]).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "agricidaniel-blog",
       plugin_versions: { "claude-blog": "2.1.1" },
     })
-    expect(lock.sources[0]?.files.filter(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path))).toHaveLength(32)
+    expect(
+      lock.sources[pluginOffset]?.files.filter(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path)),
+    ).toHaveLength(32)
   })
 })
 

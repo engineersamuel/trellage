@@ -64,3 +64,4 @@ host. Examples: `trx`, `cpx`, `cdx`, and `grx`.
 - Keep static verification free of model inference and paid calls.
 - Do not weaken or skip repository contracts to make a change pass.
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
+- Every new Trellage Sandbox profile under `profiles/` MUST declare the pinned Caveman Agent Skill with `always_on = true`. Its platform lock MUST contain the exact resolved commit and inventory, and the profile MUST pass the deterministic Caveman matrix contract and no-model image probe. Trellage Native profiles are outside this rule unless separately requested.

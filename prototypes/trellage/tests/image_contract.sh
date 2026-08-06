@@ -5,7 +5,6 @@ prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo_root="$(cd "$prototype_dir/../.." && pwd)"
 profile="${1:-$repo_root/profiles/codex-superpowers/profile.toml}"
 profile="$(cd "$(dirname "$profile")" && pwd)/$(basename "$profile")"
-lock="${profile%.toml}.lock.toml"
 compiler="$repo_root/packages/trellage-cli/dist/cli.js"
 
 fail() {
@@ -13,7 +12,7 @@ fail() {
   exit 1
 }
 
-for required_file in "$profile" "$lock" "$compiler"; do
+for required_file in "$profile" "$compiler"; do
   [[ -f "$required_file" ]] || fail "missing required file: $required_file"
 done
 
@@ -23,13 +22,29 @@ profile_name="$(jq -er '.profile_name' <<<"$metadata")"
 profile_hash="$(jq -er '.profile_hash' <<<"$metadata")"
 harness_kind="$(jq -er '.harness_kind' <<<"$metadata")"
 image_name="$(jq -er '.image' <<<"$metadata")"
+platform="$(jq -er '.platform' <<<"$metadata")"
+platform_identity="${platform//\//-}"
+lock="${profile%.toml}.${platform_identity}.lock.toml"
+[[ -f "$lock" ]] || fail "missing platform-qualified lock: $lock"
+profile_shell="$(awk '
+  /^\[image\]$/ { in_image = 1; next }
+  in_image && /^\[/ { exit }
+  in_image && /^shell = "/ {
+    value = substr($0, 10)
+    sub(/"$/, "", value)
+    print value
+    exit
+  }
+' "$profile")"
+[[ "$profile_shell" == bash || "$profile_shell" == fish ]] \
+  || fail "profile image shell is unsupported: $profile_shell"
 
-[[ "$image_name" == "trellage-profile-${profile_name}:locked" ]] \
+[[ "$image_name" == "trellage-profile-${profile_name}-${platform_identity}:locked" ]] \
   || fail "profile metadata uses a non-Trellage image tag: $image_name"
 
 jq -e \
   --arg name "$profile_name" \
-  --arg image "trellage-profile-${profile_name}:locked" '
+  --arg image "trellage-profile-${profile_name}-${platform_identity}:locked" '
     .profile_name == $name
     and .locked == true
     and .image == $image
@@ -42,6 +57,69 @@ grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$lock" \
   || fail 'credential-like value is embedded in profile inputs'
 ! grep -Eq '(/[U]sers/|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-)' "$profile" "$lock" \
   || fail 'host, temporary, or build path is embedded in profile inputs'
+
+profile_has_caveman() {
+  awk '
+    function complete() {
+      return repository == "https://github.com/JuliusBrussee/caveman.git" \
+        && ref == "v1.10.0" && select == "select = [\"caveman\"]" \
+        && always_on == "always_on = true"
+    }
+    /^\[\[skills\]\]$/ {
+      if (in_skill && complete()) found = 1
+      in_skill = 1
+      repository = ref = select = always_on = ""
+      next
+    }
+    /^\[\[/ {
+      if (in_skill && complete()) found = 1
+      in_skill = 0
+      next
+    }
+    in_skill && /^repository = / { repository = substr($0, 14); gsub(/"/, "", repository) }
+    in_skill && /^ref = / { ref = substr($0, 7); gsub(/"/, "", ref) }
+    in_skill && /^select = / { select = $0 }
+    in_skill && /^always_on = / { always_on = $0 }
+    END {
+      if (in_skill && complete()) found = 1
+      exit(found ? 0 : 1)
+    }
+  ' "$profile"
+}
+
+lock_has_caveman() {
+  awk '
+    function complete() {
+      return repository == "https://github.com/JuliusBrussee/caveman.git" \
+        && ref == "v1.10.0" && select == "select = [\"caveman\"]" \
+        && commit ~ /^[0-9a-f]{40}$/
+    }
+    /^\[\[sources\]\]$/ {
+      if (in_source && complete()) found = 1
+      in_source = 1
+      repository = ref = select = commit = ""
+      next
+    }
+    /^\[\[/ {
+      if (in_source && complete()) found = 1
+      in_source = 0
+      next
+    }
+    in_source && /^repository = / { repository = substr($0, 14); gsub(/"/, "", repository) }
+    in_source && /^ref = / { ref = substr($0, 7); gsub(/"/, "", ref) }
+    in_source && /^select = / { select = $0 }
+    in_source && /^commit = / { commit = substr($0, 10); gsub(/"/, "", commit) }
+    END {
+      if (in_source && complete()) found = 1
+      exit(found ? 0 : 1)
+    }
+  ' "$lock"
+}
+
+profile_has_caveman || fail 'profile does not declare always-on Caveman v1.10.0'
+lock_has_caveman || fail 'lock does not contain an exact Caveman v1.10.0 source commit'
+grep -Fqx 'path = "skills/caveman/SKILL.md"' "$lock" \
+  || fail 'Caveman SKILL.md is absent from the locked source inventory'
 
 runtime_package_locked() {
   local name="$1" version="$2" integrity="$3"
@@ -154,9 +232,6 @@ if [[ "${STATIC_ONLY:-0}" == 1 ]]; then
   exit 0
 fi
 
-[[ "$harness_kind" != claude ]] \
-  || fail 'live Claude image contract is not implemented; use STATIC_ONLY=1'
-
 IMAGE_REF="${IMAGE_REF:-$image_name}"
 [[ "$IMAGE_REF" == "$image_name" ]] \
   || fail "live image reference does not match profile metadata: $IMAGE_REF"
@@ -171,9 +246,10 @@ jq -e \
   --arg hash "$profile_hash" \
   --arg name "$profile_name" \
   --arg kind "$harness_kind" \
+  --arg shell "$profile_shell" \
   --arg version "$locked_version" '
     .[0].Config.User == "10001:10001"
-    and .[0].Config.Cmd == ["fish", "-l"]
+    and .[0].Config.Cmd == [$shell, "-l"]
     and .[0].Config.Labels["dev.trellage.prototype"] == "trellage"
     and .[0].Config.Labels["dev.trellage.profile"] == $name
     and .[0].Config.Labels["dev.trellage.profile.hash"] == $hash
@@ -195,6 +271,13 @@ jq -e \
       and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
       and (.[0].Config.Env | all(startswith("COPILOT_HOME=") | not))
       and (.[0].Config.Env | all(startswith("CODEX_HOME=") | not))
+    elif $kind == "claude" then
+      .[0].Config.Labels["dev.trellage.harness.kind"] == $kind
+      and .[0].Config.Labels["dev.trellage.claude.version"] == $version
+      and (.[0].Config.Env | any(. == "CLAUDE_CONFIG_DIR=/home/agent/.claude"))
+      and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
+      and (.[0].Config.Env | all(startswith("COPILOT_HOME=") | not))
+      and (.[0].Config.Env | all(startswith("CODEX_HOME=") | not))
     else
       .[0].Config.Labels["dev.trellage.codex.version"] == $version
       and (.[0].Config.Env | any(. == "CODEX_HOME=/home/agent/.codex"))
@@ -203,7 +286,7 @@ jq -e \
   || fail 'image config violates exact labels, user, shell, home, version, or secret contract'
 
 inspect_and_history="$(printf '%s\n' "$image_config"; docker history --no-trunc --format '{{.CreatedBy}} {{.Comment}}' "$IMAGE_REF")"
-! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|pi)-entry|(^|[/[:space:]])harness-(codex|copilot|pi)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
+! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|claude|pi)-entry|(^|[/[:space:]])harness-(codex|copilot|claude|pi)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
   || fail 'image inspect or history contains auth, host, temporary, build, or old-brand data'
 
 if [[ "$harness_kind" == copilot ]]; then
@@ -246,11 +329,19 @@ if [[ "$harness_kind" == copilot ]]; then
       test ! -e "$seed/settings.json"
       test ! -e "$seed/config.json"
       test ! -e /home/agent/.codex/config.toml
+      test -f "$seed/skills/caveman/SKILL.md" && test ! -L "$seed/skills/caveman/SKILL.md"
+      test -f "$seed/copilot-instructions.md" && test ! -L "$seed/copilot-instructions.md"
+      grep -Fq "ACTIVE EVERY RESPONSE" "$seed/copilot-instructions.md"
       ! find "$seed" -type f -exec grep -alE '\''/[U]sers/[^/]+/projects/prototypes/sandbox-harness|/src/hve-core|/src/copilot-seed|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-'\'' {} + | grep -q .
       ! find "$seed" -type f -exec grep -alF "$auth_canary" {} + | grep -q .
       trellage-copilot-entry new --version >/tmp/copilot-version
       test "$(sed -n '\''1s/^GitHub Copilot CLI \([0-9.]*\)\.$/\1/p'\'' /tmp/copilot-version)" = "$locked_version"
       test -f "$COPILOT_HOME/managed-lock.json"
+      test -f "$COPILOT_HOME/skills/caveman/SKILL.md" && test ! -L "$COPILOT_HOME/skills/caveman/SKILL.md"
+      test -f "$COPILOT_HOME/copilot-instructions.md" && test ! -L "$COPILOT_HOME/copilot-instructions.md"
+      test "$(stat -c "%u:%g" "$COPILOT_HOME/skills/caveman/SKILL.md")" = 10001:10001
+      test "$(stat -c "%u:%g" "$COPILOT_HOME/copilot-instructions.md")" = 10001:10001
+      grep -Fq "ACTIVE EVERY RESPONSE" "$COPILOT_HOME/copilot-instructions.md"
       test ! -e "$COPILOT_HOME/config.toml"
       ! find "$COPILOT_HOME" "$XDG_CACHE_HOME" -type f -exec grep -alE '\''/[U]sers/[^/]+/projects/prototypes/sandbox-harness|/src/hve-core|/src/copilot-seed|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-'\'' {} + | grep -q .
       ! find "$COPILOT_HOME" "$XDG_CACHE_HOME" -type f -exec grep -alF "$auth_canary" {} + | grep -q .
@@ -276,10 +367,13 @@ elif [[ "$harness_kind" == pi ]]; then
       test -f /usr/local/share/trellage/pi-seed/managed-skills.txt
       grep -Fqx "  checkUpdate: false" /usr/local/share/trellage/pi-config.yml
       grep -Fqx "  autoUpdate: off" /usr/local/share/trellage/pi-config.yml
-      test "$(cat /usr/local/share/trellage/pi-seed/managed-skills.txt)" = "$(printf "%s\n" semantic-compression system-prompts tool-prompt-optimization)"
-      for skill in semantic-compression system-prompts tool-prompt-optimization; do
+      test "$(cat /usr/local/share/trellage/pi-seed/managed-skills.txt)" = "$(printf "%s\n" caveman semantic-compression system-prompts tool-prompt-optimization)"
+      for skill in caveman semantic-compression system-prompts tool-prompt-optimization; do
         test -f "/usr/local/share/trellage/pi-seed/skills/$skill/SKILL.md"
       done
+      test -f /usr/local/share/trellage/pi-seed/APPEND_SYSTEM.md
+      test ! -L /usr/local/share/trellage/pi-seed/APPEND_SYSTEM.md
+      grep -Fq "ACTIVE EVERY RESPONSE" /usr/local/share/trellage/pi-seed/APPEND_SYSTEM.md
       test "$(omp --version)" = "omp/$locked_version"
       omp --config /usr/local/share/trellage/pi-config.yml --help >/dev/null
       omp --config /usr/local/share/trellage/pi-config.yml models github-copilot --json \
@@ -291,12 +385,42 @@ elif [[ "$harness_kind" == pi ]]; then
       trellage-pi-entry new --version >/tmp/pi-version
       test "$(cat /tmp/pi-version)" = "omp/$locked_version"
       test -d "$PI_CODING_AGENT_DIR"
-      test "$(cat "$PI_CODING_AGENT_DIR/.trellage-managed-skills")" = "$(printf "%s\n" semantic-compression system-prompts tool-prompt-optimization)"
-      for skill in semantic-compression system-prompts tool-prompt-optimization; do
+      test "$(cat "$PI_CODING_AGENT_DIR/.trellage-managed-skills")" = "$(printf "%s\n" caveman semantic-compression system-prompts tool-prompt-optimization)"
+      for skill in caveman semantic-compression system-prompts tool-prompt-optimization; do
         test -f "$PI_CODING_AGENT_DIR/skills/$skill/SKILL.md"
       done
+      test -f "$PI_CODING_AGENT_DIR/APPEND_SYSTEM.md"
+      test ! -L "$PI_CODING_AGENT_DIR/APPEND_SYSTEM.md"
+      test "$(stat -c "%u:%g" "$PI_CODING_AGENT_DIR/skills/caveman/SKILL.md")" = 10001:10001
+      test "$(stat -c "%u:%g" "$PI_CODING_AGENT_DIR/APPEND_SYSTEM.md")" = 10001:10001
+      grep -Fq "ACTIVE EVERY RESPONSE" "$PI_CODING_AGENT_DIR/APPEND_SYSTEM.md"
       ! find /home/agent -type f -exec grep -alF "$auth_canary" {} + | grep -q .
     ' -- "$locked_version" || fail 'Pi executable, entry, state, update, auth, or isolation probe failed'
+elif [[ "$harness_kind" == claude ]]; then
+  docker run --rm \
+    --network none \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+    --tmpfs /home/agent:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+    --entrypoint bash \
+    "$IMAGE_REF" -ceu '
+      locked_version="$1"
+      test "$(id -u):$(id -g)" = 10001:10001
+      test "$(claude --version | sed -n "s/^\([0-9.]*\) (Claude Code)$/\1/p")" = "$locked_version"
+      test -x /usr/local/bin/trellage-claude-entry
+      seed=/usr/local/share/trellage/claude-seed
+      test -d "$seed" && test ! -L "$seed"
+      test -f "$seed/skills/caveman/SKILL.md" && test ! -L "$seed/skills/caveman/SKILL.md"
+      test -f "$seed/CLAUDE.md" && test ! -L "$seed/CLAUDE.md"
+      grep -Fq "ACTIVE EVERY RESPONSE" "$seed/CLAUDE.md"
+      trellage-claude-entry passthrough claude --version >/tmp/claude-version
+      test "$(sed -n "s/^\([0-9.]*\) (Claude Code)$/\1/p" /tmp/claude-version)" = "$locked_version"
+      test -f "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md" && test ! -L "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md"
+      test -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" && test ! -L "$CLAUDE_CONFIG_DIR/CLAUDE.md"
+      test "$(stat -c "%u:%g" "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md")" = 10001:10001
+      test "$(stat -c "%u:%g" "$CLAUDE_CONFIG_DIR/CLAUDE.md")" = 10001:10001
+      grep -Fq "ACTIVE EVERY RESPONSE" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
+    ' -- "$locked_version" || fail 'Claude executable, entry, seed, managed state, or isolation probe failed'
 else
   docker run --rm \
     --read-only \
@@ -313,8 +437,33 @@ else
       grep -Fqx '\''model_provider = "copilot_proxy"'\'' "$CODEX_HOME/config.toml"
       test -f "$CODEX_HOME/skills/using-superpowers/SKILL.md"
       test -f "$CODEX_HOME/skills/full-stack-orchestration__full-stack-feature/SKILL.md"
+      test -f "$CODEX_HOME/skills/caveman/SKILL.md"
+      test ! -L "$CODEX_HOME/skills/caveman/SKILL.md"
+      test -f "$CODEX_HOME/AGENTS.md"
+      test ! -L "$CODEX_HOME/AGENTS.md"
+      test "$(stat -c "%u:%g" "$CODEX_HOME/skills/caveman/SKILL.md")" = 10001:10001
+      test "$(stat -c "%u:%g" "$CODEX_HOME/AGENTS.md")" = 10001:10001
+      grep -Fq '\''ACTIVE EVERY RESPONSE'\'' "$CODEX_HOME/AGENTS.md"
       test -f "$CODEX_HOME/agents/full-stack-orchestration__security-auditor.toml"
-      test "$(find "$CODEX_HOME/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d " ")" = 15
+      expected_skills="$(printf "%s\n" \
+        brainstorming \
+        caveman \
+        dispatching-parallel-agents \
+        executing-plans \
+        finishing-a-development-branch \
+        full-stack-orchestration__full-stack-feature \
+        receiving-code-review \
+        requesting-code-review \
+        subagent-driven-development \
+        systematic-debugging \
+        test-driven-development \
+        using-git-worktrees \
+        using-superpowers \
+        verification-before-completion \
+        writing-plans \
+        writing-skills)"
+      actual_skills="$(find "$CODEX_HOME/skills" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | LC_ALL=C sort)"
+      test "$actual_skills" = "$expected_skills"
       test "$(find "$CODEX_HOME/agents" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d " ")" = 4
       test -z "$(find "$CODEX_HOME/skills" "$CODEX_HOME/agents" -type l -print -quit)"
       ! touch /read-only-root-proof 2>/dev/null

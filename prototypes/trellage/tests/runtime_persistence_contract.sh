@@ -338,6 +338,7 @@ assert_no_reserved_runtime_temp() {
     "$image_ref" -ceu '
       find /home/agent/.copilot -mindepth 1 -maxdepth 1 \( \
         -name ".settings.json.trellage.??????" \
+        -o -name ".config.json.trellage.??????" \
         -o -name ".managed-lock.json.trellage.??????" \
         -o -name ".managed-settings.json.trellage.??????" \
         -o -name ".managed-files.txt.trellage.??????" \
@@ -472,8 +473,11 @@ assert_copilot_persistence() {
     cmp -s "$seed/$control_file" "$runtime/$control_file" \
       || fail "runtime control file does not match the seed: $control_file"
   done
-  [[ "$(cat "$runtime/config.json")" == 'login-session-fixture' ]] \
-    || fail 'Copilot login fixture did not survive managed sync'
+  jq -e '
+    .loginSession == "fixture"
+    and .trustedFolders == ["/existing", "/workspace"]
+  ' "$runtime/config.json" >/dev/null \
+    || fail 'Copilot login fixture or workspace trust did not survive managed sync'
   [[ "$(cat "$runtime/sessions/thread.json")" == 'session-history-fixture' ]] \
     || fail 'Copilot session fixture did not survive managed sync'
   [[ "$(cat "$runtime/unrelated.txt")" == 'unrelated-fixture' ]] \
@@ -529,7 +533,7 @@ run_copilot_persistence_contract() {
 
   mkdir -p "$runtime/sessions" \
     "$runtime/installed-plugins/other-market/other-plugin"
-  printf 'login-session-fixture\n' >"$runtime/config.json"
+  printf '{"loginSession":"fixture","trustedFolders":["/existing"]}\n' >"$runtime/config.json"
   printf 'session-history-fixture\n' >"$runtime/sessions/thread.json"
   printf 'unrelated-fixture\n' >"$runtime/unrelated.txt"
   printf 'other-plugin-fixture\n' \

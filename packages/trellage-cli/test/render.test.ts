@@ -32,6 +32,11 @@ stream_idle_timeout_ms = 300000
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git"]
+[[skills]]
+repository = "https://github.com/example/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
 [[mcps]]
 name = "local"
 transport = "stdio"
@@ -378,6 +383,7 @@ rename_exe = "copilot"`)
     expect.soft(rendered).not.toContain("harness-codex-entry")
     expect.soft(rendered).not.toContain('"dev.trellage.prototype" = "harness-enter-codex"')
     expect(rendered).toContain('XDG_CACHE_HOME = "/tmp/.cache"')
+    expect(rendered).toContain('"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }')
     expect(rendered).not.toContain('XDG_CACHE_HOME = "/home/agent/.cache"')
   })
 })

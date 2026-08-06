@@ -26,6 +26,12 @@ packages = [
 ]
 
 # Upstream project: https://github.com/jordan-gibbs/hyperresearch
+[[skills]]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
+
 [[plugins]]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"

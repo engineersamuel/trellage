@@ -17,6 +17,12 @@ shell = "fish"
 packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
 
 # Upstream project: https://github.com/charlie947/social-media-skills
+[[skills]]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
+
 [[plugins]]
 adapter = "claude-marketplace"
 repository = "https://github.com/charlie947/social-media-skills.git"

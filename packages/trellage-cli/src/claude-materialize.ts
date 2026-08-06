@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -251,6 +251,16 @@ export const managedClaudeFiles = async (root: string): Promise<ReadonlyArray<st
   }
   await visit("skills")
   await visit("agents")
+  try {
+    const instructions = path.join(root, "CLAUDE.md")
+    const status = await lstat(instructions)
+    if (status.isSymbolicLink() || !status.isFile()) {
+      throw new Error("managed Claude seed contains an unsafe CLAUDE.md")
+    }
+    found.push("CLAUDE.md")
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+  }
   return found.sort()
 }
 

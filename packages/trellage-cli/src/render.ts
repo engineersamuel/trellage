@@ -135,6 +135,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.codex/config.toml" = { source = "codex-config.toml", mode = "copy" }
 "/home/agent/.codex/skills" = { source = "assets/skills", mode = "copy" }
 "/home/agent/.codex/agents" = { source = "assets/agents", mode = "copy" }
+${profile.skills.some((skill) => skill.adapter === undefined && skill.always_on === true) ? '"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
