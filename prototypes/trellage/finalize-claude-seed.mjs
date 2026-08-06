@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto"
-import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
+import { chmod, lstat, mkdir, readFile, readdir, realpath, rm, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -54,7 +54,29 @@ const inventory = async (root, prefix = "") => {
         fail(`unsafe plugin path: ${relative}`)
       }
       const status = await lstat(absolute)
-      if (status.isSymbolicLink()) fail(`plugin symlink rejected: ${relative}`)
+      if (status.isSymbolicLink()) {
+        // Allow in-tree file symlinks (e.g. council skills/council/SKILL.md -> ../../SKILL.md).
+        // Follow the link and hash target content so install may keep a symlink or materialize a file.
+        let resolved
+        try {
+          resolved = await realpath(absolute)
+        } catch {
+          fail(`plugin symlink target is broken: ${relative}`)
+        }
+        const containment = path.relative(resolvedRoot, resolved)
+        if (containment === ".." || containment.startsWith(`..${path.sep}`) || path.isAbsolute(containment)) {
+          fail(`plugin symlink escapes root: ${relative}`)
+        }
+        const followed = await stat(resolved)
+        if (followed.isDirectory()) fail(`plugin symlink to directory rejected: ${relative}`)
+        if (!followed.isFile()) fail(`unsupported plugin symlink target: ${relative}`)
+        entries.push({
+          path: path.posix.join(prefix, relative),
+          sha256: sha256(await readFile(resolved)),
+          executable: (followed.mode & 0o111) !== 0,
+        })
+        continue
+      }
       const resolved = await realpath(absolute)
       const containment = path.relative(resolvedRoot, resolved)
       if (containment === ".." || containment.startsWith(`..${path.sep}`) || path.isAbsolute(containment)) {
@@ -75,6 +97,46 @@ const inventory = async (root, prefix = "") => {
   }
   await visit(root, "")
   return entries
+}
+
+/** Replace in-tree file symlinks with regular files so runtime managed-path checks pass. */
+const materializeFileSymlinks = async (root) => {
+  const resolvedRoot = await realpath(root)
+  const visit = async (directory) => {
+    const children = await readdir(directory, { withFileTypes: true })
+    children.sort((left, right) => lexical(left.name, right.name))
+    for (const child of children) {
+      const absolute = path.join(directory, child.name)
+      const status = await lstat(absolute)
+      if (status.isSymbolicLink()) {
+        let resolved
+        try {
+          resolved = await realpath(absolute)
+        } catch {
+          fail(`plugin symlink target is broken: ${path.relative(resolvedRoot, absolute)}`)
+        }
+        const containment = path.relative(resolvedRoot, resolved)
+        if (containment === ".." || containment.startsWith(`..${path.sep}`) || path.isAbsolute(containment)) {
+          fail(`plugin symlink escapes root: ${path.relative(resolvedRoot, absolute)}`)
+        }
+        const followed = await stat(resolved)
+        if (followed.isDirectory()) {
+          fail(`plugin symlink to directory rejected: ${path.relative(resolvedRoot, absolute)}`)
+        }
+        if (!followed.isFile()) {
+          fail(`unsupported plugin symlink target: ${path.relative(resolvedRoot, absolute)}`)
+        }
+        const bytes = await readFile(resolved)
+        const mode = followed.mode & 0o777
+        await unlink(absolute)
+        await writeFile(absolute, bytes, { mode: mode === 0 ? 0o644 : mode })
+        if ((mode & 0o111) !== 0) await chmod(absolute, mode)
+        continue
+      }
+      if (status.isDirectory()) await visit(absolute)
+    }
+  }
+  await visit(root)
 }
 
 const main = async () => {
@@ -199,6 +261,9 @@ const main = async () => {
       if (JSON.stringify(relativeCacheInventory) !== JSON.stringify(sourceInventory)) {
         fail(`installed Claude plugin does not match locked marketplace source: ${id}`)
       }
+      // Runtime seed validation requires managed paths to be regular non-symlink files.
+      // Compare inventories first (content-following), then materialize cache links in place.
+      await materializeFileSymlinks(cache)
       managed.push(...cacheInventory.map(({ path: managedPath }) => managedPath))
       const installPath = `/home/agent/.claude/${cacheRelative}`
       marketplaceInstallPath ??= installPath

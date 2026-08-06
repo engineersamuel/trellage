@@ -69,9 +69,25 @@ Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) fo
 trellage --profile codex-superpowers -p "hello"
 trellage --profile claude-hyperresearch -p "hello"
 trellage --profile claude-social-media -p "draft a LinkedIn post"
+trellage --profile claude-council -p "hello"
 trellage --profile copilot-hve -p "hello"
 trellage --profile pi-oh-my-pi -p "hello"
 ```
+
+### Claude council
+
+`claude-council` runs Claude Opus 5 through `copilot-proxy-rs` with two Claude
+Code marketplace plugins enabled by default:
+
+- [`0xNyk/council-of-high-intelligence`](https://github.com/0xNyk/council-of-high-intelligence) (`council`) for multi-persona deliberation (`/council`)
+- [`JuliusBrussee/caveman`](https://github.com/JuliusBrussee/caveman) (`caveman`) for compressed communication mode
+
+```bash
+trellage --profile claude-council
+```
+
+Requires the external `copilot-proxy-rs_default` Docker network, same as other
+proxy-backed Claude profiles.
 
 ### Claude social media skills
 

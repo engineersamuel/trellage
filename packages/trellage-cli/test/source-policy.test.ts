@@ -25,7 +25,7 @@ describe("source inclusion policy", () => {
     expect(sourceInventoryPolicy(source)).toEqual({ allowSymlinks: true })
   })
 
-  it("selects the complete repository without symlinks for Claude marketplaces", () => {
+  it("selects the complete repository and allows in-tree symlinks for Claude marketplaces", () => {
     const source = {
       kind: "plugin",
       adapter: "claude-marketplace",
@@ -34,7 +34,7 @@ describe("source inclusion policy", () => {
     } as const
 
     expect(sourceIncludes(source)).toEqual([])
-    expect(sourceInventoryPolicy(source)).toEqual({})
+    expect(sourceInventoryPolicy(source)).toEqual({ allowSymlinks: true })
   })
 
   it("keeps symlinks disabled for every other source", () => {

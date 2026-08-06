@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     readonly directory: string
     readonly marketplace: string
     readonly selections: ReadonlyArray<string>
+    readonly versionFallback?: string
   }>,
 }))
 
@@ -119,11 +120,24 @@ vi.mock("../src/copilot-plugin.js", async () => {
 
 vi.mock("../src/claude-plugin.js", async () => {
   const { Effect } = await import("effect")
+  const actual = await vi.importActual<typeof import("../src/claude-plugin.js")>("../src/claude-plugin.js")
   return {
-    ClaudePluginError: class ClaudePluginError extends Error {},
-    readClaudeMarketplace: (directory: string, marketplace: string, selections: ReadonlyArray<string>) => {
-      mocks.claudeMarketplaceRequests.push({ directory, marketplace, selections })
-      return Effect.succeed(Object.freeze(Object.assign(Object.create(null), { "social-media-skills": "1.0.0" })))
+    ...actual,
+    readClaudeMarketplace: (
+      directory: string,
+      marketplace: string,
+      selections: ReadonlyArray<string>,
+      options?: { readonly versionFallback?: string },
+    ) => {
+      mocks.claudeMarketplaceRequests.push({
+        directory,
+        marketplace,
+        selections,
+        ...(options?.versionFallback === undefined ? {} : { versionFallback: options.versionFallback }),
+      })
+      const version = options?.versionFallback ?? "1.0.0"
+      const name = selections[0] ?? "social-media-skills"
+      return Effect.succeed(Object.freeze(Object.assign(Object.create(null), { [name]: version })))
     },
   }
 })
@@ -415,7 +429,7 @@ describe("production package resolutions", () => {
     expect(mocks.requests).toEqual([
       expect.objectContaining({
         include: [],
-        inventoryPolicy: {},
+        inventoryPolicy: { allowSymlinks: true },
       }),
     ])
     expect(mocks.claudeMarketplaceRequests).toEqual([
@@ -423,6 +437,33 @@ describe("production package resolutions", () => {
         directory: "/cache/source",
         marketplace: "social-media-skills",
         selections: ["social-media-skills"],
+      },
+    ])
+  })
+
+  it("passes a ref-derived version fallback for pinned Claude marketplace tags", async () => {
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
+        kind: "plugin",
+        adapter: "claude-marketplace",
+        marketplace: "caveman",
+        repository: "https://github.com/JuliusBrussee/caveman.git",
+        ref: "v1.10.0",
+        select: ["caveman"],
+        update: false,
+      }),
+    )
+
+    expect(result).toMatchObject({
+      commit: "a".repeat(40),
+      plugin_versions: { caveman: "1.10.0" },
+    })
+    expect(mocks.claudeMarketplaceRequests).toEqual([
+      {
+        directory: "/cache/source",
+        marketplace: "caveman",
+        selections: ["caveman"],
+        versionFallback: "1.10.0",
       },
     ])
   })

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { chmod, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -14,6 +14,7 @@ import {
   materializeChromiumArchives,
   materializeHyperresearchPackage,
   normalizeHyperresearchSeed,
+  stampClaudeMarketplaceVersions,
 } from "../src/claude-materialize.js"
 import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
 import { parseLock, renderLock } from "../src/lock-file.js"
@@ -188,7 +189,21 @@ describe("native Claude marketplace materialization", () => {
     await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
     await mkdir(path.join(source, "skills", "writer"), { recursive: true })
     await mkdir(context)
-    await writeFile(path.join(source, ".claude-plugin", "marketplace.json"), '{"name":"social-media-skills"}\n')
+    await writeFile(
+      path.join(source, ".claude-plugin", "marketplace.json"),
+      `${JSON.stringify({
+        name: "social-media-skills",
+        owner: { name: "Owner" },
+        plugins: [
+          {
+            name: "social-media-skills",
+            source: "./",
+            description: "Social media skills",
+            version: "1.0.0",
+          },
+        ],
+      })}\n`,
+    )
     await writeFile(path.join(source, "skills", "writer", "SKILL.md"), "# Writer\n")
     const files = await Effect.runPromise(inventoryDirectory(source))
 
@@ -236,6 +251,162 @@ describe("native Claude marketplace materialization", () => {
       '"hasCompletedOnboarding": true',
     )
     await expect(readFile(path.join(context, "hyperresearch-wrapper.sh"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("copies and verifies a Claude marketplace source that contains an in-tree skill symlink", async () => {
+    const root = await temporaryRoot("trellage-claude-marketplace-symlink-")
+    const source = path.join(root, "source")
+    const context = path.join(root, "context")
+    await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+    await mkdir(path.join(source, "skills", "council"), { recursive: true })
+    await mkdir(context)
+    await writeFile(
+      path.join(source, ".claude-plugin", "marketplace.json"),
+      `${JSON.stringify({
+        name: "council",
+        owner: { name: "0xNyk" },
+        plugins: [{ name: "council", source: "./", description: "Council", version: "1.2.0" }],
+      })}\n`,
+    )
+    await writeFile(path.join(source, "SKILL.md"), "# Council root skill\n")
+    await symlink("../../SKILL.md", path.join(source, "skills", "council", "SKILL.md"))
+    const files = await Effect.runPromise(inventoryDirectory(source, { allowSymlinks: true }))
+    expect(files.some((entry) => entry.kind === "symlink" && entry.path === "skills/council/SKILL.md")).toBe(true)
+
+    await Effect.runPromise(
+      materializeClaudeAssets({
+        adapter: "claude-marketplace",
+        sourceDirectories: [source],
+        context,
+        lock: {
+          sources: [
+            {
+              adapter: "claude-marketplace",
+              marketplace: "council",
+              plugin_versions: { council: "1.2.0" },
+              select: ["council"],
+              commit: "c".repeat(40),
+              files,
+            },
+          ],
+          packages: {
+            harness: {
+              kind: "claude",
+              selector: "latest",
+              version: "2.1.222",
+              integrity: `sha256:${"a".repeat(64)}`,
+              url: "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz",
+              size: 88123930,
+            },
+            runtime: [],
+          },
+        } as unknown as ProfileLock,
+      }),
+    )
+
+    const copied = path.join(context, "claude-marketplace-0")
+    // Stamp mutates marketplace.json after the locked inventory check; re-verify only the skill tree.
+    const skillPath = path.join(copied, "skills", "council", "SKILL.md")
+    expect((await lstat(skillPath)).isSymbolicLink()).toBe(true)
+    await expect(readlink(skillPath)).resolves.toBe("../../SKILL.md")
+    await expect(readFile(skillPath, "utf8")).resolves.toBe("# Council root skill\n")
+    await expect(readFile(path.join(context, "claude-marketplaces.json"), "utf8")).resolves.toContain(
+      '"marketplace": "council"',
+    )
+    const stamped = JSON.parse(await readFile(path.join(copied, ".claude-plugin", "marketplace.json"), "utf8")) as {
+      plugins: Array<{ version?: string }>
+    }
+    expect(stamped.plugins[0]?.version).toBe("1.2.0")
+  })
+
+  it("stamps locked plugin versions into the marketplace copy after inventory verification", async () => {
+    const root = await temporaryRoot("trellage-claude-marketplace-stamp-")
+    const source = path.join(root, "source")
+    const context = path.join(root, "context")
+    await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+    await mkdir(context)
+    await writeFile(
+      path.join(source, ".claude-plugin", "marketplace.json"),
+      `${JSON.stringify({
+        name: "caveman",
+        owner: { name: "Julius Brussee" },
+        plugins: [
+          {
+            name: "caveman",
+            source: "./",
+            description: "Talk like caveman",
+          },
+        ],
+      })}\n`,
+    )
+    await writeFile(
+      path.join(source, ".claude-plugin", "plugin.json"),
+      `${JSON.stringify({
+        name: "caveman",
+        description: "Talk like caveman",
+      })}\n`,
+    )
+    await writeFile(path.join(source, "SKILL.md"), "# Caveman\n")
+    const files = await Effect.runPromise(inventoryDirectory(source))
+
+    await Effect.runPromise(
+      materializeClaudeAssets({
+        adapter: "claude-marketplace",
+        sourceDirectories: [source],
+        context,
+        lock: {
+          sources: [
+            {
+              adapter: "claude-marketplace",
+              marketplace: "caveman",
+              plugin_versions: { caveman: "1.10.0" },
+              select: ["caveman"],
+              commit: "d".repeat(40),
+              files,
+            },
+          ],
+          packages: {
+            harness: {
+              kind: "claude",
+              selector: "latest",
+              version: "2.1.222",
+              integrity: `sha256:${"a".repeat(64)}`,
+              url: "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz",
+              size: 88123930,
+            },
+            runtime: [],
+          },
+        } as unknown as ProfileLock,
+      }),
+    )
+
+    const stampedMarketplace = JSON.parse(
+      await readFile(path.join(context, "claude-marketplace-0", ".claude-plugin", "marketplace.json"), "utf8"),
+    ) as { plugins: Array<{ name: string; version?: string }> }
+    expect(stampedMarketplace.plugins).toEqual([expect.objectContaining({ name: "caveman", version: "1.10.0" })])
+    const stampedPlugin = JSON.parse(
+      await readFile(path.join(context, "claude-marketplace-0", ".claude-plugin", "plugin.json"), "utf8"),
+    ) as { name: string; version?: string }
+    expect(stampedPlugin).toMatchObject({ name: "caveman", version: "1.10.0" })
+    // Pristine source is unchanged; only the build-context copy is stamped.
+    await expect(readFile(path.join(source, ".claude-plugin", "marketplace.json"), "utf8")).resolves.not.toContain(
+      "1.10.0",
+    )
+  })
+
+  it("rejects locked versions that conflict with marketplace metadata", async () => {
+    const root = await temporaryRoot("trellage-claude-marketplace-conflict-")
+    await mkdir(path.join(root, ".claude-plugin"), { recursive: true })
+    await writeFile(
+      path.join(root, ".claude-plugin", "marketplace.json"),
+      `${JSON.stringify({
+        name: "demo",
+        owner: { name: "Demo" },
+        plugins: [{ name: "demo", source: "./", description: "Demo", version: "1.0.0" }],
+      })}\n`,
+    )
+
+    await expect(stampClaudeMarketplaceVersions(root, { demo: "9.9.9" })).rejects.toThrow(/version conflict/)
   })
 })
 

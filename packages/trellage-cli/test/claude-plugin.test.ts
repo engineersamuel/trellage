@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { ClaudePluginError, readClaudeMarketplace } from "../src/claude-plugin.js"
+import { ClaudePluginError, pluginVersionFromRef, readClaudeMarketplace } from "../src/claude-plugin.js"
 
 const roots: Array<string> = []
 const execFilePromise = promisify(execFile)
@@ -143,6 +143,71 @@ describe("readClaudeMarketplace", () => {
       expect(managed).toContain("plugins/cache/social-media-skills/social-media-skills/1.0.0/skills/writer/SKILL.md")
       expect(managed).toContain("plugins/installed_plugins.json")
     })
+
+    it("accepts relative in-tree skill symlinks when comparing installed plugin inventory", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-symlink-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const cache = path.join(seed, "plugins", "cache", "council", "council", "1.2.0")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(source, "skills", "council"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "council",
+          owner: { name: "0xNyk" },
+          plugins: [{ name: "council", source: "./", description: "Council", version: "1.2.0" }],
+        })}\n`,
+      )
+      await writeFile(path.join(source, "SKILL.md"), "# Council root skill\n")
+      await symlink("../../SKILL.md", path.join(source, "skills", "council", "SKILL.md"))
+      await cp(source, cache, { recursive: true, verbatimSymlinks: true })
+      await writeFile(path.join(seed, "settings.json"), '{"enabledPlugins":{"council@council":true}}\n')
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "council@council": [
+              {
+                scope: "user",
+                installPath: cache,
+                version: "1.2.0",
+                installedAt: "nondeterministic",
+              },
+            ],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "council",
+              source,
+              commit: "b".repeat(40),
+              plugins: [{ plugin: "council", version: "1.2.0" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+
+      const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
+      expect(managed).toContain("plugins/cache/council/council/1.2.0/skills/council/SKILL.md")
+      expect(managed).toContain("plugins/cache/council/council/1.2.0/SKILL.md")
+      const skillLink = path.join(cache, "skills", "council", "SKILL.md")
+      const skillStatus = await lstat(skillLink)
+      expect(skillStatus.isSymbolicLink()).toBe(false)
+      expect(skillStatus.isFile()).toBe(true)
+      await expect(readFile(skillLink, "utf8")).resolves.toBe("# Council root skill\n")
+      // Source may still be a symlink; only the baked cache must be a regular file.
+      expect((await lstat(path.join(source, "skills", "council", "SKILL.md"))).isSymbolicLink()).toBe(true)
+    })
   })
 
   it.each(["", "..", "../plugin", "/plugin", "C:\\plugin", "skills/plugin"])(
@@ -173,6 +238,67 @@ describe("readClaudeMarketplace", () => {
       Effect.runPromise(readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"])),
     ).resolves.toEqual({ "social-media-skills": "2.9.1" })
   })
+
+  it("uses a lock-time version fallback when marketplace and plugin manifests omit version", async () => {
+    const root = await marketplace({
+      ...valid,
+      plugins: [{ ...valid.plugins[0], source: "./", version: undefined }],
+    })
+    await writeFile(
+      path.join(root, ".claude-plugin", "plugin.json"),
+      '{"name":"social-media-skills","description":"no version"}\n',
+    )
+
+    await expect(
+      Effect.runPromise(
+        readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"], {
+          versionFallback: "1.10.0",
+        }),
+      ),
+    ).resolves.toEqual({ "social-media-skills": "1.10.0" })
+  })
+
+  it("prefers declared marketplace version over a version fallback", async () => {
+    const root = await marketplace(valid)
+
+    await expect(
+      Effect.runPromise(
+        readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"], {
+          versionFallback: "9.9.9",
+        }),
+      ),
+    ).resolves.toEqual({ "social-media-skills": "1.0.0" })
+  })
+
+  it("rejects missing plugin versions without a fallback", async () => {
+    const root = await marketplace({
+      ...valid,
+      plugins: [{ ...valid.plugins[0], source: "./", version: undefined }],
+    })
+    await writeFile(
+      path.join(root, ".claude-plugin", "plugin.json"),
+      '{"name":"social-media-skills","description":"no version"}\n',
+    )
+
+    await expect(
+      Effect.runPromise(readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"])),
+    ).rejects.toThrow(/version is missing/)
+  })
+
+  it.each([
+    ["v1.10.0", "1.10.0"],
+    ["1.10.0", "1.10.0"],
+    ["v0.1.0", "0.1.0"],
+  ])("derives plugin version from pinned ref %j", (ref, version) => {
+    expect(pluginVersionFromRef(ref)).toBe(version)
+  })
+
+  it.each(["main", "latest", "abc123", "v1.10", "1.10.0-beta.1", ""])(
+    "does not derive plugin version from non-semver ref %j",
+    (ref) => {
+      expect(pluginVersionFromRef(ref)).toBeUndefined()
+    },
+  )
 
   it("rejects duplicate JSON keys before decoding", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-marketplace-"))

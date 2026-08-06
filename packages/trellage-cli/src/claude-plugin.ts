@@ -28,25 +28,45 @@ const MarketplaceSchema = Schema.Struct({
 
 const PluginManifestSchema = Schema.Struct({
   name: Schema.String,
-  version: Schema.String,
+  version: Schema.optional(Schema.String),
 })
 
 const exactVersion =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+const taggedSemverRef = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/
 const safeSegment = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const dangerousKeys = new Set(["__proto__", "constructor", "prototype"])
 
 const safeKey = (value: string): boolean =>
   safeSegment.test(value) && !dangerousKeys.has(value) && !Object.hasOwn(Object.prototype, value)
 
+/** Normalize a pinned git tag/ref (`v1.10.0` or `1.10.0`) into an exact plugin semver for lock-time fallback. */
+export const pluginVersionFromRef = (ref: string): string | undefined => {
+  const match = taggedSemverRef.exec(ref)
+  return match?.[1]
+}
+
+export type ReadClaudeMarketplaceOptions = {
+  /**
+   * Used only when marketplace.json and plugin.json both omit an exact version.
+   * Intended for lock-time injection from a pinned semver git tag (e.g. caveman@v1.10.0).
+   */
+  readonly versionFallback?: string
+}
+
 export const readClaudeMarketplace = (
   sourceDirectory: string,
   expectedMarketplace: string,
   selections: ReadonlyArray<string>,
+  options?: ReadClaudeMarketplaceOptions,
 ): Effect.Effect<Readonly<Record<string, string>>, ClaudePluginError> =>
   Effect.gen(function* () {
     if (!safeKey(expectedMarketplace)) {
       return yield* Effect.fail(new ClaudePluginError({ message: "expected Claude marketplace name is unsafe" }))
+    }
+    const fallback = options?.versionFallback
+    if (fallback !== undefined && !exactVersion.test(fallback)) {
+      return yield* Effect.fail(new ClaudePluginError({ message: "Claude plugin version fallback is not exact" }))
     }
     const source = yield* Effect.tryPromise({
       try: () => readFile(path.join(sourceDirectory, ".claude-plugin", "marketplace.json"), "utf8"),
@@ -91,34 +111,57 @@ export const readClaudeMarketplace = (
       }
       let version = plugin.version
       if (version === undefined) {
-        const manifestSource = yield* Effect.tryPromise({
-          try: () => readFile(path.join(sourceDirectory, ".claude-plugin", "plugin.json"), "utf8"),
+        const manifestPath = path.join(sourceDirectory, ".claude-plugin", "plugin.json")
+        const optionalManifest = yield* Effect.tryPromise({
+          try: async (): Promise<string | undefined> => {
+            try {
+              return await readFile(manifestPath, "utf8")
+            } catch {
+              return undefined
+            }
+          },
           catch: () => new ClaudePluginError({ message: `cannot read Claude plugin metadata: ${plugin.name}` }),
         })
-        const manifestValue = yield* Effect.try({
-          try: () => {
-            assertNoDuplicateJsonKeys(manifestSource)
-            return JSON.parse(manifestSource) as unknown
-          },
-          catch: (cause) =>
-            new ClaudePluginError({
-              message:
-                cause instanceof DuplicateJsonKeyError
-                  ? cause.message
-                  : `Claude plugin metadata is invalid: ${plugin.name}`,
-            }),
-        })
-        const manifest = yield* Schema.decodeUnknown(PluginManifestSchema)(manifestValue).pipe(
-          Effect.mapError(
-            () => new ClaudePluginError({ message: `Claude plugin metadata is invalid: ${plugin.name}` }),
-          ),
-        )
-        if (manifest.name !== plugin.name) {
+        if (optionalManifest === undefined) {
+          if (fallback === undefined) {
+            return yield* Effect.fail(
+              new ClaudePluginError({ message: `cannot read Claude plugin metadata: ${plugin.name}` }),
+            )
+          }
+        } else {
+          const manifestValue = yield* Effect.try({
+            try: () => {
+              assertNoDuplicateJsonKeys(optionalManifest)
+              return JSON.parse(optionalManifest) as unknown
+            },
+            catch: (cause) =>
+              new ClaudePluginError({
+                message:
+                  cause instanceof DuplicateJsonKeyError
+                    ? cause.message
+                    : `Claude plugin metadata is invalid: ${plugin.name}`,
+              }),
+          })
+          const manifest = yield* Schema.decodeUnknown(PluginManifestSchema)(manifestValue).pipe(
+            Effect.mapError(
+              () => new ClaudePluginError({ message: `Claude plugin metadata is invalid: ${plugin.name}` }),
+            ),
+          )
+          if (manifest.name !== plugin.name) {
+            return yield* Effect.fail(
+              new ClaudePluginError({ message: `Claude plugin metadata name does not match: ${plugin.name}` }),
+            )
+          }
+          version = manifest.version
+        }
+      }
+      if (version === undefined) {
+        if (fallback === undefined) {
           return yield* Effect.fail(
-            new ClaudePluginError({ message: `Claude plugin metadata name does not match: ${plugin.name}` }),
+            new ClaudePluginError({ message: `Claude plugin version is missing: ${plugin.name}` }),
           )
         }
-        version = manifest.version
+        version = fallback
       }
       if (!exactVersion.test(version)) {
         return yield* Effect.fail(
