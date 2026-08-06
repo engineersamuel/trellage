@@ -55,7 +55,8 @@ not refreshed its mise environment. The installed `trellage` symlink provides
 the non-mise fallback: inside a linked Trellage worktree it automatically uses
 that worktree's `prototypes/trellage/trellage` and reports the selected path on
 stderr. Outside linked Trellage worktrees, it continues to use its deployed
-source tree.
+source tree. The worktree launcher runs `npm ci` when compiler dependencies are
+missing and rebuilds missing or stale profile compiler output automatically.
 
 `trellage upgrade all` discovers every valid bundled and current-worktree
 profile, applies current-worktree name overrides, and upgrades profiles

@@ -243,15 +243,32 @@ compiler_stamp="$compiler_package_dir/dist/.source-hash"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
 picker="$prototype_dir/../shared/terminal-picker.mjs"
 
-assert_profile_compiler_fresh() {
+profile_compiler_is_fresh() {
   local actual_fingerprint expected_fingerprint
+  [[ -f "$compiler" && -x "$compiler_fingerprint" ]] || return 1
+  expected_fingerprint="$($compiler_fingerprint)" || return 1
+  actual_fingerprint="$(head -n 1 "$compiler_stamp" 2>/dev/null || true)"
+  [[ "$actual_fingerprint" == "$expected_fingerprint" ]]
+}
+
+ensure_profile_compiler() {
+  profile_compiler_is_fresh && return 0
   [[ -x "$compiler_fingerprint" ]] \
     || fail "profile compiler fingerprint is unavailable: $compiler_fingerprint"
-  expected_fingerprint="$($compiler_fingerprint)" \
-    || fail 'profile compiler fingerprint calculation failed'
-  actual_fingerprint="$(head -n 1 "$compiler_stamp" 2>/dev/null || true)"
-  [[ "$actual_fingerprint" == "$expected_fingerprint" ]] \
-    || fail "profile compiler is stale; run: cd $compiler_package_dir && npm run build"
+  command -v npm >/dev/null 2>&1 \
+    || fail 'profile compiler bootstrap requires npm'
+
+  if [[ ! -x "$compiler_package_dir/node_modules/.bin/tsc" ]]; then
+    printf 'trellage: installing profile compiler dependencies\n' >&2
+    (cd "$compiler_package_dir" && npm ci) \
+      || fail "profile compiler dependency installation failed in $compiler_package_dir"
+  fi
+
+  printf 'trellage: building profile compiler\n' >&2
+  (cd "$compiler_package_dir" && npm run build) \
+    || fail "profile compiler build failed in $compiler_package_dir"
+  [[ -f "$compiler" ]] || fail 'profile compiler build did not produce dist/cli.js'
+  profile_compiler_is_fresh || fail 'profile compiler remains stale after build'
 }
 
 clean_child_environment=(env -i "PATH=$PATH")
@@ -260,8 +277,7 @@ for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE
   [[ -z "${!environment_name-}" ]] || clean_child_environment+=("$environment_name=${!environment_name}")
 done
 
-[[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
-assert_profile_compiler_fresh
+ensure_profile_compiler
 environment_metadata=
 environment_enabled=
 environment_source_present=
@@ -302,7 +318,6 @@ fi
 case "${1:-}" in
   validate|lock|build|upgrade)
     discard_ambient_github_auth
-    [[ -f "$compiler" ]] || fail "profile compiler is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm run build"
     exec "${clean_child_environment[@]}" node "$compiler" "$@"
     ;;
 esac

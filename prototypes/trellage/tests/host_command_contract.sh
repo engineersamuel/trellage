@@ -2149,30 +2149,67 @@ test_upgrade_delegates_to_effect_cli() {
   printf 'Trellage host test: PASS: upgrade delegates to Effect CLI\n'
 }
 
-test_stale_profile_compiler_fails_with_rebuild_command() {
-  local fixture_root="$test_root/stale-profile-compiler"
+test_profile_compiler_bootstraps_when_missing_or_stale() {
+  local fixture_root="$test_root/profile-compiler-bootstrap"
   local fixture_launcher="$fixture_root/prototypes/trellage/trellage"
-  local output status=0
+  local fake_bin="$fixture_root/fake-bin"
+  local npm_log="$fixture_root/npm.log"
+  local output
 
   mkdir -p \
     "$fixture_root/prototypes/trellage" \
-    "$fixture_root/packages/trellage-cli/dist" \
-    "$fixture_root/scripts"
+    "$fixture_root/packages/trellage-cli" \
+    "$fixture_root/scripts" \
+    "$fake_bin"
   cp "$prototype_dir/trellage" "$fixture_launcher"
-  printf '%s\n' 'not executable compiler output' \
-    >"$fixture_root/packages/trellage-cli/dist/cli.js"
-  printf '%s\n' 'stale-fingerprint' \
-    >"$fixture_root/packages/trellage-cli/dist/.source-hash"
   printf '%s\n' '#!/bin/sh' "printf '%s\\n' fresh-fingerprint" \
     >"$fixture_root/scripts/profile-compiler-fingerprint.sh"
-  chmod +x "$fixture_launcher" "$fixture_root/scripts/profile-compiler-fingerprint.sh"
+  cat >"$fake_bin/npm" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >>"$FAKE_NPM_LOG"
+case "$*" in
+  ci)
+    mkdir -p node_modules/.bin
+    : >node_modules/.bin/tsc
+    chmod +x node_modules/.bin/tsc
+    ;;
+  'run build')
+    mkdir -p dist
+    printf '%s\n' 'process.exit(0);' >dist/cli.js
+    printf '%s\n' 'fresh-fingerprint' >dist/.source-hash
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+EOF
+  chmod +x \
+    "$fixture_launcher" \
+    "$fixture_root/scripts/profile-compiler-fingerprint.sh" \
+    "$fake_bin/npm"
 
-  output="$(TRELLAGE_ENVIRONMENT=off "$fixture_launcher" upgrade all 2>&1)" || status=$?
-  [[ "$status" -eq 1 ]] || fail "stale profile compiler returned $status instead of 1"
-  grep -Fqx \
-    "trellage: profile compiler is stale; run: cd $fixture_root/packages/trellage-cli && npm run build" \
-    <<<"$output" || fail 'stale profile compiler diagnostic is not actionable'
-  printf 'Trellage host test: PASS: stale profile compiler fails with rebuild command\n'
+  output="$(FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
+    "$fixture_launcher" upgrade all 2>&1)"
+  grep -Fqx 'ci' "$npm_log" \
+    || fail 'missing profile compiler dependencies did not trigger npm ci'
+  grep -Fqx 'run build' "$npm_log" \
+    || fail 'missing profile compiler did not trigger npm run build'
+  grep -Fqx 'trellage: installing profile compiler dependencies' <<<"$output" \
+    || fail 'profile compiler dependency bootstrap was not reported'
+  grep -Fqx 'trellage: building profile compiler' <<<"$output" \
+    || fail 'profile compiler build was not reported'
+
+  printf '%s\n' 'stale-fingerprint' \
+    >"$fixture_root/packages/trellage-cli/dist/.source-hash"
+  : >"$npm_log"
+  output="$(FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
+    "$fixture_launcher" upgrade all 2>&1)"
+  [[ "$(cat "$npm_log")" == 'run build' ]] \
+    || fail 'stale profile compiler did not rebuild without reinstalling dependencies'
+  grep -Fqx 'trellage: building profile compiler' <<<"$output" \
+    || fail 'stale profile compiler rebuild was not reported'
+  printf 'Trellage host test: PASS: profile compiler bootstraps when missing or stale\n'
 }
 
 test_interactive_profile_selection() {
@@ -3292,7 +3329,7 @@ test_command_diagnostics_use_trellage_prefix() {
 }
 
 if [[ "${TRELLAGE_HOST_COMPILER_FRESHNESS_ONLY:-}" == 1 ]]; then
-  test_stale_profile_compiler_fails_with_rebuild_command
+  test_profile_compiler_bootstraps_when_missing_or_stale
   exit 0
 fi
 
@@ -3392,7 +3429,7 @@ fi
 
 test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
-test_stale_profile_compiler_fails_with_rebuild_command
+test_profile_compiler_bootstraps_when_missing_or_stale
 test_upgrade_delegates_to_effect_cli
 test_interactive_profile_selection
 test_compiler_commands_scrub_copilot_auth
