@@ -822,7 +822,8 @@ for qualification in \
 done
 
 for qualification in \
-  'Install and compile the profile compiler once' \
+  'bootstraps the profile compiler automatically' \
+  'npm ci' \
   'npm run build'; do
   require_section_text '## Prerequisites and Setup' "$qualification"
 done

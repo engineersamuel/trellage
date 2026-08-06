@@ -12,13 +12,9 @@ Use an Apple Silicon host with Git, Docker, `gh`, `jq`, and mise. Authenticate `
 mise trust
 ```
 
-Install and compile the profile compiler once. Run `npm run build` after dependency installation:
-
-```bash
-cd ../../packages/trellage-cli
-npm install
-npm run build
-```
+The worktree launcher bootstraps the profile compiler automatically. It runs
+`npm ci` when compiler dependencies are missing and runs `npm run build` when
+compiler output is missing or stale.
 
 ## Profiles and Locks
 
