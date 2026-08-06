@@ -1,0 +1,476 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly provider='trellage-copilot-proxy'
+readonly model_id='gpt-5.6-sol'
+readonly reasoning_effort='medium'
+readonly proxy_base_url='http://127.0.0.1:8080/v1'
+readonly mise_tool='github:1jehuang/jcode'
+readonly profile_marker_value='trellage-jcode-profile-v1'
+
+die() {
+  printf 'jcx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  jcx [JCODE_ARGS...]
+  jcx default [JCODE_ARGS...]
+  jcx list [--json]
+  jcx setup [default]
+  jcx doctor [default]
+  jcx repair [default]
+  jcx update [--check] [default]
+
+Bare jcx invocations use the default profile.
+EOF
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve runtime root'
+readonly catalog="$runtime_root/catalog.json"
+readonly version_file="$runtime_root/version"
+readonly profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
+readonly profile_home="$profile_root/home"
+readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
+readonly profile_config="$profile_home/config.toml"
+readonly setup_hints="$profile_home/setup_hints.json"
+
+validate_catalog() {
+  [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
+    || die "invalid catalog: $catalog"
+  jq -e '
+    type == "object"
+    and keys == ["profiles", "schemaVersion"]
+    and .schemaVersion == 1
+    and (.profiles | type == "object" and keys == ["default"])
+    and (.profiles.default | type == "object")
+    and (.profiles.default | keys == ["description", "plugin", "standaloneMcps"])
+    and (.profiles.default.description | type == "string" and length > 0)
+    and .profiles.default.plugin == null
+    and .profiles.default.standaloneMcps == []
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries[] | [.key, .value.description] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "jcx",
+      harness: "jcode",
+      profiles: [
+        .profiles
+        | to_entries[]
+        | {
+            name: .key,
+            description: .value.description,
+            plugin: .value.plugin,
+            source: "1jehuang/jcode",
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+require_default_profile() {
+  [[ "${1-default}" == default ]] || die "unknown profile: $1"
+}
+
+require_safe_home() {
+  local canonical_home
+
+  [[ "$HOME" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die "unsafe HOME: $HOME"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+}
+
+require_safe_profile_path() {
+  local path="$HOME" component canonical_home canonical_path
+
+  require_safe_home
+  canonical_home="$(canonical_directory "$HOME")"
+  for component in .local share trellage profiles jcode default home; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe profile path: $path"
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || die "unsafe profile path: $path"
+      canonical_path="$(canonical_directory "$path")" || die "cannot resolve profile path: $path"
+      case "$canonical_path" in
+        "$canonical_home"/*) ;;
+        *) die "redirected profile path: $path" ;;
+      esac
+    fi
+  done
+}
+
+profile_is_owned_or_empty() {
+  local existing
+
+  if [[ -e "$profile_marker" || -L "$profile_marker" ]]; then
+    [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+    [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] || return 1
+    return 0
+  fi
+  [[ ! -e "$profile_root" ]] && return 0
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  [[ -z "$existing" ]]
+}
+
+prepare_profile() {
+  local path="$HOME" component marker_stage
+
+  require_safe_profile_path
+  profile_is_owned_or_empty || die "refusing unrelated existing profile files: $profile_root"
+  for component in .local share trellage profiles jcode default home; do
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+  chmod 0700 "$profile_root" "$profile_home"
+  marker_stage="$(mktemp "$profile_root/.ownership.XXXXXX")" \
+    || die 'could not stage profile ownership'
+  printf '%s\n' "$profile_marker_value" >"$marker_stage"
+  chmod 0600 "$marker_stage"
+  mv -f "$marker_stage" "$profile_marker"
+}
+
+managed_config() {
+  cat <<EOF
+[provider]
+default_provider = "$provider"
+default_model = "$model_id"
+openai_reasoning_effort = "$reasoning_effort"
+
+[providers.$provider]
+type = "openai-compatible"
+base_url = "$proxy_base_url"
+auth = "none"
+default_model = "$model_id"
+requires_api_key = false
+model_catalog = true
+supports_reasoning_effort = true
+
+[[providers.$provider.models]]
+id = "$model_id"
+EOF
+}
+
+publish_managed_profile() {
+  local config_stage
+
+  prepare_profile
+  [[ ! -L "$profile_config" && ( ! -e "$profile_config" || -f "$profile_config" ) ]] \
+    || die "unsafe managed config: $profile_config"
+  config_stage="$(mktemp "$profile_home/.config.XXXXXX")" \
+    || die 'could not stage jcode config'
+  managed_config >"$config_stage"
+  chmod 0600 "$config_stage"
+  mv -f "$config_stage" "$profile_config"
+}
+
+ensure_onboarding_skipped() {
+  local hints_stage launch_count
+
+  [[ ! -L "$setup_hints" && ( ! -e "$setup_hints" || -f "$setup_hints" ) ]] \
+    || die "unsafe setup hints: $setup_hints"
+  if [[ -e "$setup_hints" ]]; then
+    launch_count="$(jq -er '
+      if type == "object"
+        and ((.launch_count // 0) | type == "number")
+        and ((.launch_count // 0) | floor == .)
+        and (.launch_count // 0) >= 0
+      then .launch_count // 0
+      else error("invalid launch_count")
+      end
+    ' "$setup_hints")" || die "invalid setup hints: $setup_hints"
+    ((launch_count > 5)) && return
+  fi
+  hints_stage="$(mktemp "$profile_home/.setup-hints.XXXXXX")" \
+    || die 'could not stage jcode setup hints'
+  if [[ -e "$setup_hints" ]]; then
+    jq '.launch_count = 6' "$setup_hints" >"$hints_stage" \
+      || die "invalid setup hints: $setup_hints"
+  else
+    printf '{"launch_count":6}\n' >"$hints_stage"
+  fi
+  chmod 0600 "$hints_stage"
+  mv -f "$hints_stage" "$setup_hints"
+}
+
+require_owned_profile() {
+  require_safe_profile_path
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
+    || die 'profile is not managed; run jcx setup'
+  [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
+    || die "profile ownership marker differs: $profile_marker"
+}
+
+verify_managed_profile() {
+  require_owned_profile
+  [[ -f "$profile_config" && ! -L "$profile_config" ]] \
+    || die "managed config is missing: $profile_config"
+  cmp -s "$profile_config" <(managed_config) \
+    || die 'managed config differs; run jcx repair'
+}
+
+require_exact_version() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid jcode version: $1"
+}
+
+mise_env() {
+  MISE_DATA_DIR="$runtime_root/mise" \
+    MISE_CACHE_DIR="$runtime_root/cache" \
+    MISE_CONFIG_DIR="$runtime_root/mise-config" \
+    MISE_GLOBAL_CONFIG_FILE=/dev/null \
+    MISE_IGNORED_CONFIG_PATHS="$HOME" \
+    mise "$@"
+}
+
+resolve_latest_version() {
+  local version
+
+  version="$(mise_env latest "$mise_tool")" || die 'could not resolve latest eligible jcode release'
+  require_exact_version "$version"
+  printf '%s\n' "$version"
+}
+
+read_pinned_version() {
+  local version
+
+  [[ -f "$version_file" && ! -L "$version_file" ]] \
+    || die 'jcode version is not pinned; run jcx setup'
+  version="$(<"$version_file")"
+  require_exact_version "$version"
+  printf '%s\n' "$version"
+}
+
+installed_binary() {
+  local version="$1" install_dir expected binary
+
+  install_dir="$(mise_env where "$mise_tool@$version")" \
+    || die "jcode $version is not installed; run jcx repair"
+  expected="$runtime_root/mise/installs/github-1jehuang-jcode/$version"
+  [[ "$install_dir" == "$expected" ]] \
+    || die "mise returned unexpected jcode path: $install_dir"
+  binary="$(find "$install_dir" -maxdepth 1 -type f -perm -111 -name 'jcode-*' -print)"
+  [[ "$(printf '%s\n' "$binary" | awk 'NF { count++ } END { print count + 0 }')" -eq 1 ]] \
+    || die "jcode executable is missing or ambiguous: $install_dir"
+  [[ -x "$binary" && ! -L "$binary" ]] || die "unsafe jcode executable: $binary"
+  printf '%s\n' "$binary"
+}
+
+verify_binary_version() {
+  local binary="$1" version="$2" actual
+
+  actual="$(JCODE_NO_TELEMETRY=1 "$binary" --version)" \
+    || die "could not run jcode $version"
+  [[ "$actual" == jcode\ v"$version"* ]] \
+    || die "jcode version differs: expected $version, got $actual"
+}
+
+install_exact_version() {
+  local version="$1" binary
+
+  mise_env install "$mise_tool@$version" || die "mise could not install jcode $version"
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+}
+
+publish_version() {
+  local version="$1" staged
+
+  staged="$(mktemp "$runtime_root/.version.XXXXXX")" \
+    || die 'could not stage jcode version'
+  printf '%s\n' "$version" >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$version_file"
+}
+
+check_proxy() {
+  local health models
+
+  require_command curl
+  health="$(curl -fsS --max-time 5 http://127.0.0.1:8080/health)" \
+    || die 'copilot-proxy-rs health check failed'
+  jq -e '.status == "ok" or .status == "healthy"' <<<"$health" >/dev/null \
+    || die 'copilot-proxy-rs health response is invalid'
+  models="$(curl -fsS --max-time 5 "$proxy_base_url/models")" \
+    || die 'copilot-proxy-rs model discovery failed'
+  jq -e --arg model "$model_id" '.data | any(.id == $model)' <<<"$models" >/dev/null \
+    || die "copilot-proxy-rs model is missing: $model_id"
+}
+
+setup_profile() {
+  local version
+
+  require_command mise
+  if [[ -e "$version_file" || -L "$version_file" ]]; then
+    version="$(read_pinned_version)"
+  else
+    version="$(resolve_latest_version)"
+  fi
+  install_exact_version "$version"
+  publish_managed_profile
+  ensure_onboarding_skipped
+  publish_version "$version"
+  printf 'jcx setup: ready (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
+}
+
+repair_profile() {
+  local version
+
+  require_command mise
+  version="$(read_pinned_version)"
+  install_exact_version "$version"
+  publish_managed_profile
+  ensure_onboarding_skipped
+  printf 'jcx repair: restored (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
+}
+
+check_for_update() {
+  local current latest
+
+  require_command mise
+  current="$(read_pinned_version)"
+  latest="$(resolve_latest_version)"
+  if [[ "$current" == "$latest" ]]; then
+    printf 'jcx update: %s is current\n' "$current"
+  else
+    printf 'jcx update: %s -> %s available\n' "$current" "$latest"
+  fi
+}
+
+update_profile() {
+  local current latest
+
+  require_command mise
+  current="$(read_pinned_version)"
+  latest="$(resolve_latest_version)"
+  if [[ "$current" == "$latest" ]]; then
+    printf 'jcx update: %s is current\n' "$current"
+    return
+  fi
+  install_exact_version "$latest"
+  publish_version "$latest"
+  printf 'jcx update: %s -> %s installed\n' "$current" "$latest"
+}
+
+doctor_profile() {
+  local version binary
+
+  require_command mise
+  verify_managed_profile
+  version="$(read_pinned_version)"
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  jq -e '
+    type == "object"
+    and (.launch_count | type == "number")
+    and (.launch_count | floor == .)
+    and .launch_count > 5
+  ' "$setup_hints" >/dev/null 2>&1 \
+    || die 'onboarding skip state differs; run jcx repair'
+  check_proxy
+  printf 'jcx doctor: OK (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
+}
+
+launch_jcode() {
+  local version binary
+
+  require_command mise
+  verify_managed_profile
+  version="$(read_pinned_version)"
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  ensure_onboarding_skipped
+  check_proxy
+  exec env \
+    JCODE_HOME="$profile_home" \
+    JCODE_NO_TELEMETRY=1 \
+    JCODE_PROVIDER="$provider" \
+    JCODE_MODEL="$model_id" \
+    JCODE_OPENAI_REASONING_EFFORT="$reasoning_effort" \
+    "$binary" "$@"
+}
+
+require_command jq
+validate_catalog
+
+case "${1-}" in
+  help|-h|--help)
+    usage
+    ;;
+  list)
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      list_profiles
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  setup|doctor|repair)
+    command_name="$1"
+    shift
+    [[ "$#" -le 1 ]] || die "$command_name accepts only default"
+    require_default_profile "${1-default}"
+    "${command_name}_profile"
+    ;;
+  update)
+    shift
+    check_only=false
+    if [[ "${1-}" == --check ]]; then
+      check_only=true
+      shift
+    fi
+    [[ "$#" -le 1 ]] || die 'usage: jcx update [--check] [default]'
+    require_default_profile "${1-default}"
+    if [[ "$check_only" == true ]]; then
+      check_for_update
+    else
+      update_profile
+    fi
+    ;;
+  default)
+    shift
+    launch_jcode "$@"
+    ;;
+  *)
+    launch_jcode "$@"
+    ;;
+esac

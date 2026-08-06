@@ -149,6 +149,7 @@ EOF
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
 create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
+create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
 
 export HOME="$fixture_home"
@@ -205,6 +206,11 @@ jq -e '
   | length == 2
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted OMP profiles'
+jq -e '
+  [.choices[] | select(.label == "jcode / jcx-p")]
+  | length == 1
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router choices omitted jcode profile'
 [[ ! -e "$inventory_log" ]] \
   || fail 'router read diagnostic inventory before launching the selected profile'
 mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
@@ -268,6 +274,14 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-omp.out" \
 assert_contains 'required launcher not found on PATH: omp' "$fixture_root/missing-omp.out"
 mv "$fixture_bin/omp.absent" "$fixture_bin/omp"
 
+mv "$fixture_bin/jcx" "$fixture_bin/jcx.absent"
+status=0
+python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-jcx.out" \
+  '\r' '' "$fixture_bin/trx" -i || status=$?
+[[ "$status" == 1 ]] || fail "missing jcx launcher exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: jcx' "$fixture_root/missing-jcx.out"
+mv "$fixture_bin/jcx.absent" "$fixture_bin/jcx"
+
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.catalog"
 printf '{not-json}\n' >"$runtime_parent/cdx/catalog.json"
 status=0
@@ -304,7 +318,8 @@ ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
-  && -x "$runtime_parent/grx/bin/grx" && -x "$runtime_parent/omp/bin/omp" ]] \
+  && -x "$runtime_parent/grx/bin/grx" && -x "$runtime_parent/jcx/bin/jcx" \
+  && -x "$runtime_parent/omp/bin/omp" ]] \
   || fail 'uninstaller changed native launchers'
 assert_contains 'Uninstalled trx.' "$fixture_root/uninstall.out"
 
