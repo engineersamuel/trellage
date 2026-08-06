@@ -77,6 +77,8 @@ grep -Fq 'cd prototypes/trellage' "$repo_root/Makefile" \
   || fail 'Makefile prototype path is stale'
 grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Claude entry contract'
+grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
+  || fail 'Makefile does not run the Prime entry contract'
 for target in native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
@@ -142,6 +144,7 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage/runtime-entry.sh" \
   "$repo_root/prototypes/trellage/runtime-copilot-entry.sh" \
   "$repo_root/prototypes/trellage/runtime-claude-entry.sh" \
+  "$repo_root/prototypes/trellage/runtime-prime-entry.sh" \
   "$repo_root/prototypes/trellage/finalize-copilot-seed.mjs" \
   "$repo_root/prototypes/trellage/mise.toml" \
   "$repo_root/prototypes/trellage-codex-profiles" \

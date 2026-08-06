@@ -35,6 +35,7 @@ const runtimeVersions = {
   libxfixes3: "1:6.0.0-2",
   libxkbcommon0: "1.5.0-1",
   libxrandr2: "2:1.5.2-2+b1",
+  ripgrep: "13.0.0-4+b2",
   zsh: "5.9-4+b15",
 } as const
 
@@ -65,6 +66,7 @@ const runtimeIntegrities = {
   libxfixes3: "sha256:d47bda8fed01b19b41d503e2df05d9166c58e30e2376f2f8784ceb7a834befe6",
   libxkbcommon0: "sha256:ec518d8a19796a399ab95e7bc4dfbb6bd2ed8e151f77b222df26208db412d852",
   libxrandr2: "sha256:f0bc7f79fee182caae176652fdb1bf349d13b9591b10ad4dc1c896521da8e49f",
+  ripgrep: "sha256:82bd2ff67cedf892c1906d7ecd2831605ec1f8ad74825f576f5519a9c82a02a3",
   zsh: "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bfba90",
 } as const
 

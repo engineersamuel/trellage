@@ -1,6 +1,18 @@
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -576,6 +588,132 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
     expect(miseLock).toContain('[[tools."http:pi"]]')
     expect(miseLock).toContain('rename_exe = "omp"')
     expect(miseLock).toContain('url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64"')
+  })
+
+  it("materializes the Prime wrapper, provider seed, and Node-only lock", async () => {
+    const root = await temporaryRoot("trellage-materialize-prime-")
+    const document = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "prime-agent"
+description = "Prime Agent profile"
+[harness]
+kind = "prime"
+version = "latest"
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
+[[skills]]
+repository = "https://github.com/example/prime-skill.git"
+ref = "v1.0.0"
+select = ["one"]
+always_on = true
+`,
+        path.join(root, "profile.toml"),
+      ),
+    )
+    const skillSource = await fixture(root, "skill")
+    const skillFiles = await Effect.runPromise(inventoryDirectory(skillSource))
+    const lock: ProfileLock = {
+      schema: 1,
+      platform: "linux/arm64",
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [
+        {
+          kind: "skill",
+          repository: "https://github.com/example/prime-skill.git",
+          ref: "v1.0.0",
+          select: ["one"],
+          commit: "a".repeat(40),
+          integrity: `sha256:${"c".repeat(64)}`,
+          files: skillFiles,
+        },
+      ],
+      packages: {
+        harness: {
+          kind: "prime",
+          selector: "latest",
+          version: "0.7.0",
+          integrity: "sha256:88b6578518c72cd51a825bc80f28e0fef9a64c67de4a7d6fd7afd7ca1b34da0b",
+          url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+          size: 9323789,
+        },
+        runtime: [],
+      },
+      image: { base: document.profile.image.base, base_digest: `sha256:${"b".repeat(64)}` },
+    }
+    const primeEntry = path.join(root, "runtime-prime-entry.sh")
+    await writeFile(primeEntry, '#!/bin/bash\nexec prime-agent "$@"\n')
+    const support: RuntimeSupport = {
+      codexEntry: path.join(root, "unused-codex-entry.sh"),
+      copilotEntry: path.join(root, "unused-copilot-entry.sh"),
+      primeEntry,
+      finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
+    }
+    const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("prime", support))
+    const unused = () => Effect.fail("unexpected generator call")
+    const skillGenerator: SkillGenerator = (_source, _selection, destination) =>
+      Effect.tryPromise({
+        try: async () => {
+          await mkdir(path.join(destination, ".agents", "skills", "one"), { recursive: true })
+          await writeFile(path.join(destination, ".agents", "skills", "one", "SKILL.md"), "# Generated One\n")
+        },
+        catch: (cause) => cause,
+      })
+
+    const context = await Effect.runPromise(
+      createBuildContext(document, lock, [skillSource], snapshot, root, skillGenerator, unused),
+    )
+
+    await expect(readFile(path.join(context, "runtime-prime-entry.sh"), "utf8")).resolves.toContain(
+      'exec prime-agent "$@"',
+    )
+    const wrapper = path.join(context, "prime-agent-wrapper.sh")
+    await expect(readFile(wrapper, "utf8")).resolves.toBe(
+      '#!/bin/sh\nexec /mise/installs/node/22.17.0/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n',
+    )
+    expect((await stat(wrapper)).mode & 0o777).toBe(0o755)
+    await expect(readFile(path.join(context, "prime-seed", "models.json"), "utf8")).resolves.toBe(
+      `${JSON.stringify(
+        {
+          providers: {
+            "copilot-proxy-rs": {
+              baseUrl: "http://copilot-proxy-rs:8080",
+              api: "anthropic-messages",
+              apiKey: "trellage-local-proxy",
+              compat: { supportsEagerToolInputStreaming: false },
+              models: [{ id: "claude-opus-5" }],
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    await expect(readFile(path.join(context, "prime-seed", "skills", "one", "SKILL.md"), "utf8")).resolves.toBe(
+      "# Generated One\n",
+    )
+    await expect(readFile(path.join(context, "prime-seed", "APPEND_SYSTEM.md"), "utf8")).resolves.toContain(
+      "# Trellage managed always-on skill: one\n\n# Generated One\n",
+    )
+    await expect(readFile(path.join(context, "prime-seed", "managed-skills.txt"), "utf8")).resolves.toBe("one\n")
+    const miseConfig = await readFile(path.join(context, "mise.toml"), "utf8")
+    expect(miseConfig).toContain(
+      '"/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }',
+    )
+    expect(miseConfig).toContain('PRIME_AGENT_CODING_AGENT_DIR = "/home/agent/.prime/agent"')
+    const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
+    expect(miseLock).toContain("[[tools.node]]")
+    expect(miseLock).toContain('checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"')
+    expect(miseLock).not.toMatch(/http:prime|prime-agent-0\.7\.0\.tgz/)
   })
 
   it("materializes a source-free Claude core lane without Python or browser tooling", async () => {

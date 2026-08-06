@@ -74,6 +74,9 @@ const safeIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/
 const safeLockedVersionPattern =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+const sha256Pattern = /^sha256:[0-9a-f]{64}$/
+
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`
 
 const impossibleBuilderInput = (message: string): never => {
   throw new ApplicationError({ message })
@@ -166,6 +169,35 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
   }
   if (harness.kind === "pi") {
     return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
+  }
+  if (harness.kind === "prime") {
+    const filename = `prime-agent-${harness.version}.tgz`
+    const expectedUrl = `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v${harness.version}/${filename}`
+    if (
+      harness.url !== expectedUrl ||
+      !sha256Pattern.test(harness.integrity) ||
+      !Number.isSafeInteger(harness.size) ||
+      harness.size <= 0
+    ) {
+      return impossibleBuilderInput("Prime builder requires an exact locked release tarball")
+    }
+    const artifact = `/src/${filename}`
+    const packageCheck =
+      'const p=require("/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json");if(p.name!=="prime-agent"||p.version!==process.argv[1]||p.bin?.["prime-agent"]!=="dist/bundle/cli.js")process.exit(1)'
+    return [
+      `prime_artifact=${shellQuote(artifact)}`,
+      `curl --fail --silent --show-error --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
+      `[ "$(wc -c < "$prime_artifact")" -eq ${harness.size} ]`,
+      `printf '%s  %s\\n' ${shellQuote(harness.integrity.slice("sha256:".length))} "$prime_artifact" | sha256sum --check --strict -`,
+      "rm -f /mise/config.toml",
+      "mise install --locked node@22.17.0",
+      'prime_node_dir="$(mise where node@22.17.0)"',
+      '[ -x "$prime_node_dir/bin/node" ]',
+      '[ -x "$prime_node_dir/bin/npm" ]',
+      `PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix --no-fund --no-audit --loglevel=error --progress=false "$prime_artifact"`,
+      `"$prime_node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(harness.version)}`,
+      build,
+    ].join("; ")
   }
 
   const pluginSourceOffset = document.profile.skills.length
@@ -599,6 +631,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
   piEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-pi-entry.sh",
+  ),
+  primeEntry: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/runtime-prime-entry.sh",
   ),
   finalizeCopilotSeed: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -1097,7 +1133,9 @@ export const profileMetadata = (
     const isCopilot = harnessKind === "copilot"
     const isClaude = harnessKind === "claude"
     const isPi = harnessKind === "pi"
+    const isPrime = harnessKind === "prime"
     const claude = document.profile.harness.kind === "claude" ? document.profile.harness.claude : undefined
+    const prime = document.profile.harness.kind === "prime" ? document.profile.harness.prime : undefined
     const secretEnvironment: Record<string, string> = Object.fromEntries(
       document.profile.secrets.required.map((name) => [name, name]),
     )
@@ -1122,14 +1160,16 @@ export const profileMetadata = (
       resolved_varlock_path: document.resolvedVarlockPath ?? null,
       has_initial_prompt: document.resolvedInitialPrompt !== undefined,
       harness_kind: harnessKind,
-      harness_executable: isPi ? "omp" : harnessKind,
+      harness_executable: isPrime ? "prime-agent" : isPi ? "omp" : harnessKind,
       runtime_entry: isCopilot
         ? "trellage-copilot-entry"
         : isClaude
           ? "trellage-claude-entry"
           : isPi
             ? "trellage-pi-entry"
-            : "trellage-codex-entry",
+            : isPrime
+              ? "trellage-prime-entry"
+              : "trellage-codex-entry",
       default_network: isCopilot || isPi ? "bridge" : "copilot-proxy-rs_default",
       auth_policy: isCopilot
         ? document.profile.harness.copilot.auth
@@ -1137,7 +1177,9 @@ export const profileMetadata = (
           ? document.profile.harness.pi.auth
           : isClaude
             ? "claude-explicit"
-            : "profile-secrets",
+            : isPrime
+              ? "proxy"
+              : "profile-secrets",
       resolved_version: ready && lock?.packages.harness.kind === harnessKind ? lock.packages.harness.version : null,
       ...(claude === undefined
         ? {}
@@ -1147,6 +1189,13 @@ export const profileMetadata = (
             claude_opus_model: claude.opus_model ?? "claude-opus-5",
             claude_sonnet_model: claude.sonnet_model ?? "claude-sonnet-5",
             claude_haiku_model: claude.haiku_model ?? "claude-haiku-4.5",
+          }),
+      ...(prime === undefined
+        ? {}
+        : {
+            prime_provider: prime.provider,
+            prime_model: prime.model,
+            prime_base_url: prime.base_url,
           }),
     }
   })

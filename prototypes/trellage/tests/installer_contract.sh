@@ -245,4 +245,114 @@ TRELLAGE_INSTALL_DIR="$test_root/bin" "$prototype_dir/install-trellage.sh" unins
 grep -Fqx 'legacy command' "$legacy_installed" \
   || fail 'normal install or uninstall changed the legacy harness path'
 
+repo_root="$(cd "$prototype_dir/../.." && pwd -P)"
+root_mise_config="$repo_root/mise.toml"
+[[ -f "$root_mise_config" ]] || fail 'repository root has no mise config for worktree-local Trellage'
+mise trust --quiet "$root_mise_config"
+root_trellage="$({
+  cd "$repo_root"
+  mise exec -- bash -c 'command -v trellage'
+})"
+[[ "$root_trellage" == "$prototype_dir/trellage" ]] \
+  || fail 'repository-root mise activation did not select worktree-local Trellage'
+
+dispatch_main="$test_root/dispatch main"
+dispatch_worktree="$test_root/dispatch worktree"
+dispatch_bin="$test_root/dispatch bin"
+dispatch_log="$test_root/worktree-dispatch.log"
+dispatch_error="$test_root/worktree-dispatch.error"
+mkdir -p "$dispatch_main/prototypes/trellage" "$dispatch_main/packages/trellage-cli" "$dispatch_bin"
+cp "$prototype_dir/trellage" "$dispatch_main/prototypes/trellage/trellage"
+chmod 0755 "$dispatch_main/prototypes/trellage/trellage"
+git init -q "$dispatch_main"
+git -C "$dispatch_main" add prototypes/trellage/trellage
+git -C "$dispatch_main" \
+  -c user.name='Trellage Test' \
+  -c user.email='trellage-test@example.invalid' \
+  -c commit.gpgSign=false \
+  commit -qm 'worktree dispatch fixture'
+git -C "$dispatch_main" worktree add -q -b worktree-dispatch "$dispatch_worktree"
+cat >"$dispatch_worktree/prototypes/trellage/trellage" <<'WORKTREE_COMMAND'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${COPILOT_GITHUB_TOKEN-}" == dispatch-copilot-token ]]
+[[ "${GH_TOKEN-}" == dispatch-gh-token ]]
+[[ "${GITHUB_TOKEN-}" == dispatch-github-token ]]
+[[ "${CLAUDE_CODE_OAUTH_TOKEN-}" == dispatch-claude-token ]]
+[[ "${ANTHROPIC_API_KEY-}" == dispatch-anthropic-token ]]
+[[ "${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}" == dispatch-playwright-token ]]
+[[ "${APIFY_API_TOKEN-}" == dispatch-apify-token ]]
+[[ "${GOOGLE_AI_API_KEY-}" == dispatch-google-token ]]
+printf 'CALL\n' >>"$WORKTREE_DISPATCH_LOG"
+printf 'ARG\t%s\n' "$@" >>"$WORKTREE_DISPATCH_LOG"
+printf 'worktree-local\n'
+WORKTREE_COMMAND
+chmod 0755 "$dispatch_worktree/prototypes/trellage/trellage"
+ln -s "$dispatch_main/prototypes/trellage/trellage" "$dispatch_bin/trellage"
+dispatch_git_bin="$test_root/dispatch git bin"
+dispatch_git_log="$test_root/dispatch-git-env.log"
+real_git="$(command -v git)"
+mkdir -p "$dispatch_git_bin"
+cat >"$dispatch_git_bin/git" <<'DISPATCH_GIT'
+#!/usr/bin/env bash
+set -euo pipefail
+for name in COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
+  ANTHROPIC_API_KEY PLAYWRIGHT_MCP_EXTENSION_TOKEN APIFY_API_TOKEN GOOGLE_AI_API_KEY; do
+  [[ -z "${!name-}" ]] || printf 'LEAK\t%s\n' "$name" >>"$GIT_ENV_LOG"
+done
+exec "$REAL_GIT" "$@"
+DISPATCH_GIT
+chmod 0755 "$dispatch_git_bin/git"
+mkdir -p "$dispatch_worktree/nested directory"
+if ! dispatch_output="$({
+  cd "$dispatch_worktree/nested directory"
+  PATH="$dispatch_git_bin:$PATH" \
+    REAL_GIT="$real_git" \
+    GIT_ENV_LOG="$dispatch_git_log" \
+    COPILOT_GITHUB_TOKEN=dispatch-copilot-token \
+    GH_TOKEN=dispatch-gh-token \
+    GITHUB_TOKEN=dispatch-github-token \
+    CLAUDE_CODE_OAUTH_TOKEN=dispatch-claude-token \
+    ANTHROPIC_API_KEY=dispatch-anthropic-token \
+    PLAYWRIGHT_MCP_EXTENSION_TOKEN=dispatch-playwright-token \
+    APIFY_API_TOKEN=dispatch-apify-token \
+    GOOGLE_AI_API_KEY=dispatch-google-token \
+    WORKTREE_DISPATCH_LOG="$dispatch_log" \
+    "$dispatch_bin/trellage" validate 'profile with spaces'
+} 2>"$dispatch_error")"; then
+  fail 'installed Trellage did not delegate to the active linked worktree'
+fi
+[[ "$dispatch_output" == worktree-local ]] \
+  || fail 'worktree-local Trellage returned unexpected output'
+[[ "$(cat "$dispatch_log")" == $'CALL\nARG\tvalidate\nARG\tprofile with spaces' ]] \
+  || fail 'worktree-local Trellage did not preserve exact arguments'
+[[ ! -s "$dispatch_git_log" ]] \
+  || fail 'worktree discovery exposed ambient credentials to Git'
+grep -Fqx \
+  "trellage: using current worktree command: $dispatch_worktree/prototypes/trellage/trellage" \
+  "$dispatch_error" \
+  || fail 'installed Trellage did not report its worktree command override'
+
+unrelated_repo="$test_root/unrelated repository"
+unrelated_log="$test_root/unrelated-dispatch.log"
+unrelated_error="$test_root/unrelated-dispatch.error"
+mkdir -p "$unrelated_repo/prototypes/trellage" "$unrelated_repo/nested directory"
+git init -q "$unrelated_repo"
+cat >"$unrelated_repo/prototypes/trellage/trellage" <<'UNRELATED_COMMAND'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'unexpected\n' >>"$WORKTREE_DISPATCH_LOG"
+UNRELATED_COMMAND
+chmod 0755 "$unrelated_repo/prototypes/trellage/trellage"
+if (
+  cd "$unrelated_repo/nested directory"
+  WORKTREE_DISPATCH_LOG="$unrelated_log" "$dispatch_bin/trellage" validate
+) >"$test_root/unrelated-dispatch.out" 2>"$unrelated_error"; then
+  fail 'installed Trellage unexpectedly succeeded in an unrelated repository'
+fi
+[[ ! -s "$unrelated_log" ]] \
+  || fail 'installed Trellage executed a lookalike command from an unrelated repository'
+! grep -Fq 'using current worktree command:' "$unrelated_error" \
+  || fail 'installed Trellage reported a worktree override in an unrelated repository'
+
 printf 'trellage installer test: PASS\n'

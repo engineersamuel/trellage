@@ -7,6 +7,7 @@ import type { Platform } from "./platform.js"
 import {
   isClaudeProfile,
   isCodexProfile,
+  isPrimeProfile,
   parseProfile,
   type Mcp,
   type Profile,
@@ -85,7 +86,9 @@ const model = (profile: Profile): string | undefined =>
     ? profile.harness.codex.model
     : isClaudeProfile(profile)
       ? profile.harness.claude.model
-      : undefined
+      : isPrimeProfile(profile)
+        ? profile.harness.prime.model
+        : undefined
 
 const projectMcp = (mcp: Mcp): ProfileChoiceMcp => {
   const common = {

@@ -29,6 +29,24 @@ packages = ["bash"]
 ${extra}
 `
 
+const primeProfile = `
+schema = 1
+name = "prime-agent"
+description = "Prime Agent profile"
+[harness]
+kind = "prime"
+version = "latest"
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
+`
+
 const writeProfile = async (root: string, directory: string, source: string): Promise<string> => {
   const profileDirectory = path.join(root, directory)
   await mkdir(profileDirectory, { recursive: true })
@@ -93,6 +111,14 @@ tools = { allow = ["search"], deny = ["delete"] }
           tools: { allow: ["search"], deny: ["delete"] },
         },
       ],
+    })
+  })
+  it("projects the Prime Agent model", async () => {
+    const document = await Effect.runPromise(parseProfile(primeProfile, "/profiles/prime-agent/profile.toml"))
+
+    expect(projectProfileChoice(document)).toMatchObject({
+      name: "prime-agent",
+      harness: { kind: "prime", version: "latest", model: "claude-opus-5" },
     })
   })
 })

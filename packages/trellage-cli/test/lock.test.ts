@@ -81,12 +81,32 @@ shell = "fish"
 packages = ["bash"]
 `
 
+const primeSource = `
+schema = 1
+name = "prime-agent"
+description = "Prime Agent profile"
+[harness]
+kind = "prime"
+version = "latest"
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+`
+
 const document = (model?: string) => Effect.runSync(parseProfile(source(model), "/profiles/test/profile.toml"))
 
 const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
   Effect.runSync(parseProfile(copilotSource, "/profiles/copilot/profile.toml"))
 
 const piDocument = () => Effect.runSync(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
+
+const primeDocument = () => Effect.runSync(parseProfile(primeSource, "/profiles/prime-agent/profile.toml"))
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
 const commit = (character: string) => character.repeat(40)
@@ -244,6 +264,38 @@ const completePiLock = (): ProfileLock => {
     image: {
       base: profile.profile.image.base,
       base_digest: digest("b"),
+      final_digest: digest("e"),
+    },
+  }
+}
+
+const completePrimeLock = (): ProfileLock => {
+  const profile = primeDocument()
+  return {
+    schema: 1,
+    platform: "linux/arm64",
+    source_date_epoch: 1784379906,
+    profile_hash: profileHash(profile),
+    sources: [],
+    packages: {
+      harness: {
+        kind: "prime",
+        selector: "latest",
+        version: "0.7.0",
+        integrity: "sha256:88b6578518c72cd51a825bc80f28e0fef9a64c67de4a7d6fd7afd7ca1b34da0b",
+        url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+        size: 9323789,
+      },
+      runtime: profile.profile.image.packages.map((name) => ({
+        name,
+        version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
+        integrity:
+          arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
+      })),
+    },
+    image: {
+      base: profile.profile.image.base,
+      base_digest: arm64ArtifactCatalog.base.digest,
       final_digest: digest("e"),
     },
   }
@@ -634,6 +686,34 @@ select = ["full"]
     expect(rendered).toContain('url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64"')
     await expect(Effect.runPromise(parseLock(rendered))).resolves.toEqual(lock)
     await expect(Effect.runPromise(requireLocked(piDocument(), lock))).resolves.toEqual(lock)
+  })
+
+  it("round-trips a source-free Prime lock with the canonical release tarball", async () => {
+    const lock = completePrimeLock()
+    const rendered = renderLock(lock)
+
+    expect(rendered).toContain("sources = []")
+    expect(rendered).toContain('kind = "prime"')
+    expect(rendered).toContain(
+      'url = "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz"',
+    )
+    const parsed = await Effect.runPromise(parseLock(rendered))
+    await expect(Effect.runPromise(requireLocked(primeDocument(), parsed))).resolves.toBe(parsed)
+  })
+
+  it.each([
+    "https://example.test/prime-agent-0.7.0.tgz",
+    "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.1/prime-agent-0.7.0.tgz",
+    "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-other.tgz",
+  ])("rejects forged Prime artifact URL %j", async (url) => {
+    const complete = completePrimeLock()
+    const lock: ProfileLock = {
+      ...complete,
+      packages: { ...complete.packages, harness: { ...complete.packages.harness, url } },
+    }
+
+    expect(lockIsReady(primeDocument(), lock)).toBe(false)
+    await expect(Effect.runPromise(requireLocked(primeDocument(), lock))).rejects.toThrow(/Prime package artifact URL/)
   })
 
   it("normalizes handcrafted plugin version tables deterministically", async () => {

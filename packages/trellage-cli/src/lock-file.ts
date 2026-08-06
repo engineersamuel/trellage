@@ -82,6 +82,7 @@ export const renderLock = (lock: ProfileLock): string => {
     lock.packages.harness.kind === "claude" ||
     lock.packages.harness.kind === "copilot" ||
     lock.packages.harness.kind === "pi" ||
+    lock.packages.harness.kind === "prime" ||
     (lock.packages.harness.kind === "codex" && !hasLegacyPackageProvenance(lock))
   ) {
     lines.push(
@@ -191,6 +192,14 @@ const HarnessPackageSchema = Schema.Union(
   }),
   Schema.Struct({
     kind: Schema.Literal("pi"),
+    selector: Text,
+    version: Text,
+    integrity: Text,
+    url: Text,
+    size: Schema.Number.pipe(Schema.positive()),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("prime"),
     selector: Text,
     version: Text,
     integrity: Text,

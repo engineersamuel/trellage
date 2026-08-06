@@ -1,5 +1,9 @@
 min_version = "2026.6.14"
 
+[tasks.trellage]
+description = "Run the current worktree Trellage command"
+run = "./trellage"
+
 [tasks.validate]
 description = "Validate the bundled Trellage profile"
 run = "./trellage validate ../../profiles/codex-superpowers/profile.toml"

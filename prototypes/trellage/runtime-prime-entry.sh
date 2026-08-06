@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+set +x
+set -euo pipefail
+ulimit -c 0 2>/dev/null || true
+
+unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
+unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+
+fail() {
+  printf 'trellage-prime-entry: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+skill_tree_matches() {
+  local source="$1"
+  local destination="$2"
+  local index
+  local -a source_files=() destination_files=()
+  [[ -d "$source" && ! -L "$source" && -d "$destination" && ! -L "$destination" ]] || return 1
+  [[ -z "$(find "$source" "$destination" -type l -print -quit)" ]] || return 1
+  mapfile -d '' -t source_files < <(cd "$source" && find . -type f -print0 | LC_ALL=C sort -z)
+  mapfile -d '' -t destination_files < <(cd "$destination" && find . -type f -print0 | LC_ALL=C sort -z)
+  [[ ${#source_files[@]} -eq ${#destination_files[@]} ]] || return 1
+  for index in "${!source_files[@]}"; do
+    [[ "${source_files[$index]}" == "${destination_files[$index]}" ]] || return 1
+    cmp -s -- "$source/${source_files[$index]}" "$destination/${destination_files[$index]}" || return 1
+  done
+}
+
+[[ "$#" -gt 0 ]] || fail 'a mode is required'
+mode="$1"
+shift
+case "$mode" in
+  new|prompt|resume) ;;
+  *) fail "unsupported mode: $mode" ;;
+esac
+
+harness_args=()
+while (( $# > 0 )) && [[ "$1" != -- ]]; do
+  harness_args+=("$1")
+  shift
+done
+prompt=
+if (( $# > 0 )); then
+  shift
+  [[ "$mode" == new || "$mode" == prompt ]] || fail "$mode does not accept a prompt"
+  [[ "$#" -eq 1 && -n "$1" ]] \
+    || fail "$mode mode requires exactly one non-empty prompt after --"
+  prompt="$1"
+elif [[ "$mode" == prompt ]]; then
+  fail 'prompt mode requires exactly one non-empty prompt after --'
+fi
+
+if [[ "$mode" == new && -z "$prompt" && "${#harness_args[@]}" -eq 1 && "${harness_args[0]}" == --version ]]; then
+  exec prime-agent --version
+fi
+
+runtime_home="${PRIME_AGENT_CODING_AGENT_DIR:-/home/agent/.prime/agent}"
+[[ "$runtime_home" == /* ]] || fail 'PRIME_AGENT_CODING_AGENT_DIR must be an absolute path'
+[[ "$runtime_home" != *'//'* && "$runtime_home" != *'/./'* \
+  && "$runtime_home" != *'/../'* && "$runtime_home" != */. \
+  && "$runtime_home" != */.. && "$runtime_home" != *'\\'* ]] \
+  || fail 'PRIME_AGENT_CODING_AGENT_DIR must be canonical'
+case "$runtime_home" in
+  /home/agent/*) ;;
+  *) fail 'PRIME_AGENT_CODING_AGENT_DIR must be under /home/agent' ;;
+esac
+[[ -d /home/agent && ! -L /home/agent ]] || fail '/home/agent must be a non-symlink directory'
+[[ "$(realpath -m -- "$runtime_home")" == "$runtime_home" ]] \
+  || fail 'PRIME_AGENT_CODING_AGENT_DIR must not traverse symlinks'
+
+relative_home="${runtime_home#/home/agent/}"
+IFS='/' read -r -a runtime_components <<<"$relative_home"
+current=/home/agent
+for component in "${runtime_components[@]}"; do
+  [[ -n "$component" && "$component" != . && "$component" != .. ]] \
+    || fail 'PRIME_AGENT_CODING_AGENT_DIR contains an unsafe component'
+  current="$current/$component"
+  [[ ! -L "$current" ]] || fail "Prime config path component must not be a symlink: $current"
+  if [[ -e "$current" && ! -d "$current" ]]; then
+    fail "Prime config path component must be a directory: $current"
+  fi
+done
+mkdir -p -- "$runtime_home" || fail 'cannot create Prime config directory'
+current=/home/agent
+for component in "${runtime_components[@]}"; do
+  current="$current/$component"
+  [[ -d "$current" && ! -L "$current" ]] \
+    || fail "Prime config path component must be a non-symlink directory: $current"
+done
+[[ "$(realpath -e -- "$runtime_home")" == "$runtime_home" ]] \
+  || fail 'PRIME_AGENT_CODING_AGENT_DIR resolves outside /home/agent'
+export PRIME_AGENT_CODING_AGENT_DIR="$runtime_home"
+
+seed_root=/usr/local/share/trellage/prime-seed
+managed_manifest="$runtime_home/.trellage-managed-skills"
+managed_append_manifest="$runtime_home/.trellage-managed-append-system"
+skills_home="$runtime_home/skills"
+[[ -d "$seed_root" && ! -L "$seed_root" ]] || fail 'managed Prime seed must be a directory without symlinks'
+mkdir -p "$skills_home"
+[[ -d "$skills_home" && ! -L "$skills_home" ]] || fail 'managed Prime skills directory must not be a symlink'
+[[ ! -e "$managed_manifest" || ( -f "$managed_manifest" && ! -L "$managed_manifest" ) ]] \
+  || fail 'managed Prime skill manifest must be a regular file'
+[[ ! -e "$managed_append_manifest" || ( -f "$managed_append_manifest" && ! -L "$managed_append_manifest" ) ]] \
+  || fail 'managed Prime instruction manifest must be a regular file'
+
+declare -A prior_skills=()
+if [[ -f "$managed_manifest" ]]; then
+  while IFS= read -r skill_name; do
+    [[ -n "$skill_name" ]] || continue
+    [[ "$skill_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -z "${prior_skills[$skill_name]+x}" ]] \
+      || fail "managed Prime skill name is unsafe or duplicated: $skill_name"
+    prior_skills["$skill_name"]=1
+  done <"$managed_manifest"
+fi
+
+seed_manifest="$seed_root/managed-skills.txt"
+[[ -f "$seed_manifest" && ! -L "$seed_manifest" ]] \
+  || fail 'seeded Prime skill manifest must be a regular file'
+declare -A desired_skills=()
+while IFS= read -r skill_name; do
+  [[ -n "$skill_name" ]] || continue
+  [[ "$skill_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -z "${desired_skills[$skill_name]+x}" ]] \
+    || fail "seeded Prime skill name is unsafe or duplicated: $skill_name"
+  source_skill="$seed_root/skills/$skill_name"
+  [[ -d "$source_skill" && ! -L "$source_skill" ]] || fail "seeded Prime skill is missing or unsafe: $skill_name"
+  [[ -z "$(find "$source_skill" -type l -print -quit)" ]] || fail "seeded Prime skill contains a symlink: $skill_name"
+  desired_skills["$skill_name"]=1
+done <"$seed_manifest"
+
+for skill_name in "${!prior_skills[@]}"; do
+  target_skill="$skills_home/$skill_name"
+  if [[ -e "$target_skill" || -L "$target_skill" ]]; then
+    [[ -d "$target_skill" && ! -L "$target_skill" ]] || fail "managed Prime skill destination is unsafe: $skill_name"
+    rm -rf -- "$target_skill"
+  fi
+done
+for skill_name in "${!desired_skills[@]}"; do
+  target_skill="$skills_home/$skill_name"
+  if [[ -e "$target_skill" || -L "$target_skill" ]]; then
+    skill_tree_matches "$seed_root/skills/$skill_name" "$target_skill" \
+      || fail "seeded Prime skill collides with unmanaged state: $skill_name"
+    rm -rf -- "$target_skill"
+  fi
+  cp -R -- "$seed_root/skills/$skill_name" "$target_skill"
+done
+cp -- "$seed_manifest" "$managed_manifest"
+
+seed_append="$seed_root/APPEND_SYSTEM.md"
+runtime_append="$runtime_home/APPEND_SYSTEM.md"
+if [[ -e "$seed_append" || -L "$seed_append" ]]; then
+  [[ -f "$seed_append" && ! -L "$seed_append" ]] || fail 'seeded Prime instructions must be a regular file'
+  if [[ -e "$runtime_append" || -L "$runtime_append" ]]; then
+    [[ -f "$runtime_append" && ! -L "$runtime_append" ]] \
+      || fail 'managed Prime instructions collide with unmanaged state'
+    if [[ ! -f "$managed_append_manifest" ]]; then
+      cmp -s -- "$seed_append" "$runtime_append" \
+        || fail 'managed Prime instructions collide with unmanaged state'
+    fi
+  fi
+  append_temporary="$runtime_home/.APPEND_SYSTEM.md.trellage.$$"
+  [[ ! -e "$append_temporary" && ! -L "$append_temporary" ]] || fail 'managed Prime instruction temporary already exists'
+  cp -- "$seed_append" "$append_temporary"
+  mv -f -- "$append_temporary" "$runtime_append"
+  printf '%s\n' APPEND_SYSTEM.md >"$managed_append_manifest"
+elif [[ -f "$managed_append_manifest" ]]; then
+  [[ -f "$runtime_append" && ! -L "$runtime_append" ]] || fail 'managed Prime instructions are unsafe'
+  rm -f -- "$runtime_append" "$managed_append_manifest"
+fi
+
+seed="$seed_root/models.json"
+models="$runtime_home/models.json"
+[[ -f "$seed" && ! -L "$seed" ]] || fail "missing baked Prime models seed: $seed"
+[[ ! -L "$models" ]] || fail 'managed Prime models.json must not be a symlink'
+if [[ -e "$models" && ! -f "$models" ]]; then
+  fail 'managed Prime models.json must be a regular file'
+fi
+
+managed_temporary=
+cleanup_temporary() {
+  local status=$?
+  trap - EXIT HUP INT TERM
+  if [[ -n "$managed_temporary" ]]; then
+    rm -f -- "$managed_temporary"
+  fi
+  exit "$status"
+}
+trap cleanup_temporary EXIT HUP INT TERM
+managed_temporary="$(mktemp "$runtime_home/.models.json.trellage.XXXXXX")" \
+  || fail 'cannot create temporary Prime models config'
+cp -- "$seed" "$managed_temporary" || fail 'cannot copy baked Prime models config'
+chmod 0600 "$managed_temporary" || fail 'cannot secure temporary Prime models config'
+[[ -d "$runtime_home" && ! -L "$runtime_home" \
+  && "$(realpath -e -- "$runtime_home")" == "$runtime_home" ]] \
+  || fail 'Prime config directory changed while staging models.json'
+[[ ! -L "$models" ]] || fail 'managed Prime models.json became a symlink'
+if [[ -e "$models" && ! -f "$models" ]]; then
+  fail 'managed Prime models.json became a non-regular file'
+fi
+mv -f -- "$managed_temporary" "$models" || fail 'cannot replace managed Prime models config'
+managed_temporary=
+trap - EXIT HUP INT TERM
+
+base_args=(
+  --provider copilot-proxy-rs
+  --model claude-opus-5
+  --offline
+)
+
+case "$mode" in
+  new)
+    if [[ -n "$prompt" ]]; then
+      exec prime-agent "${base_args[@]}" "${harness_args[@]}" -- "$prompt"
+    fi
+    exec prime-agent "${base_args[@]}" "${harness_args[@]}"
+    ;;
+  prompt)
+    exec prime-agent "${base_args[@]}" "${harness_args[@]}" -p -- "$prompt"
+    ;;
+  resume)
+    if [[ -n "${TRELLAGE_RESUME_SESSION_ID:-}" ]]; then
+      exec prime-agent "${base_args[@]}" "${harness_args[@]}" -r "$TRELLAGE_RESUME_SESSION_ID"
+    fi
+    exec prime-agent "${base_args[@]}" "${harness_args[@]}" -c
+    ;;
+esac

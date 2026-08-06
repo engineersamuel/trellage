@@ -149,6 +149,7 @@ const runtimeSupport = (root: string) => ({
   codexEntry: path.join(root, "runtime-entry.sh"),
   copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
   piEntry: path.join(root, "runtime-pi-entry.sh"),
+  primeEntry: path.join(root, "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
 })
 
@@ -308,6 +309,52 @@ const piLock = (profile_hash: string): ProfileLock => ({
   },
 })
 
+const primeSource = `
+schema = 1
+name = "prime-agent"
+description = "Prime Agent profile"
+[harness]
+kind = "prime"
+version = "latest"
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
+`
+
+const primeLock = (profile_hash: string): ProfileLock => ({
+  schema: 1,
+  platform: "linux/arm64",
+  source_date_epoch: 1784379906,
+  profile_hash,
+  sources: [],
+  packages: {
+    harness: {
+      kind: "prime",
+      selector: "latest",
+      version: "0.7.0",
+      integrity: "sha256:88b6578518c72cd51a825bc80f28e0fef9a64c67de4a7d6fd7afd7ca1b34da0b",
+      url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+      size: 9323789,
+    },
+    runtime: ["bash", "gh", "git"].map((name) => ({
+      name,
+      version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
+      integrity: arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
+    })),
+  },
+  image: {
+    base: "node:22.17.0-bookworm-slim",
+    base_digest: arm64ArtifactCatalog.base.digest,
+    final_digest: digest("e"),
+  },
+})
+
 const codexSource = `
 schema = 1
 name = "codex-upgrade"
@@ -459,6 +506,31 @@ describe("profile metadata", () => {
       auth_policy: "host-or-login",
     })
     expect(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
+  })
+
+  it("reports Prime proxy identity without model credentials", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-prime-"))
+    const profilePath = await writeReadyProfile(root, primeSource, primeLock("replaced-by-writeReadyProfile"))
+
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+
+    expect(metadata).toMatchObject({
+      harness_kind: "prime",
+      harness_executable: "prime-agent",
+      image: "trellage-profile-prime-agent-linux-arm64:locked",
+      locked: true,
+      resolved_version: "0.7.0",
+      runtime_entry: "trellage-prime-entry",
+      default_network: "copilot-proxy-rs_default",
+      auth_policy: "proxy",
+      prime_provider: "copilot-proxy-rs",
+      prime_model: "claude-opus-5",
+      prime_base_url: "http://copilot-proxy-rs:8080",
+    })
+    expect(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(JSON.stringify(metadata)).not.toMatch(
+      /ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN/,
+    )
   })
 })
 
@@ -1254,6 +1326,45 @@ select = ["humanizer"]
     expect(builderScript(document, piLock(profileHash(document)))).toBe(
       'mise install --locked http:pi@17.2.6; pi_dir="$(mise where http:pi@17.2.6)"; rm -f "$pi_dir/metadata.json"; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     )
+  })
+
+  it("verifies and installs only the exact locked Prime tarball before the OCI build", async () => {
+    const document = await Effect.runPromise(parseProfile(primeSource, "/profiles/prime-agent/profile.toml"))
+    const lock = primeLock(profileHash(document))
+    const script = builderScript(document, lock)
+    const commands = [
+      "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
+      'wc -c < "$prime_artifact"',
+      "sha256sum --check --strict",
+      "rm -f /mise/config.toml",
+      "mise install --locked node@22.17.0",
+      'prime_node_dir="$(mise where node@22.17.0)"',
+      '[ -x "$prime_node_dir/bin/node" ]',
+      '[ -x "$prime_node_dir/bin/npm" ]',
+      "PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0",
+      'PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix',
+      '"$prime_node_dir/bin/node" -e',
+      "/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json",
+      'p.bin?.["prime-agent"]!=="dist/bundle/cli.js"',
+      'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
+    ]
+
+    for (const command of commands) expect(script).toContain(command)
+    for (let index = 1; index < commands.length; index += 1) {
+      expect(script.indexOf(commands[index]!)).toBeGreaterThan(script.indexOf(commands[index - 1]!))
+    }
+    expect(script).not.toMatch(/install\.sh|\/stable/)
+
+    const harness = lock.packages.harness
+    for (const forged of [
+      { ...harness, url: "https://example.test/prime-agent-0.7.0.tgz" },
+      { ...harness, integrity: "sha256:bad" },
+      { ...harness, size: 0 },
+    ]) {
+      expect(() =>
+        builderScript(document, { ...lock, packages: { ...lock.packages, harness: forged } } as ProfileLock),
+      ).toThrow(/Prime builder/i)
+    }
   })
 
   it("fails closed when Copilot reports a near-miss or duplicate plugin row", async () => {

@@ -1,0 +1,24 @@
+schema = 1
+name = "prime-agent"
+description = "Prime Agent with Claude Opus 5 through copilot-proxy-rs."
+
+[harness]
+kind = "prime"
+version = "latest"
+
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "ripgrep", "zsh"]
+
+[[skills]]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true

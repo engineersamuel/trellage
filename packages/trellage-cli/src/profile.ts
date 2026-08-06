@@ -114,6 +114,13 @@ const Pi = Schema.Struct({
   auth: Schema.Literal("host-or-login"),
 })
 
+const Prime = Schema.Struct({
+  provider: Schema.Literal("copilot-proxy-rs"),
+  model: Schema.Literal("claude-opus-5"),
+  base_url: Schema.Literal("http://copilot-proxy-rs:8080"),
+  api: Schema.Literal("anthropic-messages"),
+})
+
 const CommonHarness = {
   version: NonEmpty,
   args: Schema.optional(Schema.Array(Schema.String)),
@@ -142,6 +149,12 @@ const PiHarness = Schema.Struct({
   ...CommonHarness,
   kind: Schema.Literal("pi"),
   pi: Pi,
+})
+
+const PrimeHarness = Schema.Struct({
+  ...CommonHarness,
+  kind: Schema.Literal("prime"),
+  prime: Prime,
 })
 
 const Image = Schema.Struct({
@@ -195,11 +208,18 @@ const PiProfileSchema = Schema.Struct({
   plugins: Schema.optional(Schema.Array(CodexPlugin)),
 })
 
+const PrimeProfileSchema = Schema.Struct({
+  ...CommonProfile,
+  harness: PrimeHarness,
+  plugins: Schema.optional(Schema.Array(CodexPlugin)),
+})
+
 export const ProfileSchema = Schema.Union(
   CodexProfileSchema,
   CopilotProfileSchema,
   ClaudeProfileSchema,
   PiProfileSchema,
+  PrimeProfileSchema,
 )
 
 type DecodedProfile = Schema.Schema.Type<typeof ProfileSchema>
@@ -207,6 +227,7 @@ type DecodedCodexProfile = Schema.Schema.Type<typeof CodexProfileSchema>
 type DecodedCopilotProfile = Schema.Schema.Type<typeof CopilotProfileSchema>
 type DecodedClaudeProfile = Schema.Schema.Type<typeof ClaudeProfileSchema>
 type DecodedPiProfile = Schema.Schema.Type<typeof PiProfileSchema>
+type DecodedPrimeProfile = Schema.Schema.Type<typeof PrimeProfileSchema>
 
 type NormalizedProfile<T extends DecodedProfile> = Omit<T, "runtime" | "skills" | "plugins" | "mcps" | "secrets"> & {
   readonly runtime: { readonly tmpfs_size: string }
@@ -221,7 +242,8 @@ export type CodexProfile = NormalizedProfile<DecodedCodexProfile>
 export type CopilotProfile = NormalizedProfile<DecodedCopilotProfile>
 export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
 export type PiProfile = NormalizedProfile<DecodedPiProfile>
-export type Profile = CodexProfile | CopilotProfile | ClaudeProfile | PiProfile
+export type PrimeProfile = NormalizedProfile<DecodedPrimeProfile>
+export type Profile = CodexProfile | CopilotProfile | ClaudeProfile | PiProfile | PrimeProfile
 
 export const isCodexProfile = (profile: Profile): profile is CodexProfile => profile.harness.kind === "codex"
 
@@ -231,6 +253,8 @@ export const isClaudeProfile = (profile: Profile): profile is ClaudeProfile => p
 
 export const isPiProfile = (profile: Profile): profile is PiProfile => profile.harness.kind === "pi"
 
+export const isPrimeProfile = (profile: Profile): profile is PrimeProfile => profile.harness.kind === "prime"
+
 const isDecodedCodexProfile = (profile: DecodedProfile): profile is DecodedCodexProfile =>
   profile.harness.kind === "codex"
 
@@ -238,6 +262,9 @@ const isDecodedClaudeProfile = (profile: DecodedProfile): profile is DecodedClau
   profile.harness.kind === "claude"
 
 const isDecodedPiProfile = (profile: DecodedProfile): profile is DecodedPiProfile => profile.harness.kind === "pi"
+
+const isDecodedPrimeProfile = (profile: DecodedProfile): profile is DecodedPrimeProfile =>
+  profile.harness.kind === "prime"
 
 export interface ProfileDocument {
   readonly path: string
@@ -270,6 +297,14 @@ const rejectUnsupportedPiSections = (raw: unknown): Effect.Effect<void, ProfileE
   if (Object.hasOwn(raw, "plugins")) return fail("Pi profiles do not support standalone plugins")
   if (Object.hasOwn(raw, "mcps")) return fail("Pi profiles do not support MCPs")
   if (Object.hasOwn(raw, "secrets")) return fail("Pi profiles do not support declared secrets")
+  return Effect.void
+}
+
+const rejectUnsupportedPrimeSections = (raw: unknown): Effect.Effect<void, ProfileError> => {
+  if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "prime") return Effect.void
+  if (Object.hasOwn(raw, "plugins")) return fail("Prime profiles do not support standalone plugins")
+  if (Object.hasOwn(raw, "mcps")) return fail("Prime profiles do not support MCPs")
+  if (Object.hasOwn(raw, "secrets")) return fail("Prime profiles do not support declared secrets")
   return Effect.void
 }
 
@@ -333,14 +368,23 @@ const normalize = (profile: DecodedProfile): Profile =>
             mcps: profile.mcps ?? [],
             secrets: profile.secrets ?? { provider: "env", required: [] },
           }
-        : {
-            ...profile,
-            runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-            skills: profile.skills ?? [],
-            plugins: profile.plugins ?? [],
-            mcps: profile.mcps ?? [],
-            secrets: profile.secrets ?? { provider: "env", required: [] },
-          }
+        : isDecodedPrimeProfile(profile)
+          ? {
+              ...profile,
+              runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
+              skills: profile.skills ?? [],
+              plugins: profile.plugins ?? [],
+              mcps: profile.mcps ?? [],
+              secrets: profile.secrets ?? { provider: "env", required: [] },
+            }
+          : {
+              ...profile,
+              runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
+              skills: profile.skills ?? [],
+              plugins: profile.plugins ?? [],
+              mcps: profile.mcps ?? [],
+              secrets: profile.secrets ?? { provider: "env", required: [] },
+            }
 
 const validate = (
   profile: Profile,
@@ -425,6 +469,22 @@ const validate = (
         profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace").map((plugin) => plugin.marketplace),
         "Claude marketplace",
       )
+    } else if (isPrimeProfile(profile)) {
+      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
+        return yield* fail(`invalid Prime version: ${profile.harness.version}`)
+      }
+      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
+        return yield* fail("Prime skill sources use an unsupported adapter")
+      }
+      if (profile.plugins.length > 0) return yield* fail("Prime profiles do not support standalone plugins")
+      if (profile.mcps.length > 0) return yield* fail("Prime profiles do not support MCPs")
+      if (
+        profile.secrets.required.length > 0 ||
+        profile.secrets.provider !== "env" ||
+        profile.secrets.varlock_path !== undefined
+      ) {
+        return yield* fail("Prime profiles do not support declared secrets")
+      }
     } else {
       if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
         return yield* fail(`invalid Pi version: ${profile.harness.version}`)
@@ -535,6 +595,7 @@ export const parseProfile = (source: string, profilePath: string): Effect.Effect
     })
     yield* rejectUnsupportedCopilotSections(raw)
     yield* rejectUnsupportedPiSections(raw)
+    yield* rejectUnsupportedPrimeSections(raw)
     const decoded = yield* Schema.decodeUnknown(ProfileSchema)(raw, {
       onExcessProperty: "error",
     }).pipe(

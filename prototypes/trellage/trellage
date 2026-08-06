@@ -3,6 +3,69 @@ set +x
 set -euo pipefail
 ulimit -c 0 2>/dev/null || true
 
+resolve_script_path() {
+  local candidate="$1"
+  local candidate_dir link_target
+  while [[ -L "$candidate" ]]; do
+    candidate_dir="$(cd -P "$(dirname "$candidate")" && pwd)" || return 1
+    link_target="$(readlink "$candidate")" || return 1
+    if [[ "$link_target" == /* ]]; then
+      candidate="$link_target"
+    else
+      candidate="$candidate_dir/$link_target"
+    fi
+  done
+  candidate_dir="$(cd -P "$(dirname "$candidate")" && pwd)" || return 1
+  printf '%s/%s\n' "$candidate_dir" "${candidate##*/}"
+}
+
+canonical_git_common_dir() {
+  local checkout="$1"
+  local common_dir
+  common_dir="$(git -C "$checkout" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  if [[ "$common_dir" != /* ]]; then
+    common_dir="$checkout/$common_dir"
+  fi
+  [[ -d "$common_dir" ]] || return 1
+  cd -P "$common_dir" && pwd
+}
+
+dispatch_to_current_trellage_worktree() {
+  local invoked_path="$1"
+  local installed_path="$2"
+  shift 2
+  [[ -L "$invoked_path" ]] || return 0
+  command -v git >/dev/null 2>&1 || return 0
+
+  local current_root installed_root candidate
+  local current_common_dir installed_common_dir
+  current_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  current_root="$(cd -P "$current_root" && pwd)" || return 0
+  candidate="$current_root/prototypes/trellage/trellage"
+  [[ -f "$candidate" && -x "$candidate" && ! -L "$candidate" ]] || return 0
+  candidate="$(resolve_script_path "$candidate")" || return 0
+  [[ "$candidate" != "$installed_path" ]] || return 0
+
+  installed_root="$(git -C "$(dirname "$installed_path")" rev-parse --show-toplevel 2>/dev/null)" \
+    || return 0
+  installed_root="$(cd -P "$installed_root" && pwd)" || return 0
+  current_common_dir="$(canonical_git_common_dir "$current_root")" || return 0
+  installed_common_dir="$(canonical_git_common_dir "$installed_root")" || return 0
+  [[ "$current_common_dir" == "$installed_common_dir" ]] || return 0
+
+  printf 'trellage: using current worktree command: %s\n' "$candidate" >&2
+  [[ -z "${ambient_copilot_github_token-}" ]] || export COPILOT_GITHUB_TOKEN="$ambient_copilot_github_token"
+  [[ -z "${ambient_gh_token-}" ]] || export GH_TOKEN="$ambient_gh_token"
+  [[ -z "${ambient_github_token-}" ]] || export GITHUB_TOKEN="$ambient_github_token"
+  [[ -z "${ambient_claude_code_oauth_token-}" ]] || export CLAUDE_CODE_OAUTH_TOKEN="$ambient_claude_code_oauth_token"
+  [[ -z "${ambient_anthropic_api_key-}" ]] || export ANTHROPIC_API_KEY="$ambient_anthropic_api_key"
+  [[ -z "${ambient_playwright_mcp_extension_token-}" ]] || export PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
+  [[ -z "${ambient_apify_api_token-}" ]] || export APIFY_API_TOKEN="$ambient_apify_api_token"
+  [[ -z "${ambient_google_ai_api_key-}" ]] || export GOOGLE_AI_API_KEY="$ambient_google_ai_api_key"
+  exec "$candidate" "$@"
+}
+
+
 unset \
   ambient_copilot_github_token ambient_gh_token ambient_github_token \
   ambient_claude_code_oauth_token ambient_anthropic_api_key \
@@ -24,6 +87,9 @@ unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROP
   AWS_SESSION_TOKEN AWS_PROFILE GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID \
   CLOUD_ML_REGION AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
 unset HERDR_AGENT
+invoked_path="${BASH_SOURCE[0]}"
+source_path="$(resolve_script_path "$invoked_path")"
+dispatch_to_current_trellage_worktree "$invoked_path" "$source_path" "$@"
 
 trellage_arguments=("$@")
 
@@ -169,16 +235,6 @@ case "$mode" in
   *) discard_ambient_github_auth; discard_ambient_claude_auth ;;
 esac
 
-source_path="${BASH_SOURCE[0]}"
-while [[ -L "$source_path" ]]; do
-  source_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
-  link_target="$(readlink "$source_path")"
-  if [[ "$link_target" == /* ]]; then
-    source_path="$link_target"
-  else
-    source_path="$source_dir/$link_target"
-  fi
-done
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
 compiler="$compiler_package_dir/dist/cli.js"
@@ -382,6 +438,9 @@ claude_gateway=
 claude_opus_model=
 claude_sonnet_model=
 claude_haiku_model=
+prime_provider=
+prime_model=
+prime_base_url=
 if [[ "$harness_kind" == claude ]]; then
   claude_mode="$(jq -er '.claude_mode' <<<"$profile_metadata")" || fail 'profile metadata has no Claude mode'
   claude_gateway="$(jq -er '.claude_gateway' <<<"$profile_metadata")" || fail 'profile metadata has no Claude gateway'
@@ -397,8 +456,23 @@ if [[ "$harness_kind" == claude ]]; then
   esac
   [[ "$claude_gateway" =~ ^https?://[^[:space:]]+$ ]] || fail 'profile metadata has an invalid Claude gateway'
 fi
+if [[ "$harness_kind" == prime ]]; then
+  prime_provider="$(jq -er '.prime_provider | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
+    || fail 'profile metadata has no Prime provider'
+  prime_model="$(jq -er '.prime_model | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
+    || fail 'profile metadata has no Prime model'
+  prime_base_url="$(jq -er '.prime_base_url | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
+    || fail 'profile metadata has no Prime base URL'
+  [[ "$prime_provider" == copilot-proxy-rs ]] || fail 'profile metadata has an unsupported Prime provider'
+  [[ "$prime_model" == claude-opus-5 ]] || fail 'profile metadata has an unsupported Prime model'
+  [[ "$prime_base_url" == http://copilot-proxy-rs:8080 ]] || fail 'profile metadata has an unsupported Prime base URL'
+  [[ "$auth_policy" == proxy ]] || fail 'profile metadata has an unsupported Prime auth policy'
+  [[ "$harness_executable" == prime-agent ]] || fail 'profile metadata has an unsupported Prime executable'
+  [[ "$runtime_entry" == trellage-prime-entry ]] || fail 'profile metadata has an unsupported Prime runtime entry'
+  [[ "$default_network" == copilot-proxy-rs_default ]] || fail 'profile metadata has an unsupported Prime network'
+fi
 case "$harness_kind" in
-  claude|codex|copilot|pi) ;;
+  claude|codex|copilot|pi|prime) ;;
   *) fail 'profile metadata has an unsupported harness kind' ;;
 esac
 [[ "$harness_executable" =~ ^[A-Za-z0-9._-]+$ ]] \
@@ -1274,7 +1348,7 @@ if [[ "$harness_kind" == claude && "$claude_mode" == core ]]; then
   portable_prompt_command="args=(\"\$@\"); prompt=\"\${args[-1]}\"; unset 'args[-1]'; exec $runtime_entry prompt $harness_executable \"\${args[@]}\" -- \"\$prompt\""
   initial_prompt_command="prompt=\"\$(cat /usr/local/share/trellage/initial-prompt.md)\"; exec $runtime_entry new $harness_executable \"\$@\" -- \"\$prompt\""
   new_command="exec $runtime_entry new $harness_executable \"\$@\""
-elif [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
+elif [[ "$harness_kind" == copilot || "$harness_kind" == pi || "$harness_kind" == prime ]]; then
   resume_command="exec $runtime_entry resume \$argv"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new \$argv -- \$prompt"
   portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt \$argv -- \$prompt"

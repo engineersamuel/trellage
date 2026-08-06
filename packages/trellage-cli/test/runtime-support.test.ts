@@ -31,6 +31,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     codexEntry: path.join(root, "runtime-entry.sh"),
     copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
     piEntry: path.join(root, "runtime-pi-entry.sh"),
+    primeEntry: path.join(root, "runtime-prime-entry.sh"),
     finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
     finalizeClaudeSeed: path.join(root, "finalize-claude-seed.mjs"),
     claudeEntry: path.join(root, "runtime-claude-entry.sh"),
@@ -41,6 +42,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     writeFile(paths.codexEntry, "codex-entry\n"),
     writeFile(paths.copilotEntry, "copilot-entry\n"),
     writeFile(paths.piEntry, "pi-entry\n"),
+    writeFile(paths.primeEntry, "prime-entry\n"),
     writeFile(paths.finalizeCopilotSeed, "copilot-finalizer\n"),
     writeFile(paths.finalizeClaudeSeed, "claude-finalizer\n"),
     writeFile(paths.claudeEntry, "claude-entry\n"),
@@ -58,6 +60,7 @@ describe("runtime support snapshots", () => {
     const copilot = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", paths))
     const claude = await Effect.runPromise(createRuntimeSupportSnapshot("claude", paths))
     const pi = await Effect.runPromise(createRuntimeSupportSnapshot("pi", paths))
+    const prime = await Effect.runPromise(createRuntimeSupportSnapshot("prime", paths))
 
     expect(codex.files.map((file) => file.role)).toEqual(["runtime-entry"])
     expect(copilot.files.map((file) => file.role)).toEqual(["runtime-copilot-entry", "finalize-copilot-seed"])
@@ -69,6 +72,7 @@ describe("runtime support snapshots", () => {
     ])
     expect(claude.files[2]?.destination).toBe("/src/.runtime-support/hyperresearch-requirements.lock")
     expect(pi.files.map((file) => file.role)).toEqual(["runtime-pi-entry"])
+    expect(prime.files.map((file) => file.role)).toEqual(["runtime-prime-entry"])
     expect(codex.hash).toBe("sha256:ef6c9fce95dcc3ccd9eaeb94b9611f332d30e539e8570cc99b4d0dd07c652b64")
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).toBe(codex.hash)
 
@@ -167,6 +171,7 @@ describe("runtime support snapshots", () => {
       ["codex", ["codexEntry"]],
       ["copilot", ["copilotEntry", "finalizeCopilotSeed"]],
       ["claude", ["claudeEntry", "finalizeClaudeSeed", "hyperresearchRequirements", "claudeBrowserAgent"]],
+      ["prime", ["primeEntry"]],
     ] as const
     for (const [kind, properties] of cases) {
       for (const property of properties) {

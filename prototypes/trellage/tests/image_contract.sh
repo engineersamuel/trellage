@@ -8,7 +8,7 @@ profile="$(cd "$(dirname "$profile")" && pwd)/$(basename "$profile")"
 compiler="$repo_root/packages/trellage-cli/dist/cli.js"
 
 fail() {
-  printf 'Trellage image: FAIL: %s\n' "$1" >&2
+  printf 'Trellage image contract: FAIL: %s\n' "$1" >&2
   exit 1
 }
 
@@ -21,11 +21,11 @@ metadata="$(node "$compiler" metadata "$profile")"
 profile_name="$(jq -er '.profile_name' <<<"$metadata")"
 profile_hash="$(jq -er '.profile_hash' <<<"$metadata")"
 harness_kind="$(jq -er '.harness_kind' <<<"$metadata")"
-image_name="$(jq -er '.image' <<<"$metadata")"
-platform="$(jq -er '.platform' <<<"$metadata")"
-platform_identity="${platform//\//-}"
+metadata_platform="$(jq -er '.platform' <<<"$metadata")"
+platform_identity="${metadata_platform//\//-}"
 lock="${profile%.toml}.${platform_identity}.lock.toml"
-[[ -f "$lock" ]] || fail "missing platform-qualified lock: $lock"
+[[ -f "$lock" ]] || fail "missing required file: $lock"
+image_name="$(jq -er '.image' <<<"$metadata")"
 profile_shell="$(awk '
   /^\[image\]$/ { in_image = 1; next }
   in_image && /^\[/ { exit }
@@ -40,14 +40,16 @@ profile_shell="$(awk '
   || fail "profile image shell is unsupported: $profile_shell"
 
 [[ "$image_name" == "trellage-profile-${profile_name}-${platform_identity}:locked" ]] \
-  || fail "profile metadata uses a non-Trellage image tag: $image_name"
+  || fail "profile metadata uses a non-Trellage platform image tag: $image_name"
 
 jq -e \
   --arg name "$profile_name" \
-  --arg image "trellage-profile-${profile_name}-${platform_identity}:locked" '
+  --arg image "$image_name" \
+  --arg platform "$metadata_platform" '
     .profile_name == $name
     and .locked == true
     and .image == $image
+    and .platform == $platform
     and (.profile_hash | test("^sha256:[0-9a-f]{64}$"))
   ' <<<"$metadata" >/dev/null || fail 'profile metadata is invalid, stale, or missing its final OCI digest'
 
@@ -224,6 +226,29 @@ case "$harness_kind" in
     grep -Eq '^url = "https://github.com/can1357/oh-my-pi/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/omp-linux-arm64"$' "$lock" \
       || fail 'Pi release asset identity is not exact'
     ;;
+  prime)
+    runtime_entry="$prototype_dir/runtime-prime-entry.sh"
+    [[ -f "$runtime_entry" ]] || fail "missing required file: $runtime_entry"
+    [[ "$profile_name" == prime-agent ]] || fail 'Prime profile name is not exact'
+    [[ "$(jq -r '.harness_executable' <<<"$metadata")" == prime-agent ]] \
+      || fail 'Prime executable metadata is not exact'
+    [[ "$(jq -r '.runtime_entry' <<<"$metadata")" == trellage-prime-entry ]] \
+      || fail 'Prime runtime entry metadata is not exact'
+    [[ "$(jq -r '.default_network' <<<"$metadata")" == copilot-proxy-rs_default ]] \
+      || fail 'Prime network metadata is not exact'
+    [[ "$(jq -r '.auth_policy' <<<"$metadata")" == proxy ]] \
+      || fail 'Prime auth policy metadata is not exact'
+    [[ "$(jq -r '.prime_provider' <<<"$metadata")" == copilot-proxy-rs ]] \
+      || fail 'Prime provider metadata is not exact'
+    [[ "$(jq -r '.prime_model' <<<"$metadata")" == claude-opus-5 ]] \
+      || fail 'Prime model metadata is not exact'
+    [[ "$(jq -r '.prime_base_url' <<<"$metadata")" == http://copilot-proxy-rs:8080 ]] \
+      || fail 'Prime base URL metadata is not exact'
+    [[ "$(locked_value '[packages.harness]' kind)" == prime ]] || fail 'Prime lock kind is not exact'
+    [[ "$(locked_value '[packages.harness]' selector)" == latest ]] || fail 'Prime lock selector is not upgradeable'
+    grep -Eq '^url = "https://pub-728493de92a943e2a9b2d17b4719f318\.r2\.dev/releases/v[0-9]+\.[0-9]+\.[0-9]+/prime-agent-[0-9]+\.[0-9]+\.[0-9]+\.tgz"$' "$lock" \
+      || fail 'Prime release asset identity is not exact'
+    ;;
   *) fail "unsupported harness kind: $harness_kind" ;;
 esac
 
@@ -278,6 +303,16 @@ jq -e \
       and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
       and (.[0].Config.Env | all(startswith("COPILOT_HOME=") | not))
       and (.[0].Config.Env | all(startswith("CODEX_HOME=") | not))
+    elif $kind == "prime" then
+      .[0].Config.Labels["dev.trellage.harness.kind"] == $kind
+      and .[0].Config.Labels["dev.trellage.prime.version"] == $version
+      and (.[0].Config.Env | any(. == "PRIME_AGENT_CODING_AGENT_DIR=/home/agent/.prime/agent"))
+      and (.[0].Config.Env | any(. == "PI_OFFLINE=1"))
+      and (.[0].Config.Env | any(. == "PI_SKIP_VERSION_CHECK=1"))
+      and (.[0].Config.Env | any(. == "PRIME_AGENT_INSTALL_UV=1"))
+      and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
+      and (.[0].Config.Env | all(test("^(CODEX_HOME|COPILOT_HOME|CLAUDE_CONFIG_DIR|PI_CODING_AGENT_DIR)=") | not))
+      and .[0].Config.Volumes == null
     else
       .[0].Config.Labels["dev.trellage.codex.version"] == $version
       and (.[0].Config.Env | any(. == "CODEX_HOME=/home/agent/.codex"))
@@ -286,7 +321,7 @@ jq -e \
   || fail 'image config violates exact labels, user, shell, home, version, or secret contract'
 
 inspect_and_history="$(printf '%s\n' "$image_config"; docker history --no-trunc --format '{{.CreatedBy}} {{.Comment}}' "$IMAGE_REF")"
-! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|claude|pi)-entry|(^|[/[:space:]])harness-(codex|copilot|claude|pi)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
+! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|claude|pi|prime)-entry|(^|[/[:space:]])harness-(codex|copilot|claude|pi|prime)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
   || fail 'image inspect or history contains auth, host, temporary, build, or old-brand data'
 
 if [[ "$harness_kind" == copilot ]]; then
@@ -347,6 +382,60 @@ if [[ "$harness_kind" == copilot ]]; then
       ! find "$COPILOT_HOME" "$XDG_CACHE_HOME" -type f -exec grep -alF "$auth_canary" {} + | grep -q .
     ' -- "$locked_version" "$hve_version" \
     || fail 'Copilot executable, entry, seed, HVE, path, auth, or Codex-isolation probe failed'
+elif [[ "$harness_kind" == prime ]]; then
+  docker run --rm \
+    --network none \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+    --tmpfs /home/agent:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+    --entrypoint bash \
+    "$IMAGE_REF" -ceu '
+      locked_version="$1"
+      test "$(id -u):$(id -g)" = 10001:10001
+      command -v fish bash zsh git curl jq gh rg prime-agent >/dev/null
+      test "$(command -v prime-agent)" = /usr/local/bin/prime-agent
+      test -x /usr/local/bin/trellage-prime-entry
+      test "$PRIME_AGENT_CODING_AGENT_DIR" = /home/agent/.prime/agent
+      test "$PI_OFFLINE" = 1
+      test "$PI_SKIP_VERSION_CHECK" = 1
+      test "$PRIME_AGENT_INSTALL_UV" = 1
+      jq -e --arg version "$locked_version" '\''
+        .name == "prime-agent"
+        and .version == $version
+        and .bin["prime-agent"] == "dist/bundle/cli.js"
+      '\'' /usr/local/lib/node_modules/prime-agent/package.json >/dev/null
+      jq -e '\''
+        . == {
+          providers: {
+            "copilot-proxy-rs": {
+              baseUrl: "http://copilot-proxy-rs:8080",
+              api: "anthropic-messages",
+              apiKey: "trellage-local-proxy",
+              compat: {supportsEagerToolInputStreaming: false},
+              models: [{id: "claude-opus-5"}]
+            }
+          }
+        }
+      '\'' /usr/local/share/trellage/prime-seed/models.json >/dev/null
+      test -f /usr/local/share/trellage/prime-seed/skills/caveman/SKILL.md
+      test ! -L /usr/local/share/trellage/prime-seed/skills/caveman/SKILL.md
+      grep -Fqx caveman /usr/local/share/trellage/prime-seed/managed-skills.txt
+      test -f /usr/local/share/trellage/prime-seed/APPEND_SYSTEM.md
+      test ! -L /usr/local/share/trellage/prime-seed/APPEND_SYSTEM.md
+      grep -Fq "ACTIVE EVERY RESPONSE" /usr/local/share/trellage/prime-seed/APPEND_SYSTEM.md
+      prime-agent --version >/tmp/prime-version 2>&1
+      grep -Fq "$locked_version" /tmp/prime-version
+      trellage-prime-entry new --version >/tmp/trellage-prime-version 2>&1
+      grep -Fq "$locked_version" /tmp/trellage-prime-version
+      test ! -e /home/agent/.prime
+      test ! -e /home/agent/.codex
+      test ! -e /home/agent/.copilot
+      test ! -e /home/agent/.claude
+      test ! -e /home/agent/.omp
+      test ! -e /home/agent/.config/gh
+      test ! -e /usr/local/share/harness
+      test ! -e /usr/local/bin/harness-prime-entry
+    ' -- "$locked_version" || fail 'Prime executable, entry, seed, version, gh, or state-isolation probe failed'
 elif [[ "$harness_kind" == pi ]]; then
   docker run --rm \
     --network none \

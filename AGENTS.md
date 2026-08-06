@@ -24,6 +24,8 @@ host. Examples: `trx`, `cpx`, `cdx`, and `grx`.
 - Run the TypeScript compiler directly with `cd packages/trellage-cli && npm run check`.
 - Build the TypeScript package with `cd packages/trellage-cli && npm run build`.
 - Live profile probes require explicit `PROFILE_MATRIX_ARGS=--live` opt-in because they may consume paid quota.
+- Validate locally: `mise run trellage -- validate <profile name>`.
+- Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 
 ## Architecture
 

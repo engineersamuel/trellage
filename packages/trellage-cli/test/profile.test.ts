@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { profileHash } from "../src/lock.js"
-import { isClaudeProfile, isCodexProfile, isCopilotProfile, parseProfile } from "../src/profile.js"
+import { isClaudeProfile, isCodexProfile, isCopilotProfile, isPrimeProfile, parseProfile } from "../src/profile.js"
 
 const profile = (extra = "") => `
 schema = 1
@@ -109,6 +109,25 @@ repository = "https://github.com/charlie947/social-media-skills.git"
 ref = "main"
 marketplace = "social-media-skills"
 select = ["social-media-skills"]
+${extra}
+`
+
+const primeProfile = (extra = "") => `
+schema = 1
+name = "prime-agent"
+description = "Prime Agent test profile"
+[harness]
+kind = "prime"
+version = "latest"
+[harness.prime]
+provider = "copilot-proxy-rs"
+model = "claude-opus-5"
+base_url = "http://copilot-proxy-rs:8080"
+api = "anthropic-messages"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
 ${extra}
 `
 
@@ -274,6 +293,71 @@ select = ["humanizer"]
       }),
     ])
     expect(result.profile.secrets.required).toEqual([])
+  })
+
+  it("decodes a strict Prime Agent profile", async () => {
+    const result = await decode(primeProfile())
+
+    expect(isPrimeProfile(result.profile)).toBe(true)
+    if (!isPrimeProfile(result.profile)) throw new Error("expected Prime profile")
+    expect(result.profile.harness.prime).toEqual({
+      provider: "copilot-proxy-rs",
+      model: "claude-opus-5",
+      base_url: "http://copilot-proxy-rs:8080",
+      api: "anthropic-messages",
+    })
+    expect(result.profile.skills).toEqual([])
+    expect(result.profile.plugins).toEqual([])
+    expect(result.profile.mcps).toEqual([])
+    expect(result.profile.secrets).toEqual({ provider: "env", required: [] })
+  })
+
+  it("accepts generic Prime skills while rejecting adapter-backed sources", async () => {
+    const skill = `
+[[skills]]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+select = ["caveman"]
+always_on = true
+`
+    const result = await decode(primeProfile(skill))
+
+    expect(result.profile.skills).toEqual([
+      {
+        repository: "https://github.com/JuliusBrussee/caveman.git",
+        ref: "v1.10.0",
+        select: ["caveman"],
+        always_on: true,
+      },
+    ])
+    await expect(
+      decode(primeProfile(skill.replace("[[skills]]", '[[skills]]\nadapter = "omp-native"'))),
+    ).rejects.toThrow(/Prime skill sources/i)
+  })
+
+  it.each(["preview", "1.2", "v1.2.3"])('rejects invalid Prime version "%s"', async (version) => {
+    await expect(decode(primeProfile().replace('version = "latest"', `version = "${version}"`))).rejects.toThrow(
+      /Prime version/i,
+    )
+  })
+
+  it.each([
+    ["standalone plugins", "plugins = []", /standalone plugins/i],
+    ["MCPs", "mcps = []", /do not support MCPs/i],
+    ["declared secrets", '[secrets]\nprovider = "env"\nrequired = []', /declared secrets/i],
+  ])("rejects an explicitly empty Prime %s section", async (_label, declaration, error) => {
+    const input = primeProfile().replace(
+      'description = "Prime Agent test profile"',
+      `description = "Prime Agent test profile"\n${declaration}`,
+    )
+
+    await expect(decode(input)).rejects.toThrow(error)
+  })
+
+  it("rejects excess Prime provider fields", async () => {
+    await expect(
+      decode(primeProfile().replace('api = "anthropic-messages"', 'api = "anthropic-messages"\nunexpected = true')),
+    ).rejects.toThrow(/unexpected/i)
   })
 
   it("rejects mixing Hyperresearch with Claude marketplace plugins", async () => {
