@@ -263,6 +263,13 @@ run_entry() {
     --env "TRELLAGE_RESUME_PROFILE=${TRELLAGE_RESUME_PROFILE-}" \
     --env "TRELLAGE_RESUME_SESSION_ID=${TRELLAGE_RESUME_SESSION_ID-}" \
     "$image_ref" /test/runtime-copilot-entry.sh "$@" || status=$?
+  docker run --rm \
+    --network none \
+    --user '0:0' \
+    --entrypoint /bin/bash \
+    --mount "type=bind,src=$runtime,dst=/fixture-runtime" \
+    "$image_ref" -c 'chmod -R a+rwX /fixture-runtime' \
+    || fail 'could not restore host access to Copilot runtime fixture state'
   return "$status"
 }
 
