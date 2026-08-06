@@ -20,8 +20,11 @@ ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
 ln -s "$prototype_dir/tests/fakes/host-env" "$fake_bin/env"
 
 real_node="$(command -v node)"
-runtime_hash="$($real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
-  "$prototype_dir/../../profiles/codex-superpowers/profile.toml" | jq -er '.runtime_hash')"
+default_metadata="$($real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
+  "$prototype_dir/../../profiles/codex-superpowers/profile.toml")"
+default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
+runtime_hash="$(jq -er '.runtime_hash' <<<"$default_metadata")"
+export FAKE_DOCKER_DEFAULT_PROFILE_HASH="$default_profile_hash"
 export FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash"
 export FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash"
 host_node_log="$test_root/host-node.log"
@@ -45,6 +48,17 @@ printf '%s\n' \
   'fi' \
   'if [[ "${2:-}" == metadata && -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
   '  exec cat "$FAKE_PROFILE_METADATA"' \
+  'fi' \
+  'if [[ "${2:-}" == build && "${FAKE_PROFILE_BUILD_SUCCEEDS:-0}" == 1 ]]; then' \
+  '  if [[ -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
+  '    metadata="$(cat "$FAKE_PROFILE_METADATA")"' \
+  '  else' \
+  '    metadata="$("$FAKE_REAL_NODE" "$1" metadata "${4:?}")"' \
+  '  fi' \
+  '  jq -er ".profile_hash" <<<"$metadata" >"$FAKE_DOCKER_LOG.image-profile-hash"' \
+  '  jq -er ".runtime_hash" <<<"$metadata" >"$FAKE_DOCKER_LOG.image-runtime-hash"' \
+  '  : >"$FAKE_DOCKER_LOG.image-built"' \
+  '  exit 0' \
   'fi' \
   'if [[ "${1:-}" == */terminal-picker.mjs && -n "${FAKE_PICKER_INPUT:-}" ]]; then' \
   '  cat >"$FAKE_PICKER_INPUT"' \
@@ -453,7 +467,7 @@ test_new_container_from_subdirectory() {
     || fail 'Codex container and volume must receive exact ownership and container integrity labels'
   assert_arg "$docker_log" 'dev.trellage.profile=codex-superpowers'
   assert_arg "$docker_log" 'dev.trellage.platform=linux/arm64'
-  assert_arg "$docker_log" "dev.trellage.profile.hash=sha256:62404b7266dfa833082abd9f7cd40d694fe755dfed126c323b57b542e77b9124"
+  assert_arg "$docker_log" "dev.trellage.profile.hash=$default_profile_hash"
   assert_arg "$docker_log" "dev.trellage.runtime.hash=$runtime_hash"
   [[ "$(grep -Fxc $'ARG\t--network' "$docker_log")" -eq 1 ]] \
     || fail 'container must receive exactly one network'
@@ -966,10 +980,13 @@ test_validation_precedes_mutation() {
   worktree="$test_root/valid-worktree"
   mkdir -p "$worktree"
   : >"$docker_log"
-  if FAKE_DOCKER_IMAGE_EXISTS=0 \
+  : >"$host_node_log"
+  if FAKE_DOCKER_IMAGE_EXISTS=0 FAKE_PROFILE_BUILD_SUCCEEDS=1 FAKE_DOCKER_NETWORK_EXISTS=0 \
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"; then
-    fail 'missing image was accepted'
+    fail 'missing network was accepted after automatic image build'
   fi
+  grep -Fqx $'ARG\tbuild' "$host_node_log" \
+    || fail 'missing image did not trigger an automatic build'
   assert_no_mutation "$docker_log"
 
   : >"$docker_log"
@@ -1869,23 +1886,26 @@ test_global_varlock_bootstrap_supplies_claude_browser_token() {
   printf 'Trellage host test: PASS: global Varlock bootstrap supplies Claude browser token\n'
 }
 
-test_stale_image_label_requires_exact_build() {
+test_stale_image_label_triggers_automatic_build() {
   local worktree="$test_root/stale-image-worktree"
   local docker_log="$test_root/stale-image.docker.log"
-  local output expected_profile
+  local state_volume
   mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
   : >"$docker_log"
-  expected_profile="$(cd "$prototype_dir/../.." && pwd)/profiles/codex-superpowers/profile.toml"
+  : >"$host_node_log"
 
-  if output="$(FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+  FAKE_PROFILE_BUILD_SUCCEEDS=1 \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage" 2>&1)"; then
-    fail 'stale same-name profile image was accepted'
-  fi
-  grep -Fq "profile image is missing or stale; run: trellage build --locked $expected_profile" <<<"$output" \
-    || fail 'stale image did not print the exact build command'
-  assert_no_mutation "$docker_log"
-  printf 'Trellage host test: PASS: stale image label requires exact build\n'
+      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tbuild' "$host_node_log" \
+    || fail 'stale image did not trigger an automatic build'
+  grep -Fqx $'ARG\tcreate' "$docker_log" \
+    || fail 'launch did not continue after the automatic build'
+  printf 'Trellage host test: PASS: stale image label triggers automatic build\n'
 }
 
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
@@ -2010,14 +2030,15 @@ test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
     assert_no_mutation "$docker_log"
   done
 
-  if output="$(FAKE_DOCKER_IMAGE_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+  : >"$host_node_log"
+  FAKE_PROFILE_BUILD_SUCCEEDS=1 \
+    FAKE_DOCKER_IMAGE_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage" 2>&1)"; then
-    fail 'stale same-name runtime image was accepted'
-  fi
-  grep -Fq 'profile image is missing or stale; run:' <<<"$output" \
-    || fail 'stale runtime image did not require an exact rebuild'
-  assert_no_mutation "$docker_log"
+      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tbuild' "$host_node_log" \
+    || fail 'stale runtime image did not trigger an automatic build'
 
   : >"$docker_log"
   FAKE_DOCKER_CONTAINER_RUNTIME_HASH="sha256:$(printf '0%.0s' {1..64})" \
@@ -2219,12 +2240,11 @@ test_interactive_profile_selection() {
   local metadata="$test_root/interactive-profile-metadata.json"
   local picker_input="$test_root/interactive-picker-input.json"
   local profile="$prototype_dir/../../profiles/codex-superpowers/profile.toml"
-  local output profile_hash status=0
+  local output status=0
   mkdir -p "$worktree"
   : >"$docker_log"
   "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata "$profile" \
     | jq '.locked = true | .image = "test/image:locked"' >"$metadata"
-  profile_hash="$(jq -er '.profile_hash' "$metadata")"
   jq -n --arg profile "$profile" '[
     {
       value: $profile,
@@ -2245,9 +2265,10 @@ test_interactive_profile_selection() {
   : >"$host_node_log"
   printf '\n' | FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
     FAKE_PICKER_INPUT="$picker_input" \
-    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_PROFILE_BUILD_SUCCEEDS=1 \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
+      env TRELLAGE_NETWORK='test_proxy_net' \
       "$prototype_dir/trellage" --interactive
   jq -e '
     .choices[0]
@@ -2265,6 +2286,8 @@ test_interactive_profile_selection() {
     || fail 'interactive launch did not request compiler choices'
   grep -Fqx $'ARG\t'"$profile" "$host_node_log" \
     || fail 'interactive launch did not feed the selected profile into metadata resolution'
+  grep -Fqx $'ARG\tbuild' "$host_node_log" \
+    || fail 'interactive launch did not automatically build the stale selected profile'
   grep -Fqx $'ARG\texec' "$docker_log" \
     || fail 'interactive selection did not continue through the existing launch flow'
 
@@ -3416,7 +3439,7 @@ if [[ "${TRELLAGE_HOST_TAIL_ONLY:-}" == 1 ]]; then
   test_env_secrets_reach_only_final_codex_exec
   test_varlock_secrets_reach_only_final_codex_exec
   test_global_varlock_bootstrap_supplies_claude_browser_token
-  test_stale_image_label_requires_exact_build
+  test_stale_image_label_triggers_automatic_build
   test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
   test_rebuild_replaces_container_and_preserves_profile_state
   exit 0
@@ -3477,6 +3500,6 @@ test_destroy_revalidates_after_confirmation
 test_env_secrets_reach_only_final_codex_exec
 test_varlock_secrets_reach_only_final_codex_exec
 test_global_varlock_bootstrap_supplies_claude_browser_token
-test_stale_image_label_requires_exact_build
+test_stale_image_label_triggers_automatic_build
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
 test_rebuild_replaces_container_and_preserves_profile_state

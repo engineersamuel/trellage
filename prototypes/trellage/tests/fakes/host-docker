@@ -92,7 +92,7 @@ default_profile_hash() {
     jq -er '.profile_hash | strings | select(test("^sha256:[0-9a-f]{64}$"))' "$FAKE_HARNESS_METADATA" 2>/dev/null \
       && return
   fi
-  printf '%s\n' 'sha256:62404b7266dfa833082abd9f7cd40d694fe755dfed126c323b57b542e77b9124'
+  printf '%s\n' "${FAKE_DOCKER_DEFAULT_PROFILE_HASH:-sha256:62404b7266dfa833082abd9f7cd40d694fe755dfed126c323b57b542e77b9124}"
 }
 
 read_fake_state() {
@@ -286,13 +286,27 @@ case "${1:-} ${2:-}" in
     esac
     ;;
   'image inspect')
-    [[ "${FAKE_DOCKER_IMAGE_EXISTS:-1}" == 1 ]] || exit 1
+    image_was_built=false
+    if [[ "${FAKE_PROFILE_BUILD_SUCCEEDS:-0}" == 1 && -f "$log.image-built" ]]; then
+      image_was_built=true
+    fi
+    [[ "$image_was_built" == true || "${FAKE_DOCKER_IMAGE_EXISTS:-1}" == 1 ]] || exit 1
     if [[ "${3:-}" == --format ]]; then
       case "${4:-}" in
-        *'.Id'*) printf '%s\n' "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ;;
+        *'.Id'*)
+          if [[ "$image_was_built" == true ]]; then
+            printf '%s\n' fake-built-image-id
+          else
+            printf '%s\n' "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}"
+          fi
+          ;;
         *dev.trellage.profile.hash*)
           [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
             || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
+          if [[ "$image_was_built" == true ]]; then
+            cat "$log.image-profile-hash"
+            exit 0
+          fi
           if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 && "${5:-}" != "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ]]; then
             printf 'sha256:%064d\n' 0
             exit 0
@@ -302,6 +316,10 @@ case "${1:-} ${2:-}" in
         *dev.trellage.runtime.hash*)
           [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
             || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
+          if [[ "$image_was_built" == true ]]; then
+            cat "$log.image-runtime-hash"
+            exit 0
+          fi
           if [[ "${FAKE_DOCKER_RETAG_RACE:-0}" == 1 && "${5:-}" != "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}" ]]; then
             printf 'sha256:%064d\n' 0
             exit 0
