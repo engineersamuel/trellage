@@ -197,6 +197,7 @@ printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
 cp -R "$seed/skills/caveman" "$runtime/skills/caveman"
 cp "$seed/copilot-instructions.md" "$runtime/copilot-instructions.md"
 printf '{"keep":true,"trustedFolders":["/existing"]}\n' >"$runtime/config.json"
+chmod -R a+rwX "$runtime/skills"
 printf '{"schema":1,"marketplace":"hve-core","plugin":"hve-core","version":"3.3.101"}\n' \
   >"$seed/managed-lock.json"
 printf '%s\n' \
