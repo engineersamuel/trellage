@@ -1,9 +1,9 @@
-.PHONY: test sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
+.PHONY: test sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+PARALLEL_TEST_TARGETS := publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
 SERIAL_TEST_TARGETS := native-profile-router
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 
@@ -32,6 +32,9 @@ profile-compiler:
 trellage-identity:
 	bash tests/trellage_identity_contract.sh
 
+trellage-orphan-cleanup:
+	bash tests/trellage_orphan_cleanup_contract.sh
+
 agent-harness:
 	bash tests/agent_harness_contract.sh
 
@@ -43,6 +46,7 @@ claude-entry:
 
 copilot-entry: sandbox-entry-fixture
 	bash prototypes/trellage/tests/copilot_entry_contract.sh
+
 
 pi-entry: sandbox-entry-fixture
 	bash prototypes/trellage/tests/pi_entry_contract.sh

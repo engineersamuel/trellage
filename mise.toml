@@ -10,3 +10,11 @@ run = "./prototypes/trellage/trellage"
 [tasks.rebuild-profiles]
 description = "Refresh native trx/launchers + rebuild all sandbox profile images"
 run = "./scripts/rebuild-profile-images.sh --install"
+
+[tasks.trellage-clean-orphans]
+description = "Preview cleanup of Trellage containers for deleted worktrees"
+run = "./scripts/cleanup-orphaned-trellage-containers.sh"
+
+[tasks.trellage-clean-orphans-apply]
+description = "Remove idle Trellage containers and state volumes for deleted worktrees"
+run = "./scripts/cleanup-orphaned-trellage-containers.sh --apply"
