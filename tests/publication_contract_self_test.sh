@@ -34,11 +34,11 @@ seed_fixture "$tree_fixture"
 git -C "$tree_fixture" config user.name 'Unrelated Contributor'
 git -C "$tree_fixture" config user.email 'contributor@example.invalid'
 git -C "$tree_fixture" add .
-git -C "$tree_fixture" commit -qm 'tree fixture one'
+git -C "$tree_fixture" commit --no-verify -qm 'tree fixture one'
 printf 'Second tree state\n' >>"$tree_fixture/README.md"
-git -C "$tree_fixture" commit -qam 'tree fixture two'
+git -C "$tree_fixture" commit --no-verify -qam 'tree fixture two'
 printf 'Third tree state\n' >>"$tree_fixture/README.md"
-git -C "$tree_fixture" commit -qam 'tree fixture three'
+git -C "$tree_fixture" commit --no-verify -qam 'tree fixture three'
 git -C "$tree_fixture" branch extra-branch
 git -C "$tree_fixture" tag extra-tag
 git -C "$tree_fixture" remote add origin https://example.invalid/trellage.git
@@ -78,16 +78,16 @@ seed_fixture "$history_fixture"
 git -C "$history_fixture" config user.name 'Samuel Mendenhall'
 git -C "$history_fixture" config user.email '2019830+engineersamuel@users.noreply.github.com'
 git -C "$history_fixture" add .
-git -C "$history_fixture" commit -qm 'history fixture one'
+git -C "$history_fixture" commit --no-verify -qm 'history fixture one'
 git -C "$history_fixture" branch feat/native-codex-profile-isolation
 printf 'Second approved state\n' >>"$history_fixture/README.md"
-git -C "$history_fixture" commit -qam 'history fixture two'
+git -C "$history_fixture" commit --no-verify -qam 'history fixture two'
 run_contract "$history_fixture" --sanitized-history >/dev/null \
   || fail 'valid sanitized history was rejected'
 
 cp -R "$history_fixture" "$fixture_root/history-extra-commit"
 printf 'Third state\n' >>"$fixture_root/history-extra-commit/README.md"
-git -C "$fixture_root/history-extra-commit" commit -qam 'history fixture three'
+git -C "$fixture_root/history-extra-commit" commit --no-verify -qam 'history fixture three'
 if run_contract "$fixture_root/history-extra-commit" --sanitized-history \
   >"$fixture_root/history-output" 2>&1; then
   fail 'sanitized-history mode accepted an extra commit'
@@ -98,7 +98,7 @@ grep -Fq 'history must contain exactly two commits' "$fixture_root/history-outpu
 cp -R "$history_fixture" "$fixture_root/history-wrong-author"
 git -C "$fixture_root/history-wrong-author" config user.name 'Wrong Author'
 git -C "$fixture_root/history-wrong-author" config user.email 'wrong@example.invalid'
-git -C "$fixture_root/history-wrong-author" commit -q --amend --no-edit --reset-author
+git -C "$fixture_root/history-wrong-author" commit --no-verify -q --amend --no-edit --reset-author
 git -C "$fixture_root/history-wrong-author" config user.name 'Samuel Mendenhall'
 git -C "$fixture_root/history-wrong-author" config user.email \
   '2019830+engineersamuel@users.noreply.github.com'
@@ -114,7 +114,7 @@ GIT_AUTHOR_NAME='Wrong Author' \
 GIT_AUTHOR_EMAIL='wrong-author@example.invalid' \
 GIT_COMMITTER_NAME='Samuel Mendenhall' \
 GIT_COMMITTER_EMAIL='2019830+engineersamuel@users.noreply.github.com' \
-  git -C "$fixture_root/history-wrong-author-only" commit -q --amend --no-edit --reset-author
+  git -C "$fixture_root/history-wrong-author-only" commit --no-verify -q --amend --no-edit --reset-author
 [[ "$(git -C "$fixture_root/history-wrong-author-only" log -1 \
   --format='%an <%ae>|%cn <%ce>')" = \
   'Wrong Author <wrong-author@example.invalid>|Samuel Mendenhall <2019830+engineersamuel@users.noreply.github.com>' ]] \
@@ -131,7 +131,7 @@ GIT_AUTHOR_NAME='Samuel Mendenhall' \
 GIT_AUTHOR_EMAIL='2019830+engineersamuel@users.noreply.github.com' \
 GIT_COMMITTER_NAME='Wrong Committer' \
 GIT_COMMITTER_EMAIL='wrong-committer@example.invalid' \
-  git -C "$fixture_root/history-wrong-committer-only" commit -q --amend --no-edit --reset-author
+  git -C "$fixture_root/history-wrong-committer-only" commit --no-verify -q --amend --no-edit --reset-author
 [[ "$(git -C "$fixture_root/history-wrong-committer-only" log -1 \
   --format='%an <%ae>|%cn <%ce>')" = \
   'Samuel Mendenhall <2019830+engineersamuel@users.noreply.github.com>|Wrong Committer <wrong-committer@example.invalid>' ]] \
