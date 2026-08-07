@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 cd "${ROOT}"
 
 fail() {

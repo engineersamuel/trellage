@@ -11,9 +11,13 @@ fail() {
   exit 1
 }
 
+fixture_git() {
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git "$@"
+}
+
 seed_fixture() {
   local fixture="$1"
-  git init -q -b main "$fixture"
+  fixture_git init -q -b main "$fixture"
   mkdir -p "$fixture/tests" "$fixture/packages/trellage-cli"
   cp tests/publication_contract.sh "$fixture/tests/publication_contract.sh"
   cp .gitignore "$fixture/.gitignore"
@@ -26,22 +30,26 @@ seed_fixture() {
 run_contract() {
   local fixture="$1"
   shift
-  (cd "$fixture" && bash tests/publication_contract.sh "$@")
+  (
+    cd "$fixture"
+    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+      bash tests/publication_contract.sh "$@"
+  )
 }
 
 tree_fixture="$fixture_root/tree"
 seed_fixture "$tree_fixture"
-git -C "$tree_fixture" config user.name 'Unrelated Contributor'
-git -C "$tree_fixture" config user.email 'contributor@example.invalid'
-git -C "$tree_fixture" add .
-git -C "$tree_fixture" commit --no-verify -qm 'tree fixture one'
+fixture_git -C "$tree_fixture" config user.name 'Unrelated Contributor'
+fixture_git -C "$tree_fixture" config user.email 'contributor@example.invalid'
+fixture_git -C "$tree_fixture" add .
+fixture_git -C "$tree_fixture" commit --no-verify -qm 'tree fixture one'
 printf 'Second tree state\n' >>"$tree_fixture/README.md"
-git -C "$tree_fixture" commit --no-verify -qam 'tree fixture two'
+fixture_git -C "$tree_fixture" commit --no-verify -qam 'tree fixture two'
 printf 'Third tree state\n' >>"$tree_fixture/README.md"
-git -C "$tree_fixture" commit --no-verify -qam 'tree fixture three'
-git -C "$tree_fixture" branch extra-branch
-git -C "$tree_fixture" tag extra-tag
-git -C "$tree_fixture" remote add origin https://example.invalid/trellage.git
+fixture_git -C "$tree_fixture" commit --no-verify -qam 'tree fixture three'
+fixture_git -C "$tree_fixture" branch extra-branch
+fixture_git -C "$tree_fixture" tag extra-tag
+fixture_git -C "$tree_fixture" remote add origin https://example.invalid/trellage.git
 run_contract "$tree_fixture" >/dev/null \
   || fail 'default tree mode rejected contributor or additional Git state'
 
@@ -51,7 +59,7 @@ if run_contract "$tree_fixture" >"$fixture_root/content-output" 2>&1; then
 fi
 grep -Fq 'forbidden RSU content' "$fixture_root/content-output" \
   || fail 'forbidden content diagnostic changed'
-git -C "$tree_fixture" restore README.md
+fixture_git -C "$tree_fixture" restore README.md
 
 sed 's|^/research/$|/research/runs/|' "$tree_fixture/.gitignore" \
   >"$tree_fixture/.gitignore.tmp"
@@ -61,33 +69,33 @@ if run_contract "$tree_fixture" >"$fixture_root/research-ignore-output" 2>&1; th
 fi
 grep -Fq 'missing exact .gitignore rule: /research/' "$fixture_root/research-ignore-output" \
   || fail 'research ignore diagnostic changed'
-git -C "$tree_fixture" restore .gitignore
+fixture_git -C "$tree_fixture" restore .gitignore
 
 mkdir -p "$tree_fixture/research"
 printf 'tracked research\n' >"$tree_fixture/research/notes.md"
-git -C "$tree_fixture" add -f research/notes.md
+fixture_git -C "$tree_fixture" add -f research/notes.md
 if run_contract "$tree_fixture" >"$fixture_root/tracked-research-output" 2>&1; then
   fail 'tracked research content was accepted'
 fi
 grep -Fq 'forbidden tracked path: research' "$fixture_root/tracked-research-output" \
   || fail 'tracked research diagnostic changed'
-git -C "$tree_fixture" rm -qf research/notes.md
+fixture_git -C "$tree_fixture" rm -qf research/notes.md
 
 history_fixture="$fixture_root/history"
 seed_fixture "$history_fixture"
-git -C "$history_fixture" config user.name 'Samuel Mendenhall'
-git -C "$history_fixture" config user.email '2019830+engineersamuel@users.noreply.github.com'
-git -C "$history_fixture" add .
-git -C "$history_fixture" commit --no-verify -qm 'history fixture one'
-git -C "$history_fixture" branch feat/native-codex-profile-isolation
+fixture_git -C "$history_fixture" config user.name 'Samuel Mendenhall'
+fixture_git -C "$history_fixture" config user.email '2019830+engineersamuel@users.noreply.github.com'
+fixture_git -C "$history_fixture" add .
+fixture_git -C "$history_fixture" commit --no-verify -qm 'history fixture one'
+fixture_git -C "$history_fixture" branch feat/native-codex-profile-isolation
 printf 'Second approved state\n' >>"$history_fixture/README.md"
-git -C "$history_fixture" commit --no-verify -qam 'history fixture two'
+fixture_git -C "$history_fixture" commit --no-verify -qam 'history fixture two'
 run_contract "$history_fixture" --sanitized-history >/dev/null \
   || fail 'valid sanitized history was rejected'
 
 cp -R "$history_fixture" "$fixture_root/history-extra-commit"
 printf 'Third state\n' >>"$fixture_root/history-extra-commit/README.md"
-git -C "$fixture_root/history-extra-commit" commit --no-verify -qam 'history fixture three'
+fixture_git -C "$fixture_root/history-extra-commit" commit --no-verify -qam 'history fixture three'
 if run_contract "$fixture_root/history-extra-commit" --sanitized-history \
   >"$fixture_root/history-output" 2>&1; then
   fail 'sanitized-history mode accepted an extra commit'
@@ -96,11 +104,11 @@ grep -Fq 'history must contain exactly two commits' "$fixture_root/history-outpu
   || fail 'sanitized history topology diagnostic changed'
 
 cp -R "$history_fixture" "$fixture_root/history-wrong-author"
-git -C "$fixture_root/history-wrong-author" config user.name 'Wrong Author'
-git -C "$fixture_root/history-wrong-author" config user.email 'wrong@example.invalid'
-git -C "$fixture_root/history-wrong-author" commit --no-verify -q --amend --no-edit --reset-author
-git -C "$fixture_root/history-wrong-author" config user.name 'Samuel Mendenhall'
-git -C "$fixture_root/history-wrong-author" config user.email \
+fixture_git -C "$fixture_root/history-wrong-author" config user.name 'Wrong Author'
+fixture_git -C "$fixture_root/history-wrong-author" config user.email 'wrong@example.invalid'
+fixture_git -C "$fixture_root/history-wrong-author" commit --no-verify -q --amend --no-edit --reset-author
+fixture_git -C "$fixture_root/history-wrong-author" config user.name 'Samuel Mendenhall'
+fixture_git -C "$fixture_root/history-wrong-author" config user.email \
   '2019830+engineersamuel@users.noreply.github.com'
 if run_contract "$fixture_root/history-wrong-author" --sanitized-history \
   >"$fixture_root/identity-output" 2>&1; then
@@ -114,8 +122,8 @@ GIT_AUTHOR_NAME='Wrong Author' \
 GIT_AUTHOR_EMAIL='wrong-author@example.invalid' \
 GIT_COMMITTER_NAME='Samuel Mendenhall' \
 GIT_COMMITTER_EMAIL='2019830+engineersamuel@users.noreply.github.com' \
-  git -C "$fixture_root/history-wrong-author-only" commit --no-verify -q --amend --no-edit --reset-author
-[[ "$(git -C "$fixture_root/history-wrong-author-only" log -1 \
+  fixture_git -C "$fixture_root/history-wrong-author-only" commit --no-verify -q --amend --no-edit --reset-author
+[[ "$(fixture_git -C "$fixture_root/history-wrong-author-only" log -1 \
   --format='%an <%ae>|%cn <%ce>')" = \
   'Wrong Author <wrong-author@example.invalid>|Samuel Mendenhall <2019830+engineersamuel@users.noreply.github.com>' ]] \
   || fail 'wrong-author-only fixture identity is invalid'
@@ -131,8 +139,8 @@ GIT_AUTHOR_NAME='Samuel Mendenhall' \
 GIT_AUTHOR_EMAIL='2019830+engineersamuel@users.noreply.github.com' \
 GIT_COMMITTER_NAME='Wrong Committer' \
 GIT_COMMITTER_EMAIL='wrong-committer@example.invalid' \
-  git -C "$fixture_root/history-wrong-committer-only" commit --no-verify -q --amend --no-edit --reset-author
-[[ "$(git -C "$fixture_root/history-wrong-committer-only" log -1 \
+  fixture_git -C "$fixture_root/history-wrong-committer-only" commit --no-verify -q --amend --no-edit --reset-author
+[[ "$(fixture_git -C "$fixture_root/history-wrong-committer-only" log -1 \
   --format='%an <%ae>|%cn <%ce>')" = \
   'Samuel Mendenhall <2019830+engineersamuel@users.noreply.github.com>|Wrong Committer <wrong-committer@example.invalid>' ]] \
   || fail 'wrong-committer-only fixture identity is invalid'
@@ -144,7 +152,7 @@ grep -Fq 'unexpected commit identity' "$fixture_root/committer-only-output" \
   || fail 'sanitized history committer-only diagnostic changed'
 
 cp -R "$history_fixture" "$fixture_root/history-missing-local-identity"
-git -C "$fixture_root/history-missing-local-identity" config --unset user.name
+fixture_git -C "$fixture_root/history-missing-local-identity" config --unset user.name
 if run_contract "$fixture_root/history-missing-local-identity" --sanitized-history \
   >"$fixture_root/local-identity-output" 2>&1; then
   fail 'sanitized-history mode accepted missing local identity'
@@ -154,7 +162,7 @@ grep -Fq 'repo-local user.name must be Samuel Mendenhall' \
   || fail 'sanitized history local identity diagnostic changed'
 
 cp -R "$history_fixture" "$fixture_root/history-extra-refs"
-git -C "$fixture_root/history-extra-refs" remote add origin https://example.invalid/trellage.git
+fixture_git -C "$fixture_root/history-extra-refs" remote add origin https://example.invalid/trellage.git
 if run_contract "$fixture_root/history-extra-refs" --sanitized-history \
   >"$fixture_root/refs-output" 2>&1; then
   fail 'sanitized-history mode accepted a remote'
@@ -163,7 +171,7 @@ grep -Fq 'repository must have no remotes' "$fixture_root/refs-output" \
   || fail 'sanitized history remote diagnostic changed'
 
 cp -R "$history_fixture" "$fixture_root/history-tagged"
-git -C "$fixture_root/history-tagged" tag unexpected-tag
+fixture_git -C "$fixture_root/history-tagged" tag unexpected-tag
 if run_contract "$fixture_root/history-tagged" --sanitized-history \
   >"$fixture_root/tag-output" 2>&1; then
   fail 'sanitized-history mode accepted a tag'
@@ -172,7 +180,7 @@ grep -Fq 'repository must have no tags' "$fixture_root/tag-output" \
   || fail 'sanitized history tag diagnostic changed'
 
 cp -R "$history_fixture" "$fixture_root/history-extra-branch"
-git -C "$fixture_root/history-extra-branch" branch unexpected-branch
+fixture_git -C "$fixture_root/history-extra-branch" branch unexpected-branch
 if run_contract "$fixture_root/history-extra-branch" --sanitized-history \
   >"$fixture_root/branch-output" 2>&1; then
   fail 'sanitized-history mode accepted an extra branch'
