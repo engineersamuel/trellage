@@ -13,9 +13,14 @@ export interface SourceSelection {
   readonly select: ReadonlyArray<string>
 }
 
+/** Generic skill checkouts keep common agent skill roots (not only top-level skills/). */
+const genericSkillRoots = ["skills", ".agents/skills", ".claude/skills"] as const
+
 export const sourceIncludes = (source: SourceSelection): ReadonlyArray<string> => {
   if (source.kind === "skill") {
-    return source.adapter === "omp-native" ? source.select.map((selection) => `.omp/skills/${selection}`) : ["skills"]
+    return source.adapter === "omp-native"
+      ? source.select.map((selection) => `.omp/skills/${selection}`)
+      : [...genericSkillRoots]
   }
   if (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace") return []
   if (source.adapter === "hyperresearch") return []
