@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "description": "Prime Agent with Claude Opus 5 through keyless copilot-proxy-rs.",
+      "plugin": null,
+      "standaloneMcps": []
+    }
+  }
+}
