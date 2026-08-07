@@ -26,5 +26,7 @@ pre-push:
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-jcode-profiles || make native-jcode-profile
     - name: native OMP contracts
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-omp-profiles || make native-omp-profile
+    - name: native Prime contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-prime-profiles || make native-prime-profile
     - name: native router contract
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-router || make native-profile-router
