@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-research"
-description = "Claude Code (Opus via proxy) with Hyperresearch's light gear: a focused 5-step pipeline for bounded factual queries, surveys, and comparisons with a persistent research vault. Best for source-backed answers without the cost of the full adversarial pipeline. Invoke primarily with `/hyperresearch <prompt>`."
+description = "Claude Code (Opus via proxy) with Hyperresearch light gear plus last30days multi-source social research: a focused 5-step pipeline for bounded factual queries, surveys, and comparisons with a persistent research vault, and recency-scored pulls from Reddit, X, YouTube, HN, Polymarket, GitHub, and the web. Best for source-backed answers without the cost of the full adversarial pipeline. Usage: `/hyperresearch <prompt>` for vault-backed factual research, surveys, and comparisons; `/last30days <topic>` for what people actually said in the last ~30 days (e.g. `/last30days nvidia earnings reaction`, `/last30days OpenClaw vs Hermes`); `/last30days doctor` to diagnose missing sources or auth."
 
 [harness]
 kind = "claude"
@@ -31,6 +31,12 @@ repository = "https://github.com/JuliusBrussee/caveman.git"
 ref = "v1.10.0"
 select = ["caveman"]
 always_on = true
+
+# Upstream project: https://github.com/mvanhorn/last30days-skill
+[[skills]]
+repository = "https://github.com/mvanhorn/last30days-skill.git"
+ref = "v3.18.4"
+select = ["last30days"]
 
 [[plugins]]
 adapter = "hyperresearch"
