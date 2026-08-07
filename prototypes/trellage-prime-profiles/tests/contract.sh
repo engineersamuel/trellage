@@ -316,7 +316,7 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
 "$command_path" list >"$fixture_root/list.txt" || fail 'text list failed'
-grep -Fq $'default\tPrime Agent with Claude Opus 5 through keyless copilot-proxy-rs.' \
+grep -Fq $'default\tPrime Agent with Claude Opus 5 through keyless copilot-proxy-rs, plus the managed ask_user extension.' \
   "$fixture_root/list.txt" || fail 'text list differs'
 
 "$command_path" setup >"$fixture_root/setup.out" 2>"$fixture_root/setup.err" \
@@ -329,6 +329,18 @@ grep -Fq $'default\tPrime Agent with Claude Opus 5 through keyless copilot-proxy
 [[ -d "$profile_home" && ! -L "$profile_home" ]] || fail 'profile home is unsafe'
 [[ -f "$profile_home/models.json" && ! -L "$profile_home/models.json" ]] \
   || fail 'setup did not materialize models.json'
+[[ -f "$runtime_root/assets/extensions/ask-user.ts" && ! -L "$runtime_root/assets/extensions/ask-user.ts" ]] \
+  || fail 'installer did not publish managed ask-user extension asset'
+cmp -s "$runtime_root/assets/extensions/ask-user.ts" "$root/assets/extensions/ask-user.ts" \
+  || fail 'installer published a divergent ask-user extension asset'
+[[ -f "$profile_home/extensions/ask-user.ts" && ! -L "$profile_home/extensions/ask-user.ts" ]] \
+  || fail 'setup did not materialize ask-user extension'
+cmp -s "$profile_home/extensions/ask-user.ts" "$root/assets/extensions/ask-user.ts" \
+  || fail 'setup ask-user extension differs from managed asset'
+[[ -f "$profile_home/.trellage-managed-extensions" && ! -L "$profile_home/.trellage-managed-extensions" ]] \
+  || fail 'setup did not write managed extension manifest'
+grep -Fqx 'ask-user' "$profile_home/.trellage-managed-extensions" \
+  || fail 'managed extension manifest does not list ask-user'
 [[ -x "$profile_home/kernel-venv/bin/python" ]] \
   || fail 'setup did not bootstrap kernel-venv'
 grep -Fq 'venv' "$FAKE_UV_LOG" || fail 'setup did not invoke uv venv'
@@ -415,8 +427,9 @@ grep -Fq 'prx shutdown: no profile daemon socket' "$fixture_root/shutdown.out" \
 [[ ! -e "$profile_root/daemon/kernel-env.stamp" ]] \
   || fail 'shutdown did not clear daemon kernel env stamp'
 
-# Launch restores drifted models.json.
+# Launch restores drifted models.json and managed ask-user extension.
 printf '{"providers":{}}\n' >"$profile_home/models.json"
+printf 'stale-extension\n' >"$profile_home/extensions/ask-user.ts"
 : >"$FAKE_PRIME_LOG"
 "$command_path" -p restore-probe || fail 'launch after drift failed'
 jq -e '
@@ -424,6 +437,8 @@ jq -e '
   and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5"]
 ' "$profile_home/models.json" >/dev/null \
   || fail 'launch did not restore managed models.json'
+cmp -s "$profile_home/extensions/ask-user.ts" "$root/assets/extensions/ask-user.ts" \
+  || fail 'launch did not restore managed ask-user extension'
 
 printf 'drift\n' >>"$profile_home/models.json"
 status=0

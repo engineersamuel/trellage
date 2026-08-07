@@ -512,6 +512,68 @@ export const createBuildContext = (
             managedNames.map((name) => `${name}\n`).join(""),
           ),
         )
+        const extensionsDestination = path.join(context, "prime-seed", "extensions")
+        yield* io("cannot initialize Prime extension destination", () =>
+          mkdir(extensionsDestination, { recursive: true }),
+        )
+        const managedExtensionNames: string[] = []
+        const sourceOffset = document.profile.skills.length
+        for (let index = 0; index < document.profile.plugins.length; index += 1) {
+          const profilePlugin = document.profile.plugins[index]!
+          const sourceLock = lock.sources[sourceOffset + index]
+          const sourceDirectory = sourceDirectories[sourceOffset + index]
+          if (
+            sourceLock === undefined ||
+            sourceDirectory === undefined ||
+            sourceLock.kind !== "plugin" ||
+            sourceLock.adapter !== "prime-extension" ||
+            profilePlugin.adapter !== "prime-extension" ||
+            sourceLock.repository !== profilePlugin.repository ||
+            sourceLock.ref !== profilePlugin.ref ||
+            JSON.stringify(sourceLock.select) !== JSON.stringify(profilePlugin.select)
+          ) {
+            return yield* Effect.fail(
+              new MaterializeError({ message: "Prime build requires matching prime-extension sources" }),
+            )
+          }
+          for (const selection of [...sourceLock.select].sort((left, right) => left.localeCompare(right, "en"))) {
+            const extensionsRoot = path.join(sourceDirectory, "plugins", selection, "extensions")
+            const entries = yield* io(`cannot list Prime extension source: ${selection}`, () =>
+              readdir(extensionsRoot, { withFileTypes: true }),
+            )
+            const typescriptFiles = entries
+              .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
+              .map((entry) => entry.name)
+              .sort((left, right) => left.localeCompare(right, "en"))
+            if (typescriptFiles.length === 0) {
+              return yield* Effect.fail(
+                new MaterializeError({ message: `Prime extension selection has no TypeScript files: ${selection}` }),
+              )
+            }
+            for (const fileName of typescriptFiles) {
+              const extensionName = fileName.slice(0, -".ts".length)
+              if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(extensionName)) {
+                return yield* Effect.fail(
+                  new MaterializeError({ message: `Prime extension name is unsafe: ${fileName}` }),
+                )
+              }
+              if (managedExtensionNames.includes(extensionName)) {
+                return yield* Effect.fail(
+                  new MaterializeError({ message: `managed Prime extension names collide: ${extensionName}` }),
+                )
+              }
+              managedExtensionNames.push(extensionName)
+              yield* copy(path.join(extensionsRoot, fileName), path.join(extensionsDestination, fileName))
+            }
+          }
+        }
+        managedExtensionNames.sort((left, right) => left.localeCompare(right, "en"))
+        yield* io("cannot write Prime managed extension manifest", () =>
+          writeFile(
+            path.join(context, "prime-seed", "managed-extensions.txt"),
+            managedExtensionNames.map((name) => `${name}\n`).join(""),
+          ),
+        )
       }
 
       for (

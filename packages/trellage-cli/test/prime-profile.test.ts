@@ -41,7 +41,14 @@ describe("authored Prime Agent profile", () => {
         always_on: true,
       },
     ])
-    expect(document.profile.plugins).toEqual([])
+    expect(document.profile.plugins).toEqual([
+      {
+        adapter: "prime-extension",
+        repository: "https://github.com/am-will/prime-agent-plugins.git",
+        ref: "699f9065acc5eb988a02666196c5837434fd839d",
+        select: ["ask-user"],
+      },
+    ])
     expect(document.profile.mcps).toEqual([])
     expect(document.profile.secrets).toEqual({ provider: "env", required: [] })
   })
@@ -53,7 +60,7 @@ describe("authored Prime Agent profile", () => {
 
     expect(lock.platform).toBe("linux/arm64")
     expect(lock.profile_hash).toBe(profileHash(document))
-    expect(lock.sources).toHaveLength(1)
+    expect(lock.sources).toHaveLength(2)
     expect(lock.sources[0]).toMatchObject({
       kind: "skill",
       repository: "https://github.com/JuliusBrussee/caveman.git",
@@ -67,6 +74,21 @@ describe("authored Prime Agent profile", () => {
       path: "skills/caveman/SKILL.md",
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
+    expect(lock.sources[1]).toMatchObject({
+      kind: "plugin",
+      adapter: "prime-extension",
+      repository: "https://github.com/am-will/prime-agent-plugins.git",
+      ref: "699f9065acc5eb988a02666196c5837434fd839d",
+      select: ["ask-user"],
+      commit: "699f9065acc5eb988a02666196c5837434fd839d",
+      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    })
+    expect(lock.sources[1]?.files).toContainEqual({
+      kind: "file",
+      path: "plugins/ask-user/extensions/ask-user.ts",
+      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    })
+    expect(lock.sources[1]?.files.some((file) => file.path.includes("trycua"))).toBe(false)
     expect(lock.packages.skills_cli_version).toMatch(/^\d+\.\d+\.\d+$/)
     expect(lock.packages.skills_cli_integrity).toMatch(/^sha512-/)
     expect(lock.packages.harness).toMatchObject({

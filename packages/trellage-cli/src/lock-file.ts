@@ -146,6 +146,7 @@ const SourceSchema = Schema.Struct({
       "copilot-marketplace",
       "hyperresearch",
       "omp-native",
+      "prime-extension",
     ),
   ),
   marketplace: Schema.optional(Text),
