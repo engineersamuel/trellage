@@ -302,6 +302,10 @@ prerequisites. No host Anthropic, OpenAI, Copilot, or GitHub token is forwarded
 to Prime; the separately prepared `GH_CONFIG_DIR` remains available for `gh`.
 Prime sessions and other user state persist under `/home/agent/.prime/agent`,
 while the managed provider file is restored atomically before each launch.
+The image build prepares Prime's Python kernel as
+`/usr/local/share/trellage/prime-kernel-seed.tar.gz`; launches restore it into
+the profile state volume instead of downloading Python packages when the first
+tool is invoked.
 
 ## Pi with Oh My Pi
 

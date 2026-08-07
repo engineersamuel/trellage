@@ -289,6 +289,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 "/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }
 "/usr/local/bin/prime-agent" = { source = "prime-agent-wrapper.sh", mode = "copy" }
+"/usr/local/share/trellage/prime-kernel-seed.tar.gz" = { source = "prime-kernel-seed.tar.gz", mode = "copy" }
 "/usr/local/share/trellage/prime-seed" = { source = "prime-seed", mode = "copy" }
 ${renderRuntimeDotfile(options, "runtime-prime-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
@@ -302,7 +303,8 @@ ${renderOci(
     'PRIME_AGENT_CODING_AGENT_DIR = "/home/agent/.prime/agent"',
     'PI_OFFLINE = "1"',
     'PI_SKIP_VERSION_CHECK = "1"',
-    'PRIME_AGENT_INSTALL_UV = "1"',
+    'PRIME_AGENT_INSTALL_UV = "0"',
+    'PRIME_AGENT_KERNEL_PYTHON = "/home/agent/.trellage/prime-kernel/.prime/agent/kernel-venv/bin/python"',
   ],
   ['"dev.trellage.harness.kind" = "prime"', `"dev.trellage.prime.version" = ${quote(harness.version)}`],
   "/home/agent/.cache",

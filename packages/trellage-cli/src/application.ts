@@ -182,8 +182,12 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       return impossibleBuilderInput("Prime builder requires an exact locked release tarball")
     }
     const artifact = `/src/${filename}`
+    const kernelHome = "/home/agent/.trellage/prime-kernel"
+    const kernelSeed = "/src/prime-kernel-seed.tar.gz"
     const packageCheck =
       'const p=require("/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json");if(p.name!=="prime-agent"||p.version!==process.argv[1]||p.bin?.["prime-agent"]!=="dist/bundle/cli.js")process.exit(1)'
+    const kernelBootstrap =
+      'import { ensureKernelPython } from "file:///src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js";await ensureKernelPython()'
     return [
       `prime_artifact=${shellQuote(artifact)}`,
       `curl --fail --silent --show-error --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
@@ -196,6 +200,14 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       '[ -x "$prime_node_dir/bin/npm" ]',
       `PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix --no-fund --no-audit --loglevel=error --progress=false "$prime_artifact"`,
       `"$prime_node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(harness.version)}`,
+      `prime_kernel_home=${shellQuote(kernelHome)}`,
+      `prime_kernel_seed=${shellQuote(kernelSeed)}`,
+      'rm -rf "$prime_kernel_home" "$prime_kernel_seed"',
+      'mkdir -p "$prime_kernel_home"',
+      `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)}`,
+      'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
+      'tar -C "$prime_kernel_home" -czf "$prime_kernel_seed" .trellage-prime-kernel .local/share/uv/python .prime/agent/kernel-venv',
+      'rm -rf "$prime_kernel_home"',
       build,
     ].join("; ")
   }

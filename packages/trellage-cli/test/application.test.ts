@@ -1346,6 +1346,12 @@ select = ["humanizer"]
       '"$prime_node_dir/bin/node" -e',
       "/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json",
       'p.bin?.["prime-agent"]!=="dist/bundle/cli.js"',
+      "prime_kernel_home='/home/agent/.trellage/prime-kernel'",
+      "prime_kernel_seed='/src/prime-kernel-seed.tar.gz'",
+      'HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PRIME_AGENT_INSTALL_UV=1',
+      "/src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js",
+      'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
+      'tar -C "$prime_kernel_home" -czf "$prime_kernel_seed"',
       'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     ]
 
