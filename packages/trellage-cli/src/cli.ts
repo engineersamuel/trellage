@@ -21,6 +21,7 @@ import {
 } from "./application.js"
 import { environmentMetadata } from "./environment.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
+import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
 import { selectProfilePath } from "./selection.js"
 import { captureDockerTarget, type DockerTarget } from "./docker-target.js"
 import { assertProductionPlatform, type Platform } from "./platform.js"
@@ -57,6 +58,8 @@ const bundledProfiles = path.join(repositoryRoot, "profiles")
 const profileArgument = Args.text({ name: "profile" }).pipe(Args.optional)
 const update = Options.boolean("update")
 const locked = Options.boolean("locked")
+const json = Options.boolean("json").pipe(Options.withDefault(false))
+const jsonFull = Options.boolean("json-full").pipe(Options.withDefault(false))
 
 const currentGitWorktree = (cwd: string) =>
   Effect.tryPromise({
@@ -214,6 +217,31 @@ const upgrade = Command.make("upgrade", { profile: profileArgument }, ({ profile
       ),
 )
 
+const list = Command.make("list", { json, jsonFull }, ({ json: asJson, jsonFull: asJsonFull }) =>
+  Effect.gen(function* () {
+    if (asJson && asJsonFull) {
+      return yield* Effect.fail(
+        new ApplicationError({ message: "list: --json and --json-full are mutually exclusive" }),
+      )
+    }
+    const worktree = yield* currentGitWorktree(process.cwd())
+    const choices = yield* discoverProfileChoices(profileDiscoveryRoots(worktree)).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
+    if (asJson) {
+      return yield* Console.log(JSON.stringify(toSimplifiedList(choices)))
+    }
+    if (asJsonFull) {
+      return yield* Console.log(JSON.stringify(toFullList(choices)))
+    }
+    const human = formatProfileListHuman(choices)
+    if (human.length > 0) {
+      return yield* Console.log(human)
+    }
+    return yield* Effect.void
+  }),
+)
+
 const metadata = Command.make("metadata", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform).pipe(
@@ -236,8 +264,8 @@ const choices = Command.make("choices", {}, () =>
 )
 
 const root = Command.make("trellage-profile", {}, () =>
-  Console.log("Use validate, lock, build, upgrade, metadata, environment, or choices."),
-).pipe(Command.withSubcommands([validate, lock, build, upgrade, metadata, environment, choices]))
+  Console.log("Use validate, lock, build, upgrade, metadata, environment, choices, or list."),
+).pipe(Command.withSubcommands([validate, lock, build, upgrade, list, metadata, environment, choices]))
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 
