@@ -8,6 +8,8 @@ Trellage compiles locked agent profiles and runs them in isolated Docker sandbox
 cd prototypes/trellage
 mise trust
 mise run install-trellage
+trellage help
+trellage profiles
 trellage validate /absolute/path/to/profile.toml
 trellage build --locked /absolute/path/to/profile.toml
 trellage -i
@@ -19,6 +21,10 @@ trellage destroy --profile /absolute/path/to/profile.toml
 trellage upgrade /absolute/path/to/profile.toml
 trellage upgrade all
 ```
+
+`trellage help`, `trellage --help`, and `trellage -h` show command usage
+without requiring Docker. `trellage profiles` lists discovered profiles by
+name, harness, and description; `trellage list` is an alias.
 
 Bundled profiles can also be selected by directory name:
 

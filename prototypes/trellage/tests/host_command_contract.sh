@@ -2233,6 +2233,83 @@ EOF
   printf 'Trellage host test: PASS: profile compiler bootstraps when missing or stale\n'
 }
 
+test_help_and_profile_listing() {
+  local worktree="$test_root/help-and-profiles"
+  local docker_log="$test_root/help-and-profiles.docker.log"
+  local choices="$test_root/help-and-profiles.json"
+  local help_output profiles_output output
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq -n '[
+    {
+      name: "alpha",
+      description: "Claude Opus 5 through copilot-proxy-rs with the complete Alpha suite.",
+      harness: { kind: "claude" }
+    },
+    {
+      name: "beta",
+      description: "Beta\u0001 profile with a deliberately long description",
+      harness: { kind: "copilot" }
+    },
+    {
+      name: "pi",
+      description: "Oh My Pi with native GitHub Copilot authentication and bundled OMP skills",
+      harness: { kind: "pi" }
+    },
+    {
+      name: "prime",
+      description: "Prime Agent with Claude Opus 5 through copilot-proxy-rs.",
+      harness: { kind: "prime" }
+    }
+  ]' >"$choices"
+
+  : >"$host_node_log"
+  help_output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" help)"
+  grep -Fqx '  profiles, list                List available profiles' <<<"$help_output" \
+    || fail 'help command does not document profile listing'
+  grep -Fqx '  -h, --help                    Show this help' <<<"$help_output" \
+    || fail 'help command does not document help flags'
+  [[ "$("$prototype_dir/trellage" --help)" == "$help_output" ]] \
+    || fail '--help output differs from help command output'
+  [[ "$("$prototype_dir/trellage" -h)" == "$help_output" ]] \
+    || fail '-h output differs from help command output'
+  [[ ! -s "$host_node_log" ]] || fail 'help command invoked the profile compiler'
+  assert_no_mutation "$docker_log"
+
+  : >"$host_node_log"
+  profiles_output="$(COLUMNS=48 FAKE_PROFILE_CHOICES="$choices" \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" profiles)"
+  [[ "$(sed -n '1p' <<<"$profiles_output")" == 'NAME   HARNESS  DESCRIPTION' ]] \
+    || fail 'profiles command header is not column-aligned'
+  [[ "$(sed -n '2p' <<<"$profiles_output")" == 'alpha  claude   Opus 5 proxied; complete Alph...' ]] \
+    || fail 'profiles command does not remove redundant harness wording'
+  [[ "$(sed -n '3p' <<<"$profiles_output")" == 'beta   copilot  Beta  profile with a delibera...' ]] \
+    || fail 'profiles command does not sanitize and truncate descriptions'
+  [[ "$(sed -n '4p' <<<"$profiles_output")" == 'pi     pi       Oh My Pi ecosystem with bundl...' ]] \
+    || fail 'profiles command does not describe the Oh My Pi ecosystem'
+  [[ "$(sed -n '5p' <<<"$profiles_output")" == 'prime  prime    Recursive language model harn...' ]] \
+    || fail 'profiles command does not describe the recursive language model harness'
+  ! grep -Fq $'\t' <<<"$profiles_output" \
+    || fail 'profiles command still relies on terminal-dependent tabs'
+  awk 'length > 48 { exit 1 }' <<<"$profiles_output" \
+    || fail 'profiles command exceeds the requested terminal width'
+  grep -Fqx $'ARG\tchoices' "$host_node_log" \
+    || fail 'profiles command did not use profile discovery'
+  assert_no_mutation "$docker_log"
+
+  output="$(COLUMNS=48 FAKE_PROFILE_CHOICES="$choices" \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" list)"
+  [[ "$output" == "$profiles_output" ]] || fail 'list alias differs from profiles output'
+  output="$("$prototype_dir/trellage" profiles extra 2>&1)" && \
+    fail 'profiles command accepted an argument'
+  grep -Fqx 'trellage: profiles does not accept arguments' <<<"$output" \
+    || fail 'profiles argument diagnostic is incorrect'
+  printf 'Trellage host test: PASS: help and profile listing\n'
+}
+
 test_interactive_profile_selection() {
   local worktree="$test_root/interactive-profile"
   local docker_log="$test_root/interactive-profile.docker.log"
@@ -3381,6 +3458,11 @@ if [[ "${TRELLAGE_HOST_INTERACTIVE_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_HELP_ONLY:-}" == 1 ]]; then
+  test_help_and_profile_listing
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_PI_ONLY:-}" == 1 ]]; then
   test_pi_host_auth_dispatch_and_doctor
   exit 0
@@ -3454,6 +3536,7 @@ test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
 test_profile_compiler_bootstraps_when_missing_or_stale
 test_upgrade_delegates_to_effect_cli
+test_help_and_profile_listing
 test_interactive_profile_selection
 test_compiler_commands_scrub_copilot_auth
 test_copilot_metadata_contract

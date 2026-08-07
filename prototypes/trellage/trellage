@@ -98,6 +98,34 @@ fail() {
   exit 1
 }
 
+print_help() {
+  cat <<'EOF'
+Usage:
+  trellage [OPTIONS] [PROMPT...]
+  trellage COMMAND [OPTIONS]
+
+Commands:
+  profiles, list                List available profiles
+  validate [PROFILE]            Validate a profile
+  lock [--update] [PROFILE]     Resolve and write a profile lock
+  build [--locked] [PROFILE]    Build a profile image
+  upgrade [PROFILE|all]         Upgrade one or all profiles
+  resume [SESSION_ID]           Resume a profile session
+  shell                         Open a recovery shell
+  stop                          Stop the profile container
+  doctor                        Show profile and runtime status
+  destroy                       Remove profile runtime state
+  help                          Show this help
+
+Options:
+  --profile PROFILE             Select a profile
+  -i, --interactive             Select a profile interactively
+  -p, --prompt PROMPT           Run one non-interactive prompt
+  --auth-mode MODE              Select Claude authentication mode
+  -h, --help                    Show this help
+EOF
+}
+
 discard_ambient_github_auth() {
   ambient_copilot_github_token=
   ambient_gh_token=
@@ -201,6 +229,14 @@ if [[ "$compiler_mode" == false ]]; then
     mode=prompt
   elif [[ "$#" -ge 1 ]]; then
     case "$1" in
+      help|-h|--help)
+        [[ "$#" -eq 1 ]] || fail "$1 does not accept arguments"
+        mode=help
+        ;;
+      profiles|list)
+        [[ "$#" -eq 1 ]] || fail "$1 does not accept arguments"
+        mode=profiles
+        ;;
       resume|shell|stop|doctor|destroy)
         if [[ "$1" == resume ]]; then
           [[ "$#" -le 2 ]] || fail 'resume accepts at most one session ID'
@@ -223,12 +259,22 @@ if [[ "$compiler_mode" == false ]]; then
       *) fail "--interactive is not supported for $mode" ;;
     esac
   fi
+  if [[ "$mode" == help || "$mode" == profiles ]]; then
+    [[ -z "$profile_argument" ]] || fail "--profile is not supported for $mode"
+    [[ -z "$auth_mode_argument" ]] || fail "--auth-mode is not supported for $mode"
+    [[ "$interactive" == false ]] || fail "--interactive is not supported for $mode"
+  fi
 fi
 
 case "$auth_mode_argument" in
   ''|proxy|native|api-key) ;;
   *) fail "unsupported --auth-mode: $auth_mode_argument" ;;
 esac
+
+if [[ "$mode" == help ]]; then
+  print_help
+  exit 0
+fi
 
 case "$mode" in
   new|prompt|resume|doctor) ;;
@@ -278,6 +324,63 @@ for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE
 done
 
 ensure_profile_compiler
+if [[ "$mode" == profiles ]]; then
+  profile_choices="$("${clean_child_environment[@]}" node "$compiler" choices)" \
+    || fail 'profile choices resolution failed'
+  profile_rows="$(jq -r '
+    def sentence_case:
+      if length == 0 then . else (.[0:1] | ascii_upcase) + .[1:] end;
+    def concise_description:
+      gsub(
+        "^Prime Agent with Claude Opus 5 through copilot-proxy-rs\\.$";
+        "Recursive language model harness; Opus 5 proxied."
+      )
+      | gsub(
+          "^Oh My Pi with native GitHub Copilot authentication and bundled OMP skills$";
+          "Oh My Pi ecosystem with bundled OMP skills."
+        )
+      | gsub("^Prime Agent with "; "")
+      | gsub("^Oh My Pi with "; "")
+      | gsub("^Claude Code with "; "")
+      | gsub("^Claude "; "")
+      | gsub("^Codex environment combining "; "")
+      | gsub(" through copilot-proxy-rs"; " proxied")
+      | gsub(" proxied with the "; " proxied; ")
+      | gsub(" proxied with "; " proxied; ")
+      | sentence_case;
+    .[]
+    | [
+        (.name | gsub("[[:cntrl:]]"; " ")),
+        (.harness.kind | gsub("[[:cntrl:]]"; " ")),
+        (.description | gsub("[[:cntrl:]]"; " ") | concise_description)
+      ]
+    | @tsv
+  ' <<<"$profile_choices")" || fail 'profile choices are invalid'
+  name_width="$(jq -r '[4, (.[] | .name | gsub("[[:cntrl:]]"; " ") | length)] | max' \
+    <<<"$profile_choices")" || fail 'profile choices have invalid names'
+  harness_width="$(jq -r '[7, (.[] | .harness.kind | gsub("[[:cntrl:]]"; " ") | length)] | max' \
+    <<<"$profile_choices")" || fail 'profile choices have invalid harnesses'
+  terminal_width="${COLUMNS:-}"
+  if [[ ! "$terminal_width" =~ ^[1-9][0-9]*$ ]] && [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
+    terminal_width="$(tput cols 2>/dev/null || true)"
+  fi
+  [[ "$terminal_width" =~ ^[1-9][0-9]*$ ]] || terminal_width=120
+  description_width=$((terminal_width - name_width - harness_width - 4))
+  (( description_width >= 20 )) || description_width=20
+
+  printf '%-*s  %-*s  %s\n' "$name_width" NAME "$harness_width" HARNESS DESCRIPTION
+  if [[ -n "$profile_rows" ]]; then
+    while IFS=$'\t' read -r profile_name harness_kind description; do
+      if (( ${#description} > description_width )); then
+        description="${description:0:description_width - 3}..."
+      fi
+      printf '%-*s  %-*s  %s\n' \
+        "$name_width" "$profile_name" "$harness_width" "$harness_kind" "$description"
+    done <<<"$profile_rows"
+  fi
+  exit 0
+fi
+
 environment_metadata=
 environment_enabled=
 environment_source_present=
