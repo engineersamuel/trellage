@@ -102,14 +102,24 @@ EOF
 chmod +x "$fake_bin/docker"
 
 run_cleanup_task() {
-  local task="$1"
+  local task="$1" task_command
+  task_command="$(
+    python3 - "$repo_root/mise.toml" "$task" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as config_file:
+    config = tomllib.load(config_file)
+print(config["tasks"][sys.argv[2]]["run"])
+PY
+  )"
   (
     cd "$repo_root"
     PATH="$fake_bin:$PATH" \
       FAKE_DOCKER_LOG="$log" \
       FAKE_EXISTING_WORKTREE="$existing_worktree" \
       FAKE_ROOT="$test_root" \
-      mise run "$task"
+      bash -c "$task_command"
   )
 }
 
