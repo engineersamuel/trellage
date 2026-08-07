@@ -1,6 +1,6 @@
 schema = 1
 name = "prime-agent"
-description = "Prime Agent with Claude Opus via copilot-proxy-rs: a bleeding-edge recursive, self-improving harness that runs much of its loop through an iPython kernel. Best for experimental agent research and novel workflows—not the default for production delivery."
+description = "Prime Agent (Opus via copilot-proxy-rs): recursive, self-improving runtime with a persistent iPython control loop, detach/resume, and subagents. Best for experimental long-horizon agent research and novel automation—not conservative production delivery. Skip for everyday features, GitHub PR factories, or anything needing a stable, low-surprise harness."
 
 [harness]
 kind = "prime"

@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-hyperresearch"
-description = "Claude Code (Opus via proxy) with Hyperresearch for multi-step web investigation, browser-assisted collection, and synthesis into a persistent research knowledge base. Best for deep, source-heavy research and cited reports rather than pure coding sprints."
+description = "Claude Code (Opus via proxy) with Hyperresearch: multi-step web/browser investigation, adversarial cite-checking, and a persistent research vault. Best for source-heavy reports and ongoing knowledge bases—not coding sprints. Skip for quick facts, one-line summaries, or greenfield feature implementation."
 
 [harness]
 kind = "claude"

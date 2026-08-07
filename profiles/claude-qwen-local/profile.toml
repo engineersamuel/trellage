@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-qwen-local"
-description = "Claude Code in core mode on local Qwen (qwen3.6-35b-a3b-local) through copilot-proxy-rs. Best for private, offline, or cost-controlled coding when cloud frontier models are unnecessary or unavailable—not for maximum quality on hard UI or orchestration work."
+description = "Claude Code (core) on local Qwen (`qwen3.6-35b-a3b-local`) via copilot-proxy-rs. Best for private, offline, or cost-controlled coding on bounded tasks. Not for peak quality on hard UI, multi-agent orchestration, deep research, or high-stakes architecture—use an Opus profile for those."
 
 [harness]
 kind = "claude"

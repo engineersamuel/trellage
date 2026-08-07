@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-social-media"
-description = "Claude Code (Opus via proxy) with social-media skills and Humanizer to draft platform copy and strip obvious AI writing tells. Best for social posts, threads, and public-facing short-form content that should sound human."
+description = "Claude Code (Opus via proxy) with social-media skills (voice-first posts/threads/carousels) plus Humanizer to strip AI writing tells without inventing facts. Best for public short-form that must sound like a real person. Skip for long-form SEO blogs, deep research, or engineering delivery."
 
 [harness]
 kind = "claude"
