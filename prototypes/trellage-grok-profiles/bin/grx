@@ -1409,6 +1409,44 @@ require_launch_ready() {
   validate_profile_capabilities "$profile" required "$inventory"
 }
 
+has_explicit_permission() {
+  local argument
+
+  for argument in "$@"; do
+    case "$argument" in
+      --) return 1 ;;
+      --always-approve) return 0 ;;
+      --permission-mode|--permission-mode=*) return 0 ;;
+      --allow|--allow=*|--allowedTools|--allowedTools=*) return 0 ;;
+      --deny|--deny=*|--disallowedTools|--disallowedTools=*) return 0 ;;
+    esac
+  done
+
+  return 1
+}
+
+launch_profile() {
+  local profile="$1"
+  shift
+  local grok_args=("$@")
+
+  if [ "$#" -eq 0 ]; then
+    grok_args=(--permission-mode bypassPermissions)
+  elif ! has_explicit_permission "$@"; then
+    grok_args=(--permission-mode bypassPermissions "${grok_args[@]}")
+  fi
+
+  require_launch_ready "$profile"
+  resolve_grok
+  refresh_auth "$profile"
+  exec env \
+    GROK_HOME="$(profile_home "$profile")" \
+    GROK_MODELS_BASE_URL='http://127.0.0.1:8080/v1' \
+    GROK_DEFAULT_MODEL='grok-4.5' \
+    XAI_API_KEY='local-copilot-proxy' \
+    "$grok_executable" "${grok_args[@]}"
+}
+
 setup_profile() {
   local profile="$1"
 
@@ -1614,14 +1652,6 @@ case "$command_name" in
     fi
     ;;
   *)
-    require_launch_ready "$command_name"
-    resolve_grok
-    refresh_auth "$command_name"
-    exec env \
-      GROK_HOME="$(profile_home "$command_name")" \
-      GROK_MODELS_BASE_URL='http://127.0.0.1:8080/v1' \
-      GROK_DEFAULT_MODEL='grok-4.5' \
-      XAI_API_KEY='local-copilot-proxy' \
-      "$grok_executable" "$@"
+    launch_profile "$command_name" "$@"
     ;;
 esac
