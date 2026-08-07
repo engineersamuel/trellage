@@ -494,6 +494,14 @@ merge_managed_settings() {
   managed_temporary=
 }
 
+copilot_config_json() {
+  awk -v leading=1 '
+    leading && /^[[:space:]]*$/ { next }
+    leading && /^[[:space:]]*\/\// { next }
+    { leading = 0; print }
+  ' "$1"
+}
+
 ensure_workspace_trusted() {
   local workspace config temporary config_mode=600
   workspace="$(pwd -P)"
@@ -508,7 +516,7 @@ ensure_workspace_trusted() {
   fi
   temporary="$(mktemp "$runtime_home/.config.json.trellage.XXXXXX")"
   if [[ -f "$config" ]]; then
-    jq --arg workspace "$workspace" '
+    copilot_config_json "$config" | jq -e --arg workspace "$workspace" '
       if type != "object" then error("config root must be an object")
       elif ((.trustedFolders // []) | type) != "array" then
         error("trustedFolders must be an array")
@@ -523,7 +531,7 @@ ensure_workspace_trusted() {
             end
         )
       end
-    ' "$config" >"$temporary" \
+    ' >"$temporary" \
       || fail 'Copilot config cannot record the trusted workspace'
   else
     jq -n --arg workspace "$workspace" '{trustedFolders: [$workspace]}' >"$temporary" \

@@ -365,6 +365,25 @@ assert_no_transaction_temps 'failed prompt mode'
 jq -e '.trustedFolders == ["/existing", "/"]' "$runtime/config.json" >/dev/null \
   || fail 'repeated Copilot launches duplicated the trusted workspace'
 
+commented_config="$runtime/config.json.next"
+cat >"$commented_config" <<'EOF'
+// User settings belong in settings.json.
+// This file is managed automatically.
+{
+  "keep": true,
+  "trustedFolders": ["/existing"]
+}
+EOF
+mv -f -- "$commented_config" "$runtime/config.json"
+COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
+  run_entry prompt --allow-all -- 'commented config'
+jq -e '
+  .keep == true
+  and .trustedFolders == ["/existing", "/"]
+' "$runtime/config.json" >/dev/null \
+  || fail 'Copilot managed config comment prologue was not normalized safely'
+assert_no_transaction_temps 'commented config normalization'
+
 printf 'not-json\n' >"$runtime/config.json"
 if run_entry prompt --allow-all -- 'malformed config'; then
   fail 'malformed Copilot config was accepted'
