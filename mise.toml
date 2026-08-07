@@ -6,3 +6,7 @@ _.path = "./prototypes/trellage"
 [tasks.trellage]
 description = "Run the repository worktree Trellage command"
 run = "./prototypes/trellage/trellage"
+
+[tasks.rebuild-profiles]
+description = "Refresh native trx/launchers + rebuild all sandbox profile images"
+run = "./scripts/rebuild-profile-images.sh --install"

@@ -26,6 +26,11 @@ host. Examples: `trx`, `cpx`, `cdx`, and `grx`.
 - Live profile probes require explicit `PROFILE_MATRIX_ARGS=--live` opt-in because they may consume paid quota.
 - Validate locally: `mise run trellage -- validate <profile name>`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
+- After merging CLI/compiler/native launcher changes, from the repo root run
+  `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
+  launchers (`cdx`/`cpx`/`grx`/`jcx`/`omp`) then `trx`, then non-locked sandbox
+  `build` for each `profiles/*`. Use `--native-only` or `--sandbox-only` on the
+  underlying script when you only need one side.
 
 ## Architecture
 
@@ -58,6 +63,75 @@ host. Examples: `trx`, `cpx`, `cdx`, and `grx`.
 - Profile authentication symlink or non-regular path? Report it; NEVER alter it automatically.
 - NEVER run `grok login`, delete authentication paths, follow authentication symlinks, or weaken authentication permissions without explicit user authorization.
 - Repair or doctor failure? Report the exact diagnostic; NEVER substitute proxy or native authentication.
+
+## Package feeds on Microsoft-managed devices
+
+Microsoft-managed hosts block direct access to public package registries,
+including `pypi.org`, `files.pythonhosted.org`, and often public npm/NuGet
+endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
+
+| Ecosystem | Approved simple / registry URL |
+| --- | --- |
+| npm | `https://packagefeedproxy.microsoft.io/npm/` |
+| PyPI (pip / uv) | `https://packagefeedproxy.microsoft.io/pypi/simple/` |
+| NuGet | `https://packagefeedproxy.microsoft.io/nuget/v3/index.json` |
+
+### Trellage Sandbox (`trellage`)
+
+Package feeds are **host policy**, not baked into profile images. That keeps
+images and locked digests portable for non-Microsoft developers.
+
+- **Image builds** honor host `npm config get registry` for npm, and discover a
+  PyPI simple index for `uv`/pip in this order, injecting `UV_DEFAULT_INDEX` and
+  `PIP_INDEX_URL` into the builder only when set/discovered:
+  1. `UV_DEFAULT_INDEX` / `PIP_INDEX_URL` / `UV_INDEX_URL` in the environment
+  2. Host `pip` / `pip3` / `python3 -m pip` `global.index-url` (from `pip config list`)
+  3. If npm registry is `packagefeedproxy.microsoft.io/npm`, use the CFS PyPI URL above
+- **Runtime sessions** (`docker exec`) forward the same host HTTPS feed env
+  (`UV_DEFAULT_INDEX`, `PIP_INDEX_URL`, `npm_config_registry`, …) into every
+  harness container so in-sandbox `pip`/`uv`/`npm` installs work on CFS hosts.
+  No-op when those vars are unset (public registries).
+- Proxy vars (`HTTP(S)_PROXY`, `NO_PROXY`, …) are forwarded into the builder.
+- If Prime kernel bootstrap fails with `uv venv … --seed` exit code 2, assume
+  public PyPI is blocked and confirm CFS discovery (or set `UV_DEFAULT_INDEX`
+  explicitly) before rebuilding.
+- Locked OCI digests for **prime-agent** (and any future build that installs
+  unpinned PyPI packages) may differ between CFS and public-PyPI builders.
+  Prefer a local non-locked rebuild when digests drift on a managed device.
+
+Host one-time setup (fish example):
+
+```fish
+set -gx UV_DEFAULT_INDEX https://packagefeedproxy.microsoft.io/pypi/simple/
+# npm and pip are often MDM-managed already; verify with:
+#   npm config get registry
+#   pip3 config list
+```
+
+Optional user uv config (`~/.config/uv/uv.toml`):
+
+```toml
+[[index]]
+url = "https://packagefeedproxy.microsoft.io/pypi/simple/"
+default = true
+```
+
+### Trellage Native (`trx`, `cpx`, `cdx`, `grx`, …)
+
+- Native launchers run on the host; they inherit host package-manager config.
+- Configure npm, pip, and uv on the host (as above). Do not rely on public PyPI
+  inside agent sessions on Microsoft-managed devices.
+- `trx` does not rewrite package feeds; keep shell/MDM defaults correct so every
+  native harness sees the same CFS endpoints.
+
+### Agent behavior
+
+- Prefer the CFS feed URLs above over public PyPI/npm when installing packages
+  on Microsoft-managed devices.
+- Never disable corporate feed policy, tunnel around it, or commit secrets that
+  bypass CFS.
+- When documenting build failures, distinguish “CFS feed not configured for uv”
+  from application bugs.
 
 ## Conventions
 

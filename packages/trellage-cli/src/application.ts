@@ -58,6 +58,75 @@ export const sanitizeNpmRegistry = (candidate: string): string | undefined => {
   }
 }
 
+/** Microsoft Central Feed Services (CFS) PyPI simple index for managed devices. */
+export const microsoftProtectedPypiIndex = "https://packagefeedproxy.microsoft.io/pypi/simple/"
+
+/** Sanitize a PyPI simple-index URL the same way as npm registries (HTTPS, no credentials). */
+export const sanitizePypiIndex = (candidate: string): string | undefined => sanitizeNpmRegistry(candidate)
+
+/**
+ * When the host npm registry is Microsoft packagefeedproxy, map it to the CFS PyPI simple index.
+ * Public pypi.org / files.pythonhosted.org are often blocked on Microsoft-managed devices.
+ */
+export const pypiIndexFromNpmRegistry = (npmRegistry: string | undefined): string | undefined => {
+  if (npmRegistry === undefined) return undefined
+  try {
+    const registry = new URL(npmRegistry)
+    if (registry.hostname !== "packagefeedproxy.microsoft.io") return undefined
+    const pathName = registry.pathname.replace(/\/+$/, "") || "/"
+    if (pathName !== "/npm" && pathName !== "/npm/registry") return undefined
+    return microsoftProtectedPypiIndex
+  } catch {
+    return undefined
+  }
+}
+
+const pipConfigIndexUrl = (configList: string): string | undefined => {
+  for (const line of configList.split(/\r?\n/)) {
+    const match = /^global\.index-url=['"]?([^'"\s]+)['"]?\s*$/.exec(line.trim())
+    if (match?.[1] !== undefined) return sanitizePypiIndex(match[1])
+  }
+  return undefined
+}
+
+export type CommandOutputRunner = (command: string, args: ReadonlyArray<string>) => Promise<{ readonly stdout: string }>
+
+/**
+ * Resolve a reachable PyPI simple index for uv/pip inside profile builds.
+ * Prefer explicit env, then host pip config, then Microsoft CFS when npm already uses it.
+ */
+export const discoverPypiIndex = async (options?: {
+  readonly environment?: Readonly<Record<string, string | undefined>>
+  readonly npmRegistry?: string
+  readonly run?: CommandOutputRunner
+}): Promise<string | undefined> => {
+  const environment = options?.environment ?? process.env
+  for (const key of ["UV_DEFAULT_INDEX", "PIP_INDEX_URL", "UV_INDEX_URL"] as const) {
+    const fromEnv = sanitizePypiIndex(environment[key] ?? "")
+    if (fromEnv !== undefined) return fromEnv
+  }
+
+  const run =
+    options?.run ??
+    (async (command, args) => {
+      const result = await execFilePromise(command, [...args], { encoding: "utf8" })
+      return { stdout: result.stdout }
+    })
+
+  for (const command of ["pip3", "pip", "python3"] as const) {
+    const args = command === "python3" ? ["-m", "pip", "config", "list"] : ["config", "list"]
+    try {
+      const { stdout } = await run(command, args)
+      const fromPip = pipConfigIndexUrl(stdout)
+      if (fromPip !== undefined) return fromPip
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return pypiIndexFromNpmRegistry(options?.npmRegistry)
+}
+
 export interface UpgradeServices {
   readonly buildCandidate: (
     document: ProfileDocument,
@@ -77,6 +146,53 @@ const safeLockedVersionPattern =
 const sha256Pattern = /^sha256:[0-9a-f]{64}$/
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`
+
+/** Host env vars forwarded into the profile builder container. */
+const builderForwardedEnvKeys = [
+  "UV_DEFAULT_INDEX",
+  "UV_INDEX",
+  "UV_INDEX_URL",
+  "UV_EXTRA_INDEX_URL",
+  "PIP_INDEX_URL",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
+] as const
+
+/** Docker `--env KEY=value` pairs for builder-network configuration from the host. */
+export const builderNetworkEnv = (
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  options?: { readonly pypiIndex?: string },
+): Array<string> => {
+  const args: Array<string> = []
+  const seen = new Set<string>()
+  for (const key of builderForwardedEnvKeys) {
+    const value = environment[key]
+    if (value === undefined || value === "") continue
+    // Refuse values that would break docker argv or shell scripts.
+    if (value.includes("\0") || value.includes("\r") || value.includes("\n")) continue
+    args.push("--env", `${key}=${value}`)
+    seen.add(key)
+  }
+  // Inject a discovered corporate/simple index when the host did not set UV/PIP index env vars.
+  // uv (Prime kernel bootstrap) reads UV_DEFAULT_INDEX; pip tools read PIP_INDEX_URL.
+  const discovered = options?.pypiIndex === undefined ? undefined : sanitizePypiIndex(options.pypiIndex)
+  if (discovered !== undefined) {
+    if (!seen.has("UV_DEFAULT_INDEX")) {
+      args.push("--env", `UV_DEFAULT_INDEX=${discovered}`)
+      seen.add("UV_DEFAULT_INDEX")
+    }
+    if (!seen.has("PIP_INDEX_URL")) {
+      args.push("--env", `PIP_INDEX_URL=${discovered}`)
+    }
+  }
+  return args
+}
 
 const impossibleBuilderInput = (message: string): never => {
   throw new ApplicationError({ message })
@@ -204,7 +320,12 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       `prime_kernel_seed=${shellQuote(kernelSeed)}`,
       'rm -rf "$prime_kernel_home" "$prime_kernel_seed"',
       'mkdir -p "$prime_kernel_home"',
-      `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)}`,
+      // ensureKernelPython installs uv, Python 3.11, seed packages, and the runtime
+      // over HTTPS (normally files.pythonhosted.org). Surface an actionable hint when
+      // that CDN is unreachable; UV_DEFAULT_INDEX is forwarded from the host.
+      "prime_kernel_status=0",
+      `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
+      '[ "$prime_kernel_status" -eq 0 ] || { printf \'%s\\n\' "trellage: Prime Python kernel bootstrap failed (exit $prime_kernel_status)." >&2; printf \'%s\\n\' "This step needs a reachable PyPI simple index for uv seed packages, ipykernel, and default runtime packages." >&2; printf \'%s\\n\' "On Microsoft-managed devices, public pypi.org / files.pythonhosted.org are blocked; use the CFS feed (UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/) or configure pip global.index-url, then rebuild." >&2; printf \'%s\\n\' "Elsewhere, set UV_DEFAULT_INDEX or PIP_INDEX_URL to any reachable simple-index mirror." >&2; exit "$prime_kernel_status"; }',
       'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
       'tar -C "$prime_kernel_home" -czf "$prime_kernel_seed" .trellage-prime-kernel .local/share/uv/python .prime/agent/kernel-venv',
       'rm -rf "$prime_kernel_home"',
@@ -478,6 +599,9 @@ const buildOci = (
       return yield* Effect.fail(new ApplicationError({ message: "lock platform does not match Docker target" }))
     }
     yield* docker.verify(target)
+    const pypiIndex = yield* Effect.promise(() =>
+      discoverPypiIndex(npmRegistry === undefined ? {} : { npmRegistry }).catch(() => undefined),
+    )
     yield* docker.run(
       "docker",
       dockerHostArguments(target, [
@@ -508,6 +632,7 @@ const buildOci = (
         "--env",
         "npm_config_fetch_retry_maxtimeout=10000",
         ...(npmRegistry === undefined ? [] : ["--env", `npm_config_registry=${npmRegistry}`]),
+        ...builderNetworkEnv(process.env, pypiIndex === undefined ? {} : { pypiIndex }),
         "--env",
         `SOURCE_DATE_EPOCH=${lock.source_date_epoch}`,
         "--env",

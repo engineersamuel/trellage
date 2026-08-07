@@ -43,6 +43,32 @@ Build the lock for the local Docker server platform, verify its manifest digest,
 
 The current production tag is `trellage-profile-codex-superpowers-linux-arm64:locked`.
 
+### Rebuild everything (post-merge / heavy dev)
+
+From the repository root:
+
+```bash
+mise run rebuild-profiles
+```
+
+That:
+
+1. Installs the worktree `trellage` into `~/.local/bin`
+2. Reinstalls every native launcher (`cdx`, `cpx`, `grx`, `jcx`, `omp`) then `trx`
+   from `prototypes/trellage-*-profiles` and `prototypes/trellage-router`
+3. Runs non-locked `trellage build` for every `profiles/*/profile.toml` (pins
+   kept; `final_digest` may update)
+
+Equivalent: `./scripts/rebuild-profile-images.sh --install`
+
+Useful variants:
+
+```bash
+./scripts/rebuild-profile-images.sh --native-only    # launchers + trx only
+./scripts/rebuild-profile-images.sh --sandbox-only   # Docker images only
+./scripts/rebuild-profile-images.sh --install --locked
+```
+
 ## Deterministic Smoke Verification
 
 The deterministic smoke verification requires Bash, Docker, Git, `gh`, jq, and mise. Docker must provide the existing `copilot-proxy-rs_default` network and reachable proxy service. Run it from this directory:
@@ -305,7 +331,29 @@ while the managed provider file is restored atomically before each launch.
 The image build prepares Prime's Python kernel as
 `/usr/local/share/trellage/prime-kernel-seed.tar.gz`; launches restore it into
 the profile state volume instead of downloading Python packages when the first
-tool is invoked.
+tool is invoked. Kernel bootstrap needs a reachable PyPI simple index for `uv`
+(seed packages, ipykernel, and default runtime packages).
+
+On Microsoft-managed devices, public `pypi.org` / `files.pythonhosted.org` are
+blocked. Trellage treats package feeds as **host policy** (not baked into
+images):
+
+1. **Builds** — discover `UV_DEFAULT_INDEX` / `PIP_INDEX_URL` from env, host
+   `pip` `global.index-url`, or CFS when npm is already
+   `packagefeedproxy.microsoft.io`, then inject into the builder.
+2. **Runtime** — forward the same host HTTPS feed env into every harness
+   session (`docker exec`) so in-container `pip` / `uv` / `npm` installs work.
+
+The approved CFS PyPI URL is
+`https://packagefeedproxy.microsoft.io/pypi/simple/`. Explicit override:
+
+```bash
+export UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/
+trellage build --locked /absolute/path/to/profiles/prime-agent/profile.toml
+```
+
+Hosts that use public registries leave those variables unset; Trellage does not
+force CFS.
 
 ## Pi with Oh My Pi
 
