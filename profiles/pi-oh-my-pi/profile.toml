@@ -1,6 +1,6 @@
 schema = 1
 name = "pi-oh-my-pi"
-description = "Oh My Pi with native GitHub Copilot authentication and bundled OMP skills"
+description = "Oh My Pi on GitHub Copilot models: batteries-included terminal agent that takes a prompt and keeps cranking, with long, detailed, colorful output. Best when you want minimal setup, aggressive throughput, and rich explanations without babysitting stalls."
 
 [harness]
 kind = "pi"

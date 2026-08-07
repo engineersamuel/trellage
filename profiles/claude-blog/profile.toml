@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-blog"
-description = "Claude Opus 5 through copilot-proxy-rs with the complete Claude Blog skill suite."
+description = "Claude Code (Opus via proxy) with the Claude Blog skill suite for structured long-form content and publication workflows. Claude is a frontier generalist especially strong on detailed craft and structure. Best for technical posts, docs-as-blog, and content systems that need a full editorial skill kit."
 
 [harness]
 kind = "claude"
