@@ -9,7 +9,7 @@ adapter = "omp-native"
 repository = "https://github.com/can1357/oh-my-pi.git"
 ref = "main"
 select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
-commit = "1e492d6ff9b8d4412591942b11fe06e1395ae80f"
+commit = "3a8591a8af5b6d200088d12ca75a5517cb064fa8"
 integrity = "sha256:4c8aeaf3a7e5ac00844f909fac8a67b31f7b1a0c7a2cdc1aa82ec8683324b6ee"
 
 [[sources.files]]
@@ -141,10 +141,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "pi"
 selector = "latest"
-version = "17.2.9"
-integrity = "sha256:e3c4b0a96dbe14f68a65aa4158bdc15252a0fc352691517fb2a07bf85e97e283"
-url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.9/omp-linux-arm64"
-size = 157591696
+version = "17.2.10"
+integrity = "sha256:c935d5d25eb677a625934f81f4b21b0ff05b64400feb9e90f02f0efe39676386"
+url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.10/omp-linux-arm64"
+size = 154380432
 
 [[packages.runtime]]
 name = "bash"
@@ -189,4 +189,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:78d112069896067c2543f95feee37c81ea6d4118bf3911072c9ac00442e688b1"
+final_digest = "sha256:821050ce8acd24c8598f969626363a233108a8384e5ab5ba115f0431e2d015db"
