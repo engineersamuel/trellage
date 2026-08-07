@@ -1,9 +1,53 @@
 pre-commit:
   parallel: true
   jobs:
+    - name: staged whitespace
+      run: git diff --cached --check
     - name: profile compiler oxlint
       run: npm --prefix packages/trellage-cli run lint
     - name: harness config oxfmt
       run: npm --prefix packages/trellage-cli run format:check
     - name: profile compiler typecheck
       run: npm --prefix packages/trellage-cli run check
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: broad deterministic contracts
+      run: make pre-push
+    - name: sandbox entry contracts
+      glob:
+        - Makefile
+        - profiles/**
+        - prototypes/trellage/**
+      run: make copilot-entry pi-entry prime-entry
+    - name: native Codex contracts
+      glob:
+        - Makefile
+        - prototypes/trellage-codex-profiles/**
+      run: make native-codex-profiles
+    - name: native Copilot contracts
+      glob:
+        - Makefile
+        - prototypes/trellage-copilot-profiles/**
+      run: make native-copilot-profiles
+    - name: native Grok contracts
+      glob:
+        - Makefile
+        - prototypes/trellage-grok-profiles/**
+      run: make native-grok-profiles
+    - name: native jcode contracts
+      glob:
+        - Makefile
+        - prototypes/trellage-jcode-profiles/**
+      run: make native-jcode-profile
+    - name: native OMP contracts
+      glob:
+        - Makefile
+        - prototypes/trellage-omp-profiles/**
+      run: make native-omp-profile
+    - name: native router contract
+      glob:
+        - Makefile
+        - prototypes/trellage-router/**
+      run: make native-profile-router
