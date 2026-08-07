@@ -2128,23 +2128,23 @@ test_upgrade_delegates_to_effect_cli() {
   local help_output real_node
   compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
   real_node="$(command -v node)"
-  help_output="$("$real_node" "$compiler" --help)"
+  help_output="$($real_node "$compiler" --help)"
   grep -Eq -- '- upgrade \[<profile>\]' <<<"$help_output" \
     || fail 'Effect CLI help does not list upgrade'
 
   mkdir -p "$fake_node_bin"
   ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
-  printf '%s\n' \
-    '#!/bin/sh' \
-    'set -eu' \
-    'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
-    '[ ! -f "$fixture_config" ] || . "$fixture_config"' \
-    'printf '\''ARG\t%s\n'\'' "$@" >"$FAKE_NODE_LOG"' \
-    >"$fake_node_bin/node"
+  cat >"$fake_node_bin/node" <<'EOF'
+#!/bin/sh
+set -eu
+fixture_config="$(dirname "$0")/.trellage-fixture-env"
+[ ! -f "$fixture_config" ] || . "$fixture_config"
+printf 'ARG\t%s\n' "$@" >"$FAKE_NODE_LOG"
+EOF
   chmod +x "$fake_node_bin/node"
+
   FAKE_NODE_LOG="$node_log" PATH="$fake_node_bin:$PATH" \
     "$prototype_dir/trellage" upgrade --profile '/tmp/profile with spaces.toml'
-
   [[ "$(sed -n '1p' "$node_log")" == $'ARG\t'"$compiler" ]] \
     || fail 'upgrade did not delegate to the profile compiler'
   [[ "$(sed -n '2p' "$node_log")" == $'ARG\tupgrade' ]] \
@@ -2168,6 +2168,52 @@ test_upgrade_delegates_to_effect_cli() {
   [[ "$(wc -l <"$node_log" | tr -d ' ')" -eq 3 ]] \
     || fail 'bulk upgrade delegation added unexpected arguments'
   printf 'Trellage host test: PASS: upgrade delegates to Effect CLI\n'
+}
+
+test_list_delegates_to_effect_cli() {
+  local compiler
+  local fake_node_bin="$test_root/fake-list-node-bin"
+  local node_log="$test_root/list-node.log"
+  local help_output real_node
+  compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
+  real_node="$(command -v node)"
+  help_output="$($real_node "$compiler" --help)"
+  grep -Eq -- '- list' <<<"$help_output" \
+    || fail 'Effect CLI help does not list list'
+
+  mkdir -p "$fake_node_bin"
+  ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
+  cat >"$fake_node_bin/node" <<'EOF'
+#!/bin/sh
+set -eu
+fixture_config="$(dirname "$0")/.trellage-fixture-env"
+[ ! -f "$fixture_config" ] || . "$fixture_config"
+printf 'ARG\t%s\n' "$@" >"$FAKE_NODE_LOG"
+EOF
+  chmod +x "$fake_node_bin/node"
+
+  FAKE_NODE_LOG="$node_log" PATH="$fake_node_bin:$PATH" \
+    "$prototype_dir/trellage" list --json
+  [[ "$(sed -n '1p' "$node_log")" == $'ARG\t'"$compiler" ]] \
+    || fail 'list did not delegate to the profile compiler'
+  [[ "$(sed -n '2p' "$node_log")" == $'ARG\tlist' ]] \
+    || fail 'list command was not preserved during delegation'
+  [[ "$(sed -n '3p' "$node_log")" == $'ARG\t--json' ]] \
+    || fail 'list --json flag was not preserved during delegation'
+
+  : >"$node_log"
+  FAKE_NODE_LOG="$node_log" PATH="$fake_node_bin:$PATH" \
+    "$prototype_dir/trellage" list --json-full
+  [[ "$(sed -n '2p' "$node_log")" == $'ARG\tlist' ]] \
+    || fail 'list --json-full did not preserve list'
+  [[ "$(sed -n '3p' "$node_log")" == $'ARG\t--json-full' ]] \
+    || fail 'list --json-full flag was not preserved during delegation'
+
+  output="$($prototype_dir/trellage list --prompt hello 2>&1)" && fail 'list accepted --prompt' || true
+  grep -Fqx 'trellage: --prompt is not supported for compiler commands' <<<"$output" \
+    || fail 'list --prompt diagnostic is incorrect'
+
+  printf 'Trellage host test: PASS: list delegates to Effect CLI\n'
 }
 
 test_profile_compiler_bootstraps_when_missing_or_stale() {
@@ -3453,6 +3499,7 @@ fi
 test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
 test_profile_compiler_bootstraps_when_missing_or_stale
+test_list_delegates_to_effect_cli
 test_upgrade_delegates_to_effect_cli
 test_interactive_profile_selection
 test_compiler_commands_scrub_copilot_auth

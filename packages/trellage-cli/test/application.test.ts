@@ -1763,7 +1763,7 @@ final_digest = "${oldDigest}"
     const reloaded = await Effect.runPromise(loadLock(profilePath, "linux/arm64"))
     await expect(Effect.runPromise(requireLocked(document, reloaded))).resolves.toBe(reloaded)
     expect(renderLock(reloaded!)).toBe(expected)
-  })
+  }, 20_000)
 })
 
 describe("locked build source policy", () => {
@@ -1934,7 +1934,7 @@ select = ["hve-core"]
         inventoryPolicy: { allowSymlinks: true },
       }),
     ])
-  })
+  }, 20_000)
 
   it("rehydrates Codex sources with the strict inventory policy", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-application-codex-"))

@@ -1,6 +1,6 @@
 schema = 1
 name = "copilot-hve"
-description = "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows."
+description = "GitHub Copilot with Microsoft HVE Core (Research→Plan→Implement→Review artifacts). Best for GitHub-native, process-heavy delivery—features, PRs, issues, security/a11y/work-item loops—when you want a default engineering harness with durable SDLC gates. Skip for one-line edits, offline/private-only work, or experimental non-Copilot runtimes."
 
 [harness]
 kind = "copilot"

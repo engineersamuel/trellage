@@ -75,9 +75,36 @@ vi.mock("../src/profile-discovery.js", async (importOriginal) => {
     ...actual,
     discoverProfileChoices: () =>
       EffectModule.succeed([
-        { name: "alpha", value: "/profiles/alpha/profile.toml" },
-        { name: "beta", value: "/profiles/beta/profile.toml" },
-        { name: "gamma", value: "/profiles/gamma/profile.toml" },
+        {
+          name: "alpha",
+          description: "Alpha description",
+          value: "/profiles/alpha/profile.toml",
+          supported_platforms: ["linux/arm64"],
+          harness: { kind: "codex", version: "latest" },
+          skills: [],
+          plugins: [],
+          mcps: [],
+        },
+        {
+          name: "beta",
+          description: "Beta description",
+          value: "/profiles/beta/profile.toml",
+          supported_platforms: [],
+          harness: { kind: "claude", version: "latest", model: "claude-opus-5" },
+          skills: [],
+          plugins: [],
+          mcps: [],
+        },
+        {
+          name: "gamma",
+          description: "Gamma description",
+          value: "/profiles/gamma/profile.toml",
+          supported_platforms: ["linux/amd64"],
+          harness: { kind: "copilot", version: "latest" },
+          skills: [],
+          plugins: [],
+          mcps: [],
+        },
       ]),
   }
 })
@@ -146,10 +173,42 @@ const runUpgradeAll = async (): Promise<{
   }
 }
 
+const runList = async (
+  args: ReadonlyArray<string>,
+): Promise<{
+  readonly logs: ReadonlyArray<string>
+  readonly exitCode: number | undefined
+}> => {
+  const originalArgv = process.argv
+  const originalExitCode = process.exitCode
+  const logs: Array<string> = []
+  const originalLog = console.log
+  try {
+    process.argv = [process.execPath, "trellage-profile", "list", ...args]
+    process.exitCode = undefined
+    cliHarness.main = undefined
+    console.log = (...parts: Array<unknown>) => {
+      logs.push(parts.map(String).join(" "))
+    }
+    vi.resetModules()
+    await import("../src/cli.js")
+    if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
+    await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
+    return { logs, exitCode: process.exitCode }
+  } finally {
+    process.argv = originalArgv
+    process.exitCode = originalExitCode
+    console.log = originalLog
+  }
+}
+
 describe("CLI identity and failure reporting", () => {
   it("uses Trellage identity and prints the full failure cause tree", () => {
     expect.soft(cliSource).toContain('Command.make("trellage-profile"')
     expect.soft(cliSource).toContain('Command.make("choices"')
+    expect.soft(cliSource).toContain('Command.make("list"')
+    expect.soft(cliSource).toContain('Options.boolean("json")')
+    expect.soft(cliSource).toContain('Options.boolean("json-full")')
     expect.soft(cliSource).toContain('name: "Trellage profile compiler"')
     expect.soft(cliSource).toContain("process.env.TRELLAGE_PROFILE")
     expect.soft(cliSource).not.toContain("process.env.HARNESS_PROFILE")
@@ -178,6 +237,36 @@ describe("CLI identity and failure reporting", () => {
     const selected = await runMetadata([], { harness: "legacy.toml" })
     expect(selected).toHaveLength(1)
     expect(selected[0]).not.toBe(legacy)
+  })
+
+  it("lists simplified and full JSON catalogs", async () => {
+    const simplified = await runList(["--json"])
+    expect(simplified.exitCode ?? 0).toBe(0)
+    expect(JSON.parse(simplified.logs.join("\n"))).toEqual({
+      schemaVersion: 1,
+      profiles: [
+        { name: "alpha", description: "Alpha description" },
+        { name: "beta", description: "Beta description" },
+        { name: "gamma", description: "Gamma description" },
+      ],
+    })
+
+    const full = await runList(["--json-full"])
+    const parsed = JSON.parse(full.logs.join("\n")) as {
+      schemaVersion: number
+      profiles: Array<{ name: string; path: string; supportedPlatforms: string[] }>
+    }
+    expect(parsed.schemaVersion).toBe(1)
+    expect(parsed.profiles.map((p) => p.name)).toEqual(["alpha", "beta", "gamma"])
+    expect(parsed.profiles[0]).toMatchObject({
+      path: "/profiles/alpha/profile.toml",
+      supportedPlatforms: ["linux/arm64"],
+    })
+  })
+
+  it("rejects combining --json and --json-full", async () => {
+    const result = await runList(["--json", "--json-full"])
+    expect(result.exitCode).toBe(1)
   })
 
   it("upgrades every discovered profile and reports failure after continuing", async () => {

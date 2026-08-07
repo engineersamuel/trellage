@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-council"
-description = "Claude Opus 5 through copilot-proxy-rs with Council of High Intelligence and Caveman marketplace plugins enabled by default."
+description = "Claude Code (Opus via proxy) with Council of High Intelligence—structured multi-lens deliberation that preserves dissent, kill criteria, and next steps. Best for hard architecture/product tradeoffs and high-stakes design calls where one-shot answers fail. Skip for factual lookups, small reversible edits, or pure implementation throughput."
 
 [harness]
 kind = "claude"

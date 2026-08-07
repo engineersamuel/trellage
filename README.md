@@ -39,6 +39,14 @@ A bare profile name checks the current worktree first at
 deployed Trellage source. Use a value ending in `.toml` or containing a path
 separator for an explicit path.
 
+# List sandbox profiles (selection catalog)
+
+```bash
+trellage list
+trellage list --json
+trellage list --json-full
+```
+
 The repository-root `mise.toml` prepends `prototypes/trellage` to `PATH`, so an
 activated mise shell resolves a worktree-local `trellage` without changing
 directories. Trust the root config once; mise shares that trust with linked Git

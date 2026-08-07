@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:855a6c3ce1afa5fba2f0fefed4dec85220ebc6bae303ac69684ae83409617f04"
+profile_hash = "sha256:1af0ff9c00dcfde88e093787d9219b4545ed88b46e6900d44af179fdbbe56b90"
 
 [[sources]]
 kind = "skill"
