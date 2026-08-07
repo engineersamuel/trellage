@@ -9,7 +9,9 @@ cd prototypes/trellage
 mise trust
 mise run install-trellage
 trellage validate /absolute/path/to/profile.toml
+trellage build /absolute/path/to/profile.toml
 trellage build --locked /absolute/path/to/profile.toml
+trellage ci-verify /absolute/path/to/profile.toml
 trellage -i
 trellage --profile /absolute/path/to/profile.toml
 trellage resume --profile /absolute/path/to/profile.toml SESSION_ID
@@ -19,6 +21,25 @@ trellage destroy --profile /absolute/path/to/profile.toml
 trellage upgrade /absolute/path/to/profile.toml
 trellage upgrade all
 ```
+
+Three build-shaped commands, three different jobs:
+
+- `trellage build <profile>` reconciles. It refreshes the lock for whatever changed in
+  the profile, reuses the pinned harness release and base image when those fields did
+  not change, and rebuilds the image. This is the one to reach for after editing a
+  profile.
+- `trellage build --locked <profile>` rebuilds strictly from an existing lock and
+  refuses to resolve anything. It cannot repair a stale lock, so it is not the recovery
+  path after an edit.
+- `trellage ci-verify <profile>` asserts that a profile and its lock agree exactly and
+  that the lock records a final OCI digest, without resolving or building. Release
+  gates want this one.
+
+Launching handles the common case on its own: `trellage --profile <profile>` refreshes
+a stale lock and rebuilds before starting, reporting the command it ran. Harness
+updates do not need a profile edit at all — profiles declare `version = "latest"`, and
+`trellage upgrade <profile>` (or `upgrade all`) re-resolves that selector, builds a
+candidate image, and adopts lock and image atomically.
 
 Bundled profiles can also be selected by directory name:
 
@@ -221,6 +242,15 @@ trellage doctor --profile claude-research
 Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.
 
 Profile source files are architecture-neutral editable intent. Production locks currently support native ARM64 only. `trellage` recognizes AMD64 for future lock selection, but rejects it before downloads or Docker mutation until a complete AMD64 artifact catalog and lock are available. `trellage lock` resolves sources and native artifacts only for the Docker server platform. Reproducible builds use `--locked` and reject profile, platform, artifact, or digest drift.
+
+Every build publishes two tags for the same image: the canonical
+`trellage-profile-<name>-<platform>:locked`, and a content-addressed
+`trellage-profile-<name>-<platform>:h-<profile-hash>-<runtime-hash>`. The canonical tag
+points at the most recent build, so a worktree profile and the deployed profile of the
+same name overwrite each other there. The alias gives each variant its own tag, and
+launching adopts a matching alias back onto the canonical tag instead of rebuilding —
+switching between a worktree and the deployed source no longer forces a rebuild each
+way.
 
 A GitHub blob URL also works for locked builds and launches. Trellage resolves the revision once and fetches the profile and selected sibling lock from that same commit:
 

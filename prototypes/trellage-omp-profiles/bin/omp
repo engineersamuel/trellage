@@ -340,6 +340,8 @@ mise_env() {
   MISE_DATA_DIR="$runtime_root/mise" \
     MISE_CACHE_DIR="$runtime_root/cache" \
     MISE_CONFIG_DIR="$runtime_root/mise-config" \
+    MISE_GLOBAL_CONFIG_FILE=/dev/null \
+    MISE_IGNORED_CONFIG_PATHS="$HOME" \
     mise "$@"
 }
 
@@ -407,6 +409,38 @@ verify_managed_profile() {
     || die "managed config differs; run omp repair $profile_key"
   cmp -s "$agent_root/models.yml" <(managed_models) \
     || die "managed models config differs; run omp repair $profile_key"
+}
+
+managed_profile_is_current() {
+  [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] || return 1
+  [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] || return 1
+  cmp -s "$agent_root/config.yml" <(managed_config) || return 1
+  cmp -s "$agent_root/models.yml" <(managed_models)
+}
+
+# OMP rewrites its own config during normal use, so drift on launch is expected
+# rather than exceptional. Republish instead of stopping for a manual repair.
+# Ownership and path safety still fail hard: only a profile this launcher created is
+# ever overwritten, and `omp doctor` keeps the strict check for diagnosis.
+ensure_managed_profile() {
+  require_owned_profile
+  managed_profile_is_current && return 0
+  publish_managed_profile
+  printf 'omp: managed config restored\n' >&2
+}
+
+# The pinned version is the contract; a missing install is a repairable state, not a
+# reason to refuse to start.
+ensure_installed_binary() {
+  local version="$1" binary
+
+  if binary="$(installed_binary "$version" 2>/dev/null)"; then
+    printf '%s\n' "$binary"
+    return 0
+  fi
+  printf 'omp: OMP %s is not installed; installing\n' "$version" >&2
+  install_exact_version "$version" >&2
+  installed_binary "$version"
 }
 
 profile_ready_label() {
@@ -571,8 +605,8 @@ launch_omp() {
 
   require_command mise
   version="$(read_pinned_version)"
-  verify_managed_profile
-  binary="$(installed_binary "$version")"
+  ensure_managed_profile
+  binary="$(ensure_installed_binary "$version")"
   verify_binary_version "$binary" "$version"
   if [[ "$profile_kind" == copilot ]]; then
     if token="$(resolve_copilot_token)"; then

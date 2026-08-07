@@ -697,6 +697,9 @@ describe("transactional profile upgrade", () => {
       `exists:${canonical}`,
       `tag:${canonical}->${backup}`,
       `tag:${candidate}->${canonical}`,
+      expect.stringMatching(
+        /^tag:trellage-profile-codex-upgrade-linux-arm64:locked->trellage-profile-codex-upgrade-linux-arm64:h-[0-9a-f]{12}-[0-9a-f]{12}$/,
+      ),
       "write:lock",
       `remove:${candidate}`,
       `remove:${backup}`,
@@ -1921,6 +1924,7 @@ select = ["hve-core"]
     expect(runnerOptions).toEqual([
       expect.objectContaining({ stdio: "inherit" }),
       expect.objectContaining({ stdio: "inherit" }),
+      undefined,
     ])
     expect(scripts).toHaveLength(1)
     expect(builderArgs).toContain("npm_config_registry=https://packagefeedproxy.microsoft.io/npm/")

@@ -218,12 +218,42 @@ jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v1)"
 prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1)"
 
-cpx_catalog="$(read_catalog cpx copilot "$cpx")"
-cdx_catalog="$(read_catalog cdx codex "$cdx")"
-grx_catalog="$(read_catalog grx grok "$grx")"
-jcx_catalog="$(read_catalog jcx jcode "$jcx")"
-omp_catalog="$(read_catalog omp oh-my-pi "$omp")"
-prx_catalog="$(read_catalog prx prime "$prx")"
+catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx.XXXXXX")" \
+  || die 'cannot create catalog workspace'
+cleanup_catalog_tmp() {
+  rm -rf -- "$catalog_tmp"
+}
+trap cleanup_catalog_tmp EXIT HUP INT TERM
+
+read_catalog cpx copilot "$cpx" >"$catalog_tmp/cpx" &
+cpx_catalog_pid=$!
+read_catalog cdx codex "$cdx" >"$catalog_tmp/cdx" &
+cdx_catalog_pid=$!
+read_catalog grx grok "$grx" >"$catalog_tmp/grx" &
+grx_catalog_pid=$!
+read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" &
+jcx_catalog_pid=$!
+read_catalog omp oh-my-pi "$omp" >"$catalog_tmp/omp" &
+omp_catalog_pid=$!
+read_catalog prx prime "$prx" >"$catalog_tmp/prx" &
+prx_catalog_pid=$!
+
+catalog_status=0
+for catalog_pid in \
+  "$cpx_catalog_pid" "$cdx_catalog_pid" "$grx_catalog_pid" \
+  "$jcx_catalog_pid" "$omp_catalog_pid" "$prx_catalog_pid"; do
+  wait "$catalog_pid" || catalog_status=1
+done
+((catalog_status == 0)) || die 'catalog discovery failed'
+
+cpx_catalog="$(<"$catalog_tmp/cpx")"
+cdx_catalog="$(<"$catalog_tmp/cdx")"
+grx_catalog="$(<"$catalog_tmp/grx")"
+jcx_catalog="$(<"$catalog_tmp/jcx")"
+omp_catalog="$(<"$catalog_tmp/omp")"
+prx_catalog="$(<"$catalog_tmp/prx")"
+cleanup_catalog_tmp
+trap - EXIT HUP INT TERM
 choices="$(build_choices "$cpx_catalog" "$cdx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
   || die 'could not build profile choices'
 

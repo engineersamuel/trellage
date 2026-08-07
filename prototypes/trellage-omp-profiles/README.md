@@ -54,6 +54,14 @@ and checks managed bytes and the pinned `mise` installation. The `local`
 doctor also checks proxy health and local model discovery. The `copilot` doctor
 checks native GitHub Copilot authentication and model availability.
 
+Launching self-heals. OMP rewrites its own config during use, so a launch that
+finds drifted managed bytes republishes them and reports
+`omp: managed config restored` on stderr before starting; a launch that finds the
+pinned version missing installs it. `omp repair` remains available for repairing
+without launching, and `omp doctor` keeps the strict read-only check. Self-healing
+never crosses the ownership boundary: an unmanaged or foreign-marked profile still
+fails with `profile is not managed`.
+
 The `copilot` profile matches the container profile's host-auth order:
 `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`.
 On macOS it additionally falls back to the existing `copilot-cli` Keychain

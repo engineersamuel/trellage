@@ -18,6 +18,7 @@ import {
   profileMetadata,
   sanitizeNpmRegistry,
   upgradeProfile,
+  verifyProfile,
 } from "./application.js"
 import { environmentMetadata } from "./environment.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
@@ -251,6 +252,15 @@ const metadata = Command.make("metadata", { profile: profileArgument }, ({ profi
   ),
 )
 
+const ciVerify = Command.make("ci-verify", { profile: profileArgument }, ({ profile }) =>
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) => verifyProfile(selected, target.platform)),
+      Effect.flatMap((result) => Console.log(`verified: ${result.image} (${result.digest})`)),
+    ),
+  ),
+)
+
 const environment = Command.make("environment", {}, () =>
   environmentMetadata().pipe(Effect.flatMap((result) => Console.log(JSON.stringify(result)))),
 )
@@ -264,8 +274,8 @@ const choices = Command.make("choices", {}, () =>
 )
 
 const root = Command.make("trellage-profile", {}, () =>
-  Console.log("Use validate, lock, build, upgrade, metadata, environment, choices, or list."),
-).pipe(Command.withSubcommands([validate, lock, build, upgrade, list, metadata, environment, choices]))
+  Console.log("Use validate, lock, build, upgrade, ci-verify, metadata, environment, choices, or list."),
+).pipe(Command.withSubcommands([validate, lock, build, upgrade, ciVerify, list, metadata, environment, choices]))
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 

@@ -33,6 +33,8 @@ cat >"$fake_bin/mise" <<'FAKE_MISE'
 #!/usr/bin/env bash
 set -u
 
+[[ "${MISE_GLOBAL_CONFIG_FILE-}" == /dev/null ]] || exit 96
+[[ "${MISE_IGNORED_CONFIG_PATHS-}" == "$HOME" ]] || exit 97
 printf '%s\n' "$*" >>"$FAKE_MISE_LOG"
 tool='github:can1357/oh-my-pi'
 install_name='github-can1357-oh-my-pi'
@@ -417,6 +419,55 @@ fi
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" || fail 'repair did not restore config'
 [[ "$(<"$runtime_root/version")" == '17.2.7' ]] || fail 'repair changed pinned version'
+
+printf 'drifted managed config\n' >"$agent_root/config.yml"
+"$command_path" -p 'Reply exactly OMP_SELF_HEAL' >"$fixture_root/self-heal.out" 2>&1 \
+  || fail 'launch did not self-heal drifted managed config'
+grep -Fq 'omp: managed config restored' "$fixture_root/self-heal.out" \
+  || fail 'launch did not report managed config restoration'
+grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" \
+  || fail 'launch did not republish managed config'
+
+printf 'drifted managed models\n' >"$agent_root/models.yml"
+"$command_path" -p 'Reply exactly OMP_SELF_HEAL_MODELS' >"$fixture_root/self-heal-models.out" 2>&1 \
+  || fail 'launch did not self-heal drifted managed models config'
+grep -Fqx 'providers:' "$agent_root/models.yml" \
+  || fail 'launch did not republish managed models config'
+
+"$command_path" -p 'Reply exactly OMP_NO_REPAIR' >"$fixture_root/clean-launch.out" 2>&1 \
+  || fail 'clean launch failed'
+! grep -Fq 'managed config restored' "$fixture_root/clean-launch.out" \
+  || fail 'clean launch republished managed config'
+
+printf 'drifted managed config\n' >"$agent_root/config.yml"
+if "$command_path" doctor >"$fixture_root/doctor-drift.out" 2>&1; then
+  fail 'doctor accepted drifted managed config'
+fi
+grep -Fq 'managed config differs; run omp repair local' "$fixture_root/doctor-drift.out" \
+  || fail 'doctor did not report managed config drift'
+
+mv "$profile_root/.managed-by-trellage-omp-profiles" "$fixture_root/marker-away" \
+  || fail 'could not stage ownership marker'
+if "$command_path" -p 'Reply exactly OMP_UNOWNED' >"$fixture_root/unowned-launch.out" 2>&1; then
+  fail 'launch self-healed an unmanaged profile'
+fi
+grep -Fq 'profile is not managed; run omp setup local' "$fixture_root/unowned-launch.out" \
+  || fail 'launch did not report unmanaged profile'
+grep -Fqx 'drifted managed config' "$agent_root/config.yml" \
+  || fail 'launch overwrote config for an unmanaged profile'
+mv "$fixture_root/marker-away" "$profile_root/.managed-by-trellage-omp-profiles" \
+  || fail 'could not restore ownership marker'
+"$command_path" repair >/dev/null || fail 'repair after drift checks failed'
+
+installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/17.2.7/omp"
+rm "$installed_omp" || fail 'could not remove pinned install for launch recovery test'
+"$command_path" -p 'Reply exactly OMP_INSTALL_RECOVERY' \
+  >"$fixture_root/install-recovery.out" 2>&1 \
+  || fail 'launch did not recover a missing pinned install'
+grep -Fq 'omp: OMP 17.2.7 is not installed; installing' \
+  "$fixture_root/install-recovery.out" \
+  || fail 'launch did not report missing pinned install recovery'
+[[ -x "$installed_omp" ]] || fail 'launch did not reinstall the missing pinned executable'
 
 unsafe_home="$fixture_root/unsafe-home"
 mkdir -p "$unsafe_home/.omp/profiles/trellage-qwen-local/agent"
