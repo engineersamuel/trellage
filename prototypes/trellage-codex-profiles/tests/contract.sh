@@ -840,6 +840,17 @@ trap '
         kill -KILL -- "-$cdx_test_pending_child_pid" 2>/dev/null || :
         exit 96
       }
+    cdx_test_pending_ready_wait=0
+    while [ ! -f "$CDX_TEST_PENDING_SIGNAL_READY" ] \
+      && kill -0 "$cdx_test_pending_child_pid" 2>/dev/null \
+      && [ "$cdx_test_pending_ready_wait" -lt 200 ]; do
+      sleep 0.01
+      cdx_test_pending_ready_wait=$((cdx_test_pending_ready_wait + 1))
+    done
+    [ -f "$CDX_TEST_PENDING_SIGNAL_READY" ] || {
+      kill -KILL -- "-$cdx_test_pending_child_pid" 2>/dev/null || :
+      exit 97
+    }
     : >"$CDX_TEST_PENDING_SIGNAL_ARM"
     kill -s "$CDX_TEST_PENDING_SIGNAL_NAME" "$$"
   fi
@@ -854,6 +865,7 @@ while [ "$pending_signal_iteration" -le 3 ]; do
     CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
     CDX_TEST_PENDING_SIGNAL_ARM="$pending_signal_dir/injected" \
     CDX_TEST_PENDING_SIGNAL_CHILD_PID="$pending_signal_dir/known-child.pid" \
+    CDX_TEST_PENDING_SIGNAL_READY="$pending_signal_dir/ready" \
     CDX_TEST_PENDING_SIGNAL_NAME=TERM \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TREE_DIR="$pending_signal_dir" \
@@ -3697,12 +3709,17 @@ for native_tree_case in HUP:129 INT:130 TERM:143; do
   track_async_pid "$native_tree_launcher_pid"
   set +m
   native_tree_wait=0
-  while [ ! -f "$native_tree_dir/ready" ] && [ "$native_tree_wait" -lt 100 ]; do
+  while [ ! -f "$native_tree_dir/ready" ] \
+    && kill -0 "$native_tree_launcher_pid" 2>/dev/null \
+    && [ "$native_tree_wait" -lt 400 ]; do
     sleep 0.05
     native_tree_wait=$((native_tree_wait + 1))
   done
   [ -f "$native_tree_dir/ready" ] \
-    || fail "$native_tree_signal native process tree did not start"
+    || {
+      cat "$native_tree_output" >&2 || :
+      fail "$native_tree_signal native process tree did not start"
+    }
   native_tree_grandchild_pid="$(cat "$native_tree_dir/grandchild.pid")"
   native_tree_group="$(cat "$native_tree_dir/child.pid")"
   track_async_group "$native_tree_group"
