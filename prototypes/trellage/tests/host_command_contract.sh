@@ -731,6 +731,8 @@ test_portable_prompt_parser_contract() {
 --prompt is not supported for compiler commands|lock --prompt hello
 --prompt is not supported for compiler commands|upgrade --prompt=hello
 --prompt is not supported for compiler commands|ci-verify --prompt=hello
+--model is not supported for compiler commands|build --model gpt-5.5
+--model is not supported for compiler commands|validate --model=gpt-5.5
 resume session ID must be a UUID|resume not-a-session-id
 resume accepts at most one session ID|resume 5b3664c0-9954-4526-8aab-d3d2c177798d 45f2aaf8-1064-4162-bc09-58808d5819d8
 CASES
@@ -2727,6 +2729,78 @@ test_claude_core_injects_exact_metadata_routing_only_at_final_exec() {
   printf 'Trellage host test: PASS: Claude core injects exact metadata routing only at final exec\n'
 }
 
+test_claude_model_override_routes_only_opus() {
+  local worktree="$test_root/claude-model-override"
+  local docker_log="$test_root/claude-model-override.docker.log"
+  local claude_variant="$test_root/claude-model-override.json"
+  local state_volume output status
+  mkdir -p "$worktree"
+  jq \
+    '.profile_name = "claude-council"
+      | .image = "trellage-profile-claude-council:locked"
+      | .harness_kind = "claude"
+      | .harness_executable = "claude"
+      | .runtime_entry = "trellage-claude-entry"
+      | .default_network = "copilot-proxy-rs_default"
+      | .auth_policy = "claude-explicit"
+      | .claude_mode = "hyperresearch"
+      | .claude_gateway = "http://copilot-proxy-rs:8080"
+      | .claude_opus_model = "claude-opus-5"
+      | .claude_sonnet_model = "claude-sonnet-5"
+      | .claude_haiku_model = "claude-haiku-4.5"
+      | .harness_args = []' \
+    "$copilot_metadata" >"$claude_variant"
+  state_volume="$(resource_names "$worktree" claude-council claude | tail -n 1)"
+
+  : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-council FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    FAKE_DOCKER_EXPECT_CLAUDE_MODE=hyperresearch \
+    FAKE_DOCKER_EXPECT_CLAUDE_GATEWAY=http://copilot-proxy-rs:8080 \
+    FAKE_DOCKER_EXPECT_CLAUDE_OPUS_MODEL=claude-opus-5 \
+    FAKE_DOCKER_EXPECT_CLAUDE_SONNET_MODEL=claude-sonnet-5 \
+    FAKE_DOCKER_EXPECT_CLAUDE_HAIKU_MODEL=claude-haiku-4.5 \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/claude:locked' \
+      "$prototype_dir/trellage" -p 'default model prompt'
+  [[ "$(grep -Fxc $'ENV\tCLAUDE_PROXY_ROUTING=matched' "$docker_log")" -eq 1 ]] \
+    || fail 'Claude default model routes did not reach only the final exec'
+
+  : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-council FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    FAKE_DOCKER_EXPECT_CLAUDE_MODE=hyperresearch \
+    FAKE_DOCKER_EXPECT_CLAUDE_GATEWAY=http://copilot-proxy-rs:8080 \
+    FAKE_DOCKER_EXPECT_CLAUDE_OPUS_MODEL=gpt-5.5 \
+    FAKE_DOCKER_EXPECT_CLAUDE_SONNET_MODEL=claude-sonnet-5 \
+    FAKE_DOCKER_EXPECT_CLAUDE_HAIKU_MODEL=claude-haiku-4.5 \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/claude:locked' \
+      "$prototype_dir/trellage" --model gpt-5.5 -p 'override model prompt'
+  [[ "$(grep -Fxc $'ENV\tCLAUDE_PROXY_ROUTING=matched' "$docker_log")" -eq 1 ]] \
+    || fail '--model did not override only the Claude Opus route at final exec'
+  [[ "$(tail -n 1 "$docker_log")" == $'ARG\toverride model prompt' ]] \
+    || fail '--model was forwarded as prompt or harness text'
+
+  status=0
+  output="$(FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-council FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/claude:locked' \
+      "$prototype_dir/trellage" --model=gpt-5.5 --model claude-opus-5 -p duplicate 2>&1)" \
+    || status=$?
+  [[ "$status" -ne 0 ]] || fail 'duplicate --model arguments succeeded'
+  grep -Fqx 'trellage: --model may be specified only once' <<<"$output" \
+    || fail 'duplicate --model arguments had the wrong diagnostic'
+  printf 'Trellage host test: PASS: Claude model override routes only Opus\n'
+}
+
 test_copilot_lifecycle_identity_and_runtime() {
   local worktree="$test_root/copilot-lifecycle"
   local docker_log="$test_root/copilot-lifecycle.docker.log"
@@ -3508,11 +3582,13 @@ fi
 
 if [[ "${TRELLAGE_HOST_CLAUDE_CORE_ONLY:-}" == 1 ]]; then
   test_claude_core_injects_exact_metadata_routing_only_at_final_exec
+  test_claude_model_override_routes_only_opus
   exit 0
 fi
 
 test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
+test_claude_model_override_routes_only_opus
 test_profile_compiler_bootstraps_when_missing_or_stale
 test_list_delegates_to_effect_cli
 test_upgrade_delegates_to_effect_cli
