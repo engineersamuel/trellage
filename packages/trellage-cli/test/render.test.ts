@@ -81,7 +81,7 @@ select = ["hve-core"]
 
 const claudeSource = `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude render profile"
 [harness]
 kind = "claude"
@@ -98,7 +98,7 @@ packages = ["bash", "git", "jq"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 `
 
 const claudeMarketplaceSource = `
@@ -407,7 +407,7 @@ rename_exe = "copilot"`)
   it("renders the locked Claude toolchain and managed seed without credentials", () => {
     const rendered = renderMiseConfig(claudeProfile, lock("claude"), {
       baseReference: "docker.io/library/node@sha256:base",
-      imageTag: "trellage-profile-claude-hyperresearch:locked",
+      imageTag: "trellage-profile-claude-research:locked",
       runtimeSupport: claudeRuntime,
     })
 

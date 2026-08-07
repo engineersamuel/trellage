@@ -67,7 +67,7 @@ ${extra}
 
 const claudeProfile = (extra = "") => `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude test profile"
 [harness]
 kind = "claude"
@@ -84,7 +84,7 @@ packages = ["bash", "ca-certificates", "curl", "git", "jq"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 ${extra}
 `
 
@@ -256,7 +256,7 @@ always_on = true
     expect(result.profile.plugins).toEqual([
       expect.objectContaining({
         adapter: "hyperresearch",
-        select: ["full"],
+        select: ["light"],
       }),
     ])
   })
@@ -394,11 +394,11 @@ select = ["humanizer"]
 
   it.each([
     ["wrong adapter", claudeProfile().replace('adapter = "hyperresearch"', 'adapter = "codex-native"')],
-    ["wrong gear", claudeProfile().replace('select = ["full"]', 'select = ["light"]')],
+    ["wrong gear", claudeProfile().replace('select = ["light"]', 'select = ["full"]')],
     [
       "two plugins",
       claudeProfile(
-        `[[plugins]]\nadapter = "hyperresearch"\nrepository = "https://github.com/jordan-gibbs/hyperresearch.git"\nref = "main"\nselect = ["full"]`,
+        `[[plugins]]\nadapter = "hyperresearch"\nrepository = "https://github.com/jordan-gibbs/hyperresearch.git"\nref = "main"\nselect = ["light"]`,
       ),
     ],
     ["wrong repository", claudeProfile().replace("jordan-gibbs/hyperresearch", "example/hyperresearch")],

@@ -146,7 +146,7 @@ printf '%s\n' \
 chmod 600 ~/.config/trellage/.env.local
 ```
 
-The next `trellage --profile claude-hyperresearch` launch receives `PLAYWRIGHT_MCP_EXTENSION_TOKEN` before Trellage selects Claude MCPs, so Playwright and Obscura are both exposed. Existing process environment values take precedence, which preserves explicit credentials supplied by automation.
+The next `trellage --profile claude-research` launch receives `PLAYWRIGHT_MCP_EXTENSION_TOKEN` before Trellage selects Claude MCPs, so Playwright and Obscura are both exposed. Existing process environment values take precedence, which preserves explicit credentials supplied by automation.
 
 Keep secret values out of `config.toml`. Use it only to control loading:
 
@@ -205,8 +205,8 @@ summary.
 For a profile bundled in this repository, use its directory name instead of an absolute path:
 
 ```bash
-trellage build --locked claude-hyperresearch
-trellage --profile claude-hyperresearch
+trellage build --locked claude-research
+trellage --profile claude-research
 trellage build --locked claude-social-media
 trellage --profile claude-social-media
 ```
@@ -233,7 +233,7 @@ Bare profile launches remain interactive. Portable `-p` and `--prompt` run one p
 
 ```bash
 trellage --profile codex-superpowers -p "hello"
-trellage --profile claude-hyperresearch -p "hello"
+trellage --profile claude-research -p "hello"
 trellage --profile claude-social-media -p "draft a LinkedIn post"
 trellage --profile copilot-hve -p "hello"
 trellage --profile pi-oh-my-pi -p "hello"
@@ -251,7 +251,7 @@ so reserve it for recovery after interactive sessions have exited.
 
 New and resumed sessions run Codex with `--dangerously-bypass-approvals-and-sandbox`; Docker is the external sandbox. `trellage shell` does not start or label a Codex process.
 
-Claude Hyperresearch runs with `bypassPermissions` inside the same external Docker sandbox. Trellage supplies `skipDangerousModePermissionPrompt = true` as a session-level managed setting, so Claude starts without asking users or non-interactive callers to acknowledge the bypass-mode warning.
+Claude Research runs with `bypassPermissions` inside the same external Docker sandbox. Trellage supplies `skipDangerousModePermissionPrompt = true` as a session-level managed setting, so Claude starts without asking users or non-interactive callers to acknowledge the bypass-mode warning.
 
 Claude Social Media installs every bundled skill from
 [`charlie947/social-media-skills`](https://github.com/charlie947/social-media-skills)

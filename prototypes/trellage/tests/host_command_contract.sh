@@ -646,8 +646,8 @@ test_portable_prompt_is_detached_for_each_harness() {
   assert_prompt_is_detached "$docker_log"
 
   jq \
-    '.profile_name = "claude-hyperresearch"
-      | .image = "trellage-profile-claude-hyperresearch:locked"
+    '.profile_name = "claude-research"
+      | .image = "trellage-profile-claude-research:locked"
       | .harness_kind = "claude"
       | .harness_executable = "claude"
       | .runtime_entry = "trellage-claude-entry"
@@ -660,12 +660,12 @@ test_portable_prompt_is_detached_for_each_harness() {
       | .claude_haiku_model = "claude-haiku-4.5"
       | .harness_args = []' \
     "$copilot_metadata" >"$claude_variant"
-  state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-research claude | tail -n 1)"
   : >"$docker_log"
   FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    FAKE_DOCKER_PROFILE=claude-hyperresearch FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    FAKE_DOCKER_PROFILE=claude-research FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
       env TERM=host-term COLORTERM=truecolor TRELLAGE_IMAGE='test/claude:locked' \
       "$prototype_dir/trellage" -p 'Claude prompt'
@@ -1845,8 +1845,8 @@ test_global_varlock_bootstrap_supplies_claude_browser_token() {
   printf 'PLAYWRIGHT_MCP_EXTENSION_TOKEN=browser-from-varlock\n' >"$config_directory/.env.local"
   chmod 600 "$config_directory/.env.local"
   jq \
-    '.profile_name = "claude-hyperresearch"
-      | .image = "trellage-profile-claude-hyperresearch:locked"
+    '.profile_name = "claude-research"
+      | .image = "trellage-profile-claude-research:locked"
       | .harness_kind = "claude"
       | .harness_executable = "claude"
       | .runtime_entry = "trellage-claude-entry"
@@ -1859,13 +1859,13 @@ test_global_varlock_bootstrap_supplies_claude_browser_token() {
       | .claude_haiku_model = "claude-haiku-4.5"
       | .harness_args = []' \
     "$copilot_metadata" >"$claude_variant"
-  state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-research claude | tail -n 1)"
   : >"$docker_log"
 
   FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    FAKE_DOCKER_PROFILE=claude-hyperresearch FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    FAKE_DOCKER_PROFILE=claude-research FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
       env TRELLAGE_ENVIRONMENT=on TRELLAGE_CONFIG="$config_directory/config.toml" \
       TRELLAGE_IMAGE='test/claude:locked' "$prototype_dir/trellage" -p 'browser token probe'
@@ -2632,8 +2632,8 @@ test_claude_launch_allows_empty_harness_args() {
   mkdir -p "$worktree"
   : >"$docker_log"
   jq \
-    '.profile_name = "claude-hyperresearch"
-      | .image = "trellage-profile-claude-hyperresearch:locked"
+    '.profile_name = "claude-research"
+      | .image = "trellage-profile-claude-research:locked"
       | .harness_kind = "claude"
       | .harness_executable = "claude"
       | .runtime_entry = "trellage-claude-entry"
@@ -2647,12 +2647,12 @@ test_claude_launch_allows_empty_harness_args() {
       | .claude_haiku_model = "claude-haiku-4.5"
       | .tmpfs_size = "2g"' \
     "$copilot_metadata" >"$claude_variant"
-  state_volume="$(resource_names "$worktree" claude-hyperresearch claude | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-research claude | tail -n 1)"
 
   FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant" \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=absent \
-    FAKE_DOCKER_PROFILE=claude-hyperresearch FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    FAKE_DOCKER_PROFILE=claude-research FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_copilot_tty "$worktree" "$docker_log" "$worktree" \
       env TRELLAGE_IMAGE='test/claude:locked' "$prototype_dir/trellage" \
     || fail 'Claude launch rejected an empty harness argument list'

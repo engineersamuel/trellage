@@ -74,7 +74,7 @@ const HyperresearchPlugin = Schema.Struct({
   adapter: Schema.Literal("hyperresearch"),
   repository: Schema.Literal("https://github.com/jordan-gibbs/hyperresearch.git"),
   ref: NonEmpty,
-  select: Schema.Tuple(Schema.Literal("full")),
+  select: Schema.Tuple(Schema.Literal("light")),
 })
 
 const Provider = Schema.Struct({

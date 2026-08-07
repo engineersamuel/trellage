@@ -202,8 +202,9 @@ case "$harness_kind" in
       || fail 'Claude lock selector is not upgradeable'
     [[ "$(locked_value '[packages.harness]' version)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
       || fail 'Claude version is not exact stable semver'
-    if [[ "$profile_name" == claude-hyperresearch ]]; then
+    if [[ "$profile_name" == claude-research ]]; then
       grep -Fqx 'adapter = "hyperresearch"' "$lock" || fail 'Hyperresearch adapter is not locked'
+      grep -Fqx 'select = ["light"]' "$lock" || fail 'Hyperresearch light gear is not locked'
       grep -Eq '^commit = "[0-9a-f]{40}"$' "$lock" || fail 'Hyperresearch commit is not exact'
     fi
     ;;

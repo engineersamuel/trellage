@@ -7,7 +7,7 @@ describe("profile precedence", () => {
   const paths = new Set([
     "/work/.harness.toml",
     "/home/.config/harness/profile.toml",
-    "/repo/profiles/claude-hyperresearch/profile.toml",
+    "/repo/profiles/claude-research/profile.toml",
     "/work/profiles/prime-agent/profile.toml",
     "/repo/profiles/prime-agent/profile.toml",
   ])
@@ -42,8 +42,8 @@ describe("profile precedence", () => {
   })
 
   it("resolves a bare explicit profile name from the bundled profiles directory", async () => {
-    await expect(Effect.runPromise(selectProfilePath({ ...base, explicit: "claude-hyperresearch" }))).resolves.toBe(
-      "/repo/profiles/claude-hyperresearch/profile.toml",
+    await expect(Effect.runPromise(selectProfilePath({ ...base, explicit: "claude-research" }))).resolves.toBe(
+      "/repo/profiles/claude-research/profile.toml",
     )
   })
 

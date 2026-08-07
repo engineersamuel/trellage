@@ -402,7 +402,7 @@ select = ["social-media-skills"]
       parseProfile(
         `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude lock profile"
 [harness]
 kind = "claude"
@@ -419,7 +419,7 @@ packages = ["bash"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 `,
         "/profiles/claude/profile.toml",
       ),
@@ -450,7 +450,7 @@ select = ["full"]
       parseProfile(
         `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude lock profile"
 [harness]
 kind = "claude"
@@ -467,7 +467,7 @@ packages = ["bash"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 `,
         "/profiles/claude/profile.toml",
       ),
@@ -493,7 +493,7 @@ select = ["full"]
       parseProfile(
         `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude lock profile"
 [harness]
 kind = "claude"
@@ -510,7 +510,7 @@ packages = ["bash"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 `,
         "/profiles/claude/profile.toml",
       ),
@@ -561,7 +561,7 @@ select = ["full"]
       parseProfile(
         `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude lock profile"
 [harness]
 kind = "claude"
@@ -578,7 +578,7 @@ packages = ["bash"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 `,
         "/profiles/claude/profile.toml",
       ),
