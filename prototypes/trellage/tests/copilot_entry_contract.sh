@@ -80,7 +80,7 @@ create_linux_rootfs() {
   python_stdlib="$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
   mkdir -p "$root/rootfs$(dirname "$python_stdlib")"
   cp -R -- "$python_stdlib" "$root/rootfs$python_stdlib"
-  ctypes_module="$(find "$python_stdlib" -type f -name '_ctypes*.so' -print -quit)"
+  ctypes_module="$(python3 -c 'import _ctypes; print(_ctypes.__file__)')"
   [[ -n "$ctypes_module" ]] || fail 'fixture host Python lacks _ctypes'
   copy_linux_binary "$ctypes_module"
   assembled_elf_interpreter="$(ldd "$(command -v bash)" 2>/dev/null \
@@ -116,6 +116,9 @@ create_fixture_image() {
   tar -C "$root/rootfs" -cf - . | docker image import \
     --change 'USER 10001:10001' - "$image_ref" >/dev/null
   fixture_image_created=true
+  docker run --rm --network none --entrypoint /usr/bin/python3 \
+    "$image_ref" -c 'import ctypes' \
+    || fail 'fixture image cannot import Python ctypes'
 }
 
 transaction_temp_scan() {

@@ -1367,12 +1367,16 @@ if [ "${GRX_TEST_LOCK_READ_MODE:-}" = 'release-before-read' ] \
 fi
 if [ "${GRX_TEST_LOCK_READ_MODE:-}" = 'capture-before-handoff' ] \
   && [ "$lock_path" = "$GRX_TEST_AUTH_LOCK" ]; then
-  captured_lock_target="$("$GRX_TEST_REAL_SED" "$@")"
-  captured_status=$?
-  : >"$GRX_TEST_LOCK_READ_MARKER"
-  while [ ! -e "$GRX_TEST_LOCK_READ_CONTINUE" ]; do sleep 0.05; done
-  printf '%s\n' "$captured_lock_target"
-  exit "$captured_status"
+  if [ ! -e "$GRX_TEST_LOCK_READ_MARKER" ]; then
+    captured_lock_target="$("$GRX_TEST_REAL_SED" "$@")"
+    captured_status=$?
+    : >"$GRX_TEST_LOCK_READ_MARKER"
+    while [ ! -e "$GRX_TEST_LOCK_READ_CONTINUE" ]; do sleep 0.05; done
+    printf '%s\n' "$captured_lock_target"
+    exit "$captured_status"
+  fi
+  [ -z "${GRX_TEST_LOCK_READ_RETRY_MARKER:-}" ] \
+    || : >"$GRX_TEST_LOCK_READ_RETRY_MARKER"
 fi
 exec "$GRX_TEST_REAL_SED" "$@"
 FAKE_SED_AUTH_LOCK
@@ -1437,6 +1441,7 @@ GRX_TEST_REAL_CP="$real_cp" \
   GRX_TEST_AUTH_LOCK="$hve_home/.auth.lock" \
   GRX_TEST_LOCK_READ_MARKER="$fixture_root/auth-handoff-lock-captured" \
   GRX_TEST_LOCK_READ_CONTINUE="$fixture_root/auth-handoff-lock-continue" \
+  GRX_TEST_LOCK_READ_RETRY_MARKER="$fixture_root/auth-handoff-lock-retried" \
   ./bin/grx update --check hve \
   >"$fixture_root/auth-handoff-waiter.out" \
   2>"$fixture_root/auth-handoff-waiter.err" &
@@ -1459,6 +1464,7 @@ GRX_TEST_REAL_CP="$real_cp" \
 handoff_owner_two_pid=$!
 wait_for_file "$handoff_owner_two_marker"
 : >"$fixture_root/auth-handoff-lock-continue"
+wait_for_file "$fixture_root/auth-handoff-lock-retried"
 : >"$handoff_owner_two_release"
 
 handoff_owner_two_status=0
