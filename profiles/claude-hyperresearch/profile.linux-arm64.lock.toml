@@ -1133,4 +1133,4 @@ size = 52716812
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:ed944a0b0de18316b4d6b6609fbf1a7cf8ecd6d7dc76c37056c106d9a23b086b"
+final_digest = "sha256:5be1e9f464af7747ce07dc8fda6f60166f3273ae72934f2522174f378e48db58"
