@@ -172,8 +172,9 @@ Run these commands inside the Git worktree that should be mounted:
 ```bash
 trellage [--profile PROFILE]
 trellage [--profile PROFILE] -p|--prompt PROMPT
+trellage [--profile CLAUDE_PROFILE] [--model MODEL] [-p|--prompt PROMPT]
 trellage -i|--interactive [-p|--prompt PROMPT]
-trellage resume [SESSION_ID] [--profile PROFILE]
+trellage resume [SESSION_ID] [--profile PROFILE] [--model MODEL]
 trellage shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
@@ -237,6 +238,15 @@ trellage --profile claude-research -p "hello"
 trellage --profile claude-social-media -p "draft a LinkedIn post"
 trellage --profile copilot-hve -p "hello"
 trellage --profile pi-oh-my-pi -p "hello"
+```
+
+Claude profiles route Opus, Sonnet, and Haiku aliases to the models declared by
+the profile. Their defaults are `claude-opus-5`, `claude-sonnet-5`, and
+`claude-haiku-4.5`. Pass `--model MODEL` to override only the Opus route for one
+new, prompt, or resumed Claude launch:
+
+```bash
+trellage --profile claude-council --model gpt-5.5 -p "hello"
 ```
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare

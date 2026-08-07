@@ -139,7 +139,12 @@ Code marketplace plugins enabled by default:
 
 ```bash
 trellage --profile claude-council
+trellage --profile claude-council --model gpt-5.5 -p "hello"
 ```
+
+Claude profiles default their Opus, Sonnet, and Haiku routes to
+`claude-opus-5`, `claude-sonnet-5`, and `claude-haiku-4.5`. `--model` overrides
+only the Opus route for that new, prompt, or resumed launch.
 
 Requires the external `copilot-proxy-rs_default` Docker network, same as other
 proxy-backed Claude profiles.

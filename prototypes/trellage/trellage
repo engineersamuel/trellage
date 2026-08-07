@@ -125,12 +125,14 @@ if [[ "$compiler_mode" == true ]]; then
     case "$compiler_argument" in
       -p|--prompt|--prompt=*) fail '--prompt is not supported for compiler commands' ;;
       -i|--interactive|--interactive=*) fail '--interactive is not supported for compiler commands' ;;
+      --model|--model=*) fail '--model is not supported for compiler commands' ;;
     esac
   done
 fi
 
 profile_argument=
 auth_mode_argument=
+model_argument=
 prompt_argument=
 prompt_argument_set=false
 interactive=false
@@ -161,6 +163,18 @@ if [[ "$compiler_mode" == false ]]; then
         [[ -z "$auth_mode_argument" ]] || fail '--auth-mode may be specified only once'
         auth_mode_argument="${1#--auth-mode=}"
         [[ -n "$auth_mode_argument" ]] || fail '--auth-mode requires a value'
+        shift
+        ;;
+      --model)
+        [[ -z "$model_argument" ]] || fail '--model may be specified only once'
+        [[ $# -ge 2 && -n "$2" ]] || fail '--model requires a value'
+        model_argument="$2"
+        shift 2
+        ;;
+      --model=*)
+        [[ -z "$model_argument" ]] || fail '--model may be specified only once'
+        model_argument="${1#--model=}"
+        [[ -n "$model_argument" ]] || fail '--model requires a value'
         shift
         ;;
       -p|--prompt)
@@ -229,6 +243,12 @@ case "$auth_mode_argument" in
   ''|proxy|native|api-key) ;;
   *) fail "unsupported --auth-mode: $auth_mode_argument" ;;
 esac
+if [[ -n "$model_argument" ]]; then
+  case "$mode" in
+    new|prompt|resume) ;;
+    *) fail '--model is supported only for agent launches' ;;
+  esac
+fi
 
 case "$mode" in
   new|prompt|resume|doctor) ;;
@@ -427,6 +447,7 @@ profile_metadata="$("${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoin
 harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
 if [[ "$harness_kind" != claude ]]; then
   [[ -z "$auth_mode_argument" ]] || fail '--auth-mode is supported only for Claude profiles'
+  [[ -z "$model_argument" ]] || fail '--model is supported only for Claude profiles'
   discard_ambient_claude_auth
 fi
 claude_auth_mode="${auth_mode_argument:-proxy}"
@@ -477,6 +498,7 @@ if [[ "$harness_kind" == claude ]]; then
     || fail 'profile metadata has no Claude Sonnet route'
   claude_haiku_model="$(jq -er '.claude_haiku_model | select(type == "string" and length > 0)' <<<"$profile_metadata")" \
     || fail 'profile metadata has no Claude Haiku route'
+  [[ -z "$model_argument" ]] || claude_opus_model="$model_argument"
   case "$claude_mode" in
     core|hyperresearch) ;;
     *) fail 'profile metadata has an unsupported Claude mode' ;;
