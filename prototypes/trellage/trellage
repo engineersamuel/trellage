@@ -115,7 +115,7 @@ discard_ambient_claude_auth() {
 mode=new
 compiler_mode=false
 case "${1:-}" in
-  validate|lock|build|upgrade)
+  validate|lock|build|upgrade|list)
     mode=compiler
     compiler_mode=true
     ;;
@@ -321,7 +321,7 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
 fi
 
 case "${1:-}" in
-  validate|lock|build|upgrade)
+  validate|lock|build|upgrade|list)
     discard_ambient_github_auth
     exec "${clean_child_environment[@]}" node "$compiler" "$@"
     ;;
