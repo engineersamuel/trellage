@@ -309,7 +309,8 @@ jq -e \
       and (.[0].Config.Env | any(. == "PRIME_AGENT_CODING_AGENT_DIR=/home/agent/.prime/agent"))
       and (.[0].Config.Env | any(. == "PI_OFFLINE=1"))
       and (.[0].Config.Env | any(. == "PI_SKIP_VERSION_CHECK=1"))
-      and (.[0].Config.Env | any(. == "PRIME_AGENT_INSTALL_UV=1"))
+      and (.[0].Config.Env | any(. == "PRIME_AGENT_INSTALL_UV=0"))
+      and (.[0].Config.Env | any(. == "PRIME_AGENT_KERNEL_PYTHON=/home/agent/.trellage/prime-kernel/.prime/agent/kernel-venv/bin/python"))
       and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
       and (.[0].Config.Env | all(test("^(CODEX_HOME|COPILOT_HOME|CLAUDE_CONFIG_DIR|PI_CODING_AGENT_DIR)=") | not))
       and .[0].Config.Volumes == null
@@ -387,7 +388,7 @@ elif [[ "$harness_kind" == prime ]]; then
     --network none \
     --read-only \
     --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
-    --tmpfs /home/agent:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+    --tmpfs /home/agent:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001 \
     --entrypoint bash \
     "$IMAGE_REF" -ceu '
       locked_version="$1"
@@ -398,7 +399,14 @@ elif [[ "$harness_kind" == prime ]]; then
       test "$PRIME_AGENT_CODING_AGENT_DIR" = /home/agent/.prime/agent
       test "$PI_OFFLINE" = 1
       test "$PI_SKIP_VERSION_CHECK" = 1
-      test "$PRIME_AGENT_INSTALL_UV" = 1
+      test "$PRIME_AGENT_INSTALL_UV" = 0
+      test "$PRIME_AGENT_KERNEL_PYTHON" = /home/agent/.trellage/prime-kernel/.prime/agent/kernel-venv/bin/python
+      test -f /usr/local/share/trellage/prime-kernel-seed.tar.gz
+      test ! -L /usr/local/share/trellage/prime-kernel-seed.tar.gz
+      mkdir -p /home/agent/.trellage/prime-kernel
+      tar -xzf /usr/local/share/trellage/prime-kernel-seed.tar.gz -C /home/agent/.trellage/prime-kernel
+      test -x "$PRIME_AGENT_KERNEL_PYTHON"
+      "$PRIME_AGENT_KERNEL_PYTHON" -c '\''import bs4, dotenv, httpx, ipykernel, lxml, numpy, pandas, pydantic, requests, rlm, scipy, tomli, tyro, yaml'\''
       jq -e --arg version "$locked_version" '\''
         .name == "prime-agent"
         and .version == $version

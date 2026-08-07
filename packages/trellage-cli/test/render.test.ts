@@ -382,6 +382,9 @@ rename_exe = "copilot"`)
       '"/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }',
     )
     expect(rendered).toContain('"/usr/local/bin/prime-agent" = { source = "prime-agent-wrapper.sh", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/share/trellage/prime-kernel-seed.tar.gz" = { source = "prime-kernel-seed.tar.gz", mode = "copy" }',
+    )
     expect(rendered).toContain('"/usr/local/share/trellage/prime-seed" = { source = "prime-seed", mode = "copy" }')
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-prime-entry" = { source = "runtime-prime-entry.sh", mode = "copy" }',
@@ -389,7 +392,10 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('PRIME_AGENT_CODING_AGENT_DIR = "/home/agent/.prime/agent"')
     expect(rendered).toContain('PI_OFFLINE = "1"')
     expect(rendered).toContain('PI_SKIP_VERSION_CHECK = "1"')
-    expect(rendered).toContain('PRIME_AGENT_INSTALL_UV = "1"')
+    expect(rendered).toContain('PRIME_AGENT_INSTALL_UV = "0"')
+    expect(rendered).toContain(
+      'PRIME_AGENT_KERNEL_PYTHON = "/home/agent/.trellage/prime-kernel/.prime/agent/kernel-venv/bin/python"',
+    )
     expect(rendered).toContain('XDG_CACHE_HOME = "/home/agent/.cache"')
     expect(rendered).toContain('"dev.trellage.harness.kind" = "prime"')
     expect(rendered).toContain('"dev.trellage.prime.version" = "0.7.0"')

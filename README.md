@@ -244,8 +244,10 @@ The proxy must already be reachable on Docker network
 `copilot-proxy-rs_default`. Prime receives no host model credentials; Trellage
 manages its Anthropic Messages provider seed under `/home/agent/.prime/agent`
 and preserves Prime sessions and other user state in the profile/worktree state
-volume. Every launch restores the managed provider definition so persisted
-edits cannot redirect this profile to another endpoint or model.
+volume. The locked image build also prepares a Python kernel archive that each
+state volume restores locally, so tool use does not depend on first-launch
+access to PyPI. Every launch restores the managed provider definition so
+persisted edits cannot redirect this profile to another endpoint or model.
 
 ## Pi with Oh My Pi
 

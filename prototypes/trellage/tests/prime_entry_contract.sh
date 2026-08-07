@@ -30,12 +30,26 @@ fail() {
   exit 1
 }
 
-mkdir -p "$root/fake-bin" "$root/home" "$root/output" "$root/prime-seed/skills/caveman"
+mkdir -p \
+  "$root/fake-bin" \
+  "$root/home" \
+  "$root/output" \
+  "$root/prime-kernel/.local/share/uv/python/cpython-3.11-linux-aarch64-gnu/bin" \
+  "$root/prime-kernel/.prime/agent/kernel-venv/bin" \
+  "$root/prime-seed/skills/caveman"
 printf '%s\n' '{"providers":{"copilot-proxy-rs":{"baseUrl":"http://copilot-proxy-rs:8080","api":"anthropic-messages","apiKey":"trellage-local-proxy","compat":{"supportsEagerToolInputStreaming":false},"models":[{"id":"claude-opus-5"}]}}}' \
   >"$root/prime-seed/models.json"
 printf '# Caveman\n' >"$root/prime-seed/skills/caveman/SKILL.md"
 printf 'caveman\n' >"$root/prime-seed/managed-skills.txt"
 printf '# Trellage managed always-on skill: caveman\n\n# Caveman\n' >"$root/prime-seed/APPEND_SYSTEM.md"
+printf 'schema=1\n' >"$root/prime-kernel/.trellage-prime-kernel"
+printf '#!/bin/sh\nexit 0\n' \
+  >"$root/prime-kernel/.local/share/uv/python/cpython-3.11-linux-aarch64-gnu/bin/python3.11"
+chmod 755 "$root/prime-kernel/.local/share/uv/python/cpython-3.11-linux-aarch64-gnu/bin/python3.11"
+ln -s \
+  /home/agent/.trellage/prime-kernel/.local/share/uv/python/cpython-3.11-linux-aarch64-gnu/bin/python3.11 \
+  "$root/prime-kernel/.prime/agent/kernel-venv/bin/python"
+COPYFILE_DISABLE=1 tar --no-xattrs -C "$root/prime-kernel" -czf "$root/prime-kernel-seed.tar.gz" .
 chmod -R 777 "$root/home" "$root/output"
 
 cat >"$root/fake-bin/prime-agent" <<'FAKE_PRIME'
@@ -69,10 +83,12 @@ run_entry() {
     --mount "type=bind,src=$root/fake-bin,dst=/test-bin,readonly" \
     --mount "type=bind,src=$root/home,dst=/home/agent" \
     --mount "type=bind,src=$root/output,dst=/test-output" \
+    --mount "type=bind,src=$root/prime-kernel-seed.tar.gz,dst=/usr/local/share/trellage/prime-kernel-seed.tar.gz,readonly" \
     --mount "type=bind,src=$root/prime-seed,dst=/usr/local/share/trellage/prime-seed,readonly" \
     --env 'PATH=/test-bin:/usr/local/bin:/usr/bin:/bin' \
     --env 'TRELLAGE_TEST_OUTPUT=/test-output' \
     --env 'PRIME_AGENT_CODING_AGENT_DIR=/home/agent/.prime/agent' \
+    --env 'PRIME_AGENT_KERNEL_PYTHON=/home/agent/.trellage/prime-kernel/.prime/agent/kernel-venv/bin/python' \
     --env "TRELLAGE_RESUME_SESSION_ID=${TRELLAGE_RESUME_SESSION_ID-}" \
     --env "TRELLAGE_TEST_PRIME_EXIT=${TRELLAGE_TEST_PRIME_EXIT-}" \
     --env "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY-}" \
@@ -93,6 +109,7 @@ mutate_home() {
     --user '10001:10001' \
     --entrypoint /bin/bash \
     --mount "type=bind,src=$root/home,dst=/home/agent" \
+    --mount "type=bind,src=$root/prime-seed,dst=/seed,readonly" \
     "$fixture_source_ref" -ceu "$1"
 }
 
@@ -121,7 +138,10 @@ grep -Fqx 'GH_CONFIG_DIR=/tmp/trellage-gh' "$root/output/env" || fail 'prompt mo
 grep -Fqx 'PRIME_AGENT_CODING_AGENT_DIR=/home/agent/.prime/agent' "$root/output/env" \
   || fail 'prompt mode did not isolate persistent Prime state'
 [[ "$(cat "$root/output/mode")" == 'MODE=600' ]] || fail 'managed models.json mode is not 0600'
-cmp -s "$root/prime-seed/models.json" "$root/home/.prime/agent/models.json" \
+[[ -L "$root/home/.trellage/prime-kernel/.prime/agent/kernel-venv/bin/python" \
+  && -x "$root/home/.trellage/prime-kernel/.local/share/uv/python/cpython-3.11-linux-aarch64-gnu/bin/python3.11" ]] \
+  || fail 'managed Prime kernel was not restored into persistent state'
+mutate_home 'cmp -s /seed/models.json /home/agent/.prime/agent/models.json' \
   || fail 'managed models.json was not replaced from the baked seed'
 [[ "$(cat "$root/home/.prime/agent/sessions/sentinel")" == persisted ]] \
   || fail 'unmanaged Prime session state was not preserved'

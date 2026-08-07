@@ -92,6 +92,47 @@ done
   || fail 'PRIME_AGENT_CODING_AGENT_DIR resolves outside /home/agent'
 export PRIME_AGENT_CODING_AGENT_DIR="$runtime_home"
 
+kernel_archive=/usr/local/share/trellage/prime-kernel-seed.tar.gz
+kernel_home=/home/agent/.trellage/prime-kernel
+kernel_marker="$kernel_home/.trellage-prime-kernel"
+kernel_python="$kernel_home/.prime/agent/kernel-venv/bin/python"
+[[ "${PRIME_AGENT_KERNEL_PYTHON:-}" == "$kernel_python" ]] \
+  || fail 'PRIME_AGENT_KERNEL_PYTHON does not select the managed Prime kernel'
+[[ -f "$kernel_archive" && ! -L "$kernel_archive" ]] \
+  || fail 'managed Prime kernel archive must be a regular file'
+if [[ ! -x "$kernel_python" ]]; then
+  if [[ -e "$kernel_home" || -L "$kernel_home" ]]; then
+    [[ -d "$kernel_home" && ! -L "$kernel_home" && -f "$kernel_marker" && ! -L "$kernel_marker" ]] \
+      || fail 'managed Prime kernel collides with unmanaged state'
+    rm -rf -- "$kernel_home"
+  fi
+  kernel_parent="${kernel_home%/*}"
+  mkdir -p -- "$kernel_parent"
+  [[ -d "$kernel_parent" && ! -L "$kernel_parent" ]] \
+    || fail 'managed Prime kernel parent must be a non-symlink directory'
+  kernel_temporary="$(mktemp -d "$kernel_parent/.prime-kernel.XXXXXX")" \
+    || fail 'cannot create temporary Prime kernel directory'
+  cleanup_kernel_temporary() {
+    local status=$?
+    trap - EXIT HUP INT TERM
+    rm -rf -- "$kernel_temporary"
+    exit "$status"
+  }
+  trap cleanup_kernel_temporary EXIT HUP INT TERM
+  tar -xzf "$kernel_archive" -C "$kernel_temporary" \
+    || fail 'cannot extract managed Prime kernel archive'
+  [[ -f "$kernel_temporary/.trellage-prime-kernel" \
+    && ! -L "$kernel_temporary/.trellage-prime-kernel" \
+    && -L "$kernel_temporary/.prime/agent/kernel-venv/bin/python" ]] \
+    || fail 'managed Prime kernel archive is incomplete'
+  mv -- "$kernel_temporary" "$kernel_home" \
+    || fail 'cannot install managed Prime kernel'
+  kernel_temporary=
+  trap - EXIT HUP INT TERM
+fi
+[[ -f "$kernel_marker" && ! -L "$kernel_marker" && -x "$kernel_python" ]] \
+  || fail 'managed Prime kernel is unavailable'
+
 seed_root=/usr/local/share/trellage/prime-seed
 managed_manifest="$runtime_home/.trellage-managed-skills"
 managed_append_manifest="$runtime_home/.trellage-managed-append-system"
