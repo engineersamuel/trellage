@@ -13,6 +13,19 @@ fail() {
   exit 1
 }
 
+# Portable mode bits. Do not use `stat -f … || stat -c …`: GNU stat -f is
+# --file-system, fails nonzero, but still prints filesystem info to stdout and
+# poisons command substitution on Linux CI.
+file_mode() {
+  local value
+  case "$(uname -s)" in
+    Darwin) value="$(stat -f '%Lp' "$1")" || return 1 ;;
+    Linux) value="$(stat -c '%a' "$1")" || return 1 ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$value"
+}
+
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-prx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
@@ -327,8 +340,7 @@ jq -e '
   and .providers["copilot-proxy-rs"].compat.supportsEagerToolInputStreaming == false
   and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5"]
 ' "$profile_home/models.json" >/dev/null || fail 'models.json seed differs'
-[[ "$(stat -f '%Lp' "$profile_home/models.json" 2>/dev/null \
-  || stat -c '%a' "$profile_home/models.json")" == 600 ]] \
+[[ "$(file_mode "$profile_home/models.json")" == 600 ]] \
   || fail 'models.json mode is not 0600'
 grep -Fq 'prx setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
   || fail 'setup output differs'
