@@ -1102,6 +1102,10 @@ export const upgradeProfile = (
                   }
                   canonicalAttempted = true
                   yield* activeServices.tagImage(candidate, canonical)
+                  yield* activeServices.tagImage(
+                    canonical,
+                    profileImageAlias(document.profile.name, platform, finalLock.profile_hash, runtimeSnapshot.hash),
+                  )
                   lockWriteAttempted = true
                   yield* upgradeFileServices.writeLockBytes(profilePath, platform, renderLock(finalLock))
                   committed = true
@@ -1174,6 +1178,27 @@ export const upgradeProfile = (
     )
   })
 
+/**
+ * Canonical production tag. Keyed on profile name and platform, so a worktree
+ * profile and the deployed profile of the same name share it.
+ */
+const profileImage = (name: string, platform: Platform): string =>
+  `trellage-profile-${name}-${platformIdentity(platform)}:locked`
+
+const shortDigest = (value: string): string => value.replace(/^sha256:/, "").slice(0, 12)
+
+/**
+ * Content-addressed alias for the same image.
+ *
+ * The launcher rejects an image whose `dev.trellage.profile.hash` or
+ * `dev.trellage.runtime.hash` label disagrees with the profile it is about to run, so
+ * two variants sharing only the canonical tag evict each other on every context
+ * switch. Keying an additional tag on both hashes lets each variant keep its own
+ * image, while `:locked` stays the published pointer to the most recent build.
+ */
+const profileImageAlias = (name: string, platform: Platform, profileHash: string, runtimeHash: string): string =>
+  `trellage-profile-${name}-${platformIdentity(platform)}:h-${shortDigest(profileHash)}-${shortDigest(runtimeHash)}`
+
 export const buildProfile = (
   profilePath: string,
   locked: boolean,
@@ -1230,7 +1255,7 @@ export const buildProfile = (
       skillGenerator,
       pluginGenerator,
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const image = `trellage-profile-${document.profile.name}-${platformIdentity(platform)}:locked`
+    const image = profileImage(document.profile.name, platform)
     const digest = yield* buildOci(
       context,
       image,
@@ -1245,10 +1270,46 @@ export const buildProfile = (
         io("cannot clean build context", () => rm(context, { recursive: true, force: true })).pipe(Effect.ignore),
       ),
     )
+    yield* docker.run(
+      "docker",
+      dockerHostArguments(target, [
+        "image",
+        "tag",
+        image,
+        profileImageAlias(document.profile.name, platform, lock.profile_hash, runtimeSnapshot.hash),
+      ]),
+    )
     if (!locked && digest !== lock.image.final_digest) {
       yield* writeLock(profilePath, withFinalDigest(lock, digest))
     }
     return { image, digest }
+  })
+
+/**
+ * Release gate: assert that a profile and its lock agree exactly and that the lock
+ * records a final OCI digest, without resolving anything or touching Docker.
+ *
+ * This is the job `--locked` was carrying. Giving it its own verb keeps the strict
+ * assertion available to CI while leaving the interactive build free to reconcile.
+ */
+export const verifyProfile = (
+  profilePath: string,
+  platform: Platform,
+): Effect.Effect<
+  { readonly image: string; readonly profile_hash: string; readonly digest: string },
+  ApplicationError
+> =>
+  Effect.gen(function* () {
+    const document = yield* loadProfile(profilePath)
+    const current = yield* loadLock(profilePath, platform)
+    const lock = yield* requireLocked(document, current, platform).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
+    const digest = lock.image.final_digest
+    if (digest === undefined) {
+      return yield* Effect.fail(new ApplicationError({ message: "lock has no final OCI digest" }))
+    }
+    return { image: profileImage(document.profile.name, platform), profile_hash: lock.profile_hash, digest }
   })
 
 export const profileMetadata = (
@@ -1287,9 +1348,11 @@ export const profileMetadata = (
       tmpfs_size: document.profile.runtime.tmpfs_size,
       runtime_hash: runtimeSnapshot.hash,
       platform,
-      image: `trellage-profile-${document.profile.name}-${platformIdentity(platform)}:locked`,
+      image: profileImage(document.profile.name, platform),
+      image_alias: profileImageAlias(document.profile.name, platform, hash, runtimeSnapshot.hash),
       locked: ready,
       build_command: `trellage build --locked ${document.path}`,
+      refresh_command: `trellage build ${document.path}`,
       harness_args: document.profile.harness.args ?? [],
       secrets_provider: document.profile.secrets.provider,
       required_secrets: document.profile.secrets.required,

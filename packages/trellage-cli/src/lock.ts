@@ -517,6 +517,52 @@ const lockMatchesProfile = (document: ProfileDocument, current: ProfileLock): bo
   )
 }
 
+/**
+ * Package resolution inputs that a profile edit may legitimately change.
+ *
+ * `lockMatchesProfile` is all-or-nothing: an edit to any unrelated field (a skill
+ * entry, tmpfs size) makes it false and sends `compileLock` back to the network for
+ * the harness release and the base image. Profiles that declare `version = "latest"`
+ * then silently rebase onto whatever is current. Reuse is keyed on the inputs
+ * `resolvePackages` actually consumes instead. The remaining inputs — `needsSkillsCli`
+ * and the Claude adapter — are already validated against the document by
+ * `lockSemanticError`, which every caller runs before offering a lock here.
+ */
+const reusablePackages = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  update: boolean,
+  platform: Platform,
+): ProfileLock["packages"] | undefined => {
+  if (current === undefined || update) return undefined
+  if (hasLegacyPackageProvenance(current)) return undefined
+  if (current.platform !== platform) return undefined
+  if (current.packages.harness.kind !== document.profile.harness.kind) return undefined
+  if (current.packages.harness.selector !== document.profile.harness.version) return undefined
+  const needsSkillsCli = document.profile.skills.some((skill) => skill.adapter === undefined)
+  if ((current.packages.skills_cli_version !== undefined) !== needsSkillsCli) return undefined
+  if (
+    JSON.stringify(current.packages.runtime.map((runtime) => runtime.name)) !==
+    JSON.stringify(document.profile.image.packages)
+  ) {
+    return undefined
+  }
+  return current.packages
+}
+
+/** Base image reuse, keyed on the only input `resolveBase` consumes. */
+const reusableBase = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  update: boolean,
+  platform: Platform,
+): { readonly reference: string; readonly digest: string } | undefined => {
+  if (current === undefined || update) return undefined
+  if (current.platform !== platform) return undefined
+  if (current.image.base !== document.profile.image.base) return undefined
+  return { reference: current.image.base, digest: current.image.base_digest }
+}
+
 export const lockIsReady = (
   document: ProfileDocument,
   current: ProfileLock | undefined,
@@ -595,22 +641,26 @@ export const compileLock = (
         document.profile.plugins[0]?.adapter === "claude-marketplace")
         ? document.profile.plugins[0].adapter
         : undefined
-    const packages = yield* resolvers
-      .resolvePackages({
-        kind: document.profile.harness.kind,
-        selector: document.profile.harness.version,
-        platform,
-        packages: document.profile.image.packages,
-        needsSkillsCli: document.profile.skills.some((skill) => skill.adapter === undefined),
-        ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
-      })
-      .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause })))
-    const base = yield* resolvers
-      .resolveBase({
-        reference: document.profile.image.base,
-        platform,
-      })
-      .pipe(Effect.mapError((cause) => new LockError({ message: "base image resolution failed", cause })))
+    const packages =
+      reusablePackages(document, validCurrent, update, platform) ??
+      (yield* resolvers
+        .resolvePackages({
+          kind: document.profile.harness.kind,
+          selector: document.profile.harness.version,
+          platform,
+          packages: document.profile.image.packages,
+          needsSkillsCli: document.profile.skills.some((skill) => skill.adapter === undefined),
+          ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
+        })
+        .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
+    const base =
+      reusableBase(document, validCurrent, update, platform) ??
+      (yield* resolvers
+        .resolveBase({
+          reference: document.profile.image.base,
+          platform,
+        })
+        .pipe(Effect.mapError((cause) => new LockError({ message: "base image resolution failed", cause }))))
     return {
       schema: 1,
       platform,

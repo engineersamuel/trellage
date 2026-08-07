@@ -1213,6 +1213,58 @@ describe("compileLock", () => {
     expect(calls).not.toContain("source:v6.2.0")
   })
 
+  it("reuses locked harness packages and base image when an unrelated profile field changes", async () => {
+    const current = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
+    const calls: Array<string> = []
+
+    const result = await Effect.runPromise(
+      compileLock(document("gpt-5.6"), current, false, fakeResolvers(commit("b"), calls)),
+    )
+
+    expect(calls).not.toContain("packages")
+    expect(calls).not.toContain("base")
+    expect(result.packages).toEqual(current.packages)
+    expect(result.image.base_digest).toBe(current.image.base_digest)
+    expect(result.profile_hash).toBe(profileHash(document("gpt-5.6")))
+  })
+
+  it("re-resolves harness packages when the harness selector changes", async () => {
+    const current = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
+    const bumped = Effect.runSync(
+      parseProfile(source().replace('version = "0.144.6"', 'version = "0.146.1"'), "/profiles/test/profile.toml"),
+    )
+    const calls: Array<string> = []
+
+    await Effect.runPromise(compileLock(bumped, current, false, fakeResolvers(commit("b"), calls)))
+
+    expect(calls).toContain("packages")
+  })
+
+  it("re-resolves the base image when the base reference changes", async () => {
+    const current = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
+    const rebased = Effect.runSync(
+      parseProfile(
+        source().replace("node:22.17.0-bookworm-slim", "node:22.18.0-bookworm-slim"),
+        "/profiles/test/profile.toml",
+      ),
+    )
+    const calls: Array<string> = []
+
+    await Effect.runPromise(compileLock(rebased, current, false, fakeResolvers(commit("b"), calls)))
+
+    expect(calls).toContain("base")
+  })
+
+  it("re-resolves harness packages and base image when update is requested", async () => {
+    const current = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
+    const calls: Array<string> = []
+
+    await Effect.runPromise(compileLock(document(), current, true, fakeResolvers(commit("b"), calls)))
+
+    expect(calls).toContain("packages")
+    expect(calls).toContain("base")
+  })
+
   it("refreshes unchanged refs only when update is requested", async () => {
     const current = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
     const calls: Array<string> = []

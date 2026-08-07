@@ -730,6 +730,7 @@ test_portable_prompt_parser_contract() {
 --prompt is not supported for compiler commands|validate -p hello
 --prompt is not supported for compiler commands|lock --prompt hello
 --prompt is not supported for compiler commands|upgrade --prompt=hello
+--prompt is not supported for compiler commands|ci-verify --prompt=hello
 resume session ID must be a UUID|resume not-a-session-id
 resume accepts at most one session ID|resume 5b3664c0-9954-4526-8aab-d3d2c177798d 45f2aaf8-1064-4162-bc09-58808d5819d8
 CASES
@@ -2131,6 +2132,8 @@ test_upgrade_delegates_to_effect_cli() {
   help_output="$($real_node "$compiler" --help)"
   grep -Eq -- '- upgrade \[<profile>\]' <<<"$help_output" \
     || fail 'Effect CLI help does not list upgrade'
+  grep -Eq -- '- ci-verify \[<profile>\]' <<<"$help_output" \
+    || fail 'Effect CLI help does not list ci-verify'
 
   mkdir -p "$fake_node_bin"
   ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
@@ -2167,7 +2170,19 @@ EOF
     || fail 'bulk upgrade selector was not preserved during delegation'
   [[ "$(wc -l <"$node_log" | tr -d ' ')" -eq 3 ]] \
     || fail 'bulk upgrade delegation added unexpected arguments'
-  printf 'Trellage host test: PASS: upgrade delegates to Effect CLI\n'
+
+  : >"$node_log"
+  FAKE_NODE_LOG="$node_log" PATH="$fake_node_bin:$PATH" \
+    "$prototype_dir/trellage" ci-verify prime-agent
+  [[ "$(sed -n '1p' "$node_log")" == $'ARG\t'"$compiler" ]] \
+    || fail 'ci-verify did not delegate to the profile compiler'
+  [[ "$(sed -n '2p' "$node_log")" == $'ARG\tci-verify' ]] \
+    || fail 'ci-verify command was not preserved during delegation'
+  [[ "$(sed -n '3p' "$node_log")" == $'ARG\tprime-agent' ]] \
+    || fail 'ci-verify profile was not preserved during delegation'
+  [[ "$(wc -l <"$node_log" | tr -d ' ')" -eq 3 ]] \
+    || fail 'ci-verify delegation added unexpected arguments'
+  printf 'Trellage host test: PASS: compiler commands delegate to Effect CLI\n'
 }
 
 test_list_delegates_to_effect_cli() {
@@ -2392,7 +2407,7 @@ test_compiler_commands_scrub_copilot_auth() {
   chmod +x "$fake_node_bin/node"
   : >"$node_log"
 
-  for command in validate lock build upgrade; do
+  for command in validate lock build upgrade ci-verify list; do
     FAKE_NODE_LOG="$node_log" PATH="$fake_node_bin:$PATH" env \
       "${poisoned_internal_auth_env[@]}" \
       COPILOT_GITHUB_TOKEN='compiler-copilot-canary' \

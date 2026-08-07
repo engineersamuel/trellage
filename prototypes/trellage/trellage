@@ -115,7 +115,7 @@ discard_ambient_claude_auth() {
 mode=new
 compiler_mode=false
 case "${1:-}" in
-  validate|lock|build|upgrade|list)
+  validate|lock|build|upgrade|ci-verify|list)
     mode=compiler
     compiler_mode=true
     ;;
@@ -321,7 +321,7 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
 fi
 
 case "${1:-}" in
-  validate|lock|build|upgrade|list)
+  validate|lock|build|upgrade|ci-verify|list)
     discard_ambient_github_auth
     exec "${clean_child_environment[@]}" node "$compiler" "$@"
     ;;
@@ -438,9 +438,16 @@ runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile
 profile_path="$(jq -er '.profile_path' <<<"$profile_metadata")" || fail 'profile metadata has no path'
 profile_locked="$(jq -r '.locked' <<<"$profile_metadata")" || fail 'profile metadata has no lock state'
 profile_image="$(jq -er '.image' <<<"$profile_metadata")" || fail 'profile metadata has no image'
+# Optional: a launcher may run against an older deployed compiler that predates the
+# content-addressed alias. Absent means "no alias cache", not a broken profile.
+profile_image_alias="$(jq -r '.image_alias // empty' <<<"$profile_metadata")"
 metadata_platform="$(jq -er '.platform' <<<"$profile_metadata")" || fail 'profile metadata has no platform'
 [[ "$metadata_platform" == "$docker_platform" ]] || fail 'profile metadata selected a different Docker platform'
 build_command="$(jq -er '.build_command' <<<"$profile_metadata")" || fail 'profile metadata has no build command'
+refresh_command="$(jq -r '.refresh_command // empty' <<<"$profile_metadata")"
+# A stale lock cannot be repaired by the locked build, so never point a user at it.
+# Derive the unlocked form when an older compiler does not report one.
+[[ -n "$refresh_command" ]] || refresh_command="${build_command/ --locked / }"
 secrets_provider="$(jq -er '.secrets_provider' <<<"$profile_metadata")" || fail 'profile metadata has no secrets provider'
 resolved_varlock_path="$(jq -r '.resolved_varlock_path // empty' <<<"$profile_metadata")"
 has_initial_prompt="$(jq -r '.has_initial_prompt' <<<"$profile_metadata")" || fail 'profile metadata has no prompt state'
@@ -1192,7 +1199,9 @@ if [[ "$mode" == doctor ]]; then
   else
     printf 'state: %s\n' "$resource_state"
   fi
-  if [[ "$profile_locked" != true || "$image_state" != available ]]; then
+  if [[ "$profile_locked" != true ]]; then
+    printf 'refresh required: %s\n' "$refresh_command"
+  elif [[ "$image_state" != available ]]; then
     printf 'build required: %s\n' "$build_command"
   fi
   exit 0
@@ -1273,26 +1282,51 @@ if [[ "$mode" == destroy ]]; then
   exit 0
 fi
 
-inspect_profile_image() {
-  resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
+inspect_image_ref() {
+  local candidate_ref="$1"
+  resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$candidate_ref" 2>/dev/null)" \
     || resolved_image_id=
   [[ -n "$resolved_image_id" ]] || return 1
   image_profile_hash="$(docker image inspect \
     --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$resolved_image_id" 2>/dev/null)" \
-    || fail "cannot inspect Docker image profile hash: $image"
+    || fail "cannot inspect Docker image profile hash: $candidate_ref"
   [[ "$image_profile_hash" == "$profile_hash" ]] || return 1
   image_runtime_hash="$(docker image inspect \
     --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)" \
-    || fail "cannot inspect Docker image runtime hash: $image"
+    || fail "cannot inspect Docker image runtime hash: $candidate_ref"
   [[ "$image_runtime_hash" == "$runtime_hash" ]] || return 1
   image_platform="$(docker image inspect \
     --format '{{ index .Config.Labels "dev.trellage.platform" }}' "$resolved_image_id" 2>/dev/null)" \
-    || fail "cannot inspect Docker image platform: $image"
+    || fail "cannot inspect Docker image platform: $candidate_ref"
   [[ "$image_platform" == "$docker_platform" ]]
 }
 
-[[ "$profile_locked" == true ]] \
-  || fail "profile image is missing or stale; run: $build_command"
+# The canonical :locked tag is shared by every variant of a profile name, so a
+# worktree build and a deployed build overwrite each other and each switch looks
+# stale. The content-addressed alias keeps both images on disk; adopt the matching
+# one back onto the canonical tag instead of rebuilding it.
+inspect_profile_image() {
+  inspect_image_ref "$image" && return 0
+  [[ -z "${TRELLAGE_IMAGE:-}" ]] || return 1
+  [[ -n "$profile_image_alias" ]] || return 1
+  [[ "$profile_image_alias" != "$image" ]] || return 1
+  inspect_image_ref "$profile_image_alias" || return 1
+  verify_docker_server
+  docker image tag "$profile_image_alias" "$image" >/dev/null \
+    || fail "cannot adopt cached profile image: $profile_image_alias"
+  inspect_image_ref "$image"
+}
+
+if [[ "$profile_locked" != true ]]; then
+  [[ -z "${TRELLAGE_IMAGE:-}" ]] \
+    || fail "profile lock is stale; run: $refresh_command"
+  verify_docker_server
+  printf 'trellage: profile lock is stale; refreshing lock and image: %s\n' "$refresh_command" >&2
+  "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+    node "$compiler" build "$profile_path" \
+    || fail "automatic profile refresh failed: $refresh_command"
+  profile_locked=true
+fi
 if ! inspect_profile_image; then
   if [[ -n "${TRELLAGE_IMAGE:-}" ]]; then
     resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$image" 2>/dev/null)" \
