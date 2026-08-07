@@ -264,6 +264,11 @@ export const managedClaudeFiles = async (root: string): Promise<ReadonlyArray<st
   return found.sort()
 }
 
+export const hyperresearchSeedInstallArguments = (installHome: string): ReadonlyArray<ReadonlyArray<string>> => [
+  ["-m", "hyperresearch", "install", "--global", "--profile", "light"],
+  ["-m", "hyperresearch", "install", "--steps-only", installHome, "--profile", "light"],
+]
+
 export const normalizeHyperresearchSeed = (
   seed: string,
   generatedExecutable: string,
@@ -453,9 +458,11 @@ const materializeHyperresearchAssets = (
         )
         const installHome = path.join(staging, "seed-home")
         yield* attempt("cannot create Claude seed home", () => mkdir(installHome, { recursive: true }))
-        yield* run(hostPython, ["-m", "hyperresearch", "install", "--global", "--profile", "light"], {
-          env: { ...process.env, HOME: installHome, PYTHONDONTWRITEBYTECODE: "1" },
-        })
+        for (const args of hyperresearchSeedInstallArguments(installHome)) {
+          yield* run(hostPython, args, {
+            env: { ...process.env, HOME: installHome, PYTHONDONTWRITEBYTECODE: "1" },
+          })
+        }
 
         const seed = path.join(request.context, "claude-seed")
         yield* attempt("cannot create managed Claude seed", async () => {

@@ -21,6 +21,7 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
+  hyperresearchSeedInstallArguments,
   managedClaudeFiles,
   materializeClaudeAssets,
   materializeChromiumArchives,
@@ -133,6 +134,12 @@ describe("Hyperresearch seed normalization", () => {
       disableClaudeAiConnectors: true,
       disableArtifact: true,
     })
+  })
+  it("installs every chained skill before Claude scans the global registry", () => {
+    expect(hyperresearchSeedInstallArguments("/tmp/seed-home")).toEqual([
+      ["-m", "hyperresearch", "install", "--global", "--profile", "light"],
+      ["-m", "hyperresearch", "install", "--steps-only", "/tmp/seed-home", "--profile", "light"],
+    ])
   })
 
   it("lists the managed manifest in global C-locale order", async () => {
