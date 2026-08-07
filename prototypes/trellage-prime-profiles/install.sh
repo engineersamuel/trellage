@@ -3,6 +3,8 @@
 set -euo pipefail
 
 readonly ownership_value='trellage-prime-profiles-v1'
+readonly managed_extension_name='ask-user'
+readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
 
 refuse() {
   printf 'prx install: %s\n' "$1" >&2
@@ -25,6 +27,9 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/prx"
 installed_launcher="$install_root/bin/prx"
 installed_catalog="$install_root/catalog.json"
+installed_extensions_dir="$install_root/assets/extensions"
+installed_extension="$installed_extensions_dir/${managed_extension_name}.ts"
+source_extension="$source_dir/assets/extensions/${managed_extension_name}.ts"
 ownership_marker="$install_root/.managed-by-trellage-prime-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/prx"
@@ -93,23 +98,42 @@ if [[ -L "$legacy_command" ]]; then
   esac
 fi
 
-mkdir -p "$install_root/bin" "$command_dir"
+mkdir -p "$install_root/bin" "$installed_extensions_dir" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prx/bin" 'runtime bin'
+require_safe_directory "$install_root/assets" "$canonical_home/.local/share/trellage/prx/assets" 'runtime assets'
+require_safe_directory "$installed_extensions_dir" \
+  "$canonical_home/.local/share/trellage/prx/assets/extensions" 'runtime extensions'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+[[ -f "$source_extension" && ! -L "$source_extension" ]] \
+  || refuse "missing managed extension asset: $source_extension"
+[[ ! -L "$installed_extension" && ( ! -e "$installed_extension" || -f "$installed_extension" ) ]] \
+  || refuse "unsafe managed extension: $installed_extension"
+source_extension_sha256="$(
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -- "$source_extension" | awk '{ print $1 }'
+  else
+    sha256sum -- "$source_extension" | awk '{ print $1 }'
+  fi
+)" || refuse "cannot hash managed extension asset: $source_extension"
+[[ "$source_extension_sha256" == "$managed_extension_sha256" ]] \
+  || refuse "managed extension asset integrity differs: $source_extension"
 
 launcher_stage="$(mktemp "$install_root/bin/.prx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
+extension_stage="$(mktemp "$installed_extensions_dir/.ask-user.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 install -m 0755 "$source_dir/bin/prx" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
+install -m 0644 "$source_extension" "$extension_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$catalog_stage" "$installed_catalog"
+mv -f "$extension_stage" "$installed_extension"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then

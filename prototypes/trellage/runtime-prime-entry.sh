@@ -135,13 +135,19 @@ fi
 
 seed_root=/usr/local/share/trellage/prime-seed
 managed_manifest="$runtime_home/.trellage-managed-skills"
+managed_extension_manifest="$runtime_home/.trellage-managed-extensions"
 managed_append_manifest="$runtime_home/.trellage-managed-append-system"
 skills_home="$runtime_home/skills"
+extensions_home="$runtime_home/extensions"
 [[ -d "$seed_root" && ! -L "$seed_root" ]] || fail 'managed Prime seed must be a directory without symlinks'
-mkdir -p "$skills_home"
+mkdir -p "$skills_home" "$extensions_home"
 [[ -d "$skills_home" && ! -L "$skills_home" ]] || fail 'managed Prime skills directory must not be a symlink'
+[[ -d "$extensions_home" && ! -L "$extensions_home" ]] \
+  || fail 'managed Prime extensions directory must not be a symlink'
 [[ ! -e "$managed_manifest" || ( -f "$managed_manifest" && ! -L "$managed_manifest" ) ]] \
   || fail 'managed Prime skill manifest must be a regular file'
+[[ ! -e "$managed_extension_manifest" || ( -f "$managed_extension_manifest" && ! -L "$managed_extension_manifest" ) ]] \
+  || fail 'managed Prime extension manifest must be a regular file'
 [[ ! -e "$managed_append_manifest" || ( -f "$managed_append_manifest" && ! -L "$managed_append_manifest" ) ]] \
   || fail 'managed Prime instruction manifest must be a regular file'
 
@@ -186,6 +192,52 @@ for skill_name in "${!desired_skills[@]}"; do
   cp -R -- "$seed_root/skills/$skill_name" "$target_skill"
 done
 cp -- "$seed_manifest" "$managed_manifest"
+
+declare -A prior_extensions=()
+if [[ -f "$managed_extension_manifest" ]]; then
+  while IFS= read -r extension_name; do
+    [[ -n "$extension_name" ]] || continue
+    [[ "$extension_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -z "${prior_extensions[$extension_name]+x}" ]] \
+      || fail "managed Prime extension name is unsafe or duplicated: $extension_name"
+    prior_extensions["$extension_name"]=1
+  done <"$managed_extension_manifest"
+fi
+
+seed_extension_manifest="$seed_root/managed-extensions.txt"
+[[ -f "$seed_extension_manifest" && ! -L "$seed_extension_manifest" ]] \
+  || fail 'seeded Prime extension manifest must be a regular file'
+declare -A desired_extensions=()
+while IFS= read -r extension_name; do
+  [[ -n "$extension_name" ]] || continue
+  [[ "$extension_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -z "${desired_extensions[$extension_name]+x}" ]] \
+    || fail "seeded Prime extension name is unsafe or duplicated: $extension_name"
+  source_extension="$seed_root/extensions/${extension_name}.ts"
+  [[ -f "$source_extension" && ! -L "$source_extension" ]] \
+    || fail "seeded Prime extension is missing or unsafe: $extension_name"
+  desired_extensions["$extension_name"]=1
+done <"$seed_extension_manifest"
+
+for extension_name in "${!prior_extensions[@]}"; do
+  target_extension="$extensions_home/${extension_name}.ts"
+  if [[ -e "$target_extension" || -L "$target_extension" ]]; then
+    [[ -f "$target_extension" && ! -L "$target_extension" ]] \
+      || fail "managed Prime extension destination is unsafe: $extension_name"
+    rm -f -- "$target_extension"
+  fi
+done
+for extension_name in "${!desired_extensions[@]}"; do
+  target_extension="$extensions_home/${extension_name}.ts"
+  source_extension="$seed_root/extensions/${extension_name}.ts"
+  if [[ -e "$target_extension" || -L "$target_extension" ]]; then
+    [[ -f "$target_extension" && ! -L "$target_extension" ]] \
+      || fail "managed Prime extension destination is unsafe: $extension_name"
+    cmp -s -- "$source_extension" "$target_extension" \
+      || fail "seeded Prime extension collides with unmanaged state: $extension_name"
+    rm -f -- "$target_extension"
+  fi
+  cp -- "$source_extension" "$target_extension"
+done
+cp -- "$seed_extension_manifest" "$managed_extension_manifest"
 
 seed_append="$seed_root/APPEND_SYSTEM.md"
 runtime_append="$runtime_home/APPEND_SYSTEM.md"

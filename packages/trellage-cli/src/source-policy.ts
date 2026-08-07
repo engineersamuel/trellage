@@ -8,6 +8,7 @@ export interface SourceSelection {
     | "copilot-marketplace"
     | "hyperresearch"
     | "omp-native"
+    | "prime-extension"
     | "wshobson-agents"
   readonly marketplace?: string
   readonly select: ReadonlyArray<string>
@@ -21,6 +22,9 @@ export const sourceIncludes = (source: SourceSelection): ReadonlyArray<string> =
   if (source.adapter === "hyperresearch") return []
   if (source.adapter === "codex-native") {
     return source.select.map((selection) => `plugins/${selection}/.codex`)
+  }
+  if (source.adapter === "prime-extension") {
+    return source.select.map((selection) => `plugins/${selection}/extensions`)
   }
   return [...source.select.map((selection) => `plugins/${selection}`), "plugins/plugin-eval", "tools"]
 }

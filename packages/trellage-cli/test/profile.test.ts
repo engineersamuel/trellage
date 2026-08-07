@@ -342,7 +342,6 @@ always_on = true
   })
 
   it.each([
-    ["standalone plugins", "plugins = []", /standalone plugins/i],
     ["MCPs", "mcps = []", /do not support MCPs/i],
     ["declared secrets", '[secrets]\nprovider = "env"\nrequired = []', /declared secrets/i],
   ])("rejects an explicitly empty Prime %s section", async (_label, declaration, error) => {
@@ -352,6 +351,31 @@ always_on = true
     )
 
     await expect(decode(input)).rejects.toThrow(error)
+  })
+
+  it("accepts Prime extension plugins and rejects other plugin adapters", async () => {
+    const plugin = `
+[[plugins]]
+adapter = "prime-extension"
+repository = "https://github.com/am-will/prime-agent-plugins.git"
+ref = "699f9065acc5eb988a02666196c5837434fd839d"
+select = ["ask-user"]
+`
+    const result = await decode(primeProfile(plugin))
+    expect(result.profile.plugins).toEqual([
+      {
+        adapter: "prime-extension",
+        repository: "https://github.com/am-will/prime-agent-plugins.git",
+        ref: "699f9065acc5eb988a02666196c5837434fd839d",
+        select: ["ask-user"],
+      },
+    ])
+    await expect(
+      decode(primeProfile(plugin.replace('adapter = "prime-extension"', 'adapter = "codex-native"'))),
+    ).rejects.toThrow(/prime-extension|Prime/i)
+    await expect(decode(primeProfile(plugin.replace('select = ["ask-user"]', "select = []")))).rejects.toThrow(
+      /empty|selected/i,
+    )
   })
 
   it("rejects excess Prime provider fields", async () => {

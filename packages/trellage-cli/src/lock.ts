@@ -24,6 +24,7 @@ export interface SourceLock {
     | "copilot-marketplace"
     | "hyperresearch"
     | "omp-native"
+    | "prime-extension"
     | "wshobson-agents"
   readonly marketplace?: string
   readonly plugin_versions?: Readonly<Record<string, string>>
@@ -171,6 +172,7 @@ export interface LockResolvers {
       | "copilot-marketplace"
       | "hyperresearch"
       | "omp-native"
+      | "prime-extension"
       | "wshobson-agents"
     readonly marketplace?: string
     readonly repository: string

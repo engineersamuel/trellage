@@ -36,11 +36,14 @@ mkdir -p \
   "$root/output" \
   "$root/prime-kernel/.local/share/uv/python/cpython-3.11-linux-aarch64-gnu/bin" \
   "$root/prime-kernel/.prime/agent/kernel-venv/bin" \
-  "$root/prime-seed/skills/caveman"
+  "$root/prime-seed/skills/caveman" \
+  "$root/prime-seed/extensions"
 printf '%s\n' '{"providers":{"copilot-proxy-rs":{"baseUrl":"http://copilot-proxy-rs:8080","api":"anthropic-messages","apiKey":"trellage-local-proxy","compat":{"supportsEagerToolInputStreaming":false},"models":[{"id":"claude-opus-5"}]}}}' \
   >"$root/prime-seed/models.json"
 printf '# Caveman\n' >"$root/prime-seed/skills/caveman/SKILL.md"
 printf 'caveman\n' >"$root/prime-seed/managed-skills.txt"
+printf 'export default function askUser() {}\n' >"$root/prime-seed/extensions/ask-user.ts"
+printf 'ask-user\n' >"$root/prime-seed/managed-extensions.txt"
 printf '# Trellage managed always-on skill: caveman\n\n# Caveman\n' >"$root/prime-seed/APPEND_SYSTEM.md"
 printf 'schema=1\n' >"$root/prime-kernel/.trellage-prime-kernel"
 printf '#!/bin/sh\nexit 0\n' \
@@ -122,6 +125,8 @@ printf 'persisted\n' >"$root/home/.prime/agent/sessions/sentinel"
 printf 'stale\n' >"$root/home/.prime/agent/models.json"
 mkdir -p "$root/home/.prime/agent/skills/user"
 printf 'user\n' >"$root/home/.prime/agent/skills/user/SKILL.md"
+mkdir -p "$root/home/.prime/agent/extensions"
+printf 'user-extension\n' >"$root/home/.prime/agent/extensions/user-tool.ts"
 chmod -R 777 "$root/home"
 
 prompt='literal $(touch /tmp/not-executed) --resume prompt'
@@ -149,10 +154,16 @@ cmp -s "$root/prime-seed/skills/caveman/SKILL.md" "$root/home/.prime/agent/skill
   || fail 'managed Caveman skill was not installed from the baked seed'
 cmp -s "$root/prime-seed/managed-skills.txt" "$root/home/.prime/agent/.trellage-managed-skills" \
   || fail 'managed Prime skill manifest was not installed'
+cmp -s "$root/prime-seed/extensions/ask-user.ts" "$root/home/.prime/agent/extensions/ask-user.ts" \
+  || fail 'managed ask-user extension was not installed from the baked seed'
+cmp -s "$root/prime-seed/managed-extensions.txt" "$root/home/.prime/agent/.trellage-managed-extensions" \
+  || fail 'managed Prime extension manifest was not installed'
 cmp -s "$root/prime-seed/APPEND_SYSTEM.md" "$root/home/.prime/agent/APPEND_SYSTEM.md" \
   || fail 'managed Prime always-on instructions were not installed'
 [[ "$(cat "$root/home/.prime/agent/skills/user/SKILL.md")" == user ]] \
   || fail 'unmanaged Prime skill state was not preserved'
+[[ "$(cat "$root/home/.prime/agent/extensions/user-tool.ts")" == user-extension ]] \
+  || fail 'unmanaged Prime extension state was not preserved'
 
 run_entry new --unsafe
 expected_new_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--unsafe'
@@ -176,6 +187,13 @@ run_entry new || status=$?
 [[ "$status" -ne 0 ]] || fail 'symlinked managed Prime skill was accepted'
 [[ "$(cat "$root/home/outside-skill")" == outside ]] || fail 'managed Prime skill symlink target was modified'
 mutate_home 'rm -f /home/agent/.prime/agent/skills/caveman'
+
+mutate_home 'printf "outside\\n" >/home/agent/outside-extension; rm -f /home/agent/.prime/agent/extensions/ask-user.ts; ln -s /home/agent/outside-extension /home/agent/.prime/agent/extensions/ask-user.ts'
+status=0
+run_entry new || status=$?
+[[ "$status" -ne 0 ]] || fail 'symlinked managed Prime extension was accepted'
+[[ "$(cat "$root/home/outside-extension")" == outside ]] || fail 'managed Prime extension symlink target was modified'
+mutate_home 'rm -f /home/agent/.prime/agent/extensions/ask-user.ts'
 
 mutate_home 'printf "outside\\n" >/home/agent/outside-models.json; rm -f /home/agent/.prime/agent/models.json; ln -s /home/agent/outside-models.json /home/agent/.prime/agent/models.json'
 status=0

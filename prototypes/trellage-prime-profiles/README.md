@@ -57,6 +57,13 @@ default RLM packages). Launch sets `PRIME_AGENT_KERNEL_PYTHON` and
 `PRIME_AGENT_KERNEL_VENV` so Prime does not write a half-broken kernel under
 `~/.prime/agent/`.
 
+Every setup, repair, and launch also materializes the managed
+[`ask_user`](https://github.com/am-will/prime-agent-plugins) extension at
+`…/home/extensions/ask-user.ts` (Prime auto-discovers `extensions/*.ts`). Only
+that extension is installed—not the full prime-agent-plugins collection. Unmanaged
+extensions in the same directory are preserved; do not replace the managed file
+with divergent content or a symlink.
+
 Prime’s default daemon socket is UID-global, and resident workers inherit the
 supervisor environment at spawn — they do **not** receive client
 `PRIME_AGENT_KERNEL_*` over the wire. `prx` therefore pins

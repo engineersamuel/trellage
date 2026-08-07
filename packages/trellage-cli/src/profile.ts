@@ -77,6 +77,13 @@ const HyperresearchPlugin = Schema.Struct({
   select: Schema.Tuple(Schema.Literal("light")),
 })
 
+const PrimeExtensionPlugin = Schema.Struct({
+  adapter: Schema.Literal("prime-extension"),
+  repository: NonEmpty,
+  ref: NonEmpty,
+  select: Schema.Array(NonEmpty),
+})
+
 const Provider = Schema.Struct({
   base_url: NonEmpty,
   wire_api: Schema.Literal("responses", "chat"),
@@ -211,7 +218,7 @@ const PiProfileSchema = Schema.Struct({
 const PrimeProfileSchema = Schema.Struct({
   ...CommonProfile,
   harness: PrimeHarness,
-  plugins: Schema.optional(Schema.Array(CodexPlugin)),
+  plugins: Schema.optional(Schema.Array(PrimeExtensionPlugin)),
 })
 
 export const ProfileSchema = Schema.Union(
@@ -302,7 +309,6 @@ const rejectUnsupportedPiSections = (raw: unknown): Effect.Effect<void, ProfileE
 
 const rejectUnsupportedPrimeSections = (raw: unknown): Effect.Effect<void, ProfileError> => {
   if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "prime") return Effect.void
-  if (Object.hasOwn(raw, "plugins")) return fail("Prime profiles do not support standalone plugins")
   if (Object.hasOwn(raw, "mcps")) return fail("Prime profiles do not support MCPs")
   if (Object.hasOwn(raw, "secrets")) return fail("Prime profiles do not support declared secrets")
   return Effect.void
@@ -476,7 +482,19 @@ const validate = (
       if (profile.skills.some((skill) => skill.adapter !== undefined)) {
         return yield* fail("Prime skill sources use an unsupported adapter")
       }
-      if (profile.plugins.length > 0) return yield* fail("Prime profiles do not support standalone plugins")
+      for (const plugin of profile.plugins) {
+        if (plugin.adapter !== "prime-extension") {
+          return yield* fail("Prime profiles only support prime-extension plugins")
+        }
+        yield* unique(plugin.select, "selected asset")
+        if (plugin.select.length === 0) {
+          return yield* fail("Prime extension plugin selection is empty")
+        }
+      }
+      yield* unique(
+        profile.plugins.flatMap((plugin) => plugin.select),
+        "selected Prime extension",
+      )
       if (profile.mcps.length > 0) return yield* fail("Prime profiles do not support MCPs")
       if (
         profile.secrets.required.length > 0 ||

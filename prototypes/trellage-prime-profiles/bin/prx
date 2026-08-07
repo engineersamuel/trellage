@@ -10,6 +10,8 @@ readonly api_key='trellage-local-proxy'
 readonly mise_tool='github:PrimeIntellect-ai/prime-agent'
 readonly mise_install_name='github-prime-intellect-ai-prime-agent'
 readonly profile_marker_value='trellage-prime-profile-v1'
+readonly managed_extension_name='ask-user'
+readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
 
 die() {
   printf 'prx: %s\n' "$1" >&2
@@ -61,10 +63,14 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
 readonly catalog="$runtime_root/catalog.json"
 readonly version_file="$runtime_root/version"
 readonly npm_prefix="$runtime_root/npm-prefix"
+readonly managed_extension_source="$runtime_root/assets/extensions/${managed_extension_name}.ts"
 readonly profile_root="$HOME/.local/share/trellage/profiles/prime/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-prime-profiles"
 readonly profile_models="$profile_home/models.json"
+readonly profile_extensions="$profile_home/extensions"
+readonly profile_extension="$profile_extensions/${managed_extension_name}.ts"
+readonly profile_extension_manifest="$profile_home/.trellage-managed-extensions"
 readonly kernel_venv="$profile_home/kernel-venv"
 readonly kernel_python="$kernel_venv/bin/python"
 # UID-global default socket is /tmp/prime-agent-$UID/daemon.sock. Resident workers
@@ -222,6 +228,74 @@ managed_models() {
 EOF
 }
 
+file_sha256() {
+  local path="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -- "$path" | awk '{ print $1 }'
+  else
+    sha256sum -- "$path" | awk '{ print $1 }'
+  fi
+}
+
+require_managed_extension_source() {
+  local actual
+
+  [[ -f "$managed_extension_source" && ! -L "$managed_extension_source" ]] \
+    || die "managed ask-user extension asset is missing; reinstall prx ($managed_extension_source)"
+  actual="$(file_sha256 "$managed_extension_source")" \
+    || die "cannot hash managed ask-user extension asset: $managed_extension_source"
+  [[ "$actual" == "$managed_extension_sha256" ]] \
+    || die "managed ask-user extension asset integrity differs; reinstall prx"
+}
+
+publish_managed_extensions() {
+  local extension_stage manifest_stage path component
+
+  require_managed_extension_source
+  path="$profile_home"
+  for component in extensions; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe managed extension path: $path"
+    if [[ ! -e "$path" ]]; then
+      mkdir -p "$path"
+    fi
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe managed extension path: $path"
+  done
+  chmod 0700 "$profile_extensions"
+  [[ ! -L "$profile_extension" && ( ! -e "$profile_extension" || -f "$profile_extension" ) ]] \
+    || die "unsafe managed extension: $profile_extension"
+  if [[ -e "$profile_extension" ]]; then
+    if ! cmp -s "$managed_extension_source" "$profile_extension"; then
+      if [[ -f "$profile_extension_manifest" && ! -L "$profile_extension_manifest" ]] \
+        && grep -Fqx -- "$managed_extension_name" "$profile_extension_manifest"; then
+        :
+      else
+        die "managed ask-user extension collides with unmanaged state: $profile_extension"
+      fi
+    fi
+  fi
+  [[ ! -e "$profile_extension_manifest" || ( -f "$profile_extension_manifest" && ! -L "$profile_extension_manifest" ) ]] \
+    || die "unsafe managed extension manifest: $profile_extension_manifest"
+  extension_stage="$(mktemp "$profile_extensions/.ask-user.XXXXXX")" \
+    || die 'could not stage managed ask-user extension'
+  manifest_stage="$(mktemp "$profile_home/.managed-extensions.XXXXXX")" \
+    || {
+      rm -f -- "$extension_stage"
+      die 'could not stage managed extension manifest'
+    }
+  cp -- "$managed_extension_source" "$extension_stage" \
+    || {
+      rm -f -- "$extension_stage" "$manifest_stage"
+      die 'could not copy managed ask-user extension'
+    }
+  chmod 0600 "$extension_stage"
+  printf '%s\n' "$managed_extension_name" >"$manifest_stage"
+  chmod 0600 "$manifest_stage"
+  mv -f "$extension_stage" "$profile_extension"
+  mv -f "$manifest_stage" "$profile_extension_manifest"
+}
+
 publish_managed_profile() {
   local models_stage
 
@@ -233,6 +307,7 @@ publish_managed_profile() {
   managed_models >"$models_stage"
   chmod 0600 "$models_stage"
   mv -f "$models_stage" "$profile_models"
+  publish_managed_extensions
 }
 
 require_owned_profile() {
@@ -249,6 +324,15 @@ verify_managed_profile() {
     || die "managed models config is missing: $profile_models"
   cmp -s "$profile_models" <(managed_models) \
     || die 'managed models config differs; run prx repair'
+  require_managed_extension_source
+  [[ -f "$profile_extension" && ! -L "$profile_extension" ]] \
+    || die "managed ask-user extension is missing; run prx repair"
+  cmp -s "$managed_extension_source" "$profile_extension" \
+    || die 'managed ask-user extension differs; run prx repair'
+  [[ -f "$profile_extension_manifest" && ! -L "$profile_extension_manifest" ]] \
+    || die "managed extension manifest is missing; run prx repair"
+  grep -Fqx -- "$managed_extension_name" "$profile_extension_manifest" \
+    || die 'managed extension manifest differs; run prx repair'
 }
 
 require_exact_version() {

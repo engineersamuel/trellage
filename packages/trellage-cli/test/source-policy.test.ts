@@ -11,6 +11,9 @@ describe("source inclusion policy", () => {
       "plugins/plugin-eval",
       "tools",
     ])
+    expect(sourceIncludes({ kind: "plugin", adapter: "prime-extension", select: ["ask-user"] })).toEqual([
+      "plugins/ask-user/extensions",
+    ])
   })
 
   it("selects the complete repository for Copilot marketplaces", () => {
@@ -41,5 +44,6 @@ describe("source inclusion policy", () => {
     expect(sourceInventoryPolicy({ kind: "skill", select: ["*"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "codex-native", select: ["one"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "wshobson-agents", select: ["one"] })).toEqual({})
+    expect(sourceInventoryPolicy({ kind: "plugin", adapter: "prime-extension", select: ["ask-user"] })).toEqual({})
   })
 })
