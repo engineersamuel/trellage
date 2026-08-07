@@ -48,6 +48,42 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('select = ["light"]')
   })
 
+  it("pins last30days as a generic skill alongside Caveman and Hyperresearch", async () => {
+    const lockPath = fileURLToPath(
+      new URL("../../../profiles/claude-research/profile.linux-arm64.lock.toml", import.meta.url),
+    )
+    const [source, lockSource] = await Promise.all([readFile(profilePath, "utf8"), readFile(lockPath, "utf8")])
+    const document = await Effect.runPromise(parseProfile(source, profilePath))
+    const lock = await Effect.runPromise(parseLock(lockSource))
+
+    expect(source).toContain("# Upstream project: https://github.com/mvanhorn/last30days-skill")
+    expect(document.profile.skills).toEqual([
+      expect.objectContaining({
+        repository: "https://github.com/JuliusBrussee/caveman.git",
+        ref: "v1.10.0",
+        select: ["caveman"],
+        always_on: true,
+      }),
+      expect.objectContaining({
+        repository: "https://github.com/mvanhorn/last30days-skill.git",
+        ref: "v3.18.4",
+        select: ["last30days"],
+      }),
+    ])
+    const last30days = lock.sources.find(
+      (candidate) =>
+        candidate.kind === "skill" && candidate.repository === "https://github.com/mvanhorn/last30days-skill.git",
+    )
+    expect(last30days).toMatchObject({
+      kind: "skill",
+      repository: "https://github.com/mvanhorn/last30days-skill.git",
+      ref: "v3.18.4",
+      select: ["last30days"],
+      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
+    })
+    expect(last30days?.files.some((file) => file.path === "skills/last30days/SKILL.md")).toBe(true)
+  })
+
   it("publishes Claude-specific runtime metadata without credentials", async () => {
     const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
 
@@ -103,6 +139,15 @@ describe("authored Claude Research profile", () => {
           select: ["caveman"],
           commit: "c".repeat(40),
           integrity: `sha256:${"d".repeat(64)}`,
+          files: [],
+        },
+        {
+          kind: "skill",
+          repository: "https://github.com/mvanhorn/last30days-skill.git",
+          ref: "v3.18.4",
+          select: ["last30days"],
+          commit: "a".repeat(40),
+          integrity: `sha256:${"b".repeat(64)}`,
           files: [],
         },
         {

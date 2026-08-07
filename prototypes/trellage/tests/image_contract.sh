@@ -206,6 +206,12 @@ case "$harness_kind" in
       grep -Fqx 'adapter = "hyperresearch"' "$lock" || fail 'Hyperresearch adapter is not locked'
       grep -Fqx 'select = ["light"]' "$lock" || fail 'Hyperresearch light gear is not locked'
       grep -Eq '^commit = "[0-9a-f]{40}"$' "$lock" || fail 'Hyperresearch commit is not exact'
+      grep -Fqx 'repository = "https://github.com/mvanhorn/last30days-skill.git"' "$lock" \
+        || fail 'last30days skill repository is not locked'
+      grep -Fqx 'ref = "v3.18.4"' "$lock" || fail 'last30days skill ref is not locked'
+      grep -Fqx 'select = ["last30days"]' "$lock" || fail 'last30days skill selection is not locked'
+      grep -Fqx 'path = "skills/last30days/SKILL.md"' "$lock" \
+        || fail 'last30days SKILL.md is missing from lock inventory'
     fi
     ;;
   pi)
