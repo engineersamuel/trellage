@@ -119,11 +119,16 @@ vi.mock("../src/resolvers.js", async (importOriginal) => {
 
 import {
   ApplicationError,
+  builderNetworkEnv,
   builderScript,
   buildProfile,
+  discoverPypiIndex,
   loadLock,
+  microsoftProtectedPypiIndex,
   profileMetadata,
+  pypiIndexFromNpmRegistry,
   sanitizeNpmRegistry,
+  sanitizePypiIndex,
   upgradeProfile,
   type CommandRunner,
   type DockerServices,
@@ -173,6 +178,100 @@ describe("npm registry forwarding", () => {
     expect(sanitizeNpmRegistry("https://token@registry.example.test/npm/")).toBeUndefined()
     expect(sanitizeNpmRegistry("https://registry.example.test/npm/?token=secret")).toBeUndefined()
     expect(sanitizeNpmRegistry("http://registry.example.test/npm/")).toBeUndefined()
+  })
+})
+
+describe("builder network env forwarding", () => {
+  it("forwards UV index and proxy variables from the host", () => {
+    expect(
+      builderNetworkEnv({
+        UV_DEFAULT_INDEX: "https://mirrors.aliyun.com/pypi/simple/",
+        HTTPS_PROXY: "http://proxy.example.test:8080",
+        NO_PROXY: "localhost,127.0.0.1",
+        UV_INDEX: "",
+        PATH: "/usr/bin",
+      }),
+    ).toEqual([
+      "--env",
+      "UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/",
+      "--env",
+      "HTTPS_PROXY=http://proxy.example.test:8080",
+      "--env",
+      "NO_PROXY=localhost,127.0.0.1",
+    ])
+  })
+
+  it("injects a discovered PyPI index when host UV/PIP index env is unset", () => {
+    expect(builderNetworkEnv({ PATH: "/usr/bin" }, { pypiIndex: microsoftProtectedPypiIndex })).toEqual([
+      "--env",
+      `UV_DEFAULT_INDEX=${microsoftProtectedPypiIndex}`,
+      "--env",
+      `PIP_INDEX_URL=${microsoftProtectedPypiIndex}`,
+    ])
+  })
+
+  it("does not override an explicit UV_DEFAULT_INDEX with a discovered index", () => {
+    expect(
+      builderNetworkEnv(
+        { UV_DEFAULT_INDEX: "https://example.test/simple/" },
+        { pypiIndex: microsoftProtectedPypiIndex },
+      ),
+    ).toEqual([
+      "--env",
+      "UV_DEFAULT_INDEX=https://example.test/simple/",
+      "--env",
+      `PIP_INDEX_URL=${microsoftProtectedPypiIndex}`,
+    ])
+  })
+
+  it("skips values that would break docker argv", () => {
+    expect(
+      builderNetworkEnv({
+        UV_DEFAULT_INDEX: "https://example.test/simple/\n",
+        HTTPS_PROXY: "http://proxy.example.test:8080\0",
+      }),
+    ).toEqual([])
+  })
+})
+
+describe("PyPI index discovery", () => {
+  it("accepts credential-free HTTPS simple indexes", () => {
+    expect(sanitizePypiIndex(`  ${microsoftProtectedPypiIndex}  `)).toBe(microsoftProtectedPypiIndex)
+    expect(sanitizePypiIndex("http://pypi.example.test/simple/")).toBeUndefined()
+    expect(sanitizePypiIndex("https://user:pass@pypi.example.test/simple/")).toBeUndefined()
+  })
+
+  it("maps Microsoft npm packagefeedproxy to the CFS PyPI simple index", () => {
+    expect(pypiIndexFromNpmRegistry("https://packagefeedproxy.microsoft.io/npm/")).toBe(microsoftProtectedPypiIndex)
+    expect(pypiIndexFromNpmRegistry("https://registry.npmjs.org/")).toBeUndefined()
+  })
+
+  it("prefers UV_DEFAULT_INDEX, then pip config, then Microsoft npm inference", async () => {
+    await expect(
+      discoverPypiIndex({
+        environment: { UV_DEFAULT_INDEX: "https://example.test/uv-simple/" },
+        npmRegistry: "https://packagefeedproxy.microsoft.io/npm/",
+        run: async () => ({ stdout: "global.index-url='https://example.test/pip-simple/'\n" }),
+      }),
+    ).resolves.toBe("https://example.test/uv-simple/")
+
+    await expect(
+      discoverPypiIndex({
+        environment: {},
+        npmRegistry: "https://packagefeedproxy.microsoft.io/npm/",
+        run: async () => ({ stdout: "global.index-url='https://example.test/pip-simple/'\n" }),
+      }),
+    ).resolves.toBe("https://example.test/pip-simple/")
+
+    await expect(
+      discoverPypiIndex({
+        environment: {},
+        npmRegistry: "https://packagefeedproxy.microsoft.io/npm/",
+        run: async () => {
+          throw new Error("pip missing")
+        },
+      }),
+    ).resolves.toBe(microsoftProtectedPypiIndex)
   })
 })
 
@@ -1348,8 +1447,12 @@ select = ["humanizer"]
       'p.bin?.["prime-agent"]!=="dist/bundle/cli.js"',
       "prime_kernel_home='/home/agent/.trellage/prime-kernel'",
       "prime_kernel_seed='/src/prime-kernel-seed.tar.gz'",
+      "prime_kernel_status=0",
       'HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PRIME_AGENT_INSTALL_UV=1',
       "/src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js",
+      "prime_kernel_status=$?",
+      "trellage: Prime Python kernel bootstrap failed",
+      "UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/",
       'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
       'tar -C "$prime_kernel_home" -czf "$prime_kernel_seed"',
       'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',

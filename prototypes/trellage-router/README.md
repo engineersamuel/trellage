@@ -64,6 +64,22 @@ selected agents directly on the host with the permissions and safety behavior
 documented by each launcher. Use only trusted repositories, profiles, plugins,
 and arguments.
 
+### Package feeds (Microsoft-managed hosts)
+
+Native launchers inherit the host package-manager configuration. On
+Microsoft-managed devices, public PyPI/npm registries are blocked. Keep host
+defaults on Central Feed Services (CFS), for example:
+
+```text
+npm  → https://packagefeedproxy.microsoft.io/npm/
+pip  → https://packagefeedproxy.microsoft.io/pypi/simple/   (pip global.index-url)
+uv   → UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/
+```
+
+`trx` does not rewrite feeds. Configure the shell/MDM once so every native
+harness sees the same CFS endpoints. See the repository root `Agents.md`
+section “Package feeds on Microsoft-managed devices”.
+
 ## Uninstall
 
 ```sh

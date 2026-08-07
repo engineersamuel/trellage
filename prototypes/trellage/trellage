@@ -272,8 +272,13 @@ ensure_profile_compiler() {
 }
 
 clean_child_environment=(env -i "PATH=$PATH")
+# Keep proxy/TLS and UV package-index overrides so profile image builds can reach
+# alternate PyPI simple indexes when files.pythonhosted.org is blocked.
 for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME DOCKER_CONFIG \
-  TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE HTTP_PROXY HTTPS_PROXY NO_PROXY SSL_CERT_FILE SSL_CERT_DIR; do
+  TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE \
+  HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy \
+  SSL_CERT_FILE SSL_CERT_DIR \
+  UV_DEFAULT_INDEX UV_INDEX UV_INDEX_URL UV_EXTRA_INDEX_URL PIP_INDEX_URL; do
   [[ -z "${!environment_name-}" ]] || clean_child_environment+=("$environment_name=${!environment_name}")
 done
 
@@ -914,6 +919,60 @@ prepare_codex_secrets() {
   fi
 
 }
+
+# Host package-feed overrides for agent sessions inside the sandbox.
+# Only forwards when the host has HTTPS index/registry values (corporate CFS,
+# private mirrors, etc.). Empty on machines that use public registries.
+# Images stay universal; feeds are launch-time host policy, not baked digests.
+package_feed_args=()
+is_https_package_feed_url() {
+  local value="$1"
+  [[ -n "$value" ]] || return 1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *$'\0'* ]] || return 1
+  case "$value" in
+    https://*/*) return 0 ;;
+    https://*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+prepare_package_feed_args() {
+  package_feed_args=()
+  local name value npm_registry
+  # Prefer explicit host env (fish/MDM). Fill gaps from host npm config the same
+  # way the profile compiler discovers npm_config_registry for image builds.
+  if [[ -z "${npm_config_registry:-}" ]] && command -v npm >/dev/null 2>&1; then
+    npm_registry="$(npm config get registry 2>/dev/null | tr -d '\r\n')" || npm_registry=
+    if is_https_package_feed_url "$npm_registry"; then
+      npm_config_registry="$npm_registry"
+      export npm_config_registry
+    fi
+  fi
+  if [[ -z "${UV_DEFAULT_INDEX:-}" && -n "${PIP_INDEX_URL:-}" ]] \
+    && is_https_package_feed_url "${PIP_INDEX_URL}"; then
+    UV_DEFAULT_INDEX="$PIP_INDEX_URL"
+    export UV_DEFAULT_INDEX
+  fi
+  if [[ -z "${UV_DEFAULT_INDEX:-}" && -n "${npm_config_registry:-}" ]]; then
+    case "$npm_config_registry" in
+      https://packagefeedproxy.microsoft.io/npm|https://packagefeedproxy.microsoft.io/npm/)
+        UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/
+        export UV_DEFAULT_INDEX
+        if [[ -z "${PIP_INDEX_URL:-}" ]]; then
+          PIP_INDEX_URL=$UV_DEFAULT_INDEX
+          export PIP_INDEX_URL
+        fi
+        ;;
+    esac
+  fi
+  for name in UV_DEFAULT_INDEX PIP_INDEX_URL UV_INDEX_URL UV_EXTRA_INDEX_URL \
+    npm_config_registry NPM_CONFIG_REGISTRY; do
+    value="$(printenv "$name" 2>/dev/null || true)"
+    is_https_package_feed_url "$value" || continue
+    package_feed_args+=(--env "$name")
+  done
+}
+prepare_package_feed_args
+
 github_cli_args=()
 prepare_github_cli_auth() {
   local config_dir=/tmp/trellage-gh
@@ -1400,6 +1459,7 @@ case "$mode" in
     HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
+      ${package_feed_args[@]+"${package_feed_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
       ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
@@ -1418,6 +1478,7 @@ case "$mode" in
       "${terminal_args[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
+      ${package_feed_args[@]+"${package_feed_args[@]}"} \
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
       ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
@@ -1429,6 +1490,7 @@ case "$mode" in
     exec docker container exec \
       "${terminal_args[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
+      ${package_feed_args[@]+"${package_feed_args[@]}"} \
       --workdir "$mount_path" \
       "$container_id" \
       "$runtime_shell" "${runtime_shell_args[@]}" "$interactive_shell_command" --
@@ -1447,6 +1509,7 @@ if (( $# > 0 )); then
     "${terminal_args[@]}" \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
+    ${package_feed_args[@]+"${package_feed_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
     ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
@@ -1466,6 +1529,7 @@ if [[ "$has_initial_prompt" == true ]]; then
     "${terminal_args[@]}" \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
+    ${package_feed_args[@]+"${package_feed_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
     ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
@@ -1484,6 +1548,7 @@ HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
   "${terminal_args[@]}" \
   ${github_cli_args[@]+"${github_cli_args[@]}"} \
   ${secret_args[@]+"${secret_args[@]}"} \
+  ${package_feed_args[@]+"${package_feed_args[@]}"} \
   ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
   ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
   ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
