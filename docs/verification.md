@@ -18,8 +18,9 @@ npm ci --prefix tests/playwright
 Each commit runs staged whitespace validation plus profile compiler lint,
 format, and type checks in parallel. Each push runs a broad deterministic suite
 plus slower sandbox or native profile contracts selected from the paths being
-pushed. Changes to `Makefile` run every push contract. This catches relevant
-failures without imposing the full suite's runtime on every push.
+pushed. Makefile changes run the broad target; use exact CI parity for changes
+to slow native lifecycle wiring. This catches common failures without imposing
+the full suite's runtime on every push.
 
 Run exact GitHub Actions parity explicitly before high-risk pushes:
 
