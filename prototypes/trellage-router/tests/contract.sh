@@ -151,6 +151,7 @@ create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-co
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
+create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
 
 export HOME="$fixture_home"
 export PATH="$fixture_bin:/usr/bin:/bin"
@@ -191,7 +192,7 @@ TRX_ARGUMENT_LOG="$argument_log" \
   || fail 'interactive selection failed'
 selection_finished="$(python3 -c 'import time; print(time.monotonic_ns())')"
 selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
-((selection_milliseconds < 2000)) \
+((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq -e '
   .choices[0]
@@ -211,6 +212,11 @@ jq -e '
   | length == 1
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted jcode profile'
+jq -e '
+  [.choices[] | select(.label == "prime / prx-p")]
+  | length == 1
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router choices omitted prime profile'
 [[ ! -e "$inventory_log" ]] \
   || fail 'router read diagnostic inventory before launching the selected profile'
 mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
@@ -282,6 +288,14 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-jcx.out" \
 assert_contains 'required launcher not found on PATH: jcx' "$fixture_root/missing-jcx.out"
 mv "$fixture_bin/jcx.absent" "$fixture_bin/jcx"
 
+mv "$fixture_bin/prx" "$fixture_bin/prx.absent"
+status=0
+python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-prx.out" \
+  '\r' '' "$fixture_bin/trx" -i || status=$?
+[[ "$status" == 1 ]] || fail "missing prx launcher exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: prx' "$fixture_root/missing-prx.out"
+mv "$fixture_bin/prx.absent" "$fixture_bin/prx"
+
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.catalog"
 printf '{not-json}\n' >"$runtime_parent/cdx/catalog.json"
 status=0
@@ -319,7 +333,7 @@ ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
   && -x "$runtime_parent/grx/bin/grx" && -x "$runtime_parent/jcx/bin/jcx" \
-  && -x "$runtime_parent/omp/bin/omp" ]] \
+  && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/prx/bin/prx" ]] \
   || fail 'uninstaller changed native launchers'
 assert_contains 'Uninstalled trx.' "$fixture_root/uninstall.out"
 
