@@ -495,11 +495,16 @@ merge_managed_settings() {
 }
 
 copilot_config_json() {
-  awk -v leading=1 '
-    leading && /^[[:space:]]*$/ { next }
-    leading && /^[[:space:]]*\/\// { next }
-    { leading = 0; print }
-  ' "$1"
+  local line leading=true
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$leading" == true ]]; then
+      if [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*// ]]; then
+        continue
+      fi
+      leading=false
+    fi
+    printf '%s\n' "$line"
+  done <"$1"
 }
 
 ensure_workspace_trusted() {
