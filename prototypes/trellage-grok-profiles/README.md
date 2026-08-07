@@ -82,6 +82,10 @@ checks and changes are explicit through `grx update --check` and `grx update`.
 Pass `-m` or `--model` to select another model from the proxy catalog; `grx`
 forwards the option and its value unchanged.
 
+Profile launches default to `--permission-mode bypassPermissions`. An explicit
+permission mode, approval flag, allow rule, or deny rule is forwarded unchanged
+and suppresses that default.
+
 Proxy routing applies only to profile launches. Setup, repair, update, doctor,
 and other lifecycle operations do not receive the proxy variables. Plain `grok`
 and `~/.grok` remain untouched, so direct Grok usage keeps xAI OAuth and its
