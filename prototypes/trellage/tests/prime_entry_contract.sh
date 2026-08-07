@@ -93,6 +93,7 @@ mutate_home() {
     --user '10001:10001' \
     --entrypoint /bin/bash \
     --mount "type=bind,src=$root/home,dst=/home/agent" \
+    --mount "type=bind,src=$root/prime-seed,dst=/seed,readonly" \
     "$fixture_source_ref" -ceu "$1"
 }
 
@@ -121,7 +122,7 @@ grep -Fqx 'GH_CONFIG_DIR=/tmp/trellage-gh' "$root/output/env" || fail 'prompt mo
 grep -Fqx 'PRIME_AGENT_CODING_AGENT_DIR=/home/agent/.prime/agent' "$root/output/env" \
   || fail 'prompt mode did not isolate persistent Prime state'
 [[ "$(cat "$root/output/mode")" == 'MODE=600' ]] || fail 'managed models.json mode is not 0600'
-cmp -s "$root/prime-seed/models.json" "$root/home/.prime/agent/models.json" \
+mutate_home 'cmp -s /seed/models.json /home/agent/.prime/agent/models.json' \
   || fail 'managed models.json was not replaced from the baked seed'
 [[ "$(cat "$root/home/.prime/agent/sessions/sentinel")" == persisted ]] \
   || fail 'unmanaged Prime session state was not preserved'
