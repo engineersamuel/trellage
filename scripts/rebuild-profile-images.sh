@@ -120,6 +120,7 @@ known_native_packages=(
   trellage-grok-profiles
   trellage-jcode-profiles
   trellage-omp-profiles
+  trellage-prime-profiles
 )
 
 is_known_native_package() {

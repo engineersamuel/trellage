@@ -293,14 +293,16 @@ profiles described above. Use **Trellage Native** for `trx` and its host-native
 profile launchers. Native launchers isolate agent state but run directly on the
 host.
 
-Install the four agent launchers and optional profile router from the repository
-root:
+Install the native agent launchers and optional profile router from the
+repository root:
 
 ```bash
 (cd prototypes/trellage-codex-profiles && ./install.sh)
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
 (cd prototypes/trellage-grok-profiles && ./install.sh)
+(cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
+(cd prototypes/trellage-prime-profiles && ./install.sh)
 (cd prototypes/trellage-router && ./install.sh)
 ```
 
@@ -309,7 +311,9 @@ The installers publish these commands and managed runtimes:
 - `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
 - `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
 - `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
+- `jcx`: `~/.local/bin/jcx` and `~/.local/share/trellage/jcx/`
 - `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
+- `prx`: `~/.local/bin/prx` and `~/.local/share/trellage/prx/`
 - `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
 
 Their isolated profile homes are rooted at:
@@ -318,6 +322,8 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/codex/<profile>/home/
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
 ~/.local/share/trellage/profiles/grok/<profile>/home/
+~/.local/share/trellage/profiles/jcode/default/home/
+~/.local/share/trellage/profiles/prime/default/home/
 ~/.omp/profiles/trellage-qwen-local/
 ```
 
@@ -376,6 +382,26 @@ up, repair, update, call a model, use the network, or mutate profile state.
 The native `jcx` launcher runs jcode against `copilot-proxy-rs`, defaulting to
 `gpt-5.6-sol` with `medium` reasoning in an isolated `JCODE_HOME`. Install and
 manage it from `prototypes/trellage-jcode-profiles`.
+
+The native `prx` launcher runs Prime Agent against `copilot-proxy-rs`, pinning
+the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic
+Messages API at `http://127.0.0.1:8080`). It is independent of the Docker
+`prime-agent` profile. Install and manage it from
+`prototypes/trellage-prime-profiles`:
+
+```bash
+prx setup
+prx doctor
+prx -p "Reply exactly PRX_OK"
+prx update --check
+prx update
+prx repair
+```
+
+`PRIME_AGENT_CODING_AGENT_DIR` isolates configuration and sessions under
+`~/.local/share/trellage/profiles/prime/default/home/`. Every launch restores
+the managed `models.json` seed so persisted edits cannot redirect the endpoint
+or model. No host model credentials are copied.
 
 Native profiles run directly on the host and are state-isolation conveniences,
 not security boundaries.
