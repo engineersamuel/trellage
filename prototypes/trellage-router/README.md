@@ -1,13 +1,13 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-discovers the installed launchers `cpx`, `cdx`, `grx`, `jcx`, and `omp`, validates
-each launcher's machine-readable catalog, and presents one
+discovers the installed launchers `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx`,
+validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
 
 ## Install
 
-Install the five native launchers first. Their commands must resolve from
+Install the six native launchers first. Their commands must resolve from
 `PATH` to their owned runtimes under `~/.local/share/trellage/`.
 
 Prerequisites: Bash, Node.js, and `jq`.
@@ -18,6 +18,7 @@ Prerequisites: Bash, Node.js, and `jq`.
 (cd ../trellage-grok-profiles && ./install.sh)
 (cd ../trellage-jcode-profiles && ./install.sh)
 (cd ../trellage-omp-profiles && ./install.sh)
+(cd ../trellage-prime-profiles && ./install.sh)
 ./install.sh
 ```
 
@@ -59,10 +60,10 @@ starting. Diagnostic inventory remains available directly from launchers that
 support `inventory PROFILE --json`; `trx` does not collect it on the launch
 path. `doctor` remains the full runtime health diagnostic.
 
-`trx` adds no containment. `cpx`, `cdx`, `grx`, `jcx`, and `omp` still run their
-selected agents directly on the host with the permissions and safety behavior
-documented by each launcher. Use only trusted repositories, profiles, plugins,
-and arguments.
+`trx` adds no containment. `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx` still run
+their selected agents directly on the host with the permissions and safety
+behavior documented by each launcher. Use only trusted repositories, profiles,
+plugins, and arguments.
 
 ### Package feeds (Microsoft-managed hosts)
 
