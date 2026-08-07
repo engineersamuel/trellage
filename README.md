@@ -399,16 +399,29 @@ is an explicit per-launch opt-in:
 cdx --native-auth hve exec "Review this repository"
 ```
 
-After `cdx`, `cpx`, `grx`, and `trx` are installed, use one flat
-harness/profile picker:
+After the six native profile launchers and `trx` are installed, list the
+available launcher/profile pairs or use one flat picker:
 
 ```bash
+trx list
+trx list --json
 trx -i
 trx -i --model gpt-5
 ```
 
-`trx` reads the launchers' declared catalogs before opening the picker, so rows
-show only `harness / profile` and the detail pane shows the catalog description.
+Use `mise run trx -- ...` to run the router from the current worktree without
+replacing the installed native command:
+
+```bash
+mise run trx -- list
+mise run trx -- list --json
+mise run trx -- -i
+```
+
+`trx list` prints `launcher/profile` plus the catalog description; `--json`
+returns the same discovery data with launcher and harness identity. `trx` reads
+the launchers' declared catalogs before listing or opening the picker, so picker
+rows show only `harness / profile` and the detail pane shows the catalog description.
 After selection, it validates that profile's read-only installed inventory before
 launching. Package counts come only from launcher-validated selected plugin roots
 or cache paths; `visibleCount` preserves each native CLI's broader inventory
