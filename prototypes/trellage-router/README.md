@@ -38,9 +38,27 @@ them.
 ## Use
 
 ```sh
+trx list
+trx list --json
 trx -i
 trx --interactive --model gpt-5
 ```
+
+From the repository root, run the current worktree router without replacing the
+installed `trx`:
+
+```sh
+mise run trx -- list
+mise run trx -- list --json
+mise run trx -- -i
+```
+
+`trx list` prints one `launcher/profile` and catalog description per line.
+`trx list --json` emits a schema-versioned `profiles` array whose entries contain
+`launcher`, `harness`, `name`, and `description`. Both forms are non-interactive
+and work without a TTY. They validate all six owned launchers and their catalogs
+before producing output, so missing, redirected, or invalid launchers fail
+closed.
 
 Use the arrow keys and Enter to select a profile. Escape or Ctrl-C cancels with
 status 130. Every argument after `-i` or `--interactive` is forwarded unchanged

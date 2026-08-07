@@ -166,7 +166,73 @@ assert_contains 'Installed trx' "$fixture_root/install.out"
 [[ -x "$runtime_parent/trx/bin/trx" ]] || fail 'repeat install removed launcher'
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
+assert_contains 'trx list [--json]' "$fixture_root/help.out"
 assert_contains 'trx -i [LAUNCHER_ARGS...]' "$fixture_root/help.out"
+
+"$fixture_bin/trx" list >"$fixture_root/list.out" \
+  || fail 'human list failed'
+assert_contains $'cpx/cpx-p\t' "$fixture_root/list.out"
+assert_contains $'cdx/cdx-p\tcdx' "$fixture_root/list.out"
+assert_contains $'grx/grx-p\tgrx' "$fixture_root/list.out"
+assert_contains $'jcx/jcx-p\tjcx' "$fixture_root/list.out"
+assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
+assert_contains $'omp/local\tLocal Qwen' "$fixture_root/list.out"
+assert_contains $'prx/prx-p\tprx' "$fixture_root/list.out"
+
+"$fixture_bin/trx" list --json >"$fixture_root/list.json" \
+  || fail 'JSON list failed'
+jq -e '
+  type == "object"
+  and keys == ["profiles", "schemaVersion"]
+  and .schemaVersion == 1
+  and ([.profiles[] | keys] | all(. == ["description", "harness", "launcher", "name"]))
+  and [.profiles[] | .launcher + "/" + .name] == [
+    "cpx/cpx-p",
+    "cdx/cdx-p",
+    "grx/grx-p",
+    "jcx/jcx-p",
+    "omp/copilot",
+    "omp/local",
+    "prx/prx-p"
+  ]
+  and [.profiles[] | .harness] == [
+    "copilot",
+    "codex",
+    "grok",
+    "jcode",
+    "oh-my-pi",
+    "oh-my-pi",
+    "prime"
+  ]
+  and all(.profiles[]; .description | type == "string" and length > 0)
+' "$fixture_root/list.json" >/dev/null \
+  || fail 'JSON list shape or ordering differs'
+
+TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
+  "$prototype_root/bin/trx" list --json >"$fixture_root/source-list.json" \
+  || fail 'worktree source JSON list failed'
+cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
+  || fail 'worktree source list differs from installed router list'
+
+TRX_ARGUMENT_LOG="$argument_log" \
+  TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-select.out" \
+  '\r' '' "$prototype_root/bin/trx" -i '--source-mode' \
+  || fail 'worktree source interactive selection failed'
+python3 - "$argument_log" <<'PY' || fail 'worktree source arguments were not forwarded'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cpx", b"cpx-p", b"--source-mode", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+status=0
+"$fixture_bin/trx" list --json-full >"$fixture_root/list-invalid.out" \
+  2>"$fixture_root/list-invalid.err" || status=$?
+[[ "$status" == 1 ]] || fail "invalid list arguments exited $status instead of 1"
+assert_contains 'list accepts only --json' "$fixture_root/list-invalid.err"
 
 status=0
 "$fixture_bin/trx" -i >"$fixture_root/non-tty.out" 2>"$fixture_root/non-tty.err" \
@@ -266,6 +332,11 @@ TRX_WAIT=1 \
 
 mv "$fixture_bin/grx" "$fixture_bin/grx.absent"
 status=0
+"$fixture_bin/trx" list >"$fixture_root/list-missing.out" \
+  2>"$fixture_root/list-missing.err" || status=$?
+[[ "$status" == 1 ]] || fail "missing launcher list exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: grx' "$fixture_root/list-missing.err"
+status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing.out" \
   '\r' '' "$fixture_bin/trx" -i || status=$?
 [[ "$status" == 1 ]] || fail "missing launcher exited $status instead of 1"
@@ -299,6 +370,11 @@ mv "$fixture_bin/prx.absent" "$fixture_bin/prx"
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.catalog"
 printf '{not-json}\n' >"$runtime_parent/cdx/catalog.json"
 status=0
+"$fixture_bin/trx" list --json >"$fixture_root/list-invalid-catalog.out" \
+  2>"$fixture_root/list-invalid-catalog.err" || status=$?
+[[ "$status" == 1 ]] || fail "invalid catalog list exited $status instead of 1"
+assert_contains 'invalid catalog from cdx' "$fixture_root/list-invalid-catalog.err"
+status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/invalid.out" \
   '\r' '' "$fixture_bin/trx" -i || status=$?
 [[ "$status" == 1 ]] || fail "invalid catalog exited $status instead of 1"
@@ -308,6 +384,12 @@ mv "$fixture_root/cdx.catalog" "$runtime_parent/cdx/catalog.json"
 rm "$fixture_bin/cpx"
 cp "$runtime_parent/cpx/bin/cpx" "$fixture_root/unrelated-cpx"
 ln -s "$fixture_root/unrelated-cpx" "$fixture_bin/cpx"
+status=0
+"$fixture_bin/trx" list >"$fixture_root/list-redirected.out" \
+  2>"$fixture_root/list-redirected.err" || status=$?
+[[ "$status" == 1 ]] || fail "redirected launcher list exited $status instead of 1"
+assert_contains 'launcher is not the owned Trellage runtime: cpx' \
+  "$fixture_root/list-redirected.err"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/redirected.out" \
   '\r' '' "$fixture_bin/trx" -i || status=$?

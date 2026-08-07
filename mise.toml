@@ -7,6 +7,10 @@ _.path = "./prototypes/trellage"
 description = "Run the repository worktree Trellage command"
 run = "./prototypes/trellage/trellage"
 
+[tasks.trx]
+description = "Run the repository worktree trx router"
+run = "env TRELLAGE_TRX_SOURCE_ROOT=\"$MISE_PROJECT_ROOT/prototypes/trellage-router\" \"$MISE_PROJECT_ROOT/prototypes/trellage-router/bin/trx\""
+
 [tasks.rebuild-profiles]
 description = "Refresh native trx/launchers + rebuild all sandbox profile images"
 run = "./scripts/rebuild-profile-images.sh --install"

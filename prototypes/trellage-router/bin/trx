@@ -11,11 +11,13 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
+  trx list [--json]
   trx -i [LAUNCHER_ARGS...]
   trx --interactive [LAUNCHER_ARGS...]
 
-Select one installed native harness/profile pair, then launch it. Arguments
-after -i or --interactive are forwarded unchanged to the selected launcher.
+List installed native harness/profile pairs, or select one interactively and
+launch it. Arguments after -i or --interactive are forwarded unchanged to the
+selected launcher.
 EOF
 }
 
@@ -170,12 +172,55 @@ build_choices() {
   '
 }
 
+build_profile_list() {
+  jq -cn \
+    --argjson cpxCatalog "$1" \
+    --argjson cdxCatalog "$2" \
+    --argjson grxCatalog "$3" \
+    --argjson jcxCatalog "$4" \
+    --argjson ompCatalog "$5" \
+    --argjson prxCatalog "$6" '
+    def profiles($catalog):
+      $catalog.profiles[] | {
+        launcher: $catalog.launcher,
+        harness: $catalog.harness,
+        name,
+        description
+      };
+    {
+      schemaVersion: 1,
+      profiles: [
+        profiles($cpxCatalog),
+        profiles($cdxCatalog),
+        profiles($grxCatalog),
+        profiles($jcxCatalog),
+        profiles($ompCatalog),
+        profiles($prxCatalog)
+      ]
+    }
+  '
+}
+
+mode=''
+list_json=0
 case "${1-}" in
   -h|--help|help)
     usage
     exit 0
     ;;
+  list)
+    mode='list'
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      :
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_json=1
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
   -i|--interactive)
+    mode='interactive'
     shift
     ;;
   '')
@@ -188,8 +233,6 @@ case "${1-}" in
 esac
 
 command -v jq >/dev/null 2>&1 || die 'required command not found: jq'
-command -v node >/dev/null 2>&1 || die 'required command not found: node'
-[[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
 
 case "$HOME" in
   /*) ;;
@@ -202,14 +245,25 @@ canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HO
 script_path="$(resolve_file "${BASH_SOURCE[0]}")" || die 'cannot resolve trx runtime'
 script_dir="$(canonical_directory "$(dirname "$script_path")")" || die 'cannot resolve trx runtime'
 runtime="$(canonical_directory "$script_dir/..")" || die 'cannot resolve trx runtime'
-[[ "$runtime" == "$canonical_home/.local/share/trellage/trx" ]] \
-  || die "trx is not running from its owned runtime: $runtime"
-[[ -f "$runtime/.managed-by-trellage-router" && ! -L "$runtime/.managed-by-trellage-router" ]] \
-  || die 'missing trx ownership marker'
-[[ "$(<"$runtime/.managed-by-trellage-router")" == "$ownership_value" ]] \
-  || die 'invalid trx ownership marker'
-[[ -f "$runtime/lib/terminal-picker.mjs" && ! -L "$runtime/lib/terminal-picker.mjs" ]] \
-  || die 'terminal picker is missing or unsafe'
+picker_path="$runtime/lib/terminal-picker.mjs"
+if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
+  [[ "$TRELLAGE_TRX_SOURCE_ROOT" == /* ]] \
+    || die "TRELLAGE_TRX_SOURCE_ROOT must be absolute: $TRELLAGE_TRX_SOURCE_ROOT"
+  [[ -d "$TRELLAGE_TRX_SOURCE_ROOT" && ! -L "$TRELLAGE_TRX_SOURCE_ROOT" ]] \
+    || die "unsafe TRELLAGE_TRX_SOURCE_ROOT: $TRELLAGE_TRX_SOURCE_ROOT"
+  source_root="$(canonical_directory "$TRELLAGE_TRX_SOURCE_ROOT")" \
+    || die "cannot resolve TRELLAGE_TRX_SOURCE_ROOT: $TRELLAGE_TRX_SOURCE_ROOT"
+  [[ "$runtime" == "$source_root" ]] \
+    || die "trx source runtime differs from TRELLAGE_TRX_SOURCE_ROOT: $runtime"
+  picker_path="$runtime/../shared/terminal-picker.mjs"
+else
+  [[ "$runtime" == "$canonical_home/.local/share/trellage/trx" ]] \
+    || die "trx is not running from its owned runtime: $runtime"
+  [[ -f "$runtime/.managed-by-trellage-router" && ! -L "$runtime/.managed-by-trellage-router" ]] \
+    || die 'missing trx ownership marker'
+  [[ "$(<"$runtime/.managed-by-trellage-router")" == "$ownership_value" ]] \
+    || die 'invalid trx ownership marker'
+fi
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v1)"
@@ -254,12 +308,32 @@ omp_catalog="$(<"$catalog_tmp/omp")"
 prx_catalog="$(<"$catalog_tmp/prx")"
 cleanup_catalog_tmp
 trap - EXIT HUP INT TERM
+
+if [[ "$mode" == list ]]; then
+  profile_list="$(build_profile_list \
+    "$cpx_catalog" "$cdx_catalog" "$grx_catalog" \
+    "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
+    || die 'could not build profile list'
+  if ((list_json)); then
+    printf '%s\n' "$profile_list"
+  else
+    jq -r '.profiles[] | [(.launcher + "/" + .name), .description] | @tsv' \
+      <<<"$profile_list" || die 'could not format profile list'
+  fi
+  exit 0
+fi
+
+command -v node >/dev/null 2>&1 || die 'required command not found: node'
+[[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
+[[ -f "$picker_path" && ! -L "$picker_path" ]] \
+  || die 'terminal picker is missing or unsafe'
+
 choices="$(build_choices "$cpx_catalog" "$cdx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
   || die 'could not build profile choices'
 
 selection=''
 picker_status=0
-selection="$(printf '%s\n' "$choices" | node "$runtime/lib/terminal-picker.mjs")" \
+selection="$(printf '%s\n' "$choices" | node "$picker_path")" \
   || picker_status=$?
 if ((picker_status != 0)); then
   exit "$picker_status"
