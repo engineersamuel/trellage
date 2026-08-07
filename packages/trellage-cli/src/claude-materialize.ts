@@ -453,7 +453,7 @@ const materializeHyperresearchAssets = (
         )
         const installHome = path.join(staging, "seed-home")
         yield* attempt("cannot create Claude seed home", () => mkdir(installHome, { recursive: true }))
-        yield* run(hostPython, ["-m", "hyperresearch", "install", "--global", "--profile", "full"], {
+        yield* run(hostPython, ["-m", "hyperresearch", "install", "--global", "--profile", "light"], {
           env: { ...process.env, HOME: installHome, PYTHONDONTWRITEBYTECODE: "1" },
         })
 

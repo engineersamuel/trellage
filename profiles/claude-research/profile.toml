@@ -1,6 +1,6 @@
 schema = 1
-name = "claude-hyperresearch"
-description = "Claude Code (Opus via proxy) with Hyperresearch: multi-step web/browser investigation, adversarial cite-checking, and a persistent research vault. Best for source-heavy reports and ongoing knowledge bases—not coding sprints. Skip for quick facts, one-line summaries, or greenfield feature implementation.  Invoke primarily with `/hyperresearch <prompt>`"
+name = "claude-research"
+description = "Claude Code (Opus via proxy) with Hyperresearch's light gear: a focused 5-step pipeline for bounded factual queries, surveys, and comparisons with a persistent research vault. Best for source-backed answers without the cost of the full adversarial pipeline. Invoke primarily with `/hyperresearch <prompt>`."
 
 [harness]
 kind = "claude"
@@ -36,4 +36,4 @@ always_on = true
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]

@@ -23,9 +23,9 @@ trellage upgrade all
 Bundled profiles can also be selected by directory name:
 
 ```bash
-trellage validate claude-hyperresearch
-trellage build --locked claude-hyperresearch
-trellage --profile claude-hyperresearch
+trellage validate claude-research
+trellage build --locked claude-research
+trellage --profile claude-research
 trellage validate claude-social-media
 trellage build --locked claude-social-media
 trellage --profile claude-social-media
@@ -100,7 +100,7 @@ Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) fo
 
 ```bash
 trellage --profile codex-superpowers -p "hello"
-trellage --profile claude-hyperresearch -p "hello"
+trellage --profile claude-research -p "hello"
 trellage --profile claude-social-media -p "draft a LinkedIn post"
 trellage --profile claude-council -p "hello"
 trellage --profile copilot-hve -p "hello"
@@ -150,9 +150,9 @@ worktree is pre-approved as trusted inside the isolated container.
 Trellage bundles Varlock and uses it automatically for new, prompt, and resume launches when a user environment source exists. Always invoke `trellage` directly:
 
 ```bash
-trellage --profile claude-hyperresearch
-trellage --profile claude-hyperresearch -p "research this topic"
-trellage resume --profile claude-hyperresearch
+trellage --profile claude-research
+trellage --profile claude-research -p "research this topic"
+trellage resume --profile claude-research
 ```
 
 Do not prefix these commands with `varlock`. This keeps the same interface for terminals, scripts, editors, Herdr, and other applications invoking Trellage.
@@ -168,7 +168,7 @@ The default environment directory is `$XDG_CONFIG_HOME/trellage`, or `~/.config/
 └── .env.local
 ```
 
-No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without Varlock. To supply the Claude Hyperresearch browser extension token:
+No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without Varlock. To supply the Claude Research browser extension token:
 
 ```dotenv
 # ~/.config/trellage/.env.schema
@@ -215,7 +215,7 @@ Use `TRELLAGE_CONFIG` to select another config file. Use `TRELLAGE_ENVIRONMENT=o
 Check the resolved state without printing values:
 
 ```bash
-trellage doctor --profile claude-hyperresearch
+trellage doctor --profile claude-research
 ```
 
 Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.

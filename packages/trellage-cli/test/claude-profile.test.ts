@@ -10,7 +10,7 @@ import { parseLock } from "../src/lock-file.js"
 import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 
-const profilePath = fileURLToPath(new URL("../../../profiles/claude-hyperresearch/profile.toml", import.meta.url))
+const profilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
 const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social-media/profile.toml", import.meta.url))
 const socialLockPath = fileURLToPath(
@@ -27,7 +27,7 @@ const councilLockPath = fileURLToPath(
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 
-describe("authored Claude Hyperresearch profile", () => {
+describe("authored Claude Research profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
     expect(claudeDefaultSettings.permissions.defaultMode).toBe("bypassPermissions")
     expect(claudeDefaultSettings.skipDangerousModePermissionPrompt).toBe(true)
@@ -45,7 +45,7 @@ describe("authored Claude Hyperresearch profile", () => {
     expect(source).toContain("# Upstream project: https://github.com/jordan-gibbs/hyperresearch")
     expect(source).toContain('adapter = "hyperresearch"')
     expect(source).toContain('repository = "https://github.com/jordan-gibbs/hyperresearch.git"')
-    expect(source).toContain('select = ["full"]')
+    expect(source).toContain('select = ["light"]')
   })
 
   it("publishes Claude-specific runtime metadata without credentials", async () => {
@@ -110,7 +110,7 @@ describe("authored Claude Hyperresearch profile", () => {
           adapter: "hyperresearch",
           repository: "https://github.com/jordan-gibbs/hyperresearch.git",
           ref: "main",
-          select: ["full"],
+          select: ["light"],
           commit: "e".repeat(40),
           integrity: `sha256:${"f".repeat(64)}`,
           files: [],

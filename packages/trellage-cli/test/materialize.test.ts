@@ -814,7 +814,7 @@ packages = ["bash", "ca-certificates", "git", "jq"]
       parseProfile(
         `
 schema = 1
-name = "claude-hyperresearch"
+name = "claude-research"
 description = "Claude materialize profile"
 [harness]
 kind = "claude"
@@ -831,7 +831,7 @@ packages = ["bash"]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
-select = ["full"]
+select = ["light"]
 `,
         path.join(root, "profile.toml"),
       ),
@@ -851,7 +851,7 @@ select = ["full"]
           adapter: "hyperresearch",
           repository: "https://github.com/jordan-gibbs/hyperresearch.git",
           ref: "main",
-          select: ["full"],
+          select: ["light"],
           commit: "183443aefec8d0444f4b53095cee17bf77ad5fb2",
           integrity: `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`,
           files,
