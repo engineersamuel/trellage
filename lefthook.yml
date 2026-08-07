@@ -1,9 +1,32 @@
 pre-commit:
   parallel: true
   jobs:
+    - name: staged whitespace
+      run: git diff --cached --check
     - name: profile compiler oxlint
       run: npm --prefix packages/trellage-cli run lint
     - name: harness config oxfmt
       run: npm --prefix packages/trellage-cli run format:check
     - name: profile compiler typecheck
       run: npm --prefix packages/trellage-cli run check
+
+pre-push:
+  jobs:
+    - name: broad deterministic contracts
+      run: make pre-push
+    - name: sandbox entry contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- profiles prototypes/trellage || make copilot-entry pi-entry prime-entry
+    - name: native Codex contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-codex-profiles || make native-codex-profiles
+    - name: native Copilot contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-copilot-profiles || make native-copilot-profiles
+    - name: native Grok contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-grok-profiles || make native-grok-profiles
+    - name: native jcode contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-jcode-profiles || make native-jcode-profile
+    - name: native OMP contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-omp-profiles || make native-omp-profile
+    - name: native Prime contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-prime-profiles || make native-prime-profile
+    - name: native router contract
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-router || make native-profile-router

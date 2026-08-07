@@ -22,15 +22,15 @@ active_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 
 case "$hook_name" in
-  pre-commit)
+  pre-commit|pre-push)
     lefthook="${active_root}/packages/trellage-cli/node_modules/.bin/lefthook"
     if [ ! -x "$lefthook" ]; then
       printf '%s\n' \
-        "trellage pre-commit: Lefthook is missing or not executable at ${lefthook}" \
+        "trellage ${hook_name}: Lefthook is missing or not executable at ${lefthook}" \
         "Run 'npm ci' in ${active_root}/packages/trellage-cli and retry." >&2
       exit 1
     fi
-    exec "$lefthook" run pre-commit "$@"
+    exec "$lefthook" run "$hook_name" --no-auto-install "$@"
     ;;
   post-merge|post-rewrite)
     command -v npm >/dev/null 2>&1 || {
@@ -50,6 +50,6 @@ EOF
   mv -f -- "$temp_hook" "$hook_path"
 }
 
-for hook_name in pre-commit post-merge post-rewrite; do
+for hook_name in pre-commit pre-push post-merge post-rewrite; do
   install_hook "$hook_name"
 done

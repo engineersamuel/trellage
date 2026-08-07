@@ -7,13 +7,35 @@ make test
 git diff --check
 ```
 
-The default publication contract is a one-time local release gate: it verifies the exact two-commit history, branch refs, identities, and absence of remotes and tags. CI uses the durable tree scan while running the same full deterministic suite because an ordinary Actions checkout has different temporary refs and a configured remote:
+Install the locked profile compiler dependencies once to install the repository
+Git hooks:
 
 ```bash
-make test PUBLICATION_CONTRACT_ARGS=--tree-only
+npm ci --prefix packages/trellage-cli
+npm ci --prefix tests/playwright
 ```
 
-Tree-only mode skips only those point-in-time Git topology assertions. Privacy, ignored and forbidden paths, repository identity, package and license metadata, obvious-secret scans, and generic-only content checks remain mandatory.
+Each commit runs staged whitespace validation plus profile compiler lint,
+format, and type checks in parallel. Each push runs a broad deterministic suite
+plus slower sandbox or native profile contracts selected from the paths being
+pushed. Makefile changes run the broad target; use exact CI parity for changes
+to slow native lifecycle wiring. This catches common failures without imposing
+the full suite's runtime on every push.
+
+Run exact GitHub Actions parity explicitly before high-risk pushes:
+
+```bash
+make test
+```
+
+The default publication contract is the durable tree scan used by both local
+verification and CI. The one-time sanitized-history release audit also checks
+commit identities, exact history and branch refs, and the absence of remotes
+and tags:
+
+```bash
+make publication-history-audit
+```
 
 Discover the shared TODO browser matrix after installing its locked dependencies:
 

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 cd "${ROOT}"
 
 fail() {
@@ -165,6 +166,7 @@ git -C "${lefthook_primary}" commit -qm "contract fixture"
 git -C "${lefthook_primary}" worktree add -q "${lefthook_linked}"
 mkdir -p "${lefthook_linked}/packages/trellage-cli"
 lefthook_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+pre_push_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-push)"
 post_merge_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-merge)"
 post_rewrite_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-rewrite)"
 [[ "${lefthook_hook}" == "${lefthook_custom_hooks}/pre-commit" ]] \
@@ -175,9 +177,10 @@ post_rewrite_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolut
 )
 
 [[ -x "${lefthook_hook}" ]] || fail "installer did not create executable effective pre-commit hook"
+[[ -x "${pre_push_hook}" ]] || fail "installer did not create executable pre-push hook"
 [[ -x "${post_merge_hook}" ]] || fail "installer did not create executable post-merge hook"
 [[ -x "${post_rewrite_hook}" ]] || fail "installer did not create executable post-rewrite hook"
-for installed_hook in "${lefthook_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
+for installed_hook in "${lefthook_hook}" "${pre_push_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
   if grep -Fq -- "${lefthook_linked}" "${installed_hook}"; then
     fail "installed Git hook embeds linked-worktree path: ${installed_hook}"
   fi
@@ -197,9 +200,20 @@ chmod +x "${lefthook_fake_dir}/lefthook"
   LEFTHOOK_CONTRACT_ARGS="${lefthook_args}" \
     "${lefthook_hook}" "forwarded" "two words"
 )
-printf 'run\npre-commit\nforwarded\ntwo words\n' >"${lefthook_regression_root}/expected-args"
+printf 'run\npre-commit\n--no-auto-install\nforwarded\ntwo words\n' \
+  >"${lefthook_regression_root}/expected-args"
 cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
   || fail "installed pre-commit hook did not forward Lefthook command and arguments"
+
+(
+  cd "${lefthook_primary}"
+  LEFTHOOK_CONTRACT_ARGS="${lefthook_args}" \
+    "${pre_push_hook}" "origin" "git@example.invalid:trellage.git"
+)
+printf 'run\npre-push\n--no-auto-install\norigin\ngit@example.invalid:trellage.git\n' \
+  >"${lefthook_regression_root}/expected-args"
+cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
+  || fail "installed pre-push hook did not forward Lefthook command and arguments"
 
 npm_fake_dir="${lefthook_regression_root}/fake-npm"
 npm_args="${lefthook_regression_root}/npm-args"
