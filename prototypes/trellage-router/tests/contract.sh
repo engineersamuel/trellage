@@ -148,6 +148,7 @@ EOF
 
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
 create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v1
+create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
@@ -173,6 +174,7 @@ assert_contains 'trx -i [LAUNCHER_ARGS...]' "$fixture_root/help.out"
   || fail 'human list failed'
 assert_contains $'cpx/cpx-p\t' "$fixture_root/list.out"
 assert_contains $'cdx/cdx-p\tcdx' "$fixture_root/list.out"
+assert_contains $'cldx/cldx-p\tcldx' "$fixture_root/list.out"
 assert_contains $'grx/grx-p\tgrx' "$fixture_root/list.out"
 assert_contains $'jcx/jcx-p\tjcx' "$fixture_root/list.out"
 assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
@@ -189,6 +191,7 @@ jq -e '
   and [.profiles[] | .launcher + "/" + .name] == [
     "cpx/cpx-p",
     "cdx/cdx-p",
+    "cldx/cldx-p",
     "grx/grx-p",
     "jcx/jcx-p",
     "omp/copilot",
@@ -198,6 +201,7 @@ jq -e '
   and [.profiles[] | .harness] == [
     "copilot",
     "codex",
+    "claude",
     "grok",
     "jcode",
     "oh-my-pi",
@@ -268,6 +272,11 @@ jq -e '
     and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choice omitted concise catalog data or launch readiness status'
+jq -e '
+  [.choices[] | select(.label == "claude / cldx-p")]
+  | length == 1
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router choices omitted Claude profile'
 jq -e '
   [.choices[] | select(.label == "oh-my-pi / copilot" or .label == "oh-my-pi / local")]
   | length == 2
@@ -343,6 +352,15 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing.out" \
 assert_contains 'required launcher not found on PATH: grx' "$fixture_root/missing.out"
 mv "$fixture_bin/grx.absent" "$fixture_bin/grx"
 
+mv "$fixture_bin/cldx" "$fixture_bin/cldx.absent"
+status=0
+"$fixture_bin/trx" list >"$fixture_root/list-missing-cldx.out" \
+  2>"$fixture_root/list-missing-cldx.err" || status=$?
+[[ "$status" == 1 ]] || fail "missing cldx list exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: cldx' \
+  "$fixture_root/list-missing-cldx.err"
+mv "$fixture_bin/cldx.absent" "$fixture_bin/cldx"
+
 mv "$fixture_bin/omp" "$fixture_bin/omp.absent"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-omp.out" \
@@ -414,7 +432,8 @@ ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
-  && -x "$runtime_parent/grx/bin/grx" && -x "$runtime_parent/jcx/bin/jcx" \
+  && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/grx/bin/grx" \
+  && -x "$runtime_parent/jcx/bin/jcx" \
   && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/prx/bin/prx" ]] \
   || fail 'uninstaller changed native launchers'
 assert_contains 'Uninstalled trx.' "$fixture_root/uninstall.out"

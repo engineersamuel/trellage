@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly model_id='claude-opus-5'
+readonly sonnet_model_id='claude-sonnet-5'
+readonly haiku_model_id='claude-haiku-4.5'
+readonly proxy_origin='http://127.0.0.1:8080'
+readonly proxy_token='trellage-local-proxy'
+readonly profile_marker_value='trellage-claude-profile-v1'
+
+die() {
+  printf 'cldx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  cldx [CLAUDE_ARGS...]
+  cldx default [CLAUDE_ARGS...]
+  cldx list [--json]
+  cldx setup [default]
+  cldx doctor [default]
+  cldx repair [default]
+
+Bare cldx invocations use the default profile.
+EOF
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+resolve_file() {
+  local path="$1" directory target links=0
+
+  [[ "$path" == /* ]] || {
+    directory="$(canonical_directory "$(dirname "$path")")" || return 1
+    path="$directory/$(basename "$path")"
+  }
+  while [[ -L "$path" ]]; do
+    ((links += 1))
+    ((links <= 40)) || return 1
+    directory="$(canonical_directory "$(dirname "$path")")" || return 1
+    target="$(readlink "$path")" || return 1
+    if [[ "$target" == /* ]]; then
+      path="$target"
+    else
+      path="$directory/$target"
+    fi
+  done
+  directory="$(canonical_directory "$(dirname "$path")")" || return 1
+  printf '%s/%s\n' "$directory" "$(basename "$path")"
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve runtime root'
+readonly catalog="$runtime_root/catalog.json"
+readonly profile_root="$HOME/.local/share/trellage/profiles/claude/default"
+readonly profile_home="$profile_root/home"
+readonly profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
+readonly onboarding="$profile_home/.claude.json"
+
+validate_catalog() {
+  [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
+    || die "invalid catalog: $catalog"
+  jq -e '
+    type == "object"
+    and keys == ["profiles", "schemaVersion"]
+    and .schemaVersion == 1
+    and (.profiles | type == "object" and keys == ["default"])
+    and (.profiles.default | type == "object")
+    and (.profiles.default | keys == ["description", "plugin", "standaloneMcps"])
+    and (.profiles.default.description | type == "string" and length > 0)
+    and .profiles.default.plugin == null
+    and .profiles.default.standaloneMcps == []
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries[] | [.key, .value.description] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "cldx",
+      harness: "claude",
+      profiles: [
+        .profiles
+        | to_entries[]
+        | {
+            name: .key,
+            description: .value.description,
+            plugin: .value.plugin,
+            source: "anthropics/claude-code",
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+require_default_profile() {
+  [[ "${1-default}" == default ]] || die "unknown profile: $1"
+}
+
+require_safe_home() {
+  local canonical_home
+
+  [[ "$HOME" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die "unsafe HOME: $HOME"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+}
+
+require_safe_profile_path() {
+  local path="$HOME" component canonical_home canonical_path
+
+  require_safe_home
+  canonical_home="$(canonical_directory "$HOME")"
+  for component in .local share trellage profiles claude default home; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe profile path: $path"
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || die "unsafe profile path: $path"
+      canonical_path="$(canonical_directory "$path")" || die "cannot resolve profile path: $path"
+      case "$canonical_path" in
+        "$canonical_home"/*) ;;
+        *) die "redirected profile path: $path" ;;
+      esac
+    fi
+  done
+}
+
+profile_is_owned_or_empty() {
+  local existing
+
+  if [[ -e "$profile_marker" || -L "$profile_marker" ]]; then
+    [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+    [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] || return 1
+    return 0
+  fi
+  [[ ! -e "$profile_root" ]] && return 0
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  [[ -z "$existing" ]]
+}
+
+prepare_profile() {
+  local path="$HOME" component marker_stage
+
+  require_safe_profile_path
+  profile_is_owned_or_empty || die "refusing unrelated existing profile files: $profile_root"
+  for component in .local share trellage profiles claude default home; do
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+  chmod 0700 "$profile_root" "$profile_home"
+  marker_stage="$(mktemp "$profile_root/.ownership.XXXXXX")" \
+    || die 'could not stage profile ownership'
+  printf '%s\n' "$profile_marker_value" >"$marker_stage"
+  chmod 0600 "$marker_stage"
+  mv -f "$marker_stage" "$profile_marker"
+}
+
+require_owned_profile() {
+  require_safe_profile_path
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
+    || die 'profile is not managed; run cldx setup'
+  [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
+    || die "profile ownership marker differs: $profile_marker"
+}
+
+claude_executable() {
+  local executable resolved
+
+  executable="$(command -v claude 2>/dev/null)" || die 'required command not found: claude'
+  [[ "$executable" == */* ]] || die "unsafe claude executable: $executable"
+  resolved="$(resolve_file "$executable")" || die "cannot resolve claude executable: $executable"
+  [[ -f "$resolved" && -x "$resolved" && ! -L "$resolved" ]] \
+    || die "unsafe claude executable: $resolved"
+  printf '%s\n' "$resolved"
+}
+
+claude_version() {
+  local executable="$1" output version
+
+  output="$("$executable" --version)" || die 'could not run Claude Code'
+  version="$(sed -nE 's/.*(^|[^0-9])([0-9]+\.[0-9]+\.[0-9]+)([^0-9]|$).*/\2/p' <<<"$output" | head -n 1)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || die "could not determine Claude Code version: $output"
+  printf '%s\n' "$version"
+}
+
+ensure_onboarding() {
+  local version="$1" staged
+
+  [[ ! -L "$onboarding" && ( ! -e "$onboarding" || -f "$onboarding" ) ]] \
+    || die "unsafe Claude onboarding state: $onboarding"
+  staged="$(mktemp "$profile_home/.claude.json.XXXXXX")" \
+    || die 'could not stage Claude onboarding state'
+  if [[ -e "$onboarding" ]]; then
+    jq --arg version "$version" '
+      if type != "object" then error("onboarding state must be an object") else . end
+      | .hasCompletedOnboarding = true
+      | .lastOnboardingVersion = $version
+      | .shiftEnterKeyBindingInstalled = true
+      | .theme = (.theme // "dark")
+    ' "$onboarding" >"$staged" || die "invalid Claude onboarding state: $onboarding"
+  else
+    jq -n --arg version "$version" '{
+      hasCompletedOnboarding: true,
+      lastOnboardingVersion: $version,
+      shiftEnterKeyBindingInstalled: true,
+      theme: "dark"
+    }' >"$staged"
+  fi
+  chmod 0600 "$staged"
+  mv -f "$staged" "$onboarding"
+}
+
+verify_onboarding() {
+  [[ -f "$onboarding" && ! -L "$onboarding" ]] \
+    || die 'Claude onboarding state is missing; run cldx repair'
+  jq -e '
+    type == "object"
+    and .hasCompletedOnboarding == true
+    and (.lastOnboardingVersion | type == "string"
+      and test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+    and .shiftEnterKeyBindingInstalled == true
+    and (.theme | type == "string" and length > 0)
+  ' "$onboarding" >/dev/null || die 'Claude onboarding state differs; run cldx repair'
+}
+
+check_proxy() {
+  local health models
+
+  require_command curl
+  health="$(curl -fsS --max-time 5 "$proxy_origin/health")" \
+    || die 'copilot-proxy-rs health check failed'
+  jq -e '.status == "ok" or .status == "healthy"' <<<"$health" >/dev/null \
+    || die 'copilot-proxy-rs health response is invalid'
+  models="$(curl -fsS --max-time 5 "$proxy_origin/v1/models")" \
+    || die 'copilot-proxy-rs model discovery failed'
+  jq -e --arg model "$model_id" '
+    (.data // .models // []) | any((.id // .slug) == $model)
+  ' <<<"$models" >/dev/null || die "copilot-proxy-rs model is missing: $model_id"
+}
+
+setup_profile() {
+  local executable version
+
+  require_command jq
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  prepare_profile
+  ensure_onboarding "$version"
+  check_proxy
+  printf 'cldx setup: ready (%s, %s)\n' "$version" "$model_id"
+}
+
+repair_profile() {
+  local executable version
+
+  require_command jq
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  require_owned_profile
+  ensure_onboarding "$version"
+  check_proxy
+  printf 'cldx repair: restored (%s, %s)\n' "$version" "$model_id"
+}
+
+doctor_profile() {
+  local executable version
+
+  require_command jq
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  require_owned_profile
+  verify_onboarding
+  check_proxy
+  printf 'cldx doctor: OK (%s, %s)\n' "$version" "$model_id"
+}
+
+launch_profile() {
+  local executable version arg has_model=false
+
+  require_command jq
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  require_owned_profile
+  ensure_onboarding "$version"
+  check_proxy
+
+  for arg in "$@"; do
+    if [[ "$arg" == --model || "$arg" == --model=* ]]; then
+      has_model=true
+      break
+    fi
+  done
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
+  unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+  unset CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN AWS_PROFILE GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID
+  unset CLOUD_ML_REGION AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID OPENAI_API_KEY
+  unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+
+  if [[ "$has_model" == true ]]; then
+    exec env \
+      CLAUDE_CONFIG_DIR="$profile_home" \
+      ANTHROPIC_AUTH_TOKEN="$proxy_token" \
+      ANTHROPIC_BASE_URL="$proxy_origin" \
+      ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
+      ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
+      ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
+      "$executable" "$@"
+  fi
+  exec env \
+    CLAUDE_CONFIG_DIR="$profile_home" \
+    ANTHROPIC_AUTH_TOKEN="$proxy_token" \
+    ANTHROPIC_BASE_URL="$proxy_origin" \
+    ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
+    ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
+    "$executable" --model "$model_id" "$@"
+}
+
+require_safe_home
+require_command jq
+validate_catalog
+
+case "${1-}" in
+  help|-h|--help)
+    usage
+    ;;
+  list)
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      list_profiles
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  setup|doctor|repair)
+    command_name="$1"
+    shift
+    [[ "$#" -le 1 ]] || die "usage: cldx $command_name [default]"
+    require_default_profile "${1-default}"
+    "${command_name}_profile"
+    ;;
+  default)
+    shift
+    launch_profile "$@"
+    ;;
+  *)
+    launch_profile "$@"
+    ;;
+esac

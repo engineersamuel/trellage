@@ -68,7 +68,7 @@ selected plugin's validated cache paths, broader CLI-visible entries from static
 `debug prompt-input`, and MCP names. Unrelated marketplace caches are never
 scanned.
 
-After installing `cpx`, `cdx`, `grx`, and the
+After installing every launcher required by the
 [`trx` router](../trellage-router/README.md), run `trx -i` for one flat
 harness/profile picker. `trx` forwards remaining arguments to `cdx` unchanged
 after selection and never performs setup, repair, or update.

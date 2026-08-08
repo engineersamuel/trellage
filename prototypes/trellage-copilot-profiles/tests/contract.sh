@@ -417,6 +417,18 @@ actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_arg
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
 
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" hve
+) >"$fixture_root/bare-launch.out"
+expected_bare_launch="$(jq -cn \
+  --arg home "$expected_hve_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--allow-all"]}')"
+actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
+[[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
+  || fail 'bare launch did not add the default permission argument'
+
 permission_argument_vectors=(
   '--allow-all'
   '--yolo'
@@ -612,7 +624,7 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
 
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '22' ]] \
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '23' ]] \
   || fail 'launch performed implicit setup or update mutation'
 
 list_output="$fixture_root/list.out"
@@ -640,7 +652,7 @@ jq -e '
   and .profiles[1].marketplace.kind == "git"
   and .profiles[2].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '22' ]] \
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '23' ]] \
   || fail 'list invoked Copilot'
 
 mkdir -p "$expected_hve_home/fake-state"

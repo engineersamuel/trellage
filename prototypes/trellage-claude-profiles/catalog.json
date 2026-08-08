@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "description": "Claude Code using keyless copilot-proxy-rs with Claude Opus 5 by default.",
+      "plugin": null,
+      "standaloneMcps": []
+    }
+  }
+}

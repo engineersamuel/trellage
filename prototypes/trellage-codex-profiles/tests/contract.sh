@@ -580,6 +580,12 @@ case "$*" in
           ;;
       esac
     fi
+    if [ "${FAKE_CODEX_TTY_READ:-}" = 1 ]; then
+      printf 'TTY_READ_READY\n'
+      IFS= read -r tty_input
+      [ "$tty_input" = continue ] || exit 89
+      printf 'TTY_READ_DONE\n'
+    fi
     exit "${FAKE_CODEX_EXIT_STATUS:-0}"
     ;;
 esac
@@ -739,6 +745,55 @@ cp "$hve_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   "$fixture_launcher" hve -m gpt-5.5 exec --json 'hello world') \
   || fail 'hve launch failed'
+
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
+python3 - "$fixture_launcher" <<'PY' \
+  || fail 'interactive Codex launch could not read from the foreground terminal'
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+launcher = sys.argv[1]
+pid, terminal = pty.fork()
+if pid == 0:
+    environment = os.environ.copy()
+    environment["FAKE_CODEX_TTY_READ"] = "1"
+    os.execvpe(launcher, [launcher, "hve", "--version"], environment)
+
+output = bytearray()
+sent = False
+status = None
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline:
+    ready, _, _ = select.select([terminal], [], [], 0.05)
+    if ready:
+        try:
+            chunk = os.read(terminal, 4096)
+        except OSError:
+            chunk = b""
+        output.extend(chunk)
+        if not sent and b"TTY_READ_READY" in output:
+            os.write(terminal, b"continue\n")
+            sent = True
+    waited, wait_status = os.waitpid(pid, os.WNOHANG)
+    if waited:
+        status = os.waitstatus_to_exitcode(wait_status)
+        break
+
+if status is None:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    sys.stderr.buffer.write(output)
+    raise SystemExit(1)
+if status != 0 or b"TTY_READ_DONE" not in output:
+    sys.stderr.buffer.write(output)
+    raise SystemExit(1)
+PY
+
 cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
   || fail 'proxy launch did not restore exact prelaunch config bytes'
 jq -se --arg codexHome "$hve_home" \
