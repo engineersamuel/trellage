@@ -2260,7 +2260,7 @@ cleanup_launch_config() {
 run_codex_child() {
   local profile="$1" native="$2"
   local target="$(profile_home "$profile")/config.toml"
-  local before child_status cleanup_status wait_status
+  local before child_status cleanup_status wait_status monitor_child=yes
   shift 2
 
   safe_config_target "$profile"
@@ -2281,14 +2281,18 @@ run_codex_child() {
   trap 'launch_signal HUP' HUP
   trap 'launch_signal INT' INT
   trap 'launch_signal TERM' TERM
-  set -m
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    monitor_child=no
+  else
+    set -m
+  fi
   if [ "$native" = yes ]; then
     env CODEX_HOME="$(profile_home "$profile")" \
       "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
-      -c 'model_provider="openai"' "$@" &
+      -c 'model_provider="openai"' "$@" <&0 &
   else
     env CODEX_HOME="$(profile_home "$profile")" \
-      "$codex_executable" --dangerously-bypass-approvals-and-sandbox "$@" &
+      "$codex_executable" --dangerously-bypass-approvals-and-sandbox "$@" <&0 &
   fi
   launch_child_pid=$!
   case "$launch_signal_status" in
@@ -2296,7 +2300,7 @@ run_codex_child() {
     130) launch_signal INT ;;
     143) launch_signal TERM ;;
   esac
-  set +m
+  [ "$monitor_child" = no ] || set +m
   while :; do
     wait "$launch_child_pid" 2>/dev/null
     wait_status=$?

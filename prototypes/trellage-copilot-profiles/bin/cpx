@@ -210,14 +210,12 @@ has_explicit_permission() {
 launch_profile() {
   local profile="$1"
   shift
-  local copilot_args=("$@")
-
-  if ! has_explicit_permission "${copilot_args[@]}"; then
-    copilot_args=(--allow-all "${copilot_args[@]}")
-  fi
 
   require_no_forbidden_superpowers "$profile"
-  exec env COPILOT_HOME="$(profile_home "$profile")" copilot "${copilot_args[@]}"
+  if has_explicit_permission "$@"; then
+    exec env COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
+  fi
+  exec env COPILOT_HOME="$(profile_home "$profile")" copilot --allow-all "$@"
 }
 
 installed_version() {

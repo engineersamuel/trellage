@@ -334,6 +334,7 @@ repository root:
 ```bash
 (cd prototypes/trellage-codex-profiles && ./install.sh)
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
+(cd prototypes/trellage-claude-profiles && ./install.sh)
 (cd prototypes/trellage-grok-profiles && ./install.sh)
 (cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
@@ -345,6 +346,7 @@ The installers publish these commands and managed runtimes:
 
 - `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
 - `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
+- `cldx`: `~/.local/bin/cldx` and `~/.local/share/trellage/cldx/`
 - `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
 - `jcx`: `~/.local/bin/jcx` and `~/.local/share/trellage/jcx/`
 - `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
@@ -356,6 +358,7 @@ Their isolated profile homes are rooted at:
 ```text
 ~/.local/share/trellage/profiles/codex/<profile>/home/
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
+~/.local/share/trellage/profiles/claude/default/home/
 ~/.local/share/trellage/profiles/grok/<profile>/home/
 ~/.local/share/trellage/profiles/jcode/default/home/
 ~/.local/share/trellage/profiles/prime/default/home/
@@ -399,7 +402,23 @@ is an explicit per-launch opt-in:
 cdx --native-auth hve exec "Review this repository"
 ```
 
-After the six native profile launchers and `trx` are installed, list the
+The native `cldx` launcher runs the host `claude` executable with isolated
+state and keyless `copilot-proxy-rs` at `http://127.0.0.1:8080`. It defaults to
+`claude-opus-5`; an explicit `--model` argument wins:
+
+```bash
+cldx setup
+cldx doctor
+cldx -p "Reply exactly CLDX_OK"
+cldx --model claude-sonnet-5 -p "Reply exactly CLDX_SONNET_OK"
+cldx repair
+```
+
+No host model credentials are copied. Launch scrubs ambient provider and token
+variables before setting only the local proxy environment. See the
+[native Claude guide](prototypes/trellage-claude-profiles/README.md).
+
+After the seven native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
 
 ```bash
@@ -498,7 +517,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `jcx` launcher has its own contract and router integration but is not yet part of the plugin-oriented profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `cldx` and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-oriented profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 

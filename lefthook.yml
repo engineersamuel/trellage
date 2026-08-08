@@ -20,6 +20,8 @@ pre-push:
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-codex-profiles || make native-codex-profiles
     - name: native Copilot contracts
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-copilot-profiles || make native-copilot-profiles
+    - name: native Claude contracts
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-claude-profiles || make native-claude-profile
     - name: native Grok contracts
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-grok-profiles || make native-grok-profiles
     - name: native jcode contracts

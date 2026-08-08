@@ -66,7 +66,7 @@ safely validated installed root, broader CLI-visible entries, and enabled MCP
 names. Non-cataloged enabled plugins use version `"unknown"` when Grok does not
 report a version.
 
-After installing `cpx`, `cdx`, `grx`, and the
+After installing every launcher required by the
 [`trx` router](../trellage-router/README.md), run `trx -i` for one flat
 harness/profile picker. `trx` forwards remaining arguments to `grx` unchanged
 after selection and never performs setup, repair, or update.

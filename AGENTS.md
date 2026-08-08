@@ -2,14 +2,14 @@
 
 **Trellage Sandbox** compiles locked agent profiles and runs them in isolated
 Docker containers. **Trellage Native** runs profile launchers directly on the
-host. Examples: `trx`, `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx`.
+host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx`.
 
 ## Project overview
 
 - Trellage Sandbox profiles describe reproducible container environments.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries.
-- The `trx` router presents Trellage Native profiles. Examples: `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx` launchers.
+- The `trx` router presents Trellage Native profiles. Examples: `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx` launchers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
@@ -28,7 +28,7 @@ host. Examples: `trx`, `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
   `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
-  launchers (`cdx`/`cpx`/`grx`/`jcx`/`omp`/`prx`) then `trx`, then non-locked sandbox
+  launchers (`cdx`/`cpx`/`cldx`/`grx`/`jcx`/`omp`/`prx`) then `trx`, then non-locked sandbox
   `build` for each `profiles/*`. Use `--native-only` or `--sandbox-only` on the
   underlying script when you only need one side. Installed `post-merge` and
   `post-rewrite` hooks rebuild the compiler and refresh native launchers
@@ -38,7 +38,7 @@ host. Examples: `trx`, `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx`.
 
 - `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.
 - `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
-- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`cdx`, `cpx`, `grx`, `jcx`, `omp`, `prx`).
+- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `prx`).
 - `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
