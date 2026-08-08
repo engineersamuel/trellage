@@ -746,7 +746,8 @@ cp "$hve_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
   "$fixture_launcher" hve -m gpt-5.5 exec --json 'hello world') \
   || fail 'hve launch failed'
 
-PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
 python3 - "$fixture_launcher" <<'PY' \
   || fail 'interactive Codex launch could not read from the foreground terminal'
 import os
@@ -761,7 +762,7 @@ pid, terminal = pty.fork()
 if pid == 0:
     environment = os.environ.copy()
     environment["FAKE_CODEX_TTY_READ"] = "1"
-    os.execvpe(launcher, [launcher, "superpowers", "--version"], environment)
+    os.execvpe(launcher, [launcher, "hve", "--version"], environment)
 
 output = bytearray()
 sent = False
