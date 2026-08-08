@@ -137,6 +137,7 @@ jq -e '
   and .harness == "jcode"
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "1jehuang/jcode"
+  and .profiles[0].description == "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms."
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'

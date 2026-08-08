@@ -313,7 +313,7 @@ jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["awesome", "hve", "superpowers"]
   and .profiles.awesome == {
-    "description": "GitHub-curated general-purpose agents, prompts, instructions, and skills for coding, review, documentation, testing, and platform tasks.",
+    "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
     "marketplace": "github/awesome-copilot",
     "marketplaceName": "awesome-copilot",
     "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
@@ -321,7 +321,7 @@ jq -e '
     "standaloneMcps": []
   }
   and .profiles.hve == {
-    "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
+    "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
     "marketplace": "microsoft/hve-core",
     "marketplaceName": "hve-core",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
@@ -329,7 +329,7 @@ jq -e '
     "standaloneMcps": []
   }
   and .profiles.superpowers == {
-    "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
+    "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
     "marketplace": "obra/superpowers-marketplace",
     "marketplaceName": "superpowers-marketplace",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",

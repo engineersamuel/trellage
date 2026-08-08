@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "default": {
-      "description": "jcode using keyless copilot-proxy-rs with GPT-5.6 Sol and medium reasoning by default.",
+      "description": "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms.",
       "plugin": null,
       "standaloneMcps": []
     }

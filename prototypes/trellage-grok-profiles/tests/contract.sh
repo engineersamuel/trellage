@@ -180,14 +180,14 @@ jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["hve", "superpowers"]
   and .profiles.hve == {
-    "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
+    "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
     "source": "microsoft/hve-core#plugins/hve-core-all",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
     "plugin": "hve-core-all",
     "standaloneMcps": []
   }
   and .profiles.superpowers == {
-    "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
+    "description": "Grok Build with Superpowers’ design, TDD, debugging, review, verification, and branch-finishing skills, plus a separate Caveman plugin.",
     "source": "obra/superpowers",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
     "plugin": "superpowers",
