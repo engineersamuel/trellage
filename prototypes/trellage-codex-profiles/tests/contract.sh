@@ -141,7 +141,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["hve", "superpowers"]
-  and .profiles.hve.description == "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows."
+  and .profiles.hve.description == "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access."
   and .profiles.hve.marketplaceKind == "local-adapter"
   and .profiles.hve.marketplaceSource == "marketplaces/hve-core"
   and .profiles.hve.marketplaceName == "hve-core"
@@ -150,7 +150,7 @@ jq -e '
   and .profiles.hve.manifestUrl == "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
   and .profiles.hve.plugin == "hve-core-all@hve-core"
   and .profiles.hve.standaloneMcps == []
-  and .profiles.superpowers.description == "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly."
+  and .profiles.superpowers.description == "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow."
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
   and .profiles.superpowers.marketplaceName == "superpowers-marketplace"
