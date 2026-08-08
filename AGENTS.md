@@ -30,7 +30,9 @@ host. Examples: `trx`, `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx`.
   `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
   launchers (`cdx`/`cpx`/`grx`/`jcx`/`omp`/`prx`) then `trx`, then non-locked sandbox
   `build` for each `profiles/*`. Use `--native-only` or `--sandbox-only` on the
-  underlying script when you only need one side.
+  underlying script when you only need one side. Installed `post-merge` and
+  `post-rewrite` hooks rebuild the compiler and refresh native launchers
+  automatically when the local `main` worktree receives merged commits.
 
 ## Architecture
 

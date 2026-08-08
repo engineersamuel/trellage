@@ -5157,6 +5157,19 @@ write_legacy_fish "$edited_home"
 HOME="$edited_home" /bin/bash "$install_script" >/dev/null || fail 'edited fixture install failed'
 printf '# user edit\n' >>"$edited_home/.config/fish/config.fish"
 cp "$edited_home/.config/fish/config.fish" "$fixture_root/edited-fish-before"
+mkdir "$fixture_root/edited-recovery-before-reinstall"
+cp "$edited_home/.local/share/trellage/cdx/.fish-recovery/"* \
+  "$fixture_root/edited-recovery-before-reinstall/"
+HOME="$edited_home" /bin/bash "$install_script" \
+  >"$fixture_root/edited-reinstall.out" \
+  || fail 'reinstall rejected an unrelated Fish config edit'
+cmp -s "$edited_home/.config/fish/config.fish" "$fixture_root/edited-fish-before" \
+  || fail 'reinstall changed unrelated Fish config edits'
+for name in config-before original-mode sha256-before sha256-after removed-line; do
+  cmp -s "$edited_home/.local/share/trellage/cdx/.fish-recovery/$name" \
+    "$fixture_root/edited-recovery-before-reinstall/$name" \
+    || fail "reinstall changed Fish recovery metadata after unrelated edit: $name"
+done
 if HOME="$edited_home" /bin/bash "$uninstall_script" >"$fixture_root/edited-uninstall.out" 2>&1; then
   fail 'uninstall overwrote Fish config after a user edit'
 fi

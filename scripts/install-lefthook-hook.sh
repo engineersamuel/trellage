@@ -37,7 +37,18 @@ case "$hook_name" in
       printf 'trellage %s: npm is unavailable; rebuild the profile compiler manually.\n' "$hook_name" >&2
       exit 1
     }
-    exec npm --prefix "${active_root}/packages/trellage-cli" run build
+    npm --prefix "${active_root}/packages/trellage-cli" run build
+    branch="$(git branch --show-current)"
+    if [ "$branch" != main ]; then
+      exit 0
+    fi
+    native_refresh="${active_root}/scripts/rebuild-profile-images.sh"
+    if [ ! -x "$native_refresh" ]; then
+      printf 'trellage %s: native refresh script is missing or not executable: %s\n' \
+        "$hook_name" "$native_refresh" >&2
+      exit 1
+    fi
+    exec "$native_refresh" --native-only
     ;;
   *)
     printf 'trellage hook: unsupported hook name: %s\n' "$hook_name" >&2

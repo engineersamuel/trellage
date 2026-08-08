@@ -163,6 +163,7 @@ git -C "${lefthook_primary}" config core.hooksPath "${lefthook_custom_hooks}"
 touch "${lefthook_primary}/packages/trellage-cli/.keep"
 git -C "${lefthook_primary}" add packages/trellage-cli/.keep
 git -C "${lefthook_primary}" commit -qm "contract fixture"
+git -C "${lefthook_primary}" branch -M main
 git -C "${lefthook_primary}" worktree add -q "${lefthook_linked}"
 mkdir -p "${lefthook_linked}/packages/trellage-cli"
 lefthook_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
@@ -217,21 +218,34 @@ cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
 
 npm_fake_dir="${lefthook_regression_root}/fake-npm"
 npm_args="${lefthook_regression_root}/npm-args"
+native_args="${lefthook_regression_root}/native-args"
 mkdir -p "${npm_fake_dir}"
 cat >"${npm_fake_dir}/npm" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"${NPM_CONTRACT_ARGS:?}"
 EOF
 chmod +x "${npm_fake_dir}/npm"
+mkdir -p "${lefthook_primary}/scripts"
+cat >"${lefthook_primary}/scripts/rebuild-profile-images.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"${NATIVE_CONTRACT_ARGS:?}"
+EOF
+chmod +x "${lefthook_primary}/scripts/rebuild-profile-images.sh"
 for rebuild_hook in "${post_merge_hook}" "${post_rewrite_hook}"; do
   (
     cd "${lefthook_primary}"
-    PATH="${npm_fake_dir}:${PATH}" NPM_CONTRACT_ARGS="${npm_args}" "${rebuild_hook}"
+    PATH="${npm_fake_dir}:${PATH}" \
+      NPM_CONTRACT_ARGS="${npm_args}" \
+      NATIVE_CONTRACT_ARGS="${native_args}" \
+      "${rebuild_hook}"
   )
   printf '%s\n' --prefix "${lefthook_primary}/packages/trellage-cli" run build \
     >"${lefthook_regression_root}/expected-npm-args"
   cmp -s "${lefthook_regression_root}/expected-npm-args" "${npm_args}" \
     || fail "installed rebuild hook did not rebuild the active worktree compiler"
+  printf '%s\n' --native-only >"${lefthook_regression_root}/expected-native-args"
+  cmp -s "${lefthook_regression_root}/expected-native-args" "${native_args}" \
+    || fail "installed rebuild hook did not refresh native launchers"
 done
 
 rm -f -- "${lefthook_fake_dir}/lefthook"
