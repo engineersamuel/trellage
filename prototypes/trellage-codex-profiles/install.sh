@@ -507,9 +507,8 @@ fish_cutover=''
 if [ "$runtime_owned" = false ] && [ "$exact_count" -eq 1 ] \
   && [ "$definition_count" -eq 1 ]; then
   fish_cutover=fresh-alias
-elif [ "$runtime_owned" = true ] && [ "$exact_count" -eq 0 ] && [ "$definition_count" -eq 0 ] \
-  && [ -f "$install_root/.fish-recovery/sha256-after" ] \
-  && [ "$(sha256_file "$fish_config")" = "$(sed -n '1p' "$install_root/.fish-recovery/sha256-after")" ]; then
+elif [ "$runtime_owned" = true ] && [ "$exact_count" -eq 0 ] \
+  && [ "$definition_count" -eq 0 ]; then
   fish_cutover=reinstall
 elif [ "$runtime_owned" = false ] && [ "$exact_count" -eq 0 ] \
   && [ "$definition_count" -eq 0 ]; then
