@@ -324,10 +324,16 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       // over HTTPS (normally files.pythonhosted.org). Surface an actionable hint when
       // that CDN is unreachable; UV_DEFAULT_INDEX is forwarded from the host.
       "prime_kernel_status=0",
-      `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
+      `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PYTHONDONTWRITEBYTECODE=1 PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
       '[ "$prime_kernel_status" -eq 0 ] || { printf \'%s\\n\' "trellage: Prime Python kernel bootstrap failed (exit $prime_kernel_status)." >&2; printf \'%s\\n\' "This step needs a reachable PyPI simple index for uv seed packages, ipykernel, and default runtime packages." >&2; printf \'%s\\n\' "On Microsoft-managed devices, public pypi.org / files.pythonhosted.org are blocked; use the CFS feed (UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/) or configure pip global.index-url, then rebuild." >&2; printf \'%s\\n\' "Elsewhere, set UV_DEFAULT_INDEX or PIP_INDEX_URL to any reachable simple-index mirror." >&2; exit "$prime_kernel_status"; }',
       'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
-      'tar -C "$prime_kernel_home" -czf "$prime_kernel_seed" .trellage-prime-kernel .local/share/uv/python .prime/agent/kernel-venv',
+      'find "$prime_kernel_home" -type d -name __pycache__ -prune -exec rm -rf {} +',
+      'prime_runtime_record="$(find "$prime_kernel_home/.prime/agent/kernel-venv/lib" -path \'*/site-packages/prime_agent_runtime-*.dist-info/RECORD\' -type f -print -quit)"',
+      '[ -n "$prime_runtime_record" ]',
+      'prime_runtime_dist_info="$(dirname "$prime_runtime_record")"',
+      'rm -f "$prime_runtime_dist_info/uv_cache.json"',
+      "sed -i '/prime_agent_runtime-.*\\.dist-info\\/uv_cache\\.json,/d' \"$prime_runtime_record\"",
+      'tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -C "$prime_kernel_home" -cf - .trellage-prime-kernel .local/share/uv/python .prime/agent/kernel-venv | gzip -n > "$prime_kernel_seed"',
       'rm -rf "$prime_kernel_home"',
       build,
     ].join("; ")
@@ -536,7 +542,7 @@ const pluginGenerator: PluginGenerator = (sourceDirectory, selections, destinati
           "--",
           "uv",
           "run",
-          "--locked",
+          "--frozen",
           "--project",
           path.join(sourceDirectory, "plugins", "plugin-eval"),
           "python",
