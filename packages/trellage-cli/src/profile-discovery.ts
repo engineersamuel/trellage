@@ -6,8 +6,9 @@ import type { Platform } from "./platform.js"
 
 import {
   isClaudeProfile,
+  isCopilotProfile,
   isCodexProfile,
-  isPrimeProfile,
+  isPiProfile,
   parseProfile,
   type Mcp,
   type Profile,
@@ -81,14 +82,16 @@ interface DiscoveredProfile {
   readonly supportedPlatforms: ReadonlyArray<Platform>
 }
 
-const model = (profile: Profile): string | undefined =>
+const model = (profile: Profile): string =>
   isCodexProfile(profile)
     ? profile.harness.codex.model
-    : isClaudeProfile(profile)
-      ? profile.harness.claude.model
-      : isPrimeProfile(profile)
-        ? profile.harness.prime.model
-        : undefined
+    : isCopilotProfile(profile)
+      ? (profile.harness.copilot.model ?? "gpt-5.6-sol")
+      : isClaudeProfile(profile)
+        ? profile.harness.claude.model
+        : isPiProfile(profile)
+          ? profile.harness.pi.model
+          : profile.harness.prime.model
 
 const projectMcp = (mcp: Mcp): ProfileChoiceMcp => {
   const common = {

@@ -21,9 +21,15 @@ for input in "${inputs[@]}"; do
   }
 done
 
-{
-  for input in "${inputs[@]}"; do
-    printf '%s\0' "${input#"$repo_root"/}"
-    shasum -a 256 "$input" | awk '{print $1}'
-  done
-} | shasum -a 256 | awk '{print $1}'
+shasum -a 256 "${inputs[@]}" \
+  | awk -v root="$repo_root/" '
+      {
+        digest = $1
+        absolute = substr($0, length($1) + 3)
+        if (index(absolute, root) != 1) exit 1
+        relative = substr(absolute, length(root) + 1)
+        printf "%s%c%s\n", relative, 0, digest
+      }
+    ' \
+  | shasum -a 256 \
+  | awk '{print $1}'

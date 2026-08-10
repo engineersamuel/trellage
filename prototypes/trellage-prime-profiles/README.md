@@ -2,8 +2,8 @@
 
 `prx` runs [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)
 directly on the host with an isolated profile. It uses keyless
-`copilot-proxy-rs` at `http://127.0.0.1:8080` (Anthropic Messages API) and pins
-the provider and model to `copilot-proxy-rs` and `claude-opus-5`.
+`copilot-proxy-rs` at `http://127.0.0.1:8080` (Anthropic Messages API), pins
+the provider to `copilot-proxy-rs`, and defaults the model to `claude-opus-5`.
 
 This launcher is independent of the Docker `prime-agent` Trellage Sandbox
 profile. Native launchers isolate agent state but are not security boundaries.
@@ -18,10 +18,10 @@ profile. Native launchers isolate agent state but are not security boundaries.
 - `copilot-proxy-rs` listening on `http://127.0.0.1:8080`
 
 No host model credentials are copied. The launcher materializes an owned
-`models.json` with a dummy proxy API key and restores it on every launch so
-persisted edits cannot redirect the endpoint or model. Launch unsets
-`ANTHROPIC_*`, `OPENAI_API_KEY`, `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, and
-`GITHUB_TOKEN`.
+`models.json` with a dummy proxy API key and restores the exact provider and
+selected model on every launch so persisted edits cannot redirect the endpoint.
+Launch unsets `ANTHROPIC_*`, `OPENAI_API_KEY`, `COPILOT_GITHUB_TOKEN`,
+`GH_TOKEN`, and `GITHUB_TOKEN`.
 
 ## Install and lifecycle
 
@@ -84,10 +84,10 @@ prx default
 prx -p "Reply exactly PRX_OK"
 ```
 
-Arguments pass unchanged after fixed
-`--provider copilot-proxy-rs --model claude-opus-5 --offline` flags.
-`doctor` and every launch verify the proxy health response and confirm that
-`claude-opus-5` is advertised.
+Arguments pass after managed `--provider copilot-proxy-rs`, `--model`, and
+`--offline` flags. Pass `--model MODEL` or `--model=MODEL` to select another
+model advertised by the proxy. `doctor` verifies proxy health and confirms that
+the default `claude-opus-5` model is advertised.
 
 Long-running interactive sessions may leave Prime background workers on the
 profile socket. Stop them with:

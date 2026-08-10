@@ -39,7 +39,7 @@ require_owned_runtime_contents() {
   while IFS= read -r path; do
     case "$path" in
       "$ownership_marker"|"$install_root/bin"|"$installed_launcher"|\
-      "$install_root/lib"|"$install_root/lib/terminal-picker.mjs") ;;
+      "$install_root/lib"|"$install_root/lib/launcher.mjs") ;;
       *) refuse "refusing unrelated runtime path: $path" ;;
     esac
   done < <(find "$install_root" -mindepth 1 -maxdepth 2 -print)
@@ -76,8 +76,8 @@ fi
   || refuse "refusing unsafe managed runtime: $install_root/lib"
 [[ -f "$installed_launcher" && ! -L "$installed_launcher" ]] \
   || refuse "refusing unsafe managed launcher: $installed_launcher"
-[[ -f "$install_root/lib/terminal-picker.mjs" && ! -L "$install_root/lib/terminal-picker.mjs" ]] \
-  || refuse "refusing unsafe managed picker"
+[[ -f "$install_root/lib/launcher.mjs" && ! -L "$install_root/lib/launcher.mjs" ]] \
+  || refuse "refusing unsafe managed launcher UI"
 require_owned_runtime_contents
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
@@ -86,6 +86,6 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
   rm "$command_path"
 fi
 
-rm "$installed_launcher" "$install_root/lib/terminal-picker.mjs" "$ownership_marker"
+rm "$installed_launcher" "$install_root/lib/launcher.mjs" "$ownership_marker"
 rmdir "$install_root/bin" "$install_root/lib" "$install_root"
 printf 'Uninstalled trx.\n'

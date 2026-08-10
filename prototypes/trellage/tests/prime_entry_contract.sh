@@ -168,6 +168,12 @@ cmp -s "$root/prime-seed/APPEND_SYSTEM.md" "$root/home/.prime/agent/APPEND_SYSTE
 run_entry new --unsafe
 expected_new_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--unsafe'
 [[ "$(cat "$root/output/argv")" == "$expected_new_argv" ]] || fail 'interactive mode changed Prime argv'
+run_entry new --unsafe --model vendor/custom
+expected_custom_argv=$'--provider\ncopilot-proxy-rs\n--model\nvendor/custom\n--offline\n--unsafe'
+[[ "$(cat "$root/output/argv")" == "$expected_custom_argv" ]] \
+  || fail 'custom model did not replace the Prime launch default'
+mutate_home 'jq -e '\''[.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5", "vendor/custom"]'\'' /home/agent/.prime/agent/models.json >/dev/null' \
+  || fail 'custom model was not materialized in managed Prime configuration'
 
 run_entry new --unsafe -- 'new prompt'
 expected_new_prompt_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--unsafe\n--\nnew prompt'

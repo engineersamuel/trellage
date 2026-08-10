@@ -35,8 +35,12 @@ while time.monotonic() < deadline:
         except OSError:
             chunk = b""
         output.extend(chunk)
-        if not sent_keys and b"Enter select" in output:
-            os.write(terminal, keys.encode("utf-8").decode("unicode_escape").encode("latin1"))
+        if not sent_keys and output:
+            time.sleep(0.1)
+            try:
+                os.write(terminal, keys.encode("utf-8").decode("unicode_escape").encode("latin1"))
+            except OSError:
+                pass
             sent_keys = True
         if signal_marker and not sent_signal and signal_marker.encode() in output:
             os.kill(pid, signal.SIGTERM)

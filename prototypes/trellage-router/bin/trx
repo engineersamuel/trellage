@@ -11,13 +11,11 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
+  trx
   trx list [--json]
-  trx -i [LAUNCHER_ARGS...]
-  trx --interactive [LAUNCHER_ARGS...]
 
-List installed native harness/profile pairs, or select one interactively and
-launch it. Arguments after -i or --interactive are forwarded unchanged to the
-selected launcher.
+Select an installed native harness/profile interactively, or list available
+profiles. Bare trx opens the launcher.
 EOF
 }
 
@@ -151,16 +149,67 @@ build_choices() {
     --argjson grxCatalog "$4" \
     --argjson jcxCatalog "$5" \
     --argjson ompCatalog "$6" \
-    --argjson prxCatalog "$7" '
+    --argjson prxCatalog "$7" \
+    --arg cpxPath "$8" \
+    --arg cdxPath "$9" \
+    --arg cldxPath "${10}" \
+    --arg grxPath "${11}" \
+    --arg jcxPath "${12}" \
+    --arg ompPath "${13}" \
+    --arg prxPath "${14}" \
+    --argjson passthroughArgs "${15}" '
+    def models($catalog; $profile):
+      if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
+        {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
+      elif $catalog.launcher == "cldx" then
+        {defaultModel:"claude-opus-5",models:["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"],modelOverrideSupported:true}
+      elif $catalog.launcher == "omp" and $profile.name == "copilot" then
+        {defaultModel:"github-copilot/gpt-5.6-sol:medium",models:["github-copilot/gpt-5.6-sol:medium","github-copilot/gpt-5.6-terra:medium"],modelOverrideSupported:true}
+      elif $catalog.launcher == "omp" then
+        {defaultModel:"copilot-proxy-rs/qwen3.6-35b-a3b-local",models:["copilot-proxy-rs/qwen3.6-35b-a3b-local"],modelOverrideSupported:false}
+      elif $catalog.launcher == "grx" then
+        {defaultModel:"grok-4.5",models:["grok-4.5"],modelOverrideSupported:true}
+      elif $catalog.launcher == "jcx" then
+        {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol"],modelOverrideSupported:true}
+      elif $catalog.launcher == "prx" then
+        {defaultModel:"claude-opus-5",models:["claude-opus-5"],modelOverrideSupported:true}
+      else {models:[],modelOverrideSupported:false}
+      end;
+    def display_harness($catalog):
+      if $catalog.launcher == "omp" then "pi" else $catalog.harness end;
+    def display_profile($catalog; $profile):
+      if $catalog.launcher == "omp" and $profile.name == "copilot" then "oh-my-pi" else $profile.name end;
+    def binary_path($catalog):
+      if $catalog.launcher == "cpx" then $cpxPath
+      elif $catalog.launcher == "cdx" then $cdxPath
+      elif $catalog.launcher == "cldx" then $cldxPath
+      elif $catalog.launcher == "grx" then $grxPath
+      elif $catalog.launcher == "jcx" then $jcxPath
+      elif $catalog.launcher == "omp" then $ompPath
+      elif $catalog.launcher == "prx" then $prxPath
+      else error("unknown launcher path") end;
     def pair($catalog):
-      $catalog.profiles[] | {
-        id: ($catalog.launcher + ":" + .name),
-        label: ($catalog.harness + " / " + .name),
-        description,
+      $catalog.profiles[] as $profile
+      | (display_harness($catalog)) as $harness
+      | (display_profile($catalog; $profile)) as $displayProfile
+      | ({
+        id: ($catalog.launcher + ":" + $profile.name),
+        label: ($harness + " / " + $displayProfile),
+        harness: $harness,
+        profile: $displayProfile,
+        commandAlias: $catalog.launcher,
+        commandPath: binary_path($catalog),
+        profileArgument: $profile.name,
+        passthroughArgs: $passthroughArgs,
+        description: $profile.description,
+        plugins: ([$profile.plugin] | map(select(type == "string" and length > 0)) | unique),
+        skills: [],
+        mcps: ([$profile.standaloneMcps[]? | if type == "string" then . else .name end] | map(select(type == "string" and length > 0)) | unique),
         details: "The selected launcher checks readiness before starting."
-      };
+      } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
+      description: "Trellage Native runs coding-agent launchers directly on the host with isolated state. Choose a harness/profile for fast startup; native profiles are not security boundaries.",
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),
@@ -223,16 +272,14 @@ case "${1-}" in
       die 'list accepts only --json'
     fi
     ;;
-  -i|--interactive)
-    mode='interactive'
-    shift
+  -i|--interactive|--interactive=*)
+    die '-i and --interactive have been removed; run trx with no arguments'
     ;;
   '')
-    usage >&2
-    exit 2
+    mode='interactive'
     ;;
   *)
-    die "unknown option: $1"
+    mode='interactive'
     ;;
 esac
 
@@ -249,7 +296,7 @@ canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HO
 script_path="$(resolve_file "${BASH_SOURCE[0]}")" || die 'cannot resolve trx runtime'
 script_dir="$(canonical_directory "$(dirname "$script_path")")" || die 'cannot resolve trx runtime'
 runtime="$(canonical_directory "$script_dir/..")" || die 'cannot resolve trx runtime'
-picker_path="$runtime/lib/terminal-picker.mjs"
+picker_path="$runtime/lib/launcher.mjs"
 if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
   [[ "$TRELLAGE_TRX_SOURCE_ROOT" == /* ]] \
     || die "TRELLAGE_TRX_SOURCE_ROOT must be absolute: $TRELLAGE_TRX_SOURCE_ROOT"
@@ -259,7 +306,7 @@ if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     || die "cannot resolve TRELLAGE_TRX_SOURCE_ROOT: $TRELLAGE_TRX_SOURCE_ROOT"
   [[ "$runtime" == "$source_root" ]] \
     || die "trx source runtime differs from TRELLAGE_TRX_SOURCE_ROOT: $runtime"
-  picker_path="$runtime/../shared/terminal-picker.mjs"
+  picker_path="$runtime/../../packages/trellage-launcher/dist/launcher.mjs"
 else
   [[ "$runtime" == "$canonical_home/.local/share/trellage/trx" ]] \
     || die "trx is not running from its owned runtime: $runtime"
@@ -334,19 +381,34 @@ fi
 command -v node >/dev/null 2>&1 || die 'required command not found: node'
 [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
 [[ -f "$picker_path" && ! -L "$picker_path" ]] \
-  || die 'terminal picker is missing or unsafe'
+  || die 'Ink launcher is missing or unsafe'
 
-choices="$(build_choices "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
+passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
+  || die 'could not encode launcher arguments'
+choices="$(build_choices \
+  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog" \
+  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$prx" "$passthrough_args")" \
   || die 'could not build profile choices'
 
-selection=''
+choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
+  || die 'cannot create launcher catalog file'
+result_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-result.XXXXXX")" \
+  || { rm -f -- "$choice_file"; die 'cannot create launcher result file'; }
+printf '%s\n' "$choices" >"$choice_file"
 picker_status=0
-selection="$(printf '%s\n' "$choices" | node "$picker_path")" \
-  || picker_status=$?
+node "$picker_path" "$choice_file" "$result_file" || picker_status=$?
+launch_intent="$(<"$result_file")"
+rm -f -- "$choice_file" "$result_file"
 if ((picker_status != 0)); then
   exit "$picker_status"
 fi
 
+selection="$(jq -er '.id | select(type == "string")' <<<"$launch_intent")" \
+  || die 'Ink launcher returned an invalid selection'
+launch_target="$(jq -er '.target | select(. == "current" or . == "herdr")' <<<"$launch_intent")" \
+  || die 'Ink launcher returned an invalid target'
+selected_model="$(jq -r '.model // empty' <<<"$launch_intent")" \
+  || die 'Ink launcher returned an invalid model'
 launcher="${selection%%:*}"
 profile="${selection#*:}"
 case "$launcher" in
@@ -384,5 +446,22 @@ esac
   || die 'terminal picker returned an invalid profile'
 jq -e --arg profile "$profile" '.profiles | map(.name) | index($profile) != null' \
   <<<"$selected_catalog" >/dev/null \
-  || die 'terminal picker returned an unknown profile'
-exec "$selected_launcher" "$profile" "$@"
+  || die 'Ink launcher returned an unknown profile'
+launch_arguments=("$selected_launcher" "$profile")
+[[ -z "$selected_model" ]] || launch_arguments+=(--model "$selected_model")
+launch_arguments+=("$@")
+if [[ "$launch_target" == herdr ]]; then
+  [[ "${HERDR_ENV:-}" == 1 && -n "${HERDR_PANE_ID:-}" ]] \
+    || die 'Herdr launch requested outside a Herdr pane'
+  command -v herdr >/dev/null 2>&1 || die 'Herdr command is unavailable'
+  worktree="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" \
+    || die 'Herdr launch requires a Git worktree'
+  split="$(herdr pane split --current --direction right --cwd "$worktree" --focus)" \
+    || die 'could not create a Herdr pane'
+  pane="$(jq -er '.result.pane.pane_id' <<<"$split")" \
+    || die 'Herdr did not return a pane ID'
+  command_line="$(printf '%q ' "${launch_arguments[@]}")"
+  herdr pane run "$pane" "$command_line" || die 'could not start the selected profile in Herdr'
+  exit 0
+fi
+exec "${launch_arguments[@]}"

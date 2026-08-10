@@ -853,7 +853,7 @@ mutation_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-readme-test.XXXXXX")"
 trap 'rm -rf -- "$mutation_root"' EXIT
 mutated_readme="$mutation_root/missing-bare-trellage.md"
 awk '
-  /^trellage[[:space:]]+# new interactive Codex conversation$/ {
+  /^trellage[[:space:]]+# select a profile, then start its interactive harness$/ {
     print "trellage doctor             # bare command removed"
     next
   }

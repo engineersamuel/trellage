@@ -46,6 +46,45 @@ base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "gh", "git"]
 `
+const copilotProfile = `
+schema = 1
+name = "copilot-hve"
+description = "Copilot profile"
+[harness]
+kind = "copilot"
+version = "latest"
+[harness.copilot]
+auth = "host-or-login"
+model = "gpt-5.6-sol"
+[[plugins]]
+adapter = "copilot-marketplace"
+repository = "https://github.com/example/plugin.git"
+ref = "v1"
+marketplace = "example"
+select = ["example"]
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
+`
+
+const piProfile = `
+schema = 1
+name = "pi-oh-my-pi"
+description = "Pi profile"
+[harness]
+kind = "pi"
+version = "latest"
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "gh", "git"]
+`
 
 const writeProfile = async (root: string, directory: string, source: string): Promise<string> => {
   const profileDirectory = path.join(root, directory)
@@ -119,6 +158,16 @@ tools = { allow = ["search"], deny = ["delete"] }
     expect(projectProfileChoice(document)).toMatchObject({
       name: "prime-agent",
       harness: { kind: "prime", version: "latest", model: "claude-opus-5" },
+    })
+  })
+  it.each([
+    ["Copilot", copilotProfile, "/profiles/copilot-hve/profile.toml", "copilot", "gpt-5.6-sol"],
+    ["Pi", piProfile, "/profiles/pi-oh-my-pi/profile.toml", "pi", "gpt-5.6-terra"],
+  ])("projects the %s model", async (_label, source, profilePath, kind, expectedModel) => {
+    const document = await Effect.runPromise(parseProfile(source, profilePath))
+
+    expect(projectProfileChoice(document)).toMatchObject({
+      harness: { kind, model: expectedModel },
     })
   })
 })

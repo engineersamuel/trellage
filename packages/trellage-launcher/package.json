@@ -1,0 +1,30 @@
+{
+  "name": "@trellage/launcher",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "trellage-launcher": "dist/launcher.mjs"
+  },
+  "scripts": {
+    "build": "esbuild src/cli.tsx --bundle --platform=node --format=esm --target=node22 --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/launcher.mjs",
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ink": "7.1.1",
+    "react": "19.2.4",
+    "react-devtools-core": "^7.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.14",
+    "esbuild": "0.27.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

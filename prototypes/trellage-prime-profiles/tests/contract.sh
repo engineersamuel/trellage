@@ -217,7 +217,7 @@ case "$url" in
     ;;
   http://127.0.0.1:8080/v1/models)
     if [[ "${FAKE_PROXY_HAS_MODEL:-1}" == 1 ]]; then
-      printf '{"data":[{"id":"claude-opus-5"}]}\n'
+      printf '{"data":[{"id":"claude-opus-5"},{"id":"vendor/custom"}]}\n'
     else
       printf '{"data":[{"id":"another-model"}]}\n'
     fi
@@ -426,6 +426,30 @@ grep -Fq 'prx shutdown: no profile daemon socket' "$fixture_root/shutdown.out" \
   || fail 'shutdown output differs'
 [[ ! -e "$profile_root/daemon/kernel-env.stamp" ]] \
   || fail 'shutdown did not clear daemon kernel env stamp'
+
+: >"$FAKE_PRIME_LOG"
+"$command_path" --model vendor/custom -p custom-model || fail 'custom model launch failed'
+jq -e '
+  .providers["copilot-proxy-rs"].baseUrl == "http://127.0.0.1:8080"
+  and [.providers["copilot-proxy-rs"].models[].id] == ["vendor/custom"]
+' "$profile_home/models.json" >/dev/null \
+  || fail 'custom model was not materialized in native Prime configuration'
+python3 - "$FAKE_PRIME_LOG" "$profile_root/daemon/daemon.sock" <<'PY' || fail 'custom Prime model arguments differ'
+import json
+import pathlib
+import sys
+
+actual = json.loads(pathlib.Path(sys.argv[1]).read_text())["args"]
+expected = [
+    "--provider", "copilot-proxy-rs",
+    "--model", "vendor/custom",
+    "--offline",
+    "--daemon-socket", sys.argv[2],
+    "-p", "custom-model"
+]
+raise SystemExit(0 if actual == expected else 1)
+PY
+"$command_path" doctor >/dev/null || fail 'doctor rejected managed custom model state'
 
 # Launch restores drifted models.json and managed ask-user extension.
 printf '{"providers":{}}\n' >"$profile_home/models.json"
