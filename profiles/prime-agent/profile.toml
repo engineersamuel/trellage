@@ -22,10 +22,3 @@ repository = "https://github.com/JuliusBrussee/caveman.git"
 ref = "v1.10.0"
 select = ["caveman"]
 always_on = true
-
-# Upstream: https://github.com/am-will/prime-agent-plugins (ask-user extension only)
-[[plugins]]
-adapter = "prime-extension"
-repository = "https://github.com/am-will/prime-agent-plugins.git"
-ref = "699f9065acc5eb988a02666196c5837434fd839d"
-select = ["ask-user"]
