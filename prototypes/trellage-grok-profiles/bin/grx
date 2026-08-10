@@ -1409,6 +1409,25 @@ require_launch_ready() {
   validate_profile_capabilities "$profile" required "$inventory"
 }
 
+ensure_launch_ready() {
+  local profile="$1"
+  local home
+
+  if (require_launch_ready "$profile") >/dev/null 2>&1; then
+    return
+  fi
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  [ -d "$home" ] && [ ! -L "$home" ] \
+    || die "profile is not set up: $profile"
+  preflight_profile "$profile"
+  remove_forbidden_superpowers "$profile"
+  prepare_profile "$profile"
+  ensure_plugin "$profile"
+  doctor_profile "$profile" >/dev/null
+}
+
 has_explicit_permission() {
   local argument
 
@@ -1436,7 +1455,7 @@ launch_profile() {
     grok_args=(--permission-mode bypassPermissions "${grok_args[@]}")
   fi
 
-  require_launch_ready "$profile"
+  ensure_launch_ready "$profile"
   resolve_grok
   refresh_auth "$profile"
   exec env \
