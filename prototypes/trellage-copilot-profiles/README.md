@@ -72,8 +72,9 @@ harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
 after selection; `trx` never performs setup, repair, or update.
 
 `update --check` compares the installed plugin version reported by Copilot with
-the official marketplace manifest. Launch and check never install or update a
-plugin. Updates are explicit and use native Copilot marketplace/plugin commands.
+the official marketplace manifest. Launch self-heals a missing cataloged plugin
+and removes forbidden Superpowers variants without updating healthy plugins.
+Updates remain explicit and use native Copilot marketplace/plugin commands.
 
 The checked-in [`catalog.json`](catalog.json) declares marketplaces, official
 manifest URLs, plugins, and the empty standalone MCP lists. Installed Copilot

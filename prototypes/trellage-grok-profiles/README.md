@@ -97,7 +97,8 @@ They normalize the profile home to mode `0700` and managed `requirements.toml` t
 It prevents the Grok Build 0.2.112 session-start managed-config refresh from clearing the local isolation policy when no team principal owns it.
 They preserve existing sessions, memory, and permissions.
 Repair restores managed policy and a missing cataloged plugin; it is not generic recovery for every doctor failure.
-Launch refuses a profile until setup completes, and refuses damaged managed policy or unsafe authentication paths instead of silently repairing them.
+Launch self-heals repairable managed policy and plugin drift after setup.
+Unsafe profile or authentication paths still fail closed.
 
 ### Update checks
 

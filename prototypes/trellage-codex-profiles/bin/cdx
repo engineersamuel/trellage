@@ -2004,6 +2004,18 @@ require_launch_ready() {
   require_profile_config "$profile"
 }
 
+ensure_launch_ready() {
+  local profile="$1"
+
+  if (
+    require_profile_config "$profile"
+    [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
+  ) 2>/dev/null; then
+    return
+  fi
+  repair_profile "$profile" >/dev/null
+}
+
 resolve_codex() {
   local candidate
   local candidate_directory
@@ -2329,9 +2341,8 @@ run_proxy_launch() {
 
   require_profile_home_ready "$profile"
   acquire_profile_launch_lock "$profile"
-  require_profile_config "$profile"
   resolve_codex
-  [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
+  ensure_launch_ready "$profile"
   run_codex_child "$profile" no "$@"
   status=$?
   release_profile_launch_lock || release_status=1
@@ -2347,11 +2358,10 @@ run_native_launch() {
 
   require_profile_home_ready "$profile"
   acquire_profile_launch_lock "$profile"
-  require_profile_config "$profile"
   resolve_codex
   require_host_native_login "$profile"
   require_safe_host_native_auth_source "$profile"
-  [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
+  ensure_launch_ready "$profile"
   refresh_auth "$profile"
   run_codex_child "$profile" yes "$@"
   status=$?
