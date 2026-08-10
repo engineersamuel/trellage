@@ -54,6 +54,24 @@ fi
 if [[ "$mode" == new && -z "$prompt" && "${#harness_args[@]}" -eq 1 && "${harness_args[0]}" == --version ]]; then
   exec prime-agent --version
 fi
+selected_model=claude-opus-5
+runtime_args=()
+for ((index = 0; index < ${#harness_args[@]}; index += 1)); do
+  case "${harness_args[$index]}" in
+    --model)
+      ((index + 1 < ${#harness_args[@]})) || fail '--model requires a value'
+      selected_model="${harness_args[$((index + 1))]}"
+      [[ -n "$selected_model" ]] || fail '--model requires a value'
+      index=$((index + 1))
+      ;;
+    --model=*)
+      selected_model="${harness_args[$index]#--model=}"
+      [[ -n "$selected_model" ]] || fail '--model requires a value'
+      ;;
+    *) runtime_args+=("${harness_args[$index]}") ;;
+  esac
+done
+
 
 runtime_home="${PRIME_AGENT_CODING_AGENT_DIR:-/home/agent/.prime/agent}"
 [[ "$runtime_home" == /* ]] || fail 'PRIME_AGENT_CODING_AGENT_DIR must be an absolute path'
@@ -281,7 +299,14 @@ cleanup_temporary() {
 trap cleanup_temporary EXIT HUP INT TERM
 managed_temporary="$(mktemp "$runtime_home/.models.json.trellage.XXXXXX")" \
   || fail 'cannot create temporary Prime models config'
-cp -- "$seed" "$managed_temporary" || fail 'cannot copy baked Prime models config'
+if [[ "$selected_model" == claude-opus-5 ]]; then
+  cp -- "$seed" "$managed_temporary" || fail 'cannot copy baked Prime models config'
+else
+  jq --arg model "$selected_model" '
+    .providers["copilot-proxy-rs"].models |=
+      if any(.id == $model) then . else . + [{ id: $model }] end
+  ' "$seed" >"$managed_temporary" || fail 'cannot materialize selected Prime model'
+fi
 chmod 0600 "$managed_temporary" || fail 'cannot secure temporary Prime models config'
 [[ -d "$runtime_home" && ! -L "$runtime_home" \
   && "$(realpath -e -- "$runtime_home")" == "$runtime_home" ]] \
@@ -296,24 +321,24 @@ trap - EXIT HUP INT TERM
 
 base_args=(
   --provider copilot-proxy-rs
-  --model claude-opus-5
+  --model "$selected_model"
   --offline
 )
 
 case "$mode" in
   new)
     if [[ -n "$prompt" ]]; then
-      exec prime-agent "${base_args[@]}" "${harness_args[@]}" -- "$prompt"
+      exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -- "$prompt"
     fi
-    exec prime-agent "${base_args[@]}" "${harness_args[@]}"
+    exec prime-agent "${base_args[@]}" "${runtime_args[@]}"
     ;;
   prompt)
-    exec prime-agent "${base_args[@]}" "${harness_args[@]}" -p -- "$prompt"
+    exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -p -- "$prompt"
     ;;
   resume)
     if [[ -n "${TRELLAGE_RESUME_SESSION_ID:-}" ]]; then
-      exec prime-agent "${base_args[@]}" "${harness_args[@]}" -r "$TRELLAGE_RESUME_SESSION_ID"
+      exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -r "$TRELLAGE_RESUME_SESSION_ID"
     fi
-    exec prime-agent "${base_args[@]}" "${harness_args[@]}" -c
+    exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -c
     ;;
 esac

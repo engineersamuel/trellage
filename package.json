@@ -1,0 +1,54 @@
+{
+  "name": "trellage",
+  "version": "0.1.0",
+  "description": "Rich launchers for Trellage Sandbox and Trellage Native agent profiles",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "trellage": "prototypes/trellage/trellage",
+    "trx": "bin/trx.mjs"
+  },
+  "files": [
+    "bin",
+    "packages/trellage-cli/dist/**/*",
+    "packages/trellage-cli/package.json",
+    "packages/trellage-cli/package-lock.json",
+    "packages/trellage-cli/src",
+    "packages/trellage-cli/tsconfig.json",
+    "packages/trellage-cli/tsconfig.build.json",
+    "packages/trellage-cli/dist/.source-hash",
+    "packages/trellage-launcher/dist/**/*",
+    "profiles",
+    "prototypes",
+    "scripts/build-profile-compiler.sh",
+    "scripts/profile-compiler-fingerprint.sh"
+  ],
+  "scripts": {
+    "build": "npm run build --prefix packages/trellage-launcher",
+    "prepare": "npm run build",
+    "test": "npm test --prefix packages/trellage-launcher"
+  },
+  "dependencies": {
+    "@effect/cli": "0.76.0",
+    "@effect/platform": "0.97.1",
+    "@effect/platform-node": "0.108.0",
+    "@effect/printer": "0.50.0",
+    "@effect/printer-ansi": "0.50.0",
+    "effect": "3.22.1",
+    "esbuild": "0.27.0",
+    "ink": "7.1.1",
+    "proper-lockfile": "4.1.2",
+    "react": "19.2.4",
+    "react-devtools-core": "7.0.1",
+    "skills": "1.5.19",
+    "smol-toml": "1.7.0",
+    "varlock": "1.13.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/engineersamuel/trellage.git"
+  }
+}

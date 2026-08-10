@@ -66,10 +66,10 @@ and MCP names. `visibleCount` reflects Copilot's enabled `skill list` entries;
 that native surface may include commands, so Trellage does not call it a package
 skill count.
 
-After installing `cpx`, `cdx`, `grx`, and the
-[`trx` router](../trellage-router/README.md), run `trx -i` for one flat
-harness/profile picker. `trx` forwards remaining arguments to `cpx` unchanged
-after selection and never performs setup, repair, or update.
+After installing the native launchers and the
+[`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
+harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
+after selection; `trx` never performs setup, repair, or update.
 
 `update --check` compares the installed plugin version reported by Copilot with
 the official marketplace manifest. Launch and check never install or update a

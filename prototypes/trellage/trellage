@@ -111,6 +111,14 @@ discard_ambient_claude_auth() {
   ambient_apify_api_token=
   ambient_google_ai_api_key=
 }
+for argument in "$@"; do
+  case "$argument" in
+    -i|--interactive|--interactive=*)
+      fail '-i and --interactive have been removed; run trellage with no arguments'
+      ;;
+  esac
+done
+
 
 mode=new
 compiler_mode=false
@@ -124,7 +132,7 @@ if [[ "$compiler_mode" == true ]]; then
   for compiler_argument in "$@"; do
     case "$compiler_argument" in
       -p|--prompt|--prompt=*) fail '--prompt is not supported for compiler commands' ;;
-      -i|--interactive|--interactive=*) fail '--interactive is not supported for compiler commands' ;;
+      -i|--interactive|--interactive=*) fail '-i and --interactive have been removed; run trellage with no arguments' ;;
       --model|--model=*) fail '--model is not supported for compiler commands' ;;
     esac
   done
@@ -136,6 +144,7 @@ model_argument=
 prompt_argument=
 prompt_argument_set=false
 interactive=false
+(( $# > 0 )) || [[ -n "${TRELLAGE_PROFILE:-}" ]] || interactive=true
 resume_session_id=
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
@@ -191,13 +200,8 @@ if [[ "$compiler_mode" == false ]]; then
         prompt_argument_set=true
         shift
         ;;
-      -i|--interactive)
-        [[ "$interactive" == false ]] || fail '--interactive may be specified only once'
-        interactive=true
-        shift
-        ;;
-      --interactive=*)
-        fail '--interactive does not accept a value'
+      -i|--interactive|--interactive=*)
+        fail '-i and --interactive have been removed; run trellage with no arguments'
         ;;
       *)
         parsed_arguments+=("$1")
@@ -230,13 +234,6 @@ if [[ "$compiler_mode" == false ]]; then
         ;;
     esac
   fi
-  if [[ "$interactive" == true ]]; then
-    [[ -z "$profile_argument" ]] || fail '--profile cannot be combined with --interactive'
-    case "$mode" in
-      new|prompt) ;;
-      *) fail "--interactive is not supported for $mode" ;;
-    esac
-  fi
 fi
 
 case "$auth_mode_argument" in
@@ -261,7 +258,7 @@ compiler="$compiler_package_dir/dist/cli.js"
 compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
 compiler_stamp="$compiler_package_dir/dist/.source-hash"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
-picker="$prototype_dir/../shared/terminal-picker.mjs"
+picker="$prototype_dir/../../packages/trellage-launcher/dist/launcher.mjs"
 
 profile_compiler_is_fresh() {
   local actual_fingerprint expected_fingerprint
@@ -320,7 +317,8 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
     || fail 'environment metadata has an invalid enabled state'
   [[ "$environment_source_present" == true || "$environment_source_present" == false ]] \
     || fail 'environment metadata has an invalid source state'
-  if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) \
+  if [[ "$interactive" == false \
+    && ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) \
     && "$environment_enabled" == true && "$environment_source_present" == true \
     && "${_TRELLAGE_VARLOCK_BOOTSTRAPPED:-}" != 1 ]]; then
     [[ -x "$varlock" ]] \
@@ -336,7 +334,8 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
     [[ -z "$ambient_apify_api_token" ]] || export APIFY_API_TOKEN="$ambient_apify_api_token"
     [[ -z "$ambient_google_ai_api_key" ]] || export GOOGLE_AI_API_KEY="$ambient_google_ai_api_key"
     export _TRELLAGE_VARLOCK_BOOTSTRAPPED=1
-    exec "$varlock" run --inject vars --path "$environment_path" -- "$source_path" "${trellage_arguments[@]}"
+    exec "$varlock" run --inject vars --path "$environment_path" -- "$source_path" \
+      ${trellage_arguments[@]+"${trellage_arguments[@]}"}
   fi
 fi
 
@@ -353,40 +352,81 @@ if [[ "$interactive" == true ]]; then
   profile_choices="$("${clean_child_environment[@]}" node "$compiler" choices)" \
     || fail 'profile choices resolution failed'
   picker_input="$(jq -ce '
-    def counted($label; $items):
-      ($items | length) as $count
-      | $label + " " + ($count | tostring)
-        + (if $count == 0 then "" else ": " + ($items | join(", ")) end);
     {
       prompt: "Select a Trellage profile",
+      description: "Trellage Sandbox runs reproducible agent profiles in isolated Docker containers. Choose a profile to launch its harness, model, plugins, skills, and MCPs.",
       choices: to_entries | map({
         id: (.key | tostring),
         label: ((.value.name + " / " + .value.harness.kind) | .[:500]),
+        harness: .value.harness.kind,
+        profile: .value.name,
+        harnessVersion: .value.harness.version,
         description: (.value.description | gsub("[[:cntrl:]]"; " ") | .[:4000]),
-        details: (
-          (
-            "Declared profile — harness " + .value.harness.kind
-            + " " + .value.harness.version
-            + (if .value.harness.model then ", model " + .value.harness.model else "" end)
-            + "; " + counted("plugins"; [.value.plugins[].select[]])
-            + "; " + counted("skill selections"; [.value.skills[].select[]])
-            + "; " + counted("MCPs"; [.value.mcps[].name])
-          )
-          | gsub("[[:cntrl:]]"; " ")
-          | .[:8000]
-        )
+        plugins: ([.value.plugins[].select[]] | unique),
+        skills: ([.value.skills[].select[]] | unique),
+        mcps: ([.value.mcps[].name] | unique),
+        details: "Declared profile metadata; launch checks remain authoritative.",
+        defaultModel: .value.harness.model,
+        models: (
+          if .value.harness.kind == "claude" and .value.name != "claude-qwen-local" then
+            ([.value.harness.model, "claude-opus-5", "gpt-5.6-sol", "gpt-5.6-terra"] | map(select(. != null)) | unique)
+          elif .value.harness.model then [.value.harness.model]
+          else [] end
+        ),
+        modelOverrideSupported: (.value.name != "claude-qwen-local")
       })
     }
   ' <<<"$profile_choices")" || fail 'profile choices are invalid'
+  picker_input_file="$(mktemp "${TMPDIR:-/tmp}/trellage-launcher-choices.XXXXXX")" \
+    || fail 'could not create launcher catalog file'
+  picker_result_file="$(mktemp "${TMPDIR:-/tmp}/trellage-launcher-result.XXXXXX")" \
+    || { rm -f -- "$picker_input_file"; fail 'could not create launcher result file'; }
+  printf '%s\n' "$picker_input" >"$picker_input_file"
   picker_status=0
-  selected_choice="$(node "$picker" <<<"$picker_input")" || picker_status=$?
+  node "$picker" "$picker_input_file" "$picker_result_file" || picker_status=$?
+  launch_intent="$(<"$picker_result_file")"
+  rm -f -- "$picker_input_file" "$picker_result_file"
   if [[ "$picker_status" -ne 0 ]]; then
     exit "$picker_status"
   fi
+  selected_choice="$(jq -er '.id | select(type == "string")' <<<"$launch_intent")" \
+    || fail 'terminal picker returned an invalid launch intent'
+  launch_target="$(jq -er '.target | select(. == "current" or . == "herdr")' <<<"$launch_intent")" \
+    || fail 'terminal picker returned an invalid launch target'
+  selected_model="$(jq -r '.model // empty' <<<"$launch_intent")" \
+    || fail 'terminal picker returned an invalid model selection'
   profile_argument="$(jq -er --arg choice "$selected_choice" \
     '.[$choice | tonumber].value' <<<"$profile_choices")" \
     || fail 'terminal picker returned an invalid profile selection'
   [[ -n "$profile_argument" ]] || fail 'terminal picker returned an empty profile path'
+  [[ -z "$selected_model" ]] || model_argument="$selected_model"
+  if [[ "$launch_target" == herdr ]]; then
+    [[ "${HERDR_ENV:-}" == 1 && -n "${HERDR_PANE_ID:-}" ]] \
+      || fail 'Herdr launch requested outside a Herdr pane'
+    command -v herdr >/dev/null 2>&1 || fail 'Herdr command is unavailable'
+    worktree="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" \
+      || fail 'Herdr launch requires a Git worktree'
+    split="$(herdr pane split --current --direction right --cwd "$worktree" --focus)" \
+      || fail 'could not create a Herdr pane'
+    pane="$(jq -er '.result.pane.pane_id' <<<"$split")" \
+      || fail 'Herdr did not return a pane ID'
+    command_line="$(printf '%q ' "$source_path" --profile "$profile_argument")"
+    [[ -z "$model_argument" ]] \
+      || command_line+="$(printf '%q ' --model "$model_argument")"
+    herdr pane run "$pane" "$command_line" || fail 'could not start the selected profile in Herdr'
+    exit 0
+  fi
+  [[ -z "$ambient_copilot_github_token" ]] || export COPILOT_GITHUB_TOKEN="$ambient_copilot_github_token"
+  [[ -z "$ambient_gh_token" ]] || export GH_TOKEN="$ambient_gh_token"
+  [[ -z "$ambient_github_token" ]] || export GITHUB_TOKEN="$ambient_github_token"
+  [[ -z "$ambient_claude_code_oauth_token" ]] || export CLAUDE_CODE_OAUTH_TOKEN="$ambient_claude_code_oauth_token"
+  [[ -z "$ambient_anthropic_api_key" ]] || export ANTHROPIC_API_KEY="$ambient_anthropic_api_key"
+  [[ -z "$ambient_playwright_mcp_extension_token" ]] || export PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
+  [[ -z "$ambient_apify_api_token" ]] || export APIFY_API_TOKEN="$ambient_apify_api_token"
+  [[ -z "$ambient_google_ai_api_key" ]] || export GOOGLE_AI_API_KEY="$ambient_google_ai_api_key"
+  selected_arguments=(--profile "$profile_argument")
+  [[ -z "$model_argument" ]] || selected_arguments+=(--model "$model_argument")
+  exec "$source_path" "${selected_arguments[@]}"
 fi
 
 metadata_args=(metadata)
@@ -447,11 +487,13 @@ profile_metadata="$("${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoin
 harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
 if [[ "$harness_kind" != claude ]]; then
   [[ -z "$auth_mode_argument" ]] || fail '--auth-mode is supported only for Claude profiles'
-  [[ -z "$model_argument" ]] || fail '--model is supported only for Claude profiles'
   discard_ambient_claude_auth
 fi
 claude_auth_mode="${auth_mode_argument:-proxy}"
 profile_name="$(jq -er '.profile_name' <<<"$profile_metadata")" || fail 'profile metadata has no name'
+if [[ "$profile_name" == claude-qwen-local && -n "$model_argument" ]]; then
+  fail '--model is not supported for claude-qwen-local'
+fi
 profile_hash="$(jq -er '.profile_hash' <<<"$profile_metadata")" || fail 'profile metadata has no hash'
 runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile metadata has no runtime hash'
 [[ "$profile_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid profile hash'
@@ -533,6 +575,9 @@ harness_args=()
 while IFS= read -r harness_arg; do
   harness_args+=("$harness_arg")
 done < <(jq -r '.harness_args[]' <<<"$profile_metadata")
+if [[ -n "$model_argument" && "$harness_kind" != claude ]]; then
+  harness_args+=(--model "$model_argument")
+fi
 secret_environment=()
 while IFS=$'\t' read -r secret_target secret_source; do
   [[ -n "$secret_target" && -n "$secret_source" ]] || continue

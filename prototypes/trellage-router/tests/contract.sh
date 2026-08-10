@@ -167,7 +167,7 @@ assert_contains 'Installed trx' "$fixture_root/install.out"
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
-assert_contains 'trx -i [LAUNCHER_ARGS...]' "$fixture_root/help.out"
+assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 
 "$fixture_bin/trx" list >"$fixture_root/list.out" \
   || fail 'human list failed'
@@ -217,14 +217,14 @@ cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
 TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-select.out" \
-  '\r' '' "$prototype_root/bin/trx" -i '--source-mode' \
+  'l' '' "$prototype_root/bin/trx" '--source-mode' \
   || fail 'worktree source interactive selection failed'
 python3 - "$argument_log" <<'PY' || fail 'worktree source arguments were not forwarded'
 import pathlib
 import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cpx", b"cpx-p", b"--source-mode", b""]
+expected = [b"cdx", b"cdx-p", b"--source-mode", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
@@ -235,17 +235,17 @@ status=0
 assert_contains 'list accepts only --json' "$fixture_root/list-invalid.err"
 
 status=0
-"$fixture_bin/trx" -i >"$fixture_root/non-tty.out" 2>"$fixture_root/non-tty.err" \
+"$fixture_bin/trx" >"$fixture_root/non-tty.out" 2>"$fixture_root/non-tty.err" \
   || status=$?
 [[ "$status" == 1 ]] || fail "non-TTY invocation exited $status instead of 1"
 assert_contains 'an interactive terminal is required' "$fixture_root/non-tty.err"
 
-cp "$runtime_parent/trx/lib/terminal-picker.mjs" "$fixture_root/terminal-picker.mjs"
-cat >"$runtime_parent/trx/lib/terminal-picker.mjs" <<'EOF'
+cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
+cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
 import { readFileSync, writeFileSync } from "node:fs"
 
-writeFileSync(process.env.TRX_PICKER_INPUT, readFileSync(0))
-process.stdout.write("cpx:cpx-p\n")
+writeFileSync(process.env.TRX_PICKER_INPUT, readFileSync(process.argv[2]))
+writeFileSync(process.argv[3], '{"id":"cpx:cpx-p","target":"current"}\n')
 EOF
 selection_started="$(python3 -c 'import time; print(time.monotonic_ns())')"
 TRX_ARGUMENT_LOG="$argument_log" \
@@ -253,26 +253,42 @@ TRX_ARGUMENT_LOG="$argument_log" \
   TRX_INVENTORY_LOG="$inventory_log" \
   TRX_PICKER_INPUT="$fixture_root/picker-input.json" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/select.out" \
-  '\r' '' "$fixture_bin/trx" --interactive \
+  '\r' '' "$fixture_bin/trx" \
   'two words' '' '--literal=*' \
   || fail 'interactive selection failed'
 selection_finished="$(python3 -c 'import time; print(time.monotonic_ns())')"
 selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
-jq -e '
-  .choices[0]
-  | .label == "copilot / cpx-p"
-    and (.description | length == 1200)
-    and (.details == "The selected launcher checks readiness before starting.")
-    and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
+jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
+  .description == "Trellage Native runs coding-agent launchers directly on the host with isolated state. Choose a harness/profile for fast startup; native profiles are not security boundaries."
+  and (.choices[0]
+    | .label == "copilot / cpx-p"
+      and (.description | length == 1200)
+      and .commandAlias == "cpx"
+      and .commandPath == $commandPath
+      and .profileArgument == "cpx-p"
+      and .passthroughArgs == ["two words", "", "--literal=*"]
+      and .plugins == ["cpx-plug"]
+      and .skills == []
+      and .mcps == ["docs", "files"]
+      and (.details == "The selected launcher checks readiness before starting.")
+      and ([.label,.description,.details,.plugins[],.mcps[]] | all(test("[[:cntrl:]]") | not)))
 ' "$fixture_root/picker-input.json" >/dev/null \
-  || fail 'router choice omitted concise catalog data or launch readiness status'
+  || fail 'router choice omitted complete catalog metadata or launch readiness status'
 jq -e '
-  [.choices[] | select(.label == "oh-my-pi / copilot" or .label == "oh-my-pi / local")]
-  | length == 2
+  ([.choices[] | select(.id == "omp:copilot")]
+    | length == 1
+      and .[0].label == "pi / oh-my-pi"
+      and .[0].harness == "pi"
+      and .[0].profile == "oh-my-pi")
+  and ([.choices[] | select(.id == "omp:local")]
+    | length == 1
+      and .[0].label == "pi / local"
+      and .[0].harness == "pi"
+      and .[0].profile == "local")
 ' "$fixture_root/picker-input.json" >/dev/null \
-  || fail 'router choices omitted OMP profiles'
+  || fail 'router choices did not expose Pi harness/profile identities'
 jq -e '
   [.choices[] | select(.label == "jcode / jcx-p")]
   | length == 1
@@ -283,9 +299,14 @@ jq -e '
   | length == 1
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted prime profile'
+jq -e '
+  ([.choices[] | select(.id == "omp:local") | .modelOverrideSupported] == [false])
+  and ([.choices[] | select(.id != "omp:local") | .modelOverrideSupported] | all)
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router did not enable model overrides for every launcher except local Qwen'
 [[ ! -e "$inventory_log" ]] \
   || fail 'router read diagnostic inventory before launching the selected profile'
-mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
+mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 python3 - "$argument_log" <<'PY' || fail 'arguments were not forwarded unchanged'
 import pathlib
 import sys
@@ -295,15 +316,40 @@ expected = [b"cpx", b"cpx-p", b"two words", b"", b"--literal=*", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
-cp "$runtime_parent/trx/lib/terminal-picker.mjs" "$fixture_root/terminal-picker.mjs"
-cat >"$runtime_parent/trx/lib/terminal-picker.mjs" <<'EOF'
-process.stdout.write("omp:copilot\n")
+herdr_log="$fixture_root/herdr.log"
+cat >"$fixture_bin/herdr" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$TRX_HERDR_LOG"
+if [[ "${1-} ${2-}" == 'pane split' ]]; then
+  printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p2"}}}'
+fi
+EOF
+chmod 0755 "$fixture_bin/herdr"
+cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
+cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+import {writeFileSync} from "node:fs"
+writeFileSync(process.argv[3], '{"id":"cdx:cdx-p","target":"herdr","model":"gpt-5.6-terra"}\n')
+EOF
+HERDR_ENV=1 HERDR_PANE_ID=w1:p1 TRX_HERDR_LOG="$herdr_log" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/herdr-select.out" \
+  'l' '' "$fixture_bin/trx" '--literal=herdr' \
+  || fail 'Herdr profile launch failed'
+mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+assert_contains 'pane split --current --direction right --cwd ' "$herdr_log"
+assert_contains 'pane run w1:p2 ' "$herdr_log"
+assert_contains '--model gpt-5.6-terra --literal=herdr' "$herdr_log"
+rm "$fixture_bin/herdr"
+
+cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
+cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+import {writeFileSync} from "node:fs"
+writeFileSync(process.argv[3], '{"id":"omp:copilot","target":"current"}\n')
 EOF
 TRX_ARGUMENT_LOG="$argument_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/omp-select.out" \
-  '\r' '' "$fixture_bin/trx" -i '--native-copilot' \
+  '\r' '' "$fixture_bin/trx" '--native-copilot' \
   || fail 'OMP interactive selection failed'
-mv "$fixture_root/terminal-picker.mjs" "$runtime_parent/trx/lib/terminal-picker.mjs"
+mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 python3 - "$argument_log" <<'PY' || fail 'OMP arguments were not forwarded unchanged'
 import pathlib
 import sys
@@ -316,18 +362,18 @@ PY
 status=0
 TRX_CHILD_EXIT=37 \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/child-exit.out" \
-  '\x1b[B\r' '' "$fixture_bin/trx" -i || status=$?
+  '\x1b[Bl' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status instead of 37"
 
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/cancel.out" \
-  '\x1b' '' "$fixture_bin/trx" -i || status=$?
+  '\x1b' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 130 ]] || fail "cancellation exited $status instead of 130"
 
 status=0
 TRX_WAIT=1 \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/signal.out" \
-  '\r' 'CHILD_READY' "$fixture_bin/trx" -i || status=$?
+  'l' 'CHILD_READY' "$fixture_bin/trx" || status=$?
 [[ "$status" == 143 ]] || fail "terminated child exited $status instead of 143"
 
 mv "$fixture_bin/grx" "$fixture_bin/grx.absent"
@@ -338,7 +384,7 @@ status=0
 assert_contains 'required launcher not found on PATH: grx' "$fixture_root/list-missing.err"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 1 ]] || fail "missing launcher exited $status instead of 1"
 assert_contains 'required launcher not found on PATH: grx' "$fixture_root/missing.out"
 mv "$fixture_bin/grx.absent" "$fixture_bin/grx"
@@ -346,7 +392,7 @@ mv "$fixture_bin/grx.absent" "$fixture_bin/grx"
 mv "$fixture_bin/omp" "$fixture_bin/omp.absent"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-omp.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 1 ]] || fail "missing OMP launcher exited $status instead of 1"
 assert_contains 'required launcher not found on PATH: omp' "$fixture_root/missing-omp.out"
 mv "$fixture_bin/omp.absent" "$fixture_bin/omp"
@@ -354,7 +400,7 @@ mv "$fixture_bin/omp.absent" "$fixture_bin/omp"
 mv "$fixture_bin/jcx" "$fixture_bin/jcx.absent"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-jcx.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 1 ]] || fail "missing jcx launcher exited $status instead of 1"
 assert_contains 'required launcher not found on PATH: jcx' "$fixture_root/missing-jcx.out"
 mv "$fixture_bin/jcx.absent" "$fixture_bin/jcx"
@@ -362,7 +408,7 @@ mv "$fixture_bin/jcx.absent" "$fixture_bin/jcx"
 mv "$fixture_bin/prx" "$fixture_bin/prx.absent"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-prx.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 1 ]] || fail "missing prx launcher exited $status instead of 1"
 assert_contains 'required launcher not found on PATH: prx' "$fixture_root/missing-prx.out"
 mv "$fixture_bin/prx.absent" "$fixture_bin/prx"
@@ -376,7 +422,7 @@ status=0
 assert_contains 'invalid catalog from cdx' "$fixture_root/list-invalid-catalog.err"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/invalid.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 1 ]] || fail "invalid catalog exited $status instead of 1"
 assert_contains 'invalid catalog from cdx' "$fixture_root/invalid.out"
 mv "$fixture_root/cdx.catalog" "$runtime_parent/cdx/catalog.json"
@@ -392,7 +438,7 @@ assert_contains 'launcher is not the owned Trellage runtime: cpx' \
   "$fixture_root/list-redirected.err"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/redirected.out" \
-  '\r' '' "$fixture_bin/trx" -i || status=$?
+  '\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 1 ]] || fail "redirected launcher exited $status instead of 1"
 assert_contains 'launcher is not the owned Trellage runtime: cpx' "$fixture_root/redirected.out"
 rm "$fixture_bin/cpx"

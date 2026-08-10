@@ -12,7 +12,7 @@ trellage validate /absolute/path/to/profile.toml
 trellage build /absolute/path/to/profile.toml
 trellage build --locked /absolute/path/to/profile.toml
 trellage ci-verify /absolute/path/to/profile.toml
-trellage -i
+trellage
 trellage --profile /absolute/path/to/profile.toml
 trellage resume --profile /absolute/path/to/profile.toml SESSION_ID
 trellage resume --profile /absolute/path/to/profile.toml
@@ -96,26 +96,29 @@ image; remaining profiles continue, and the command exits nonzero after
 reporting all failures. Exact versions and immutable Git refs remain pinned by
 the profile.
 
-Use `trellage -i` or `trellage --interactive` to choose a profile before a new
-launch:
+Run bare `trellage` to open the Ink profile launcher:
 
 ```bash
-trellage -i
-trellage -i -p "hello"
+trellage
 ```
 
 The picker combines valid profiles bundled with the installed Trellage source
 tree and valid `<current-worktree>/profiles/<directory>/profile.toml` files into
-one name-sorted list. A current-worktree profile with the same declared name
-replaces the bundled choice. Rows stay concise. The highlighted detail pane
-shows the full description plus declared harness version/model, selected plugin
-names, skill selections/count, and MCP names/count. The profile remains the
-source of truth for those declarations; they are not installed inventory.
+one harness-sorted list. A current-worktree profile with the same declared name
+replaces the bundled choice. A context banner distinguishes isolated Trellage
+Sandbox containers from fast host-native launchers and states the native
+security tradeoff. Rows stay concise while the highlighted detail card wraps
+the description, harness version, active model, plugins, skills, and MCPs.
+Press `D` for a scrollable full-detail view; no profile metadata is
+ellipsis-truncated there. The profile remains the source of truth for those
+declarations; they are not installed inventory.
 
-Interactive selection requires a terminal and cannot be combined with
-`--profile`, resume, lifecycle, or compiler commands. Escape or Ctrl-C cancels
-with status `130`. Selection does not install, update, lock, or build a profile;
-the chosen profile continues through the normal launch checks.
+Interactive selection requires a terminal. Escape or Ctrl-C cancels with status
+`130`. Selection does not install, update, lock, or build a profile; the chosen
+profile continues through the normal launch checks. Use `S` to sort, `/` to
+filter, `M` to choose an advertised model or enter a custom model ID, `D` for
+full details, and `H` to launch in a new Herdr pane. `claude-qwen-local` is the
+only pinned model.
 
 Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) for one plain-text, non-interactive prompt; Trellage returns the native harness exit status:
 
@@ -271,8 +274,8 @@ See [the Trellage prototype guide](prototypes/trellage/README.md) for profile lo
 The bundled `prime-agent` profile installs Prime Agent from Prime Intellect's
 official stable release channel and locks the resolved versioned tarball, size,
 SHA-256 digest, and final Linux/arm64 OCI digest. It routes model traffic only
-through the host-managed `copilot-proxy-rs` service and fixes the provider and
-model to `copilot-proxy-rs` and `claude-opus-5`.
+through the host-managed `copilot-proxy-rs` service, fixes the provider to
+`copilot-proxy-rs`, and defaults the model to `claude-opus-5`.
 
 ```bash
 trellage validate prime-agent
@@ -290,7 +293,8 @@ and preserves Prime sessions and other user state in the profile/worktree state
 volume. The locked image build also prepares a Python kernel archive that each
 state volume restores locally, so tool use does not depend on first-launch
 access to PyPI. Every launch restores the managed provider definition so
-persisted edits cannot redirect this profile to another endpoint or model.
+persisted edits cannot redirect this profile to another endpoint. `--model MODEL`
+selects another model advertised by the same proxy for that launch.
 
 ## Pi with Oh My Pi
 
@@ -386,7 +390,7 @@ omp update
 omp repair
 ```
 
-Bare `omp` remains an alias for the `local` profile. `trx -i` includes both
+Bare `omp` remains an alias for the `local` profile. `trx` includes both
 `oh-my-pi / local` and `oh-my-pi / copilot`.
 
 See the [native OMP guide](prototypes/trellage-omp-profiles/README.md) for
@@ -403,27 +407,29 @@ After the six native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
 
 ```bash
+trx
 trx list
 trx list --json
-trx -i
-trx -i --model gpt-5
+trx --model gpt-5.6-terra
 ```
 
 Use `mise run trx -- ...` to run the router from the current worktree without
 replacing the installed native command:
 
 ```bash
+mise run trx
 mise run trx -- list
 mise run trx -- list --json
-mise run trx -- -i
 ```
 
 `trx list` prints `launcher/profile` plus the catalog description; `--json`
 returns the same discovery data with launcher and harness identity. `trx` reads
-the launchers' declared catalogs before listing or opening the picker, so picker
-rows show only `harness / profile` and the detail pane shows the catalog description.
-After selection, it validates that profile's read-only installed inventory before
-launching. Package counts come only from launcher-validated selected plugin roots
+the launchers' declared catalogs before listing or opening the picker. Picker
+rows show `harness / profile`; the detail pane shows the resolved launcher alias,
+absolute binary path, exact JSON argument vector, catalog metadata, and readiness
+status. After selection, it validates that profile's read-only installed
+inventory before launching. Package counts come only from launcher-validated
+selected plugin roots
 or cache paths; `visibleCount` preserves each native CLI's broader inventory
 semantics. `trx` requires a TTY; Escape or Ctrl-C returns `130`. It does not set
 up, repair, update, call a model, use the network, or mutate profile state.
@@ -448,8 +454,8 @@ prx repair
 
 `PRIME_AGENT_CODING_AGENT_DIR` isolates configuration and sessions under
 `~/.local/share/trellage/profiles/prime/default/home/`. Every launch restores
-the managed `models.json` seed so persisted edits cannot redirect the endpoint
-or model. No host model credentials are copied.
+the managed `models.json` provider and selected model so persisted edits cannot
+redirect the endpoint. No host model credentials are copied.
 
 Native profiles run directly on the host and are state-isolation conveniences,
 not security boundaries.

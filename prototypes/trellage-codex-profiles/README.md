@@ -68,10 +68,10 @@ selected plugin's validated cache paths, broader CLI-visible entries from static
 `debug prompt-input`, and MCP names. Unrelated marketplace caches are never
 scanned.
 
-After installing `cpx`, `cdx`, `grx`, and the
-[`trx` router](../trellage-router/README.md), run `trx -i` for one flat
-harness/profile picker. `trx` forwards remaining arguments to `cdx` unchanged
-after selection and never performs setup, repair, or update.
+After installing the native launchers and the
+[`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
+harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
+after selection; `trx` never performs setup, repair, or update.
 
 Profile launch always passes
 `--dangerously-bypass-approvals-and-sandbox`. This disables Codex approvals and

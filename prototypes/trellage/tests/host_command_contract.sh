@@ -60,9 +60,9 @@ printf '%s\n' \
   '  : >"$FAKE_DOCKER_LOG.image-built"' \
   '  exit 0' \
   'fi' \
-  'if [[ "${1:-}" == */terminal-picker.mjs && -n "${FAKE_PICKER_INPUT:-}" ]]; then' \
-  '  cat >"$FAKE_PICKER_INPUT"' \
-  '  printf '\''0\n'\''' \
+  'if [[ "${1:-}" == */launcher.mjs && -n "${FAKE_PICKER_INPUT:-}" ]]; then' \
+  '  cat "$2" >"$FAKE_PICKER_INPUT"' \
+  '  printf '\''{"id":"0","target":"current"}\n'\'' >"$3"' \
   '  exit 0' \
   'fi' \
   'exec "$FAKE_REAL_NODE" "$@"' \
@@ -212,6 +212,7 @@ run_tty() {
     cd "$work_dir"
     script -q -e /dev/null env \
       PATH="$fake_bin:$PATH" \
+      TRELLAGE_PROFILE=codex-superpowers \
       GH_TOKEN=host-contract-gh-token \
       FAKE_DOCKER_LOG="$docker_log" \
       FAKE_GIT_LOG="$test_root/git.log" \
@@ -1033,7 +1034,7 @@ test_invalid_tmpfs_metadata_precedes_mutation() {
   if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
     FAKE_DOCKER_CONTAINER_STATE=absent \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" 2>&1)"; then
+      "$prototype_dir/trellage" --profile copilot-hve 2>&1)"; then
     fail 'invalid tmpfs metadata was accepted'
   fi
   grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
@@ -1054,7 +1055,7 @@ test_false_tmpfs_metadata_precedes_mutation() {
   if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
     FAKE_DOCKER_CONTAINER_STATE=absent \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" 2>&1)"; then
+      "$prototype_dir/trellage" --profile copilot-hve 2>&1)"; then
     fail 'false tmpfs metadata was accepted'
   fi
   grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
@@ -1075,7 +1076,7 @@ test_null_tmpfs_metadata_precedes_mutation() {
   if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
     FAKE_DOCKER_CONTAINER_STATE=absent \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" 2>&1)"; then
+      "$prototype_dir/trellage" --profile copilot-hve 2>&1)"; then
     fail 'null tmpfs metadata was accepted'
   fi
   grep -Fqx 'trellage: profile metadata has an invalid tmpfs size' <<<"$output" \
@@ -2331,18 +2332,19 @@ test_interactive_profile_selection() {
     FAKE_PROFILE_BUILD_SUCCEEDS=1 \
     FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env TRELLAGE_NETWORK='test_proxy_net' \
-      "$prototype_dir/trellage" --interactive
+      env -u TRELLAGE_PROFILE TRELLAGE_NETWORK='test_proxy_net' \
+      "$prototype_dir/trellage"
   jq -e '
-    .choices[0]
-    | .label == "cap / codex"
-      and (.description | startswith("Interactive  ") and length == 1213)
-      and (.details
-        | contains("Declared profile — harness codex v, model g")
-          and contains("plugins 1: p1")
-          and contains("skill selections 2: s1, s2")
-          and contains("MCPs 1: m1"))
-      and ([.label,.description,.details] | all(test("[[:cntrl:]]") | not))
+    .description == "Trellage Sandbox runs reproducible agent profiles in isolated Docker containers. Choose a profile to launch its harness, model, plugins, skills, and MCPs."
+    and (.choices[0]
+      | .label == "cap / codex"
+        and (.description | startswith("Interactive  ") and length == 1213)
+        and .harnessVersion == "v"
+        and .plugins == ["p1"]
+        and .skills == ["s1", "s2"]
+        and .mcps == ["m1"]
+        and .details == "Declared profile metadata; launch checks remain authoritative."
+        and ([.label,.description,.details,.plugins[],.skills[],.mcps[]] | all(test("[[:cntrl:]]") | not)))
   ' "$picker_input" >/dev/null \
     || fail 'interactive choice omitted concise label, description, or declared details'
   grep -Fqx $'ARG\tchoices' "$host_node_log" \
@@ -2355,30 +2357,30 @@ test_interactive_profile_selection() {
     || fail 'interactive selection did not continue through the existing launch flow'
 
   output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
-    "$prototype_dir/trellage" -i 2>&1)" || status=$?
+    env -u TRELLAGE_PROFILE "$prototype_dir/trellage" 2>&1)" || status=$?
   [[ "$status" -eq 1 ]] || fail "non-TTY interactive launch returned $status instead of 1"
   grep -Fqx 'trellage: interactive profile selection requires an interactive terminal' <<<"$output" \
     || fail 'non-TTY interactive launch did not report the terminal requirement'
 
-  output="$("$prototype_dir/trellage" --profile "$profile" -i 2>&1)" && \
-    fail 'interactive launch accepted --profile'
-  grep -Fqx 'trellage: --profile cannot be combined with --interactive' <<<"$output" \
-    || fail 'interactive --profile conflict diagnostic is incorrect'
+  output="$("$prototype_dir/trellage" -i 2>&1)" && \
+    fail 'legacy -i flag was accepted'
+  grep -Fqx 'trellage: -i and --interactive have been removed; run trellage with no arguments' <<<"$output" \
+    || fail 'legacy interactive flag diagnostic is incorrect'
 
   output="$("$prototype_dir/trellage" resume --interactive 2>&1)" && \
-    fail 'resume accepted --interactive'
-  grep -Fqx 'trellage: --interactive is not supported for resume' <<<"$output" \
-    || fail 'interactive lifecycle diagnostic is incorrect'
+    fail 'legacy --interactive flag was accepted'
+  grep -Fqx 'trellage: -i and --interactive have been removed; run trellage with no arguments' <<<"$output" \
+    || fail 'legacy lifecycle flag diagnostic is incorrect'
 
   output="$("$prototype_dir/trellage" validate --interactive 2>&1)" && \
-    fail 'compiler command accepted --interactive'
-  grep -Fqx 'trellage: --interactive is not supported for compiler commands' <<<"$output" \
-    || fail 'interactive compiler diagnostic is incorrect'
+    fail 'compiler command accepted legacy --interactive'
+  grep -Fqx 'trellage: -i and --interactive have been removed; run trellage with no arguments' <<<"$output" \
+    || fail 'legacy compiler flag diagnostic is incorrect'
 
   status=0
   printf '\033' | FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" -i >/dev/null 2>&1 || status=$?
+      env -u TRELLAGE_PROFILE "$prototype_dir/trellage" >/dev/null 2>&1 || status=$?
   [[ "$status" -eq 130 ]] \
     || fail "interactive cancellation returned $status instead of 130"
   printf 'Trellage host test: PASS: interactive profile selection\n'
@@ -2798,6 +2800,14 @@ test_claude_model_override_routes_only_opus() {
   [[ "$status" -ne 0 ]] || fail 'duplicate --model arguments succeeded'
   grep -Fqx 'trellage: --model may be specified only once' <<<"$output" \
     || fail 'duplicate --model arguments had the wrong diagnostic'
+  jq '.profile_name = "claude-qwen-local"' "$claude_variant" >"$claude_variant.qwen"
+  status=0
+  output="$(FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant.qwen" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --model another-model 2>&1)" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'claude-qwen-local accepted a model override'
+  grep -Fqx 'trellage: --model is not supported for claude-qwen-local' <<<"$output" \
+    || fail 'claude-qwen-local model override had the wrong diagnostic'
   printf 'Trellage host test: PASS: Claude model override routes only Opus\n'
 }
 
@@ -2912,14 +2922,15 @@ test_copilot_rebuild_shell_and_doctor() {
 
   : >"$docker_log"
   output="$(run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-    env -u GH_TOKEN FAKE_GH_TOKEN='doctor-auth-canary' TRELLAGE_IMAGE='test/copilot:doctor' \
+    env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+    FAKE_GH_TOKEN='doctor-auth-canary' TRELLAGE_IMAGE='test/copilot:doctor' \
     "$prototype_dir/trellage" doctor 2>&1)"
   grep -Fqx 'harness kind: copilot' <<<"$output" \
     || fail 'doctor omitted Copilot harness kind'
   grep -Fqx 'resolved version: 1.0.75' <<<"$output" \
     || fail 'doctor omitted exact Copilot version'
   grep -Fqx 'host auth: gh' <<<"$output" \
-    || fail 'doctor omitted value-free gh auth source'
+    || fail "doctor omitted value-free gh auth source: $(grep '^host auth:' <<<"$output" || printf 'missing')"
   ! grep -Fq 'doctor-auth-canary' <<<"$output" \
     || fail 'doctor printed a Copilot token value'
   assert_no_mutation "$docker_log"
@@ -3080,7 +3091,8 @@ test_pi_host_auth_dispatch_and_doctor() {
     FAKE_DOCKER_IMAGE_PROFILE_HASH="$pi_profile_hash" \
     FAKE_DOCKER_CONTAINER_PROFILE_HASH="$pi_profile_hash" \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
-      env -u GH_TOKEN FAKE_GH_TOKEN='pi-doctor-auth-canary' TRELLAGE_IMAGE='test/pi:doctor' \
+      env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+      FAKE_GH_TOKEN='pi-doctor-auth-canary' TRELLAGE_IMAGE='test/pi:doctor' \
       "$prototype_dir/trellage" doctor 2>&1)"
   grep -Fqx 'harness kind: pi' <<<"$output" || fail 'doctor omitted Pi harness kind'
   grep -Fqx 'resolved version: 17.2.6' <<<"$output" || fail 'doctor omitted exact Pi version'
@@ -3186,7 +3198,7 @@ test_copilot_launches_when_gh_is_genuinely_absent() {
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env -u GH_TOKEN PATH="$no_gh_bin" \
+      env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN PATH="$no_gh_bin" \
       FAKE_HARNESS_METADATA="$copilot_metadata" \
       FAKE_NODE_LOG="$copilot_node_log" \
       FAKE_REAL_NODE="$real_node" \
@@ -3424,7 +3436,7 @@ test_copilot_gh_host_precedence() {
     FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
     FAKE_DOCKER_EXPECT_COPILOT_TOKEN_SHA256="$expected_hash" \
     run_copilot_tty "$worktree" "$docker_log" "$worktree" \
-      env -u GH_TOKEN "${poisoned_internal_auth_env[@]}" \
+      env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN "${poisoned_internal_auth_env[@]}" \
       COPILOT_GH_HOST='copilot.example.test' GH_HOST='gh.example.test' \
       FAKE_GH_TOKEN='enterprise-host-canary' TRELLAGE_IMAGE='test/copilot:locked' \
       "$prototype_dir/trellage"
@@ -3479,7 +3491,7 @@ test_command_diagnostics_use_trellage_prefix() {
   output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
     "$prototype_dir/trellage" 2>&1)" || status=$?
   [[ "$status" -ne 0 ]] || fail 'noninteractive launch unexpectedly succeeded'
-  grep -Fqx 'trellage: an interactive terminal is required' <<<"$output" \
+  grep -Fqx 'trellage: interactive profile selection requires an interactive terminal' <<<"$output" \
     || fail 'command diagnostic does not use the exact trellage prefix'
   ! grep -Fq 'harness:' <<<"$output" \
     || fail 'legacy command diagnostic prefix remains observable'
@@ -3585,10 +3597,64 @@ if [[ "${TRELLAGE_HOST_CLAUDE_CORE_ONLY:-}" == 1 ]]; then
   test_claude_model_override_routes_only_opus
   exit 0
 fi
+test_model_overrides_reach_each_runtime() {
+  local worktree="$test_root/model-overrides-worktree"
+  local docker_log="$test_root/model-overrides.docker.log"
+  local metadata kind profile prototype image state_volume profile_hash record
+  local -a records
+  local codex_override_metadata="$test_root/model-overrides-codex.json"
+  mkdir -p "$worktree"
+  jq '
+    .profile_name = "codex-superpowers-test"
+    | .image = "trellage-profile-codex-superpowers-test:locked"
+    | .harness_kind = "codex"
+    | .harness_executable = "codex"
+    | .runtime_entry = "trellage-codex-entry"
+    | .default_network = "copilot-proxy-rs_default"
+    | .auth_policy = "profile-secrets"
+    | .harness_args = []
+  ' "$copilot_metadata" >"$codex_override_metadata"
+  records=(
+    "$codex_override_metadata|codex|codex-superpowers-test|trellage-codex|test/codex:locked"
+    "$copilot_metadata|copilot|copilot-hve-test|trellage-copilot|test/copilot:locked"
+    "$pi_metadata|pi|pi-oh-my-pi-test|trellage-pi|test/pi:locked"
+    "$prime_metadata|prime|prime-agent-test|trellage-prime|test/prime:locked"
+  )
+
+  for record in "${records[@]}"; do
+    IFS='|' read -r metadata kind profile prototype image <<<"$record"
+    printf 'Trellage host test: checking %s model override\n' "$kind"
+    : >"$docker_log"
+    state_volume="$(resource_names "$worktree" "$profile" "$kind" | tail -n 1)"
+    profile_hash="$(jq -r '.profile_hash' "$metadata")"
+    FAKE_HARNESS_METADATA_OVERRIDE="$metadata" \
+      FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_PROFILE="$profile" FAKE_DOCKER_PROTOTYPE="$prototype" \
+      FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+      FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+      run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE="$image" "$prototype_dir/trellage" --model vendor/custom-model
+    grep -Fqx $'ARG\t--model' "$docker_log" \
+      || fail "$kind model override flag did not reach its runtime"
+    grep -Fqx $'ARG\tvendor/custom-model' "$docker_log" \
+      || fail "$kind custom model did not reach its runtime"
+  done
+
+  printf 'Trellage host test: PASS: every non-Qwen harness receives custom model overrides\n'
+}
+
+if [[ "${TRELLAGE_HOST_MODEL_ONLY:-}" == 1 ]]; then
+  test_claude_model_override_routes_only_opus
+  test_model_overrides_reach_each_runtime
+  exit 0
+fi
+
 
 test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
 test_claude_model_override_routes_only_opus
+test_model_overrides_reach_each_runtime
 test_profile_compiler_bootstraps_when_missing_or_stale
 test_list_delegates_to_effect_cli
 test_upgrade_delegates_to_effect_cli

@@ -38,19 +38,19 @@ them.
 ## Use
 
 ```sh
+trx
+trx --model gpt-5.6-terra
 trx list
 trx list --json
-trx -i
-trx --interactive --model gpt-5
 ```
 
 From the repository root, run the current worktree router without replacing the
 installed `trx`:
 
 ```sh
-mise run trx -- list
+mise run trx
+mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
-mise run trx -- -i
 ```
 
 `trx list` prints one `launcher/profile` and catalog description per line.
@@ -60,11 +60,12 @@ and work without a TTY. They validate all six owned launchers and their catalogs
 before producing output, so missing, redirected, or invalid launchers fail
 closed.
 
-Use the arrow keys and Enter to select a profile. Escape or Ctrl-C cancels with
-status 130. Every argument after `-i` or `--interactive` is forwarded unchanged
-after the selected launcher's profile name. `trx` never runs setup, update, or
-repair. The selected launcher replaces `trx`, so child exit status and signals
-remain unchanged.
+Use the arrow keys and Enter to select a profile. `/` filters, `S` sorts, `D`
+opens full details, and `M` selects an advertised or custom model for launchers
+that support overrides. `H` launches the selection in a new Herdr pane when
+available. Escape or Ctrl-C cancels with status 130. Remaining arguments are
+forwarded unchanged after the selected launcher profile. `trx` never runs setup,
+update, or repair.
 
 `trx` fails closed if a launcher is absent, does not resolve to its owned
 runtime, or has an invalid catalog. The selected native launcher performs its
@@ -72,11 +73,12 @@ own launch-time readiness checks and handles not-setup or unhealthy profiles.
 Interactive use requires stdin and stderr attached to a TTY; a non-TTY
 invocation exits `1`.
 
-Rows contain only `harness / profile`. The highlighted detail pane shows the
-full catalog description and that the selected launcher checks readiness before
-starting. Diagnostic inventory remains available directly from launchers that
-support `inventory PROFILE --json`; `trx` does not collect it on the launch
-path. `doctor` remains the full runtime health diagnostic.
+Rows show `harness / profile`. The highlighted detail pane shows the resolved
+launcher alias, absolute binary path, and exact JSON argument vector—including
+empty or space-containing arguments—before the full catalog metadata and
+readiness status. Diagnostic inventory remains available directly from
+launchers that support `inventory PROFILE --json`; `trx` does not collect it on
+the launch path. `doctor` remains the full runtime health diagnostic.
 
 `trx` adds no containment. `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx` still run
 their selected agents directly on the host with the permissions and safety

@@ -102,6 +102,7 @@ const Codex = Schema.Struct({
 
 const Copilot = Schema.Struct({
   auth: Schema.Literal("host-or-login"),
+  model: Schema.optional(NonEmpty),
 })
 
 const Claude = Schema.Struct({

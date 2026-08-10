@@ -207,25 +207,23 @@ prepare_profile() {
 }
 
 managed_models() {
-  cat <<EOF
-{
-  "providers": {
-    "$provider": {
-      "baseUrl": "$proxy_origin",
-      "api": "anthropic-messages",
-      "apiKey": "$api_key",
-      "compat": {
-        "supportsEagerToolInputStreaming": false
-      },
-      "models": [
-        {
-          "id": "$model_id"
+  local selected_model="${1:-$model_id}"
+  jq -n \
+    --arg provider "$provider" \
+    --arg base_url "$proxy_origin" \
+    --arg api_key "$api_key" \
+    --arg model "$selected_model" \
+    '{
+      providers: {
+        ($provider): {
+          baseUrl: $base_url,
+          api: "anthropic-messages",
+          apiKey: $api_key,
+          compat: { supportsEagerToolInputStreaming: false },
+          models: [{ id: $model }]
         }
-      ]
-    }
-  }
-}
-EOF
+      }
+    }'
 }
 
 file_sha256() {
@@ -297,14 +295,14 @@ publish_managed_extensions() {
 }
 
 publish_managed_profile() {
-  local models_stage
+  local models_stage selected_model="${1:-$model_id}"
 
   prepare_profile
   [[ ! -L "$profile_models" && ( ! -e "$profile_models" || -f "$profile_models" ) ]] \
     || die "unsafe managed models config: $profile_models"
   models_stage="$(mktemp "$profile_home/.models.XXXXXX")" \
     || die 'could not stage Prime models config'
-  managed_models >"$models_stage"
+  managed_models "$selected_model" >"$models_stage"
   chmod 0600 "$models_stage"
   mv -f "$models_stage" "$profile_models"
   publish_managed_extensions
@@ -322,7 +320,19 @@ verify_managed_profile() {
   require_owned_profile
   [[ -f "$profile_models" && ! -L "$profile_models" ]] \
     || die "managed models config is missing: $profile_models"
-  cmp -s "$profile_models" <(managed_models) \
+  jq -e \
+    --arg provider "$provider" \
+    --arg base_url "$proxy_origin" \
+    --arg api_key "$api_key" '
+      (.providers | keys) == [$provider]
+      and .providers[$provider].baseUrl == $base_url
+      and .providers[$provider].api == "anthropic-messages"
+      and .providers[$provider].apiKey == $api_key
+      and .providers[$provider].compat == { supportsEagerToolInputStreaming: false }
+      and (.providers[$provider].models | type == "array" and length > 0)
+      and all(.providers[$provider].models[]; keys == ["id"] and (.id | type == "string" and length > 0))
+      and ([.providers[$provider].models[].id] | length == (unique | length))
+    ' "$profile_models" >/dev/null \
     || die 'managed models config differs; run prx repair'
   require_managed_extension_source
   [[ -f "$profile_extension" && ! -L "$profile_extension" ]] \
@@ -519,7 +529,7 @@ publish_version() {
 }
 
 check_proxy() {
-  local health models
+  local selected_model="${1:-$model_id}" health models
 
   require_command curl
   health="$(curl -fsS --max-time 5 "${proxy_origin}/health")" \
@@ -528,8 +538,8 @@ check_proxy() {
     || die 'copilot-proxy-rs health response is invalid'
   models="$(curl -fsS --max-time 5 "$proxy_models_url")" \
     || die 'copilot-proxy-rs model discovery failed'
-  jq -e --arg model "$model_id" '.data | any(.id == $model)' <<<"$models" >/dev/null \
-    || die "copilot-proxy-rs model is missing: $model_id"
+  jq -e --arg model "$selected_model" '.data | any(.id == $model)' <<<"$models" >/dev/null \
+    || die "copilot-proxy-rs model is missing: $selected_model"
 }
 
 pypi_host_reachable() {
@@ -837,21 +847,37 @@ doctor_profile() {
 }
 
 launch_prime() {
-  local version cli
+  local version cli selected_model="$model_id"
+  local -a prime_args=()
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --model)
+        [[ $# -ge 2 && -n "$2" ]] || die '--model requires a value'
+        selected_model="$2"
+        shift 2
+        ;;
+      --model=*)
+        selected_model="${1#--model=}"
+        [[ -n "$selected_model" ]] || die '--model requires a value'
+        shift
+        ;;
+      *)
+        prime_args+=("$1")
+        shift
+        ;;
+    esac
+  done
 
   require_command mise
   require_node
-  # Always restore managed provider/model so persisted edits cannot redirect traffic.
-  publish_managed_profile
+  publish_managed_profile "$selected_model"
   version="$(read_pinned_version)"
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"
-  # Ensure the kernel is ready before the TUI starts; first-tool bootstrap is
-  # painful when files.pythonhosted.org is blocked mid-session.
   ensure_kernel_runtime
-  # Profile-local daemon must be (re)started with KERNEL_* in supervisor env.
   restart_stale_profile_daemon
-  check_proxy
+  check_proxy "$selected_model"
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
   unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
   exec env \
@@ -860,10 +886,10 @@ launch_prime() {
     PRIME_AGENT_KERNEL_VENV="$kernel_venv" \
     node "$cli" \
     --provider "$provider" \
-    --model "$model_id" \
+    --model "$selected_model" \
     --offline \
     --daemon-socket "$daemon_socket" \
-    "$@"
+    "${prime_args[@]}"
 }
 
 require_command jq

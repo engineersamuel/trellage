@@ -1,9 +1,9 @@
-.PHONY: test pre-push sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
+.PHONY: test pre-push sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+PARALLEL_TEST_TARGETS := publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
 PRE_PUSH_TEST_TARGETS := publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity trellage-orphan-cleanup agent-harness claude-entry manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
 SERIAL_TEST_TARGETS := native-profile-router
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
@@ -32,6 +32,10 @@ caveman-profile-contract:
 
 profile-compiler:
 	cd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test
+
+launcher:
+	cd packages/trellage-launcher && npm run check && npm run build && npm test
+	bash tests/profile_compiler_fingerprint_contract.sh
 
 trellage-identity:
 	bash tests/trellage_identity_contract.sh

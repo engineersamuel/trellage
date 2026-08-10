@@ -173,7 +173,6 @@ Run these commands inside the Git worktree that should be mounted:
 trellage [--profile PROFILE]
 trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage [--profile CLAUDE_PROFILE] [--model MODEL] [-p|--prompt PROMPT]
-trellage -i|--interactive [-p|--prompt PROMPT]
 trellage resume [SESSION_ID] [--profile PROFILE] [--model MODEL]
 trellage shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
@@ -181,8 +180,8 @@ trellage lock [--update] [PROFILE]
 trellage build [--locked] [PROFILE]
 trellage upgrade [PROFILE|all]
 
-trellage                    # new interactive Codex conversation
-trellage -i                 # select a profile, then start its interactive harness
+trellage                    # select a profile, then start its interactive harness
+trellage --profile NAME     # directly launch one profile
 trellage "<prompt>"         # new conversation with an explicit prompt
 trellage -p "<prompt>"      # one non-interactive prompt with plain-text output
 trellage resume             # resume the latest native conversation
@@ -214,21 +213,17 @@ trellage --profile claude-social-media
 
 A bare name resolves to `profiles/<name>/profile.toml`; explicit `.toml` and path arguments continue to resolve from the current directory.
 
-`trellage -i` and `trellage --interactive` discover valid immediate child
-profiles from both the bundled source-tree `profiles/` directory and the current
-Git worktree's `profiles/` directory. Choices are sorted by declared profile
-name. A current-worktree profile overrides a bundled profile with the same
-declared name; duplicate canonical paths and invalid profiles are omitted. Each
-row shows only the declared name and harness. The highlighted detail pane shows
-the full description plus declared harness version/model, selected plugin names,
-skill selections/count, and MCP names/count. These are declarations in the
-selected `profile.toml`, not runtime inventory claims.
+Bare `trellage` discovers valid immediate child profiles from both the bundled
+source-tree `profiles/` directory and the current Git worktree's `profiles/`
+directory. Choices default to profile-name order; `S` cycles sort order and `/`
+filters the list. A current-worktree profile overrides a bundled profile with the
+same declared name. The detail pane shows the description, harness version/model,
+plugins, skills, and MCPs declared by the selected `profile.toml`.
 
-The picker requires interactive stdin and stdout. It cannot be combined with
-`--profile`, resume, lifecycle, or compiler commands. Escape or Ctrl-C restores
-the terminal and exits `130`. `trellage -i -p "prompt"` uses a TTY only for
-selection, then runs the selected harness through the ordinary portable prompt
-path. Selection never locks, builds, upgrades, or otherwise mutates a profile.
+The Ink launcher requires an interactive terminal. Escape or Ctrl-C restores the
+terminal and exits `130`. `M` selects an advertised model where the harness
+supports overrides. Inside Herdr, `H` opens the selected launch in a new pane for
+the current Git worktree. Selection itself never builds or mutates a profile.
 
 Bare profile launches remain interactive. Portable `-p` and `--prompt` run one prompt without a TTY and return the native harness status. Trellage translates this to `codex exec`, `claude -p`, or `copilot -p`:
 
@@ -242,11 +237,13 @@ trellage --profile pi-oh-my-pi -p "hello"
 
 Claude profiles route Opus, Sonnet, and Haiku aliases to the models declared by
 the profile. Their defaults are `claude-opus-5`, `claude-sonnet-5`, and
-`claude-haiku-4.5`. Pass `--model MODEL` to override only the Opus route for one
-new, prompt, or resumed Claude launch:
+`claude-haiku-4.5`; `--model MODEL` overrides the Opus route. Codex, Copilot,
+Pi, and Prime pass `--model MODEL` to their runtime. The local Qwen profile is
+the sole pinned model.
 
 ```bash
 trellage --profile claude-council --model gpt-5.5 -p "hello"
+trellage --profile prime-agent --model claude-sonnet-5 -p "hello"
 ```
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
@@ -332,12 +329,14 @@ trellage destroy --profile /absolute/path/to/profiles/prime-agent/profile.toml
 ```
 
 Every launch fixes Prime's custom provider to `copilot-proxy-rs`, its API to
-Anthropic Messages, its endpoint to `http://copilot-proxy-rs:8080`, and its
-model to `claude-opus-5`. The proxy and Docker network are host-managed
-prerequisites. No host Anthropic, OpenAI, Copilot, or GitHub token is forwarded
-to Prime; the separately prepared `GH_CONFIG_DIR` remains available for `gh`.
-Prime sessions and other user state persist under `/home/agent/.prime/agent`,
-while the managed provider file is restored atomically before each launch.
+Anthropic Messages, and its endpoint to `http://copilot-proxy-rs:8080`. The
+default model is `claude-opus-5`; `--model MODEL` materializes another model in
+the managed provider file for that launch. The proxy and Docker network are
+host-managed prerequisites. No host Anthropic, OpenAI, Copilot, or GitHub token
+is forwarded to Prime; the separately prepared `GH_CONFIG_DIR` remains
+available for `gh`. Prime sessions and other user state persist under
+`/home/agent/.prime/agent`, while the managed provider file is restored
+atomically before each launch.
 The image build prepares Prime's Python kernel as
 `/usr/local/share/trellage/prime-kernel-seed.tar.gz`; launches restore it into
 the profile state volume instead of downloading Python packages when the first
