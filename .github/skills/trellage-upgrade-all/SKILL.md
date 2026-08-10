@@ -18,8 +18,30 @@ Promote verified local Trellage development work, run the installed host command
 - Never push, force-push, merge with a merge commit, or publish a release unless separately requested.
 - Prefer rebase when an active development branch must be brought onto local `main`.
 - Run Git and build commands only in verified Trellage worktrees.
+- Resolve the upgrade target once (see "Upgrade Target") and perform every upgrade, lock, and commit step there.
 - Never expose or persist GitHub credentials. Use existing host `gh` authentication only for release metadata.
 - A transient upstream failure may use a verified existing lock, but report that as fallback rather than as a newly resolved release.
+
+## Upgrade Target
+
+The **upgrade target** is the worktree whose profile locks this run upgrades and commits. Resolve it once, before step 1, and use it for steps 5, 6, 9, and 10.
+
+```bash
+target="${TRELLAGE_UPGRADE_ROOT:-<installed-repository>}"
+```
+
+- When `TRELLAGE_UPGRADE_ROOT` is set, it is authoritative. This is how automation points the upgrade at an isolated worktree instead of the developer's checkout.
+- When it is unset, the target is the installed repository, preserving normal interactive behavior.
+
+Validate an overridden target before using it:
+
+1. `git -C "$target" rev-parse --show-toplevel` must equal `$target`.
+2. Its `git rev-parse --git-common-dir` must match the installed repository's, so it is a worktree of the same Trellage repository.
+3. It must be clean.
+
+Fail if any check does not hold. Never fall back to the installed repository after an override was supplied; a bad override is an error, not a reason to write to the developer's checkout.
+
+When the target is not the installed repository, treat the installed checkout as **read-only reference state**. Inspect it to identify and validate the CLI, but never commit to it, never fast-forward its `main`, and leave it exactly as found.
 
 ## Workflow
 
@@ -62,6 +84,8 @@ Fetch metadata without changing files:
 git fetch --prune origin
 ```
 
+Skip this entire step when `TRELLAGE_UPGRADE_ROOT` is set: automation supplies a target already based on current `origin/main`, and promotion into the installed checkout is out of scope for that run.
+
 If no development candidate is being promoted, fast-forward local `main` to `origin/main`.
 
 If the candidate contains commits absent from installed `main`:
@@ -90,13 +114,15 @@ The launcher's source fingerprint must accept the resulting `dist` build. Warnin
 
 ### 5. Capture the Pre-Upgrade State
 
-Run from the installed repository root so profile discovery cannot accidentally use another worktree:
+Run from the resolved upgrade target so profile discovery cannot accidentally use another worktree:
 
 ```bash
-cd "<installed-repository>"
+cd "$target"
 ```
 
-Require a clean tree. Record hashes of all profile lock files and the installed commit. Capture command output in a temporary file with a cleanup trap.
+Because the `trellage` launcher dispatches to the worktree copy matching `$PWD`, this both pins profile discovery and keeps the CLI under test consistent with the target.
+
+Require a clean tree. Record hashes of all profile lock files and the target's commit. Capture command output in a temporary file with a cleanup trap.
 
 ### 6. Run the Exact Installed Upgrade
 
@@ -167,18 +193,22 @@ If the first run changed files:
 1. Require every changed path to be a profile platform lock.
 2. Reject any unexpected source, profile, script, or configuration change.
 3. Review the lock diff for version, integrity, release URL, source commit, and final OCI digest changes.
-4. Commit deterministic lock-only updates locally with a concise `chore(profiles): ...` message.
+4. Commit deterministic lock-only updates in the upgrade target with a concise `chore(profiles): ...` message.
 5. Include the configured Copilot co-author trailer.
-6. Do not push unless explicitly requested.
+6. Do not push unless explicitly requested. Automation that set `TRELLAGE_UPGRADE_ROOT` owns pushing and pull-request creation.
 
-If no release changed, the installed repository must remain clean.
+If no release changed, the upgrade target must remain clean.
+
+The installed repository must be clean and unchanged whenever it is not itself the target.
 
 ### 11. Completion Audit
 
 Before reporting success, require:
 
 - installed launcher resolves to the intended repository
-- local installed `main` contains the promoted fix
+- every lock change is committed in the upgrade target, and the target's `HEAD` advanced whenever locks changed
+- the installed repository is unchanged when it is not the target
+- local installed `main` contains the promoted fix (only when the installed repository is the target)
 - compiler source and `dist` fingerprint match
 - all discovered profiles succeeded twice
 - locks match resolvable latest stable GitHub releases
