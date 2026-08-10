@@ -11,22 +11,13 @@ pre-commit:
       run: npm --prefix packages/trellage-cli run check
 
 pre-push:
+  parallel: true
   jobs:
-    - name: broad deterministic contracts
-      run: make pre-push
-    - name: sandbox entry contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- profiles prototypes/trellage || make copilot-entry pi-entry prime-entry
-    - name: native Codex contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-codex-profiles || make native-codex-profiles
-    - name: native Copilot contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-copilot-profiles || make native-copilot-profiles
-    - name: native Grok contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-grok-profiles || make native-grok-profiles
-    - name: native jcode contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-jcode-profiles || make native-jcode-profile
-    - name: native OMP contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-omp-profiles || make native-omp-profile
-    - name: native Prime contracts
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-prime-profiles || make native-prime-profile
-    - name: native router contract
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-router || make native-profile-router
+    - name: pushed whitespace
+      run: git diff --check "refs/remotes/{1}/main...HEAD"
+    - name: launcher checks
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- package.json package-lock.json packages/trellage-launcher || (npm --prefix packages/trellage-launcher run check && npm --prefix packages/trellage-launcher test && npm --prefix packages/trellage-launcher run build && git diff --exit-code -- packages/trellage-launcher/dist/launcher.mjs)
+    - name: profile compiler typecheck
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- packages/trellage-cli profiles || npm --prefix packages/trellage-cli run check
+    - name: launcher shell syntax
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage prototypes/trellage-*-profiles prototypes/trellage-router || bash -n prototypes/trellage/trellage prototypes/trellage-router/bin/trx prototypes/trellage-codex-profiles/bin/cdx prototypes/trellage-copilot-profiles/bin/cpx prototypes/trellage-grok-profiles/bin/grx prototypes/trellage-jcode-profiles/bin/jcx prototypes/trellage-omp-profiles/bin/omp prototypes/trellage-prime-profiles/bin/prx
