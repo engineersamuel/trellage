@@ -714,6 +714,11 @@ git_common_dir="$(cd -P -- "$git_common_dir" >/dev/null 2>&1 && pwd -P)" \
   || fail 'cannot resolve Git common directory'
 [[ -d "$git_common_dir" && ! -L "$git_common_dir" ]] \
   || fail "unsafe Git common directory: $git_common_dir"
+copilot_models="${HOME%/}/.copilot/models.json"
+require_copilot_models() {
+  [[ -f "$copilot_models" && ! -L "$copilot_models" ]] \
+    || fail "unsafe or missing Copilot models catalog: $copilot_models"
+}
 worktree_name="$(basename "$worktree")"
 [[ "$worktree_name" != '.' && "$worktree_name" != '..' ]] \
   || fail 'worktree name is not a safe mount segment'
@@ -910,11 +915,11 @@ validate_state_volume() {
 }
 
 container_mount_state() {
-  local mounts expected_worktree expected_git count
+  local mounts expected_worktree expected_git expected_models count
   mounts="$(docker container inspect \
     --format "$mounts_format" "$container_id" 2>/dev/null)" || return 2
   count="$(printf '%s\n' "$mounts" | awk 'NF { count++ } END { print count + 0 }')"
-  [[ "$count" == 2 || "$count" == 3 ]] || return 1
+  [[ "$count" == 2 || "$count" == 3 || "$count" == 4 ]] || return 1
   expected_worktree=$'bind\t\t'"$worktree"$'\t'"$mount_path"$'\ttrue'
   grep -Fqx "$expected_worktree" <<<"$mounts" || return 1
   awk -F '\t' -v volume="$state_volume" '
@@ -927,6 +932,12 @@ container_mount_state() {
   fi
   expected_git=$'bind\t\t'"$git_common_dir"$'\t'"$git_common_dir"$'\ttrue'
   grep -Fqx "$expected_git" <<<"$mounts" || return 1
+  if [[ "$count" == 3 ]]; then
+    printf 'legacy\n'
+    return
+  fi
+  expected_models=$'bind\t\t'"$copilot_models"$'\t/home/agent/.copilot-models.json\tfalse'
+  grep -Fqx "$expected_models" <<<"$mounts" || return 1
   printf 'current\n'
 }
 
@@ -1424,6 +1435,7 @@ if container_is_present; then
   mount_state="$(container_mount_state)" \
     || fail "refusing Docker container with unexpected mounts: $container_name"
   if [[ "$mount_state" == legacy ]] || ! container_is_current; then
+    require_copilot_models
     remove_stale_container
     container_id=
   else
@@ -1431,6 +1443,7 @@ if container_is_present; then
       --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
       || fail "cannot inspect Docker container image: $container_name"
     if [[ "$container_image_id" != "$expected_image_id" ]]; then
+      require_copilot_models
       remove_stale_container
     else
       reuse_container=true
@@ -1447,6 +1460,7 @@ if container_is_present; then
   fi
 fi
 if [[ "$reuse_container" != true ]]; then
+  require_copilot_models
   if volume_is_present; then
     validate_state_volume
   else
@@ -1475,6 +1489,7 @@ if [[ "$reuse_container" != true ]]; then
     --mount "type=bind,src=$worktree,dst=$mount_path" \
     --mount "type=bind,src=$git_common_dir,dst=$git_common_dir" \
     --mount "type=volume,src=$state_volume,dst=/home/agent" \
+    --mount "type=bind,src=$copilot_models,dst=/home/agent/.copilot-models.json,readonly" \
     --network "$network" \
     --workdir "$mount_path" \
     "$expected_image_id" sleep infinity)"

@@ -492,6 +492,19 @@ case "${1:-} ${2:-}" in
           printf 'bind\t\t%s\t%s\ttrue\n' "$worktree/.git" "$worktree/.git"
           printf 'volume\t%s\t/var/lib/docker/volumes/%s/_data\t/home/agent\ttrue\n' \
             "${FAKE_DOCKER_STATE_VOLUME:?}" "${FAKE_DOCKER_STATE_VOLUME:?}"
+          case "${FAKE_DOCKER_MODELS_MOUNT_STATE:-matching}" in
+            absent) ;;
+            matching)
+              printf 'bind\t\t%s\t/home/agent/.copilot-models.json\tfalse\n' "$HOME/.copilot/models.json"
+              ;;
+            writable)
+              printf 'bind\t\t%s\t/home/agent/.copilot-models.json\ttrue\n' "$HOME/.copilot/models.json"
+              ;;
+            wrong-source)
+              printf 'bind\t\t%s\t/home/agent/.copilot-models.json\tfalse\n' "$HOME/.copilot/wrong-models.json"
+              ;;
+            *) exit 79 ;;
+          esac
         fi
         ;;
       *) exit 66 ;;
