@@ -6,6 +6,10 @@ test_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-host-test.XXXXXX")"
 test_root="$(cd "$test_root" && pwd -P)"
 trap 'rm -rf -- "$test_root"' EXIT
 export TRELLAGE_ENVIRONMENT=off
+test_home="$test_root/home"
+mkdir -p "$test_home/.copilot"
+printf '{}\n' >"$test_home/.copilot/models.json"
+export HOME="$test_home"
 
 fail() {
   printf 'Trellage host test: FAIL: %s\n' "$1" >&2
@@ -449,13 +453,14 @@ test_new_container_from_subdirectory() {
   assert_arg "$docker_log" '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001'
   assert_arg "$docker_log" "type=bind,src=$worktree,dst=$mount_path"
   assert_arg "$docker_log" "type=volume,src=$state_volume,dst=/home/agent"
+  assert_arg "$docker_log" "type=bind,src=$HOME/.copilot/models.json,dst=/home/agent/.copilot-models.json,readonly"
   assert_arg "$docker_log" "dev.trellage.worktree=$worktree"
   assert_arg "$docker_log" 'dev.trellage.prototype=trellage-codex'
   assert_arg "$docker_log" "$mount_path"
   assert_arg "$docker_log" 'fish'
   assert_arg "$docker_log" '-Nlc'
-  [[ "$(grep -Fxc $'ARG\t--mount' "$docker_log")" -eq 3 ]] \
-    || fail 'container must receive worktree, Git metadata, and state mounts'
+  [[ "$(grep -Fxc $'ARG\t--mount' "$docker_log")" -eq 4 ]] \
+    || fail 'container must receive worktree, Git metadata, models catalog, and state mounts'
   assert_arg "$docker_log" 'fix $(touch /tmp/not-executed) with spaces'
   assert_docker_env "$docker_log" 'GH_CONFIG_DIR=/tmp/trellage-gh'
   assert_docker_env "$docker_log" 'GIT_CONFIG_GLOBAL=/tmp/trellage-gh/gitconfig'
@@ -481,6 +486,116 @@ test_new_container_from_subdirectory() {
   container_name="$(resource_names "$worktree" | head -n 1)"
   assert_arg "$docker_log" "$container_name"
   printf 'Trellage host test: PASS: secure new container from subdirectory\n'
+}
+
+test_copilot_models_catalog_lifecycle() {
+  local worktree="$test_root/models-catalog-worktree"
+  local docker_log="$test_root/models-catalog.docker.log"
+  local missing_home="$test_root/missing-models-home"
+  local symlink_home="$test_root/symlink-models-home"
+  local container_name state_volume confirmation output
+  mkdir -p "$worktree" "$missing_home" "$symlink_home/.copilot"
+  ln -s "$HOME/.copilot/models.json" "$symlink_home/.copilot/models.json"
+  container_name="$(resource_names "$worktree" | head -n 1)"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  confirmation="destroy $container_name $state_volume"
+
+  : >"$docker_log"
+  if output="$(HOME="$missing_home" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test 2>&1)"; then
+    fail 'container creation accepted a missing Copilot models catalog'
+  fi
+  grep -Fq "unsafe or missing Copilot models catalog: $missing_home/.copilot/models.json" <<<"$output" \
+    || fail 'missing Copilot models catalog had the wrong diagnostic'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  if output="$(HOME="$symlink_home" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test 2>&1)"; then
+    fail 'container creation accepted a symlinked Copilot models catalog'
+  fi
+  grep -Fq "unsafe or missing Copilot models catalog: $symlink_home/.copilot/models.json" <<<"$output" \
+    || fail 'symlinked Copilot models catalog had the wrong diagnostic'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  if output="$(HOME="$missing_home" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_MODELS_MOUNT_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test 2>&1)"; then
+    fail 'legacy container replacement accepted a missing Copilot models catalog'
+  fi
+  grep -Fq "unsafe or missing Copilot models catalog: $missing_home/.copilot/models.json" <<<"$output" \
+    || fail 'legacy replacement had the wrong missing-catalog diagnostic'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_MODELS_MOUNT_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test
+  grep -Fqx $'ARG\trm' "$docker_log" \
+    || fail 'legacy container without the models catalog mount was not removed'
+  grep -Fqx $'ARG\tcreate' "$docker_log" \
+    || fail 'legacy container without the models catalog mount was not recreated'
+  awk '
+    $0 == "CALL" { first = second = ""; next }
+    /^ARG\t/ && first == "" { first = $0; next }
+    /^ARG\t/ && second == "" {
+      second = $0
+      if (first == "ARG\tvolume" && (second == "ARG\tcreate" || second == "ARG\trm")) exit 1
+    }
+  ' "$docker_log" \
+    || fail 'legacy models catalog migration mutated the state volume'
+
+  for mount_state in wrong-source writable; do
+    : >"$docker_log"
+    if FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_MODELS_MOUNT_STATE="$mount_state" \
+      run_non_tty "$worktree" "$docker_log" "$worktree" \
+        "$prototype_dir/trellage" -p test; then
+      fail "container with $mount_state models catalog mount was accepted"
+    fi
+    assert_no_mutation "$docker_log"
+  done
+
+  : >"$docker_log"
+  HOME="$missing_home" FAKE_DOCKER_VOLUME_STATE=matching \
+    FAKE_DOCKER_STATE_VOLUME="$state_volume" FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor \
+    >/dev/null
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  HOME="$missing_home" FAKE_DOCKER_VOLUME_STATE=matching \
+    FAKE_DOCKER_STATE_VOLUME="$state_volume" FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" stop
+  grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'stop required the host Copilot models catalog'
+
+  : >"$docker_log"
+  printf '%s\n' "$confirmation" | HOME="$missing_home" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" destroy \
+    >/dev/null
+  awk -v volume="$state_volume" '
+    $0 == "CALL" { command = ""; next }
+    $0 == "ARG\tvolume" { command = "volume"; next }
+    command == "volume" && $0 == "ARG\trm" { saw_rm = 1; next }
+    command == "volume" && saw_rm && $0 == "ARG\t" volume { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$docker_log" \
+    || fail 'destroy did not remove state without the host Copilot models catalog'
+  printf 'Trellage host test: PASS: Copilot models catalog lifecycle\n'
 }
 
 test_normalizes_docker_aarch64_server_platform() {
@@ -3555,6 +3670,11 @@ if [[ "${TRELLAGE_HOST_NEW_CONTAINER_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_MODELS_CATALOG_ONLY:-}" == 1 ]]; then
+  test_copilot_models_catalog_lifecycle
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_LEGACY_PLATFORM_ONLY:-}" == 1 ]]; then
   test_adopts_legacy_arm64_state_without_platform_labels
   exit 0
@@ -3678,6 +3798,7 @@ test_copilot_gh_host_precedence
 test_legacy_product_environment_is_ignored
 test_command_diagnostics_use_trellage_prefix
 test_new_container_from_subdirectory
+test_copilot_models_catalog_lifecycle
 test_normalizes_docker_aarch64_server_platform
 test_adopts_legacy_arm64_state_without_platform_labels
 test_resume_uses_native_thread_without_prompt_replay

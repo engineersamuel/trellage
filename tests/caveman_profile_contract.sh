@@ -50,5 +50,7 @@ done <<<"$expected_profiles"
 
 grep -Fq 'Every new Trellage Sandbox profile under `profiles/` MUST declare the pinned Caveman Agent Skill with `always_on = true`.' AGENTS.md \
   || fail 'AGENTS.md does not require always-on Caveman for future Sandbox profiles'
+grep -Fq 'Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.' AGENTS.md \
+  || fail 'AGENTS.md does not require the models catalog mount for future harness profiles'
 
 printf 'Caveman profile contract: PASS\n'

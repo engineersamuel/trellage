@@ -285,7 +285,7 @@ inside the isolated container.
 
 Every profile image includes `gh`. Launching or opening a recovery shell requires host GitHub authentication from `GH_TOKEN`, `GITHUB_TOKEN`, `COPILOT_GITHUB_TOKEN`, or `gh auth token`.
 
-Trellage mounts the current worktree and its writable Git common directory. This preserves linked-worktree metadata, so agents can commit, push, create pull requests, and enable auto-merge when the host credential permits it.
+Trellage mounts the current worktree, its writable Git common directory, and the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`. The separate destination avoids colliding with mutable Copilot runtime state while preserving linked-worktree metadata and giving every profile the shared model catalog.
 
 For each active session, Trellage configures `gh` in the container `/tmp` tmpfs and passes only `GH_CONFIG_DIR` and `GIT_CONFIG_GLOBAL` to the agent. `GH_TOKEN` is never passed to the agent process, written to the state volume, baked into images, or logged. The temporary configuration disappears when the container stops.
 
@@ -437,9 +437,9 @@ Dry-run changes nothing. Real uninstall removes only the exact owned `trellage` 
 
 ## Safety Boundary
 
-The container is non-root, read-only, capability-free, and resource-limited. The only host-backed mounts are the current worktree, its writable Git common directory, and its owned `/home/agent` state volume. The container also receives a private `/tmp` tmpfs with `noexec`, `nosuid`, and `nodev`; GitHub CLI credentials exist only in that tmpfs. Host-visible Docker exec uses the supported `HERDR_AGENT=codex` hint. `HERDR_AGENT=codex is host-only wrapper metadata`. The hint is not passed into the container. Herdr is not installed or mounted in the container. No bridge, socket, or plugin was added for Herdr.
+The container is non-root, read-only, capability-free, and resource-limited. The host-backed mounts are the current worktree, its writable Git common directory, the read-only `~/.copilot/models.json` catalog at `/home/agent/.copilot-models.json`, and its owned `/home/agent` state volume. The container also receives a private `/tmp` tmpfs with `noexec`, `nosuid`, and `nodev`; GitHub CLI credentials exist only in that tmpfs. Host-visible Docker exec uses the supported `HERDR_AGENT=codex` hint. `HERDR_AGENT=codex is host-only wrapper metadata`. The hint is not passed into the container. Herdr is not installed or mounted in the container. No bridge, socket, or plugin was added for Herdr.
 
-Resource names include the profile, normalized worktree basename, and a canonical-path hash. Ownership labels and exact mounts are revalidated before stop, attach, or removal; collisions with unrelated Docker resources fail closed. Legacy managed containers without the Git common-directory mount are recreated while preserving the profile/worktree state volume. Rebuilt images replace stale containers while retaining the profile/worktree state volume.
+Resource names include the profile, normalized worktree basename, and a canonical-path hash. Ownership labels and exact mounts are revalidated before stop, attach, or removal; collisions with unrelated Docker resources fail closed. Legacy managed containers missing the Git common-directory or models-catalog mount are recreated while preserving the profile/worktree state volume. Rebuilt images replace stale containers while retaining the profile/worktree state volume.
 
 ## Observations
 
