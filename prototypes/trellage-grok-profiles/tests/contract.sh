@@ -145,7 +145,8 @@ assert_line '`fail_closed = true` is the first top-level key in the managed poli
 assert_line 'It prevents the Grok Build 0.2.112 session-start managed-config refresh from clearing the local isolation policy when no team principal owns it.' "$readme"
 assert_line 'They preserve existing sessions, memory, and permissions.' "$readme"
 assert_line 'Repair restores managed policy and a missing cataloged plugin; it is not generic recovery for every doctor failure.' "$readme"
-assert_line 'Launch refuses a profile until setup completes, and refuses damaged managed policy or unsafe authentication paths instead of silently repairing them.' "$readme"
+assert_line 'Launch self-heals repairable managed policy and plugin drift after setup.' "$readme"
+assert_line 'Unsafe profile or authentication paths still fail closed.' "$readme"
 assert_line '`inspect --json` may retain personal Claude or Cursor entries; they are operationally disabled either by entry-level `disabled: true` plus `compatibilityStatus: "disabled"` or by the matching disabled `externalCompat` vendor/surface cell. Plugin container metadata is allowed only when every provided invocable surface is disabled.' "$readme"
 assert_line '`grx update --check` requires `curl` and uses network access to fetch official manifests for installed profiles.' "$readme"
 assert_line 'Exit status: 0 means current; 1 means update available or not installed; 2 means an operational error.' "$readme"
@@ -1589,41 +1590,34 @@ jq -s -e '
 ' "$fake_grok_log" >/dev/null \
   || fail 'lifecycle validation received proxy routing variables'
 
-assert_launch_rejects_current_policy() {
+assert_launch_repairs_current_policy() {
   local fixture_name="$1"
-  local before="$fixture_root/$fixture_name-before.toml"
   local calls_before
   local calls_after
 
-  cp "$hve_home/requirements.toml" "$before"
   calls_before="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-  if ./bin/grx hve inspect --json >"$fixture_root/$fixture_name-inspect.out" \
-    2>"$fixture_root/$fixture_name-inspect.err"; then
-    fail "launch accepted the $fixture_name policy"
-  fi
-  assert_line 'grx: requirements policy does not match: hve' \
-    "$fixture_root/$fixture_name-inspect.err"
-  cmp -s "$before" "$hve_home/requirements.toml" \
-    || fail "launch changed the $fixture_name policy"
+  ./bin/grx hve inspect --json >"$fixture_root/$fixture_name-inspect.out" \
+    2>"$fixture_root/$fixture_name-inspect.err" \
+    || fail "launch did not repair the $fixture_name policy"
+  cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+    || fail "launch did not restore the $fixture_name policy"
   calls_after="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-  [ "$calls_after" = "$calls_before" ] \
-    || fail "launch invoked Grok with the $fixture_name policy"
+  [ "$calls_after" -gt "$calls_before" ] \
+    || fail "launch did not invoke Grok after repairing the $fixture_name policy"
 }
 
 hve_old_policy="$fixture_root/hve-old-requirements.toml"
 sed '1,2d' "$expected_policy" >"$hve_old_policy"
 cp "$hve_old_policy" "$hve_home/requirements.toml"
-assert_launch_rejects_current_policy 'missing-fail-closed'
 if ./bin/grx doctor hve >"$fixture_root/missing-fail-closed.out" \
   2>"$fixture_root/missing-fail-closed.err"; then
   fail 'doctor accepted policy without fail_closed'
 fi
 assert_line 'grx: requirements policy does not match: hve' \
   "$fixture_root/missing-fail-closed.err"
-./bin/grx repair hve >"$fixture_root/missing-fail-closed-repair.out"
-assert_line 'hve: repaired' "$fixture_root/missing-fail-closed-repair.out"
+assert_launch_repairs_current_policy 'missing-fail-closed'
 cmp -s "$expected_policy" "$hve_home/requirements.toml" \
-  || fail 'repair did not restore missing fail_closed = true'
+  || fail 'launch did not restore missing fail_closed = true'
 cp "$hve_old_policy" "$hve_home/requirements.toml"
 ./bin/grx setup hve >"$fixture_root/hve-old-policy-upgrade.out"
 assert_line 'hve: ready' "$fixture_root/hve-old-policy-upgrade.out"
@@ -2165,20 +2159,32 @@ assert_launch_readiness_refusal() {
   chmod 0600 "$hve_home/auth.json"
 }
 
-assert_launch_readiness_refusal missing-policy \
-  'grx: requirements policy is missing: hve'
 assert_launch_readiness_refusal policy-symlink \
-  'grx: requirements policy is missing: hve'
+  "grx: unsafe requirements path: $hve_home/requirements.toml"
 assert_launch_readiness_refusal auth-mode \
   'grx: profile authentication must have mode 0600: hve'
 assert_launch_readiness_refusal auth-unreadable \
   'grx: profile authentication is missing or unreadable: hve'
 assert_launch_readiness_refusal auth-symlink \
   'grx: profile authentication is missing or unreadable: hve'
-assert_launch_readiness_refusal profile-mode \
-  'grx: profile home must have mode 0700: hve'
-assert_launch_readiness_refusal policy-mode \
-  'grx: requirements policy must have mode 0644: hve'
+
+rm "$hve_home/requirements.toml"
+./bin/grx hve --version >/dev/null \
+  || fail 'launch did not restore missing requirements policy'
+cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+  || fail 'launch restored incorrect requirements policy'
+
+chmod 0711 "$hve_home"
+./bin/grx hve --version >/dev/null \
+  || fail 'launch did not restore profile home mode'
+[ "$(path_mode "$hve_home")" = '700' ] \
+  || fail 'launch restored incorrect profile home mode'
+
+chmod 0600 "$hve_home/requirements.toml"
+./bin/grx hve --version >/dev/null \
+  || fail 'launch did not restore requirements policy mode'
+[ "$(path_mode "$hve_home/requirements.toml")" = '644' ] \
+  || fail 'launch restored incorrect requirements policy mode'
 
 hve_launch_safe_home="$fixture_root/hve-launch-safe-home"
 hve_launch_safe_hash_before="$(profile_tree_hash "$hve_home")"
@@ -2831,11 +2837,10 @@ jq -e '
 
 printf 'damaged policy\n' >"$hve_home/requirements.toml"
 rm "$hve_home/fake-state/plugins.json"
-hve_repair_output="$fixture_root/hve-repair.out"
-./bin/grx repair hve >"$hve_repair_output"
-assert_line 'hve: repaired' "$hve_repair_output"
+./bin/grx hve --version >"$fixture_root/hve-launch-repair.out" \
+  || fail 'launch did not restore managed policy and plugin'
 cmp -s "$expected_policy" "$hve_home/requirements.toml" \
-  || fail 'repair did not restore the exact capability policy'
+  || fail 'launch did not restore the exact capability policy'
 jq -e --arg path "$hve_install_path" '. == [{
   status:"installed",
   name:"hve-core-all",
@@ -2844,9 +2849,9 @@ jq -e --arg path "$hve_install_path" '. == [{
   path:$path,
   source:"https://github.com/microsoft/hve-core",
   marketplace:null
-}]' "$hve_plugins_file" >/dev/null || fail 'repair did not restore the HVE plugin'
+}]' "$hve_plugins_file" >/dev/null || fail 'launch did not restore the HVE plugin'
 cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
-  || fail 'repair did not refresh authentication'
+  || fail 'launch repair did not refresh authentication'
 assert_line 'keep session' "$hve_home/sessions/keep"
 assert_line 'keep memory' "$hve_home/memory/keep"
 assert_line 'keep permissions' "$hve_home/permissions/keep"
@@ -2864,13 +2869,11 @@ assert_doctor_failure() {
 
 sed 's/^fail_closed = true$/fail_closed = false/' "$expected_policy" \
   >"$hve_home/requirements.toml"
-assert_launch_rejects_current_policy 'false-fail-closed'
 assert_doctor_failure 'false fail_closed' \
   'grx: requirements policy does not match: hve'
-./bin/grx repair hve >"$fixture_root/false-fail-closed-repair.out"
-assert_line 'hve: repaired' "$fixture_root/false-fail-closed-repair.out"
+assert_launch_repairs_current_policy 'false-fail-closed'
 cmp -s "$expected_policy" "$hve_home/requirements.toml" \
-  || fail 'repair did not restore fail_closed = true'
+  || fail 'launch did not restore fail_closed = true'
 
 jq '.[0].name = "unexpected"' "$hve_plugins_file" \
   >"$fixture_root/hve-unexpected-plugin.json"

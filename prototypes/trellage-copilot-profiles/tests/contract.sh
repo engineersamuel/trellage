@@ -624,9 +624,12 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
 
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '23' ]] \
-  || fail 'launch performed implicit setup or update mutation'
+assert_contains 'args=plugin install hve-core-all@hve-core ' "$fake_copilot_log"
+assert_contains $'hve-core-all@hve-core\t3.3.101' \
+  "$expected_hve_home/fake-state/plugins"
+assert_not_contains 'args=plugin update ' "$fake_copilot_log"
 
+before_list_calls="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 list_output="$fixture_root/list.out"
 "$launcher" list >"$list_output"
 assert_contains $'hve\thve-core-all@hve-core' "$list_output"
@@ -652,7 +655,7 @@ jq -e '
   and .profiles[1].marketplace.kind == "git"
   and .profiles[2].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '23' ]] \
+[[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == "$before_list_calls" ]] \
   || fail 'list invoked Copilot'
 
 mkdir -p "$expected_hve_home/fake-state"
@@ -767,14 +770,14 @@ assert_contains $'hve-core-all@hve-core\t3.3.101' "$expected_hve_home/fake-state
   || fail 'update changed preserved profile state'
 
 rm -f "$expected_hve_home/fake-state/plugins"
-"$launcher" repair hve
+"$launcher" hve --prompt 'repair missing plugin during launch'
 [[ "$(<"$sessions_sentinel")" == 'session' \
   && "$(<"$permissions_sentinel")" == 'permission' \
   && "$(<"$auth_sentinel")" == 'auth' ]] \
-  || fail 'repair changed preserved profile state'
+  || fail 'launch repair changed preserved profile state'
 assert_contains $'hve-core-all@hve-core\t3.3.101' "$expected_hve_home/fake-state/plugins"
 [[ "$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")" == "$marketplace_add_count" ]] \
-  || fail 'repair re-added an already registered marketplace'
+  || fail 'launch repair re-added an already registered marketplace'
 
 awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")"
 awesome_missing_builtin_status=0
@@ -825,20 +828,16 @@ printf '%s\n' \
   $'renamed@custom\t6.2.0' \
   >>"$expected_hve_home/fake-state/plugins"
 launch_calls_before="$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")"
-if "$launcher" hve --prompt contaminated \
+"$launcher" hve --prompt contaminated \
   >"$fixture_root/hve-contaminated-launch.out" \
-  2>"$fixture_root/hve-contaminated-launch.err"; then
-  fail 'ordinary launch accepted direct and source-renamed Superpowers plugins'
-fi
-assert_contains 'cpx: forbidden Superpowers plugin is installed: hve; run: cpx repair hve' \
-  "$fixture_root/hve-contaminated-launch.err"
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == "$launch_calls_before" ]] \
-  || fail 'contaminated launch started the underlying Copilot agent'
-"$launcher" setup hve >"$fixture_root/hve-multiple-superpowers-setup.out"
+  2>"$fixture_root/hve-contaminated-launch.err" \
+  || fail 'ordinary launch did not self-heal forbidden Superpowers plugins'
 assert_not_contains $'superpowers\t' "$expected_hve_home/fake-state/plugins"
 assert_not_contains $'renamed@custom\t' "$expected_hve_home/fake-state/plugins"
 assert_contains $'hve-core-all@hve-core\t3.3.101' \
   "$expected_hve_home/fake-state/plugins"
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" -gt "$launch_calls_before" ]] \
+  || fail 'self-healed launch did not start the underlying Copilot agent'
 
 for profile in awesome hve superpowers; do
   "$launcher" doctor "$profile" >"$fixture_root/$profile-native-auth-doctor.out"

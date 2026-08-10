@@ -1711,32 +1711,24 @@ for contaminated_launch in proxy native; do
   contaminated_args=(hve --version)
   [ "$contaminated_launch" = proxy ] \
     || contaminated_args=(--native-auth hve --version)
-  if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     "$fixture_launcher" "${contaminated_args[@]}" \
     >"$fixture_root/$contaminated_launch-contaminated.out" \
-    2>"$fixture_root/$contaminated_launch-contaminated.err"; then
-    fail "$contaminated_launch launch accepted direct/source-renamed Superpowers"
-  fi
-  grep -F -- 'cdx: forbidden Superpowers plugin is installed: hve; run: cdx repair hve' \
-    "$fixture_root/$contaminated_launch-contaminated.err" >/dev/null \
-    || fail "$contaminated_launch forbidden-Superpowers diagnostic differs"
+    2>"$fixture_root/$contaminated_launch-contaminated.err" \
+    || fail "$contaminated_launch launch did not self-heal forbidden Superpowers"
 done
 unset FAKE_CODEX_LOGIN_STATUS
 rm "$fixture_root/home/.codex/auth.json"
-[ -e "$fake_state/hve/forbidden-superpowers-direct" ] \
-  && [ -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
-  || fail 'contaminated launch mutated installed plugins'
-[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
-  "$fixture_root/fake-codex.log")" = "$launches_before" ] \
-  || fail 'contaminated launch started the underlying Codex agent'
-HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair hve \
-  >"$fixture_root/repair-hve-multiple-superpowers.out" \
-  || fail 'repair did not remove all forbidden Superpowers variants'
+[ -f "$hve_home/auth.json" ] \
+  || fail 'self-healed native launch did not refresh profile authentication'
+rm "$hve_home/auth.json"
 [ ! -e "$fake_state/hve/forbidden-superpowers-direct" ] \
   && [ ! -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
-  || fail 'repair preserved a forbidden Superpowers variant'
+  || fail 'contaminated launch preserved forbidden Superpowers variants'
+[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+  "$fixture_root/fake-codex.log")" = "$((launches_before + 2))" ] \
+  || fail 'self-healed launches did not start the underlying Codex agent'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" inventory hve --json \
   >"$fixture_root/inventory-hve.json" || fail 'inventory hve failed'
