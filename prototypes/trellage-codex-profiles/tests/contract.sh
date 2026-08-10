@@ -141,7 +141,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["hve", "superpowers"]
-  and .profiles.hve.description == "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows."
+  and .profiles.hve.description == "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access."
   and .profiles.hve.marketplaceKind == "local-adapter"
   and .profiles.hve.marketplaceSource == "marketplaces/hve-core"
   and .profiles.hve.marketplaceName == "hve-core"
@@ -150,7 +150,7 @@ jq -e '
   and .profiles.hve.manifestUrl == "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
   and .profiles.hve.plugin == "hve-core-all@hve-core"
   and .profiles.hve.standaloneMcps == []
-  and .profiles.superpowers.description == "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly."
+  and .profiles.superpowers.description == "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow."
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
   and .profiles.superpowers.marketplaceName == "superpowers-marketplace"
@@ -580,6 +580,12 @@ case "$*" in
           ;;
       esac
     fi
+    if [ "${FAKE_CODEX_TTY_READ:-}" = 1 ]; then
+      printf 'TTY_READ_READY\n'
+      IFS= read -r tty_input
+      [ "$tty_input" = continue ] || exit 89
+      printf 'TTY_READ_DONE\n'
+    fi
     exit "${FAKE_CODEX_EXIT_STATUS:-0}"
     ;;
 esac
@@ -739,6 +745,55 @@ cp "$hve_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   "$fixture_launcher" hve -m gpt-5.5 exec --json 'hello world') \
   || fail 'hve launch failed'
+
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
+python3 - "$fixture_launcher" <<'PY' \
+  || fail 'interactive Codex launch could not read from the foreground terminal'
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+launcher = sys.argv[1]
+pid, terminal = pty.fork()
+if pid == 0:
+    environment = os.environ.copy()
+    environment["FAKE_CODEX_TTY_READ"] = "1"
+    os.execvpe(launcher, [launcher, "hve", "--version"], environment)
+
+output = bytearray()
+sent = False
+status = None
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline:
+    ready, _, _ = select.select([terminal], [], [], 0.05)
+    if ready:
+        try:
+            chunk = os.read(terminal, 4096)
+        except OSError:
+            chunk = b""
+        output.extend(chunk)
+        if not sent and b"TTY_READ_READY" in output:
+            os.write(terminal, b"continue\n")
+            sent = True
+    waited, wait_status = os.waitpid(pid, os.WNOHANG)
+    if waited:
+        status = os.waitstatus_to_exitcode(wait_status)
+        break
+
+if status is None:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    sys.stderr.buffer.write(output)
+    raise SystemExit(1)
+if status != 0 or b"TTY_READ_DONE" not in output:
+    sys.stderr.buffer.write(output)
+    raise SystemExit(1)
+PY
+
 cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
   || fail 'proxy launch did not restore exact prelaunch config bytes'
 jq -se --arg codexHome "$hve_home" \

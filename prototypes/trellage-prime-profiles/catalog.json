@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "default": {
-      "description": "Prime Agent with Claude Opus 5 through keyless copilot-proxy-rs, plus the managed ask_user extension.",
+      "description": "Prime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.",
       "plugin": null,
       "standaloneMcps": []
     }

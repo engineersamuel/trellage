@@ -316,7 +316,7 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
 "$command_path" list >"$fixture_root/list.txt" || fail 'text list failed'
-grep -Fq $'default\tPrime Agent with Claude Opus 5 through keyless copilot-proxy-rs, plus the managed ask_user extension.' \
+grep -Fq $'default\tPrime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.' \
   "$fixture_root/list.txt" || fail 'text list differs'
 
 "$command_path" setup >"$fixture_root/setup.out" 2>"$fixture_root/setup.err" \

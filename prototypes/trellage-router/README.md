@@ -1,13 +1,14 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-discovers the installed launchers `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx`,
+discovers the installed launchers `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`,
+and `prx`,
 validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
 
 ## Install
 
-Install the six native launchers first. Their commands must resolve from
+Install the seven native launchers first. Their commands must resolve from
 `PATH` to their owned runtimes under `~/.local/share/trellage/`.
 
 Prerequisites: Bash, Node.js, and `jq`.
@@ -15,6 +16,7 @@ Prerequisites: Bash, Node.js, and `jq`.
 ```sh
 (cd ../trellage-codex-profiles && ./install.sh)
 (cd ../trellage-copilot-profiles && ./install.sh)
+(cd ../trellage-claude-profiles && ./install.sh)
 (cd ../trellage-grok-profiles && ./install.sh)
 (cd ../trellage-jcode-profiles && ./install.sh)
 (cd ../trellage-omp-profiles && ./install.sh)
@@ -56,7 +58,7 @@ mise run trx -- list --json
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
 `launcher`, `harness`, `name`, and `description`. Both forms are non-interactive
-and work without a TTY. They validate all six owned launchers and their catalogs
+and work without a TTY. They validate all seven owned launchers and their catalogs
 before producing output, so missing, redirected, or invalid launchers fail
 closed.
 
@@ -80,7 +82,8 @@ readiness status. Diagnostic inventory remains available directly from
 launchers that support `inventory PROFILE --json`; `trx` does not collect it on
 the launch path. `doctor` remains the full runtime health diagnostic.
 
-`trx` adds no containment. `cpx`, `cdx`, `grx`, `jcx`, `omp`, and `prx` still run
+`trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx`
+still run
 their selected agents directly on the host with the permissions and safety
 behavior documented by each launcher. Use only trusted repositories, profiles,
 plugins, and arguments.

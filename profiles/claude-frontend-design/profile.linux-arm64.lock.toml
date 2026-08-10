@@ -1308,7 +1308,7 @@ kind = "skill"
 repository = "https://github.com/emilkowalski/skills.git"
 ref = "main"
 select = ["animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations"]
-commit = "de33dbed000212b54400a33767d1e4d03654db2a"
+commit = "9075d1724a831411ab5cf138dd9b5cd406ffc2e2"
 integrity = "sha256:e58e3bffb0201b01b41e31dd6cbfb0adb06cea7d0d6349883abcc1daeb227f16"
 
 [[sources.files]]
@@ -7907,10 +7907,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.224"
-integrity = "sha256:6f72188d3593111b4a8e6d738844209ce42f94275f9d5981f3123d462a66c157"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.224/claude-linux-arm64.tar.gz"
-size = 89904780
+version = "2.1.226"
+integrity = "sha256:fe6a30d9358c6407780cc2045181ca7ecebe6f9967b99ac1a884f90694e825f5"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.226/claude-linux-arm64.tar.gz"
+size = 90402868
 
 [[packages.runtime]]
 name = "bash"
@@ -7973,3 +7973,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
+final_digest = "sha256:e6128df6630900bd62537bf4d27b1d2f920004f3efd4daa664410bd9f7ea0c7c"

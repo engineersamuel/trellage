@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "profiles": {
     "copilot": {
-      "description": "Oh My Pi using native GitHub Copilot authentication and OMP-discovered Copilot models.",
+      "description": "OMP with native GitHub Copilot authentication and model catalog, default gpt-5.6-sol medium routing, LSP, debugger, browser, eval tools, and typed subagent fan-out.",
       "kind": "copilot",
       "ompProfile": "trellage-copilot-native",
       "plugin": null,
       "standaloneMcps": []
     },
     "local": {
-      "description": "Oh My Pi using keyless copilot-proxy-rs access to the local qwen3.6-35b-a3b-local model.",
+      "description": "OMP with one keyless local Qwen 3.6 35B A3B route assigned to every model role, retaining OMP’s full host tool and subagent surface.",
       "kind": "local",
       "ompProfile": "trellage-qwen-local",
       "plugin": null,

@@ -56,6 +56,8 @@ scan_public_branding() {
   || fail 'Codex profiles prototype path is missing'
 [[ -d "$repo_root/prototypes/trellage-copilot-profiles" ]] \
   || fail 'Copilot profiles prototype path is missing'
+[[ -d "$repo_root/prototypes/trellage-claude-profiles" ]] \
+  || fail 'Claude profile prototype path is missing'
 [[ ! -e "$repo_root/prototypes/trellage-profiles" ]] \
   || fail 'ambiguous legacy Copilot profiles prototype path remains'
 [[ -d "$repo_root/prototypes/trellage-grok-profiles" ]] || fail 'Grok profiles prototype path is missing'
@@ -79,7 +81,7 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-profiles native-copilot-profiles native-grok-profiles native-jcode-profile; do
+for target in native-codex-profiles native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
@@ -89,6 +91,8 @@ grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Codex profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-copilot-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Copilot profiles target is stale'
+grep -Fqx $'\tbash prototypes/trellage-claude-profiles/tests/contract.sh' \
+  "$repo_root/Makefile" || fail 'Makefile Claude profile target is stale'
 grep -Fqx $'\tbash prototypes/trellage-grok-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Grok profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-jcode-profiles/tests/contract.sh' \
@@ -149,6 +153,7 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage/mise.toml" \
   "$repo_root/prototypes/trellage-codex-profiles" \
   "$repo_root/prototypes/trellage-copilot-profiles" \
+  "$repo_root/prototypes/trellage-claude-profiles" \
   "$repo_root/prototypes/trellage-grok-profiles" \
   "$repo_root/prototypes/trellage-jcode-profiles" \
   "$repo_root/Makefile" \

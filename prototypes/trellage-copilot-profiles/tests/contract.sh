@@ -313,7 +313,7 @@ jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["awesome", "hve", "superpowers"]
   and .profiles.awesome == {
-    "description": "GitHub-curated general-purpose agents, prompts, instructions, and skills for coding, review, documentation, testing, and platform tasks.",
+    "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
     "marketplace": "github/awesome-copilot",
     "marketplaceName": "awesome-copilot",
     "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
@@ -321,7 +321,7 @@ jq -e '
     "standaloneMcps": []
   }
   and .profiles.hve == {
-    "description": "Opinionated agentic SDLC toolkit for planning, research, implementation, review, security, accessibility, work-item integration, and reusable engineering workflows.",
+    "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
     "marketplace": "microsoft/hve-core",
     "marketplaceName": "hve-core",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
@@ -329,7 +329,7 @@ jq -e '
     "standaloneMcps": []
   }
   and .profiles.superpowers == {
-    "description": "Disciplined development workflow centered on brainstorming, written plans, TDD, systematic debugging, review, and finishing changes cleanly.",
+    "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
     "marketplace": "obra/superpowers-marketplace",
     "marketplaceName": "superpowers-marketplace",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
@@ -416,6 +416,18 @@ expected_awesome_launch="$(jq -cn \
 actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" hve
+) >"$fixture_root/bare-launch.out"
+expected_bare_launch="$(jq -cn \
+  --arg home "$expected_hve_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--allow-all"]}')"
+actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
+[[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
+  || fail 'bare launch did not add the default permission argument'
 
 permission_argument_vectors=(
   '--allow-all'
@@ -612,7 +624,7 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
 
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '22' ]] \
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '23' ]] \
   || fail 'launch performed implicit setup or update mutation'
 
 list_output="$fixture_root/list.out"
@@ -640,7 +652,7 @@ jq -e '
   and .profiles[1].marketplace.kind == "git"
   and .profiles[2].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
-[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '22' ]] \
+[[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" == '23' ]] \
   || fail 'list invoked Copilot'
 
 mkdir -p "$expected_hve_home/fake-state"

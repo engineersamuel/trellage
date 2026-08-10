@@ -117,6 +117,7 @@ fi
 known_native_packages=(
   trellage-codex-profiles
   trellage-copilot-profiles
+  trellage-claude-profiles
   trellage-grok-profiles
   trellage-jcode-profiles
   trellage-omp-profiles
@@ -198,11 +199,11 @@ install_native_stack() {
 
   printf 'rebuild-profile-images: verifying native commands on PATH\n' >&2
   local cmd resolved runtime
-  for cmd in cdx cpx grx jcx omp trx; do
+  for cmd in cdx cpx cldx grx jcx omp prx trx; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
-      # jcx/omp may be optional on some machines; warn but only fail hard for core set.
+      # jcx/omp/prx may be optional on some machines; fail hard for the core set.
       case "$cmd" in
-        cdx | cpx | grx | trx)
+        cdx | cpx | cldx | grx | trx)
           printf 'rebuild-profile-images: missing required command on PATH: %s\n' "$cmd" >&2
           status=1
           ;;

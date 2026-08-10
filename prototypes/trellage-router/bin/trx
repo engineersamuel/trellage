@@ -145,20 +145,24 @@ build_choices() {
   jq -cn \
     --argjson cpxCatalog "$1" \
     --argjson cdxCatalog "$2" \
-    --argjson grxCatalog "$3" \
-    --argjson jcxCatalog "$4" \
-    --argjson ompCatalog "$5" \
-    --argjson prxCatalog "$6" \
-    --arg cpxPath "$7" \
-    --arg cdxPath "$8" \
-    --arg grxPath "$9" \
-    --arg jcxPath "${10}" \
-    --arg ompPath "${11}" \
-    --arg prxPath "${12}" \
-    --argjson passthroughArgs "${13}" '
+    --argjson cldxCatalog "$3" \
+    --argjson grxCatalog "$4" \
+    --argjson jcxCatalog "$5" \
+    --argjson ompCatalog "$6" \
+    --argjson prxCatalog "$7" \
+    --arg cpxPath "$8" \
+    --arg cdxPath "$9" \
+    --arg cldxPath "${10}" \
+    --arg grxPath "${11}" \
+    --arg jcxPath "${12}" \
+    --arg ompPath "${13}" \
+    --arg prxPath "${14}" \
+    --argjson passthroughArgs "${15}" '
     def models($catalog; $profile):
       if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
+      elif $catalog.launcher == "cldx" then
+        {defaultModel:"claude-opus-5",models:["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"],modelOverrideSupported:true}
       elif $catalog.launcher == "omp" and $profile.name == "copilot" then
         {defaultModel:"github-copilot/gpt-5.6-sol:medium",models:["github-copilot/gpt-5.6-sol:medium","github-copilot/gpt-5.6-terra:medium"],modelOverrideSupported:true}
       elif $catalog.launcher == "omp" then
@@ -178,6 +182,7 @@ build_choices() {
     def binary_path($catalog):
       if $catalog.launcher == "cpx" then $cpxPath
       elif $catalog.launcher == "cdx" then $cdxPath
+      elif $catalog.launcher == "cldx" then $cldxPath
       elif $catalog.launcher == "grx" then $grxPath
       elif $catalog.launcher == "jcx" then $jcxPath
       elif $catalog.launcher == "omp" then $ompPath
@@ -208,6 +213,7 @@ build_choices() {
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),
+        pair($cldxCatalog),
         pair($grxCatalog),
         pair($jcxCatalog),
         pair($ompCatalog),
@@ -221,10 +227,11 @@ build_profile_list() {
   jq -cn \
     --argjson cpxCatalog "$1" \
     --argjson cdxCatalog "$2" \
-    --argjson grxCatalog "$3" \
-    --argjson jcxCatalog "$4" \
-    --argjson ompCatalog "$5" \
-    --argjson prxCatalog "$6" '
+    --argjson cldxCatalog "$3" \
+    --argjson grxCatalog "$4" \
+    --argjson jcxCatalog "$5" \
+    --argjson ompCatalog "$6" \
+    --argjson prxCatalog "$7" '
     def profiles($catalog):
       $catalog.profiles[] | {
         launcher: $catalog.launcher,
@@ -237,6 +244,7 @@ build_profile_list() {
       profiles: [
         profiles($cpxCatalog),
         profiles($cdxCatalog),
+        profiles($cldxCatalog),
         profiles($grxCatalog),
         profiles($jcxCatalog),
         profiles($ompCatalog),
@@ -310,6 +318,7 @@ fi
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v1)"
+cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1)"
 grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v1)"
@@ -326,6 +335,8 @@ read_catalog cpx copilot "$cpx" >"$catalog_tmp/cpx" &
 cpx_catalog_pid=$!
 read_catalog cdx codex "$cdx" >"$catalog_tmp/cdx" &
 cdx_catalog_pid=$!
+read_catalog cldx claude "$cldx" >"$catalog_tmp/cldx" &
+cldx_catalog_pid=$!
 read_catalog grx grok "$grx" >"$catalog_tmp/grx" &
 grx_catalog_pid=$!
 read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" &
@@ -337,7 +348,7 @@ prx_catalog_pid=$!
 
 catalog_status=0
 for catalog_pid in \
-  "$cpx_catalog_pid" "$cdx_catalog_pid" "$grx_catalog_pid" \
+  "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" "$grx_catalog_pid" \
   "$jcx_catalog_pid" "$omp_catalog_pid" "$prx_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
@@ -345,6 +356,7 @@ done
 
 cpx_catalog="$(<"$catalog_tmp/cpx")"
 cdx_catalog="$(<"$catalog_tmp/cdx")"
+cldx_catalog="$(<"$catalog_tmp/cldx")"
 grx_catalog="$(<"$catalog_tmp/grx")"
 jcx_catalog="$(<"$catalog_tmp/jcx")"
 omp_catalog="$(<"$catalog_tmp/omp")"
@@ -354,7 +366,7 @@ trap - EXIT HUP INT TERM
 
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
-    "$cpx_catalog" "$cdx_catalog" "$grx_catalog" \
+    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
     "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
@@ -374,8 +386,8 @@ command -v node >/dev/null 2>&1 || die 'required command not found: node'
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$cpx_catalog" "$cdx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog" \
-  "$cpx" "$cdx" "$grx" "$jcx" "$omp" "$prx" "$passthrough_args")" \
+  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog" \
+  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$prx" "$passthrough_args")" \
   || die 'could not build profile choices'
 
 choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
@@ -407,6 +419,10 @@ case "$launcher" in
   cdx)
     selected_launcher="$cdx"
     selected_catalog="$cdx_catalog"
+    ;;
+  cldx)
+    selected_launcher="$cldx"
+    selected_catalog="$cldx_catalog"
     ;;
   grx)
     selected_launcher="$grx"
