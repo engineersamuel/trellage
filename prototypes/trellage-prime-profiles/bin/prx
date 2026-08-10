@@ -848,7 +848,7 @@ doctor_profile() {
 
 launch_prime() {
   local version cli selected_model="$model_id"
-  local -a prime_args=()
+  local -a prime_args=() command_args
 
   while (( $# > 0 )); do
     case "$1" in
@@ -880,16 +880,22 @@ launch_prime() {
   check_proxy "$selected_model"
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
   unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+  command_args=(
+    "$cli"
+    --provider "$provider"
+    --model "$selected_model"
+    --offline
+    --daemon-socket "$daemon_socket"
+  )
+  # Bash 3.2 treats an empty array expansion as unbound under `set -u`.
+  if (( ${#prime_args[@]} > 0 )); then
+    command_args+=("${prime_args[@]}")
+  fi
   exec env \
     PRIME_AGENT_CODING_AGENT_DIR="$profile_home" \
     PRIME_AGENT_KERNEL_PYTHON="$kernel_python" \
     PRIME_AGENT_KERNEL_VENV="$kernel_venv" \
-    node "$cli" \
-    --provider "$provider" \
-    --model "$selected_model" \
-    --offline \
-    --daemon-socket "$daemon_socket" \
-    "${prime_args[@]}"
+    node "${command_args[@]}"
 }
 
 require_command jq

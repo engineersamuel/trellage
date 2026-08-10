@@ -331,6 +331,32 @@ expected = [b"cpx", b"cpx-p", b"two words", b"", b"--literal=*", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
+# Selecting Prime without passthrough arguments must invoke PRX with only its
+# profile argument. This composes with the PRX argument-free launch contract.
+cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
+cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+import {writeFileSync} from "node:fs"
+writeFileSync(process.argv[3], '{"id":"prx:prx-p","target":"current"}\n')
+EOF
+: >"$argument_log"
+TRX_ARGUMENT_LOG="$argument_log" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/prx-select.out" \
+  '\r' '' "$fixture_bin/trx" \
+  || fail 'argument-free Prime selection failed'
+mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+python3 - "$argument_log" <<'PY' || fail 'argument-free Prime selection arguments differ'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+# The fake launcher's zero-argument `printf` emits one empty sentinel, followed
+# by the trailing split field. No non-empty passthrough argument is present.
+expected = [b"prx", b"prx-p", b"", b""]
+if actual != expected:
+    print(f"actual={actual!r} expected={expected!r}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
 herdr_log="$fixture_root/herdr.log"
 cat >"$fixture_bin/herdr" <<'EOF'
 #!/usr/bin/env bash
