@@ -163,8 +163,14 @@ export PATH="$fixture_bin:/usr/bin:/bin"
   || fail 'installer published the wrong trx command target'
 assert_contains 'Installed trx' "$fixture_root/install.out"
 
+mv "$runtime_parent/trx/lib/launcher.mjs" \
+  "$runtime_parent/trx/lib/terminal-picker.mjs"
 "$prototype_root/install.sh" >"$fixture_root/reinstall.out"
 [[ -x "$runtime_parent/trx/bin/trx" ]] || fail 'repeat install removed launcher'
+[[ -x "$runtime_parent/trx/lib/launcher.mjs" ]] \
+  || fail 'upgrade did not install the Ink launcher'
+[[ ! -e "$runtime_parent/trx/lib/terminal-picker.mjs" ]] \
+  || fail 'upgrade left the legacy terminal picker'
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
@@ -473,6 +479,8 @@ assert_contains 'refusing to replace unrelated command' "$fixture_root/unrelated
 rm "$fixture_bin/trx"
 ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
 
+mv "$runtime_parent/trx/lib/launcher.mjs" \
+  "$runtime_parent/trx/lib/terminal-picker.mjs"
 "$prototype_root/uninstall.sh" >"$fixture_root/uninstall.out"
 [[ ! -e "$runtime_parent/trx" ]] || fail 'uninstaller left trx runtime'
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \
