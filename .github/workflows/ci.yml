@@ -23,13 +23,17 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: packages/trellage-cli/package-lock.json
+          cache-dependency-path: |
+            packages/trellage-cli/package-lock.json
+            packages/trellage-launcher/package-lock.json
       - name: Install required system tools
         run: sudo apt-get install --yes --no-install-recommends fish ripgrep
       - name: Verify required system tools
         run: for tool in jq curl git make fish rg; do command -v "$tool" >/dev/null; done
       - name: Install profile compiler dependencies
         run: npm ci --prefix packages/trellage-cli
+      - name: Install launcher dependencies
+        run: npm ci --prefix packages/trellage-launcher
       - name: Install browser contract dependencies
         run: npm ci --prefix tests/playwright
       - name: Run full deterministic test and build suite
