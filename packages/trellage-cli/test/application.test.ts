@@ -122,6 +122,7 @@ import {
   builderNetworkEnv,
   builderScript,
   buildProfile,
+  compatibilityPluginArguments,
   discoverPypiIndex,
   loadLock,
   microsoftProtectedPypiIndex,
@@ -166,6 +167,29 @@ const pathExists = async (candidate: string) => {
     return false
   }
 }
+
+describe("compatibility plugin generation", () => {
+  it("runs the source generator without installing its unrelated eval project", () => {
+    expect(compatibilityPluginArguments("/source", "full-stack-orchestration", "/output")).toEqual([
+      "x",
+      "uv@0.11.21",
+      "--",
+      "uv",
+      "run",
+      "--no-project",
+      "--python",
+      "3.13",
+      "python",
+      "/source/tools/generate.py",
+      "--harness",
+      "codex",
+      "--plugin",
+      "full-stack-orchestration",
+      "--output-root",
+      "/output",
+    ])
+  })
+})
 
 describe("npm registry forwarding", () => {
   it("accepts a credential-free HTTPS registry", () => {
@@ -1456,6 +1480,10 @@ select = ["humanizer"]
       "prime_kernel_status=$?",
       "trellage: Prime Python kernel bootstrap failed",
       "UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/",
+      "prime_kernel_requirements='/tmp/trellage-prime-kernel-requirements.txt'",
+      "platformdirs==4.11.0 --hash=sha256:360ccded2b7fce0af0ff80cc8f5942a1c5d99b0e856033acb030bfc634709e74",
+      'mise x uv@0.11.21 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall',
+      'rm -f "$prime_kernel_requirements"',
       'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
       'find "$prime_kernel_home" -type d -name __pycache__',
       "prime_agent_runtime-*.dist-info/RECORD",

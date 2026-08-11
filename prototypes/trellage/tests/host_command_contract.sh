@@ -53,11 +53,18 @@ printf '%s\n' \
   'if [[ "${2:-}" == metadata && -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
   '  exec cat "$FAKE_PROFILE_METADATA"' \
   'fi' \
+  'if [[ "${2:-}" == build && "${3:-}" == --locked && "${FAKE_PROFILE_LOCKED_BUILD_FAILS:-0}" == 1 ]]; then' \
+  '  exit 1' \
+  'fi' \
   'if [[ "${2:-}" == build && "${FAKE_PROFILE_BUILD_SUCCEEDS:-0}" == 1 ]]; then' \
   '  if [[ -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
   '    metadata="$(cat "$FAKE_PROFILE_METADATA")"' \
   '  else' \
-  '    metadata="$("$FAKE_REAL_NODE" "$1" metadata "${4:?}")"' \
+  '    if [[ "${3:-}" == --locked ]]; then' \
+  '      metadata="$("$FAKE_REAL_NODE" "$1" metadata "${4:?}")"' \
+  '    else' \
+  '      metadata="$("$FAKE_REAL_NODE" "$1" metadata "${3:?}")"' \
+  '    fi' \
   '  fi' \
   '  jq -er ".profile_hash" <<<"$metadata" >"$FAKE_DOCKER_LOG.image-profile-hash"' \
   '  jq -er ".runtime_hash" <<<"$metadata" >"$FAKE_DOCKER_LOG.image-runtime-hash"' \
@@ -2027,6 +2034,31 @@ test_stale_image_label_triggers_automatic_build() {
   printf 'Trellage host test: PASS: stale image label triggers automatic build\n'
 }
 
+test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build() {
+  local worktree="$test_root/locked-digest-mismatch-worktree"
+  local docker_log="$test_root/locked-digest-mismatch.docker.log"
+  local state_volume
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+  : >"$host_node_log"
+
+  FAKE_PROFILE_BUILD_SUCCEEDS=1 \
+    FAKE_PROFILE_LOCKED_BUILD_FAILS=1 \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+  grep -Fqx $'ARG\t--locked' "$host_node_log" \
+    || fail 'locked build was not attempted first'
+  [[ "$(grep -Fcx $'ARG\tbuild' "$host_node_log")" -ge 2 ]] \
+    || fail 'non-locked fallback build was not attempted after locked build failure'
+  grep -Fqx $'ARG\tcreate' "$docker_log" \
+    || fail 'launch did not continue after the non-locked fallback build'
+  printf 'Trellage host test: PASS: locked digest mismatch falls back to non-locked build\n'
+}
+
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
   local worktree="$test_root/stale-runtime-worktree"
   local docker_log="$test_root/stale-runtime.docker.log"
@@ -3707,6 +3739,7 @@ if [[ "${TRELLAGE_HOST_TAIL_ONLY:-}" == 1 ]]; then
   test_varlock_secrets_reach_only_final_codex_exec
   test_global_varlock_bootstrap_supplies_claude_browser_token
   test_stale_image_label_triggers_automatic_build
+  test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build
   test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
   test_rebuild_replaces_container_and_preserves_profile_state
   exit 0
@@ -3826,5 +3859,6 @@ test_env_secrets_reach_only_final_codex_exec
 test_varlock_secrets_reach_only_final_codex_exec
 test_global_varlock_bootstrap_supplies_claude_browser_token
 test_stale_image_label_triggers_automatic_build
+test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
 test_rebuild_replaces_container_and_preserves_profile_state

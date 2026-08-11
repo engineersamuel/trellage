@@ -1308,8 +1308,8 @@ kind = "skill"
 repository = "https://github.com/emilkowalski/skills.git"
 ref = "main"
 select = ["animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations"]
-commit = "9075d1724a831411ab5cf138dd9b5cd406ffc2e2"
-integrity = "sha256:e58e3bffb0201b01b41e31dd6cbfb0adb06cea7d0d6349883abcc1daeb227f16"
+commit = "78761e1b57f97dce65b983d640c70a68f39e8163"
+integrity = "sha256:23ecb55519ea1148f7031d52069a8ecd2c9621fce181d290ae1d4ed59fc71896"
 
 [[sources.files]]
 path = "skills/animate/RECIPES.md"
@@ -1326,6 +1326,14 @@ sha256 = "sha256:d718b48fe3c7898804d588f050a2e266d82c9f5ef51da256c8cb8b595152775
 [[sources.files]]
 path = "skills/apple-design/SKILL.md"
 sha256 = "sha256:11840b24a11d7f94f39c6aaab074750ae4e4de4ef54ee4b1dd97e16ebd485e61"
+
+[[sources.files]]
+path = "skills/ask-sonner/API.md"
+sha256 = "sha256:4bb06f482c5757529e3d7a672a30fbeed42d24919a63e2571384a9ce1549aa7f"
+
+[[sources.files]]
+path = "skills/ask-sonner/SKILL.md"
+sha256 = "sha256:be1b04511aadb4d7d81aa8cd2b55c260a626aae534983bc8ae3fbe26bbf48632"
 
 [[sources.files]]
 path = "skills/emil-design-eng/SKILL.md"
@@ -7907,10 +7915,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.226"
-integrity = "sha256:fe6a30d9358c6407780cc2045181ca7ecebe6f9967b99ac1a884f90694e825f5"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.226/claude-linux-arm64.tar.gz"
-size = 90402868
+version = "2.1.227"
+integrity = "sha256:e998df163821c7c2be66139f0b5411e26928b9bc18326edb95576b7bc94168b3"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.227/claude-linux-arm64.tar.gz"
+size = 92357612
 
 [[packages.runtime]]
 name = "bash"
@@ -7973,4 +7981,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:e6128df6630900bd62537bf4d27b1d2f920004f3efd4daa664410bd9f7ea0c7c"
+final_digest = "sha256:13e2187032819ecbe58580fad31a22550571cc3cca7572d7ef354935aff35410"
