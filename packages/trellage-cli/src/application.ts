@@ -300,6 +300,7 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
     const artifact = `/src/${filename}`
     const kernelHome = "/home/agent/.trellage/prime-kernel"
     const kernelSeed = "/src/prime-kernel-seed.tar.gz"
+    const kernelRequirements = "/tmp/trellage-prime-kernel-requirements.txt"
     const packageCheck =
       'const p=require("/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json");if(p.name!=="prime-agent"||p.version!==process.argv[1]||p.bin?.["prime-agent"]!=="dist/bundle/cli.js")process.exit(1)'
     const kernelBootstrap =
@@ -326,6 +327,10 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       "prime_kernel_status=0",
       `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PYTHONDONTWRITEBYTECODE=1 PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
       '[ "$prime_kernel_status" -eq 0 ] || { printf \'%s\\n\' "trellage: Prime Python kernel bootstrap failed (exit $prime_kernel_status)." >&2; printf \'%s\\n\' "This step needs a reachable PyPI simple index for uv seed packages, ipykernel, and default runtime packages." >&2; printf \'%s\\n\' "On Microsoft-managed devices, public pypi.org / files.pythonhosted.org are blocked; use the CFS feed (UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/) or configure pip global.index-url, then rebuild." >&2; printf \'%s\\n\' "Elsewhere, set UV_DEFAULT_INDEX or PIP_INDEX_URL to any reachable simple-index mirror." >&2; exit "$prime_kernel_status"; }',
+      `prime_kernel_requirements=${shellQuote(kernelRequirements)}`,
+      `printf '%s\\n' 'platformdirs==4.11.0 --hash=sha256:360ccded2b7fce0af0ff80cc8f5942a1c5d99b0e856033acb030bfc634709e74' > "$prime_kernel_requirements"`,
+      'PYTHONDONTWRITEBYTECODE=1 mise x uv@0.11.21 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall -r "$prime_kernel_requirements"',
+      'rm -f "$prime_kernel_requirements"',
       'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
       'find "$prime_kernel_home" -type d -name __pycache__ -prune -exec rm -rf {} +',
       'prime_runtime_record="$(find "$prime_kernel_home/.prime/agent/kernel-venv/lib" -path \'*/site-packages/prime_agent_runtime-*.dist-info/RECORD\' -type f -print -quit)"',
@@ -530,38 +535,39 @@ const run = (command: string, args: ReadonlyArray<string>, options?: CommandOpti
         catch: (cause) => new ApplicationError({ message: `command failed: ${command}`, cause }),
       })
 
+export const compatibilityPluginArguments = (
+  sourceDirectory: string,
+  selection: string,
+  destination: string,
+): ReadonlyArray<string> => [
+  "x",
+  "uv@0.11.21",
+  "--",
+  "uv",
+  "run",
+  "--no-project",
+  "--python",
+  "3.13",
+  "python",
+  path.join(sourceDirectory, "tools", "generate.py"),
+  "--harness",
+  "codex",
+  "--plugin",
+  selection,
+  "--output-root",
+  destination,
+]
+
 const pluginGenerator: PluginGenerator = (sourceDirectory, selections, destination) =>
   Effect.forEach(
     selections,
     (selection) =>
-      run(
-        "mise",
-        [
-          "x",
-          "uv@0.11.21",
-          "--",
-          "uv",
-          "run",
-          "--frozen",
-          "--project",
-          path.join(sourceDirectory, "plugins", "plugin-eval"),
-          "python",
-          path.join(sourceDirectory, "tools", "generate.py"),
-          "--harness",
-          "codex",
-          "--plugin",
-          selection,
-          "--output-root",
-          destination,
-        ],
-        {
-          env: {
-            ...process.env,
-            PYTHONDONTWRITEBYTECODE: "1",
-            UV_PROJECT_ENVIRONMENT: path.join(destination, ".venv"),
-          },
+      run("mise", compatibilityPluginArguments(sourceDirectory, selection, destination), {
+        env: {
+          ...process.env,
+          PYTHONDONTWRITEBYTECODE: "1",
         },
-      ),
+      }),
     { concurrency: 1 },
   ).pipe(Effect.zipRight(run("bash", [compatibilityAdapter, destination])), Effect.asVoid)
 
