@@ -604,6 +604,9 @@ launch_omp() {
   local version binary token
 
   require_command mise
+  if [[ ! -e "$version_file" && ! -L "$version_file" ]]; then
+    setup_profile >/dev/null
+  fi
   version="$(read_pinned_version)"
   ensure_managed_profile
   binary="$(ensure_installed_binary "$version")"

@@ -1418,9 +1418,6 @@ ensure_launch_ready() {
   fi
   require_profile "$profile"
   require_safe_profile_home "$profile"
-  home="$(profile_home "$profile")"
-  [ -d "$home" ] && [ ! -L "$home" ] \
-    || die "profile is not set up: $profile"
   preflight_profile "$profile"
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"

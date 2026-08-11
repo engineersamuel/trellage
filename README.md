@@ -375,6 +375,65 @@ profiles described above. Use **Trellage Native** for `trx` and its host-native
 profile launchers. Native launchers isolate agent state but run directly on the
 host.
 
+### Fresh-machine onboarding
+
+Each native launcher wraps a real, already-installed agent CLI; `trx` itself
+is just a picker over whichever launchers are installed. On a brand-new
+machine:
+
+1. **Confirm `~/.local/bin` is on `PATH`.** Every installer places its command
+   there. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile if
+   it is missing, then reload the shell.
+2. **Install only the underlying agent CLIs you actually use**, each launcher
+   only needs its own dependency:
+   - `cdx` (Codex) needs the `codex` CLI: `npm install -g @openai/codex`.
+   - `cpx` (GitHub Copilot) needs `copilot` (`gh extension install
+     github/gh-copilot` or the standalone Copilot CLI) already authenticated,
+     plus `jq`.
+   - `cldx` (Claude Code) needs the `claude` CLI: `npm install -g
+     @anthropic-ai/claude-code`.
+   - `grx` (Grok) needs the `grok` CLI already logged in
+     (`~/.grok/auth.json` present).
+   - `jcx` (jcode) and `omp` (Oh My Pi) only need `mise` and `curl` — the
+     installer fetches and pins the agent binary itself via `mise`.
+   - `prx` (Prime Agent) needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
+     `uv`** (`mise use -g uv` if it is not already on `PATH`) to bootstrap its
+     Python kernel venv.
+3. **`trx` requires every one of the seven launchers to be installed** before
+   it will list or launch anything — it errors with `required launcher not
+   found on PATH: <name>` otherwise. If you only use a subset of harnesses,
+   skip `trx` and run that launcher's binary (`cpx`, `grx`, …) directly
+   instead of installing agent CLIs you don't need.
+4. Several profiles (`cldx`, `jcx`, `prx`, and `omp`'s `copilot` profile) talk
+   to a keyless `copilot-proxy-rs` service at `http://127.0.0.1:8080`. Start
+   that proxy and make sure it has a valid GitHub Copilot device-flow login
+   before using those launchers. A `401` or `GitHub OAuth device flow is not
+   available in this non-interactive process` error means the proxy has no
+   usable cached token (it only prompts for the device flow when its stdin is
+   a terminal, so a detached `docker compose up -d`/`restart` never shows the
+   prompt). Re-authenticate it once, from the proxy's own repository:
+
+   ```bash
+   docker run -t --rm \
+     -e COPILOT_PROXY_RS_CONFIG_DIR=/config \
+     -e COPILOT_PROXY_RS_PORT=8091 \
+     -v "$HOME/.config/copilot-proxy-rs:/config:rw" \
+     copilot-proxy-rs:local
+   ```
+
+   Open the printed `https://github.com/login/device` URL, enter the printed
+   code, and approve GitHub Copilot access. The token persists to
+   `~/.config/copilot-proxy-rs/github_token`; once authorization completes,
+   stop that temporary container and restart the real service (`docker
+   compose restart` in the proxy's project directory) so it picks up the
+   fresh token. A plain `gh auth token` value is **not** sufficient — the
+   Copilot API rejects it with "Copilot token request denied" because it
+   lacks the Copilot OAuth app's scope.
+
+Once `copilot-proxy-rs` is authenticated, `omp`'s keyless `local` profile
+(routed to a self-hosted Qwen model, not GitHub Copilot) is a separate setup
+and is not fixed by the device-flow login above.
+
 Install the native agent launchers and optional profile router from the
 repository root:
 
@@ -388,6 +447,26 @@ repository root:
 (cd prototypes/trellage-prime-profiles && ./install.sh)
 (cd prototypes/trellage-router && ./install.sh)
 ```
+
+Then set up each profile you plan to use and confirm it's healthy before
+launching, for example:
+
+```bash
+cpx setup --all
+grx setup --all
+jcx setup
+omp setup
+prx setup
+cpx doctor awesome
+trx list
+```
+
+An explicit `setup` step is not strictly required: every native launcher
+(`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `prx`) self-heals on first launch,
+automatically running the equivalent of `setup` for a profile the first time
+it's launched. Running `setup`/`doctor` ahead of time is still recommended so
+you can catch missing prerequisites (proxy auth, host CLIs, etc.) before
+diving into a session, rather than mid-launch.
 
 The installers publish these commands and managed runtimes:
 

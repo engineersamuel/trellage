@@ -256,6 +256,14 @@ ensure_managed_profile_for_launch() {
   publish_managed_profile
 }
 
+ensure_profile_ready_for_launch() {
+  require_safe_profile_path
+  if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
+    setup_profile >/dev/null
+  fi
+  ensure_managed_profile_for_launch
+}
+
 require_exact_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid jcode version: $1"
 }
@@ -295,7 +303,7 @@ installed_binary() {
   expected="$runtime_root/mise/installs/github-1jehuang-jcode/$version"
   [[ "$install_dir" == "$expected" ]] \
     || die "mise returned unexpected jcode path: $install_dir"
-  binary="$(find "$install_dir" -maxdepth 1 -type f -perm -111 -name 'jcode-*' -print)"
+  binary="$(find "$install_dir" -maxdepth 1 -type f -perm -111 \( -name 'jcode' -o -name 'jcode-*' \) -print)"
   [[ "$(printf '%s\n' "$binary" | awk 'NF { count++ } END { print count + 0 }')" -eq 1 ]] \
     || die "jcode executable is missing or ambiguous: $install_dir"
   [[ -x "$binary" && ! -L "$binary" ]] || die "unsafe jcode executable: $binary"
@@ -421,7 +429,7 @@ launch_jcode() {
   local version binary
 
   require_command mise
-  ensure_managed_profile_for_launch
+  ensure_profile_ready_for_launch
   version="$(read_pinned_version)"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"

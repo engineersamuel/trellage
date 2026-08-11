@@ -210,6 +210,15 @@ jq -e '
   and (.profiles[] | select(.name == "local") | .description) == "OMP with one keyless local Qwen 3.6 35B A3B route assigned to every model role, retaining OMP’s full host tool and subagent surface."
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON profile list differs'
 
+"$command_path" local -p 'Reply exactly OMP_SELF_HEAL_SETUP' \
+  >"$fixture_root/self-heal.out" 2>&1 \
+  || fail 'launch before explicit setup did not self-heal'
+[[ -f "$profile_root/.managed-by-trellage-omp-profiles" ]] \
+  || fail 'self-healed launch did not mark profile ownership'
+[[ -f "$runtime_root/version" ]] \
+  || fail 'self-healed launch did not pin a version'
+rm -rf "$profile_root" "$runtime_root/version"
+
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'setup did not pin resolved version'
 [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \

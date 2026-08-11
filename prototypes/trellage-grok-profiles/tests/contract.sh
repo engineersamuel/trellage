@@ -843,16 +843,17 @@ assert_invalid_catalog "$catalog_valid_then_unexpected" \
 
 worktree_with_spaces="$fixture_root/worktree with spaces"
 mkdir -p "$worktree_with_spaces"
-calls_before_unready_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-if ./bin/grx hve --version >"$fixture_root/unready-launch.out" \
-  2>"$fixture_root/unready-launch.err"; then
-  fail 'launch accepted a profile that was not set up'
+calls_before_self_heal_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
+if ! ./bin/grx hve --version >"$fixture_root/self-heal-launch.out" \
+  2>"$fixture_root/self-heal-launch.err"; then
+  fail 'launch before setup did not self-heal'
 fi
-assert_line 'grx: profile is not set up: hve' \
-  "$fixture_root/unready-launch.err"
-calls_after_unready_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-[ "$calls_after_unready_launch" = "$calls_before_unready_launch" ] \
-  || fail 'unready launch invoked Grok'
+[ -d "$HOME/.local/share/trellage/profiles/grok/hve/home" ] \
+  || fail 'self-healed launch did not materialize the profile home'
+calls_after_self_heal_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
+[ "$calls_after_self_heal_launch" -gt "$calls_before_self_heal_launch" ] \
+  || fail 'self-healed launch did not invoke Grok'
+rm -rf "$HOME/.local/share/trellage/profiles/grok/hve/home"
 
 calls_before_root_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 if HOME=/ ./bin/grx hve --version >"$fixture_root/root-home-launch.out" \
@@ -864,11 +865,6 @@ assert_line 'grx: unsafe profile home path: /.local/share/trellage/profiles/grok
 calls_after_root_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 [ "$calls_after_root_home_launch" = "$calls_before_root_home_launch" ] \
   || fail 'root-HOME launch invoked Grok'
-
-if jq -s -e 'any(.[]; .args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])' \
-  "$fake_grok_log" >/dev/null; then
-  fail 'normal launches installed or updated a plugin'
-fi
 
 calls_before_list="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 list_output="$fixture_root/list.out"
@@ -898,7 +894,7 @@ if ! cmp -s "$missing_check_output" <(printf 'superpowers: not installed\n'); th
 fi
 [ ! -s "$missing_check_stderr" ] \
   || fail 'missing profile update check wrote stderr'
-[ ! -e "$HOME/.local/share/trellage/profiles/grok" ] \
+[ ! -e "$HOME/.local/share/trellage/profiles/grok/superpowers" ] \
   || fail 'missing profile update check created managed state'
 
 expected_policy="$fixture_root/expected-requirements.toml"
@@ -930,6 +926,7 @@ EXPECTED_POLICY
 
 hve_home="$HOME/.local/share/trellage/profiles/grok/hve/home"
 hve_setup_output="$fixture_root/hve-setup.out"
+calls_before_hve_setup="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 ./bin/grx setup hve >"$hve_setup_output"
 assert_line 'hve: ready' "$hve_setup_output"
 if ! cmp -s "$hve_setup_output" <(printf 'hve: ready\n'); then
@@ -941,17 +938,20 @@ cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
   || fail 'setup did not set authentication mode 0600'
 cmp -s "$expected_policy" "$hve_home/requirements.toml" \
   || fail 'setup did not write the exact capability policy'
-jq -s -e --arg home "$hve_home" '
-  any(.[];
+jq -s -e --arg home "$hve_home" --arg since "$calls_before_hve_setup" '
+  .[($since | tonumber):]
+  | any(.[];
     .grokHome == $home
     and .args == ["plugin","install","microsoft/hve-core#plugins/hve-core-all","--trust"]
   )
 ' "$fake_grok_log" >/dev/null || fail 'setup did not install the exact trusted HVE source'
-if ! jq -s -e 'all(.[];
-  .modelsBaseUrl == ""
-  and .defaultModel == ""
-  and .xaiApiKey == ""
-)' "$fake_grok_log" >/dev/null; then
+if ! jq -s -e --arg since "$calls_before_hve_setup" '
+  .[($since | tonumber):]
+  | all(.[];
+    .modelsBaseUrl == ""
+    and .defaultModel == ""
+    and .xaiApiKey == ""
+  )' "$fake_grok_log" >/dev/null; then
   fail 'setup received proxy routing variables'
 fi
 ./bin/grx inventory hve --json >"$fixture_root/inventory-hve.json"
