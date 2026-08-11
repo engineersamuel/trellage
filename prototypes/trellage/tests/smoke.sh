@@ -160,6 +160,7 @@ run_static_contracts() {
     host_command_contract.sh
     image_contract.sh
     installer_contract.sh
+    pty_foreground_contract.sh
     readme_contract.sh
     resource_cleanup_behavior_contract.sh
   )
@@ -187,6 +188,10 @@ run_live_contracts() {
 run_session_contracts() {
   "$tests_dir/runtime_session_contract.sh"
   IMAGE_REF="$image_ref" "$tests_dir/runtime_persistence_contract.sh"
+}
+
+run_automatic_shutdown_smoke() {
+  IMAGE_REF="$image_ref" "$tests_dir/automatic_shutdown_smoke.sh"
 }
 
 create_smoke_container() {
@@ -928,6 +933,7 @@ main() {
   check_shell_syntax
   run_static_contracts
   build_image
+  run_automatic_shutdown_smoke
   run_live_contracts
   run_session_contracts
   run_live_container_probe

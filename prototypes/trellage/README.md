@@ -253,8 +253,14 @@ session ID to select an exact conversation; Trellage maps that ID to each
 harness's native resume syntax. After an interactive session exits, Trellage
 prints a copyable exact resume command. All sessions share one container and
 durable profile volume.
-`trellage stop` stops the shared container and terminates every active session for that profile and worktree,
-so reserve it for recovery after interactive sessions have exited.
+Trellage automatically stops the shared container after the last harness exits.
+Concurrent harnesses and recovery shells keep the container running.
+The container and state volume remain retained, so the next launch restarts the
+same container with durable agent state.
+A `trellage shell` exit alone does not request shutdown.
+
+`trellage stop` remains the force/recovery operation: it stops the shared
+container and terminates every active attachment for that profile and worktree.
 
 New and resumed sessions run Codex with `--dangerously-bypass-approvals-and-sandbox`; Docker is the external sandbox. `trellage shell` does not start or label a Codex process.
 
@@ -409,18 +415,22 @@ Managed skills are refreshed into the persistent state volume on every launch.
 4. Invoke a bundled Superpowers skill and the pinned full-stack-orchestration plugin.
 5. Edit a host-mounted file and confirm two-way host/container visibility.
 6. Observe Herdr detect Codex and follow its status transitions.
-7. Exit or kill Codex, then run `trellage stop` or allow the container to restart on the next launch.
+7. Exit or kill Codex, confirm the container stops automatically, then relaunch it.
 8. Run `trellage resume` and verify the same conversation continues.
 9. Run `trellage shell` and confirm recovery access.
 10. Record the Herdr verdict and every interaction that felt wrong.
 
 ## Cleanup
 
-Stop preserves container and conversation state:
+Automatic shutdown preserves the container and state volume after the last
+harness exits. Explicit stop preserves the same resources:
 
 ```bash
 trellage stop
 ```
+
+`trellage stop` may terminate active attachments, so use it as a force/recovery
+operation rather than normal session cleanup.
 
 `trellage doctor` names the exact profile/worktree container and state volume. `trellage destroy` prints both names; type `destroy <container> <state-volume>` to confirm. A wrong or empty response cancels. Thus destroy removes only the named container and state volume after confirmation.
 

@@ -3,25 +3,27 @@ set -euo pipefail
 
 write_fixture_config() {
   local directory="$1"
-  local destination="$directory/.trellage-fixture-env"
-  local temporary="$destination.tmp-$$-$RANDOM"
-  local has_fixture_values=false
+  local destination="$directory/.trellage-fixture-env.$$.$RANDOM"
+  local temporary="$destination.tmp"
+  : >"$temporary"
   while IFS= read -r name; do
-    if [[ "$has_fixture_values" == false ]]; then
-      : >"$temporary"
-      has_fixture_values=true
-    fi
     printf 'export %q=%q\n' "$name" "${!name}" >>"$temporary"
   done < <(compgen -A variable FAKE_)
-  [[ "$has_fixture_values" == false ]] || mv -f "$temporary" "$destination"
+  mv -f "$temporary" "$destination"
+  fixture_config="$destination"
 }
 
-IFS=: read -r -a path_entries <<<"${PATH:-}"
-for directory in "${path_entries[@]}"; do
-  [[ -d "$directory" && -w "$directory" ]] || continue
-  if [[ -e "$directory/docker" || -e "$directory/node" || -e "$directory/gh" ]]; then
-    write_fixture_config "$directory"
-  fi
-done
+fixture_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+fixture_config=
+write_fixture_config "$fixture_directory"
+export TRELLAGE_TEST_FIXTURE_CONFIG="$fixture_config"
 
-exec /usr/bin/env "$@"
+case "${1:-}" in
+  -i|--ignore-environment)
+    clean_option="$1"
+    shift
+    exec /usr/bin/env "$clean_option" \
+      "TRELLAGE_TEST_FIXTURE_CONFIG=$fixture_config" "$@"
+    ;;
+  *) exec /usr/bin/env "$@" ;;
+esac

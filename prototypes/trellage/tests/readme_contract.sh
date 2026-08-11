@@ -337,10 +337,11 @@ has_ordered_smoke_stages() {
       expected[1] = "check_shell_syntax"
       expected[2] = "run_static_contracts"
       expected[3] = "build_image"
-      expected[4] = "run_live_contracts"
-      expected[5] = "run_session_contracts"
-      expected[6] = "run_live_container_probe"
-      expected[7] = "run_installer_probe"
+      expected[4] = "run_automatic_shutdown_smoke"
+      expected[5] = "run_live_contracts"
+      expected[6] = "run_session_contracts"
+      expected[7] = "run_live_container_probe"
+      expected[8] = "run_installer_probe"
     }
     function trim(line) {
       sub(/^[[:space:]]+/, "", line)
@@ -358,7 +359,7 @@ has_ordered_smoke_stages() {
     }
     in_main {
       line = trim($0)
-      for (position = 1; position <= 7; position++) {
+      for (position = 1; position <= 8; position++) {
         if (line == expected[position]) {
           seen++
           if (seen != position) {
@@ -369,10 +370,10 @@ has_ordered_smoke_stages() {
       }
     }
     END {
-      if (main_functions != 1 || seen != 7 || bad_order) {
+      if (main_functions != 1 || seen != 8 || bad_order) {
         exit 1
       }
-      for (position = 1; position <= 7; position++) {
+      for (position = 1; position <= 8; position++) {
         if (calls[expected[position]] != 1) {
           exit 1
         }
@@ -390,6 +391,7 @@ has_exact_static_contract_inventory() {
       expected["host_command_contract.sh"] = 1
       expected["image_contract.sh"] = 1
       expected["installer_contract.sh"] = 1
+      expected["pty_foreground_contract.sh"] = 1
       expected["readme_contract.sh"] = 1
       expected["resource_cleanup_behavior_contract.sh"] = 1
     }
@@ -685,6 +687,15 @@ for qualification in \
   require_section_text '## Automatic Environment Loading' "$qualification"
 done
 
+for qualification in \
+  'automatically stops the shared container after the last harness exits' \
+  'Concurrent harnesses and recovery shells keep the container running' \
+  'The container and state volume remain retained' \
+  '`trellage shell` exit alone does not request shutdown' \
+  '`trellage stop` remains the force/recovery operation'; do
+  require_section_text '## Use' "$qualification"
+done
+
 for command in \
   'mise trust' \
   './trellage validate ../../profiles/codex-superpowers/profile.toml' \
@@ -730,7 +741,7 @@ for qualification in \
   '`trellage resume` selects the newest recorded native session' \
   'session ID to select an exact conversation' \
   'prints a copyable exact resume command' \
-  '`trellage stop` stops the shared container and terminates every active session for that profile and worktree'; do
+  '`trellage stop` remains the force/recovery operation'; do
   require_section_text '## Use' "$qualification"
 done
 
@@ -798,7 +809,9 @@ done
 for qualification in \
   'destroy removes only the named container and state volume after confirmation' \
   'type `destroy <container> <state-volume>` to confirm' \
-  'Stop preserves container and conversation state' \
+  'Explicit stop preserves the same resources' \
+  'Automatic shutdown preserves the container and state volume' \
+  '`trellage stop` may terminate active attachments' \
   'retains the image, network, proxy, Herdr, and unrelated resources'; do
   require_section_text '## Cleanup' "$qualification"
 done
@@ -835,6 +848,8 @@ section_contains_text "$root_readme" '## Trellage Quick Start' 'worktree-local `
   || fail 'root README omits automatic worktree-local Trellage activation'
 section_contains_text "$root_readme" '## Trellage Quick Start' 'checks the current worktree first' \
   || fail 'root README omits worktree-first profile precedence'
+section_contains_text "$root_readme" '## Trellage Quick Start' 'stops a Sandbox container after its last harness exits' \
+  || fail 'root README omits automatic Sandbox shutdown'
 
 require_section_text '## Build' 'trellage-profile-codex-superpowers-linux-arm64:locked'
 require_section_text '## Install' '`~/.local/bin/trellage`'

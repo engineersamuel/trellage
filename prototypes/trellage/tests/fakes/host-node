@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"
+[[ ! -f "$fixture_config" ]] || source "$fixture_config"
+
+printf 'ARG\t%s\n' "$@" >>"${FAKE_NODE_LOG:?}"
+if [[ "${2:-}" == metadata && -n "${FAKE_PROFILE_METADATA:-}" ]]; then
+  exec cat "$FAKE_PROFILE_METADATA"
+fi
+exec "${FAKE_REAL_NODE:?}" "$@"

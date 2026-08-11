@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fixture_config="$(dirname "$0")/.trellage-fixture-env"
+fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"
 [[ ! -f "$fixture_config" ]] || source "$fixture_config"
 
 log="${FAKE_MISE_LOG:?}"
