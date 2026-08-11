@@ -888,6 +888,7 @@ launch_prime() {
     --provider "$provider"
     --model "$selected_model"
     --offline
+    --autonomous
     --daemon-socket "$daemon_socket"
   )
   # Bash 3.2 treats an empty array expansion as unbound under `set -u`.

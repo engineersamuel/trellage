@@ -189,7 +189,7 @@ jq -e --arg home "$profile_home" '
   and .provider == "trellage-copilot-proxy"
   and .model == "gpt-5.6-sol"
   and .effort == "medium"
-  and .args == ["run", "two words", "", "--literal=*"]
+  and .args == ["--no-update", "run", "two words", "", "--literal=*"]
 ' "$FAKE_JCODE_LOG" >/dev/null || fail 'launch environment or arguments differ'
 
 printf '{"launch_count":1,"hotkey_dismissed":true}\n' \

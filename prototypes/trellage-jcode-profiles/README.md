@@ -57,11 +57,11 @@ jcx default
 jcx run "Reply exactly JCODE_OK"
 ```
 
-Arguments pass unchanged to jcode. Explicit jcode CLI flags can override the
-launcher defaults. `doctor` and every launch verify the proxy health response
-and confirm that `gpt-5.6-sol` is advertised. Launches automatically restore
-the owned managed config when it is missing or differs; unsafe paths and
-unowned profile state still fail closed.
+The launcher passes `--no-update` before caller arguments; explicit jcode CLI
+flags can override other launcher defaults. `doctor` and every launch verify the
+proxy health response and confirm that `gpt-5.6-sol` is advertised.
+Launches automatically restore the owned managed config when it is missing or
+differs; unsafe paths and unowned profile state still fail closed.
 
 `jcx` adds no containment. jcode runs with all host access available to the
 process.

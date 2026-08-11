@@ -193,29 +193,13 @@ run_copilot() {
   COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
 }
 
-has_explicit_permission() {
-  local argument
-
-  for argument in "$@"; do
-    case "$argument" in
-      --) return 1 ;;
-      --allow-all|--yolo|--allow-all-tools|--allow-all-paths|--allow-all-urls|--disallow-temp-dir) return 0 ;;
-      --allow-tool|--allow-tool=*|--allow-url|--allow-url=*|--deny-tool|--deny-tool=*|--deny-url|--deny-url=*|--add-dir|--add-dir=*) return 0 ;;
-    esac
-  done
-
-  return 1
-}
-
 launch_profile() {
   local profile="$1"
   shift
 
   ensure_profile_for_launch "$profile"
-  if has_explicit_permission "$@"; then
-    exec env COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
-  fi
-  exec env COPILOT_HOME="$(profile_home "$profile")" copilot --allow-all "$@"
+  exec env COPILOT_HOME="$(profile_home "$profile")" \
+    copilot --autopilot --allow-all --no-ask-user "$@"
 }
 
 installed_version() {

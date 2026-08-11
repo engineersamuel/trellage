@@ -71,6 +71,9 @@ After installing the native launchers and the
 harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
 after selection; `trx` never performs setup, repair, or update.
 
+Profile launches always pass `--autopilot --allow-all --no-ask-user`, so
+Copilot runs autonomously without waiting for permission or user-input prompts.
+
 `update --check` compares the installed plugin version reported by Copilot with
 the official marketplace manifest. Launch self-heals a missing cataloged plugin
 and removes forbidden Superpowers variants without updating healthy plugins.

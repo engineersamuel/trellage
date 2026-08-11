@@ -102,7 +102,7 @@ printf '\tnative_auth=%s\n' "$FAKE_COPILOT_NATIVE_AUTH_FILE" >>"$FAKE_COPILOT_LO
 
 installed="$COPILOT_HOME/fake-state/plugins"
 marketplaces="$COPILOT_HOME/fake-state/marketplaces"
-if [[ "${1-} ${2-}" == '--allow-all --fixture-capability-inventory' ]]; then
+if [[ "${1-} ${2-} ${3-} ${4-}" == '--autopilot --allow-all --no-ask-user --fixture-capability-inventory' ]]; then
   if [[ -f "$installed" ]]; then
     while IFS=$'\t' read -r plugin _version; do
       printf 'plugin:%s\n' "$plugin"
@@ -389,7 +389,7 @@ assert_not_contains "$HOME/.copilot" "$fake_copilot_log"
 expected_hve_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--prompt", "hello world", "--allow-tool", "git status"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--prompt", "hello world", "--allow-tool", "git status"]}')"
 actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '1p')"
 [[ "$actual_hve_launch" == "$expected_hve_launch" ]] \
   || fail 'hve launch did not preserve the exact ordered argument vector'
@@ -402,7 +402,7 @@ expected_superpowers_home="$HOME/.local/share/trellage/profiles/copilot/superpow
 expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--allow-all", "--model", "gpt-5.5", "--prompt", "two words", "--", "--deny-tool"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-5.5", "--prompt", "two words", "--", "--deny-tool"]}')"
 actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '2p')"
 [[ "$actual_superpowers_launch" == "$expected_superpowers_launch" ]] \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
@@ -415,7 +415,7 @@ expected_awesome_home="$HOME/.local/share/trellage/profiles/copilot/awesome/home
 expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--prompt", "find useful skills", "--deny-url=example.com", "--model", "gpt-5.5"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--prompt", "find useful skills", "--deny-url=example.com", "--model", "gpt-5.5"]}')"
 actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
@@ -427,7 +427,7 @@ actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_arg
 expected_bare_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--allow-all"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user"]}')"
 actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 [[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
   || fail 'bare launch did not add the default permission argument'
@@ -462,7 +462,7 @@ for permission_argument_vector in "${permission_argument_vectors[@]}"; do
     --arg home "$expected_hve_home" \
     --arg cwd "$worktree" \
     --args '{home: $home, cwd: $cwd, args: $ARGS.positional}' \
-    -- "${permission_args[@]}" --prompt 'permission contract')"
+    -- "--autopilot" "--allow-all" "--no-ask-user" "${permission_args[@]}" --prompt 'permission contract')"
   [[ "$actual_permission_launch" == "$expected_permission_launch" ]] \
     || fail "explicit permission arguments changed: $permission_argument_vector"
 done

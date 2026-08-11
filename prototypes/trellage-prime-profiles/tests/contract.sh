@@ -399,6 +399,7 @@ jq -e --arg home "$profile_home" \
     "--provider", "copilot-proxy-rs",
     "--model", "claude-opus-5",
     "--offline",
+    "--autonomous",
     "--daemon-socket", $daemonSocket,
     "-p", "two words", "", "--literal=*"
   ]
@@ -417,6 +418,7 @@ jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
     "--provider", "copilot-proxy-rs",
     "--model", "claude-opus-5",
     "--offline",
+    "--autonomous",
     "--daemon-socket", $daemonSocket,
     "-p", "bare"
   ]
@@ -430,6 +432,7 @@ jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
     "--provider", "copilot-proxy-rs",
     "--model", "claude-opus-5",
     "--offline",
+    "--autonomous",
     "--daemon-socket", $daemonSocket
   ]
 ' "$FAKE_PRIME_LOG" >/dev/null || fail 'argument-free launch arguments differ'
@@ -465,6 +468,7 @@ expected = [
     "--provider", "copilot-proxy-rs",
     "--model", "vendor/custom",
     "--offline",
+    "--autonomous",
     "--daemon-socket", sys.argv[2],
     "-p", "custom-model"
 ]

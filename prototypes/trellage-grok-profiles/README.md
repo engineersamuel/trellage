@@ -82,9 +82,9 @@ checks and changes are explicit through `grx update --check` and `grx update`.
 Pass `-m` or `--model` to select another model from the proxy catalog; `grx`
 forwards the option and its value unchanged.
 
-Profile launches default to `--permission-mode bypassPermissions`. An explicit
-permission mode, approval flag, allow rule, or deny rule is forwarded unchanged
-and suppresses that default.
+Profile launches always pass `--permission-mode bypassPermissions` and
+`--always-approve` before caller arguments. Explicit permission modes, approval
+flags, allow rules, and deny rules are still forwarded unchanged.
 
 Proxy routing applies only to profile launches. Setup, repair, update, doctor,
 and other lifecycle operations do not receive the proxy variables. Plain `grok`
