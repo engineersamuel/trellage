@@ -292,7 +292,7 @@ clean_child_environment=(env -i "PATH=$PATH")
 # Keep proxy/TLS and UV package-index overrides so profile image builds can reach
 # alternate PyPI simple indexes when files.pythonhosted.org is blocked.
 for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME DOCKER_CONFIG \
-  TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE \
+  TRELLAGE_CONFIG TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE \
   HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy \
   SSL_CERT_FILE SSL_CERT_DIR \
   UV_DEFAULT_INDEX UV_INDEX UV_INDEX_URL UV_EXTRA_INDEX_URL PIP_INDEX_URL; do
