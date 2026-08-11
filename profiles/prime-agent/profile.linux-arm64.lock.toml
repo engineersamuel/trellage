@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:dafe3e2b73812025e100ab13e6e08112e7addb9875714ca397a3b2a89722d6ea"
+profile_hash = "sha256:aaa589b7ad12b5524c44d80b6654dbec71a1c2ab63d990285f870f4dd5ea7a65"
 
 [[sources]]
 kind = "skill"
@@ -99,19 +99,6 @@ sha256 = "sha256:9369b69197e5d07e0c56679f9fc346f3539f58537c17f4e804a44612f086dc7
 path = "skills/caveman/SKILL.md"
 sha256 = "sha256:daf9cec496ebd039809d8236f99f17fa1b4beaadf8ce4e2d532d0da51d70afce"
 
-[[sources]]
-kind = "plugin"
-adapter = "prime-extension"
-repository = "https://github.com/am-will/prime-agent-plugins.git"
-ref = "699f9065acc5eb988a02666196c5837434fd839d"
-select = ["ask-user"]
-commit = "699f9065acc5eb988a02666196c5837434fd839d"
-integrity = "sha256:9fbfb7668f6fef489e0965e24a7e29c49fc6ffc789248ec5b4a7c455282de105"
-
-[[sources.files]]
-path = "plugins/ask-user/extensions/ask-user.ts"
-sha256 = "sha256:c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2"
-
 [packages]
 skills_cli_version = "1.5.19"
 skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
@@ -172,4 +159,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:4f46365d04cb7113a3fdef63cfc9230687f1bd8c70bb4882ef1b698216bbfdff"
+final_digest = "sha256:ef5ed079b28a813f9337edee04117ddfbf5f9e487e9f5c104d6c2d55399de540"

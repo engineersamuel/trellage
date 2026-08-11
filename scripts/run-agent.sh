@@ -57,11 +57,26 @@ if [[ "$session_mode" == '--new' ]]; then
     --output-last-message "$last_message_file" \
     "$@" 2>&1 | tee "$events_file"
 else
-  if [[ ! -s "$session_file" ]]; then
-    printf 'no durable Codex session ID; start with --new\n' >&2
-    exit 66
+  session_id=''
+  if [[ -s "$session_file" ]]; then
+    candidate_session_id="$(<"$session_file")"
+    if /usr/local/bin/find-harness-session.sh \
+      codex "$CODEX_HOME" /workspace "$candidate_session_id" >/dev/null; then
+      session_id="$candidate_session_id"
+    fi
   fi
-  session_id="$(<"$session_file")"
+  if [[ -z "$session_id" ]]; then
+    session_id="$(/usr/local/bin/find-harness-session.sh \
+      codex "$CODEX_HOME" /workspace 2>/dev/null || true)"
+    if [[ -z "$session_id" ]]; then
+      printf 'no recoverable Codex session; start with --new\n' >&2
+      exit 66
+    fi
+    session_tmp="$(mktemp /workspace/.harness/codex-session-id.XXXXXX)"
+    printf '%s\n' "$session_id" >"$session_tmp"
+    chmod 0600 "$session_tmp"
+    mv "$session_tmp" "$session_file"
+  fi
   codex exec resume \
     --json \
     --dangerously-bypass-approvals-and-sandbox \

@@ -345,8 +345,8 @@ describe("production package resolutions", () => {
         },
         {
           name: "libnss3",
-          version: "2:3.87.1-1+deb12u3",
-          integrity: "sha256:0b5bc3d95e6c18cf6685e6688875bb7077607b8715a9edf3194b0afe83f7f157",
+          version: "2:3.87.1-1+deb12u4",
+          integrity: "sha256:aaa1b291b6330590079a0eb1404650c7c4f6c788f9213ab6911149dc22b2b6d0",
         },
         {
           name: "libgbm1",

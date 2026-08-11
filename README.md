@@ -2,6 +2,37 @@
 
 Trellage compiles locked agent profiles and runs them in isolated Docker sandboxes while preserving host worktree and Herdr workflows. Install the CLI from `prototypes/trellage`; it defaults to `~/.local/bin/trellage`.
 
+## Fresh Machine Setup (macOS)
+
+These are the one-time prerequisites for a Mac that has never run Trellage. Skip anything already installed.
+
+```bash
+# 1. Docker Desktop — install from https://www.docker.com/products/docker-desktop/,
+#    then launch it and wait until it reports "running".
+open -a Docker
+docker info >/dev/null && echo "Docker is running"
+
+# 2. mise (task runner / tool version manager)
+brew install mise
+
+# 3. Node.js >= 22 (builds the profile compiler on first use)
+brew install node
+
+# 4. GitHub CLI, authenticated — Trellage forwards this token into containers
+brew install gh
+gh auth login
+
+# 5. GitHub Copilot CLI, authenticated — required by profiles that use
+#    native Copilot auth (e.g. copilot-hve) or the shared model catalog mount
+brew install copilot-cli
+copilot -p "Reply exactly OK"
+
+# 6. Shared Copilot model catalog file — every Trellage profile mounts this
+#    read-only, so it must exist even as an empty JSON object
+mkdir -p ~/.copilot
+[ -f ~/.copilot/models.json ] || printf '{}\n' > ~/.copilot/models.json
+```
+
 ## Trellage Quick Start
 
 ```bash
@@ -21,6 +52,18 @@ trellage destroy --profile /absolute/path/to/profile.toml
 trellage upgrade /absolute/path/to/profile.toml
 trellage upgrade all
 ```
+
+First run in a repo worktree, end to end with a bundled profile:
+
+```bash
+mise trust
+mise run trellage -- validate copilot-hve
+mise run trellage -- --profile copilot-hve -p "Reply exactly OK"
+```
+
+`trellage --profile <name> -p "<prompt>"` builds the image automatically on first
+use (this can take several minutes), launches an isolated sandbox container, runs
+the one-shot prompt, and prints the harness's own exit status.
 
 Three build-shaped commands, three different jobs:
 
@@ -661,6 +704,7 @@ The default manifest is `harnesses/todo-side-by-side/harness.json`.
 ./scripts/harness build    harnesses/todo-side-by-side/harness.json
 ./scripts/harness run      harnesses/todo-side-by-side/harness.json
 ./scripts/harness resume   harnesses/todo-side-by-side/harness.json
+./scripts/harness sessions harnesses/todo-side-by-side/harness.json
 ./scripts/harness serve    harnesses/todo-side-by-side/harness.json
 ./scripts/harness verify   harnesses/todo-side-by-side/harness.json
 HARNESS_RUN_ID=my-run ./scripts/harness collect harnesses/todo-side-by-side/harness.json
@@ -669,12 +713,23 @@ HARNESS_RUN_ID=my-run ./scripts/harness collect harnesses/todo-side-by-side/harn
 ```
 
 - `run` creates new retained agent sessions and runs contestants concurrently.
-- `resume` continues both retained sessions with the shared prompt.
+- `resume` continues both retained sessions with the shared prompt. If an abrupt
+  container exit prevented the session-ID sidecar from being written, it
+  recovers the newest native session for `/workspace`.
+- `sessions` inspects retained native state without credentials or network
+  access and prints each contestant's recoverable session ID.
 - `serve` publishes the generated runtime artifacts and starts both apps.
 - `verify` runs each app's own test/type/lint/build/audit checks, recreates clean app processes, runs the shared CRUD flow, recreates each app again, and proves SQLite persistence.
 - `collect` exports normalized, secret-scanned evidence and refuses to overwrite an existing run ID.
 - `down` stops containers but preserves workspaces, sessions, and app data.
 - `purge` permanently removes both contestant projects and their named volumes.
+
+Agent containers are one-shot, but their Codex and Copilot runtime homes live in
+the project-scoped workspace volumes. A container or terminal crash therefore
+does not discard conversation state; use `sessions` to inspect it and `resume`
+to continue it. Host `~/.codex` and `~/.copilot` remain unmounted so contestants
+cannot read or modify unrelated host conversations. `purge` irreversibly removes
+the retained runtime homes.
 
 Use another manifest with Make:
 
