@@ -231,7 +231,8 @@ plugin_inventory_snapshot() {
 
   inventory="$(run_copilot "$profile" plugin list)" || return 2
   printf '%s\n' "$inventory" | awk '
-    /^No plugins installed$/ { empty += 1; next }
+    /^No plugins installed\.?$/ { empty += 1; next }
+    /^Use .copilot plugin install <source>. to install a plugin\.$/ { next }
     /^Installed plugins:$/ { header += 1; next }
     /^[[:space:]]*• [A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)? \(v[^()[:cntrl:]]+\)( \((enabled|disabled)\))?$/ { plugins += 1; next }
     /^[[:space:]]*$/ { next }

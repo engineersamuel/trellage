@@ -15,6 +15,7 @@ profile. Native launchers isolate agent state but are not security boundaries.
 - `npm`
 - `curl`
 - `jq`
+- `uv` (bootstraps the Prime IPython kernel venv; `mise use -g uv` if missing)
 - `copilot-proxy-rs` listening on `http://127.0.0.1:8080`
 
 No host model credentials are copied. The launcher materializes an owned

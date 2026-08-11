@@ -958,6 +958,19 @@ require_profile_home_ready() {
     || die "profile home must have mode 0700: $profile"
 }
 
+ensure_profile_home_ready() {
+  local profile="$1"
+  local home="$(profile_home "$profile")"
+
+  require_safe_profile_home "$profile"
+  if [ -d "$home" ] && [ ! -L "$home" ]; then
+    require_profile_home_ready "$profile"
+    return
+  fi
+  setup_profile "$profile" >/dev/null
+  require_profile_home_ready "$profile"
+}
+
 catalog_value() {
   local profile="$1" key="$2"
   local cached_profile cached_key cached_value
@@ -2339,7 +2352,7 @@ run_proxy_launch() {
   local profile="$1" status release_status=0
   shift
 
-  require_profile_home_ready "$profile"
+  ensure_profile_home_ready "$profile"
   acquire_profile_launch_lock "$profile"
   resolve_codex
   ensure_launch_ready "$profile"
@@ -2356,11 +2369,11 @@ run_native_launch() {
   local profile="$1" status release_status=0
   shift
 
-  require_profile_home_ready "$profile"
-  acquire_profile_launch_lock "$profile"
   resolve_codex
   require_host_native_login "$profile"
   require_safe_host_native_auth_source "$profile"
+  ensure_profile_home_ready "$profile"
+  acquire_profile_launch_lock "$profile"
   ensure_launch_ready "$profile"
   refresh_auth "$profile"
   run_codex_child "$profile" yes "$@"

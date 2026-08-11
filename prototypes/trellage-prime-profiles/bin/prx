@@ -871,6 +871,9 @@ launch_prime() {
 
   require_command mise
   require_node
+  if [[ ! -e "$version_file" && ! -L "$version_file" ]]; then
+    setup_profile >/dev/null
+  fi
   publish_managed_profile "$selected_model"
   version="$(read_pinned_version)"
   cli="$(installed_cli "$version")"

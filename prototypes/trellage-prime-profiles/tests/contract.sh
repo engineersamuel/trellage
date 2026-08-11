@@ -319,6 +319,15 @@ jq -e '
 grep -Fq $'default\tPrime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.' \
   "$fixture_root/list.txt" || fail 'text list differs'
 
+"$command_path" default -p 'self-heal-before-setup-probe' \
+  >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
+  || fail 'launch before explicit setup did not self-heal'
+[[ -f "$runtime_root/version" ]] \
+  || fail 'self-healed launch did not pin a version'
+[[ -f "$profile_root/.managed-by-trellage-prime-profiles" ]] \
+  || fail 'self-healed launch did not mark profile ownership'
+rm -rf "$profile_root" "$runtime_root/version"
+
 "$command_path" setup >"$fixture_root/setup.out" 2>"$fixture_root/setup.err" \
   || fail 'setup failed'
 [[ "$(<"$runtime_root/version")" == 0.7.0 ]] || fail 'setup did not pin version'

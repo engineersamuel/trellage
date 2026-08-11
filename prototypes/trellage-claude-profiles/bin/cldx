@@ -313,7 +313,11 @@ launch_profile() {
   require_command jq
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
-  require_owned_profile
+  if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
+    setup_profile >/dev/null
+  else
+    require_owned_profile
+  fi
   ensure_onboarding "$version"
   check_proxy
 

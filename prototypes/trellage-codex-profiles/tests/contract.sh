@@ -2713,15 +2713,35 @@ assert_command_fails symlink-home-component env HOME="$symlink_leaf_home" \
 fresh_home="$fixture_root/fresh-home"
 prepare_test_home "$fresh_home"
 codex_count="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
-assert_command_fails launch-before-setup env HOME="$fresh_home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" hve --version
+if ! HOME="$fresh_home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  "$fixture_launcher" hve --version \
+  >"$fixture_root/launch-self-heals-before-setup.out" 2>&1; then
+  fail 'launch before setup did not self-heal'
+fi
+[ "$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')" -gt "$codex_count" ] \
+  || fail 'self-healed launch did not invoke Codex'
+tail -n1 "$fixture_root/fake-codex.log" | jq -e '.args[-1] == "--version"' >/dev/null \
+  || fail 'self-healed launch did not end with the requested launch invocation'
+[ -d "$fresh_home/.local/share/trellage/profiles/codex/hve/home" ] \
+  || fail 'self-healed launch did not materialize the profile home'
+codex_count="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
 assert_command_fails native-launch-before-setup env HOME="$fresh_home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_LOGIN_STATUS=0 \
-  "$fixture_launcher" --native-auth hve --version
+  "$fixture_launcher" --native-auth superpowers --version
+# Native launch checks host login/auth-source availability before self-healing the
+# profile home, so a legitimate `login status` probe is invoked (and logged) even
+# though the launch ultimately fails on the missing native auth source; the profile
+# must not have been self-healed as a side effect of that failed launch.
+[ "$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')" -gt "$codex_count" ] \
+  || fail 'native-auth precheck did not run Codex login status'
+[ -d "$fresh_home/.local/share/trellage/profiles/codex/superpowers/home" ] \
+  && fail 'missing native auth unexpectedly self-healed the profile home'
+codex_count="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
 assert_command_fails unsafe-profile-slug env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" '../hve' --version
 [ "$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')" = "$codex_count" ] \
-  || fail 'unsafe or unprepared profile invoked Codex'
+  || fail 'unsafe profile slug invoked Codex'
 
 ln -s "$fixture_launcher" "$fake_bin/codex-recursive"
 mv "$fake_bin/codex" "$fake_bin/codex-real"

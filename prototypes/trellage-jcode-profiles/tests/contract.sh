@@ -40,15 +40,17 @@ case "${1-}" in
     [[ "$spec" == "$tool@$version" && "$version" != "$spec" ]] || exit 91
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
     mkdir -p "$destination"
+    # Current mise github backends rename the single extracted asset to the
+    # plain tool name ("jcode"), not the original release asset name.
     sed "s/@VERSION@/$version/g" "$FAKE_JCODE_TEMPLATE" \
-      >"$destination/jcode-macos-aarch64"
-    chmod 0755 "$destination/jcode-macos-aarch64"
+      >"$destination/jcode"
+    chmod 0755 "$destination/jcode"
     ;;
   where)
     spec="${2-}"
     version="${spec#"$tool"@}"
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
-    [[ -x "$destination/jcode-macos-aarch64" ]] || exit 1
+    [[ -x "$destination/jcode" ]] || exit 1
     printf '%s\n' "$destination"
     ;;
   *) exit 92 ;;
@@ -139,6 +141,16 @@ jq -e '
   and .profiles[0].source == "1jehuang/jcode"
   and .profiles[0].description == "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms."
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
+
+"$command_path" run self-heal-before-setup-probe \
+  >"$fixture_root/self-heal.out" 2>&1 \
+  || fail 'launch before explicit setup did not self-heal'
+[[ -f "$profile_root/.managed-by-trellage-jcode-profiles" ]] \
+  || fail 'self-healed launch did not mark profile ownership'
+[[ "$(<"$runtime_root/version")" == 0.67.1 ]] \
+  || fail 'self-healed launch did not pin version'
+rm -rf "$profile_root" "$runtime_root/version"
+: >"$FAKE_JCODE_LOG"
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ "$(<"$runtime_root/version")" == 0.67.1 ]] || fail 'setup did not pin version'

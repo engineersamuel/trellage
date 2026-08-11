@@ -122,6 +122,15 @@ jq -e '
   and .profiles[0].source == "anthropics/claude-code"
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
+"$command_path" default -p 'self-heal-before-setup-probe' \
+  >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
+  || fail 'launch before explicit setup did not self-heal'
+[[ -f "$profile_root/.managed-by-trellage-claude-profiles" ]] \
+  || fail 'self-healed launch did not mark profile ownership'
+[[ -d "$profile_home" && ! -L "$profile_home" ]] \
+  || fail 'self-healed launch did not materialize the profile home'
+rm -rf "$profile_root"
+
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ -f "$profile_root/.managed-by-trellage-claude-profiles" ]] \
   || fail 'setup did not mark profile ownership'
@@ -146,23 +155,23 @@ GH_TOKEN=poison \
   "$command_path" default -p 'two words' '' '--literal=*' \
   || fail 'default launch failed'
 jq -s -e --arg home "$profile_home" '
-  .[1].configDir == $home
-  and .[1].authToken == "trellage-local-proxy"
-  and .[1].baseUrl == "http://127.0.0.1:8080"
-  and .[1].opus == "claude-opus-5"
-  and .[1].sonnet == "claude-sonnet-5"
-  and .[1].haiku == "claude-haiku-4.5"
-  and .[1].apiKey == "unset"
-  and .[1].oauth == "unset"
-  and .[1].openai == "unset"
-  and .[1].gh == "unset"
-  and .[1].args == ["--model", "claude-opus-5", "-p", "two words", "", "--literal=*"]
+  .[-1].configDir == $home
+  and .[-1].authToken == "trellage-local-proxy"
+  and .[-1].baseUrl == "http://127.0.0.1:8080"
+  and .[-1].opus == "claude-opus-5"
+  and .[-1].sonnet == "claude-sonnet-5"
+  and .[-1].haiku == "claude-haiku-4.5"
+  and .[-1].apiKey == "unset"
+  and .[-1].oauth == "unset"
+  and .[-1].openai == "unset"
+  and .[-1].gh == "unset"
+  and .[-1].args == ["--model", "claude-opus-5", "-p", "two words", "", "--literal=*"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 "$command_path" --model claude-sonnet-5 -p override \
   || fail 'model override launch failed'
 jq -s -e '
-  .[2].args == ["--model", "claude-sonnet-5", "-p", "override"]
+  .[-1].args == ["--model", "claude-sonnet-5", "-p", "override"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model override was changed'
 
 status=0

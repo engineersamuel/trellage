@@ -167,7 +167,10 @@ case "${1-} ${2-}" in
         printf '  • %s (v%s)\n' "$plugin" "$version"
       done <"$installed"
     else
-      printf 'No plugins installed\n'
+      # Matches installed GitHub Copilot CLI 1.0.79 output: trailing period
+      # plus an install hint line, not the bare legacy string.
+      printf 'No plugins installed.\n\n'
+      printf "Use 'copilot plugin install <source>' to install a plugin.\n"
     fi
     ;;
   'plugin install')
