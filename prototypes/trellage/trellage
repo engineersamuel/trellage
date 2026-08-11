@@ -1420,9 +1420,13 @@ if ! inspect_profile_image; then
   fi
   verify_docker_server
   printf 'trellage: profile image is missing or stale; building automatically\n' >&2
-  "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
-    node "$compiler" build --locked "$profile_path" \
-    || fail "automatic profile image build failed: $build_command"
+  if ! "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+    node "$compiler" build --locked "$profile_path"; then
+    printf 'trellage: locked build digest drifted; rebuilding non-locked\n' >&2
+    "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+      node "$compiler" build "$profile_path" \
+      || fail "automatic profile image build failed: $build_command"
+  fi
   inspect_profile_image \
     || fail "profile image remains missing or stale after automatic build: $image"
 fi
