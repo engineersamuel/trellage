@@ -53,6 +53,9 @@ If the arguments do not contain `--model` or `--model=...`, `cldx` adds
 `--model claude-opus-5`. Explicit model selection wins. All other arguments and
 the Claude process exit status pass through unchanged.
 
+Every launch also bypasses permission prompts and disallows `AskUserQuestion`,
+so profiles run without waiting for interactive user input.
+
 Every setup, doctor, repair, and launch checks proxy health and confirms that
 `claude-opus-5` is advertised.
 

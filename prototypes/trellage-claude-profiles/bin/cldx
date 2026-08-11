@@ -342,7 +342,9 @@ launch_profile() {
       ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
       ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
       ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
-      "$executable" "$@"
+      "$executable" --dangerously-skip-permissions \
+      --permission-mode bypassPermissions \
+      --disallowedTools AskUserQuestion "$@"
   fi
   exec env \
     CLAUDE_CONFIG_DIR="$profile_home" \
@@ -351,7 +353,10 @@ launch_profile() {
     ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
     ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
     ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
-    "$executable" --model "$model_id" "$@"
+    "$executable" --dangerously-skip-permissions \
+    --permission-mode bypassPermissions \
+    --disallowedTools AskUserQuestion \
+    --model "$model_id" "$@"
 }
 
 require_safe_home

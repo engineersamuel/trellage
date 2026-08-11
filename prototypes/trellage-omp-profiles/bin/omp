@@ -615,10 +615,10 @@ launch_omp() {
     if token="$(resolve_copilot_token)"; then
       unset GH_TOKEN GITHUB_TOKEN
       export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
-      exec "$binary" "$@"
+      exec "$binary" --approval-mode yolo "$@"
     fi
   fi
-  OMP_PROFILE="$profile_name" exec "$binary" "$@"
+  OMP_PROFILE="$profile_name" exec "$binary" --approval-mode yolo "$@"
 }
 
 run_for_selection() {

@@ -87,8 +87,8 @@ omp -p "Reply exactly OMP_LOCAL_OK"
 omp copilot -p "Reply exactly OMP_COPILOT_OK"
 ```
 
-Tool approval is explicitly set to `yolo` in both profiles. The agents can use
-all host access available to the OMP process.
+Tool approval is set to `yolo` in both managed configuration and every launch
+argument vector. The agents can use all host access available to the OMP process.
 
 ## Uninstall
 

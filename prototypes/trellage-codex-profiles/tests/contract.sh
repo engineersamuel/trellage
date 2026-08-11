@@ -569,7 +569,7 @@ case "$*" in
     fi
     if [ "$profile" = superpowers ] \
       && [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ]; then
-      case "${2:-}" in
+      case "${4:-}" in
         debug|--*) ;;
         *)
           if ! git_marketplace_is_materialized; then
@@ -805,7 +805,7 @@ jq -se --arg codexHome "$hve_home" \
     and $launches[0].home == $home
     and $launches[0].cwd == $cwd
     and $launches[0].args == [
-      "--dangerously-bypass-approvals-and-sandbox",
+      "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'
@@ -2914,7 +2914,7 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers --version \
 assert_isolation_snapshot_unchanged launch-ordinary
 jq -se '
   length == 1
-  and .[0].args == ["--dangerously-bypass-approvals-and-sandbox","--version"]
+  and .[0].args == ["--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
 [ ! -e "$fixture_root/fake-curl.log" ] || fail 'launch invoked curl'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
@@ -3717,7 +3717,7 @@ jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
       home: $home,
       cwd: $cwd,
       args: [
-        "--dangerously-bypass-approvals-and-sandbox",
+        "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
         "-c", "model_provider=\"openai\"",
         "-m", "gpt-5.5", "exec", "--json", "hello world"
       ]
@@ -4188,7 +4188,7 @@ assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
 jq -se '
   length == 2
   and .[0].args == ["plugin","list","--json"]
-  and .[1].args == ["--dangerously-bypass-approvals-and-sandbox","--version"]
+  and .[1].args == ["--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \

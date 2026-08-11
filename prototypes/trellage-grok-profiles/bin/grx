@@ -1425,32 +1425,10 @@ ensure_launch_ready() {
   doctor_profile "$profile" >/dev/null
 }
 
-has_explicit_permission() {
-  local argument
-
-  for argument in "$@"; do
-    case "$argument" in
-      --) return 1 ;;
-      --always-approve) return 0 ;;
-      --permission-mode|--permission-mode=*) return 0 ;;
-      --allow|--allow=*|--allowedTools|--allowedTools=*) return 0 ;;
-      --deny|--deny=*|--disallowedTools|--disallowedTools=*) return 0 ;;
-    esac
-  done
-
-  return 1
-}
-
 launch_profile() {
   local profile="$1"
   shift
-  local grok_args=("$@")
-
-  if [ "$#" -eq 0 ]; then
-    grok_args=(--permission-mode bypassPermissions)
-  elif ! has_explicit_permission "$@"; then
-    grok_args=(--permission-mode bypassPermissions "${grok_args[@]}")
-  fi
+  local grok_args=(--permission-mode bypassPermissions --always-approve "$@")
 
   ensure_launch_ready "$profile"
   resolve_grok

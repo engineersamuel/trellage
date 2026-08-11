@@ -441,7 +441,7 @@ launch_jcode() {
     JCODE_PROVIDER="$provider" \
     JCODE_MODEL="$model_id" \
     JCODE_OPENAI_REASONING_EFFORT="$reasoning_effort" \
-    "$binary" "$@"
+    "$binary" --no-update "$@"
 }
 
 require_command jq

@@ -116,9 +116,9 @@ assert_contains 'GROK_HOME' "$readme"
 assert_contains 'http://127.0.0.1:8080/v1' "$readme"
 assert_contains '`grok-4.5`' "$readme"
 assert_contains '`-m` or `--model`' "$readme"
-assert_line 'Profile launches default to `--permission-mode bypassPermissions`. An explicit' "$readme"
-assert_line 'permission mode, approval flag, allow rule, or deny rule is forwarded unchanged' "$readme"
-assert_line 'and suppresses that default.' "$readme"
+assert_line 'Profile launches always pass `--permission-mode bypassPermissions` and' "$readme"
+assert_line '`--always-approve` before caller arguments. Explicit permission modes, approval' "$readme"
+assert_line 'flags, allow rules, and deny rules are still forwarded unchanged.' "$readme"
 assert_contains 'Plain `grok`' "$readme"
 assert_contains 'profile-local user-scoped MCP servers' "$readme"
 assert_contains 'does not import MCP servers from `~/.grok/config.toml`' "$readme"
@@ -298,8 +298,9 @@ jq -cn \
   -- "$@" >>"$FAKE_GROK_LOG"
 
 if [ "${1:-}" = '--permission-mode' ] \
-  && [ "${2:-}" = 'bypassPermissions' ]; then
-  shift 2
+  && [ "${2:-}" = 'bypassPermissions' ] \
+  && [ "${3:-}" = '--always-approve' ]; then
+  shift 3
 fi
 
 state_dir="$GROK_HOME/fake-state"
@@ -1507,7 +1508,7 @@ expected_launch_json="$(jq -cn \
     modelsBaseUrl:"http://127.0.0.1:8080/v1",
     defaultModel:"grok-4.5",
     xaiApiKey:"local-copilot-proxy",
-    args:["--permission-mode","bypassPermissions","--model","grok-code-fast-1","-p","hello world","--","--literal"]
+    args:["--permission-mode","bypassPermissions","--always-approve","--model","grok-code-fast-1","-p","hello world","--","--literal"]
   }')"
 last_launch_json="$(tail -n 1 "$fake_grok_log")"
 [ "$last_launch_json" = "$expected_launch_json" ] \
@@ -1521,7 +1522,7 @@ jq -s -e '
   | .modelsBaseUrl == "http://127.0.0.1:8080/v1"
   and .defaultModel == "grok-4.5"
   and .xaiApiKey == "local-copilot-proxy"
-  and .args == ["--permission-mode","bypassPermissions","-m","gpt-5.2-codex","-p","short model flag"]
+  and .args == ["--permission-mode","bypassPermissions","--always-approve","-m","gpt-5.2-codex","-p","short model flag"]
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not preserve the explicit short model override'
 
@@ -1529,7 +1530,7 @@ jq -s -e '
   >"$fixture_root/explicit-permission-mode-launch.out"
 jq -s -e '
   last
-  | .args == ["--permission-mode","plan","-p","explicit permission mode"]
+  | .args == ["--permission-mode","bypassPermissions","--always-approve","--permission-mode","plan","-p","explicit permission mode"]
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not preserve an explicit permission mode'
 
@@ -1537,7 +1538,7 @@ jq -s -e '
   >"$fixture_root/explicit-deny-launch.out"
 jq -s -e '
   last
-  | .args == ["--deny","shell","-p","explicit deny rule"]
+  | .args == ["--permission-mode","bypassPermissions","--always-approve","--deny","shell","-p","explicit deny rule"]
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not preserve an explicit deny rule'
 
@@ -1552,7 +1553,7 @@ for permission_option in \
     >"$fixture_root/explicit-permission-option-launch.out"
   jq -s -e --arg option "$permission_option" '
     last
-    | .args == [$option,"-p","explicit permission option"]
+    | .args == ["--permission-mode","bypassPermissions","--always-approve",$option,"-p","explicit permission option"]
   ' "$fake_grok_log" >/dev/null \
     || fail "launch did not preserve explicit permission option: $permission_option"
 done
@@ -1561,7 +1562,7 @@ done
   >"$fixture_root/literal-permission-option-launch.out"
 jq -s -e '
   last
-  | .args == ["--permission-mode","bypassPermissions","-p","literal permission option","--","--permission-mode=plan"]
+  | .args == ["--permission-mode","bypassPermissions","--always-approve","-p","literal permission option","--","--permission-mode=plan"]
 ' "$fake_grok_log" >/dev/null \
   || fail 'a literal permission-looking argument suppressed the default permission mode'
 
@@ -2941,7 +2942,7 @@ assert_line 'hve: repaired' "$fixture_root/profile-user-mcp-repair.out"
 jq -s -e --arg home "$hve_home" '
   last
   | .grokHome == $home
-  and .args == ["--permission-mode","bypassPermissions","--profile-user-mcp"]
+  and .args == ["--permission-mode","bypassPermissions","--always-approve","--profile-user-mcp"]
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not allow the profile-local user MCP inventory'
 cmp -s "$profile_config" "$fixture_root/profile-config-before-lifecycle.toml" \

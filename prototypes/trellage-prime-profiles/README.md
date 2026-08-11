@@ -85,10 +85,10 @@ prx default
 prx -p "Reply exactly PRX_OK"
 ```
 
-Arguments pass after managed `--provider copilot-proxy-rs`, `--model`, and
-`--offline` flags. Pass `--model MODEL` or `--model=MODEL` to select another
-model advertised by the proxy. `doctor` verifies proxy health and confirms that
-the default `claude-opus-5` model is advertised.
+Arguments pass after managed `--provider copilot-proxy-rs`, `--model`,
+`--offline`, and `--autonomous` flags. Pass `--model MODEL` or `--model=MODEL`
+to select another model advertised by the proxy. `doctor` verifies proxy health
+and confirms that the default `claude-opus-5` model is advertised.
 
 Long-running interactive sessions may leave Prime background workers on the
 profile socket. Stop them with:

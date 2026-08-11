@@ -178,6 +178,7 @@ export FAKE_OMP_TEMPLATE="$fixture_root/fake-omp-template"
 export FAKE_OMP_SIGNAL_LOG="$fixture_root/signal.log"
 export FAKE_SECURITY_LOG="$fixture_root/security.log"
 export FAKE_GH_LOG="$fixture_root/gh.log"
+unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
 : >"$FAKE_MISE_LOG"
 : >"$FAKE_CURL_LOG"
 : >"$FAKE_OMP_LOG"
@@ -301,7 +302,7 @@ worktree="$(CDPATH= cd -P -- "$worktree" && pwd -P)"
 expected_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
+  '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_launch" ]] \
   || fail 'launch did not preserve profile, cwd, HOME, or exact arguments'
 
@@ -312,7 +313,7 @@ expected_launch="$(jq -cn \
 expected_local_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
+  '{version:"17.2.6",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_local_launch" ]] \
   || fail 'explicit local launch did not select the local profile'
 
@@ -323,7 +324,7 @@ expected_local_launch="$(jq -cn \
 expected_copilot_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"17.2.6",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_COPILOT_OK"]}')"
+  '{version:"17.2.6",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_COPILOT_OK"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_copilot_launch" ]] \
   || fail 'Copilot launch did not select the native Copilot profile'
 grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \

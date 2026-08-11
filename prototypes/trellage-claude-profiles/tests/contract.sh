@@ -144,7 +144,7 @@ jq -e '
 
 "$command_path" || fail 'bare launch failed'
 jq -e '
-  .args == ["--model", "claude-opus-5"]
+  .args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'bare launch arguments differ'
 
 printf 'preserve\n' >"$profile_home/unrelated-state"
@@ -165,13 +165,13 @@ jq -s -e --arg home "$profile_home" '
   and .[-1].oauth == "unset"
   and .[-1].openai == "unset"
   and .[-1].gh == "unset"
-  and .[-1].args == ["--model", "claude-opus-5", "-p", "two words", "", "--literal=*"]
+  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "-p", "two words", "", "--literal=*"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 "$command_path" --model claude-sonnet-5 -p override \
   || fail 'model override launch failed'
 jq -s -e '
-  .[-1].args == ["--model", "claude-sonnet-5", "-p", "override"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-sonnet-5", "-p", "override"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model override was changed'
 
 status=0
