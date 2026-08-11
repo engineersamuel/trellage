@@ -16,6 +16,7 @@ for required_file in \
   compose.copilot.yaml \
   docker/codex-config.toml \
   scripts/agent-entrypoint.sh \
+  scripts/find-harness-session.sh \
   scripts/run-agent.sh \
   scripts/app-entrypoint.sh; do
   [[ -f "$required_file" ]] || fail "missing required file: $required_file"
@@ -135,6 +136,8 @@ jq -e '((.services.copilot_agent.environment // {}) | has("COPILOT_GITHUB_TOKEN"
 grep -Fq -- '--dangerously-bypass-approvals-and-sandbox' scripts/run-agent.sh || fail 'Codex external-sandbox mode is missing'
 grep -Fq '/usr/local/bin/adapt-agent-kit.sh /workspace' scripts/agent-entrypoint.sh || fail 'generated agent references are not adapted in the live workspace'
 grep -Fq '"$CODEX_HOME/agents"' scripts/agent-entrypoint.sh || fail 'generated agents are not installed into container-local CODEX_HOME'
+grep -Fq 'scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh' Dockerfile.agent \
+  || fail 'Codex session discovery helper is not installed'
 grep -Fq 'chmod 0700 /workspace' scripts/agent-entrypoint.sh || fail 'workspace mode is not restored after archive-preserving seed copy'
 
 printf 'harness contract: PASS\n'

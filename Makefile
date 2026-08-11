@@ -109,6 +109,7 @@ runner:
 
 session:
 	bash tests/run_agent_session.sh
+	bash tests/harness_session_discovery.sh
 
 workspace-checks:
 	bash tests/workspace_checks.sh

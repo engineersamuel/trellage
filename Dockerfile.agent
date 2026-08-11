@@ -52,6 +52,7 @@ COPY --from=adapter /opt/agent-kit /opt/agent-kit
 COPY --from=adapter /opt/agent-kit-inventory.txt /opt/agent-kit-inventory.txt
 COPY docker/codex-config.toml /opt/codex-config.toml
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
+COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
 COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
 COPY scripts/run-agent.sh /usr/local/bin/run-agent.sh
 

@@ -76,11 +76,26 @@ copilot_args=(
 if [[ "$session_mode" == '--new' ]]; then
   copilot_args+=(--autopilot --max-autopilot-continues 20 --prompt "$prompt")
 else
-  [[ -s "$session_file" ]] || {
-    printf 'no durable Copilot session ID; start with --new\n' >&2
-    exit 66
-  }
-  session_id="$(<"$session_file")"
+  session_id=''
+  if [[ -s "$session_file" ]]; then
+    candidate_session_id="$(<"$session_file")"
+    if /usr/local/bin/find-harness-session.sh \
+      copilot "$COPILOT_HOME" /workspace "$candidate_session_id" >/dev/null; then
+      session_id="$candidate_session_id"
+    fi
+  fi
+  if [[ -z "$session_id" ]]; then
+    session_id="$(/usr/local/bin/find-harness-session.sh \
+      copilot "$COPILOT_HOME" /workspace 2>/dev/null || true)"
+    if [[ -z "$session_id" ]]; then
+      printf 'no recoverable Copilot session; start with --new\n' >&2
+      exit 66
+    fi
+    session_tmp="$(mktemp /workspace/.harness/copilot-session-id.XXXXXX)"
+    printf '%s\n' "$session_id" >"$session_tmp"
+    chmod 0600 "$session_tmp"
+    mv "$session_tmp" "$session_file"
+  fi
   copilot_args+=(--resume="$session_id" --prompt "$prompt")
 fi
 

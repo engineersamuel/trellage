@@ -30,6 +30,7 @@ commands:
   build     Build isolated contestant and app images
   run       Run both contestants concurrently in new sessions
   resume    Resume both retained contestant sessions concurrently
+  sessions  Show retained contestant sessions and recovery command
   serve     Publish both generated apps on their loopback ports
   verify    Run generated-app checks and common browser/persistence checks
   collect   Export normalized, secret-scanned judge evidence
@@ -245,6 +246,46 @@ run_all() {
   cleanup_secret_file
   copilot_secret_file=''
   return "$overall_status"
+}
+
+show_sessions() {
+  local contestant contestant_id runtime experiment image workspace_volume runtime_home
+  local session_id status
+  status=0
+
+  for contestant in "${contestants[@]}"; do
+    contestant_id="$(jq -r '.id' <<<"$contestant")"
+    runtime="$(jq -r '.runtime' <<<"$contestant")"
+    experiment="$harness_id-$contestant_id"
+    image="$experiment-agent:local"
+    workspace_volume="${experiment}_workspace"
+    case "$runtime" in
+      codex) runtime_home='/workspace/.codex-home' ;;
+      copilot) runtime_home='/workspace/.copilot-home' ;;
+    esac
+
+    if ! docker volume inspect "$workspace_volume" >/dev/null 2>&1; then
+      printf '%s\t%s\t%s\n' "$contestant_id" "$runtime" 'workspace volume is missing'
+      status=1
+      continue
+    fi
+    if session_id="$(docker run --rm \
+      --network none \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --volume "$workspace_volume:/workspace:ro" \
+      --entrypoint /usr/local/bin/find-harness-session.sh \
+      "$image" "$runtime" "$runtime_home" /workspace)"; then
+      printf '%s\t%s\t%s\n' "$contestant_id" "$runtime" "$session_id"
+    else
+      printf '%s\t%s\t%s\n' "$contestant_id" "$runtime" 'no recoverable session'
+      status=1
+    fi
+  done
+
+  printf 'resume: scripts/harness resume %q\n' "$manifest"
+  return "$status"
 }
 
 serve_all() {
@@ -505,6 +546,9 @@ case "$command_name" in
     ;;
   resume)
     run_all --resume
+    ;;
+  sessions)
+    show_sessions
     ;;
   serve)
     serve_all

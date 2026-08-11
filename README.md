@@ -582,6 +582,7 @@ The default manifest is `harnesses/todo-side-by-side/harness.json`.
 ./scripts/harness build    harnesses/todo-side-by-side/harness.json
 ./scripts/harness run      harnesses/todo-side-by-side/harness.json
 ./scripts/harness resume   harnesses/todo-side-by-side/harness.json
+./scripts/harness sessions harnesses/todo-side-by-side/harness.json
 ./scripts/harness serve    harnesses/todo-side-by-side/harness.json
 ./scripts/harness verify   harnesses/todo-side-by-side/harness.json
 HARNESS_RUN_ID=my-run ./scripts/harness collect harnesses/todo-side-by-side/harness.json
@@ -590,12 +591,23 @@ HARNESS_RUN_ID=my-run ./scripts/harness collect harnesses/todo-side-by-side/harn
 ```
 
 - `run` creates new retained agent sessions and runs contestants concurrently.
-- `resume` continues both retained sessions with the shared prompt.
+- `resume` continues both retained sessions with the shared prompt. If an abrupt
+  container exit prevented the session-ID sidecar from being written, it
+  recovers the newest native session for `/workspace`.
+- `sessions` inspects retained native state without credentials or network
+  access and prints each contestant's recoverable session ID.
 - `serve` publishes the generated runtime artifacts and starts both apps.
 - `verify` runs each app's own test/type/lint/build/audit checks, recreates clean app processes, runs the shared CRUD flow, recreates each app again, and proves SQLite persistence.
 - `collect` exports normalized, secret-scanned evidence and refuses to overwrite an existing run ID.
 - `down` stops containers but preserves workspaces, sessions, and app data.
 - `purge` permanently removes both contestant projects and their named volumes.
+
+Agent containers are one-shot, but their Codex and Copilot runtime homes live in
+the project-scoped workspace volumes. A container or terminal crash therefore
+does not discard conversation state; use `sessions` to inspect it and `resume`
+to continue it. Host `~/.codex` and `~/.copilot` remain unmounted so contestants
+cannot read or modify unrelated host conversations. `purge` irreversibly removes
+the retained runtime homes.
 
 Use another manifest with Make:
 
