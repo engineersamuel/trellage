@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fixture_config="$(dirname "$0")/.trellage-fixture-env"
+fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"
 [[ ! -f "$fixture_config" ]] || source "$fixture_config"
 
 log="${FAKE_DOCKER_LOG:?}"
@@ -70,7 +70,13 @@ case "${1:-} ${2:-}" in
     [[ ! -f "$server_info_count_file" ]] || server_info_count="$(head -n 1 "$server_info_count_file")"
     server_info_count="$((server_info_count + 1))"
     printf '%s\n' "$server_info_count" >"$server_info_count_file"
-    if [[ "$server_info_count" -eq "${FAKE_DOCKER_SERVER_CHANGE_ON_INFO_CALL:-0}" ]]; then
+    if [[ "${FAKE_DOCKER_CLEANUP_SERVER_CHANGE:-0}" == 1 && -f "$log.agent-exec-finished" ]]; then
+      if [[ "${3:-}" == $'{{.ID}}\n{{.OSType}}/{{.Architecture}}' ]]; then
+        printf '%s\n%s\n' changed-server-id linux/amd64
+      else
+        printf '%s\n' changed-server-id
+      fi
+    elif [[ "$server_info_count" -eq "${FAKE_DOCKER_SERVER_CHANGE_ON_INFO_CALL:-0}" ]]; then
       if [[ "${3:-}" == $'{{.ID}}\n{{.OSType}}/{{.Architecture}}' ]]; then
         printf '%s\n%s\n' changed-server-id linux/amd64
       else
@@ -334,6 +340,9 @@ case "${1:-} ${2:-}" in
     [[ "${FAKE_DOCKER_NETWORK_EXISTS:-1}" == 1 ]]
     ;;
   'volume inspect')
+    if [[ "${FAKE_DOCKER_CLEANUP_VOLUME_MISMATCH:-0}" == 1 && -f "$log.agent-exec-finished" ]]; then
+      volume_state=unrelated
+    fi
     case "$volume_state" in
       absent) exit 1 ;;
       error) exit "${FAKE_DOCKER_VOLUME_ERROR_CODE:-71}" ;;
@@ -383,6 +392,11 @@ case "${1:-} ${2:-}" in
     esac
     ;;
   'container inspect')
+    if [[ "${FAKE_DOCKER_CLEANUP_OWNERSHIP_MISMATCH:-0}" == 1 && -f "$log.agent-exec-finished" ]]; then
+      container_state=unrelated
+    elif [[ "${FAKE_DOCKER_CLEANUP_MOUNT_MISMATCH:-0}" == 1 && -f "$log.agent-exec-finished" ]]; then
+      container_state=matching-wrong-mount
+    fi
     case "$container_state" in
       absent) exit 1 ;;
       error) exit "${FAKE_DOCKER_CONTAINER_ERROR_CODE:-70}" ;;
@@ -473,7 +487,13 @@ case "${1:-} ${2:-}" in
       *dev.trellage.worktree*) printf '%s\n' "$worktree" ;;
       *dev.trellage.platform*) printf '%s\n' "${platform:-}" ;;
       *dev.trellage.profile*) printf '%s\n' "$profile" ;;
-      *'.Id'*) printf 'fake-container-id\n' ;;
+      *'.Id'*)
+        if [[ "${FAKE_DOCKER_CLEANUP_ID_MISMATCH:-0}" == 1 && -f "$log.agent-exec-finished" ]]; then
+          printf 'changed-container-id\n'
+        else
+          printf 'fake-container-id\n'
+        fi
+        ;;
       *'.Image'*)
         if [[ "$container_state" == created ]]; then
           printf '%s\n' "$container_image"
@@ -484,6 +504,11 @@ case "${1:-} ${2:-}" in
       *State.Running*) printf '%s\n' "$running" ;;
       *State.Pid*) printf '100\n' ;;
       *'.Mounts'*)
+        fake_state_volume="${FAKE_DOCKER_STATE_VOLUME:-}"
+        if [[ -z "$fake_state_volume" && -f "$log.created-volume-name" ]]; then
+          IFS= read -r fake_state_volume <"$log.created-volume-name"
+        fi
+        [[ -n "$fake_state_volume" ]] || exit 67
         if [[ "$container_state" == matching-wrong-mount ]]; then
           printf 'bind\t\t%s\t%s\ttrue\n' "$worktree" "/mounts/$(basename "$worktree")"
           printf 'volume\twrong-state-volume\t/var/lib/docker/volumes/wrong/_data\t/home/agent\ttrue\n'
@@ -491,7 +516,7 @@ case "${1:-} ${2:-}" in
           printf 'bind\t\t%s\t%s\ttrue\n' "$worktree" "/mounts/$(basename "$worktree")"
           printf 'bind\t\t%s\t%s\ttrue\n' "$worktree/.git" "$worktree/.git"
           printf 'volume\t%s\t/var/lib/docker/volumes/%s/_data\t/home/agent\ttrue\n' \
-            "${FAKE_DOCKER_STATE_VOLUME:?}" "${FAKE_DOCKER_STATE_VOLUME:?}"
+            "$fake_state_volume" "$fake_state_volume"
           case "${FAKE_DOCKER_MODELS_MOUNT_STATE:-matching}" in
             absent) ;;
             matching)
@@ -512,6 +537,7 @@ case "${1:-} ${2:-}" in
     ;;
   'volume create')
     persist_create_labels volume "$@"
+    printf '%s\n' "${@: -1}" >"$log.created-volume-name"
     printf '%s\n' "${@: -1}"
     ;;
   'container create')
@@ -532,6 +558,11 @@ case "${1:-} ${2:-}" in
     printf '%s\n' "${@: -1}"
     ;;
   'container stop')
+    [[ "${FAKE_DOCKER_STOP_EXIT:-0}" == 0 ]] || exit "$FAKE_DOCKER_STOP_EXIT"
+    if [[ -n "${FAKE_DOCKER_STOP_READY_FILE:-}" ]]; then
+      : >"$FAKE_DOCKER_STOP_READY_FILE"
+      while [[ ! -f "${FAKE_DOCKER_STOP_RELEASE_FILE:?}" ]]; do sleep 0.05; done
+    fi
     if [[ "$container_state" == created ]]; then
       printf 'false\n' >"$log.container-running"
     fi
@@ -547,13 +578,40 @@ case "${1:-} ${2:-}" in
   'container rm') printf '%s\n' "${@: -1}" ;;
   'volume rm') printf '%s\n' "${@: -1}" ;;
   'container exec')
+    if [[ "${FAKE_DOCKER_BLOCK_ANY_EXEC:-0}" == 1 && -n "${FAKE_DOCKER_EXEC_READY_FILE:-}" ]]; then
+      : >"$FAKE_DOCKER_EXEC_READY_FILE"
+      while [[ ! -f "${FAKE_DOCKER_EXEC_RELEASE_FILE:?}" ]]; do sleep 0.05; done
+    fi
     if [[ -n "${FAKE_DOCKER_AGENT_EXEC_EXIT:-}" ]]; then
       for argument in "$@"; do
         if [[ "$argument" == *trellage-*-entry* ]]; then
+          : >"$log.agent-exec-finished"
           exit "$FAKE_DOCKER_AGENT_EXEC_EXIT"
         fi
       done
     fi
+    for argument in "$@"; do
+      if [[ "$argument" == *trellage-*-entry* ]]; then
+        if [[ "${FAKE_DOCKER_PTY_PROBE:-0}" == 1 ]]; then
+          [[ -t 0 && -t 1 && -t 2 ]] || exit 91
+          trap 'printf "PTY:interrupt\n"; exit 130' INT
+          printf 'PTY:tty\n'
+          printf '\033[32mPTY:color\033[0m\n'
+          printf 'PTY:ready\n'
+          IFS= read -r probe_input
+          printf 'PTY:input:%s\n' "$probe_input"
+          IFS= read -r probe_command
+          printf 'PTY:slash:%s\n' "$probe_command"
+          while :; do sleep 1; done
+        fi
+        if [[ -n "${FAKE_DOCKER_EXEC_READY_FILE:-}" ]]; then
+          : >"$FAKE_DOCKER_EXEC_READY_FILE"
+          while [[ ! -f "${FAKE_DOCKER_EXEC_RELEASE_FILE:?}" ]]; do sleep 0.05; done
+        fi
+        : >"$log.agent-exec-finished"
+        break
+      fi
+    done
     exit "${FAKE_DOCKER_EXEC_EXIT:-0}"
     ;;
   *) exit 64 ;;

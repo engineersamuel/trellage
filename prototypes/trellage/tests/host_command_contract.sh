@@ -17,7 +17,8 @@ fail() {
 }
 
 fake_bin="$test_root/fake-bin"
-mkdir -p "$fake_bin"
+runtime_dir="$test_root/runtime"
+mkdir -p "$fake_bin" "$runtime_dir"
 ln -s "$prototype_dir/tests/fakes/host-docker" "$fake_bin/docker"
 ln -s "$prototype_dir/tests/fakes/host-git" "$fake_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
@@ -35,7 +36,7 @@ host_node_log="$test_root/host-node.log"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
-  'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+  'fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"' \
   '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -94,7 +95,7 @@ ln -s "$prototype_dir/tests/fakes/host-gh" "$copilot_fake_bin/gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
-  'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+  'fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"' \
   '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -112,7 +113,8 @@ printf '%s\n' \
 chmod +x "$copilot_fake_bin/node"
 no_gh_bin="$test_root/no-gh-bin"
 mkdir -p "$no_gh_bin"
-for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv; do
+for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv \
+  mkdir chmod rm rmdir id; do
   ln -s "$(command -v "$utility")" "$no_gh_bin/$utility"
 done
 ln -s "$prototype_dir/tests/fakes/host-env" "$no_gh_bin/env"
@@ -225,6 +227,7 @@ run_tty() {
       PATH="$fake_bin:$PATH" \
       TRELLAGE_PROFILE=codex-superpowers \
       GH_TOKEN=host-contract-gh-token \
+      XDG_RUNTIME_DIR="$runtime_dir" \
       FAKE_DOCKER_LOG="$docker_log" \
       FAKE_GIT_LOG="$test_root/git.log" \
       FAKE_GIT_ROOT="$git_root" \
@@ -402,6 +405,21 @@ assert_no_mutation() {
   ! grep -Fqx $'ARG\trm' "$log" || fail 'unexpected Docker removal'
 }
 
+last_harness_exec_argument() {
+  local log="$1"
+  awk '
+    function finish_call() {
+      if (is_harness) result = last_argument
+    }
+    $0 == "CALL" { finish_call(); is_harness = 0; last_argument = ""; next }
+    /^ARG\t/ {
+      last_argument = $0
+      if ($0 ~ /trellage-[a-z-]+-entry/) is_harness = 1
+    }
+    END { finish_call(); print result }
+  ' "$log"
+}
+
 run_non_tty() {
   local work_dir="$1"
   local docker_log="$2"
@@ -412,6 +430,7 @@ run_non_tty() {
     cd "$work_dir"
     env \
       GH_TOKEN=host-contract-gh-token \
+      XDG_RUNTIME_DIR="$runtime_dir" \
       PATH="$fake_bin:$PATH" \
       FAKE_DOCKER_LOG="$docker_log" \
       FAKE_GIT_LOG="$test_root/git.log" \
@@ -696,7 +715,7 @@ test_resume_uses_native_thread_without_prompt_replay() {
       "$prototype_dir/trellage" --sandbox danger-full-access
   grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry new codex $argv -- $prompt' "$docker_log" \
     || fail 'option-like prompt lacks Codex option boundary'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\t--sandbox danger-full-access' ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\t--sandbox danger-full-access' ]] \
     || fail 'option-like prompt was not passed as one literal positional prompt'
   ! grep -Fqx $'ARG\t--sandbox' "$docker_log" \
     || fail 'option-like prompt leaked into Codex option argv'
@@ -717,7 +736,7 @@ test_bare_command_has_no_prompt() {
 
   grep -Fqx $'ARG\texec trellage-codex-entry new codex $argv' "$docker_log" \
     || fail 'bare command did not enter Codex through Fish'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\t--dangerously-bypass-approvals-and-sandbox' ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\t--dangerously-bypass-approvals-and-sandbox' ]] \
     || fail 'bare command did not pass the profile Codex argument'
   ! grep -Fqx $'ARG\tcreate' "$docker_log" || fail 'running matching container was recreated'
   ! grep -Fqx $'ARG\tstart' "$docker_log" || fail 'running matching container was restarted'
@@ -742,7 +761,7 @@ test_portable_prompt_mode_is_noninteractive_and_literal() {
 
   grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry prompt codex $argv -- $prompt' "$docker_log" \
     || fail 'portable prompt did not use the Codex runtime prompt boundary'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\t'"$prompt" ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\t'"$prompt" ]] \
     || fail 'portable prompt text was not passed as one literal argument'
   assert_prompt_is_detached "$docker_log"
   printf 'Trellage host test: PASS: portable prompt is noninteractive and literal\n'
@@ -821,7 +840,7 @@ test_portable_prompt_parser_contract() {
       FAKE_DOCKER_CONTAINER_STATE=matching-running \
       run_non_tty "$worktree" "$docker_log" "$worktree" \
         "$prototype_dir/trellage" "${launch_args[@]}"
-    [[ "$(tail -n 1 "$docker_log")" == $'ARG\t'"$expected_prompt" ]] \
+    [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\t'"$expected_prompt" ]] \
       || fail "$prompt_form did not preserve its prompt as one argument"
   done
 
@@ -1049,7 +1068,7 @@ test_terminal_environment_and_agent_tagging() {
   assert_codex_exec_hint "$docker_log"
   grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry new codex $argv -- $prompt' "$docker_log" \
     || fail 'prompted new lacks Codex bypass flag before prompt boundary'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\tliteral $(touch /tmp/not-executed) prompt' ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tliteral $(touch /tmp/not-executed) prompt' ]] \
     || fail 'terminal environment handling changed prompt literalness'
 
   : >"$docker_log"
@@ -1254,6 +1273,332 @@ test_requires_tty_and_returns_exec_status() {
     [[ "$?" -eq 23 ]] || fail 'Docker exec exit status changed'
   fi
   printf 'Trellage host test: PASS: TTY required and exec status preserved\n'
+}
+
+test_last_harness_exit_stops_idle_container() {
+  local worktree="$test_root/automatic-stop-worktree"
+  local docker_log="$test_root/automatic-stop.docker.log"
+  local state_volume launch
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  for launch in new positional resume prompt; do
+    : >"$docker_log"
+    case "$launch" in
+      new)
+        FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+          FAKE_DOCKER_CONTAINER_STATE=matching-running \
+          run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+        ;;
+      positional)
+        FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+          FAKE_DOCKER_CONTAINER_STATE=matching-running \
+          run_tty "$worktree" "$docker_log" "$worktree" \
+            "$prototype_dir/trellage" 'finish this task'
+        ;;
+      resume)
+        FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+          FAKE_DOCKER_CONTAINER_STATE=matching-running \
+          run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" resume
+        ;;
+      prompt)
+        FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+          FAKE_DOCKER_CONTAINER_STATE=matching-running \
+          run_non_tty "$worktree" "$docker_log" "$worktree" \
+            env XDG_RUNTIME_DIR="$runtime_dir" \
+            "$prototype_dir/trellage" --profile codex-superpowers -p 'portable prompt'
+        ;;
+    esac
+    [[ "$(grep -Fxc $'ARG\tstop' "$docker_log")" -eq 1 ]] \
+      || fail "$launch launch did not stop its idle container exactly once"
+  done
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" shell
+  ! grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'recovery shell exit initiated automatic shutdown'
+  printf 'Trellage host test: PASS: last harness exit stops idle container\n'
+}
+
+wait_for_file() {
+  local path="$1" attempts=0
+  while [[ ! -f "$path" && "$attempts" -lt 200 ]]; do
+    sleep 0.05
+    attempts=$((attempts + 1))
+  done
+  [[ -f "$path" ]] || fail "timed out waiting for fixture: $path"
+}
+
+test_host_env_scopes_fixture_config_to_its_fake_bin() {
+  local decoy_bin="$test_root/host-env-decoy-bin" fixture_config output
+  mkdir -p "$decoy_bin"
+  ln -s "$(command -v node)" "$decoy_bin/node"
+  rm -f "$fake_bin/.trellage-fixture-env" "$decoy_bin/.trellage-fixture-env"
+
+  output="$(FAKE_HOST_ENV_SCOPE_SENTINEL=present \
+    PATH="$fake_bin:$decoy_bin:/usr/bin:/bin" \
+    "$fake_bin/env")"
+  fixture_config="$(awk -F= '$1 == "TRELLAGE_TEST_FIXTURE_CONFIG" {
+    print substr($0, length($1) + 2)
+  }' <<<"$output")"
+
+  [[ "$fixture_config" == "$fake_bin"/.trellage-fixture-env.* ]] \
+    || fail 'host env did not select a per-invocation fixture config'
+  grep -Fqx 'export FAKE_HOST_ENV_SCOPE_SENTINEL=present' \
+    "$fixture_config" \
+    || fail 'host env did not persist fixture values beside the invoking fake commands'
+  [[ ! -e "$decoy_bin/.trellage-fixture-env" ]] \
+    || fail 'host env persisted fixture values into another writable PATH directory'
+  printf 'Trellage host test: PASS: host env scopes fixture config to its fake bin\n'
+}
+
+test_concurrent_harnesses_stop_after_last_exit() {
+  local worktree="$test_root/concurrent-lifecycle-worktree"
+  local docker_log="$test_root/concurrent-lifecycle.docker.log"
+  local state_volume first_ready first_release second_ready second_release first_pid second_pid
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  first_ready="$test_root/first.ready"
+  first_release="$test_root/first.release"
+  second_ready="$test_root/second.ready"
+  second_release="$test_root/second.release"
+  : >"$docker_log"
+
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_EXEC_READY_FILE="$first_ready" FAKE_DOCKER_EXEC_RELEASE_FILE="$first_release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" &
+  first_pid=$!
+  wait_for_file "$first_ready"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_EXEC_READY_FILE="$second_ready" FAKE_DOCKER_EXEC_RELEASE_FILE="$second_release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" &
+  second_pid=$!
+  wait_for_file "$second_ready"
+
+  : >"$first_release"
+  wait "$first_pid"
+  ! grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'first concurrent harness exit stopped the container'
+  : >"$second_release"
+  wait "$second_pid"
+  [[ "$(grep -Fxc $'ARG\tstop' "$docker_log")" -eq 1 ]] \
+    || fail 'last concurrent harness exit did not stop the container exactly once'
+  printf 'Trellage host test: PASS: concurrent harnesses stop after last exit\n'
+}
+
+test_pending_launch_is_serialized_with_cleanup() {
+  local worktree="$test_root/pending-launch-worktree"
+  local docker_log="$test_root/pending-launch.docker.log"
+  local state_volume first_ready first_release stop_ready stop_release second_ready first_pid second_pid
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  first_ready="$test_root/pending-first.ready"
+  first_release="$test_root/pending-first.release"
+  stop_ready="$test_root/pending-stop.ready"
+  stop_release="$test_root/pending-stop.release"
+  second_ready="$test_root/pending-second.ready"
+  : >"$docker_log"
+
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_EXEC_READY_FILE="$first_ready" FAKE_DOCKER_EXEC_RELEASE_FILE="$first_release" \
+    FAKE_DOCKER_STOP_READY_FILE="$stop_ready" FAKE_DOCKER_STOP_RELEASE_FILE="$stop_release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" &
+  first_pid=$!
+  wait_for_file "$first_ready"
+  : >"$first_release"
+  wait_for_file "$stop_ready"
+
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_EXEC_READY_FILE="$second_ready" \
+    FAKE_DOCKER_EXEC_RELEASE_FILE="$test_root/pending-second.release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" &
+  second_pid=$!
+  sleep 0.2
+  [[ ! -f "$second_ready" ]] \
+    || fail 'pending launch entered the container before last-session cleanup completed'
+  : >"$stop_release"
+  wait "$first_pid"
+  wait_for_file "$second_ready"
+  : >"$test_root/pending-second.release"
+  wait "$second_pid"
+  printf 'Trellage host test: PASS: pending launch is serialized with cleanup\n'
+}
+
+test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
+  local worktree="$test_root/lease-guards-worktree"
+  local docker_log="$test_root/lease-guards.docker.log"
+  local state_volume shell_ready shell_release harness_ready harness_release shell_pid harness_pid leases_dir
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  shell_ready="$test_root/shell.ready"
+  shell_release="$test_root/shell.release"
+  harness_ready="$test_root/guard-harness.ready"
+  harness_release="$test_root/guard-harness.release"
+  : >"$docker_log"
+
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_BLOCK_ANY_EXEC=1 \
+    FAKE_DOCKER_EXEC_READY_FILE="$shell_ready" FAKE_DOCKER_EXEC_RELEASE_FILE="$shell_release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" shell &
+  shell_pid=$!
+  wait_for_file "$shell_ready"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_EXEC_READY_FILE="$harness_ready" FAKE_DOCKER_EXEC_RELEASE_FILE="$harness_release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" &
+  harness_pid=$!
+  wait_for_file "$harness_ready"
+  : >"$harness_release"
+  wait "$harness_pid"
+  ! grep -Fqx $'ARG\tstop' "$docker_log" || fail 'live recovery shell lease did not prevent shutdown'
+  : >"$shell_release"
+  wait "$shell_pid"
+  ! grep -Fqx $'ARG\tstop' "$docker_log" || fail 'recovery shell exit initiated shutdown'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_ACTIVE_SESSION=1 \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  ! grep -Fqx $'ARG\tstop' "$docker_log" || fail 'unmanaged container process did not prevent shutdown'
+
+  leases_dir="$(ls -td "$runtime_dir"/trellage-*/*/leases 2>/dev/null | head -n 1)"
+  [[ -n "$leases_dir" ]] || fail 'lifecycle leases directory was not created'
+  printf '99999999\n' >"$leases_dir/99999999"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'dead lease prevented automatic shutdown'
+  [[ ! -e "$leases_dir/99999999" ]] || fail 'dead lease was not pruned'
+  printf 'Trellage host test: PASS: shell leases, processes, and dead leases guard shutdown\n'
+}
+
+test_cleanup_status_signals_secrets_and_validation() {
+  local worktree="$test_root/cleanup-contract-worktree"
+  local docker_log="$test_root/cleanup-contract.docker.log"
+  local state_volume output status signal mismatch variable
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  : >"$docker_log"
+  status=0
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_AGENT_EXEC_EXIT=23 \
+    FAKE_DOCKER_STOP_EXIT=47 \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" || status=$?
+  [[ "$status" -eq 23 ]] || fail "cleanup failure replaced a nonzero harness status with $status"
+
+  : >"$docker_log"
+  status=0
+  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_STOP_EXIT=47 \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers -p cleanup 2>&1)" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'stop failure preserved a successful harness status'
+  grep -Fq 'cannot automatically stop Docker container' <<<"$output" \
+    || fail 'stop failure omitted its diagnostic'
+
+  for signal in HUP INT TERM; do
+    : >"$docker_log"
+    status=0
+    case "$signal" in HUP) expected_signal_status=129 ;; INT) expected_signal_status=130 ;; TERM) expected_signal_status=143 ;; esac
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_AGENT_EXEC_EXIT="$expected_signal_status" \
+      run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" || status=$?
+    case "$signal:$status" in HUP:129|INT:130|TERM:143) ;; *) fail "$signal status changed to $status" ;; esac
+  done
+
+  : >"$docker_log"
+  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers -p cleanup 2>&1)"
+  [[ -z "$output" ]] || fail 'successful cleanup produced output'
+  awk '
+    $0 == "CALL" { call++; next }
+    $0 == "ARG\tcontainer" { container_call = call; next }
+    $0 == "ARG\texec" && container_call == call { exec_call = call; next }
+    call > exec_call && /^ENV\t(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|DOCS_TOKEN|PLAYWRIGHT_MCP_EXTENSION_TOKEN)=.+$/ { exit 1 }
+    END { exit(exec_call ? 0 : 1) }
+  ' "$docker_log" || fail 'cleanup Docker process received a provider or GitHub secret'
+
+  for mismatch in SERVER_CHANGE ID_MISMATCH OWNERSHIP_MISMATCH MOUNT_MISMATCH VOLUME_MISMATCH; do
+    : >"$docker_log"
+    rm -f -- "$docker_log.agent-exec-finished"
+    status=0
+    variable="FAKE_DOCKER_CLEANUP_$mismatch=1"
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      run_non_tty "$worktree" "$docker_log" "$worktree" \
+        env "$variable" "$prototype_dir/trellage" --profile codex-superpowers -p cleanup \
+        >/dev/null 2>&1 || status=$?
+    [[ "$status" -ne 0 ]] || fail "$mismatch cleanup mismatch was accepted"
+    ! grep -Fqx $'ARG\tstop' "$docker_log" || fail "$mismatch cleanup mismatch stopped the container"
+  done
+  printf 'Trellage host test: PASS: cleanup preserves statuses, scrubs secrets, and fails closed\n'
+}
+
+test_foreground_wrapper_preserves_pty_contract() {
+  local worktree="$test_root/pty-foreground-worktree"
+  local docker_log="$test_root/pty-foreground.docker.log"
+  local transcript="$test_root/pty-foreground.transcript"
+  local state_volume
+  mkdir -p "$worktree/.git"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+
+  TEST_PATH="$fake_bin:$PATH" TEST_WORKTREE="$worktree" TEST_DOCKER_LOG="$docker_log" \
+    TEST_GIT_LOG="$test_root/git.log" TEST_RUNTIME_DIR="$runtime_dir" \
+    TEST_NODE_LOG="$host_node_log" TEST_REAL_NODE="$real_node" \
+    TEST_STATE_VOLUME="$state_volume" TEST_LAUNCHER="$prototype_dir/trellage" \
+    TEST_TRANSCRIPT="$transcript" expect <<'EXPECT'
+set timeout 20
+log_file -noappend $env(TEST_TRANSCRIPT)
+spawn -noecho env \
+  PATH=$env(TEST_PATH) \
+  TRELLAGE_PROFILE=codex-superpowers \
+  GH_TOKEN=host-contract-gh-token \
+  XDG_RUNTIME_DIR=$env(TEST_RUNTIME_DIR) \
+  FAKE_DOCKER_LOG=$env(TEST_DOCKER_LOG) \
+  FAKE_GIT_LOG=$env(TEST_GIT_LOG) \
+  FAKE_GIT_ROOT=$env(TEST_WORKTREE) \
+  FAKE_NODE_LOG=$env(TEST_NODE_LOG) \
+  FAKE_REAL_NODE=$env(TEST_REAL_NODE) \
+  FAKE_DOCKER_VOLUME_STATE=matching \
+  FAKE_DOCKER_STATE_VOLUME=$env(TEST_STATE_VOLUME) \
+  FAKE_DOCKER_CONTAINER_STATE=matching-running \
+  FAKE_DOCKER_PTY_PROBE=1 \
+  $env(TEST_LAUNCHER)
+expect "PTY:ready"
+send -- "direct input\r"
+expect "PTY:input:direct input"
+send -- "/status\r"
+expect "PTY:slash:/status"
+send -- "\003"
+expect "PTY:interrupt"
+expect eof
+set result [wait]
+set status [lindex $result 3]
+if {$status != 130} {
+  puts stderr "PTY launcher status changed to $status"
+  exit 1
+}
+EXPECT
+
+  grep -Fq 'PTY:tty' "$transcript" || fail 'foreground Docker exec did not receive a TTY'
+  grep -Fq $'\033[32mPTY:color\033[0m' "$transcript" \
+    || fail 'foreground Docker exec did not preserve terminal colors'
+  grep -Fq 'PTY:input:direct input' "$transcript" || fail 'foreground Docker exec lost direct input'
+  grep -Fq 'PTY:slash:/status' "$transcript" || fail 'foreground Docker exec lost slash commands'
+  grep -Fq 'PTY:interrupt' "$transcript" || fail 'foreground Docker exec lost Ctrl-C'
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'Ctrl-C cleanup did not stop the idle container'
+  printf 'Trellage host test: PASS: foreground wrapper preserves direct PTY behavior\n'
 }
 
 test_doctor_reports_status_without_mutation_or_secrets() {
@@ -2290,7 +2635,7 @@ test_upgrade_delegates_to_effect_cli() {
   cat >"$fake_node_bin/node" <<'EOF'
 #!/bin/sh
 set -eu
-fixture_config="$(dirname "$0")/.trellage-fixture-env"
+fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"
 [ ! -f "$fixture_config" ] || . "$fixture_config"
 printf 'ARG\t%s\n' "$@" >"$FAKE_NODE_LOG"
 EOF
@@ -2351,7 +2696,7 @@ test_list_delegates_to_effect_cli() {
   cat >"$fake_node_bin/node" <<'EOF'
 #!/bin/sh
 set -eu
-fixture_config="$(dirname "$0")/.trellage-fixture-env"
+fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"
 [ ! -f "$fixture_config" ] || . "$fixture_config"
 printf 'ARG\t%s\n' "$@" >"$FAKE_NODE_LOG"
 EOF
@@ -2542,7 +2887,7 @@ test_compiler_commands_scrub_copilot_auth() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'fixture_config="$(dirname "$0")/.trellage-fixture-env"' \
+    'fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"' \
     '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
     'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
     'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -2873,7 +3218,7 @@ test_claude_core_injects_exact_metadata_routing_only_at_final_exec() {
     || fail 'Claude core mode did not use its Python-free Bash runtime'
   grep -Fqx $'ARG\t-c' "$docker_log" \
     || fail 'Claude core mode used a login shell that resets the locked tool PATH'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\tliteral Qwen -p' ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tliteral Qwen -p' ]] \
     || fail 'Claude core prompt was not passed literally'
   printf 'Trellage host test: PASS: Claude core injects exact metadata routing only at final exec\n'
 }
@@ -2932,7 +3277,7 @@ test_claude_model_override_routes_only_opus() {
       "$prototype_dir/trellage" --model gpt-5.5 -p 'override model prompt'
   [[ "$(grep -Fxc $'ENV\tCLAUDE_PROXY_ROUTING=matched' "$docker_log")" -eq 1 ]] \
     || fail '--model did not override only the Claude Opus route at final exec'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\toverride model prompt' ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\toverride model prompt' ]] \
     || fail '--model was forwarded as prompt or harness text'
 
   status=0
@@ -3100,7 +3445,11 @@ assert_copilot_auth_forwarding() {
       if (token == "ENV\tCOPILOT_GITHUB_TOKEN=matched") found++
     }
     END { exit(found == 1 ? 0 : 1) }
-  ' "$docker_log" || fail 'selected Copilot token reached a non-final Docker process'
+  ' "$docker_log" || {
+    awk '/^CALL$|^ENV\tCOPILOT_GITHUB_TOKEN=|^ARG\t(container|exec|--host|unix:)/ { print }' \
+      "$docker_log" >&2
+    fail 'selected Copilot token reached a non-final Docker process'
+  }
   ! grep -Eq $'ENV\t(GH_TOKEN|GITHUB_TOKEN)=present' "$docker_log" \
     || fail 'alternate GitHub token entered a Docker child environment'
   ! grep -Fqx $'ARG\tGH_TOKEN' "$docker_log" \
@@ -3291,7 +3640,7 @@ test_prime_proxy_dispatch_and_metadata_validation() {
   grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-prime-entry prompt $argv -- $prompt' "$docker_log" \
     || fail 'Prime prompt did not dispatch through its runtime entry'
   grep -Fqx $'ARG\t--unsafe' "$docker_log" || fail 'Prime harness arguments were not preserved'
-  [[ "$(tail -n 1 "$docker_log")" == $'ARG\tPrime literal $(not-executed)' ]] \
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tPrime literal $(not-executed)' ]] \
     || fail 'Prime prompt was not passed as one literal argument'
   [[ "$(grep -Fxc $'ENV\tHERDR_AGENT=prime-agent' "$docker_log")" -eq 1 ]] \
     || fail 'Prime launch did not select the prime-agent host hint'
@@ -3727,6 +4076,30 @@ if [[ "${TRELLAGE_HOST_VALIDATION_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_LIFECYCLE_ONLY:-}" == 1 ]]; then
+  test_last_harness_exit_stops_idle_container
+  test_concurrent_harnesses_stop_after_last_exit
+  test_pending_launch_is_serialized_with_cleanup
+  test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
+  test_cleanup_status_signals_secrets_and_validation
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_ENV_ONLY:-}" == 1 ]]; then
+  test_host_env_scopes_fixture_config_to_its_fake_bin
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_CLEANUP_ONLY:-}" == 1 ]]; then
+  test_cleanup_status_signals_secrets_and_validation
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_PTY_ONLY:-}" == 1 ]]; then
+  test_foreground_wrapper_preserves_pty_contract
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_DESTROY_ONLY:-}" == 1 ]]; then
   test_destroy_requires_exact_confirmation_and_removes_in_order
   test_destroy_is_idempotent_and_collision_safe
@@ -3850,6 +4223,12 @@ test_false_tmpfs_metadata_precedes_mutation
 test_null_tmpfs_metadata_precedes_mutation
 test_legacy_tmpfs_metadata_defaults_at_launch
 test_requires_tty_and_returns_exec_status
+test_host_env_scopes_fixture_config_to_its_fake_bin
+test_last_harness_exit_stops_idle_container
+test_concurrent_harnesses_stop_after_last_exit
+test_pending_launch_is_serialized_with_cleanup
+test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
+test_cleanup_status_signals_secrets_and_validation
 test_doctor_reports_status_without_mutation_or_secrets
 test_stop_rejects_collisions_and_wrong_mounts
 test_destroy_requires_exact_confirmation_and_removes_in_order

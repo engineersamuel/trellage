@@ -292,7 +292,7 @@ clean_child_environment=(env -i "PATH=$PATH")
 # Keep proxy/TLS and UV package-index overrides so profile image builds can reach
 # alternate PyPI simple indexes when files.pythonhosted.org is blocked.
 for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME DOCKER_CONFIG \
-  TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE \
+  TRELLAGE_CONFIG TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE \
   HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy \
   SSL_CERT_FILE SSL_CERT_DIR \
   UV_DEFAULT_INDEX UV_INDEX UV_INDEX_URL UV_EXTRA_INDEX_URL PIP_INDEX_URL; do
@@ -737,6 +737,213 @@ path_hash="$(printf '%s' "$worktree" | sha256)"
 container_name="trellage-${harness_kind}-${profile_segment}-${resource_segment}-${path_hash:0:16}"
 state_volume="trellage-${harness_kind}-state-${profile_segment}-${resource_segment}-${path_hash:0:16}"
 mount_path="/mounts/$worktree_name"
+
+lifecycle_mutex_owned=false
+lifecycle_auto_stop=false
+lifecycle_attachment_started=false
+lifecycle_signal_status=0
+lifecycle_lease=
+lifecycle_resource_dir=
+lifecycle_mutex=
+
+initialize_lifecycle() {
+  local runtime_base runtime_root lifecycle_key
+  runtime_base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
+  runtime_root="$runtime_base/trellage-${UID:-$(id -u)}"
+  [[ ! -L "$runtime_root" ]] || fail "unsafe lifecycle runtime directory: $runtime_root"
+  (umask 077 && mkdir -p -- "$runtime_root") \
+    || fail "cannot create lifecycle runtime directory: $runtime_root"
+  [[ -d "$runtime_root" && ! -L "$runtime_root" ]] \
+    || fail "unsafe lifecycle runtime directory: $runtime_root"
+  chmod 700 "$runtime_root" \
+    || fail "cannot secure lifecycle runtime directory: $runtime_root"
+  lifecycle_key="$(printf '%s\n%s' "$docker_server_id" "$container_name" | sha256)"
+  lifecycle_resource_dir="$runtime_root/$lifecycle_key"
+  [[ ! -L "$lifecycle_resource_dir" && ! -L "$lifecycle_resource_dir/leases" ]] \
+    || fail "unsafe lifecycle resource directory: $lifecycle_resource_dir"
+  (umask 077 && mkdir -p -- "$lifecycle_resource_dir/leases") \
+    || fail "cannot create lifecycle resource directory: $lifecycle_resource_dir"
+  [[ -d "$lifecycle_resource_dir/leases" \
+    && ! -L "$lifecycle_resource_dir" && ! -L "$lifecycle_resource_dir/leases" ]] \
+    || fail "unsafe lifecycle resource directory: $lifecycle_resource_dir"
+  lifecycle_mutex="$lifecycle_resource_dir/mutex"
+  lifecycle_lease="$lifecycle_resource_dir/leases/$$"
+}
+
+acquire_lifecycle_mutex() {
+  local owner missing_owner_attempts=0
+  [[ "$lifecycle_mutex_owned" == false ]] || return 0
+  while ! mkdir -- "$lifecycle_mutex" 2>/dev/null; do
+    owner=
+    [[ ! -f "$lifecycle_mutex/owner" ]] || IFS= read -r owner <"$lifecycle_mutex/owner"
+    if [[ "$owner" =~ ^[1-9][0-9]*$ ]] && kill -0 "$owner" 2>/dev/null; then
+      missing_owner_attempts=0
+      sleep 0.05
+      continue
+    fi
+    if [[ -z "$owner" && "$missing_owner_attempts" -lt 20 ]]; then
+      missing_owner_attempts=$((missing_owner_attempts + 1))
+      sleep 0.05
+      continue
+    fi
+    rm -f -- "$lifecycle_mutex/owner" 2>/dev/null || true
+    rmdir -- "$lifecycle_mutex" 2>/dev/null || true
+    missing_owner_attempts=0
+  done
+  printf '%s\n' "$$" >"$lifecycle_mutex/owner" \
+    || fail "cannot record lifecycle mutex ownership: $lifecycle_mutex"
+  lifecycle_mutex_owned=true
+}
+
+release_lifecycle_mutex() {
+  [[ "$lifecycle_mutex_owned" == true ]] || return 0
+  rm -f -- "$lifecycle_mutex/owner" 2>/dev/null || true
+  rmdir -- "$lifecycle_mutex" 2>/dev/null || true
+  lifecycle_mutex_owned=false
+}
+
+register_lifecycle_lease() {
+  initialize_lifecycle
+  acquire_lifecycle_mutex
+  printf '%s\n' "$$" >"$lifecycle_lease" \
+    || fail "cannot register lifecycle lease: $lifecycle_lease"
+  trap lifecycle_on_exit EXIT
+  trap 'record_lifecycle_signal 129' HUP
+  trap 'record_lifecycle_signal 130' INT
+  trap 'record_lifecycle_signal 143' TERM
+}
+
+record_lifecycle_signal() {
+  lifecycle_signal_status="$1"
+  [[ "$lifecycle_attachment_started" == true ]] || exit "$lifecycle_signal_status"
+}
+
+prune_lifecycle_leases() {
+  local lease pid
+  lifecycle_has_live_lease=false
+  shopt -s nullglob
+  for lease in "$lifecycle_resource_dir"/leases/*; do
+    pid=
+    [[ ! -f "$lease" ]] || IFS= read -r pid <"$lease"
+    if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null; then
+      lifecycle_has_live_lease=true
+      continue
+    fi
+    rm -f -- "$lease" 2>/dev/null || true
+  done
+  shopt -u nullglob
+}
+
+scrub_cleanup_environment() {
+  local index
+  index=0
+  while [[ "$index" -lt "${#secret_environment[@]}" ]]; do
+    unset "${secret_environment[$index]}"
+    index=$((index + 2))
+  done
+  secret_args=()
+  secret_source_names=()
+  secret_source_values=()
+  copilot_auth_args=()
+  claude_auth_args=()
+  unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
+    ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
+    ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL PLAYWRIGHT_MCP_EXTENSION_TOKEN \
+    APIFY_API_TOKEN GOOGLE_AI_API_KEY HERDR_AGENT copilot_token github_cli_token \
+    secret_value ambient_copilot_github_token ambient_gh_token ambient_github_token \
+    ambient_claude_code_oauth_token ambient_anthropic_api_key \
+    ambient_playwright_mcp_extension_token ambient_apify_api_token \
+    ambient_google_ai_api_key
+}
+
+validate_cleanup_target() {
+  local cleanup_container_id cleanup_running
+  verify_docker_server
+  cleanup_container_id="$(docker container inspect \
+    --format '{{ .Id }}' "$container_name" 2>/dev/null)" \
+    || fail "cannot revalidate Docker container ID: $container_name"
+  [[ "$cleanup_container_id" == "$container_id" ]] \
+    || fail "refusing changed Docker container during automatic shutdown: $container_name"
+  inspect_container
+  [[ "$container_id" == "$cleanup_container_id" ]] \
+    || fail "refusing changed Docker container during automatic shutdown: $container_name"
+  container_is_current \
+    || fail "refusing stale Docker container during automatic shutdown: $container_name"
+  volume_is_present || fail "Docker state volume is missing: $state_volume"
+  validate_state_volume
+  validate_container_mounts
+  cleanup_running="$(docker container inspect \
+    --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container state: $container_name"
+  [[ "$cleanup_running" == true || "$cleanup_running" == false ]] \
+    || fail "Docker container has an invalid running state: $container_name"
+  printf '%s\n' "$cleanup_running"
+}
+
+container_has_non_init_process() {
+  local main_pid processes
+  main_pid="$(docker container inspect \
+    --format '{{ .State.Pid }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container PID: $container_name"
+  [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] \
+    || fail "Docker container has an invalid PID: $container_name"
+  processes="$(docker container top "$container_id" -eo pid,ppid,comm 2>/dev/null)" \
+    || fail "cannot inspect Docker container processes: $container_name"
+  awk -v main_pid="$main_pid" \
+    'NR > 1 && $1 != main_pid { found = 1 } END { exit(found ? 0 : 1) }' \
+    <<<"$processes"
+}
+
+automatic_shutdown_if_idle() {
+  local running
+  running="$(validate_cleanup_target)" || return 1
+  [[ "$running" == true ]] || return 0
+  prune_lifecycle_leases
+  [[ "$lifecycle_has_live_lease" == false ]] || return 0
+  if container_has_non_init_process; then
+    return 0
+  fi
+  verify_docker_server
+  docker container stop "$container_id" >/dev/null \
+    || fail "cannot automatically stop Docker container: $container_name"
+}
+
+lifecycle_on_exit() {
+  local command_status="$?" cleanup_status=0 final_status
+  trap - EXIT
+  trap '' HUP INT TERM
+  set +e
+  scrub_cleanup_environment
+  acquire_lifecycle_mutex
+  rm -f -- "$lifecycle_lease" 2>/dev/null || true
+  if [[ "$lifecycle_auto_stop" == true && "$lifecycle_attachment_started" == true \
+    && -n "${container_id:-}" ]]; then
+    (automatic_shutdown_if_idle)
+    cleanup_status="$?"
+  fi
+  release_lifecycle_mutex
+  final_status="$command_status"
+  if [[ "$lifecycle_signal_status" -ne 0 ]]; then
+    final_status="$lifecycle_signal_status"
+  elif [[ "$final_status" -eq 0 && "$cleanup_status" -ne 0 ]]; then
+    final_status="$cleanup_status"
+  fi
+  exit "$final_status"
+}
+
+run_supervised_attachment() {
+  local status
+  lifecycle_attachment_started=true
+  set +e
+  "$@"
+  status="$?"
+  set -e
+  if [[ "$lifecycle_signal_status" -ne 0 ]]; then
+    status="$lifecycle_signal_status"
+  fi
+  exit "$status"
+}
 
 prototype_label='dev.trellage.prototype'
 worktree_label='dev.trellage.worktree'
@@ -1290,7 +1497,7 @@ if [[ "$mode" == doctor ]]; then
   exit 0
 fi
 
-codex_exec_prefix=(docker container exec)
+codex_exec_prefix=(command docker container exec)
 if [[ "$secrets_provider" == varlock \
   && ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) ]]; then
   secret_filter="$(jq -r '.required_secrets | sort | join(",")' <<<"$profile_metadata")"
@@ -1435,6 +1642,11 @@ docker network inspect "$network" >/dev/null 2>&1 \
 expected_image_id="$resolved_image_id"
 [[ -n "$expected_image_id" ]] || fail "Docker image has an empty ID: $image"
 
+register_lifecycle_lease
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
+  lifecycle_auto_stop=true
+fi
+
 reuse_container=false
 if container_is_present; then
   inspect_container
@@ -1513,6 +1725,7 @@ if [[ "$reuse_container" != true ]]; then
   verify_docker_server
   docker container start "$container_id" >/dev/null
 fi
+release_lifecycle_mutex
 if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
   resolve_github_cli_auth
   if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ]]; then
@@ -1581,7 +1794,7 @@ case "$mode" in
     elif [[ "$harness_kind" == claude ]]; then
       prepare_claude_auth
     fi
-    HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+    HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -1599,7 +1812,7 @@ case "$mode" in
     elif [[ "$harness_kind" == claude ]]; then
       prepare_claude_auth
     fi
-    HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+    HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
       "${terminal_args[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
@@ -1612,7 +1825,7 @@ case "$mode" in
       "$runtime_shell" "${runtime_shell_args[@]}" "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
     ;;
   shell)
-    exec docker container exec \
+    run_supervised_attachment command docker container exec \
       "${terminal_args[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -1630,7 +1843,7 @@ if (( $# > 0 )); then
   elif [[ "$harness_kind" == claude ]]; then
     prepare_claude_auth
   fi
-  HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+  HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
     "${terminal_args[@]}" \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
@@ -1650,7 +1863,7 @@ if [[ "$has_initial_prompt" == true ]]; then
   elif [[ "$harness_kind" == claude ]]; then
     prepare_claude_auth
   fi
-  HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+  HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
     "${terminal_args[@]}" \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
@@ -1669,7 +1882,7 @@ if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
 elif [[ "$harness_kind" == claude ]]; then
   prepare_claude_auth
 fi
-HERDR_AGENT="$herdr_agent" exec "${codex_exec_prefix[@]}" \
+HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
   "${terminal_args[@]}" \
   ${github_cli_args[@]+"${github_cli_args[@]}"} \
   ${secret_args[@]+"${secret_args[@]}"} \

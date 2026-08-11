@@ -84,6 +84,9 @@ updates do not need a profile edit at all — profiles declare `version = "lates
 `trellage upgrade <profile>` (or `upgrade all`) re-resolves that selector, builds a
 candidate image, and adopts lock and image atomically.
 
+When a harness exits, Trellage stops a Sandbox container after its last harness exits.
+The retained container and profile state volume are reused by the next launch.
+
 Bundled profiles can also be selected by directory name:
 
 ```bash
