@@ -80,8 +80,9 @@ available to the process. Use `cdx` only with trusted repositories and plugins.
 Lifecycle commands do not add the bypass flag.
 
 `setup` creates managed profile policy and installs the selected cataloged
-plugin. Launch never installs, updates, or repairs anything. `doctor` validates
-policy, marketplace, and plugin identity.
+plugin. Launch self-heals repairable managed policy, marketplace, plugin, and
+cache drift while preserving profile-local state. `doctor` remains a strict
+diagnostic for policy, marketplace, and plugin identity.
 Doctor performs no native marketplace/plugin mutation, but may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
 `repair` restores
 managed policy and a missing cataloged plugin while preserving profile-local

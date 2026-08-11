@@ -1429,10 +1429,10 @@ python_lock_integrity = "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.226"
-integrity = "sha256:fe6a30d9358c6407780cc2045181ca7ecebe6f9967b99ac1a884f90694e825f5"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.226/claude-linux-arm64.tar.gz"
-size = 90402868
+version = "2.1.227"
+integrity = "sha256:e998df163821c7c2be66139f0b5411e26928b9bc18326edb95576b7bc94168b3"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.227/claude-linux-arm64.tar.gz"
+size = 92357612
 
 [[packages.runtime]]
 name = "bash"
@@ -1516,8 +1516,8 @@ integrity = "sha256:3aa6bc5a1a3f83627f735b9712eed74ed2c345ae9148e9d876887a97982a
 
 [[packages.runtime]]
 name = "libnss3"
-version = "2:3.87.1-1+deb12u3"
-integrity = "sha256:0b5bc3d95e6c18cf6685e6688875bb7077607b8715a9edf3194b0afe83f7f157"
+version = "2:3.87.1-1+deb12u4"
+integrity = "sha256:aaa1b291b6330590079a0eb1404650c7c4f6c788f9213ab6911149dc22b2b6d0"
 
 [[packages.runtime]]
 name = "libpango-1.0-0"
@@ -1638,4 +1638,4 @@ size = 52716812
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:7c2ba6f77a9cc7f0d38a9828782442abc934eb8c5a84d46630c53601e97e005b"
+final_digest = "sha256:6c408cdbb3aba1fa60c972992690d1b5818c6577442730206cbf90ca4bffa1b2"

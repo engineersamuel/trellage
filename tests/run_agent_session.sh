@@ -21,6 +21,10 @@ grep -Fq 'codex exec resume' "$runner" || {
   printf 'run agent session: FAIL: Codex resume invocation missing\n' >&2
   exit 1
 }
+grep -Fq '/usr/local/bin/find-harness-session.sh' "$runner" || {
+  printf 'run agent session: FAIL: native Codex session recovery is missing\n' >&2
+  exit 1
+}
 grep -Fq 'thread.started' "$runner" || {
   printf 'run agent session: FAIL: session ID is not captured from Codex events\n' >&2
   exit 1

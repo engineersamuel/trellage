@@ -211,7 +211,7 @@ launch_profile() {
   local profile="$1"
   shift
 
-  require_no_forbidden_superpowers "$profile"
+  ensure_profile_for_launch "$profile"
   if has_explicit_permission "$@"; then
     exec env COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
   fi
@@ -393,6 +393,43 @@ remove_forbidden_superpowers() {
       || die "failed to remove forbidden Superpowers plugin: $profile"
   done <<<"$plugins"
   require_no_forbidden_superpowers "$profile"
+}
+
+ensure_profile_for_launch() {
+  local profile="$1"
+  local inventory
+  local forbidden
+  local status=0
+  local plugin
+  local version
+
+  prepare_profile_home "$profile"
+  inventory="$(plugin_inventory_snapshot "$profile")" \
+    || die "failed to read installed plugins: $profile"
+  forbidden="$(forbidden_superpowers_plugins_from_snapshot "$profile" "$inventory")" \
+    || status=$?
+  case "$status" in
+    0)
+      while IFS= read -r plugin; do
+        [[ "$plugin" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?$ ]] \
+          || die "invalid forbidden Superpowers plugin selector: $profile"
+        run_copilot "$profile" plugin uninstall "$plugin" \
+          || die "failed to remove forbidden Superpowers plugin: $profile"
+      done <<<"$forbidden"
+      require_no_forbidden_superpowers "$profile"
+      ;;
+    1) ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
+
+  plugin="$(profile_value "$profile" plugin)"
+  version="$(printf '%s\n' "$inventory" \
+    | sed -n "s/^[[:space:]]*• ${plugin} (v\\([^)]*\\)).*/\\1/p" \
+    | head -n 1)"
+  if [[ -z "$version" ]]; then
+    ensure_marketplace "$profile"
+    run_copilot "$profile" plugin install "$plugin"
+  fi
 }
 
 marketplace_available() {

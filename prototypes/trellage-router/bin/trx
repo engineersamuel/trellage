@@ -331,19 +331,19 @@ cleanup_catalog_tmp() {
 }
 trap cleanup_catalog_tmp EXIT HUP INT TERM
 
-read_catalog cpx copilot "$cpx" >"$catalog_tmp/cpx" &
+read_catalog cpx copilot "$cpx" >"$catalog_tmp/cpx" 2>"$catalog_tmp/cpx.err" &
 cpx_catalog_pid=$!
-read_catalog cdx codex "$cdx" >"$catalog_tmp/cdx" &
+read_catalog cdx codex "$cdx" >"$catalog_tmp/cdx" 2>"$catalog_tmp/cdx.err" &
 cdx_catalog_pid=$!
-read_catalog cldx claude "$cldx" >"$catalog_tmp/cldx" &
+read_catalog cldx claude "$cldx" >"$catalog_tmp/cldx" 2>"$catalog_tmp/cldx.err" &
 cldx_catalog_pid=$!
-read_catalog grx grok "$grx" >"$catalog_tmp/grx" &
+read_catalog grx grok "$grx" >"$catalog_tmp/grx" 2>"$catalog_tmp/grx.err" &
 grx_catalog_pid=$!
-read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" &
+read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" 2>"$catalog_tmp/jcx.err" &
 jcx_catalog_pid=$!
-read_catalog omp oh-my-pi "$omp" >"$catalog_tmp/omp" &
+read_catalog omp oh-my-pi "$omp" >"$catalog_tmp/omp" 2>"$catalog_tmp/omp.err" &
 omp_catalog_pid=$!
-read_catalog prx prime "$prx" >"$catalog_tmp/prx" &
+read_catalog prx prime "$prx" >"$catalog_tmp/prx" 2>"$catalog_tmp/prx.err" &
 prx_catalog_pid=$!
 
 catalog_status=0
@@ -352,7 +352,14 @@ for catalog_pid in \
   "$jcx_catalog_pid" "$omp_catalog_pid" "$prx_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
-((catalog_status == 0)) || die 'catalog discovery failed'
+if ((catalog_status != 0)); then
+  for launcher in cpx cdx cldx grx jcx omp prx; do
+    while IFS= read -r diagnostic; do
+      printf '%s\n' "$diagnostic" >&2
+    done <"$catalog_tmp/$launcher.err"
+  done
+  die 'catalog discovery failed'
+fi
 
 cpx_catalog="$(<"$catalog_tmp/cpx")"
 cdx_catalog="$(<"$catalog_tmp/cdx")"

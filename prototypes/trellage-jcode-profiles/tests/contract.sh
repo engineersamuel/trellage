@@ -193,8 +193,35 @@ status=0
 [[ "$status" == 1 ]] || fail 'doctor accepted modified managed config'
 grep -Fq 'managed config differs; run jcx repair' "$fixture_root/drift.out" \
   || fail 'managed config drift error differs'
-"$command_path" repair >"$fixture_root/repair-config.out" \
-  || fail 'repair did not restore managed config'
+"$command_path" run drift-repair-probe \
+  || fail 'launch did not self-heal managed config'
+"$command_path" doctor >"$fixture_root/doctor-after-drift.out" \
+  || fail 'doctor rejected launch-repaired managed config'
+grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' \
+  "$fixture_root/doctor-after-drift.out" \
+  || fail 'doctor output differs after launch repair'
+
+rm "$profile_home/config.toml"
+"$command_path" run missing-config-repair-probe \
+  || fail 'launch did not restore missing managed config'
+[[ -f "$profile_home/config.toml" && ! -L "$profile_home/config.toml" ]] \
+  || fail 'launch did not materialize missing managed config safely'
+
+printf 'outside\n' >"$fixture_root/outside-config"
+rm "$profile_home/config.toml"
+ln -s "$fixture_root/outside-config" "$profile_home/config.toml"
+status=0
+"$command_path" run unsafe-config-probe >"$fixture_root/unsafe-config.out" 2>&1 \
+  || status=$?
+[[ "$status" == 1 ]] || fail 'launch accepted symlinked managed config'
+grep -Fq "unsafe managed config: $profile_home/config.toml" \
+  "$fixture_root/unsafe-config.out" \
+  || fail 'unsafe managed config error differs'
+[[ "$(<"$fixture_root/outside-config")" == outside ]] \
+  || fail 'launch changed symlinked managed config target'
+rm "$profile_home/config.toml"
+"$command_path" run symlink-recovery-probe \
+  || fail 'launch did not recover after unsafe managed config removal'
 
 status=0
 FAKE_JCODE_EXIT_STATUS=37 "$command_path" run probe || status=$?

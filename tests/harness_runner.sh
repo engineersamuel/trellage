@@ -54,6 +54,18 @@ jq -n \
   --args -- "$@" \
   >"$FAKE_DOCKER_LOG_DIR/call.$$.json"
 
+if [[ "$*" == *'/usr/local/bin/find-harness-session.sh'* ]]; then
+  case "$*" in
+    *todo-side-by-side-codex-wshobson_workspace:/workspace:ro*)
+      printf '%s\n' 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      ;;
+    *todo-side-by-side-copilot-awesome_workspace:/workspace:ro*)
+      printf '%s\n' 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+      ;;
+    *) exit 1 ;;
+  esac
+fi
+
 if [[ "$*" == *'--entrypoint tar'* ]]; then
   contestant_id=''
   for argument in "$@"; do
@@ -179,6 +191,43 @@ jq -s -e '
 ' "${run_calls[@]}" >/dev/null || fail 'prompt parity or Copilot-only secret scope failed'
 [[ "$(find "$gh_log_dir" -type f -name '*.txt' | wc -l | tr -d ' ')" == '1' ]] \
   || fail 'gh auth token fallback was not used exactly once'
+
+rm -f "$docker_log_dir"/* "$gh_log_dir"/*
+sessions_output="$("${runner_env[@]}" "$runner" sessions "$manifest")"
+grep -Fq $'codex-wshobson\tcodex\taaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' \
+  <<<"$sessions_output" || fail 'sessions did not report retained Codex state'
+grep -Fq $'copilot-awesome\tcopilot\tbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' \
+  <<<"$sessions_output" || fail 'sessions did not report retained Copilot state'
+grep -Fq "resume: scripts/harness resume $(pwd -P)/$manifest" <<<"$sessions_output" \
+  || fail 'sessions did not print the recovery command'
+session_calls=()
+while IFS= read -r call_file; do
+  session_calls+=("$call_file")
+done < <(
+  find "$docker_log_dir" -type f -name '*.json' -print \
+    | while IFS= read -r call_file; do
+        jq -e '.args | index("/usr/local/bin/find-harness-session.sh")' \
+          "$call_file" >/dev/null && printf '%s\n' "$call_file"
+      done \
+    | sort
+)
+[[ "${#session_calls[@]}" -eq 2 ]] \
+  || fail "expected 2 session inspection calls, found ${#session_calls[@]}"
+[[ "$(find "$docker_log_dir" -type f -name '*.json' | wc -l | tr -d ' ')" == '4' ]] \
+  || fail 'sessions did not verify both retained volumes before inspection'
+jq -s -e '
+  all(.[];
+    (.args | index("run"))
+    and (.args | index("--network"))
+    and (.args | index("none"))
+    and (.args | index("--read-only"))
+    and (.args | index("/usr/local/bin/find-harness-session.sh"))
+    and any(.args[]; endswith("_workspace:/workspace:ro"))
+    and .tokenState == "absent"
+  )
+' "${session_calls[@]}" >/dev/null || fail 'sessions inspection is not isolated and read-only'
+[[ -z "$(find "$gh_log_dir" -type f -print -quit)" ]] \
+  || fail 'sessions resolved authentication'
 
 rm -f "$docker_log_dir"/* "$gh_log_dir"/*
 COPILOT_GITHUB_TOKEN='preferred-native-token' GH_TOKEN='secondary-token' \

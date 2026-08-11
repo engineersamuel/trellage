@@ -413,6 +413,18 @@ jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   ]
 ' "$FAKE_PRIME_LOG" >/dev/null || fail 'bare launch arguments differ'
 
+# An argument-free launch must work under macOS Bash 3.2 with `set -u`.
+: >"$FAKE_PRIME_LOG"
+"$command_path" default || fail 'argument-free launch failed'
+jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
+  .args == [
+    "--provider", "copilot-proxy-rs",
+    "--model", "claude-opus-5",
+    "--offline",
+    "--daemon-socket", $daemonSocket
+  ]
+' "$FAKE_PRIME_LOG" >/dev/null || fail 'argument-free launch arguments differ'
+
 # shutdown is a managed command (no live socket in the fixture).
 # Publish a minimal daemon-launch module so stop_profile_daemon_socket can import.
 mkdir -p "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/cli"
