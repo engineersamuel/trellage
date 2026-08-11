@@ -34,6 +34,10 @@ fi
 
 grep -Fq 'COPILOT_HOME=/workspace/.copilot-home' Dockerfile.copilot-agent \
   || fail 'Copilot home is not workspace-local'
+grep -Fq 'scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh' \
+  Dockerfile.copilot-agent || fail 'Copilot session discovery helper is not installed'
+grep -Fq '/usr/local/bin/find-harness-session.sh' scripts/run-copilot-agent.sh \
+  || fail 'native Copilot session recovery is missing'
 grep -Fq '/run/secrets/copilot_token' scripts/run-copilot-agent.sh \
   || fail 'Copilot runner does not require the runtime secret'
 grep -Fq 'unset COPILOT_PROVIDER_BASE_URL' scripts/run-copilot-agent.sh \
