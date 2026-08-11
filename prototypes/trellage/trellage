@@ -918,6 +918,11 @@ container_mount_state() {
   local mounts expected_worktree expected_git expected_models count
   mounts="$(docker container inspect \
     --format "$mounts_format" "$container_id" 2>/dev/null)" || return 2
+  # Docker Desktop on macOS reports the Source of a bind mount nested inside
+  # another mount's destination (e.g. .copilot-models.json under the
+  # /home/agent volume mount) with a spurious "/host_mnt" VM-path prefix.
+  # Strip it so the exact-match comparisons below still recognize the mount.
+  mounts="$(awk -F '\t' 'BEGIN { OFS = "\t" } { sub(/^\/host_mnt/, "", $3); print }' <<<"$mounts")"
   count="$(printf '%s\n' "$mounts" | awk 'NF { count++ } END { print count + 0 }')"
   [[ "$count" == 2 || "$count" == 3 || "$count" == 4 ]] || return 1
   expected_worktree=$'bind\t\t'"$worktree"$'\t'"$mount_path"$'\ttrue'
