@@ -42,8 +42,8 @@ printf '%s\n' '{"providers":{"copilot-proxy-rs":{"baseUrl":"http://copilot-proxy
   >"$root/prime-seed/models.json"
 printf '# Caveman\n' >"$root/prime-seed/skills/caveman/SKILL.md"
 printf 'caveman\n' >"$root/prime-seed/managed-skills.txt"
-printf 'export default function askUser() {}\n' >"$root/prime-seed/extensions/ask-user.ts"
-printf 'ask-user\n' >"$root/prime-seed/managed-extensions.txt"
+printf 'export default function managedTool() {}\n' >"$root/prime-seed/extensions/managed-tool.ts"
+printf 'managed-tool\n' >"$root/prime-seed/managed-extensions.txt"
 printf '# Trellage managed always-on skill: caveman\n\n# Caveman\n' >"$root/prime-seed/APPEND_SYSTEM.md"
 printf 'schema=1\n' >"$root/prime-kernel/.trellage-prime-kernel"
 printf '#!/bin/sh\nexit 0\n' \
@@ -154,8 +154,8 @@ cmp -s "$root/prime-seed/skills/caveman/SKILL.md" "$root/home/.prime/agent/skill
   || fail 'managed Caveman skill was not installed from the baked seed'
 cmp -s "$root/prime-seed/managed-skills.txt" "$root/home/.prime/agent/.trellage-managed-skills" \
   || fail 'managed Prime skill manifest was not installed'
-cmp -s "$root/prime-seed/extensions/ask-user.ts" "$root/home/.prime/agent/extensions/ask-user.ts" \
-  || fail 'managed ask-user extension was not installed from the baked seed'
+cmp -s "$root/prime-seed/extensions/managed-tool.ts" "$root/home/.prime/agent/extensions/managed-tool.ts" \
+  || fail 'managed extension was not installed from the baked seed'
 cmp -s "$root/prime-seed/managed-extensions.txt" "$root/home/.prime/agent/.trellage-managed-extensions" \
   || fail 'managed Prime extension manifest was not installed'
 cmp -s "$root/prime-seed/APPEND_SYSTEM.md" "$root/home/.prime/agent/APPEND_SYSTEM.md" \
@@ -194,12 +194,12 @@ run_entry new || status=$?
 [[ "$(cat "$root/home/outside-skill")" == outside ]] || fail 'managed Prime skill symlink target was modified'
 mutate_home 'rm -f /home/agent/.prime/agent/skills/caveman'
 
-mutate_home 'printf "outside\\n" >/home/agent/outside-extension; rm -f /home/agent/.prime/agent/extensions/ask-user.ts; ln -s /home/agent/outside-extension /home/agent/.prime/agent/extensions/ask-user.ts'
+mutate_home 'printf "outside\\n" >/home/agent/outside-extension; rm -f /home/agent/.prime/agent/extensions/managed-tool.ts; ln -s /home/agent/outside-extension /home/agent/.prime/agent/extensions/managed-tool.ts'
 status=0
 run_entry new || status=$?
 [[ "$status" -ne 0 ]] || fail 'symlinked managed Prime extension was accepted'
 [[ "$(cat "$root/home/outside-extension")" == outside ]] || fail 'managed Prime extension symlink target was modified'
-mutate_home 'rm -f /home/agent/.prime/agent/extensions/ask-user.ts'
+mutate_home 'rm -f /home/agent/.prime/agent/extensions/managed-tool.ts'
 
 mutate_home 'printf "outside\\n" >/home/agent/outside-models.json; rm -f /home/agent/.prime/agent/models.json; ln -s /home/agent/outside-models.json /home/agent/.prime/agent/models.json'
 status=0
