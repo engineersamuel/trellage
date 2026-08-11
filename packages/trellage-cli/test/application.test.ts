@@ -122,6 +122,7 @@ import {
   builderNetworkEnv,
   builderScript,
   buildProfile,
+  compatibilityPluginArguments,
   discoverPypiIndex,
   loadLock,
   microsoftProtectedPypiIndex,
@@ -166,6 +167,29 @@ const pathExists = async (candidate: string) => {
     return false
   }
 }
+
+describe("compatibility plugin generation", () => {
+  it("runs the source generator without installing its unrelated eval project", () => {
+    expect(compatibilityPluginArguments("/source", "full-stack-orchestration", "/output")).toEqual([
+      "x",
+      "uv@0.11.21",
+      "--",
+      "uv",
+      "run",
+      "--no-project",
+      "--python",
+      "3.13",
+      "python",
+      "/source/tools/generate.py",
+      "--harness",
+      "codex",
+      "--plugin",
+      "full-stack-orchestration",
+      "--output-root",
+      "/output",
+    ])
+  })
+})
 
 describe("npm registry forwarding", () => {
   it("accepts a credential-free HTTPS registry", () => {

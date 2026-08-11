@@ -530,38 +530,39 @@ const run = (command: string, args: ReadonlyArray<string>, options?: CommandOpti
         catch: (cause) => new ApplicationError({ message: `command failed: ${command}`, cause }),
       })
 
+export const compatibilityPluginArguments = (
+  sourceDirectory: string,
+  selection: string,
+  destination: string,
+): ReadonlyArray<string> => [
+  "x",
+  "uv@0.11.21",
+  "--",
+  "uv",
+  "run",
+  "--no-project",
+  "--python",
+  "3.13",
+  "python",
+  path.join(sourceDirectory, "tools", "generate.py"),
+  "--harness",
+  "codex",
+  "--plugin",
+  selection,
+  "--output-root",
+  destination,
+]
+
 const pluginGenerator: PluginGenerator = (sourceDirectory, selections, destination) =>
   Effect.forEach(
     selections,
     (selection) =>
-      run(
-        "mise",
-        [
-          "x",
-          "uv@0.11.21",
-          "--",
-          "uv",
-          "run",
-          "--frozen",
-          "--project",
-          path.join(sourceDirectory, "plugins", "plugin-eval"),
-          "python",
-          path.join(sourceDirectory, "tools", "generate.py"),
-          "--harness",
-          "codex",
-          "--plugin",
-          selection,
-          "--output-root",
-          destination,
-        ],
-        {
-          env: {
-            ...process.env,
-            PYTHONDONTWRITEBYTECODE: "1",
-            UV_PROJECT_ENVIRONMENT: path.join(destination, ".venv"),
-          },
+      run("mise", compatibilityPluginArguments(sourceDirectory, selection, destination), {
+        env: {
+          ...process.env,
+          PYTHONDONTWRITEBYTECODE: "1",
         },
-      ),
+      }),
     { concurrency: 1 },
   ).pipe(Effect.zipRight(run("bash", [compatibilityAdapter, destination])), Effect.asVoid)
 
