@@ -131,7 +131,7 @@ wait_for_file() {
 readme="$prototype_root/README.md"
 assert_contains 'GROK_HOME' "$readme"
 assert_contains 'http://127.0.0.1:8080/v1' "$readme"
-assert_contains '`grok-4.5`' "$readme"
+assert_contains '`grok-4.6`' "$readme"
 assert_contains '`-m` or `--model`' "$readme"
 assert_line 'Profile launches always pass `--sandbox workspace`, `--permission-mode' "$readme"
 assert_line 'bypassPermissions`, and `--always-approve` before caller arguments. The' "$readme"
@@ -1574,7 +1574,7 @@ expected_launch_json="$(jq -cn \
     home:$home,
     cwd:$cwd,
     modelsBaseUrl:"http://127.0.0.1:8080/v1",
-    defaultModel:"grok-4.5",
+    defaultModel:"grok-4.6",
     xaiApiKey:"local-copilot-proxy",
     args:["--sandbox","workspace","--permission-mode","bypassPermissions","--always-approve","--model","grok-code-fast-1","-p","hello world","--","--literal"]
   }')"
@@ -1588,7 +1588,7 @@ assert_line "$expected_launch_tty" "$launch_tty_log"
 jq -s -e '
   last
   | .modelsBaseUrl == "http://127.0.0.1:8080/v1"
-  and .defaultModel == "grok-4.5"
+  and .defaultModel == "grok-4.6"
   and .xaiApiKey == "local-copilot-proxy"
   and .args == ["--sandbox","workspace","--permission-mode","bypassPermissions","--always-approve","-m","gpt-5.2-codex","-p","short model flag"]
 ' "$fake_grok_log" >/dev/null \
