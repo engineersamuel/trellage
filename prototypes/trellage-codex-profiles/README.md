@@ -73,12 +73,16 @@ After installing the native launchers and the
 harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
 after selection; `trx` never performs setup, repair, or update.
 
-Profile launch always passes `--dangerously-bypass-approvals-and-sandbox` and
-disables `default_mode_request_user_input`. This disables Codex approvals,
-sandboxing, and interactive user-input requests. Plugin code and Codex commands
-can access and change any host data available to the process. Use `cdx` only
-with trusted repositories and plugins. Lifecycle commands do not add these
-launch flags.
+Profile launch always passes `--sandbox workspace-write -c
+sandbox_workspace_write.network_access=true --ask-for-approval never` and
+disables `default_mode_request_user_input`. Codex's native OS-level sandbox
+(Seatbelt on macOS, Landlock+bubblewrap on Linux) restricts writes to the
+workspace and temp directories while still allowing reads and network access;
+approvals never pause for interactive input, so full permissions apply within
+that sandbox boundary. Plugin code and Codex commands can still read any host
+data available to the process and reach the network. Use `cdx` only with
+trusted repositories and plugins. Lifecycle commands do not add these launch
+flags.
 
 `setup` creates managed profile policy and installs the selected cataloged
 plugin. Launch self-heals repairable managed policy, marketplace, plugin, and

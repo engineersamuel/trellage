@@ -127,6 +127,9 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "prx",
       harness: "prime",
+      # Prime Agent has no known native OS-level sandbox; runs directly on
+      # the host. See docs/native-sandbox-research.md.
+      sandbox: false,
       profiles: [
         .profiles
         | to_entries[]

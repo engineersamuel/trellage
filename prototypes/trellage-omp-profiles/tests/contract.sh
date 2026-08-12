@@ -205,6 +205,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "omp"
   and .harness == "oh-my-pi"
+  and .sandbox == false
   and [.profiles[].name] == ["copilot", "local"]
   and all(.profiles[]; .plugin == null)
   and (.profiles[] | select(.name == "copilot") | .description) == "OMP with native GitHub Copilot authentication and model catalog, default gpt-5.6-sol medium routing, LSP, debugger, browser, eval tools, and typed subagent fan-out."

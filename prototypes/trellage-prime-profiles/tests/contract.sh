@@ -309,6 +309,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "prx"
   and .harness == "prime"
+  and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "PrimeIntellect-ai/prime-agent"
   and .profiles[0].plugin == null

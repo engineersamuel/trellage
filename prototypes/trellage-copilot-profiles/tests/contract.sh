@@ -644,6 +644,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cpx"
   and .harness == "copilot"
+  and .sandbox == false
   and [.profiles[].name] == ["awesome", "hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].plugin == "awesome-copilot@awesome-copilot"

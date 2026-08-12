@@ -78,18 +78,24 @@ checks and changes are explicit through `grx update --check` and `grx update`.
 ### Model routing
 
 `grx hve` and `grx superpowers` route model requests through
-`copilot-proxy-rs` at `http://127.0.0.1:8080/v1` and default to `grok-4.5`.
+`copilot-proxy-rs` at `http://127.0.0.1:8080/v1` and default to `grok-4.6`.
 Pass `-m` or `--model` to select another model from the proxy catalog; `grx`
 forwards the option and its value unchanged.
 
-Profile launches always pass `--permission-mode bypassPermissions` and
-`--always-approve` before caller arguments. Explicit permission modes, approval
-flags, allow rules, and deny rules are still forwarded unchanged.
+Profile launches always pass `--sandbox workspace`, `--permission-mode
+bypassPermissions`, and `--always-approve` before caller arguments. The
+`--sandbox workspace` flag enables Grok's native OS-level sandbox, restricting
+filesystem writes to the current working directory, `~/.grok/`, and temp while
+still allowing network access. This is independent of and complements the
+`bypassPermissions`/`--always-approve` approval settings, which only gate
+whether a tool call runs, not what an approved call can access. Explicit
+permission modes, approval flags, allow rules, and deny rules are still
+forwarded unchanged.
 
 Proxy routing applies only to profile launches. Setup, repair, update, doctor,
 and other lifecycle operations do not receive the proxy variables. Plain `grok`
 and `~/.grok` remain untouched, so direct Grok usage keeps xAI OAuth and its
-`grok-4.5` default.
+`grok-4.6` default.
 
 ### Never-authenticate, never-prompt guarantee
 

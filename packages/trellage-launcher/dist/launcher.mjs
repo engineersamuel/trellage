@@ -54574,6 +54574,10 @@ var parseLaunchCatalog = (source) => {
     const defaultModel = optionalText(item.defaultModel, `choice ${index} defaultModel`);
     const models = stringArray(item.models, `choice ${index} models`);
     const modelOverrideSupported = item.modelOverrideSupported === true;
+    if (item.sandbox !== void 0 && typeof item.sandbox !== "boolean") {
+      throw new Error(`choice ${index} sandbox must be a boolean`);
+    }
+    const sandbox = item.sandbox;
     if (modelOverrideSupported && models.length === 0) {
       throw new Error(`choice ${index} must advertise models when overrides are supported`);
     }
@@ -54597,7 +54601,8 @@ var parseLaunchCatalog = (source) => {
       ...item.details === void 0 ? {} : { details: text(item.details, `choice ${index} details`) },
       ...defaultModel === void 0 ? {} : { defaultModel },
       models,
-      modelOverrideSupported
+      modelOverrideSupported,
+      ...sandbox === void 0 ? {} : { sandbox }
     };
   });
   const description = root === void 0 ? void 0 : optionalText(root.description, "description");
@@ -54663,6 +54668,7 @@ var detailRows = (entry, model, columns, forwardedModel) => {
     ...fieldRows("Plugins", list(entry.plugins), width),
     ...fieldRows("Skills", list(entry.skills), width),
     ...fieldRows("MCPs", list(entry.mcps), width),
+    ...entry.sandbox === void 0 ? [] : fieldRows("Sandbox", entry.sandbox ? "true" : "false", width),
     ...entry.details === void 0 ? [] : fieldRows("Status", entry.details, width)
   ];
 };
@@ -54682,10 +54688,12 @@ var tableColumns = (entries, terminalWidth) => {
     10,
     Math.max(10, Math.floor(available * 0.25))
   );
+  const sandbox = entries.some((entry) => entry.sandbox !== void 0) ? "SANDBOX".length + 2 : 0;
   return {
     profile,
     harness,
-    model: Math.max(8, available - profile - harness)
+    sandbox,
+    model: Math.max(8, available - profile - harness - sandbox)
   };
 };
 
@@ -54776,6 +54784,7 @@ var detailColors = {
   Plugins: "blue",
   Skills: "green",
   MCPs: "cyan",
+  Sandbox: "green",
   Status: "gray"
 };
 var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "wrap", children: [
@@ -54963,16 +54972,19 @@ var Launcher = ({
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: " " }) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
       ] }),
       shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
         const active = entry.id === state.selectedId;
         const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
         const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
+        const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
         return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
         ] }, entry.id);
       })

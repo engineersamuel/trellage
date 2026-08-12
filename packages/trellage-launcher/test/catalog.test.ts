@@ -26,6 +26,7 @@ describe("launch catalog", () => {
             defaultModel: "gpt-default",
             models: ["gpt-default", "gpt-fast"],
             modelOverrideSupported: true,
+            sandbox: true,
           },
         ],
       }),
@@ -48,6 +49,7 @@ describe("launch catalog", () => {
       defaultModel: "gpt-default",
       models: ["gpt-default", "gpt-fast"],
       modelOverrideSupported: true,
+      sandbox: true,
     })
   })
 
@@ -62,6 +64,14 @@ describe("launch catalog", () => {
       models: [],
       modelOverrideSupported: false,
     })
+  })
+
+  it("rejects a non-boolean sandbox value", () => {
+    expect(() =>
+      parseLaunchCatalog(
+        JSON.stringify([{ id: "one", label: "one / codex", description: "One", sandbox: "yes" }]),
+      ),
+    ).toThrow(/sandbox must be a boolean/)
   })
 
   it("rejects duplicate IDs and terminal control characters", () => {

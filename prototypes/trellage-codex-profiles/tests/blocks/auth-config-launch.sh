@@ -55,6 +55,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cdx"
   and .harness == "codex"
+  and .sandbox == true
   and [.profiles[].name] == ["hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].plugin == "hve-core-all@hve-core"
@@ -252,13 +253,14 @@ cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
 jq -se --arg codexHome "$hve_home" \
   --arg home "$fixture_root/home" \
   --arg cwd "$original_cwd" '
-    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
+    map(select(.args[0] == "--sandbox")) as $launches |
     ($launches | length) == 1
     and $launches[0].codexHome == $codexHome
     and $launches[0].home == $home
     and $launches[0].cwd == $cwd
     and $launches[0].args == [
-      "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
+      "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+      "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'
@@ -860,6 +862,71 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
 cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
   || fail 'launch stale project recovery changed other config bytes'
 
+# Codex writes hook-approval trust hashes and TUI nux flags into config.toml
+# after the managed provider tail, often *after* a project trust stanza that
+# is itself only ever transient. Doctor must strip the stale project trust
+# while leaving this other native Codex state untouched.
+awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
+  $0 == marker {
+    print ""
+    print "[projects.\"" cwd "\"]"
+    print "trust_level = \"trusted\""
+    print ""
+    print "[hooks.state]"
+    print ""
+    print "[hooks.state.\"" cwd "/.codex/hooks.json:pre_tool_use:0:0\"]"
+    print "trusted_hash = \"sha256:398989e9bdf95b43657a40589049a298a170f1946642abe2124fe9ee222caa5a\""
+    print ""
+    print "[tui.model_availability_nux]"
+    print "\"gpt-5.6-sol\" = 1"
+  }
+  { print }
+' "$hve_home/config.toml" >"$fixture_root/stale-project-with-hooks-nux.toml"
+mv "$fixture_root/stale-project-with-hooks-nux.toml" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+  >"$fixture_root/doctor-stale-project-hooks-nux.out" \
+  || fail 'doctor rejected hooks state and tui nux native content'
+grep -F -- '[projects."' "$hve_home/config.toml" >/dev/null \
+  && fail 'doctor left stale project trust alongside hooks state and tui nux'
+grep -F -- '[hooks.state]' "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor stripped hooks state alongside stale project trust'
+grep -F -- 'trusted_hash = "sha256:398989e9bdf95b43657a40589049a298a170f1946642abe2124fe9ee222caa5a"' \
+  "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor lost a hook approval trust hash'
+grep -F -- '[tui.model_availability_nux]' "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor stripped tui nux flags alongside stale project trust'
+grep -F -- '"gpt-5.6-sol" = 1' "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor lost a tui nux flag'
+cp "$proxy_config_before" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+
+# Hooks state and tui nux content with no project trust stanza at all must be
+# accepted and left byte-for-byte unchanged (no stale content to recover).
+awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
+  $0 == marker {
+    print "[hooks.state]"
+    print ""
+    print "[hooks.state.\"" cwd "/.codex/hooks.json:post_tool_use:0:0\"]"
+    print "trusted_hash = \"sha256:a044cd448bad32f8a34e7639e24f7aa40ba782ee3221fa3c510958986e26518f\""
+    print ""
+    print "[tui.model_availability_nux]"
+    print "\"gpt-5.6-sol\" = 1"
+    print ""
+  }
+  { print }
+' "$hve_home/config.toml" >"$fixture_root/hooks-nux-only.toml"
+mv "$fixture_root/hooks-nux-only.toml" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+cp "$hve_home/config.toml" "$fixture_root/hooks-nux-only-before.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+  >"$fixture_root/doctor-hooks-nux-only.out" \
+  || fail 'doctor rejected hooks state and tui nux native content with no project trust'
+cmp -s "$fixture_root/hooks-nux-only-before.toml" "$hve_home/config.toml" \
+  || fail 'doctor changed hooks state and tui nux bytes with no project trust to recover'
+cp "$proxy_config_before" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+
 awk '
   $0 == "# trellage-profile-local-config-end" {
     print "[projects.\"/user/owned/project\"]"
@@ -1040,7 +1107,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   || fail 'repair preserved forbidden Superpowers in HVE'
 : >"$fake_state/hve/forbidden-superpowers-direct"
 : >"$fake_state/hve/forbidden-superpowers-renamed"
-launches_before="$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+launches_before="$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")"
 mkdir -p "$fixture_root/home/.codex"
 printf '%s\n' '{"tokens":{"access_token":"contamination-check"}}' \
@@ -1066,7 +1133,7 @@ rm "$hve_home/auth.json"
 [ ! -e "$fake_state/hve/forbidden-superpowers-direct" ] \
   && [ ! -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
   || fail 'contaminated launch preserved forbidden Superpowers variants'
-[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+[ "$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")" = "$((launches_before + 2))" ] \
   || fail 'self-healed launches did not start the underlying Codex agent'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1244,7 +1311,7 @@ upgrade_failure_profile="$upgrade_failure_home/.local/share/trellage/profiles/co
   || fail 'failed fresh Superpowers materialization added selected plugin before upgrade'
 jq -se '
   any(.[]; .args == ["plugin","marketplace","upgrade","superpowers-marketplace","--json"])
-  and all(.[]; .args[0] != "--dangerously-bypass-approvals-and-sandbox")
+  and all(.[]; .args[0] != "--sandbox")
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'failed fresh Superpowers materialization used a launch fallback'
 : >"$fixture_root/fake-codex.log"
@@ -2043,7 +2110,7 @@ rm "$fake_bin/codex"
 mv "$fake_bin/codex-real" "$fake_bin/codex"
 
 jq -se '
-  all(.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox");
+  all(.[] | select(.args[0] == "--sandbox");
     ((.args | join(" ")) | test("marketplace add|plugin add|marketplace upgrade|plugin remove") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch invoked a forbidden marketplace or plugin mutation'

@@ -105,10 +105,11 @@ read_catalog() {
 
   jq -e --arg launcher "$launcher" --arg harness "$harness" '
     type == "object"
-    and keys == ["harness", "launcher", "profiles", "schemaVersion"]
+    and keys == ["harness", "launcher", "profiles", "sandbox", "schemaVersion"]
     and .schemaVersion == 1
     and .launcher == $launcher
     and .harness == $harness
+    and (.sandbox | type == "boolean")
     and (.profiles | type == "array" and length > 0)
     and all(.profiles[];
       type == "object"
@@ -168,7 +169,7 @@ build_choices() {
       elif $catalog.launcher == "omp" then
         {defaultModel:"copilot-proxy-rs/qwen3.6-35b-a3b-local",models:["copilot-proxy-rs/qwen3.6-35b-a3b-local"],modelOverrideSupported:false}
       elif $catalog.launcher == "grx" then
-        {defaultModel:"grok-4.5",models:["grok-4.5"],modelOverrideSupported:true}
+        {defaultModel:"grok-4.6",models:["grok-4.6"],modelOverrideSupported:true}
       elif $catalog.launcher == "jcx" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol"],modelOverrideSupported:true}
       elif $catalog.launcher == "prx" then
@@ -205,11 +206,12 @@ build_choices() {
         plugins: ([$profile.plugin] | map(select(type == "string" and length > 0)) | unique),
         skills: [],
         mcps: ([$profile.standaloneMcps[]? | if type == "string" then . else .name end] | map(select(type == "string" and length > 0)) | unique),
+        sandbox: $catalog.sandbox,
         details: "The selected launcher checks readiness before starting."
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Trellage Native runs coding-agent launchers directly on the host with isolated state. Choose a harness/profile for fast startup; native profiles are not security boundaries.",
+      description: "Trellage Native runs coding-agent launchers directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries.",
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),
@@ -237,7 +239,8 @@ build_profile_list() {
         launcher: $catalog.launcher,
         harness: $catalog.harness,
         name,
-        description
+        description,
+        sandbox: $catalog.sandbox
       };
     {
       schemaVersion: 1,
