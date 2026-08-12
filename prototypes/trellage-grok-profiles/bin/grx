@@ -1491,7 +1491,7 @@ launch_profile() {
   exec env \
     GROK_HOME="$(profile_home "$profile")" \
     GROK_MODELS_BASE_URL='http://127.0.0.1:8080/v1' \
-    GROK_DEFAULT_MODEL='grok-4.5' \
+    GROK_DEFAULT_MODEL='grok-4.6' \
     XAI_API_KEY='local-copilot-proxy' \
     "$grok_executable" "${grok_args[@]}"
 }
