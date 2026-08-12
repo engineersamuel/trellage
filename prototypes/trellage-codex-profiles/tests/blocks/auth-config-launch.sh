@@ -250,9 +250,11 @@ PY
 
 cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
   || fail 'proxy launch did not restore exact prelaunch config bytes'
+original_cwd_physical="$(CDPATH= cd -P -- "$original_cwd" && pwd)"
 jq -se --arg codexHome "$hve_home" \
   --arg home "$fixture_root/home" \
-  --arg cwd "$original_cwd" '
+  --arg cwd "$original_cwd" \
+  --arg trustOverride "projects.\"$original_cwd_physical\".trust_level=\"trusted\"" '
     map(select(.args[0] == "--sandbox")) as $launches |
     ($launches | length) == 1
     and $launches[0].codexHome == $codexHome
@@ -261,6 +263,7 @@ jq -se --arg codexHome "$hve_home" \
     and $launches[0].args == [
       "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
       "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
+      "-c", $trustOverride,
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'

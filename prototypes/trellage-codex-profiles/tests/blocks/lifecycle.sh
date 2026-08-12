@@ -163,9 +163,9 @@ write_isolation_snapshot launch-ordinary
 HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers --version \
   || fail 'superpowers launch failed'
 assert_isolation_snapshot_unchanged launch-ordinary
-jq -se '
+jq -se --arg trustOverride "projects.\"$(CDPATH= cd -P -- . && pwd)\".trust_level=\"trusted\"" '
   length == 1
-  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input","--version"]
+  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "-c", $trustOverride, "--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
 [ ! -e "$fixture_root/fake-curl.log" ] || fail 'launch invoked curl'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
@@ -949,7 +949,8 @@ write_isolation_snapshot native-launch-success
   || fail 'native-auth launch failed'
 assert_isolation_snapshot_unchanged native-launch-success
 jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
-  --arg home "$fixture_root/home" --arg cwd "$original_cwd" '
+  --arg home "$fixture_root/home" --arg cwd "$original_cwd" \
+  --arg trustOverride "projects.\"$(CDPATH= cd -P -- "$original_cwd" && pwd)\".trust_level=\"trusted\"" '
   . == [
     {
       codexHome: $host,
@@ -971,6 +972,7 @@ jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
         "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
         "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
         "-c", "model_provider=\"openai\"",
+        "-c", $trustOverride,
         "-m", "gpt-5.5", "exec", "--json", "hello world"
       ]
     }
@@ -1437,10 +1439,10 @@ write_isolation_snapshot launch-preserved-auth-ordinary
 HOME="$fixture_root/home" fake_env "$fixture_launcher" hve --version \
   || fail 'launch with preserved profile authentication failed'
 assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
-jq -se '
+jq -se --arg trustOverride "projects.\"$(CDPATH= cd -P -- . && pwd)\".trust_level=\"trusted\"" '
   length == 2
   and .[0].args == ["plugin","list","--json"]
-  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input","--version"]
+  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "-c", $trustOverride, "--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \

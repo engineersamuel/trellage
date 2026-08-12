@@ -2336,11 +2336,36 @@ cleanup_launch_config() {
   remove_owned_temp "$after" || return 1
 }
 
+toml_escape_basic_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+launch_project_trust_override() {
+  local project_dir project_dir_escaped
+
+  project_dir="$(pwd -P)" \
+    || die 'failed to resolve working directory for project trust override'
+  project_dir_escaped="$(toml_escape_basic_string "$project_dir")"
+  printf 'projects."%s".trust_level="trusted"' "$project_dir_escaped"
+}
+
 run_codex_child() {
   local profile="$1" native="$2"
   local target="$(profile_home "$profile")/config.toml"
   local before child_status cleanup_status wait_status monitor_child=yes
+  local trust_override
   shift 2
+
+  # Codex's interactive "Do you trust the contents of this directory?"
+  # prompt is gated on [projects."<cwd>"] trust_level = "trusted" in its
+  # merged config. Pass it as an ephemeral -c override for the launch
+  # directory so the prompt never fires; nothing is written to the
+  # profile's config.toml, so the existing generated-project-trust
+  # stripping above is unaffected.
+  trust_override="$(launch_project_trust_override)"
 
   safe_config_target "$profile"
   [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] \
@@ -2371,13 +2396,15 @@ run_codex_child() {
       -c sandbox_workspace_write.network_access=true \
       --ask-for-approval never \
       --disable default_mode_request_user_input \
-      -c 'model_provider="openai"' "$@" <&0 &
+      -c 'model_provider="openai"' \
+      -c "$trust_override" "$@" <&0 &
   else
     env CODEX_HOME="$(profile_home "$profile")" \
       "$codex_executable" --sandbox workspace-write \
       -c sandbox_workspace_write.network_access=true \
       --ask-for-approval never \
-      --disable default_mode_request_user_input "$@" <&0 &
+      --disable default_mode_request_user_input \
+      -c "$trust_override" "$@" <&0 &
   fi
   launch_child_pid=$!
   case "$launch_signal_status" in
