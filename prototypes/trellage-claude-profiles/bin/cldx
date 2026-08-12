@@ -243,6 +243,24 @@ ensure_onboarding() {
   mv -f "$staged" "$onboarding"
 }
 
+ensure_trust() {
+  local workspace staged
+
+  workspace="$(pwd -P)" || die 'could not resolve current directory'
+  [[ -f "$onboarding" && ! -L "$onboarding" ]] \
+    || die "unsafe Claude onboarding state: $onboarding"
+  staged="$(mktemp "$profile_home/.claude.json.XXXXXX")" \
+    || die 'could not stage Claude onboarding state'
+  jq --arg workspace "$workspace" '
+    .projects = (
+      (.projects // {})
+      | .[$workspace] = ((.[$workspace] // {}) + {"hasTrustDialogAccepted": true})
+    )
+  ' "$onboarding" >"$staged" || die "invalid Claude onboarding state: $onboarding"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$onboarding"
+}
+
 verify_onboarding() {
   [[ -f "$onboarding" && ! -L "$onboarding" ]] \
     || die 'Claude onboarding state is missing; run cldx repair'
@@ -319,6 +337,7 @@ launch_profile() {
     require_owned_profile
   fi
   ensure_onboarding "$version"
+  ensure_trust
   check_proxy
 
   for arg in "$@"; do
