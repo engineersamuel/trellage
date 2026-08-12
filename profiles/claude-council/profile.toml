@@ -23,6 +23,12 @@ ref = "v1.10.0"
 select = ["caveman"]
 always_on = true
 
+[[skills]]
+repository = "https://github.com/mattpocock/skills.git"
+ref = "v1.2.3"
+select = ["grill-with-docs", "improve-codebase-architecture"]
+always_on = true
+
 # Upstream project: https://github.com/0xNyk/council-of-high-intelligence
 [[plugins]]
 adapter = "claude-marketplace"

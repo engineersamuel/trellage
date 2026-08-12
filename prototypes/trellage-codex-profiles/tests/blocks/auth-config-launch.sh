@@ -865,6 +865,71 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
 cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
   || fail 'launch stale project recovery changed other config bytes'
 
+# Codex writes hook-approval trust hashes and TUI nux flags into config.toml
+# after the managed provider tail, often *after* a project trust stanza that
+# is itself only ever transient. Doctor must strip the stale project trust
+# while leaving this other native Codex state untouched.
+awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
+  $0 == marker {
+    print ""
+    print "[projects.\"" cwd "\"]"
+    print "trust_level = \"trusted\""
+    print ""
+    print "[hooks.state]"
+    print ""
+    print "[hooks.state.\"" cwd "/.codex/hooks.json:pre_tool_use:0:0\"]"
+    print "trusted_hash = \"sha256:398989e9bdf95b43657a40589049a298a170f1946642abe2124fe9ee222caa5a\""
+    print ""
+    print "[tui.model_availability_nux]"
+    print "\"gpt-5.6-sol\" = 1"
+  }
+  { print }
+' "$hve_home/config.toml" >"$fixture_root/stale-project-with-hooks-nux.toml"
+mv "$fixture_root/stale-project-with-hooks-nux.toml" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+  >"$fixture_root/doctor-stale-project-hooks-nux.out" \
+  || fail 'doctor rejected hooks state and tui nux native content'
+grep -F -- '[projects."' "$hve_home/config.toml" >/dev/null \
+  && fail 'doctor left stale project trust alongside hooks state and tui nux'
+grep -F -- '[hooks.state]' "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor stripped hooks state alongside stale project trust'
+grep -F -- 'trusted_hash = "sha256:398989e9bdf95b43657a40589049a298a170f1946642abe2124fe9ee222caa5a"' \
+  "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor lost a hook approval trust hash'
+grep -F -- '[tui.model_availability_nux]' "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor stripped tui nux flags alongside stale project trust'
+grep -F -- '"gpt-5.6-sol" = 1' "$hve_home/config.toml" >/dev/null \
+  || fail 'doctor lost a tui nux flag'
+cp "$proxy_config_before" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+
+# Hooks state and tui nux content with no project trust stanza at all must be
+# accepted and left byte-for-byte unchanged (no stale content to recover).
+awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
+  $0 == marker {
+    print "[hooks.state]"
+    print ""
+    print "[hooks.state.\"" cwd "/.codex/hooks.json:post_tool_use:0:0\"]"
+    print "trusted_hash = \"sha256:a044cd448bad32f8a34e7639e24f7aa40ba782ee3221fa3c510958986e26518f\""
+    print ""
+    print "[tui.model_availability_nux]"
+    print "\"gpt-5.6-sol\" = 1"
+    print ""
+  }
+  { print }
+' "$hve_home/config.toml" >"$fixture_root/hooks-nux-only.toml"
+mv "$fixture_root/hooks-nux-only.toml" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+cp "$hve_home/config.toml" "$fixture_root/hooks-nux-only-before.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+  >"$fixture_root/doctor-hooks-nux-only.out" \
+  || fail 'doctor rejected hooks state and tui nux native content with no project trust'
+cmp -s "$fixture_root/hooks-nux-only-before.toml" "$hve_home/config.toml" \
+  || fail 'doctor changed hooks state and tui nux bytes with no project trust to recover'
+cp "$proxy_config_before" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+
 awk '
   $0 == "# trellage-profile-local-config-end" {
     print "[projects.\"/user/owned/project\"]"
