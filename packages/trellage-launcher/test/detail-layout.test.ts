@@ -55,4 +55,15 @@ describe("profile detail layout", () => {
     expect(fields.Binary).toBe("/opt/trellage/cpx/bin/cpx")
     expect(fields.Arguments).toBe('["copilot","--model","gpt-fast","two words","","--literal=*"]')
   })
+
+  it("shows a sandbox row only when the entry declares one", () => {
+    const withSandbox = detailRows({ ...entry, sandbox: true }, "claude-opus-5", 200)
+    const fields = Object.fromEntries(
+      withSandbox.filter((row) => row.label !== undefined).map((row) => [row.label, row.text]),
+    )
+    expect(fields.Sandbox).toBe("true")
+
+    const withoutSandbox = detailRows(entry, "claude-opus-5", 200)
+    expect(withoutSandbox.some((row) => row.label === "Sandbox")).toBe(false)
+  })
 })

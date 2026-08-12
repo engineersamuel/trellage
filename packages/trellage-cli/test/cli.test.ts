@@ -245,9 +245,9 @@ describe("CLI identity and failure reporting", () => {
     expect(JSON.parse(simplified.logs.join("\n"))).toEqual({
       schemaVersion: 1,
       profiles: [
-        { name: "alpha", description: "Alpha description" },
-        { name: "beta", description: "Beta description" },
-        { name: "gamma", description: "Gamma description" },
+        { name: "alpha", description: "Alpha description", sandbox: true },
+        { name: "beta", description: "Beta description", sandbox: true },
+        { name: "gamma", description: "Gamma description", sandbox: true },
       ],
     })
 

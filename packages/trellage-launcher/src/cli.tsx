@@ -51,6 +51,7 @@ const detailColors: Record<
   Plugins: "blue",
   Skills: "green",
   MCPs: "cyan",
+  Sandbox: "green",
   Status: "gray",
 }
 
@@ -290,6 +291,13 @@ const Launcher = ({
               PROFILE
             </Text>
           </Box>
+          <Box width={widths.sandbox}>
+            {widths.sandbox === 0 ? null : (
+              <Text bold color="green">
+                SANDBOX
+              </Text>
+            )}
+          </Box>
           <Box width={widths.model}>
             <Text bold color="magenta">
               MODEL
@@ -304,6 +312,7 @@ const Launcher = ({
             const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel
             const modelLabel =
               entryModel === undefined ? "—" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`
+            const sandboxLabel = entry.sandbox === undefined ? "—" : entry.sandbox ? "true" : "false"
             return (
               <Box key={entry.id}>
                 <Box width={2}>
@@ -320,6 +329,13 @@ const Launcher = ({
                   <Text bold={active} color="cyan" dimColor={!active} wrap="truncate-end">
                     {entry.profile}
                   </Text>
+                </Box>
+                <Box width={widths.sandbox}>
+                  {widths.sandbox === 0 ? null : (
+                    <Text bold={active} color="green" dimColor={!active} wrap="truncate-end">
+                      {sandboxLabel}
+                    </Text>
+                  )}
                 </Box>
                 <Box width={widths.model}>
                   <Text bold={active} color="magenta" dimColor={!active} wrap="truncate-end">

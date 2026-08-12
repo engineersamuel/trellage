@@ -55,6 +55,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cdx"
   and .harness == "codex"
+  and .sandbox == true
   and [.profiles[].name] == ["hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].plugin == "hve-core-all@hve-core"
@@ -252,13 +253,14 @@ cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
 jq -se --arg codexHome "$hve_home" \
   --arg home "$fixture_root/home" \
   --arg cwd "$original_cwd" '
-    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
+    map(select(.args[0] == "--sandbox")) as $launches |
     ($launches | length) == 1
     and $launches[0].codexHome == $codexHome
     and $launches[0].home == $home
     and $launches[0].cwd == $cwd
     and $launches[0].args == [
-      "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
+      "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+      "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'
@@ -1040,7 +1042,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   || fail 'repair preserved forbidden Superpowers in HVE'
 : >"$fake_state/hve/forbidden-superpowers-direct"
 : >"$fake_state/hve/forbidden-superpowers-renamed"
-launches_before="$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+launches_before="$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")"
 mkdir -p "$fixture_root/home/.codex"
 printf '%s\n' '{"tokens":{"access_token":"contamination-check"}}' \
@@ -1066,7 +1068,7 @@ rm "$hve_home/auth.json"
 [ ! -e "$fake_state/hve/forbidden-superpowers-direct" ] \
   && [ ! -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
   || fail 'contaminated launch preserved forbidden Superpowers variants'
-[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+[ "$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")" = "$((launches_before + 2))" ] \
   || fail 'self-healed launches did not start the underlying Codex agent'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1244,7 +1246,7 @@ upgrade_failure_profile="$upgrade_failure_home/.local/share/trellage/profiles/co
   || fail 'failed fresh Superpowers materialization added selected plugin before upgrade'
 jq -se '
   any(.[]; .args == ["plugin","marketplace","upgrade","superpowers-marketplace","--json"])
-  and all(.[]; .args[0] != "--dangerously-bypass-approvals-and-sandbox")
+  and all(.[]; .args[0] != "--sandbox")
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'failed fresh Superpowers materialization used a launch fallback'
 : >"$fixture_root/fake-codex.log"
@@ -2043,7 +2045,7 @@ rm "$fake_bin/codex"
 mv "$fake_bin/codex-real" "$fake_bin/codex"
 
 jq -se '
-  all(.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox");
+  all(.[] | select(.args[0] == "--sandbox");
     ((.args | join(" ")) | test("marketplace add|plugin add|marketplace upgrade|plugin remove") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch invoked a forbidden marketplace or plugin mutation'

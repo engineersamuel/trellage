@@ -299,6 +299,10 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "grx",
       harness: "grok",
+      # grx now enables the Grok native --sandbox workspace profile: writes
+      # restricted to the CWD/~/.grok/temp, network kept allowed. See
+      # docs/native-sandbox-research.md.
+      sandbox: true,
       profiles: [
         .profiles
         | to_entries
@@ -1479,7 +1483,7 @@ ensure_launch_ready() {
 launch_profile() {
   local profile="$1"
   shift
-  local grok_args=(--permission-mode bypassPermissions --always-approve "$@")
+  local grok_args=(--sandbox workspace --permission-mode bypassPermissions --always-approve "$@")
 
   ensure_launch_ready "$profile"
   resolve_grok

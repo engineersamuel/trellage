@@ -3,6 +3,7 @@ import type { LaunchEntry } from "./state.js"
 export interface TableColumns {
   readonly profile: number
   readonly harness: number
+  readonly sandbox: number
   readonly model: number
 }
 
@@ -27,9 +28,14 @@ export const tableColumns = (
     10,
     Math.max(10, Math.floor(available * 0.25)),
   )
+  // Only reserve a SANDBOX column when at least one entry actually declares
+  // a sandbox status; catalogs that never set it (e.g. Trellage Sandbox,
+  // where every profile is implicitly Docker-isolated) omit the column.
+  const sandbox = entries.some((entry) => entry.sandbox !== undefined) ? "SANDBOX".length + 2 : 0
   return {
     profile,
     harness,
-    model: Math.max(8, available - profile - harness),
+    sandbox,
+    model: Math.max(8, available - profile - harness - sandbox),
   }
 }

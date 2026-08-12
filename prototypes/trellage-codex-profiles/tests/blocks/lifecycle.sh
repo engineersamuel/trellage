@@ -165,7 +165,7 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers --version \
 assert_isolation_snapshot_unchanged launch-ordinary
 jq -se '
   length == 1
-  and .[0].args == ["--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input","--version"]
+  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
 [ ! -e "$fixture_root/fake-curl.log" ] || fail 'launch invoked curl'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
@@ -933,7 +933,7 @@ grep -F -- 'hve' "$fixture_root/native-malformed-host-auth.out" >/dev/null \
 jq -se '
   length == 1
   and .[0].args == ["login","status"]
-  and (map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length) == 0
+  and (map(select(.args[0] == "--sandbox")) | length) == 0
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'malformed host auth invoked a native launch or proxy fallback'
 printf '%s\n' '{"tokens":{"access_token":"native-v1","refresh_token":"native-refresh-v1"}}' \
@@ -968,7 +968,8 @@ jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
       home: $home,
       cwd: $cwd,
       args: [
-        "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
+        "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+        "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
         "-c", "model_provider=\"openai\"",
         "-m", "gpt-5.5", "exec", "--json", "hello world"
       ]
@@ -1136,7 +1137,7 @@ assert_native_refresh_failure() {
   [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
     || fail "$label left authentication staging debris"
   jq -se '
-    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length == 0
+    map(select(.args[0] == "--sandbox")) | length == 0
   ' "$fixture_root/fake-codex.log" >/dev/null \
     || fail "$label invoked a native launch or proxy fallback"
 }
@@ -1411,7 +1412,7 @@ assert_isolation_snapshot_unchanged native-target-changed-during-copy
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'destination safety failure left authentication staging debris'
 jq -se '
-  map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length == 0
+  map(select(.args[0] == "--sandbox")) | length == 0
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'destination safety failure invoked a native launch or proxy fallback'
 rm "$fake_bin/cp" "$hve_home/auth.json"
@@ -1439,7 +1440,7 @@ assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
 jq -se '
   length == 2
   and .[0].args == ["plugin","list","--json"]
-  and .[1].args == ["--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input","--version"]
+  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \

@@ -323,7 +323,7 @@ export FAKE_CODEX_PROJECT_TRUST_VALUE
 
 case "${FAKE_CODEX_SIGNAL_PARENT:-}" in
   HUP|INT|TERM)
-    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
+    if [ "${1:-}" = '--sandbox' ] \
       && [ "${FAKE_CODEX_APPEND_PROJECT_TRUST:-}" = 1 ]; then
       persist_project_trust
     fi
@@ -437,7 +437,7 @@ case "$*" in
     printf '%s\n' '{"upgraded":true}'
     ;;
   *)
-    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
+    if [ "${1:-}" = '--sandbox' ] \
       && [ "${FAKE_CODEX_APPEND_PROJECT_TRUST:-}" = 1 ]; then
       fake_project_append_count="${FAKE_CODEX_APPEND_PROJECT_TRUST_COUNT:-1}"
       [ "${FAKE_CODEX_APPEND_PROJECT_TRUST_TWICE:-}" != 1 ] \
@@ -517,8 +517,8 @@ case "$*" in
       : >"$FAKE_CODEX_RELEASE_RACE_DIR/child-started"
     fi
     if [ "$profile" = superpowers ] \
-      && [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ]; then
-      case "${4:-}" in
+      && [ "${1:-}" = '--sandbox' ]; then
+      case "${9:-}" in
         debug|--*) ;;
         *)
           if ! git_marketplace_is_materialized; then
