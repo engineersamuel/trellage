@@ -34,6 +34,22 @@ host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx`.
   `post-rewrite` hooks rebuild the compiler and refresh native launchers
   automatically when the local `main` worktree receives merged commits.
 
+## Worktrees and mise trust
+
+- `mise trust` is keyed by absolute config path, so every new worktree starts
+  untrusted. This repository's `mise.toml` sets `[env]`, which mise refuses to
+  load until trusted; `[tools]`-only configs need no trust.
+- Symptom: any `mise run ...` in a fresh worktree fails with
+  `Config files in <path>/mise.toml are not trusted`.
+- Fix, once per worktree, from its root: `mise trust`.
+- Verify with `mise trust --show` (expect `trusted`) or `mise tasks`.
+- When deleting a worktree, run `mise trust --untrust` from it first; trust
+  entries are keyed by path and otherwise accumulate for directories that no
+  longer exist.
+- Automation that creates worktrees must trust the config itself rather than
+  assume an inherited trust decision. The checkout is a verbatim copy of an
+  already-trusted `main`, so this is not a new trust decision.
+
 ## Architecture
 
 - `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.

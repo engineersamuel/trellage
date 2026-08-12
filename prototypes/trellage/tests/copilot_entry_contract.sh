@@ -80,7 +80,12 @@ create_linux_rootfs() {
   python_stdlib="$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
   mkdir -p "$root/rootfs$(dirname "$python_stdlib")"
   cp -R -- "$python_stdlib" "$root/rootfs$python_stdlib"
-  ctypes_module="$(find "$python_stdlib" -type f -name '_ctypes*.so' -print -quit)"
+  # Ask Python for the module rather than globbing: `_ctypes*.so` also matches
+  # `_ctypes_test*.so`, which does not link libffi, and `find -print -quit` stops
+  # at whichever the directory order happens to yield first. Selecting the test
+  # helper left libffi out of the rootfs and made the entry fail to import ctypes.
+  ctypes_module="$(python3 -c 'import _ctypes; print(_ctypes.__file__)')" \
+    || fail 'fixture host Python lacks _ctypes'
   [[ -n "$ctypes_module" ]] || fail 'fixture host Python lacks _ctypes'
   copy_linux_binary "$ctypes_module"
   assembled_elf_interpreter="$(ldd "$(command -v bash)" 2>/dev/null \

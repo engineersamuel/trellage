@@ -41,6 +41,9 @@ launch_child_pid=""
 launch_signal_status=0
 active_launch_lock=""
 active_launch_lock_owner=""
+# Resolved once so `file_mode` does not spawn `uname` on every mode check.
+host_system_name="$(uname -s 2>/dev/null || :)"
+validated_profile=""
 # The exact catalog records the Superpowers marketplace repository, not the
 # plugin source repository. Keep that independently validated invariant here.
 superpowers_plugin_repository="https://github.com/obra/superpowers.git"
@@ -145,8 +148,12 @@ require_profile() {
   case "$profile" in
     *[!a-z0-9-]*|-*|*-|*--*) die "unknown profile: $profile" ;;
   esac
+  # Callers re-assert the profile several times per run; the catalog cannot
+  # change under a single launcher process, so one `jq` lookup is enough.
+  [ "$profile" != "$validated_profile" ] || return 0
   jq -e --arg profile "$profile" '.profiles | has($profile)' "$catalog" >/dev/null \
     || die "unknown profile: $profile"
+  validated_profile="$profile"
 }
 
 require_profile_or_all() {
@@ -159,10 +166,9 @@ profile_home() {
 }
 
 file_mode() {
-  local system_name value
+  local value
 
-  system_name="$(uname -s 2>/dev/null)" || return 1
-  case "$system_name" in
+  case "$host_system_name" in
     Darwin) value="$(stat -f '%Lp' "$1" 2>/dev/null)" || return 1 ;;
     Linux) value="$(stat -c '%a' "$1" 2>/dev/null)" || return 1 ;;
     *) return 1 ;;
@@ -193,10 +199,6 @@ source_auth_is_readable() {
 
 profile_home_is_safe() {
   local profile="$1"
-  local canonical_home
-  local canonical_path
-  local path="$HOME"
-  local component
 
   case "$HOME" in
     /|'') return 1 ;;
@@ -207,21 +209,35 @@ profile_home_is_safe() {
     */../*) return 1 ;;
   esac
   [ -d "$HOME" ] && [ ! -L "$HOME" ] || return 1
-  canonical_home="$(cd -P "$HOME" >/dev/null 2>&1 && pwd)" || return 1
-  [ "$canonical_home" -ef / ] && return 1
 
-  for component in .local share trellage profiles codex "$profile" home; do
-    path="$path/$component"
-    [ ! -L "$path" ] || return 1
-    if [ -e "$path" ]; then
-      [ -d "$path" ] || return 1
-      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" || return 1
-      case "$canonical_path" in
-        "$canonical_home"|"$canonical_home"/*) ;;
-        *) return 1 ;;
-      esac
-    fi
-  done
+  # Canonicalize every component inside one subshell: `cd -P` only mutates the
+  # child, so the walk costs a single fork instead of one per component. This
+  # runs on every safety re-check, so the fork count dominates launcher latency.
+  (
+    canonical_home=''
+    canonical_path=''
+    path="$HOME"
+    component=''
+
+    cd -P "$HOME" >/dev/null 2>&1 || exit 1
+    canonical_home="$PWD"
+    [ "$canonical_home" -ef / ] && exit 1
+
+    for component in .local share trellage profiles codex "$profile" home; do
+      path="$path/$component"
+      [ ! -L "$path" ] || exit 1
+      if [ -e "$path" ]; then
+        [ -d "$path" ] || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_home"|"$canonical_home"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+    exit 0
+  )
 }
 
 require_safe_profile_home() {
@@ -456,18 +472,50 @@ install_initial_config() {
 
 config_marker_lines() {
   local target="$1"
-  local marker
 
-  for marker in \
-    '# trellage-managed-codex-config-begin' \
-    '# trellage-managed-codex-config-end' \
-    '# trellage-profile-local-config-begin' \
-    '# trellage-profile-local-config-end' \
-    '# trellage-managed-codex-provider-begin' \
-    '# trellage-managed-codex-provider-end'; do
-    [ "$(grep -Fxc -- "$marker" "$target")" -eq 1 ] || return 1
-    grep -Fnx -- "$marker" "$target" | cut -d: -f1
-  done
+  # One awk pass replaces a grep/cut pair per marker: the six markers each cost
+  # three processes otherwise, and this runs on every config validation.
+  awk '
+    BEGIN {
+      total = split("# trellage-managed-codex-config-begin\n" \
+        "# trellage-managed-codex-config-end\n" \
+        "# trellage-profile-local-config-begin\n" \
+        "# trellage-profile-local-config-end\n" \
+        "# trellage-managed-codex-provider-begin\n" \
+        "# trellage-managed-codex-provider-end", markers, "\n")
+    }
+    { count[$0]++; line[$0] = NR }
+    END {
+      for (index_ = 1; index_ <= total; index_++) {
+        marker = markers[index_]
+        if (count[marker] != 1) exit 1
+        print line[marker]
+      }
+    }
+  ' "$target"
+}
+
+# Split the six marker line numbers into globals. `read` in the current shell
+# avoids the fork-plus-`sed` that extracting each field separately would cost.
+read_config_marker_lines() {
+  local lines="$1"
+
+  marker_config_begin=''
+  marker_config_end=''
+  marker_local_begin=''
+  marker_local_end=''
+  marker_provider_begin=''
+  marker_provider_end=''
+  {
+    read -r marker_config_begin
+    read -r marker_config_end
+    read -r marker_local_begin
+    read -r marker_local_end
+    read -r marker_provider_begin
+    read -r marker_provider_end
+  } <<EOF
+$lines
+EOF
 }
 
 validate_native_provider_tail() {
@@ -606,8 +654,9 @@ strip_generated_project_trust() {
     *) return 1 ;;
   esac
   lines="$(config_marker_lines "$target")" || return 1
-  provider_begin="$(printf '%s\n' "$lines" | sed -n '5p')"
-  provider_end="$(printf '%s\n' "$lines" | sed -n '6p')"
+  read_config_marker_lines "$lines"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
   awk -v first="$((provider_begin + 5))" -v last="$((provider_end - 1))" \
     -v max_projects="$max_generated_projects" \
     -v keep_separator="$([ "$separator_style" = blank ] && printf 1 || printf 0)" '
@@ -717,12 +766,13 @@ validate_config_structure() {
   fi
   [ -f "$target" ] || return 1
   lines="$(config_marker_lines "$target")" || return 1
-  config_begin="$(printf '%s\n' "$lines" | sed -n '1p')"
-  config_end="$(printf '%s\n' "$lines" | sed -n '2p')"
-  local_begin="$(printf '%s\n' "$lines" | sed -n '3p')"
-  local_end="$(printf '%s\n' "$lines" | sed -n '4p')"
-  provider_begin="$(printf '%s\n' "$lines" | sed -n '5p')"
-  provider_end="$(printf '%s\n' "$lines" | sed -n '6p')"
+  read_config_marker_lines "$lines"
+  config_begin="$marker_config_begin"
+  config_end="$marker_config_end"
+  local_begin="$marker_local_begin"
+  local_end="$marker_local_end"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
   [ "$config_begin" -lt "$config_end" ] \
     && [ "$config_end" -lt "$local_begin" ] \
     && [ "$local_begin" -lt "$local_end" ] \
@@ -741,7 +791,7 @@ validate_config_structure() {
   old_end_count="$(config_marker_count \
     '# trellage-codex-native-marketplaces-end' "$target")"
   if [ "$old_begin_count" -eq 0 ] && [ "$old_end_count" -eq 0 ]; then
-    [ "$provider_end" -eq "$(wc -l <"$target" | tr -d ' ')" ] || return 1
+    [ "$provider_end" -eq "$(wc -l <"$target")" ] || return 1
     layout=canonical
   elif [ "$old_begin_count" -eq 1 ] && [ "$old_end_count" -eq 1 ]; then
     old_begin="$(grep -Fnx -- '# trellage-codex-native-marketplaces-begin' \
@@ -751,7 +801,7 @@ validate_config_structure() {
     [ "$old_begin" -eq $((provider_end + 2)) ] \
       && [ -z "$(sed -n "$((provider_end + 1))p" "$target")" ] \
       && [ "$old_begin" -lt "$old_end" ] \
-      && [ "$old_end" -eq "$(wc -l <"$target" | tr -d ' ')" ] \
+      && [ "$old_end" -eq "$(wc -l <"$target")" ] \
       || return 1
     second_first=$((old_begin + 1))
     second_last=$((old_end - 1))
@@ -2097,7 +2147,7 @@ read_launch_lock_owner() {
   case "$birth" in ''|*[!A-Za-z0-9]*) return 1 ;; esac
   case "$token" in ''|*[!0-9-]*) return 1 ;; esac
   [ -z "$extra" ] || return 1
-  [ "$(wc -l <"$path" | tr -d ' ')" -eq 1 ] || return 1
+  [ "$(wc -l <"$path")" -eq 1 ] || return 1
   printf '%s %s %s\n' "$pid" "$birth" "$token"
 }
 

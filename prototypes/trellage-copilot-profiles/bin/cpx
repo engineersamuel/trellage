@@ -106,11 +106,6 @@ profile_home() {
 
 profile_home_is_safe() {
   local profile="$1"
-  local canonical_home
-  local canonical_profiles_root
-  local canonical_path
-  local path="$HOME"
-  local component
 
   case "$HOME" in
     /|'') return 1 ;;
@@ -121,43 +116,60 @@ profile_home_is_safe() {
     */../*) return 1 ;;
   esac
   [[ -d "$HOME" && ! -L "$HOME" ]] || return 1
-  canonical_home="$(cd -P "$HOME" >/dev/null 2>&1 && pwd)" || return 1
-  [[ "$canonical_home" != '/' ]] || return 1
-  profile_name_is_safe "$profile" || return 1
 
-  for component in .local share trellage profiles copilot; do
-    path="$path/$component"
-    [[ ! -L "$path" ]] || return 1
-    if [[ -e "$path" ]]; then
-      [[ -d "$path" ]] || return 1
-      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" || return 1
-      case "$canonical_path" in
-        "$canonical_home"|"$canonical_home"/*) ;;
-        *) return 1 ;;
-      esac
+  # Canonicalize every component inside one subshell: `cd -P` only mutates the
+  # child, so the whole walk costs a single fork instead of one per component.
+  # This runs on every safety re-check, so the fork count dominates latency.
+  (
+    canonical_home=''
+    canonical_profiles_root=''
+    canonical_path=''
+    path="$HOME"
+    component=''
+
+    cd -P "$HOME" >/dev/null 2>&1 || exit 1
+    canonical_home="$PWD"
+    [[ "$canonical_home" != '/' ]] || exit 1
+    profile_name_is_safe "$profile" || exit 1
+
+    for component in .local share trellage profiles copilot; do
+      path="$path/$component"
+      [[ ! -L "$path" ]] || exit 1
+      if [[ -e "$path" ]]; then
+        [[ -d "$path" ]] || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_home"|"$canonical_home"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+
+    if [[ -e "$profiles_root" ]]; then
+      cd -P "$profiles_root" >/dev/null 2>&1 || exit 1
+      canonical_profiles_root="$PWD"
+      [[ "$canonical_profiles_root" == "$canonical_home/.local/share/trellage/profiles/copilot" ]] \
+        || exit 1
+    else
+      canonical_profiles_root="$canonical_home/.local/share/trellage/profiles/copilot"
     fi
-  done
 
-  if [[ -e "$profiles_root" ]]; then
-    canonical_profiles_root="$(cd -P "$profiles_root" >/dev/null 2>&1 && pwd)" || return 1
-    [[ "$canonical_profiles_root" == "$canonical_home/.local/share/trellage/profiles/copilot" ]] \
-      || return 1
-  else
-    canonical_profiles_root="$canonical_home/.local/share/trellage/profiles/copilot"
-  fi
-
-  for component in "$profile" home; do
-    path="$path/$component"
-    [[ ! -L "$path" ]] || return 1
-    if [[ -e "$path" ]]; then
-      [[ -d "$path" ]] || return 1
-      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" || return 1
-      case "$canonical_path" in
-        "$canonical_profiles_root"/*) ;;
-        *) return 1 ;;
-      esac
-    fi
-  done
+    for component in "$profile" home; do
+      path="$path/$component"
+      [[ ! -L "$path" ]] || exit 1
+      if [[ -e "$path" ]]; then
+        [[ -d "$path" ]] || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_profiles_root"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+    exit 0
+  )
 }
 
 require_safe_profile_home() {

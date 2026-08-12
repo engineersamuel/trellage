@@ -29,6 +29,23 @@ assert_line() {
   grep -Fxq -- "$expected" "$file" || fail "missing exact line '$expected' in $file"
 }
 
+# grx now requires a profile/host auth.json to structurally look like a
+# real Grok auth session (see auth_file_is_viable in bin/grx) before it
+# will ever launch the real grok binary; a plain marker string is no
+# longer sufficient. Fixtures use this helper to embed a marker inside a
+# minimal viable auth.json so copy/lock/race mechanics can still be
+# exercised with recognizable, comparable content.
+auth_marker_json() {
+  printf '{"grx-test":{"key":"%s","auth_mode":"api_key"}}\n' "$1"
+}
+
+assert_auth_marker() {
+  local expected="$1"
+  local file="$2"
+  grep -Fq -- "\"key\":\"$expected\"" "$file" \
+    || fail "missing auth marker '$expected' in $file"
+}
+
 sha256_digest() {
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 | awk '{print $1}'
@@ -763,7 +780,7 @@ mkdir -p \
   "$HOME/.cursor/plugins/personal-cursor" \
   "$HOME/.cursor/mcps/personal-cursor"
 printf 'personal command\n' >"$HOME/.agents/commands/personal.md"
-printf 'source-auth\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'source-auth' >"$HOME/.grok/auth.json"
 chmod 0600 "$HOME/.grok/auth.json"
 
 [ -x ./bin/grx ] || fail 'missing executable launcher'
@@ -1011,37 +1028,37 @@ assert_auth_refresh_preserves_profile_state() {
     || fail "$label did not change stale authentication"
   [ "$(profile_tree_hash "$hve_home" outside-auth)" = "$before_outside_auth_hash" ] \
     || fail "$label changed profile config, MCP, session, or plugin state outside auth.json"
-  assert_line "$expected_auth" "$hve_home/auth.json"
+  assert_auth_marker "$expected_auth" "$hve_home/auth.json"
   assert_line 'session sentinel' "$hve_home/sessions/keep"
   assert_line 'mcp sentinel' "$hve_home/mcp-state/keep"
   assert_line 'profile config sentinel' "$hve_home/config.toml"
 }
 
-printf 'refresh-launch\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-launch' >"$HOME/.grok/auth.json"
 hve_refresh_before="$(profile_tree_hash "$hve_home")"
 hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
 ./bin/grx hve --auth-refresh-launch >"$fixture_root/auth-refresh-launch.out"
 assert_auth_refresh_preserves_profile_state launch refresh-launch "$hve_refresh_before" "$hve_refresh_outside_auth_before"
 
-printf 'refresh-doctor\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-doctor' >"$HOME/.grok/auth.json"
 hve_refresh_before="$(profile_tree_hash "$hve_home")"
 hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
 ./bin/grx doctor hve >"$fixture_root/auth-refresh-doctor.out"
 assert_auth_refresh_preserves_profile_state doctor refresh-doctor "$hve_refresh_before" "$hve_refresh_outside_auth_before"
 
-printf 'refresh-update-check\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-update-check' >"$HOME/.grok/auth.json"
 hve_refresh_before="$(profile_tree_hash "$hve_home")"
 hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
 ./bin/grx update --check hve >"$fixture_root/auth-refresh-update-check.out"
 assert_auth_refresh_preserves_profile_state update-check refresh-update-check "$hve_refresh_before" "$hve_refresh_outside_auth_before"
 
-printf 'refresh-update\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-update' >"$HOME/.grok/auth.json"
 hve_refresh_before="$(profile_tree_hash "$hve_home")"
 hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
 ./bin/grx update hve >"$fixture_root/auth-refresh-update.out"
 assert_auth_refresh_preserves_profile_state update refresh-update "$hve_refresh_before" "$hve_refresh_outside_auth_before"
 
-printf 'refresh-repair\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-repair' >"$HOME/.grok/auth.json"
 hve_refresh_before="$(profile_tree_hash "$hve_home")"
 hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
 ./bin/grx repair hve >"$fixture_root/auth-refresh-repair.out"
@@ -1055,7 +1072,7 @@ hve_auth_inode="$(path_inode "$hve_home/auth.json")"
 [ "$(path_mode "$hve_home/auth.json")" = '600' ] \
   || fail 'identical authentication refresh did not enforce mode 0600'
 
-printf 'refresh-list-must-not-copy\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-list-must-not-copy' >"$HOME/.grok/auth.json"
 hve_auth_inode="$(path_inode "$hve_home/auth.json")"
 cp "$hve_home/auth.json" "$fixture_root/auth-before-list"
 managed_stale_guard_status=0
@@ -1103,7 +1120,7 @@ mv "$fixture_root/profile-auth-saved" "$hve_home/auth.json"
 [ "$(wc -l <"$fake_grok_log" | tr -d ' ')" = "$calls_before_auth_failure" ] \
   || fail 'symlinked destination authentication invoked Grok'
 
-printf 'refresh-publication-failure\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'refresh-publication-failure' >"$HOME/.grok/auth.json"
 cp "$hve_home/auth.json" "$fixture_root/auth-before-publication-failure"
 hve_auth_inode="$(path_inode "$hve_home/auth.json")"
 real_mv="$(command -v mv)"
@@ -1155,6 +1172,47 @@ assert_line "grx: source authentication is missing or unreadable: $HOME/.grok/au
   "$fixture_root/unreadable-update-auth.err"
 chmod 0600 "$HOME/.grok/auth.json"
 
+# grx must never let an unusable host Grok session reach the real grok
+# binary: a present, readable, but structurally invalid auth.json (e.g. an
+# expired/rotated session with no viable credential) must fail closed with
+# a clear diagnostic instead of ever launching Grok (which would otherwise
+# surface its own device-code login prompt).
+cp "$HOME/.grok/auth.json" "$fixture_root/unviable-update-auth-saved"
+calls_before_unviable_auth="$(wc -l <"$fake_grok_log" | tr -d ' ')"
+printf '{"stale-session":{"auth_mode":"oidc"}}\n' >"$HOME/.grok/auth.json"
+unviable_update_auth_status=0
+./bin/grx update --check hve >"$fixture_root/unviable-update-auth.out" \
+  2>"$fixture_root/unviable-update-auth.err" || unviable_update_auth_status=$?
+[ "$unviable_update_auth_status" -eq 2 ] \
+  || fail "unviable-auth update check exited $unviable_update_auth_status instead of 2"
+assert_line "grx: host Grok session is missing or unusable: $HOME/.grok/auth.json" \
+  "$fixture_root/unviable-update-auth.err"
+assert_line "grx: run 'grok login' once on the host (outside grx), then retry" \
+  "$fixture_root/unviable-update-auth.err"
+[ "$(wc -l <"$fake_grok_log" | tr -d ' ')" = "$calls_before_unviable_auth" ] \
+  || fail 'structurally invalid host authentication invoked Grok'
+cp "$fixture_root/unviable-update-auth-saved" "$HOME/.grok/auth.json"
+chmod 0600 "$HOME/.grok/auth.json"
+
+# The same guarantee must hold for a profile's own already-copied
+# auth.json: doctor must refuse to call it healthy, and a fresh launch
+# must refuse to run rather than falling through to Grok's own login UI.
+cp "$hve_home/auth.json" "$fixture_root/unviable-profile-auth-saved"
+calls_before_unviable_profile_auth="$(wc -l <"$fake_grok_log" | tr -d ' ')"
+printf '{"stale-session":{"auth_mode":"oidc"}}\n' >"$hve_home/auth.json"
+chmod 0600 "$hve_home/auth.json"
+unviable_doctor_status=0
+./bin/grx doctor hve >"$fixture_root/unviable-doctor.out" \
+  2>"$fixture_root/unviable-doctor.err" || unviable_doctor_status=$?
+[ "$unviable_doctor_status" -ne 0 ] \
+  || fail 'doctor accepted a structurally invalid profile authentication'
+assert_line "grx: profile authentication is unusable: hve; run 'grok login' once on the host (outside grx), then retry" \
+  "$fixture_root/unviable-doctor.err"
+[ "$(wc -l <"$fake_grok_log" | tr -d ' ')" = "$calls_before_unviable_profile_auth" ] \
+  || fail 'structurally invalid profile authentication invoked Grok during doctor'
+cp "$fixture_root/unviable-profile-auth-saved" "$hve_home/auth.json"
+chmod 0600 "$hve_home/auth.json"
+
 mkdir "$hve_home/.auth.lock-owned.stale"
 printf '.auth.lock-owned.stale\n' >"$hve_home/.auth.lock-owned.stale/token"
 printf '999999999\n' >"$hve_home/.auth.lock-owned.stale/pid"
@@ -1171,8 +1229,8 @@ rm "$hve_home/.auth.lock" "$hve_home/.auth.lock-owned.stale/pid" \
 rmdir "$hve_home/.auth.lock-owned.stale"
 
 for auth_signal in HUP INT TERM; do
-  printf 'signal-source-%s\n' "$auth_signal" >"$HOME/.grok/auth.json"
-  printf 'signal-target-before\n' >"$hve_home/auth.json"
+  auth_marker_json "signal-source-$auth_signal" >"$HOME/.grok/auth.json"
+  auth_marker_json 'signal-target-before' >"$hve_home/auth.json"
   chmod 0600 "$hve_home/auth.json"
   signal_auth_inode="$(path_inode "$hve_home/auth.json")"
   signal_status=0
@@ -1183,7 +1241,7 @@ for auth_signal in HUP INT TERM; do
     HUP:129|INT:130|TERM:143) ;;
     *) fail "$auth_signal-interrupted auth refresh exited $signal_status" ;;
   esac
-  assert_line 'signal-target-before' "$hve_home/auth.json"
+  assert_auth_marker 'signal-target-before' "$hve_home/auth.json"
   [ "$(path_inode "$hve_home/auth.json")" = "$signal_auth_inode" ] \
     || fail "$auth_signal-interrupted auth refresh replaced prior target"
   [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
@@ -1194,8 +1252,8 @@ done
 
 for signal_window in LOCK_ACQUIRE AFTER_PUBLISH LOCK_RELEASE; do
   for auth_signal in HUP INT TERM; do
-    printf 'window-source-%s-%s\n' "$signal_window" "$auth_signal" >"$HOME/.grok/auth.json"
-    printf 'window-target-before\n' >"$hve_home/auth.json"
+    auth_marker_json "window-source-$signal_window-$auth_signal" >"$HOME/.grok/auth.json"
+    auth_marker_json 'window-target-before' >"$hve_home/auth.json"
     chmod 0640 "$hve_home/auth.json"
     window_inode="$(path_inode "$hve_home/auth.json")"
     window_status=0
@@ -1205,11 +1263,11 @@ for signal_window in LOCK_ACQUIRE AFTER_PUBLISH LOCK_RELEASE; do
     case "$auth_signal:$window_status" in HUP:129|INT:130|TERM:143) ;; *)
       fail "$signal_window/$auth_signal exited $window_status" ;; esac
     if [ "$signal_window" = 'LOCK_RELEASE' ]; then
-      assert_line "window-source-$signal_window-$auth_signal" "$hve_home/auth.json"
+      assert_auth_marker "window-source-$signal_window-$auth_signal" "$hve_home/auth.json"
       [ "$(path_mode "$hve_home/auth.json")" = '600' ] \
         || fail "$signal_window/$auth_signal did not retain committed target mode"
     else
-      assert_line 'window-target-before' "$hve_home/auth.json"
+      assert_auth_marker 'window-target-before' "$hve_home/auth.json"
       [ "$(path_inode "$hve_home/auth.json")" = "$window_inode" ] \
         || fail "$signal_window/$auth_signal changed entry inode"
       [ "$(path_mode "$hve_home/auth.json")" = '640' ] \
@@ -1220,15 +1278,15 @@ for signal_window in LOCK_ACQUIRE AFTER_PUBLISH LOCK_RELEASE; do
   done
 done
 
-printf 'release-window-first\n' >"$HOME/.grok/auth.json"
-printf 'release-window-entry\n' >"$hve_home/auth.json"
+auth_marker_json 'release-window-first' >"$HOME/.grok/auth.json"
+auth_marker_json 'release-window-entry' >"$hve_home/auth.json"
 release_window_marker="$fixture_root/release-window-marker"
 GRX_AUTH_TEST_RELEASE_MARKER="$release_window_marker" \
   ./bin/grx update --check hve >"$fixture_root/release-window-first.out" \
   2>"$fixture_root/release-window-first.err" &
 release_window_pid=$!
 wait_for_file "$release_window_marker"
-printf 'release-window-second\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'release-window-second' >"$HOME/.grok/auth.json"
 release_window_second_status=0
 ./bin/grx update --check hve >"$fixture_root/release-window-second.out" \
   2>"$fixture_root/release-window-second.err" || release_window_second_status=$?
@@ -1239,12 +1297,12 @@ release_window_first_status=0
 wait "$release_window_pid" || release_window_first_status=$?
 [ "$release_window_first_status" -eq 143 ] \
   || fail "release-window first refresh exited $release_window_first_status"
-assert_line 'release-window-second' "$hve_home/auth.json"
+assert_auth_marker 'release-window-second' "$hve_home/auth.json"
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'release-window concurrency left auth debris'
 
 for auth_signal in HUP INT TERM; do
-  printf 'absent-source-%s\n' "$auth_signal" >"$HOME/.grok/auth.json"
+  auth_marker_json "absent-source-$auth_signal" >"$HOME/.grok/auth.json"
   rm -f "$hve_home/auth.json"
   absent_status=0
   GRX_AUTH_TEST_SIGNAL_AFTER_PUBLISH="$auth_signal" \
@@ -1258,8 +1316,8 @@ for auth_signal in HUP INT TERM; do
     || fail "absent AFTER_PUBLISH/$auth_signal left auth debris"
 done
 
-printf 'rotation-source-0\n' >"$HOME/.grok/auth.json"
-printf 'rotation-entry-state\n' >"$hve_home/auth.json"
+auth_marker_json 'rotation-source-0' >"$HOME/.grok/auth.json"
+auth_marker_json 'rotation-entry-state' >"$hve_home/auth.json"
 chmod 0640 "$hve_home/auth.json"
 rotation_inode="$(path_inode "$hve_home/auth.json")"
 real_mv="$(command -v mv)"
@@ -1278,7 +1336,8 @@ case "$first:$last" in
     [ ! -f "$GRX_TEST_ROTATION_COUNT" ] || count="$(cat "$GRX_TEST_ROTATION_COUNT")"
     count=$((count + 1))
     printf '%s\n' "$count" >"$GRX_TEST_ROTATION_COUNT"
-    printf 'rotation-source-%s\n' "$count" >"$GRX_TEST_AUTH_SOURCE"
+    printf '{"grx-test":{"key":"rotation-source-%s","auth_mode":"api_key"}}\n' "$count" \
+      >"$GRX_TEST_AUTH_SOURCE"
     ;;
 esac
 FAKE_MV_ROTATE
@@ -1292,7 +1351,7 @@ GRX_TEST_REAL_MV="$real_mv" GRX_TEST_AUTH_TARGET="$hve_home/auth.json" \
 [ "$rotation_status" -eq 2 ] || fail "rotation exhaustion exited $rotation_status"
 assert_line "grx: source authentication did not stabilize: $HOME/.grok/auth.json" \
   "$fixture_root/rotation-exhaustion.err"
-assert_line 'rotation-entry-state' "$hve_home/auth.json"
+assert_auth_marker 'rotation-entry-state' "$hve_home/auth.json"
 [ "$(path_inode "$hve_home/auth.json")" = "$rotation_inode" ] \
   || fail 'rotation exhaustion did not restore entry inode'
 [ "$(path_mode "$hve_home/auth.json")" = '640' ] \
@@ -1300,7 +1359,7 @@ assert_line 'rotation-entry-state' "$hve_home/auth.json"
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'rotation exhaustion left auth debris'
 
-printf 'rotation-absent-source-0\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'rotation-absent-source-0' >"$HOME/.grok/auth.json"
 rm -f "$hve_home/auth.json" "$fixture_root/rotation-count"
 rotation_absent_status=0
 GRX_TEST_REAL_MV="$real_mv" GRX_TEST_AUTH_TARGET="$hve_home/auth.json" \
@@ -1318,8 +1377,8 @@ assert_line "grx: source authentication did not stabilize: $HOME/.grok/auth.json
   || fail 'absent rotation exhaustion left auth debris'
 rm "$fake_bin/mv"
 
-printf 'fast-path-stable\n' >"$HOME/.grok/auth.json"
-printf 'fast-path-entry-before\n' >"$hve_home/auth.json"
+auth_marker_json 'fast-path-stable' >"$HOME/.grok/auth.json"
+auth_marker_json 'fast-path-entry-before' >"$hve_home/auth.json"
 chmod 0640 "$hve_home/auth.json"
 fast_path_real_cp="$(command -v cp)"
 cat >"$fake_bin/mv" <<'FAKE_MV_FAST_PATH'
@@ -1350,15 +1409,15 @@ GRX_TEST_REAL_MV="$real_mv" GRX_TEST_REAL_CP="$fast_path_real_cp" \
   ./bin/grx update --check hve >"$fixture_root/fast-path.out" \
   2>"$fixture_root/fast-path.err" || fast_path_status=$?
 [ "$fast_path_status" -eq 0 ] || fail "fast-path stabilization exited $fast_path_status"
-assert_line 'fast-path-stable' "$hve_home/auth.json"
+assert_auth_marker 'fast-path-stable' "$hve_home/auth.json"
 [ "$(path_mode "$hve_home/auth.json")" = '600' ] \
   || fail 'fast-path stabilization did not commit target mode'
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'fast-path stabilization left auth debris'
 rm "$fake_bin/mv"
 
-printf 'race-old\n' >"$HOME/.grok/auth.json"
-printf 'race-target-before\n' >"$hve_home/auth.json"
+auth_marker_json 'race-old' >"$HOME/.grok/auth.json"
+auth_marker_json 'race-target-before' >"$hve_home/auth.json"
 chmod 0600 "$HOME/.grok/auth.json" "$hve_home/auth.json"
 real_cp="$(command -v cp)"
 cat >"$fake_bin/cp" <<'FAKE_CP_RACE'
@@ -1404,7 +1463,7 @@ GRX_TEST_REAL_CP="$real_cp" GRX_TEST_RACE_MARKER="$race_marker" \
   >"$fixture_root/auth-race-old.out" 2>"$fixture_root/auth-race-old.err" &
 race_old_pid=$!
 wait_for_file "$race_marker"
-printf 'race-new\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'race-new' >"$HOME/.grok/auth.json"
 GRX_TEST_REAL_CP="$real_cp" GRX_TEST_RACE_MARKER="$race_marker" \
   GRX_TEST_RACE_RELEASE="$race_release" \
   GRX_TEST_REAL_SED="$real_sed" \
@@ -1424,7 +1483,7 @@ race_new_status=0
 wait "$race_new_pid" || race_new_status=$?
 [ "$race_old_status" -eq 0 ] && [ "$race_new_status" -eq 0 ] \
   || fail "concurrent auth refreshes failed: old=$race_old_status new=$race_new_status"
-assert_line 'race-new' "$hve_home/auth.json"
+assert_auth_marker 'race-new' "$hve_home/auth.json"
 cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
   || fail 'concurrent auth refresh returned with stale destination bytes'
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
@@ -1432,8 +1491,8 @@ cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
 [ ! -e "$hve_home/.auth.lock" ] && [ ! -L "$hve_home/.auth.lock" ] \
   || fail 'concurrent auth refresh left its lock'
 
-printf 'handoff-new\n' >"$HOME/.grok/auth.json"
-printf 'handoff-target-before\n' >"$hve_home/auth.json"
+auth_marker_json 'handoff-new' >"$HOME/.grok/auth.json"
+auth_marker_json 'handoff-target-before' >"$hve_home/auth.json"
 chmod 0600 "$HOME/.grok/auth.json" "$hve_home/auth.json"
 handoff_owner_one_marker="$fixture_root/auth-handoff-owner-one"
 handoff_owner_one_release="$fixture_root/auth-handoff-owner-one-release"
@@ -1466,7 +1525,7 @@ wait_for_file "$fixture_root/auth-handoff-lock-captured"
 handoff_owner_one_status=0
 wait "$handoff_owner_one_pid" || handoff_owner_one_status=$?
 
-printf 'handoff-owner-two\n' >"$HOME/.grok/auth.json"
+auth_marker_json 'handoff-owner-two' >"$HOME/.grok/auth.json"
 handoff_owner_two_marker="$fixture_root/auth-handoff-owner-two"
 handoff_owner_two_release="$fixture_root/auth-handoff-owner-two-release"
 GRX_TEST_REAL_CP="$real_cp" \
@@ -1488,7 +1547,7 @@ wait "$handoff_waiter_pid" || handoff_waiter_status=$?
   && [ "$handoff_owner_two_status" -eq 0 ] \
   && [ "$handoff_waiter_status" -eq 0 ] \
   || fail "lock-owner handoff failed: first=$handoff_owner_one_status second=$handoff_owner_two_status waiter=$handoff_waiter_status"
-assert_line 'handoff-owner-two' "$hve_home/auth.json"
+assert_auth_marker 'handoff-owner-two' "$hve_home/auth.json"
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'lock-owner handoff left auth debris'
 [ ! -e "$hve_home/.auth.lock" ] && [ ! -L "$hve_home/.auth.lock" ] \
@@ -1737,7 +1796,7 @@ assert_poisoned_lifecycle_rejected update skills \
 assert_poisoned_lifecycle_rejected update commands \
   "grx: standalone capability directory is not empty: $hve_home/commands"
 
-printf 'profile-auth\n' >"$hve_home/auth.json"
+auth_marker_json 'profile-auth' >"$hve_home/auth.json"
 chmod 0600 "$hve_home/auth.json"
 chmod 0600 "$hve_home/requirements.toml"
 installs_before_repeat="$(jq -s --arg home "$hve_home" '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","install"])] | length' "$fake_grok_log")"
@@ -2108,7 +2167,7 @@ assert_launch_readiness_refusal() {
 
   cp "$expected_policy" "$hve_home/requirements.toml"
   chmod 0644 "$hve_home/requirements.toml"
-  printf 'profile-auth\n' >"$hve_home/auth.json"
+  auth_marker_json 'profile-auth' >"$hve_home/auth.json"
   chmod 0600 "$hve_home/auth.json"
   chmod 0700 "$hve_home"
 
@@ -2157,7 +2216,7 @@ assert_launch_readiness_refusal() {
 
   if [ "$unsafe_kind" = auth-unreadable ]; then
     chmod 0600 "$hve_home/auth.json"
-    assert_line 'profile-auth' "$hve_home/auth.json"
+    assert_auth_marker 'profile-auth' "$hve_home/auth.json"
     chmod 0000 "$hve_home/auth.json"
   fi
 
@@ -2165,7 +2224,7 @@ assert_launch_readiness_refusal() {
   rm -f "$hve_home/auth.json" "$hve_home/requirements.toml" "$outside"
   cp "$expected_policy" "$hve_home/requirements.toml"
   chmod 0644 "$hve_home/requirements.toml"
-  printf 'profile-auth\n' >"$hve_home/auth.json"
+  auth_marker_json 'profile-auth' >"$hve_home/auth.json"
   chmod 0600 "$hve_home/auth.json"
 }
 
@@ -3014,7 +3073,7 @@ done
 symlink_home="$fixture_root/symlink-home"
 escaped_profiles="$fixture_root/escaped-profiles"
 mkdir -p "$symlink_home/.grok" "$escaped_profiles"
-printf 'source-auth\n' >"$symlink_home/.grok/auth.json"
+auth_marker_json 'source-auth' >"$symlink_home/.grok/auth.json"
 chmod 0600 "$symlink_home/.grok/auth.json"
 ln -s "$escaped_profiles" "$symlink_home/.local"
 symlink_home_stderr="$fixture_root/symlink-home.err"

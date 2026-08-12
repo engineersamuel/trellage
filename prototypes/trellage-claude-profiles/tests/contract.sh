@@ -148,6 +148,12 @@ jq -e '
   .args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'bare launch arguments differ'
 
+workspace="$(pwd -P)"
+jq -e --arg workspace "$workspace" \
+  '.projects[$workspace].hasTrustDialogAccepted == true' \
+  "$profile_home/.claude.json" >/dev/null \
+  || fail 'launch did not trust the current workspace'
+
 printf 'preserve\n' >"$profile_home/unrelated-state"
 ANTHROPIC_API_KEY=poison \
 CLAUDE_CODE_OAUTH_TOKEN=poison \

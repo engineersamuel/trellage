@@ -97,6 +97,37 @@ and other lifecycle operations do not receive the proxy variables. Plain `grok`
 and `~/.grok` remain untouched, so direct Grok usage keeps xAI OAuth and its
 `grok-4.5` default.
 
+### Never-authenticate, never-prompt guarantee
+
+`grx` itself never performs xAI authentication and never shows a login or
+device-code prompt. It exclusively routes model traffic through
+`copilot-proxy-rs` for every profile launch, and it will only ever invoke the
+real `grok` binary once it has verified — locally, structurally, without
+contacting xAI — that a usable credential is already in place.
+
+This relies on one, one-time, out-of-band precondition: a genuine
+`grok login` performed once on the host, outside `grx` (see Prerequisites
+above). `grx` never runs this itself, never asks for it, and never repeats
+it. If that host session is missing, unreadable, or has become structurally
+unusable (for example, an expired or rotated session with no viable
+credential), `grx` fails closed with a diagnostic such as:
+
+```
+grx: host Grok session is missing or unusable: /home/you/.grok/auth.json
+grx: run 'grok login' once on the host (outside grx), then retry
+```
+
+or, for a profile whose own copied credential has become unusable:
+
+```
+grx: profile authentication is unusable: hve; run 'grok login' once on the host (outside grx), then retry
+```
+
+In both cases `grx` exits without ever launching Grok, so the real `grok`
+binary can never fall back to its own interactive or device-code login UI.
+This check runs before every launch, setup, doctor, update, and repair
+operation that would otherwise reach Grok.
+
 Setup and repair rewrite managed `requirements.toml` to catalog policy.
 They normalize the profile home to mode `0700` and managed `requirements.toml` to mode `0644`.
 `fail_closed = true` is the first top-level key in the managed policy.
@@ -122,6 +153,9 @@ selected profile home and sets only the three model-routing variables described
 above.
 
 Source authentication must be a readable, regular, non-symlink file; its source mode may be arbitrary.
+Source and profile authentication are also structurally validated (see
+above) before any refresh completes; a present-but-unusable credential fails
+closed instead of being copied and silently handed to Grok.
 Each profile copy is created with mode `0600`.
 Before every selected-profile Grok invocation, `grx` atomically refreshes the profile `auth.json` from `~/.grok/auth.json`.
 This includes launch, setup, doctor, update checks, update, and repair; `grx list`
