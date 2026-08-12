@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:e8f7c245050c25e12c29ee67a84254f2254dbd43a0b397fe06d3c8cb9ee606dd"
+profile_hash = "sha256:c5db2b0e1868474a46b40a86bb20be44e780f4f8f0ad078ffce4b7716c188fae"
 
 [[sources]]
 kind = "skill"
@@ -134,6 +134,419 @@ sha256 = "sha256:9369b69197e5d07e0c56679f9fc346f3539f58537c17f4e804a44612f086dc7
 path = "skills/caveman/SKILL.md"
 sha256 = "sha256:daf9cec496ebd039809d8236f99f17fa1b4beaadf8ce4e2d532d0da51d70afce"
 
+[[sources]]
+kind = "skill"
+repository = "https://github.com/mattpocock/skills.git"
+ref = "v1.2.3"
+select = ["grill-with-docs", "improve-codebase-architecture"]
+commit = "6acc160e4e0cd062dbbbd7a1b26ae92855edf07e"
+integrity = "sha256:ff6567d51e8d167eb60c526af9998b9b9fafd015c18800bcd7aa182d9495cab2"
+
+[[sources.files]]
+path = "skills/deprecated/README.md"
+sha256 = "sha256:e951955161a17638da3abb77bd359be791d05d7744f6774a630b67cb8d47fc93"
+
+[[sources.files]]
+path = "skills/engineering/ask-matt/agents/openai.yaml"
+sha256 = "sha256:bdffbc5a0a99ed1b6ef3253d251d755fd18162b9845972e380007f844b09b05c"
+
+[[sources.files]]
+path = "skills/engineering/ask-matt/PHASE-BOUNDARIES.md"
+sha256 = "sha256:bd0fe4291d25064080a5b880a17d2ebe320e65a63747a2d69a64b04d72a0d03e"
+
+[[sources.files]]
+path = "skills/engineering/ask-matt/SKILL.md"
+sha256 = "sha256:3d38910535f5f01e15bc5fd7f6ca8880d628cd248741f08e6780dd7c1828e832"
+
+[[sources.files]]
+path = "skills/engineering/code-review/agents/openai.yaml"
+sha256 = "sha256:8229ca854e11dc8e6aef2131ee03f31fb1561cf905fab9ccc325180cf3331352"
+
+[[sources.files]]
+path = "skills/engineering/code-review/SKILL.md"
+sha256 = "sha256:9cf46653dd9c710ea1e6c22423caf31a794c88773bc94bdaa23140277f470442"
+
+[[sources.files]]
+path = "skills/engineering/codebase-design/agents/openai.yaml"
+sha256 = "sha256:edebc9e4fcfe102114012575eaa9600b9b5fd08c311664f389c36e7bc717740f"
+
+[[sources.files]]
+path = "skills/engineering/codebase-design/DEEPENING.md"
+sha256 = "sha256:125e6b77413ad2bc7cf7a772bc74336d580a50f9e797db2178ed133d62333d06"
+
+[[sources.files]]
+path = "skills/engineering/codebase-design/DESIGN-IT-TWICE.md"
+sha256 = "sha256:09f9948ea7636a4d3704c5ab909762e876c0b39849eefb14d2e03a398cc9c7e7"
+
+[[sources.files]]
+path = "skills/engineering/codebase-design/SKILL.md"
+sha256 = "sha256:a8d50abac5a4018f60e1d911d4b6f4e36454ca14d6c390c0695a578c7de65dad"
+
+[[sources.files]]
+path = "skills/engineering/diagnosing-bugs/agents/openai.yaml"
+sha256 = "sha256:3e430dbe4334a87597488c060cb3dc3786bb00c9182877d6f5ec41f62490e90b"
+
+[[sources.files]]
+path = "skills/engineering/diagnosing-bugs/scripts/hitl-loop.template.sh"
+sha256 = "sha256:18ae07e1cc49b32c71767e241a6e8de4be74ef21d5e3b7e39034d9c7335f2d80"
+
+[[sources.files]]
+path = "skills/engineering/diagnosing-bugs/SKILL.md"
+sha256 = "sha256:b9339b09ee3980808d8c5a35c7251b891b8b1e0036ec4ca37812b976ebddf6b6"
+
+[[sources.files]]
+path = "skills/engineering/domain-modeling/ADR-FORMAT.md"
+sha256 = "sha256:f1f36cd3f8d3b6474ddd5855da4e233bfc4ae1a1c5024909ccf11871819a41b2"
+
+[[sources.files]]
+path = "skills/engineering/domain-modeling/agents/openai.yaml"
+sha256 = "sha256:f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b"
+
+[[sources.files]]
+path = "skills/engineering/domain-modeling/CONTEXT-FORMAT.md"
+sha256 = "sha256:b8cc318f2a4285b530e908b6bc43901c3c5cd11100362636bbc4216639bef597"
+
+[[sources.files]]
+path = "skills/engineering/domain-modeling/SKILL.md"
+sha256 = "sha256:152e2c97239affb12a60c5f4a7e74ab546a49ae169688c81f4e2ccc42dafa579"
+
+[[sources.files]]
+path = "skills/engineering/grill-with-docs/agents/openai.yaml"
+sha256 = "sha256:94cd0ab161fb468a836349f5ed482ba58ce8e709a05c57ce533d739dbd35cca9"
+
+[[sources.files]]
+path = "skills/engineering/grill-with-docs/SKILL.md"
+sha256 = "sha256:610d091047bcfb9db0f75c057d15538481a721111579fc5ec7f83ad9131a2165"
+
+[[sources.files]]
+path = "skills/engineering/implement/agents/openai.yaml"
+sha256 = "sha256:8970a8596ade0c28ab427f41a4ea242d6bdf6186c59ebf55e1238dbecaab79dc"
+
+[[sources.files]]
+path = "skills/engineering/implement/SKILL.md"
+sha256 = "sha256:6d3fd9e83b8f36e5213854779db49b256a457a7ebb4a503e53fa7dcff696adc3"
+
+[[sources.files]]
+path = "skills/engineering/improve-codebase-architecture/agents/openai.yaml"
+sha256 = "sha256:c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1"
+
+[[sources.files]]
+path = "skills/engineering/improve-codebase-architecture/HTML-REPORT.md"
+sha256 = "sha256:0b0936104158abeef7246ff6cbabefa4dc055f17589f2833f2d93001421910a1"
+
+[[sources.files]]
+path = "skills/engineering/improve-codebase-architecture/SKILL.md"
+sha256 = "sha256:7b76f01b0eefe49a127754c9027a6235a036a21348df5dad988893d8b2f384d6"
+
+[[sources.files]]
+path = "skills/engineering/prototype/agents/openai.yaml"
+sha256 = "sha256:5af65e43ab41a350436697b81e27b7f848d36782043b73c322bb2c9fa9cc55dc"
+
+[[sources.files]]
+path = "skills/engineering/prototype/LOGIC.md"
+sha256 = "sha256:5aef84c2ef514dd2a7268433abd3ee8e47b35f42b60e0b5f7430ec4937f4f06a"
+
+[[sources.files]]
+path = "skills/engineering/prototype/SKILL.md"
+sha256 = "sha256:2579ecf89a7fb7e73345117405c7ba9b9fb5ab22a78ecb08b0ce68b73f0148c2"
+
+[[sources.files]]
+path = "skills/engineering/prototype/UI.md"
+sha256 = "sha256:e2ca04434be54acdee2f5df582ef8038fadf582bbcc99be0d2e27737ff8ed096"
+
+[[sources.files]]
+path = "skills/engineering/README.md"
+sha256 = "sha256:7de5a70b2eecdc9987c7ed5a5688764cb762b6099b25ca833251e632183a4d68"
+
+[[sources.files]]
+path = "skills/engineering/research/agents/openai.yaml"
+sha256 = "sha256:9b4c470d63221c1f68f22df70b83e2f12401b317babe0d1b7b5f24a974474d0d"
+
+[[sources.files]]
+path = "skills/engineering/research/SKILL.md"
+sha256 = "sha256:af378829f015775a3bcd65ff466826722e99359017ae6bae227ca4c9bd14049c"
+
+[[sources.files]]
+path = "skills/engineering/resolving-merge-conflicts/agents/openai.yaml"
+sha256 = "sha256:a1f4f96838f2ed6282eb28abbbf99029cb8fadce552baf53da90a025b8bffddf"
+
+[[sources.files]]
+path = "skills/engineering/resolving-merge-conflicts/SKILL.md"
+sha256 = "sha256:c7c9ba81362a786aac05d2223123bf1bd2f8a99c3243a72882ede9c68bedfb24"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/agents/openai.yaml"
+sha256 = "sha256:9527de0110541c45712319025155aeab8dc7d77c6ed6e5e83271bab1851ab939"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/domain.md"
+sha256 = "sha256:25be404b58798b3cb2d51c93dba2ab052fc3a425632185726ac3f5fcff193b99"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/issue-tracker-github.md"
+sha256 = "sha256:ec8332bb69e7e79e349989e940be481a0c79b552be3acc613e718278bcc5e03d"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/issue-tracker-gitlab.md"
+sha256 = "sha256:16ea4a727803876cbc763e1f6b00992b3b393ba5e0cd394382dccc0f8d83c564"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md"
+sha256 = "sha256:6f38f66f9ffce2fdc26c43608d06b527f60e45c6f43003d0ea77d4e2641c9de3"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/SKILL.md"
+sha256 = "sha256:310fb1a73c0467e617e17d7c41d4a2278b5405c4a27f36d7cd22bb4599aee6bb"
+
+[[sources.files]]
+path = "skills/engineering/setup-matt-pocock-skills/triage-labels.md"
+sha256 = "sha256:4f53c9b40ce2651e3611aa090eaedbd6dbc9b71ef8c5f7e65eac0d8263190d0d"
+
+[[sources.files]]
+path = "skills/engineering/tdd/agents/openai.yaml"
+sha256 = "sha256:ea6f01cf1b8c06a4b0f5b649d74b1b8ce8685e72af1b38d70d877693e092af0b"
+
+[[sources.files]]
+path = "skills/engineering/tdd/mocking.md"
+sha256 = "sha256:3ceb807fdf4a47d6a93d4d9a891e5ba6d362a6247bd08adc451feebfc17361ef"
+
+[[sources.files]]
+path = "skills/engineering/tdd/SKILL.md"
+sha256 = "sha256:5e6b9c16b547113e90afbb946489d1c1384be5c2128f0159bd0bee57251ecf08"
+
+[[sources.files]]
+path = "skills/engineering/tdd/tests.md"
+sha256 = "sha256:859f9e592c188fda4fc7277dd180e4ce9c7a2e13f6efe1f6f29eccc9d28c106a"
+
+[[sources.files]]
+path = "skills/engineering/to-spec/agents/openai.yaml"
+sha256 = "sha256:1c5b4d1e3d8e52287ef19cc2742fdbbfae1914ac75d33af3e4c8174f08cc55bb"
+
+[[sources.files]]
+path = "skills/engineering/to-spec/SKILL.md"
+sha256 = "sha256:5d26479544b08048d3a8f79d937b39bc613a617f026b3fd083bafc1e99a7b811"
+
+[[sources.files]]
+path = "skills/engineering/to-tickets/agents/openai.yaml"
+sha256 = "sha256:21bc6215fffcd7614e9f772bb1760e87cc5fc7dcc707e7d282bc9414267a6090"
+
+[[sources.files]]
+path = "skills/engineering/to-tickets/SKILL.md"
+sha256 = "sha256:5ecdf1d4df8a360ed39df21a2347f97ba177afd449a577da4f6b6ea8e1ebb808"
+
+[[sources.files]]
+path = "skills/engineering/triage/AGENT-BRIEF.md"
+sha256 = "sha256:5b78d347cc53f6bcf7b875106005ccf5315055fa4cf75eb28d41e96ee426d27b"
+
+[[sources.files]]
+path = "skills/engineering/triage/agents/openai.yaml"
+sha256 = "sha256:2e683717720cf456d165d0bb1a68bb600d0b6a8ccb61841c172e50d26f95351c"
+
+[[sources.files]]
+path = "skills/engineering/triage/OUT-OF-SCOPE.md"
+sha256 = "sha256:2526f998fd7ca5e956d3f6f234bcc2431a5971ee769f1148ddc60b92f04d5914"
+
+[[sources.files]]
+path = "skills/engineering/triage/SKILL.md"
+sha256 = "sha256:91e2817ecb688c4df4e2444eab472d1d79d2a0a57abf9f6726967664c460ff2e"
+
+[[sources.files]]
+path = "skills/engineering/wayfinder/agents/openai.yaml"
+sha256 = "sha256:88bc81a11a6d52ac67aeaa76b8b619e387020d47c5133a4dd4927fd15c4ad073"
+
+[[sources.files]]
+path = "skills/engineering/wayfinder/SKILL.md"
+sha256 = "sha256:d33e2141f7c8bbfd137fef0213cbec465820e4680e67da5d0f0815d6742d26c2"
+
+[[sources.files]]
+path = "skills/engineering/wizard/agents/openai.yaml"
+sha256 = "sha256:98f44d682d58e262f160dc59a8befc365e0aa65820dd0261864af26aa8e59d83"
+
+[[sources.files]]
+path = "skills/engineering/wizard/SKILL.md"
+sha256 = "sha256:7fb2b4ba23870ec028c85c6d7ef1ca573413ca7026bd4d410fe0e6d8dc9d1e92"
+
+[[sources.files]]
+path = "skills/engineering/wizard/template.sh"
+sha256 = "sha256:d43dc3f7b6008779ef55e3935bf1df246b5bc194b7f9e1dee3d9340a00922ce6"
+
+[[sources.files]]
+path = "skills/in-progress/claude-handoff/agents/openai.yaml"
+sha256 = "sha256:2308a672978864633286fb9f0792b08657e501426b3f7883fc418d5d2eac5eb0"
+
+[[sources.files]]
+path = "skills/in-progress/claude-handoff/SKILL.md"
+sha256 = "sha256:ef298da8abf31c80e4770e6881cee4973a20d66a3ad74364889c2b388f30184e"
+
+[[sources.files]]
+path = "skills/in-progress/loop-me/agents/openai.yaml"
+sha256 = "sha256:b66fa10079957051be6a812f45e55b67ac394b71d5ba88349962b4c9205802c3"
+
+[[sources.files]]
+path = "skills/in-progress/loop-me/SKILL.md"
+sha256 = "sha256:ad7110ecbd419fc312c3e7c62f496bd346a05462cdf1589b12ff7550fce3202a"
+
+[[sources.files]]
+path = "skills/in-progress/README.md"
+sha256 = "sha256:b67240df51801825053ffdb3c2be5cd1c574d5568f23b2310987f9d69f852975"
+
+[[sources.files]]
+path = "skills/in-progress/setup-ts-deep-modules/agents/openai.yaml"
+sha256 = "sha256:159f680217d50747702620c05fd65734a152185b3219a8ca5ee4630878a354fa"
+
+[[sources.files]]
+path = "skills/in-progress/setup-ts-deep-modules/dependency-cruiser.config.cjs"
+sha256 = "sha256:f5aaa09edcdfdab39970bd94cb6d1d711bf3f175f5e2c21a268c542cbd95eae9"
+
+[[sources.files]]
+path = "skills/in-progress/setup-ts-deep-modules/SKILL.md"
+sha256 = "sha256:2c6e39ccdd77f85337c13a4877c222d47dcd26e31619157af9688798244192d5"
+
+[[sources.files]]
+path = "skills/in-progress/writing-beats/agents/openai.yaml"
+sha256 = "sha256:ddaef01da61d8e3c5f482c4403033c20cf5823f08a1dbf1d4c871670831d01e2"
+
+[[sources.files]]
+path = "skills/in-progress/writing-beats/SKILL.md"
+sha256 = "sha256:668185cfb6eb6a324b8d864404c398e21f3cddbb637b760e39b7784c8c5e4fee"
+
+[[sources.files]]
+path = "skills/in-progress/writing-fragments/agents/openai.yaml"
+sha256 = "sha256:81167f25ee8ea1bb4b4958f12b6702ea972ad31b05e03ec91e39fa4bae0c2641"
+
+[[sources.files]]
+path = "skills/in-progress/writing-fragments/SKILL.md"
+sha256 = "sha256:c61b6608f227b0eee1b832273360cf5088ad68c343c15ec9c06673086662e64e"
+
+[[sources.files]]
+path = "skills/in-progress/writing-shape/agents/openai.yaml"
+sha256 = "sha256:56de45430e23104ff178415f5ecf7821d51a9cfabd8814b1607ebf39da2ef5cd"
+
+[[sources.files]]
+path = "skills/in-progress/writing-shape/SKILL.md"
+sha256 = "sha256:67d34422bbe43cfd523dea9fe7b3ec5260791aed8ea52309b5b85f9d76f32745"
+
+[[sources.files]]
+path = "skills/misc/git-guardrails-claude-code/agents/openai.yaml"
+sha256 = "sha256:d53cd783fc0ac208dec9a4c267989284384785aab6422dccdaed42f9e40243ec"
+
+[[sources.files]]
+path = "skills/misc/git-guardrails-claude-code/scripts/block-dangerous-git.sh"
+sha256 = "sha256:234922b83c0a1737ee7300806c21ac0f389b07aaeb65c2d71ccedafbc5e1ea4b"
+executable = true
+
+[[sources.files]]
+path = "skills/misc/git-guardrails-claude-code/SKILL.md"
+sha256 = "sha256:03c4de7613c712aea336d64c467ea3ed14be2cbd52345925fe949c75c01c29f7"
+
+[[sources.files]]
+path = "skills/misc/migrate-to-shoehorn/agents/openai.yaml"
+sha256 = "sha256:395c2db852e66a199f1cd07f7ed92d66cb6f0787460c5475926f1a5e778b699d"
+
+[[sources.files]]
+path = "skills/misc/migrate-to-shoehorn/SKILL.md"
+sha256 = "sha256:de4da4c11d924fac79c924b2ee3d2db4a5cb98386eb490a599119463d036ae72"
+
+[[sources.files]]
+path = "skills/misc/README.md"
+sha256 = "sha256:cab071ebdf783f7cd555ef97b2b6783636815d3a3c1e582c0ee6aaca4f6892b3"
+
+[[sources.files]]
+path = "skills/misc/scaffold-exercises/agents/openai.yaml"
+sha256 = "sha256:525b33913340bea7947ad2de17f2a7c5fb94be543345fe80ae753b9a44ba601d"
+
+[[sources.files]]
+path = "skills/misc/scaffold-exercises/SKILL.md"
+sha256 = "sha256:75f5c9d771606fb9762f16522efc954df11c324f87148d8ff069bce166257de9"
+
+[[sources.files]]
+path = "skills/misc/setup-pre-commit/agents/openai.yaml"
+sha256 = "sha256:acf41db398c5c43afe504008bb7d615a97b6498b0f1f6c5b2395254c0bfb57d1"
+
+[[sources.files]]
+path = "skills/misc/setup-pre-commit/SKILL.md"
+sha256 = "sha256:872f4037cb7e6e0e340d4175c086550072959925dffc87b160d1a30dc9f63bbd"
+
+[[sources.files]]
+path = "skills/productivity/grill-me/agents/openai.yaml"
+sha256 = "sha256:c061e39c3e0f9d865fb1b97556d485704af2a8a58f4b8221a8917a5c2074a32b"
+
+[[sources.files]]
+path = "skills/productivity/grill-me/SKILL.md"
+sha256 = "sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54"
+
+[[sources.files]]
+path = "skills/productivity/grilling/agents/openai.yaml"
+sha256 = "sha256:1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b"
+
+[[sources.files]]
+path = "skills/productivity/grilling/SKILL.md"
+sha256 = "sha256:fa5c1e5ee76b1c8f1ae56101f52c9e239de75d5c578adc61227b92d10b7e52ef"
+
+[[sources.files]]
+path = "skills/productivity/handoff/agents/openai.yaml"
+sha256 = "sha256:5c479fd562c691851690e8b18c8501045bef0943c10743d636b2fae26add1d28"
+
+[[sources.files]]
+path = "skills/productivity/handoff/SKILL.md"
+sha256 = "sha256:57c9f1f392d7352cdc85b1e39ca49eddc70ce1dc278bd9653fb4f23dfc2560fc"
+
+[[sources.files]]
+path = "skills/productivity/README.md"
+sha256 = "sha256:f50213d4832e9420b6b5b32df07eecc2d663cad7c0083b72274c33a3546d854b"
+
+[[sources.files]]
+path = "skills/productivity/teach/agents/openai.yaml"
+sha256 = "sha256:5856f3ae8aec742f1499c640aecdd5f1d6af5fa210a7c6ec794de8263a6f733f"
+
+[[sources.files]]
+path = "skills/productivity/teach/GLOSSARY-FORMAT.md"
+sha256 = "sha256:d177def491519d97873291f2e860d8f1d60ead78feecb82eee022177958069c6"
+
+[[sources.files]]
+path = "skills/productivity/teach/LEARNING-RECORD-FORMAT.md"
+sha256 = "sha256:855f81017625256584bbf62bd5edb9b0c86605c4cc1139c56acc36b802595d17"
+
+[[sources.files]]
+path = "skills/productivity/teach/MISSION-FORMAT.md"
+sha256 = "sha256:8da6d3ac84eb2eb19f17c260b6acf01c560d3ac7a4501c415eea0e985602f4d7"
+
+[[sources.files]]
+path = "skills/productivity/teach/RESOURCES-FORMAT.md"
+sha256 = "sha256:2bc634a64b0d0daa10904f9222e7aa0d361420dfacabbf092fbe3a72222edc08"
+
+[[sources.files]]
+path = "skills/productivity/teach/SKILL.md"
+sha256 = "sha256:6d2dbe5e03084cf26fef66b535127b36cd1bcbe9478e26b0626029cd51dc2259"
+
+[[sources.files]]
+path = "skills/productivity/to-questionnaire/agents/openai.yaml"
+sha256 = "sha256:9e8a06c38c8842eea8d4922cb9d1ead8e3ace647bab259b943c994a1b4742bc2"
+
+[[sources.files]]
+path = "skills/productivity/to-questionnaire/SKILL.md"
+sha256 = "sha256:8e7f9ed8d7b2e66babf1a54aee9b94319bf38c32619cffe78819df6518ead5fc"
+
+[[sources.files]]
+path = "skills/productivity/wait-what/agents/openai.yaml"
+sha256 = "sha256:3ec661af8fc7063b650518c95ab775bbeabaefce38b89acaf6da2f749168f37e"
+
+[[sources.files]]
+path = "skills/productivity/wait-what/SKILL.md"
+sha256 = "sha256:8923f7df1a0d1b138281658e134caa4bf1c618d2876a2323b19acdfdffebc024"
+
+[[sources.files]]
+path = "skills/productivity/writing-for-agents/agents/openai.yaml"
+sha256 = "sha256:eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b"
+
+[[sources.files]]
+path = "skills/productivity/writing-for-agents/SKILL-MECHANICS.md"
+sha256 = "sha256:b4c54a0aaad3f6eddefde6d06770a0e401fbb8fc6a8f49ce18af816bd144d14d"
+
+[[sources.files]]
+path = "skills/productivity/writing-for-agents/SKILL.md"
+sha256 = "sha256:a842323e664e5af104eac5c97ad22fda929ebeb62d81c501161ac1f6f482db58"
+
 [packages]
 skills_cli_version = "1.5.19"
 skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
@@ -189,4 +602,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:08e9c9d9bc7597e4c03f9d6b33cf79cb2cacdd10c39d207ac2c33e1a061773e5"
+final_digest = "sha256:5deeb1fca8f945f08a986d8728ff637707535e2f96d8267c9c68b2125d7a23f8"

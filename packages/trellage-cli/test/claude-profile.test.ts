@@ -65,6 +65,12 @@ describe("authored Claude Research profile", () => {
         always_on: true,
       }),
       expect.objectContaining({
+        repository: "https://github.com/mattpocock/skills.git",
+        ref: "v1.2.3",
+        select: ["grill-with-docs", "improve-codebase-architecture"],
+        always_on: true,
+      }),
+      expect.objectContaining({
         repository: "https://github.com/mvanhorn/last30days-skill.git",
         ref: "v3.18.4",
         select: ["last30days"],
@@ -139,6 +145,15 @@ describe("authored Claude Research profile", () => {
           select: ["caveman"],
           commit: "c".repeat(40),
           integrity: `sha256:${"d".repeat(64)}`,
+          files: [],
+        },
+        {
+          kind: "skill",
+          repository: "https://github.com/mattpocock/skills.git",
+          ref: "v1.2.3",
+          select: ["grill-with-docs", "improve-codebase-architecture"],
+          commit: "a".repeat(40),
+          integrity: `sha256:${"b".repeat(64)}`,
           files: [],
         },
         {
@@ -228,7 +243,7 @@ describe("authored Claude social media profile", () => {
       adapter: "claude-marketplace",
       marketplace: "social-media-skills",
       plugin_versions: { "social-media-skills": "1.0.0" },
-      commit: "94f72ea2ece388fa30ef49a26fb2e6fd2109e0b1",
+      commit: "69d9488e880cceaf418329dfa64b44b9bf022174",
     })
     expect(lock.sources[pluginOffset]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(17)
     expect(lock.sources[pluginOffset + 1]).toMatchObject({
@@ -317,6 +332,12 @@ describe("authored Claude council profile", () => {
         select: ["caveman"],
         always_on: true,
       }),
+      expect.objectContaining({
+        repository: "https://github.com/mattpocock/skills.git",
+        ref: "v1.2.3",
+        select: ["grill-with-docs", "improve-codebase-architecture"],
+        always_on: true,
+      }),
     ])
     expect(document.profile.plugins).toEqual([
       expect.objectContaining({
@@ -334,11 +355,23 @@ describe("authored Claude council profile", () => {
         select: ["caveman"],
       }),
     ])
-    expect(lock.sources).toHaveLength(3)
-    const skillSource = lock.sources.find(({ kind }) => kind === "skill")
+    expect(lock.sources).toHaveLength(4)
+    const skillSource = lock.sources.find(
+      (candidate) =>
+        candidate.kind === "skill" && candidate.repository === "https://github.com/JuliusBrussee/caveman.git",
+    )
     expect(skillSource).toMatchObject({
       repository: "https://github.com/JuliusBrussee/caveman.git",
       commit: "fcf7663366c217dc8f334a11028de52ed950ceab",
+    })
+    const mattpocockSkillSource = lock.sources.find(
+      (candidate) => candidate.kind === "skill" && candidate.repository === "https://github.com/mattpocock/skills.git",
+    )
+    expect(mattpocockSkillSource).toMatchObject({
+      repository: "https://github.com/mattpocock/skills.git",
+      ref: "v1.2.3",
+      select: ["grill-with-docs", "improve-codebase-architecture"],
+      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
     })
     const councilSource = lock.sources.find(
       (candidate) => candidate.kind === "plugin" && candidate.marketplace === "council-of-high-intelligence",
