@@ -86,6 +86,10 @@ export const parseLaunchCatalog = (source: string): LaunchCatalog => {
     const defaultModel = optionalText(item.defaultModel, `choice ${index} defaultModel`)
     const models = stringArray(item.models, `choice ${index} models`)
     const modelOverrideSupported = item.modelOverrideSupported === true
+    if (item.sandbox !== undefined && typeof item.sandbox !== "boolean") {
+      throw new Error(`choice ${index} sandbox must be a boolean`)
+    }
+    const sandbox = item.sandbox as boolean | undefined
     if (modelOverrideSupported && models.length === 0) {
       throw new Error(`choice ${index} must advertise models when overrides are supported`)
     }
@@ -110,6 +114,7 @@ export const parseLaunchCatalog = (source: string): LaunchCatalog => {
       ...(defaultModel === undefined ? {} : { defaultModel }),
       models,
       modelOverrideSupported,
+      ...(sandbox === undefined ? {} : { sandbox }),
     }
   })
 

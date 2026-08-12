@@ -108,6 +108,10 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "cldx",
       harness: "claude",
+      # cldx runs Claude Code directly on the host with
+      # --dangerously-skip-permissions; no native OS-level sandbox is
+      # enabled today. See docs/native-sandbox-research.md.
+      sandbox: false,
       profiles: [
         .profiles
         | to_entries[]

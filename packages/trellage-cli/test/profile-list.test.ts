@@ -22,7 +22,7 @@ const sample = (
 })
 
 describe("profile list DTOs", () => {
-  it("projects simplified JSON with only name and description", () => {
+  it("projects simplified JSON with name, description, and sandbox", () => {
     const choices = [
       sample({ name: "beta", description: "Beta blurb", value: "/p/beta/profile.toml" }),
       sample({ name: "alpha", description: "Alpha blurb", value: "/p/alpha/profile.toml" }),
@@ -30,8 +30,8 @@ describe("profile list DTOs", () => {
     expect(toSimplifiedList(choices)).toEqual({
       schemaVersion: 1,
       profiles: [
-        { name: "beta", description: "Beta blurb" },
-        { name: "alpha", description: "Alpha blurb" },
+        { name: "beta", description: "Beta blurb", sandbox: true },
+        { name: "alpha", description: "Alpha blurb", sandbox: true },
       ],
     })
   })
@@ -64,6 +64,7 @@ describe("profile list DTOs", () => {
           skills: choice.skills,
           plugins: choice.plugins,
           mcps: choice.mcps,
+          sandbox: true,
         },
       ],
     })

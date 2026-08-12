@@ -8,7 +8,7 @@ host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx`.
 
 - Trellage Sandbox profiles describe reproducible container environments.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
-- Trellage Native profiles isolate agent state but are not containers or security boundaries.
+- Trellage Native profiles isolate agent state but are not containers or security boundaries, **except** `cdx` (Codex) and `grx` (Grok), which enable each harness's native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed, no approval prompts). See `docs/native-sandbox-research.md`.
 - The `trx` router presents Trellage Native profiles. Examples: `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx` launchers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.

@@ -181,6 +181,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cdx"
   and .harness == "codex"
+  and .sandbox == true
   and [.profiles[].name] == ["hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].plugin == "hve-core-all@hve-core"
@@ -374,7 +375,7 @@ export FAKE_CODEX_PROJECT_TRUST_VALUE
 
 case "${FAKE_CODEX_SIGNAL_PARENT:-}" in
   HUP|INT|TERM)
-    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
+    if [ "${1:-}" = '--sandbox' ] \
       && [ "${FAKE_CODEX_APPEND_PROJECT_TRUST:-}" = 1 ]; then
       persist_project_trust
     fi
@@ -488,7 +489,7 @@ case "$*" in
     printf '%s\n' '{"upgraded":true}'
     ;;
   *)
-    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
+    if [ "${1:-}" = '--sandbox' ] \
       && [ "${FAKE_CODEX_APPEND_PROJECT_TRUST:-}" = 1 ]; then
       fake_project_append_count="${FAKE_CODEX_APPEND_PROJECT_TRUST_COUNT:-1}"
       [ "${FAKE_CODEX_APPEND_PROJECT_TRUST_TWICE:-}" != 1 ] \
@@ -568,8 +569,8 @@ case "$*" in
       : >"$FAKE_CODEX_RELEASE_RACE_DIR/child-started"
     fi
     if [ "$profile" = superpowers ] \
-      && [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ]; then
-      case "${4:-}" in
+      && [ "${1:-}" = '--sandbox' ]; then
+      case "${9:-}" in
         debug|--*) ;;
         *)
           if ! git_marketplace_is_materialized; then
@@ -799,13 +800,14 @@ cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
 jq -se --arg codexHome "$hve_home" \
   --arg home "$fixture_root/home" \
   --arg cwd "$original_cwd" '
-    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
+    map(select(.args[0] == "--sandbox")) as $launches |
     ($launches | length) == 1
     and $launches[0].codexHome == $codexHome
     and $launches[0].home == $home
     and $launches[0].cwd == $cwd
     and $launches[0].args == [
-      "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
+      "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+      "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'
@@ -1700,7 +1702,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   || fail 'repair preserved forbidden Superpowers in HVE'
 : >"$fake_state/hve/forbidden-superpowers-direct"
 : >"$fake_state/hve/forbidden-superpowers-renamed"
-launches_before="$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+launches_before="$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")"
 mkdir -p "$fixture_root/home/.codex"
 printf '%s\n' '{"tokens":{"access_token":"contamination-check"}}' \
@@ -1726,7 +1728,7 @@ rm "$hve_home/auth.json"
 [ ! -e "$fake_state/hve/forbidden-superpowers-direct" ] \
   && [ ! -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
   || fail 'contaminated launch preserved forbidden Superpowers variants'
-[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
+[ "$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")" = "$((launches_before + 2))" ] \
   || fail 'self-healed launches did not start the underlying Codex agent'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1904,7 +1906,7 @@ upgrade_failure_profile="$upgrade_failure_home/.local/share/trellage/profiles/co
   || fail 'failed fresh Superpowers materialization added selected plugin before upgrade'
 jq -se '
   any(.[]; .args == ["plugin","marketplace","upgrade","superpowers-marketplace","--json"])
-  and all(.[]; .args[0] != "--dangerously-bypass-approvals-and-sandbox")
+  and all(.[]; .args[0] != "--sandbox")
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'failed fresh Superpowers materialization used a launch fallback'
 : >"$fixture_root/fake-codex.log"
@@ -2752,7 +2754,7 @@ rm "$fake_bin/codex"
 mv "$fake_bin/codex-real" "$fake_bin/codex"
 
 jq -se '
-  all(.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox");
+  all(.[] | select(.args[0] == "--sandbox");
     ((.args | join(" ")) | test("marketplace add|plugin add|marketplace upgrade|plugin remove") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch invoked a forbidden marketplace or plugin mutation'
@@ -2914,7 +2916,7 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers --version \
 assert_isolation_snapshot_unchanged launch-ordinary
 jq -se '
   length == 1
-  and .[0].args == ["--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input","--version"]
+  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
 [ ! -e "$fixture_root/fake-curl.log" ] || fail 'launch invoked curl'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
@@ -3682,7 +3684,7 @@ grep -F -- 'hve' "$fixture_root/native-malformed-host-auth.out" >/dev/null \
 jq -se '
   length == 1
   and .[0].args == ["login","status"]
-  and (map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length) == 0
+  and (map(select(.args[0] == "--sandbox")) | length) == 0
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'malformed host auth invoked a native launch or proxy fallback'
 printf '%s\n' '{"tokens":{"access_token":"native-v1","refresh_token":"native-refresh-v1"}}' \
@@ -3717,7 +3719,8 @@ jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
       home: $home,
       cwd: $cwd,
       args: [
-        "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
+        "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+        "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
         "-c", "model_provider=\"openai\"",
         "-m", "gpt-5.5", "exec", "--json", "hello world"
       ]
@@ -3885,7 +3888,7 @@ assert_native_refresh_failure() {
   [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
     || fail "$label left authentication staging debris"
   jq -se '
-    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length == 0
+    map(select(.args[0] == "--sandbox")) | length == 0
   ' "$fixture_root/fake-codex.log" >/dev/null \
     || fail "$label invoked a native launch or proxy fallback"
 }
@@ -4160,7 +4163,7 @@ assert_isolation_snapshot_unchanged native-target-changed-during-copy
 [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'destination safety failure left authentication staging debris'
 jq -se '
-  map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length == 0
+  map(select(.args[0] == "--sandbox")) | length == 0
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'destination safety failure invoked a native launch or proxy fallback'
 rm "$fake_bin/cp" "$hve_home/auth.json"
@@ -4188,7 +4191,7 @@ assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
 jq -se '
   length == 2
   and .[0].args == ["plugin","list","--json"]
-  and .[1].args == ["--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input","--version"]
+  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input","--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \
@@ -4323,7 +4326,7 @@ assert_install_text '~/.local/share/trellage/profiles/copilot/<profile>/home/' "
 assert_install_text '~/.local/share/trellage/profiles/grok/<profile>/home/' "$readme"
 assert_install_text 'cdx setup --all' "$readme"
 assert_install_text 'cdx --native-auth hve exec "Review this repository"' "$readme"
-assert_install_text '`--dangerously-bypass-approvals-and-sandbox`' "$readme"
+assert_install_text '`--sandbox workspace-write -c' "$readme"
 assert_install_text 'MCP servers are profile-local.' "$readme"
 assert_install_text 'do not require or copy `~/.codex/auth.json`.' "$readme"
 assert_install_text 'only the selected profile' "$readme"

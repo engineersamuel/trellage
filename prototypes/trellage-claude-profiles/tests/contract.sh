@@ -118,6 +118,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cldx"
   and .harness == "claude"
+  and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "anthropics/claude-code"
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'

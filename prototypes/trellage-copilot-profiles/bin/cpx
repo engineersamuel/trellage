@@ -484,6 +484,10 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "cpx",
       harness: "copilot",
+      # Copilot CLI has no native OS-level sandbox (only trust-directory +
+      # tool-approval prompts); real isolation requires Trellage Sandbox
+      # (Docker). See docs/native-sandbox-research.md.
+      sandbox: false,
       profiles: [
         .profiles
         | to_entries

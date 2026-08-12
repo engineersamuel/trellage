@@ -18,6 +18,7 @@ export interface LaunchEntry {
   readonly defaultModel?: string
   readonly models: ReadonlyArray<string>
   readonly modelOverrideSupported: boolean
+  readonly sandbox?: boolean
 }
 
 export interface LauncherState {

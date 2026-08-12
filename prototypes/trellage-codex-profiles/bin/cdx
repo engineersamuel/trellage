@@ -113,6 +113,10 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "cdx",
       harness: "codex",
+      # cdx now enables the Codex native --sandbox workspace-write profile
+      # (network access re-enabled via config override, approvals never
+      # prompted). See docs/native-sandbox-research.md.
+      sandbox: true,
       profiles: [
         .profiles
         | to_entries
@@ -2313,12 +2317,16 @@ run_codex_child() {
   fi
   if [ "$native" = yes ]; then
     env CODEX_HOME="$(profile_home "$profile")" \
-      "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
+      "$codex_executable" --sandbox workspace-write \
+      -c sandbox_workspace_write.network_access=true \
+      --ask-for-approval never \
       --disable default_mode_request_user_input \
       -c 'model_provider="openai"' "$@" <&0 &
   else
     env CODEX_HOME="$(profile_home "$profile")" \
-      "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
+      "$codex_executable" --sandbox workspace-write \
+      -c sandbox_workspace_write.network_access=true \
+      --ask-for-approval never \
       --disable default_mode_request_user_input "$@" <&0 &
   fi
   launch_child_pid=$!

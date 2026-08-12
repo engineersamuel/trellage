@@ -49,6 +49,11 @@ create_native_launcher() {
     standalone_mcps='["docs", {"name":"files","transport":"stdio"}]'
   fi
 
+  local sandbox=false
+  if [[ "$launcher" == cdx || "$launcher" == grx ]]; then
+    sandbox=true
+  fi
+
   mkdir -p "$runtime/bin"
   printf '%s\n' "$marker_value" >"$runtime/$marker"
   if [[ "$launcher" == omp ]]; then
@@ -57,6 +62,7 @@ create_native_launcher() {
   "schemaVersion": 1,
   "launcher": "omp",
   "harness": "oh-my-pi",
+  "sandbox": false,
   "profiles": [
     {
       "name": "copilot",
@@ -83,6 +89,7 @@ EOF
   "schemaVersion": 1,
   "launcher": "$launcher",
   "harness": "$harness",
+  "sandbox": $sandbox,
   "profiles": [
     {
       "name": "${launcher}-p",
@@ -193,7 +200,7 @@ jq -e '
   type == "object"
   and keys == ["profiles", "schemaVersion"]
   and .schemaVersion == 1
-  and ([.profiles[] | keys] | all(. == ["description", "harness", "launcher", "name"]))
+  and ([.profiles[] | keys] | all(. == ["description", "harness", "launcher", "name", "sandbox"]))
   and [.profiles[] | .launcher + "/" + .name] == [
     "cpx/cpx-p",
     "cdx/cdx-p",
@@ -213,6 +220,16 @@ jq -e '
     "oh-my-pi",
     "oh-my-pi",
     "prime"
+  ]
+  and [.profiles[] | .sandbox] == [
+    false,
+    true,
+    false,
+    true,
+    false,
+    false,
+    false,
+    false
   ]
   and all(.profiles[]; .description | type == "string" and length > 0)
 ' "$fixture_root/list.json" >/dev/null \
@@ -271,7 +288,7 @@ selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
-  .description == "Trellage Native runs coding-agent launchers directly on the host with isolated state. Choose a harness/profile for fast startup; native profiles are not security boundaries."
+  .description == "Trellage Native runs coding-agent launchers directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries."
   and (.choices[0]
     | .label == "copilot / cpx-p"
       and (.description | length == 1200)
@@ -282,6 +299,7 @@ jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
       and .plugins == ["cpx-plug"]
       and .skills == []
       and .mcps == ["docs", "files"]
+      and .sandbox == false
       and (.details == "The selected launcher checks readiness before starting.")
       and ([.label,.description,.details,.plugins[],.mcps[]] | all(test("[[:cntrl:]]") | not)))
 ' "$fixture_root/picker-input.json" >/dev/null \
@@ -319,6 +337,12 @@ jq -e '
   and ([.choices[] | select(.id != "omp:local") | .modelOverrideSupported] | all)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not enable model overrides for every launcher except local Qwen'
+jq -e '
+  ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [true])
+  and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
+  and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "prx") | .sandbox] | all(. == false))
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router did not expose accurate per-choice sandbox status'
 [[ ! -e "$inventory_log" ]] \
   || fail 'router read diagnostic inventory before launching the selected profile'
 mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"

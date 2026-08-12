@@ -11,6 +11,7 @@ export interface DetailRow {
     | "Plugins"
     | "Skills"
     | "MCPs"
+    | "Sandbox"
     | "Status"
   readonly text: string
 }
@@ -82,6 +83,7 @@ export const detailRows = (
     ...fieldRows("Plugins", list(entry.plugins), width),
     ...fieldRows("Skills", list(entry.skills), width),
     ...fieldRows("MCPs", list(entry.mcps), width),
+    ...(entry.sandbox === undefined ? [] : fieldRows("Sandbox", entry.sandbox ? "true" : "false", width)),
     ...(entry.details === undefined ? [] : fieldRows("Status", entry.details, width)),
   ]
 }

@@ -137,6 +137,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "jcx"
   and .harness == "jcode"
+  and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "1jehuang/jcode"
   and .profiles[0].description == "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms."

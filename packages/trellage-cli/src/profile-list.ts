@@ -5,6 +5,9 @@ export interface SimplifiedProfileList {
   readonly profiles: ReadonlyArray<{
     readonly name: string
     readonly description: string
+    // Trellage Sandbox profiles always execute inside a locked, built Docker
+    // container, so every entry is implicitly sandboxed regardless of harness.
+    readonly sandbox: true
   }>
 }
 
@@ -17,6 +20,9 @@ export interface FullProfileListEntry {
   readonly skills: ProfileChoice["skills"]
   readonly plugins: ProfileChoice["plugins"]
   readonly mcps: ProfileChoice["mcps"]
+  // Trellage Sandbox profiles always execute inside a locked, built Docker
+  // container, so every entry is implicitly sandboxed regardless of harness.
+  readonly sandbox: true
 }
 
 export interface FullProfileList {
@@ -32,7 +38,7 @@ const singleLine = (value: string): string =>
 
 export const toSimplifiedList = (choices: ReadonlyArray<ProfileChoice>): SimplifiedProfileList => ({
   schemaVersion: 1,
-  profiles: choices.map(({ name, description }) => ({ name, description })),
+  profiles: choices.map(({ name, description }) => ({ name, description, sandbox: true as const })),
 })
 
 export const toFullList = (choices: ReadonlyArray<ProfileChoice>): FullProfileList => ({
@@ -46,6 +52,7 @@ export const toFullList = (choices: ReadonlyArray<ProfileChoice>): FullProfileLi
     skills: choice.skills,
     plugins: choice.plugins,
     mcps: choice.mcps,
+    sandbox: true,
   })),
 })
 
