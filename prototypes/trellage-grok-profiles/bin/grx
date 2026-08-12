@@ -29,6 +29,9 @@ auth_backup=""
 auth_target=""
 auth_transaction_active=""
 update_check_error=""
+# Resolved once so the per-file `file_identity`/`file_mode` probes do not each
+# spawn `uname`.
+host_system_name="$(uname -s 2>/dev/null || :)"
 
 cleanup_auth_assets() {
   case "$auth_stage" in
@@ -405,10 +408,9 @@ auth_file_is_viable() {
 }
 
 file_identity() {
-  local system_name value
+  local value
 
-  system_name="$(uname -s 2>/dev/null)" || return 1
-  case "$system_name" in
+  case "$host_system_name" in
     Darwin) value="$(stat -f '%d:%i' "$1" 2>/dev/null)" || return 1 ;;
     Linux) value="$(stat -c '%d:%i' "$1" 2>/dev/null)" || return 1 ;;
     *) return 1 ;;
@@ -660,11 +662,9 @@ refresh_auth() {
 }
 
 file_mode() {
-  local system_name
   local value
 
-  system_name="$(uname -s 2>/dev/null)" || return 1
-  case "$system_name" in
+  case "$host_system_name" in
     Darwin) value="$(stat -f '%Lp' "$1" 2>/dev/null)" || return 1 ;;
     Linux) value="$(stat -c '%a' "$1" 2>/dev/null)" || return 1 ;;
     *) return 1 ;;
@@ -962,10 +962,6 @@ check_empty_directory() {
 
 profile_home_is_safe() {
   local profile="$1"
-  local canonical_home
-  local canonical_path
-  local path="$HOME"
-  local component
 
   case "$HOME" in
     /) return 1 ;;
@@ -974,24 +970,36 @@ profile_home_is_safe() {
   esac
   [ -d "$HOME" ] && [ ! -L "$HOME" ] \
     || return 1
-  canonical_home="$(cd -P "$HOME" >/dev/null 2>&1 && pwd)" \
-    || return 1
 
-  for component in .local share trellage profiles grok "$profile" home; do
-    path="$path/$component"
-    [ ! -L "$path" ] \
-      || return 1
-    if [ -e "$path" ]; then
-      [ -d "$path" ] \
-        || return 1
-      canonical_path="$(cd -P "$path" >/dev/null 2>&1 && pwd)" \
-        || return 1
-      case "$canonical_path" in
-        "$canonical_home"|"$canonical_home"/*) ;;
-        *) return 1 ;;
-      esac
-    fi
-  done
+  # Canonicalize every component inside one subshell: `cd -P` only mutates the
+  # child, so the walk costs a single fork instead of one per component. This
+  # runs on every safety re-check, so the fork count dominates launcher latency.
+  (
+    canonical_home=''
+    canonical_path=''
+    path="$HOME"
+    component=''
+
+    cd -P "$HOME" >/dev/null 2>&1 || exit 1
+    canonical_home="$PWD"
+
+    for component in .local share trellage profiles grok "$profile" home; do
+      path="$path/$component"
+      [ ! -L "$path" ] \
+        || exit 1
+      if [ -e "$path" ]; then
+        [ -d "$path" ] \
+          || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_home"|"$canonical_home"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+    exit 0
+  )
 }
 
 require_safe_profile_home() {
