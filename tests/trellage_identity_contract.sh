@@ -81,14 +81,16 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-profiles native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile; do
+for target in native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/contract.sh' \
-  "$repo_root/Makefile" || fail 'Makefile Codex profiles target is stale'
+for block in auth-config-launch lifecycle catalog installation; do
+  grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/blocks/'"$block"'.sh' \
+    "$repo_root/Makefile" || fail "Makefile Codex ${block} target is stale"
+done
 grep -Fqx $'\tbash prototypes/trellage-copilot-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Copilot profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-claude-profiles/tests/contract.sh' \
