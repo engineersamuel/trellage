@@ -518,7 +518,18 @@ case "$*" in
     fi
     if [ "$profile" = superpowers ] \
       && [ "${1:-}" = '--sandbox' ]; then
-      case "${9:-}" in
+      # Skip the fixed cdx-injected launch flags (--sandbox <mode>, repeatable
+      # -c <value>, --ask-for-approval <value>, --disable <value>) to find the
+      # first actual user-supplied argument, regardless of how many -c
+      # overrides cdx currently injects ahead of it.
+      launch_action=''
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --sandbox|-c|--ask-for-approval|--disable) shift 2 ;;
+          *) launch_action="$1"; break ;;
+        esac
+      done
+      case "$launch_action" in
         debug|--*) ;;
         *)
           if ! git_marketplace_is_materialized; then
