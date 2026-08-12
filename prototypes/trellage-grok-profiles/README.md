@@ -78,7 +78,7 @@ checks and changes are explicit through `grx update --check` and `grx update`.
 ### Model routing
 
 `grx hve` and `grx superpowers` route model requests through
-`copilot-proxy-rs` at `http://127.0.0.1:8080/v1` and default to `grok-4.5`.
+`copilot-proxy-rs` at `http://127.0.0.1:8080/v1` and default to `grok-4.6`.
 Pass `-m` or `--model` to select another model from the proxy catalog; `grx`
 forwards the option and its value unchanged.
 
@@ -95,7 +95,7 @@ forwarded unchanged.
 Proxy routing applies only to profile launches. Setup, repair, update, doctor,
 and other lifecycle operations do not receive the proxy variables. Plain `grok`
 and `~/.grok` remain untouched, so direct Grok usage keeps xAI OAuth and its
-`grok-4.5` default.
+`grok-4.6` default.
 
 ### Never-authenticate, never-prompt guarantee
 
