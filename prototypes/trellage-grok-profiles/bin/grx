@@ -374,6 +374,36 @@ source_auth_is_readable() {
     && [ -r "$source" ]
 }
 
+# Structural viability check only. grx never contacts xAI itself to
+# validate a session; it only verifies the copied auth.json is non-empty,
+# well-formed JSON and that every principal entry carries the fields grok
+# needs to refresh or use the credential on its own (never grx) without
+# falling back to an interactive or device-code sign-in. This is what lets
+# grx fail closed with a clear message instead of letting grok launch and
+# prompt for xAI login itself.
+auth_file_is_viable() {
+  local auth="$1"
+
+  [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] || return 1
+  require_command jq
+  jq -e '
+    type == "object"
+    and (keys | length) > 0
+    and ([.[]] | all(
+      type == "object"
+      and (.key | type == "string" and length > 0)
+      and (.auth_mode | type == "string" and length > 0)
+      and (
+        (.auth_mode == "api_key")
+        or (
+          (.refresh_token | type == "string" and length > 0)
+          and (.expires_at | type == "string" and length > 0)
+        )
+      )
+    ))
+  ' "$auth" >/dev/null 2>&1
+}
+
 file_identity() {
   local system_name value
 
@@ -519,6 +549,12 @@ refresh_auth() {
     attempts=$((attempts + 1))
     if ! source_auth_is_readable "$source"; then
       printf 'grx: source authentication is missing or unreadable: %s\n' "$source" >&2
+      release_auth_lock || cleanup_auth_assets
+      return 1
+    fi
+    if ! auth_file_is_viable "$source"; then
+      printf 'grx: host Grok session is missing or unusable: %s\n' "$source" >&2
+      printf 'grx: run '\''grok login'\'' once on the host (outside grx), then retry\n' >&2
       release_auth_lock || cleanup_auth_assets
       return 1
     fi
@@ -1153,6 +1189,8 @@ preflight_profile() {
   else
     [ -f "$source_auth" ] && [ ! -L "$source_auth" ] && [ -r "$source_auth" ] \
       || die "source authentication is missing or unreadable: $source_auth"
+    auth_file_is_viable "$source_auth" \
+      || die "host Grok session is missing or unusable: $source_auth; run 'grok login' once on the host (outside grx), then retry"
   fi
 
   if [ -e "$policy" ] || [ -L "$policy" ]; then
@@ -1195,6 +1233,8 @@ doctor_profile() {
     || die "profile authentication is missing or unreadable: $profile"
   [ "$(file_mode "$auth")" = '600' ] \
     || die "profile authentication must have mode 0600: $profile"
+  auth_file_is_viable "$auth" \
+    || die "profile authentication is unusable: $profile; run 'grok login' once on the host (outside grx), then retry"
   jq -e --arg profile "$profile" '.profiles[$profile].standaloneMcps == []' \
     "$catalog" >/dev/null \
     || die "catalog requests unsupported standalone MCPs: $profile"
@@ -1238,7 +1278,8 @@ inventory_profile_files_are_healthy() {
   [ "$(file_mode "$policy")" = '644' ] || return 1
   policy_content | cmp -s - "$policy" || return 1
   [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] || return 1
-  [ "$(file_mode "$auth")" = '600' ]
+  [ "$(file_mode "$auth")" = '600' ] || return 1
+  auth_file_is_viable "$auth"
 }
 
 inventory_profile() {
@@ -1403,6 +1444,8 @@ require_launch_ready() {
     || die "profile authentication is missing or unreadable: $profile"
   [ "$(file_mode "$auth")" = '600' ] \
     || die "profile authentication must have mode 0600: $profile"
+  auth_file_is_viable "$auth" \
+    || die "profile authentication is unusable: $profile; run 'grok login' once on the host (outside grx), then retry"
   inventory="$(validated_plugin_inventory "$profile")" \
     || die "failed to read installed plugin inventory: $profile"
   require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
