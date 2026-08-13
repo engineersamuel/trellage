@@ -242,7 +242,7 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       `mise install --locked ${tool}`,
       `codex_dir=\"$(mise where ${tool})\"`,
       'rm -f "$codex_dir/metadata.json"',
-      `curl --fail --silent --show-error --proto '=https' --tlsv1.2 --output ${shellQuote(codeModeHostArchive)} ${shellQuote(codeModeHostArtifact.url)}`,
+      `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(codeModeHostArchive)} ${shellQuote(codeModeHostArtifact.url)}`,
       `[ "$(wc -c < ${shellQuote(codeModeHostArchive)})" -eq ${codeModeHostArtifact.size} ]`,
       `printf '%s  %s\\n' ${shellQuote(codeModeHostArtifact.integrity.slice("sha256:".length))} ${shellQuote(codeModeHostArchive)} | sha256sum --check --strict -`,
       `rm -rf ${shellQuote(codeModeHostStage)}`,
@@ -353,7 +353,7 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       'import { ensureKernelPython } from "file:///src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js";await ensureKernelPython()'
     return [
       `prime_artifact=${shellQuote(artifact)}`,
-      `curl --fail --silent --show-error --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
+      `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
       `[ "$(wc -c < "$prime_artifact")" -eq ${harness.size} ]`,
       `printf '%s  %s\\n' ${shellQuote(harness.integrity.slice("sha256:".length))} "$prime_artifact" | sha256sum --check --strict -`,
       "rm -f /mise/config.toml",
