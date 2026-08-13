@@ -165,7 +165,7 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers --version \
 assert_isolation_snapshot_unchanged launch-ordinary
 jq -se --arg trustOverride "projects.\"$(CDPATH= cd -P -- . && pwd)\".trust_level=\"trusted\"" '
   length == 1
-  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "-c", $trustOverride, "--version"]
+  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "--dangerously-bypass-hook-trust", "-c", $trustOverride, "--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
 [ ! -e "$fixture_root/fake-curl.log" ] || fail 'launch invoked curl'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
@@ -971,6 +971,7 @@ jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
       args: [
         "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
         "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
+        "--dangerously-bypass-hook-trust",
         "-c", "model_provider=\"openai\"",
         "-c", $trustOverride,
         "-m", "gpt-5.5", "exec", "--json", "hello world"
@@ -1442,7 +1443,7 @@ assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
 jq -se --arg trustOverride "projects.\"$(CDPATH= cd -P -- . && pwd)\".trust_level=\"trusted\"" '
   length == 2
   and .[0].args == ["plugin","list","--json"]
-  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "-c", $trustOverride, "--version"]
+  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "--dangerously-bypass-hook-trust", "-c", $trustOverride, "--version"]
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \

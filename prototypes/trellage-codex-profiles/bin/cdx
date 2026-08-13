@@ -2439,6 +2439,7 @@ run_codex_child() {
       -c sandbox_workspace_write.network_access=true \
       --ask-for-approval never \
       --disable default_mode_request_user_input \
+      --dangerously-bypass-hook-trust \
       -c 'model_provider="openai"' \
       -c "$trust_override" "$@" <&0 &
   else
@@ -2447,6 +2448,7 @@ run_codex_child() {
       -c sandbox_workspace_write.network_access=true \
       --ask-for-approval never \
       --disable default_mode_request_user_input \
+      --dangerously-bypass-hook-trust \
       -c "$trust_override" "$@" <&0 &
   fi
   launch_child_pid=$!

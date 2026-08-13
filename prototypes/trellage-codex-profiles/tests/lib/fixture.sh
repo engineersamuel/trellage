@@ -519,13 +519,15 @@ case "$*" in
     if [ "$profile" = superpowers ] \
       && [ "${1:-}" = '--sandbox' ]; then
       # Skip the fixed cdx-injected launch flags (--sandbox <mode>, repeatable
-      # -c <value>, --ask-for-approval <value>, --disable <value>) to find the
-      # first actual user-supplied argument, regardless of how many -c
-      # overrides cdx currently injects ahead of it.
+      # -c <value>, --ask-for-approval <value>, --disable <value>,
+      # --dangerously-bypass-hook-trust with no value) to find the first
+      # actual user-supplied argument, regardless of how many -c overrides
+      # cdx currently injects ahead of it.
       launch_action=''
       while [ $# -gt 0 ]; do
         case "$1" in
           --sandbox|-c|--ask-for-approval|--disable) shift 2 ;;
+          --dangerously-bypass-hook-trust) shift 1 ;;
           *) launch_action="$1"; break ;;
         esac
       done

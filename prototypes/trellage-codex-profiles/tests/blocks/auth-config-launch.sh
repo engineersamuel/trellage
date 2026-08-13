@@ -263,6 +263,7 @@ jq -se --arg codexHome "$hve_home" \
     and $launches[0].args == [
       "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
       "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
+      "--dangerously-bypass-hook-trust",
       "-c", $trustOverride,
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
