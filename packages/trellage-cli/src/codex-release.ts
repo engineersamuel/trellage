@@ -1,6 +1,6 @@
 import { Data, Effect, Schema } from "effect"
 
-import type { HarnessPackageLock } from "./lock.js"
+import type { ArtifactLock, HarnessPackageLock } from "./lock.js"
 
 export interface CodexReleaseClient {
   readonly release: (selector: string) => Effect.Effect<unknown, unknown>
@@ -64,11 +64,23 @@ export const GitHubCodexReleaseClient: CodexReleaseClient = {
 const assetName = (platform: "linux/arm64" | "linux/amd64"): string =>
   platform === "linux/arm64" ? "codex-aarch64-unknown-linux-musl.tar.gz" : "codex-x86_64-unknown-linux-musl.tar.gz"
 
+export const codeModeHostArtifactName = "codex-code-mode-host"
+
+const codeModeHostAssetName = (platform: "linux/arm64" | "linux/amd64"): string =>
+  platform === "linux/arm64"
+    ? "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+    : "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
+
+export interface CodexReleaseLock {
+  readonly harness: HarnessPackageLock & { readonly kind: "codex" }
+  readonly artifacts: ReadonlyArray<ArtifactLock>
+}
+
 export const resolveCodexRelease = (
   selector: string,
   platform: "linux/arm64" | "linux/amd64",
   client: CodexReleaseClient = GitHubCodexReleaseClient,
-): Effect.Effect<HarnessPackageLock, CodexReleaseError> =>
+): Effect.Effect<CodexReleaseLock, CodexReleaseError> =>
   Effect.gen(function* () {
     if (selector !== "latest" && !exactStableVersion.test(selector)) {
       return yield* Effect.fail(new CodexReleaseError({ message: "Codex release selector is not an exact version" }))
@@ -110,12 +122,41 @@ export const resolveCodexRelease = (
     if (!Number.isSafeInteger(asset.size) || asset.size <= 0) {
       return yield* Effect.fail(new CodexReleaseError({ message: "Codex release asset size is invalid" }))
     }
+    const codeModeHostName = codeModeHostAssetName(platform)
+    const codeModeHostAssets = release.assets.filter((candidate) => candidate.name === codeModeHostName)
+    if (codeModeHostAssets.length !== 1) {
+      return yield* Effect.fail(
+        new CodexReleaseError({ message: "Codex code-mode host asset is missing or ambiguous" }),
+      )
+    }
+    const codeModeHostAsset = codeModeHostAssets[0]!
+    const expectedCodeModeHostUrl = `https://github.com/openai/codex/releases/download/rust-v${version}/${codeModeHostName}`
+    if (codeModeHostAsset.browser_download_url !== expectedCodeModeHostUrl) {
+      return yield* Effect.fail(new CodexReleaseError({ message: "Codex code-mode host asset URL is invalid" }))
+    }
+    if (codeModeHostAsset.digest === undefined || !sha256Digest.test(codeModeHostAsset.digest)) {
+      return yield* Effect.fail(new CodexReleaseError({ message: "Codex code-mode host asset digest is invalid" }))
+    }
+    if (!Number.isSafeInteger(codeModeHostAsset.size) || codeModeHostAsset.size <= 0) {
+      return yield* Effect.fail(new CodexReleaseError({ message: "Codex code-mode host asset size is invalid" }))
+    }
     return {
-      kind: "codex",
-      selector,
-      version,
-      url: expectedUrl,
-      size: asset.size,
-      integrity: asset.digest,
+      harness: {
+        kind: "codex",
+        selector,
+        version,
+        url: expectedUrl,
+        size: asset.size,
+        integrity: asset.digest,
+      },
+      artifacts: [
+        {
+          name: codeModeHostArtifactName,
+          version,
+          url: expectedCodeModeHostUrl,
+          size: codeModeHostAsset.size,
+          integrity: codeModeHostAsset.digest,
+        },
+      ],
     }
   })

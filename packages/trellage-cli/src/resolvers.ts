@@ -65,6 +65,7 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
         if (!version || !integrity) return yield* Effect.fail(`unsupported runtime package: ${name}`)
         runtime.push({ name, version, integrity })
       }
+      const codexRelease = kind === "codex" ? yield* resolveCodexRelease(selector, requestedPlatform) : undefined
       const harness =
         kind === "copilot"
           ? yield* resolveCopilotRelease(selector, requestedPlatform)
@@ -74,14 +75,16 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
               ? yield* resolvePrimeRelease(selector, requestedPlatform)
               : kind === "claude"
                 ? yield* resolveClaudeRelease(selector, requestedPlatform)
-                : yield* resolveCodexRelease(selector, requestedPlatform)
+                : codexRelease!.harness
       const claudeCommonArtifacts = [...arm64ArtifactCatalog.fixedArtifacts]
       const artifacts =
         kind === "claude"
           ? claudeAdapter === "hyperresearch"
             ? [...claudeCommonArtifacts, ...arm64ArtifactCatalog.hyperresearchArtifacts]
             : claudeCommonArtifacts
-          : undefined
+          : kind === "codex"
+            ? codexRelease!.artifacts
+            : undefined
       return {
         harness,
         ...(needsSkillsCli

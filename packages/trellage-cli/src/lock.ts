@@ -386,6 +386,30 @@ const lockSemanticError = (
     } else if (current.packages.python_lock_integrity !== undefined) {
       return "Python dependency lock requires Hyperresearch"
     }
+  } else if (harness.kind === "codex") {
+    if (!hasLegacyPackageProvenance(current)) {
+      const codeModeHostArtifact = (current.packages.artifacts ?? []).find(
+        (artifact) => artifact.name === "codex-code-mode-host",
+      )
+      if (codeModeHostArtifact === undefined) return "required Codex artifact is missing: codex-code-mode-host"
+      if ((current.packages.artifacts ?? []).length !== 1) {
+        return "Codex artifact locks require exactly one artifact: codex-code-mode-host"
+      }
+      if (codeModeHostArtifact.version !== harness.version) {
+        return "Codex code-mode host artifact version does not match harness version"
+      }
+      const codeModeHostAsset =
+        platform === "linux/arm64"
+          ? "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+          : "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
+      const expectedCodeModeHostUrl = `https://github.com/openai/codex/releases/download/rust-v${harness.version}/${codeModeHostAsset}`
+      if (codeModeHostArtifact.url !== expectedCodeModeHostUrl) {
+        return "Codex code-mode host artifact URL is invalid"
+      }
+    }
+    if (current.packages.python_lock_integrity !== undefined) {
+      return "Python dependency lock requires the Claude harness"
+    }
   } else if (current.packages.artifacts !== undefined || current.packages.python_lock_integrity !== undefined) {
     return "Claude artifact locks require the Claude harness"
   }

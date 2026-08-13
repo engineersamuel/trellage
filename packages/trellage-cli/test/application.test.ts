@@ -82,15 +82,26 @@ vi.mock("../src/codex-release.js", async () => {
     resolveCodexRelease: (selector: string) => {
       const version = selector === "latest" ? "0.146.1" : selector
       return EffectModule.succeed({
-        kind: "codex" as const,
-        selector,
-        version,
-        integrity:
-          selector === "latest"
-            ? "sha256:05de65ee7b6bd02038e720cc313941d5ec6794718e4261bd28fd83b93fe34d43"
-            : "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
-        url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
-        size: selector === "latest" ? 105647055 : 101269986,
+        harness: {
+          kind: "codex" as const,
+          selector,
+          version,
+          integrity:
+            selector === "latest"
+              ? "sha256:05de65ee7b6bd02038e720cc313941d5ec6794718e4261bd28fd83b93fe34d43"
+              : "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
+          url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
+          size: selector === "latest" ? 105647055 : 101269986,
+        },
+        artifacts: [
+          {
+            name: "codex-code-mode-host",
+            version,
+            integrity: "sha256:dfd4ff98ea4db30ed078af9c31b6f86e3da4836d0573aa87e225e5a5b54d3c7c",
+            url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz`,
+            size: 17260137,
+          },
+        ],
       })
     },
   }
@@ -527,6 +538,15 @@ const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock
       url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
       size: 101269986,
     },
+    artifacts: [
+      {
+        name: "codex-code-mode-host",
+        version: "0.144.6",
+        integrity: "sha256:dfd4ff98ea4db30ed078af9c31b6f86e3da4836d0573aa87e225e5a5b54d3c7c",
+        url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+        size: 17260137,
+      },
+    ],
     skills_cli_version: "1.5.19",
     skills_cli_integrity:
       "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w==",
@@ -1436,13 +1456,22 @@ select = ["humanizer"]
           url: "https://example.test/codex.tar.gz",
           size: 1024,
         },
+        artifacts: [
+          {
+            name: "codex-code-mode-host",
+            version: "0.144.6",
+            integrity: digest("e"),
+            url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+            size: 17260137,
+          },
+        ],
         skills_cli_version: "1.5.19",
         skills_cli_integrity: "sha512-dGVzdA==",
       },
     }
 
     expect(builderScript(document, lock)).toBe(
-      'mise install --locked http:codex@0.144.6; codex_dir="$(mise where http:codex@0.144.6)"; rm -f "$codex_dir/metadata.json"; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
+      "mise install --locked http:codex@0.144.6; codex_dir=\"$(mise where http:codex@0.144.6)\"; rm -f \"$codex_dir/metadata.json\"; curl --fail --silent --show-error --proto '=https' --tlsv1.2 --output '/src/codex-code-mode-host.tar.gz' 'https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz'; [ \"$(wc -c < '/src/codex-code-mode-host.tar.gz')\" -eq 17260137 ]; printf '%s  %s\\n' 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' '/src/codex-code-mode-host.tar.gz' | sha256sum --check --strict -; rm -rf '/tmp/trellage-codex-code-mode-host'; mkdir -p '/tmp/trellage-codex-code-mode-host'; tar --no-same-owner --no-same-permissions -xzf '/src/codex-code-mode-host.tar.gz' -C '/tmp/trellage-codex-code-mode-host'; [ \"$(find '/tmp/trellage-codex-code-mode-host' -mindepth 1 -maxdepth 1 | wc -l)\" -eq 1 ]; mv '/tmp/trellage-codex-code-mode-host/codex-code-mode-host-aarch64-unknown-linux-musl' \"$codex_dir/codex-code-mode-host\"; chmod 0755 \"$codex_dir/codex-code-mode-host\"; PATH=/src/build-support:$PATH mise oci build --locked --output \"$OUTPUT_DIR\" --tag \"$IMAGE_REF\"",
     )
   })
 
@@ -2029,6 +2058,15 @@ select = ["*"]
           url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
           size: 101269986,
         },
+        artifacts: [
+          {
+            name: "codex-code-mode-host",
+            version: "0.144.6",
+            integrity: digest("c"),
+            url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+            size: 17260137,
+          },
+        ],
         skills_cli_version: "1.5.19",
         skills_cli_integrity: "sha512-dGVzdA==",
         runtime: [

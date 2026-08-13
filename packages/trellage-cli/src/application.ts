@@ -12,6 +12,7 @@ import { resolveGitHubSource } from "./github-cache.js"
 import { parseLock, renderLock } from "./lock-file.js"
 import {
   compileLock,
+  hasLegacyPackageProvenance,
   lockIsReady,
   profileHash,
   requireLocked,
@@ -205,8 +206,53 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
   }
   const tool = `http:${harness.kind}@${harness.version}`
   const build = 'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"'
+  if (harness.kind === "codex" && hasLegacyPackageProvenance(lock)) {
+    // Legacy Codex locks predate the code-mode-host companion binary; install just the CLI.
+    return [
+      `mise install --locked ${tool}`,
+      `codex_dir=\"$(mise where ${tool})\"`,
+      'rm -f "$codex_dir/metadata.json"',
+      build,
+    ].join("; ")
+  }
   if (harness.kind === "codex") {
-    return `mise install --locked ${tool}; codex_dir=\"$(mise where ${tool})\"; rm -f \"$codex_dir/metadata.json\"; ${build}`
+    const artifacts = lock.packages.artifacts ?? []
+    const codeModeHostArtifact = artifacts.find((artifact) => artifact.name === "codex-code-mode-host")
+    if (
+      codeModeHostArtifact === undefined ||
+      artifacts.length !== 1 ||
+      codeModeHostArtifact.version !== harness.version ||
+      !sha256Pattern.test(codeModeHostArtifact.integrity) ||
+      !Number.isSafeInteger(codeModeHostArtifact.size ?? 0) ||
+      (codeModeHostArtifact.size ?? 0) <= 0
+    ) {
+      return impossibleBuilderInput("Codex builder requires an exact locked code-mode host artifact")
+    }
+    const codeModeHostMember =
+      lock.platform === "linux/arm64"
+        ? "codex-code-mode-host-aarch64-unknown-linux-musl"
+        : "codex-code-mode-host-x86_64-unknown-linux-musl"
+    const expectedCodeModeHostUrl = `https://github.com/openai/codex/releases/download/rust-v${harness.version}/${codeModeHostMember}.tar.gz`
+    if (codeModeHostArtifact.url !== expectedCodeModeHostUrl) {
+      return impossibleBuilderInput("Codex builder requires an exact locked code-mode host artifact")
+    }
+    const codeModeHostArchive = "/src/codex-code-mode-host.tar.gz"
+    const codeModeHostStage = "/tmp/trellage-codex-code-mode-host"
+    return [
+      `mise install --locked ${tool}`,
+      `codex_dir=\"$(mise where ${tool})\"`,
+      'rm -f "$codex_dir/metadata.json"',
+      `curl --fail --silent --show-error --proto '=https' --tlsv1.2 --output ${shellQuote(codeModeHostArchive)} ${shellQuote(codeModeHostArtifact.url)}`,
+      `[ "$(wc -c < ${shellQuote(codeModeHostArchive)})" -eq ${codeModeHostArtifact.size} ]`,
+      `printf '%s  %s\\n' ${shellQuote(codeModeHostArtifact.integrity.slice("sha256:".length))} ${shellQuote(codeModeHostArchive)} | sha256sum --check --strict -`,
+      `rm -rf ${shellQuote(codeModeHostStage)}`,
+      `mkdir -p ${shellQuote(codeModeHostStage)}`,
+      `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(codeModeHostArchive)} -C ${shellQuote(codeModeHostStage)}`,
+      `[ "$(find ${shellQuote(codeModeHostStage)} -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]`,
+      `mv ${shellQuote(`${codeModeHostStage}/${codeModeHostMember}`)} \"$codex_dir/codex-code-mode-host\"`,
+      'chmod 0755 "$codex_dir/codex-code-mode-host"',
+      build,
+    ].join("; ")
   }
   if (harness.kind === "claude") {
     const claudeDirectory = `claude_dir="$(mise where ${tool})"`
