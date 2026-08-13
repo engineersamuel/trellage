@@ -411,6 +411,21 @@ auth_file_is_viable() {
   ' "$auth" >/dev/null 2>&1
 }
 
+auth_checks_disabled() {
+  case "${GRX_DISABLE_AUTH_CHECK:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+proxy_auth_stub() {
+  printf '%s\n' '{"grx-proxy":{"key":"trellage-local-proxy","auth_mode":"api_key"}}'
+}
+
 file_identity() {
   local value
 
@@ -553,6 +568,52 @@ refresh_auth() {
 
   while [ "$attempts" -lt 20 ]; do
     attempts=$((attempts + 1))
+    if auth_checks_disabled; then
+      if [ -f "$target" ] && [ ! -L "$target" ] && [ -r "$target" ] \
+        && [ "$(file_mode "$target" 2>/dev/null || printf '%s' '000')" = '600' ] \
+        && auth_file_is_viable "$target"; then
+        commit_auth_transaction
+        release_auth_lock || {
+          printf 'grx: failed to release profile authentication lock\n' >&2
+          return 1
+        }
+        return 0
+      fi
+      auth_stage="$(mktemp "$home/.auth.XXXXXX")" || {
+        printf 'grx: failed to stage profile authentication\n' >&2
+        release_auth_lock || cleanup_auth_assets
+        return 1
+      }
+      chmod 0600 "$auth_stage" || {
+        printf 'grx: failed to secure staged authentication\n' >&2
+        cleanup_auth_assets
+        return 1
+      }
+      proxy_auth_stub >"$auth_stage" || {
+        printf 'grx: failed to write proxy authentication stub\n' >&2
+        cleanup_auth_assets
+        return 1
+      }
+      begin_auth_transaction "$target" || { cleanup_auth_assets; return 1; }
+      rm -f "$target"
+      if ! mv -f "$auth_stage" "$target"; then
+        printf 'grx: failed to publish profile authentication\n' >&2
+        cleanup_auth_assets
+        return 1
+      fi
+      auth_stage=""
+      chmod 0600 "$target" || {
+        printf 'grx: failed to secure profile authentication\n' >&2
+        cleanup_auth_assets
+        return 1
+      }
+      commit_auth_transaction
+      release_auth_lock || {
+        printf 'grx: failed to release profile authentication lock\n' >&2
+        return 1
+      }
+      return 0
+    fi
     if ! source_auth_is_readable "$source"; then
       printf 'grx: source authentication is missing or unreadable: %s\n' "$source" >&2
       release_auth_lock || cleanup_auth_assets
@@ -1193,6 +1254,10 @@ preflight_profile() {
       || die "unsafe profile home: $home"
   fi
 
+  if auth_checks_disabled; then
+    return
+  fi
+
   if [ -e "$auth" ] || [ -L "$auth" ]; then
     [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] \
       || die "profile authentication is missing or unreadable: $profile"
@@ -1241,6 +1306,19 @@ doctor_profile() {
     || die "requirements policy must have mode 0644: $profile"
   policy_content | cmp -s - "$policy" \
     || die "requirements policy does not match: $profile"
+  if auth_checks_disabled; then
+    [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] || return 0
+    [ "$(file_mode "$auth")" = '600' ] || return 0
+    jq -e --arg profile "$profile" '.profiles[$profile].standaloneMcps == []' \
+      "$catalog" >/dev/null \
+      || die "catalog requests unsupported standalone MCPs: $profile"
+    inventory="$(validated_plugin_inventory "$profile")" \
+      || die "failed to read installed plugin inventory: $profile"
+    require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
+    validate_profile_capabilities "$profile" required "$inventory"
+    printf '%s: healthy (plugin %s, version %s)\n' "$profile" "$plugin" "$validated_plugin_version"
+    return
+  fi
   [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] \
     || die "profile authentication is missing or unreadable: $profile"
   [ "$(file_mode "$auth")" = '600' ] \
@@ -1289,6 +1367,11 @@ inventory_profile_files_are_healthy() {
   [ -f "$policy" ] && [ ! -L "$policy" ] || return 1
   [ "$(file_mode "$policy")" = '644' ] || return 1
   policy_content | cmp -s - "$policy" || return 1
+  if auth_checks_disabled; then
+    [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] || return 0
+    [ "$(file_mode "$auth")" = '600' ] || return 0
+    return 0
+  fi
   [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] || return 1
   [ "$(file_mode "$auth")" = '600' ] || return 1
   auth_file_is_viable "$auth"
@@ -1452,6 +1535,13 @@ require_launch_ready() {
     || die "requirements policy must have mode 0644: $profile"
   policy_content | cmp -s - "$policy" \
     || die "requirements policy does not match: $profile"
+  if auth_checks_disabled; then
+    inventory="$(validated_plugin_inventory "$profile")" \
+      || die "failed to read installed plugin inventory: $profile"
+    require_no_forbidden_superpowers_from_inventory "$profile" "$inventory"
+    validate_profile_capabilities "$profile" required "$inventory"
+    return
+  fi
   [ -f "$auth" ] && [ ! -L "$auth" ] && [ -r "$auth" ] \
     || die "profile authentication is missing or unreadable: $profile"
   [ "$(file_mode "$auth")" = '600' ] \
