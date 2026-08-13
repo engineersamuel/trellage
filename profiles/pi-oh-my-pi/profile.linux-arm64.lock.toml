@@ -9,20 +9,20 @@ adapter = "omp-native"
 repository = "https://github.com/can1357/oh-my-pi.git"
 ref = "main"
 select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
-commit = "45e12e5bb758198a920c6070e7e64cb33b21beac"
-integrity = "sha256:4c8aeaf3a7e5ac00844f909fac8a67b31f7b1a0c7a2cdc1aa82ec8683324b6ee"
+commit = "a53e4e790d3939a08708bf0d3c912d0763237a2d"
+integrity = "sha256:e869ee2d2aa924201efe98e2daab8f63ddc02ff0b777bdea39d536999eb85538"
 
 [[sources.files]]
 path = ".omp/skills/semantic-compression/SKILL.md"
-sha256 = "sha256:d71b1d40cac60ff670ea0abf8d0e77435fa3b4edad425976db47e70a20ffaa2d"
+sha256 = "sha256:11e5ee26fccf39d9eab3adcd02899acbb12ab2d2a4fb9a92220580bc34dab701"
 
 [[sources.files]]
 path = ".omp/skills/system-prompts/SKILL.md"
-sha256 = "sha256:c9efc90862748f4a064f66ee41b2851428fcb51fa5f547a905c9fbc03237d211"
+sha256 = "sha256:a81d288bcf2e104ba7159d16832a0d5663e948bdb8d481349cfb22cc121f38ea"
 
 [[sources.files]]
 path = ".omp/skills/system-prompts/small-models.md"
-sha256 = "sha256:aaf89ef493584735d6bdbf4c93d244e432f9ac409aed7091aa618e3bd6c50e68"
+sha256 = "sha256:f3461c65846186e8884d7bc376935377901c003a1b18a4e864b81b42d0fee535"
 
 [[sources.files]]
 path = ".omp/skills/tool-prompt-optimization/scripts/probe-builtin.ts"
@@ -36,7 +36,7 @@ executable = true
 
 [[sources.files]]
 path = ".omp/skills/tool-prompt-optimization/SKILL.md"
-sha256 = "sha256:7bb8bbd6a4b188699998d16e5aaedccab1c43afb4b532c992094d083da368831"
+sha256 = "sha256:1f051cd83e8115a640349b53d23cb0fca90c0004b0a4eda1521fa7c3bd578374"
 
 [[sources]]
 kind = "skill"
@@ -554,10 +554,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "pi"
 selector = "latest"
-version = "17.2.12"
-integrity = "sha256:f176edf8174db252abe1aa6e84df284e1b83b8dd7ef34ac7faf7884a5e172a4c"
-url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.12/omp-linux-arm64"
-size = 154183824
+version = "17.2.15"
+integrity = "sha256:36507ba3d98332f52649d22009ead86f154ab007cb169d68690fa2b0111769ad"
+url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.15/omp-linux-arm64"
+size = 154708112
 
 [[packages.runtime]]
 name = "bash"
@@ -602,4 +602,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:5deeb1fca8f945f08a986d8728ff637707535e2f96d8267c9c68b2125d7a23f8"
+final_digest = "sha256:7d8a9fe50fb367dcb4df6c1da4780de96d5dc6b20a0c2a01e7a0e6ab4849111f"
