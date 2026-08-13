@@ -1842,10 +1842,10 @@ python_lock_integrity = "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.227"
-integrity = "sha256:e998df163821c7c2be66139f0b5411e26928b9bc18326edb95576b7bc94168b3"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.227/claude-linux-arm64.tar.gz"
-size = 92357612
+version = "2.1.229"
+integrity = "sha256:89ba26ba3f622f849115e2f8abcfe326abf1b2b4272523002c8de223d753fa95"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.229/claude-linux-arm64.tar.gz"
+size = 93612101
 
 [[packages.runtime]]
 name = "bash"
@@ -2051,4 +2051,4 @@ size = 52716812
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:d87047cda7916b73f6763e9b66898f1229e304a5edf532204ef34dc28ddb6dc6"
+final_digest = "sha256:14c40400707059c966dee2358b2be72a1fafe37480165789bcda84cb55c4721b"
