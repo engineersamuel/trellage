@@ -160,6 +160,10 @@ const fakeResolvers = (
           ? "codex-aarch64-unknown-linux-musl.tar.gz"
           : "codex-x86_64-unknown-linux-musl.tar.gz"
       const piAsset = request.platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
+      const codeModeHostAsset =
+        request.platform === "linux/arm64"
+          ? "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+          : "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
       return {
         harness: {
           kind: request.kind,
@@ -177,6 +181,19 @@ const fakeResolvers = (
           size: 1024,
         },
         ...(request.needsSkillsCli ? { skills_cli_version: "1.5.19", skills_cli_integrity: "sha512-dGVzdA==" } : {}),
+        ...(request.kind === "codex"
+          ? {
+              artifacts: [
+                {
+                  name: "codex-code-mode-host",
+                  version,
+                  integrity: digest("c"),
+                  url: `https://github.com/openai/codex/releases/download/rust-v${version}/${codeModeHostAsset}`,
+                  size: 1024,
+                },
+              ],
+            }
+          : {}),
         runtime: request.packages.map((name) => ({
           name,
           version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
