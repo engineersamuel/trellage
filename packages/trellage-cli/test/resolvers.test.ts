@@ -115,12 +115,23 @@ vi.mock("../src/codex-release.js", async () => {
       mocks.codexReleaseRequests.push({ selector, platform })
       const version = selector === "latest" ? "0.146.1" : selector
       return EffectModule.succeed({
-        kind: "codex" as const,
-        selector,
-        version,
-        integrity: `sha256:${"d".repeat(64)}`,
-        url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
-        size: 105647055,
+        harness: {
+          kind: "codex" as const,
+          selector,
+          version,
+          integrity: `sha256:${"d".repeat(64)}`,
+          url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
+          size: 105647055,
+        },
+        artifacts: [
+          {
+            name: "codex-code-mode-host",
+            version,
+            integrity: `sha256:${"e".repeat(64)}`,
+            url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz`,
+            size: 17260137,
+          },
+        ],
       })
     },
   }
