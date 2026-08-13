@@ -3,6 +3,29 @@ set -euo pipefail
 
 readonly ownership_value='trellage-router-v1'
 
+# Hand-maintained Herdr-compatibility ledger for native launcher/profile pairs,
+# merged into `trx list --json` as each profile's `herdrCompatibility` field.
+# This is a curated signal (not live-probed): trx cannot detect Herdr-side
+# bugs (agent detection, consent-dialog handling, etc.) automatically, and
+# embedding it here (rather than reading a file at runtime) keeps `trx list`
+# fast and self-contained for the installed launcher, which has no access to
+# this repository's working tree. KEEP THIS IN SYNC with the native entries in
+# docs/herdr-compatibility.json.
+readonly trx_herdr_ledger='[
+  { "launcher": "cldx", "profile": "default", "status": "verified" },
+  { "launcher": "omp", "profile": "copilot", "status": "verified" },
+  { "launcher": "cpx", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
+  { "launcher": "cpx", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrators own repo/worktree; never finished." },
+  { "launcher": "cpx", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
+  { "launcher": "cdx", "profile": "hve", "status": "known-issue", "issue": "B", "notes": "Stuck on an unrecognized Codex hooks-trust consent screen." },
+  { "launcher": "cdx", "profile": "superpowers", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+  { "launcher": "grx", "profile": "hve", "status": "known-issue", "issue": "E", "notes": "\"Agent is outside run scope\" from ScopedHerdr/createHerdrTrellageBackend." },
+  { "launcher": "grx", "profile": "superpowers", "status": "known-issue", "issue": "B", "notes": "Stuck on an unrecognized Grok first-run data-retention consent screen." },
+  { "launcher": "jcx", "profile": "default", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+  { "launcher": "omp", "profile": "local", "status": "known-issue", "issue": "G", "notes": "No local Qwen inference backend is registered with the running copilot-proxy-rs instance; out-of-repo infrastructure provisioning, not a Trellage code defect. driveLoop also masked the real error as an empty submind-answerer response." },
+  { "launcher": "prx", "profile": "default", "status": "known-issue", "issue": "E", "notes": "\"agent_not_ready: not an active named agent\"; pane never reached a ready state." }
+]'
+
 die() {
   printf 'trx: %s\n' "$1" >&2
   exit 1
@@ -13,9 +36,13 @@ usage() {
 Usage:
   trx
   trx list [--json]
+  trx inventory LAUNCHER PROFILE --json
 
 Select an installed native harness/profile interactively, or list available
-profiles. Bare trx opens the launcher.
+profiles. Bare trx opens the launcher. `trx inventory` reports the live
+readiness (healthy/unhealthy/not-setup) of a single profile by delegating to
+that launcher's own `inventory` command; it is not called during `list` or
+interactive selection so those stay fast.
 EOF
 }
 
@@ -233,14 +260,21 @@ build_profile_list() {
     --argjson grxCatalog "$4" \
     --argjson jcxCatalog "$5" \
     --argjson ompCatalog "$6" \
-    --argjson prxCatalog "$7" '
+    --argjson prxCatalog "$7" \
+    --argjson herdrLedger "$trx_herdr_ledger" '
+    def herdrCompatibility($launcher; $name):
+      ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
+      | if $entry == null then { status: "untested" }
+        else ($entry | del(.launcher, .profile))
+        end;
     def profiles($catalog):
       $catalog.profiles[] | {
         launcher: $catalog.launcher,
         harness: $catalog.harness,
         name,
         description,
-        sandbox: $catalog.sandbox
+        sandbox: $catalog.sandbox,
+        herdrCompatibility: herdrCompatibility($catalog.launcher; .name)
       };
     {
       schemaVersion: 1,
@@ -259,6 +293,8 @@ build_profile_list() {
 
 mode=''
 list_json=0
+inventory_launcher=''
+inventory_profile_arg=''
 case "${1-}" in
   -h|--help|help)
     usage
@@ -274,6 +310,14 @@ case "${1-}" in
     else
       die 'list accepts only --json'
     fi
+    ;;
+  inventory)
+    mode='inventory'
+    shift
+    [[ "$#" -eq 3 && "$3" == --json ]] \
+      || die 'inventory requires LAUNCHER PROFILE --json'
+    inventory_launcher="$1"
+    inventory_profile_arg="$2"
     ;;
   -i|--interactive|--interactive=*)
     die '-i and --interactive have been removed; run trx with no arguments'
@@ -326,6 +370,27 @@ grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-pr
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v1)"
 prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1)"
+
+if [[ "$mode" == inventory ]]; then
+  case "$inventory_launcher" in
+    cpx) inventory_executable="$cpx" ;;
+    cdx) inventory_executable="$cdx" ;;
+    cldx) inventory_executable="$cldx" ;;
+    grx) inventory_executable="$grx" ;;
+    jcx) inventory_executable="$jcx" ;;
+    omp) inventory_executable="$omp" ;;
+    prx) inventory_executable="$prx" ;;
+    *) die "unknown launcher: $inventory_launcher" ;;
+  esac
+  output="$("$inventory_executable" inventory "$inventory_profile_arg" --json)" \
+    || die "$inventory_launcher inventory failed for $inventory_profile_arg"
+  jq -e '
+    type == "object"
+    and (.readiness | type == "string" and test("^(healthy|unhealthy|not-setup)$"))
+  ' <<<"$output" >/dev/null || die "invalid inventory output from $inventory_launcher"
+  printf '%s\n' "$output"
+  exit 0
+fi
 
 catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx.XXXXXX")" \
   || die 'cannot create catalog workspace'

@@ -20,6 +20,7 @@ Usage:
   jcx [JCODE_ARGS...]
   jcx default [JCODE_ARGS...]
   jcx list [--json]
+  jcx inventory PROFILE --json
   jcx setup [default]
   jcx doctor [default]
   jcx repair [default]
@@ -428,6 +429,46 @@ doctor_profile() {
   printf 'jcx doctor: OK (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
 }
 
+not_ready_inventory() {
+  local profile="$1"
+  local readiness="$2"
+
+  jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: "jcx",
+    harness: "jcode",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile() {
+  local profile="$1"
+
+  [[ "$profile" == default ]] || die "unknown profile: $profile"
+  if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  if ! (doctor_profile >/dev/null 2>&1); then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+  jq -cn --arg profile "$profile" '{
+    schemaVersion: 1,
+    launcher: "jcx",
+    harness: "jcode",
+    profile: $profile,
+    readiness: "healthy",
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
 launch_jcode() {
   local version binary
 
@@ -463,6 +504,11 @@ case "${1-}" in
     else
       die 'list accepts only --json'
     fi
+    ;;
+  inventory)
+    shift
+    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
     ;;
   setup|doctor|repair)
     command_name="$1"

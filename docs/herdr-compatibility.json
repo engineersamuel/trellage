@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "lastUpdated": "2026-08-12",
+  "description": "Hand-maintained ledger of whether each Trellage profile has been observed to work end-to-end when driven as a Herdr agent (launched, detected, and able to complete a one-line task). This is a curated signal refreshed by manual verification runs, not a live probe: Trellage cannot detect Herdr-side bugs (agent detection, consent-dialog handling, etc.) automatically. Status values: 'verified' (completed an end-to-end round trip), 'known-issue' (observed to fail, see issue/notes), 'untested' (no verification run recorded). See docs/rlm-herdr-handoff.md for the source report and category definitions (A-G).",
+  "entries": [
+    { "kind": "native", "launcher": "cldx", "profile": "default", "harness": "claude", "status": "verified" },
+    { "kind": "native", "launcher": "omp", "profile": "copilot", "harness": "oh-my-pi", "status": "verified" },
+    { "kind": "native", "launcher": "cpx", "profile": "hve", "harness": "copilot", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
+    { "kind": "native", "launcher": "cpx", "profile": "awesome", "harness": "copilot", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrator's own repo/worktree; never finished." },
+    { "kind": "native", "launcher": "cpx", "profile": "superpowers", "harness": "copilot", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
+    { "kind": "native", "launcher": "cdx", "profile": "hve", "harness": "codex", "status": "known-issue", "issue": "B", "notes": "Stuck on an unrecognized Codex hooks-trust consent screen." },
+    { "kind": "native", "launcher": "cdx", "profile": "superpowers", "harness": "codex", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+    { "kind": "native", "launcher": "grx", "profile": "hve", "harness": "grok", "status": "known-issue", "issue": "E", "notes": "\"Agent is outside run scope\" from ScopedHerdr/createHerdrTrellageBackend." },
+    { "kind": "native", "launcher": "grx", "profile": "superpowers", "harness": "grok", "status": "known-issue", "issue": "B", "notes": "Stuck on an unrecognized Grok first-run data-retention consent screen." },
+    { "kind": "native", "launcher": "jcx", "profile": "default", "harness": "jcode", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+    { "kind": "native", "launcher": "omp", "profile": "local", "harness": "oh-my-pi", "status": "known-issue", "issue": "G", "notes": "No local Qwen inference backend is registered with the running copilot-proxy-rs instance; out-of-repo infrastructure provisioning, not a Trellage code defect. driveLoop also masked the real error as an empty submind-answerer response." },
+    { "kind": "native", "launcher": "prx", "profile": "default", "harness": "prime", "status": "known-issue", "issue": "E", "notes": "\"agent_not_ready: not an active named agent\"; pane never reached a ready state." },
+    { "kind": "container", "profile": "claude-research", "status": "verified" },
+    { "kind": "container", "profile": "claude-social-media", "status": "verified" },
+    { "kind": "container", "profile": "copilot-hve", "status": "verified" },
+    { "kind": "container", "profile": "pi-oh-my-pi", "status": "verified" },
+    { "kind": "container", "profile": "claude-blog", "status": "known-issue", "issue": "D", "notes": "Prompt loaded into the composer but never submitted; the documented Enter-nudge did not fire." },
+    { "kind": "container", "profile": "claude-council", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+    { "kind": "container", "profile": "claude-frontend-design", "status": "known-issue", "issue": "D", "notes": "Prompt loaded into the composer but never submitted; the documented Enter-nudge did not fire." },
+    { "kind": "container", "profile": "claude-qwen-local", "status": "known-issue", "issue": "G", "notes": "Prompt submitted fine, but qwen3.6-35b-a3b-local was rejected by copilot-proxy-rs with HTTP 400 model_not_supported -- same root cause as omp/local: no local Qwen backend registered with the proxy. Out-of-repo infrastructure provisioning, not fixable via a Trellage code change without defeating the profile's offline/local purpose." },
+    { "kind": "container", "profile": "codex-superpowers", "status": "untested", "notes": "Fixed: resolveCodexRelease now locks the codex-code-mode-host companion asset alongside codex, and the container build installs and verifies both. Rebuilt image confirmed codex-code-mode-host is present, executable, and on PATH. Awaiting fresh Herdr end-to-end verification." },
+    { "kind": "container", "profile": "prime-agent", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." }
+  ]
+}

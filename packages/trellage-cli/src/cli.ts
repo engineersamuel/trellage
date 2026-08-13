@@ -23,6 +23,8 @@ import {
 import { environmentMetadata } from "./environment.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
 import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
+import { resolveProfilesLocked } from "./profile-readiness.js"
+import { containerHerdrCompatibility, loadHerdrCompatibilityLedger } from "./herdr-compatibility.js"
 import { selectProfilePath } from "./selection.js"
 import { captureDockerTarget, type DockerTarget } from "./docker-target.js"
 import { assertProductionPlatform, type Platform } from "./platform.js"
@@ -233,7 +235,10 @@ const list = Command.make("list", { json, jsonFull }, ({ json: asJson, jsonFull:
       return yield* Console.log(JSON.stringify(toSimplifiedList(choices)))
     }
     if (asJsonFull) {
-      return yield* Console.log(JSON.stringify(toFullList(choices)))
+      const readiness = yield* resolveProfilesLocked(choices)
+      const ledger = yield* loadHerdrCompatibilityLedger(repositoryRoot)
+      const herdrCompatibility = choices.map((choice) => containerHerdrCompatibility(ledger, choice.name))
+      return yield* Console.log(JSON.stringify(toFullList(choices, readiness, herdrCompatibility)))
     }
     const human = formatProfileListHuman(choices)
     if (human.length > 0) {

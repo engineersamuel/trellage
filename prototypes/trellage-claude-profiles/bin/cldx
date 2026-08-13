@@ -20,6 +20,7 @@ Usage:
   cldx [CLAUDE_ARGS...]
   cldx default [CLAUDE_ARGS...]
   cldx list [--json]
+  cldx inventory PROFILE --json
   cldx setup [default]
   cldx doctor [default]
   cldx repair [default]
@@ -329,6 +330,46 @@ doctor_profile() {
   printf 'cldx doctor: OK (%s, %s)\n' "$version" "$model_id"
 }
 
+not_ready_inventory() {
+  local profile="$1"
+  local readiness="$2"
+
+  jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: "cldx",
+    harness: "claude",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile() {
+  local profile="$1"
+
+  [[ "$profile" == default ]] || die "unknown profile: $profile"
+  if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  if ! (doctor_profile >/dev/null 2>&1); then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+  jq -cn --arg profile "$profile" '{
+    schemaVersion: 1,
+    launcher: "cldx",
+    harness: "claude",
+    profile: $profile,
+    readiness: "healthy",
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
 launch_profile() {
   local executable version arg has_model=false
 
@@ -399,6 +440,11 @@ case "${1-}" in
     else
       die 'list accepts only --json'
     fi
+    ;;
+  inventory)
+    shift
+    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
     ;;
   setup|doctor|repair)
     command_name="$1"

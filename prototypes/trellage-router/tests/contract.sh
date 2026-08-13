@@ -200,7 +200,7 @@ jq -e '
   type == "object"
   and keys == ["profiles", "schemaVersion"]
   and .schemaVersion == 1
-  and ([.profiles[] | keys] | all(. == ["description", "harness", "launcher", "name", "sandbox"]))
+  and ([.profiles[] | keys] | all(. == ["description", "harness", "herdrCompatibility", "launcher", "name", "sandbox"]))
   and [.profiles[] | .launcher + "/" + .name] == [
     "cpx/cpx-p",
     "cdx/cdx-p",
@@ -231,6 +231,10 @@ jq -e '
     false,
     false
   ]
+  and all(.profiles[]; .herdrCompatibility.status | . == "untested" or . == "verified" or . == "known-issue")
+  and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .herdrCompatibility) == { status: "verified" }
+  and (.profiles[] | select(.launcher == "omp" and .name == "local") | .herdrCompatibility.status) == "known-issue"
+  and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and all(.profiles[]; .description | type == "string" and length > 0)
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list shape or ordering differs'
@@ -345,6 +349,29 @@ jq -e '
   || fail 'router did not expose accurate per-choice sandbox status'
 [[ ! -e "$inventory_log" ]] \
   || fail 'router read diagnostic inventory before launching the selected profile'
+
+inventory_output="$("$fixture_bin/trx" inventory cpx cpx-p --json)" \
+  || fail 'trx inventory failed for a known launcher/profile'
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cpx"
+  and .profile == "cpx-p"
+  and .readiness == "healthy"
+' <<<"$inventory_output" >/dev/null \
+  || fail 'trx inventory did not return the expected readiness contract'
+
+status=0
+"$fixture_bin/trx" inventory bogus cpx-p --json >"$fixture_root/inventory-bad-launcher.out" \
+  2>"$fixture_root/inventory-bad-launcher.err" || status=$?
+[[ "$status" == 1 ]] || fail "trx inventory for an unknown launcher exited $status instead of 1"
+assert_contains 'unknown launcher: bogus' "$fixture_root/inventory-bad-launcher.err"
+
+status=0
+"$fixture_bin/trx" inventory cpx cpx-p >"$fixture_root/inventory-missing-json.out" \
+  2>"$fixture_root/inventory-missing-json.err" || status=$?
+[[ "$status" == 1 ]] || fail "trx inventory without --json exited $status instead of 1"
+assert_contains 'inventory requires LAUNCHER PROFILE --json' "$fixture_root/inventory-missing-json.err"
+
 mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 python3 - "$argument_log" <<'PY' || fail 'arguments were not forwarded unchanged'
 import pathlib

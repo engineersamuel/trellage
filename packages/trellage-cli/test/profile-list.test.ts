@@ -52,7 +52,7 @@ describe("profile list DTOs", () => {
         },
       ],
     })
-    expect(toFullList([choice])).toEqual({
+    expect(toFullList([choice], [true], [{ status: "verified" }])).toEqual({
       schemaVersion: 1,
       profiles: [
         {
@@ -65,9 +65,18 @@ describe("profile list DTOs", () => {
           plugins: choice.plugins,
           mcps: choice.mcps,
           sandbox: true,
+          locked: true,
+          herdrCompatibility: { status: "verified" },
         },
       ],
     })
+  })
+
+  it("defaults locked to false and herdrCompatibility to untested when not supplied", () => {
+    const choice = sample({ name: "bare", description: "Bare blurb", value: "/p/bare/profile.toml" })
+    const [entry] = toFullList([choice]).profiles
+    expect(entry?.locked).toBe(false)
+    expect(entry?.herdrCompatibility).toEqual({ status: "untested" })
   })
 
   it("formats human list as name-description TSV", () => {
