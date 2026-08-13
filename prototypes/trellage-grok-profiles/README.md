@@ -37,6 +37,13 @@ Each profile has an independent home at
 requirements, sessions, and authentication created for a profile stay in that
 profile home. Authentication is refreshed from the host login before use.
 
+For proxy-only Grok setups that intentionally route all model traffic through
+`copilot-proxy-rs`, set `GRX_DISABLE_AUTH_CHECK=1` before launching `grx`.
+This is an explicit opt-in that skips the host `~/.grok/auth.json` viability
+check and writes a minimal proxy API-key stub into the selected profile's
+`auth.json`. This is meant for trusted local proxy deployments only; the default
+remains secure and still requires a valid host Grok session.
+
 ## Commands
 
 ```sh
