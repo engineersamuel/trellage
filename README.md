@@ -133,6 +133,12 @@ stderr. Outside linked Trellage worktrees, it continues to use its deployed
 source tree. The worktree launcher runs `npm ci` when compiler dependencies are
 missing and rebuilds missing or stale profile compiler output automatically.
 
+The root mise config also installs missing declared tools when an activated shell enters the
+repository. Source-tree `trellage` and `trx` launches schedule the same dependency check in the
+background, so tool detection and the `uvx yt-dlp` cache warm-up do not delay startup. Concurrent
+checks share a PID lock. Diagnostics are written to
+`${XDG_STATE_HOME:-$HOME/.local/state}/trellage/dependency-bootstrap.log`.
+
 `trellage upgrade all` discovers every valid bundled and current-worktree
 profile, applies current-worktree name overrides, and upgrades profiles
 sequentially in name order. Each profile refreshes its declared mutable source

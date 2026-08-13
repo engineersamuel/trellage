@@ -8,6 +8,7 @@ install_root="$runtime_parent/trx"
 command_dir="$local_dir/bin"
 command_path="$command_dir/trx"
 installed_launcher="$install_root/bin/trx"
+installed_dependency_bootstrap="$install_root/lib/bootstrap-development-dependencies.sh"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
 ownership_value='trellage-router-v1'
@@ -40,7 +41,8 @@ require_owned_runtime_contents() {
   while IFS= read -r path; do
     case "$path" in
       "$ownership_marker"|"$install_root/bin"|"$installed_launcher"|\
-      "$install_root/lib"|"$install_root/lib/launcher.mjs"|"$legacy_picker") ;;
+      "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
+      "$installed_dependency_bootstrap"|"$legacy_picker") ;;
       *) refuse "refusing unrelated runtime path: $path" ;;
     esac
   done < <(find "$install_root" -mindepth 1 -maxdepth 2 -print)
@@ -77,7 +79,7 @@ fi
   || refuse "refusing unsafe managed runtime: $install_root/lib"
 [[ -f "$installed_launcher" && ! -L "$installed_launcher" ]] \
   || refuse "refusing unsafe managed launcher: $installed_launcher"
-for path in "$install_root/lib/launcher.mjs" "$legacy_picker"; do
+for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "$legacy_picker"; do
   [[ ! -e "$path" && ! -L "$path" ]] || {
     [[ -f "$path" && ! -L "$path" ]] \
       || refuse "refusing unsafe managed launcher UI: $path"
@@ -94,7 +96,7 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
 fi
 
 rm "$installed_launcher" "$ownership_marker"
-for path in "$install_root/lib/launcher.mjs" "$legacy_picker"; do
+for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "$legacy_picker"; do
   if [[ -e "$path" ]]; then
     rm "$path"
   fi

@@ -253,6 +253,8 @@ case "$mode" in
 esac
 
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+dependency_bootstrap="$prototype_dir/../../scripts/bootstrap-development-dependencies.sh"
+[[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
 compiler="$compiler_package_dir/dist/cli.js"
 compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
