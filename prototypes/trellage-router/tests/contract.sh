@@ -8,6 +8,7 @@ fixture_bin="$fixture_home/.local/bin"
 runtime_parent="$fixture_home/.local/share/trellage"
 argument_log="$fixture_root/arguments.bin"
 inventory_log="$fixture_root/inventory.log"
+real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
 
 cleanup() {
   if [[ "${TRX_KEEP_FIXTURE-}" == 1 ]]; then
@@ -30,7 +31,7 @@ assert_contains() {
 }
 
 mkdir -p "$fixture_home" "$fixture_bin"
-ln -s "$(command -v node)" "$fixture_bin/node"
+ln -s "$real_node" "$fixture_bin/node"
 ln -s "$(command -v jq)" "$fixture_bin/jq"
 ln -s "$(command -v python3)" "$fixture_bin/python3"
 
@@ -176,6 +177,8 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
 [[ -x "$runtime_parent/trx/bin/trx" ]] || fail 'repeat install removed launcher'
 [[ -x "$runtime_parent/trx/lib/launcher.mjs" ]] \
   || fail 'upgrade did not install the Ink launcher'
+[[ -x "$runtime_parent/trx/lib/bootstrap-development-dependencies.sh" ]] \
+  || fail 'upgrade did not install the dependency bootstrap'
 [[ ! -e "$runtime_parent/trx/lib/terminal-picker.mjs" ]] \
   || fail 'upgrade left the legacy terminal picker'
 

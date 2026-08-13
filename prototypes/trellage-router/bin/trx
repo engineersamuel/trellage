@@ -354,6 +354,7 @@ if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
   [[ "$runtime" == "$source_root" ]] \
     || die "trx source runtime differs from TRELLAGE_TRX_SOURCE_ROOT: $runtime"
   picker_path="$runtime/../../packages/trellage-launcher/dist/launcher.mjs"
+  dependency_bootstrap="$runtime/../../scripts/bootstrap-development-dependencies.sh"
 else
   [[ "$runtime" == "$canonical_home/.local/share/trellage/trx" ]] \
     || die "trx is not running from its owned runtime: $runtime"
@@ -361,7 +362,9 @@ else
     || die 'missing trx ownership marker'
   [[ "$(<"$runtime/.managed-by-trellage-router")" == "$ownership_value" ]] \
     || die 'invalid trx ownership marker'
+  dependency_bootstrap="$runtime/lib/bootstrap-development-dependencies.sh"
 fi
+[[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v1)"

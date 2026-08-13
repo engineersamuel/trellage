@@ -2,6 +2,7 @@
 set -euo pipefail
 
 prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-host-test.XXXXXX")"
 test_root="$(cd "$test_root" && pwd -P)"
 trap 'rm -rf -- "$test_root"' EXIT
@@ -24,7 +25,6 @@ ln -s "$prototype_dir/tests/fakes/host-git" "$fake_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
 ln -s "$prototype_dir/tests/fakes/host-env" "$fake_bin/env"
 
-real_node="$(command -v node)"
 default_metadata="$($real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
   "$prototype_dir/../../profiles/codex-superpowers/profile.toml")"
 default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
@@ -1334,7 +1334,7 @@ wait_for_file() {
 test_host_env_scopes_fixture_config_to_its_fake_bin() {
   local decoy_bin="$test_root/host-env-decoy-bin" fixture_config output
   mkdir -p "$decoy_bin"
-  ln -s "$(command -v node)" "$decoy_bin/node"
+  ln -s "$real_node" "$decoy_bin/node"
   rm -f "$fake_bin/.trellage-fixture-env" "$decoy_bin/.trellage-fixture-env"
 
   output="$(FAKE_HOST_ENV_SCOPE_SENTINEL=present \
@@ -2621,9 +2621,8 @@ test_upgrade_delegates_to_effect_cli() {
   local compiler
   local fake_node_bin="$test_root/fake-node-bin"
   local node_log="$test_root/upgrade-node.log"
-  local help_output real_node
+  local help_output
   compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
-  real_node="$(command -v node)"
   help_output="$($real_node "$compiler" --help)"
   grep -Eq -- '- upgrade \[<profile>\]' <<<"$help_output" \
     || fail 'Effect CLI help does not list upgrade'
@@ -2684,9 +2683,8 @@ test_list_delegates_to_effect_cli() {
   local compiler
   local fake_node_bin="$test_root/fake-list-node-bin"
   local node_log="$test_root/list-node.log"
-  local help_output real_node
+  local help_output
   compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
-  real_node="$(command -v node)"
   help_output="$($real_node "$compiler" --help)"
   grep -Eq -- '- list' <<<"$help_output" \
     || fail 'Effect CLI help does not list list'
@@ -2765,6 +2763,7 @@ EOF
     "$fixture_launcher" \
     "$fixture_root/scripts/profile-compiler-fingerprint.sh" \
     "$fake_bin/npm"
+  ln -s "$real_node" "$fake_bin/node"
 
   output="$(FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
     "$fixture_launcher" upgrade all 2>&1)"

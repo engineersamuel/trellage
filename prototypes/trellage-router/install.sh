@@ -9,6 +9,7 @@ install_root="$runtime_parent/trx"
 command_dir="$local_dir/bin"
 command_path="$command_dir/trx"
 installed_launcher="$install_root/bin/trx"
+installed_dependency_bootstrap="$install_root/lib/bootstrap-development-dependencies.sh"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
 ownership_value='trellage-router-v1'
@@ -47,7 +48,11 @@ require_owned_runtime_contents() {
     || [[ ! -e "$install_root/lib" && ! -L "$install_root/lib" ]] \
     || refuse "refusing unsafe managed runtime path: $install_root/lib"
 
-  for path in "$installed_launcher" "$install_root/lib/launcher.mjs" "$legacy_picker"; do
+  for path in \
+    "$installed_launcher" \
+    "$install_root/lib/launcher.mjs" \
+    "$installed_dependency_bootstrap" \
+    "$legacy_picker"; do
     [[ ! -e "$path" && ! -L "$path" ]] || {
       [[ -f "$path" && ! -L "$path" ]] \
         || refuse "refusing unsafe managed runtime path: $path"
@@ -57,7 +62,8 @@ require_owned_runtime_contents() {
   while IFS= read -r path; do
     case "$path" in
       "$ownership_marker"|"$install_root/bin"|"$installed_launcher"|\
-      "$install_root/lib"|"$install_root/lib/launcher.mjs"|"$legacy_picker") ;;
+      "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
+      "$installed_dependency_bootstrap"|"$legacy_picker") ;;
       *) refuse "refusing unrelated runtime path: $path" ;;
     esac
   done < <(find "$install_root" -mindepth 1 -maxdepth 2 -print)
@@ -98,9 +104,13 @@ require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command dire
 
 printf '%s\n' "$ownership_value" >"$ownership_marker"
 launcher_bundle="$source_dir/../../packages/trellage-launcher/dist/launcher.mjs"
+dependency_bootstrap="$source_dir/../../scripts/bootstrap-development-dependencies.sh"
 [[ -f "$launcher_bundle" && ! -L "$launcher_bundle" ]] \
   || refuse "Ink launcher bundle is missing; run npm run build in packages/trellage-launcher"
+[[ -f "$dependency_bootstrap" && -x "$dependency_bootstrap" && ! -L "$dependency_bootstrap" ]] \
+  || refuse "dependency bootstrap is missing or unsafe: $dependency_bootstrap"
 install -m 0755 "$launcher_bundle" "$install_root/lib/launcher.mjs"
+install -m 0755 "$dependency_bootstrap" "$installed_dependency_bootstrap"
 install -m 0755 "$source_dir/bin/trx" "$installed_launcher"
 if [[ -e "$legacy_picker" ]]; then
   rm "$legacy_picker"

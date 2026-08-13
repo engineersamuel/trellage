@@ -1,5 +1,8 @@
 min_version = "2026.6.14"
 
+[settings]
+auto_install = true
+
 [env]
 _.path = "./prototypes/trellage"
 
@@ -25,3 +28,4 @@ run = "./scripts/cleanup-orphaned-trellage-containers.sh --apply"
 
 [tools]
 "github:PrimeIntellect-ai/prime-agent" = "latest"
+uv = "0.12.3"
