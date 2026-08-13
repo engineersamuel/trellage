@@ -254,7 +254,13 @@ describe("CLI identity and failure reporting", () => {
     const full = await runList(["--json-full"])
     const parsed = JSON.parse(full.logs.join("\n")) as {
       schemaVersion: number
-      profiles: Array<{ name: string; path: string; supportedPlatforms: string[] }>
+      profiles: Array<{
+        name: string
+        path: string
+        supportedPlatforms: string[]
+        locked: boolean
+        herdrCompatibility: { status: string }
+      }>
     }
     expect(parsed.schemaVersion).toBe(1)
     expect(parsed.profiles.map((p) => p.name)).toEqual(["alpha", "beta", "gamma"])
@@ -262,6 +268,12 @@ describe("CLI identity and failure reporting", () => {
       path: "/profiles/alpha/profile.toml",
       supportedPlatforms: ["linux/arm64"],
     })
+    // These fixture profiles have no real file on disk, so readiness cannot
+    // be determined and must degrade to false rather than failing `list`.
+    expect(parsed.profiles.every((p) => p.locked === false)).toBe(true)
+    // None of these fixture names appear in docs/herdr-compatibility.json,
+    // so the ledger lookup must default to "untested" rather than failing.
+    expect(parsed.profiles.every((p) => p.herdrCompatibility.status === "untested")).toBe(true)
   })
 
   it("rejects combining --json and --json-full", async () => {

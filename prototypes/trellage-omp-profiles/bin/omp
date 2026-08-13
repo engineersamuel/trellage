@@ -21,6 +21,7 @@ Usage:
   omp local [OMP_ARGS...]
   omp copilot [OMP_ARGS...]
   omp list [--json]
+  omp inventory PROFILE --json
   omp setup [local|copilot|--all]
   omp doctor [local|copilot]
   omp repair [local|copilot]
@@ -603,6 +604,48 @@ doctor_profile() {
   fi
 }
 
+not_ready_inventory() {
+  local profile="$1"
+  local readiness="$2"
+
+  jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: "omp",
+    harness: "oh-my-pi",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile() {
+  local requested="$1"
+
+  jq -e --arg profile "$requested" '.profiles[$profile] != null' "$catalog" \
+    >/dev/null || die "unknown profile: $requested"
+  select_profile "$requested"
+  if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
+    not_ready_inventory "$requested" not-setup
+    return
+  fi
+  if ! (doctor_profile >/dev/null 2>&1); then
+    not_ready_inventory "$requested" unhealthy
+    return
+  fi
+  jq -cn --arg profile "$requested" '{
+    schemaVersion: 1,
+    launcher: "omp",
+    harness: "oh-my-pi",
+    profile: $profile,
+    readiness: "healthy",
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
 launch_omp() {
   local version binary token
 
@@ -655,6 +698,11 @@ case "$command_name" in
     else
       die 'list accepts only --json'
     fi
+    ;;
+  inventory)
+    shift
+    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
     ;;
   setup)
     shift

@@ -24,6 +24,7 @@ Usage:
   prx [PRIME_ARGS...]
   prx default [PRIME_ARGS...]
   prx list [--json]
+  prx inventory PROFILE --json
   prx setup [default]
   prx doctor [default]
   prx repair [default]
@@ -849,6 +850,46 @@ doctor_profile() {
   printf 'prx doctor: OK (%s, %s)\n' "$version" "$model_id"
 }
 
+not_ready_inventory() {
+  local profile="$1"
+  local readiness="$2"
+
+  jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: "prx",
+    harness: "prime",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile() {
+  local profile="$1"
+
+  [[ "$profile" == default ]] || die "unknown profile: $profile"
+  if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  if ! (doctor_profile >/dev/null 2>&1); then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+  jq -cn --arg profile "$profile" '{
+    schemaVersion: 1,
+    launcher: "prx",
+    harness: "prime",
+    profile: $profile,
+    readiness: "healthy",
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
 launch_prime() {
   local version cli selected_model="$model_id"
   local -a prime_args=() command_args
@@ -921,6 +962,11 @@ case "${1-}" in
     else
       die 'list accepts only --json'
     fi
+    ;;
+  inventory)
+    shift
+    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
     ;;
   setup|doctor|repair)
     command_name="$1"
