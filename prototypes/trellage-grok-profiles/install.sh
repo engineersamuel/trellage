@@ -535,13 +535,4 @@ fi
 
 publication_completed=true
 publication_active=false
-memory_installer="$source_dir/../trellage-memory/install-deja.sh"
-if [ "${TRELLAGE_MEMORY:-deja}" != off ]; then
-  [ -f "$memory_installer" ] && [ ! -L "$memory_installer" ] && [ -x "$memory_installer" ] \
-    || refuse "missing common Deja installer: $memory_installer"
-  memory_home="$(CDPATH= cd -P -- "$home" && pwd -P)" \
-    || refuse "cannot resolve common Deja home: $home"
-  HOME="$memory_home" "$memory_installer" >/dev/null \
-    || refuse 'could not install the common Deja runtime'
-fi
 printf 'Installed grx at %s\n' "$command_path"

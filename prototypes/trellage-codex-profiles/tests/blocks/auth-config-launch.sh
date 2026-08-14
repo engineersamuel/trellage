@@ -9,7 +9,6 @@ set -o pipefail
 blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 . "$blocks_dir/../lib/fixture.sh"
 . "$blocks_dir/../lib/profiles.sh"
-. "$root/../../tests/deja_native_fixture.sh"
 
 
 validate_adapter "$adapter" || fail 'adapter contract failed'
@@ -281,40 +280,6 @@ assert_early_status 37 proxy-launch-child-status env HOME="$fixture_root/home" \
   FAKE_CODEX_EXIT_STATUS=37 "$fixture_launcher" hve --version
 cmp -s "$proxy_config_before" "$hve_home/config.toml" \
   || fail 'failed proxy child did not restore exact prelaunch config bytes'
-
-deja_native_prepare_install "$fixture_root/home" \
-  || fail 'could not prepare fake Deja runtime'
-export FAKE_DEJA_LOG="$fixture_root/deja.log"
-deja_native_install_fake_helper "$fixture_root/home" "$FAKE_DEJA_LOG"
-deja_native_install_ambient_helper "$fake_bin" "$FAKE_DEJA_LOG"
-HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  DEJA_RECALL=unsafe \
-  "$fixture_launcher" hve --version || fail 'Deja lifecycle launch failed'
-expected_deja_log="$(printf '%s\n' \
-  "prepare home=$hve_home real=$fixture_root/home memory=deja recall=safe" \
-  "finalize home=$hve_home real=$fixture_root/home memory=deja recall=safe")"
-[ "$(<"$FAKE_DEJA_LOG")" = "$expected_deja_log" ] \
-  || fail 'Deja lifecycle order or isolated home differs'
-if grep -Fx 'ambient helper used' "$FAKE_DEJA_LOG" >/dev/null; then
-  fail 'launch used an ambient Deja helper'
-fi
-status=0
-HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_DEJA_PREPARE_STATUS=71 FAKE_DEJA_FINALIZE_STATUS=72 \
-  FAKE_CODEX_EXIT_STATUS=37 "$fixture_launcher" hve --version \
-  >"$fixture_root/deja-failure.out" 2>&1 || status=$?
-[ "$status" -eq 37 ] || fail "Deja failure changed harness status to $status"
-grep -F 'Deja prepare failed' "$fixture_root/deja-failure.out" >/dev/null \
-  || fail 'prepare failure was not warning-only'
-grep -F 'Deja finalize failed' "$fixture_root/deja-failure.out" >/dev/null \
-  || fail 'finalize failure was not warning-only'
-: >"$FAKE_DEJA_LOG"
-HOME="$fixture_root/home" PATH="$fake_bin:$PATH" TRELLAGE_MEMORY=off \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  "$fixture_launcher" hve --version || fail 'off-mode launch failed'
-[ ! -s "$FAKE_DEJA_LOG" ] || fail 'off mode used the Deja helper'
 
 proxy_config_with_separator="$fixture_root/proxy-launch-config-with-separator.toml"
 awk -v marker='# trellage-managed-codex-provider-end' '

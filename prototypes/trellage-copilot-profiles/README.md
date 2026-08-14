@@ -25,9 +25,6 @@ under `~/.local/share/trellage/cpx`. Install and uninstall refuse unrelated or
 symlinked runtime roots and unrelated commands. `./uninstall.sh` removes only
 owned command and runtime files; profile homes and their sessions, permissions,
 and authentication state remain.
-Installation refreshes the shared OS-user Deja runtime unless
-`TRELLAGE_MEMORY=off` is set. Uninstall retains that shared runtime and its
-local data so other native launchers continue to work.
 
 Profile homes use this layout:
 

@@ -41,12 +41,9 @@ them.
 
 ```sh
 trx
-trx --no-memory
 trx --model gpt-5.6-terra
 trx list
 trx list --json
-trx memory status
-trx memory sync
 ```
 
 From the repository root, run the current worktree router without replacing the
@@ -54,11 +51,8 @@ installed `trx`:
 
 ```sh
 mise run trx
-mise run trx -- --no-memory
 mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
-mise run trx -- memory status
-mise run trx -- memory sync
 ```
 
 `trx list` prints one `launcher/profile` and catalog description per line.
@@ -74,29 +68,6 @@ that support overrides. `H` launches the selection in a new Herdr pane when
 available. Escape or Ctrl-C cancels with status 130. Remaining arguments are
 forwarded unchanged after the selected launcher profile. `trx` never runs setup,
 update, or repair.
-
-`trx --no-memory` disables Deja only for the selected interactive launch. The
-router removes this option before it builds picker arguments or starts the
-launcher. It sets `TRELLAGE_MEMORY=off` for the selected launcher, including
-Herdr-pane launches.
-
-`trx memory status` reports the content-free Deja state for every catalog
-profile in fixed launcher and catalog order. `trx memory sync` runs Deja
-`prepare` then `finalize` for each profile in that same serial order. Each
-profile has one result line. The summary reports all successes, failures, and
-memory-off profiles; status exits nonzero for an unavailable profile and sync
-exits nonzero when any profile fails. These commands use only the owned helper at
-`~/.local/share/trellage/deja/deja-memory`; they do not search `PATH` for Deja.
-They force `DEJA_RECALL=safe`.
-
-Deja is enabled by default. Its shared runtime is global only to this OS user
-account; every selected launcher still uses its isolated profile home and index.
-`sync` does not call a model. Redacted exchange batches can still contain
-sensitive prose, so treat the owner-readable local exchange as sensitive data.
-`TRELLAGE_MEMORY=off` disables all Deja work; `--no-memory` is the
-per-interactive-launch form. See [the Deja memory policy](../../docs/deja-memory.md)
-for local-only forget and tombstones, v1 retention limits, and Deja SSH
-multi-machine sync. `trx` adds no mount and no Weavekit transport.
 
 `trx` fails closed if a launcher is absent, does not resolve to its owned
 runtime, or has an invalid catalog. The selected native launcher performs its
@@ -140,8 +111,7 @@ section “Package feeds on Microsoft-managed devices”.
 ```
 
 Uninstall removes only the owned `trx` runtime and its exact command symlink.
-Native launcher runtimes, all profile homes, the shared Deja runtime, and all
-Deja state are preserved. Removing `trx` must not break direct launcher use.
+Native launcher runtimes and all profile homes are preserved.
 
 ## Test
 

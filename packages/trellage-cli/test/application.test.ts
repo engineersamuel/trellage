@@ -371,7 +371,6 @@ const copilotLock = (profile_hash: string): ProfileLock => ({
     },
   ],
   packages: {
-    deja: arm64ArtifactCatalog.deja,
     harness: {
       kind: "copilot",
       selector: "latest",
@@ -421,7 +420,6 @@ const piLock = (profile_hash: string): ProfileLock => ({
   profile_hash,
   sources: [],
   packages: {
-    deja: arm64ArtifactCatalog.deja,
     harness: {
       kind: "pi",
       selector: "latest",
@@ -470,7 +468,6 @@ const primeLock = (profile_hash: string): ProfileLock => ({
   profile_hash,
   sources: [],
   packages: {
-    deja: arm64ArtifactCatalog.deja,
     harness: {
       kind: "prime",
       selector: "latest",
@@ -533,7 +530,6 @@ const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock
     },
   ],
   packages: {
-    deja: arm64ArtifactCatalog.deja,
     harness: {
       kind: "codex",
       selector: "0.144.6",
@@ -1374,7 +1370,6 @@ select = ["humanizer"]
         },
       ],
       packages: {
-        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "claude",
           selector: "2.1.218",
@@ -1435,9 +1430,6 @@ select = ["humanizer"]
     expect(script).not.toMatch(
       /login|\/Users\/|\.copilot|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|secret|profile-injection|latest/,
     )
-    expect(script).toContain("deja_archive='/src/deja-vu_0.17.0_linux_arm64.tar.gz'")
-    expect(script).toContain("tar --no-same-owner --no-same-permissions")
-    expect(script).toContain("'/src/deja/linux_arm64/deja'")
   })
 
   it("retains the locked Codex install, metadata removal, and OCI build sequence", async () => {
@@ -1478,27 +1470,17 @@ select = ["humanizer"]
       },
     }
 
-    const script = builderScript(document, lock)
-    expect(script).toContain(
-      'mise install --locked http:codex@0.144.6; codex_dir="$(mise where http:codex@0.144.6)"; rm -f "$codex_dir/metadata.json"',
+    expect(builderScript(document, lock)).toBe(
+      "mise install --locked http:codex@0.144.6; codex_dir=\"$(mise where http:codex@0.144.6)\"; rm -f \"$codex_dir/metadata.json\"; curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output '/src/codex-code-mode-host.tar.gz' 'https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz'; [ \"$(wc -c < '/src/codex-code-mode-host.tar.gz')\" -eq 17260137 ]; printf '%s  %s\\n' 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' '/src/codex-code-mode-host.tar.gz' | sha256sum --check --strict -; rm -rf '/tmp/trellage-codex-code-mode-host'; mkdir -p '/tmp/trellage-codex-code-mode-host'; tar --no-same-owner --no-same-permissions -xzf '/src/codex-code-mode-host.tar.gz' -C '/tmp/trellage-codex-code-mode-host'; [ \"$(find '/tmp/trellage-codex-code-mode-host' -mindepth 1 -maxdepth 1 | wc -l)\" -eq 1 ]; mv '/tmp/trellage-codex-code-mode-host/codex-code-mode-host-aarch64-unknown-linux-musl' \"$codex_dir/codex-code-mode-host\"; chmod 0755 \"$codex_dir/codex-code-mode-host\"; PATH=/src/build-support:$PATH mise oci build --locked --output \"$OUTPUT_DIR\" --tag \"$IMAGE_REF\"",
     )
-    expect(script).toContain(
-      "mv '/tmp/trellage-codex-code-mode-host/codex-code-mode-host-aarch64-unknown-linux-musl' \"$codex_dir/codex-code-mode-host\"",
-    )
-    expect(script).toContain(
-      "curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output '/src/codex-code-mode-host.tar.gz' 'https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz'",
-    )
-    expect(script).toContain("install -m 0755 '/src/.deja-stage/deja' '/src/deja/linux_arm64/deja'")
   })
 
   it("installs the exact locked Pi executable before the OCI build", async () => {
     const document = await Effect.runPromise(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
 
-    const script = builderScript(document, piLock(profileHash(document)))
-    expect(script).toContain(
-      'mise install --locked http:pi@17.2.6; pi_dir="$(mise where http:pi@17.2.6)"; rm -f "$pi_dir/metadata.json"',
+    expect(builderScript(document, piLock(profileHash(document)))).toBe(
+      'mise install --locked http:pi@17.2.6; pi_dir="$(mise where http:pi@17.2.6)"; rm -f "$pi_dir/metadata.json"; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     )
-    expect(script).toContain("install -m 0755 '/src/.deja-stage/deja' '/src/deja/linux_arm64/deja'")
   })
 
   it("verifies and installs only the exact locked Prime tarball before the OCI build", async () => {
@@ -1636,13 +1618,7 @@ exit "$FINALIZER_STATUS"
           : options.nodeMode === "non-executable"
             ? nonExecutableNode
             : fakeNode
-      const managedDeja = script.slice(
-        script.indexOf("deja_archive="),
-        script.indexOf(
-          'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
-        ),
-      )
-      const executableScript = script.replace(managedDeja, "").replaceAll("/mise/installs/node/24.18.0/bin/node", node)
+      const executableScript = script.replaceAll("/mise/installs/node/24.18.0/bin/node", node)
       const result = await execFilePromise("/bin/sh", ["-ceu", executableScript], {
         env: {
           PATH: `${bin}:/usr/bin:/bin`,
@@ -1803,13 +1779,6 @@ codex_integrity = "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1
 codex_url = "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz"
 codex_size = 101269986
 
-[packages.deja]
-name = "deja"
-version = "0.17.0"
-integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"
-url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"
-size = 4364290
-
 [[packages.runtime]]
 name = "bash"
 version = "5.2.15-2+b13"
@@ -1946,7 +1915,6 @@ select = ["hve-core"]
         },
       ],
       packages: {
-        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "copilot",
           selector: "latest",
@@ -2082,7 +2050,6 @@ select = ["*"]
         },
       ],
       packages: {
-        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "codex",
           selector: "0.144.6",

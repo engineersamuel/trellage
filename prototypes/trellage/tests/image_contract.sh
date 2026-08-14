@@ -6,36 +6,18 @@ repo_root="$(cd "$prototype_dir/../.." && pwd)"
 profile="${1:-$repo_root/profiles/codex-superpowers/profile.toml}"
 profile="$(cd "$(dirname "$profile")" && pwd)/$(basename "$profile")"
 compiler="$repo_root/packages/trellage-cli/dist/cli.js"
-static_fixture_root=
 
 fail() {
   printf 'Trellage image contract: FAIL: %s\n' "$1" >&2
   exit 1
 }
 
-compiler_command() {
-  if [[ "${STATIC_ONLY:-0}" == 1 ]]; then
-    FAKE_DOCKER_LOG="$static_fixture_root/docker.log" \
-      PATH="$static_fixture_root/bin:$PATH" node "$compiler" "$@"
-  else
-    node "$compiler" "$@"
-  fi
-}
-
 for required_file in "$profile" "$compiler"; do
   [[ -f "$required_file" ]] || fail "missing required file: $required_file"
 done
 
-if [[ "${STATIC_ONLY:-0}" == 1 ]]; then
-  static_fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-image-contract.XXXXXX")"
-  trap 'rm -rf -- "$static_fixture_root"' EXIT
-  mkdir -p "$static_fixture_root/bin"
-  ln -s "$prototype_dir/tests/fakes/host-docker" "$static_fixture_root/bin/docker"
-  : >"$static_fixture_root/docker.log"
-fi
-
-compiler_command validate "$profile" >/dev/null
-metadata="$(compiler_command metadata "$profile")"
+node "$compiler" validate "$profile" >/dev/null
+metadata="$(node "$compiler" metadata "$profile")"
 profile_name="$(jq -er '.profile_name' <<<"$metadata")"
 profile_hash="$(jq -er '.profile_hash' <<<"$metadata")"
 harness_kind="$(jq -er '.harness_kind' <<<"$metadata")"
@@ -112,7 +94,7 @@ lock_has_caveman() {
     function complete() {
       return repository == "https://github.com/JuliusBrussee/caveman.git" \
         && ref == "v1.10.0" && select == "select = [\"caveman\"]" \
-        && commit ~ /^[0-9a-f]+$/ && length(commit) == 40
+        && commit ~ /^[0-9a-f]{40}$/
     }
     /^\[\[sources\]\]$/ {
       if (in_source && complete()) found = 1
@@ -303,7 +285,6 @@ jq -e \
     and .[0].Config.Labels["dev.trellage.prototype"] == "trellage"
     and .[0].Config.Labels["dev.trellage.profile"] == $name
     and .[0].Config.Labels["dev.trellage.profile.hash"] == $hash
-    and .[0].Config.Labels["dev.trellage.deja.version"] == "0.17.0"
     and (.[0].Config.Env | any(. == "HOME=/home/agent"))
     and (.[0].Config.Env | all(test("(?i)(token|secret|password|api[_-]?key)=") | not))
     and (if $kind == "copilot" then
@@ -346,114 +327,6 @@ jq -e \
     end)
   ' <<<"$image_config" >/dev/null \
   || fail 'image config violates exact labels, user, shell, home, version, or secret contract'
-
-docker run --rm \
-  --network none \
-  --read-only \
-  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
-  --tmpfs /home/agent:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
-  --entrypoint bash \
-  "$IMAGE_REF" -ceu '
-    test -x /usr/local/bin/deja-memory
-    test -x /usr/local/lib/trellage/deja/0.17.0/linux_arm64/deja
-    test "$(stat -c "%u:%g:%a" /usr/local/lib/trellage/deja/0.17.0/linux_arm64/deja)" = 10001:10001:755
-    test "$(TRELLAGE_MEMORY_INSTALL_ROOT_DEFAULT=/usr/local/lib/trellage/deja \
-      /usr/local/bin/deja-memory status)" = "memory: enabled; exchange: absent; binary: ready"
-  ' || fail 'Deja memory helper or fixed managed binary layout is unavailable'
-
-run_deja_tmpfs_bridge_contract() {
-  local nonce container volume import_bridge export_bridge payload
-
-  nonce="${BASHPID:-$$}-${RANDOM}"
-  container="trellage-deja-bridge-${nonce}"
-  volume="trellage-deja-bridge-${nonce}"
-  import_bridge="/home/agent/.trellage-deja-bridge-${nonce}-import"
-  export_bridge="/home/agent/.trellage-deja-bridge-${nonce}-export"
-  cleanup_deja_tmpfs_bridge_contract() {
-    docker container rm --force "$container" >/dev/null 2>&1 || true
-    docker volume rm "$volume" >/dev/null 2>&1 || true
-  }
-
-  docker volume create "$volume" >/dev/null || fail 'cannot create the no-model Deja bridge state volume'
-  if ! docker container create \
-    --name "$container" \
-    --read-only \
-    --network none \
-    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001 \
-    --mount "type=volume,src=$volume,dst=/home/agent" \
-    --entrypoint bash \
-    "$IMAGE_REF" -ceu 'while :; do sleep 3600; done' >/dev/null; then
-    cleanup_deja_tmpfs_bridge_contract
-    fail 'cannot create the no-model Deja bridge container'
-  fi
-  if ! docker container start "$container" >/dev/null \
-    || ! docker container exec --user 0:0 "$container" /bin/bash -ceu '
-      bridge="$1"
-      test -d /home/agent && test ! -L /home/agent
-      umask 077
-      mkdir -m 700 -- "$bridge"
-      chown 10001:10001 "$bridge"
-      test "$(stat -c "%u:%g:%a" "$bridge")" = 10001:10001:700
-    ' -- "$import_bridge" >/dev/null \
-    || ! python3 -c '
-import io
-import sys
-import tarfile
-
-payload = b"{\"tmpfs_bridge\":true}\n"
-with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
-    entry = tarfile.TarInfo("deja-sync-bridge.jsonl")
-    entry.mode = 0o600
-    entry.size = len(payload)
-    archive.addfile(entry, io.BytesIO(payload))
-' | docker cp - "${container}:${import_bridge}/" >/dev/null \
-    || ! docker container exec --user 0:0 "$container" /bin/bash -ceu '
-      bridge="$1"
-      stage=/tmp/trellage-deja-bridge-contract
-      test -d "$bridge" && test ! -L "$bridge"
-      test -f "$bridge/deja-sync-bridge.jsonl" && test ! -L "$bridge/deja-sync-bridge.jsonl"
-      install -d -m 700 -o 10001 -g 10001 "$stage"
-      chown 10001:10001 "$bridge/deja-sync-bridge.jsonl"
-      chmod 600 "$bridge/deja-sync-bridge.jsonl"
-      mv -- "$bridge/deja-sync-bridge.jsonl" "$stage/deja-sync-bridge.jsonl"
-      test -f "$stage/deja-sync-bridge.jsonl"
-      /usr/local/lib/trellage/deja/0.17.0/linux_arm64/deja --help >/dev/null
-    ' -- "$import_bridge" >/dev/null \
-    || ! docker container exec --user 0:0 "$container" /bin/bash -ceu '
-      bridge="$1"
-      stage=/tmp/trellage-deja-bridge-contract
-      umask 077
-      mkdir -m 700 -- "$bridge"
-      chown 10001:10001 "$bridge"
-      test -d "$bridge" && test ! -L "$bridge"
-      mv -- "$stage/deja-sync-bridge.jsonl" "$bridge/deja-sync-bridge.jsonl"
-      chown 10001:10001 "$bridge/deja-sync-bridge.jsonl"
-      chmod 600 "$bridge/deja-sync-bridge.jsonl"
-    ' -- "$export_bridge" >/dev/null; then
-    cleanup_deja_tmpfs_bridge_contract
-    fail 'the no-model Deja bridge could not move data through noexec tmpfs'
-  fi
-  if ! payload="$(docker cp "${container}:${export_bridge}/." - \
-    | tar -xOf - deja-sync-bridge.jsonl)" \
-    || [[ "$payload" != '{"tmpfs_bridge":true}' ]] \
-    || ! docker container exec --user 0:0 "$container" /bin/bash -ceu '
-      import_bridge="$1"
-      export_bridge="$2"
-      rm -rf -- "$import_bridge" "$export_bridge" /tmp/trellage-deja-bridge-contract
-      test ! -e "$import_bridge" && test ! -L "$import_bridge"
-      test ! -e "$export_bridge" && test ! -L "$export_bridge"
-    ' -- "$import_bridge" "$export_bridge" >/dev/null; then
-    cleanup_deja_tmpfs_bridge_contract
-    fail 'the no-model Deja bridge did not export or clean up safely'
-  fi
-  cleanup_deja_tmpfs_bridge_contract
-}
-
-if [[ "${DEJA_TMPFS_BRIDGE_CONTRACT:-0}" == 1 ]]; then
-  run_deja_tmpfs_bridge_contract
-  printf 'Trellage image contract: PASS: no-model Deja tmpfs bridge\n'
-  [[ "${DEJA_TMPFS_BRIDGE_ONLY:-0}" != 1 ]] || exit 0
-fi
 
 inspect_and_history="$(printf '%s\n' "$image_config"; docker history --no-trunc --format '{{.CreatedBy}} {{.Comment}}' "$IMAGE_REF")"
 ! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|claude|pi|prime)-entry|(^|[/[:space:]])harness-(codex|copilot|claude|pi|prime)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
@@ -683,8 +556,6 @@ else
         executing-plans \
         finishing-a-development-branch \
         full-stack-orchestration__full-stack-feature \
-        grill-with-docs \
-        improve-codebase-architecture \
         receiving-code-review \
         requesting-code-review \
         subagent-driven-development \

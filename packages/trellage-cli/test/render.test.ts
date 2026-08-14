@@ -198,13 +198,6 @@ const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
   profile_hash: `sha256:${"a".repeat(64)}`,
   sources: [],
   packages: {
-    deja: {
-      name: "deja",
-      version: "0.17.0",
-      integrity: "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1",
-      url: "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz",
-      size: 4364290,
-    },
     harness:
       kind === "codex"
         ? {
@@ -256,13 +249,6 @@ const primeLock: ProfileLock = {
   profile_hash: `sha256:${"a".repeat(64)}`,
   sources: [],
   packages: {
-    deja: {
-      name: "deja",
-      version: "0.17.0",
-      integrity: "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1",
-      url: "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz",
-      size: 4364290,
-    },
     harness: {
       kind: "prime",
       selector: "latest",
@@ -313,13 +299,7 @@ rename_exe = "copilot"`)
       .toContain('"/usr/local/bin/trellage-copilot-entry" = { source = "runtime-copilot-entry.sh", mode = "copy" }')
     expect.soft(rendered).toContain('"dev.trellage.harness.kind" = "copilot"')
     expect.soft(rendered).toContain('"dev.trellage.copilot.version" = "1.0.75"')
-    expect.soft(rendered).toContain('"dev.trellage.deja.version" = "0.17.0"')
     expect.soft(rendered).toContain(`"dev.trellage.runtime.hash" = "${copilotRuntime.hash}"`)
-    expect
-      .soft(rendered)
-      .toContain(
-        '"/usr/local/lib/trellage/deja/0.17.0/linux_arm64/deja" = { source = "deja/linux_arm64/deja", mode = "copy" }',
-      )
     const runtimeEntry = copilotRuntime.files.find((file) => file.role === "runtime-copilot-entry")!
     expect
       .soft(rendered)
@@ -457,47 +437,6 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('TRELLAGE_CLAUDE_RUNTIME_MODE = "native-plugin"')
     expect(rendered).toContain('"/usr/local/share/trellage/claude-seed"')
     expect(rendered).not.toMatch(/hyperresearch|playwright|chromium|obscura|PYTHONPATH/)
-  })
-
-  it("renders an opt-in Deja helper beside the fixed managed binary", async () => {
-    const helper = path.join(runtimeRoot, "deja-memory")
-    await writeFile(helper, "#!/bin/sh\nexit 0\n")
-    const runtime = await Effect.runPromise(
-      createRuntimeSupportSnapshot("codex", { ...runtimePaths, dejaMemory: helper }),
-    )
-
-    const rendered = renderMiseConfig(profile, lock("codex"), {
-      baseReference: "docker.io/library/node@sha256:base",
-      imageTag: "trellage-profile-golden:locked",
-      runtimeSupport: runtime,
-    })
-
-    expect(rendered).toContain('"/usr/local/bin/deja-memory" = { source = "deja-memory", mode = "copy" }')
-    expect(rendered).toContain(
-      '"/usr/local/lib/trellage/deja/0.17.0/linux_arm64/deja" = { source = "deja/linux_arm64/deja", mode = "copy" }',
-    )
-  })
-
-  it("rejects a non-canonical Deja artifact before rendering", () => {
-    const exactLock = lock("codex")
-
-    expect(() =>
-      renderMiseConfig(
-        profile,
-        {
-          ...exactLock,
-          packages: {
-            ...exactLock.packages,
-            deja: { ...exactLock.packages.deja!, version: "0.17.1" },
-          },
-        },
-        {
-          baseReference: "docker.io/library/node@sha256:base",
-          imageTag: "trellage-profile-golden:locked",
-          runtimeSupport: codexRuntime,
-        },
-      ),
-    ).toThrow(/exact managed Deja artifact/)
   })
 
   it("renders locked mise OCI input", () => {

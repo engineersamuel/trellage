@@ -119,30 +119,6 @@ for argument in "$@"; do
   esac
 done
 
-memory_mode="${TRELLAGE_MEMORY:-deja}"
-case "$memory_mode" in
-  deja|off) ;;
-  *) fail "unsupported TRELLAGE_MEMORY value: $memory_mode" ;;
-esac
-memory_option_seen=false
-memory_filtered_arguments=()
-for argument in "$@"; do
-  case "$argument" in
-    --no-memory)
-      [[ "$memory_option_seen" == false ]] || fail '--no-memory may be specified only once'
-      memory_option_seen=true
-      memory_mode=off
-      ;;
-    *) memory_filtered_arguments+=("$argument") ;;
-  esac
-done
-if [[ "${#memory_filtered_arguments[@]}" -eq 0 ]]; then
-  set --
-else
-  set -- "${memory_filtered_arguments[@]}"
-fi
-export TRELLAGE_MEMORY="$memory_mode"
-
 
 mode=new
 compiler_mode=false
@@ -255,13 +231,6 @@ if [[ "$compiler_mode" == false ]]; then
           [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
         fi
         mode="$1"
-        ;;
-      memory)
-        [[ "$#" -eq 2 ]] || fail 'usage: trellage memory <status|sync> [--profile NAME]'
-        case "$2" in
-          status|sync) mode="memory-$2" ;;
-          *) fail 'usage: trellage memory <status|sync> [--profile NAME]' ;;
-        esac
         ;;
     esac
   fi
@@ -719,8 +688,7 @@ sha256() {
   fail 'sha256sum or shasum is required'
 }
 
-if [[ "$mode" != prompt && "$mode" != stop && "$mode" != doctor && "$mode" != destroy \
-  && "$mode" != memory-status && "$mode" != memory-sync ]]; then
+if [[ "$mode" != prompt && "$mode" != stop && "$mode" != doctor && "$mode" != destroy ]]; then
   [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
 fi
 if [[ "$mode" == doctor ]]; then
@@ -779,8 +747,6 @@ lifecycle_signal_status=0
 lifecycle_lease=
 lifecycle_resource_dir=
 lifecycle_mutex=
-memory_finalize_requested=false
-memory_container_root=
 
 initialize_lifecycle() {
   local runtime_base runtime_root lifecycle_key
@@ -953,9 +919,6 @@ lifecycle_on_exit() {
   scrub_cleanup_environment
   acquire_lifecycle_mutex
   rm -f -- "$lifecycle_lease" 2>/dev/null || true
-  if [[ "$memory_finalize_requested" == true && -n "$memory_container_root" ]]; then
-    memory_finalize || printf 'trellage: memory finalization failed; preserving harness status\n' >&2
-  fi
   if [[ "$lifecycle_auto_stop" == true && "$lifecycle_attachment_started" == true \
     && -n "${container_id:-}" ]]; then
     (automatic_shutdown_if_idle)
@@ -1200,612 +1163,8 @@ validate_container_mounts() {
     || fail "refusing Docker container with unexpected mounts: $container_name"
 }
 
-readonly DEJA_MEMORY_VERSION='0.17.0'
-memory_state_home=
-memory_root=
-memory_exchange=
-memory_staging=
-memory_host_stage=
-memory_container_state=
-memory_container_exchange=
-memory_container_bridge=
-memory_container_running=
-declare -a memory_batches=()
-
-memory_warn() {
-  printf 'trellage: memory: %s\n' "$*" >&2
-}
-
-if command -v stat >/dev/null 2>&1; then
-  if stat -c '%u' / >/dev/null 2>&1; then
-    memory_stat_owner() { stat -c '%u' "$1"; }
-    memory_stat_mode() { stat -c '%a' "$1"; }
-  else
-    memory_stat_owner() { stat -f '%u' "$1"; }
-    memory_stat_mode() { stat -f '%Lp' "$1"; }
-  fi
-else
-  memory_stat_owner() { return 1; }
-  memory_stat_mode() { return 1; }
-fi
-
-memory_no_symlink_ancestors() {
-  local path="$1" part current=''
-  local -a parts
-
-  [[ "$path" == /* ]] || return 1
-  IFS=/ read -r -a parts <<<"${path#/}"
-  for part in "${parts[@]}"; do
-    [[ -n "$part" ]] || continue
-    current="${current}/${part}"
-    [[ ! -L "$current" ]] || return 1
-  done
-}
-
-memory_safe_parent() {
-  local path="$1" owner mode
-
-  memory_no_symlink_ancestors "$path" || return 1
-  [[ -d "$path" && ! -L "$path" ]] || return 1
-  owner="$(memory_stat_owner "$path")" || return 1
-  mode="$(memory_stat_mode "$path")" || return 1
-  [[ "$owner" == "$(id -u)" ]] && (( (8#$mode & 8#022) == 0 ))
-}
-
-memory_ensure_state_home() {
-  local nearest="$memory_state_home"
-
-  [[ "$nearest" == /* ]] || return 1
-  while [[ ! -e "$nearest" && ! -L "$nearest" && "$nearest" != / ]]; do
-    nearest="${nearest%/*}"
-    [[ -n "$nearest" ]] || nearest=/
-  done
-  memory_safe_parent "$nearest" || return 1
-  (umask 077 && mkdir -p -m 700 "$memory_state_home") || return 1
-  memory_safe_parent "$memory_state_home"
-}
-
-memory_ensure_private_dir() {
-  local path="$1" parent owner mode
-
-  parent="$(dirname "$path")"
-  memory_safe_parent "$parent" || return 1
-  if [[ -e "$path" || -L "$path" ]]; then
-    [[ -d "$path" && ! -L "$path" ]] || return 1
-  else
-    (umask 077 && mkdir -m 700 "$path") || return 1
-  fi
-  owner="$(memory_stat_owner "$path")" || return 1
-  [[ "$owner" == "$(id -u)" ]] || return 1
-  chmod 700 "$path" || return 1
-  mode="$(memory_stat_mode "$path")" || return 1
-  [[ "$mode" == 700 ]]
-}
-
-memory_prepare_host_layout() {
-  memory_state_home="${TRELLAGE_REAL_XDG_STATE_HOME:-${XDG_STATE_HOME:-${HOME%/}/.local/state}}"
-  [[ "$memory_state_home" == /* ]] || return 1
-  memory_state_home="${memory_state_home%/}"
-  memory_root="${memory_state_home}/trellage/deja"
-  memory_exchange="${memory_root}/exchange"
-  memory_staging="${memory_root}/staging"
-  memory_ensure_state_home \
-    && memory_ensure_private_dir "$(dirname "$memory_root")" \
-    && memory_ensure_private_dir "$memory_root" \
-    && memory_ensure_private_dir "$memory_exchange" \
-    && memory_ensure_private_dir "$memory_staging"
-}
-
-memory_batch_name_is_valid() {
-  [[ "$1" == deja-sync-*.jsonl && "$1" != deja-sync-.jsonl ]]
-}
-
-memory_json_object_is_valid() {
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$1" | jq -e 'type == "object"' >/dev/null 2>&1
-  elif command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$1" | python3 -c '
-import json
-import sys
-
-def reject_non_json_constant(value):
-    raise ValueError(value)
-
-value = json.load(sys.stdin, parse_constant=reject_non_json_constant)
-if type(value) is not dict:
-    raise ValueError("a JSON object is required")
-' >/dev/null 2>&1
-  else
-    return 1
-  fi
-}
-
-memory_validate_batch() {
-  local batch="$1" owner mode line last_byte
-
-  [[ -f "$batch" && ! -L "$batch" ]] || return 1
-  owner="$(memory_stat_owner "$batch")" || return 1
-  mode="$(memory_stat_mode "$batch")" || return 1
-  [[ "$owner" == "$(id -u)" && "$mode" == 600 ]] || return 1
-  last_byte="$(tail -c 1 "$batch" | od -An -tu1 | tr -d '[:space:]')" || return 1
-  [[ "$last_byte" == 10 ]] || return 1
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -n "$line" ]] && memory_json_object_is_valid "$line" || return 1
-  done <"$batch"
-}
-
-memory_collect_batches() {
-  local directory="$1" entry
-  local -a entries
-
-  memory_ensure_private_dir "$directory" || return 1
-  memory_batches=()
-  entries=("$directory"/* "$directory"/.[!.]* "$directory"/..?*)
-  for entry in "${entries[@]}"; do
-    [[ -e "$entry" || -L "$entry" ]] || continue
-    memory_batch_name_is_valid "$(basename "$entry")" || continue
-    if memory_validate_batch "$entry"; then
-      memory_batches+=("$entry")
-    else
-      memory_warn 'skipping an unsafe or malformed memory batch'
-    fi
-  done
-}
-
-memory_new_host_stage() {
-  local label="$1" candidate attempt
-
-  for ((attempt = 0; attempt < 32; attempt++)); do
-    candidate="${memory_staging}/.${label}.${BASHPID:-$$}.${RANDOM}"
-    if (umask 077 && mkdir -m 700 "$candidate") 2>/dev/null; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
-
-memory_sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
-  fi
-}
-
-memory_publish_batch() {
-  local source="$1" digest destination existing
-
-  memory_validate_batch "$source" || return 1
-  digest="$(memory_sha256 "$source")" || return 1
-  [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || return 1
-  destination="${memory_exchange}/deja-sync-${digest}.jsonl"
-  if [[ -e "$destination" || -L "$destination" ]]; then
-    memory_validate_batch "$destination" || return 1
-    existing="$(memory_sha256 "$destination")" || return 1
-    [[ "$existing" == "$digest" ]] && cmp -s "$source" "$destination"
-    return
-  fi
-  ln "$source" "$destination" 2>/dev/null || {
-    [[ -e "$destination" || -L "$destination" ]] || return 1
-    memory_validate_batch "$destination" \
-      && existing="$(memory_sha256 "$destination")" \
-      && [[ "$existing" == "$digest" ]] \
-      && cmp -s "$source" "$destination"
-    return
-  }
-  rm -f -- "$source"
-  memory_validate_batch "$destination"
-}
-
-memory_publish_collected_batches() {
-  local batch result=0
-
-  for batch in "${memory_batches[@]:-}"; do
-    [[ -n "$batch" ]] || continue
-    memory_publish_batch "$batch" || result=1
-  done
-  return "$result"
-}
-
-memory_validate_deja_image() {
-  local image_id image_prototype image_profile image_profile_hash image_runtime_hash image_platform image_deja_version
-
-  image_id="$(docker container inspect --format '{{ .Image }}' "$container_id" 2>/dev/null)" || return 1
-  [[ -n "$image_id" ]] || return 1
-  image_prototype="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.prototype" }}' "$image_id" 2>/dev/null)" || return 1
-  image_profile="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.profile" }}' "$image_id" 2>/dev/null)" || return 1
-  image_profile_hash="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$image_id" 2>/dev/null)" || return 1
-  image_runtime_hash="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$image_id" 2>/dev/null)" || return 1
-  image_platform="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.platform" }}' "$image_id" 2>/dev/null)" || return 1
-  image_deja_version="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.deja.version" }}' "$image_id" 2>/dev/null)" || return 1
-  [[ "$image_prototype" == trellage \
-    && "$image_profile" == "$profile_name" \
-    && "$image_profile_hash" == "$profile_hash" \
-    && "$image_runtime_hash" == "$runtime_hash" \
-    && "$image_platform" == "$docker_platform" \
-    && "$image_deja_version" == "$DEJA_MEMORY_VERSION" ]]
-}
-
-memory_validate_current_container() {
-  local mount_state
-
-  container_is_present || return $?
-  inspect_container
-  container_is_current || return 1
-  volume_is_present || return $?
-  validate_state_volume
-  mount_state="$(container_mount_state)" || return 1
-  [[ "$mount_state" == current ]] || return 1
-  memory_validate_deja_image || return 1
-  memory_container_running="$(docker container inspect \
-    --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" || return 1
-  [[ "$memory_container_running" == true || "$memory_container_running" == false ]]
-}
-
-memory_container_stage_is_safe() {
-  [[ "$memory_container_root" =~ ^/tmp/trellage-deja-[[:xdigit:]]{16}-[0-9]+$ ]]
-}
-
-memory_container_bridge_is_safe() {
-  [[ "$memory_container_bridge" =~ ^/home/agent/\.trellage-deja-bridge-[[:xdigit:]]{16}-[0-9]+-[0-9]+$ ]]
-}
-
-memory_prepare_container_stage() {
-  memory_container_stage_is_safe || return 1
-  memory_container_state="${memory_container_root}/state"
-  memory_container_exchange="${memory_container_state}/trellage/deja/exchange"
-  docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-    root="$1"
-    rm -rf -- "$root"
-    install -d -m 700 -o 10001 -g 10001 \
-      "$root" "$root/state" "$root/state/trellage" "$root/state/trellage/deja" \
-      "$root/state/trellage/deja/exchange"
-  ' -- "$memory_container_root" >/dev/null
-}
-
-memory_sweep_container_bridges() {
-  local bridge_names name owner_pid
-
-  bridge_names="$(docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-    home=/home/agent
-    test -d /home && test ! -L /home
-    test -d "$home" && test ! -L "$home"
-    shopt -s nullglob dotglob
-    for bridge in "$home"/.trellage-deja-bridge-*; do
-      [[ -e "$bridge" || -L "$bridge" ]] || continue
-      name="${bridge##*/}"
-      [[ "$name" =~ ^\.trellage-deja-bridge-[[:alnum:]_.-]+$ ]] || continue
-      printf "%s\n" "$name"
-    done
-  ')" || return 1
-  [[ -n "$bridge_names" ]] || return 0
-
-  while IFS= read -r name; do
-    [[ -n "$name" ]] || continue
-    if [[ "$name" =~ ^\.trellage-deja-bridge-[[:xdigit:]]{16}-([1-9][0-9]*)-[0-9]+$ ]]; then
-      owner_pid="${BASH_REMATCH[1]}"
-      if kill -0 -- "$owner_pid" 2>/dev/null; then
-        continue
-      fi
-    fi
-    docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-      home=/home/agent
-      name="$1"
-      [[ "$name" =~ ^\.trellage-deja-bridge-[[:alnum:]_.-]+$ ]] || exit 64
-      test -d /home && test ! -L /home
-      test -d "$home" && test ! -L "$home"
-      bridge="$home/$name"
-      [[ -e "$bridge" || -L "$bridge" ]] || exit 0
-      if [[ ! -d "$bridge" || -L "$bridge" ]] \
-        || [[ "$(stat -c "%u:%g:%a" -- "$bridge")" != 10001:10001:700 ]]; then
-        printf "trellage: memory: skipping unsafe stale container bridge\n" >&2
-        exit 0
-      fi
-      rm -rf -- "$bridge"
-      test ! -e "$bridge" && test ! -L "$bridge"
-    ' -- "$name" >/dev/null || return 1
-  done <<<"$bridge_names"
-}
-
-memory_validate_container_bridge() {
-  memory_container_bridge_is_safe || return 1
-  docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-    bridge="$1"
-    [[ "$bridge" =~ ^/home/agent/\.trellage-deja-bridge-[[:xdigit:]]{16}-[0-9]+-[0-9]+$ ]] || exit 64
-    test -d "$bridge" && test ! -L "$bridge"
-    test "$(stat -c "%u:%g:%a" "$bridge")" = 10001:10001:700
-  ' -- "$memory_container_bridge" >/dev/null
-}
-
-memory_prepare_container_bridge() {
-  local candidate attempt status
-
-  memory_container_bridge=
-  for ((attempt = 0; attempt < 32; attempt++)); do
-    candidate="/home/agent/.trellage-deja-bridge-${path_hash:0:16}-${BASHPID:-$$}-${RANDOM}"
-    memory_container_bridge="$candidate"
-    if docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-      bridge="$1"
-      [[ "$bridge" =~ ^/home/agent/\.trellage-deja-bridge-[[:xdigit:]]{16}-[0-9]+-[0-9]+$ ]] || exit 64
-      test -d /home/agent
-      test ! -L /home/agent
-      if ! (umask 077; mkdir -m 700 -- "$bridge"); then
-        [[ -e "$bridge" || -L "$bridge" ]] && exit 17
-        exit 1
-      fi
-      test -d "$bridge"
-      test ! -L "$bridge"
-      chown 10001:10001 "$bridge"
-      chmod 700 "$bridge"
-      test "$(stat -c "%u:%g:%a" "$bridge")" = 10001:10001:700
-    ' -- "$candidate" >/dev/null; then
-      return 0
-    else
-      status="$?"
-    fi
-    if [[ "$status" == 17 ]]; then
-      memory_container_bridge=
-      continue
-    fi
-    memory_cleanup_container_bridge
-    return "$status"
-  done
-  memory_container_bridge=
-  return 1
-}
-
-memory_cleanup_container_bridge() {
-  local bridge="$memory_container_bridge"
-
-  memory_container_bridge=
-  [[ -n "$bridge" ]] || return 0
-  [[ "$bridge" =~ ^/home/agent/\.trellage-deja-bridge-[[:xdigit:]]{16}-[0-9]+-[0-9]+$ ]] \
-    || return 1
-  docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-    bridge="$1"
-    [[ "$bridge" =~ ^/home/agent/\.trellage-deja-bridge-[[:xdigit:]]{16}-[0-9]+-[0-9]+$ ]] || exit 64
-    test -d "$bridge" && test ! -L "$bridge"
-    test "$(stat -c "%u:%g:%a" "$bridge")" = 10001:10001:700
-    rm -rf -- "$bridge"
-  ' -- "$bridge" >/dev/null 2>&1 || true
-}
-
-memory_move_import_bridge_to_tmp() {
-  memory_container_bridge_is_safe || return 1
-  docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-    bridge="$1"
-    exchange="$2"
-    test -d "$bridge" && test ! -L "$bridge"
-    test -d "$exchange" && test ! -L "$exchange"
-    shopt -s nullglob dotglob
-    for batch in "$bridge"/*; do
-      name="$(basename "$batch")"
-      [[ "$name" == deja-sync-*.jsonl && "$name" != deja-sync-.jsonl ]] || exit 1
-      test -f "$batch" && test ! -L "$batch"
-      chown 10001:10001 "$batch"
-      chmod 600 "$batch"
-      mv -n -- "$batch" "$exchange/$name"
-      test ! -e "$batch" && test ! -L "$batch"
-    done
-  ' -- "$memory_container_bridge" "$memory_container_exchange" >/dev/null
-}
-
-memory_move_export_tmp_to_bridge() {
-  memory_container_bridge_is_safe || return 1
-  docker container exec --user 0:0 "$container_id" /bin/bash -ceu '
-    exchange="$1"
-    bridge="$2"
-    test -d "$exchange" && test ! -L "$exchange"
-    test -d "$bridge" && test ! -L "$bridge"
-    shopt -s nullglob dotglob
-    for batch in "$exchange"/*; do
-      name="$(basename "$batch")"
-      [[ "$name" == deja-sync-*.jsonl && "$name" != deja-sync-.jsonl ]] || exit 1
-      test -f "$batch" && test ! -L "$batch"
-      chown 10001:10001 "$batch"
-      chmod 600 "$batch"
-      mv -n -- "$batch" "$bridge/$name"
-      test ! -e "$batch" && test ! -L "$batch"
-    done
-  ' -- "$memory_container_exchange" "$memory_container_bridge" >/dev/null
-}
-
-memory_stage_import_batches() {
-  local batch destination result=0
-
-  memory_host_stage="$(memory_new_host_stage import)" || return 1
-  for batch in "${memory_batches[@]:-}"; do
-    [[ -n "$batch" ]] || continue
-    destination="${memory_host_stage}/$(basename "$batch")"
-    ln "$batch" "$destination" 2>/dev/null || memory_warn 'skipping a memory batch that changed during import'
-  done
-  if [[ "${#memory_batches[@]}" -gt 0 ]]; then
-    memory_prepare_container_bridge || return 1
-    if ! memory_validate_container_bridge; then
-      result=1
-    else
-      docker cp "${memory_host_stage}/." "${container_id}:${memory_container_bridge}/" >/dev/null \
-        || result=1
-    fi
-    if [[ "$result" == 0 ]]; then
-      memory_move_import_bridge_to_tmp || result=1
-    fi
-    memory_cleanup_container_bridge || result=1
-  fi
-  return "$result"
-}
-
-memory_stage_export_batches() {
-  local result=0
-
-  memory_prepare_container_bridge || return 1
-  memory_move_export_tmp_to_bridge || result=1
-  if [[ "$result" == 0 ]] && memory_validate_container_bridge; then
-    docker cp "${container_id}:${memory_container_bridge}/." "$memory_host_stage" >/dev/null \
-      || result=1
-  elif [[ "$result" == 0 ]]; then
-    result=1
-  fi
-  memory_cleanup_container_bridge || result=1
-  return "$result"
-}
-
-memory_run_helper() {
-  local operation="$1"
-
-  docker container exec \
-    --user 10001:10001 \
-    --env TRELLAGE_MEMORY=deja \
-    --env DEJA_RECALL=safe \
-    --env TRELLAGE_MEMORY_REAL_HOME=/home/agent \
-    --env "TRELLAGE_MEMORY_STATE_HOME=$memory_container_state" \
-    --env 'TRELLAGE_MEMORY_INSTALL_ROOT_DEFAULT=/usr/local/lib/trellage/deja' \
-    "$container_id" /usr/local/bin/deja-memory "$operation"
-}
-
-memory_cleanup_container_stage() {
-  [[ -n "$memory_container_root" ]] || return 0
-  memory_container_stage_is_safe || return 1
-  docker container exec --user 0:0 "$container_id" /bin/bash -ceu 'rm -rf -- "$1"' \
-    -- "$memory_container_root" >/dev/null 2>&1 || true
-}
-
-memory_prepare() {
-  [[ "$memory_mode" == deja ]] || return 0
-  memory_sweep_container_bridges || {
-    memory_warn 'cannot safely clear stale container bridges'
-    return 1
-  }
-  memory_prepare_host_layout || {
-    memory_warn 'host exchange layout is unsafe or unavailable'
-    return 1
-  }
-  memory_collect_batches "$memory_exchange" || {
-    memory_warn 'host exchange is unsafe or unavailable'
-    return 1
-  }
-  memory_container_root="/tmp/trellage-deja-${path_hash:0:16}-${BASHPID:-$$}"
-  memory_prepare_container_stage || {
-    memory_warn 'cannot create private container staging'
-    return 1
-  }
-  if ! memory_stage_import_batches; then
-    memory_warn 'cannot copy validated memory batches into the container'
-    rm -rf -- "${memory_host_stage:-}"
-    memory_cleanup_container_stage
-    memory_container_root=
-    return 1
-  fi
-  rm -rf -- "${memory_host_stage:-}"
-  memory_host_stage=
-  if ! memory_run_helper prepare; then
-    memory_warn 'prepare failed'
-    return 1
-  fi
-}
-
-memory_finalize() {
-  local result=0
-
-  [[ "$memory_mode" == deja && -n "$memory_container_root" ]] || return 0
-  memory_run_helper finalize || result=1
-  if [[ -z "$memory_staging" ]]; then
-    result=1
-  else
-    memory_host_stage="$(memory_new_host_stage export)" || result=1
-    if [[ -n "$memory_host_stage" ]]; then
-      memory_stage_export_batches || result=1
-      if [[ "$result" -eq 0 ]]; then
-        memory_collect_batches "$memory_host_stage" || result=1
-      fi
-      if [[ "$result" -eq 0 ]]; then
-        memory_publish_collected_batches || result=1
-      fi
-      rm -rf -- "$memory_host_stage"
-      memory_host_stage=
-    fi
-  fi
-  memory_cleanup_container_stage
-  memory_container_root=
-  return "$result"
-}
-
-memory_status() {
-  local present_status
-
-  if [[ "$memory_mode" == off ]]; then
-    printf 'memory: off\n'
-    return 0
-  fi
-  if container_is_present; then
-    if (memory_validate_current_container) >/dev/null 2>&1; then
-      printf 'memory: deja; container: ready\n'
-    else
-      printf 'memory: deja; container: unsafe\n'
-    fi
-    return 0
-  else
-    present_status="$?"
-  fi
-  if [[ "$present_status" == 1 ]]; then
-    printf 'memory: deja; container: absent\n'
-    return 0
-  fi
-  printf 'memory: deja; container: unavailable\n'
-  return 0
-}
-
-memory_sync() {
-  local present_status
-
-  [[ "$memory_mode" == deja ]] || {
-    printf 'memory: off\n'
-    return 0
-  }
-  if container_is_present; then
-    :
-  else
-    present_status="$?"
-    if [[ "$present_status" == 1 ]]; then
-      fail "memory sync requires an existing current-worktree container; it is absent: $container_name"
-    fi
-    fail "cannot determine Docker container presence: $container_name"
-  fi
-  memory_validate_current_container \
-    || fail "memory sync requires a current container, matching state volume, exact four mounts, and Deja $DEJA_MEMORY_VERSION"
-  [[ "$memory_container_running" == true ]] \
-    || fail "memory sync requires a running current-worktree container: $container_name"
-  if ! memory_prepare; then
-    memory_cleanup_container_stage
-    memory_container_root=
-    fail 'memory sync prepare failed'
-  fi
-  if ! memory_finalize; then
-    fail 'memory sync finalization failed'
-  fi
-  printf 'memory: synced\n'
-}
-
 image="${TRELLAGE_IMAGE:-$profile_image}"
 network="${TRELLAGE_NETWORK:-$default_network}"
-
-case "$mode" in
-  memory-status)
-    memory_status
-    exit 0
-    ;;
-  memory-sync)
-    memory_sync
-    exit 0
-    ;;
-esac
 
 secret_args=()
 secret_source_names=()
@@ -2010,7 +1369,6 @@ if [[ "$mode" == doctor ]]; then
       image_state=available
       image_profile_inspection=error
       image_runtime_inspection=error
-      image_deja_inspection=error
       if inspected_profile_hash="$(docker image inspect \
         --format '{{ index .Config.Labels "dev.trellage.profile.hash" }}' "$resolved_image_id" 2>/dev/null)"; then
         image_profile_inspection=ok
@@ -2019,16 +1377,10 @@ if [[ "$mode" == doctor ]]; then
         --format '{{ index .Config.Labels "dev.trellage.runtime.hash" }}' "$resolved_image_id" 2>/dev/null)"; then
         image_runtime_inspection=ok
       fi
-      if inspected_deja_version="$(docker image inspect \
-        --format '{{ index .Config.Labels "dev.trellage.deja.version" }}' "$resolved_image_id" 2>/dev/null)"; then
-        image_deja_inspection=ok
-      fi
-      if [[ "$image_profile_inspection" != ok || "$image_runtime_inspection" != ok \
-        || "$image_deja_inspection" != ok ]]; then
+      if [[ "$image_profile_inspection" != ok || "$image_runtime_inspection" != ok ]]; then
         image_state=error
       elif [[ "$inspected_profile_hash" != "$profile_hash" \
-        || "$inspected_runtime_hash" != "$runtime_hash" \
-        || "$inspected_deja_version" != "$DEJA_MEMORY_VERSION" ]]; then
+        || "$inspected_runtime_hash" != "$runtime_hash" ]]; then
         image_state=stale
       fi
     fi
@@ -2131,7 +1483,6 @@ if [[ "$mode" == doctor ]]; then
   printf 'worktree: %s\n' "$worktree"
   printf 'mount: %s\n' "$mount_path"
   printf 'image: %s (%s)\n' "$image" "$image_state"
-  printf 'memory: %s\n' "$memory_mode"
   printf 'network: %s (%s)\n' "$network" "$network_state"
   printf 'container: %s\n' "$container_name"
   printf 'state volume: %s\n' "$state_volume"
@@ -2224,7 +1575,7 @@ if [[ "$mode" == destroy ]]; then
 fi
 
 inspect_image_ref() {
-  local candidate_ref="$1" image_deja_version
+  local candidate_ref="$1"
   resolved_image_id="$(docker image inspect --format '{{ .Id }}' "$candidate_ref" 2>/dev/null)" \
     || resolved_image_id=
   [[ -n "$resolved_image_id" ]] || return 1
@@ -2239,11 +1590,7 @@ inspect_image_ref() {
   image_platform="$(docker image inspect \
     --format '{{ index .Config.Labels "dev.trellage.platform" }}' "$resolved_image_id" 2>/dev/null)" \
     || fail "cannot inspect Docker image platform: $candidate_ref"
-  [[ "$image_platform" == "$docker_platform" ]] || return 1
-  image_deja_version="$(docker image inspect \
-    --format '{{ index .Config.Labels "dev.trellage.deja.version" }}' "$resolved_image_id" 2>/dev/null)" \
-    || fail "cannot inspect Docker image Deja version: $candidate_ref"
-  [[ "$image_deja_version" == "$DEJA_MEMORY_VERSION" ]]
+  [[ "$image_platform" == "$docker_platform" ]]
 }
 
 # The canonical :locked tag is shared by every variant of a profile name, so a
@@ -2381,14 +1728,6 @@ if [[ "$reuse_container" != true ]]; then
   docker container start "$container_id" >/dev/null
 fi
 release_lifecycle_mutex
-if [[ "$memory_mode" == deja && ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) ]]; then
-  if ! (memory_validate_current_container); then
-    memory_warn 'container image or state is not eligible; continuing without synchronized memory'
-  elif ! memory_prepare; then
-    memory_warn 'prepare failed; continuing without synchronized memory'
-  fi
-  [[ -z "$memory_container_root" ]] || memory_finalize_requested=true
-fi
 if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
   resolve_github_cli_auth
   if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ]]; then

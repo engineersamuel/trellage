@@ -746,13 +746,4 @@ mv "$command_staging/new-command" "$command_path"
 
 publication_active=false
 cleanup_staging
-memory_installer="$source_dir/../trellage-memory/install-deja.sh"
-if [ "${TRELLAGE_MEMORY:-deja}" != off ]; then
-  [ -f "$memory_installer" ] && [ ! -L "$memory_installer" ] && [ -x "$memory_installer" ] \
-    || refuse "missing common Deja installer: $memory_installer"
-  memory_home="$(CDPATH= cd -P -- "$home" && pwd -P)" \
-    || refuse "cannot resolve common Deja home: $home"
-  HOME="$memory_home" "$memory_installer" >/dev/null \
-    || refuse 'could not install the common Deja runtime'
-fi
 printf 'Installed cdx at %s. Reload Fish to clear the legacy alias from existing shells.\n' "$command_path"

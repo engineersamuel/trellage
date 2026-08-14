@@ -34,17 +34,15 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  trx [--no-memory] [LAUNCHER_ARGS...]
+  trx
   trx list [--json]
   trx inventory LAUNCHER PROFILE --json
-  trx memory <status|sync>
 
 Select an installed native harness/profile interactively, or list available
 profiles. Bare trx opens the launcher. `trx inventory` reports the live
 readiness (healthy/unhealthy/not-setup) of a single profile by delegating to
 that launcher's own `inventory` command; it is not called during `list` or
-interactive selection so those stay fast. --no-memory applies only to the
-selected interactive launch and is not forwarded to its harness.
+interactive selection so those stay fast.
 EOF
 }
 
@@ -293,224 +291,14 @@ build_profile_list() {
   '
 }
 
-build_memory_profile_plan() {
-  jq -nr \
-    --argjson cpxCatalog "$1" \
-    --argjson cdxCatalog "$2" \
-    --argjson cldxCatalog "$3" \
-    --argjson grxCatalog "$4" \
-    --argjson jcxCatalog "$5" \
-    --argjson ompCatalog "$6" \
-    --argjson prxCatalog "$7" '
-    def profiles($catalog):
-      $catalog.profiles[] | [$catalog.launcher, .name] | @tsv;
-    profiles($cpxCatalog),
-    profiles($cdxCatalog),
-    profiles($cldxCatalog),
-    profiles($grxCatalog),
-    profiles($jcxCatalog),
-    profiles($ompCatalog),
-    profiles($prxCatalog)
-  '
-}
-
-discover_deja_helper() {
-  local runtime="$canonical_home/.local/share/trellage/deja"
-  local expected="$runtime/deja-memory"
-
-  require_safe_directory "$runtime" "$runtime" 'Trellage Deja runtime'
-  [[ -f "$expected" && -x "$expected" && ! -L "$expected" ]] \
-    || die "unsafe owned Trellage Deja helper: $expected"
-  printf '%s\n' "$expected"
-}
-
-memory_profile_home() {
-  local launcher="$1"
-  local profile="$2"
-
-  case "$launcher" in
-    cpx)
-      printf '%s/.local/share/trellage/profiles/copilot/%s/home\n' \
-        "$canonical_home" "$profile"
-      ;;
-    cdx)
-      printf '%s/.local/share/trellage/profiles/codex/%s/home\n' \
-        "$canonical_home" "$profile"
-      ;;
-    cldx)
-      printf '%s/.local/share/trellage/profiles/claude/default/home\n' \
-        "$canonical_home"
-      ;;
-    grx)
-      printf '%s/.local/share/trellage/profiles/grok/%s/home\n' \
-        "$canonical_home" "$profile"
-      ;;
-    jcx)
-      printf '%s/.local/share/trellage/profiles/jcode/default/home\n' \
-        "$canonical_home"
-      ;;
-    omp)
-      case "$profile" in
-        copilot)
-          printf '%s/.omp/profiles/trellage-copilot-native\n' "$canonical_home"
-          ;;
-        local)
-          printf '%s/.omp/profiles/trellage-qwen-local\n' "$canonical_home"
-          ;;
-        *) return 1 ;;
-      esac
-      ;;
-    prx)
-      printf '%s/.local/share/trellage/profiles/prime/default/home\n' \
-        "$canonical_home"
-      ;;
-    *) return 1 ;;
-  esac
-}
-
-memory_profile_home_is_safe() {
-  local path="$1"
-  local resolved
-
-  [[ -d "$path" && ! -L "$path" ]] || return 1
-  resolved="$(canonical_directory "$path")" || return 1
-  [[ "$resolved" == "$path" ]]
-}
-
-memory_status_is_content_free() {
-  [[ "$1" == 'memory: off' \
-    || "$1" =~ ^memory:\ enabled\;\ exchange:\ (absent|ready|unsafe)\;\ binary:\ (missing|ready)$ ]]
-}
-
-memory_status_for_profile() {
-  local launcher="$1"
-  local profile="$2"
-  local helper="$3"
-  local profile_home
-  local output
-
-  if [[ "${TRELLAGE_MEMORY:-deja}" == off ]]; then
-    printf '%s/%s: memory: off\n' "$launcher" "$profile"
-    return
-  fi
-  if ! profile_home="$(memory_profile_home "$launcher" "$profile")" \
-    || ! memory_profile_home_is_safe "$profile_home"; then
-    printf '%s/%s: memory: unavailable\n' "$launcher" "$profile"
-    return 1
-  fi
-  if ! output="$(TRELLAGE_MEMORY="${TRELLAGE_MEMORY:-deja}" \
-    TRELLAGE_REAL_HOME="$canonical_home" HOME="$profile_home" \
-    "$helper" status 2>&1)" || ! memory_status_is_content_free "$output"; then
-    printf '%s/%s: memory: unavailable\n' "$launcher" "$profile"
-    return 1
-  fi
-  printf '%s/%s: %s\n' "$launcher" "$profile" "$output"
-}
-
-memory_sync_for_profile() {
-  local launcher="$1"
-  local profile="$2"
-  local helper="$3"
-  local profile_home
-  local prepare_status=0
-  local finalize_status=0
-
-  if [[ "${TRELLAGE_MEMORY:-deja}" == off ]]; then
-    printf '%s/%s: sync: off\n' "$launcher" "$profile"
-    return 10
-  fi
-  if ! profile_home="$(memory_profile_home "$launcher" "$profile")" \
-    || ! memory_profile_home_is_safe "$profile_home"; then
-    printf '%s/%s: sync: failed (profile)\n' "$launcher" "$profile"
-    return 1
-  fi
-  TRELLAGE_MEMORY="${TRELLAGE_MEMORY:-deja}" DEJA_RECALL=safe \
-    TRELLAGE_REAL_HOME="$canonical_home" HOME="$profile_home" \
-    "$helper" prepare >/dev/null 2>&1 || prepare_status=1
-  TRELLAGE_MEMORY="${TRELLAGE_MEMORY:-deja}" DEJA_RECALL=safe \
-    TRELLAGE_REAL_HOME="$canonical_home" HOME="$profile_home" \
-    "$helper" finalize >/dev/null 2>&1 || finalize_status=1
-  if ((prepare_status && finalize_status)); then
-    printf '%s/%s: sync: failed (prepare, finalize)\n' "$launcher" "$profile"
-    return 1
-  fi
-  if ((prepare_status)); then
-    printf '%s/%s: sync: failed (prepare)\n' "$launcher" "$profile"
-    return 1
-  fi
-  if ((finalize_status)); then
-    printf '%s/%s: sync: failed (finalize)\n' "$launcher" "$profile"
-    return 1
-  fi
-  printf '%s/%s: sync: ok\n' "$launcher" "$profile"
-}
-
-run_memory_command() {
-  local operation="$1"
-  local helper
-  local plan
-  local launcher
-  local profile
-  local profile_status
-  local total=0
-  local available=0
-  local unavailable=0
-  local synchronized=0
-  local failed=0
-  local off=0
-
-  helper="$(discover_deja_helper)"
-  plan="$(build_memory_profile_plan \
-    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
-    || die 'could not build memory profile plan'
-  [[ -n "$plan" ]] || die 'memory profile plan is empty'
-
-  while IFS=$'\t' read -r launcher profile; do
-    ((total += 1))
-    if [[ "$operation" == status ]]; then
-      if memory_status_for_profile "$launcher" "$profile" "$helper"; then
-        ((available += 1))
-      else
-        ((unavailable += 1))
-      fi
-      continue
-    fi
-
-    profile_status=0
-    memory_sync_for_profile "$launcher" "$profile" "$helper" || profile_status=$?
-    case "$profile_status" in
-      0) ((synchronized += 1)) ;;
-      10) ((off += 1)) ;;
-      *) ((failed += 1)) ;;
-    esac
-  done <<<"$plan"
-
-  if [[ "$operation" == status ]]; then
-    printf 'memory status: %d profiles; %d available; %d unavailable\n' \
-      "$total" "$available" "$unavailable"
-    ((unavailable == 0))
-    return
-  fi
-  printf 'memory sync: %d profiles; %d synchronized; %d failed; %d off\n' \
-    "$total" "$synchronized" "$failed" "$off"
-  ((failed == 0))
-}
-
 mode=''
 list_json=0
 inventory_launcher=''
 inventory_profile_arg=''
-no_memory=0
 case "${1-}" in
   -h|--help|help)
     usage
     exit 0
-    ;;
-  --no-memory)
-    mode='interactive'
-    no_memory=1
-    shift
     ;;
   list)
     mode='list'
@@ -531,15 +319,6 @@ case "${1-}" in
     inventory_launcher="$1"
     inventory_profile_arg="$2"
     ;;
-  memory)
-    mode='memory'
-    shift
-    [[ "$#" -eq 1 ]] || die 'memory requires status or sync'
-    case "$1" in
-      status|sync) memory_operation="$1" ;;
-      *) die 'memory requires status or sync' ;;
-    esac
-    ;;
   -i|--interactive|--interactive=*)
     die '-i and --interactive have been removed; run trx with no arguments'
     ;;
@@ -550,27 +329,6 @@ case "${1-}" in
     mode='interactive'
     ;;
 esac
-
-if [[ "$mode" == interactive ]]; then
-  interactive_args=()
-  router_options=true
-  for argument in "$@"; do
-    if [[ "$router_options" == true && "$argument" == -- ]]; then
-      router_options=false
-      interactive_args+=("$argument")
-    elif [[ "$router_options" == true && "$argument" == --no-memory ]]; then
-      ((no_memory == 0)) || die '--no-memory may be specified only once'
-      no_memory=1
-    else
-      interactive_args+=("$argument")
-    fi
-  done
-  if (( ${#interactive_args[@]} > 0 )); then
-    set -- "${interactive_args[@]}"
-  else
-    set --
-  fi
-fi
 
 command -v jq >/dev/null 2>&1 || die 'required command not found: jq'
 
@@ -698,11 +456,6 @@ if [[ "$mode" == list ]]; then
   exit 0
 fi
 
-if [[ "$mode" == memory ]]; then
-  run_memory_command "$memory_operation"
-  exit $?
-fi
-
 command -v node >/dev/null 2>&1 || die 'required command not found: node'
 [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
 [[ -f "$picker_path" && ! -L "$picker_path" ]] \
@@ -786,13 +539,7 @@ if [[ "$launch_target" == herdr ]]; then
   pane="$(jq -er '.result.pane.pane_id' <<<"$split")" \
     || die 'Herdr did not return a pane ID'
   command_line="$(printf '%q ' "${launch_arguments[@]}")"
-  if ((no_memory)); then
-    command_line="TRELLAGE_MEMORY=off $command_line"
-  fi
   herdr pane run "$pane" "$command_line" || die 'could not start the selected profile in Herdr'
   exit 0
-fi
-if ((no_memory)); then
-  export TRELLAGE_MEMORY=off
 fi
 exec "${launch_arguments[@]}"

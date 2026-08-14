@@ -2,7 +2,6 @@
 set -euo pipefail
 
 prototype_root="$(cd -P "$(dirname "$0")/.." && pwd -P)"
-readme="$prototype_root/README.md"
 fixture_root="$prototype_root/.contract-fixture.$$"
 fixture_home="$fixture_root/home"
 fixture_bin="$fixture_home/.local/bin"
@@ -10,10 +9,6 @@ runtime_parent="$fixture_home/.local/share/trellage"
 argument_log="$fixture_root/arguments.bin"
 inventory_log="$fixture_root/inventory.log"
 real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
-memory_log="$fixture_root/memory.log"
-memory_lock="$fixture_root/memory.lock"
-memory_policy_log="$fixture_root/memory-policy.log"
-memory_recall_log="$fixture_root/memory-recall.log"
 
 cleanup() {
   if [[ "${TRX_KEEP_FIXTURE-}" == 1 ]]; then
@@ -34,14 +29,6 @@ assert_contains() {
   local file="$2"
   grep -Fq -- "$expected" "$file" || fail "missing '$expected' in $file"
 }
-
-for expected in \
-  'Deja is enabled by default.' \
-  'global only to this OS user' \
-  'Uninstall removes only the owned `trx` runtime and its exact command symlink.' \
-  'no Weavekit transport'; do
-  assert_contains "$expected" "$readme"
-done
 
 mkdir -p "$fixture_home" "$fixture_bin"
 ln -s "$real_node" "$fixture_bin/node"
@@ -157,9 +144,6 @@ if [[ -n "${TRX_ARGUMENT_LOG-}" ]]; then
     printf '%s\0' "$@"
   } >"$TRX_ARGUMENT_LOG"
 fi
-if [[ -n "${TRX_MEMORY_POLICY_LOG-}" ]]; then
-  printf '%s\n' "${TRELLAGE_MEMORY-unset}" >"$TRX_MEMORY_POLICY_LOG"
-fi
 if [[ "${TRX_WAIT-}" == 1 ]]; then
   printf 'CHILD_READY\n'
   while :; do sleep 1; done
@@ -170,57 +154,6 @@ EOF
   ln -s "$runtime/bin/$launcher" "$fixture_bin/$launcher"
 }
 
-create_deja_helper() {
-  local helper="$runtime_parent/deja/deja-memory"
-
-  mkdir -p "$(dirname "$helper")"
-  cat >"$helper" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-operation="${1-}"
-case "$operation" in
-  status)
-    printf 'memory: enabled; exchange: ready; binary: ready\n'
-    [[ -z "${TRX_MEMORY_STATUS_EXTRA-}" ]] \
-      || printf '%s\n' "$TRX_MEMORY_STATUS_EXTRA"
-    ;;
-  prepare|finalize)
-    lock_created=false
-    if [[ -n "${TRX_MEMORY_LOCK-}" ]]; then
-      if mkdir "$TRX_MEMORY_LOCK" 2>/dev/null; then
-        lock_created=true
-      else
-        printf 'concurrent %s %s\n' "$operation" "$HOME" >>"$TRX_MEMORY_LOG"
-        exit 1
-      fi
-    fi
-    if [[ -n "${TRX_MEMORY_LOG-}" ]]; then
-      printf '%s %s\n' "$operation" "$HOME" >>"$TRX_MEMORY_LOG"
-    fi
-    if [[ -n "${TRX_MEMORY_RECALL_LOG-}" ]]; then
-      printf '%s\n' "${DEJA_RECALL-unset}" >>"$TRX_MEMORY_RECALL_LOG"
-    fi
-    sleep "${TRX_MEMORY_DELAY-0}"
-    status=0
-    if [[ "${TRX_MEMORY_FAIL_OPERATION-}" == "$operation" \
-      && -n "${TRX_MEMORY_FAIL_PATH-}" \
-      && "$HOME" == *"${TRX_MEMORY_FAIL_PATH}"* ]]; then
-      status=1
-    fi
-    if [[ "$lock_created" == true ]]; then
-      rmdir "$TRX_MEMORY_LOCK"
-    fi
-    exit "$status"
-    ;;
-  *)
-    exit 2
-    ;;
-esac
-EOF
-  chmod 0755 "$helper"
-}
-
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
 create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v1
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
@@ -228,17 +161,6 @@ create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
-create_deja_helper
-
-mkdir -p \
-  "$runtime_parent/profiles/copilot/cpx-p/home" \
-  "$runtime_parent/profiles/codex/cdx-p/home" \
-  "$runtime_parent/profiles/claude/default/home" \
-  "$runtime_parent/profiles/grok/grx-p/home" \
-  "$runtime_parent/profiles/jcode/default/home" \
-  "$fixture_home/.omp/profiles/trellage-copilot-native" \
-  "$fixture_home/.omp/profiles/trellage-qwen-local" \
-  "$runtime_parent/profiles/prime/default/home"
 
 export HOME="$fixture_home"
 export PATH="$fixture_bin:/usr/bin:/bin"
@@ -261,9 +183,7 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
   || fail 'upgrade left the legacy terminal picker'
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
-assert_contains 'trx [--no-memory] [LAUNCHER_ARGS...]' "$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
-assert_contains 'trx memory <status|sync>' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 
 "$fixture_bin/trx" list >"$fixture_root/list.out" \
@@ -342,117 +262,11 @@ expected = [b"cldx", b"cldx-p", b"--source-mode", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
-TRX_MEMORY_LOG="$memory_log" \
-  "$fixture_bin/trx" memory status >"$fixture_root/memory-status.out" \
-  || fail 'memory status failed'
-python3 - "$fixture_root/memory-status.out" <<'PY' \
-  || fail 'memory status did not report all profiles in catalog order'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_text().splitlines()
-state = "memory: enabled; exchange: ready; binary: ready"
-expected = [
-    f"cpx/cpx-p: {state}",
-    f"cdx/cdx-p: {state}",
-    f"cldx/cldx-p: {state}",
-    f"grx/grx-p: {state}",
-    f"jcx/jcx-p: {state}",
-    f"omp/copilot: {state}",
-    f"omp/local: {state}",
-    f"prx/prx-p: {state}",
-    "memory status: 8 profiles; 8 available; 0 unavailable",
-]
-raise SystemExit(0 if actual == expected else 1)
-PY
-[[ ! -s "$memory_log" ]] || fail 'memory status performed a synchronization'
-
-status=0
-TRX_MEMORY_STATUS_EXTRA='private memory content' \
-  "$fixture_bin/trx" memory status >"$fixture_root/memory-status-extra.out" \
-  2>"$fixture_root/memory-status-extra.err" || status=$?
-[[ "$status" == 1 ]] || fail "content-bearing memory status exited $status instead of 1"
-! grep -Fq 'private memory content' "$fixture_root/memory-status-extra.out" \
-  || fail 'memory status exposed helper content'
-assert_contains 'memory status: 8 profiles; 0 available; 8 unavailable' \
-  "$fixture_root/memory-status-extra.out"
-
-: >"$memory_log"
-TRX_MEMORY_LOG="$memory_log" TRX_MEMORY_RECALL_LOG="$memory_recall_log" \
-  TRX_MEMORY_LOCK="$memory_lock" TRX_MEMORY_DELAY=0.05 DEJA_RECALL=unsafe \
-  "$fixture_bin/trx" memory sync >"$fixture_root/memory-sync.out" \
-  || fail 'memory sync failed'
-python3 - "$memory_log" <<'PY' || fail 'memory sync was not serial or did not use catalog order'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_text().splitlines()
-homes = [
-    "profiles/copilot/cpx-p/home",
-    "profiles/codex/cdx-p/home",
-    "profiles/claude/default/home",
-    "profiles/grok/grx-p/home",
-    "profiles/jcode/default/home",
-    ".omp/profiles/trellage-copilot-native",
-    ".omp/profiles/trellage-qwen-local",
-    "profiles/prime/default/home",
-]
-expected = [item for home in homes for item in (f"prepare {home}", f"finalize {home}")]
-normalized = [
-    f"{operation} {home[home.index('/.local/share/trellage/') + len('/.local/share/trellage/'):]}"
-    if "/.local/share/trellage/" in home
-    else f"{operation} {home[home.index('/.omp/') + 1:]}"
-    for operation, home in (line.split(" ", 1) for line in actual)
-]
-raise SystemExit(0 if normalized == expected else 1)
-PY
-! grep -Fq 'concurrent ' "$memory_log" \
-  || fail 'memory sync ran profile work concurrently'
-[[ "$(sort -u "$memory_recall_log")" == safe \
-  && "$(wc -l <"$memory_recall_log" | tr -d '[:space:]')" == 16 ]] \
-  || fail 'memory sync did not force safe recall for every lifecycle operation'
-assert_contains 'memory sync: 8 profiles; 8 synchronized; 0 failed; 0 off' \
-  "$fixture_root/memory-sync.out"
-
-status=0
-TRX_MEMORY_LOG="$memory_log" TRX_MEMORY_FAIL_OPERATION=finalize \
-  TRX_MEMORY_FAIL_PATH='profiles/grok/grx-p/home' \
-  "$fixture_bin/trx" memory sync >"$fixture_root/memory-sync-failed.out" \
-  2>"$fixture_root/memory-sync-failed.err" || status=$?
-[[ "$status" == 1 ]] || fail "partial memory sync failure exited $status instead of 1"
-assert_contains 'grx/grx-p: sync: failed (finalize)' "$fixture_root/memory-sync-failed.out"
-assert_contains 'prx/prx-p: sync: ok' "$fixture_root/memory-sync-failed.out"
-assert_contains 'memory sync: 8 profiles; 7 synchronized; 1 failed; 0 off' \
-  "$fixture_root/memory-sync-failed.out"
-
-mv "$runtime_parent/deja/deja-memory" "$fixture_root/owned-deja-memory"
-cat >"$fixture_bin/deja-memory" <<'EOF'
-#!/usr/bin/env bash
-printf 'ambient helper used\n' >"$TRX_AMBIENT_DEJA_LOG"
-EOF
-chmod 0755 "$fixture_bin/deja-memory"
-status=0
-TRX_AMBIENT_DEJA_LOG="$fixture_root/ambient-deja.log" \
-  "$fixture_bin/trx" memory status >"$fixture_root/memory-no-helper.out" \
-  2>"$fixture_root/memory-no-helper.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing owned Deja helper exited $status instead of 1"
-assert_contains 'unsafe owned Trellage Deja helper' "$fixture_root/memory-no-helper.err"
-[[ ! -e "$fixture_root/ambient-deja.log" ]] \
-  || fail 'router resolved an ambient Deja helper'
-mv "$fixture_root/owned-deja-memory" "$runtime_parent/deja/deja-memory"
-rm "$fixture_bin/deja-memory"
-
 status=0
 "$fixture_bin/trx" list --json-full >"$fixture_root/list-invalid.out" \
   2>"$fixture_root/list-invalid.err" || status=$?
 [[ "$status" == 1 ]] || fail "invalid list arguments exited $status instead of 1"
 assert_contains 'list accepts only --json' "$fixture_root/list-invalid.err"
-
-status=0
-"$fixture_bin/trx" memory >"$fixture_root/memory-invalid.out" \
-  2>"$fixture_root/memory-invalid.err" || status=$?
-[[ "$status" == 1 ]] || fail "invalid memory arguments exited $status instead of 1"
-assert_contains 'memory requires status or sync' "$fixture_root/memory-invalid.err"
 
 status=0
 "$fixture_bin/trx" >"$fixture_root/non-tty.out" 2>"$fixture_root/non-tty.err" \
@@ -469,12 +283,11 @@ writeFileSync(process.argv[3], '{"id":"cpx:cpx-p","target":"current"}\n')
 EOF
 selection_started="$(python3 -c 'import time; print(time.monotonic_ns())')"
 TRX_ARGUMENT_LOG="$argument_log" \
-  TRX_MEMORY_POLICY_LOG="$memory_policy_log" \
   TRX_INVENTORY_DELAY=4 \
   TRX_INVENTORY_LOG="$inventory_log" \
   TRX_PICKER_INPUT="$fixture_root/picker-input.json" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/select.out" \
-  '\r' '' "$fixture_bin/trx" --no-memory \
+  '\r' '' "$fixture_bin/trx" \
   'two words' '' '--literal=*' \
   || fail 'interactive selection failed'
 selection_finished="$(python3 -c 'import time; print(time.monotonic_ns())')"
@@ -563,8 +376,6 @@ status=0
 assert_contains 'inventory requires LAUNCHER PROFILE --json' "$fixture_root/inventory-missing-json.err"
 
 mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
-[[ "$(<"$memory_policy_log")" == off ]] \
-  || fail 'no-memory did not set the selected launcher memory policy'
 python3 - "$argument_log" <<'PY' || fail 'arguments were not forwarded unchanged'
 import pathlib
 import sys
@@ -616,15 +427,12 @@ writeFileSync(process.argv[3], '{"id":"cdx:cdx-p","target":"herdr","model":"gpt-
 EOF
 HERDR_ENV=1 HERDR_PANE_ID=w1:p1 TRX_HERDR_LOG="$herdr_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/herdr-select.out" \
-  'l' '' "$fixture_bin/trx" --no-memory '--literal=herdr' \
+  'l' '' "$fixture_bin/trx" '--literal=herdr' \
   || fail 'Herdr profile launch failed'
 mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 assert_contains 'pane split --current --direction right --cwd ' "$herdr_log"
 assert_contains 'pane run w1:p2 ' "$herdr_log"
-assert_contains "TRELLAGE_MEMORY=off $runtime_parent/cdx/bin/cdx cdx-p --model gpt-5.6-terra --literal=herdr" \
-  "$herdr_log"
-! grep -Fq -- '--no-memory' "$herdr_log" \
-  || fail 'no-memory leaked into the Herdr harness command'
+assert_contains '--model gpt-5.6-terra --literal=herdr' "$herdr_log"
 rm "$fixture_bin/herdr"
 
 cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
@@ -669,11 +477,6 @@ status=0
   2>"$fixture_root/list-missing.err" || status=$?
 [[ "$status" == 1 ]] || fail "missing launcher list exited $status instead of 1"
 assert_contains 'required launcher not found on PATH: grx' "$fixture_root/list-missing.err"
-status=0
-"$fixture_bin/trx" memory status >"$fixture_root/memory-missing.out" \
-  2>"$fixture_root/memory-missing.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing launcher memory status exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: grx' "$fixture_root/memory-missing.err"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing.out" \
   '\r' '' "$fixture_bin/trx" || status=$?

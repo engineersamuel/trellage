@@ -5,7 +5,6 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { builderScript, profileMetadata } from "../src/application.js"
-import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
 import { claudeDefaultOnboarding, claudeDefaultSettings } from "../src/claude-materialize.js"
 import { parseLock } from "../src/lock-file.js"
 import type { ProfileLock } from "../src/lock.js"
@@ -178,7 +177,6 @@ describe("authored Claude Research profile", () => {
         },
       ],
       packages: {
-        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "claude",
           selector: "2.1.218",
