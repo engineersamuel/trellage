@@ -206,8 +206,8 @@ jq -e '
   and (.profiles | keys | sort) == ["hve", "superpowers"]
   and .profiles.hve == {
     "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
-    "source": "microsoft/hve-core#plugins/hve-core-all",
-    "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+    "source": "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all",
+    "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json",
     "plugin": "hve-core-all",
     "standaloneMcps": []
   }
@@ -250,7 +250,7 @@ jq -e '
   and [.profiles[].name] == ["hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].plugin == "hve-core-all"
-  and .profiles[0].source == "microsoft/hve-core#plugins/hve-core-all"
+  and .profiles[0].source == "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all"
   and .profiles[0].marketplace == null
   and .profiles[0].standaloneMcps == []
   and .profiles[1].source == "obra/superpowers"
@@ -384,7 +384,7 @@ if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'install' ]; then
   fi
 
   case "$source" in
-    'microsoft/hve-core#plugins/hve-core-all')
+    'microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all')
       name='hve-core-all'
       version='3.3.101'
       repo_key='hve-core-fixture'
@@ -736,7 +736,7 @@ if [ "${FAKE_CURL_RAW_NUL_URL:-}" = "$url" ]; then
 fi
 
 case "$url" in
-  'https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json')
+  'https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json')
     if [ -n "${FAKE_CURL_HVE_MANIFEST_JSON:-}" ]; then
       printf '%s\n' "$FAKE_CURL_HVE_MANIFEST_JSON"
     else
@@ -970,7 +970,7 @@ jq -s -e --arg home "$hve_home" --arg since "$calls_before_hve_setup" '
   .[($since | tonumber):]
   | any(.[];
     .grokHome == $home
-    and .args == ["plugin","install","microsoft/hve-core#plugins/hve-core-all","--trust"]
+    and .args == ["plugin","install","microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all","--trust"]
   )
 ' "$fake_grok_log" >/dev/null || fail 'setup did not install the exact trusted HVE source'
 if ! jq -s -e --arg since "$calls_before_hve_setup" '
@@ -1953,7 +1953,7 @@ assert_hve_inventory_check_failure 'hve-inventory-manifest-version-mismatch' \
   "$(printf '%s\n' "$hve_native_inventory" | jq -c '.[0].version = "9.9.9"')"
 
 hve_legacy_inventory="$(printf '%s\n' "$hve_native_inventory" | jq -c '
-  .[0].source = "microsoft/hve-core#plugins/hve-core-all"
+  .[0].source = "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all"
   | .[0].version = "3.3.101"
 ')"
 printf '%s\n' "$hve_legacy_inventory" >"$hve_plugins_file"
@@ -2335,7 +2335,7 @@ assert_raw_nul_boundary_failure() {
         "$fixture_root/$fixture_name.err"
       ;;
     remote-manifest)
-      export FAKE_CURL_RAW_NUL_URL='https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json'
+      export FAKE_CURL_RAW_NUL_URL='https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json'
       ./bin/grx update --check hve >"$fixture_root/$fixture_name.out" \
         2>"$fixture_root/$fixture_name.err" || status=$?
       unset FAKE_CURL_RAW_NUL_URL

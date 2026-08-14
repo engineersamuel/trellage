@@ -157,7 +157,9 @@ direct_source_metadata() {
   local repository
   local fragment=''
   local owner
+  local rest
   local repo
+  local ref=''
 
   case "$source" in
     *'#'*)
@@ -173,8 +175,20 @@ direct_source_metadata() {
   esac
 
   owner="${repository%%/*}"
-  repo="${repository#*/}"
+  rest="${repository#*/}"
   [ "$owner" != "$repository" ] || return 1
+  case "$rest" in
+    *'@'*)
+      repo="${rest%%@*}"
+      ref="${rest#*@}"
+      [ -n "$ref" ] || return 1
+      case "$ref" in
+        *'@'*) return 1 ;;
+      esac
+      [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
+      ;;
+    *) repo="$rest" ;;
+  esac
   case "$repo" in
     ''|*/*) return 1 ;;
   esac
@@ -214,8 +228,8 @@ validate_catalog() {
       and (.profiles == {
         "hve": {
           "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
-          "source": "microsoft/hve-core#plugins/hve-core-all",
-          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+          "source": "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all",
+          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json",
           "plugin": "hve-core-all",
           "standaloneMcps": []
         },
