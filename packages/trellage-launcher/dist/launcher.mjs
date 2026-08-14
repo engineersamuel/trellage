@@ -66096,7 +66096,7 @@ var handleCommandMovement = (input, key, updateState, cancel) => {
   }
   return true;
 };
-var handleCommandInput = (input, key, state, selected, herdrAvailable, updateState, setSearching, setModelIndex, setChoosingModel, setDetailOffset, setShowingDetails, finish, cancel) => {
+var handleCommandInput = (input, key, state, selected, herdrAvailable, remoteAvailable, updateState, setSearching, setModelIndex, setChoosingModel, setDetailOffset, setShowingDetails, finish, cancel) => {
   if (handleCommandMovement(input, key, updateState, cancel)) return;
   if (input === "/") {
     setSearching(true);
@@ -66111,6 +66111,8 @@ var handleCommandInput = (input, key, state, selected, herdrAvailable, updateSta
     setShowingDetails(true);
   } else if (input === "H" && herdrAvailable) {
     finish("herdr");
+  } else if (input === "R" && remoteAvailable) {
+    finish("remote");
   } else if (input.toLocaleLowerCase("en") === "l" || isSubmitInput(input, key)) {
     finish("current");
   }
@@ -78149,13 +78151,15 @@ var ModelChooser = ({
 ] });
 var ShortcutHelp = ({
   searching,
-  herdrAvailable
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""} \xB7 Esc` });
+  herdrAvailable,
+  remoteAvailable
+}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
 var SelectionView = ({
   catalog,
   state,
   searching,
   herdrAvailable,
+  remoteAvailable,
   shown,
   widths,
   selected,
@@ -78172,7 +78176,10 @@ var SelectionView = ({
       "Sort: ",
       state.sort,
       " \xB7 Herdr: ",
-      herdrAvailable ? "available" : "unavailable"
+      herdrAvailable ? "available" : "unavailable",
+      " \xB7 Remote:",
+      " ",
+      remoteAvailable ? "available" : "unavailable"
     ] })
   ] }),
   catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { wrap: "wrap", children: [
@@ -78198,11 +78205,12 @@ var SelectionView = ({
       customModel
     }
   ) : null,
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ShortcutHelp, { searching, herdrAvailable })
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
 ] });
 var Launcher = ({
   catalog,
-  herdrAvailable
+  herdrAvailable,
+  remoteAvailable
 }) => {
   const { exit } = use_app_default();
   const { columns, rows } = use_window_size_default();
@@ -78278,6 +78286,7 @@ var Launcher = ({
       state,
       selected,
       herdrAvailable,
+      remoteAvailable,
       updateState,
       setSearching,
       setModelIndex,
@@ -78321,6 +78330,7 @@ var Launcher = ({
       state,
       searching,
       herdrAvailable,
+      remoteAvailable,
       shown,
       widths,
       selected,
@@ -78491,7 +78501,8 @@ var main = async () => {
         Launcher,
         {
           catalog,
-          herdrAvailable: process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID)
+          herdrAvailable: process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID),
+          remoteAvailable: process.env.TRELLAGE_REMOTE_AVAILABLE === "true"
         }
       ),
       {

@@ -196,7 +196,7 @@ Set `TRELLAGE_CONFIG` to an alternate config file. Set `TRELLAGE_ENVIRONMENT=off
 Run these commands inside the Git worktree that should be mounted:
 
 ```bash
-trellage [--profile PROFILE]
+trellage [--profile PROFILE] [-l|--local|-r|--remote]
 trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage [--profile CLAUDE_PROFILE] [--model MODEL] [-p|--prompt PROMPT]
 trellage [--profile PROFILE] --output-format jsonl [--trellage-events] -p PROMPT
@@ -211,6 +211,7 @@ trellage                    # select a profile, then start its interactive harne
 trellage --profile NAME     # directly launch one profile
 trellage "<prompt>"         # new conversation with an explicit prompt
 trellage -p "<prompt>"      # one non-interactive prompt when advertised
+trellage --remote --profile NAME  # provision/reuse an Azure VM and launch there
 trellage resume             # resume the latest conversation when advertised
 trellage resume SESSION_ID  # resume an exact session when advertised
 trellage shell              # recovery Fish without secrets
@@ -230,6 +231,31 @@ upstream access blocks one profile, its existing lock and image remain intact,
 the remaining profiles still run, and the command exits nonzero with a failure
 summary. Every image build resolves selected skill bundles from current
 default-branch content independently of the core upgrade policy.
+
+### Remote Execution (Azure)
+
+`trellage` always launches locally unless `-r`/`--remote` is given; `-l`/`--local`
+is the explicit (and default) opposite, useful for scripting clarity. `--remote`
+is supported only for agent launches (`new`, `prompt`, `resume`) and requires an
+explicit `--profile`:
+
+```bash
+trellage --profile copilot-hve --remote -p "hello"   # or: --remote -p "hello"
+trellage -r --profile copilot-hve                    # interactive, on Azure
+```
+
+`--remote` requires the Azure CLI (`az`) installed and an authenticated session
+(`az login`); it fails fast with a clear message otherwise, and never falls
+back to local automatically. When available, it builds the locked profile
+image locally (production builds are ARM64-only), then provisions (or reuses)
+a single shared ARM64 Azure VM (`Standard_D2ps_v5`, `westus2`), mirrors the
+current worktree, Git common directory, and `~/.copilot/models.json` onto the
+VM at identical paths, transfers the built image, and re-execs the unmodified
+`trellage` launcher on the VM's own Docker daemon over an interactive SSH PTY
+(`--local` is forced on the remote side to avoid recursive delegation). This
+is a prototype convenience path with no cost controls beyond VM reuse; destroy
+the `trellage-remote-rg` resource group (`az group delete --name
+trellage-remote-rg --yes`) when a remote session is no longer needed.
 
 For a profile bundled in this repository, use its directory name instead of an absolute path:
 

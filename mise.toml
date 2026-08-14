@@ -26,6 +26,10 @@ run = "./scripts/cleanup-orphaned-trellage-containers.sh"
 description = "Remove idle Trellage containers and state volumes for deleted worktrees"
 run = "./scripts/cleanup-orphaned-trellage-containers.sh --apply"
 
+[tasks.azure-copilot-spike]
+description = "Eval prototype: up|run|down|status a Copilot profile on an ephemeral Azure ARM64 VM"
+run = "./scripts/prototype-azure-copilot-spike.sh"
+
 [tools]
 "github:PrimeIntellect-ai/prime-agent" = "latest"
 uv = "0.12.3"

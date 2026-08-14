@@ -96,14 +96,15 @@ const search = (recorder: Recorder, input: string, key: Key): void => {
   })
 }
 
-const command = (recorder: Recorder, input: string, key: Key): void => {
+const command = (recorder: Recorder, input: string, key: Key, herdrAvailable = false, remoteAvailable = false): void => {
   const selected = recorder.state.entries.find(({ id }) => id === recorder.state.selectedId)
   handleCommandInput(
     input,
     key,
     recorder.state,
     selected,
-    false,
+    herdrAvailable,
+    remoteAvailable,
     setterFor(recorder, "state"),
     setterFor(recorder, "searching"),
     setterFor(recorder, "modelIndex"),
@@ -192,6 +193,26 @@ describe("handleCommandInput", () => {
     const recorder = createRecorder()
     command(recorder, "", keyOf({ pageUp: true }))
     expect(recorder.launches).toEqual([])
+  })
+
+  it("launches herdr on H only when herdrAvailable", () => {
+    const unavailable = createRecorder()
+    command(unavailable, "H", keyOf(), false, false)
+    expect(unavailable.launches).toEqual([])
+
+    const available = createRecorder()
+    command(available, "H", keyOf(), true, false)
+    expect(available.launches).toEqual(["herdr"])
+  })
+
+  it("launches remote on R only when remoteAvailable", () => {
+    const unavailable = createRecorder()
+    command(unavailable, "R", keyOf(), false, false)
+    expect(unavailable.launches).toEqual([])
+
+    const available = createRecorder()
+    command(available, "R", keyOf(), false, true)
+    expect(available.launches).toEqual(["remote"])
   })
 })
 
