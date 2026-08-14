@@ -35,6 +35,9 @@ The installer publishes `~/.local/bin/jcx` and owns its runtime beneath
 `~/.local/share/trellage/jcx`. `setup` resolves the latest jcode release
 eligible under `mise` policy, installs it into the managed runtime, and pins
 that exact version. Ordinary launches never update it.
+Installation refreshes the shared OS-user Deja runtime unless
+`TRELLAGE_MEMORY=off` is set. The launcher uses it with this profile's isolated
+home and index.
 
 Profile state lives at:
 
@@ -71,6 +74,9 @@ process.
 ```bash
 ./uninstall.sh
 ```
+
+Uninstall retains the shared Deja runtime and its local data so other native
+launchers continue to work.
 
 ## Test
 

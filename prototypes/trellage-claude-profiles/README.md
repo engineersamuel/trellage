@@ -42,6 +42,10 @@ The installer publishes `~/.local/bin/cldx` and owns its runtime beneath
 without overwriting an existing theme or unrelated state. Sessions remain
 isolated from direct `claude` use.
 
+Installation refreshes the shared OS-user Deja runtime unless
+`TRELLAGE_MEMORY=off` is set. Launches use that exact helper with this isolated
+home; see [the Deja memory policy](../../docs/deja-memory.md).
+
 Bare and explicit launches are equivalent:
 
 ```bash
@@ -65,8 +69,9 @@ Every setup, doctor, repair, and launch checks proxy health and confirms that
 ./uninstall.sh
 ```
 
-Uninstall removes only the owned runtime and command symlink. Profile state and
-sessions are preserved.
+Uninstall removes only the owned runtime and command symlink. Profile state,
+sessions, and the shared Deja runtime and local data are preserved so other
+native launchers continue to work.
 
 ## Test
 

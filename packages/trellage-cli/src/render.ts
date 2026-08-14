@@ -9,6 +9,7 @@ import {
   type PrimeProfile,
   type Profile,
 } from "./profile.js"
+import { managedDejaArtifactError, managedDejaImagePlatform } from "./artifact-catalog.js"
 import type { ProfileLock } from "./lock.js"
 import type { RuntimeSupportSnapshot } from "./runtime-support.js"
 
@@ -74,6 +75,22 @@ export interface MiseRenderOptions {
   readonly packageVersions?: Readonly<Record<string, string>>
 }
 
+const managedDeja = (lock: ProfileLock) => {
+  const artifact = lock.packages.deja
+  if (managedDejaArtifactError(artifact) !== undefined) {
+    throw new Error("rendering requires an exact managed Deja artifact")
+  }
+  return artifact!
+}
+
+const renderDejaDotfiles = (lock: ProfileLock, options: MiseRenderOptions): string => {
+  const artifact = managedDeja(lock)
+  const helper = options.runtimeSupport.files.some((file) => file.role === "deja-memory")
+    ? `\n${renderRuntimeDotfile(options, "deja-memory")}`
+    : ""
+  return `"/usr/local/lib/trellage/deja/${artifact.version}/${managedDejaImagePlatform}/deja" = { source = "deja/${managedDejaImagePlatform}/deja", mode = "copy" }${helper}`
+}
+
 const renderRuntimeDotfile = (options: MiseRenderOptions, role: string): string => {
   const file = options.runtimeSupport.files.find((candidate) => candidate.role === role)
   if (file === undefined || file.mode !== 0o755) throw new Error(`runtime support is missing executable ${role}`)
@@ -95,7 +112,9 @@ const renderOci = (
   environment: ReadonlyArray<string>,
   labels: ReadonlyArray<string>,
   cacheHome = "/tmp/.cache",
-): string => `[oci]
+): string => {
+  const deja = managedDeja(lock)
+  return `[oci]
 from = ${quote(options.baseReference)}
 tag = ${quote(options.imageTag)}
 workdir = "/workspace"
@@ -116,8 +135,10 @@ TMPDIR = "/tmp"
 "dev.trellage.profile.hash" = ${quote(lock.profile_hash)}
 "dev.trellage.platform" = ${quote(lock.platform)}
 "dev.trellage.runtime.hash" = ${quote(options.runtimeSupport.hash)}
+"dev.trellage.deja.version" = ${quote(deja.version)}
 ${labels.join("\n")}
 `
+}
 
 const renderCodexMiseConfig = (profile: CodexProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
   const harness = lock.packages.harness
@@ -139,6 +160,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.codex/agents" = { source = "assets/agents", mode = "copy" }
 ${profile.skills.some((skill) => skill.adapter === undefined && skill.always_on === true) ? '"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-entry")}
+${renderDejaDotfiles(lock, options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -171,6 +193,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 "/usr/local/share/trellage/copilot-seed" = { source = "copilot-seed", mode = "copy" }
 ${renderRuntimeDotfile(options, "runtime-copilot-entry")}
+${renderDejaDotfiles(lock, options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -214,6 +237,7 @@ ${hyperresearch ? '"/ms-playwright/chromium_headless_shell-1228" = { source = "c
 ${hyperresearch ? '"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }' : ""}
 ${hyperresearch ? '"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-claude-entry")}
+${renderDejaDotfiles(lock, options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -258,6 +282,7 @@ ${renderBootstrap(profile, options)}
 "/usr/local/share/trellage/pi-config.yml" = { source = "pi-config.yml", mode = "copy" }
 "/usr/local/share/trellage/pi-seed" = { source = "pi-seed", mode = "copy" }
 ${renderRuntimeDotfile(options, "runtime-pi-entry")}
+${renderDejaDotfiles(lock, options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -292,6 +317,7 @@ ${renderBootstrap(profile, options)}
 "/usr/local/share/trellage/prime-kernel-seed.tar.gz" = { source = "prime-kernel-seed.tar.gz", mode = "copy" }
 "/usr/local/share/trellage/prime-seed" = { source = "prime-seed", mode = "copy" }
 ${renderRuntimeDotfile(options, "runtime-prime-entry")}
+${renderDejaDotfiles(lock, options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 

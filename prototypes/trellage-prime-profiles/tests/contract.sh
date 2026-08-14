@@ -4,6 +4,8 @@ set -u
 set -o pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+repo_root="$(CDPATH= cd -- "$root/../.." && pwd)"
+. "$repo_root/tests/deja_native_fixture.sh"
 launcher="$root/bin/prx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
@@ -33,6 +35,7 @@ trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 mkdir -p "$fake_bin" "$home"
+deja_native_prepare_install "$home" || fail 'could not prepare fake Deja runtime'
 
 cat >"$fake_bin/mise" <<'FAKE_MISE'
 #!/usr/bin/env bash
@@ -177,6 +180,14 @@ jq -cn \
   '$ARGS.named + {args:$ARGS.positional}' \
   --args -- "$@" >>"$FAKE_PRIME_LOG"
 
+if [[ "${FAKE_PRIME_TTY_READ-}" == 1 ]]; then
+  [[ -t 0 ]] || exit 88
+  printf 'TTY_READ_READY\n'
+  IFS= read -r tty_input
+  [[ "$tty_input" == continue ]] || exit 89
+  printf 'TTY_READ_DONE\n'
+fi
+
 exit "${FAKE_PRIME_EXIT_STATUS:-0}"
 FAKE_PRIME
 chmod 0755 "$fixture_root/fake-prime-template"
@@ -299,6 +310,8 @@ profile_home="$profile_root/home"
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
+deja_native_assert_installed_helper "$HOME" \
+  || fail 'installer did not install the common Deja helper'
 [[ -f "$runtime_root/.managed-by-trellage-prime-profiles" ]] \
   || fail 'installer did not write ownership marker'
 [[ "$(<"$runtime_root/.managed-by-trellage-prime-profiles")" == trellage-prime-profiles-v1 ]] \
@@ -505,6 +518,36 @@ jq -e '
 status=0
 FAKE_PRIME_EXIT_STATUS=37 "$command_path" -p probe || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status"
+
+export FAKE_DEJA_LOG="$fixture_root/deja.log"
+deja_native_install_fake_helper "$HOME" "$FAKE_DEJA_LOG"
+deja_native_install_ambient_helper "$fake_bin" "$FAKE_DEJA_LOG"
+DEJA_RECALL=unsafe "$command_path" -p deja-lifecycle || fail 'Deja lifecycle launch failed'
+expected_deja_log="$(printf '%s\n' \
+  "prepare home=$profile_home real=$home memory=deja recall=safe" \
+  "finalize home=$profile_home real=$home memory=deja recall=safe")"
+[[ "$(<"$FAKE_DEJA_LOG")" == "$expected_deja_log" ]] \
+  || fail 'Deja lifecycle order or isolated home differs'
+! grep -Fqx 'ambient helper used' "$FAKE_DEJA_LOG" \
+  || fail 'launch used an ambient Deja helper'
+FAKE_PRIME_TTY_READ=1 \
+  python3 "$repo_root/tests/deja_native_tty_driver.py" "$fixture_root/deja-tty.out" \
+    "$command_path" -p tty-stdin \
+  || fail 'interactive Prime launch did not preserve terminal stdin'
+grep -Fq 'TTY_READ_DONE' "$fixture_root/deja-tty.out" \
+  || fail 'interactive Prime child did not read terminal stdin'
+status=0
+FAKE_DEJA_PREPARE_STATUS=71 FAKE_DEJA_FINALIZE_STATUS=72 \
+FAKE_PRIME_EXIT_STATUS=37 "$command_path" -p deja-failure >"$fixture_root/deja-failure.out" 2>&1 \
+  || status=$?
+[[ "$status" == 37 ]] || fail "Deja failure changed harness status to $status"
+grep -Fq 'Deja prepare failed' "$fixture_root/deja-failure.out" \
+  || fail 'prepare failure was not warning-only'
+grep -Fq 'Deja finalize failed' "$fixture_root/deja-failure.out" \
+  || fail 'finalize failure was not warning-only'
+: >"$FAKE_DEJA_LOG"
+TRELLAGE_MEMORY=off "$command_path" -p deja-off || fail 'off-mode launch failed'
+[[ ! -s "$FAKE_DEJA_LOG" ]] || fail 'off mode used the Deja helper'
 
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \
   && fail 'doctor accepted missing model'

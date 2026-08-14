@@ -36,6 +36,9 @@ Each profile has an independent home at
 `~/.local/share/trellage/profiles/grok/<profile>/home/`. Plugin state,
 requirements, sessions, and authentication created for a profile stay in that
 profile home. Authentication is refreshed from the host login before use.
+Installation also refreshes the shared OS-user Deja runtime unless
+`TRELLAGE_MEMORY=off` is set. Deja indexing remains isolated to this profile
+home; see [the Deja memory policy](../../docs/deja-memory.md).
 
 For proxy-only Grok setups that intentionally route all model traffic through
 `copilot-proxy-rs`, set `GRX_DISABLE_AUTH_CHECK=1` before launching `grx`.
@@ -206,6 +209,8 @@ repository and host resources available to Grok.
 
 Run `./uninstall.sh` to remove the managed `grx` command and runtime.
 Uninstall preserves all profile homes, including authentication, plugins, sessions, memory, and permissions.
+It also retains the shared Deja runtime and local data so other native
+launchers continue to work.
 
 Run the contract suite with:
 

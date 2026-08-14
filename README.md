@@ -384,6 +384,32 @@ profiles described above. Use **Trellage Native** for `trx` and its host-native
 profile launchers. Native launchers isolate agent state but run directly on the
 host.
 
+### Shared Deja memory
+
+Deja memory is on by default for native and sandbox launches. The shared native
+runtime at `~/.local/share/trellage/deja/` is global only to the current OS user
+account. Each profile still has its own isolated home and Deja index.
+
+Launches use the safe `prepare → harness → finalize` boundary. Manual
+`trx memory sync` and `trellage memory sync --profile NAME` use the same
+prepare/finalize boundary without a harness or model call. `status` is
+content-free. Use `TRELLAGE_MEMORY=off`, `trx --no-memory`, or
+`trellage --no-memory` for a per-process opt-out.
+
+```bash
+trx memory status
+trx memory sync
+trellage memory status --profile codex-superpowers
+trellage memory sync --profile codex-superpowers
+```
+
+The exchange is sensitive owner-readable local state. Redacted batches can
+still contain sensitive prose. Forget and tombstones are local-only; v1 has no
+global revocation or garbage collection. Trellage does not migrate or delete
+old local stores or `.weavekit/deja-shared` evidence. For more than one
+machine, use Deja SSH sync; Trellage adds no extra mount and no Weavekit
+transport. See [the Deja memory policy](docs/deja-memory.md).
+
 ### Fresh-machine onboarding
 
 Each native launcher wraps a real, already-installed agent CLI; `trx` itself
@@ -444,7 +470,8 @@ Once `copilot-proxy-rs` is authenticated, `omp`'s keyless `local` profile
 and is not fixed by the device-flow login above.
 
 Install the native agent launchers and optional profile router from the
-repository root:
+repository root. Each direct launcher install refreshes the shared Deja runtime;
+`mise run rebuild-profiles` refreshes it once before all launchers and `trx`.
 
 ```bash
 (cd prototypes/trellage-codex-profiles && ./install.sh)
@@ -487,6 +514,10 @@ The installers publish these commands and managed runtimes:
 - `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
 - `prx`: `~/.local/bin/prx` and `~/.local/share/trellage/prx/`
 - `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
+
+Uninstalling one native launcher removes only its command and runtime. It
+retains the shared Deja runtime and all Deja state so other launchers continue
+to work.
 
 Their isolated profile homes are rooted at:
 
@@ -685,6 +716,8 @@ make profile-matrix-test
 Codex discovery and static checks require the managed `cdx` launcher and its isolated profile roots under `~/.local/share/trellage/profiles/codex/<profile>/home`.
 
 Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
+
+Static verification also checks the exact shared Deja 0.17.0 runtime and runs its prepare/finalize lifecycle for each statically passing managed Codex profile. It invokes no model or paid service, but updates only those local Deja indexes and exchange batches.
 
 Static verification performs no native marketplace/plugin mutation or live prompt and never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
 

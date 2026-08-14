@@ -4010,6 +4010,13 @@ sha256 = "sha256:af8f233b66f475f857ffbe7f81083b5b3a406fb81ac7a7cda94f03a430dc1a8
 skills_cli_version = "1.5.19"
 skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
 
+[packages.deja]
+name = "deja"
+version = "0.17.0"
+integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"
+url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"
+size = 4364290
+
 [packages.harness]
 kind = "claude"
 selector = "latest"
@@ -4079,4 +4086,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:0136a1b1bd3392078ffc68dbe4a67573baf41844fd6a4882fd406eb52d8f3b33"
+final_digest = "sha256:dd99e1f15e427f4f36ea0e589f9dffeb098dadbd334c56241e78fef7b5b1fa90"

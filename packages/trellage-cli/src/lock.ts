@@ -6,7 +6,7 @@ import { Data, Effect } from "effect"
 import type { InventoryEntry } from "./inventory.js"
 import type { ProfileDocument } from "./profile.js"
 import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.js"
-import { lockedArtifactError } from "./artifact-catalog.js"
+import { arm64ArtifactCatalog, lockedArtifactError, managedDejaArtifactError } from "./artifact-catalog.js"
 
 const legacySourceProvenance = Symbol("legacySourceProvenance")
 const persistedLockProvenance = Symbol("persistedLockProvenance")
@@ -94,6 +94,7 @@ export interface RuntimePackageLock {
 
 export interface PackageLock {
   readonly harness: HarnessPackageLock
+  readonly deja?: ArtifactLock
   readonly skills_cli_version?: string
   readonly skills_cli_integrity?: string
   readonly runtime: ReadonlyArray<RuntimePackageLock>
@@ -292,6 +293,8 @@ const lockSemanticError = (
   if (current.image.final_digest !== undefined && !sha256Pattern.test(current.image.final_digest)) {
     return "final OCI digest is invalid"
   }
+  const dejaError = managedDejaArtifactError(current.packages.deja)
+  if (dejaError !== undefined) return dejaError
   const harness = current.packages.harness
   const harnessLabel =
     harness.kind === "codex"
@@ -677,6 +680,7 @@ export const compileLock = (
           ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
         })
         .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
+    const managedPackages: PackageLock = { ...packages, deja: arm64ArtifactCatalog.deja }
     const base =
       reusableBase(document, validCurrent, update, platform) ??
       (yield* resolvers
@@ -691,7 +695,7 @@ export const compileLock = (
       source_date_epoch: 1784379906,
       profile_hash: hash,
       sources,
-      packages,
+      packages: managedPackages,
       image: {
         base: base.reference,
         base_digest: base.digest,

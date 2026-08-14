@@ -8,6 +8,7 @@ set -o pipefail
 
 blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 . "$blocks_dir/../lib/fixture.sh"
+. "$root/../../tests/deja_native_fixture.sh"
 
 install_script="$root/install.sh"
 uninstall_script="$root/uninstall.sh"
@@ -74,6 +75,8 @@ assert_install_text 'records that no line was removed' "$readme"
 assert_install_text 'uninstall preserves that state and does not add a line' "$readme"
 assert_install_text 'Dynamic or escaped alias/function names' "$readme"
 assert_install_text 'Dynamic command names, `eval`, sourced files, and runtime function calls' "$readme"
+assert_install_text 'refreshes the shared OS-user Deja runtime' "$readme"
+assert_install_text 'retains the shared `~/.local/share/trellage/deja/` runtime' "$readme"
 
 assert_no_install_staging() {
   fixture_home="$1"
@@ -190,6 +193,7 @@ fi
 
 install_home="$fixture_root/install-home"
 mkdir -p "$install_home"
+deja_native_prepare_install "$install_home" || fail 'could not prepare fake Deja runtime'
 write_legacy_fish "$install_home"
 fish_config="$install_home/.config/fish/config.fish"
 cp "$fish_config" "$fixture_root/fish-before"
@@ -198,6 +202,9 @@ fish_before_mode="$(path_mode "$fish_config")"
 HOME="$install_home" /bin/bash "$install_script" >"$fixture_root/install.out" \
   || fail 'fixture install failed'
 assert_install_published "$install_home"
+deja_native_assert_installed_helper "$install_home" \
+  || fail 'installer did not install the common Deja helper'
+export TRELLAGE_MEMORY=off
 HOME="$install_home" "$install_home/.local/bin/cdx" list \
   >"$fixture_root/installed-list.out" 2>"$fixture_root/installed-list.err" \
   || fail "installed cdx list failed: $(cat "$fixture_root/installed-list.err")"

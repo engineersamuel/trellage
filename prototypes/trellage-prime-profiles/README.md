@@ -39,6 +39,9 @@ The installer publishes `~/.local/bin/prx` and owns its runtime beneath
 `~/.local/share/trellage/prx`. `setup` resolves the latest Prime Agent release
 eligible under `mise` policy, installs the release package into a managed npm
 prefix, and pins that exact version. Ordinary launches never update it.
+Installation refreshes the shared OS-user Deja runtime unless
+`TRELLAGE_MEMORY=off` is set. The launcher uses it with this profile's isolated
+home and index.
 
 The launcher is named `prx` (Prime + `x`) so it does not collide with macOS
 `/bin/pax` (POSIX archive tool). `trx` refuses any `prx` that does not resolve
@@ -107,6 +110,9 @@ the process.
 ```bash
 ./uninstall.sh
 ```
+
+Uninstall retains the shared Deja runtime and its local data so other native
+launchers continue to work.
 
 ## Test
 

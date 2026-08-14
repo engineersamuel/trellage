@@ -7,6 +7,7 @@ log="${FAKE_DOCKER_LOG:?}"
 if [[ ! -s "$log" || ! -f "$log.generation" ]]; then
   printf '%s:%s\n' "$$" "$RANDOM" >"$log.generation"
   printf '0\n' >"$log.container-label-inspect-count"
+  rm -f -- "$log.cp-count"
 fi
 IFS= read -r current_generation <"$log.generation"
 printf 'CALL\n' >>"$log"
@@ -306,6 +307,7 @@ case "${1:-} ${2:-}" in
             printf '%s\n' "${FAKE_DOCKER_IMAGE_ID:-fake-image-id}"
           fi
           ;;
+        *dev.trellage.prototype*) printf '%s\n' "${FAKE_DOCKER_IMAGE_PROTOTYPE:-trellage}" ;;
         *dev.trellage.profile.hash*)
           [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
             || exit "${FAKE_DOCKER_IMAGE_LABEL_ERROR_CODE:-77}"
@@ -318,6 +320,9 @@ case "${1:-} ${2:-}" in
             exit 0
           fi
           printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE_HASH-$(default_profile_hash)}"
+          ;;
+        *dev.trellage.profile*)
+          printf '%s\n' "${FAKE_DOCKER_IMAGE_PROFILE:-${FAKE_DOCKER_PROFILE:-codex-superpowers}}"
           ;;
         *dev.trellage.runtime.hash*)
           [[ "${FAKE_DOCKER_IMAGE_LABEL_INSPECT_ERROR:-0}" != 1 ]] \
@@ -332,6 +337,7 @@ case "${1:-} ${2:-}" in
           fi
           printf '%s\n' "${FAKE_DOCKER_IMAGE_RUNTIME_HASH:-}"
           ;;
+        *dev.trellage.deja.version*) printf '%s\n' "${FAKE_DOCKER_IMAGE_DEJA_VERSION:-0.17.0}" ;;
         *dev.trellage.platform*) printf '%s\n' "${FAKE_DOCKER_PLATFORM:-linux/arm64}" ;;
       esac
     fi
@@ -578,9 +584,44 @@ case "${1:-} ${2:-}" in
   'container rm') printf '%s\n' "${@: -1}" ;;
   'volume rm') printf '%s\n' "${@: -1}" ;;
   'container exec')
+    if [[ -n "${FAKE_DOCKER_DEJA_BRIDGE_ROOT:-}" ]]; then
+      for argument in "$@"; do
+        if [[ "$argument" == *'printf "%s\n" "$name"'* \
+          && "$argument" == *'.trellage-deja-bridge-'* ]]; then
+          shopt -s nullglob
+          for bridge in "$FAKE_DOCKER_DEJA_BRIDGE_ROOT"/.trellage-deja-bridge-*; do
+            printf '%s\n' "${bridge##*/}"
+          done
+          exit 0
+        fi
+        if [[ "$argument" == *'bridge="$home/$name"'* \
+          && "$argument" == *'skipping unsafe stale container bridge'* ]]; then
+          bridge="$FAKE_DOCKER_DEJA_BRIDGE_ROOT/${!#}"
+          [[ -e "$bridge" || -L "$bridge" ]] || exit 0
+          if [[ ! -d "$bridge" || -L "$bridge" ]]; then
+            exit 0
+          fi
+          if stat -c '%a' "$bridge" >/dev/null 2>&1; then
+            bridge_mode="$(stat -c '%a' "$bridge")"
+          else
+            bridge_mode="$(stat -f '%Lp' "$bridge")"
+          fi
+          [[ "$bridge_mode" == 700 ]] || exit 0
+          rm -rf -- "$bridge"
+          exit 0
+        fi
+      done
+    fi
     if [[ "${FAKE_DOCKER_BLOCK_ANY_EXEC:-0}" == 1 && -n "${FAKE_DOCKER_EXEC_READY_FILE:-}" ]]; then
       : >"$FAKE_DOCKER_EXEC_READY_FILE"
       while [[ ! -f "${FAKE_DOCKER_EXEC_RELEASE_FILE:?}" ]]; do sleep 0.05; done
+    fi
+    if [[ -n "${FAKE_DOCKER_DEJA_BRIDGE_CREATE_EXIT:-}" ]]; then
+      for argument in "$@"; do
+        if [[ "$argument" == *'if ! (umask 077; mkdir -m 700 -- "$bridge"); then'* ]]; then
+          exit "$FAKE_DOCKER_DEJA_BRIDGE_CREATE_EXIT"
+        fi
+      done
     fi
     if [[ -n "${FAKE_DOCKER_AGENT_EXEC_EXIT:-}" ]]; then
       for argument in "$@"; do
@@ -590,6 +631,16 @@ case "${1:-} ${2:-}" in
         fi
       done
     fi
+    for ((index = 1; index <= $#; index++)); do
+      if [[ "${!index}" == /usr/local/bin/deja-memory ]]; then
+        next_index=$((index + 1))
+        operation="${!next_index-}"
+        case "$operation" in
+          prepare) exit "${FAKE_DOCKER_DEJA_PREPARE_EXIT:-0}" ;;
+          finalize) exit "${FAKE_DOCKER_DEJA_FINALIZE_EXIT:-0}" ;;
+        esac
+      fi
+    done
     for argument in "$@"; do
       if [[ "$argument" == *trellage-*-entry* ]]; then
         if [[ "${FAKE_DOCKER_PTY_PROBE:-0}" == 1 ]]; then
@@ -613,6 +664,17 @@ case "${1:-} ${2:-}" in
       fi
     done
     exit "${FAKE_DOCKER_EXEC_EXIT:-0}"
+    ;;
+  'cp '*)
+    cp_count_file="$log.cp-count"
+    cp_count=0
+    [[ ! -f "$cp_count_file" ]] || cp_count="$(head -n 1 "$cp_count_file")"
+    cp_count="$((cp_count + 1))"
+    printf '%s\n' "$cp_count" >"$cp_count_file"
+    if [[ "$cp_count" == "${FAKE_DOCKER_CP_EXIT_ON_CALL:-0}" ]]; then
+      exit "${FAKE_DOCKER_CP_EXIT:-1}"
+    fi
+    exit "${FAKE_DOCKER_CP_EXIT:-0}"
     ;;
   *) exit 64 ;;
 esac
