@@ -75,8 +75,11 @@ printf '%s\n' \
   '  : >"$FAKE_DOCKER_LOG.image-built"' \
   '  exit 0' \
   'fi' \
-  'if [[ "${1:-}" == */launcher.mjs && -n "${FAKE_PICKER_INPUT:-}" ]]; then' \
-  '  cat "$2" >"$FAKE_PICKER_INPUT"' \
+  'if [[ "${1:-}" == */launcher.mjs && "${FAKE_PICKER_CANCEL:-0}" == 1 ]]; then' \
+  '  exit 130' \
+  'fi' \
+  'if [[ "${1:-}" == */launcher.mjs && "${FAKE_PICKER_AUTOSELECT:-0}" == 1 ]]; then' \
+  '  cat "$2" >"$FAKE_PROFILE_CHOICES.input"' \
   '  printf '\''{"id":"0","target":"current"}\n'\'' >"$3"' \
   '  exit 0' \
   'fi' \
@@ -2806,7 +2809,7 @@ test_interactive_profile_selection() {
   local docker_log="$test_root/interactive-profile.docker.log"
   local choices="$test_root/interactive-profile-choices.json"
   local metadata="$test_root/interactive-profile-metadata.json"
-  local picker_input="$test_root/interactive-picker-input.json"
+  local picker_input="$choices.input"
   local profile="$prototype_dir/../../profiles/codex-superpowers/profile.toml"
   local output status=0
   mkdir -p "$worktree"
@@ -2833,12 +2836,11 @@ test_interactive_profile_selection() {
 
   : >"$host_node_log"
   printf '\n' | FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
-    FAKE_PICKER_INPUT="$picker_input" \
+    FAKE_PICKER_AUTOSELECT=1 \
     FAKE_PROFILE_BUILD_SUCCEEDS=1 \
     FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env -u TRELLAGE_PROFILE TRELLAGE_NETWORK='test_proxy_net' \
-      "$prototype_dir/trellage"
+      env -u TRELLAGE_PROFILE TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
   jq -e '
     .description == "Trellage Sandbox runs reproducible agent profiles in isolated Docker containers. Choose a profile to launch its harness, model, plugins, skills, and MCPs."
     and (.choices[0]
@@ -2883,7 +2885,8 @@ test_interactive_profile_selection() {
     || fail 'legacy compiler flag diagnostic is incorrect'
 
   status=0
-  printf '\033' | FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
+  FAKE_PROFILE_CHOICES="$choices" FAKE_PROFILE_METADATA="$metadata" \
+    FAKE_PICKER_CANCEL=1 \
     run_tty "$worktree" "$docker_log" "$worktree" \
       env -u TRELLAGE_PROFILE "$prototype_dir/trellage" >/dev/null 2>&1 || status=$?
   [[ "$status" -eq 130 ]] \
