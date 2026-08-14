@@ -2811,7 +2811,8 @@ test_interactive_profile_selection() {
   local output status=0
   mkdir -p "$worktree"
   : >"$docker_log"
-  "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata "$profile" \
+  FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
+    "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata "$profile" \
     | jq '.locked = true | .image = "test/image:locked"' >"$metadata"
   jq -n --arg profile "$profile" '[
     {
@@ -2959,7 +2960,8 @@ test_copilot_metadata_contract() {
     'marketplace = "hve-core"' \
     'select = ["hve-core"]' >"$profile"
   compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
-  profile_hash="$($real_node "$compiler" metadata "$profile" | jq -r '.profile_hash')"
+  profile_hash="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
+    "$real_node" "$compiler" metadata "$profile" | jq -r '.profile_hash')"
   source_integrity="$(printf '%s' '[{"kind":"file","path":"plugins/hve-core/SKILL.md","sha256":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}]' | shasum -a 256 | awk '{print "sha256:" $1}')"
   printf '%s\n' \
     'schema = 1' \
@@ -2994,7 +2996,8 @@ test_copilot_metadata_contract() {
     'base = "node:22.17.0-bookworm-slim"' \
     'base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"' \
     'final_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' >"$lock"
-  metadata="$($real_node "$compiler" metadata "$profile")"
+  metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
+    "$real_node" "$compiler" metadata "$profile")"
 
   [[ "$(jq -r '.harness_kind' <<<"$metadata")" == copilot ]] \
     || fail 'Copilot metadata lacks harness kind'
