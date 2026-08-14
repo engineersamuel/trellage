@@ -2034,7 +2034,8 @@ test_resource_identity_isolates_codex_and_copilot_profiles() {
   [[ "$container_one" != "$container_two" ]] \
     || fail 'Codex profiles collide on one worktree'
   state_one="$(resource_names "$worktree" one | tail -n 1)"
-  profile_one_hash="$("$real_node" \
+  profile_one_hash="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
+    "$real_node" \
     "$prototype_dir/../../packages/trellage-cli/dist/cli.js" \
     metadata "$profile_one" | jq -r '.profile_hash')"
   cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$profile_one_lock"
