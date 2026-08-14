@@ -528,10 +528,10 @@ test_new_container_from_subdirectory() {
   ! grep -Eq $'ARG\ttype=(bind|volume).*(docker\.sock|herdr\.sock|/run/herdr|/var/run/herdr)' "$docker_log" \
     || fail 'forbidden host resource was mounted'
 
-  create_line="$(grep -n -F $'ARG\tcreate' "$docker_log" | head -n 1 | cut -d: -f1)"
+  create_line="$(grep -n -F $'ARG\tcreate' "$docker_log" | sed -n '1p' | cut -d: -f1)"
   [[ "$(grep -n -F $'ARG\tinspect' "$docker_log" | head -n 2 | tail -n 1 | cut -d: -f1)" -lt "$create_line" ]] \
     || fail 'image and network were not validated before mutation'
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   assert_arg "$docker_log" "$container_name"
   printf 'Trellage host test: PASS: secure new container from subdirectory\n'
 }
@@ -544,7 +544,7 @@ test_copilot_models_catalog_lifecycle() {
   local container_name state_volume confirmation output
   mkdir -p "$worktree" "$missing_home" "$symlink_home/.copilot"
   ln -s "$HOME/.copilot/models.json" "$symlink_home/.copilot/models.json"
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   confirmation="destroy $container_name $state_volume"
 
@@ -1489,7 +1489,7 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
   ! grep -Fqx $'ARG\tstop' "$docker_log" || fail 'unmanaged container process did not prevent shutdown'
 
-  leases_dir="$(ls -td "$runtime_dir"/trellage-*/*/leases 2>/dev/null | head -n 1)"
+  leases_dir="$(ls -td "$runtime_dir"/trellage-*/*/leases 2>/dev/null | sed -n '1p')"
   [[ -n "$leases_dir" ]] || fail 'lifecycle leases directory was not created'
   printf '99999999\n' >"$leases_dir/99999999"
   : >"$docker_log"
@@ -1633,7 +1633,7 @@ test_doctor_reports_status_without_mutation_or_secrets() {
     "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" environment \
       | jq -er '.path'
   )"
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
 
   : >"$docker_log"
@@ -1764,7 +1764,7 @@ test_destroy_requires_exact_confirmation_and_removes_in_order() {
   local docker_log="$test_root/destroy.docker.log"
   local container_name state_volume confirmation output container_rm_line volume_rm_line
   mkdir -p "$worktree"
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   confirmation="destroy $container_name $state_volume"
 
@@ -1842,7 +1842,7 @@ test_destroy_is_idempotent_and_collision_safe() {
   local docker_log="$test_root/destroy-safety.docker.log"
   local container_name state_volume confirmation output
   mkdir -p "$worktree"
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   confirmation="destroy $container_name $state_volume"
 
@@ -1954,7 +1954,7 @@ test_destroy_revalidates_after_confirmation() {
   local container_name state_volume confirmation pid prompt_seen=false
   local preconfirmation_docker_calls=false attempts=0
   mkdir -p "$worktree"
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   confirmation="destroy $container_name $state_volume"
   printf 'matching-running\n' >"$container_state_file"
@@ -2172,7 +2172,7 @@ test_codex_profile_resources_reuse_running_and_stopped_state() {
   local docker_log="$test_root/profile-reuse.docker.log"
   local container_name state_volume state
   mkdir -p "$worktree"
-  container_name="$(resource_names "$worktree" | head -n 1)"
+  container_name="$(resource_names "$worktree" | sed -n '1p')"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
 
   for state in matching-running matching-stopped; do
@@ -2487,7 +2487,7 @@ test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
   assert_arg "$docker_log" 'sha256:resolved-image-id'
   [[ "$(grep -Fxc $'ARG\ttest/race:latest' "$docker_log")" -eq 1 ]] \
     || fail 'mutable image tag was reused after immutable ID resolution'
-  image_verification_line="$(grep -n -F $'ARG\t{{ .Image }}' "$docker_log" | head -n 1 | cut -d: -f1)"
+  image_verification_line="$(grep -n -F $'ARG\t{{ .Image }}' "$docker_log" | sed -n '1p' | cut -d: -f1)"
   start_line="$(grep -n -F $'ARG\tstart' "$docker_log" | tail -n 1 | cut -d: -f1)"
   [[ -n "$image_verification_line" && -n "$start_line" && "$image_verification_line" -lt "$start_line" ]] \
     || fail 'created container image ID was not verified before start'
@@ -3634,7 +3634,7 @@ test_copilot_lifecycle_identity_and_runtime() {
       env TRELLAGE_IMAGE='test/copilot:locked' \
       "$prototype_dir/trellage" 'research $(touch /tmp/not-executed)'
 
-  assert_arg "$docker_log" "$(resource_names "$worktree" copilot-hve-test copilot | head -n 1)"
+  assert_arg "$docker_log" "$(resource_names "$worktree" copilot-hve-test copilot | sed -n '1p')"
   assert_arg "$docker_log" "$state_volume"
   assert_arg "$docker_log" 'dev.trellage.prototype=trellage-copilot'
   assert_create_label "$docker_log" volume \
@@ -4032,7 +4032,7 @@ test_copilot_auth_isolated_across_create_start_stop_destroy() {
   local gh_alternate='lifecycle-gh-alternate-canary'
   local github_alternate='lifecycle-github-alternate-canary'
   mkdir -p "$worktree"
-  container_name="$(resource_names "$worktree" copilot-hve-test copilot | head -n 1)"
+  container_name="$(resource_names "$worktree" copilot-hve-test copilot | sed -n '1p')"
   state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
   expected_hash="$(printf '%s' "$selected" | shasum -a 256 | awk '{print $1}')"
   : >"$docker_log"
@@ -4175,7 +4175,7 @@ test_copilot_non_agent_modes_skip_auth_discovery_and_xtrace_is_safe() {
   local gh_alternate='xtrace-gh-canary'
   local github_alternate='xtrace-github-canary'
   mkdir -p "$worktree"
-  container_name="$(resource_names "$worktree" copilot-hve-test copilot | head -n 1)"
+  container_name="$(resource_names "$worktree" copilot-hve-test copilot | sed -n '1p')"
   state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
   confirmation="destroy $container_name $state_volume"
 
