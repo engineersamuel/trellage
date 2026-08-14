@@ -3,8 +3,8 @@
   "profiles": {
     "hve": {
       "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
-      "source": "microsoft/hve-core#plugins/hve-core-all",
-      "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+      "source": "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all",
+      "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json",
       "plugin": "hve-core-all",
       "standaloneMcps": []
     },
