@@ -78,6 +78,17 @@ export const renderLock = (lock: ProfileLock): string => {
     lines.push(`skills_cli_integrity = ${quote(lock.packages.skills_cli_integrity)}`)
   if (lock.packages.python_lock_integrity)
     lines.push(`python_lock_integrity = ${quote(lock.packages.python_lock_integrity)}`)
+  if (lock.packages.deja) {
+    lines.push(
+      "",
+      "[packages.deja]",
+      `name = ${quote(lock.packages.deja.name)}`,
+      `version = ${quote(lock.packages.deja.version)}`,
+      `integrity = ${quote(lock.packages.deja.integrity)}`,
+      `url = ${quote(lock.packages.deja.url)}`,
+      `size = ${lock.packages.deja.size}`,
+    )
+  }
   if (
     lock.packages.harness.kind === "claude" ||
     lock.packages.harness.kind === "copilot" ||
@@ -213,12 +224,14 @@ const LegacyPackageSchema = Schema.Struct({
   codex_integrity: Schema.optional(Text),
   codex_url: Schema.optional(Text),
   codex_size: Schema.optional(Schema.Number.pipe(Schema.positive())),
+  deja: Schema.optional(ArtifactSchema),
   skills_cli_version: Schema.optional(Text),
   skills_cli_integrity: Schema.optional(Text),
   runtime: Schema.Array(RuntimeSchema),
 })
 const PackageSchema = Schema.Struct({
   harness: HarnessPackageSchema,
+  deja: Schema.optional(ArtifactSchema),
   skills_cli_version: Schema.optional(Text),
   skills_cli_integrity: Schema.optional(Text),
   python_lock_integrity: Schema.optional(Text),
@@ -300,6 +313,7 @@ export const parseLock = (source: string): Effect.Effect<ProfileLock, LockFileEr
                 ...(value.packages.skills_cli_integrity === undefined
                   ? {}
                   : { skills_cli_integrity: value.packages.skills_cli_integrity }),
+                ...(value.packages.deja === undefined ? {} : { deja: value.packages.deja }),
                 runtime: value.packages.runtime,
               },
       } as ProfileLock

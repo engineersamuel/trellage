@@ -33,6 +33,162 @@ report_error() {
   status=1
 }
 
+deja_stat_owner() {
+  if stat -c '%u' / >/dev/null 2>&1; then
+    stat -c '%u' "$1"
+  else
+    stat -f '%u' "$1"
+  fi
+}
+
+deja_stat_mode() {
+  if stat -c '%a' / >/dev/null 2>&1; then
+    stat -c '%a' "$1"
+  else
+    stat -f '%Lp' "$1"
+  fi
+}
+
+deja_platform() {
+  case "$(uname -s):$(uname -m)" in
+    Linux:aarch64|Linux:arm64) printf '%s\n' linux_arm64 ;;
+    Linux:x86_64|Linux:amd64) printf '%s\n' linux_amd64 ;;
+    Darwin:arm64|Darwin:aarch64) printf '%s\n' darwin_arm64 ;;
+    Darwin:x86_64|Darwin:amd64) printf '%s\n' darwin_amd64 ;;
+    *) return 1 ;;
+  esac
+}
+
+deja_release_sha() {
+  case "$1" in
+    linux_arm64) printf '%s\n' e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1 ;;
+    linux_amd64) printf '%s\n' 1d176d47d3a6990dbb74a91086a6a9099fe7c3461e4d196718ef8a7d51570d78 ;;
+    darwin_arm64) printf '%s\n' 17daa4e2036191ce87e41b47154785ae3b59c537fe89c1606eb476ba540799b4 ;;
+    darwin_amd64) printf '%s\n' a45650cf5041da49cd318577ce674be919b414d6994aab5615c529df31c349b2 ;;
+    *) return 1 ;;
+  esac
+}
+
+deja_no_symlink_ancestors() {
+  local path="$1"
+  local component
+  local current=''
+  local -a components
+
+  [[ "$path" == /* ]] || return 1
+  IFS=/ read -r -a components <<<"${path#/}"
+  for component in "${components[@]}"; do
+    [[ -n "$component" ]] || continue
+    current="${current}/${component}"
+    [[ ! -L "$current" ]] || return 1
+  done
+}
+
+deja_owned_directory() {
+  local path="$1"
+  deja_no_symlink_ancestors "$path" \
+    && [[ -d "$path" && ! -L "$path" ]] \
+    && [[ "$(deja_stat_owner "$path")" == "$(id -u)" ]] \
+    && [[ "$(deja_stat_mode "$path")" == 700 ]]
+}
+
+deja_owned_file() {
+  local path="$1"
+  local expected_mode="$2"
+  [[ -f "$path" && ! -L "$path" ]] \
+    && [[ "$(deja_stat_owner "$path")" == "$(id -u)" ]] \
+    && [[ "$(deja_stat_mode "$path")" == "$expected_mode" ]]
+}
+
+deja_helper=''
+deja_runtime_ready=0
+deja_real_home=''
+
+verify_deja_runtime() {
+  local platform expected_sha runtime version_dir platform_dir binary marker marker_last_byte output
+
+  if [[ "${TRELLAGE_MEMORY:-deja}" != deja ]]; then
+    report_error 'shared Deja runtime is disabled; unset TRELLAGE_MEMORY=off before static verification'
+    return
+  fi
+  [[ "$HOME" == /* && -d "$HOME" && ! -L "$HOME" ]] || {
+    report_error 'shared Deja runtime requires a safe absolute HOME'
+    return
+  }
+  deja_real_home="$(cd -P -- "$HOME" && pwd)" || {
+    report_error 'cannot resolve HOME for the shared Deja runtime'
+    return
+  }
+  platform="$(deja_platform)" || {
+    report_error 'shared Deja runtime has an unsupported platform'
+    return
+  }
+  expected_sha="$(deja_release_sha "$platform")" || {
+    report_error 'shared Deja runtime has no pinned release checksum'
+    return
+  }
+  runtime="$deja_real_home/.local/share/trellage/deja"
+  version_dir="$runtime/0.17.0"
+  platform_dir="$version_dir/$platform"
+  binary="$platform_dir/deja"
+  marker="$platform_dir/.archive-sha256"
+  deja_helper="$runtime/deja-memory"
+
+  for directory in "$runtime" "$version_dir" "$platform_dir"; do
+    if ! deja_owned_directory "$directory"; then
+      report_error "shared Deja runtime has an unsafe managed directory: $directory"
+      return
+    fi
+  done
+  if ! deja_owned_file "$deja_helper" 700 || [[ ! -x "$deja_helper" ]]; then
+    report_error "shared Deja runtime has an unsafe helper: $deja_helper"
+    return
+  fi
+  if ! deja_owned_file "$binary" 700 || [[ ! -x "$binary" ]]; then
+    report_error "shared Deja runtime has an unsafe binary: $binary"
+    return
+  fi
+  if ! deja_owned_file "$marker" 600 || [[ "$(<"$marker")" != "$expected_sha" ]]; then
+    report_error "shared Deja runtime has an invalid release marker: $marker"
+    return
+  fi
+  marker_last_byte="$(tail -c 1 "$marker" | od -An -tu1 | tr -d '[:space:]')" || marker_last_byte=''
+  if [[ "$marker_last_byte" != 10 ]]; then
+    report_error "shared Deja runtime has an invalid release marker: $marker"
+    return
+  fi
+  if ! output="$(TRELLAGE_MEMORY=deja TRELLAGE_REAL_HOME="$deja_real_home" \
+    "$deja_helper" status 2>&1)" \
+    || [[ ! "$output" =~ ^memory:\ enabled\;\ exchange:\ (absent|ready|unsafe)\;\ binary:\ ready$ ]]; then
+    report_error 'shared Deja runtime did not return a content-free ready status'
+    return
+  fi
+
+  deja_runtime_ready=1
+  printf 'Deja static runtime: pass\n'
+}
+
+verify_deja_lifecycle() {
+  local profile="$1"
+  local profile_home="$deja_real_home/.local/share/trellage/profiles/codex/$profile/home"
+
+  ((deja_runtime_ready == 1)) || return 1
+  if [[ ! -d "$profile_home" || -L "$profile_home" ]]; then
+    report_error "Deja lifecycle has an unsafe Codex profile home: $profile"
+    return 1
+  fi
+  if ! TRELLAGE_MEMORY=deja DEJA_RECALL=safe TRELLAGE_REAL_HOME="$deja_real_home" \
+    HOME="$profile_home" "$deja_helper" prepare >/dev/null 2>&1; then
+    report_error "Deja prepare failed for Codex profile: $profile"
+    return 1
+  fi
+  if ! TRELLAGE_MEMORY=deja DEJA_RECALL=safe TRELLAGE_REAL_HOME="$deja_real_home" \
+    HOME="$profile_home" "$deja_helper" finalize >/dev/null 2>&1; then
+    report_error "Deja finalize failed for Codex profile: $profile"
+    return 1
+  fi
+}
+
 for required_command in jq cdx codex cpx grx; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     report_error "required command not found: $required_command"
@@ -76,6 +232,7 @@ fi
 
 live_pid=''
 live_pgid=''
+live_timeout_pid=''
 live_process_timed_out=0
 launch_in_progress=0
 pending_signal_status=''
@@ -156,10 +313,23 @@ terminate_live_process_group() {
   live_pgid=''
 }
 
+stop_live_timeout_watchdog() {
+  local timeout_pid="$live_timeout_pid"
+  [ -n "$timeout_pid" ] || return 0
+  if [[ "$timeout_pid" =~ ^[1-9][0-9]*$ ]] \
+    && [ "$timeout_pid" -ne "$$" ] \
+    && [ "$timeout_pid" -ne "$PPID" ]; then
+    kill -TERM "$timeout_pid" 2>/dev/null || true
+    wait "$timeout_pid" 2>/dev/null || true
+  fi
+  live_timeout_pid=''
+}
+
 cleanup() {
   local exit_status=$?
   trap - EXIT HUP INT TERM
   terminate_live_process_group
+  stop_live_timeout_watchdog
   rm -rf -- "$temp_dir"
   exit "$exit_status"
 }
@@ -273,13 +443,13 @@ run_live_process() {
   local output_file="$2"
   local error_file="$3"
   local command_status
-  local live_deadline
   local hold_attempt
   local launch_prefix
   local pre_spawn_marker
   local release_file
   local supervisor_waiting_marker
   local supervisor_released
+  local timeout_file
   shift 3
 
   live_launch_sequence=$((live_launch_sequence + 1))
@@ -287,6 +457,7 @@ run_live_process() {
   pre_spawn_marker="$launch_prefix.pre-spawn"
   release_file="$launch_prefix.release"
   supervisor_waiting_marker="$launch_prefix.waiting"
+  timeout_file="$launch_prefix.timeout"
   pending_signal_status=''
   live_process_timed_out=0
   launch_in_progress=1
@@ -360,11 +531,19 @@ run_live_process() {
     exit "$command_status"
   fi
   : >"$release_file"
-  live_deadline=$((SECONDS + live_timeout_seconds))
+  # A sleep watchdog measures a full interval; SECONDS can expire a one-second
+  # deadline almost immediately when the counter advances after its assignment.
+  (
+    trap - HUP INT TERM
+    sleep "$live_timeout_seconds"
+    : >"$timeout_file"
+  ) &
+  live_timeout_pid=$!
   while live_launcher_running; do
-    if [ "$SECONDS" -ge "$live_deadline" ]; then
+    if [ -f "$timeout_file" ]; then
       live_process_timed_out=1
       terminate_live_process_group
+      stop_live_timeout_watchdog
       return 124
     fi
     sleep 0.05 || true
@@ -375,6 +554,7 @@ run_live_process() {
     command_status=$?
   fi
   terminate_live_process_group
+  stop_live_timeout_watchdog
   return "$command_status"
 }
 
@@ -729,6 +909,9 @@ verify_codex_profiles() {
         fi
       fi
     fi
+    if [ "$row_static" = 'pass' ] && ! verify_deja_lifecycle "$profile"; then
+      set_row_failure 'Deja lifecycle'
+    fi
     if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
       probe_codex_live "$profile" "$package" "$skills_file"
       if [ "$row_live" = 'not run' ]; then
@@ -981,6 +1164,7 @@ verify_grx_profiles() {
   done <"$inventory"
 }
 
+verify_deja_runtime
 verify_codex_profiles
 verify_cpx_profiles
 verify_grx_profiles

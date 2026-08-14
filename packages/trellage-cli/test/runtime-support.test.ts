@@ -102,6 +102,24 @@ describe("runtime support snapshots", () => {
     expect(core.files.map((file) => file.role)).toEqual(["runtime-claude-entry"])
   })
 
+  it("captures an opt-in Deja memory helper without requiring one by default", async () => {
+    const { root, paths } = await fixtures()
+    const helper = path.join(root, "deja-memory")
+    await writeFile(helper, "#!/bin/sh\nexit 0\n")
+
+    const defaultSnapshot = await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))
+    const helperSnapshot = await Effect.runPromise(
+      createRuntimeSupportSnapshot("codex", { ...paths, dejaMemory: helper }),
+    )
+
+    expect(defaultSnapshot.files.map((file) => file.role)).not.toContain("deja-memory")
+    expect(helperSnapshot.files.find((file) => file.role === "deja-memory")).toMatchObject({
+      destination: "/usr/local/bin/deja-memory",
+      buildContextPath: "deja-memory",
+      mode: 0o755,
+    })
+  })
+
   it("keeps captured bytes immutable after source mutation", async () => {
     const { paths } = await fixtures()
     const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))

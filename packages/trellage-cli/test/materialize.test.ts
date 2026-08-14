@@ -29,6 +29,7 @@ import {
   normalizeHyperresearchSeed,
   stampClaudeMarketplaceVersions,
 } from "../src/claude-materialize.js"
+import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
 import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
 import { parseLock, renderLock } from "../src/lock-file.js"
 import {
@@ -244,6 +245,7 @@ describe("native Claude marketplace materialization", () => {
             },
           ],
           packages: {
+            deja: arm64ArtifactCatalog.deja,
             harness: {
               kind: "claude",
               selector: "latest",
@@ -310,6 +312,7 @@ describe("native Claude marketplace materialization", () => {
             },
           ],
           packages: {
+            deja: arm64ArtifactCatalog.deja,
             harness: {
               kind: "claude",
               selector: "latest",
@@ -386,6 +389,7 @@ describe("native Claude marketplace materialization", () => {
             },
           ],
           packages: {
+            deja: arm64ArtifactCatalog.deja,
             harness: {
               kind: "claude",
               selector: "latest",
@@ -543,6 +547,7 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "pi",
           selector: "latest",
@@ -645,6 +650,7 @@ always_on = true
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "prime",
           selector: "latest",
@@ -757,6 +763,7 @@ packages = ["bash", "ca-certificates", "git", "jq"]
       profile_hash: profileHash(document),
       sources: [],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "claude",
           selector: "2.1.218",
@@ -865,6 +872,7 @@ select = ["light"]
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "claude",
           selector: "2.1.218",
@@ -991,6 +999,7 @@ select = ["one"]
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "codex",
           selector: "0.144.6",
@@ -1039,6 +1048,13 @@ codex = "0.144.6"
 codex_integrity = "sha256:codex"
 codex_url = "https://example.test/codex.tar.gz"
 codex_size = 1024
+
+[packages.deja]
+name = "deja"
+version = "0.17.0"
+integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"
+url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"
+size = 4364290
 
 [[packages.runtime]]
 name = "bash"
@@ -1108,6 +1124,7 @@ final_digest = "sha256:final"
       profile_hash: profileHash(document),
       sources: sourceLocks,
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "codex",
           selector: "0.144.6",
@@ -1207,6 +1224,7 @@ select = ["hve-core"]
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "copilot",
           selector: "latest",
@@ -1272,6 +1290,7 @@ select = ["hve-core"]
       profile_hash: profileHash(document),
       sources: sourceLocks,
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "codex",
           selector: "0.144.6",
@@ -1323,6 +1342,7 @@ select = ["hve-core"]
     )
 
     expect.soft(path.basename(context)).toMatch(/^trellage-build-/)
+    expect((await lstat(path.join(context, "deja", "linux_arm64"))).isDirectory()).toBe(true)
     await expect(readFile(path.join(context, "assets", "skills", "one", "SKILL.md"), "utf8")).resolves.toBe(
       "# Generated One\n",
     )
@@ -1384,6 +1404,7 @@ packages = ["bash"]
       profile_hash: profileHash(document),
       sources: [],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "codex",
           selector: "0.144.6",
@@ -1484,6 +1505,7 @@ select = ["hve-core"]
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "copilot",
           selector: "latest",
@@ -1609,6 +1631,7 @@ select = ["hve-core"]
         },
       ],
       packages: {
+        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "copilot",
           selector: "latest",

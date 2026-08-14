@@ -61,6 +61,14 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "unrelated command: $command_path"
 fi
 
+memory_installer="$source_dir/../trellage-memory/install-deja.sh"
+if [[ "${TRELLAGE_MEMORY:-deja}" != off ]]; then
+  [[ -f "$memory_installer" && ! -L "$memory_installer" && -x "$memory_installer" ]] \
+    || refuse "missing common Deja installer: $memory_installer"
+  HOME="$canonical_home" "$memory_installer" >/dev/null \
+    || refuse 'could not install the common Deja runtime'
+fi
+
 mkdir -p "$install_root/bin" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/omp/bin" 'runtime bin'

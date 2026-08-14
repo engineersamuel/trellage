@@ -54,7 +54,8 @@ mise run rebuild-profiles
 That:
 
 1. Installs the worktree `trellage` into `~/.local/bin`
-2. Reinstalls every native launcher (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `prx`) then `trx`
+2. Refreshes the shared OS-user Deja runtime once, then reinstalls every native
+   launcher (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `prx`) and then `trx`
    from `prototypes/trellage-*-profiles` and `prototypes/trellage-router`
 3. Runs non-locked `trellage build` for every `profiles/*/profile.toml` (pins
    kept; `final_digest` may update)
@@ -127,6 +128,30 @@ trellage doctor
 ```
 
 Doctor also reports whether automatic Varlock environment loading is disabled, ready, or has no configured source.
+
+## Deja memory
+
+Deja memory is enabled by default. Each launch uses `prepare → harness →
+finalize` with `DEJA_RECALL=safe`; a Deja failure is warning-only and preserves
+the harness exit status. Use `trellage --no-memory` or
+`TRELLAGE_MEMORY=off` for one process.
+
+```bash
+trellage memory status --profile codex-superpowers
+trellage memory sync --profile codex-superpowers
+```
+
+`status` is content-free. `sync` uses the same prepare/finalize boundary without
+a harness or model call, and only works for an existing, running current
+container with the exact managed image, state volume, and four mounts. It adds
+no mount and creates no container. The image-resident helper and binary run
+from the image; temporary batches are moved through private `0700` bridges in
+the existing state volume because Docker copy cannot access the noexec `/tmp`
+tmpfs. Each bridge is removed after its transfer. The exchange is owner-readable sensitive
+local data; redaction can still leave sensitive prose. See the repository
+[Deja memory policy](../../docs/deja-memory.md) for local-only forget and
+tombstones, v1 retention limits, Deja SSH multi-machine sync, and retained
+`.weavekit/deja-shared` evidence.
 
 ## Automatic Environment Loading
 

@@ -87,6 +87,7 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
             : undefined
       return {
         harness,
+        deja: arm64ArtifactCatalog.deja,
         ...(needsSkillsCli
           ? {
               skills_cli_version: "1.5.19",

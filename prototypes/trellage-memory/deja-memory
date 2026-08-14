@@ -1,0 +1,686 @@
+#!/usr/bin/env bash
+: "${TRELLAGE_MEMORY_INSTALL_ROOT_DEFAULT:=}"
+
+set -u -o pipefail
+umask 077
+
+readonly DEJA_VERSION='0.17.0'
+readonly DEJA_IMAGE_OWNER='10001'
+
+warn() {
+  printf 'deja memory: %s\n' "$*" >&2
+}
+
+usage() {
+  cat >&2 <<'EOF'
+usage: deja-memory <prepare|finalize|status>
+       deja-memory run -- <command> [arguments...]
+EOF
+}
+
+if stat -c '%u' / >/dev/null 2>&1; then
+  stat_owner() { stat -c '%u' "$1"; }
+  stat_group() { stat -c '%g' "$1"; }
+  stat_mode() { stat -c '%a' "$1"; }
+else
+  stat_owner() { stat -f '%u' "$1"; }
+  stat_group() { stat -f '%g' "$1"; }
+  stat_mode() { stat -f '%Lp' "$1"; }
+fi
+
+platform() {
+  case "$(uname -s):$(uname -m)" in
+    Linux:aarch64|Linux:arm64) printf '%s\n' 'linux_arm64' ;;
+    Linux:x86_64|Linux:amd64) printf '%s\n' 'linux_amd64' ;;
+    Darwin:arm64|Darwin:aarch64) printf '%s\n' 'darwin_arm64' ;;
+    Darwin:x86_64|Darwin:amd64) printf '%s\n' 'darwin_amd64' ;;
+    *) warn 'unsupported operating system or architecture'; return 1 ;;
+  esac
+}
+
+real_home() {
+  local candidate
+  for candidate in \
+    "${TRELLAGE_MEMORY_REAL_HOME:-}" \
+    "${TRELLAGE_REAL_HOME:-}" \
+    "${TRELLAGE_HOST_HOME:-}" \
+    "${HOME:-}"; do
+    if [[ -n "$candidate" ]]; then
+      [[ "$candidate" == /* ]] || {
+        warn 'the selected user home is not absolute'
+        return 1
+      }
+      printf '%s\n' "${candidate%/}"
+      return 0
+    fi
+  done
+  warn 'no user home is available'
+  return 1
+}
+
+no_symlink_ancestors() {
+  local path="$1" component current=''
+  local -a pieces
+
+  [[ "$path" == /* ]] || return 1
+  IFS=/ read -r -a pieces <<< "${path#/}"
+  for component in "${pieces[@]}"; do
+    [[ -n "$component" ]] || continue
+    current="${current}/${component}"
+    [[ ! -L "$current" ]] || {
+      warn 'a managed path has a symbolic-link parent'
+      return 1
+    }
+  done
+}
+
+safe_parent() {
+  local path="$1" owner mode
+
+  no_symlink_ancestors "$path" || return 1
+  [[ -d "$path" && ! -L "$path" ]] || {
+    warn 'a required parent is not a directory'
+    return 1
+  }
+  owner="$(stat_owner "$path")" || return 1
+  [[ "$owner" == "$(id -u)" ]] || {
+    warn 'a required parent is not owned by this user'
+    return 1
+  }
+  mode="$(stat_mode "$path")" || return 1
+  (( (8#$mode & 8#022) == 0 )) || {
+    warn 'a required parent is writable by another user'
+    return 1
+  }
+}
+
+ensure_state_base() {
+  local path="$1" nearest
+
+  [[ "$path" == /* ]] || {
+    warn 'the state directory is not absolute'
+    return 1
+  }
+  nearest="$path"
+  while [[ ! -e "$nearest" && ! -L "$nearest" && "$nearest" != '/' ]]; do
+    nearest="${nearest%/*}"
+    [[ -n "$nearest" ]] || nearest='/'
+  done
+  safe_parent "$nearest" || return 1
+  mkdir -p -m 700 "$path" 2>/dev/null || {
+    warn 'cannot create the state directory'
+    return 1
+  }
+  safe_parent "$path"
+}
+
+ensure_private_dir() {
+  local path="$1" parent owner mode
+
+  parent="$(dirname "$path")"
+  safe_parent "$parent" || return 1
+  if [[ -e "$path" || -L "$path" ]]; then
+    [[ -d "$path" && ! -L "$path" ]] || {
+      warn 'a managed directory is unsafe'
+      return 1
+    }
+  else
+    mkdir -m 700 "$path" 2>/dev/null || {
+      warn 'cannot create a managed directory'
+      return 1
+    }
+  fi
+  owner="$(stat_owner "$path")" || return 1
+  [[ "$owner" == "$(id -u)" ]] || {
+    warn 'a managed directory is not owned by this user'
+    return 1
+  }
+  chmod 700 "$path" 2>/dev/null || {
+    warn 'cannot secure a managed directory'
+    return 1
+  }
+  mode="$(stat_mode "$path")" || return 1
+  [[ "$mode" == '700' ]] || {
+    warn 'a managed directory is not private'
+    return 1
+  }
+}
+
+ensure_private_file() {
+  local path="$1" owner mode
+
+  [[ -f "$path" && ! -L "$path" ]] || {
+    warn 'a memory batch is not a regular file'
+    return 1
+  }
+  owner="$(stat_owner "$path")" || return 1
+  [[ "$owner" == "$(id -u)" ]] || {
+    warn 'a memory batch is not owned by this user'
+    return 1
+  }
+  mode="$(stat_mode "$path")" || return 1
+  [[ "$mode" == '600' ]] || {
+    warn 'a memory batch is not private'
+    return 1
+  }
+}
+
+json_line_is_valid() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -e 'type == "object"' >/dev/null 2>&1
+  elif command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$1" | python3 -c '
+import json
+import sys
+
+def reject_non_json_constant(value):
+    raise ValueError(value)
+
+value = json.load(sys.stdin, parse_constant=reject_non_json_constant)
+if type(value) is not dict:
+    raise ValueError("a JSON object is required")
+' \
+      >/dev/null 2>&1
+  elif command -v python >/dev/null 2>&1; then
+    printf '%s' "$1" | python -c '
+import json
+import sys
+
+def reject_non_json_constant(value):
+    raise ValueError(value)
+
+value = json.load(sys.stdin, parse_constant=reject_non_json_constant)
+if type(value) is not dict:
+    raise ValueError("a JSON object is required")
+' \
+      >/dev/null 2>&1
+  else
+    warn 'jq or Python is required to validate memory batches'
+    return 1
+  fi
+}
+
+validate_jsonl() {
+  local path="$1" line last_byte
+
+  ensure_private_file "$path" || return 1
+  last_byte="$(tail -c 1 "$path" | od -An -tu1 | tr -d '[:space:]')" || return 1
+  [[ "$last_byte" == '10' ]] || {
+    warn 'a memory batch is not newline terminated'
+    return 1
+  }
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" ]] || {
+      warn 'a memory batch has an empty JSON line'
+      return 1
+    }
+    json_line_is_valid "$line" || {
+      warn 'a memory batch has invalid JSON'
+      return 1
+    }
+  done < "$path"
+}
+
+is_batch_name() {
+  [[ "$1" == deja-sync-*.jsonl && "$1" != 'deja-sync-.jsonl' ]]
+}
+
+private_dir_is_valid() {
+  local path="$1" owner mode
+
+  no_symlink_ancestors "$path" || return 1
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  owner="$(stat_owner "$path")" || return 1
+  mode="$(stat_mode "$path")" || return 1
+  [[ "$owner" == "$(id -u)" && "$mode" == '700' ]]
+}
+
+exchange_layout_is_safe() {
+  safe_parent "$MEMORY_STATE" \
+    && private_dir_is_valid "$(dirname "$MEMORY_ROOT")" \
+    && private_dir_is_valid "$MEMORY_ROOT" \
+    && private_dir_is_valid "$MEMORY_EXCHANGE"
+}
+
+layout_is_safe() {
+  exchange_layout_is_safe && private_dir_is_valid "$MEMORY_STAGING"
+}
+
+declare -a BATCH_ENTRIES=()
+
+collect_valid_batches() {
+  local directory="$1" entry
+  local -a entries
+
+  ensure_private_dir "$directory" || return 1
+  BATCH_ENTRIES=()
+  entries=("$directory"/* "$directory"/.[!.]* "$directory"/..?*)
+  for entry in "${entries[@]}"; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    is_batch_name "$(basename "$entry")" || continue
+    if validate_jsonl "$entry"; then
+      BATCH_ENTRIES+=("$entry")
+    else
+      warn 'skipping an unsafe or malformed memory batch'
+    fi
+  done
+}
+
+stage_import_batches() {
+  local stage="$1" entry destination
+
+  for entry in "${BATCH_ENTRIES[@]:-}"; do
+    [[ -n "$entry" ]] || continue
+    destination="${stage}/$(basename "$entry")"
+    if ! ln "$entry" "$destination" 2>/dev/null; then
+      warn 'skipping a memory batch that changed during import'
+    fi
+  done
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+set_layout() {
+  local home state
+
+  home="$(real_home)" || return 1
+  if [[ -n "${TRELLAGE_MEMORY_STATE_HOME:-}" ]]; then
+    state="$TRELLAGE_MEMORY_STATE_HOME"
+  elif [[ -n "${TRELLAGE_REAL_XDG_STATE_HOME:-}" ]]; then
+    state="$TRELLAGE_REAL_XDG_STATE_HOME"
+  elif [[ -n "${TRELLAGE_HOST_XDG_STATE_HOME:-}" ]]; then
+    state="$TRELLAGE_HOST_XDG_STATE_HOME"
+  elif [[ -n "${XDG_STATE_HOME:-}" ]]; then
+    state="$XDG_STATE_HOME"
+  else
+    state="${home}/.local/state"
+  fi
+  [[ "$state" == /* ]] || {
+    warn 'the selected state directory is not absolute'
+    return 1
+  }
+  MEMORY_STATE="${state%/}"
+  MEMORY_ROOT="${MEMORY_STATE}/trellage/deja"
+  MEMORY_EXCHANGE="${MEMORY_ROOT}/exchange"
+  MEMORY_STAGING="${MEMORY_ROOT}/staging"
+}
+
+prepare_layout() {
+  set_layout || return 1
+  ensure_state_base "$MEMORY_STATE" || return 1
+  ensure_private_dir "$(dirname "$MEMORY_ROOT")" || return 1
+  ensure_private_dir "$MEMORY_ROOT" || return 1
+  ensure_private_dir "$MEMORY_EXCHANGE" || return 1
+  ensure_private_dir "$MEMORY_STAGING" || return 1
+  layout_is_safe
+}
+
+set_binary() {
+  local home root selected_platform
+
+  home="$(real_home)" || return 1
+  if [[ -n "$TRELLAGE_MEMORY_INSTALL_ROOT_DEFAULT" ]]; then
+    root="$TRELLAGE_MEMORY_INSTALL_ROOT_DEFAULT"
+  else
+    root="${home}/.local/share/trellage/deja"
+  fi
+  [[ "$root" == /* ]] || {
+    warn 'the Deja installation path is not absolute'
+    return 1
+  }
+  MEMORY_INSTALL_ROOT="${root%/}"
+  selected_platform="$(platform)" || return 1
+  if [[ "$MEMORY_INSTALL_ROOT" == /usr/local/lib/trellage/deja ]]; then
+    [[ "$selected_platform" == linux_arm64 ]] || {
+      warn 'the fixed image Deja binary only supports linux_arm64'
+      return 1
+    }
+    MEMORY_BINARY="${MEMORY_INSTALL_ROOT}/${DEJA_VERSION}/linux_arm64/deja"
+  else
+    MEMORY_BINARY="${MEMORY_INSTALL_ROOT}/${DEJA_VERSION}/${selected_platform}/deja"
+  fi
+}
+
+validate_binary() {
+  local root="$MEMORY_INSTALL_ROOT" version_dir platform_dir owner group mode
+
+  if [[ "$root" == /usr/local/lib/trellage/deja ]]; then
+    version_dir="${root}/${DEJA_VERSION}"
+    platform_dir="${version_dir}/linux_arm64"
+    [[ "$MEMORY_BINARY" == "${platform_dir}/deja" ]] || {
+      warn 'the fixed image Deja binary path is invalid'
+      return 1
+    }
+    no_symlink_ancestors "$root" || {
+      warn 'the fixed image Deja path is unsafe'
+      return 1
+    }
+    for root in "$root" "$version_dir" "$platform_dir"; do
+      [[ -d "$root" && ! -L "$root" ]] || {
+        warn 'the fixed image Deja directory is unavailable'
+        return 1
+      }
+      owner="$(stat_owner "$root")" || return 1
+      group="$(stat_group "$root")" || return 1
+      mode="$(stat_mode "$root")" || return 1
+      [[ "$owner" == "$DEJA_IMAGE_OWNER" && "$group" == "$DEJA_IMAGE_OWNER" && $((8#$mode & 8#022)) == 0 ]] || {
+        warn 'the fixed image Deja directory is unsafe'
+        return 1
+      }
+    done
+    [[ -f "$MEMORY_BINARY" && ! -L "$MEMORY_BINARY" && -x "$MEMORY_BINARY" ]] || {
+      warn 'the fixed image Deja binary is unavailable'
+      return 1
+    }
+    owner="$(stat_owner "$MEMORY_BINARY")" || return 1
+    group="$(stat_group "$MEMORY_BINARY")" || return 1
+    mode="$(stat_mode "$MEMORY_BINARY")" || return 1
+    [[ "$owner" == "$DEJA_IMAGE_OWNER" && "$group" == "$DEJA_IMAGE_OWNER" && $((8#$mode & 8#022)) == 0 ]] || {
+      warn 'the fixed image Deja binary is unsafe'
+      return 1
+    }
+    return 0
+  fi
+  version_dir="$(dirname "$(dirname "$MEMORY_BINARY")")"
+  platform_dir="$(dirname "$MEMORY_BINARY")"
+  safe_parent "$(dirname "$root")" || return 1
+  for root in "$root" "$version_dir" "$platform_dir"; do
+    [[ -d "$root" && ! -L "$root" ]] || {
+      warn 'the managed Deja directory is unavailable'
+      return 1
+    }
+    owner="$(stat_owner "$root")" || return 1
+    mode="$(stat_mode "$root")" || return 1
+    [[ "$owner" == "$(id -u)" && "$mode" == '700' ]] || {
+      warn 'the managed Deja directory is unsafe'
+      return 1
+    }
+  done
+  [[ -f "$MEMORY_BINARY" && ! -L "$MEMORY_BINARY" && -x "$MEMORY_BINARY" ]] || {
+    warn 'the managed Deja binary is unavailable'
+    return 1
+  }
+  owner="$(stat_owner "$MEMORY_BINARY")" || return 1
+  mode="$(stat_mode "$MEMORY_BINARY")" || return 1
+  [[ "$owner" == "$(id -u)" && "$mode" == '700' ]] || {
+    warn 'the managed Deja binary is unsafe'
+    return 1
+  }
+}
+
+new_stage() {
+  local candidate attempt
+  for ((attempt = 0; attempt < 32; attempt++)); do
+    candidate="${MEMORY_STAGING}/.stage.${BASHPID:-$$}.${RANDOM}"
+    if mkdir -m 700 "$candidate" 2>/dev/null; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  warn 'cannot create private export staging'
+  return 1
+}
+
+if stat -c '%d' / >/dev/null 2>&1; then
+  stat_device() { stat -c '%d' "$1"; }
+else
+  stat_device() { stat -f '%d' "$1"; }
+fi
+
+same_filesystem() {
+  [[ "$(stat_device "$1")" == "$(stat_device "$2")" ]]
+}
+
+release_publication_lock() {
+  [[ -n "${PUBLICATION_LOCK:-}" ]] || return 0
+  rm -f "${PUBLICATION_LOCK}/pid"
+  rmdir "$PUBLICATION_LOCK" 2>/dev/null || true
+  PUBLICATION_LOCK=''
+}
+
+lock_is_stale() {
+  local lock="$1" pid
+
+  [[ -f "${lock}/pid" && ! -L "${lock}/pid" ]] || return 1
+  IFS= read -r pid < "${lock}/pid" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  ! kill -0 "$pid" 2>/dev/null
+}
+
+acquire_publication_lock() {
+  local digest="$1" lock attempt
+
+  lock="${MEMORY_STAGING}/.publish-${digest}.lock"
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    if mkdir -m 700 "$lock" 2>/dev/null; then
+      if printf '%s\n' "$$" > "${lock}/pid"; then
+        chmod 600 "${lock}/pid" || {
+          rm -f "${lock}/pid"
+          rmdir "$lock" 2>/dev/null || true
+          warn 'cannot secure a publication lock'
+          return 1
+        }
+        PUBLICATION_LOCK="$lock"
+        return 0
+      fi
+      rmdir "$lock" 2>/dev/null || true
+      warn 'cannot create a publication lock'
+      return 1
+    fi
+    if lock_is_stale "$lock"; then
+      rm -f "${lock}/pid"
+      rmdir "$lock" 2>/dev/null || true
+    else
+      sleep 0.05
+    fi
+  done
+  warn 'a memory batch publication is still in progress'
+  return 1
+}
+
+publish_batch() {
+  local source="$1" digest destination existing result=1
+
+  validate_jsonl "$source" || return 1
+  digest="$(sha256 "$source")" || return 1
+  [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || {
+    warn 'a memory batch has an invalid digest'
+    return 1
+  }
+  destination="${MEMORY_EXCHANGE}/deja-sync-${digest}.jsonl"
+
+  acquire_publication_lock "$digest" || return 1
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    validate_jsonl "$destination" || {
+      release_publication_lock
+      return 1
+    }
+    existing="$(sha256 "$destination")" || {
+      release_publication_lock
+      return 1
+    }
+    if [[ "$existing" == "$digest" ]] && cmp -s "$source" "$destination"; then
+      rm -f "$source"
+      result=0
+    else
+      warn 'a digest publication collision occurred'
+    fi
+    release_publication_lock
+    return "$result"
+  fi
+
+  same_filesystem "$source" "$MEMORY_EXCHANGE" || {
+    release_publication_lock
+    warn 'cannot atomically rename a memory batch across filesystems'
+    return 1
+  }
+  if mv -n "$source" "$destination" 2>/dev/null \
+    && [[ ! -e "$source" && ! -L "$source" ]]; then
+    validate_jsonl "$destination" && result=0
+    release_publication_lock
+    return "$result"
+  fi
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    validate_jsonl "$destination" || {
+      release_publication_lock
+      return 1
+    }
+    existing="$(sha256 "$destination")" || {
+      release_publication_lock
+      return 1
+    }
+    if [[ "$existing" == "$digest" ]] && cmp -s "$source" "$destination"; then
+      rm -f "$source"
+      result=0
+    else
+      warn 'a digest publication collision occurred'
+    fi
+    release_publication_lock
+    return "$result"
+  fi
+  release_publication_lock
+  warn 'cannot publish a memory batch'
+  return 1
+}
+
+prepare_memory() {
+  local stage
+
+  prepare_layout || return 1
+  collect_valid_batches "$MEMORY_EXCHANGE" || return 1
+  stage="$(new_stage)" || return 1
+  stage_import_batches "$stage"
+  set_binary || {
+    rm -rf "$stage"
+    return 1
+  }
+  validate_binary || {
+    rm -rf "$stage"
+    return 1
+  }
+  "$MEMORY_BINARY" sync import "$stage" >&2 || {
+    rm -rf "$stage"
+    warn 'Deja import failed'
+    return 1
+  }
+  "$MEMORY_BINARY" index >&2 || {
+    rm -rf "$stage"
+    warn 'Deja index failed'
+    return 1
+  }
+  DEJA_RECALL=safe "$MEMORY_BINARY" install --auto --no-index >&2 || {
+    rm -rf "$stage"
+    warn 'Deja install failed'
+    return 1
+  }
+  rm -rf "$stage"
+}
+
+finalize_memory() {
+  local stage entry result=0
+
+  prepare_layout || return 1
+  collect_valid_batches "$MEMORY_EXCHANGE" || return 1
+  set_binary || return 1
+  validate_binary || return 1
+  "$MEMORY_BINARY" index >&2 || {
+    warn 'Deja index failed'
+    return 1
+  }
+  stage="$(new_stage)" || return 1
+  if ! "$MEMORY_BINARY" sync export "$stage" >&2; then
+    rm -rf "$stage"
+    warn 'Deja export failed'
+    return 1
+  fi
+  collect_valid_batches "$stage" || {
+    rm -rf "$stage"
+    return 1
+  }
+  for entry in "${BATCH_ENTRIES[@]:-}"; do
+    [[ -n "$entry" ]] || continue
+    if ! publish_batch "$entry"; then
+      result=1
+    fi
+  done
+  rm -rf "$stage"
+  return "$result"
+}
+
+status_memory() {
+  local exchange_state='absent' binary_state='missing'
+
+  set_layout || return 1
+  if [[ -d "$MEMORY_EXCHANGE" && ! -L "$MEMORY_EXCHANGE" ]]; then
+    if exchange_layout_is_safe >/dev/null 2>&1; then
+      exchange_state='ready'
+    else
+      exchange_state='unsafe'
+    fi
+  elif [[ -e "$MEMORY_EXCHANGE" || -L "$MEMORY_EXCHANGE" ]]; then
+    exchange_state='unsafe'
+  fi
+  if set_binary >/dev/null 2>&1 && validate_binary >/dev/null 2>&1; then
+    binary_state='ready'
+  fi
+  printf 'memory: enabled; exchange: %s; binary: %s\n' \
+    "$exchange_state" "$binary_state"
+}
+
+run_memory() {
+  local command_status
+
+  [[ "${1:-}" == '--' ]] || {
+    usage
+    return 2
+  }
+  shift
+  (($# > 0)) || {
+    usage
+    return 2
+  }
+  if ! prepare_memory; then
+    warn 'prepare failed; continuing without synchronized memory'
+  fi
+  "$@"
+  command_status=$?
+  if ! finalize_memory; then
+    warn 'finalize failed; preserving command status'
+  fi
+  return "$command_status"
+}
+
+main() {
+  local operation="${1:-}"
+
+  if [[ "${TRELLAGE_MEMORY:-}" == 'off' ]]; then
+    case "$operation" in
+      prepare|finalize|status) printf 'memory: off\n' ;;
+      run)
+        shift
+        [[ "${1:-}" == '--' ]] || { usage; return 2; }
+        shift
+        (($# > 0)) || { usage; return 2; }
+        exec "$@"
+        ;;
+      *) usage; return 2 ;;
+    esac
+    return
+  fi
+
+  case "$operation" in
+    prepare) prepare_memory ;;
+    finalize) finalize_memory ;;
+    status) status_memory ;;
+    run) shift; run_memory "$@" ;;
+    *) usage; return 2 ;;
+  esac
+}
+
+main "$@"

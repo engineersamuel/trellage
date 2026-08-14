@@ -21,6 +21,8 @@ resolve_script_dir() {
 script_dir="$(resolve_script_dir)"
 catalog="${GRX_CATALOG:-$script_dir/../catalog.json}"
 profiles_root="${HOME%/}/.local/share/trellage/profiles/grok"
+trellage_real_home="$HOME"
+deja_helper="$trellage_real_home/.local/share/trellage/deja/deja-memory"
 grok_executable=""
 auth_stage=""
 auth_lock=""
@@ -79,6 +81,9 @@ cleanup_auth_assets() {
   auth_lock_owned=""
 }
 
+# Never `return` from this handler: bash aborts an in-flight `wait` and exits
+# the shell when a trap handler returns, which would skip Deja finalize.
+# Launch-scoped signal handling lives in run_with_deja instead.
 auth_signal_exit() {
   local status="$1"
 
@@ -113,6 +118,73 @@ usage() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+run_deja_helper() {
+  local operation="$1"
+
+  env \
+    -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+    -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN \
+    -u OPENAI_API_KEY -u XAI_API_KEY \
+    -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+    -u AZURE_CLIENT_ID -u AZURE_CLIENT_SECRET -u AZURE_TENANT_ID \
+    -u GOOGLE_APPLICATION_CREDENTIALS \
+    TRELLAGE_MEMORY="$memory_mode" DEJA_RECALL="$recall_mode" \
+    TRELLAGE_REAL_HOME="$trellage_real_home" HOME="$isolated_home" \
+    "$deja_helper" "$operation"
+}
+
+run_with_deja() {
+  local isolated_home="$1"
+  local memory_mode
+  local recall_mode
+  local status=0
+  local deja_child_pid='' deja_signal_status=0 monitor_child=yes wait_status=0
+  shift
+
+  memory_mode="${TRELLAGE_MEMORY:-deja}"
+  recall_mode=safe
+  if [ "$memory_mode" = off ]; then
+    exec "$@"
+  fi
+  if [ ! -f "$deja_helper" ] || [ -h "$deja_helper" ] || [ ! -x "$deja_helper" ]; then
+    exec "$@"
+  fi
+  if ! run_deja_helper prepare; then
+    printf 'grx: Deja prepare failed; continuing without synchronized memory\n' >&2
+  fi
+  trap 'deja_signal_status=129; [ -z "${deja_child_pid:-}" ] || kill -HUP "$deja_child_pid" 2>/dev/null || :' HUP
+  trap 'deja_signal_status=130; [ -z "${deja_child_pid:-}" ] || kill -INT "$deja_child_pid" 2>/dev/null || :' INT
+  trap 'deja_signal_status=143; [ -z "${deja_child_pid:-}" ] || kill -TERM "$deja_child_pid" 2>/dev/null || :' TERM
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    monitor_child=no
+  else
+    set -m
+  fi
+  "$@" <&0 &
+  deja_child_pid=$!
+  case "$deja_signal_status" in
+    129) kill -HUP "$deja_child_pid" 2>/dev/null || : ;;
+    130) kill -INT "$deja_child_pid" 2>/dev/null || : ;;
+    143) kill -TERM "$deja_child_pid" 2>/dev/null || : ;;
+  esac
+  [ "$monitor_child" = no ] || set +m
+  while :; do
+    wait "$deja_child_pid" 2>/dev/null || wait_status=$?
+    if kill -0 "$deja_child_pid" 2>/dev/null; then
+      continue
+    fi
+    status="$wait_status"
+    break
+  done
+  deja_child_pid=''
+  trap '' HUP INT TERM
+  [ "$deja_signal_status" = 0 ] || status="$deja_signal_status"
+  if ! run_deja_helper finalize; then
+    printf 'grx: Deja finalize failed; preserving harness status\n' >&2
+  fi
+  return "$status"
 }
 
 single_json_document() {
@@ -1578,7 +1650,7 @@ launch_profile() {
   ensure_launch_ready "$profile"
   resolve_grok
   refresh_auth "$profile"
-  exec env \
+  run_with_deja "$(profile_home "$profile")" env \
     GROK_HOME="$(profile_home "$profile")" \
     GROK_MODELS_BASE_URL='http://127.0.0.1:8080/v1' \
     GROK_DEFAULT_MODEL='grok-4.6' \

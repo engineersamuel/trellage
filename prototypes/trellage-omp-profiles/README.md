@@ -38,6 +38,9 @@ The installer publishes `~/.local/bin/omp` and owns its runtime beneath
 `~/.local/share/trellage/omp`. `setup` resolves the latest release eligible
 under `mise` policy, installs it into the managed runtime, and pins that exact
 version. Ordinary launches never update it. Only `omp update` changes the pin.
+Installation refreshes the shared OS-user Deja runtime unless
+`TRELLAGE_MEMORY=off` is set. The launcher uses it with each isolated OMP home
+and index.
 
 Managed OMP files live at:
 
@@ -67,7 +70,8 @@ The `copilot` profile matches the container profile's host-auth order:
 On macOS it additionally falls back to the existing `copilot-cli` Keychain
 credential. The selected token is forwarded only as `COPILOT_GITHUB_TOKEN`;
 alternate token variables are removed before OMP starts. The token is not
-copied into the profile, written to disk, or logged.
+copied into the profile, written to disk, or logged. Deja prepare and finalize
+run without harness credentials.
 
 If no host Copilot credential is available, OMP can use profile-scoped
 authentication. Run:
@@ -98,7 +102,8 @@ argument vector. The agents can use all host access available to the OMP process
 
 Uninstall removes only the owned command and managed runtime. Both named
 profiles, their configuration, authentication, sessions, and other state
-remain.
+remain. It also retains the shared Deja runtime and local data so other native
+launchers continue to work.
 
 ## Test
 

@@ -23,6 +23,7 @@ import {
   type RuntimeSupportSnapshot,
   writeRuntimeSupportSnapshot,
 } from "./runtime-support.js"
+import { managedDejaImagePlatform } from "./artifact-catalog.js"
 
 export type PluginGenerator = (
   sourceDirectory: string,
@@ -362,6 +363,9 @@ export const createBuildContext = (
     const build = Effect.gen(function* () {
       yield* writeRuntimeSupportSnapshot(support, context).pipe(
         Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
+      )
+      yield* io("cannot initialize managed Deja build asset", () =>
+        mkdir(path.join(context, "deja", managedDejaImagePlatform), { recursive: true }),
       )
       if (document.profile.harness.kind === "codex") {
         yield* io("cannot initialize build context", () =>

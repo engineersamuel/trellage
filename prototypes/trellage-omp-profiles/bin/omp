@@ -58,6 +58,72 @@ profile_name=''
 profile_root=''
 agent_root=''
 profile_marker=''
+readonly trellage_real_home="$HOME"
+readonly deja_helper="$trellage_real_home/.local/share/trellage/deja/deja-memory"
+
+run_deja_helper() {
+  local operation="$1"
+
+  env \
+    -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+    -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN \
+    -u OPENAI_API_KEY -u XAI_API_KEY \
+    -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+    -u AZURE_CLIENT_ID -u AZURE_CLIENT_SECRET -u AZURE_TENANT_ID \
+    -u GOOGLE_APPLICATION_CREDENTIALS \
+    TRELLAGE_MEMORY="$memory_mode" DEJA_RECALL="$recall_mode" \
+    TRELLAGE_REAL_HOME="$trellage_real_home" HOME="$isolated_home" \
+    "$deja_helper" "$operation"
+}
+
+run_with_deja() {
+  local isolated_home="$1" memory_mode recall_mode status=0
+  local deja_child_pid='' deja_signal_status=0 monitor_child=yes wait_status=0
+  shift
+
+  memory_mode="${TRELLAGE_MEMORY:-deja}"
+  recall_mode=safe
+  if [[ "$memory_mode" == off ]]; then
+    exec "$@"
+  fi
+  if [[ ! -f "$deja_helper" || -L "$deja_helper" || ! -x "$deja_helper" ]]; then
+    exec "$@"
+  fi
+  if ! run_deja_helper prepare; then
+    printf 'omp: Deja prepare failed; continuing without synchronized memory\n' >&2
+  fi
+  trap 'deja_signal_status=129; [[ -z "${deja_child_pid:-}" ]] || kill -HUP "$deja_child_pid" 2>/dev/null || :' HUP
+  trap 'deja_signal_status=130; [[ -z "${deja_child_pid:-}" ]] || kill -INT "$deja_child_pid" 2>/dev/null || :' INT
+  trap 'deja_signal_status=143; [[ -z "${deja_child_pid:-}" ]] || kill -TERM "$deja_child_pid" 2>/dev/null || :' TERM
+  if [[ -t 0 && -t 1 && -t 2 ]]; then
+    monitor_child=no
+  else
+    set -m
+  fi
+  "$@" <&0 &
+  deja_child_pid=$!
+  case "$deja_signal_status" in
+    129) kill -HUP "$deja_child_pid" 2>/dev/null || : ;;
+    130) kill -INT "$deja_child_pid" 2>/dev/null || : ;;
+    143) kill -TERM "$deja_child_pid" 2>/dev/null || : ;;
+  esac
+  [[ "$monitor_child" == no ]] || set +m
+  while :; do
+    wait "$deja_child_pid" 2>/dev/null || wait_status=$?
+    if kill -0 "$deja_child_pid" 2>/dev/null; then
+      continue
+    fi
+    status="$wait_status"
+    break
+  done
+  deja_child_pid=''
+  trap '' HUP INT TERM
+  [[ "$deja_signal_status" == 0 ]] || status="$deja_signal_status"
+  if ! run_deja_helper finalize; then
+    printf 'omp: Deja finalize failed; preserving harness status\n' >&2
+  fi
+  return "$status"
+}
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
@@ -536,11 +602,15 @@ doctor_copilot() {
   local binary="$1" output token
 
   if token="$(resolve_copilot_token)"; then
-    output="$(
-      unset GH_TOKEN GITHUB_TOKEN
-      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
-      "$binary" models github-copilot 2>&1
-    )" || {
+    output="$(env \
+      -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+      -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN \
+      -u OPENAI_API_KEY -u XAI_API_KEY \
+      -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+      -u AZURE_CLIENT_ID -u AZURE_CLIENT_SECRET -u AZURE_TENANT_ID \
+      -u GOOGLE_APPLICATION_CREDENTIALS \
+      COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name" \
+      "$binary" models github-copilot 2>&1)" || {
       printf '%s\n' "$output" >&2
       die 'GitHub Copilot authentication is unavailable; run omp copilot auth-broker login github-copilot'
     }
@@ -659,12 +729,27 @@ launch_omp() {
   verify_binary_version "$binary" "$version"
   if [[ "$profile_kind" == copilot ]]; then
     if token="$(resolve_copilot_token)"; then
-      unset GH_TOKEN GITHUB_TOKEN
-      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
-      exec "$binary" --approval-mode yolo "$@"
+      run_with_deja "$profile_root" env \
+        -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+        -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN \
+        -u OPENAI_API_KEY -u XAI_API_KEY \
+        -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+        -u AZURE_CLIENT_ID -u AZURE_CLIENT_SECRET -u AZURE_TENANT_ID \
+        -u GOOGLE_APPLICATION_CREDENTIALS \
+        COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name" \
+        "$binary" --approval-mode yolo "$@"
+      return
     fi
   fi
-  OMP_PROFILE="$profile_name" exec "$binary" --approval-mode yolo "$@"
+  run_with_deja "$profile_root" env \
+    -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+    -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN \
+    -u OPENAI_API_KEY -u XAI_API_KEY \
+    -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+    -u AZURE_CLIENT_ID -u AZURE_CLIENT_SECRET -u AZURE_TENANT_ID \
+    -u GOOGLE_APPLICATION_CREDENTIALS \
+    OMP_PROFILE="$profile_name" \
+    "$binary" --approval-mode yolo "$@"
 }
 
 run_for_selection() {

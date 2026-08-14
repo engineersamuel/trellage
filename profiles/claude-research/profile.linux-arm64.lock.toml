@@ -1839,6 +1839,13 @@ skills_cli_version = "1.5.19"
 skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
 python_lock_integrity = "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6"
 
+[packages.deja]
+name = "deja"
+version = "0.17.0"
+integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"
+url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"
+size = 4364290
+
 [packages.harness]
 kind = "claude"
 selector = "latest"
@@ -2051,4 +2058,4 @@ size = 52716812
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:7cdcf907cd945966378607de3586335fa675eae1ae027ecbd2d11cb805a81f4e"
+final_digest = "sha256:5f4878b1dc78057c981033c93910da0ca44a664fe791fe8cc0aa015cfc958fa8"

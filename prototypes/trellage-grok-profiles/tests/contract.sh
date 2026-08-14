@@ -3,6 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 prototype_root="$PWD"
+repo_root="$(CDPATH= cd -- "$prototype_root/../.." && pwd)"
+. "$repo_root/tests/deja_native_fixture.sh"
 
 fail() {
   printf 'trellage Grok profiles contract: FAIL: %s\n' "$1" >&2
@@ -177,6 +179,8 @@ assert_line 'Exit status: 0 means current; 1 means update available or not insta
 assert_line 'Status 1 is expected in automation and is not an operational failure.' "$readme"
 assert_line 'This is clean user-state separation, not containment and not a security boundary.' "$readme"
 assert_line 'Uninstall preserves all profile homes, including authentication, plugins, sessions, memory, and permissions.' "$readme"
+assert_contains 'Installation also refreshes the shared OS-user Deja runtime' "$readme"
+assert_contains 'It also retains the shared Deja runtime and local data' "$readme"
 
 readme_commands="$(awk '
   $0 == "## Commands" { in_commands = 1; next }
@@ -302,6 +306,13 @@ if [ -n "${FAKE_GROK_TTY_LOG:-}" ]; then
   else
     printf '0\n' >>"$FAKE_GROK_TTY_LOG"
   fi
+fi
+if [ "${FAKE_GROK_TTY_READ:-}" = 1 ] && [ "${1:-}" = --sandbox ]; then
+  [ -t 0 ] || exit 88
+  printf 'TTY_READ_READY\n'
+  IFS= read -r tty_input
+  [ "$tty_input" = continue ] || exit 89
+  printf 'TTY_READ_DONE\n'
 fi
 
 jq -cn \
@@ -718,6 +729,12 @@ printf "GROK_HOME=%s\nHOME=%s\nCWD=%s\n" "$GROK_HOME" "$HOME" "$PWD"
 for arg in "$@"; do
   printf "ARG=%s\n" "$arg"
 done
+if [ "${FAKE_GROK_WAIT_FOR_SIGNAL:-}" = 1 ]; then
+  trap 'exit 143' TERM
+  printf 'READY\n' >"${FAKE_GROK_SIGNAL_LOG:?}"
+  while :; do sleep 0.05; done
+fi
+exit "${FAKE_GROK_EXIT_STATUS:-0}"
 FAKE_GROK
 chmod 0555 "$fake_bin/grok"
 
@@ -755,6 +772,7 @@ FAKE_CURL
 chmod 0555 "$fake_bin/curl"
 
 export HOME="$fixture_home"
+deja_native_prepare_install "$HOME" || fail 'could not prepare fake Deja runtime'
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export FAKE_GROK_LOG="$fake_grok_log"
 
@@ -1583,6 +1601,44 @@ last_launch_json="$(tail -n 1 "$fake_grok_log")"
 [ "$last_launch_json" = "$expected_launch_json" ] \
   || fail 'launch did not set proxy routing while preserving profile home, HOME, cwd, and ordered arguments'
 assert_line "$expected_launch_tty" "$launch_tty_log"
+
+export FAKE_DEJA_LOG="$fixture_root/deja.log"
+deja_native_install_fake_helper "$HOME" "$FAKE_DEJA_LOG"
+deja_native_install_ambient_helper "$fake_bin" "$FAKE_DEJA_LOG"
+DEJA_RECALL=unsafe ./bin/grx hve -p deja-lifecycle || fail 'Deja lifecycle launch failed'
+expected_deja_log="$(printf '%s\n' \
+  "prepare home=$hve_home real=$fixture_home memory=deja recall=safe" \
+  "finalize home=$hve_home real=$fixture_home memory=deja recall=safe")"
+[ "$(<"$FAKE_DEJA_LOG")" = "$expected_deja_log" ] \
+  || fail 'Deja lifecycle order or isolated home differs'
+if grep -Fx 'ambient helper used' "$FAKE_DEJA_LOG" >/dev/null; then
+  fail 'launch used an ambient Deja helper'
+fi
+FAKE_GROK_TTY_READ=1 \
+  python3 "$repo_root/tests/deja_native_tty_driver.py" "$fixture_root/deja-tty.out" \
+    ./bin/grx hve -p tty-stdin \
+  || fail 'interactive Grok launch did not preserve terminal stdin'
+assert_contains 'TTY_READ_DONE' "$fixture_root/deja-tty.out"
+status=0
+FAKE_DEJA_PREPARE_STATUS=71 FAKE_DEJA_FINALIZE_STATUS=72 \
+FAKE_GROK_EXIT_STATUS=37 ./bin/grx hve -p deja-failure >"$fixture_root/deja-failure.out" 2>&1 \
+  || status=$?
+[ "$status" = 37 ] || fail "Deja failure changed harness status to $status"
+assert_contains 'Deja prepare failed' "$fixture_root/deja-failure.out"
+assert_contains 'Deja finalize failed' "$fixture_root/deja-failure.out"
+: >"$FAKE_DEJA_LOG"
+TRELLAGE_MEMORY=off ./bin/grx hve -p deja-off || fail 'off-mode launch failed'
+[ ! -s "$FAKE_DEJA_LOG" ] || fail 'off mode used the Deja helper'
+FAKE_GROK_SIGNAL_LOG="$fixture_root/deja-signal.log" \
+FAKE_GROK_WAIT_FOR_SIGNAL=1 ./bin/grx hve -p deja-signal &
+deja_signal_pid=$!
+wait_for_file "$fixture_root/deja-signal.log"
+kill -TERM "$deja_signal_pid"
+status=0
+wait "$deja_signal_pid" || status=$?
+[ "$status" = 143 ] || fail "signaled Deja launch exited $status instead of 143"
+grep -Fqx "finalize home=$hve_home real=$fixture_home memory=deja recall=safe" \
+  "$FAKE_DEJA_LOG" || fail 'signaled launch did not finalize Deja memory'
 
 ./bin/grx hve -m 'gpt-5.2-codex' -p 'short model flag' \
   >"$fixture_root/short-model-launch.out"
@@ -3352,6 +3408,8 @@ ancestor_install_hash_after="$(profile_tree_hash "$ancestor_install_target")"
 ancestor_uninstall_home="$fixture_root/ancestor-uninstall-home"
 ancestor_uninstall_target="$fixture_root/ancestor-uninstall-target"
 mkdir -p "$ancestor_uninstall_home" "$ancestor_uninstall_target"
+deja_native_prepare_install "$ancestor_uninstall_home" \
+  || fail 'could not prepare ancestor-uninstall fake Deja runtime'
 HOME="$ancestor_uninstall_home" "$installer" >/dev/null
 mv "$ancestor_uninstall_home/.local/bin" "$ancestor_uninstall_target/bin"
 ln -s "$ancestor_uninstall_target/bin" "$ancestor_uninstall_home/.local/bin"
@@ -3434,6 +3492,8 @@ assert_contains 'injected failure at after-command-publish' \
 mkdir -m 0700 "$(dirname "$installed_command")"
 
 "$installer" >"$fixture_root/install.out"
+deja_native_assert_installed_helper "$HOME" \
+  || fail 'installer did not install the common Deja helper'
 if ! cmp -s "$fixture_root/install.out" \
   <(printf 'Installed grx at %s\n' "$installed_command"); then
   fail 'installer did not emit the exact installed line'
@@ -3733,6 +3793,8 @@ installer_signal_failures=''
 for signal_case in $installer_signal_cases; do
   signal_home="$fixture_root/installer-$signal_case-home"
   mkdir "$signal_home"
+  deja_native_prepare_install "$signal_home" \
+    || fail "could not prepare installer-signal fake Deja runtime: $signal_case"
   HOME="$signal_home" "$installer" >/dev/null
   signal_runtime="$signal_home/.local/share/trellage/grx"
   signal_launcher="$signal_runtime/bin/grx"
@@ -3962,6 +4024,8 @@ transaction_baseline_failures=''
 for failure_point in $transaction_failure_points; do
   transaction_home="$fixture_root/transaction-$failure_point-home"
   mkdir "$transaction_home"
+  deja_native_prepare_install "$transaction_home" \
+    || fail "could not prepare transaction fake Deja runtime: $failure_point"
   HOME="$transaction_home" "$installer" >/dev/null
   transaction_root="$transaction_home/.local/share/trellage/grx"
   transaction_command="$transaction_home/.local/bin/grx"
@@ -4014,6 +4078,8 @@ done
 
 uninstall_signal_home="$fixture_root/uninstall-signal-home"
 mkdir "$uninstall_signal_home"
+deja_native_prepare_install "$uninstall_signal_home" \
+  || fail 'could not prepare uninstall-signal fake Deja runtime'
 HOME="$uninstall_signal_home" "$installer" >/dev/null
 uninstall_signal_root="$uninstall_signal_home/.local/share/trellage/grx"
 uninstall_signal_command="$uninstall_signal_home/.local/bin/grx"
@@ -4038,6 +4104,8 @@ HOME="$uninstall_signal_home" \
 
 rollback_failure_home="$fixture_root/uninstall-rollback-failure-home"
 mkdir "$rollback_failure_home"
+deja_native_prepare_install "$rollback_failure_home" \
+  || fail 'could not prepare rollback-failure fake Deja runtime'
 HOME="$rollback_failure_home" "$installer" >/dev/null
 rollback_failure_root="$rollback_failure_home/.local/share/trellage/grx"
 rollback_failure_command="$rollback_failure_home/.local/bin/grx"
@@ -4071,6 +4139,8 @@ assert_line 'preserve rollback-failure user data' \
 
 uninstall_cleanup_home="$fixture_root/uninstall-cleanup-failure-home"
 mkdir "$uninstall_cleanup_home"
+deja_native_prepare_install "$uninstall_cleanup_home" \
+  || fail 'could not prepare uninstall-cleanup fake Deja runtime'
 HOME="$uninstall_cleanup_home" "$installer" >/dev/null
 uninstall_cleanup_root="$uninstall_cleanup_home/.local/share/trellage/grx"
 uninstall_cleanup_command="$uninstall_cleanup_home/.local/bin/grx"

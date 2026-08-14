@@ -1,9 +1,9 @@
-.PHONY: test dependency-bootstrap sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
+.PHONY: test dependency-bootstrap sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness deja-memory-contract deja-sandbox-contract claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
+PARALLEL_TEST_TARGETS := dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness deja-memory-contract deja-sandbox-contract claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence
 SERIAL_TEST_TARGETS := native-profile-router
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 
@@ -45,6 +45,13 @@ trellage-orphan-cleanup:
 
 agent-harness:
 	bash tests/agent_harness_contract.sh
+
+deja-memory-contract:
+	bash prototypes/trellage-memory/tests/contract.sh
+
+deja-sandbox-contract: profile-compiler
+	bash prototypes/trellage/tests/host_command_contract.sh
+	STATIC_ONLY=1 bash prototypes/trellage/tests/image_contract.sh
 
 sandbox-entry-fixture:
 	@docker image inspect "$(SANDBOX_ENTRY_FIXTURE_IMAGE)" >/dev/null 2>&1 || docker image pull "$(SANDBOX_ENTRY_FIXTURE_IMAGE)"
@@ -135,7 +142,7 @@ evidence:
 profile-matrix:
 	scripts/verify-agent-profiles $(PROFILE_MATRIX_ARGS)
 
-profile-matrix-test:
+profile-matrix-test: deja-memory-contract
 	bash tests/agent_profile_matrix.sh
 
 build:

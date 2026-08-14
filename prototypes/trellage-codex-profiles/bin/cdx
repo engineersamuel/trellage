@@ -30,6 +30,8 @@ script_dir="$(CDPATH= cd -P -- "$resolved_script_dir/.." >/dev/null 2>&1 && pwd)
 }
 catalog="$script_dir/catalog.json"
 profiles_root="${HOME%/}/.local/share/trellage/profiles/codex"
+trellage_real_home="$HOME"
+deja_helper="$trellage_real_home/.local/share/trellage/deja/deja-memory"
 codex_executable=""
 active_stage=""
 active_auth_profile=""
@@ -51,6 +53,44 @@ superpowers_plugin_repository="https://github.com/obra/superpowers.git"
 die() {
   printf 'cdx: %s\n' "$*" >&2
   exit 1
+}
+
+prepare_deja() {
+  local isolated_home="$1"
+  local memory_mode
+  local recall_mode
+
+  memory_mode="${TRELLAGE_MEMORY:-deja}"
+  recall_mode=safe
+  if [ "$memory_mode" = off ]; then
+    return
+  fi
+  if [ ! -f "$deja_helper" ] || [ -h "$deja_helper" ] || [ ! -x "$deja_helper" ]; then
+    return
+  fi
+  if ! TRELLAGE_MEMORY="$memory_mode" DEJA_RECALL="$recall_mode" \
+    TRELLAGE_REAL_HOME="$trellage_real_home" HOME="$isolated_home" \
+    "$deja_helper" prepare; then
+    printf 'cdx: Deja prepare failed; continuing without synchronized memory\n' >&2
+  fi
+}
+
+finalize_deja() {
+  local isolated_home="$1"
+  local memory_mode
+  local recall_mode
+
+  memory_mode="${TRELLAGE_MEMORY:-deja}"
+  recall_mode=safe
+  if [ "$memory_mode" = off ] \
+    || [ ! -f "$deja_helper" ] || [ -h "$deja_helper" ] || [ ! -x "$deja_helper" ]; then
+    return
+  fi
+  if ! TRELLAGE_MEMORY="$memory_mode" DEJA_RECALL="$recall_mode" \
+    TRELLAGE_REAL_HOME="$trellage_real_home" HOME="$isolated_home" \
+    "$deja_helper" finalize; then
+    printf 'cdx: Deja finalize failed; preserving harness status\n' >&2
+  fi
 }
 
 usage() {
@@ -2423,6 +2463,7 @@ run_codex_child() {
     || die "profile config must have mode 0600: $profile"
   cmp -s "$before" "$target" \
     || die "profile config changed during prelaunch snapshot: $profile"
+  prepare_deja "$(profile_home "$profile")"
 
   launch_signal_status=0
   trap 'launch_signal HUP' HUP
@@ -2469,6 +2510,7 @@ run_codex_child() {
   done
   launch_child_pid=""
   trap '' HUP INT TERM
+  finalize_deja "$(profile_home "$profile")"
   cleanup_status=0
   cleanup_launch_config "$profile" "$before" || cleanup_status=$?
   remove_owned_temp "$before" || cleanup_status=1
