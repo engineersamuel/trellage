@@ -9,8 +9,6 @@ import type { Profile } from "./profile.js"
 export interface RuntimeSupportPaths {
   readonly codexEntry: string
   readonly copilotEntry: string
-  /** Common lifecycle helper for the managed Deja binary. */
-  readonly dejaMemory?: string
   readonly piEntry?: string
   readonly primeEntry?: string
   readonly finalizeCopilotSeed: string
@@ -65,19 +63,7 @@ const selectedFiles = (
   harnessKind: Profile["harness"]["kind"],
   claudeAdapter?: ClaudeRuntimeAdapter,
   claudeMode: "core" | "hyperresearch" = "hyperresearch",
-  includeDejaMemory = false,
 ): ReadonlyArray<SelectedFile> => {
-  const dejaMemory: ReadonlyArray<SelectedFile> = includeDejaMemory
-    ? [
-        {
-          property: "dejaMemory",
-          role: "deja-memory",
-          destination: "/usr/local/bin/deja-memory",
-          buildContextPath: "deja-memory",
-          mode: 0o755,
-        },
-      ]
-    : []
   switch (harnessKind) {
     case "codex":
       return [
@@ -88,7 +74,6 @@ const selectedFiles = (
           buildContextPath: "runtime-entry.sh",
           mode: 0o755,
         },
-        ...dejaMemory,
       ]
     case "copilot":
       return [
@@ -106,7 +91,6 @@ const selectedFiles = (
           buildContextPath: "finalize-copilot-seed.mjs",
           mode: 0o644,
         },
-        ...dejaMemory,
       ]
     case "claude":
       const entry: SelectedFile = {
@@ -116,7 +100,7 @@ const selectedFiles = (
         buildContextPath: "runtime-claude-entry.sh",
         mode: 0o755,
       }
-      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, ...dejaMemory]
+      if (claudeMode === "core" && claudeAdapter === undefined) return [entry]
       return [
         entry,
         {
@@ -144,7 +128,6 @@ const selectedFiles = (
                 mode: 0o644,
               },
             ]),
-        ...dejaMemory,
       ]
     case "pi":
       return [
@@ -155,7 +138,6 @@ const selectedFiles = (
           buildContextPath: "runtime-pi-entry.sh",
           mode: 0o755,
         },
-        ...dejaMemory,
       ]
     case "prime":
       return [
@@ -166,7 +148,6 @@ const selectedFiles = (
           buildContextPath: "runtime-prime-entry.sh",
           mode: 0o755,
         },
-        ...dejaMemory,
       ]
   }
 }
@@ -223,7 +204,7 @@ export const createRuntimeSupportSnapshot = (
               ? "Prime"
               : "Claude"
     const files = yield* Effect.forEach(
-      selectedFiles(harnessKind, claudeAdapter, claudeMode, paths.dejaMemory !== undefined),
+      selectedFiles(harnessKind, claudeAdapter, claudeMode),
       (selected) => {
         const candidate = paths[selected.property]
         const message = `${label} runtime support ${selected.property} must be a regular readable file: ${candidate ?? "missing"}`

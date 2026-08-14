@@ -98,14 +98,6 @@ if [[ -L "$legacy_command" ]]; then
   esac
 fi
 
-memory_installer="$source_dir/../trellage-memory/install-deja.sh"
-if [[ "${TRELLAGE_MEMORY:-deja}" != off ]]; then
-  [[ -f "$memory_installer" && ! -L "$memory_installer" && -x "$memory_installer" ]] \
-    || refuse "missing common Deja installer: $memory_installer"
-  HOME="$canonical_home" "$memory_installer" >/dev/null \
-    || refuse 'could not install the common Deja runtime'
-fi
-
 mkdir -p "$install_root/bin" "$installed_extensions_dir" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prx/bin" 'runtime bin'

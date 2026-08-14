@@ -233,7 +233,6 @@ const completeCopilotLock = (platform: "linux/arm64" | "linux/amd64" = "linux/ar
       },
     ],
     packages: {
-      deja: arm64ArtifactCatalog.deja,
       harness: {
         kind: "copilot",
         selector: "latest",
@@ -265,7 +264,6 @@ const completePiLock = (): ProfileLock => {
     profile_hash: profileHash(profile),
     sources: [],
     packages: {
-      deja: arm64ArtifactCatalog.deja,
       harness: {
         kind: "pi",
         selector: "latest",
@@ -297,7 +295,6 @@ const completePrimeLock = (): ProfileLock => {
     profile_hash: profileHash(profile),
     sources: [],
     packages: {
-      deja: arm64ArtifactCatalog.deja,
       harness: {
         kind: "prime",
         selector: "latest",
@@ -322,37 +319,6 @@ const completePrimeLock = (): ProfileLock => {
 }
 
 describe("lock inventory compatibility", () => {
-  it("renders and validates the exact managed Deja artifact", async () => {
-    const lock = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
-    const completed = {
-      ...lock,
-      image: { ...lock.image, final_digest: digest("e") },
-    }
-
-    expect(lock.packages.deja).toEqual(arm64ArtifactCatalog.deja)
-    const rendered = renderLock(completed)
-    expect(rendered).toContain(`[packages.deja]
-name = "deja"
-version = "0.17.0"
-integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"
-url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"
-size = 4364290`)
-    await expect(
-      Effect.runPromise(requireLocked(document(), await Effect.runPromise(parseLock(rendered)))),
-    ).resolves.toEqual(
-      expect.objectContaining({ packages: expect.objectContaining({ deja: arm64ArtifactCatalog.deja }) }),
-    )
-    const { deja: _deja, ...withoutDeja } = completed.packages
-    await expect(
-      Effect.runPromise(
-        requireLocked(document(), {
-          ...completed,
-          packages: withoutDeja,
-        }),
-      ),
-    ).rejects.toThrow(/Deja artifact is missing/)
-  })
-
   it("rejects a persisted lock without platform identity", async () => {
     const rendered = renderLock(completeCopilotLock()).replace('platform = "linux/arm64"\n', "")
 
@@ -414,7 +380,6 @@ select = ["social-media-skills"]
         },
       ],
       packages: {
-        deja: arm64ArtifactCatalog.deja,
         harness: {
           kind: "claude",
           selector: "2.1.218",

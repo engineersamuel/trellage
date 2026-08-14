@@ -255,13 +255,6 @@ describe("production package resolutions", () => {
     )
 
     expect(result).toEqual({
-      deja: {
-        name: "deja",
-        version: "0.17.0",
-        integrity: "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1",
-        url: "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz",
-        size: 4364290,
-      },
       harness: {
         kind: "copilot",
         selector: "latest",

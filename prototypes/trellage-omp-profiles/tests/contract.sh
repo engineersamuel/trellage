@@ -4,8 +4,6 @@ set -u
 set -o pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
-repo_root="$(CDPATH= cd -- "$root/../.." && pwd)"
-. "$repo_root/tests/deja_native_fixture.sh"
 launcher="$root/bin/omp"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
@@ -30,7 +28,6 @@ trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 mkdir -p "$fake_bin" "$home"
-deja_native_prepare_install "$home" || fail 'could not prepare fake Deja runtime'
 
 cat >"$fake_bin/mise" <<'FAKE_MISE'
 #!/usr/bin/env bash
@@ -99,25 +96,6 @@ if [[ "${OMP_PROFILE-}" == trellage-copilot-native \
   printf 'alternate GitHub tokens were not scrubbed\n' >&2
   exit 43
 fi
-if [[ -n "${FAKE_OMP_ENV_LOG-}" ]]; then
-  credential_names=(
-    COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
-    ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
-    OPENAI_API_KEY XAI_API_KEY
-    AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-    AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
-    GOOGLE_APPLICATION_CREDENTIALS
-  )
-  credential_state=()
-  for credential_name in "${credential_names[@]}"; do
-    if [[ -n "${!credential_name-}" ]]; then
-      credential_state+=("${credential_name}=present")
-    else
-      credential_state+=("${credential_name}=absent")
-    fi
-  done
-  printf 'profile=%s %s\n' "${OMP_PROFILE-}" "${credential_state[*]}" >>"$FAKE_OMP_ENV_LOG"
-fi
 
 if [[ "$#" -eq 0 ]]; then
   config="$HOME/.omp/profiles/${OMP_PROFILE-}/agent/config.yml"
@@ -140,13 +118,6 @@ if [[ "${FAKE_OMP_WAIT_FOR_SIGNAL-}" == 1 ]]; then
   trap 'printf "TERM\n" >>"$FAKE_OMP_SIGNAL_LOG"; exit 143' TERM
   printf 'READY\n' >>"$FAKE_OMP_SIGNAL_LOG"
   while :; do sleep 0.05; done
-fi
-if [[ "${FAKE_OMP_TTY_READ-}" == 1 && "${1-}" == --approval-mode ]]; then
-  [[ -t 0 ]] || exit 88
-  printf 'TTY_READ_READY\n'
-  IFS= read -r tty_input
-  [[ "$tty_input" == continue ]] || exit 89
-  printf 'TTY_READ_DONE\n'
 fi
 
 exit "${FAKE_OMP_EXIT_STATUS:-0}"
@@ -207,8 +178,6 @@ export FAKE_OMP_TEMPLATE="$fixture_root/fake-omp-template"
 export FAKE_OMP_SIGNAL_LOG="$fixture_root/signal.log"
 export FAKE_SECURITY_LOG="$fixture_root/security.log"
 export FAKE_GH_LOG="$fixture_root/gh.log"
-export FAKE_DEJA_ENV_LOG="$fixture_root/deja-env.log"
-export FAKE_OMP_ENV_LOG="$fixture_root/omp-env.log"
 unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
 : >"$FAKE_MISE_LOG"
 : >"$FAKE_CURL_LOG"
@@ -230,8 +199,6 @@ copilot_agent_root="$copilot_profile_root/agent"
   || fail 'command symlink target differs'
 cmp -s "$installed_catalog" "$root/catalog.json" \
   || fail 'installer did not publish the OMP catalog'
-deja_native_assert_installed_helper "$HOME" \
-  || fail 'installer did not install the common Deja helper'
 
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON profile list failed'
 jq -e '
@@ -325,57 +292,6 @@ printf 'profile session canary\n' >"$profile_root/reinstall-canary"
 grep -Fqx 'profile session canary' "$profile_root/reinstall-canary" \
   || fail 'reinstall changed profile state'
 [[ "$(<"$runtime_root/version")" == '17.2.6' ]] || fail 'reinstall changed pinned version'
-
-export FAKE_DEJA_LOG="$fixture_root/deja.log"
-deja_native_install_fake_helper "$HOME" "$FAKE_DEJA_LOG"
-deja_native_install_ambient_helper "$fake_bin" "$FAKE_DEJA_LOG"
-DEJA_RECALL=unsafe "$command_path" -p deja-lifecycle || fail 'Deja lifecycle launch failed'
-expected_deja_log="$(printf '%s\n' \
-  "prepare home=$profile_root real=$home memory=deja recall=safe" \
-  "finalize home=$profile_root real=$home memory=deja recall=safe")"
-[[ "$(<"$FAKE_DEJA_LOG")" == "$expected_deja_log" ]] \
-  || fail 'Deja lifecycle order or isolated home differs'
-! grep -Fqx 'ambient helper used' "$FAKE_DEJA_LOG" \
-  || fail 'launch used an ambient Deja helper'
-: >"$FAKE_DEJA_LOG"
-: >"$FAKE_DEJA_ENV_LOG"
-: >"$FAKE_OMP_ENV_LOG"
-FAKE_DEJA_REJECT_CREDENTIALS=1 FAKE_COPILOT_KEYCHAIN=0 \
-  COPILOT_GITHUB_TOKEN=host-copilot-token \
-  GH_TOKEN=poison-github-token GITHUB_TOKEN=poison-github-api-token \
-  ANTHROPIC_API_KEY=poison-anthropic-key ANTHROPIC_AUTH_TOKEN=poison-anthropic-token \
-  CLAUDE_CODE_OAUTH_TOKEN=poison-claude-token OPENAI_API_KEY=poison-openai-key \
-  XAI_API_KEY=poison-xai-key AWS_ACCESS_KEY_ID=poison-aws-id \
-  AWS_SECRET_ACCESS_KEY=poison-aws-secret AWS_SESSION_TOKEN=poison-aws-session \
-  AZURE_CLIENT_ID=poison-azure-id AZURE_CLIENT_SECRET=poison-azure-secret \
-  AZURE_TENANT_ID=poison-azure-tenant GOOGLE_APPLICATION_CREDENTIALS=poison-google \
-  "$command_path" copilot -p deja-token-isolation \
-  || fail 'Copilot launch did not preserve the selected token during Deja isolation'
-expected_deja_credentials="$(printf '%s\n' \
-  'prepare COPILOT_GITHUB_TOKEN=absent GH_TOKEN=absent GITHUB_TOKEN=absent ANTHROPIC_API_KEY=absent ANTHROPIC_AUTH_TOKEN=absent CLAUDE_CODE_OAUTH_TOKEN=absent OPENAI_API_KEY=absent XAI_API_KEY=absent AWS_ACCESS_KEY_ID=absent AWS_SECRET_ACCESS_KEY=absent AWS_SESSION_TOKEN=absent AZURE_CLIENT_ID=absent AZURE_CLIENT_SECRET=absent AZURE_TENANT_ID=absent GOOGLE_APPLICATION_CREDENTIALS=absent' \
-  'finalize COPILOT_GITHUB_TOKEN=absent GH_TOKEN=absent GITHUB_TOKEN=absent ANTHROPIC_API_KEY=absent ANTHROPIC_AUTH_TOKEN=absent CLAUDE_CODE_OAUTH_TOKEN=absent OPENAI_API_KEY=absent XAI_API_KEY=absent AWS_ACCESS_KEY_ID=absent AWS_SECRET_ACCESS_KEY=absent AWS_SESSION_TOKEN=absent AZURE_CLIENT_ID=absent AZURE_CLIENT_SECRET=absent AZURE_TENANT_ID=absent GOOGLE_APPLICATION_CREDENTIALS=absent')"
-[[ "$(<"$FAKE_DEJA_ENV_LOG")" == "$expected_deja_credentials" ]] \
-  || fail 'Deja helper received a harness credential'
-grep -Fqx 'profile=trellage-copilot-native COPILOT_GITHUB_TOKEN=present GH_TOKEN=absent GITHUB_TOKEN=absent ANTHROPIC_API_KEY=absent ANTHROPIC_AUTH_TOKEN=absent CLAUDE_CODE_OAUTH_TOKEN=absent OPENAI_API_KEY=absent XAI_API_KEY=absent AWS_ACCESS_KEY_ID=absent AWS_SECRET_ACCESS_KEY=absent AWS_SESSION_TOKEN=absent AZURE_CLIENT_ID=absent AZURE_CLIENT_SECRET=absent AZURE_TENANT_ID=absent GOOGLE_APPLICATION_CREDENTIALS=absent' \
-  "$FAKE_OMP_ENV_LOG" || fail 'OMP did not receive only the selected Copilot token'
-FAKE_OMP_TTY_READ=1 \
-  python3 "$repo_root/tests/deja_native_tty_driver.py" "$fixture_root/deja-tty.out" \
-    "$command_path" -p tty-stdin \
-  || fail 'interactive OMP launch did not preserve terminal stdin'
-grep -Fq 'TTY_READ_DONE' "$fixture_root/deja-tty.out" \
-  || fail 'interactive OMP child did not read terminal stdin'
-status=0
-FAKE_DEJA_PREPARE_STATUS=71 FAKE_DEJA_FINALIZE_STATUS=72 \
-FAKE_OMP_EXIT_STATUS=37 "$command_path" -p deja-failure >"$fixture_root/deja-failure.out" 2>&1 \
-  || status=$?
-[[ "$status" == 37 ]] || fail "Deja failure changed harness status to $status"
-grep -Fq 'Deja prepare failed' "$fixture_root/deja-failure.out" \
-  || fail 'prepare failure was not warning-only'
-grep -Fq 'Deja finalize failed' "$fixture_root/deja-failure.out" \
-  || fail 'finalize failure was not warning-only'
-: >"$FAKE_DEJA_LOG"
-TRELLAGE_MEMORY=off "$command_path" -p deja-off || fail 'off-mode launch failed'
-[[ ! -s "$FAKE_DEJA_LOG" ]] || fail 'off mode used the Deja helper'
 
 worktree="$fixture_root/worktree with spaces"
 mkdir -p "$worktree"
@@ -568,7 +484,6 @@ grep -Fq 'omp: OMP 17.2.7 is not installed; installing' \
 
 unsafe_home="$fixture_root/unsafe-home"
 mkdir -p "$unsafe_home/.omp/profiles/trellage-qwen-local/agent"
-deja_native_prepare_install "$unsafe_home" || fail 'could not prepare unsafe-home fake Deja runtime'
 printf 'user-owned\n' >"$unsafe_home/.omp/profiles/trellage-qwen-local/agent/config.yml"
 if HOME="$unsafe_home" "$installer" >/dev/null \
   && HOME="$unsafe_home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
@@ -581,7 +496,6 @@ grep -Fqx 'user-owned' "$unsafe_home/.omp/profiles/trellage-qwen-local/agent/con
 
 symlink_home="$fixture_root/symlink-home"
 mkdir -p "$symlink_home/.omp/profiles" "$fixture_root/symlink-target"
-deja_native_prepare_install "$symlink_home" || fail 'could not prepare symlink-home fake Deja runtime'
 ln -s "$fixture_root/symlink-target" "$symlink_home/.omp/profiles/trellage-qwen-local"
 HOME="$symlink_home" "$installer" >/dev/null || fail 'symlink fixture install failed'
 if HOME="$symlink_home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \

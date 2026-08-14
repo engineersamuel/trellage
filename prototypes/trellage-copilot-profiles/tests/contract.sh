@@ -3,8 +3,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 prototype_root="$PWD"
-repo_root="$(CDPATH= cd -- "$prototype_root/../.." && pwd)"
-. "$repo_root/tests/deja_native_fixture.sh"
 
 fail() {
   printf 'trellage profiles contract: FAIL: %s\n' "$1" >&2
@@ -92,13 +90,6 @@ if [[ -n "${FAKE_COPILOT_SIGNAL_PID_FILE-}" && "${1-}" != plugin ]]; then
   while :; do
     sleep 1
   done
-fi
-if [[ "${FAKE_COPILOT_TTY_READ-}" == 1 && "${1-}" == --autopilot ]]; then
-  [[ -t 0 ]] || exit 88
-  printf 'TTY_READ_READY\n'
-  IFS= read -r tty_input
-  [[ "$tty_input" == continue ]] || exit 89
-  printf 'TTY_READ_DONE\n'
 fi
 jq -cn \
   --arg home "$COPILOT_HOME" \
@@ -280,7 +271,6 @@ ln -s "$(command -v jq)" "$fake_bin/jq"
 ln -s /bin/bash "$fake_bin/bash"
 ln -s "$(command -v dirname)" "$fake_bin/dirname"
 export HOME="$fixture_home"
-deja_native_prepare_install "$HOME" || fail 'could not prepare fake Deja runtime'
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export FAKE_COPILOT_LOG="$fake_copilot_log"
 export FAKE_COPILOT_ARGV_LOG="$fake_copilot_argv_log"
@@ -322,8 +312,6 @@ readme="$prototype_root/README.md"
 [[ -x "$installer" ]] || fail "missing executable installer: $installer"
 [[ -x "$uninstaller" ]] || fail "missing executable uninstaller: $uninstaller"
 assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.' "$readme"
-assert_contains 'Installation refreshes the shared OS-user Deja runtime' "$readme"
-assert_contains 'Uninstall retains that shared runtime and its' "$readme"
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["awesome", "hve", "superpowers"]
@@ -382,45 +370,12 @@ worktree="$fixture_root/project with spaces"
 mkdir -p "$worktree/.github/skills/repository-skill"
 printf '%s\n' 'repository skill sentinel' >"$worktree/.github/skills/repository-skill/SKILL.md"
 launch_output="$fixture_root/launch.out"
-expected_hve_home="$HOME/.local/share/trellage/profiles/copilot/hve/home"
-export FAKE_DEJA_LOG="$fixture_root/deja.log"
-deja_native_install_fake_helper "$HOME" "$FAKE_DEJA_LOG"
-deja_native_install_ambient_helper "$fake_bin" "$FAKE_DEJA_LOG"
-DEJA_RECALL=unsafe "$prototype_root/bin/cpx" hve --prompt deja-lifecycle \
-  || fail 'Deja lifecycle launch failed'
-expected_deja_log="$(printf '%s\n' \
-  "prepare home=$expected_hve_home real=$fixture_home memory=deja recall=safe" \
-  "finalize home=$expected_hve_home real=$fixture_home memory=deja recall=safe")"
-[[ "$(<"$FAKE_DEJA_LOG")" == "$expected_deja_log" ]] \
-  || fail 'Deja lifecycle order or isolated home differs'
-! grep -Fqx 'ambient helper used' "$FAKE_DEJA_LOG" \
-  || fail 'launch used an ambient Deja helper'
-FAKE_COPILOT_TTY_READ=1 \
-  python3 "$repo_root/tests/deja_native_tty_driver.py" "$fixture_root/deja-tty.out" \
-    "$prototype_root/bin/cpx" hve --prompt tty-stdin \
-  || fail 'interactive Copilot launch did not preserve terminal stdin'
-grep -Fq 'TTY_READ_DONE' "$fixture_root/deja-tty.out" \
-  || fail 'interactive Copilot child did not read terminal stdin'
-status=0
-FAKE_DEJA_PREPARE_STATUS=71 FAKE_DEJA_FINALIZE_STATUS=72 \
-FAKE_COPILOT_FAILURE_HOME="$expected_hve_home" FAKE_COPILOT_FAILURE_STATUS=37 \
-  "$prototype_root/bin/cpx" hve --prompt deja-failure >"$fixture_root/deja-failure.out" 2>&1 \
-  || status=$?
-[[ "$status" == 37 ]] || fail "Deja failure changed harness status to $status"
-grep -Fq 'Deja prepare failed' "$fixture_root/deja-failure.out" \
-  || fail 'prepare failure was not warning-only'
-grep -Fq 'Deja finalize failed' "$fixture_root/deja-failure.out" \
-  || fail 'finalize failure was not warning-only'
-: >"$FAKE_DEJA_LOG"
-TRELLAGE_MEMORY=off "$prototype_root/bin/cpx" hve --prompt deja-off \
-  || fail 'off-mode launch failed'
-[[ ! -s "$FAKE_DEJA_LOG" ]] || fail 'off mode used the Deja helper'
-: >"$fake_copilot_argv_log"
 (
   cd "$worktree"
   CPX_PROFILES_ROOT="$fixture_root/forbidden-profile-root" \
     "$prototype_root/bin/cpx" hve --prompt 'hello world' --allow-tool 'git status'
 ) >"$launch_output"
+expected_hve_home="$HOME/.local/share/trellage/profiles/copilot/hve/home"
 assert_contains "COPILOT_HOME=$expected_hve_home" "$launch_output"
 assert_not_contains "$fixture_root/forbidden-profile-root" "$launch_output"
 assert_contains "HOME=$HOME" "$launch_output"
@@ -618,11 +573,10 @@ if kill -0 "$signal_copilot_pid" 2>/dev/null; then
   signal_orphan=1
   kill -TERM "$signal_copilot_pid" 2>/dev/null || true
 fi
-[[ "$signal_status" == '143' \
+[[ "$signal_copilot_pid" == "$signal_launcher_pid" \
+  && "$signal_status" == '143' \
   && "$signal_orphan" == '0' ]] \
-  || fail 'launch did not preserve Copilot SIGTERM behavior'
-grep -Fqx "finalize home=$expected_hve_home real=$fixture_home memory=deja recall=safe" \
-  "$FAKE_DEJA_LOG" || fail 'signaled launch did not finalize Deja memory'
+  || fail 'launch did not preserve Copilot process identity and SIGTERM behavior'
 
 unrelated_status=0
 FAKE_COPILOT_FAILURE_HOME="$expected_hve_home" \
@@ -1015,8 +969,6 @@ rm -rf "$runtime_root"
 
 "$installer"
 [[ -x "$installed" ]] || fail 'installer did not create ~/.local/bin/cpx'
-deja_native_assert_installed_helper "$HOME" \
-  || fail 'installer did not install the common Deja helper'
 assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
 "$installed" list >"$fixture_root/installed-list.out"
 assert_contains $'hve\thve-core-all@hve-core' "$fixture_root/installed-list.out"

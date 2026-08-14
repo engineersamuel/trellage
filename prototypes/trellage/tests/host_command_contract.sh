@@ -421,12 +421,6 @@ assert_no_mutation() {
   ! grep -Fqx $'ARG\trm' "$log" || fail 'unexpected Docker removal'
 }
 
-assert_no_memory_transport() {
-  local log="$1"
-  ! grep -Fqx $'ARG\tcp' "$log" || fail 'unexpected Docker memory copy'
-  ! grep -Fqx $'ARG\t/usr/local/bin/deja-memory' "$log" || fail 'unexpected Docker memory helper'
-}
-
 last_harness_exec_argument() {
   local log="$1"
   awk '
@@ -2487,7 +2481,7 @@ test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
   assert_arg "$docker_log" 'sha256:resolved-image-id'
   [[ "$(grep -Fxc $'ARG\ttest/race:latest' "$docker_log")" -eq 1 ]] \
     || fail 'mutable image tag was reused after immutable ID resolution'
-  image_verification_line="$(grep -n -F $'ARG\t{{ .Image }}' "$docker_log" | sed -n '1p' | cut -d: -f1)"
+  image_verification_line="$(grep -n -F $'ARG\t{{ .Image }}' "$docker_log" | tail -n 1 | cut -d: -f1)"
   start_line="$(grep -n -F $'ARG\tstart' "$docker_log" | tail -n 1 | cut -d: -f1)"
   [[ -n "$image_verification_line" && -n "$start_line" && "$image_verification_line" -lt "$start_line" ]] \
     || fail 'created container image ID was not verified before start'
@@ -3007,12 +3001,6 @@ test_copilot_metadata_contract() {
     'integrity = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' \
     'url = "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz"' \
     'size = 106111479' \
-    '[packages.deja]' \
-    'name = "deja"' \
-    'version = "0.17.0"' \
-    'integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"' \
-    'url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"' \
-    'size = 4364290' \
     '[image]' \
     'base = "node:22.17.0-bookworm-slim"' \
     'base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"' \
@@ -3033,285 +3021,6 @@ test_copilot_metadata_contract() {
   [[ "$(jq -r '.resolved_version' <<<"$metadata")" == 1.0.75 ]] \
     || fail 'Copilot metadata lacks exact resolved version'
   printf 'Trellage host test: PASS: Copilot metadata drives host lifecycle\n'
-}
-
-test_deja_memory_lifecycle_and_commands() {
-  local worktree="$test_root/deja-memory-worktree"
-  local docker_log="$test_root/deja-memory.docker.log"
-  local state_volume output status=0 prepare_line harness_line finalize_line
-  local bridge_root live_bridge dead_bridge malformed_bridge unsafe_link unsafe_mode
-  mkdir -p "$worktree"
-  state_volume="$(resource_names "$worktree" | tail -n 1)"
-
-  : >"$docker_log"
-  DEJA_RECALL=unsafe FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" -p 'memory lifecycle'
-  prepare_line="$(grep -n -F $'ARG\tprepare' "$docker_log" | cut -d: -f1)"
-  harness_line="$(grep -n -E $'ARG\t.*trellage-codex-entry prompt' "$docker_log" | cut -d: -f1 || true)"
-  finalize_line="$(grep -n -F $'ARG\tfinalize' "$docker_log" | cut -d: -f1)"
-  [[ "$prepare_line" =~ ^[0-9]+$ && "$harness_line" =~ ^[0-9]+$ && "$finalize_line" =~ ^[0-9]+$ ]] \
-    || fail 'memory lifecycle did not run its fixed helper around the harness'
-  [[ "$prepare_line" -lt "$harness_line" && "$harness_line" -lt "$finalize_line" ]] \
-    || fail 'memory lifecycle helper sequence is not prepare, harness, finalize'
-  [[ "$(grep -Fxc $'ARG\tDEJA_RECALL=safe' "$docker_log")" -eq 2 ]] \
-    || fail 'memory lifecycle did not force safe recall for prepare and finalize'
-  ! grep -Fqx $'ARG\tDEJA_RECALL=unsafe' "$docker_log" \
-    || fail 'memory lifecycle accepted an unsafe recall override'
-  grep -Fqx $'ARG\tcp' "$docker_log" || fail 'memory finalization did not use Docker copy'
-  ! grep -Fqx $'ARG\t--mount' "$docker_log" || fail 'memory lifecycle added a Docker mount to a reused container'
-
-  : >"$docker_log"
-  status=0
-  DEJA_RECALL=unsafe FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_DEJA_PREPARE_EXIT=71 \
-    FAKE_DOCKER_DEJA_FINALIZE_EXIT=72 FAKE_DOCKER_AGENT_EXEC_EXIT=37 \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" -p 'memory failure' \
-      >"$test_root/deja-memory-failure.out" 2>&1 || status=$?
-  [[ "$status" == 37 ]] \
-    || fail "memory lifecycle failure changed harness status to $status"
-  grep -Fq 'prepare failed; continuing without synchronized memory' \
-    "$test_root/deja-memory-failure.out" \
-    || fail 'memory prepare failure was not warning-only'
-  grep -Fq 'memory finalization failed; preserving harness status' \
-    "$test_root/deja-memory-failure.out" \
-    || fail 'memory finalization failure was not warning-only'
-  prepare_line="$(grep -n -F $'ARG\tprepare' "$docker_log" | cut -d: -f1)"
-  harness_line="$(grep -n -E $'ARG\t.*trellage-codex-entry prompt' "$docker_log" | cut -d: -f1 || true)"
-  finalize_line="$(grep -n -F $'ARG\tfinalize' "$docker_log" | cut -d: -f1)"
-  [[ "$prepare_line" =~ ^[0-9]+$ && "$harness_line" =~ ^[0-9]+$ && "$finalize_line" =~ ^[0-9]+$ \
-    && "$prepare_line" -lt "$harness_line" && "$harness_line" -lt "$finalize_line" ]] \
-    || fail 'memory finalization did not run after a failed harness'
-
-  : >"$docker_log"
-  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory status --profile codex-superpowers)"
-  grep -Fqx 'memory: deja; container: ready' <<<"$output" \
-    || fail 'memory status did not report the validated current container'
-  ! grep -Eiq '(deja-sync|exchange|staging|\.local/state)' <<<"$output" \
-    || fail 'memory status exposed private exchange details'
-  assert_no_memory_transport "$docker_log"
-  assert_no_mutation "$docker_log"
-
-  : >"$docker_log"
-  mkdir -p "$HOME/.local/state/trellage/deja/exchange"
-  chmod 700 "$HOME/.local/state/trellage/deja/exchange"
-  printf 'not-json\n' >"$HOME/.local/state/trellage/deja/exchange/deja-sync-unsafe.jsonl"
-  chmod 600 "$HOME/.local/state/trellage/deja/exchange/deja-sync-unsafe.jsonl"
-  printf '%s\n' '{"safe":true}' >"$HOME/.local/state/trellage/deja/exchange/deja-sync-safe.jsonl"
-  chmod 600 "$HOME/.local/state/trellage/deja/exchange/deja-sync-safe.jsonl"
-  DEJA_RECALL=unsafe FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory sync --profile codex-superpowers
-  grep -Fqx $'ARG\tprepare' "$docker_log" || fail 'manual memory sync did not prepare'
-  grep -Fqx $'ARG\tfinalize' "$docker_log" || fail 'manual memory sync did not finalize'
-  grep -Fqx $'ARG\tcp' "$docker_log" || fail 'manual memory sync did not use Docker copy'
-  [[ "$(grep -Fxc $'ARG\tcp' "$docker_log")" -eq 2 ]] \
-    || fail 'manual memory sync did not copy the validated import and export sequence'
-  [[ "$(grep -Fxc $'ARG\tDEJA_RECALL=safe' "$docker_log")" -eq 2 ]] \
-    || fail 'manual memory sync did not force safe recall'
-  python3 - "$docker_log" <<'PY' \
-    || fail 'manual memory sync did not use the fixed private container copy sequence'
-import re
-import sys
-
-calls = [block.splitlines() for block in open(sys.argv[1]).read().split("CALL\n")[1:]]
-copies = []
-for call in calls:
-    args = [line[4:] for line in call if line.startswith("ARG\t")]
-    if "cp" in args:
-        copies.append(args[args.index("cp"):])
-
-if len(copies) != 2:
-    raise SystemExit(1)
-bridge = r"fake-container-id:/home/agent/\.trellage-deja-bridge-[0-9a-f]{16}-[0-9]+-[0-9]+"
-if not (
-    copies[0][1].endswith("/.")
-    and re.fullmatch(bridge + r"/", copies[0][2])
-    and re.fullmatch(bridge + r"/\.", copies[1][1])
-    and copies[1][2].startswith("/")
-):
-    raise SystemExit(1)
-if "/tmp/" in copies[0][2] or "/tmp/" in copies[1][1]:
-    raise SystemExit(1)
-
-prepare = next(index for index, call in enumerate(calls) if "prepare" in [
-    line[4:] for line in call if line.startswith("ARG\t")
-])
-finalize = next(index for index, call in enumerate(calls) if "finalize" in [
-    line[4:] for line in call if line.startswith("ARG\t")
-])
-if not any(
-    "/usr/local/bin/deja-memory" in [line[4:] for line in call if line.startswith("ARG\t")]
-    and "TRELLAGE_MEMORY_INSTALL_ROOT_DEFAULT=/usr/local/lib/trellage/deja"
-    in [line[4:] for line in call if line.startswith("ARG\t")]
-    for call in calls
-):
-    raise SystemExit(1)
-
-def bridge_cleanup_after(copy_index, path, limit):
-    return any(
-        path in "\n".join(call) and 'rm -rf -- "$bridge"' in "\n".join(call)
-        for call in calls[copy_index + 1:limit]
-    )
-
-copy_indexes = [
-    index for index, call in enumerate(calls)
-    if "cp" in [line[4:] for line in call if line.startswith("ARG\t")]
-]
-if not (
-    bridge_cleanup_after(copy_indexes[0], copies[0][2][len("fake-container-id:"):-1], prepare)
-    and bridge_cleanup_after(copy_indexes[1], copies[1][1][len("fake-container-id:"):-2], len(calls))
-    and copy_indexes[0] < prepare < finalize < copy_indexes[1]
-):
-    raise SystemExit(1)
-PY
-  ! grep -Fqx $'ARG\tcreate' "$docker_log" || fail 'manual memory sync created a container'
-  ! grep -Fqx $'ARG\tstart' "$docker_log" || fail 'manual memory sync started a container'
-  ! grep -Fqx $'ARG\trm' "$docker_log" || fail 'manual memory sync replaced a container'
-
-  bridge_root="$test_root/deja-stale-bridges"
-  live_bridge="$bridge_root/.trellage-deja-bridge-0123456789abcdef-$$-1"
-  dead_bridge="$bridge_root/.trellage-deja-bridge-0123456789abcdef-99999999-2"
-  malformed_bridge="$bridge_root/.trellage-deja-bridge-malformed"
-  unsafe_link="$bridge_root/.trellage-deja-bridge-0123456789abcdef-99999998-3"
-  unsafe_mode="$bridge_root/.trellage-deja-bridge-0123456789abcdef-99999997-4"
-  mkdir -p "$live_bridge" "$dead_bridge" "$malformed_bridge" "$unsafe_mode"
-  chmod 700 "$live_bridge" "$dead_bridge" "$malformed_bridge"
-  chmod 755 "$unsafe_mode"
-  ln -s "$test_root/deja-unsafe-bridge-target" "$unsafe_link"
-  : >"$docker_log"
-  FAKE_DOCKER_DEJA_BRIDGE_ROOT="$bridge_root" \
-    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory sync --profile codex-superpowers
-  [[ -d "$live_bridge" && ! -L "$live_bridge" ]] \
-    || fail 'memory sweep removed a bridge owned by a live host PID'
-  [[ ! -e "$dead_bridge" && ! -L "$dead_bridge" ]] \
-    || fail 'memory sweep did not remove a dead-owner bridge'
-  [[ ! -e "$malformed_bridge" && ! -L "$malformed_bridge" ]] \
-    || fail 'memory sweep did not remove a malformed stale bridge'
-  [[ -L "$unsafe_link" ]] || fail 'memory sweep removed an unsafe bridge symlink'
-  [[ -d "$unsafe_mode" && ! -L "$unsafe_mode" ]] \
-    || fail 'memory sweep removed an unsafe-mode bridge'
-
-  : >"$docker_log"
-  status=0
-  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_DEJA_BRIDGE_CREATE_EXIT=71 \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory sync --profile codex-superpowers 2>&1)" || status=$?
-  [[ "$status" -ne 0 ]] || fail 'memory sync accepted a failed container bridge creation'
-  grep -Fq 'cannot copy validated memory batches into the container' <<<"$output" \
-    || fail 'memory bridge creation failure did not warn about the failed copy preparation'
-  grep -Fq 'memory sync prepare failed' <<<"$output" \
-    || fail 'memory bridge creation failure did not fail manual synchronization'
-  ! grep -Fqx $'ARG\tcp' "$docker_log" \
-    || fail 'memory bridge creation failure attempted Docker copy'
-  ! grep -Eq $'^ARG\tfake-container-id:/($|\.$)' "$docker_log" \
-    || fail 'memory bridge creation failure used a Docker root copy target'
-  python3 - "$prototype_dir/trellage" <<'PY' \
-    || fail 'memory bridge sweep did not restrict stale cleanup to safe owned directories'
-import sys
-
-source = open(sys.argv[1]).read()
-required = (
-    'memory_sweep_container_bridges()',
-    '[[ "$name" =~ ^\\.trellage-deja-bridge-[[:alnum:]_.-]+$ ]]',
-    '[[ "$name" =~ ^\\.trellage-deja-bridge-[[:xdigit:]]{16}-([1-9][0-9]*)-[0-9]+$ ]]',
-    'kill -0 -- "$owner_pid"',
-    'bridge="$home/$name"',
-    'stat -c "%u:%g:%a" -- "$bridge"',
-    '10001:10001:700',
-    'rm -rf -- "$bridge"',
-)
-if any(value not in source for value in required):
-    raise SystemExit(1)
-PY
-  rm -f "$HOME/.local/state/trellage/deja/exchange/deja-sync-unsafe.jsonl" \
-    "$HOME/.local/state/trellage/deja/exchange/deja-sync-safe.jsonl"
-
-  : >"$docker_log"
-  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_CP_EXIT_ON_CALL=2 \
-    FAKE_DOCKER_CP_EXIT=73 \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" -p 'memory export bridge cleanup' 2>&1)"
-  grep -Fq 'memory finalization failed; preserving harness status' <<<"$output" \
-    || fail 'memory export copy failure did not preserve the harness status'
-  python3 - "$docker_log" <<'PY' \
-    || fail 'memory bridge cleanup did not run after a failed Docker export copy'
-import sys
-
-log = open(sys.argv[1]).read()
-last_copy = log.rfind("\nARG\tcp\n")
-if last_copy < 0 or 'rm -rf -- "$bridge"' not in log[last_copy:]:
-    raise SystemExit(1)
-PY
-
-  : >"$docker_log"
-  output="$(FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=absent \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory sync --profile codex-superpowers 2>&1)" || status=$?
-  [[ "$status" -ne 0 ]] || fail 'memory sync accepted an absent container'
-  grep -Fq 'memory sync requires an existing current-worktree container; it is absent' <<<"$output" \
-    || fail 'memory sync did not clearly report an absent container'
-  assert_no_memory_transport "$docker_log"
-  assert_no_mutation "$docker_log"
-
-  : >"$docker_log"
-  status=0
-  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-wrong-mount \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory sync --profile codex-superpowers 2>&1)" || status=$?
-  [[ "$status" -ne 0 ]] || fail 'memory sync accepted unsafe container mounts'
-  grep -Fq 'exact four mounts' <<<"$output" || fail 'memory sync did not reject unsafe container mounts'
-  assert_no_memory_transport "$docker_log"
-  assert_no_mutation "$docker_log"
-
-  : >"$docker_log"
-  status=0
-  output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_IMAGE_DEJA_VERSION=0.17.1 \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" memory sync --profile codex-superpowers 2>&1)" || status=$?
-  [[ "$status" -ne 0 ]] || fail 'memory sync accepted an image with the wrong Deja label'
-  grep -Fq 'Deja 0.17.0' <<<"$output" || fail 'memory sync did not report the required Deja image label'
-  assert_no_memory_transport "$docker_log"
-  assert_no_mutation "$docker_log"
-
-  : >"$docker_log"
-  output="$(FAKE_DOCKER_IMAGE_DEJA_VERSION=0.17.1 \
-    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" doctor)"
-  grep -Fqx 'image: trellage-profile-codex-superpowers-linux-arm64:locked (stale)' <<<"$output" \
-    || fail 'doctor did not mark a wrong Deja image label stale'
-  grep -Fqx 'memory: deja' <<<"$output" || fail 'doctor did not report the default memory mode'
-  assert_no_mutation "$docker_log"
-
-  : >"$docker_log"
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" --no-memory -p 'memory disabled'
-  assert_no_memory_transport "$docker_log"
-
-  : >"$docker_log"
-  output="$(TRELLAGE_MEMORY=off run_non_tty "$worktree" "$docker_log" "$worktree" \
-    "$prototype_dir/trellage" memory status --profile codex-superpowers)"
-  grep -Fqx 'memory: off' <<<"$output" || fail 'memory status did not honor off mode'
-  assert_no_memory_transport "$docker_log"
-  assert_no_mutation "$docker_log"
-  printf 'Trellage host test: PASS: Deja memory lifecycle and manual commands\n'
 }
 
 test_host_docker_created_labels_round_trip_without_defaults() {
@@ -4371,11 +4080,6 @@ if [[ "${TRELLAGE_HOST_MODELS_CATALOG_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
-if [[ "${TRELLAGE_HOST_MEMORY_ONLY:-}" == 1 ]]; then
-  test_deja_memory_lifecycle_and_commands
-  exit 0
-fi
-
 if [[ "${TRELLAGE_HOST_LEGACY_PLATFORM_ONLY:-}" == 1 ]]; then
   test_adopts_legacy_arm64_state_without_platform_labels
   exit 0
@@ -4550,7 +4254,6 @@ test_pending_launch_is_serialized_with_cleanup
 test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
 test_cleanup_status_signals_secrets_and_validation
 test_doctor_reports_status_without_mutation_or_secrets
-test_deja_memory_lifecycle_and_commands
 test_stop_rejects_collisions_and_wrong_mounts
 test_destroy_requires_exact_confirmation_and_removes_in_order
 test_destroy_is_idempotent_and_collision_safe

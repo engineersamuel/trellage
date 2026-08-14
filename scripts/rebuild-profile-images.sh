@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Post-merge / heavy-dev refresh for Trellage:
 #   1. Install worktree trellage CLI (optional)
-#   2. Refresh the shared Deja runtime once, then reinstall native launchers + trx
+#   2. Reinstall every native launcher + trx from this worktree
 #   3. Rebuild every sandbox profile OCI image (default: non-locked)
 #
-# Native install order matches prototypes/trellage-router/README.md: shared
-# Deja first, launchers next, router last. Any additional
-# trellage-*-profiles packages are installed after the known set and before trx.
+# Native install order matches prototypes/trellage-router/README.md:
+# launchers first, router last. Any additional prototypes/trellage-*-profiles
+# packages are installed after the known set and before trx.
 set -euo pipefail
 
 fail() {
@@ -26,8 +26,7 @@ Usage:
   --fallback        With --locked, on digest mismatch retry without --locked
   PROFILE...        Optional bare profile names (default: every profiles/*/profile.toml)
 
-Default: refresh shared Deja once, reinstall native launchers + trx, then
-non-locked sandbox rebuilds.
+Default: reinstall native launchers + trx, then non-locked sandbox rebuilds.
 
 Examples:
   mise run rebuild-profiles
@@ -42,7 +41,6 @@ trellage="$repo_root/prototypes/trellage/trellage"
 installer="$repo_root/prototypes/trellage/install-trellage.sh"
 profiles_dir="$repo_root/profiles"
 prototypes_dir="$repo_root/prototypes"
-deja_installer="$prototypes_dir/trellage-memory/install-deja.sh"
 
 [[ -d "$prototypes_dir" ]] || fail "prototypes directory missing: $prototypes_dir"
 
@@ -134,19 +132,6 @@ is_known_native_package() {
   return 1
 }
 
-refresh_shared_deja_runtime() {
-  if [[ "${TRELLAGE_MEMORY:-deja}" == off ]]; then
-    printf 'rebuild-profile-images: shared Deja refresh disabled by TRELLAGE_MEMORY=off\n' >&2
-    return
-  fi
-
-  [[ -f "$deja_installer" && ! -L "$deja_installer" && -x "$deja_installer" ]] \
-    || fail "missing common Deja installer: $deja_installer"
-  printf 'rebuild-profile-images: === shared Deja runtime ===\n' >&2
-  "$deja_installer" >/dev/null \
-    || fail 'could not refresh the shared Deja runtime'
-}
-
 list_native_packages() {
   local pkg name
   for pkg in "${known_native_packages[@]}"; do
@@ -177,7 +162,6 @@ install_native_stack() {
   (( ${#packages[@]} > 0 )) \
     || fail "no native launcher packages found under $prototypes_dir/trellage-*-profiles"
 
-  refresh_shared_deja_runtime
   printf 'rebuild-profile-images: reinstalling %d native launcher package(s)\n' \
     "${#packages[@]}" >&2
 
@@ -186,7 +170,7 @@ install_native_stack() {
     printf 'rebuild-profile-images: === native %s ===\n' "$pkg" >&2
     if ! (
       cd "$prototypes_dir/$pkg"
-      TRELLAGE_MEMORY=off ./install.sh
+      ./install.sh
     ); then
       printf 'rebuild-profile-images: FAILED native install: %s\n' "$pkg" >&2
       failed_packages+=("$pkg")

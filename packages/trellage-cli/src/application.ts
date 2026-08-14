@@ -9,7 +9,6 @@ import { Cause, Data, Effect, Exit } from "effect"
 import lockfile from "proper-lockfile"
 
 import { resolveGitHubSource } from "./github-cache.js"
-import { managedDejaArtifactError, managedDejaImagePlatform } from "./artifact-catalog.js"
 import { parseLock, renderLock } from "./lock-file.js"
 import {
   compileLock,
@@ -200,37 +199,13 @@ const impossibleBuilderInput = (message: string): never => {
   throw new ApplicationError({ message })
 }
 
-const managedDejaMaterialization = (lock: ProfileLock): string => {
-  const deja = lock.packages.deja
-  if (managedDejaArtifactError(deja) !== undefined) {
-    return impossibleBuilderInput("builder requires the exact managed Deja artifact")
-  }
-  const artifact = deja!
-  const archive = `/src/deja-vu_${artifact.version}_linux_arm64.tar.gz`
-  const staging = "/src/.deja-stage"
-  const destination = `/src/deja/${managedDejaImagePlatform}/deja`
-  return [
-    `deja_archive=${shellQuote(archive)}`,
-    `curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 --output "$deja_archive" ${shellQuote(artifact.url)}`,
-    `[ "$(wc -c < "$deja_archive")" -eq ${artifact.size} ]`,
-    `printf '%s  %s\\n' ${shellQuote(artifact.integrity.slice("sha256:".length))} "$deja_archive" | sha256sum --check --strict -`,
-    `rm -rf ${shellQuote(staging)}`,
-    `mkdir -p ${shellQuote(staging)} ${shellQuote(path.dirname(destination))}`,
-    `tar --no-same-owner --no-same-permissions -xzf "$deja_archive" -C ${shellQuote(staging)} deja`,
-    `[ -f ${shellQuote(`${staging}/deja`)} ]`,
-    `[ ! -L ${shellQuote(`${staging}/deja`)} ]`,
-    `install -m 0755 ${shellQuote(`${staging}/deja`)} ${shellQuote(destination)}`,
-    `rm -rf ${shellQuote(staging)} "$deja_archive"`,
-  ].join("; ")
-}
-
 export const builderScript = (document: ProfileDocument, lock: ProfileLock): string => {
   const harness = lock.packages.harness
   if (document.profile.harness.kind !== harness.kind || !safeLockedVersionPattern.test(harness.version)) {
     return impossibleBuilderInput("profile and lock harness packages do not match")
   }
   const tool = `http:${harness.kind}@${harness.version}`
-  const build = `${managedDejaMaterialization(lock)}; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"`
+  const build = 'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"'
   if (harness.kind === "codex" && hasLegacyPackageProvenance(lock)) {
     // Legacy Codex locks predate the code-mode-host companion binary; install just the CLI.
     return [

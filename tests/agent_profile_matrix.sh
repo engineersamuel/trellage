@@ -86,7 +86,7 @@ if ! test_make_output="$(make --no-print-directory -n profile-matrix-test 2>&1)"
   fail 'Makefile does not expose the profile-matrix-test target'
 fi
 test_make_output="$(normalize_make_output <<<"$test_make_output")"
-[ "$test_make_output" = $'bash prototypes/trellage-memory/tests/contract.sh\nbash tests/agent_profile_matrix.sh' ] \
+[ "$test_make_output" = 'bash tests/agent_profile_matrix.sh' ] \
   || fail "unexpected profile-matrix-test recipe: $test_make_output"
 
 set +e
@@ -112,7 +112,7 @@ if ! phony_make_output="$(make --no-print-directory -n -C "$phony_fixture" \
   fail 'profile matrix phony-target probe failed'
 fi
 phony_make_output="$(normalize_make_output <<<"$phony_make_output")"
-expected_phony_make_output=$'scripts/verify-agent-profiles\nbash prototypes/trellage-memory/tests/contract.sh\nbash tests/agent_profile_matrix.sh'
+expected_phony_make_output=$'scripts/verify-agent-profiles\nbash tests/agent_profile_matrix.sh'
 [ "$phony_make_output" = "$expected_phony_make_output" ] \
   || fail 'profile-matrix and profile-matrix-test are not both phony targets'
 if ! cleanup_phony_fixture; then
@@ -126,54 +126,9 @@ fi
 default_test_make_output="$(normalize_make_output <<<"$default_test_make_output")"
 default_test_make_output="$(sed -E 's#^([^[:space:]]*/)?make #make #' \
   <<<"$default_test_make_output")"
-expected_parallel_test_targets='dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness deja-memory-contract deja-sandbox-contract claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence'
-expected_default_test_make_output="$(
-  cat <<EOF
-make --no-print-directory -j4 $expected_parallel_test_targets
-bash tests/dependency_bootstrap_contract.sh
-bash tests/publication_contract.sh
-bash tests/publication_contract_self_test.sh
-bash tests/agent_profile_hup_contract.sh
-bash tests/caveman_profile_contract.sh
-cd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test
-cd packages/trellage-launcher && npm run check && npm run build && npm test
-bash tests/profile_compiler_fingerprint_contract.sh
-bash tests/trellage_identity_contract.sh
-bash tests/trellage_orphan_cleanup_contract.sh
-bash tests/agent_harness_contract.sh
-bash prototypes/trellage-memory/tests/contract.sh
-bash prototypes/trellage/tests/host_command_contract.sh
-STATIC_ONLY=1 bash prototypes/trellage/tests/image_contract.sh
-bash prototypes/trellage/tests/claude_entry_contract.sh
-docker image inspect "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af" >/dev/null 2>&1 || docker image pull "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af"
-bash prototypes/trellage/tests/copilot_entry_contract.sh
-bash prototypes/trellage/tests/pi_entry_contract.sh
-bash prototypes/trellage/tests/prime_entry_contract.sh
-bash prototypes/trellage-codex-profiles/tests/blocks/auth-config-launch.sh
-bash prototypes/trellage-codex-profiles/tests/blocks/lifecycle.sh
-bash prototypes/trellage-codex-profiles/tests/blocks/catalog.sh
-bash prototypes/trellage-codex-profiles/tests/blocks/installation.sh
-bash prototypes/trellage-copilot-profiles/tests/contract.sh
-bash prototypes/trellage-claude-profiles/tests/contract.sh
-bash prototypes/trellage-grok-profiles/tests/contract.sh
-bash prototypes/trellage-jcode-profiles/tests/contract.sh
-bash prototypes/trellage-omp-profiles/tests/contract.sh
-bash prototypes/trellage-prime-profiles/tests/contract.sh
-bash tests/manifest_contract.sh
-bash tests/harness_contract.sh
-bash tests/agent_kit_adapter.sh
-bash tests/awesome_copilot_adapter.sh
-bash tests/copilot_agent_image.sh
-bash tests/harness_runner.sh
-bash tests/run_agent_session.sh
-bash tests/harness_session_discovery.sh
-bash tests/workspace_checks.sh
-bash tests/playwright_matrix.sh
-bash tests/evidence_contract.sh
-make --no-print-directory native-profile-router
-bash prototypes/trellage-router/tests/contract.sh
-EOF
-)"
+expected_parallel_test_targets='publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract profile-compiler trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence'
+expected_default_test_make_output="make --no-print-directory -j4 $expected_parallel_test_targets"$'\n'
+expected_default_test_make_output+=$'bash tests/publication_contract.sh\nbash tests/publication_contract_self_test.sh\nbash tests/agent_profile_hup_contract.sh\nbash tests/caveman_profile_contract.sh\ncd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test\nbash tests/trellage_identity_contract.sh\nbash tests/trellage_orphan_cleanup_contract.sh\nbash tests/agent_harness_contract.sh\nbash prototypes/trellage/tests/claude_entry_contract.sh\ndocker image inspect "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af" >/dev/null 2>&1 || docker image pull "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af"\nbash prototypes/trellage/tests/copilot_entry_contract.sh\nbash prototypes/trellage/tests/pi_entry_contract.sh\nbash prototypes/trellage/tests/prime_entry_contract.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/auth-config-launch.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/lifecycle.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/catalog.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/installation.sh\nbash prototypes/trellage-copilot-profiles/tests/contract.sh\nbash prototypes/trellage-claude-profiles/tests/contract.sh\nbash prototypes/trellage-grok-profiles/tests/contract.sh\nbash prototypes/trellage-jcode-profiles/tests/contract.sh\nbash prototypes/trellage-omp-profiles/tests/contract.sh\nbash prototypes/trellage-prime-profiles/tests/contract.sh\nbash tests/manifest_contract.sh\nbash tests/harness_contract.sh\nbash tests/agent_kit_adapter.sh\nbash tests/awesome_copilot_adapter.sh\nbash tests/copilot_agent_image.sh\nbash tests/harness_runner.sh\nbash tests/run_agent_session.sh\nbash tests/workspace_checks.sh\nbash tests/playwright_matrix.sh\nbash tests/evidence_contract.sh\nmake --no-print-directory native-profile-router\nbash prototypes/trellage-router/tests/contract.sh'
 [ "$default_test_make_output" = "$expected_default_test_make_output" ] \
   || fail 'default test dry-run differs from the established parallel dependency graph'
 
@@ -213,7 +168,6 @@ for required_statement in \
   'Live mode invokes every statically passing discovered profile, may consume paid model quota, and may create product-local telemetry or state where a CLI lacks ephemeral mode.' \
   'Codex discovery and static checks require the managed `cdx` launcher and its isolated profile roots under `~/.local/share/trellage/profiles/codex/<profile>/home`.' \
   'Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.' \
-  'Static verification also checks the exact shared Deja 0.17.0 runtime and runs its prepare/finalize lifecycle for each statically passing managed Codex profile. It invokes no model or paid service, but updates only those local Deja indexes and exchange batches.' \
   'Static verification performs no native marketplace/plugin mutation or live prompt and never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.' \
   'Exit statuses:' \
   '- `0`: all required checks pass.' \
@@ -304,59 +258,6 @@ mkdir -p "$fixture_home" "$fixture_codex_home" "$fixture_bin" "$fixture_core_bin
 mkdir -p \
   "$fixture_home/.local/share/trellage/profiles/codex/hve/home" \
   "$fixture_home/.local/share/trellage/profiles/codex/superpowers/home"
-
-case "$(uname -s):$(uname -m)" in
-  Linux:aarch64|Linux:arm64)
-    deja_platform=linux_arm64
-    deja_release_sha=e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1
-    ;;
-  Linux:x86_64|Linux:amd64)
-    deja_platform=linux_amd64
-    deja_release_sha=1d176d47d3a6990dbb74a91086a6a9099fe7c3461e4d196718ef8a7d51570d78
-    ;;
-  Darwin:arm64|Darwin:aarch64)
-    deja_platform=darwin_arm64
-    deja_release_sha=17daa4e2036191ce87e41b47154785ae3b59c537fe89c1606eb476ba540799b4
-    ;;
-  Darwin:x86_64|Darwin:amd64)
-    deja_platform=darwin_amd64
-    deja_release_sha=a45650cf5041da49cd318577ce674be919b414d6994aab5615c529df31c349b2
-    ;;
-  *) fail 'unsupported Deja fixture platform' ;;
-esac
-deja_runtime="$fixture_home/.local/share/trellage/deja"
-deja_binary="$deja_runtime/0.17.0/$deja_platform/deja"
-deja_marker="$(dirname "$deja_binary")/.archive-sha256"
-deja_helper="$deja_runtime/deja-memory"
-deja_log="$fixture_root/deja.log"
-mkdir -p "$(dirname "$deja_binary")"
-chmod 700 "$deja_runtime" "$deja_runtime/0.17.0" "$(dirname "$deja_binary")"
-printf '%s\n' "$deja_release_sha" >"$deja_marker"
-chmod 600 "$deja_marker"
-cat >"$deja_binary" <<'FAKE_DEJA_BINARY'
-#!/usr/bin/env bash
-exit 0
-FAKE_DEJA_BINARY
-chmod 700 "$deja_binary"
-cat >"$deja_helper" <<'FAKE_DEJA_HELPER'
-#!/usr/bin/env bash
-set -euo pipefail
-
-case "${1-}" in
-  status)
-    printf 'memory: enabled; exchange: absent; binary: ready\n'
-    ;;
-  prepare|finalize)
-    printf '%s home=%s real=%s memory=%s recall=%s\n' \
-      "$1" "$HOME" "${TRELLAGE_REAL_HOME-unset}" "${TRELLAGE_MEMORY-unset}" \
-      "${DEJA_RECALL-unset}" >>"${FAKE_DEJA_LOG:?}"
-    ;;
-  *) exit 64 ;;
-esac
-FAKE_DEJA_HELPER
-chmod 700 "$deja_helper"
-: >"$deja_log"
-export FAKE_DEJA_LOG="$deja_log"
 
 cat >"$fixture_bin/cdx" <<'FAKE_CDX'
 #!/usr/bin/env bash
@@ -588,7 +489,7 @@ FAKE_TERM_IGNORER
 chmod 0755 "$fixture_bin/cdx" "$fixture_bin/codex" "$fixture_bin/cpx" "$fixture_bin/grx" \
   "$fixture_bin/fake-live-descendant" "$fixture_bin/fake-term-ignorer"
 ln -s "$real_jq" "$fixture_bin/jq"
-for core_command in bash mktemp rm cut grep sort awk head cat sleep stat uname id tail od tr; do
+for core_command in bash mktemp rm cut grep sort awk head cat sleep; do
   ln -s "$(command -v "$core_command")" "$fixture_core_bin/$core_command"
 done
 
@@ -679,7 +580,6 @@ run_matrix() {
   HOME="$fixture_home" \
   CODEX_HOME="$selected_codex_home" \
   FAKE_COMMAND_LOG="$command_log" \
-  FAKE_DEJA_LOG="$deja_log" \
   FAKE_DATA="$fixture_data" \
   FAKE_BLOCK_LIVE="${FAKE_BLOCK_LIVE:-}" \
   FAKE_READY_FILE="${FAKE_READY_FILE:-}" \
@@ -700,7 +600,6 @@ run_live_matrix() {
   HOME="$fixture_home" \
   CODEX_HOME="$fixture_codex_home" \
   FAKE_COMMAND_LOG="$command_log" \
-  FAKE_DEJA_LOG="$deja_log" \
   FAKE_DATA="$fixture_data" \
   FAKE_BLOCK_LIVE="${FAKE_BLOCK_LIVE:-}" \
   FAKE_READY_FILE="${FAKE_READY_FILE:-}" \
@@ -902,7 +801,6 @@ for survivor_case in \
     || fail "$survivor_adapter survivor cleanup left temporary artifacts"
 done
 : >"$command_log"
-: >"$deja_log"
 
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'happy-path matrix returned nonzero'
@@ -911,7 +809,6 @@ expected_table="$fixture_root/expected-table"
 cat >"$expected_table" <<'TABLE'
 | Launcher | Profile | Package | Package skills | Visible skills | Sample | Static | Live |
 |---|---|---|---:|---:|---|---|---|
-Deja static runtime: pass
 | cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | pass | not run |
 | cdx | superpowers | superpowers@superpowers-marketplace | n/a | 1 | zskill | pass | not run |
 | cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | not run |
@@ -923,33 +820,6 @@ cmp -s "$expected_table" "$output_file" || {
   diff -u "$expected_table" "$output_file" >&2 || true
   fail 'happy-path matrix did not match the shared table contract'
 }
-
-canonical_fixture_home="$(cd -P -- "$fixture_home" && pwd)"
-expected_deja_log="$(printf '%s\n' \
-  "prepare home=$canonical_fixture_home/.local/share/trellage/profiles/codex/hve/home real=$canonical_fixture_home memory=deja recall=safe" \
-  "finalize home=$canonical_fixture_home/.local/share/trellage/profiles/codex/hve/home real=$canonical_fixture_home memory=deja recall=safe" \
-  "prepare home=$canonical_fixture_home/.local/share/trellage/profiles/codex/superpowers/home real=$canonical_fixture_home memory=deja recall=safe" \
-  "finalize home=$canonical_fixture_home/.local/share/trellage/profiles/codex/superpowers/home real=$canonical_fixture_home memory=deja recall=safe")"
-if [[ "$(<"$deja_log")" != "$expected_deja_log" ]]; then
-  printf 'expected Deja lifecycle:\n%s\nactual Deja lifecycle:\n%s\n' \
-    "$expected_deja_log" "$(<"$deja_log")" >&2
-  fail 'static verifier did not run the safe Deja lifecycle per isolated Codex home'
-fi
-
-chmod 600 "$deja_helper"
-run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'unsafe shared Deja helper returned success'
-grep -Fq 'shared Deja runtime has an unsafe helper' "$error_file" \
-  || fail 'unsafe shared Deja helper omitted its diagnostic'
-chmod 700 "$deja_helper"
-
-printf '%s\n' invalid-deja-marker >"$deja_marker"
-run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'wrong shared Deja marker returned success'
-grep -Fq 'shared Deja runtime has an invalid release marker' "$error_file" \
-  || fail 'wrong shared Deja marker omitted its diagnostic'
-printf '%s\n' "$deja_release_sha" >"$deja_marker"
-chmod 600 "$deja_marker"
 
 grep -Fqx $'cdx\tlist' "$command_log" \
   || fail 'managed Codex profiles were not discovered through cdx list'

@@ -551,13 +551,6 @@ sha256 = "sha256:a842323e664e5af104eac5c97ad22fda929ebeb62d81c501161ac1f6f482db5
 skills_cli_version = "1.5.19"
 skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w=="
 
-[packages.deja]
-name = "deja"
-version = "0.17.0"
-integrity = "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1"
-url = "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz"
-size = 4364290
-
 [packages.harness]
 kind = "pi"
 selector = "latest"
@@ -609,4 +602,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:52a1291aa6b0f440a0497a9d6c43667393ce6a385a31a3b95cf2d6b04f608e97"
+final_digest = "sha256:7d8a9fe50fb367dcb4df6c1da4780de96d5dc6b20a0c2a01e7a0e6ab4849111f"

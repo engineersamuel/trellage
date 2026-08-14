@@ -15,8 +15,6 @@ non-symlink `~/.config/fish/config.fish`. Install with:
 
 The installer publishes `~/.local/bin/cdx` as a symlink to the owned runtime at
 `~/.local/share/trellage/cdx/`. `~/.local/bin` must already be on `PATH`.
-It also refreshes the shared OS-user Deja runtime unless
-`TRELLAGE_MEMORY=off` is set.
 
 Trellage's three native profile roots are:
 
@@ -135,8 +133,6 @@ symlink/runtime and restores the original Fish bytes and mode.
 It preserves every Codex profile home, including authentication, configuration, MCPs, plugins,
 sessions, memory, and permissions. When the legacy alias was restored, reload
 Fish to make it visible in an existing shell.
-It deliberately retains the shared `~/.local/share/trellage/deja/` runtime and
-its local data so other native launchers continue to work.
 
 ## Tests
 

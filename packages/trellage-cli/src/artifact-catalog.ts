@@ -91,16 +91,6 @@ const fixedArtifacts: ReadonlyArray<ArtifactLock> = [
   },
 ]
 
-export const managedDejaImagePlatform = "linux_arm64" as const
-
-const deja = {
-  name: "deja",
-  version: "0.17.0",
-  integrity: "sha256:e6b21fdd9953b8428bd9464fc1cd6c9bbb1ad9396db31727a96903f60598b0e1",
-  url: "https://github.com/vshulcz/deja-vu/releases/download/v0.17.0/deja-vu_0.17.0_linux_arm64.tar.gz",
-  size: 4364290,
-} as const satisfies ArtifactLock
-
 const hyperresearchArtifacts: ReadonlyArray<ArtifactLock> = [
   {
     name: "python",
@@ -161,7 +151,6 @@ export const arm64ArtifactCatalog = {
   runtimeVersions,
   runtimeIntegrities,
   fixedArtifacts,
-  deja,
   hyperresearchArtifacts,
   hyperresearchPythonLockIntegrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
 } as const
@@ -178,11 +167,6 @@ const sameArtifact = (actual: ArtifactLock, expected: ArtifactLock): boolean =>
   actual.url === expected.url &&
   actual.size === expected.size
 
-export const managedDejaArtifactError = (actual: ArtifactLock | undefined): string | undefined => {
-  if (actual === undefined) return "Deja artifact is missing"
-  return sameArtifact(actual, arm64ArtifactCatalog.deja) ? undefined : "Deja artifact does not match platform catalog"
-}
-
 export const lockedArtifactError = (
   document: ProfileDocument,
   lock: ProfileLock,
@@ -193,8 +177,6 @@ export const lockedArtifactError = (
   if (lock.image.base !== catalog.base.reference || lock.image.base_digest !== catalog.base.digest) {
     return "base image artifact does not match platform catalog"
   }
-  const dejaError = managedDejaArtifactError(lock.packages.deja)
-  if (dejaError !== undefined) return dejaError
   for (const runtime of lock.packages.runtime) {
     const name = runtime.name as keyof typeof runtimeVersions
     if (catalog.runtimeVersions[name] !== runtime.version || catalog.runtimeIntegrities[name] !== runtime.integrity) {
