@@ -975,7 +975,16 @@ local_plugin_manifest() {
   local candidate_count=0
 
   if [ -n "$fragment" ]; then
-    manifest="$plugin_path/$fragment/.github/plugin/plugin.json"
+    for candidate in \
+      "$plugin_path/$fragment/plugin.json" \
+      "$plugin_path/$fragment/.claude-plugin/plugin.json" \
+      "$plugin_path/$fragment/.github/plugin/plugin.json"; do
+      if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+        candidate_count=$((candidate_count + 1))
+        manifest="$candidate"
+      fi
+    done
+    [ "$candidate_count" -eq 1 ] || return 1
     regular_file_is_safe_beneath "$plugin_path" "$manifest" || return 1
     printf '%s\n' "$manifest"
     return 0
