@@ -82,7 +82,7 @@ ambient_google_ai_api_key="${GOOGLE_AI_API_KEY-}"
 unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
   PLAYWRIGHT_MCP_EXTENSION_TOKEN APIFY_API_TOKEN GOOGLE_AI_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
   ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
-  TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID \
+  TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID TRELLAGE_OUTPUT_FORMAT \
   CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
   AWS_SESSION_TOKEN AWS_PROFILE GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID \
   CLOUD_ML_REGION AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
@@ -134,6 +134,7 @@ if [[ "$compiler_mode" == true ]]; then
       -p|--prompt|--prompt=*) fail '--prompt is not supported for compiler commands' ;;
       -i|--interactive|--interactive=*) fail '-i and --interactive have been removed; run trellage with no arguments' ;;
       --model|--model=*) fail '--model is not supported for compiler commands' ;;
+      --output-format|--output-format=*) fail '--output-format is not supported for compiler commands' ;;
     esac
   done
 fi
@@ -141,6 +142,8 @@ fi
 profile_argument=
 auth_mode_argument=
 model_argument=
+output_format=text
+output_format_set=false
 prompt_argument=
 prompt_argument_set=false
 interactive=false
@@ -186,6 +189,25 @@ if [[ "$compiler_mode" == false ]]; then
         [[ -n "$model_argument" ]] || fail '--model requires a value'
         shift
         ;;
+      --output-format)
+        [[ "$output_format_set" == false ]] || fail '--output-format may be specified only once'
+        [[ $# -ge 2 && -n "$2" ]] || fail '--output-format requires a format'
+        case "$2" in
+          text|jsonl) output_format="$2"; output_format_set=true ;;
+          *) fail "unsupported output format: $2" ;;
+        esac
+        shift 2
+        ;;
+      --output-format=*)
+        [[ "$output_format_set" == false ]] || fail '--output-format may be specified only once'
+        output_format_val="${1#--output-format=}"
+        [[ -n "$output_format_val" ]] || fail '--output-format requires a format'
+        case "$output_format_val" in
+          text|jsonl) output_format="$output_format_val"; output_format_set=true ;;
+          *) fail "unsupported output format: $output_format_val" ;;
+        esac
+        shift
+        ;;
       -p|--prompt)
         [[ "$prompt_argument_set" == false ]] || fail '--prompt may be specified only once'
         [[ $# -ge 2 && -n "$2" ]] || fail '--prompt requires a non-empty value'
@@ -214,25 +236,31 @@ if [[ "$compiler_mode" == false ]]; then
   else
     set -- "${parsed_arguments[@]}"
   fi
-  if [[ "$prompt_argument_set" == true ]]; then
-    [[ "$#" -eq 0 ]] || fail '--prompt cannot be combined with positional arguments'
-    mode=prompt
-  elif [[ "$#" -ge 1 ]]; then
+  if [[ "$#" -ge 1 ]]; then
     case "$1" in
-      resume|shell|stop|doctor|destroy)
-        if [[ "$1" == resume ]]; then
-          [[ "$#" -le 2 ]] || fail 'resume accepts at most one session ID'
-          if [[ "$#" -eq 2 ]]; then
-            resume_session_id="$2"
-            [[ "$resume_session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] \
-              || fail 'resume session ID must be a UUID'
-          fi
-        else
-          [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
+      resume)
+        [[ "$#" -le 2 ]] || fail 'resume accepts at most one session ID'
+        if [[ "$#" -eq 2 ]]; then
+          resume_session_id="$2"
+          [[ "$resume_session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] \
+            || fail 'resume session ID must be a UUID'
         fi
+        if [[ "$prompt_argument_set" == true && -z "$resume_session_id" ]]; then
+          fail 'resume with --prompt requires a session ID'
+        fi
+        mode=resume
+        ;;
+      shell|stop|doctor|destroy)
+        [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with positional arguments'
+        [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
         mode="$1"
         ;;
+      *)
+        [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with positional arguments'
+        ;;
     esac
+  elif [[ "$prompt_argument_set" == true ]]; then
+    mode=prompt
   fi
 fi
 
@@ -244,6 +272,12 @@ if [[ -n "$model_argument" ]]; then
   case "$mode" in
     new|prompt|resume) ;;
     *) fail '--model is supported only for agent launches' ;;
+  esac
+fi
+if [[ "$output_format_set" == true ]]; then
+  case "$mode" in
+    new|prompt|resume) ;;
+    *) fail '--output-format is supported only for agent launches' ;;
   esac
 fi
 
@@ -688,7 +722,9 @@ sha256() {
   fail 'sha256sum or shasum is required'
 }
 
-if [[ "$mode" != prompt && "$mode" != stop && "$mode" != doctor && "$mode" != destroy ]]; then
+if [[ "$mode" != prompt && "$mode" != stop && "$mode" != doctor && "$mode" != destroy \
+  && ! ( "$mode" == resume && "$prompt_argument_set" == true ) \
+  && "$output_format" != jsonl ]]; then
   [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
 fi
 if [[ "$mode" == doctor ]]; then
@@ -848,6 +884,7 @@ scrub_cleanup_environment() {
   secret_source_values=()
   copilot_auth_args=()
   claude_auth_args=()
+  output_format_args=()
   unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
     ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
     ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL \
@@ -856,7 +893,8 @@ scrub_cleanup_environment() {
     secret_value ambient_copilot_github_token ambient_gh_token ambient_github_token \
     ambient_claude_code_oauth_token ambient_anthropic_api_key \
     ambient_playwright_mcp_extension_token ambient_apify_api_token \
-    ambient_google_ai_api_key
+    ambient_google_ai_api_key TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID \
+    TRELLAGE_OUTPUT_FORMAT
 }
 
 validate_cleanup_target() {
@@ -1749,6 +1787,13 @@ case "${COLORTERM:-}" in
   truecolor|24bit) terminal_args+=(--env COLORTERM=truecolor) ;;
 esac
 
+output_format_args=()
+if [[ "$output_format" == jsonl ]]; then
+  TRELLAGE_OUTPUT_FORMAT="$output_format"
+  export TRELLAGE_OUTPUT_FORMAT
+  output_format_args=(--env TRELLAGE_OUTPUT_FORMAT)
+fi
+
 resume_hint_args=()
 if [[ "$mode" == new || "$mode" == resume ]]; then
   TRELLAGE_RESUME_PROFILE="$profile_path"
@@ -1770,18 +1815,21 @@ if [[ "$harness_kind" == claude && "$claude_mode" == core ]]; then
   runtime_shell_args=(-c)
   interactive_shell_command='exec bash -l'
   resume_command="exec $runtime_entry resume $harness_executable \"\$@\""
+  resume_prompt_command="args=(\"\$@\"); prompt=\"\${args[-1]}\"; unset 'args[-1]'; exec $runtime_entry resume-prompt $harness_executable \"\${args[@]}\" -- \"\$prompt\""
   prompt_command="args=(\"\$@\"); prompt=\"\${args[-1]}\"; unset 'args[-1]'; exec $runtime_entry new $harness_executable \"\${args[@]}\" -- \"\$prompt\""
   portable_prompt_command="args=(\"\$@\"); prompt=\"\${args[-1]}\"; unset 'args[-1]'; exec $runtime_entry prompt $harness_executable \"\${args[@]}\" -- \"\$prompt\""
   initial_prompt_command="prompt=\"\$(cat /usr/local/share/trellage/initial-prompt.md)\"; exec $runtime_entry new $harness_executable \"\$@\" -- \"\$prompt\""
   new_command="exec $runtime_entry new $harness_executable \"\$@\""
 elif [[ "$harness_kind" == copilot || "$harness_kind" == pi || "$harness_kind" == prime ]]; then
   resume_command="exec $runtime_entry resume \$argv"
+  resume_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry resume-prompt \$argv -- \$prompt"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new \$argv -- \$prompt"
   portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt \$argv -- \$prompt"
   initial_prompt_command="set prompt (cat /usr/local/share/trellage/initial-prompt.md); exec $runtime_entry new \$argv -- \$prompt"
   new_command="exec $runtime_entry new \$argv"
 else
   resume_command="exec $runtime_entry resume $harness_executable \$argv"
+  resume_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry resume-prompt $harness_executable \$argv -- \$prompt"
   prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry new $harness_executable \$argv -- \$prompt"
   portable_prompt_command="set prompt \$argv[-1]; set -e argv[-1]; exec $runtime_entry prompt $harness_executable \$argv -- \$prompt"
   initial_prompt_command="set prompt (cat /usr/local/share/trellage/initial-prompt.md); exec $runtime_entry new $harness_executable \$argv -- \$prompt"
@@ -1803,6 +1851,7 @@ case "$mode" in
       ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
       ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
       ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+      ${output_format_args[@]+"${output_format_args[@]}"} \
       --workdir "$mount_path" \
       "$container_id" \
       "$runtime_shell" "${runtime_shell_args[@]}" "$portable_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
@@ -1814,17 +1863,44 @@ case "$mode" in
     elif [[ "$harness_kind" == claude ]]; then
       prepare_claude_auth
     fi
-    HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
-      "${terminal_args[@]}" \
-      ${github_cli_args[@]+"${github_cli_args[@]}"} \
-      ${secret_args[@]+"${secret_args[@]}"} \
-      ${package_feed_args[@]+"${package_feed_args[@]}"} \
-      ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
-      ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
-      ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
-      --workdir "$mount_path" \
-      "$container_id" \
-      "$runtime_shell" "${runtime_shell_args[@]}" "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
+    if [[ "$prompt_argument_set" == true ]]; then
+      HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+        ${github_cli_args[@]+"${github_cli_args[@]}"} \
+        ${secret_args[@]+"${secret_args[@]}"} \
+        ${package_feed_args[@]+"${package_feed_args[@]}"} \
+        ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+        ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+        ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+        ${output_format_args[@]+"${output_format_args[@]}"} \
+        --workdir "$mount_path" \
+        "$container_id" \
+        "$runtime_shell" "${runtime_shell_args[@]}" "$resume_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
+    elif [[ "$output_format" == jsonl ]]; then
+      HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+        ${github_cli_args[@]+"${github_cli_args[@]}"} \
+        ${secret_args[@]+"${secret_args[@]}"} \
+        ${package_feed_args[@]+"${package_feed_args[@]}"} \
+        ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+        ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+        ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+        ${output_format_args[@]+"${output_format_args[@]}"} \
+        --workdir "$mount_path" \
+        "$container_id" \
+        "$runtime_shell" "${runtime_shell_args[@]}" "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
+    else
+      HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+        "${terminal_args[@]}" \
+        ${github_cli_args[@]+"${github_cli_args[@]}"} \
+        ${secret_args[@]+"${secret_args[@]}"} \
+        ${package_feed_args[@]+"${package_feed_args[@]}"} \
+        ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
+        ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
+        ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+        ${output_format_args[@]+"${output_format_args[@]}"} \
+        --workdir "$mount_path" \
+        "$container_id" \
+        "$runtime_shell" "${runtime_shell_args[@]}" "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
+    fi
     ;;
   shell)
     run_supervised_attachment command docker container exec \
@@ -1837,6 +1913,11 @@ case "$mode" in
     ;;
 esac
 
+exec_terminal_args=()
+if [[ "$output_format" != jsonl ]]; then
+  exec_terminal_args=("${terminal_args[@]}")
+fi
+
 if (( $# > 0 )); then
   prompt="$*"
   prepare_codex_secrets
@@ -1846,13 +1927,14 @@ if (( $# > 0 )); then
     prepare_claude_auth
   fi
   HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
-    "${terminal_args[@]}" \
+    ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${package_feed_args[@]+"${package_feed_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
     ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+    ${output_format_args[@]+"${output_format_args[@]}"} \
     --workdir "$mount_path" \
     "$container_id" \
     "$runtime_shell" "${runtime_shell_args[@]}" "$prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt"
@@ -1866,13 +1948,14 @@ if [[ "$has_initial_prompt" == true ]]; then
     prepare_claude_auth
   fi
   HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
-    "${terminal_args[@]}" \
+    ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${package_feed_args[@]+"${package_feed_args[@]}"} \
     ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
     ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
     ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+    ${output_format_args[@]+"${output_format_args[@]}"} \
     --workdir "$mount_path" \
     "$container_id" \
     "$runtime_shell" "${runtime_shell_args[@]}" "$initial_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"}
@@ -1885,13 +1968,14 @@ elif [[ "$harness_kind" == claude ]]; then
   prepare_claude_auth
 fi
 HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
-  "${terminal_args[@]}" \
+  ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
   ${github_cli_args[@]+"${github_cli_args[@]}"} \
   ${secret_args[@]+"${secret_args[@]}"} \
   ${package_feed_args[@]+"${package_feed_args[@]}"} \
   ${copilot_auth_args[@]+"${copilot_auth_args[@]}"} \
   ${claude_auth_args[@]+"${claude_auth_args[@]}"} \
   ${resume_hint_args[@]+"${resume_hint_args[@]}"} \
+  ${output_format_args[@]+"${output_format_args[@]}"} \
   --workdir "$mount_path" \
   "$container_id" \
   "$runtime_shell" "${runtime_shell_args[@]}" "$new_command" -- ${harness_args[@]+"${harness_args[@]}"}

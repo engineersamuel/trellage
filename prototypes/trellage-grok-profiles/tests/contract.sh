@@ -3,6 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 prototype_root="$PWD"
+unset GRX_DISABLE_AUTH_CHECK GRX_CATALOG || true
 
 fail() {
   printf 'trellage Grok profiles contract: FAIL: %s\n' "$1" >&2

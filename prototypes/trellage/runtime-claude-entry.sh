@@ -16,10 +16,14 @@ claude_mode="${TRELLAGE_CLAUDE_MODE:-hyperresearch}"
 runtime_mode="${TRELLAGE_CLAUDE_RUNTIME_MODE:-$claude_mode}"
 resume_profile="${TRELLAGE_RESUME_PROFILE-}"
 resume_session_id="${TRELLAGE_RESUME_SESSION_ID-}"
-unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID
+output_format="${TRELLAGE_OUTPUT_FORMAT-}"
+unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID TRELLAGE_OUTPUT_FORMAT
 if [[ -n "$resume_session_id" \
   && ! "$resume_session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
   fail 'resume session ID must be a UUID'
+fi
+if [[ -n "$output_format" && "$output_format" != text && "$output_format" != jsonl ]]; then
+  fail "unsupported output format: $output_format"
 fi
 
 valid_session_id() {
@@ -53,6 +57,7 @@ find_newest_session() {
 
 print_resume_hint() {
   local session_id="$1"
+  [[ "$output_format" != jsonl ]] || return 0
   [[ -n "$resume_profile" ]] || return 0
   printf '\nResume this conversation:\n'
   printf 'trellage resume --profile %q %q\n' "$resume_profile" "$session_id"
@@ -404,6 +409,17 @@ case "$mode" in
       claude_args=(--continue "$@")
     fi
     ;;
+  resume-prompt)
+    [[ -n "$resume_session_id" ]] || fail 'resume-prompt requires a session ID'
+    claude_args=(--resume "$resume_session_id")
+    while (( $# > 0 )) && [[ "$1" != -- ]]; do
+      claude_args+=("$1")
+      shift
+    done
+    [[ "$#" -eq 2 && "$1" == -- && -n "$2" ]] \
+      || fail 'resume-prompt mode requires exactly one prompt after --'
+    claude_args+=(-p "$2")
+    ;;
   passthrough) exec "$claude_command" "$@" ;;
   *) fail "unsupported Claude launch mode: $mode" ;;
 esac
@@ -440,6 +456,9 @@ fi
 
 export CLAUDE_CONFIG_DIR="$runtime_home"
 managed_args=(--dangerously-skip-permissions --settings "$default_settings")
+if [[ "$output_format" == jsonl ]]; then
+  managed_args+=(--output-format stream-json --verbose)
+fi
 if [[ "$runtime_mode" == hyperresearch ]]; then
   mcp_config="$(mktemp "${TMPDIR:-/tmp}/trellage-claude-mcp.XXXXXX.json")"
   cleanup_mcp() { rm -f -- "$mcp_config"; }
