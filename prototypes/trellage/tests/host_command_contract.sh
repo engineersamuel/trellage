@@ -25,7 +25,10 @@ ln -s "$prototype_dir/tests/fakes/host-git" "$fake_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
 ln -s "$prototype_dir/tests/fakes/host-env" "$fake_bin/env"
 
-default_metadata="$($real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
+metadata_docker_log="$test_root/metadata-docker.log"
+: >"$metadata_docker_log"
+default_metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
+  $real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
   "$prototype_dir/../../profiles/codex-superpowers/profile.toml")"
 default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
 runtime_hash="$(jq -er '.runtime_hash' <<<"$default_metadata")"
