@@ -1621,7 +1621,12 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   local worktree="$test_root/doctor-worktree"
   local docker_log="$test_root/doctor.docker.log"
   local container_name state_volume output
+  local expected_environment_path
   mkdir -p "$worktree"
+  expected_environment_path="$(
+    "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" environment \
+      | jq -er '.path'
+  )"
   container_name="$(resource_names "$worktree" | head -n 1)"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
 
@@ -1638,7 +1643,7 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   grep -Fqx 'dependency docker: available' <<<"$output" || fail 'doctor omitted Docker status'
   grep -Eq '^dependency mise: (available|missing)$' <<<"$output" || fail 'doctor omitted mise status'
   grep -Fqx 'environment: disabled' <<<"$output" || fail 'doctor omitted disabled environment status'
-  grep -Fqx "environment path: $HOME/.config/trellage" <<<"$output" \
+  grep -Fqx "environment path: $expected_environment_path" <<<"$output" \
     || fail 'doctor omitted the default environment path'
   grep -Fqx "worktree: $worktree" <<<"$output" || fail 'doctor omitted canonical worktree'
   grep -Fqx 'mount: /mounts/doctor-worktree' <<<"$output" || fail 'doctor omitted mount path'
