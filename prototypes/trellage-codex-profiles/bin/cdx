@@ -599,6 +599,11 @@ validate_native_provider_tail() {
       # no entries yet (tui nux flags).
       zero_field_ok["hooks-state-root"] = 1
       zero_field_ok["tui-nux"] = 1
+      # Concurrent cdx sessions may leave ephemeral project-trust stanzas in the
+      # shared native tail. Accept them here so prepare does not mutate live
+      # config; post-exit cleanup still strips the generated chain.
+      max_project_trust = 8
+      project_trust_count = 0
     }
     function complete() {
       return table_type != "" && (have_field || zero_field_ok[table_type])
@@ -626,6 +631,15 @@ validate_native_provider_tail() {
       normalized_name = normalize_plugin_key(name)
       if (normalized_name == "" || length(normalized_name) > 128) exit 1
       begin_table(normalized_name, "plugin")
+      next
+    }
+    /^\[projects\.".*"\]$/ {
+      name = substr($0, 12, length($0) - 13)
+      if (!valid_basic_string(name)) exit 1
+      if (length(name) > 4096) exit 1
+      project_trust_count++
+      if (project_trust_count > max_project_trust) exit 1
+      begin_table(name, "project-trust")
       next
     }
     $0 == "[hooks.state]" {
@@ -656,6 +670,9 @@ validate_native_provider_tail() {
       } else if (table_type == "hooks-state-entry") {
         if (field != "trusted_hash" || seen_fields[field]) exit 1
         if (value !~ /^"sha256:[0-9a-f]{64}"$/) exit 1
+      } else if (table_type == "project-trust") {
+        if (field != "trust_level" || seen_fields[field]) exit 1
+        if (value != "\"trusted\"") exit 1
       } else {
         if (length(field) > 64 || field !~ /^[a-z][a-z0-9_-]*$/ ||
             seen_fields[field]) exit 1
@@ -964,6 +981,13 @@ recover_generated_project_trust() {
       || die "profile config changed during recovery: $profile"
     [ "$(file_mode "$target")" = '600' ] \
       || die "profile config must have mode 0600: $profile"
+    # Strip is a no-op when no generated native chain matches. Leftover native
+    # project-trust means the chain is malformed and must fail closed.
+    # Profile-local [projects] tables are outside this check.
+    if config_has_native_project_trust_stanza "$target"; then
+      remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
+      die "profile config markers are invalid: $profile"
+    fi
     remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
     return 0
   fi
@@ -1029,7 +1053,10 @@ require_profile_config() {
   [ -f "$target" ] || die "profile config is missing: $profile"
   [ "$(file_mode "$target")" = '600' ] \
     || die "profile config must have mode 0600: $profile"
-  recover_generated_project_trust "$profile"
+  # Do not strip live project-trust here. Concurrent cdx sessions share one
+  # profile home; prepare must not mutate another session's in-flight trust.
+  # doctor/setup/repair recover stale trust explicitly. Launch cleanup strips
+  # generated trust after the Codex child exits.
   write_repaired_config "$profile" no \
     || die "profile managed config does not match: $profile"
 }
@@ -1789,6 +1816,7 @@ setup_profile() {
   require_profile "$profile"
   prepare_profile_home "$profile"
   install_initial_config "$profile"
+  recover_generated_project_trust "$profile"
   require_profile_config "$profile"
   validate_profile_paths "$profile"
   ensure_profile_lifecycle "$profile" no
@@ -1801,6 +1829,7 @@ doctor_profile() {
 
   require_profile "$profile"
   require_profile_home_ready "$profile"
+  recover_generated_project_trust "$profile"
   require_profile_config "$profile"
   validate_profile_paths "$profile"
   require_marketplace_inventory "$profile"
@@ -2194,12 +2223,27 @@ read_launch_lock_owner() {
   printf '%s %s %s\n' "$pid" "$birth" "$token"
 }
 
+describe_launch_lock_wait() {
+  local profile="$1" pid="$2" started
+
+  started="$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null)" || started=''
+  started="$(printf '%s' "$started" | sed -e 's/^ *//' -e 's/ *$//')"
+  if [ -n "$started" ]; then
+    printf 'cdx: waiting for profile lock: %s is held by pid %s (running since %s); concurrent Codex sessions are allowed, but setup/doctor/update/repair and brief launch prepare/cleanup still serialize.\n' \
+      "$profile" "$pid" "$started" >&2
+  else
+    printf 'cdx: waiting for profile lock: %s is held by pid %s; concurrent Codex sessions are allowed, but setup/doctor/update/repair and brief launch prepare/cleanup still serialize.\n' \
+      "$profile" "$pid" >&2
+  fi
+}
+
 acquire_profile_launch_lock() {
   local profile="$1"
   local home="$(profile_home "$profile")"
   local lock="$home/.launch.lock"
   local reap="$home/.launch-lock-reap"
   local candidate owner claimed_owner pid candidate_birth owner_birth current_birth token owner_remainder
+  local announced_pid=''
 
   [ -z "$active_launch_lock" ] || die 'internal error: launch lock already held'
   require_profile_home_ready "$profile"
@@ -2237,6 +2281,10 @@ acquire_profile_launch_lock() {
       current_birth="$(process_birth_identity "$pid" 2>/dev/null || printf '%s\n' unavailable)"
       if [ "$owner_birth" = unavailable ] || [ "$current_birth" = unavailable ] \
         || [ "$owner_birth" = "$current_birth" ]; then
+        if [ "$announced_pid" != "$pid" ]; then
+          describe_launch_lock_wait "$profile" "$pid"
+          announced_pid="$pid"
+        fi
         sleep 0.05
         continue
       fi
@@ -2320,63 +2368,338 @@ launch_signal() {
   kill -s "$signal" "$launch_child_pid" 2>/dev/null || :
 }
 
+config_has_project_trust_stanza() {
+  local target="$1"
+
+  awk '
+    BEGIN { in_project = 0 }
+    /^\[projects\.".*"\]$/ { in_project = 1; next }
+    /^\[/ { in_project = 0 }
+    in_project && $0 == "trust_level = \"trusted\"" { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$target"
+}
+
+# True only when generated project-trust lives in the managed native provider
+# tail. Profile-local [projects] tables are user state and must not fail recover.
+config_has_native_project_trust_stanza() {
+  local target="$1"
+  local lines provider_begin provider_end
+
+  lines="$(config_marker_lines "$target")" || return 1
+  read_config_marker_lines "$lines"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
+  awk -v first="$((provider_begin + 5))" -v last="$((provider_end - 1))" '
+    BEGIN { in_project = 0 }
+    NR < first || NR > last { in_project = 0; next }
+    /^\[projects\.".*"\]$/ { in_project = 1; next }
+    /^\[/ { in_project = 0 }
+    in_project && $0 == "trust_level = \"trusted\"" { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$target"
+}
+
+# Remove Codex session-live native tables for comparison only: hooks.state*
+# and tui.model_availability_nux. Marketplace/plugin/managed bytes stay so
+# unexpected mutations still fail cleanup.
+strip_native_session_live_state() {
+  local target="$1" output="$2"
+  local lines provider_begin provider_end
+
+  lines="$(config_marker_lines "$target")" || return 1
+  read_config_marker_lines "$lines"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
+  awk -v first="$((provider_begin + 5))" -v last="$((provider_end - 1))" '
+    function is_live_header(line) {
+      return line == "[hooks.state]" ||
+        line ~ /^\[hooks\.state\.".*"\]$/ ||
+        line == "[tui.model_availability_nux]"
+    }
+    {
+      if (NR < first || NR > last) {
+        skip = 0
+        print
+        next
+      }
+      if (is_live_header($0)) {
+        skip = 1
+        next
+      }
+      if (skip) {
+        if ($0 ~ /^\[/) {
+          skip = 0
+        } else {
+          next
+        }
+      }
+      print
+    }
+  ' "$target" >"$output"
+}
+
+# True when left/right differ only by project-trust (already stripped by caller)
+# and/or hooks.state / tui nux session-live tables.
+configs_match_aside_from_session_live() {
+  local left="$1" right="$2"
+  local left_norm right_norm
+
+  make_owned_temp "$(dirname "$left")/.config-live-norm-left.XXXXXX" \
+    'failed to stage left session-live normalization'
+  left_norm="$created_temp"
+  chmod 0600 "$left_norm" || {
+    remove_owned_temp "$left_norm" || :
+    return 1
+  }
+  make_owned_temp "$(dirname "$right")/.config-live-norm-right.XXXXXX" \
+    'failed to stage right session-live normalization'
+  right_norm="$created_temp"
+  chmod 0600 "$right_norm" || {
+    remove_owned_temp "$right_norm" || :
+    remove_owned_temp "$left_norm" || :
+    return 1
+  }
+  if ! strip_native_session_live_state "$left" "$left_norm" \
+    || ! strip_native_session_live_state "$right" "$right_norm"; then
+    remove_owned_temp "$right_norm" || :
+    remove_owned_temp "$left_norm" || :
+    return 1
+  fi
+  if cmp -s "$left_norm" "$right_norm"; then
+    remove_owned_temp "$right_norm" || :
+    remove_owned_temp "$left_norm" || :
+    return 0
+  fi
+  remove_owned_temp "$right_norm" || :
+  remove_owned_temp "$left_norm" || :
+  return 1
+}
+
+# Strip Codex-generated project-trust stanzas from the live config.
+# Keep hooks.state and tui nux writes Codex makes during a normal session.
+# Refuse marketplace/plugin/managed mutations (leave live bytes unchanged).
+# `before` is a pre-launch hint for trust-only and concurrent trust cleanup.
 cleanup_launch_config() {
   local profile="$1" before="$2"
   local target="$(profile_home "$profile")/config.toml"
-  local after
+  local after none_stage blank_stage before_none_stage before_blank_stage attempt=0
+  local none_ok=0 blank_ok=0 chosen=""
+  local before_none_ok=0 before_blank_ok=0
+  local after_has_trust=0 publish=0
 
-  safe_config_target "$profile" || return 1
-  [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] || return 1
-  make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
-    'failed to stage post-launch config snapshot'
-  after="$created_temp"
-  chmod 0600 "$after" || return 1
-  cp "$target" "$after" || return 1
-  safe_config_target "$profile" || return 1
-  [ "$(file_mode "$target")" = '600' ] || return 1
-  cmp -s "$after" "$target" || return 1
-  if cmp -s "$before" "$after"; then
+  while [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt + 1))
+    none_ok=0
+    blank_ok=0
+    before_none_ok=0
+    before_blank_ok=0
+    chosen=""
+    none_stage=""
+    blank_stage=""
+    before_none_stage=""
+    before_blank_stage=""
+    after_has_trust=0
+    publish=0
+    safe_config_target "$profile" || return 1
+    [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] || return 1
+    make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
+      'failed to stage post-launch config snapshot'
+    after="$created_temp"
+    chmod 0600 "$after" || return 1
+    cp "$target" "$after" || return 1
     safe_config_target "$profile" || return 1
     [ "$(file_mode "$target")" = '600' ] || return 1
-    cmp -s "$after" "$target" || {
-      printf 'cdx: post-launch config cleanup detected concurrent mutation: %s\n' \
-        "$profile" >&2
+    if ! cmp -s "$after" "$target"; then
+      remove_owned_temp "$after" || :
+      continue
+    fi
+
+    if cmp -s "$before" "$after"; then
+      remove_owned_temp "$after" || return 1
+      return 0
+    fi
+
+    make_owned_temp "$(profile_home "$profile")/.config-cleanup-before-none.XXXXXX" \
+      'failed to stage before none-style cleanup'
+    before_none_stage="$created_temp"
+    chmod 0600 "$before_none_stage" || {
+      remove_owned_temp "$before_none_stage" || :
       remove_owned_temp "$after" || :
       return 1
     }
+    if strip_generated_project_trust "$before" "$before_none_stage" none \
+      && validate_config_structure "$profile" "$before_none_stage" >/dev/null; then
+      before_none_ok=1
+    fi
+    make_owned_temp "$(profile_home "$profile")/.config-cleanup-before-blank.XXXXXX" \
+      'failed to stage before blank-style cleanup'
+    before_blank_stage="$created_temp"
+    chmod 0600 "$before_blank_stage" || {
+      remove_owned_temp "$before_blank_stage" || :
+      remove_owned_temp "$before_none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    if strip_generated_project_trust "$before" "$before_blank_stage" blank \
+      && validate_config_structure "$profile" "$before_blank_stage" >/dev/null; then
+      before_blank_ok=1
+    fi
+
+    if config_has_project_trust_stanza "$after"; then
+      after_has_trust=1
+    fi
+
+    if [ "$after_has_trust" -eq 1 ]; then
+      make_owned_temp "$(profile_home "$profile")/.config-cleanup-none.XXXXXX" \
+        'failed to stage none-style cleanup'
+      none_stage="$created_temp"
+      chmod 0600 "$none_stage" || {
+        remove_owned_temp "$none_stage" || :
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$after" || :
+        return 1
+      }
+      if strip_generated_project_trust "$after" "$none_stage" none \
+        && validate_config_structure "$profile" "$none_stage" >/dev/null; then
+        none_ok=1
+      fi
+
+      make_owned_temp "$(profile_home "$profile")/.config-cleanup-blank.XXXXXX" \
+        'failed to stage blank-style cleanup'
+      blank_stage="$created_temp"
+      chmod 0600 "$blank_stage" || {
+        remove_owned_temp "$blank_stage" || :
+        remove_owned_temp "$none_stage" || :
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$after" || :
+        return 1
+      }
+      if strip_generated_project_trust "$after" "$blank_stage" blank \
+        && validate_config_structure "$profile" "$blank_stage" >/dev/null; then
+        blank_ok=1
+      fi
+
+      # Prefer exact pre-launch restore, then trust-stripped baselines, then
+      # trust-stripped baselines that also allow hooks/tui session-live deltas.
+      if [ "$none_ok" -eq 1 ] && cmp -s "$before" "$none_stage"; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && cmp -s "$before" "$blank_stage"; then
+        chosen="$blank_stage"
+      elif [ "$none_ok" -eq 1 ] && [ "$before_none_ok" -eq 1 ] \
+        && cmp -s "$before_none_stage" "$none_stage"; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && [ "$before_blank_ok" -eq 1 ] \
+        && cmp -s "$before_blank_stage" "$blank_stage"; then
+        chosen="$blank_stage"
+      elif [ "$none_ok" -eq 1 ] && [ "$before_blank_ok" -eq 1 ] \
+        && cmp -s "$before_blank_stage" "$none_stage"; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && [ "$before_none_ok" -eq 1 ] \
+        && cmp -s "$before_none_stage" "$blank_stage"; then
+        chosen="$blank_stage"
+      elif [ "$none_ok" -eq 1 ] && {
+          cmp -s "$before" "$none_stage" 2>/dev/null \
+            || { [ "$before_none_ok" -eq 1 ] \
+              && configs_match_aside_from_session_live "$before_none_stage" "$none_stage"; } \
+            || { [ "$before_blank_ok" -eq 1 ] \
+              && configs_match_aside_from_session_live "$before_blank_stage" "$none_stage"; } \
+            || configs_match_aside_from_session_live "$before" "$none_stage"
+        }; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && {
+          { [ "$before_blank_ok" -eq 1 ] \
+            && configs_match_aside_from_session_live "$before_blank_stage" "$blank_stage"; } \
+            || { [ "$before_none_ok" -eq 1 ] \
+              && configs_match_aside_from_session_live "$before_none_stage" "$blank_stage"; } \
+            || configs_match_aside_from_session_live "$before" "$blank_stage"
+        }; then
+        chosen="$blank_stage"
+      fi
+
+      if [ -z "$chosen" ]; then
+        printf 'cdx: post-launch config cleanup refused unrelated mutation: %s\n' \
+          "$profile" >&2
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$blank_stage" || :
+        remove_owned_temp "$none_stage" || :
+        remove_owned_temp "$after" || :
+        return 1
+      fi
+      publish=1
+      remove_owned_temp "$before_blank_stage" || :
+      remove_owned_temp "$before_none_stage" || :
+      before_blank_stage=""
+      before_none_stage=""
+    else
+      # No project trust left. Success when after matches trust-stripped before,
+      # or differs only by hooks/tui session-live tables (Codex normal writes).
+      if { [ "$before_none_ok" -eq 1 ] && cmp -s "$before_none_stage" "$after"; } \
+        || { [ "$before_blank_ok" -eq 1 ] && cmp -s "$before_blank_stage" "$after"; } \
+        || { [ "$before_none_ok" -eq 1 ] \
+          && configs_match_aside_from_session_live "$before_none_stage" "$after"; } \
+        || { [ "$before_blank_ok" -eq 1 ] \
+          && configs_match_aside_from_session_live "$before_blank_stage" "$after"; } \
+        || configs_match_aside_from_session_live "$before" "$after"; then
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$after" || return 1
+        return 0
+      fi
+      printf 'cdx: post-launch config cleanup refused unrelated mutation: %s\n' \
+        "$profile" >&2
+      remove_owned_temp "$before_blank_stage" || :
+      remove_owned_temp "$before_none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    fi
+
+    if [ "$publish" -ne 1 ]; then
+      remove_owned_temp "$after" || :
+      return 1
+    fi
+
+    safe_config_target "$profile" || {
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    [ "$(file_mode "$target")" = '600' ] || {
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    if ! cmp -s "$after" "$target"; then
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      continue
+    fi
+    mv -f "$chosen" "$target" || {
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    forget_owned_temp "$chosen" || return 1
+    if [ -n "$none_stage" ] && [ "$chosen" != "$none_stage" ]; then
+      remove_owned_temp "$none_stage" || :
+    fi
+    if [ -n "$blank_stage" ] && [ "$chosen" != "$blank_stage" ]; then
+      remove_owned_temp "$blank_stage" || :
+    fi
     remove_owned_temp "$after" || return 1
     return 0
-  fi
-  activate_stage "$(profile_home "$profile")/.config.XXXXXX" \
-    'failed to stage post-launch config cleanup'
-  strip_generated_project_trust "$after" "$active_stage" none || return 1
-  chmod 0600 "$active_stage" || return 1
-  if ! validate_config_structure "$profile" "$active_stage" >/dev/null \
-    || ! cmp -s "$before" "$active_stage"; then
-    strip_generated_project_trust "$after" "$active_stage" blank || return 1
-    chmod 0600 "$active_stage" || return 1
-  fi
-  if ! validate_config_structure "$profile" "$active_stage" >/dev/null \
-    || ! cmp -s "$before" "$active_stage"; then
-    printf 'cdx: post-launch config cleanup refused unrelated mutation: %s\n' \
-      "$profile" >&2
-    finish_stage_cleanup
-    remove_owned_temp "$after" || :
-    return 1
-  fi
-  safe_config_target "$profile" || return 1
-  [ "$(file_mode "$target")" = '600' ] || return 1
-  cmp -s "$after" "$target" || {
-    printf 'cdx: post-launch config cleanup detected concurrent mutation: %s\n' \
-      "$profile" >&2
-    finish_stage_cleanup
-    remove_owned_temp "$after" || :
-    return 1
-  }
-  mv -f "$active_stage" "$target" || return 1
-  forget_owned_temp "$active_stage" || return 1
-  active_stage=""
-  remove_owned_temp "$after" || return 1
+  done
+
+  printf 'cdx: post-launch config cleanup detected concurrent mutation: %s\n' \
+    "$profile" >&2
+  return 1
 }
 
 toml_escape_basic_string() {
@@ -2386,33 +2709,139 @@ toml_escape_basic_string() {
   printf '%s' "$value"
 }
 
-launch_project_trust_override() {
-  local project_dir project_dir_escaped
+# Print unique physical directories Codex may use for the trust gate.
+# Codex trusts the Git repository root when cwd is a worktree or subdirectory;
+# for linked worktrees that root is the main working tree (dirname of the
+# common .git), not always `git rev-parse --show-toplevel`.
+collect_launch_trust_dirs() {
+  local cwd candidate common
 
-  project_dir="$(pwd -P)" \
+  cwd="$(pwd -P)" \
     || die 'failed to resolve working directory for project trust override'
-  project_dir_escaped="$(toml_escape_basic_string "$project_dir")"
-  printf 'projects."%s".trust_level="trusted"' "$project_dir_escaped"
+  printf '%s\n' "$cwd"
+
+  if candidate="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" \
+    && [ -n "$candidate" ]; then
+    if candidate="$(CDPATH= cd -P -- "$candidate" 2>/dev/null && pwd -P)"; then
+      printf '%s\n' "$candidate"
+    fi
+  fi
+
+  common="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null \
+    || git -C "$cwd" rev-parse --git-common-dir 2>/dev/null \
+    || true)"
+  if [ -n "$common" ]; then
+    case "$common" in
+      /*) ;;
+      *)
+        common="$(CDPATH= cd -P -- "$cwd/$common" 2>/dev/null && pwd -P)" || common=""
+        ;;
+    esac
+  fi
+  if [ -n "$common" ] && [ -d "$common" ] \
+    && [ "$(basename "$common")" = '.git' ]; then
+    if candidate="$(CDPATH= cd -P -- "$(dirname "$common")" 2>/dev/null && pwd -P)"; then
+      printf '%s\n' "$candidate"
+    fi
+  fi
+}
+
+# Populate trust_codex_args with one merged -c projects={...} override.
+# Current Codex ignores/breaks on dotted projects."path".trust_level= form; an
+# inline table override is what skips the interactive trust gate.
+build_launch_trust_codex_args() {
+  local dir escaped dirs entry
+  local parts=""
+
+  trust_codex_args=()
+  dirs="$(collect_launch_trust_dirs | awk 'NF && !seen[$0]++')"
+  [ -n "$dirs" ] \
+    || die 'failed to resolve working directory for project trust override'
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    escaped="$(toml_escape_basic_string "$dir")"
+    entry="\"${escaped}\"={trust_level=\"trusted\"}"
+    if [ -n "$parts" ]; then
+      parts="${parts},${entry}"
+    else
+      parts="$entry"
+    fi
+  done <<EOF
+$dirs
+EOF
+  [ -n "$parts" ] \
+    || die 'failed to resolve working directory for project trust override'
+  trust_codex_args+=(-c "projects={${parts}}")
+}
+
+# Populate hook_trust_codex_args with optional --dangerously-bypass-hook-trust.
+# CDX_HOOK_TRUST:
+#   auto   (default) bypass when launch is non-interactive or automation-marked
+#   bypass always pass the flag (unattended / forced)
+#   prompt never pass the flag (human review / persisted hooks.state trust)
+build_launch_hook_trust_codex_args() {
+  local mode
+
+  hook_trust_codex_args=()
+  mode="${CDX_HOOK_TRUST:-auto}"
+  case "$mode" in
+    bypass|always|1|yes|true)
+      hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
+      return 0
+      ;;
+    prompt|never|0|no|false)
+      return 0
+      ;;
+    auto|'')
+      ;;
+    *)
+      die "CDX_HOOK_TRUST must be auto, bypass, or prompt (got: $mode)"
+      ;;
+  esac
+
+  # Automation markers always bypass so unattended launches cannot block on
+  # hook-trust prompts.
+  case "${CDX_AUTOMATION:-}" in
+    1|yes|true|on) hook_trust_codex_args+=(--dangerously-bypass-hook-trust); return 0 ;;
+  esac
+  if [ -n "${CI:-}" ] || [ -n "${TRELLAGE_AUTOMATION:-}" ]; then
+    hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
+    return 0
+  fi
+
+  # Full interactive TTY: omit bypass. Profile hooks.state trusted_hash entries
+  # avoid repeat prompts; new/changed hooks can be reviewed once.
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    return 0
+  fi
+
+  hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
 }
 
 run_codex_child() {
   local profile="$1" native="$2"
   local target="$(profile_home "$profile")/config.toml"
-  local before child_status cleanup_status wait_status monitor_child=yes
-  local trust_override
+  local before child_status cleanup_status wait_status release_status=0
+  local monitor_child=yes
+  # Bash 3.2-safe: builders fill these arrays.
+  trust_codex_args=()
+  hook_trust_codex_args=()
   shift 2
 
-  # Codex's interactive "Do you trust the contents of this directory?"
-  # prompt is gated on [projects."<cwd>"] trust_level = "trusted" in its
-  # merged config. Pass it as an ephemeral -c override for the launch
-  # directory so the prompt never fires; nothing is written to the
-  # profile's config.toml, so the existing generated-project-trust
-  # stripping above is unaffected.
-  trust_override="$(launch_project_trust_override)"
+  # Codex's interactive "Do you trust the contents of this directory?" gate
+  # ignores dotted -c projects."path".trust_level= overrides (PTY stays empty).
+  # One inline -c projects={"/path"={trust_level="trusted"},...} skips it for
+  # cwd, git toplevel, and main repository root. Do not write trust into
+  # config.toml here: that races concurrent sessions and breaks cleanup caps.
+  # If Codex itself appends project-trust during the session, post-exit cleanup
+  # strips those generated stanzas while keeping other live writes.
+  build_launch_trust_codex_args
+  build_launch_hook_trust_codex_args
 
   safe_config_target "$profile"
   [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] \
     || die "profile config must have mode 0600: $profile"
+  # Snapshot is a cleanup hint only; the session does not hold the profile lock.
   make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
     'failed to stage prelaunch config snapshot'
   before="$created_temp"
@@ -2433,23 +2862,26 @@ run_codex_child() {
   else
     set -m
   fi
+  # Bash 3.2 + set -u: empty array [@] is unbound; expand only when set/non-empty.
   if [ "$native" = yes ]; then
     env CODEX_HOME="$(profile_home "$profile")" \
       "$codex_executable" --sandbox workspace-write \
       -c sandbox_workspace_write.network_access=true \
       --ask-for-approval never \
       --disable default_mode_request_user_input \
-      --dangerously-bypass-hook-trust \
+      ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
       -c 'model_provider="openai"' \
-      -c "$trust_override" "$@" <&0 &
+      ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
+      "$@" <&0 &
   else
     env CODEX_HOME="$(profile_home "$profile")" \
       "$codex_executable" --sandbox workspace-write \
       -c sandbox_workspace_write.network_access=true \
       --ask-for-approval never \
       --disable default_mode_request_user_input \
-      --dangerously-bypass-hook-trust \
-      -c "$trust_override" "$@" <&0 &
+      ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
+      ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
+      "$@" <&0 &
   fi
   launch_child_pid=$!
   case "$launch_signal_status" in
@@ -2470,8 +2902,13 @@ run_codex_child() {
   launch_child_pid=""
   trap '' HUP INT TERM
   cleanup_status=0
+  acquire_profile_launch_lock "$profile"
   cleanup_launch_config "$profile" "$before" || cleanup_status=$?
+  release_profile_launch_lock || release_status=1
+  install_owned_temp_traps
   remove_owned_temp "$before" || cleanup_status=1
+  [ "$release_status" -eq 0 ] \
+    || die "failed to release profile launch lock: $profile"
   [ "$cleanup_status" -eq 0 ] || {
     printf 'cdx: post-launch config cleanup failed: %s\n' "$profile" >&2
     return 1
@@ -2485,15 +2922,17 @@ run_proxy_launch() {
   shift
 
   ensure_profile_home_ready "$profile"
-  acquire_profile_launch_lock "$profile"
   resolve_codex
+  # Hold the profile lock only for brief prepare work. The Codex session itself
+  # runs unlocked so multiple cdx PROFILE instances may share one home.
+  acquire_profile_launch_lock "$profile"
   ensure_launch_ready "$profile"
-  run_codex_child "$profile" no "$@"
-  status=$?
   release_profile_launch_lock || release_status=1
   install_owned_temp_traps
   [ "$release_status" -eq 0 ] \
     || die "failed to release profile launch lock: $profile"
+  run_codex_child "$profile" no "$@"
+  status=$?
   return "$status"
 }
 
@@ -2508,12 +2947,12 @@ run_native_launch() {
   acquire_profile_launch_lock "$profile"
   ensure_launch_ready "$profile"
   refresh_auth "$profile"
-  run_codex_child "$profile" yes "$@"
-  status=$?
   release_profile_launch_lock || release_status=1
   install_owned_temp_traps
   [ "$release_status" -eq 0 ] \
     || die "failed to release profile launch lock: $profile"
+  run_codex_child "$profile" yes "$@"
+  status=$?
   return "$status"
 }
 

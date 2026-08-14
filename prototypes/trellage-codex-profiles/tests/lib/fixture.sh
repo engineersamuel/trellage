@@ -332,6 +332,23 @@ case "${FAKE_CODEX_SIGNAL_PARENT:-}" in
     ;;
 esac
 
+# Optional hold for lifecycle inventory/mutation calls. Launch path uses
+# FAKE_CODEX_OVERLAP_DIR instead so prepare-time inventory cannot wedge the
+# short profile lock while a session is meant to run unlocked.
+if [ -n "${FAKE_CODEX_LIFECYCLE_HOLD_DIR:-}" ]; then
+  mkdir -p "$FAKE_CODEX_LIFECYCLE_HOLD_DIR"
+  if mkdir "$FAKE_CODEX_LIFECYCLE_HOLD_DIR/first" 2>/dev/null; then
+    printf '%s\n' "$$" >"$FAKE_CODEX_LIFECYCLE_HOLD_DIR/first-child.pid"
+    : >"$FAKE_CODEX_LIFECYCLE_HOLD_DIR/first-started"
+    while [ ! -f "$FAKE_CODEX_LIFECYCLE_HOLD_DIR/release-first" ]; do
+      sleep 0.05
+    done
+  else
+    printf '%s\n' "$$" >"$FAKE_CODEX_LIFECYCLE_HOLD_DIR/second-child.pid"
+    : >"$FAKE_CODEX_LIFECYCLE_HOLD_DIR/second-started"
+  fi
+fi
+
 case "$*" in
   'plugin marketplace list --json')
     if [ -f "$FAKE_CODEX_MARKETPLACE_OVERRIDE" ]; then
@@ -449,6 +466,29 @@ case "$*" in
       done
       [ -z "${FAKE_CODEX_CAPTURE_PROJECT_CONFIG:-}" ] \
         || cp "$CODEX_HOME/config.toml" "$FAKE_CODEX_CAPTURE_PROJECT_CONFIG"
+    fi
+    # Simulate Codex session-live native writes that must not fail cleanup.
+    if [ "${1:-}" = '--sandbox' ] && [ "${FAKE_CODEX_BUMP_TUI_NUX:-}" = 1 ]; then
+      staged="$CODEX_HOME/.fake-codex-config-nux.$$"
+      awk -v marker='# trellage-managed-codex-provider-end' '
+        $0 == marker {
+          if (!seen_nux) {
+            if (previous != "") print ""
+            print "[tui.model_availability_nux]"
+            print "\"gpt-5.6-sol\" = 2"
+            print ""
+          }
+        }
+        $0 == "[tui.model_availability_nux]" { seen_nux = 1; in_nux = 1; print; next }
+        in_nux && /^\[/ { in_nux = 0 }
+        in_nux && $0 ~ /^"gpt-5\.6-sol" = / {
+          print "\"gpt-5.6-sol\" = 2"
+          next
+        }
+        { print; previous = $0 }
+      ' "$CODEX_HOME/config.toml" >"$staged" || exit 1
+      mv "$staged" "$CODEX_HOME/config.toml" || exit 1
+      chmod 0600 "$CODEX_HOME/config.toml" || exit 1
     fi
     [ -z "${FAKE_CODEX_ARM_CLEANUP_RACE:-}" ] \
       || : >"$FAKE_CODEX_ARM_CLEANUP_RACE"
@@ -661,4 +701,29 @@ state_mcp_hash() {
   sed -n \
     '/^# trellage-profile-local-config-begin$/,/^# trellage-profile-local-config-end$/p' \
     "$config" | state_sha256
+}
+
+# jq defs for launch-arg assertions. Launch injects one ephemeral
+# -c projects={...trust_level...} override (cwd, git toplevel, main root).
+strip_project_trust_c_jq() {
+  cat <<'EOF'
+def is_project_trust_override:
+  type == "string" and (
+    test("^projects\\..*\\.trust_level=\"trusted\"$")
+    or test("^projects=\\{.*trust_level=\"trusted\".*\\}$")
+  );
+def strip_project_trust_c:
+  . as $args
+  | reduce range(0; $args|length) as $i ([];
+      if $i > 0
+        and $args[$i - 1] == "-c"
+        and ($args[$i] | is_project_trust_override)
+      then .
+      elif $args[$i] == "-c"
+        and (($i + 1) < ($args|length))
+        and ($args[$i + 1] | is_project_trust_override)
+      then .
+      else . + [$args[$i]]
+      end);
+EOF
 }
