@@ -6,18 +6,36 @@ repo_root="$(cd "$prototype_dir/../.." && pwd)"
 profile="${1:-$repo_root/profiles/codex-superpowers/profile.toml}"
 profile="$(cd "$(dirname "$profile")" && pwd)/$(basename "$profile")"
 compiler="$repo_root/packages/trellage-cli/dist/cli.js"
+static_fixture_root=
 
 fail() {
   printf 'Trellage image contract: FAIL: %s\n' "$1" >&2
   exit 1
 }
 
+compiler_command() {
+  if [[ "${STATIC_ONLY:-0}" == 1 ]]; then
+    FAKE_DOCKER_LOG="$static_fixture_root/docker.log" \
+      PATH="$static_fixture_root/bin:$PATH" node "$compiler" "$@"
+  else
+    node "$compiler" "$@"
+  fi
+}
+
 for required_file in "$profile" "$compiler"; do
   [[ -f "$required_file" ]] || fail "missing required file: $required_file"
 done
 
-node "$compiler" validate "$profile" >/dev/null
-metadata="$(node "$compiler" metadata "$profile")"
+if [[ "${STATIC_ONLY:-0}" == 1 ]]; then
+  static_fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-image-contract.XXXXXX")"
+  trap 'rm -rf -- "$static_fixture_root"' EXIT
+  mkdir -p "$static_fixture_root/bin"
+  ln -s "$prototype_dir/tests/fakes/host-docker" "$static_fixture_root/bin/docker"
+  : >"$static_fixture_root/docker.log"
+fi
+
+compiler_command validate "$profile" >/dev/null
+metadata="$(compiler_command metadata "$profile")"
 profile_name="$(jq -er '.profile_name' <<<"$metadata")"
 profile_hash="$(jq -er '.profile_hash' <<<"$metadata")"
 harness_kind="$(jq -er '.harness_kind' <<<"$metadata")"
@@ -94,7 +112,7 @@ lock_has_caveman() {
     function complete() {
       return repository == "https://github.com/JuliusBrussee/caveman.git" \
         && ref == "v1.10.0" && select == "select = [\"caveman\"]" \
-        && commit ~ /^[0-9a-f]{40}$/
+        && commit ~ /^[0-9a-f]+$/ && length(commit) == 40
     }
     /^\[\[sources\]\]$/ {
       if (in_source && complete()) found = 1
