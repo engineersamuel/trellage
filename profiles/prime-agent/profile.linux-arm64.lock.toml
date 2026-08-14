@@ -579,4 +579,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:5ed068ebf2bf6efaed6845f7a0ba9ef812f5a452832e33bfaa51de2b7f776de6"
+final_digest = "sha256:a88b90e49f68b1f47c596d97567996a1330d218c3e963aec479e599b74d88574"
