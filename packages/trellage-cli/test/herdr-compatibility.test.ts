@@ -17,7 +17,7 @@ describe("herdr compatibility ledger", () => {
     const ledger = await Effect.runPromise(loadHerdrCompatibilityLedger(repositoryRoot))
     expect(containerHerdrCompatibility(ledger, "claude-research")).toEqual({ status: "verified" })
     expect(containerHerdrCompatibility(ledger, "claude-blog")).toMatchObject({ status: "known-issue" })
-    expect(containerHerdrCompatibility(ledger, "codex-superpowers")).toMatchObject({ status: "untested" })
+    expect(containerHerdrCompatibility(ledger, "codex-superpowers")).toMatchObject({ status: "verified" })
   })
 
   it("reports untested for a container profile absent from the ledger", async () => {
