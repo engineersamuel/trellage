@@ -23,7 +23,7 @@
     { "kind": "container", "profile": "claude-council", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
     { "kind": "container", "profile": "claude-frontend-design", "status": "known-issue", "issue": "D", "notes": "Prompt loaded into the composer but never submitted; the documented Enter-nudge did not fire." },
     { "kind": "container", "profile": "claude-qwen-local", "status": "known-issue", "issue": "G", "notes": "Prompt submitted fine, but qwen3.6-35b-a3b-local was rejected by copilot-proxy-rs with HTTP 400 model_not_supported -- same root cause as omp/local: no local Qwen backend registered with the proxy. Out-of-repo infrastructure provisioning, not fixable via a Trellage code change without defeating the profile's offline/local purpose." },
-    { "kind": "container", "profile": "codex-superpowers", "status": "untested", "notes": "Fixed: resolveCodexRelease now locks the codex-code-mode-host companion asset alongside codex, and the container build installs and verifies both. Rebuilt image confirmed codex-code-mode-host is present, executable, and on PATH. Awaiting fresh Herdr end-to-end verification." },
+    { "kind": "container", "profile": "codex-superpowers", "status": "verified", "notes": "Fixed across PR #80 (package codex-code-mode-host) and PR #85 (add --location to the curl download, fixing a 0-byte-file bug found during Herdr re-verification). Confirmed end-to-end via invoke_trellage: clean completion, exact HELLO FROM codex-superpowers output." },
     { "kind": "container", "profile": "prime-agent", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." }
   ]
 }
