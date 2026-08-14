@@ -389,7 +389,7 @@ if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'install' ]; then
       version='3.3.101'
       repo_key='hve-core-fixture'
       repo_url='https://github.com/microsoft/hve-core'
-      manifest_relative='plugins/hve-core-all/.github/plugin/plugin.json'
+      manifest_relative='plugins/hve-core-all/plugin.json'
       ;;
     'obra/superpowers')
       name='superpowers'
@@ -433,7 +433,7 @@ if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'update' ]; then
       version='3.3.101'
       repo_key='hve-core-fixture'
       repo_url='https://github.com/microsoft/hve-core'
-      manifest_relative='plugins/hve-core-all/.github/plugin/plugin.json'
+      manifest_relative='plugins/hve-core-all/plugin.json'
       ;;
     'superpowers')
       version='6.2.0'
@@ -1696,7 +1696,7 @@ cmp -s "$expected_policy" "$hve_home/requirements.toml" \
 
 hve_plugins_file="$hve_home/fake-state/plugins.json"
 hve_install_path="$hve_home/installed-plugins/hve-core-fixture"
-hve_local_manifest="$hve_install_path/plugins/hve-core-all/.github/plugin/plugin.json"
+hve_local_manifest="$hve_install_path/plugins/hve-core-all/plugin.json"
 jq -e --arg path "$hve_install_path" '. == [{
   status:"installed",
   name:"hve-core-all",
@@ -1870,9 +1870,9 @@ assert_hve_inventory_check_failure 'hve-missing-path' \
   "$(printf '%s\n' "$hve_native_inventory" | jq -c 'del(.[0].path)')"
 
 hve_outside_install="$fixture_root/outside-hve-plugin"
-mkdir -p "$hve_outside_install/plugins/hve-core-all/.github/plugin"
+mkdir -p "$hve_outside_install/plugins/hve-core-all"
 printf '%s\n' "$hve_native_manifest" \
-  >"$hve_outside_install/plugins/hve-core-all/.github/plugin/plugin.json"
+  >"$hve_outside_install/plugins/hve-core-all/plugin.json"
 assert_hve_inventory_check_failure 'hve-path-outside-profile' \
   "$(printf '%s\n' "$hve_native_inventory" \
     | jq -c --arg path "$hve_outside_install" '.[0].path = $path')"
