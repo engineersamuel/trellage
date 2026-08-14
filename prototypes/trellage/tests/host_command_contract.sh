@@ -222,21 +222,31 @@ run_tty() {
   local work_dir="$1"
   local docker_log="$2"
   local git_root="$3"
+  local command_line
+  local -a command
   shift 3
   mkdir -p "$git_root/.git"
+  command=(
+    env
+    PATH="$fake_bin:$PATH"
+    TRELLAGE_PROFILE=codex-superpowers
+    GH_TOKEN=host-contract-gh-token
+    XDG_RUNTIME_DIR="$runtime_dir"
+    FAKE_DOCKER_LOG="$docker_log"
+    FAKE_GIT_LOG="$test_root/git.log"
+    FAKE_GIT_ROOT="$git_root"
+    FAKE_NODE_LOG="$host_node_log"
+    FAKE_REAL_NODE="$real_node"
+    "$@"
+  )
   (
     cd "$work_dir"
-    script -q -e /dev/null env \
-      PATH="$fake_bin:$PATH" \
-      TRELLAGE_PROFILE=codex-superpowers \
-      GH_TOKEN=host-contract-gh-token \
-      XDG_RUNTIME_DIR="$runtime_dir" \
-      FAKE_DOCKER_LOG="$docker_log" \
-      FAKE_GIT_LOG="$test_root/git.log" \
-      FAKE_GIT_ROOT="$git_root" \
-      FAKE_NODE_LOG="$host_node_log" \
-      FAKE_REAL_NODE="$real_node" \
-      "$@"
+    if script --version >/dev/null 2>&1; then
+      printf -v command_line '%q ' "${command[@]}"
+      script -q -e -c "$command_line" /dev/null
+    else
+      script -q -e /dev/null "${command[@]}"
+    fi
   )
 }
 
