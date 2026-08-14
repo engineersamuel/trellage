@@ -67,9 +67,9 @@ jq -se --arg hve "$hve_home" --arg superpowers "$superpowers_home" '
   and all(.[]; (.args | join(" ") | test(" add | remove | upgrade ") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'setup --all order or idempotence differs'
 
-# Every top-level lifecycle action shares the launch lock. Each contender must
-# reach the lock, remain blocked without native lifecycle activity, then finish
-# after the held launch releases it.
+# Lifecycle actions still share the profile lock with each other. One held
+# setup must block other lifecycle work without native activity until release.
+# Codex sessions no longer hold that lock for the whole run.
 lifecycle_lock_bash_env="$fixture_root/lifecycle-lock.bashenv"
 cat >"$lifecycle_lock_bash_env" <<'EOF'
 set -T
@@ -85,29 +85,29 @@ trap '
 ' DEBUG
 EOF
 
-assert_lifecycle_waits_for_launch() {
+assert_lifecycle_waits_for_lifecycle() {
   local label="$1" hold_dir="$fixture_root/lifecycle-lock-$1"
-  local launch_pid launch_group contender_pid wait_count before_calls after_calls
-  local launch_status=0 contender_status=0
+  local holder_pid holder_group contender_pid wait_count before_calls after_calls
+  local holder_status=0 contender_status=0
   shift
 
   mkdir "$hold_dir"
   : >"$fixture_root/fake-codex.log"
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-    FAKE_CODEX_OVERLAP_DIR="$hold_dir" \
-    "$fixture_launcher" hve --version >"$hold_dir/launch.out" 2>&1 &
-  launch_pid=$!
-  track_async_pid "$launch_pid"
+    FAKE_CODEX_LIFECYCLE_HOLD_DIR="$hold_dir" \
+    "$fixture_launcher" setup hve >"$hold_dir/holder.out" 2>&1 &
+  holder_pid=$!
+  track_async_pid "$holder_pid"
   wait_count=0
   while [ ! -f "$hold_dir/first-started" ] && [ "$wait_count" -lt 100 ]; do
     sleep 0.05
     wait_count=$((wait_count + 1))
   done
   [ -f "$hold_dir/first-started" ] \
-    || fail "$label held launch did not start"
-  launch_group="$(cat "$hold_dir/first-child.pid")"
-  track_async_group "$launch_group"
+    || fail "$label held lifecycle action did not start"
+  holder_group="$(cat "$hold_dir/first-child.pid")"
+  track_async_group "$holder_group"
   before_calls="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
 
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -129,32 +129,137 @@ assert_lifecycle_waits_for_launch() {
     || fail "$label did not use the shared lifecycle lock"
   sleep 0.1
   kill -0 "$contender_pid" 2>/dev/null \
-    || fail "$label did not wait for the held launch"
+    || fail "$label did not wait for the held lifecycle action"
   after_calls="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
   [ "$after_calls" = "$before_calls" ] \
-    || fail "$label invoked native lifecycle activity while launch held the lock"
+    || fail "$label invoked native lifecycle activity while another lifecycle held the lock"
 
   : >"$hold_dir/release-first"
-  wait "$launch_pid" || launch_status=$?
+  wait "$holder_pid" || holder_status=$?
   wait "$contender_pid" || contender_status=$?
-  [ "$launch_status" -eq 0 ] || fail "$label held launch failed"
+  [ "$holder_status" -eq 0 ] || fail "$label held lifecycle action failed"
   [ "$contender_status" -eq 0 ] \
-    || fail "$label did not proceed after launch lock release"
+    || fail "$label did not proceed after lifecycle lock release"
   [ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
     || fail "$label left profile launch lock state"
   [ ! -e "$hve_home/.launch-lock-reap" ] \
     && [ ! -L "$hve_home/.launch-lock-reap" ] \
     || fail "$label left profile launch lock recovery state"
-  untrack_async_pid "$launch_pid"
-  untrack_async_group "$launch_group"
+  untrack_async_pid "$holder_pid"
+  untrack_async_group "$holder_group"
   untrack_async_pid "$contender_pid"
 }
 
-assert_lifecycle_waits_for_launch doctor doctor hve
-assert_lifecycle_waits_for_launch update update hve
-assert_lifecycle_waits_for_launch setup setup hve
-assert_lifecycle_waits_for_launch repair repair hve
-assert_lifecycle_waits_for_launch update-check update --check hve
+# A blocked lifecycle contender must report which pid holds the profile lock.
+assert_lifecycle_reports_lock_holder() {
+  local hold_dir="$fixture_root/lifecycle-lock-report"
+  local holder_pid holder_group contender_pid lock_owner wait_count
+  local holder_status=0 contender_status=0
+
+  mkdir "$hold_dir"
+  : >"$fixture_root/fake-codex.log"
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    FAKE_CODEX_LIFECYCLE_HOLD_DIR="$hold_dir" \
+    "$fixture_launcher" setup hve >"$hold_dir/holder.out" 2>&1 &
+  holder_pid=$!
+  track_async_pid "$holder_pid"
+  wait_count=0
+  while [ ! -f "$hold_dir/first-started" ] && [ "$wait_count" -lt 100 ]; do
+    sleep 0.05
+    wait_count=$((wait_count + 1))
+  done
+  [ -f "$hold_dir/first-started" ] \
+    || fail 'lock-report held lifecycle action did not start'
+  holder_group="$(cat "$hold_dir/first-child.pid")"
+  track_async_group "$holder_group"
+  lock_owner="$(awk '{print $1}' "$hve_home/.launch.lock")"
+
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    "$fixture_launcher" doctor hve >"$hold_dir/contender.out" 2>&1 &
+  contender_pid=$!
+  track_async_pid "$contender_pid"
+  wait_count=0
+  while ! grep -q 'waiting for profile lock' "$hold_dir/contender.out" 2>/dev/null \
+    && kill -0 "$contender_pid" 2>/dev/null \
+    && [ "$wait_count" -lt 100 ]; do
+    sleep 0.05
+    wait_count=$((wait_count + 1))
+  done
+  grep -q "waiting for profile lock: hve is held by pid $lock_owner" \
+    "$hold_dir/contender.out" \
+    || fail 'lock-report contender did not name the blocking pid'
+
+  : >"$hold_dir/release-first"
+  wait "$holder_pid" || holder_status=$?
+  wait "$contender_pid" || contender_status=$?
+  [ "$holder_status" -eq 0 ] || fail 'lock-report held lifecycle action failed'
+  [ "$contender_status" -eq 0 ] \
+    || fail 'lock-report did not proceed after lifecycle lock release'
+  untrack_async_pid "$holder_pid"
+  untrack_async_group "$holder_group"
+  untrack_async_pid "$contender_pid"
+}
+
+assert_lifecycle_waits_for_lifecycle doctor doctor hve
+assert_lifecycle_waits_for_lifecycle update update hve
+assert_lifecycle_waits_for_lifecycle setup setup hve
+assert_lifecycle_waits_for_lifecycle repair repair hve
+assert_lifecycle_waits_for_lifecycle update-check update --check hve
+
+assert_lifecycle_reports_lock_holder
+
+# Concurrent Codex sessions against one profile must both enter native Codex
+# while the first session is still live.
+concurrent_launch_dir="$fixture_root/concurrent-launches"
+mkdir "$concurrent_launch_dir"
+: >"$fixture_root/fake-codex.log"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  FAKE_CODEX_OVERLAP_DIR="$concurrent_launch_dir" \
+  "$fixture_launcher" hve --version >"$concurrent_launch_dir/first.out" 2>&1 &
+concurrent_first_pid=$!
+track_async_pid "$concurrent_first_pid"
+wait_count=0
+while [ ! -f "$concurrent_launch_dir/first-started" ] && [ "$wait_count" -lt 100 ]; do
+  sleep 0.05
+  wait_count=$((wait_count + 1))
+done
+[ -f "$concurrent_launch_dir/first-started" ] \
+  || fail 'concurrent first launch did not start'
+concurrent_first_group="$(cat "$concurrent_launch_dir/first-child.pid")"
+track_async_group "$concurrent_first_group"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  FAKE_CODEX_OVERLAP_DIR="$concurrent_launch_dir" \
+  "$fixture_launcher" hve --version >"$concurrent_launch_dir/second.out" 2>&1 &
+concurrent_second_pid=$!
+track_async_pid "$concurrent_second_pid"
+wait_count=0
+while [ ! -f "$concurrent_launch_dir/second-started" ] \
+  && kill -0 "$concurrent_second_pid" 2>/dev/null \
+  && [ "$wait_count" -lt 100 ]; do
+  sleep 0.05
+  wait_count=$((wait_count + 1))
+done
+[ -f "$concurrent_launch_dir/second-started" ] \
+  || fail 'concurrent second launch did not enter Codex beside the first'
+kill -0 "$concurrent_first_pid" 2>/dev/null \
+  || fail 'concurrent first launch exited before second entered'
+: >"$concurrent_launch_dir/release-first"
+concurrent_first_status=0
+concurrent_second_status=0
+wait "$concurrent_first_pid" || concurrent_first_status=$?
+wait "$concurrent_second_pid" || concurrent_second_status=$?
+[ "$concurrent_first_status" -eq 0 ] || fail 'concurrent first launch failed'
+[ "$concurrent_second_status" -eq 0 ] \
+  || { cat "$concurrent_launch_dir/second.out" >&2; fail 'concurrent second launch failed'; }
+[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+  || fail 'concurrent launches left profile lock state'
+untrack_async_pid "$concurrent_first_pid"
+untrack_async_group "$concurrent_first_group"
+untrack_async_pid "$concurrent_second_pid"
 
 # Launch is isolated from lifecycle mutations and network fetches.
 : >"$fixture_root/fake-codex.log"
@@ -163,10 +268,16 @@ write_isolation_snapshot launch-ordinary
 HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers --version \
   || fail 'superpowers launch failed'
 assert_isolation_snapshot_unchanged launch-ordinary
-jq -se --arg trustOverride "projects.\"$(CDPATH= cd -P -- . && pwd)\".trust_level=\"trusted\"" '
+jq -se --arg trustPath "$(CDPATH= cd -P -- . && pwd)" "
+$(strip_project_trust_c_jq)
   length == 1
-  and .[0].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "--dangerously-bypass-hook-trust", "-c", $trustOverride, "--version"]
-' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
+  and (.[0].args | strip_project_trust_c) == [
+    \"--sandbox\", \"workspace-write\", \"-c\", \"sandbox_workspace_write.network_access=true\",
+    \"--ask-for-approval\", \"never\", \"--disable\", \"default_mode_request_user_input\",
+    \"--dangerously-bypass-hook-trust\", \"--version\"
+  ]
+  and any(.[0].args[]; is_project_trust_override and contains(\$trustPath))
+" "$fixture_root/fake-codex.log" >/dev/null || fail 'launch lifecycle isolation differs'
 [ ! -e "$fixture_root/fake-curl.log" ] || fail 'launch invoked curl'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'launch created host authentication'
@@ -950,35 +1061,33 @@ write_isolation_snapshot native-launch-success
 assert_isolation_snapshot_unchanged native-launch-success
 jq -se --arg host "$fixture_root/home/.codex" --arg profile "$hve_home" \
   --arg home "$fixture_root/home" --arg cwd "$original_cwd" \
-  --arg trustOverride "projects.\"$(CDPATH= cd -P -- "$original_cwd" && pwd)\".trust_level=\"trusted\"" '
-  . == [
-    {
-      codexHome: $host,
-      home: $home,
-      cwd: $cwd,
-      args: ["login","status"]
-    },
-    {
-      codexHome: $profile,
-      home: $home,
-      cwd: $cwd,
-      args: ["plugin","list","--json"]
-    },
-    {
-      codexHome: $profile,
-      home: $home,
-      cwd: $cwd,
-      args: [
-        "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
-        "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
-        "--dangerously-bypass-hook-trust",
-        "-c", "model_provider=\"openai\"",
-        "-c", $trustOverride,
-        "-m", "gpt-5.5", "exec", "--json", "hello world"
-      ]
-    }
+  --arg trustPath "$(CDPATH= cd -P -- "$original_cwd" && pwd)" "
+$(strip_project_trust_c_jq)
+  length == 3
+  and .[0] == {
+    codexHome: \$host,
+    home: \$home,
+    cwd: \$cwd,
+    args: [\"login\",\"status\"]
+  }
+  and .[1] == {
+    codexHome: \$profile,
+    home: \$home,
+    cwd: \$cwd,
+    args: [\"plugin\",\"list\",\"--json\"]
+  }
+  and .[2].codexHome == \$profile
+  and .[2].home == \$home
+  and .[2].cwd == \$cwd
+  and (.[2].args | strip_project_trust_c) == [
+    \"--sandbox\", \"workspace-write\", \"-c\", \"sandbox_workspace_write.network_access=true\",
+    \"--ask-for-approval\", \"never\", \"--disable\", \"default_mode_request_user_input\",
+    \"--dangerously-bypass-hook-trust\",
+    \"-c\", \"model_provider=\\\"openai\\\"\",
+    \"-m\", \"gpt-5.5\", \"exec\", \"--json\", \"hello world\"
   ]
-' "$fixture_root/fake-codex.log" >/dev/null \
+  and any(.[2].args[]; is_project_trust_override and contains(\$trustPath))
+" "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'native-auth login, routing, environment, or forwarded arguments differ'
 cmp -s "$fixture_root/home/.codex/auth.json" "$hve_home/auth.json" \
   || fail 'native-auth launch did not copy exact host authentication'
@@ -1440,11 +1549,17 @@ write_isolation_snapshot launch-preserved-auth-ordinary
 HOME="$fixture_root/home" fake_env "$fixture_launcher" hve --version \
   || fail 'launch with preserved profile authentication failed'
 assert_isolation_snapshot_unchanged launch-preserved-auth-ordinary
-jq -se --arg trustOverride "projects.\"$(CDPATH= cd -P -- . && pwd)\".trust_level=\"trusted\"" '
+jq -se --arg trustPath "$(CDPATH= cd -P -- . && pwd)" "
+$(strip_project_trust_c_jq)
   length == 2
-  and .[0].args == ["plugin","list","--json"]
-  and .[1].args == ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--ask-for-approval", "never", "--disable", "default_mode_request_user_input", "--dangerously-bypass-hook-trust", "-c", $trustOverride, "--version"]
-' "$fixture_root/fake-codex.log" >/dev/null \
+  and .[0].args == [\"plugin\",\"list\",\"--json\"]
+  and (.[1].args | strip_project_trust_c) == [
+    \"--sandbox\", \"workspace-write\", \"-c\", \"sandbox_workspace_write.network_access=true\",
+    \"--ask-for-approval\", \"never\", \"--disable\", \"default_mode_request_user_input\",
+    \"--dangerously-bypass-hook-trust\", \"--version\"
+  ]
+  and any(.[1].args[]; is_project_trust_override and contains(\$trustPath))
+" "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch with preserved authentication injected a provider override'
 [ "$(shasum -a 256 "$hve_home/auth.json" | awk '{print $1}')" = "$profile_auth_hash" ] \
   || fail 'default launch changed profile authentication bytes'

@@ -84,6 +84,17 @@ data available to the process and reach the network. Use `cdx` only with
 trusted repositories and plugins. Lifecycle commands do not add these launch
 flags.
 
+Hook trust uses contextual `--dangerously-bypass-hook-trust`:
+
+| Mode | When |
+| --- | --- |
+| `auto` (default) | Bypass when stdin/stdout/stderr are not a full TTY, or when `CI`, `TRELLAGE_AUTOMATION`, or `CDX_AUTOMATION=1` is set. Full interactive TTY omits the flag so Codex can use persisted `[hooks.state]` trust (and prompt once for new/changed hooks). |
+| `bypass` | Always pass the flag (`CDX_HOOK_TRUST=bypass`). |
+| `prompt` | Never pass the flag (`CDX_HOOK_TRUST=prompt`). |
+
+Automated/`trx`/non-TTY launches stay unblocked. Interactive humans avoid the
+permanent bypass warning when profile hook hashes are already trusted.
+
 `setup` creates managed profile policy and installs the selected cataloged
 plugin. Launch self-heals repairable managed policy, marketplace, plugin, and
 cache drift while preserving profile-local state. `doctor` remains a strict
@@ -107,6 +118,30 @@ configuration, and other profile state remain isolated.
 MCP servers are profile-local. `cdx` does not import host MCP definitions from
 `~/.codex/config.toml`, and one profile's MCPs are not shared with another.
 Configure MCPs by launching the selected profile explicitly.
+
+Multiple `cdx PROFILE` Codex sessions may run at the same time against one
+shared profile home, matching bare `codex` multi-instance use. The profile lock
+is only held for brief prepare/cleanup windows and for lifecycle commands
+(`setup`, `doctor`, `update`, `repair`). Post-exit cleanup strips only
+Codex-generated project-trust stanzas from the live `config.toml` and keeps
+other concurrent writes (hooks, marketplace metadata, TUI notices). If a
+lifecycle command or brief prepare/cleanup must wait, `cdx` reports the
+blocking PID so a wait is never silent.
+
+Launch skips the Codex directory-trust prompt with one ephemeral
+`-c 'projects={...}'` inline-table override for the launch cwd, `git`
+toplevel, and main repository root (dirname of the common `.git`, required for
+linked worktrees). Current Codex ignores dotted
+`projects."path".trust_level=` overrides for this gate.
+
+Launch does not write trust into `config.toml`. If Codex itself appends
+project-trust during the session, post-exit cleanup removes those generated
+stanzas.
+
+On exit, cleanup strips generated project-trust stanzas and keeps normal Codex
+session-live native writes (`hooks.state`, `tui.model_availability_nux`).
+Marketplace/plugin/managed mutations still fail cleanup and leave live bytes
+unchanged so unexpected drift stays visible.
 
 ## HVE adapter boundary
 

@@ -254,7 +254,7 @@ original_cwd_physical="$(CDPATH= cd -P -- "$original_cwd" && pwd)"
 jq -se --arg codexHome "$hve_home" \
   --arg home "$fixture_root/home" \
   --arg cwd "$original_cwd" \
-  --arg trustOverride "projects.\"$original_cwd_physical\".trust_level=\"trusted\"" '
+  --arg trustOverride "projects={\"$original_cwd_physical\"={trust_level=\"trusted\"}}" '
     map(select(.args[0] == "--sandbox")) as $launches |
     ($launches | length) == 1
     and $launches[0].codexHome == $codexHome
@@ -268,10 +268,92 @@ jq -se --arg codexHome "$hve_home" \
       "-m", "gpt-5.5", "exec", "--json", "hello world"
     ]
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'
+
+# Non-TTY auto mode keeps hook-trust bypass so unattended launches cannot block.
+# CDX_HOOK_TRUST=prompt forces human review path (no bypass flag).
+: >"$fixture_root/fake-codex.log"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  CDX_HOOK_TRUST=prompt \
+  "$fixture_launcher" hve --version \
+  || fail 'CDX_HOOK_TRUST=prompt launch failed'
+jq -se '
+  map(select(.args[0] == "--sandbox")) as $launches |
+  ($launches | length) == 1
+  and all($launches[0].args[]; . != "--dangerously-bypass-hook-trust")
+' "$fixture_root/fake-codex.log" >/dev/null \
+  || fail 'CDX_HOOK_TRUST=prompt still passed hook-trust bypass'
+: >"$fixture_root/fake-codex.log"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  CDX_HOOK_TRUST=bypass \
+  "$fixture_launcher" hve --version \
+  || fail 'CDX_HOOK_TRUST=bypass launch failed'
+jq -se '
+  map(select(.args[0] == "--sandbox")) as $launches |
+  ($launches | length) == 1
+  and any($launches[0].args[]; . == "--dangerously-bypass-hook-trust")
+' "$fixture_root/fake-codex.log" >/dev/null \
+  || fail 'CDX_HOOK_TRUST=bypass omitted hook-trust bypass'
+: >"$fixture_root/fake-codex.log"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  CDX_HOOK_TRUST=invalid-mode \
+  "$fixture_launcher" hve --version \
+  >"$fixture_root/hook-trust-invalid.out" 2>&1 \
+  && fail 'invalid CDX_HOOK_TRUST was accepted'
+grep -F 'CDX_HOOK_TRUST must be auto, bypass, or prompt' \
+  "$fixture_root/hook-trust-invalid.out" >/dev/null \
+  || fail 'invalid CDX_HOOK_TRUST diagnostic missing'
+: >"$fixture_root/fake-codex.log"
+
 auth_is_absent "$hve_home/auth.json" || fail 'launch copied host authentication'
 [ "$(shasum -a 256 "$fixture_root/home/.codex/auth.json" | awk '{print $1}')" = "$host_auth_hash" ] \
   || fail 'launch changed host authentication'
 rm "$fixture_root/home/.codex/auth.json"
+
+# Linked worktree: Codex applies the trust gate to the main repository root
+# (dirname of the common .git), not only the worktree cwd / show-toplevel.
+worktree_trust_main="$fixture_root/git-trust-main"
+worktree_trust_link="$fixture_root/git-trust-worktree"
+mkdir -p "$worktree_trust_main"
+git -C "$worktree_trust_main" init -b main >/dev/null \
+  || fail 'could not init worktree trust main repository'
+git -C "$worktree_trust_main" config user.email 'cdx-contract@example.com'
+git -C "$worktree_trust_main" config user.name 'cdx contract'
+printf 'seed\n' >"$worktree_trust_main/README"
+git -C "$worktree_trust_main" add README \
+  || fail 'could not stage worktree trust seed'
+git -C "$worktree_trust_main" commit -m seed >/dev/null \
+  || fail 'could not commit worktree trust seed'
+git -C "$worktree_trust_main" worktree add -b cdx-trust-wt "$worktree_trust_link" >/dev/null \
+  || fail 'could not add linked worktree for trust override'
+worktree_trust_main_physical="$(CDPATH= cd -P -- "$worktree_trust_main" && pwd)"
+worktree_trust_link_physical="$(CDPATH= cd -P -- "$worktree_trust_link" && pwd)"
+worktree_trust_log="$fixture_root/fake-codex-worktree-trust.log"
+: >"$worktree_trust_log"
+(cd "$worktree_trust_link" && \
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$worktree_trust_log" \
+  "$fixture_launcher" hve --version) \
+  || fail 'launch from linked worktree failed'
+jq -se \
+  --arg linkPath "$worktree_trust_link_physical" \
+  --arg mainPath "$worktree_trust_main_physical" '
+    map(select(.args[0] == "--sandbox")) as $launches |
+    ($launches | length) == 1
+    and any(
+      $launches[0].args[];
+      type == "string"
+      and test("^projects=\\{")
+      and contains($linkPath)
+      and contains($mainPath)
+      and contains("trust_level=\"trusted\"")
+    )
+  ' "$worktree_trust_log" >/dev/null \
+  || fail 'linked worktree launch omitted cwd or main-root project trust overrides'
+git -C "$worktree_trust_main" worktree remove --force "$worktree_trust_link" >/dev/null 2>&1 || :
+rm -rf -- "$worktree_trust_main" "$worktree_trust_link"
 
 proxy_config_before="$fixture_root/proxy-launch-config-before.toml"
 assert_early_status 37 proxy-launch-child-status env HOME="$fixture_root/home" \
@@ -525,20 +607,30 @@ if [ -f "$overlap_dir/second-child.pid" ]; then
   track_async_group "$overlap_second_group"
 fi
 wait "$overlap_second_pid" || overlap_second_status=$?
-[ "$overlap_entered_early" = no ] \
-  || fail 'second overlapping launch entered Codex before first cleanup'
+[ "$overlap_entered_early" = yes ] \
+  || fail 'second overlapping launch did not run concurrently with the first'
 [ "$overlap_first_status" -eq 0 ] || fail 'first overlapping launch failed'
 [ "$overlap_second_status" -eq 0 ] \
   || { cat "$fixture_root/overlap-second.out" >&2; fail 'second overlapping launch failed'; }
 [ -f "$overlap_dir/second-started" ] || fail 'second overlapping launch never started'
-cmp -s "$proxy_config_before" "$hve_home/config.toml" \
-  || fail 'overlapping launches did not restore exact canonical config bytes'
+grep -E '^\[projects\."' "$hve_home/config.toml" >/dev/null \
+  && fail 'overlapping launches left generated project trust in config'
+# Managed marker envelope must remain intact after concurrent sessions.
+grep -Fxc -- '# trellage-managed-codex-config-begin' "$hve_home/config.toml" \
+  | grep -qx 1 \
+  || fail 'overlapping launches damaged managed config begin marker'
+grep -Fxc -- '# trellage-managed-codex-provider-end' "$hve_home/config.toml" \
+  | grep -qx 1 \
+  || fail 'overlapping launches damaged managed provider end marker'
 [ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
   || fail 'overlapping launches left profile lock state'
 untrack_async_pid "$overlap_first_pid"
 untrack_async_group "$overlap_first_group"
 untrack_async_pid "$overlap_second_pid"
 [ -z "$overlap_second_group" ] || untrack_async_group "$overlap_second_group"
+# Restore canonical bytes before later exact-restore assertions.
+cp "$proxy_config_before" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
 
 printf '%s %s %s\n' 2147483647 stalebirth 999-1 >"$hve_home/.launch.lock"
 chmod 0600 "$hve_home/.launch.lock"
@@ -774,6 +866,36 @@ grep -F -- 'unexpected = true' "$hve_home/config.toml" >/dev/null \
 cp "$proxy_config_before" "$hve_home/config.toml"
 chmod 0600 "$hve_home/config.toml"
 
+# Codex often bumps tui nux counters and rewrites hooks.state during a normal
+# session while also persisting project trust. Cleanup must strip trust, keep
+# the session-live tables, and exit 0.
+awk -v marker='# trellage-managed-codex-provider-end' '
+  $0 == marker {
+    print ""
+    print "[hooks.state]"
+    print ""
+    print "[tui.model_availability_nux]"
+    print "\"gpt-5.6-sol\" = 1"
+  }
+  { print }
+' "$proxy_config_before" >"$fixture_root/session-live-before.toml"
+cp "$fixture_root/session-live-before.toml" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
+  FAKE_CODEX_BUMP_TUI_NUX=1 \
+  "$fixture_launcher" hve --version \
+  || fail 'session-live hooks/tui launch cleanup failed'
+grep -E '^\[projects\."' "$hve_home/config.toml" >/dev/null \
+  && fail 'session-live launch left generated project trust'
+grep -F -- '"gpt-5.6-sol" = 2' "$hve_home/config.toml" >/dev/null \
+  || fail 'session-live launch cleanup dropped tui nux mutation'
+grep -F -- '[hooks.state]' "$hve_home/config.toml" >/dev/null \
+  || fail 'session-live launch cleanup dropped hooks.state'
+cp "$proxy_config_before" "$hve_home/config.toml"
+chmod 0600 "$hve_home/config.toml"
+
 awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
   $0 == marker {
     print ""
@@ -863,7 +985,10 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" hve --version \
   || fail 'launch did not recover stale generated project trust'
-cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
+# Launch prepare no longer mutates live trust (concurrent sessions share the
+# home). Cleanup strips trust and prefers none-style so concurrent cleanups do
+# not leave cosmetic blank separators.
+cmp -s "$proxy_config_before" "$hve_home/config.toml" \
   || fail 'launch stale project recovery changed other config bytes'
 
 # Codex writes hook-approval trust hashes and TUI nux flags into config.toml
@@ -964,7 +1089,7 @@ cat >"$fake_bin/cmp" <<'EOF'
 "$CDX_TEST_REAL_CMP" "$@"
 status=$?
 case "${2:-}:${3:-}" in
-  */.config-snapshot.*:*/.config.*)
+  */.config-snapshot.*:*/config.toml|*/.config-snapshot.*:*/.config-cleanup-*)
     if [ "$status" -eq 0 ] && [ -f "$CDX_TEST_CLEANUP_RACE_ARM" ]; then
       rm "$CDX_TEST_CLEANUP_RACE_ARM" || exit $?
       "$CDX_TEST_REAL_MV" "$CDX_TEST_CLEANUP_RACE_EXTERNAL" \
@@ -975,6 +1100,8 @@ esac
 exit "$status"
 EOF
 chmod +x "$fake_bin/cmp"
+# Concurrent writers may replace config during cleanup. Keep the other writer's
+# bytes and fail the launch rather than clobbering them.
 assert_early_status 1 proxy-launch-cleanup-race env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 CDX_TEST_REAL_CMP="$real_cmp" \
@@ -984,9 +1111,12 @@ assert_early_status 1 proxy-launch-cleanup-race env HOME="$fixture_root/home" \
   CDX_TEST_CLEANUP_RACE_EXTERNAL="$fixture_root/concurrent-launch-config.toml" \
   CDX_TEST_CLEANUP_RACE_TARGET="$hve_home/config.toml" \
   "$fixture_launcher" hve --version
-grep -F -- 'cdx: post-launch config cleanup detected concurrent mutation: hve' \
+if ! grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: hve' \
   "$fixture_root/proxy-launch-cleanup-race.out" >/dev/null \
-  || fail 'concurrent launch cleanup diagnostic differs'
+  && ! grep -F -- 'cdx: post-launch config cleanup detected concurrent mutation: hve' \
+  "$fixture_root/proxy-launch-cleanup-race.out" >/dev/null; then
+  fail 'concurrent launch cleanup diagnostic differs'
+fi
 grep -F -- 'model = "concurrent-launch-winner"' "$hve_home/config.toml" >/dev/null \
   || fail 'launch cleanup clobbered concurrent config mutation'
 rm "$fake_bin/cmp"
