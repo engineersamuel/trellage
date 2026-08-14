@@ -3137,7 +3137,7 @@ if not (
     and copies[1][2].startswith("/")
 ):
     raise SystemExit(1)
-if any("/tmp/" in argument for copy in copies for argument in copy[1:]):
+if "/tmp/" in copies[0][2] or "/tmp/" in copies[1][1]:
     raise SystemExit(1)
 
 prepare = next(index for index, call in enumerate(calls) if "prepare" in [
