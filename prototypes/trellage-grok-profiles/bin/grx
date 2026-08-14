@@ -81,18 +81,12 @@ cleanup_auth_assets() {
   auth_lock_owned=""
 }
 
+# Never `return` from this handler: bash aborts an in-flight `wait` and exits
+# the shell when a trap handler returns, which would skip Deja finalize.
+# Launch-scoped signal handling lives in run_with_deja instead.
 auth_signal_exit() {
   local status="$1"
 
-  if [ -n "${deja_child_pid:-}" ]; then
-    deja_signal_status="$status"
-    case "$status" in
-      129) kill -HUP "$deja_child_pid" 2>/dev/null || : ;;
-      130) kill -INT "$deja_child_pid" 2>/dev/null || : ;;
-      143) kill -TERM "$deja_child_pid" 2>/dev/null || : ;;
-    esac
-    return
-  fi
   cleanup_auth_assets
   trap - EXIT HUP INT TERM
   exit "$status"
@@ -160,6 +154,9 @@ run_with_deja() {
   if ! run_deja_helper prepare; then
     printf 'grx: Deja prepare failed; continuing without synchronized memory\n' >&2
   fi
+  trap 'deja_signal_status=129; [ -z "${deja_child_pid:-}" ] || kill -HUP "$deja_child_pid" 2>/dev/null || :' HUP
+  trap 'deja_signal_status=130; [ -z "${deja_child_pid:-}" ] || kill -INT "$deja_child_pid" 2>/dev/null || :' INT
+  trap 'deja_signal_status=143; [ -z "${deja_child_pid:-}" ] || kill -TERM "$deja_child_pid" 2>/dev/null || :' TERM
   if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
     monitor_child=no
   else
