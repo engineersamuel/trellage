@@ -374,7 +374,7 @@ assert_prompt_is_detached() {
     }
     $0 == "CALL" { reject_interactive_prompt(); interactive = prompt = 0; next }
     $0 == "ARG\t--interactive" { interactive = 1; next }
-    /^ARG\t.*trellage-[a-z-]+-entry prompt/ { prompt = 1 }
+    /^ARG\t.*trellage-[a-z-]+-entry (prompt|resume-prompt|new|resume)/ { prompt = 1 }
     END { reject_interactive_prompt() }
   ' "$log" || fail 'portable prompt agent exec allocated interactive Docker stdin'
   ! grep -Fqx $'ARG\t--tty' "$log" \
@@ -727,6 +727,19 @@ test_resume_uses_native_thread_without_prompt_replay() {
   : >"$docker_log"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" resume "$resume_session_id" -p 'continuation text'
+  assert_arg "$docker_log" TRELLAGE_RESUME_SESSION_ID
+  assert_arg "$docker_log" TRELLAGE_RESUME_PROFILE
+  grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry resume-prompt codex $argv -- $prompt' "$docker_log" \
+    || fail 'resume with prompt did not dispatch to resume-prompt entry'
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tcontinuation text' ]] \
+    || fail 'continuation prompt was not passed as the last harness exec argument'
+  assert_prompt_is_detached "$docker_log"
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
     run_tty "$worktree" "$docker_log" "$worktree" \
       "$prototype_dir/trellage" --sandbox danger-full-access
   grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry new codex $argv -- $prompt' "$docker_log" \
@@ -877,21 +890,34 @@ test_portable_prompt_parser_contract() {
 --prompt may be specified only once|-p first --prompt second
 --prompt may be specified only once|--prompt first --prompt=second
 --prompt may be specified only once|--prompt=first -p second
---prompt cannot be combined with positional arguments|resume -p hello
---prompt cannot be combined with positional arguments|-p hello resume
 --prompt cannot be combined with positional arguments|shell --prompt hello
 --prompt cannot be combined with positional arguments|stop --prompt=hello
 --prompt cannot be combined with positional arguments|doctor -p hello
 --prompt cannot be combined with positional arguments|destroy --prompt hello
 --prompt cannot be combined with positional arguments|positional -p hello
+--prompt cannot be combined with positional arguments|-p hello positional
 --prompt is not supported for compiler commands|build --prompt hello
 --prompt is not supported for compiler commands|validate -p hello
 --prompt is not supported for compiler commands|lock --prompt hello
 --prompt is not supported for compiler commands|upgrade --prompt=hello
 --prompt is not supported for compiler commands|ci-verify --prompt=hello
+--output-format requires a format|--output-format
+--output-format requires a format|--output-format=
+unsupported output format: invalid|--output-format invalid
+unsupported output format: invalid|--output-format=invalid
+--output-format may be specified only once|--output-format text --output-format jsonl
+--output-format is not supported for compiler commands|build --output-format jsonl
+--output-format is not supported for compiler commands|validate --output-format=text
+--output-format is not supported for compiler commands|lock --output-format jsonl
+--output-format is not supported for compiler commands|upgrade --output-format=jsonl
+--output-format is not supported for compiler commands|ci-verify --output-format jsonl
 --model is not supported for compiler commands|build --model gpt-5.5
 --model is not supported for compiler commands|validate --model=gpt-5.5
+resume with --prompt requires a session ID|resume -p hello
+resume with --prompt requires a session ID|-p hello resume
 resume session ID must be a UUID|resume not-a-session-id
+resume session ID must be a UUID|resume not-a-session-id -p hello
+resume session ID must be a UUID|-p hello resume not-a-session-id
 resume accepts at most one session ID|resume 5b3664c0-9954-4526-8aab-d3d2c177798d 45f2aaf8-1064-4162-bc09-58808d5819d8
 CASES
 
@@ -904,6 +930,55 @@ CASES
     || status=$?
   [[ "$status" -eq 37 ]] || fail 'portable prompt changed the harness exit status'
   printf 'Trellage host test: PASS: portable prompt parser forms and errors\n'
+}
+
+test_output_format_contract() {
+  local worktree="$test_root/output-format-worktree"
+  local docker_log="$test_root/output-format.docker.log"
+  local resume_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+  local state_volume
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl
+  assert_docker_env "$docker_log" 'TRELLAGE_OUTPUT_FORMAT'
+  assert_prompt_is_detached "$docker_log"
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl -p 'jsonl prompt'
+  assert_docker_env "$docker_log" 'TRELLAGE_OUTPUT_FORMAT'
+  assert_prompt_is_detached "$docker_log"
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tjsonl prompt' ]] \
+    || fail 'jsonl prompt was not passed as one literal argument'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" resume "$resume_session_id" --output-format jsonl -p 'jsonl resume prompt'
+  assert_docker_env "$docker_log" 'TRELLAGE_OUTPUT_FORMAT'
+  assert_arg "$docker_log" TRELLAGE_RESUME_SESSION_ID
+  assert_arg "$docker_log" TRELLAGE_RESUME_PROFILE
+  assert_prompt_is_detached "$docker_log"
+  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tjsonl resume prompt' ]] \
+    || fail 'jsonl resume prompt was not passed as one literal argument'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format text
+  ! grep -Fq 'TRELLAGE_OUTPUT_FORMAT' "$docker_log" \
+    || fail 'text output format forwarded TRELLAGE_OUTPUT_FORMAT'
+
+  printf 'Trellage host test: PASS: output format contract\n'
 }
 
 test_stopped_and_collision_behavior() {
@@ -4029,6 +4104,7 @@ if [[ "${TRELLAGE_HOST_PROMPT_ONLY:-}" == 1 ]]; then
   test_portable_prompt_mode_is_noninteractive_and_literal
   test_portable_prompt_is_detached_for_each_harness
   test_portable_prompt_parser_contract
+  test_output_format_contract
   exit 0
 fi
 
@@ -4236,6 +4312,7 @@ test_bare_command_has_no_prompt
 test_portable_prompt_mode_is_noninteractive_and_literal
 test_portable_prompt_is_detached_for_each_harness
 test_portable_prompt_parser_contract
+test_output_format_contract
 test_stopped_and_collision_behavior
 test_stale_container_preserves_active_sessions
 test_volume_collision_and_mount_validation

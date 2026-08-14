@@ -231,6 +231,59 @@ CLAUDE_CONFIG_PATH_OUT="$root/resume-config-path" CLAUDE_ENV_OUT="$root/resume-e
   exit 1
 }
 
+resume_prompt_args_out="$root/resume-prompt-args"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$core_runtime" \
+TRELLAGE_CLAUDE_MODE=core \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+TRELLAGE_RESUME_SESSION_ID="$resume_session_id" \
+ANTHROPIC_AUTH_TOKEN=core-proxy-token \
+CLAUDE_ARGS_OUT="$resume_prompt_args_out" CLAUDE_CONFIG_OUT="$root/resume-prompt-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/resume-prompt-config-path" CLAUDE_ENV_OUT="$root/resume-prompt-env" \
+  "$entry" resume-prompt claude -- 'continuation text'
+expected_resume_prompt_args=$'--resume\n'"$resume_session_id"$'\n-p\ncontinuation text'
+[[ "$(tail -n 4 "$resume_prompt_args_out")" == "$expected_resume_prompt_args" ]] || {
+  printf 'Claude resume-prompt mode did not use exact native --resume ID -p argv\n' >&2
+  exit 1
+}
+
+jsonl_args_out="$root/jsonl-args"
+jsonl_hint_out="$root/jsonl-hint-output"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$core_runtime" \
+TRELLAGE_CLAUDE_MODE=core \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+TRELLAGE_OUTPUT_FORMAT=jsonl \
+TRELLAGE_RESUME_PROFILE=/tmp/claude-qwen-local/profile.toml \
+CLAUDE_CREATE_SESSION_ID="$resume_session_id" \
+ANTHROPIC_AUTH_TOKEN=core-proxy-token \
+CLAUDE_ARGS_OUT="$jsonl_args_out" CLAUDE_CONFIG_OUT="$root/jsonl-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/jsonl-config-path" CLAUDE_ENV_OUT="$root/jsonl-env" \
+  "$entry" new claude --test-interactive >"$jsonl_hint_out"
+grep -Fqx -- '--output-format' "$jsonl_args_out"
+grep -Fqx -- 'stream-json' "$jsonl_args_out"
+grep -Fqx -- '--verbose' "$jsonl_args_out"
+[[ ! -s "$jsonl_hint_out" ]] || {
+  printf 'Claude jsonl output format printed resume guidance\n' >&2
+  exit 1
+}
+
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+  TRELLAGE_CLAUDE_HOME="$core_runtime" \
+  TRELLAGE_CLAUDE_MODE=core \
+  TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+  TRELLAGE_OUTPUT_FORMAT=unsupported \
+  ANTHROPIC_AUTH_TOKEN=core-proxy-token \
+  CLAUDE_ARGS_OUT="$root/unsupported-args" CLAUDE_CONFIG_OUT="$root/unsupported-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/unsupported-config-path" CLAUDE_ENV_OUT="$root/unsupported-env" \
+  "$entry" new claude >/dev/null 2>&1; then
+  printf 'expected unsupported TRELLAGE_OUTPUT_FORMAT to fail\n' >&2
+  exit 1
+fi
+
 hint_output="$root/resume-hint-output"
 PATH="$fake_bin:$PATH" \
 TRELLAGE_CLAUDE_SEED_HOME="$seed" \
