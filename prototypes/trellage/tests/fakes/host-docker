@@ -578,6 +578,15 @@ case "${1:-} ${2:-}" in
   'container rm') printf '%s\n' "${@: -1}" ;;
   'volume rm') printf '%s\n' "${@: -1}" ;;
   'container exec')
+    if [[ -n "${FAKE_DOCKER_GH_AUTH_MARKER:-}" ]]; then
+      for argument in "$@"; do
+        if [[ "$argument" == *'gh auth login'* ]]; then
+          printf '%s\n' "$FAKE_DOCKER_GH_AUTH_MARKER"
+          printf '%s-stderr\n' "$FAKE_DOCKER_GH_AUTH_MARKER" >&2
+          break
+        fi
+      done
+    fi
     if [[ "${FAKE_DOCKER_BLOCK_ANY_EXEC:-0}" == 1 && -n "${FAKE_DOCKER_EXEC_READY_FILE:-}" ]]; then
       : >"$FAKE_DOCKER_EXEC_READY_FILE"
       while [[ ! -f "${FAKE_DOCKER_EXEC_RELEASE_FILE:?}" ]]; do sleep 0.05; done
