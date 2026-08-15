@@ -304,6 +304,19 @@ profile_compiler_is_fresh() {
   [[ "$actual_fingerprint" == "$expected_fingerprint" ]]
 }
 
+# Host-side lifecycle commands (compiler bootstrap, profile lock refresh,
+# image builds) can run before the harness owns stdout. In `--output-format
+# jsonl` launches, stdout must contain only the harness's JSON stream, so
+# redirect such commands' stdout to stderr in that mode only; leave every
+# other output format untouched.
+run_lifecycle_command() {
+  if [[ "$output_format" == jsonl ]]; then
+    "$@" 1>&2
+  else
+    "$@"
+  fi
+}
+
 ensure_profile_compiler() {
   profile_compiler_is_fresh && return 0
   [[ -x "$compiler_fingerprint" ]] \
@@ -313,12 +326,12 @@ ensure_profile_compiler() {
 
   if [[ ! -x "$compiler_package_dir/node_modules/.bin/tsc" ]]; then
     printf 'trellage: installing profile compiler dependencies\n' >&2
-    (cd "$compiler_package_dir" && npm ci) \
+    (cd "$compiler_package_dir" && run_lifecycle_command npm ci) \
       || fail "profile compiler dependency installation failed in $compiler_package_dir"
   fi
 
   printf 'trellage: building profile compiler\n' >&2
-  (cd "$compiler_package_dir" && npm run build) \
+  (cd "$compiler_package_dir" && run_lifecycle_command npm run build) \
     || fail "profile compiler build failed in $compiler_package_dir"
   [[ -f "$compiler" ]] || fail 'profile compiler build did not produce dist/cli.js'
   profile_compiler_is_fresh || fail 'profile compiler remains stale after build'
@@ -1316,7 +1329,7 @@ prepare_github_cli_auth() {
   local git_config="$config_dir/gitconfig"
 
   github_cli_args=(--env "GH_CONFIG_DIR=$config_dir" --env "GIT_CONFIG_GLOBAL=$git_config")
-  printf '%s\n' "$github_cli_token" | docker container exec --interactive \
+  printf '%s\n' "$github_cli_token" | run_lifecycle_command docker container exec --interactive \
     --user '10001:10001' \
     --env "GH_CONFIG_DIR=$config_dir" \
     --env "GIT_CONFIG_GLOBAL=$git_config" \
@@ -1652,7 +1665,7 @@ if [[ "$profile_locked" != true ]]; then
     || fail "profile lock is stale; run: $refresh_command"
   verify_docker_server
   printf 'trellage: profile lock is stale; refreshing lock and image: %s\n' "$refresh_command" >&2
-  "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+  run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
     node "$compiler" build "$profile_path" \
     || fail "automatic profile refresh failed: $refresh_command"
   profile_locked=true
@@ -1667,10 +1680,10 @@ if ! inspect_profile_image; then
   fi
   verify_docker_server
   printf 'trellage: profile image is missing or stale; building automatically\n' >&2
-  if ! "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+  if ! run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
     node "$compiler" build --locked "$profile_path"; then
     printf 'trellage: locked build digest drifted; rebuilding non-locked\n' >&2
-    "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+    run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
       node "$compiler" build "$profile_path" \
       || fail "automatic profile image build failed: $build_command"
   fi

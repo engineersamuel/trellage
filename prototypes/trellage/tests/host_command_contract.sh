@@ -57,6 +57,13 @@ printf '%s\n' \
   'if [[ "${2:-}" == metadata && -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
   '  exec cat "$FAKE_PROFILE_METADATA"' \
   'fi' \
+  'if [[ "${2:-}" == build && -n "${FAKE_PROFILE_BUILD_PROGRESS_MARKER:-}" ]]; then' \
+  '  printf '\''%s\n'\'' "$FAKE_PROFILE_BUILD_PROGRESS_MARKER"' \
+  '  printf '\''%s-stderr\n'\'' "$FAKE_PROFILE_BUILD_PROGRESS_MARKER" >&2' \
+  'fi' \
+  'if [[ "${2:-}" == build && "${FAKE_PROFILE_BUILD_ALWAYS_FAILS:-0}" == 1 ]]; then' \
+  '  exit 1' \
+  'fi' \
   'if [[ "${2:-}" == build && "${3:-}" == --locked && "${FAKE_PROFILE_LOCKED_BUILD_FAILS:-0}" == 1 ]]; then' \
   '  exit 1' \
   'fi' \
@@ -2501,6 +2508,198 @@ test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build() {
   printf 'Trellage host test: PASS: locked digest mismatch falls back to non-locked build\n'
 }
 
+test_jsonl_cold_launch_isolates_automatic_build_output() {
+  local marker='FAKE_PROFILE_BUILD_MARKER_9f21c6'
+  local worktree docker_log state_volume stdout_capture stderr_capture status
+
+  # Successful automatic build: jsonl mode must keep build prose off stdout.
+  worktree="$test_root/jsonl-cold-build-success-worktree"
+  docker_log="$test_root/jsonl-cold-build.success.docker.log"
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+  : >"$host_node_log"
+  stdout_capture="$test_root/jsonl-cold-build.success.stdout"
+  stderr_capture="$test_root/jsonl-cold-build.success.stderr"
+  FAKE_PROFILE_BUILD_SUCCEEDS=1 \
+    FAKE_PROFILE_BUILD_PROGRESS_MARKER="$marker" \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_NETWORK='test_proxy_net' \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      -p 'jsonl cold build' \
+    >"$stdout_capture" 2>"$stderr_capture"
+  grep -Fqx $'ARG\tbuild' "$host_node_log" \
+    || fail 'jsonl cold launch did not trigger an automatic build'
+  ! grep -Fq "$marker" "$stdout_capture" \
+    || fail 'jsonl mode leaked automatic build stdout onto the harness stream'
+  grep -Fq "$marker" "$stderr_capture" \
+    || fail 'jsonl mode dropped automatic build stdout instead of redirecting it to stderr'
+  grep -Fq "$marker-stderr" "$stderr_capture" \
+    || fail 'automatic build stderr output did not reach stderr'
+  grep -Fqx $'ARG\tcreate' "$docker_log" \
+    || fail 'jsonl launch did not continue after the automatic build'
+
+  # Failed automatic build: stdout must still carry zero build prose, and the
+  # failure diagnostics must remain visible on stderr.
+  worktree="$test_root/jsonl-cold-build-failure-worktree"
+  docker_log="$test_root/jsonl-cold-build.failure.docker.log"
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+  : >"$host_node_log"
+  stdout_capture="$test_root/jsonl-cold-build.failure.stdout"
+  stderr_capture="$test_root/jsonl-cold-build.failure.stderr"
+  status=0
+  FAKE_PROFILE_BUILD_ALWAYS_FAILS=1 \
+    FAKE_PROFILE_BUILD_PROGRESS_MARKER="$marker" \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_NETWORK='test_proxy_net' \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      -p 'jsonl cold build failure' \
+    >"$stdout_capture" 2>"$stderr_capture" || status=$?
+  [[ "$status" -ne 0 ]] \
+    || fail 'failed automatic build unexpectedly reported success'
+  [[ ! -s "$stdout_capture" ]] \
+    || fail 'jsonl mode leaked failed-build output onto stdout'
+  grep -Fq "$marker" "$stderr_capture" \
+    || fail 'failed automatic build stdout was not redirected to stderr'
+  grep -Fq 'automatic profile image build failed' "$stderr_capture" \
+    || fail 'automatic build failure diagnostic did not reach stderr'
+
+  # Regression: text mode must keep showing build prose on stdout.
+  worktree="$test_root/jsonl-cold-build-text-worktree"
+  docker_log="$test_root/jsonl-cold-build.text.docker.log"
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+  : >"$host_node_log"
+  stdout_capture="$test_root/jsonl-cold-build.text.stdout"
+  stderr_capture="$test_root/jsonl-cold-build.text.stderr"
+  FAKE_PROFILE_BUILD_SUCCEEDS=1 \
+    FAKE_PROFILE_BUILD_PROGRESS_MARKER="$marker" \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage" \
+    >"$stdout_capture" 2>"$stderr_capture"
+  grep -Fq "$marker" "$stdout_capture" \
+    || fail 'text output format stopped showing automatic build progress on stdout'
+  printf 'Trellage host test: PASS: jsonl cold launch isolates automatic build output\n'
+}
+
+test_jsonl_cold_launch_isolates_compiler_bootstrap_output() {
+  local dist_dir="$prototype_dir/../../packages/trellage-cli/dist"
+  local stamp="$dist_dir/.source-hash"
+  local stamp_backup="$test_root/compiler-source-hash.backup"
+  local fake_npm_bin="$test_root/jsonl-fake-npm-bin"
+  local marker='FAKE_NPM_BUILD_MARKER_4a7d10'
+  local worktree="$test_root/jsonl-compiler-bootstrap-worktree"
+  local docker_log="$test_root/jsonl-compiler-bootstrap.docker.log"
+  local state_volume stdout_capture stderr_capture
+
+  [[ -f "$stamp" ]] || fail 'profile compiler source-hash stamp is missing'
+  cp "$stamp" "$stamp_backup"
+  mkdir -p "$fake_npm_bin" "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  cat >"$fake_npm_bin/npm" <<EOF
+#!/bin/sh
+set -eu
+printf '%s\n' '$marker'
+printf '%s\n' '$marker-stderr' >&2
+if [ "\$*" = 'run build' ]; then
+  cp '$stamp_backup' '$stamp'
+fi
+EOF
+  chmod +x "$fake_npm_bin/npm"
+
+  : >"$docker_log"
+  : >"$host_node_log"
+  printf 'stale-fingerprint\n' >"$stamp"
+  stdout_capture="$test_root/jsonl-compiler-bootstrap.jsonl.stdout"
+  stderr_capture="$test_root/jsonl-compiler-bootstrap.jsonl.stderr"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      env PATH="$fake_npm_bin:$fake_bin:$PATH" \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      -p 'jsonl compiler bootstrap' \
+    >"$stdout_capture" 2>"$stderr_capture"
+  cp "$stamp_backup" "$stamp"
+  ! grep -Fq "$marker" "$stdout_capture" \
+    || fail 'jsonl mode leaked profile compiler bootstrap output onto the harness stream'
+  grep -Fq "$marker" "$stderr_capture" \
+    || fail 'jsonl mode dropped profile compiler bootstrap stdout instead of redirecting it to stderr'
+  grep -Fq "$marker-stderr" "$stderr_capture" \
+    || fail 'profile compiler bootstrap stderr output did not reach stderr'
+
+  : >"$docker_log"
+  : >"$host_node_log"
+  printf 'stale-fingerprint\n' >"$stamp"
+  stdout_capture="$test_root/jsonl-compiler-bootstrap.text.stdout"
+  stderr_capture="$test_root/jsonl-compiler-bootstrap.text.stderr"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      env PATH="$fake_npm_bin:$fake_bin:$PATH" "$prototype_dir/trellage" \
+    >"$stdout_capture" 2>"$stderr_capture"
+  cp "$stamp_backup" "$stamp"
+  grep -Fq "$marker" "$stdout_capture" \
+    || fail 'text output format stopped showing profile compiler bootstrap output on stdout'
+  printf 'Trellage host test: PASS: jsonl cold launch isolates compiler bootstrap output\n'
+}
+
+test_jsonl_launch_isolates_github_cli_auth_output() {
+  local marker='FAKE_DOCKER_GH_AUTH_MARKER_5c33e1'
+  local worktree docker_log state_volume stdout_capture stderr_capture
+
+  worktree="$test_root/jsonl-gh-auth-worktree"
+  docker_log="$test_root/jsonl-gh-auth.docker.log"
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+  stdout_capture="$test_root/jsonl-gh-auth.stdout"
+  stderr_capture="$test_root/jsonl-gh-auth.stderr"
+  FAKE_DOCKER_GH_AUTH_MARKER="$marker" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      -p 'jsonl gh auth' \
+    >"$stdout_capture" 2>"$stderr_capture"
+  grep -Fq 'gh auth login --hostname "$GH_HOST" --with-token' "$docker_log" \
+    || fail 'jsonl launch did not configure ephemeral GitHub CLI authentication'
+  ! grep -Fq "$marker" "$stdout_capture" \
+    || fail 'jsonl mode leaked GitHub CLI authentication output onto the harness stream'
+  grep -Fq "$marker" "$stderr_capture" \
+    || fail 'jsonl mode dropped GitHub CLI authentication stdout instead of redirecting it to stderr'
+  grep -Fq "$marker-stderr" "$stderr_capture" \
+    || fail 'GitHub CLI authentication stderr output did not reach stderr'
+
+  worktree="$test_root/jsonl-gh-auth-text-worktree"
+  docker_log="$test_root/jsonl-gh-auth.text.docker.log"
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  : >"$docker_log"
+  stdout_capture="$test_root/jsonl-gh-auth.text.stdout"
+  stderr_capture="$test_root/jsonl-gh-auth.text.stderr"
+  FAKE_DOCKER_GH_AUTH_MARKER="$marker" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers \
+    >"$stdout_capture" 2>"$stderr_capture"
+  grep -Fq "$marker" "$stdout_capture" \
+    || fail 'text output format stopped showing GitHub CLI authentication output on stdout'
+  printf 'Trellage host test: PASS: jsonl launch isolates GitHub CLI authentication output\n'
+}
+
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only() {
   local worktree="$test_root/stale-runtime-worktree"
   local docker_log="$test_root/stale-runtime.docker.log"
@@ -4340,5 +4539,8 @@ test_varlock_secrets_reach_only_final_codex_exec
 test_global_varlock_bootstrap_supplies_claude_browser_token
 test_stale_image_label_triggers_automatic_build
 test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build
+test_jsonl_cold_launch_isolates_automatic_build_output
+test_jsonl_cold_launch_isolates_compiler_bootstrap_output
+test_jsonl_launch_isolates_github_cli_auth_output
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
 test_rebuild_replaces_container_and_preserves_profile_state
