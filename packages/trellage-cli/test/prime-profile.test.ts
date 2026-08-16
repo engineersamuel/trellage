@@ -125,6 +125,23 @@ describe("authored Prime Agent profile", () => {
       prime_provider: "copilot-proxy-rs",
       prime_model: "claude-opus-5",
       prime_base_url: "http://copilot-proxy-rs:8080",
+      headless: {
+        schemaVersion: 1,
+        prompt: false,
+        outputFormats: ["text"],
+        eventContract: null,
+        trellageEventContract: null,
+        sessionId: "none",
+        resume: false,
+        resumeWithPrompt: false,
+        questionToolControl: "none",
+        changedFiles: "none",
+        usage: false,
+        cost: false,
+        modelOverride: false,
+        effortOverride: false,
+        testedHarnessVersion: null,
+      },
       resolved_version: expect.stringMatching(/^\d+\.\d+\.\d+$/),
     })
     expect(JSON.stringify(metadata)).not.toMatch(

@@ -32,6 +32,31 @@ default_metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH
   "$prototype_dir/../../profiles/codex-superpowers/profile.toml")"
 default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
 runtime_hash="$(jq -er '.runtime_hash' <<<"$default_metadata")"
+default_profile_path_raw="$prototype_dir/../../profiles/codex-superpowers/profile.toml"
+default_profile_path="$(cd "$prototype_dir/../../profiles/codex-superpowers" && pwd -P)/profile.toml"
+default_test_metadata="$test_root/default-test-metadata.json"
+default_headless="$(jq -cn '{
+  schemaVersion: 1,
+  prompt: true,
+  outputFormats: ["text"],
+  eventContract: null,
+  trellageEventContract: null,
+  sessionId: "native",
+  resume: true,
+  resumeWithPrompt: false,
+  questionToolControl: "none",
+  changedFiles: "none",
+  usage: false,
+  cost: false,
+  modelOverride: true,
+  effortOverride: false,
+  testedHarnessVersion: "0.147.0"
+}')"
+jq --argjson headless "$default_headless" '.headless = $headless' \
+  <<<"$default_metadata" >"$default_test_metadata"
+export FAKE_DEFAULT_PROFILE_PATH="$default_profile_path"
+export FAKE_DEFAULT_PROFILE_PATH_RAW="$default_profile_path_raw"
+export FAKE_DEFAULT_PROFILE_METADATA="$default_test_metadata"
 export FAKE_DOCKER_DEFAULT_PROFILE_HASH="$default_profile_hash"
 export FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash"
 export FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash"
@@ -56,6 +81,17 @@ printf '%s\n' \
   'fi' \
   'if [[ "${2:-}" == metadata && -n "${FAKE_PROFILE_METADATA:-}" ]]; then' \
   '  exec cat "$FAKE_PROFILE_METADATA"' \
+  'fi' \
+  'if [[ "${2:-}" == metadata && -n "${FAKE_DEFAULT_PROFILE_METADATA:-}"' \
+  '  && ( "${@: -1}" == "${FAKE_DEFAULT_PROFILE_PATH:-}"' \
+  '    || "${@: -1}" == "${FAKE_DEFAULT_PROFILE_PATH_RAW:-}"' \
+  '    || "${@: -1}" == codex-superpowers' \
+  '    || "$#" -eq 2 ) ]]; then' \
+  '  exec cat "$FAKE_DEFAULT_PROFILE_METADATA"' \
+  'fi' \
+  'if [[ "${2:-}" == metadata && -n "${FAKE_HEADLESS_OVERRIDE:-}" ]]; then' \
+  '  "$FAKE_REAL_NODE" "$@" | jq --argjson headless "$FAKE_HEADLESS_OVERRIDE" ".headless = \$headless"' \
+  '  exit "${PIPESTATUS[0]}"' \
   'fi' \
   'if [[ "${2:-}" == build && -n "${FAKE_PROFILE_BUILD_PROGRESS_MARKER:-}" ]]; then' \
   '  printf '\''%s\n'\'' "$FAKE_PROFILE_BUILD_PROGRESS_MARKER"' \
@@ -98,6 +134,7 @@ export FAKE_NODE_LOG="$host_node_log"
 export FAKE_REAL_NODE="$real_node"
 copilot_fake_bin="$test_root/copilot-fake-bin"
 copilot_metadata="$test_root/copilot-metadata.json"
+claude_metadata="$test_root/claude-metadata.json"
 pi_metadata="$test_root/pi-metadata.json"
 prime_metadata="$test_root/prime-metadata.json"
 copilot_profile="$test_root/copilot-profile.toml"
@@ -139,6 +176,7 @@ ln -s "$copilot_fake_bin/node" "$no_gh_bin/node"
 jq -n \
   --arg profile "$copilot_profile" \
   --arg runtime_hash "$runtime_hash" \
+  --argjson headless "$default_headless" \
   '{
     profile_path: $profile,
     profile_name: "copilot-hve-test",
@@ -160,11 +198,13 @@ jq -n \
     default_network: "bridge",
     auth_policy: "host-or-login",
     resolved_version: "1.0.75",
-    tmpfs_size: "256m"
+    tmpfs_size: "256m",
+    headless: $headless
   }' >"$copilot_metadata"
 jq -n \
   --arg profile "$copilot_profile" \
   --arg runtime_hash "$runtime_hash" \
+  --argjson headless "$default_headless" \
   '{
     profile_path: $profile,
     profile_name: "pi-oh-my-pi-test",
@@ -185,11 +225,13 @@ jq -n \
     runtime_entry: "trellage-pi-entry",
     default_network: "bridge",
     auth_policy: "host-or-login",
-    resolved_version: "17.2.6"
+    resolved_version: "17.2.6",
+    headless: $headless
   }' >"$pi_metadata"
 jq -n \
   --arg profile "$copilot_profile" \
   --arg runtime_hash "$runtime_hash" \
+  --argjson headless "$default_headless" \
   '{
     profile_path: $profile,
     profile_name: "prime-agent-test",
@@ -214,8 +256,42 @@ jq -n \
     tmpfs_size: "256m",
     prime_provider: "copilot-proxy-rs",
     prime_model: "claude-opus-5",
-    prime_base_url: "http://copilot-proxy-rs:8080"
+    prime_base_url: "http://copilot-proxy-rs:8080",
+    headless: $headless
   }' >"$prime_metadata"
+claude_headless="$(jq -cn '{
+  schemaVersion: 1,
+  prompt: true,
+  outputFormats: ["text", "jsonl"],
+  eventContract: "claude-stream-json-v1",
+  trellageEventContract: "trellage-headless-v1",
+  sessionId: "native",
+  resume: true,
+  resumeWithPrompt: true,
+  questionToolControl: "hard-deny",
+  changedFiles: "git-diff",
+  usage: true,
+  cost: true,
+  modelOverride: true,
+  effortOverride: false,
+  testedHarnessVersion: "2.1.229"
+}')"
+jq --argjson headless "$claude_headless" '
+  .profile_name = "claude-headless-test"
+  | .harness_args = []
+  | .harness_kind = "claude"
+  | .harness_executable = "claude"
+  | .runtime_entry = "trellage-claude-entry"
+  | .default_network = "copilot-proxy-rs_default"
+  | .auth_policy = "proxy"
+  | .resolved_version = "2.1.229"
+  | .claude_mode = "core"
+  | .claude_gateway = "http://copilot-proxy-rs:8080"
+  | .claude_opus_model = "claude-opus-5"
+  | .claude_sonnet_model = "claude-sonnet-5"
+  | .claude_haiku_model = "claude-haiku-4.5"
+  | .headless = $headless
+' "$copilot_metadata" >"$claude_metadata"
 : >"$copilot_node_log"
 : >"$copilot_gh_log"
 
@@ -707,6 +783,7 @@ test_adopts_legacy_arm64_state_without_platform_labels() {
 test_resume_uses_native_thread_without_prompt_replay() {
   local worktree="$test_root/literal-prompt-worktree"
   local docker_log="$test_root/literal-prompt.docker.log"
+  local output status
   mkdir -p "$worktree"
   : >"$docker_log"
 
@@ -732,17 +809,16 @@ test_resume_uses_native_thread_without_prompt_replay() {
     || fail 'exact resume did not delegate native thread selection to runtime helper'
 
   : >"$docker_log"
+  status=0
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" resume "$resume_session_id" -p 'continuation text'
-  assert_arg "$docker_log" TRELLAGE_RESUME_SESSION_ID
-  assert_arg "$docker_log" TRELLAGE_RESUME_PROFILE
-  grep -Fqx $'ARG\tset prompt $argv[-1]; set -e argv[-1]; exec trellage-codex-entry resume-prompt codex $argv -- $prompt' "$docker_log" \
-    || fail 'resume with prompt did not dispatch to resume-prompt entry'
-  [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tcontinuation text' ]] \
-    || fail 'continuation prompt was not passed as the last harness exec argument'
-  assert_prompt_is_detached "$docker_log"
+  output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" resume "$resume_session_id" -p 'continuation text' 2>&1)" \
+    || status=$?
+  [[ "$status" -ne 0 ]] || fail 'unsupported Codex resume with prompt succeeded'
+  grep -Fqx 'trellage: profile codex-superpowers does not support non-interactive resume with prompt' \
+    <<<"$output" || fail 'unsupported Codex resume with prompt diagnostic differs'
+  assert_no_mutation "$docker_log"
 
   : >"$docker_log"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
@@ -918,6 +994,11 @@ unsupported output format: invalid|--output-format=invalid
 --output-format is not supported for compiler commands|lock --output-format jsonl
 --output-format is not supported for compiler commands|upgrade --output-format=jsonl
 --output-format is not supported for compiler commands|ci-verify --output-format jsonl
+--trellage-events requires --output-format jsonl|--trellage-events -p hello
+--trellage-events may be specified only once|--output-format jsonl --trellage-events --trellage-events
+--trellage-events does not accept a value|--output-format jsonl --trellage-events=true
+--trellage-events is not supported for compiler commands|build --trellage-events
+--trellage-events is not supported for compiler commands|validate --trellage-events=true
 --model is not supported for compiler commands|build --model gpt-5.5
 --model is not supported for compiler commands|validate --model=gpt-5.5
 resume with --prompt requires a session ID|resume -p hello
@@ -943,33 +1024,41 @@ test_output_format_contract() {
   local worktree="$test_root/output-format-worktree"
   local docker_log="$test_root/output-format.docker.log"
   local resume_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
-  local state_volume
+  local codex_state_volume state_volume
   mkdir -p "$worktree"
-  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
+  codex_state_volume="$(resource_names "$worktree" | tail -n 1)"
 
   : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl
   assert_docker_env "$docker_log" 'TRELLAGE_OUTPUT_FORMAT'
   assert_prompt_is_detached "$docker_log"
 
   : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl -p 'jsonl prompt'
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl -p 'jsonl prompt'
   assert_docker_env "$docker_log" 'TRELLAGE_OUTPUT_FORMAT'
   assert_prompt_is_detached "$docker_log"
   [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\tjsonl prompt' ]] \
     || fail 'jsonl prompt was not passed as one literal argument'
 
   : >"$docker_log"
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" resume "$resume_session_id" --output-format jsonl -p 'jsonl resume prompt'
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile claude-headless-test \
+      resume "$resume_session_id" --output-format jsonl -p 'jsonl resume prompt'
   assert_docker_env "$docker_log" 'TRELLAGE_OUTPUT_FORMAT'
   assert_arg "$docker_log" TRELLAGE_RESUME_SESSION_ID
   assert_arg "$docker_log" TRELLAGE_RESUME_PROFILE
@@ -978,7 +1067,7 @@ test_output_format_contract() {
     || fail 'jsonl resume prompt was not passed as one literal argument'
 
   : >"$docker_log"
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$codex_state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     run_tty "$worktree" "$docker_log" "$worktree" \
       "$prototype_dir/trellage" --profile codex-superpowers --output-format text
@@ -986,6 +1075,227 @@ test_output_format_contract() {
     || fail 'text output format forwarded TRELLAGE_OUTPUT_FORMAT'
 
   printf 'Trellage host test: PASS: output format contract\n'
+}
+
+test_trellage_event_bridge_contract() {
+  local worktree="$test_root/trellage-event-worktree"
+  local docker_log="$test_root/trellage-event.docker.log"
+  local stdout_file="$test_root/trellage-event.stdout"
+  local stderr_file="$test_root/trellage-event.stderr"
+  local native_stdout="$test_root/trellage-event-native.stdout"
+  local native_stderr="$test_root/trellage-event-native.stderr"
+  local session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+  local state_volume status output_line_count
+  local output_line_1 output_line_2 output_line_3 output_line_4 output_line_5
+  local init_line assistant_line result_line
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
+
+  init_line='{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d"}'
+  assistant_line='{"type":"assistant","message":{"model":"claude-sonnet-5","content":[{"type":"text","text":"DONE"}]}}'
+  result_line='{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"DONE","usage":{"input_tokens":11,"output_tokens":7},"total_cost_usd":0.25}'
+  printf '%s\n%s\n%s\n' "$init_line" "$assistant_line" "$result_line" >"$native_stdout"
+  printf 'native-stderr-marker\n' >"$native_stderr"
+  : >"$docker_log"
+  : >"$host_node_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env FAKE_DOCKER_AGENT_STDOUT_FILE="$native_stdout" \
+      FAKE_DOCKER_AGENT_STDERR_FILE="$native_stderr" \
+      "$prototype_dir/trellage" --profile claude-headless-test \
+      resume "$session_id" --output-format jsonl --trellage-events -p 'resume event prompt' \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -eq 0 ]] \
+    || fail "successful Trellage event launch returned $status: $(cat "$stderr_file")"
+
+  output_line_count="$(wc -l <"$stdout_file" | tr -d '[:space:]')"
+  output_line_1="$(sed -n '1p' "$stdout_file")"
+  output_line_2="$(sed -n '2p' "$stdout_file")"
+  output_line_3="$(sed -n '3p' "$stdout_file")"
+  output_line_4="$(sed -n '4p' "$stdout_file")"
+  output_line_5="$(sed -n '5p' "$stdout_file")"
+  [[ "$output_line_count" -eq 5 ]] \
+    || fail 'successful Trellage event launch did not emit three native and two metadata events'
+  [[ "$output_line_1" == "$init_line" && "$output_line_3" == "$assistant_line" \
+    && "$output_line_4" == "$result_line" ]] \
+    || fail 'Trellage event bridge changed or reordered native JSONL lines'
+  jq -e --arg session_id "$session_id" '
+    .type == "trellage.session"
+    and .schemaVersion == 1
+    and .profile == "claude-headless-test"
+    and .harness == "claude"
+    and .runtime == "claude"
+    and .eventContract == "claude-stream-json-v1"
+    and .sessionId == $session_id
+    and .expectedSessionId == $session_id
+    and .expectedSessionIdMatches == true
+  ' <<<"$output_line_2" >/dev/null \
+    || fail "successful Trellage session event differs: $output_line_2"
+  jq -e --arg session_id "$session_id" '
+    .type == "trellage.result"
+    and .outcome == "success"
+    and .sessionId == $session_id
+    and .sessionIdConsistent == true
+    and .expectedSessionIdMatches == true
+    and .finalText == "DONE"
+    and .model == "claude-sonnet-5"
+    and .usage.input_tokens == 11
+    and .usage.output_tokens == 7
+    and .costUsd == 0.25
+    and .changedFiles == []
+    and .changedFilesSource == "git-diff"
+    and .exitCode == 0
+    and .signal == null
+  ' <<<"$output_line_5" >/dev/null \
+    || fail "successful Trellage result event differs: $output_line_5"
+  grep -Fqx 'native-stderr-marker' "$stderr_file" \
+    || fail 'native stderr did not remain on stderr with Trellage events enabled'
+  ! grep -Fq 'native-stderr-marker' "$stdout_file" \
+    || fail 'native stderr entered the JSONL stream'
+  grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'successful Trellage event launch skipped automatic cleanup'
+
+  init_line='{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d"}'
+  result_line='{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","error":"native failure"}'
+  printf '%s\n%s\n' "$init_line" "$result_line" >"$native_stdout"
+  : >"$docker_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env FAKE_DOCKER_AGENT_STDOUT_FILE="$native_stdout" \
+      FAKE_DOCKER_AGENT_EXEC_EXIT=37 \
+      "$prototype_dir/trellage" --profile claude-headless-test \
+      --output-format jsonl --trellage-events -p 'failure event prompt' \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -eq 37 ]] || fail 'Trellage event bridge changed a failing harness exit status'
+
+  output_line_count="$(wc -l <"$stdout_file" | tr -d '[:space:]')"
+  output_line_1="$(sed -n '1p' "$stdout_file")"
+  output_line_2="$(sed -n '2p' "$stdout_file")"
+  output_line_3="$(sed -n '3p' "$stdout_file")"
+  output_line_4="$(sed -n '4p' "$stdout_file")"
+  [[ "$output_line_count" -eq 4 ]] \
+    || fail 'failing Trellage event launch did not emit two native and two metadata events'
+  [[ "$output_line_1" == "$init_line" && "$output_line_3" == "$result_line" ]] \
+    || fail 'failing Trellage event launch changed native JSONL lines'
+  jq -e '
+    .type == "trellage.result"
+    and .outcome == "failure"
+    and .nativeResultSubtype == "error_during_execution"
+    and .nativeIsError == true
+    and .nativeError == "native failure"
+    and .exitCode == 37
+    and .signal == null
+  ' <<<"$output_line_4" >/dev/null \
+    || fail "failing Trellage result event differs: $output_line_4"
+  grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'failing Trellage event launch skipped automatic cleanup'
+
+  printf 'Trellage host test: PASS: optional Trellage event bridge\n'
+}
+
+test_headless_capabilities_precede_mutation() {
+  local worktree="$test_root/headless-capability-worktree"
+  local docker_log="$test_root/headless-capability.docker.log"
+  local stderr_file="$test_root/headless-capability.stderr"
+  local stdout_file="$test_root/headless-capability.stdout"
+  local invalid_metadata="$test_root/invalid-headless-metadata.json"
+  local no_prompt_metadata="$test_root/no-headless-prompt-metadata.json"
+  local no_resume_metadata="$test_root/no-headless-resume-metadata.json"
+  local no_session_id_metadata="$test_root/no-headless-session-id-metadata.json"
+  local unsupported_events_metadata="$test_root/unsupported-trellage-events-metadata.json"
+  local resume_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+  local state_volume status
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" | tail -n 1)"
+
+  : >"$docker_log"
+  : >"$stdout_file"
+  : >"$stderr_file"
+  status=0
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile codex-superpowers \
+      --output-format jsonl -p rejected >"$stdout_file" 2>"$stderr_file" \
+    || status=$?
+  [[ "$status" -ne 0 ]] || fail 'unsupported Codex JSONL launch succeeded'
+  [[ ! -s "$stdout_file" ]] || fail 'unsupported JSONL rejection wrote to stdout'
+  grep -Fqx 'trellage: profile codex-superpowers does not support JSONL output' "$stderr_file" \
+    || fail 'unsupported JSONL diagnostic differs'
+  assert_no_mutation "$docker_log"
+
+  jq '.headless.prompt = false' "$copilot_metadata" >"$no_prompt_metadata"
+  : >"$docker_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$no_prompt_metadata" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile copilot-hve -p rejected \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'unsupported non-interactive prompt succeeded'
+  grep -Fqx 'trellage: profile copilot-hve-test does not support non-interactive prompts' \
+    "$stderr_file" || fail 'unsupported prompt diagnostic differs'
+  assert_no_mutation "$docker_log"
+
+  jq '.headless.resume = false | .headless.resumeWithPrompt = false' \
+    "$copilot_metadata" >"$no_resume_metadata"
+  : >"$docker_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$no_resume_metadata" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile copilot-hve resume \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'unsupported resume succeeded'
+  grep -Fqx 'trellage: profile copilot-hve-test does not support resume' "$stderr_file" \
+    || fail 'unsupported resume diagnostic differs'
+  assert_no_mutation "$docker_log"
+
+  jq '.headless.sessionId = "none"' "$copilot_metadata" >"$no_session_id_metadata"
+  : >"$docker_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$no_session_id_metadata" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile copilot-hve resume "$resume_session_id" \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'unsupported exact-session resume succeeded'
+  grep -Fqx 'trellage: profile copilot-hve-test does not expose resumable session IDs' \
+    "$stderr_file" || fail 'unsupported session ID diagnostic differs'
+  assert_no_mutation "$docker_log"
+
+  jq 'del(.headless.cost)' "$copilot_metadata" >"$invalid_metadata"
+  : >"$docker_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$invalid_metadata" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile copilot-hve -p rejected \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'invalid headless metadata was accepted'
+  grep -Fqx 'trellage: profile metadata has invalid headless capabilities' "$stderr_file" \
+    || fail 'invalid headless metadata diagnostic differs'
+  assert_no_mutation "$docker_log"
+
+  jq '.headless.trellageEventContract = null | .headless.changedFiles = "none"' \
+    "$claude_metadata" >"$unsupported_events_metadata"
+  : >"$docker_log"
+  status=0
+  FAKE_HARNESS_METADATA_OVERRIDE="$unsupported_events_metadata" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile claude-headless-test \
+      --output-format jsonl --trellage-events -p rejected \
+      >"$stdout_file" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'unsupported Trellage metadata events succeeded'
+  grep -Fqx 'trellage: profile claude-headless-test does not support Trellage metadata events' \
+    "$stderr_file" || fail 'unsupported Trellage metadata event diagnostic differs'
+  assert_no_mutation "$docker_log"
+
+  printf 'Trellage host test: PASS: headless capabilities reject before mutation\n'
 }
 
 test_stopped_and_collision_behavior() {
@@ -2339,7 +2649,8 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=secret-test \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
-      env DOCS_TOKEN='prompt-secret-value' TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
+      env FAKE_HEADLESS_OVERRIDE="$default_headless" \
+      DOCS_TOKEN='prompt-secret-value' TRELLAGE_IMAGE='test/image:locked' TRELLAGE_NETWORK='test_proxy_net' \
       "$prototype_dir/trellage" --profile "$profile" -p 'secret prompt'
   awk '
     $0 == "CALL" { secret = first = second = ""; next }
@@ -2516,19 +2827,21 @@ test_jsonl_cold_launch_isolates_automatic_build_output() {
   worktree="$test_root/jsonl-cold-build-success-worktree"
   docker_log="$test_root/jsonl-cold-build.success.docker.log"
   mkdir -p "$worktree"
-  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
   : >"$docker_log"
   : >"$host_node_log"
   stdout_capture="$test_root/jsonl-cold-build.success.stdout"
   stderr_capture="$test_root/jsonl-cold-build.success.stderr"
   FAKE_PROFILE_BUILD_SUCCEEDS=1 \
     FAKE_PROFILE_BUILD_PROGRESS_MARKER="$marker" \
+    FAKE_PROFILE_METADATA="$claude_metadata" \
     FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
     FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=absent \
+    FAKE_DOCKER_CONTAINER_STATE=absent FAKE_DOCKER_PROFILE=claude-headless-test \
+    FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       env TRELLAGE_NETWORK='test_proxy_net' \
-      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl \
       -p 'jsonl cold build' \
     >"$stdout_capture" 2>"$stderr_capture"
   grep -Fqx $'ARG\tbuild' "$host_node_log" \
@@ -2547,7 +2860,7 @@ test_jsonl_cold_launch_isolates_automatic_build_output() {
   worktree="$test_root/jsonl-cold-build-failure-worktree"
   docker_log="$test_root/jsonl-cold-build.failure.docker.log"
   mkdir -p "$worktree"
-  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
   : >"$docker_log"
   : >"$host_node_log"
   stdout_capture="$test_root/jsonl-cold-build.failure.stdout"
@@ -2555,12 +2868,14 @@ test_jsonl_cold_launch_isolates_automatic_build_output() {
   status=0
   FAKE_PROFILE_BUILD_ALWAYS_FAILS=1 \
     FAKE_PROFILE_BUILD_PROGRESS_MARKER="$marker" \
+    FAKE_PROFILE_METADATA="$claude_metadata" \
     FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
     FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=absent \
+    FAKE_DOCKER_CONTAINER_STATE=absent FAKE_DOCKER_PROFILE=claude-headless-test \
+    FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       env TRELLAGE_NETWORK='test_proxy_net' \
-      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl \
       -p 'jsonl cold build failure' \
     >"$stdout_capture" 2>"$stderr_capture" || status=$?
   [[ "$status" -ne 0 ]] \
@@ -2602,12 +2917,15 @@ test_jsonl_cold_launch_isolates_compiler_bootstrap_output() {
   local marker='FAKE_NPM_BUILD_MARKER_4a7d10'
   local worktree="$test_root/jsonl-compiler-bootstrap-worktree"
   local docker_log="$test_root/jsonl-compiler-bootstrap.docker.log"
-  local state_volume stdout_capture stderr_capture
+  local state_volume text_state_volume stdout_capture stderr_capture profile_hash runtime_hash
 
   [[ -f "$stamp" ]] || fail 'profile compiler source-hash stamp is missing'
   cp "$stamp" "$stamp_backup"
   mkdir -p "$fake_npm_bin" "$worktree"
-  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
+  text_state_volume="$(resource_names "$worktree" | tail -n 1)"
+  profile_hash="$(jq -r '.profile_hash' "$claude_metadata")"
+  runtime_hash="$(jq -r '.runtime_hash' "$claude_metadata")"
   cat >"$fake_npm_bin/npm" <<EOF
 #!/bin/sh
 set -eu
@@ -2624,11 +2942,17 @@ EOF
   printf 'stale-fingerprint\n' >"$stamp"
   stdout_capture="$test_root/jsonl-compiler-bootstrap.jsonl.stdout"
   stderr_capture="$test_root/jsonl-compiler-bootstrap.jsonl.stderr"
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+  FAKE_PROFILE_METADATA="$claude_metadata" \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash" \
+    FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash" \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=claude-headless-test \
+    FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       env PATH="$fake_npm_bin:$fake_bin:$PATH" \
-      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl \
       -p 'jsonl compiler bootstrap' \
     >"$stdout_capture" 2>"$stderr_capture"
   cp "$stamp_backup" "$stamp"
@@ -2644,7 +2968,7 @@ EOF
   printf 'stale-fingerprint\n' >"$stamp"
   stdout_capture="$test_root/jsonl-compiler-bootstrap.text.stdout"
   stderr_capture="$test_root/jsonl-compiler-bootstrap.text.stderr"
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$text_state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     run_tty "$worktree" "$docker_log" "$worktree" \
       env PATH="$fake_npm_bin:$fake_bin:$PATH" "$prototype_dir/trellage" \
@@ -2657,20 +2981,28 @@ EOF
 
 test_jsonl_launch_isolates_github_cli_auth_output() {
   local marker='FAKE_DOCKER_GH_AUTH_MARKER_5c33e1'
-  local worktree docker_log state_volume stdout_capture stderr_capture
+  local worktree docker_log state_volume stdout_capture stderr_capture profile_hash runtime_hash
 
   worktree="$test_root/jsonl-gh-auth-worktree"
   docker_log="$test_root/jsonl-gh-auth.docker.log"
   mkdir -p "$worktree"
-  state_volume="$(resource_names "$worktree" | tail -n 1)"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
+  profile_hash="$(jq -r '.profile_hash' "$claude_metadata")"
+  runtime_hash="$(jq -r '.runtime_hash' "$claude_metadata")"
   : >"$docker_log"
   stdout_capture="$test_root/jsonl-gh-auth.stdout"
   stderr_capture="$test_root/jsonl-gh-auth.stderr"
   FAKE_DOCKER_GH_AUTH_MARKER="$marker" \
+    FAKE_PROFILE_METADATA="$claude_metadata" \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash" \
+    FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash" \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=claude-headless-test \
+    FAKE_DOCKER_PROTOTYPE=trellage-claude \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
-      "$prototype_dir/trellage" --profile codex-superpowers --output-format jsonl \
+      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl \
       -p 'jsonl gh auth' \
     >"$stdout_capture" 2>"$stderr_capture"
   grep -Fq 'gh auth login --hostname "$GH_HOST" --with-token' "$docker_log" \
@@ -3097,12 +3429,13 @@ test_interactive_profile_selection() {
   FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
     "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata "$profile" \
     | jq '.locked = true | .image = "test/image:locked"' >"$metadata"
-  jq -n --arg profile "$profile" '[
+  jq -n --arg profile "$profile" --argjson headless "$default_headless" '[
     {
       value: $profile,
       name: "cap",
       description: ("Interactive\u0001 " + ("x" * 1200)),
       harness: { kind: "codex", version: "v", model: "g" },
+      headless: $headless,
       skills: [{ repository: "skills", ref: "v1", select: ["s1", "s2"] }],
       plugins: [{
         adapter: "test",
@@ -3131,6 +3464,7 @@ test_interactive_profile_selection() {
         and .skills == ["s1", "s2"]
         and .mcps == ["m1"]
         and .details == "Declared profile metadata; launch checks remain authoritative."
+        and .modelOverrideSupported
         and ([.label,.description,.details,.plugins[],.skills[],.mcps[]] | all(test("[[:cntrl:]]") | not)))
   ' "$picker_input" >/dev/null \
     || fail 'interactive choice omitted concise label, description, or declared details'
@@ -3590,7 +3924,8 @@ test_claude_model_override_routes_only_opus() {
   [[ "$status" -ne 0 ]] || fail 'duplicate --model arguments succeeded'
   grep -Fqx 'trellage: --model may be specified only once' <<<"$output" \
     || fail 'duplicate --model arguments had the wrong diagnostic'
-  jq '.profile_name = "claude-qwen-local"' "$claude_variant" >"$claude_variant.qwen"
+  jq '.profile_name = "claude-qwen-local" | .headless.modelOverride = false' \
+    "$claude_variant" >"$claude_variant.qwen"
   status=0
   output="$(FAKE_HARNESS_METADATA_OVERRIDE="$claude_variant.qwen" \
     run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
@@ -4098,7 +4433,7 @@ assert_github_auth_scrubbed_from_child_log() {
 test_codex_scrubs_github_auth_before_children() {
   local worktree="$test_root/codex-auth-scrub"
   local docker_log="$test_root/codex-auth-scrub.docker.log"
-  local output state_volume
+  local output state_volume status
   local selected='codex-copilot-canary'
   local gh_alternate='codex-gh-canary'
   local github_alternate='codex-github-canary'
@@ -4122,13 +4457,16 @@ test_codex_scrubs_github_auth_before_children() {
 
   : >"$docker_log"
   : >"$host_node_log"
+  status=0
   output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     run_tty "$worktree" "$docker_log" "$worktree" \
       env "${poisoned_internal_auth_env[@]}" \
       COPILOT_GITHUB_TOKEN="$selected" GH_TOKEN="$gh_alternate" GITHUB_TOKEN="$github_alternate" \
       TRELLAGE_IMAGE='test/image:codex-auth-scrub' TRELLAGE_NETWORK='test_auth_scrub_net' \
-      "$prototype_dir/trellage" resume 2>&1)"
+      "$prototype_dir/trellage" resume 2>&1)" || status=$?
+  [[ "$status" -eq 0 ]] \
+    || fail "Codex resume failed with status $status: $output"
   assert_github_auth_scrubbed_from_child_log 'Codex resume metadata child' "$host_node_log"
   assert_github_auth_scrubbed_from_child_log 'Codex resume Docker child' "$docker_log"
   ! grep -Fq "$selected" <<<"$output" || fail 'Codex resume traced COPILOT_GITHUB_TOKEN'
@@ -4304,6 +4642,8 @@ if [[ "${TRELLAGE_HOST_PROMPT_ONLY:-}" == 1 ]]; then
   test_portable_prompt_is_detached_for_each_harness
   test_portable_prompt_parser_contract
   test_output_format_contract
+  test_trellage_event_bridge_contract
+  test_headless_capabilities_precede_mutation
   exit 0
 fi
 
@@ -4367,6 +4707,7 @@ fi
 
 if [[ "${TRELLAGE_HOST_VALIDATION_ONLY:-}" == 1 ]]; then
   test_validation_precedes_mutation
+  test_headless_capabilities_precede_mutation
   test_invalid_tmpfs_metadata_precedes_mutation
   test_false_tmpfs_metadata_precedes_mutation
   test_null_tmpfs_metadata_precedes_mutation
@@ -4469,6 +4810,13 @@ test_model_overrides_reach_each_runtime() {
   printf 'Trellage host test: PASS: every non-Qwen harness receives custom model overrides\n'
 }
 
+if [[ "${TRELLAGE_HOST_HEADLESS_ONLY:-}" == 1 ]]; then
+  test_output_format_contract
+  test_trellage_event_bridge_contract
+  test_headless_capabilities_precede_mutation
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_MODEL_ONLY:-}" == 1 ]]; then
   test_claude_model_override_routes_only_opus
   test_model_overrides_reach_each_runtime
@@ -4512,6 +4860,8 @@ test_portable_prompt_mode_is_noninteractive_and_literal
 test_portable_prompt_is_detached_for_each_harness
 test_portable_prompt_parser_contract
 test_output_format_contract
+test_trellage_event_bridge_contract
+test_headless_capabilities_precede_mutation
 test_stopped_and_collision_behavior
 test_stale_container_preserves_active_sessions
 test_volume_collision_and_mount_validation

@@ -104,6 +104,24 @@ describe("authored Claude Research profile", () => {
       claude_opus_model: "claude-opus-5",
       claude_sonnet_model: "claude-sonnet-5",
       claude_haiku_model: "claude-haiku-4.5",
+      resolved_version: "2.1.233",
+      headless: {
+        schemaVersion: 1,
+        prompt: false,
+        outputFormats: ["text"],
+        eventContract: null,
+        trellageEventContract: null,
+        sessionId: "none",
+        resume: false,
+        resumeWithPrompt: false,
+        questionToolControl: "none",
+        changedFiles: "none",
+        usage: false,
+        cost: false,
+        modelOverride: false,
+        effortOverride: false,
+        testedHarnessVersion: "2.1.229",
+      },
     })
     expect(JSON.stringify(metadata)).not.toMatch(/TOKEN|API_KEY|secret value/i)
   })
@@ -417,6 +435,16 @@ describe("authored standalone Claude Qwen profile", () => {
       claude_opus_model: "qwen3.6-35b-a3b-local",
       claude_sonnet_model: "qwen3.6-35b-a3b-local",
       claude_haiku_model: "qwen3.6-35b-a3b-local",
+      resolved_version: "2.1.233",
+      headless: {
+        outputFormats: ["text"],
+        trellageEventContract: null,
+        changedFiles: "none",
+        modelOverride: false,
+        resumeWithPrompt: false,
+        eventContract: null,
+        testedHarnessVersion: "2.1.229",
+      },
     })
   })
 })

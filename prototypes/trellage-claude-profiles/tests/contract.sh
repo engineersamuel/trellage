@@ -33,7 +33,7 @@ cat >"$fake_bin/claude" <<'FAKE_CLAUDE'
 set -euo pipefail
 
 if [[ "${1-}" == --version ]]; then
-  printf '2.1.224 (Claude Code)\n'
+  printf '%s (Claude Code)\n' "${FAKE_CLAUDE_VERSION:-2.1.229}"
   exit 0
 fi
 
@@ -55,6 +55,15 @@ if [[ "${FAKE_CLAUDE_WAIT_FOR_SIGNAL-}" == 1 ]]; then
   trap 'printf "TERM\n" >>"$FAKE_CLAUDE_SIGNAL_LOG"; exit 143' TERM
   printf 'READY\n' >>"$FAKE_CLAUDE_SIGNAL_LOG"
   while :; do sleep 0.05; done
+fi
+
+if [[ -n "${FAKE_CLAUDE_STDOUT_FILE-}" ]]; then
+  [[ -f "$FAKE_CLAUDE_STDOUT_FILE" && ! -L "$FAKE_CLAUDE_STDOUT_FILE" ]] || exit 79
+  cat -- "$FAKE_CLAUDE_STDOUT_FILE"
+fi
+if [[ -n "${FAKE_CLAUDE_STDERR_FILE-}" ]]; then
+  [[ -f "$FAKE_CLAUDE_STDERR_FILE" && ! -L "$FAKE_CLAUDE_STDERR_FILE" ]] || exit 79
+  cat -- "$FAKE_CLAUDE_STDERR_FILE" >&2
 fi
 
 exit "${FAKE_CLAUDE_EXIT_STATUS:-0}"
@@ -121,7 +130,69 @@ jq -e '
   and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "anthropics/claude-code"
+  and .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": true,
+    "outputFormats": ["text", "jsonl"],
+    "eventContract": "claude-stream-json-v1",
+    "trellageEventContract": null,
+    "sessionId": "native",
+    "resume": true,
+    "resumeWithPrompt": true,
+    "questionToolControl": "hard-deny",
+    "changedFiles": "none",
+    "usage": true,
+    "cost": true,
+    "modelOverride": true,
+    "effortOverride": false,
+    "testedHarnessVersion": "2.1.229"
+  }
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
+
+FAKE_CLAUDE_VERSION=2.1.230 "$command_path" list --json >"$fixture_root/list-drift.json" \
+  || fail 'drifted JSON list failed'
+jq -e '
+  .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+' "$fixture_root/list-drift.json" >/dev/null || fail 'drifted JSON list differs'
+
+cp "$runtime_root/catalog.json" "$fixture_root/catalog.saved" || fail 'could not save catalog'
+jq '.profiles.default.headless.questionToolControl = "invalid"' \
+  "$runtime_root/catalog.json" >"$fixture_root/catalog.invalid" \
+  || fail 'could not create invalid catalog'
+mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
+if "$command_path" list --json >"$fixture_root/invalid-list.out" 2>"$fixture_root/invalid-list.err"; then
+  fail 'list accepted invalid headless catalog'
+fi
+grep -Fq 'cldx: invalid catalog:' "$fixture_root/invalid-list.err" \
+  || fail 'invalid headless catalog diagnostic differs'
+jq '.profiles.default.headless.trellageEventContract = "unsupported-trellage-events-v1"' \
+  "$fixture_root/catalog.saved" >"$fixture_root/catalog.invalid" \
+  || fail 'could not create invalid Trellage event contract'
+mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
+if "$command_path" list --json \
+  >"$fixture_root/invalid-trellage-event-list.out" \
+  2>"$fixture_root/invalid-trellage-event-list.err"; then
+  fail 'list accepted unsupported Trellage event contract'
+fi
+grep -Fq 'cldx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
+  || fail 'unsupported Trellage event contract diagnostic differs'
+mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
 "$command_path" default -p 'self-heal-before-setup-probe' \
   >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
@@ -138,7 +209,7 @@ rm -rf "$profile_root"
 [[ -d "$profile_home" && ! -L "$profile_home" ]] || fail 'profile home is unsafe'
 jq -e '
   .hasCompletedOnboarding == true
-  and .lastOnboardingVersion == "2.1.224"
+  and .lastOnboardingVersion == "2.1.229"
   and .shiftEnterKeyBindingInstalled == true
   and .theme == "dark"
 ' "$profile_home/.claude.json" >/dev/null || fail 'setup onboarding state differs'
@@ -181,6 +252,73 @@ jq -s -e '
   .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-sonnet-5", "-p", "override"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model override was changed'
 
+headless_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
+headless_initial_stream="$fixture_root/headless-initial.jsonl"
+printf '%s\n' \
+  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-opus-5"}' \
+  '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_JSONL_OK","usage":{"input_tokens":9,"output_tokens":4},"total_cost_usd":0.01}' \
+  >"$headless_initial_stream"
+FAKE_CLAUDE_STDOUT_FILE="$headless_initial_stream" \
+  "$command_path" --output-format stream-json --verbose -p 'machine output' \
+  >"$fixture_root/headless-initial.out" 2>"$fixture_root/headless-initial.err" \
+  || fail 'Claude JSONL launch failed'
+cmp -s "$headless_initial_stream" "$fixture_root/headless-initial.out" \
+  || fail 'Claude JSONL launch changed native stdout'
+[[ ! -s "$fixture_root/headless-initial.err" ]] \
+  || fail 'Claude JSONL launch wrote unexpected stderr'
+jq -se --arg session "$headless_session_id" '
+  length == 2
+  and all(.[]; type == "object")
+  and .[0].type == "system"
+  and .[0].subtype == "init"
+  and .[0].session_id == $session
+  and .[1].type == "result"
+  and .[1].subtype == "success"
+  and .[1].is_error == false
+  and .[1].session_id == $session
+  and .[1].result == "CLDX_JSONL_OK"
+  and (.[1].usage | type == "object")
+  and (.[1].total_cost_usd | type == "number")
+' "$fixture_root/headless-initial.out" >/dev/null \
+  || fail 'Claude JSONL evidence differs'
+jq -s -e '
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude JSONL argument vector differs'
+
+headless_resume_stream="$fixture_root/headless-resume.jsonl"
+printf '%s\n' \
+  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-opus-5"}' \
+  '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_RESUME_OK","usage":{"input_tokens":5,"output_tokens":3},"total_cost_usd":0.006}' \
+  >"$headless_resume_stream"
+FAKE_CLAUDE_STDOUT_FILE="$headless_resume_stream" \
+  "$command_path" --resume "$headless_session_id" \
+  --output-format stream-json --verbose -p 'resume output' \
+  >"$fixture_root/headless-resume.out" 2>"$fixture_root/headless-resume.err" \
+  || fail 'Claude resume-with-prompt launch failed'
+jq -se --arg session "$headless_session_id" '
+  all(.[]; type == "object")
+  and all(.[] | select(.session_id != null); .session_id == $session)
+  and .[-1].result == "CLDX_RESUME_OK"
+' "$fixture_root/headless-resume.out" >/dev/null \
+  || fail 'Claude resume-with-prompt session evidence differs'
+jq -s -e --arg session "$headless_session_id" '
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude resume-with-prompt argument vector differs'
+
+headless_malformed_stream="$fixture_root/headless-malformed.jsonl"
+printf '%s\n' \
+  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d"}' \
+  'not-json' >"$headless_malformed_stream"
+FAKE_CLAUDE_STDOUT_FILE="$headless_malformed_stream" \
+  "$command_path" --output-format stream-json --verbose -p malformed \
+  >"$fixture_root/headless-malformed.out" 2>"$fixture_root/headless-malformed.err" \
+  || fail 'Claude malformed-output fixture launch failed'
+cmp -s "$headless_malformed_stream" "$fixture_root/headless-malformed.out" \
+  || fail 'Claude malformed-output fixture changed native stdout'
+if jq -se 'all(.[]; type == "object")' "$fixture_root/headless-malformed.out" >/dev/null 2>&1; then
+  fail 'malformed Claude output passed JSONL validation'
+fi
+
 status=0
 FAKE_CLAUDE_EXIT_STATUS=37 "$command_path" -p exit-probe || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status"
@@ -203,7 +341,7 @@ grep -Fqx TERM "$FAKE_CLAUDE_SIGNAL_LOG" \
   || fail 'Claude process did not receive TERM'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'cldx doctor: OK (2.1.224, claude-opus-5)' "$fixture_root/doctor.out" \
+grep -Fq 'cldx doctor: OK (2.1.229, claude-opus-5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \

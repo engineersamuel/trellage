@@ -68,6 +68,23 @@ create_native_launcher() {
     {
       "name": "copilot",
       "description": "Native GitHub Copilot",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "prompt-only",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "17.2.12"
+      },
       "plugin": null,
       "source": null,
       "marketplace": null,
@@ -76,6 +93,23 @@ create_native_launcher() {
     {
       "name": "local",
       "description": "Local Qwen",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
       "plugin": null,
       "source": null,
       "marketplace": null,
@@ -95,6 +129,23 @@ EOF
     {
       "name": "${launcher}-p",
       "description": "$description",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "1.2.3"
+      },
       "plugin": "${launcher}-plug",
       "source": null,
       "marketplace": null,
@@ -203,7 +254,7 @@ jq -e '
   type == "object"
   and keys == ["profiles", "schemaVersion"]
   and .schemaVersion == 1
-  and ([.profiles[] | keys] | all(. == ["description", "harness", "herdrCompatibility", "launcher", "name", "sandbox"]))
+  and ([.profiles[] | keys] | all(. == ["description", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"]))
   and [.profiles[] | .launcher + "/" + .name] == [
     "cpx/cpx-p",
     "cdx/cdx-p",
@@ -238,6 +289,8 @@ jq -e '
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .herdrCompatibility) == { status: "verified" }
   and (.profiles[] | select(.launcher == "omp" and .name == "local") | .herdrCompatibility.status) == "known-issue"
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
+  and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
+  and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
   and all(.profiles[]; .description | type == "string" and length > 0)
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list shape or ordering differs'
@@ -530,6 +583,41 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/invalid.out" \
 [[ "$status" == 1 ]] || fail "invalid catalog exited $status instead of 1"
 assert_contains 'invalid catalog from cdx' "$fixture_root/invalid.out"
 mv "$fixture_root/cdx.catalog" "$runtime_parent/cdx/catalog.json"
+
+cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.headless.catalog"
+python3 - "$runtime_parent/cdx/catalog.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["profiles"][0]["headless"]["questionToolControl"] = "invalid"
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+status=0
+"$fixture_bin/trx" list --json >"$fixture_root/list-invalid-headless.out" \
+  2>"$fixture_root/list-invalid-headless.err" || status=$?
+[[ "$status" == 1 ]] || fail "invalid headless catalog list exited $status instead of 1"
+assert_contains 'invalid catalog from cdx' "$fixture_root/list-invalid-headless.err"
+python3 - "$fixture_root/cdx.headless.catalog" "$runtime_parent/cdx/catalog.json" <<'PY'
+import json
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+data = json.loads(source.read_text())
+data["profiles"][0]["headless"]["trellageEventContract"] = "unsupported-trellage-events-v1"
+destination.write_text(json.dumps(data, indent=2) + "\n")
+PY
+status=0
+"$fixture_bin/trx" list --json >"$fixture_root/list-invalid-trellage-event.out" \
+  2>"$fixture_root/list-invalid-trellage-event.err" || status=$?
+[[ "$status" == 1 ]] \
+  || fail "unsupported Trellage event contract list exited $status instead of 1"
+assert_contains 'invalid catalog from cdx' "$fixture_root/list-invalid-trellage-event.err"
+mv "$fixture_root/cdx.headless.catalog" "$runtime_parent/cdx/catalog.json"
 
 rm "$fixture_bin/cpx"
 cp "$runtime_parent/cpx/bin/cpx" "$fixture_root/unrelated-cpx"

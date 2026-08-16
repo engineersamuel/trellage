@@ -22,8 +22,9 @@ import {
 } from "./application.js"
 import { environmentMetadata } from "./environment.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
+import { resolveSandboxHeadlessCapabilities } from "./headless-capabilities.js"
 import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
-import { resolveProfilesLocked } from "./profile-readiness.js"
+import { resolveProfilesReadiness } from "./profile-readiness.js"
 import { containerHerdrCompatibility, loadHerdrCompatibilityLedger } from "./herdr-compatibility.js"
 import { selectProfilePath } from "./selection.js"
 import { captureDockerTarget, type DockerTarget } from "./docker-target.js"
@@ -63,6 +64,7 @@ const update = Options.boolean("update")
 const locked = Options.boolean("locked")
 const json = Options.boolean("json").pipe(Options.withDefault(false))
 const jsonFull = Options.boolean("json-full").pipe(Options.withDefault(false))
+const full = Options.boolean("full").pipe(Options.withDefault(false))
 
 const currentGitWorktree = (cwd: string) =>
   Effect.tryPromise({
@@ -220,22 +222,30 @@ const upgrade = Command.make("upgrade", { profile: profileArgument }, ({ profile
       ),
 )
 
-const list = Command.make("list", { json, jsonFull }, ({ json: asJson, jsonFull: asJsonFull }) =>
+const list = Command.make("list", { json, jsonFull, full }, ({ json: asJson, jsonFull: asJsonFull, full: asFull }) =>
   Effect.gen(function* () {
     if (asJson && asJsonFull) {
       return yield* Effect.fail(
         new ApplicationError({ message: "list: --json and --json-full are mutually exclusive" }),
       )
     }
+    if (asFull && asJsonFull) {
+      return yield* Effect.fail(
+        new ApplicationError({ message: "list: --full and --json-full are mutually exclusive" }),
+      )
+    }
+    if (asFull && !asJson) {
+      return yield* Effect.fail(new ApplicationError({ message: "list: --full requires --json" }))
+    }
     const worktree = yield* currentGitWorktree(process.cwd())
     const choices = yield* discoverProfileChoices(profileDiscoveryRoots(worktree)).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
-    if (asJson) {
+    if (asJson && !asFull) {
       return yield* Console.log(JSON.stringify(toSimplifiedList(choices)))
     }
-    if (asJsonFull) {
-      const readiness = yield* resolveProfilesLocked(choices)
+    if (asJsonFull || asFull) {
+      const readiness = yield* resolveProfilesReadiness(choices)
       const ledger = yield* loadHerdrCompatibilityLedger(repositoryRoot)
       const herdrCompatibility = choices.map((choice) => containerHerdrCompatibility(ledger, choice.name))
       return yield* Console.log(JSON.stringify(toFullList(choices, readiness, herdrCompatibility)))
@@ -273,7 +283,12 @@ const environment = Command.make("environment", {}, () =>
 const choices = Command.make("choices", {}, () =>
   Effect.gen(function* () {
     const worktree = yield* currentGitWorktree(process.cwd())
-    const result = yield* discoverProfileChoices(profileDiscoveryRoots(worktree))
+    const profiles = yield* discoverProfileChoices(profileDiscoveryRoots(worktree))
+    const readiness = yield* resolveProfilesReadiness(profiles)
+    const result = profiles.map((profile, index) => ({
+      ...profile,
+      headless: resolveSandboxHeadlessCapabilities(profile.headlessRuntime, readiness[index]?.resolvedVersion ?? null),
+    }))
     yield* Console.log(JSON.stringify(result))
   }),
 )

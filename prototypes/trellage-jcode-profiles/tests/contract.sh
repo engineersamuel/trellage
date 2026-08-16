@@ -141,7 +141,46 @@ jq -e '
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "1jehuang/jcode"
   and .profiles[0].description == "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms."
+  and .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
+
+cp "$runtime_root/catalog.json" "$fixture_root/catalog.saved" || fail 'could not save catalog'
+jq '.profiles.default.headless.sessionId = "bogus"' "$runtime_root/catalog.json" \
+  >"$fixture_root/catalog.invalid" || fail 'could not create invalid catalog'
+mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
+if "$command_path" list --json >"$fixture_root/invalid-list.out" 2>"$fixture_root/invalid-list.err"; then
+  fail 'list accepted invalid headless catalog'
+fi
+grep -Fq 'jcx: invalid catalog:' "$fixture_root/invalid-list.err" \
+  || fail 'invalid headless catalog diagnostic differs'
+jq '.profiles.default.headless.trellageEventContract = "unsupported-trellage-events-v1"' \
+  "$fixture_root/catalog.saved" >"$fixture_root/catalog.invalid" \
+  || fail 'could not create invalid Trellage event contract'
+mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
+if "$command_path" list --json \
+  >"$fixture_root/invalid-trellage-event-list.out" \
+  2>"$fixture_root/invalid-trellage-event-list.err"; then
+  fail 'list accepted unsupported Trellage event contract'
+fi
+grep -Fq 'jcx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
+  || fail 'unsupported Trellage event contract diagnostic differs'
+mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
 "$command_path" run self-heal-before-setup-probe \
   >"$fixture_root/self-heal.out" 2>&1 \
@@ -177,6 +216,27 @@ grep -Fqx 'supports_reasoning_effort = true' "$profile_home/config.toml" \
   || fail 'managed config contains credential-shaped data'
 jq -e '.launch_count == 6' "$profile_home/setup_hints.json" >/dev/null \
   || fail 'setup did not skip first-run onboarding'
+
+"$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
+jq -e '
+  .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list differs'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
 grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' "$fixture_root/doctor.out" \

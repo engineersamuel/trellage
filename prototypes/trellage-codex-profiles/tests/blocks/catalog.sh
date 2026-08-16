@@ -82,6 +82,8 @@ mutate_catalog changed-manifest '.profiles.hve.manifestUrl = "https://example.co
 mutate_catalog changed-upstream-repository '.profiles.hve.upstreamRepository = "https://example.com/hve.git"'
 mutate_catalog changed-upstream-path '.profiles.hve.upstreamSkillsPath = ".github/other"'
 mutate_catalog changed-plugin '.profiles.hve.plugin = "other@hve-core"'
+mutate_catalog changed-headless-question '.profiles.hve.headless.questionToolControl = "invalid"'
+mutate_catalog changed-headless-tested-version '.profiles.hve.headless.testedHarnessVersion = 1'
 mutate_catalog wrong-type '.profiles.hve.plugin = 1'
 mutate_catalog extra-profile-field '.profiles.hve.untrusted = "value"'
 mutate_catalog changed-superpowers-source '.profiles.superpowers.marketplaceSource = "other/source"'
@@ -89,6 +91,7 @@ mutate_catalog changed-superpowers-kind '.profiles.superpowers.marketplaceKind =
 mutate_catalog changed-superpowers-name '.profiles.superpowers.marketplaceName = "other-marketplace"'
 mutate_catalog changed-superpowers-manifest '.profiles.superpowers.manifestUrl = "https://example.com/marketplace.json"'
 mutate_catalog changed-superpowers-plugin '.profiles.superpowers.plugin = "other@superpowers-marketplace"'
+mutate_catalog changed-superpowers-headless-output '.profiles.superpowers.headless.outputFormats = ["text", "xml"]'
 mutate_catalog extra-superpowers-field '.profiles.superpowers.untrusted = "value"'
 
 printf 'trellage Codex catalog contract: PASS\n'

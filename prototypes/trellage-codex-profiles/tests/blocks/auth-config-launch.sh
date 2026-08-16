@@ -58,6 +58,24 @@ jq -e '
   and .sandbox == true
   and [.profiles[].name] == ["hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
+  and .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+  and .profiles[1].headless == .profiles[0].headless
   and .profiles[0].plugin == "hve-core-all@hve-core"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
@@ -79,6 +97,29 @@ else
 fi
 
 write_fake_bin
+
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" "$fixture_launcher" list --json \
+  >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
+jq -e '
+  .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+  and .profiles[1].headless == .profiles[0].headless
+' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list output differs'
 
 profile_login_home="$fixture_root/home/.local/share/trellage/profiles/codex/hve/home"
 HOME="$fixture_root/home" CODEX_HOME="$profile_login_home" \

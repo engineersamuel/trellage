@@ -126,6 +126,7 @@ tools = { allow = ["search"], deny = ["delete"] }
       description: "Detailed profile",
       supported_platforms: [],
       harness: { kind: "codex", version: "0.144.6", model: "gpt-5.5" },
+      headlessRuntime: "codex",
       skills: [
         {
           repository: "https://github.com/example/skills.git",
@@ -158,6 +159,7 @@ tools = { allow = ["search"], deny = ["delete"] }
     expect(projectProfileChoice(document)).toMatchObject({
       name: "prime-agent",
       harness: { kind: "prime", version: "latest", model: "claude-opus-5" },
+      headlessRuntime: "prime",
     })
   })
   it.each([
@@ -168,6 +170,7 @@ tools = { allow = ["search"], deny = ["delete"] }
 
     expect(projectProfileChoice(document)).toMatchObject({
       harness: { kind, model: expectedModel },
+      headlessRuntime: kind,
     })
   })
 })

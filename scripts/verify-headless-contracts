@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf 'Usage: scripts/verify-headless-contracts [--live]\n' >&2
+}
+
+live_mode=0
+case "$#" in
+  0) ;;
+  1)
+    if [[ "$1" == --live ]]; then
+      live_mode=1
+    else
+      usage
+      exit 2
+    fi
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ledger="$repository_root/docs/headless-evidence.json"
+
+for command_name in bash jq node npm; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    printf 'verify-headless-contracts: required command not found: %s\n' "$command_name" >&2
+    exit 1
+  }
+done
+
+jq -e '
+  (keys | sort) == [
+    "capabilitySchemaVersion",
+    "contracts",
+    "requiredDeterministicCases",
+    "schemaVersion"
+  ]
+  and .schemaVersion == 1
+  and .capabilitySchemaVersion == 1
+  and (.requiredDeterministicCases | type == "array" and length > 0 and length == (unique | length))
+  and (.contracts | type == "array" and length > 0)
+  and ([.contracts[].id] | length == (unique | length))
+  and all(.contracts[];
+    (keys | sort) == [
+      "capabilities",
+      "deterministicEvidence",
+      "id",
+      "liveEvidence",
+      "publication"
+    ]
+    and (.id | type == "string" and length > 0)
+    and (.deterministicEvidence | type == "array" and length > 0)
+    and (.liveEvidence.recorded == true)
+    and (.liveEvidence.source | type == "string" and length > 0)
+  )
+' "$ledger" >/dev/null || {
+  printf 'verify-headless-contracts: invalid evidence ledger: %s\n' "$ledger" >&2
+  exit 1
+}
+
+printf 'verify-headless-contracts: package capability and evidence cases\n'
+(
+  cd "$repository_root/packages/trellage-cli"
+  npm run build >/dev/null
+  npm test -- --run \
+    test/headless-capabilities.test.ts \
+    test/headless-publication.test.ts \
+    test/headless-event-bridge.test.ts \
+    test/git-evidence.test.ts
+)
+
+printf 'verify-headless-contracts: Sandbox runtime and host cases\n'
+bash "$repository_root/prototypes/trellage/tests/claude_entry_contract.sh"
+TRELLAGE_HOST_HEADLESS_ONLY=1 bash "$repository_root/prototypes/trellage/tests/host_command_contract.sh"
+
+printf 'verify-headless-contracts: Native adapter and router cases\n'
+bash "$repository_root/prototypes/trellage-copilot-profiles/tests/contract.sh"
+bash "$repository_root/prototypes/trellage-claude-profiles/tests/contract.sh"
+bash "$repository_root/prototypes/trellage-omp-profiles/tests/contract.sh"
+bash "$repository_root/prototypes/trellage-router/tests/contract.sh"
+
+if [[ "$live_mode" -eq 1 ]]; then
+  "$repository_root/scripts/verify-headless-live-contracts"
+else
+  printf 'verify-headless-contracts: live probes not run\n'
+fi
+
+printf 'verify-headless-contracts: PASS\n'

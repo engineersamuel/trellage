@@ -47,6 +47,73 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+extract_semver() {
+  sed -nE 's/.*(^|[^0-9])([0-9]+\.[0-9]+\.[0-9]+)([^0-9]|$).*/\2/p' | head -n 1
+}
+
+copilot_version_if_available() {
+  local executable output version
+
+  executable="$(command -v copilot 2>/dev/null || :)"
+  [[ "$executable" == */* && -x "$executable" ]] || return 0
+  output="$("$executable" --version 2>/dev/null || :)"
+  version="$(printf '%s\n' "$output" | extract_semver)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  printf '%s\n' "$version"
+}
+
+conservative_headless() {
+  local question_tool_control="${1-none}"
+
+  jq -cn \
+    --arg questionToolControl "$question_tool_control" '
+    {
+      schemaVersion: 1,
+      prompt: false,
+      outputFormats: ["text"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "none",
+      resume: false,
+      resumeWithPrompt: false,
+      questionToolControl: $questionToolControl,
+      changedFiles: "none",
+      usage: false,
+      cost: false,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null
+    }
+  '
+}
+
+projected_headless() {
+  local profile="$1"
+  local current_version expected_version
+
+  current_version="$(copilot_version_if_available)"
+  expected_version="$(jq -r --arg profile "$profile" \
+    '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
+  if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
+    conservative_headless
+    return
+  fi
+  jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+}
+
+projected_headless_map_json() {
+  jq -cn \
+    --argjson awesome "$(projected_headless awesome)" \
+    --argjson hve "$(projected_headless hve)" \
+    --argjson superpowers "$(projected_headless superpowers)" '
+    {
+      awesome: $awesome,
+      hve: $hve,
+      superpowers: $superpowers
+    }
+  '
+}
+
 validate_catalog() {
   [[ -f "$catalog" ]] || die "catalog not found: $catalog"
   jq -se '
@@ -56,6 +123,23 @@ validate_catalog() {
       "profiles": {
         "awesome": {
           "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": true,
+            "outputFormats": ["text", "json"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "hard-deny",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": true,
+            "effortOverride": false,
+            "testedHarnessVersion": "1.0.80"
+          },
           "marketplace": "github/awesome-copilot",
           "marketplaceName": "awesome-copilot",
           "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
@@ -64,6 +148,23 @@ validate_catalog() {
         },
         "hve": {
           "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": true,
+            "outputFormats": ["text", "json"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "hard-deny",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": true,
+            "effortOverride": false,
+            "testedHarnessVersion": "1.0.80"
+          },
           "marketplace": "microsoft/hve-core",
           "marketplaceName": "hve-core",
           "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
@@ -72,6 +173,23 @@ validate_catalog() {
         },
         "superpowers": {
           "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": true,
+            "outputFormats": ["text", "json"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "hard-deny",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": true,
+            "effortOverride": false,
+            "testedHarnessVersion": "1.0.80"
+          },
           "marketplace": "obra/superpowers-marketplace",
           "marketplaceName": "superpowers-marketplace",
           "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
@@ -491,7 +609,10 @@ list_profiles() {
 }
 
 list_profiles_json() {
-  jq -S '
+  local headless_map
+
+  headless_map="$(projected_headless_map_json)"
+  jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
       launcher: "cpx",
@@ -507,6 +628,7 @@ list_profiles_json() {
         | {
             name: .key,
             description: .value.description,
+            headless: $headless[.key],
             plugin: .value.plugin,
             source: null,
             marketplace: {

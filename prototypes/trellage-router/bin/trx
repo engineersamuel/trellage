@@ -131,6 +131,52 @@ read_catalog() {
   fi
 
   jq -e --arg launcher "$launcher" --arg harness "$harness" '
+    def validHeadless:
+      type == "object"
+      and keys == [
+        "changedFiles",
+        "cost",
+        "effortOverride",
+        "eventContract",
+        "modelOverride",
+        "outputFormats",
+        "prompt",
+        "questionToolControl",
+        "resume",
+        "resumeWithPrompt",
+        "schemaVersion",
+        "sessionId",
+        "testedHarnessVersion",
+        "trellageEventContract",
+        "usage"
+      ]
+      and .schemaVersion == 1
+      and (.prompt | type == "boolean")
+      and (.outputFormats
+        | type == "array"
+        and length == (unique | length)
+        and all(.[]; . == "text" or . == "json" or . == "jsonl"))
+      and (.eventContract == null
+        or (.eventContract | type == "string" and length > 0))
+      and (.trellageEventContract == null
+        or .trellageEventContract == "trellage-headless-v1")
+      and (.sessionId == "native"
+        or .sessionId == "trellage"
+        or .sessionId == "none")
+      and (.resume | type == "boolean")
+      and (.resumeWithPrompt | type == "boolean")
+      and (.questionToolControl == "hard-deny"
+        or .questionToolControl == "prompt-only"
+        or .questionToolControl == "none")
+      and (.changedFiles == "native"
+        or .changedFiles == "git-diff"
+        or .changedFiles == "none")
+      and (.usage | type == "boolean")
+      and (.cost | type == "boolean")
+      and (.modelOverride | type == "boolean")
+      and (.effortOverride | type == "boolean")
+      and (.testedHarnessVersion == null
+        or (.testedHarnessVersion | type == "string" and length > 0));
     type == "object"
     and keys == ["harness", "launcher", "profiles", "sandbox", "schemaVersion"]
     and .schemaVersion == 1
@@ -145,6 +191,7 @@ read_catalog() {
         | type == "string"
         and length > 0
         and (test("[\u0000-\u001f\u007f-\u009f]") | not))
+      and (.headless | validHeadless)
       and (.plugin == null or
         (.plugin
           | type == "string"
@@ -273,6 +320,7 @@ build_profile_list() {
         harness: $catalog.harness,
         name,
         description,
+        headless,
         sandbox: $catalog.sandbox,
         herdrCompatibility: herdrCompatibility($catalog.launcher; .name)
       };

@@ -135,6 +135,7 @@ if [[ "$compiler_mode" == true ]]; then
       -i|--interactive|--interactive=*) fail '-i and --interactive have been removed; run trellage with no arguments' ;;
       --model|--model=*) fail '--model is not supported for compiler commands' ;;
       --output-format|--output-format=*) fail '--output-format is not supported for compiler commands' ;;
+      --trellage-events|--trellage-events=*) fail '--trellage-events is not supported for compiler commands' ;;
     esac
   done
 fi
@@ -144,6 +145,7 @@ auth_mode_argument=
 model_argument=
 output_format=text
 output_format_set=false
+trellage_events=false
 prompt_argument=
 prompt_argument_set=false
 interactive=false
@@ -208,6 +210,14 @@ if [[ "$compiler_mode" == false ]]; then
         esac
         shift
         ;;
+      --trellage-events)
+        [[ "$trellage_events" == false ]] || fail '--trellage-events may be specified only once'
+        trellage_events=true
+        shift
+        ;;
+      --trellage-events=*)
+        fail '--trellage-events does not accept a value'
+        ;;
       -p|--prompt)
         [[ "$prompt_argument_set" == false ]] || fail '--prompt may be specified only once'
         [[ $# -ge 2 && -n "$2" ]] || fail '--prompt requires a non-empty value'
@@ -264,6 +274,9 @@ if [[ "$compiler_mode" == false ]]; then
   fi
 fi
 
+if [[ "$trellage_events" == true && "$output_format" != jsonl ]]; then
+  fail '--trellage-events requires --output-format jsonl'
+fi
 case "$auth_mode_argument" in
   ''|proxy|native|api-key) ;;
   *) fail "unsupported --auth-mode: $auth_mode_argument" ;;
@@ -291,6 +304,7 @@ dependency_bootstrap="$prototype_dir/../../scripts/bootstrap-development-depende
 [[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
 compiler="$compiler_package_dir/dist/cli.js"
+headless_event_bridge="$compiler_package_dir/dist/headless-event-bridge.js"
 compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
 compiler_stamp="$compiler_package_dir/dist/.source-hash"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
@@ -417,12 +431,12 @@ if [[ "$interactive" == true ]]; then
         details: "Declared profile metadata; launch checks remain authoritative.",
         defaultModel: .value.harness.model,
         models: (
-          if .value.harness.kind == "claude" and .value.name != "claude-qwen-local" then
+          if .value.harness.kind == "claude" and .value.headless.modelOverride then
             ([.value.harness.model, "claude-opus-5", "gpt-5.6-sol", "gpt-5.6-terra"] | map(select(. != null)) | unique)
           elif .value.harness.model then [.value.harness.model]
           else [] end
         ),
-        modelOverrideSupported: (.value.name != "claude-qwen-local")
+        modelOverrideSupported: .value.headless.modelOverride
       })
     }
   ' <<<"$profile_choices")" || fail 'profile choices are invalid'
@@ -540,9 +554,6 @@ if [[ "$harness_kind" != claude ]]; then
 fi
 claude_auth_mode="${auth_mode_argument:-proxy}"
 profile_name="$(jq -er '.profile_name' <<<"$profile_metadata")" || fail 'profile metadata has no name'
-if [[ "$profile_name" == claude-qwen-local && -n "$model_argument" ]]; then
-  fail '--model is not supported for claude-qwen-local'
-fi
 profile_hash="$(jq -er '.profile_hash' <<<"$profile_metadata")" || fail 'profile metadata has no hash'
 runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile metadata has no runtime hash'
 [[ "$profile_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid profile hash'
@@ -572,6 +583,92 @@ tmpfs_size="$(jq -r 'if has("tmpfs_size") then .tmpfs_size else "256m" end' <<<"
   || fail 'profile metadata has no tmpfs size'
 [[ "$tmpfs_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
   || fail 'profile metadata has an invalid tmpfs size'
+headless_metadata="$(jq -ce '
+  .headless as $headless
+  | select(
+    ($headless | type) == "object"
+    and ($headless | keys) == [
+    "changedFiles",
+    "cost",
+    "effortOverride",
+    "eventContract",
+    "modelOverride",
+    "outputFormats",
+    "prompt",
+    "questionToolControl",
+    "resume",
+    "resumeWithPrompt",
+    "schemaVersion",
+    "sessionId",
+    "testedHarnessVersion",
+    "trellageEventContract",
+    "usage"
+    ]
+    and $headless.schemaVersion == 1
+    and ($headless.prompt | type == "boolean")
+    and ($headless.outputFormats
+    | type == "array"
+    and length == (unique | length)
+    and all(.[]; . == "text" or . == "json" or . == "jsonl"))
+    and ($headless.eventContract == null
+      or ($headless.eventContract | type == "string" and length > 0))
+    and ($headless.trellageEventContract == null
+      or ($headless.trellageEventContract | type == "string" and length > 0))
+    and ($headless.sessionId == "native"
+      or $headless.sessionId == "trellage"
+      or $headless.sessionId == "none")
+    and ($headless.resume | type == "boolean")
+    and ($headless.resumeWithPrompt | type == "boolean")
+    and ($headless.questionToolControl == "hard-deny"
+      or $headless.questionToolControl == "prompt-only"
+      or $headless.questionToolControl == "none")
+    and ($headless.changedFiles == "native"
+      or $headless.changedFiles == "git-diff"
+      or $headless.changedFiles == "none")
+    and ($headless.usage | type == "boolean")
+    and ($headless.cost | type == "boolean")
+    and ($headless.modelOverride | type == "boolean")
+    and ($headless.effortOverride | type == "boolean")
+    and ($headless.testedHarnessVersion == null
+      or ($headless.testedHarnessVersion | type == "string" and length > 0))
+  )
+  | $headless
+' <<<"$profile_metadata")" \
+  || fail 'profile metadata has invalid headless capabilities'
+headless_event_contract="$(jq -r '.eventContract // empty' <<<"$headless_metadata")"
+trellage_event_contract="$(jq -r '.trellageEventContract // empty' <<<"$headless_metadata")"
+if ! jq -e --arg format "$output_format" \
+  '.outputFormats | index($format) != null' <<<"$headless_metadata" >/dev/null; then
+  if [[ "$output_format" == jsonl ]]; then
+    fail "profile $profile_name does not support JSONL output"
+  fi
+  fail "profile $profile_name does not support $output_format output"
+fi
+if [[ "$trellage_events" == true ]]; then
+  [[ "$trellage_event_contract" == trellage-headless-v1 \
+    && "$headless_event_contract" == claude-stream-json-v1 ]] \
+    || fail "profile $profile_name does not support Trellage metadata events"
+fi
+if [[ -n "$model_argument" ]] \
+  && ! jq -e '.modelOverride == true' <<<"$headless_metadata" >/dev/null; then
+  fail "--model is not supported for $profile_name"
+fi
+if [[ "$mode" == prompt ]] \
+  && ! jq -e '.prompt == true' <<<"$headless_metadata" >/dev/null; then
+  fail "profile $profile_name does not support non-interactive prompts"
+fi
+if [[ "$mode" == resume ]]; then
+  if [[ "$prompt_argument_set" == true ]]; then
+    jq -e '.resumeWithPrompt == true' <<<"$headless_metadata" >/dev/null \
+      || fail "profile $profile_name does not support non-interactive resume with prompt"
+  fi
+  jq -e '.resume == true' <<<"$headless_metadata" >/dev/null \
+    || fail "profile $profile_name does not support resume"
+  if [[ -n "$resume_session_id" ]]; then
+    jq -e '.sessionId != "none"' <<<"$headless_metadata" >/dev/null \
+      || fail "profile $profile_name does not expose resumable session IDs"
+  fi
+fi
 claude_mode=
 claude_gateway=
 claude_opus_model=
@@ -996,6 +1093,33 @@ run_supervised_attachment() {
     status="$lifecycle_signal_status"
   fi
   exit "$status"
+}
+
+run_agent_attachment() {
+  local -a bridge_args child_command
+  if [[ "$trellage_events" != true ]]; then
+    "$@"
+    return
+  fi
+  [[ -f "$headless_event_bridge" ]] \
+    || fail "Trellage event bridge is unavailable: $headless_event_bridge"
+  child_command=("$@")
+  if [[ "${child_command[0]:-}" == command ]]; then
+    child_command=("${child_command[@]:1}")
+  fi
+  [[ "${#child_command[@]}" -gt 0 ]] || fail 'Trellage event bridge has no child command'
+  bridge_args=(
+    node "$headless_event_bridge"
+    --event-contract "$headless_event_contract"
+    --profile "$profile_name"
+    --harness "$harness_kind"
+    --runtime "$harness_kind"
+    --git-root "$worktree"
+  )
+  if [[ -n "$resume_session_id" ]]; then
+    bridge_args+=(--expected-session-id "$resume_session_id")
+  fi
+  "${bridge_args[@]}" -- "${child_command[@]}"
 }
 
 prototype_label='dev.trellage.prototype'
@@ -1857,7 +1981,7 @@ case "$mode" in
     elif [[ "$harness_kind" == claude ]]; then
       prepare_claude_auth
     fi
-    HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+    HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -1877,7 +2001,7 @@ case "$mode" in
       prepare_claude_auth
     fi
     if [[ "$prompt_argument_set" == true ]]; then
-      HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+      HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
         ${github_cli_args[@]+"${github_cli_args[@]}"} \
         ${secret_args[@]+"${secret_args[@]}"} \
         ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -1889,7 +2013,7 @@ case "$mode" in
         "$container_id" \
         "$runtime_shell" "${runtime_shell_args[@]}" "$resume_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
     elif [[ "$output_format" == jsonl ]]; then
-      HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+      HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
         ${github_cli_args[@]+"${github_cli_args[@]}"} \
         ${secret_args[@]+"${secret_args[@]}"} \
         ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -1901,7 +2025,7 @@ case "$mode" in
         "$container_id" \
         "$runtime_shell" "${runtime_shell_args[@]}" "$resume_command" -- ${harness_args[@]+"${harness_args[@]}"}
     else
-      HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+      HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
         "${terminal_args[@]}" \
         ${github_cli_args[@]+"${github_cli_args[@]}"} \
         ${secret_args[@]+"${secret_args[@]}"} \
@@ -1939,7 +2063,7 @@ if (( $# > 0 )); then
   elif [[ "$harness_kind" == claude ]]; then
     prepare_claude_auth
   fi
-  HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+  HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
     ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
@@ -1960,7 +2084,7 @@ if [[ "$has_initial_prompt" == true ]]; then
   elif [[ "$harness_kind" == claude ]]; then
     prepare_claude_auth
   fi
-  HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+  HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
     ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
@@ -1980,7 +2104,7 @@ if [[ "$harness_kind" == copilot || "$harness_kind" == pi ]]; then
 elif [[ "$harness_kind" == claude ]]; then
   prepare_claude_auth
 fi
-HERDR_AGENT="$herdr_agent" run_supervised_attachment "${codex_exec_prefix[@]}" \
+HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
   ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
   ${github_cli_args[@]+"${github_cli_args[@]}"} \
   ${secret_args[@]+"${secret_args[@]}"} \

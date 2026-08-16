@@ -81,6 +81,7 @@ vi.mock("../src/profile-discovery.js", async (importOriginal) => {
           value: "/profiles/alpha/profile.toml",
           supported_platforms: ["linux/arm64"],
           harness: { kind: "codex", version: "latest" },
+          headlessRuntime: "codex",
           skills: [],
           plugins: [],
           mcps: [],
@@ -91,6 +92,7 @@ vi.mock("../src/profile-discovery.js", async (importOriginal) => {
           value: "/profiles/beta/profile.toml",
           supported_platforms: [],
           harness: { kind: "claude", version: "latest", model: "claude-opus-5" },
+          headlessRuntime: "claude-hyperresearch",
           skills: [],
           plugins: [],
           mcps: [],
@@ -101,6 +103,7 @@ vi.mock("../src/profile-discovery.js", async (importOriginal) => {
           value: "/profiles/gamma/profile.toml",
           supported_platforms: ["linux/amd64"],
           harness: { kind: "copilot", version: "latest" },
+          headlessRuntime: "copilot",
           skills: [],
           plugins: [],
           mcps: [],
@@ -209,6 +212,7 @@ describe("CLI identity and failure reporting", () => {
     expect.soft(cliSource).toContain('Command.make("list"')
     expect.soft(cliSource).toContain('Options.boolean("json")')
     expect.soft(cliSource).toContain('Options.boolean("json-full")')
+    expect.soft(cliSource).toContain('Options.boolean("full")')
     expect.soft(cliSource).toContain('name: "Trellage profile compiler"')
     expect.soft(cliSource).toContain("process.env.TRELLAGE_PROFILE")
     expect.soft(cliSource).not.toContain("process.env.HARNESS_PROFILE")
@@ -252,17 +256,21 @@ describe("CLI identity and failure reporting", () => {
     })
 
     const full = await runList(["--json-full"])
+    const fullAlias = await runList(["--json", "--full"])
     const parsed = JSON.parse(full.logs.join("\n")) as {
       schemaVersion: number
       profiles: Array<{
         name: string
         path: string
         supportedPlatforms: string[]
+        headless: { schemaVersion: number; testedHarnessVersion: string | null }
         locked: boolean
         herdrCompatibility: { status: string }
       }>
     }
     expect(parsed.schemaVersion).toBe(1)
+    expect(fullAlias.exitCode ?? 0).toBe(0)
+    expect(fullAlias.logs.join("\n")).toBe(full.logs.join("\n"))
     expect(parsed.profiles.map((p) => p.name)).toEqual(["alpha", "beta", "gamma"])
     expect(parsed.profiles[0]).toMatchObject({
       path: "/profiles/alpha/profile.toml",
@@ -274,11 +282,14 @@ describe("CLI identity and failure reporting", () => {
     // None of these fixture names appear in docs/herdr-compatibility.json,
     // so the ledger lookup must default to "untested" rather than failing.
     expect(parsed.profiles.every((p) => p.herdrCompatibility.status === "untested")).toBe(true)
+    expect(parsed.profiles.every((p) => p.headless.schemaVersion === 1)).toBe(true)
+    expect(parsed.profiles[1]?.headless.testedHarnessVersion).toBe("2.1.229")
   })
 
-  it("rejects combining --json and --json-full", async () => {
-    const result = await runList(["--json", "--json-full"])
-    expect(result.exitCode).toBe(1)
+  it("rejects invalid full-list flag combinations", async () => {
+    await expect(runList(["--json", "--json-full"])).resolves.toMatchObject({ exitCode: 1 })
+    await expect(runList(["--full"])).resolves.toMatchObject({ exitCode: 1 })
+    await expect(runList(["--json-full", "--full"])).resolves.toMatchObject({ exitCode: 1 })
   })
 
   it("upgrades every discovered profile and reports failure after continuing", async () => {

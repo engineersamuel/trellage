@@ -87,6 +87,25 @@ omp -p "Reply exactly OMP_LOCAL_OK"
 omp copilot -p "Reply exactly OMP_COPILOT_OK"
 ```
 
+Use `--headless-policy no-user-input` for one non-interactive launch that must
+fail if OMP tries to ask the user. Trellage writes one temporary one-shot
+overlay with only:
+
+```yaml
+ask:
+  enabled: false
+```
+
+The launcher passes that file through OMP `--config`, removes it on exit or
+signal, and leaves the managed profile configuration unchanged. For exact OMP
+`17.2.12`, only the `copilot` profile publishes
+`headless.questionToolControl = "prompt-only"` with the live-proved prompt/text
+contract. The `local` profile stays fully conservative, including
+`headless.questionToolControl = "none"`, until it has its own live smoke.
+Other versions stay discoverable in `omp list --json`, but they fall back to
+conservative `headless` values and `--headless-policy no-user-input` fails
+closed.
+
 Tool approval is set to `yolo` in both managed configuration and every launch
 argument vector. The agents can use all host access available to the OMP process.
 

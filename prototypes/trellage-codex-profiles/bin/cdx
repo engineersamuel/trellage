@@ -70,6 +70,81 @@ usage() {
     '  PROFILE [CODEX_ARGS...]'
 }
 
+extract_semver() {
+  sed -nE 's/.*(^|[^0-9])([0-9]+\.[0-9]+\.[0-9]+)([^0-9]|$).*/\2/p' | head -n 1
+}
+
+codex_version_if_available() {
+  local candidate output version
+
+  candidate="$(command -v codex 2>/dev/null || :)"
+  case "$candidate" in
+    /*) ;;
+    */*)
+      candidate="$(CDPATH= cd -- "$(dirname "$candidate")" >/dev/null 2>&1 && pwd -P)/$(basename "$candidate")" || return 0
+      ;;
+    *) return 0 ;;
+  esac
+  [[ -f "$candidate" && -x "$candidate" ]] || return 0
+  if [ "$candidate" -ef "$0" ]; then
+    return 0
+  fi
+  output="$("$candidate" --version 2>/dev/null || :)"
+  version="$(printf '%s\n' "$output" | extract_semver)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  printf '%s\n' "$version"
+}
+
+conservative_headless() {
+  local question_tool_control="${1-none}"
+
+  jq -cn \
+    --arg questionToolControl "$question_tool_control" '
+    {
+      schemaVersion: 1,
+      prompt: false,
+      outputFormats: ["text"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "none",
+      resume: false,
+      resumeWithPrompt: false,
+      questionToolControl: $questionToolControl,
+      changedFiles: "none",
+      usage: false,
+      cost: false,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null
+    }
+  '
+}
+
+projected_headless() {
+  local profile="$1"
+  local current_version expected_version
+
+  current_version="$(codex_version_if_available)"
+  expected_version="$(jq -r --arg profile "$profile" \
+    '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
+  if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
+    conservative_headless
+    return
+  fi
+  jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+}
+
+projected_headless_map_json() {
+  jq -cn \
+    --argjson hve "$(projected_headless hve)" \
+    --argjson superpowers "$(projected_headless superpowers)" '
+    {
+      hve: $hve,
+      superpowers: $superpowers
+    }
+  '
+}
+
 validate_catalog() {
   jq -se '
     length == 1
@@ -78,6 +153,23 @@ validate_catalog() {
       "profiles": {
         "hve": {
           "description": "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": false,
+            "outputFormats": ["text"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "none",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": false,
+            "effortOverride": false,
+            "testedHarnessVersion": null
+          },
           "marketplaceKind": "local-adapter",
           "marketplaceSource": "marketplaces/hve-core",
           "marketplaceName": "hve-core",
@@ -89,6 +181,23 @@ validate_catalog() {
         },
         "superpowers": {
           "description": "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": false,
+            "outputFormats": ["text"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "none",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": false,
+            "effortOverride": false,
+            "testedHarnessVersion": null
+          },
           "marketplaceKind": "git",
           "marketplaceSource": "obra/superpowers-marketplace",
           "marketplaceName": "superpowers-marketplace",
@@ -111,7 +220,10 @@ list_profiles() {
 }
 
 list_profiles_json() {
-  jq -S '
+  local headless_map
+
+  headless_map="$(projected_headless_map_json)"
+  jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
       launcher: "cdx",
@@ -127,6 +239,7 @@ list_profiles_json() {
         | {
             name: .key,
             description: .value.description,
+            headless: $headless[.key],
             plugin: .value.plugin,
             source: null,
             marketplace: {

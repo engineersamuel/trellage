@@ -3,6 +3,26 @@
   "profiles": {
     "default": {
       "description": "Claude Code using keyless copilot-proxy-rs with Claude Opus 5 by default.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "jsonl"
+        ],
+        "eventContract": "claude-stream-json-v1",
+        "trellageEventContract": null,
+        "sessionId": "native",
+        "resume": true,
+        "resumeWithPrompt": true,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": true,
+        "cost": true,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "2.1.229"
+      },
       "plugin": null,
       "standaloneMcps": []
     }
