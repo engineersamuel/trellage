@@ -9,7 +9,7 @@ adapter = "omp-native"
 repository = "https://github.com/can1357/oh-my-pi.git"
 ref = "main"
 select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
-commit = "ffd53ff92a6f575d499730475a73460dd7cc2eea"
+commit = "de6b7974a0658e1fae8fac584368a33021ae668f"
 integrity = "sha256:e869ee2d2aa924201efe98e2daab8f63ddc02ff0b777bdea39d536999eb85538"
 
 [[sources.files]]
