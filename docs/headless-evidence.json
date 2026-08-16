@@ -1,0 +1,472 @@
+{
+  "schemaVersion": 1,
+  "capabilitySchemaVersion": 1,
+  "requiredDeterministicCases": [
+    "nonTtyCompletion",
+    "machineOnlyStdout",
+    "authoritativeSessionId",
+    "resumeWithPrompt",
+    "malformedOutput",
+    "nonZeroExit",
+    "cancellationCleanup",
+    "questionToolControl",
+    "usageAndCost",
+    "changedFiles"
+  ],
+  "contracts": [
+    {
+      "id": "sandbox-claude-core-2.1.229",
+      "publication": {
+        "surface": "sandbox",
+        "adapter": "claude-core"
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "jsonl"
+        ],
+        "eventContract": "claude-stream-json-v1",
+        "trellageEventContract": "trellage-headless-v1",
+        "sessionId": "native",
+        "resume": true,
+        "resumeWithPrompt": true,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "git-diff",
+        "usage": true,
+        "cost": true,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "2.1.229"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "packages/trellage-cli/test/headless-capabilities.test.ts",
+          "cases": [
+            "versionGating",
+            "schema"
+          ]
+        },
+        {
+          "path": "packages/trellage-cli/test/headless-event-bridge.test.ts",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "malformedOutput",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "usageAndCost",
+            "changedFiles"
+          ]
+        },
+        {
+          "path": "packages/trellage-cli/test/git-evidence.test.ts",
+          "cases": [
+            "changedFiles"
+          ]
+        },
+        {
+          "path": "prototypes/trellage/tests/claude_entry_contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "questionToolControl"
+          ]
+        },
+        {
+          "path": "prototypes/trellage/tests/host_command_contract.sh",
+          "cases": [
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "changedFiles",
+            "versionGating"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Claude headless validation recorded before this publication gate",
+        "cases": [
+          "nonTtyCompletion",
+          "machineOnlyStdout",
+          "authoritativeSessionId",
+          "resumeWithPrompt",
+          "questionToolControl",
+          "usageAndCost"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-claude-marketplace-2.1.229",
+      "publication": {
+        "surface": "sandbox",
+        "adapter": "claude-marketplace"
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "jsonl"
+        ],
+        "eventContract": "claude-stream-json-v1",
+        "trellageEventContract": "trellage-headless-v1",
+        "sessionId": "native",
+        "resume": true,
+        "resumeWithPrompt": true,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "git-diff",
+        "usage": true,
+        "cost": true,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "2.1.229"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "packages/trellage-cli/test/headless-capabilities.test.ts",
+          "cases": [
+            "versionGating",
+            "schema"
+          ]
+        },
+        {
+          "path": "packages/trellage-cli/test/headless-event-bridge.test.ts",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "malformedOutput",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "usageAndCost",
+            "changedFiles"
+          ]
+        },
+        {
+          "path": "packages/trellage-cli/test/git-evidence.test.ts",
+          "cases": [
+            "changedFiles"
+          ]
+        },
+        {
+          "path": "prototypes/trellage/tests/claude_entry_contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "questionToolControl"
+          ]
+        },
+        {
+          "path": "prototypes/trellage/tests/host_command_contract.sh",
+          "cases": [
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "changedFiles",
+            "versionGating"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Claude headless validation recorded before this publication gate",
+        "cases": [
+          "nonTtyCompletion",
+          "machineOnlyStdout",
+          "authoritativeSessionId",
+          "resumeWithPrompt",
+          "questionToolControl",
+          "usageAndCost",
+          "modelOverride"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-claude-hyperresearch-2.1.229",
+      "publication": {
+        "surface": "sandbox",
+        "adapter": "claude-hyperresearch"
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "jsonl"
+        ],
+        "eventContract": "claude-stream-json-v1",
+        "trellageEventContract": "trellage-headless-v1",
+        "sessionId": "native",
+        "resume": true,
+        "resumeWithPrompt": true,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "git-diff",
+        "usage": true,
+        "cost": true,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "2.1.229"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "packages/trellage-cli/test/headless-capabilities.test.ts",
+          "cases": [
+            "versionGating",
+            "schema"
+          ]
+        },
+        {
+          "path": "packages/trellage-cli/test/headless-event-bridge.test.ts",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "malformedOutput",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "usageAndCost",
+            "changedFiles"
+          ]
+        },
+        {
+          "path": "packages/trellage-cli/test/git-evidence.test.ts",
+          "cases": [
+            "changedFiles"
+          ]
+        },
+        {
+          "path": "prototypes/trellage/tests/claude_entry_contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "questionToolControl"
+          ]
+        },
+        {
+          "path": "prototypes/trellage/tests/host_command_contract.sh",
+          "cases": [
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "changedFiles",
+            "versionGating"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Claude headless validation recorded before this publication gate",
+        "cases": [
+          "nonTtyCompletion",
+          "machineOnlyStdout",
+          "authoritativeSessionId",
+          "resumeWithPrompt",
+          "questionToolControl",
+          "usageAndCost",
+          "modelOverride"
+        ]
+      }
+    },
+    {
+      "id": "native-copilot-1.0.80",
+      "publication": {
+        "surface": "native",
+        "catalog": "prototypes/trellage-copilot-profiles/catalog.json",
+        "profiles": [
+          "awesome",
+          "hve",
+          "superpowers"
+        ]
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "json"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "1.0.80"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "prototypes/trellage-copilot-profiles/tests/contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "malformedOutput",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "questionToolControl",
+            "versionGating"
+          ]
+        },
+        {
+          "path": "prototypes/trellage-router/tests/contract.sh",
+          "cases": [
+            "schema"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Native Copilot 1.0.80 validation recorded before this publication gate",
+        "cases": [
+          "nonTtyCompletion",
+          "machineOnlyStdout",
+          "questionToolControl",
+          "modelOverride"
+        ]
+      }
+    },
+    {
+      "id": "native-claude-2.1.229",
+      "publication": {
+        "surface": "native",
+        "catalog": "prototypes/trellage-claude-profiles/catalog.json",
+        "profiles": [
+          "default"
+        ]
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "jsonl"
+        ],
+        "eventContract": "claude-stream-json-v1",
+        "trellageEventContract": null,
+        "sessionId": "native",
+        "resume": true,
+        "resumeWithPrompt": true,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": true,
+        "cost": true,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "2.1.229"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "prototypes/trellage-claude-profiles/tests/contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "machineOnlyStdout",
+            "authoritativeSessionId",
+            "resumeWithPrompt",
+            "malformedOutput",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "questionToolControl",
+            "usageAndCost",
+            "versionGating"
+          ]
+        },
+        {
+          "path": "prototypes/trellage-router/tests/contract.sh",
+          "cases": [
+            "schema"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Native Claude 2.1.229 validation recorded before this publication gate",
+        "cases": [
+          "nonTtyCompletion",
+          "machineOnlyStdout",
+          "authoritativeSessionId",
+          "resumeWithPrompt",
+          "questionToolControl",
+          "usageAndCost",
+          "modelOverride"
+        ]
+      }
+    },
+    {
+      "id": "native-omp-copilot-17.2.12",
+      "publication": {
+        "surface": "native",
+        "catalog": "prototypes/trellage-omp-profiles/catalog.json",
+        "profiles": [
+          "copilot"
+        ]
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "prompt-only",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "17.2.12"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "prototypes/trellage-omp-profiles/tests/contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "questionToolControl",
+            "versionGating"
+          ]
+        },
+        {
+          "path": "prototypes/trellage-router/tests/contract.sh",
+          "cases": [
+            "schema"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Native OMP 17.2.12 Copilot-profile validation recorded before this publication gate",
+        "cases": [
+          "nonTtyCompletion"
+        ]
+      }
+    }
+  ]
+}

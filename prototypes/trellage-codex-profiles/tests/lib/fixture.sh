@@ -160,6 +160,11 @@ cat >"$fake_bin/codex" <<'EOF'
 #!/usr/bin/env bash
 set -u
 
+if [ "${1-}" = '--version' ]; then
+  printf 'codex-cli 0.146.0\n'
+  exit 0
+fi
+
 profile="$(basename "$(dirname "$CODEX_HOME")")"
 state="$FAKE_CODEX_STATE/$profile"
 mkdir -p "$state"

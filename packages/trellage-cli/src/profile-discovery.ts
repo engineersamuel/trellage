@@ -4,6 +4,7 @@ import path from "node:path"
 import { Data, Effect, Option } from "effect"
 import type { Platform } from "./platform.js"
 
+import { sandboxHeadlessRuntimeAdapter, type SandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
 import {
   isClaudeProfile,
   isCopilotProfile,
@@ -59,6 +60,7 @@ export interface ProfileChoice {
     readonly version: string
     readonly model?: string
   }
+  readonly headlessRuntime: SandboxHeadlessRuntimeAdapter
   readonly skills: ReadonlyArray<ProfileChoiceSource>
   readonly plugins: ReadonlyArray<ProfileChoicePlugin>
   readonly mcps: ReadonlyArray<ProfileChoiceMcp>
@@ -123,6 +125,7 @@ export const projectProfileChoice = (
       version: profile.harness.version,
       ...(profileModel === undefined ? {} : { model: profileModel }),
     },
+    headlessRuntime: sandboxHeadlessRuntimeAdapter(profile),
     skills: profile.skills.map(({ repository, ref, select }) => ({ repository, ref, select })),
     plugins: profile.plugins.map((plugin) => ({
       adapter: plugin.adapter,

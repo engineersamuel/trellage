@@ -63,7 +63,10 @@ grx repair hve
 ```
 
 Use `grx list --json` for the stable machine-readable catalog, including
-launcher, harness, plugin, source, marketplace, and standalone MCP metadata.
+launcher, harness, plugin, source, marketplace, standalone MCP metadata, and a
+conservative `headless` object. Trellage has no recorded live headless matrix
+for Grok yet, so `grx list --json` intentionally does not claim prompt,
+question-tool control, or model-override support from the installed version.
 These are catalog declarations, not proof that profile setup or installed
 plugin state is healthy. Use `grx doctor PROFILE` for that validation.
 `grx inventory PROFILE --json` is read-only. It reports readiness, the validated

@@ -63,6 +63,11 @@ cat >"$fake_bin/copilot" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1-}" == --version ]]; then
+  printf 'copilot %s\n' "${FAKE_COPILOT_VERSION:-1.0.80}"
+  exit 0
+fi
+
 : "${COPILOT_HOME:?COPILOT_HOME must be set}"
 : "${FAKE_COPILOT_LOG:?FAKE_COPILOT_LOG must be set}"
 : "${FAKE_COPILOT_ARGV_LOG:?FAKE_COPILOT_ARGV_LOG must be set}"
@@ -99,6 +104,17 @@ jq -cn \
 printf 'home=%s\tcwd=%s\thome_env=%s\targs=' "$COPILOT_HOME" "$PWD" "$HOME" >>"$FAKE_COPILOT_LOG"
 printf '%q ' "$@" >>"$FAKE_COPILOT_LOG"
 printf '\tnative_auth=%s\n' "$FAKE_COPILOT_NATIVE_AUTH_FILE" >>"$FAKE_COPILOT_LOG"
+if [[ "${FAKE_COPILOT_STREAM_HOME-}" == "$COPILOT_HOME" && "${1-}" != plugin ]]; then
+  [[ -z "${FAKE_COPILOT_STREAM_STDOUT_FILE-}" \
+    || ( -f "$FAKE_COPILOT_STREAM_STDOUT_FILE" && ! -L "$FAKE_COPILOT_STREAM_STDOUT_FILE" ) ]] \
+    || exit 79
+  [[ -z "${FAKE_COPILOT_STREAM_STDERR_FILE-}" \
+    || ( -f "$FAKE_COPILOT_STREAM_STDERR_FILE" && ! -L "$FAKE_COPILOT_STREAM_STDERR_FILE" ) ]] \
+    || exit 79
+  [[ -z "${FAKE_COPILOT_STREAM_STDOUT_FILE-}" ]] || cat -- "$FAKE_COPILOT_STREAM_STDOUT_FILE"
+  [[ -z "${FAKE_COPILOT_STREAM_STDERR_FILE-}" ]] || cat -- "$FAKE_COPILOT_STREAM_STDERR_FILE" >&2
+  exit "${FAKE_COPILOT_STREAM_STATUS:-0}"
+fi
 
 installed="$COPILOT_HOME/fake-state/plugins"
 marketplaces="$COPILOT_HOME/fake-state/marketplaces"
@@ -167,7 +183,7 @@ case "${1-} ${2-}" in
         printf '  • %s (v%s)\n' "$plugin" "$version"
       done <"$installed"
     else
-      # Matches installed GitHub Copilot CLI 1.0.79 output: trailing period
+      # Matches installed GitHub Copilot CLI 1.0.80 output: trailing period
       # plus an install hint line, not the bare legacy string.
       printf 'No plugins installed.\n\n'
       printf "Use 'copilot plugin install <source>' to install a plugin.\n"
@@ -315,7 +331,24 @@ assert_line 'Copilot authentication is inherited through the CLI native credenti
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["awesome", "hve", "superpowers"]
-  and .profiles.awesome == {
+  and .profiles.awesome.headless == {
+    "schemaVersion": 1,
+    "prompt": true,
+    "outputFormats": ["text", "json"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "hard-deny",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": true,
+    "effortOverride": false,
+    "testedHarnessVersion": "1.0.80"
+  }
+  and (.profiles.awesome | del(.headless)) == {
     "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
     "marketplace": "github/awesome-copilot",
     "marketplaceName": "awesome-copilot",
@@ -323,7 +356,24 @@ jq -e '
     "plugin": "awesome-copilot@awesome-copilot",
     "standaloneMcps": []
   }
-  and .profiles.hve == {
+  and .profiles.hve.headless == {
+    "schemaVersion": 1,
+    "prompt": true,
+    "outputFormats": ["text", "json"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "hard-deny",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": true,
+    "effortOverride": false,
+    "testedHarnessVersion": "1.0.80"
+  }
+  and (.profiles.hve | del(.headless)) == {
     "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
     "marketplace": "microsoft/hve-core",
     "marketplaceName": "hve-core",
@@ -331,7 +381,24 @@ jq -e '
     "plugin": "hve-core-all@hve-core",
     "standaloneMcps": []
   }
-  and .profiles.superpowers == {
+  and .profiles.superpowers.headless == {
+    "schemaVersion": 1,
+    "prompt": true,
+    "outputFormats": ["text", "json"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "hard-deny",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": true,
+    "effortOverride": false,
+    "testedHarnessVersion": "1.0.80"
+  }
+  and (.profiles.superpowers | del(.headless)) == {
     "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
     "marketplace": "obra/superpowers-marketplace",
     "marketplaceName": "superpowers-marketplace",
@@ -364,6 +431,20 @@ for malicious_profile in '../../../../../.ssh' 'bad/name' '.hidden' 'Upper'; do
     || fail "malicious profile key mutated filesystem: $malicious_profile"
   [[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == "$before_malicious_log_lines" ]] \
     || fail "malicious profile key invoked Copilot: $malicious_profile"
+done
+
+invalid_headless_catalog="$fixture_root/invalid-headless.json"
+jq '.profiles.hve.headless.questionToolControl = "invalid"' \
+  catalog.json >"$invalid_headless_catalog"
+for invalid_operation in list setup launch; do
+  invalid_status=0
+  case "$invalid_operation" in
+    list) CPX_CATALOG="$invalid_headless_catalog" "$launcher" list --json >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
+    setup) CPX_CATALOG="$invalid_headless_catalog" "$launcher" setup hve >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
+    launch) CPX_CATALOG="$invalid_headless_catalog" "$launcher" hve --prompt unsafe >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
+  esac
+  [[ "$invalid_status" -ne 0 ]] || fail "$invalid_operation accepted invalid headless catalog"
+  assert_contains 'invalid catalog:' "$fixture_root/invalid-headless.err"
 done
 
 worktree="$fixture_root/project with spaces"
@@ -431,6 +512,50 @@ expected_bare_launch="$(jq -cn \
 actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 [[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
   || fail 'bare launch did not add the default permission argument'
+
+valid_json_stream="$fixture_root/headless-valid.jsonl"
+printf '%s\n' \
+  '{"type":"session.start","data":{"sessionId":"fixture-session"}}' \
+  '{"type":"assistant.message","data":{"content":"CPX_JSON_OK"}}' \
+  >"$valid_json_stream"
+(
+  cd "$worktree"
+  FAKE_COPILOT_STREAM_HOME="$expected_hve_home" \
+  FAKE_COPILOT_STREAM_STDOUT_FILE="$valid_json_stream" \
+    "$prototype_root/bin/cpx" hve \
+    --prompt 'machine output' --output-format json --stream off
+) >"$fixture_root/headless-valid.out" 2>"$fixture_root/headless-valid.err" \
+  || fail 'JSON headless launch failed'
+cmp -s "$valid_json_stream" "$fixture_root/headless-valid.out" \
+  || fail 'JSON headless launch changed native stdout'
+[[ ! -s "$fixture_root/headless-valid.err" ]] \
+  || fail 'JSON headless launch wrote unexpected stderr'
+jq -se 'length == 2 and all(.[]; type == "object")' \
+  "$fixture_root/headless-valid.out" >/dev/null \
+  || fail 'JSON headless launch did not produce machine-only stdout'
+expected_json_launch="$(jq -cn \
+  --arg home "$expected_hve_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
+[[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_json_launch" ]] \
+  || fail 'JSON headless launch argument vector differs'
+
+malformed_json_stream="$fixture_root/headless-malformed.jsonl"
+printf '%s\n' '{"type":"assistant.message","data":{"content":"partial"}}' 'not-json' \
+  >"$malformed_json_stream"
+(
+  cd "$worktree"
+  FAKE_COPILOT_STREAM_HOME="$expected_hve_home" \
+  FAKE_COPILOT_STREAM_STDOUT_FILE="$malformed_json_stream" \
+    "$prototype_root/bin/cpx" hve \
+    --prompt 'malformed output' --output-format json --stream off
+) >"$fixture_root/headless-malformed.out" 2>"$fixture_root/headless-malformed.err" \
+  || fail 'malformed-output fixture launch failed'
+cmp -s "$malformed_json_stream" "$fixture_root/headless-malformed.out" \
+  || fail 'malformed-output fixture changed native stdout'
+if jq -se 'all(.[]; type == "object")' "$fixture_root/headless-malformed.out" >/dev/null 2>&1; then
+  fail 'malformed Copilot output passed JSON validation'
+fi
 
 permission_argument_vectors=(
   '--allow-all'
@@ -647,6 +772,25 @@ jq -e '
   and .sandbox == false
   and [.profiles[].name] == ["awesome", "hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
+  and .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": true,
+    "outputFormats": ["text", "json"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "hard-deny",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": true,
+    "effortOverride": false,
+    "testedHarnessVersion": "1.0.80"
+  }
+  and .profiles[1].headless == .profiles[0].headless
+  and .profiles[2].headless == .profiles[0].headless
   and .profiles[0].plugin == "awesome-copilot@awesome-copilot"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
@@ -659,6 +803,27 @@ jq -e '
   and .profiles[1].marketplace.kind == "git"
   and .profiles[2].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
+
+FAKE_COPILOT_VERSION=1.0.81 "$launcher" list --json >"$fixture_root/list-drift.json"
+jq -e '
+  all(.profiles[]; .headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  })
+' "$fixture_root/list-drift.json" >/dev/null || fail 'drifted JSON list output differs'
 [[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == "$before_list_calls" ]] \
   || fail 'list invoked Copilot'
 

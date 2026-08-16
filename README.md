@@ -45,8 +45,7 @@ trellage build --locked /absolute/path/to/profile.toml
 trellage ci-verify /absolute/path/to/profile.toml
 trellage
 trellage --profile /absolute/path/to/profile.toml
-trellage resume --profile /absolute/path/to/profile.toml SESSION_ID
-trellage resume --profile /absolute/path/to/profile.toml
+trellage list --json --full
 trellage doctor --profile /absolute/path/to/profile.toml
 trellage destroy --profile /absolute/path/to/profile.toml
 trellage upgrade /absolute/path/to/profile.toml
@@ -58,12 +57,12 @@ First run in a repo worktree, end to end with a bundled profile:
 ```bash
 mise trust
 mise run trellage -- validate copilot-hve
-mise run trellage -- --profile copilot-hve -p "Reply exactly OK"
+mise run trellage -- --profile copilot-hve
 ```
 
-`trellage --profile <name> -p "<prompt>"` builds the image automatically on first
-use (this can take several minutes), launches an isolated sandbox container, runs
-the one-shot prompt, and prints the harness's own exit status.
+An advertised headless prompt also builds the image automatically on first use
+(this can take several minutes), runs one non-TTY prompt, and returns the
+harness status. Check `trellage list --json --full` first.
 
 Three build-shaped commands, three different jobs:
 
@@ -172,17 +171,22 @@ filter, `M` to choose an advertised model or enter a custom model ID, `D` for
 full details, and `H` to launch in a new Herdr pane. `claude-qwen-local` is the
 only pinned model.
 
-Bare profile launches open the harness TUI. Use portable `-p` (or `--prompt`) for one plain-text, non-interactive prompt; Trellage returns the native harness exit status:
+Bare profile launches open the harness TUI. Headless prompt, structured output,
+resume, and override support are version-gated. Inspect
+`trellage list --json --full` before using them. Trellage rejects an unsupported
+request before Docker mutation and never downgrades JSONL to text.
 
 ```bash
-trellage --profile codex-superpowers -p "hello"
-trellage --profile claude-research -p "hello"
-trellage --profile claude-social-media -p "draft a LinkedIn post"
-trellage --profile claude-council -p "hello"
-trellage --profile copilot-hve -p "hello"
-trellage --profile pi-oh-my-pi -p "hello"
-trellage --profile prime-agent -p "hello"
+trellage list --json --full
+trellage --profile VERIFIED_PROFILE -p "hello"
+trellage --profile VERIFIED_PROFILE --output-format jsonl -p "hello"
+trellage resume SESSION_ID --profile VERIFIED_PROFILE -p "continue"
 ```
+
+Add `--trellage-events` to a JSONL launch only when the inventory publishes
+`trellage-headless-v1`. Native JSONL remains unchanged; Trellage adds one
+session event and one terminal evidence event. See
+[`docs/headless-contract.md`](docs/headless-contract.md).
 
 ### Claude council
 
@@ -194,12 +198,12 @@ Code marketplace plugins enabled by default:
 
 ```bash
 trellage --profile claude-council
-trellage --profile claude-council --model gpt-5.5 -p "hello"
 ```
 
 Claude profiles default their Opus, Sonnet, and Haiku routes to
-`claude-opus-5`, `claude-sonnet-5`, and `claude-haiku-4.5`. `--model` overrides
-only the Opus route for that new, prompt, or resumed launch.
+`claude-opus-5`, `claude-sonnet-5`, and `claude-haiku-4.5`. When the resolved
+headless inventory publishes `modelOverride: true`, `--model` overrides only
+the Opus route for that new, prompt, or resumed launch.
 
 Requires the external `copilot-proxy-rs_default` Docker network, same as other
 proxy-backed Claude profiles.
@@ -232,9 +236,11 @@ Trellage bundles Varlock and uses it automatically for new, prompt, and resume l
 
 ```bash
 trellage --profile claude-research
-trellage --profile claude-research -p "research this topic"
-trellage resume --profile claude-research
+trellage list --json --full
 ```
+
+Prompt and resume launches use the same loading only when the selected profile
+publishes those capabilities.
 
 Do not prefix these commands with `varlock`. This keeps the same interface for terminals, scripts, editors, Herdr, and other applications invoking Trellage.
 
@@ -333,8 +339,6 @@ through the host-managed `copilot-proxy-rs` service, fixes the provider to
 trellage validate prime-agent
 trellage build --locked prime-agent
 trellage --profile prime-agent
-trellage --profile prime-agent -p "review this repository"
-trellage resume --profile prime-agent
 trellage doctor --profile prime-agent
 ```
 
@@ -345,8 +349,9 @@ and preserves Prime sessions and other user state in the profile/worktree state
 volume. The locked image build also prepares a Python kernel archive that each
 state volume restores locally, so tool use does not depend on first-launch
 access to PyPI. Every launch restores the managed provider definition so
-persisted edits cannot redirect this profile to another endpoint. `--model MODEL`
-selects another model advertised by the same proxy for that launch.
+persisted edits cannot redirect this profile to another endpoint. Use
+`--model MODEL` only when the full inventory publishes
+`modelOverride: true`.
 
 ## Pi with Oh My Pi
 
@@ -360,8 +365,6 @@ seeds OMP's `semantic-compression`, `system-prompts`, and
 trellage validate pi-oh-my-pi
 trellage build --locked pi-oh-my-pi
 trellage --profile pi-oh-my-pi
-trellage --profile pi-oh-my-pi -p "review this repository"
-trellage resume --profile pi-oh-my-pi
 trellage doctor --profile pi-oh-my-pi
 ```
 
@@ -693,6 +696,38 @@ Exit statuses:
 - `0`: all required checks pass.
 - `1`: a required launcher is missing, or discovery, static verification, or live verification fails.
 - `2`: invalid usage.
+
+## Headless Contract Matrix
+
+The headless publication gate compares Sandbox adapter declarations and Native
+catalogs with [`docs/headless-evidence.json`](docs/headless-evidence.json). It
+also runs deterministic prompt, machine-output, session, resume, malformed
+output, failure, cleanup, question-control, usage/cost, and Git evidence
+contracts.
+
+```bash
+scripts/verify-headless-contracts
+make headless-matrix
+make headless-matrix-test
+```
+
+Static and deterministic checks do not invoke a model. Live verification is
+separate because it can consume paid quota:
+
+```bash
+TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
+  scripts/verify-headless-contracts --live
+TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
+  make headless-matrix-live
+```
+
+The checked-in fixture pins the recorded Claude Code `2.1.229` contract.
+`TRELLAGE_HEADLESS_SANDBOX_PROFILE` can instead name another full-inventory
+profile that resolves to the same contract.
+
+Capability values apply only to the exact recorded harness version. Version
+drift keeps the profile discoverable but resolves its headless object to
+conservative values.
 
 ## Native Copilot Authentication
 

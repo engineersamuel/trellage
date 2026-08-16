@@ -3,6 +3,25 @@
   "profiles": {
     "default": {
       "description": "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
       "plugin": null,
       "standaloneMcps": []
     }

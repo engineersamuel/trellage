@@ -205,14 +205,48 @@ expected_readme_commands="$(printf '%s\n' \
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["hve", "superpowers"]
-  and .profiles.hve == {
+  and .profiles.hve.headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+  and (.profiles.hve | del(.headless)) == {
     "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
     "source": "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json",
     "plugin": "hve-core-all",
     "standaloneMcps": []
   }
-  and .profiles.superpowers == {
+  and .profiles.superpowers.headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+  and (.profiles.superpowers | del(.headless)) == {
     "description": "Grok Build with Superpowers’ design, TDD, debugging, review, verification, and branch-finishing skills, plus a separate Caveman plugin.",
     "source": "obra/superpowers",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
@@ -250,6 +284,24 @@ jq -e '
   and .sandbox == true
   and [.profiles[].name] == ["hve", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
+  and .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+  and .profiles[1].headless == .profiles[0].headless
   and .profiles[0].plugin == "hve-core-all"
   and .profiles[0].source == "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all"
   and .profiles[0].marketplace == null
@@ -280,6 +332,11 @@ chmod 0555 "$fake_bin/jq"
 cat >"$fake_bin/grok" <<'FAKE_GROK'
 #!/bin/bash
 set -euo pipefail
+
+if [ "${1-}" = '--version' ]; then
+  printf 'grok 0.2.112\n'
+  exit 0
+fi
 
 : "${GROK_HOME:?GROK_HOME is required}"
 : "${FAKE_GROK_LOG:?FAKE_GROK_LOG is required}"
@@ -759,6 +816,29 @@ export HOME="$fixture_home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export FAKE_GROK_LOG="$fake_grok_log"
 
+HOME="$fixture_home" "$prototype_root/bin/grx" list --json >"$fixture_root/list-verified.json" \
+  || fail 'verified JSON list failed'
+jq -e '
+  .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+  and .profiles[1].headless == .profiles[0].headless
+' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list output differs'
+
 mkdir -p \
   "$HOME/.grok/skills/personal-grok" \
   "$HOME/.grok/agents/personal-grok" \
@@ -821,6 +901,11 @@ jq --arg profile 'list' \
   '.profiles = {($profile): .profiles.hve}' \
   "$prototype_root/catalog.json" >"$reserved_key_catalog"
 assert_invalid_catalog "$reserved_key_catalog" 'reserved profile key'
+
+invalid_headless_catalog="$fixture_root/invalid-headless.json"
+jq '.profiles.hve.headless.outputFormats = ["text", "yaml"]' \
+  "$prototype_root/catalog.json" >"$invalid_headless_catalog"
+assert_invalid_catalog "$invalid_headless_catalog" 'invalid headless schema'
 
 changed_trust_catalog="$fixture_root/changed-trust-catalog.json"
 jq '

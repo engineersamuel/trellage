@@ -3,6 +3,26 @@
   "profiles": {
     "awesome": {
       "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "json"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "1.0.80"
+      },
       "marketplace": "github/awesome-copilot",
       "marketplaceName": "awesome-copilot",
       "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
@@ -11,6 +31,26 @@
     },
     "hve": {
       "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "json"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "1.0.80"
+      },
       "marketplace": "microsoft/hve-core",
       "marketplaceName": "hve-core",
       "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
@@ -19,6 +59,26 @@
     },
     "superpowers": {
       "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "json"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "1.0.80"
+      },
       "marketplace": "obra/superpowers-marketplace",
       "marketplaceName": "superpowers-marketplace",
       "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",

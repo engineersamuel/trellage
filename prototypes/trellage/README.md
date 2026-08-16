@@ -173,6 +173,7 @@ Run these commands inside the Git worktree that should be mounted:
 trellage [--profile PROFILE]
 trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage [--profile CLAUDE_PROFILE] [--model MODEL] [-p|--prompt PROMPT]
+trellage [--profile PROFILE] --output-format jsonl [--trellage-events] -p PROMPT
 trellage resume [SESSION_ID] [--profile PROFILE] [--model MODEL]
 trellage shell|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
@@ -183,9 +184,9 @@ trellage upgrade [PROFILE|all]
 trellage                    # select a profile, then start its interactive harness
 trellage --profile NAME     # directly launch one profile
 trellage "<prompt>"         # new conversation with an explicit prompt
-trellage -p "<prompt>"      # one non-interactive prompt with plain-text output
-trellage resume             # resume the latest native conversation
-trellage resume SESSION_ID  # resume one exact native conversation
+trellage -p "<prompt>"      # one non-interactive prompt when advertised
+trellage resume             # resume the latest conversation when advertised
+trellage resume SESSION_ID  # resume an exact session when advertised
 trellage shell              # recovery Fish without secrets
 trellage stop               # preserve state
 trellage destroy            # confirmed profile/worktree cleanup
@@ -225,34 +226,36 @@ terminal and exits `130`. `M` selects an advertised model where the harness
 supports overrides. Inside Herdr, `H` opens the selected launch in a new pane for
 the current Git worktree. Selection itself never builds or mutates a profile.
 
-Bare profile launches remain interactive. Portable `-p` and `--prompt` run one prompt without a TTY and return the native harness status. Trellage translates this to `codex exec`, `claude -p`, or `copilot -p`:
+Bare profile launches remain interactive. Headless prompt, JSONL, resume,
+exact-session resume, resume-with-prompt, and model override operations require
+matching capability values from `trellage list --json --full`. The values are
+valid only for their exact `testedHarnessVersion`. Unsupported requests fail
+before Docker or authentication mutation.
 
 ```bash
-trellage --profile codex-superpowers -p "hello"
-trellage --profile claude-research -p "hello"
-trellage --profile claude-social-media -p "draft a LinkedIn post"
-trellage --profile copilot-hve -p "hello"
-trellage --profile pi-oh-my-pi -p "hello"
+trellage list --json --full
+trellage --profile VERIFIED_PROFILE -p "hello"
+trellage --profile VERIFIED_PROFILE --output-format jsonl -p "hello"
+trellage resume SESSION_ID --profile VERIFIED_PROFILE -p "continue"
 ```
+
+`--trellage-events` is opt-in and requires JSONL plus a published
+`trellage-headless-v1` contract. Native JSONL lines remain unchanged. See
+[`../../docs/headless-contract.md`](../../docs/headless-contract.md).
 
 Claude profiles route Opus, Sonnet, and Haiku aliases to the models declared by
 the profile. Their defaults are `claude-opus-5`, `claude-sonnet-5`, and
-`claude-haiku-4.5`; `--model MODEL` overrides the Opus route. Codex, Copilot,
-Pi, and Prime pass `--model MODEL` to their runtime. The local Qwen profile is
-the sole pinned model.
-
-```bash
-trellage --profile claude-council --model gpt-5.5 -p "hello"
-trellage --profile prime-agent --model claude-sonnet-5 -p "hello"
-```
+`claude-haiku-4.5`. When `modelOverride` is true, Claude overrides the Opus
+route and other supported adapters pass the model to their runtime. The local
+Qwen profile is the sole pinned model.
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
-`trellage` invocation starts a new native session.
-`trellage resume` selects the newest recorded native session. Pass a native
-session ID to select an exact conversation; Trellage maps that ID to each
-harness's native resume syntax. After an interactive session exits, Trellage
-prints a copyable exact resume command. All sessions share one container and
-durable profile volume.
+`trellage` invocation starts a new native session. When the selected profile
+publishes resume support, `trellage resume` selects the newest recorded native
+session. A profile with `sessionId` other than `none` can also accept an exact
+session ID. After a supported interactive session exits, Trellage prints a
+copyable exact resume command. All sessions share one container and durable
+profile volume.
 Trellage automatically stops the shared container after the last harness exits.
 Concurrent harnesses and recovery shells keep the container running.
 The container and state volume remain retained, so the next launch restarts the
@@ -305,13 +308,18 @@ Use absolute profile paths when invoking the installed command from any worktree
 trellage validate /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage build --locked /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage --profile /absolute/path/to/profiles/copilot-hve/profile.toml
-trellage resume --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml
 ```
 
-For a launch or resume, host authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`, then device login. Host authentication is ephemeral: the resolved host token is supplied only to the Copilot process and is not saved in the profile state volume. If no host token is available, Copilot falls back to device login. Device login persists in the profile state volume so later launches and resumes stay authenticated.
+For a launch, and for a resume when the inventory publishes resume support,
+host authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
+`GITHUB_TOKEN`, then `gh auth token`, then device login. Host authentication
+is ephemeral: the resolved host token is supplied only to the Copilot process
+and is not saved in the profile state volume. If no host token is available,
+Copilot falls back to device login. Device login persists in the profile state
+volume.
 
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
@@ -328,16 +336,15 @@ final OCI digest. Locked rebuilds reject any resulting image drift.
 trellage validate /absolute/path/to/profiles/prime-agent/profile.toml
 trellage build --locked /absolute/path/to/profiles/prime-agent/profile.toml
 trellage --profile /absolute/path/to/profiles/prime-agent/profile.toml
-trellage --profile /absolute/path/to/profiles/prime-agent/profile.toml -p "review this repository"
-trellage resume --profile /absolute/path/to/profiles/prime-agent/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/prime-agent/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/prime-agent/profile.toml
 ```
 
 Every launch fixes Prime's custom provider to `copilot-proxy-rs`, its API to
 Anthropic Messages, and its endpoint to `http://copilot-proxy-rs:8080`. The
-default model is `claude-opus-5`; `--model MODEL` materializes another model in
-the managed provider file for that launch. The proxy and Docker network are
+default model is `claude-opus-5`. When the full inventory publishes
+`modelOverride: true`, `--model MODEL` materializes another model in the
+managed provider file for that launch. The proxy and Docker network are
 host-managed prerequisites. No host Anthropic, OpenAI, Copilot, or GitHub token
 is forwarded to Prime; the separately prepared `GH_CONFIG_DIR` remains
 available for `gh`. Prime sessions and other user state persist under
@@ -383,15 +390,15 @@ the three native skills published under the matching OMP release's
 trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
-trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"
-trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 ```
 
-Prompt mode translates to OMP `--print`; interactive launch uses a new native
-OMP session; resume uses OMP `--continue` for the current worktree. All modes force
-`github-copilot/gpt-5.6-terra` and preserve OMP's exit status.
+When the exact resolved version publishes prompt support, prompt mode
+translates to OMP `--print`. Interactive launch uses a new native OMP session.
+When resume support is published, resume uses OMP `--continue` for the current
+worktree. All modes force `github-copilot/gpt-5.6-terra` and preserve OMP's
+exit status.
 
 Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
 `GITHUB_TOKEN`, then `gh auth token`, then OMP's native interactive login. A
@@ -416,7 +423,8 @@ Managed skills are refreshed into the persistent state volume on every launch.
 5. Edit a host-mounted file and confirm two-way host/container visibility.
 6. Observe Herdr detect Codex and follow its status transitions.
 7. Exit or kill Codex, confirm the container stops automatically, then relaunch it.
-8. Run `trellage resume` and verify the same conversation continues.
+8. If the full inventory publishes resume support, run `trellage resume` and
+   verify the same conversation continues.
 9. Run `trellage shell` and confirm recovery access.
 10. Record the Herdr verdict and every interaction that felt wrong.
 

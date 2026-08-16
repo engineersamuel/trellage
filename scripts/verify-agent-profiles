@@ -273,7 +273,8 @@ run_live_process() {
   local output_file="$2"
   local error_file="$3"
   local command_status
-  local live_deadline
+  local live_wait_attempt
+  local live_wait_limit
   local hold_attempt
   local launch_prefix
   local pre_spawn_marker
@@ -360,13 +361,15 @@ run_live_process() {
     exit "$command_status"
   fi
   : >"$release_file"
-  live_deadline=$((SECONDS + live_timeout_seconds))
+  live_wait_attempt=0
+  live_wait_limit=$((live_timeout_seconds * 20))
   while live_launcher_running; do
-    if [ "$SECONDS" -ge "$live_deadline" ]; then
+    if [ "$live_wait_attempt" -ge "$live_wait_limit" ]; then
       live_process_timed_out=1
       terminate_live_process_group
       return 124
     fi
+    live_wait_attempt=$((live_wait_attempt + 1))
     sleep 0.05 || true
   done
   if wait "$live_pid"; then

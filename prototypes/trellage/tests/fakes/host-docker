@@ -50,6 +50,19 @@ for internal_name in \
 done
 printf 'ARG\t%s\n' "$@" >>"$log"
 
+emit_agent_streams() {
+  if [[ -n "${FAKE_DOCKER_AGENT_STDOUT_FILE:-}" ]]; then
+    [[ -f "$FAKE_DOCKER_AGENT_STDOUT_FILE" && ! -L "$FAKE_DOCKER_AGENT_STDOUT_FILE" ]] \
+      || exit 64
+    cat -- "$FAKE_DOCKER_AGENT_STDOUT_FILE"
+  fi
+  if [[ -n "${FAKE_DOCKER_AGENT_STDERR_FILE:-}" ]]; then
+    [[ -f "$FAKE_DOCKER_AGENT_STDERR_FILE" && ! -L "$FAKE_DOCKER_AGENT_STDERR_FILE" ]] \
+      || exit 64
+    cat -- "$FAKE_DOCKER_AGENT_STDERR_FILE" >&2
+  fi
+}
+
 if [[ "${1:-}" == --host ]]; then
   [[ $# -ge 3 ]] || exit 64
   shift 2
@@ -594,6 +607,7 @@ case "${1:-} ${2:-}" in
     if [[ -n "${FAKE_DOCKER_AGENT_EXEC_EXIT:-}" ]]; then
       for argument in "$@"; do
         if [[ "$argument" == *trellage-*-entry* ]]; then
+          emit_agent_streams
           : >"$log.agent-exec-finished"
           exit "$FAKE_DOCKER_AGENT_EXEC_EXIT"
         fi
@@ -617,6 +631,7 @@ case "${1:-} ${2:-}" in
           : >"$FAKE_DOCKER_EXEC_READY_FILE"
           while [[ ! -f "${FAKE_DOCKER_EXEC_RELEASE_FILE:?}" ]]; do sleep 0.05; done
         fi
+        emit_agent_streams
         : >"$log.agent-exec-finished"
         break
       fi

@@ -1,5 +1,7 @@
 import type { ProfileChoice } from "./profile-discovery.js"
+import { resolveSandboxHeadlessCapabilities, type HeadlessCapabilitiesV1 } from "./headless-capabilities.js"
 import type { HerdrCompatibilityEntry } from "./herdr-compatibility.js"
+import type { ProfileReadiness } from "./profile-readiness.js"
 
 export interface SimplifiedProfileList {
   readonly schemaVersion: 1
@@ -24,6 +26,9 @@ export interface FullProfileListEntry {
   // Trellage Sandbox profiles always execute inside a locked, built Docker
   // container, so every entry is implicitly sandboxed regardless of harness.
   readonly sandbox: true
+  // Version-gated headless capability contract for the resolved container
+  // runtime. Unknown or unverified harness versions fail closed.
+  readonly headless: HeadlessCapabilitiesV1
   // Whether this profile currently has a valid, up-to-date lock for a
   // production platform (i.e. `trellage build --locked` can reuse an image
   // instead of re-resolving sources). Computed from the profile document and
@@ -57,23 +62,27 @@ const untestedCompatibility: HerdrCompatibilityEntry = { status: "untested" }
 
 export const toFullList = (
   choices: ReadonlyArray<ProfileChoice>,
-  locked: ReadonlyArray<boolean> = [],
+  readiness: ReadonlyArray<ProfileReadiness> = [],
   herdrCompatibility: ReadonlyArray<HerdrCompatibilityEntry> = [],
 ): FullProfileList => ({
   schemaVersion: 1,
-  profiles: choices.map((choice, index) => ({
-    name: choice.name,
-    description: choice.description,
-    path: choice.value,
-    supportedPlatforms: choice.supported_platforms,
-    harness: choice.harness,
-    skills: choice.skills,
-    plugins: choice.plugins,
-    mcps: choice.mcps,
-    sandbox: true,
-    locked: locked[index] ?? false,
-    herdrCompatibility: herdrCompatibility[index] ?? untestedCompatibility,
-  })),
+  profiles: choices.map((choice, index) => {
+    const entryReadiness = readiness[index] ?? { locked: false, resolvedVersion: null }
+    return {
+      name: choice.name,
+      description: choice.description,
+      path: choice.value,
+      supportedPlatforms: choice.supported_platforms,
+      harness: choice.harness,
+      skills: choice.skills,
+      plugins: choice.plugins,
+      mcps: choice.mcps,
+      sandbox: true,
+      headless: resolveSandboxHeadlessCapabilities(choice.headlessRuntime, entryReadiness.resolvedVersion),
+      locked: entryReadiness.locked,
+      herdrCompatibility: herdrCompatibility[index] ?? untestedCompatibility,
+    }
+  }),
 })
 
 export const formatProfileListHuman = (choices: ReadonlyArray<ProfileChoice>): string =>

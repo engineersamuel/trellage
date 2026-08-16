@@ -3,6 +3,25 @@
   "profiles": {
     "hve": {
       "description": "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
       "marketplaceKind": "local-adapter",
       "marketplaceSource": "marketplaces/hve-core",
       "marketplaceName": "hve-core",
@@ -14,6 +33,25 @@
     },
     "superpowers": {
       "description": "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
       "marketplaceKind": "git",
       "marketplaceSource": "obra/superpowers-marketplace",
       "marketplaceName": "superpowers-marketplace",

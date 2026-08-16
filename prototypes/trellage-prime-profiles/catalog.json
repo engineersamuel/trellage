@@ -3,6 +3,25 @@
   "profiles": {
     "default": {
       "description": "Prime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
       "plugin": null,
       "standaloneMcps": []
     }

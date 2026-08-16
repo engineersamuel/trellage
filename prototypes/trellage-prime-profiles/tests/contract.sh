@@ -314,7 +314,46 @@ jq -e '
   and .profiles[0].source == "PrimeIntellect-ai/prime-agent"
   and .profiles[0].plugin == null
   and .profiles[0].standaloneMcps == []
+  and .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
+
+cp "$runtime_root/catalog.json" "$fixture_root/catalog.saved" || fail 'could not save catalog'
+jq '.profiles.default.headless.outputFormats = ["yaml"]' "$runtime_root/catalog.json" \
+  >"$fixture_root/catalog.invalid" || fail 'could not create invalid catalog'
+mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
+if "$command_path" list --json >"$fixture_root/invalid-list.out" 2>"$fixture_root/invalid-list.err"; then
+  fail 'list accepted invalid headless catalog'
+fi
+grep -Fq 'prx: invalid catalog:' "$fixture_root/invalid-list.err" \
+  || fail 'invalid headless catalog diagnostic differs'
+jq '.profiles.default.headless.trellageEventContract = "unsupported-trellage-events-v1"' \
+  "$fixture_root/catalog.saved" >"$fixture_root/catalog.invalid" \
+  || fail 'could not create invalid Trellage event contract'
+mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
+if "$command_path" list --json \
+  >"$fixture_root/invalid-trellage-event-list.out" \
+  2>"$fixture_root/invalid-trellage-event-list.err"; then
+  fail 'list accepted unsupported Trellage event contract'
+fi
+grep -Fq 'prx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
+  || fail 'unsupported Trellage event contract diagnostic differs'
+mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
 "$command_path" list >"$fixture_root/list.txt" || fail 'text list failed'
 grep -Fq $'default\tPrime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.' \
@@ -370,6 +409,27 @@ grep -Fq 'prx setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
   || fail 'setup did not install prime-agent CLI'
 grep -Fq 'install github:PrimeIntellect-ai/prime-agent@0.7.0' "$FAKE_MISE_LOG" \
   || fail 'setup did not ask mise to install the pinned release'
+
+"$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
+jq -e '
+  .profiles[0].headless == {
+    "schemaVersion": 1,
+    "prompt": false,
+    "outputFormats": ["text"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "none",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": false,
+    "effortOverride": false,
+    "testedHarnessVersion": null
+  }
+' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list differs'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
 grep -Fq 'prx doctor: OK (0.7.0, claude-opus-5)' "$fixture_root/doctor.out" \

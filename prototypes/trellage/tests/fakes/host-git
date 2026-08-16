@@ -20,8 +20,34 @@ if [[ "$#" -eq 2 && "$1" == rev-parse && "$2" == --show-toplevel ]]; then
   printf '%s\n' "${FAKE_GIT_ROOT:?}"
   exit 0
 fi
+if [[ "$#" -eq 4 && "$1" == -C && "$3" == rev-parse && "$4" == --show-toplevel ]]; then
+  printf '%s\n' "${FAKE_GIT_ROOT:?}"
+  exit 0
+fi
 if [[ "$#" -eq 4 && "$1" == -C && "$3" == rev-parse && "$4" == --git-common-dir ]]; then
   printf '%s\n' "${FAKE_GIT_COMMON_DIR:-${FAKE_GIT_ROOT:?}/.git}"
+  exit 0
+fi
+if [[ "$#" -eq 6 && "$1" == -C && "$3" == status \
+  && "$4" == --porcelain=v2 && "$5" == -z && "$6" == --untracked-files=all ]]; then
+  exit 0
+fi
+if [[ "$#" -eq 8 && "$1" == --no-optional-locks && "$2" == -c \
+  && "$3" == core.fsmonitor=false && "$4" == -C && "$6" == rev-parse \
+  && "$7" == --path-format=absolute && "$8" == --show-toplevel ]]; then
+  printf '%s\n' "${FAKE_GIT_ROOT:?}"
+  exit 0
+fi
+if [[ "$#" -eq 8 && "$1" == --no-optional-locks && "$2" == -c \
+  && "$3" == core.fsmonitor=false && "$4" == -C && "$6" == rev-parse \
+  && "$7" == --verify && "$8" == 'HEAD^{commit}' ]]; then
+  printf '%040d\n' 1
+  exit 0
+fi
+if [[ "$#" -eq 11 && "$1" == --no-optional-locks && "$2" == -c \
+  && "$3" == core.fsmonitor=false && "$4" == -C && "$6" == status \
+  && "$7" == --porcelain=v2 && "$8" == -z && "$9" == --untracked-files=all \
+  && "${10}" == --renames && "${11}" == --ignore-submodules=none ]]; then
   exit 0
 fi
 exit 64

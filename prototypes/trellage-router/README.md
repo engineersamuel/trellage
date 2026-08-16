@@ -57,10 +57,12 @@ mise run trx -- list --json
 
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
-`launcher`, `harness`, `name`, and `description`. Both forms are non-interactive
-and work without a TTY. They validate all seven owned launchers and their catalogs
-before producing output, so missing, redirected, or invalid launchers fail
-closed.
+`launcher`, `harness`, `name`, `description`, `headless`, `sandbox`, and
+`herdrCompatibility`. `trx` copies each launcher's `headless` object unchanged;
+it does not infer headless support from launcher names. Both forms are
+non-interactive and work without a TTY. They validate all seven owned launchers
+and their catalogs before producing output, so missing, redirected, or invalid
+launchers fail closed.
 
 Use the arrow keys and Enter to select a profile. `/` filters, `S` sorts, `D`
 opens full details, and `M` selects an advertised or custom model for launchers

@@ -8,6 +8,7 @@ readonly model_selector="$provider/$model_id"
 readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
 readonly mise_tool='github:can1357/oh-my-pi'
 readonly profile_marker_value='trellage-omp-profile-v1'
+readonly verified_headless_policy_version='17.2.12'
 
 die() {
   printf 'omp: %s\n' "$1" >&2
@@ -20,6 +21,7 @@ Usage:
   omp [OMP_ARGS...]
   omp local [OMP_ARGS...]
   omp copilot [OMP_ARGS...]
+  omp [local|copilot] --headless-policy no-user-input [OMP_ARGS...]
   omp list [--json]
   omp inventory PROFILE --json
   omp setup [local|copilot|--all]
@@ -58,6 +60,12 @@ profile_name=''
 profile_root=''
 agent_root=''
 profile_marker=''
+launch_child_pid=''
+launch_overlay_path=''
+launch_headless_policy=''
+launch_pending_signal=''
+launch_cancel_status=0
+launch_forwarded_args=()
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
@@ -71,6 +79,52 @@ validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
     || die "invalid catalog: $catalog"
   jq -e '
+    def validHeadless:
+      type == "object"
+      and keys == [
+        "changedFiles",
+        "cost",
+        "effortOverride",
+        "eventContract",
+        "modelOverride",
+        "outputFormats",
+        "prompt",
+        "questionToolControl",
+        "resume",
+        "resumeWithPrompt",
+        "schemaVersion",
+        "sessionId",
+        "testedHarnessVersion",
+        "trellageEventContract",
+        "usage"
+      ]
+      and .schemaVersion == 1
+      and (.prompt | type == "boolean")
+      and (.outputFormats
+        | type == "array"
+        and length == (unique | length)
+        and all(.[]; . == "text" or . == "json" or . == "jsonl"))
+      and (.eventContract == null
+        or (.eventContract | type == "string" and length > 0))
+      and (.trellageEventContract == null
+        or .trellageEventContract == "trellage-headless-v1")
+      and (.sessionId == "native"
+        or .sessionId == "trellage"
+        or .sessionId == "none")
+      and (.resume | type == "boolean")
+      and (.resumeWithPrompt | type == "boolean")
+      and (.questionToolControl == "hard-deny"
+        or .questionToolControl == "prompt-only"
+        or .questionToolControl == "none")
+      and (.changedFiles == "native"
+        or .changedFiles == "git-diff"
+        or .changedFiles == "none")
+      and (.usage | type == "boolean")
+      and (.cost | type == "boolean")
+      and (.modelOverride | type == "boolean")
+      and (.effortOverride | type == "boolean")
+      and (.testedHarnessVersion == null
+        or (.testedHarnessVersion | type == "string" and length > 0));
     type == "object"
     and keys == ["profiles", "schemaVersion"]
     and .schemaVersion == 1
@@ -79,11 +133,12 @@ validate_catalog() {
       (.key | test("^[a-z0-9]+(-[a-z0-9]+)*$"))
       and (.value | type == "object")
       and (.value | keys
-        == ["description", "kind", "ompProfile", "plugin", "standaloneMcps"])
+        == ["description", "headless", "kind", "ompProfile", "plugin", "standaloneMcps"])
       and (.value.description
         | type == "string"
         and length > 0
         and (test("[\u0000-\u001f\u007f-\u009f]") | not))
+      and (.value.headless | validHeadless)
       and (.value.kind == .key)
       and (.value.ompProfile
         | type == "string"
@@ -111,7 +166,10 @@ list_profiles() {
 }
 
 list_profiles_json() {
-  jq -S '
+  local headless_map
+
+  headless_map="$(projected_headless_map_json)"
+  jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
       launcher: "omp",
@@ -126,6 +184,7 @@ list_profiles_json() {
         | {
             name: .key,
             description: .value.description,
+            headless: $headless[.key],
             plugin: .value.plugin,
             source: null,
             marketplace: null,
@@ -338,6 +397,73 @@ publish_managed_profile() {
 
 require_exact_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid OMP version: $1"
+}
+
+omp_version_if_available() {
+  local version binary actual
+
+  [[ -f "$version_file" && ! -L "$version_file" ]] || return 0
+  version="$(<"$version_file")"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  binary="$runtime_root/mise/installs/github-can1357-oh-my-pi/$version/omp"
+  [[ -x "$binary" && ! -L "$binary" ]] || return 0
+  actual="$("$binary" --version 2>/dev/null || :)"
+  [[ "$actual" == "omp/$version" ]] || return 0
+  printf '%s\n' "$version"
+}
+
+conservative_headless() {
+  local question_tool_control="${1-none}"
+
+  jq -cn \
+    --arg questionToolControl "$question_tool_control" '
+    {
+      schemaVersion: 1,
+      prompt: false,
+      outputFormats: ["text"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "none",
+      resume: false,
+      resumeWithPrompt: false,
+      questionToolControl: $questionToolControl,
+      changedFiles: "none",
+      usage: false,
+      cost: false,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null
+    }
+  '
+}
+
+projected_headless() {
+  local profile="$1"
+  local current_version expected_version
+
+  current_version="$(omp_version_if_available)"
+  expected_version="$(jq -r --arg profile "$profile" \
+    '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
+  if [[ -z "$expected_version" ]]; then
+    jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+    return
+  fi
+  if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
+    conservative_headless
+    return
+  fi
+  jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+}
+
+projected_headless_map_json() {
+  jq -cn \
+    --argjson copilotProfile "$(projected_headless copilot)" \
+    --argjson localProfile "$(projected_headless local)" '
+    {
+      copilot: $copilotProfile,
+      local: $localProfile
+    }
+  '
 }
 
 mise_env() {
@@ -646,25 +772,190 @@ inventory_profile() {
   }'
 }
 
+parse_launch_arguments() {
+  local value
+
+  launch_headless_policy=''
+  launch_forwarded_args=()
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --headless-policy)
+        [[ -z "$launch_headless_policy" ]] || die '--headless-policy may be specified only once'
+        [[ "$#" -ge 2 ]] || die '--headless-policy requires a value'
+        value="$2"
+        [[ -n "$value" && "$value" != -* ]] || die '--headless-policy requires a value'
+        [[ "$value" == no-user-input ]] || die "unknown --headless-policy: $value"
+        launch_headless_policy="$value"
+        shift 2
+        ;;
+      --headless-policy=*)
+        [[ -z "$launch_headless_policy" ]] || die '--headless-policy may be specified only once'
+        value="${1#--headless-policy=}"
+        [[ -n "$value" ]] || die '--headless-policy requires a value'
+        [[ "$value" == no-user-input ]] || die "unknown --headless-policy: $value"
+        launch_headless_policy="$value"
+        shift
+        ;;
+      *)
+        launch_forwarded_args+=("$1")
+        shift
+        ;;
+    esac
+  done
+}
+
+cleanup_launch_overlay() {
+  if [[ -n "$launch_overlay_path" ]]; then
+    rm -f -- "$launch_overlay_path"
+    launch_overlay_path=''
+  fi
+}
+
+create_headless_policy_overlay() {
+  launch_overlay_path="$(mktemp "$runtime_root/.headless-policy.XXXXXX.yml")" \
+    || die 'could not stage OMP headless policy overlay'
+  cat >"$launch_overlay_path" <<'EOF'
+ask:
+  enabled: false
+EOF
+  chmod 0600 "$launch_overlay_path"
+}
+
+forward_launch_signal() {
+  local signal="$1"
+
+  if [[ -z "$launch_child_pid" ]]; then
+    launch_pending_signal="$signal"
+    return 0
+  fi
+  kill "-$signal" "$launch_child_pid" 2>/dev/null || true
+}
+
+cancel_pending_launch() {
+  [[ -n "$launch_pending_signal" ]] || return 1
+  case "$launch_pending_signal" in
+    HUP) launch_cancel_status=129 ;;
+    INT) launch_cancel_status=130 ;;
+    TERM) launch_cancel_status=143 ;;
+    *) launch_cancel_status=1 ;;
+  esac
+  launch_pending_signal=''
+  launch_child_pid=''
+  trap - EXIT HUP INT TERM
+  cleanup_launch_overlay
+  return 0
+}
+
+wait_for_launch_child() {
+  local status
+
+  while :; do
+    if wait "$launch_child_pid"; then
+      status=0
+    else
+      status=$?
+    fi
+    if [[ "$status" -ge 128 ]] && kill -0 "$launch_child_pid" 2>/dev/null; then
+      continue
+    fi
+    return "$status"
+  done
+}
+
 launch_omp() {
-  local version binary token
+  local version binary token status
+  local launch_args=()
+
+  launch_child_pid=''
+  launch_pending_signal=''
+  launch_cancel_status=0
+  trap cleanup_launch_overlay EXIT
+  trap 'forward_launch_signal HUP' HUP
+  trap 'forward_launch_signal INT' INT
+  trap 'forward_launch_signal TERM' TERM
 
   require_command mise
   if [[ ! -e "$version_file" && ! -L "$version_file" ]]; then
     setup_profile >/dev/null
+    if cancel_pending_launch; then
+      return "$launch_cancel_status"
+    fi
   fi
   version="$(read_pinned_version)"
   ensure_managed_profile
+  if cancel_pending_launch; then
+    return "$launch_cancel_status"
+  fi
   binary="$(ensure_installed_binary "$version")"
+  if cancel_pending_launch; then
+    return "$launch_cancel_status"
+  fi
   verify_binary_version "$binary" "$version"
+  if cancel_pending_launch; then
+    return "$launch_cancel_status"
+  fi
+  parse_launch_arguments "$@"
+  launch_args=(--approval-mode yolo)
+  if [[ "$launch_headless_policy" == no-user-input ]]; then
+    [[ "$version" == "$verified_headless_policy_version" ]] \
+      || die "--headless-policy no-user-input is verified only for OMP $verified_headless_policy_version; pinned version is $version"
+    create_headless_policy_overlay
+    launch_args+=(--config "$launch_overlay_path")
+  fi
+  if cancel_pending_launch; then
+    return "$launch_cancel_status"
+  fi
+  if [[ "${#launch_forwarded_args[@]}" -gt 0 ]]; then
+    launch_args+=("${launch_forwarded_args[@]}")
+  fi
+
+  if cancel_pending_launch; then
+    return "$launch_cancel_status"
+  fi
   if [[ "$profile_kind" == copilot ]]; then
     if token="$(resolve_copilot_token)"; then
-      unset GH_TOKEN GITHUB_TOKEN
-      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
-      exec "$binary" --approval-mode yolo "$@"
+      if cancel_pending_launch; then
+        return "$launch_cancel_status"
+      fi
+      env -u GH_TOKEN -u GITHUB_TOKEN \
+        COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name" \
+        "$binary" "${launch_args[@]}" &
+      launch_child_pid=$!
+    else
+      if cancel_pending_launch; then
+        return "$launch_cancel_status"
+      fi
+      env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" &
+      launch_child_pid=$!
     fi
+  else
+    env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" &
+    launch_child_pid=$!
   fi
-  OMP_PROFILE="$profile_name" exec "$binary" --approval-mode yolo "$@"
+  if [[ -n "$launch_pending_signal" ]]; then
+    case "$launch_pending_signal" in
+      HUP) launch_cancel_status=129 ;;
+      INT) launch_cancel_status=130 ;;
+      TERM) launch_cancel_status=143 ;;
+      *) launch_cancel_status=1 ;;
+    esac
+    forward_launch_signal "$launch_pending_signal"
+    launch_pending_signal=''
+  fi
+  if wait_for_launch_child; then
+    status=0
+  else
+    status=$?
+  fi
+  if [[ "$launch_cancel_status" -ne 0 ]]; then
+    status="$launch_cancel_status"
+  fi
+  launch_child_pid=''
+  launch_pending_signal=''
+  launch_cancel_status=0
+  trap - EXIT HUP INT TERM
+  cleanup_launch_overlay
+  return "$status"
 }
 
 run_for_selection() {

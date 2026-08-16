@@ -9,6 +9,7 @@ import { Cause, Data, Effect, Exit } from "effect"
 import lockfile from "proper-lockfile"
 
 import { resolveGitHubSource } from "./github-cache.js"
+import { resolveSandboxHeadlessCapabilities, sandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
 import { parseLock, renderLock } from "./lock-file.js"
 import {
   compileLock,
@@ -1392,6 +1393,11 @@ export const profileMetadata = (
     const isPrime = harnessKind === "prime"
     const claude = document.profile.harness.kind === "claude" ? document.profile.harness.claude : undefined
     const prime = document.profile.harness.kind === "prime" ? document.profile.harness.prime : undefined
+    const resolvedVersion = ready && lock?.packages.harness.kind === harnessKind ? lock.packages.harness.version : null
+    const headless = resolveSandboxHeadlessCapabilities(
+      sandboxHeadlessRuntimeAdapter(document.profile),
+      resolvedVersion,
+    )
     const secretEnvironment: Record<string, string> = Object.fromEntries(
       document.profile.secrets.required.map((name) => [name, name]),
     )
@@ -1438,7 +1444,8 @@ export const profileMetadata = (
             : isPrime
               ? "proxy"
               : "profile-secrets",
-      resolved_version: ready && lock?.packages.harness.kind === harnessKind ? lock.packages.harness.version : null,
+      headless,
+      resolved_version: resolvedVersion,
       ...(claude === undefined
         ? {}
         : {
