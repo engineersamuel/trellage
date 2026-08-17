@@ -1496,4 +1496,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:6c7dbc08965b8eb26cbe3569569224430595d2daa656ace4832a59172b3efdc2"
+final_digest = "sha256:5ee5bf78dc25218419990ff126024518aa93c973f4c690e2f20a110e2d1a8911"

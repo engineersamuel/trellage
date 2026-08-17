@@ -105,7 +105,7 @@
       }
     },
     {
-      "id": "sandbox-claude-marketplace-2.1.229",
+      "id": "sandbox-claude-marketplace-2.1.233",
       "publication": {
         "surface": "sandbox",
         "adapter": "claude-marketplace"
@@ -128,7 +128,7 @@
         "cost": true,
         "modelOverride": true,
         "effortOverride": false,
-        "testedHarnessVersion": "2.1.229"
+        "testedHarnessVersion": "2.1.233"
       },
       "deterministicEvidence": [
         {
@@ -183,7 +183,7 @@
       ],
       "liveEvidence": {
         "recorded": true,
-        "source": "Trellage Claude headless validation recorded before this publication gate",
+        "source": "Trellage claude-council marketplace validation on Claude Code 2.1.233, 2026-08-17",
         "cases": [
           "nonTtyCompletion",
           "machineOnlyStdout",
@@ -349,7 +349,7 @@
       }
     },
     {
-      "id": "native-claude-2.1.229",
+      "id": "native-claude-2.1.233",
       "publication": {
         "surface": "native",
         "catalog": "prototypes/trellage-claude-profiles/catalog.json",
@@ -375,7 +375,7 @@
         "cost": true,
         "modelOverride": true,
         "effortOverride": false,
-        "testedHarnessVersion": "2.1.229"
+        "testedHarnessVersion": "2.1.233"
       },
       "deterministicEvidence": [
         {
@@ -402,7 +402,7 @@
       ],
       "liveEvidence": {
         "recorded": true,
-        "source": "Trellage Native Claude 2.1.229 validation recorded before this publication gate",
+        "source": "Trellage Native Claude 2.1.233 validation on 2026-08-17",
         "cases": [
           "nonTtyCompletion",
           "machineOnlyStdout",

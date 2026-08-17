@@ -41,7 +41,7 @@ describe("headless capability contract", () => {
   })
 
   it("rejects duplicate output formats and unexpected keys", async () => {
-    const capabilities = resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.229")
+    const capabilities = resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.233")
 
     await expect(
       Effect.runPromise(
@@ -72,7 +72,7 @@ describe("headless capability contract", () => {
   it("fails closed on harness version drift while keeping the proven version marker", () => {
     expect(resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.234")).toEqual({
       ...conservativeHeadlessCapabilitiesV1,
-      testedHarnessVersion: "2.1.229",
+      testedHarnessVersion: "2.1.233",
     })
   })
 
@@ -89,18 +89,20 @@ describe("headless capability contract", () => {
     expect(resolveSandboxHeadlessCapabilities("codex", null)).toEqual(conservativeHeadlessCapabilitiesV1)
   })
 
-  it("publishes the verified Claude bridge contract only for the proven 2.1.229 runtime", () => {
-    expect(resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.229")).toMatchObject({
+  it("publishes each verified Claude bridge contract only for its proven runtime", () => {
+    expect(resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.233")).toMatchObject({
       outputFormats: ["text", "jsonl"],
       eventContract: "claude-stream-json-v1",
       trellageEventContract: "trellage-headless-v1",
       changedFiles: "git-diff",
-      testedHarnessVersion: "2.1.229",
+      testedHarnessVersion: "2.1.233",
     })
-    expect(resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.233")).toEqual({
+    expect(resolveSandboxHeadlessCapabilities("claude-marketplace", "2.1.229")).toEqual({
       ...conservativeHeadlessCapabilitiesV1,
-      testedHarnessVersion: "2.1.229",
+      testedHarnessVersion: "2.1.233",
     })
+    expect(resolveSandboxHeadlessCapabilities("claude-core", "2.1.229").prompt).toBe(true)
+    expect(resolveSandboxHeadlessCapabilities("claude-hyperresearch", "2.1.229").prompt).toBe(true)
   })
 
   it("maps parsed Sandbox profiles to runtime adapters without a profile-name allowlist", async () => {

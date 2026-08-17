@@ -33,7 +33,7 @@ cat >"$fake_bin/claude" <<'FAKE_CLAUDE'
 set -euo pipefail
 
 if [[ "${1-}" == --version ]]; then
-  printf '%s (Claude Code)\n' "${FAKE_CLAUDE_VERSION:-2.1.229}"
+  printf '%s (Claude Code)\n' "${FAKE_CLAUDE_VERSION:-2.1.233}"
   exit 0
 fi
 
@@ -145,7 +145,7 @@ jq -e '
     "cost": true,
     "modelOverride": true,
     "effortOverride": false,
-    "testedHarnessVersion": "2.1.229"
+    "testedHarnessVersion": "2.1.233"
   }
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
@@ -209,7 +209,7 @@ rm -rf "$profile_root"
 [[ -d "$profile_home" && ! -L "$profile_home" ]] || fail 'profile home is unsafe'
 jq -e '
   .hasCompletedOnboarding == true
-  and .lastOnboardingVersion == "2.1.229"
+  and .lastOnboardingVersion == "2.1.233"
   and .shiftEnterKeyBindingInstalled == true
   and .theme == "dark"
 ' "$profile_home/.claude.json" >/dev/null || fail 'setup onboarding state differs'
@@ -341,7 +341,7 @@ grep -Fqx TERM "$FAKE_CLAUDE_SIGNAL_LOG" \
   || fail 'Claude process did not receive TERM'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'cldx doctor: OK (2.1.229, claude-opus-5)' "$fixture_root/doctor.out" \
+grep -Fq 'cldx doctor: OK (2.1.233, claude-opus-5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \
