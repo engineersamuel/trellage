@@ -90,8 +90,7 @@ export type SandboxHeadlessRuntimeAdapter =
   | "pi"
   | "prime"
 
-const verifiedClaudeHarnessVersion = "2.1.229"
-const verifiedClaudeHeadlessCapabilities = {
+const verifiedClaudeHeadlessCapabilities = (testedHarnessVersion: string) => ({
   schemaVersion: 1 as const,
   prompt: true,
   outputFormats: ["text", "jsonl"] as const,
@@ -105,22 +104,22 @@ const verifiedClaudeHeadlessCapabilities = {
   usage: true,
   cost: true,
   effortOverride: false,
-  testedHarnessVersion: verifiedClaudeHarnessVersion,
-}
+  testedHarnessVersion,
+})
 
 export const sandboxHeadlessCapabilityDeclarations = {
   codex: conservativeHeadlessCapabilitiesV1,
   copilot: conservativeHeadlessCapabilitiesV1,
   "claude-core": checkedHeadlessCapabilitiesV1({
-    ...verifiedClaudeHeadlessCapabilities,
+    ...verifiedClaudeHeadlessCapabilities("2.1.229"),
     modelOverride: false,
   }),
   "claude-marketplace": checkedHeadlessCapabilitiesV1({
-    ...verifiedClaudeHeadlessCapabilities,
+    ...verifiedClaudeHeadlessCapabilities("2.1.233"),
     modelOverride: true,
   }),
   "claude-hyperresearch": checkedHeadlessCapabilitiesV1({
-    ...verifiedClaudeHeadlessCapabilities,
+    ...verifiedClaudeHeadlessCapabilities("2.1.229"),
     modelOverride: true,
   }),
   pi: conservativeHeadlessCapabilitiesV1,

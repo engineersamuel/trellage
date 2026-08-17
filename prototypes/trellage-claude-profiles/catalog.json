@@ -21,7 +21,7 @@
         "cost": true,
         "modelOverride": true,
         "effortOverride": false,
-        "testedHarnessVersion": "2.1.229"
+        "testedHarnessVersion": "2.1.233"
       },
       "plugin": null,
       "standaloneMcps": []

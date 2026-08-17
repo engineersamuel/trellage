@@ -26,6 +26,24 @@ const baseChoice: ProfileChoice = {
   mcps: [],
 }
 
+const councilChoice: ProfileChoice = {
+  ...baseChoice,
+  value: path.join(repositoryRoot, "profiles", "claude-council", "profile.toml"),
+  name: "claude-council",
+  description: "Claude Council",
+  harness: { kind: "claude", version: "latest", model: "claude-opus-5" },
+  headlessRuntime: "claude-marketplace",
+  plugins: [
+    {
+      adapter: "claude-marketplace",
+      repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
+      ref: "v1.2.0",
+      marketplace: "council-of-high-intelligence",
+      select: ["council"],
+    },
+  ],
+}
+
 describe("resolveProfileLocked", () => {
   it("reports locked and the resolved harness version when a committed profile has a current production lock", async () => {
     const readiness = await Effect.runPromise(resolveProfileReadiness(baseChoice))
@@ -33,6 +51,13 @@ describe("resolveProfileLocked", () => {
 
     const locked = await Effect.runPromise(resolveProfileLocked(baseChoice))
     expect(locked).toBe(true)
+  })
+
+  it("reports the exact current Council marketplace version", async () => {
+    await expect(Effect.runPromise(resolveProfileReadiness(councilChoice))).resolves.toEqual({
+      locked: true,
+      resolvedVersion: "2.1.233",
+    })
   })
 
   it("reports not locked when no production platform is supported", async () => {

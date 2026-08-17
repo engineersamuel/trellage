@@ -716,14 +716,25 @@ separate because it can consume paid quota:
 
 ```bash
 TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
+TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
   scripts/verify-headless-contracts --live
 TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
+TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
   make headless-matrix-live
+
+TRELLAGE_HEADLESS_SANDBOX_PROFILE=claude-council \
+TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.233 \
+TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox \
+  scripts/verify-headless-contracts --live
 ```
 
-The checked-in fixture pins the recorded Claude Code `2.1.229` contract.
-`TRELLAGE_HEADLESS_SANDBOX_PROFILE` can instead name another full-inventory
-profile that resolves to the same contract.
+The checked-in core fixture pins its recorded Claude Code `2.1.229` contract.
+Sandbox adapters can publish different tested Claude versions. Set
+`TRELLAGE_HEADLESS_SANDBOX_VERSION` with the exact version expected for the
+selected profile. The `claude-council` live probe also requires a successful
+headless Council agent invocation. Use `TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox`
+to run only the selected Sandbox contract when unrelated Native probes are not
+part of the evidence being refreshed.
 
 Capability values apply only to the exact recorded harness version. Version
 drift keeps the profile discoverable but resolves its headless object to

@@ -51,9 +51,32 @@ TRELLAGE_HEADLESS_SANDBOX_PROFILE= \
   || status=$?
 [[ "$status" -eq 1 ]] || fail "unconfigured live driver returned $status instead of 1"
 grep -Fqx \
-  'verify-headless-live-contracts: set TRELLAGE_HEADLESS_SANDBOX_PROFILE to the checked-in Claude 2.1.229 live fixture or another verified profile' \
+  'verify-headless-live-contracts: set TRELLAGE_HEADLESS_SANDBOX_PROFILE to a verified Claude profile' \
   "$temp_root/live.err" || fail 'unconfigured live driver diagnostic differs'
 [[ ! -s "$temp_root/live.out" ]] || fail 'unconfigured live driver wrote stdout'
+
+status=0
+TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
+TRELLAGE_HEADLESS_SANDBOX_VERSION= \
+  scripts/verify-headless-live-contracts >"$temp_root/live-version.out" 2>"$temp_root/live-version.err" \
+  || status=$?
+[[ "$status" -eq 1 ]] || fail "unconfigured live version returned $status instead of 1"
+grep -Fqx \
+  'verify-headless-live-contracts: set TRELLAGE_HEADLESS_SANDBOX_VERSION to the exact verified Claude version' \
+  "$temp_root/live-version.err" || fail 'unconfigured live version diagnostic differs'
+[[ ! -s "$temp_root/live-version.out" ]] || fail 'unconfigured live version wrote stdout'
+
+status=0
+TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
+TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
+TRELLAGE_HEADLESS_LIVE_SCOPE=invalid \
+  scripts/verify-headless-live-contracts >"$temp_root/live-scope.out" 2>"$temp_root/live-scope.err" \
+  || status=$?
+[[ "$status" -eq 1 ]] || fail "invalid live scope returned $status instead of 1"
+grep -Fqx \
+  'verify-headless-live-contracts: TRELLAGE_HEADLESS_LIVE_SCOPE must be all or sandbox' \
+  "$temp_root/live-scope.err" || fail 'invalid live scope diagnostic differs'
+[[ ! -s "$temp_root/live-scope.out" ]] || fail 'invalid live scope wrote stdout'
 
 live_profile='tests/fixtures/headless-live-claude/profile.toml'
 live_lock='tests/fixtures/headless-live-claude/profile.linux-arm64.lock.toml'
@@ -68,17 +91,23 @@ grep -Fqx 'version = "2.1.229"' "$live_lock" \
 grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$live_lock" \
   || fail 'Sandbox live lock has no final image digest'
 
+council_lock='profiles/claude-council/profile.linux-arm64.lock.toml'
+grep -Fqx 'version = "2.1.233"' "$council_lock" \
+  || fail 'Council lock does not resolve the recorded marketplace version'
+grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$council_lock" \
+  || fail 'Council lock has no final image digest'
+
 ledger='docs/headless-evidence.json'
 jq -e '
   .schemaVersion == 1
   and .capabilitySchemaVersion == 1
   and ([.contracts[].id] | sort) == [
-    "native-claude-2.1.229",
+    "native-claude-2.1.233",
     "native-copilot-1.0.80",
     "native-omp-copilot-17.2.12",
     "sandbox-claude-core-2.1.229",
     "sandbox-claude-hyperresearch-2.1.229",
-    "sandbox-claude-marketplace-2.1.229"
+    "sandbox-claude-marketplace-2.1.233"
   ]
   and all(.contracts[]; .liveEvidence.recorded == true)
   and any(.contracts[];
@@ -113,6 +142,7 @@ for documented_command in \
   'scripts/verify-headless-contracts' \
   'make headless-matrix' \
   'make headless-matrix-test' \
+  'TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \' \
   '  scripts/verify-headless-contracts --live' \
   '  make headless-matrix-live'; do
   grep -Fxq "$documented_command" <<<"$headless_section" \

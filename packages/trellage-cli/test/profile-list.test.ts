@@ -92,7 +92,7 @@ describe("profile list DTOs", () => {
     expect(entry?.herdrCompatibility).toEqual({ status: "untested" })
   })
 
-  it("fails closed for full-list Claude entries when the resolved version drifted past the verified evidence", () => {
+  it("publishes the current Claude marketplace contract and fails closed on later drift", () => {
     const choice = sample({
       name: "claude-blog",
       description: "Claude blog",
@@ -113,12 +113,23 @@ describe("profile list DTOs", () => {
     const [entry] = toFullList([choice], [{ locked: true, resolvedVersion: "2.1.233" }]).profiles
 
     expect(entry?.headless).toMatchObject({
+      prompt: true,
+      outputFormats: ["text", "jsonl"],
+      eventContract: "claude-stream-json-v1",
+      trellageEventContract: "trellage-headless-v1",
+      changedFiles: "git-diff",
+      testedHarnessVersion: "2.1.233",
+    })
+
+    const [drifted] = toFullList([choice], [{ locked: true, resolvedVersion: "2.1.234" }]).profiles
+
+    expect(drifted?.headless).toMatchObject({
       prompt: false,
       outputFormats: ["text"],
       eventContract: null,
       trellageEventContract: null,
       changedFiles: "none",
-      testedHarnessVersion: "2.1.229",
+      testedHarnessVersion: "2.1.233",
     })
   })
 
