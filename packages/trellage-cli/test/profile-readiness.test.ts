@@ -56,7 +56,7 @@ describe("resolveProfileLocked", () => {
   it("reports the exact current Council marketplace version", async () => {
     await expect(Effect.runPromise(resolveProfileReadiness(councilChoice))).resolves.toEqual({
       locked: true,
-      resolvedVersion: "2.1.233",
+      resolvedVersion: "2.1.236",
     })
   })
 

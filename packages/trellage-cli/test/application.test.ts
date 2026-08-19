@@ -2129,7 +2129,7 @@ select = ["*"]
     )
     expect(mocks.requests).toEqual([
       expect.objectContaining({
-        include: ["skills", ".agents/skills", ".claude/skills"],
+        include: ["skills", ".agents/skills", ".claude/skills", "plugins/*"],
         inventoryPolicy: {},
       }),
     ])

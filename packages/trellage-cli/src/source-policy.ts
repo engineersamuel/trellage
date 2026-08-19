@@ -19,9 +19,12 @@ const genericSkillRoots = ["skills", ".agents/skills", ".claude/skills"] as cons
 
 export const sourceIncludes = (source: SourceSelection): ReadonlyArray<string> => {
   if (source.kind === "skill") {
+    // Some upstream skill catalogs nest each skill under a Claude-plugin
+    // directory (`plugins/<name>/skills/<name>`) instead of a top-level
+    // `skills/` root; keep both shapes so the Skills CLI can find either.
     return source.adapter === "omp-native"
       ? source.select.map((selection) => `.omp/skills/${selection}`)
-      : [...genericSkillRoots]
+      : [...genericSkillRoots, ...source.select.map((selection) => `plugins/${selection}`)]
   }
   if (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace") return []
   if (source.adapter === "hyperresearch") return []

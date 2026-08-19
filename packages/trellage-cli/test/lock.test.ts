@@ -1006,6 +1006,7 @@ describe("compileLock", () => {
       "source:v6.2.0",
       "source:v1.10.0",
       "source:v1.2.3",
+      "source:3c2629142c5d437428269b1b722b08c0b87f574d",
       "source:c4b82b0ad771190355eb8e204b1329732a18449a",
     ])
     expect(compiled.sources.every((source) => source.integrity === treeIntegrity(source.files))).toBe(true)

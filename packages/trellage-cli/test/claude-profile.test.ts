@@ -71,6 +71,11 @@ describe("authored Claude Research profile", () => {
         always_on: true,
       }),
       expect.objectContaining({
+        repository: "https://github.com/humanlayer/skills.git",
+        ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
+        select: ["show-me"],
+      }),
+      expect.objectContaining({
         repository: "https://github.com/mvanhorn/last30days-skill.git",
         ref: "v3.18.4",
         select: ["last30days"],
@@ -104,7 +109,7 @@ describe("authored Claude Research profile", () => {
       claude_opus_model: "claude-opus-5",
       claude_sonnet_model: "claude-sonnet-5",
       claude_haiku_model: "claude-haiku-4.5",
-      resolved_version: "2.1.233",
+      resolved_version: "2.1.236",
       headless: {
         schemaVersion: 1,
         prompt: false,
@@ -170,6 +175,15 @@ describe("authored Claude Research profile", () => {
           repository: "https://github.com/mattpocock/skills.git",
           ref: "v1.2.3",
           select: ["grill-with-docs", "improve-codebase-architecture"],
+          commit: "a".repeat(40),
+          integrity: `sha256:${"b".repeat(64)}`,
+          files: [],
+        },
+        {
+          kind: "skill",
+          repository: "https://github.com/humanlayer/skills.git",
+          ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
+          select: ["show-me"],
           commit: "a".repeat(40),
           integrity: `sha256:${"b".repeat(64)}`,
           files: [],
@@ -267,8 +281,8 @@ describe("authored Claude social media profile", () => {
     expect(lock.sources[pluginOffset + 1]).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "humanizer",
-      plugin_versions: { humanizer: "2.9.1" },
-      commit: "523374dee72d67c7b2b5f858ea0094ffda49c3ac",
+      plugin_versions: { humanizer: "2.11.2" },
+      commit: "e2e92e7b4b8229253ed5c8e81dc65463fdeddda5",
     })
     expect(lock.sources[pluginOffset + 1]?.files.filter(({ path }) => path === "SKILL.md")).toHaveLength(1)
     expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
@@ -356,6 +370,11 @@ describe("authored Claude council profile", () => {
         select: ["grill-with-docs", "improve-codebase-architecture"],
         always_on: true,
       }),
+      expect.objectContaining({
+        repository: "https://github.com/humanlayer/skills.git",
+        ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
+        select: ["show-me"],
+      }),
     ])
     expect(document.profile.plugins).toEqual([
       expect.objectContaining({
@@ -373,7 +392,7 @@ describe("authored Claude council profile", () => {
         select: ["caveman"],
       }),
     ])
-    expect(lock.sources).toHaveLength(4)
+    expect(lock.sources).toHaveLength(5)
     const skillSource = lock.sources.find(
       (candidate) =>
         candidate.kind === "skill" && candidate.repository === "https://github.com/JuliusBrussee/caveman.git",
@@ -435,7 +454,7 @@ describe("authored standalone Claude Qwen profile", () => {
       claude_opus_model: "qwen3.6-35b-a3b-local",
       claude_sonnet_model: "qwen3.6-35b-a3b-local",
       claude_haiku_model: "qwen3.6-35b-a3b-local",
-      resolved_version: "2.1.233",
+      resolved_version: "2.1.236",
       headless: {
         outputFormats: ["text"],
         trellageEventContract: null,

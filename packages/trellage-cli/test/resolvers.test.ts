@@ -452,7 +452,7 @@ describe("production package resolutions", () => {
     expect(result.commit).toBe("a".repeat(40))
     expect(mocks.requests).toEqual([
       expect.objectContaining({
-        include: ["skills", ".agents/skills", ".claude/skills"],
+        include: ["skills", ".agents/skills", ".claude/skills", "plugins/*"],
         inventoryPolicy: {},
       }),
     ])
