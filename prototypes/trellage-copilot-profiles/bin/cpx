@@ -168,7 +168,8 @@ validate_catalog() {
           "marketplace": "microsoft/hve-core",
           "marketplaceName": "hve-core",
           "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
-          "plugin": "hve-core-all@hve-core",
+          "plugin": "hve-core@hve-core",
+          "retiredPlugins": ["hve-core-all@hve-core"],
           "standaloneMcps": []
         },
         "superpowers": {
@@ -450,6 +451,11 @@ forbidden_superpowers_plugins_from_snapshot() {
       continue
     fi
     [[ "$selector" != "$selected" ]] || continue
+    if jq -e --arg profile "$profile" --arg selector "$selector" \
+      '(.profiles[$profile].retiredPlugins // []) | index($selector) != null' \
+      "$catalog" >/dev/null; then
+      continue
+    fi
     root="$(active_plugin_root "$profile" "$selector")" || status=$?
     case "$status" in
       0)
@@ -510,6 +516,58 @@ remove_forbidden_superpowers() {
   require_no_forbidden_superpowers "$profile"
 }
 
+retired_plugins_from_snapshot() {
+  local profile="$1" inventory="$2" selector matches=''
+
+  while IFS= read -r selector; do
+    [[ -n "$selector" ]] || continue
+    if printf '%s\n' "$inventory" | sed -n -E \
+      's/^[[:space:]]*• ([A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?) \(v[^)]*\)( \((enabled|disabled)\))?$/\1/p' \
+      | grep -Fxq -- "$selector"; then
+      matches+="$selector"$'\n'
+    fi
+  done < <(jq -r --arg profile "$profile" \
+    '.profiles[$profile].retiredPlugins[]? // empty' "$catalog")
+  [[ -n "$matches" ]] || return 1
+  printf '%s' "$matches" | LC_ALL=C sort -u
+}
+
+retired_plugins() {
+  local profile="$1" inventory
+
+  inventory="$(plugin_inventory_snapshot "$profile")" || return $?
+  retired_plugins_from_snapshot "$profile" "$inventory"
+}
+
+require_no_retired_plugins() {
+  local profile="$1" status=0
+
+  retired_plugins "$profile" >/dev/null || status=$?
+  case "$status" in
+    0) die "retired plugin is installed: $profile; run: cpx repair $profile" ;;
+    1) ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
+}
+
+remove_retired_plugins() {
+  local profile="$1" plugins status=0 plugin
+
+  plugins="$(retired_plugins "$profile")" || status=$?
+  case "$status" in
+    0) ;;
+    1) return ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
+  while IFS= read -r plugin; do
+    [[ "$plugin" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?$ ]] \
+      || die "invalid retired plugin selector: $profile"
+    run_copilot "$profile" plugin uninstall "$plugin" \
+      || die "failed to remove retired plugin: $profile"
+  done <<<"$plugins"
+  require_no_retired_plugins "$profile"
+}
+
 ensure_profile_for_launch() {
   local profile="$1"
   local inventory
@@ -545,6 +603,7 @@ ensure_profile_for_launch() {
     ensure_marketplace "$profile"
     run_copilot "$profile" plugin install "$plugin"
   fi
+  remove_retired_plugins "$profile"
 }
 
 marketplace_available() {
@@ -586,6 +645,7 @@ setup_profile() {
   if [[ -z "$current_version" ]]; then
     run_copilot "$profile" plugin install "$plugin"
   fi
+  remove_retired_plugins "$profile"
   printf '%s: ready\n' "$profile"
 }
 
@@ -826,6 +886,7 @@ doctor_profile() {
   require_safe_profile_home "$profile"
   home="$(profile_home "$profile")"
   [[ -d "$home" ]] || die "profile is not set up: $profile"
+  require_no_retired_plugins "$profile"
   require_no_forbidden_superpowers "$profile"
   plugin="$(profile_value "$profile" plugin)"
   version="$(installed_version "$profile" "$plugin")"
@@ -911,12 +972,20 @@ update_profile() {
   local profile="$1"
   local marketplace_name
   local plugin
+  local version
   require_profile "$profile"
   [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  ensure_marketplace "$profile"
   marketplace_name="$(profile_value "$profile" marketplaceName)"
   plugin="$(profile_value "$profile" plugin)"
   run_copilot "$profile" plugin marketplace update "$marketplace_name"
-  run_copilot "$profile" plugin update "$plugin"
+  version="$(installed_version "$profile" "$plugin")"
+  if [[ -n "$version" ]]; then
+    run_copilot "$profile" plugin update "$plugin"
+  else
+    run_copilot "$profile" plugin install "$plugin"
+  fi
+  remove_retired_plugins "$profile"
   printf '%s: updated\n' "$profile"
 }
 
@@ -933,6 +1002,7 @@ repair_profile() {
   if [[ -z "$version" ]]; then
     run_copilot "$profile" plugin install "$plugin"
   fi
+  remove_retired_plugins "$profile"
   doctor_profile "$profile"
   printf '%s: repaired\n' "$profile"
 }

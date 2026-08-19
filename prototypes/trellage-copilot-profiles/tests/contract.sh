@@ -194,7 +194,7 @@ case "${1-} ${2-}" in
     version='unknown'
     case "$plugin" in
       awesome-copilot@awesome-copilot) version='1.1.0' ;;
-      hve-core-all@hve-core) version='3.3.101' ;;
+      hve-core@hve-core) version='3.2.2' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
     esac
     mkdir -p "$(dirname "$installed")"
@@ -205,7 +205,7 @@ case "${1-} ${2-}" in
     version='unknown'
     case "$plugin" in
       awesome-copilot@awesome-copilot) version='1.1.0' ;;
-      hve-core-all@hve-core) version='3.3.101' ;;
+      hve-core@hve-core) version='3.2.2' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
     esac
     mkdir -p "$(dirname "$installed")"
@@ -258,7 +258,7 @@ case "$url" in
     printf '%s\n' '{"name":"awesome-copilot","plugins":[{"name":"awesome-copilot","version":"1.1.0"}]}'
     ;;
   https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json)
-    printf '%s\n' '{"name":"hve-core","plugins":[{"name":"hve-core-all","version":"3.3.101"}]}'
+    printf '%s\n' '{"name":"hve-core","plugins":[{"name":"hve-core","version":"3.2.2"}]}'
     ;;
   https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json)
     printf '%s\n' '{"name":"superpowers-marketplace","plugins":[{"name":"superpowers","version":"6.2.0"}]}'
@@ -378,7 +378,8 @@ jq -e '
     "marketplace": "microsoft/hve-core",
     "marketplaceName": "hve-core",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
-    "plugin": "hve-core-all@hve-core",
+    "plugin": "hve-core@hve-core",
+    "retiredPlugins": ["hve-core-all@hve-core"],
     "standaloneMcps": []
   }
   and .profiles.superpowers.headless == {
@@ -752,15 +753,15 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
 
-assert_contains 'args=plugin install hve-core-all@hve-core ' "$fake_copilot_log"
-assert_contains $'hve-core-all@hve-core\t3.3.101' \
+assert_contains 'args=plugin install hve-core@hve-core ' "$fake_copilot_log"
+assert_contains $'hve-core@hve-core\t3.2.2' \
   "$expected_hve_home/fake-state/plugins"
 assert_not_contains 'args=plugin update ' "$fake_copilot_log"
 
 before_list_calls="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 list_output="$fixture_root/list.out"
 "$launcher" list >"$list_output"
-assert_contains $'hve\thve-core-all@hve-core' "$list_output"
+assert_contains $'hve\thve-core@hve-core' "$list_output"
 assert_contains $'superpowers\tsuperpowers@superpowers-marketplace' "$list_output"
 assert_contains $'awesome\tawesome-copilot@awesome-copilot' "$list_output"
 json_list_output="$fixture_root/list.json"
@@ -832,19 +833,19 @@ printf '%s\t%s\n' 'hve-core-preview' 'fixture/hve-core-preview' \
   >"$expected_hve_home/fake-state/marketplaces"
 "$launcher" setup hve
 assert_contains 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log"
-assert_contains 'args=plugin install hve-core-all@hve-core ' "$fake_copilot_log"
+assert_contains 'args=plugin install hve-core@hve-core ' "$fake_copilot_log"
 [[ -f "$expected_hve_home/fake-state/plugins" ]] || fail 'setup did not use isolated profile state'
 mkdir -p \
-  "$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-one" \
-  "$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-two" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core/skills/package-one" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core/skills/package-two" \
   "$expected_hve_home/installed-plugins/unrelated/unrelated/skills/not-selected"
 printf '%s\n' '# Package one' \
-  >"$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-one/SKILL.md"
+  >"$expected_hve_home/installed-plugins/hve-core/hve-core/skills/package-one/SKILL.md"
 printf '%s\n' '# Package two' \
-  >"$expected_hve_home/installed-plugins/hve-core/hve-core-all/skills/package-two/SKILL.md"
+  >"$expected_hve_home/installed-plugins/hve-core/hve-core/skills/package-two/SKILL.md"
 printf '%s\n' '# Unrelated package' \
   >"$expected_hve_home/installed-plugins/unrelated/unrelated/skills/not-selected/SKILL.md"
-[[ ! -e "$HOME/.copilot/plugins/hve-core-all@hve-core" ]] \
+[[ ! -e "$HOME/.copilot/plugins/hve-core@hve-core" ]] \
   || fail 'setup leaked into global Copilot state'
 marketplace_add_count="$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")"
 "$launcher" setup hve
@@ -862,23 +863,35 @@ jq -e '
   and .harness == "copilot"
   and .profile == "hve"
   and .readiness == "healthy"
-  and .plugins == [{name:"hve-core-all@hve-core",version:"3.3.101"}]
+  and .plugins == [{name:"hve-core@hve-core",version:"3.2.2"}]
   and .skills == {packageCount:2,visibleCount:3}
   and .mcps == ["docs","files"]
 ' "$inventory_output" >/dev/null || fail 'healthy inventory output differs'
-mv "$expected_hve_home/installed-plugins/hve-core/hve-core-all" \
-  "$expected_hve_home/installed-plugins/hve-core/hve-core-all.safe"
+mv "$expected_hve_home/installed-plugins/hve-core/hve-core" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core.safe"
 ln -s "$expected_hve_home/installed-plugins/unrelated/unrelated" \
-  "$expected_hve_home/installed-plugins/hve-core/hve-core-all"
+  "$expected_hve_home/installed-plugins/hve-core/hve-core"
 if "$launcher" inventory hve --json \
   >"$fixture_root/symlink-plugin-root.out" 2>"$fixture_root/symlink-plugin-root.err"; then
   fail 'inventory accepted a redirected selected plugin root'
 fi
 assert_contains 'invalid installed plugin root for hve' \
   "$fixture_root/symlink-plugin-root.err"
-rm "$expected_hve_home/installed-plugins/hve-core/hve-core-all"
-mv "$expected_hve_home/installed-plugins/hve-core/hve-core-all.safe" \
-  "$expected_hve_home/installed-plugins/hve-core/hve-core-all"
+rm "$expected_hve_home/installed-plugins/hve-core/hve-core"
+mv "$expected_hve_home/installed-plugins/hve-core/hve-core.safe" \
+  "$expected_hve_home/installed-plugins/hve-core/hve-core"
+printf '%s\t%s\n' 'hve-core-all@hve-core' '3.3.101' \
+  >>"$expected_hve_home/fake-state/plugins"
+if "$launcher" doctor hve \
+  >"$fixture_root/retired-hve-doctor.out" 2>"$fixture_root/retired-hve-doctor.err"; then
+  fail 'doctor accepted a retired HVE plugin'
+fi
+assert_contains 'cpx: retired plugin is installed: hve; run: cpx repair hve' \
+  "$fixture_root/retired-hve-doctor.err"
+"$launcher" repair hve >"$fixture_root/retired-hve-repair.out"
+assert_contains 'args=plugin uninstall hve-core-all@hve-core ' "$fake_copilot_log"
+assert_not_contains 'hve-core-all@hve-core' "$expected_hve_home/fake-state/plugins"
+assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugins"
 rm -rf "$HOME/.local/share/trellage/profiles/copilot/awesome"
 "$launcher" inventory awesome --json >"$fixture_root/not-setup-inventory.json"
 jq -e '
@@ -906,7 +919,7 @@ check_output="$fixture_root/check.out"
 export FAKE_FORBID_PROFILE_MUTATION=1
 "$launcher" update --check hve >"$check_output"
 unset FAKE_FORBID_PROFILE_MUTATION
-assert_contains 'hve: current (3.3.101)' "$check_output"
+assert_contains 'hve: current (3.2.2)' "$check_output"
 assert_contains 'https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json' "$fake_curl_log"
 after_check_hash="$(profile_tree_hash "$expected_hve_home")"
 [[ "$before_check_hash" == "$after_check_hash" ]] || fail 'update --check mutated the profile home tree'
@@ -922,17 +935,18 @@ printf 'session\n' >"$sessions_sentinel"
 printf 'permission\n' >"$permissions_sentinel"
 printf 'auth\n' >"$auth_sentinel"
 
-printf '%s\t%s\n' 'hve-core-all@hve-core' '3.3.100' >"$expected_hve_home/fake-state/plugins"
+printf '%s\t%s\n' 'hve-core@hve-core' '3.2.1' >"$expected_hve_home/fake-state/plugins"
 if "$launcher" update --check hve >"$fixture_root/outdated.out"; then
   fail 'update --check returned success for an outdated profile'
 fi
-assert_contains 'hve: update available (3.3.100 -> 3.3.101)' "$fixture_root/outdated.out"
-mv "$fake_bin/curl" "$fake_bin/curl.disabled"
-PATH="$fake_bin:/bin:/usr/sbin:/sbin" "$launcher" update hve
-mv "$fake_bin/curl.disabled" "$fake_bin/curl"
+assert_contains 'hve: update available (3.2.1 -> 3.2.2)' "$fixture_root/outdated.out"
+before_update_curl_calls="$(wc -l <"$fake_curl_log" | tr -d ' ')"
+"$launcher" update hve
+[[ "$(wc -l <"$fake_curl_log" | tr -d ' ')" == "$before_update_curl_calls" ]] \
+  || fail 'update fetched the manifest outside Copilot marketplace commands'
 assert_contains 'args=plugin marketplace update hve-core ' "$fake_copilot_log"
-assert_contains 'args=plugin update hve-core-all@hve-core ' "$fake_copilot_log"
-assert_contains $'hve-core-all@hve-core\t3.3.101' "$expected_hve_home/fake-state/plugins"
+assert_contains 'args=plugin update hve-core@hve-core ' "$fake_copilot_log"
+assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugins"
 [[ "$(<"$sessions_sentinel")" == 'session' \
   && "$(<"$permissions_sentinel")" == 'permission' \
   && "$(<"$auth_sentinel")" == 'auth' ]] \
@@ -944,7 +958,7 @@ rm -f "$expected_hve_home/fake-state/plugins"
   && "$(<"$permissions_sentinel")" == 'permission' \
   && "$(<"$auth_sentinel")" == 'auth' ]] \
   || fail 'launch repair changed preserved profile state'
-assert_contains $'hve-core-all@hve-core\t3.3.101' "$expected_hve_home/fake-state/plugins"
+assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugins"
 [[ "$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")" == "$marketplace_add_count" ]] \
   || fail 'launch repair re-added an already registered marketplace'
 
@@ -985,7 +999,7 @@ assert_contains 'cpx: forbidden Superpowers plugin is installed: hve; run: cpx r
   "$fixture_root/hve-superpowers-doctor.err"
 "$launcher" repair hve >"$fixture_root/hve-superpowers-repair.out"
 assert_not_contains 'superpowers@' "$expected_hve_home/fake-state/plugins"
-assert_contains $'hve-core-all@hve-core\t3.3.101' \
+assert_contains $'hve-core@hve-core\t3.2.2' \
   "$expected_hve_home/fake-state/plugins"
 
 mkdir -p "$expected_hve_home/installed-plugins/custom/renamed/.claude-plugin"
@@ -1003,7 +1017,7 @@ launch_calls_before="$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")"
   || fail 'ordinary launch did not self-heal forbidden Superpowers plugins'
 assert_not_contains $'superpowers\t' "$expected_hve_home/fake-state/plugins"
 assert_not_contains $'renamed@custom\t' "$expected_hve_home/fake-state/plugins"
-assert_contains $'hve-core-all@hve-core\t3.3.101' \
+assert_contains $'hve-core@hve-core\t3.2.2' \
   "$expected_hve_home/fake-state/plugins"
 [[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" -gt "$launch_calls_before" ]] \
   || fail 'self-healed launch did not start the underlying Copilot agent'
@@ -1069,7 +1083,7 @@ unset FAKE_CURL_FAILURE_URL
   || fail "manifest transport failure returned status $check_all_status instead of 2"
 assert_contains 'failed to fetch or parse official manifest for superpowers' \
   "$fixture_root/check-all-failure.err"
-assert_contains 'hve: current (3.3.101)' "$fixture_root/check-all-failure.out"
+assert_contains 'hve: current (3.2.2)' "$fixture_root/check-all-failure.out"
 assert_not_contains 'superpowers: update available' "$fixture_root/check-all-failure.out"
 
 export FAKE_CURL_FAILURE_URL='https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json'
@@ -1136,7 +1150,7 @@ rm -rf "$runtime_root"
 [[ -x "$installed" ]] || fail 'installer did not create ~/.local/bin/cpx'
 assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
 "$installed" list >"$fixture_root/installed-list.out"
-assert_contains $'hve\thve-core-all@hve-core' "$fixture_root/installed-list.out"
+assert_contains $'hve\thve-core@hve-core' "$fixture_root/installed-list.out"
 "$installer"
 "$uninstaller"
 [[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/bin/cpx behind'
