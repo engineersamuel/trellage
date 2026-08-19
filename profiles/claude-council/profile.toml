@@ -4,7 +4,9 @@ description = "Claude Code (Opus via proxy) with Council of High Intelligence—
 
 [harness]
 kind = "claude"
-version = "latest"
+# Pinned to the exact Claude Code release recorded in docs/headless-evidence.json's
+# claude-council live validation. Bump only alongside new live-validated evidence.
+version = "2.1.233"
 
 [harness.claude]
 default_auth = "proxy"
