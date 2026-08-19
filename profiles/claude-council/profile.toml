@@ -4,7 +4,9 @@ description = "Claude Code (Opus via proxy) with Council of High Intelligence—
 
 [harness]
 kind = "claude"
-version = "latest"
+# Pinned to the exact Claude Code release recorded in docs/headless-evidence.json's
+# claude-council live validation. Bump only alongside new live-validated evidence.
+version = "2.1.233"
 
 [harness.claude]
 default_auth = "proxy"
@@ -28,6 +30,13 @@ repository = "https://github.com/mattpocock/skills.git"
 ref = "v1.2.3"
 select = ["grill-with-docs", "improve-codebase-architecture"]
 always_on = true
+
+# Visual explanations (diagrams, code trees, diffs) on demand via /show-me.
+# Upstream project: https://github.com/humanlayer/skills
+[[skills]]
+repository = "https://github.com/humanlayer/skills.git"
+ref = "3c2629142c5d437428269b1b722b08c0b87f574d"
+select = ["show-me"]
 
 # Upstream project: https://github.com/0xNyk/council-of-high-intelligence
 [[plugins]]

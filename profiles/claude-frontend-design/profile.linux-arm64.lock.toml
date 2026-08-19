@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:0f9b0fbfcd996164b15bc33ca415412879cb0cd03d4da191f522accb088ff36a"
+profile_hash = "sha256:82254296ae3b79136a7e83530d6cd7b85ebecb8b8e5c9c63dcbd77087ccf4fdf"
 
 [[sources]]
 kind = "skill"
@@ -9,7 +9,87 @@ repository = "https://github.com/JuliusBrussee/caveman.git"
 ref = "v1.10.0"
 select = ["caveman"]
 commit = "fcf7663366c217dc8f334a11028de52ed950ceab"
-integrity = "sha256:79ad78f5dda894ab83c8d7d7c79374855d74b151810113e4c363251e4e2a9374"
+integrity = "sha256:e06b5877b997bb538d9a380484929839dca4828907bd7685ae74771b5c4c80ce"
+
+[[sources.files]]
+path = "plugins/caveman/.codex-plugin/plugin.json"
+sha256 = "sha256:b0c4f98731fdea478293d63177a6b403fb5cda77b70b24ec42606fc85a6ab02b"
+
+[[sources.files]]
+path = "plugins/caveman/agents/cavecrew-builder.md"
+sha256 = "sha256:135af639b287ed7534b66d01390c4dc48d98683af52232728a0e87db9c558b3e"
+
+[[sources.files]]
+path = "plugins/caveman/agents/cavecrew-investigator.md"
+sha256 = "sha256:f1ce01150aeeec7de98d487f41693d27eba1bc9d4cc67f4c774675bb21c24fc2"
+
+[[sources.files]]
+path = "plugins/caveman/agents/cavecrew-reviewer.md"
+sha256 = "sha256:ae45346edae2cdb97018a38ebdcb79b162c59875cac2921d976a7d7540e4df70"
+
+[[sources.files]]
+path = "plugins/caveman/assets/caveman-small.svg"
+sha256 = "sha256:1c8f55516541b6094cb20ceabb50ff89b01d1acafaae84487e53739deebcbb1f"
+
+[[sources.files]]
+path = "plugins/caveman/assets/caveman.svg"
+sha256 = "sha256:8024fa96dce034675eb5610139e75f6d2b5db3b4cb3df3090adb8a2b2a285595"
+
+[[sources.files]]
+path = "plugins/caveman/skills/cavecrew/SKILL.md"
+sha256 = "sha256:b74f374f6aae6e9a31e78e7d876860406fe5833378e9298536edf176c12f379b"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/__init__.py"
+sha256 = "sha256:429c3e1c5cc5b9705f28d77f303c728304ae68693913ad3d5ce9b5a44c8ee40f"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/__main__.py"
+sha256 = "sha256:6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/benchmark.py"
+sha256 = "sha256:6ff5098db623154161503595e3ef513516d1d47bed7c264c7e0378581945767b"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/cli.py"
+sha256 = "sha256:17edb6b425adc0ea04e35f1e90dfe318ba4232a1b815c5ff7d6cff7d574efea6"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/compress.py"
+sha256 = "sha256:638dacb2a45a8283f6188ebd8b98280cf322d33f9712c8afdac28ad0aa6db6ce"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/detect.py"
+sha256 = "sha256:0c68b6500dac582b53a0b02fa8949b34901dd859ee940b8004e7b54164c15e2b"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/scripts/validate.py"
+sha256 = "sha256:6098687a5fa374dc22b886452af6792f3aaa60855c4032e035ea1228dae253c7"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-compress/SKILL.md"
+sha256 = "sha256:3167d62440eee99c0e5b224d7f8b8ebcfe37efba38bc5bbee24f0d00da72a688"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman-stats/SKILL.md"
+sha256 = "sha256:b78227f62898b0360d21f2a94d48e9d7a80629cb879cc7b7f9b45b4a241eba90"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman/agents/openai.yaml"
+sha256 = "sha256:4961a650c93d688aab1f68850149cfde235a9f25b20072fcad3ee192914808fc"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman/assets/caveman-small.svg"
+sha256 = "sha256:1c8f55516541b6094cb20ceabb50ff89b01d1acafaae84487e53739deebcbb1f"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman/assets/caveman.svg"
+sha256 = "sha256:8024fa96dce034675eb5610139e75f6d2b5db3b4cb3df3090adb8a2b2a285595"
+
+[[sources.files]]
+path = "plugins/caveman/skills/caveman/SKILL.md"
+sha256 = "sha256:daf9cec496ebd039809d8236f99f17fa1b4beaadf8ce4e2d532d0da51d70afce"
 
 [[sources.files]]
 path = "skills/cavecrew/README.md"
@@ -511,6 +591,22 @@ sha256 = "sha256:b4c54a0aaad3f6eddefde6d06770a0e401fbb8fc6a8f49ce18af816bd144d14
 [[sources.files]]
 path = "skills/productivity/writing-for-agents/SKILL.md"
 sha256 = "sha256:a842323e664e5af104eac5c97ad22fda929ebeb62d81c501161ac1f6f482db58"
+
+[[sources]]
+kind = "skill"
+repository = "https://github.com/humanlayer/skills.git"
+ref = "3c2629142c5d437428269b1b722b08c0b87f574d"
+select = ["show-me"]
+commit = "3c2629142c5d437428269b1b722b08c0b87f574d"
+integrity = "sha256:af7485b54d0c1d71090f802cdde6d09cbf3e0e7226342c45fb72f8294a02b430"
+
+[[sources.files]]
+path = "plugins/show-me/.claude-plugin/plugin.json"
+sha256 = "sha256:3daf5f7ee36d15043e79a336349d04fa7e9ab9906717224d62f4bca7c92058ef"
+
+[[sources.files]]
+path = "plugins/show-me/skills/show-me/SKILL.md"
+sha256 = "sha256:bea6da70a58096730b9aeb0bae293ddf4726103a98efc9ce13c481619942a810"
 
 [[sources]]
 kind = "skill"
@@ -1721,8 +1817,16 @@ kind = "skill"
 repository = "https://github.com/emilkowalski/skills.git"
 ref = "main"
 select = ["animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations"]
-commit = "78761e1b57f97dce65b983d640c70a68f39e8163"
-integrity = "sha256:23ecb55519ea1148f7031d52069a8ecd2c9621fce181d290ae1d4ed59fc71896"
+commit = "e879241fab3cdb22e8d95587cdbf40b57a88d7da"
+integrity = "sha256:a73f2820459e7cd48b590bac6c48a84a4cdadcfcddb0431a072d4f7372e47132"
+
+[[sources.files]]
+path = "skills/animate-expo/RECIPES.md"
+sha256 = "sha256:1193cb71334da2e2341778dd92bec9ac79d989cb07fd55d661f324ed5871e718"
+
+[[sources.files]]
+path = "skills/animate-expo/SKILL.md"
+sha256 = "sha256:2121fc72ffa476492c1b91ccf96c7b26aade9d1a332dc5834ba3526e1102b00d"
 
 [[sources.files]]
 path = "skills/animate/RECIPES.md"
@@ -1730,7 +1834,7 @@ sha256 = "sha256:21ff63d84391db8d96ecdf9170095f55a42c836ccc36fd3269c4772bab031ba
 
 [[sources.files]]
 path = "skills/animate/SKILL.md"
-sha256 = "sha256:2a99870e61971553c0af3185a194c0e557f33aaa81e0422ca2fcec52195a4341"
+sha256 = "sha256:f6317335da2662e92270dc0a6128bea95d7216cd751f86628e3ac6b72804e805"
 
 [[sources.files]]
 path = "skills/animation-vocabulary/SKILL.md"
@@ -7897,8 +8001,8 @@ plugin_versions = { "taste-skill" = "1.0.0" }
 repository = "https://github.com/leonxlnx/taste-skill.git"
 ref = "main"
 select = ["taste-skill"]
-commit = "e988add20dab0fa97d7a76781c48961c8184288e"
-integrity = "sha256:72d9bb528093ac528357e474eacfb6a90ee9fd8d93203c92c58b8fd8f9afe6ae"
+commit = "dfb6f9f9e93a39f673b1827c0889cc28326d1800"
+integrity = "sha256:fae76066d965cc54ad26d9b7714951e0731f7c92d3c75f5459fd9358b0b6474f"
 
 [[sources.files]]
 path = ".claude-plugin/marketplace.json"
@@ -7961,6 +8065,14 @@ path = "assets/sponsors/imgly-logo.svg"
 sha256 = "sha256:2dd10ba9f8005d6b52149db678d611678609e653d0870b42cdb083fe9506e85f"
 
 [[sources.files]]
+path = "assets/sponsors/reactbits-logo-dark.svg"
+sha256 = "sha256:64e2e3bbdceb70c7e390517a18932b1dd984bb7c67d8737aa831d83f98825513"
+
+[[sources.files]]
+path = "assets/sponsors/reactbits-logo-light.svg"
+sha256 = "sha256:5001b2e25e293ed3cbf751cf92b69a19b0ac96b7d963845cd9879f7b7e1aab0a"
+
+[[sources.files]]
 path = "assets/sponsors/sentdm.png"
 sha256 = "sha256:e22c024eba502cf83b1d86018d310d23430b8173093dda9f9686190df1db0b48"
 
@@ -8002,7 +8114,7 @@ sha256 = "sha256:4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326d
 
 [[sources.files]]
 path = "README.md"
-sha256 = "sha256:40264d5e7be1a1b6105e60fefff310edbb19ca36a100547e0429d94bd5a1ac13"
+sha256 = "sha256:ae47e33331f4e1d77af3ed935c72f9c7832303fd7f0f3874063085e5ffde599e"
 
 [[sources.files]]
 path = "research/laziness/findings/empirical-results.md"
@@ -8328,10 +8440,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.233"
-integrity = "sha256:b5ca70610eadee40a82c6fa74f5f873eb70d5fde94bdc67df1c51416eb45e72b"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.233/claude-linux-arm64.tar.gz"
-size = 97479874
+version = "2.1.236"
+integrity = "sha256:ae3dc54b8baf2ea76c2dc475bae6b750ac5d58d79ddd3dc5da48c44b5b5f08a9"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.236/claude-linux-arm64.tar.gz"
+size = 100309808
 
 [[packages.runtime]]
 name = "bash"
@@ -8394,4 +8506,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:7a616a4f03dcd8a4fdac2e6bb0454602910c92140e562f0b758a9fb8f0d6ee29"
+final_digest = "sha256:7e29ddd23f7ff541e367b2cc93e0659017bd786212269b2c40e27dbb08dd699f"

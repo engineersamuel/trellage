@@ -46,6 +46,11 @@ describe("authored Prime Agent profile", () => {
         select: ["grill-with-docs", "improve-codebase-architecture"],
         always_on: true,
       },
+      {
+        repository: "https://github.com/humanlayer/skills.git",
+        ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
+        select: ["show-me"],
+      },
     ])
     expect(document.profile.plugins).toEqual([])
     expect(document.profile.mcps).toEqual([])
@@ -59,7 +64,7 @@ describe("authored Prime Agent profile", () => {
 
     expect(lock.platform).toBe("linux/arm64")
     expect(lock.profile_hash).toBe(profileHash(document))
-    expect(lock.sources).toHaveLength(2)
+    expect(lock.sources).toHaveLength(3)
     expect(lock.sources[0]).toMatchObject({
       kind: "skill",
       repository: "https://github.com/JuliusBrussee/caveman.git",
@@ -89,6 +94,19 @@ describe("authored Prime Agent profile", () => {
     expect(lock.sources[1]?.files).toContainEqual({
       kind: "file",
       path: "skills/engineering/improve-codebase-architecture/SKILL.md",
+      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    })
+    expect(lock.sources[2]).toMatchObject({
+      kind: "skill",
+      repository: "https://github.com/humanlayer/skills.git",
+      ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
+      select: ["show-me"],
+      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
+      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    })
+    expect(lock.sources[2]?.files).toContainEqual({
+      kind: "file",
+      path: "plugins/show-me/skills/show-me/SKILL.md",
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
     expect(lock.packages.skills_cli_version).toMatch(/^\d+\.\d+\.\d+$/)
