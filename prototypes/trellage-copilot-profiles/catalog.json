@@ -54,7 +54,10 @@
       "marketplace": "microsoft/hve-core",
       "marketplaceName": "hve-core",
       "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
-      "plugin": "hve-core-all@hve-core",
+      "plugin": "hve-core@hve-core",
+      "retiredPlugins": [
+        "hve-core-all@hve-core"
+      ],
       "standaloneMcps": []
     },
     "superpowers": {

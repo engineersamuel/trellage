@@ -81,7 +81,9 @@ Copilot runs autonomously without waiting for permission or user-input prompts.
 `update --check` compares the installed plugin version reported by Copilot with
 the official marketplace manifest. Launch self-heals a missing cataloged plugin
 and removes forbidden Superpowers variants without updating healthy plugins.
-Updates remain explicit and use native Copilot marketplace/plugin commands.
+Cataloged retired plugin identities are removed during setup, launch, update,
+and repair. Updates remain explicit and use native Copilot
+marketplace/plugin commands.
 
 The checked-in [`catalog.json`](catalog.json) declares marketplaces, official
 manifest URLs, plugins, and the empty standalone MCP lists. Installed Copilot
