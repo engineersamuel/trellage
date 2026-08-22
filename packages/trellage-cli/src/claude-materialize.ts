@@ -114,6 +114,26 @@ export const stampClaudeMarketplaceVersions = async (
 const attempt = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ClaudeMaterializeError> =>
   Effect.tryPromise({ try: operation, catch: (cause) => new ClaudeMaterializeError({ message, cause }) })
 
+export const normalizeHyperresearchSitePermissions = (
+  sitePackages: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  attempt("cannot normalize Hyperresearch site permissions", async () => {
+    const visit = async (entryPath: string): Promise<void> => {
+      const entry = await lstat(entryPath)
+      if (entry.isSymbolicLink()) return
+      if (entry.isDirectory()) {
+        await chmod(entryPath, 0o755)
+        await Promise.all((await readdir(entryPath)).map((name) => visit(path.join(entryPath, name))))
+        return
+      }
+      if (entry.isFile()) {
+        await chmod(entryPath, (entry.mode & 0o111) === 0 ? 0o644 : 0o755)
+      }
+    }
+
+    await visit(sitePackages)
+  })
+
 const run = (
   command: string,
   args: ReadonlyArray<string>,
@@ -401,25 +421,11 @@ const materializeHyperresearchAssets = (
           )
         }
 
-        const pythonSite = path.join(request.context, "hyperresearch-site")
-        yield* attempt("cannot create Hyperresearch target", () => mkdir(pythonSite, { recursive: true }))
         const uv = ["x", "uv@0.11.21", "--", "uv"]
-        yield* run("mise", [
-          ...uv,
-          "pip",
-          "install",
-          "--target",
-          pythonSite,
-          "--python-version",
-          "3.13",
-          "--python-platform",
-          "aarch64-manylinux_2_28",
-          "--require-hashes",
-          "--no-deps",
-          "-r",
-          requirementsPath,
-        ])
-        yield* materializeHyperresearchPackage(request.sourceDirectories[0]!, pythonSite)
+        const pythonPackage = path.join(request.context, "hyperresearch-package")
+        yield* attempt("cannot create Hyperresearch package target", () => mkdir(pythonPackage, { recursive: true }))
+        yield* materializeHyperresearchPackage(request.sourceDirectories[0]!, pythonPackage)
+        yield* normalizeHyperresearchSitePermissions(pythonPackage)
 
         const hostVenv = path.join(staging, "host-venv")
         yield* run("mise", [...uv, "venv", "--python", "3.13", hostVenv])

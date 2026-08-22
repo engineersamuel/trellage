@@ -11,7 +11,13 @@ import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
+const lockPath = fileURLToPath(
+  new URL("../../../profiles/claude-research/profile.linux-arm64.lock.toml", import.meta.url),
+)
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
+const qwenLockPath = fileURLToPath(
+  new URL("../../../profiles/claude-qwen-local/profile.linux-arm64.lock.toml", import.meta.url),
+)
 const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social-media/profile.toml", import.meta.url))
 const socialLockPath = fileURLToPath(
   new URL("../../../profiles/claude-social-media/profile.linux-arm64.lock.toml", import.meta.url),
@@ -49,9 +55,6 @@ describe("authored Claude Research profile", () => {
   })
 
   it("pins last30days as a generic skill alongside Caveman and Hyperresearch", async () => {
-    const lockPath = fileURLToPath(
-      new URL("../../../profiles/claude-research/profile.linux-arm64.lock.toml", import.meta.url),
-    )
     const [source, lockSource] = await Promise.all([readFile(profilePath, "utf8"), readFile(lockPath, "utf8")])
     const document = await Effect.runPromise(parseProfile(source, profilePath))
     const lock = await Effect.runPromise(parseLock(lockSource))
@@ -97,6 +100,7 @@ describe("authored Claude Research profile", () => {
 
   it("publishes Claude-specific runtime metadata without credentials", async () => {
     const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+    const lock = await Effect.runPromise(parseLock(await readFile(lockPath, "utf8")))
 
     expect(metadata).toMatchObject({
       harness_kind: "claude",
@@ -109,7 +113,7 @@ describe("authored Claude Research profile", () => {
       claude_opus_model: "claude-opus-5",
       claude_sonnet_model: "claude-sonnet-5",
       claude_haiku_model: "claude-haiku-4.5",
-      resolved_version: "2.1.236",
+      resolved_version: lock.packages.harness.version,
       headless: {
         schemaVersion: 1,
         prompt: false,
@@ -223,6 +227,10 @@ describe("authored Claude Research profile", () => {
     }
 
     const script = builderScript(document, lock)
+    expect(script).toContain(
+      "mise x uv@0.11.21 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps",
+    )
+    expect(script).toContain("cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch")
     expect(script).toContain("mise install --locked")
     expect(script).toContain("mise oci build --locked")
     expect(script).not.toMatch(/TOKEN|API_KEY|secret/i)
@@ -447,6 +455,7 @@ describe("authored standalone Claude Qwen profile", () => {
 
   it("publishes the exact local gateway and Qwen alias routes", async () => {
     const metadata = await Effect.runPromise(profileMetadata(qwenProfilePath, "linux/arm64"))
+    const lock = await Effect.runPromise(parseLock(await readFile(qwenLockPath, "utf8")))
 
     expect(metadata).toMatchObject({
       claude_mode: "core",
@@ -454,7 +463,7 @@ describe("authored standalone Claude Qwen profile", () => {
       claude_opus_model: "qwen3.6-35b-a3b-local",
       claude_sonnet_model: "qwen3.6-35b-a3b-local",
       claude_haiku_model: "qwen3.6-35b-a3b-local",
-      resolved_version: "2.1.236",
+      resolved_version: lock.packages.harness.version,
       headless: {
         outputFormats: ["text"],
         trellageEventContract: null,
