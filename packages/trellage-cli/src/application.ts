@@ -281,7 +281,9 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       document.profile.plugins.length === 1 &&
       lock.sources.length === pluginSourceOffset + 1
     ) {
-      return `mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
+      const materializePythonSite =
+        "mkdir -p /src/hyperresearch-site; mise x uv@0.11.21 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/.runtime-support/hyperresearch-requirements.lock; cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch"
+      return `${materializePythonSite}; mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
     }
     if (
       document.profile.plugins.length === 0 ||
@@ -700,6 +702,9 @@ const buildOci = (
         `IMAGE_REF=${imageTag}`,
         "--mount",
         `type=bind,src=${context},dst=/src`,
+        ...(document.profile.plugins.some((plugin) => plugin.adapter === "hyperresearch")
+          ? ["--mount", "type=tmpfs,dst=/src/hyperresearch-site"]
+          : []),
         "--workdir",
         "/src",
         "--entrypoint",

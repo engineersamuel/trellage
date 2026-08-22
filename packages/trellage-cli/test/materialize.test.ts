@@ -27,6 +27,7 @@ import {
   materializeChromiumArchives,
   materializeHyperresearchPackage,
   normalizeHyperresearchSeed,
+  normalizeHyperresearchSitePermissions,
   stampClaudeMarketplaceVersions,
 } from "../src/claude-materialize.js"
 import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
@@ -198,6 +199,23 @@ describe("Hyperresearch seed normalization", () => {
     await expect(readFile(executable, "utf8")).resolves.toBe(
       '#!/bin/sh\nexec "$(dirname "$0")/python" -m hyperresearch "$@"\n',
     )
+  })
+
+  it("makes generated site packages readable while preserving executable files", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-permissions-")
+    const packageDirectory = path.join(root, "site-packages", "litellm")
+    const module = path.join(packageDirectory, "__init__.py")
+    const executable = path.join(packageDirectory, "launcher")
+    await mkdir(packageDirectory, { recursive: true, mode: 0o700 })
+    await writeFile(module, "", { mode: 0o600 })
+    await writeFile(executable, "", { mode: 0o700 })
+
+    await Effect.runPromise(normalizeHyperresearchSitePermissions(path.join(root, "site-packages")))
+
+    expect((await stat(path.join(root, "site-packages"))).mode & 0o777).toBe(0o755)
+    expect((await stat(packageDirectory)).mode & 0o777).toBe(0o755)
+    expect((await stat(module)).mode & 0o777).toBe(0o644)
+    expect((await stat(executable)).mode & 0o777).toBe(0o755)
   })
 })
 

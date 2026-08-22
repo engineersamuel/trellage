@@ -1817,8 +1817,8 @@ kind = "skill"
 repository = "https://github.com/emilkowalski/skills.git"
 ref = "main"
 select = ["animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations"]
-commit = "e879241fab3cdb22e8d95587cdbf40b57a88d7da"
-integrity = "sha256:a73f2820459e7cd48b590bac6c48a84a4cdadcfcddb0431a072d4f7372e47132"
+commit = "d23d7f88a2e21c9e4b1418c7abe420f5c1052ba7"
+integrity = "sha256:727d8ae9671f10f168ee8169e1705d90517beb81a8b8f51349db65567a57da45"
 
 [[sources.files]]
 path = "skills/animate-expo/RECIPES.md"
@@ -1891,6 +1891,10 @@ sha256 = "sha256:61cf8ac0c4c8e1f63385298c546b16c65ca9aec34abddcd04e821c16712d671
 [[sources.files]]
 path = "skills/review-animations/STANDARDS.md"
 sha256 = "sha256:e7d3605034acda54ca13e43aec9e64d65b53de20f75b11b8d694e373012fbe07"
+
+[[sources.files]]
+path = "skills/write-swift/SKILL.md"
+sha256 = "sha256:2579cb2684245f75a261cbb13aa4a12f7f9441dabdfe3bc2e72dc2f04ec5e9fd"
 
 [[sources]]
 kind = "skill"
@@ -8001,8 +8005,8 @@ plugin_versions = { "taste-skill" = "1.0.0" }
 repository = "https://github.com/leonxlnx/taste-skill.git"
 ref = "main"
 select = ["taste-skill"]
-commit = "dfb6f9f9e93a39f673b1827c0889cc28326d1800"
-integrity = "sha256:fae76066d965cc54ad26d9b7714951e0731f7c92d3c75f5459fd9358b0b6474f"
+commit = "72e299530e2eb31ed8da06181bc19f6c18a00821"
+integrity = "sha256:b2a3ef79ac222d61b52188640613551141f3bb990cbb6a576cc043e107a6c7ac"
 
 [[sources.files]]
 path = ".claude-plugin/marketplace.json"
@@ -8065,6 +8069,22 @@ path = "assets/sponsors/imgly-logo.svg"
 sha256 = "sha256:2dd10ba9f8005d6b52149db678d611678609e653d0870b42cdb083fe9506e85f"
 
 [[sources.files]]
+path = "assets/sponsors/interfaces-dev-icon.webp"
+sha256 = "sha256:bc6607b4721cd0b3f9a8314a6b5c8e36ee3bb53b988fbc55cb0d856e893a2873"
+
+[[sources.files]]
+path = "assets/sponsors/kimi-icon.png"
+sha256 = "sha256:dbd00e2ad61ea8832ef0b024662a4a8a5d1b66f0599d5d42e1c9688b9d4cfdf6"
+
+[[sources.files]]
+path = "assets/sponsors/reactbits-icon-dark.svg"
+sha256 = "sha256:e78e92b5289d049945dd6c3c7403d6d6799d78c7c4e503a4ace5ac0927df4840"
+
+[[sources.files]]
+path = "assets/sponsors/reactbits-icon-light.svg"
+sha256 = "sha256:fbb62de0895647def6c562ec3bf2819de0d4bb091ce3114dfd72b17288af4020"
+
+[[sources.files]]
 path = "assets/sponsors/reactbits-logo-dark.svg"
 sha256 = "sha256:64e2e3bbdceb70c7e390517a18932b1dd984bb7c67d8737aa831d83f98825513"
 
@@ -8114,7 +8134,7 @@ sha256 = "sha256:4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326d
 
 [[sources.files]]
 path = "README.md"
-sha256 = "sha256:ae47e33331f4e1d77af3ed935c72f9c7832303fd7f0f3874063085e5ffde599e"
+sha256 = "sha256:c36548efd83ef69eb889230764f1c19a446f20cf9d76b4e2c0cb1ce0d09974a7"
 
 [[sources.files]]
 path = "research/laziness/findings/empirical-results.md"
@@ -8440,10 +8460,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.236"
-integrity = "sha256:ae3dc54b8baf2ea76c2dc475bae6b750ac5d58d79ddd3dc5da48c44b5b5f08a9"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.236/claude-linux-arm64.tar.gz"
-size = 100309808
+version = "2.1.240"
+integrity = "sha256:d2cac755f002ef706b3aadc33152aca90712c26db9d465c7f2bcf53830ee96ce"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.240/claude-linux-arm64.tar.gz"
+size = 102265531
 
 [[packages.runtime]]
 name = "bash"
@@ -8506,4 +8526,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:7e29ddd23f7ff541e367b2cc93e0659017bd786212269b2c40e27dbb08dd699f"
+final_digest = "sha256:dc1051ad92fb82cfb2058b46d5677ac691169f14cb67425f31990611a4aeba6f"

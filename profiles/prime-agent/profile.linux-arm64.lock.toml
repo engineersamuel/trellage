@@ -615,10 +615,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "prime"
 selector = "latest"
-version = "0.7.3"
-integrity = "sha256:2a188738318b91ff91ea77b8a0b215c41543cf0483fcb18a53475dc4e7032784"
-url = "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.3/prime-agent-0.7.3.tgz"
-size = 9464400
+version = "0.8.0"
+integrity = "sha256:f5b0093c7e0fddb73f94773d74383585456adfa84f12a4082d3098f23bb8fab6"
+url = "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.8.0/prime-agent-0.8.0.tgz"
+size = 9614923
 
 [[packages.runtime]]
 name = "bash"
@@ -668,4 +668,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:c2e9c539fa0a657f9abf587228236075018d73cfa530bc26412b33061a37abf9"
+final_digest = "sha256:42da383e2337d20dd649ef0f1c5a3e674effea13169c1f6a4e4cbaf6f896fccc"

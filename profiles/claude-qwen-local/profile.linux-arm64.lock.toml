@@ -615,10 +615,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.236"
-integrity = "sha256:ae3dc54b8baf2ea76c2dc475bae6b750ac5d58d79ddd3dc5da48c44b5b5f08a9"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.236/claude-linux-arm64.tar.gz"
-size = 100309808
+version = "2.1.240"
+integrity = "sha256:d2cac755f002ef706b3aadc33152aca90712c26db9d465c7f2bcf53830ee96ce"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.240/claude-linux-arm64.tar.gz"
+size = 102265531
 
 [[packages.runtime]]
 name = "bash"
@@ -666,4 +666,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:2455048156c39d60f1a3f141332d12a29d72c682d0959db2335e2b2c4e1b717c"
+final_digest = "sha256:5b1db5f61552bffe6aa3b21bf1bbb1d3736143de552b4d7708db984e8f668f1e"
