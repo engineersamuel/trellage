@@ -393,6 +393,8 @@ if [[ "$harness_kind" == copilot ]]; then
       test -f "$seed/skills/caveman/SKILL.md" && test ! -L "$seed/skills/caveman/SKILL.md"
       test -f "$seed/copilot-instructions.md" && test ! -L "$seed/copilot-instructions.md"
       grep -Fq "ACTIVE EVERY RESPONSE" "$seed/copilot-instructions.md"
+      test -f "$seed/instructions/rundown.instructions.md" \
+        && test ! -L "$seed/instructions/rundown.instructions.md"
       ! find "$seed" -type f -exec grep -alE '\''/[U]sers/[^/]+/projects/prototypes/sandbox-harness|/src/hve-core|/src/copilot-seed|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-'\'' {} + | grep -q .
       ! find "$seed" -type f -exec grep -alF "$auth_canary" {} + | grep -q .
       trellage-copilot-entry new --version >/tmp/copilot-version
@@ -403,6 +405,10 @@ if [[ "$harness_kind" == copilot ]]; then
       test "$(stat -c "%u:%g" "$COPILOT_HOME/skills/caveman/SKILL.md")" = 10001:10001
       test "$(stat -c "%u:%g" "$COPILOT_HOME/copilot-instructions.md")" = 10001:10001
       grep -Fq "ACTIVE EVERY RESPONSE" "$COPILOT_HOME/copilot-instructions.md"
+      test -f "$COPILOT_HOME/instructions/rundown.instructions.md" \
+        && test ! -L "$COPILOT_HOME/instructions/rundown.instructions.md"
+      test "$(stat -c "%u:%g" "$COPILOT_HOME/instructions/rundown.instructions.md")" = 10001:10001
+      grep -Fq "TL;DR" "$COPILOT_HOME/instructions/rundown.instructions.md"
       test ! -e "$COPILOT_HOME/config.toml"
       ! find "$COPILOT_HOME" "$XDG_CACHE_HOME" -type f -exec grep -alE '\''/[U]sers/[^/]+/projects/prototypes/sandbox-harness|/src/hve-core|/src/copilot-seed|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-'\'' {} + | grep -q .
       ! find "$COPILOT_HOME" "$XDG_CACHE_HOME" -type f -exec grep -alF "$auth_canary" {} + | grep -q .
@@ -535,6 +541,7 @@ elif [[ "$harness_kind" == claude ]]; then
       test -f "$seed/skills/caveman/SKILL.md" && test ! -L "$seed/skills/caveman/SKILL.md"
       test -f "$seed/CLAUDE.md" && test ! -L "$seed/CLAUDE.md"
       grep -Fq "ACTIVE EVERY RESPONSE" "$seed/CLAUDE.md"
+      test -f "$seed/output-styles/rundown.md" && test ! -L "$seed/output-styles/rundown.md"
       trellage-claude-entry passthrough claude --version >/tmp/claude-version
       test "$(sed -n "s/^\([0-9.]*\) (Claude Code)$/\1/p" /tmp/claude-version)" = "$locked_version"
       test -f "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md" && test ! -L "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md"
@@ -542,6 +549,9 @@ elif [[ "$harness_kind" == claude ]]; then
       test "$(stat -c "%u:%g" "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md")" = 10001:10001
       test "$(stat -c "%u:%g" "$CLAUDE_CONFIG_DIR/CLAUDE.md")" = 10001:10001
       grep -Fq "ACTIVE EVERY RESPONSE" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
+      test -f "$CLAUDE_CONFIG_DIR/output-styles/rundown.md" && test ! -L "$CLAUDE_CONFIG_DIR/output-styles/rundown.md"
+      test "$(stat -c "%u:%g" "$CLAUDE_CONFIG_DIR/output-styles/rundown.md")" = 10001:10001
+      grep -Fq "name: Rundown" "$CLAUDE_CONFIG_DIR/output-styles/rundown.md"
     ' -- "$locked_version" || fail 'Claude executable, entry, seed, managed state, or isolation probe failed'
 else
   docker run --rm \

@@ -25,6 +25,7 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/cldx"
 installed_launcher="$install_root/bin/cldx"
 installed_catalog="$install_root/catalog.json"
+installed_assets="$install_root/assets/rundown"
 ownership_marker="$install_root/.managed-by-trellage-claude-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/cldx"
@@ -61,9 +62,18 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "unrelated command: $command_path"
 fi
 
-mkdir -p "$install_root/bin" "$command_dir"
+mkdir -p "$install_root/bin" "$installed_assets" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/cldx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/cldx/bin" 'runtime bin'
+require_safe_directory "$install_root/assets" \
+  "$canonical_home/.local/share/trellage/cldx/assets" 'runtime assets'
+require_safe_directory "$installed_assets" \
+  "$canonical_home/.local/share/trellage/cldx/assets/rundown" 'runtime assets'
+for asset in rundown.md NOTICE.md; do
+  [[ ! -L "$installed_assets/$asset" \
+    && ( ! -e "$installed_assets/$asset" || -f "$installed_assets/$asset" ) ]] \
+    || refuse "unsafe managed asset: $installed_assets/$asset"
+done
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
@@ -79,6 +89,12 @@ chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"
+
+for asset in rundown.md NOTICE.md; do
+  asset_stage="$(mktemp "$installed_assets/.$asset.XXXXXX")"
+  install -m 0644 "$source_dir/assets/rundown/$asset" "$asset_stage"
+  mv -f "$asset_stage" "$installed_assets/$asset"
+done
 
 if [[ ! -L "$command_path" ]]; then
   command_stage="$command_dir/.cldx-command.$$"

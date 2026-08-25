@@ -5,10 +5,17 @@ umask 077
 
 mkdir -p \
   "$COPILOT_HOME" \
+  "$COPILOT_HOME/instructions" \
   /workspace/.harness/copilot-logs \
   /workspace/.npm \
   /workspace/.cache \
   /workspace/.config
+
+managed_instructions='/usr/local/share/trellage/copilot-instructions/rundown.instructions.md'
+instructions_tmp="$(mktemp "$COPILOT_HOME/instructions/.rundown.instructions.md.XXXXXX")"
+cat -- "$managed_instructions" >"$instructions_tmp"
+chmod 0600 "$instructions_tmp"
+mv -f "$instructions_tmp" "$COPILOT_HOME/instructions/rundown.instructions.md"
 
 plugin_inventory='/workspace/.harness/copilot-plugin-inventory.txt'
 inventory_tmp="$(mktemp /workspace/.harness/copilot-plugin-inventory.XXXXXX)"

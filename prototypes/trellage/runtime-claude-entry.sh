@@ -131,6 +131,9 @@ validate_managed_path() {
     skills/*)
       [[ "$candidate" =~ ^skills/[A-Za-z0-9][A-Za-z0-9._-]*/.+$ ]] || return 1
       ;;
+    output-styles/*)
+      [[ "$candidate" =~ ^output-styles/[A-Za-z0-9][A-Za-z0-9._-]*\.md$ ]] || return 1
+      ;;
     plugins/cache/*)
       [[ "$candidate" =~ ^plugins/cache/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9.+-]*/.+$ ]] \
         || return 1

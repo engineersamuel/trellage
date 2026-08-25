@@ -16,6 +16,8 @@ export interface RuntimeSupportPaths {
   readonly claudeEntry?: string
   readonly hyperresearchRequirements?: string
   readonly claudeBrowserAgent?: string
+  readonly claudeOutputStyleRundown?: string
+  readonly copilotInstructionRundown?: string
 }
 
 export type RuntimeSupportOpener = (candidate: string, flags: "r") => Promise<FileHandle>
@@ -91,6 +93,13 @@ const selectedFiles = (
           buildContextPath: "finalize-copilot-seed.mjs",
           mode: 0o644,
         },
+        {
+          property: "copilotInstructionRundown",
+          role: "copilot-instruction-rundown",
+          destination: "/usr/local/share/trellage/copilot-seed/instructions/rundown.instructions.md",
+          buildContextPath: ".runtime-support/instruction-rundown.md",
+          mode: 0o644,
+        },
       ]
     case "claude":
       const entry: SelectedFile = {
@@ -100,9 +109,17 @@ const selectedFiles = (
         buildContextPath: "runtime-claude-entry.sh",
         mode: 0o755,
       }
-      if (claudeMode === "core" && claudeAdapter === undefined) return [entry]
+      const outputStyle: SelectedFile = {
+        property: "claudeOutputStyleRundown",
+        role: "claude-output-style-rundown",
+        destination: "/usr/local/share/trellage/claude-seed/output-styles/rundown.md",
+        buildContextPath: ".runtime-support/output-style-rundown.md",
+        mode: 0o644,
+      }
+      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, outputStyle]
       return [
         entry,
+        outputStyle,
         {
           property: "finalizeClaudeSeed",
           role: "finalize-claude-seed",

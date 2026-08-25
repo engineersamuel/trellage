@@ -857,6 +857,14 @@ const defaultRuntimeSupport: RuntimeSupport = {
     path.dirname(fileURLToPath(import.meta.url)),
     "../assets/hyperresearch-browser-fetcher.md",
   ),
+  claudeOutputStyleRundown: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/assets/rundown/rundown.md",
+  ),
+  copilotInstructionRundown: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/assets/rundown/rundown.instructions.md",
+  ),
 }
 
 const defaultCacheHome = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache")

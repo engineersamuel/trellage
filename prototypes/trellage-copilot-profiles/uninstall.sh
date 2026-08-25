@@ -7,6 +7,7 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/cpx"
 installed_launcher="$install_root/bin/cpx"
 installed_catalog="$install_root/catalog.json"
+installed_assets="$install_root/assets/rundown"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
 ownership_value='trellage-profiles-v1'
 command_dir="$local_dir/bin"
@@ -73,6 +74,10 @@ fi
   || refuse "refusing unsafe managed runtime path: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "refusing unsafe managed runtime path: $installed_catalog"
+[[ ! -L "$install_root/assets" && ( ! -e "$install_root/assets" || -d "$install_root/assets" ) ]] \
+  || refuse "refusing unsafe managed runtime path: $install_root/assets"
+[[ ! -L "$installed_assets" && ( ! -e "$installed_assets" || -d "$installed_assets" ) ]] \
+  || refuse "refusing unsafe managed runtime path: $installed_assets"
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   if [[ ! -L "$command_path" || "$(readlink "$command_path")" != "$installed_launcher" ]]; then
@@ -82,5 +87,7 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
 fi
 
 rm -f "$installed_launcher" "$installed_catalog" "$ownership_marker"
+rm -f "$installed_assets/rundown.instructions.md" "$installed_assets/NOTICE.md"
+rmdir "$installed_assets" "$install_root/assets" 2>/dev/null || true
 rmdir "$install_root/bin" "$install_root" 2>/dev/null || true
 printf 'Uninstalled cpx; profile homes were preserved.\n'

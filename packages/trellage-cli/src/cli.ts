@@ -56,6 +56,15 @@ const runtimeSupport = {
     "assets",
     "hyperresearch-browser-fetcher.md",
   ),
+  claudeOutputStyleRundown: path.join(repositoryRoot, "prototypes", "trellage", "assets", "rundown", "rundown.md"),
+  copilotInstructionRundown: path.join(
+    repositoryRoot,
+    "prototypes",
+    "trellage",
+    "assets",
+    "rundown",
+    "rundown.instructions.md",
+  ),
 }
 const bundledProfile = path.join(repositoryRoot, "profiles", "codex-superpowers", "profile.toml")
 const bundledProfiles = path.join(repositoryRoot, "profiles")

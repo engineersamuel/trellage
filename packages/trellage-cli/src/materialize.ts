@@ -477,7 +477,19 @@ export const createBuildContext = (
                   : path.join(context, "pi-seed", "APPEND_SYSTEM.md")
         yield* io("cannot write managed always-on instructions", () => writeFile(destination, alwaysOnInstructions))
       }
+      if (document.profile.harness.kind === "copilot") {
+        const instruction = runtimeSupportFile(support, "copilot-instruction-rundown")
+        yield* copy(
+          path.join(context, instruction.buildContextPath),
+          path.join(context, "copilot-seed", "instructions", "rundown.instructions.md"),
+        )
+      }
       if (document.profile.harness.kind === "claude") {
+        const outputStyle = runtimeSupportFile(support, "claude-output-style-rundown")
+        yield* copy(
+          path.join(context, outputStyle.buildContextPath),
+          path.join(context, "claude-seed", "output-styles", "rundown.md"),
+        )
         const manifest = yield* io("cannot enumerate managed Claude seed", () =>
           managedClaudeFiles(path.join(context, "claude-seed")),
         )

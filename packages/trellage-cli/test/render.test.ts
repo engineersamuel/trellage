@@ -181,6 +181,8 @@ const runtimePaths = {
   claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
   hyperresearchRequirements: path.join(runtimeRoot, "requirements.lock"),
   claudeBrowserAgent: path.join(runtimeRoot, "browser-agent.md"),
+  claudeOutputStyleRundown: path.join(runtimeRoot, "output-style-rundown.md"),
+  copilotInstructionRundown: path.join(runtimeRoot, "instruction-rundown.md"),
 }
 await Promise.all(Object.values(runtimePaths).map((file) => writeFile(file, file)))
 const codexRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("codex", runtimePaths))

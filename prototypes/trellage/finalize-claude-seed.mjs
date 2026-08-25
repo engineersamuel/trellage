@@ -245,6 +245,16 @@ const main = async () => {
   } catch (error) {
     if (error?.code !== "ENOENT") throw error
   }
+  const outputStyles = path.join(seed, "output-styles")
+  try {
+    const outputStylesStatus = await lstat(outputStyles)
+    if (!outputStylesStatus.isDirectory() || outputStylesStatus.isSymbolicLink()) {
+      fail("generated Claude output styles are unsafe")
+    }
+    managed.push(...(await inventory(outputStyles, "output-styles")).map(({ path: managedPath }) => managedPath))
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error
+  }
   const instructions = path.join(seed, "CLAUDE.md")
   try {
     const instructionsStatus = await lstat(instructions)
@@ -335,6 +345,7 @@ const main = async () => {
     "CLAUDE.md",
     "managed-paths.txt",
     "plugin-marketplaces.json",
+    "output-styles",
     "plugin-settings.json",
     "plugins",
     "skills",

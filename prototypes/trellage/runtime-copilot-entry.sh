@@ -218,6 +218,10 @@ validate_managed_path() {
       [[ "$managed_path" =~ ^skills/[A-Za-z0-9][A-Za-z0-9._-]*/.+$ ]] \
         || fail "unexpected managed seed path: $managed_path"
       ;;
+    instructions/*)
+      [[ "$managed_path" =~ ^instructions/[A-Za-z0-9][A-Za-z0-9._-]*\.instructions\.md$ ]] \
+        || fail "unexpected managed seed path: $managed_path"
+      ;;
     *) fail "unexpected managed seed path: $managed_path" ;;
   esac
 }
@@ -232,6 +236,12 @@ actual_managed_files() {
         [[ -d "skills/$skill_name" && ! -L "skills/$skill_name" ]] || exit 1
         find "skills/$skill_name" -type f -print
       done < <(managed_skill_names managed-files.txt)
+    fi
+    if [[ -f managed-files.txt && ! -L managed-files.txt ]]; then
+      while IFS= read -r instruction_name; do
+        [[ -f "instructions/$instruction_name" && ! -L "instructions/$instruction_name" ]] || exit 1
+        printf '%s\n' "instructions/$instruction_name"
+      done < <(managed_instruction_names managed-files.txt)
     fi
     if [[ -f copilot-instructions.md && ! -L copilot-instructions.md ]]; then printf '%s\n' copilot-instructions.md; fi
     printf '%s\n' managed-lock.json managed-settings.json
@@ -259,6 +269,10 @@ verify_managed_tree() {
       [[ -z "$(find "$root/skills/$managed_skill" -type l -print -quit)" ]] || return 1
       [[ -z "$(find "$root/skills/$managed_skill" -mindepth 1 ! -type d ! -type f -print -quit)" ]] || return 1
     done < <(managed_skill_names "$files")
+  fi
+  if [[ -e "$root/instructions" || -L "$root/instructions" ]]; then
+    [[ -d "$root/instructions" && ! -L "$root/instructions" ]] || return 1
+    [[ -z "$(find "$root/instructions" -mindepth 1 ! -type f -print -quit)" ]] || return 1
   fi
   if [[ -e "$root/copilot-instructions.md" || -L "$root/copilot-instructions.md" ]]; then
     [[ -f "$root/copilot-instructions.md" && ! -L "$root/copilot-instructions.md" ]] || return 1
@@ -351,12 +365,19 @@ managed_skill_names() {
   sed -n 's#^skills/\([A-Za-z0-9][A-Za-z0-9._-]*\)/.*$#\1#p' "$manifest" | LC_ALL=C sort -u
 }
 
+managed_instruction_names() {
+  local manifest="$1"
+  sed -n 's#^instructions/\([A-Za-z0-9][A-Za-z0-9._-]*\.instructions\.md\)$#\1#p' "$manifest" | LC_ALL=C sort -u
+}
+
 sync_generic_state() {
   local runtime_skills="$runtime_home/skills"
   local prior_manifest="$runtime_home/managed-files.txt"
   local prior_instruction=false
-  local skill_name source destination temporary
+  local skill_name instruction_name source destination temporary
   local -a prior_skills=() desired_skills=()
+  local -a prior_instructions=() desired_instructions=()
+  local runtime_instructions="$runtime_home/instructions"
   runtime_root_is_unchanged || fail 'Copilot runtime home changed before generic skill synchronization'
   if [[ -f "$prior_manifest" && ! -L "$prior_manifest" ]]; then
     while IFS= read -r managed_path; do
@@ -364,10 +385,12 @@ sync_generic_state() {
       [[ "$managed_path" == copilot-instructions.md ]] && prior_instruction=true
     done <"$prior_manifest"
     mapfile -t prior_skills < <(managed_skill_names "$prior_manifest")
+    mapfile -t prior_instructions < <(managed_instruction_names "$prior_manifest")
   elif [[ -e "$prior_manifest" || -L "$prior_manifest" ]]; then
     fail 'prior Copilot managed-file manifest is unsafe'
   fi
   mapfile -t desired_skills < <(managed_skill_names "$seed_home/managed-files.txt")
+  mapfile -t desired_instructions < <(managed_instruction_names "$seed_home/managed-files.txt")
   if [[ ${#desired_skills[@]} -gt 0 ]]; then
     if [[ -e "$runtime_skills" || -L "$runtime_skills" ]]; then
       [[ -d "$runtime_skills" && ! -L "$runtime_skills" ]] \
@@ -401,6 +424,41 @@ sync_generic_state() {
       || fail "managed Copilot skill stage already exists: $skill_name"
     cp -R -- "$source" "$temporary"
     mv -T -- "$temporary" "$destination"
+  done
+  if [[ ${#desired_instructions[@]} -gt 0 ]]; then
+    if [[ -e "$runtime_instructions" || -L "$runtime_instructions" ]]; then
+      [[ -d "$runtime_instructions" && ! -L "$runtime_instructions" ]] \
+        || fail 'Copilot managed instructions path must be a directory without symlinks'
+    else
+      mkdir -- "$runtime_instructions"
+    fi
+    [[ "$(realpath -e -- "$runtime_instructions")" == "$runtime_instructions" ]] \
+      || fail 'Copilot managed instructions path escaped the runtime home'
+  fi
+  for instruction_name in "${prior_instructions[@]}"; do
+    destination="$runtime_instructions/$instruction_name"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      [[ -f "$destination" && ! -L "$destination" ]] \
+        || fail "managed Copilot instruction destination is unsafe: $instruction_name"
+      rm -f -- "$destination"
+    fi
+  done
+  for instruction_name in "${desired_instructions[@]}"; do
+    source="$seed_home/instructions/$instruction_name"
+    destination="$runtime_instructions/$instruction_name"
+    [[ -f "$source" && ! -L "$source" ]] \
+      || fail "baked Copilot instruction is unsafe: $instruction_name"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      [[ -f "$destination" && ! -L "$destination" ]] \
+        || fail "managed Copilot instruction collides with unmanaged state: $instruction_name"
+      cmp -s -- "$source" "$destination" \
+        || fail "managed Copilot instruction collides with unmanaged state: $instruction_name"
+    fi
+    temporary="$runtime_instructions/.${instruction_name}.trellage-stage"
+    [[ ! -e "$temporary" && ! -L "$temporary" ]] \
+      || fail "managed Copilot instruction stage already exists: $instruction_name"
+    cp -- "$source" "$temporary"
+    mv -f -- "$temporary" "$destination"
   done
   source="$seed_home/copilot-instructions.md"
   destination="$runtime_home/copilot-instructions.md"

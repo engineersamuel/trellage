@@ -271,6 +271,7 @@ export const managedClaudeFiles = async (root: string): Promise<ReadonlyArray<st
   }
   await visit("skills")
   await visit("agents")
+  await visit("output-styles")
   try {
     const instructions = path.join(root, "CLAUDE.md")
     const status = await lstat(instructions)

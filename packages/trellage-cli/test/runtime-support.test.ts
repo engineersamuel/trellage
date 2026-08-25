@@ -37,6 +37,8 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     claudeEntry: path.join(root, "runtime-claude-entry.sh"),
     hyperresearchRequirements: path.join(root, "hyperresearch-requirements.lock"),
     claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
+    claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
+    copilotInstructionRundown: path.join(root, "instruction-rundown.md"),
   }
   await Promise.all([
     writeFile(paths.codexEntry, "codex-entry\n"),
@@ -48,6 +50,8 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     writeFile(paths.claudeEntry, "claude-entry\n"),
     writeFile(paths.hyperresearchRequirements, "requirements\n"),
     writeFile(paths.claudeBrowserAgent, "browser-agent\n"),
+    writeFile(paths.claudeOutputStyleRundown, "output-style\n"),
+    writeFile(paths.copilotInstructionRundown, "instruction\n"),
   ])
   return { root, paths }
 }
@@ -63,14 +67,19 @@ describe("runtime support snapshots", () => {
     const prime = await Effect.runPromise(createRuntimeSupportSnapshot("prime", paths))
 
     expect(codex.files.map((file) => file.role)).toEqual(["runtime-entry"])
-    expect(copilot.files.map((file) => file.role)).toEqual(["runtime-copilot-entry", "finalize-copilot-seed"])
+    expect(copilot.files.map((file) => file.role)).toEqual([
+      "runtime-copilot-entry",
+      "finalize-copilot-seed",
+      "copilot-instruction-rundown",
+    ])
     expect(claude.files.map((file) => file.role)).toEqual([
       "runtime-claude-entry",
+      "claude-output-style-rundown",
       "finalize-claude-seed",
       "hyperresearch-requirements",
       "claude-browser-agent",
     ])
-    expect(claude.files[2]?.destination).toBe("/src/.runtime-support/hyperresearch-requirements.lock")
+    expect(claude.files[3]?.destination).toBe("/src/.runtime-support/hyperresearch-requirements.lock")
     expect(pi.files.map((file) => file.role)).toEqual(["runtime-pi-entry"])
     expect(prime.files.map((file) => file.role)).toEqual(["runtime-prime-entry"])
     expect(codex.hash).toBe("sha256:ef6c9fce95dcc3ccd9eaeb94b9611f332d30e539e8570cc99b4d0dd07c652b64")
@@ -79,7 +88,11 @@ describe("runtime support snapshots", () => {
     const claudeMarketplace = await Effect.runPromise(
       createRuntimeSupportSnapshot("claude", paths, "claude-marketplace"),
     )
-    expect(claudeMarketplace.files.map((file) => file.role)).toEqual(["runtime-claude-entry", "finalize-claude-seed"])
+    expect(claudeMarketplace.files.map((file) => file.role)).toEqual([
+      "runtime-claude-entry",
+      "claude-output-style-rundown",
+      "finalize-claude-seed",
+    ])
 
     const original = codex.hash
     await writeFile(paths.copilotEntry, "changed but irrelevant\n")
@@ -99,7 +112,7 @@ describe("runtime support snapshots", () => {
 
     const core = await Effect.runPromise(createRuntimeSupportSnapshot("claude", paths, undefined, "core"))
 
-    expect(core.files.map((file) => file.role)).toEqual(["runtime-claude-entry"])
+    expect(core.files.map((file) => file.role)).toEqual(["runtime-claude-entry", "claude-output-style-rundown"])
   })
 
   it("keeps captured bytes immutable after source mutation", async () => {
@@ -169,8 +182,17 @@ describe("runtime support snapshots", () => {
   it("changes each harness hash for every selected file mutation", async () => {
     const cases = [
       ["codex", ["codexEntry"]],
-      ["copilot", ["copilotEntry", "finalizeCopilotSeed"]],
-      ["claude", ["claudeEntry", "finalizeClaudeSeed", "hyperresearchRequirements", "claudeBrowserAgent"]],
+      ["copilot", ["copilotEntry", "finalizeCopilotSeed", "copilotInstructionRundown"]],
+      [
+        "claude",
+        [
+          "claudeEntry",
+          "finalizeClaudeSeed",
+          "hyperresearchRequirements",
+          "claudeBrowserAgent",
+          "claudeOutputStyleRundown",
+        ],
+      ],
       ["prime", ["primeEntry"]],
     ] as const
     for (const [kind, properties] of cases) {

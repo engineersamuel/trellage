@@ -835,6 +835,32 @@ printf '%s\t%s\n' 'hve-core-preview' 'fixture/hve-core-preview' \
 assert_contains 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log"
 assert_contains 'args=plugin install hve-core@hve-core ' "$fake_copilot_log"
 [[ -f "$expected_hve_home/fake-state/plugins" ]] || fail 'setup did not use isolated profile state'
+managed_instructions="$expected_hve_home/instructions/rundown.instructions.md"
+[[ -f "$managed_instructions" && ! -L "$managed_instructions" ]] \
+  || fail 'setup did not seed the managed instructions'
+cmp -s "$managed_instructions" "$prototype_root/assets/rundown/rundown.instructions.md" \
+  || fail 'seeded managed instructions differ'
+cmp -s "$prototype_root/assets/rundown/rundown.instructions.md" \
+  "$prototype_root/../trellage/assets/rundown/rundown.instructions.md" \
+  || fail 'vendored instructions differ from the canonical copy'
+cmp -s "$prototype_root/assets/rundown/NOTICE.md" \
+  "$prototype_root/../trellage/assets/rundown/NOTICE.md" \
+  || fail 'vendored notice differs from the canonical copy'
+printf 'stale\n' >"$managed_instructions"
+"$launcher" setup hve
+cmp -s "$managed_instructions" "$prototype_root/assets/rundown/rundown.instructions.md" \
+  || fail 'setup did not refresh the managed instructions'
+rm -f "$managed_instructions"
+ln -s /dev/null "$managed_instructions"
+managed_instruction_status=0
+"$launcher" setup hve \
+  >"$fixture_root/managed-instructions.out" 2>"$fixture_root/managed-instructions.err" \
+  || managed_instruction_status=$?
+rm -f "$managed_instructions"
+[[ "$managed_instruction_status" -ne 0 ]] \
+  || fail 'setup accepted symlinked managed instructions'
+assert_contains 'unsafe managed instructions' "$fixture_root/managed-instructions.err"
+"$launcher" setup hve
 mkdir -p \
   "$expected_hve_home/installed-plugins/hve-core/hve-core/skills/package-one" \
   "$expected_hve_home/installed-plugins/hve-core/hve-core/skills/package-two" \
@@ -1149,11 +1175,18 @@ rm -rf "$runtime_root"
 "$installer"
 [[ -x "$installed" ]] || fail 'installer did not create ~/.local/bin/cpx'
 assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
+for asset in rundown.instructions.md NOTICE.md; do
+  [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \
+    || fail "installer did not publish asset: $asset"
+  cmp -s "$runtime_root/assets/rundown/$asset" "$prototype_root/assets/rundown/$asset" \
+    || fail "installed asset differs: $asset"
+done
 "$installed" list >"$fixture_root/installed-list.out"
 assert_contains $'hve\thve-core@hve-core' "$fixture_root/installed-list.out"
 "$installer"
 "$uninstaller"
 [[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/bin/cpx behind'
+[[ ! -e "$runtime_root/assets" ]] || fail 'uninstaller left runtime assets behind'
 [[ -d "$HOME/.local/share/trellage/profiles/copilot/hve/home" ]] \
   || fail 'uninstaller removed profile state'
 
