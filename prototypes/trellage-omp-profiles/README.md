@@ -38,6 +38,9 @@ The installer publishes `~/.local/bin/omp` and owns its runtime beneath
 `~/.local/share/trellage/omp`. `setup` resolves the latest release eligible
 under `mise` policy, installs it into the managed runtime, and pins that exact
 version. Ordinary launches never update it. Only `omp update` changes the pin.
+The bundled OMP community skills require OMP 17.3.5 or newer. Profiles pinned
+to an older OMP release omit the community skill directory from discovery;
+run `omp update` to enable it.
 
 Managed OMP files live at:
 
@@ -47,6 +50,22 @@ Managed OMP files live at:
 ~/.omp/profiles/trellage-copilot-native/agent/config.yml
 ~/.omp/profiles/trellage-copilot-native/agent/models.yml
 ```
+
+Both profiles also receive 49 approved community skills from:
+
+- [`dsebban/skills`](https://github.com/dsebban/skills): `orchestrate-omp`,
+  `poteto-mode`, and `pstack-omp`
+- [`cursor/plugins/pstack`](https://github.com/cursor/plugins/tree/main/pstack):
+  46 pstack workflow, principle, automation, and support skills
+
+The approved source policy is in `skills.json`. The two repositories both
+provide `poteto-mode`; Trellage intentionally selects the dsebban version
+because it adapts pstack skill links and agent roles for OMP. The first
+eligible OMP setup resolves the latest source commits into a shared local
+cache. Later launches work offline and synchronize the cached snapshot
+atomically into each profile's `agent/community-skills` directory without
+removing unrelated skills. Run `trx skills update` to refresh both the common
+native skills and this OMP-only cache from the approved default branches.
 
 Setup and repair refuse symlinked paths or unrelated existing profile files.
 They preserve other profile state, including sessions. `doctor` is read-only
@@ -104,7 +123,9 @@ contract. The `local` profile stays fully conservative, including
 `headless.questionToolControl = "none"`, until it has its own live smoke.
 Other versions stay discoverable in `omp list --json`, but they fall back to
 conservative `headless` values and `--headless-policy no-user-input` fails
-closed.
+closed. OMP 17.2.12 therefore retains its verified headless behavior without
+loading the newer community skills; current OMP releases load the skills but
+do not claim the older headless verification.
 
 Tool approval is set to `yolo` in both managed configuration and every launch
 argument vector. The agents can use all host access available to the OMP process.

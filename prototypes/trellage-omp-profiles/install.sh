@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-ownership_value='trellage-omp-profiles-v1'
+ownership_value='trellage-omp-profiles-v2'
+legacy_ownership_value='trellage-omp-profiles-v1'
 
 refuse() {
   printf 'omp install: %s\n' "$1" >&2
@@ -49,7 +50,9 @@ if [[ -e "$install_root" || -L "$install_root" ]]; then
   require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
-  [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+  installed_ownership="$(<"$ownership_marker")"
+  [[ "$installed_ownership" == "$ownership_value" \
+    || "$installed_ownership" == "$legacy_ownership_value" ]] \
     || refuse "unowned runtime root: $install_root"
   runtime_owned=true
 fi
