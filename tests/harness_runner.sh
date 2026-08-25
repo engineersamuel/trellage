@@ -23,6 +23,21 @@ docker_log_dir="$fixture_root/docker-calls"
 gh_log_dir="$fixture_root/gh-calls"
 mkdir -p "$fake_bin" "$docker_log_dir" "$gh_log_dir"
 
+real_node="$(command -v node)"
+cat >"$fake_bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1-}" in
+  */scripts/update-engineersamuel-skills.mjs)
+    printf '%s\n' "$*" >>"$FAKE_NODE_LOG"
+    exit 0
+    ;;
+esac
+
+exec "$REAL_NODE" "$@"
+EOF
+
 cat >"$fake_bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -116,7 +131,7 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_CURL_LOG"
 EOF
 
-chmod 0555 "$fake_bin/docker" "$fake_bin/gh" "$fake_bin/playwright" "$fake_bin/curl"
+chmod 0555 "$fake_bin/node" "$fake_bin/docker" "$fake_bin/gh" "$fake_bin/playwright" "$fake_bin/curl"
 
 runner_env=(
   env
@@ -125,8 +140,10 @@ runner_env=(
   PATH="$fake_bin:$PATH"
   FAKE_DOCKER_LOG_DIR="$docker_log_dir"
   FAKE_GH_LOG_DIR="$gh_log_dir"
+  FAKE_NODE_LOG="$fixture_root/node.log"
   FAKE_PLAYWRIGHT_LOG="$fixture_root/playwright.log"
   FAKE_CURL_LOG="$fixture_root/curl.log"
+  REAL_NODE="$real_node"
   HARNESS_PLAYWRIGHT_BIN="$fake_bin/playwright"
   HARNESS_STATE_ROOT="$fixture_root/state"
   HARNESS_RESULTS_ROOT="$fixture_root/results"
@@ -165,6 +182,8 @@ for invalid_mutation in \
 done
 
 "${runner_env[@]}" "$runner" build "$manifest" >/dev/null
+grep -Fxq "$PWD/scripts/update-engineersamuel-skills.mjs" "$fixture_root/node.log" \
+  || fail 'build did not request a personal skill refresh'
 build_calls=()
 while IFS= read -r call_file; do
   build_calls+=("$call_file")
