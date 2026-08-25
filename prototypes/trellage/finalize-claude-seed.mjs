@@ -332,6 +332,27 @@ const verifyPluginRegistration = (installed, id, version) => {
   }
 }
 
+const sameInventoryEntry = (left, right) =>
+  left.path === right.path && left.sha256 === right.sha256 && left.executable === right.executable
+
+const sourceInventoryByPath = (sourceInventory) => {
+  const byPath = new Map()
+  for (const entry of sourceInventory) byPath.set(entry.path, entry)
+  return byPath
+}
+
+/** Fail unless every installed cache file is present in the locked plugin source with the same hash. Extra source files (other-harness plugin trees) are allowed. */
+const assertInstalledPluginMatchesSource = (cacheInventory, sourceInventory, id) => {
+  if (cacheInventory.length === 0) fail(`installed Claude plugin cache is empty: ${id}`)
+  const sourceByPath = sourceInventoryByPath(sourceInventory)
+  for (const entry of cacheInventory) {
+    const sourceEntry = sourceByPath.get(entry.path)
+    if (sourceEntry === undefined || !sameInventoryEntry(entry, sourceEntry)) {
+      fail(`installed Claude plugin does not match locked marketplace source: ${id}`)
+    }
+  }
+}
+
 /** Verify one installed plugin's cache matches its locked marketplace source, then materialize its file symlinks. */
 const materializeInstalledPluginCache = async (seed, marketplace, plugin, version, sourceInventory) => {
   const id = `${plugin}@${marketplace}`
@@ -342,9 +363,7 @@ const materializeInstalledPluginCache = async (seed, marketplace, plugin, versio
     ...entry,
     path: entry.path.slice(cacheRelative.length + 1),
   }))
-  if (JSON.stringify(relativeCacheInventory) !== JSON.stringify(sourceInventory)) {
-    fail(`installed Claude plugin does not match locked marketplace source: ${id}`)
-  }
+  assertInstalledPluginMatchesSource(relativeCacheInventory, sourceInventory, id)
   // Runtime seed validation requires managed paths to be regular non-symlink files.
   // Compare inventories first (content-following), then materialize cache links in place.
   await materializeFileSymlinks(cache)
@@ -354,14 +373,32 @@ const materializeInstalledPluginCache = async (seed, marketplace, plugin, versio
   }
 }
 
+/** Resolve the locked plugin tree: marketplace root for `.`/`./`, otherwise a safe relative subdirectory. */
+const pluginSourceDirectory = async (marketplaceRoot, pluginName) => {
+  const metadata = await readJson(
+    path.join(marketplaceRoot, ".claude-plugin", "marketplace.json"),
+    "Claude marketplace metadata",
+  )
+  if (!Array.isArray(metadata.plugins)) fail("Claude marketplace metadata plugins array is missing")
+  const plugin = metadata.plugins.find((entry) => entry?.name === pluginName)
+  if (plugin === undefined) fail(`Claude plugin source is missing: ${pluginName}`)
+  if (typeof plugin.source !== "string") {
+    fail(`Claude plugin source must be a relative marketplace path: ${pluginName}`)
+  }
+  if (plugin.source === "." || plugin.source === "./") return marketplaceRoot
+  const relative = plugin.source.startsWith("./") ? plugin.source.slice(2) : plugin.source
+  assertSafePluginRelativePath(relative)
+  return path.join(marketplaceRoot, ...relative.split("/"))
+}
+
 /** Materialize every locked plugin selection for one marketplace, returning its normalized marketplace entry. */
 const materializeMarketplacePlugins = async (seed, marketplaceEntry, installed, normalizedPlugins, managed) => {
   const { marketplace, source, commit, selections } = marketplaceEntry
-  const sourceInventory = await inventory(source)
   let marketplaceInstallPath
   for (const { plugin, version } of selections) {
     const id = `${plugin}@${marketplace}`
     verifyPluginRegistration(installed, id, version)
+    const sourceInventory = await inventory(await pluginSourceDirectory(source, plugin))
     const { installPath, managedPaths } = await materializeInstalledPluginCache(
       seed,
       marketplace,

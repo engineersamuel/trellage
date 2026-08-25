@@ -2,7 +2,7 @@ import { Data, Effect } from "effect"
 
 import type { ArtifactLock, ProfileLock } from "./lock.js"
 import type { Platform } from "./platform.js"
-import type { ProfileDocument } from "./profile.js"
+import { claudeGithubReleaseTools, claudePypiToolNames, isClaudeProfile, type ProfileDocument } from "./profile.js"
 
 export class ArtifactCatalogError extends Data.TaggedError("ArtifactCatalogError")<{
   readonly message: string
@@ -142,6 +142,38 @@ const hyperresearchArtifacts: ReadonlyArray<ArtifactLock> = [
   },
 ]
 
+const pythonStandaloneArtifact = hyperresearchArtifacts.find((artifact) => artifact.name === "python")!
+
+const graphOfLoopsArtifacts: ReadonlyArray<ArtifactLock> = [
+  pythonStandaloneArtifact,
+  {
+    name: "bd",
+    version: "1.2.2",
+    integrity: "sha256:501f38a1070d4b9b3b6261a86a3c92c4a52366869021560430a4bb0036afd83a",
+    url: "https://github.com/gastownhall/beads/releases/download/v1.2.2/beads_1.2.2_linux_arm64.tar.gz",
+    size: 45556402,
+  },
+  {
+    name: "raindrop",
+    version: "0.1.21",
+    integrity: "sha256:04e0b57073d9be1d7059dbc23f10212c503c2252aa26f60ce9e5ab215ebd0522",
+    url: "https://github.com/raindrop-ai/workshop/releases/download/v0.1.21/raindrop-bun-linux-arm64.gz",
+    size: 41964676,
+  },
+]
+
+export const extraClaudeMarketplaceArtifacts = (document: ProfileDocument): ReadonlyArray<ArtifactLock> => {
+  if (!isClaudeProfile(document.profile) || document.profile.plugins[0]?.adapter === "hyperresearch") return []
+  const artifacts: ArtifactLock[] = []
+  if (claudePypiToolNames(document.profile).length > 0) artifacts.push(pythonStandaloneArtifact)
+  for (const tool of claudeGithubReleaseTools(document.profile)) {
+    const match = graphOfLoopsArtifacts.find((artifact) => artifact.name === tool.name)
+    if (match === undefined) continue
+    if (!artifacts.some((artifact) => artifact.name === match.name)) artifacts.push(match)
+  }
+  return artifacts
+}
+
 export const arm64ArtifactCatalog = {
   platform: "linux/arm64" as const,
   base: {
@@ -152,7 +184,9 @@ export const arm64ArtifactCatalog = {
   runtimeIntegrities,
   fixedArtifacts,
   hyperresearchArtifacts,
+  graphOfLoopsArtifacts,
   hyperresearchPythonLockIntegrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
+  graphOfLoopsPythonLockIntegrity: "sha256:4f384d281b261fb57077b5f99fc2d17310b6562fa26be0b76c1fac516eb43460",
 } as const
 
 export const productionArtifactCatalog = (platform: Platform) =>
@@ -167,6 +201,49 @@ const sameArtifact = (actual: ArtifactLock, expected: ArtifactLock): boolean =>
   actual.url === expected.url &&
   actual.size === expected.size
 
+const runtimeCatalogError = (lock: ProfileLock): string | undefined => {
+  const catalog = arm64ArtifactCatalog
+  for (const runtime of lock.packages.runtime) {
+    const name = runtime.name as keyof typeof runtimeVersions
+    if (catalog.runtimeVersions[name] !== runtime.version || catalog.runtimeIntegrities[name] !== runtime.integrity) {
+      return `runtime package does not match platform catalog: ${runtime.name}`
+    }
+  }
+  return undefined
+}
+
+const expectedClaudeArtifacts = (document: ProfileDocument): ReadonlyArray<ArtifactLock> => {
+  const catalog = arm64ArtifactCatalog
+  if (document.profile.plugins[0]?.adapter === "hyperresearch") {
+    return [...catalog.fixedArtifacts, ...catalog.hyperresearchArtifacts]
+  }
+  return [...catalog.fixedArtifacts, ...extraClaudeMarketplaceArtifacts(document)]
+}
+
+const claudeArtifactSetError = (document: ProfileDocument, lock: ProfileLock): string | undefined => {
+  const catalog = arm64ArtifactCatalog
+  const actual = new Map((lock.packages.artifacts ?? []).map((artifact) => [artifact.name, artifact]))
+  const expectedArtifacts = expectedClaudeArtifacts(document)
+  if (actual.size !== expectedArtifacts.length) return "artifact set does not match platform catalog"
+  for (const expected of expectedArtifacts) {
+    const artifact = actual.get(expected.name)
+    if (artifact === undefined || !sameArtifact(artifact, expected)) {
+      return `artifact does not match platform catalog: ${expected.name}`
+    }
+  }
+  const extraArtifacts = extraClaudeMarketplaceArtifacts(document)
+  const pythonIntegrity =
+    document.profile.plugins[0]?.adapter === "hyperresearch"
+      ? catalog.hyperresearchPythonLockIntegrity
+      : extraArtifacts.some((artifact) => artifact.name === "python")
+        ? catalog.graphOfLoopsPythonLockIntegrity
+        : undefined
+  if (pythonIntegrity !== undefined && lock.packages.python_lock_integrity !== pythonIntegrity) {
+    return "Python dependency lock does not match platform catalog"
+  }
+  return undefined
+}
+
 export const lockedArtifactError = (
   document: ProfileDocument,
   lock: ProfileLock,
@@ -177,32 +254,11 @@ export const lockedArtifactError = (
   if (lock.image.base !== catalog.base.reference || lock.image.base_digest !== catalog.base.digest) {
     return "base image artifact does not match platform catalog"
   }
-  for (const runtime of lock.packages.runtime) {
-    const name = runtime.name as keyof typeof runtimeVersions
-    if (catalog.runtimeVersions[name] !== runtime.version || catalog.runtimeIntegrities[name] !== runtime.integrity) {
-      return `runtime package does not match platform catalog: ${runtime.name}`
-    }
-  }
-  const harness = lock.packages.harness
-  if (harness.kind === "claude") {
-    const actual = new Map((lock.packages.artifacts ?? []).map((artifact) => [artifact.name, artifact]))
-    const adapter = document.profile.plugins[0]?.adapter
-    const expectedArtifacts =
-      adapter === "hyperresearch"
-        ? [...catalog.fixedArtifacts, ...catalog.hyperresearchArtifacts]
-        : catalog.fixedArtifacts
-    if (actual.size !== expectedArtifacts.length) return "artifact set does not match platform catalog"
-    for (const expected of expectedArtifacts) {
-      const artifact = actual.get(expected.name)
-      if (artifact === undefined || !sameArtifact(artifact, expected))
-        return `artifact does not match platform catalog: ${expected.name}`
-    }
-    if (
-      adapter === "hyperresearch" &&
-      lock.packages.python_lock_integrity !== catalog.hyperresearchPythonLockIntegrity
-    ) {
-      return "Python dependency lock does not match platform catalog"
-    }
+  const runtimeError = runtimeCatalogError(lock)
+  if (runtimeError !== undefined) return runtimeError
+  if (lock.packages.harness.kind === "claude") {
+    const claudeError = claudeArtifactSetError(document, lock)
+    if (claudeError !== undefined) return claudeError
   }
   if (document.profile.image.base !== catalog.base.reference) return "profile base image is unsupported for platform"
   return undefined

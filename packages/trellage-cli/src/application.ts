@@ -22,7 +22,7 @@ import {
   type ProfileLock,
 } from "./lock.js"
 import { createBuildContext, type PluginGenerator, type RuntimeSupport } from "./materialize.js"
-import { parseProfile, type ProfileDocument } from "./profile.js"
+import { claudePypiToolNames, isClaudeProfile, parseProfile, type ProfileDocument } from "./profile.js"
 import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
 import { productionResolvers } from "./resolvers.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
@@ -323,8 +323,9 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
   const nativeEnvironment =
     "HOME=/src/claude-builder-home CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 NO_COLOR=1 TERM=dumb"
   const marketplaceCommands = claudeMarketplaceCommands(document, lock, nativeEnvironment)
+  const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
   return [
-    `mise install --locked node@22.17.0 ${tool}`,
+    extraPython ? "mise install --locked" : `mise install --locked node@22.17.0 ${tool}`,
     claudeDirectory,
     'claude_bin="$claude_dir/claude"',
     '[ -x "$claude_bin" ]',
@@ -333,6 +334,12 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
     normalizeClaudeMetadata,
     ...marketplaceCommands,
     `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harness.version}`,
+    ...(extraPython
+      ? [
+          "mkdir -p /src/graph-tools-site",
+          "mise x uv@0.11.21 -- uv pip install --target /src/graph-tools-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/graph-of-loops-requirements.lock",
+        ]
+      : []),
     build,
   ].join("; ")
 }

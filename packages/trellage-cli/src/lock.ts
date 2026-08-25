@@ -4,9 +4,9 @@ import path from "node:path"
 import { Data, Effect } from "effect"
 
 import type { InventoryEntry } from "./inventory.js"
-import type { ProfileDocument } from "./profile.js"
+import { claudePypiToolNames, isClaudeProfile, type ProfileDocument } from "./profile.js"
 import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.js"
-import { lockedArtifactError } from "./artifact-catalog.js"
+import { arm64ArtifactCatalog, extraClaudeMarketplaceArtifacts, lockedArtifactError } from "./artifact-catalog.js"
 
 const legacySourceProvenance = Symbol("legacySourceProvenance")
 const persistedLockProvenance = Symbol("persistedLockProvenance")
@@ -183,6 +183,8 @@ export interface LockResolvers {
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
     readonly claudeAdapter?: "claude-marketplace" | "hyperresearch"
+    readonly extraArtifacts?: ReadonlyArray<ArtifactLock>
+    readonly extraPythonLockIntegrity?: string
   }) => Effect.Effect<PackageLock, unknown>
   readonly resolveBase: (request: {
     readonly reference: string
@@ -395,6 +397,15 @@ const validateClaudeArtifacts = (
   if (missingCommon !== undefined) return `required Claude artifact is missing: ${missingCommon}`
   const claudeAdapter = document.profile.harness.kind === "claude" ? document.profile.plugins[0]?.adapter : undefined
   if (claudeAdapter !== "hyperresearch") {
+    const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
+    if (extraPython) {
+      if (!sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
+        return "Python dependency lock integrity is missing or invalid"
+      }
+      return missingArtifact(artifactNames, ["python"]) === undefined
+        ? undefined
+        : "required Claude artifact is missing: python"
+    }
     return current.packages.python_lock_integrity === undefined
       ? undefined
       : "Python dependency lock requires Hyperresearch"
@@ -750,6 +761,7 @@ export const compileLock = (
         document.profile.plugins[0]?.adapter === "claude-marketplace")
         ? document.profile.plugins[0].adapter
         : undefined
+    const extraArtifacts = extraClaudeMarketplaceArtifacts(document)
     const packages =
       reusablePackages(document, validCurrent, update, platform) ??
       (yield* resolvers
@@ -759,6 +771,14 @@ export const compileLock = (
           platform,
           packages: document.profile.image.packages,
           ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
+          ...(extraArtifacts.length === 0
+            ? {}
+            : {
+                extraArtifacts,
+                ...(extraArtifacts.some((artifact) => artifact.name === "python")
+                  ? { extraPythonLockIntegrity: arm64ArtifactCatalog.graphOfLoopsPythonLockIntegrity }
+                  : {}),
+              }),
         })
         .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
     const base =

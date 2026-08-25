@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { Data, Effect } from "effect"
 
@@ -8,6 +9,7 @@ import { verifyInventory } from "./inventory.js"
 import { renderLock } from "./lock-file.js"
 import { hasLegacySourceProvenance, type ProfileLock } from "./lock.js"
 import {
+  claudePypiToolNames,
   isClaudeProfile,
   isPrimeProfile,
   type ClaudeProfile,
@@ -21,6 +23,7 @@ import {
   claudeDefaultUserSettings,
   managedClaudeFiles,
   materializeClaudeAssets,
+  materializeClaudeExtraRuntime,
 } from "./claude-materialize.js"
 import {
   createRuntimeSupportSnapshot,
@@ -534,9 +537,11 @@ ${toolLock}
 `
   }
   const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
-  const pythonLock = claudeMarketplace
-    ? ""
-    : `[[tools.python]]
+  const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
+  const pythonLock =
+    claudeMarketplace && !extraPython
+      ? ""
+      : `[[tools.python]]
 version = "3.13.14"
 backend = "core:python"
 
@@ -641,6 +646,15 @@ export const createBuildContext = (
           context,
           materializeClaude,
         )
+        if (document.profile.plugins[0]?.adapter === "claude-marketplace") {
+          const pythonRequirementsPath =
+            claudePypiToolNames(document.profile).length === 0
+              ? undefined
+              : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets/graph-of-loops-requirements.lock")
+          yield* materializeClaudeExtraRuntime(document.profile, lock, context, pythonRequirementsPath).pipe(
+            Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
+          )
+        }
       }
       if (document.profile.harness.kind === "pi") {
         yield* materializePiProfileAssets(context)

@@ -254,6 +254,65 @@ select = ["humanizer"]
     expect(result.profile.secrets.required).toEqual([])
   })
 
+  it("accepts extra stdio MCPs and image tools on a native Claude marketplace profile", async () => {
+    const result = await decode(
+      claudeMarketplaceProfile(`
+[[image.tools]]
+kind = "pypi"
+name = "bernstein"
+[[image.tools]]
+kind = "github-release"
+repository = "gastownhall/beads"
+name = "bd"
+[[image.tools]]
+kind = "worktree-cli"
+name = "wt"
+[[mcps]]
+name = "serena"
+transport = "stdio"
+command = "serena"
+args = ["start-mcp-server", "--context", "claude-code"]
+`),
+    )
+
+    expect(isClaudeProfile(result.profile)).toBe(true)
+    if (!isClaudeProfile(result.profile)) throw new Error("expected Claude profile")
+    expect(result.profile.image.tools).toEqual([
+      { kind: "pypi", name: "bernstein" },
+      { kind: "github-release", repository: "gastownhall/beads", name: "bd" },
+      { kind: "worktree-cli", name: "wt" },
+    ])
+    expect(result.profile.mcps).toEqual([
+      expect.objectContaining({
+        name: "serena",
+        transport: "stdio",
+        command: "serena",
+      }),
+    ])
+  })
+
+  it("rejects extra MCPs and image tools on Hyperresearch Claude profiles", async () => {
+    await expect(
+      decode(
+        claudeProfile(`
+[[mcps]]
+name = "serena"
+transport = "stdio"
+command = "serena"
+`),
+      ),
+    ).rejects.toThrow(/Claude profile MCPs are managed by Trellage/)
+    await expect(
+      decode(
+        claudeProfile(`
+[[image.tools]]
+kind = "pypi"
+name = "bernstein"
+`),
+      ),
+    ).rejects.toThrow(/Hyperresearch cannot declare extra image tools/)
+  })
+
   it("decodes a strict Prime Agent profile", async () => {
     const result = await decode(primeProfile())
 
