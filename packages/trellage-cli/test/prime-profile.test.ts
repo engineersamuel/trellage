@@ -36,7 +36,7 @@ describe("authored Prime Agent profile", () => {
     expect(document.profile.skills).toEqual([
       {
         repository: "https://github.com/engineersamuel/skills.git",
-        ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+        ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
         select: [
           "audit-ro",
           "finish",
@@ -81,7 +81,7 @@ describe("authored Prime Agent profile", () => {
     expect(lock.sources[0]).toMatchObject({
       kind: "skill",
       repository: "https://github.com/engineersamuel/skills.git",
-      ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+      ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
       select: [
         "audit-ro",
         "finish",
@@ -91,7 +91,7 @@ describe("authored Prime Agent profile", () => {
         "runwisp-job-authoring",
         "validate-repository",
       ],
-      commit: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+      commit: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
       integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
     expect(lock.sources[0]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(7)

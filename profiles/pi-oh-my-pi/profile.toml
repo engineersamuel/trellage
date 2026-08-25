@@ -26,7 +26,7 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
 
 [[skills]]
 repository = "https://github.com/engineersamuel/skills.git"
-ref = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
 
 [[skills]]

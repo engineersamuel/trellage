@@ -12,7 +12,7 @@ readonly mise_install_name='github-prime-intellect-ai-prime-agent'
 readonly profile_marker_value='trellage-prime-profile-v1'
 readonly managed_extension_name='ask-user'
 readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
-readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'prx: %s\n' "$1" >&2

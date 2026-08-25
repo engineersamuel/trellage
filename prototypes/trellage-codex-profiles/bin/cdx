@@ -47,7 +47,7 @@ validated_profile=""
 # The exact catalog records the Superpowers marketplace repository, not the
 # plugin source repository. Keep that independently validated invariant here.
 superpowers_plugin_repository="https://github.com/obra/superpowers.git"
-readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 engineersamuel_skills_source="$script_dir/../common/engineersamuel-skills"
 engineersamuel_skills_sync="$script_dir/../common/sync-engineersamuel-skills.sh"
 if [ ! -d "$engineersamuel_skills_source" ]; then

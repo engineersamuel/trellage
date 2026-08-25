@@ -1,14 +1,14 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:961385202bff1769b99719d838fbd0c359faee83ce244e7192180b8c549cbb10"
+profile_hash = "sha256:a2703265bb24160e68e67290f9da14f55c268fa81acfe21f16b66e7bd3ab9d97"
 
 [[sources]]
 kind = "skill"
 repository = "https://github.com/engineersamuel/skills.git"
-ref = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-commit = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+commit = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 integrity = "sha256:d305d246f2b40c281f75bbb58605cd2720f65a6330f68320adaf8969c835bddf"
 
 [[sources.files]]
@@ -8520,10 +8520,10 @@ skills_cli_integrity = "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAA
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.243"
-integrity = "sha256:533b3c79d7a4716ce7f8fceca40acbb14ed9fcd3726402b6e5d9c441a00f3ca3"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.243/claude-linux-arm64.tar.gz"
-size = 121600883
+version = "2.1.241"
+integrity = "sha256:d3563afb0328eee644b5b830c3de42699b56a0d83de3423a466a0e2065b2417d"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.241/claude-linux-arm64.tar.gz"
+size = 102549448
 
 [[packages.runtime]]
 name = "bash"
@@ -8586,4 +8586,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:09d307ac5fa08c190389a1439af349e702b12a19481849cb1d10427ab21ee8ed"
+final_digest = "sha256:a0968434e2d8849c913aae45c641a68cad7012f54c8aacdbcf47429daa682968"

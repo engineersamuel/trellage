@@ -1,14 +1,14 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:9c9239198bd14921e0561c8f5a39f25f58b7c6af070048b627833c79ed28c7c5"
+profile_hash = "sha256:d90f48ece4714e61337c338de056f2cf4eb48032f6a58e7397b22d377e6334e4"
 
 [[sources]]
 kind = "skill"
 repository = "https://github.com/engineersamuel/skills.git"
-ref = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-commit = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+commit = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 integrity = "sha256:d305d246f2b40c281f75bbb58605cd2720f65a6330f68320adaf8969c835bddf"
 
 [[sources.files]]
@@ -728,4 +728,4 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:e668d9ba4700392c2bda971c034e7b1fdd2006230249f6dd7b6559a0fff71279"
+final_digest = "sha256:d9d5d35c12af11e7781c2680b3acdb9c9fc143b9cc194befa26d6494e29e61c8"

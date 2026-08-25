@@ -32,7 +32,7 @@ update_check_error=""
 # Resolved once so the per-file `file_identity`/`file_mode` probes do not each
 # spawn `uname`.
 host_system_name="$(uname -s 2>/dev/null || :)"
-readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 runtime_root="$(cd -P "$script_dir/.." && pwd)"
 engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
 engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"

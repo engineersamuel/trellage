@@ -43,7 +43,7 @@ const replaceRef = async (file, pattern, ref) => {
   if (updated !== source) await writeFile(file, updated)
 }
 
-const updateRefMarkers = async (ref, skillNames) => {
+const updateRefMarkers = async (ref, previousRef, skillNames) => {
   const profileFiles = []
   for (const directory of await readdir(path.join(root, "profiles"), { withFileTypes: true })) {
     if (directory.isDirectory()) profileFiles.push(path.join(root, "profiles", directory.name, "profile.toml"))
@@ -80,6 +80,17 @@ const updateRefMarkers = async (ref, skillNames) => {
       ref,
     )
   }
+
+  if (previousRef && previousRef !== ref) {
+    const testDirectory = path.join(root, "packages", "trellage-cli", "test")
+    for (const entry of await readdir(testDirectory, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".ts")) continue
+      const file = path.join(testDirectory, entry.name)
+      const source = await readFile(file, "utf8")
+      const updated = source.replaceAll(previousRef, ref)
+      if (updated !== source) await writeFile(file, updated)
+    }
+  }
 }
 
 const publishVendor = async (checkout, ref) => {
@@ -114,6 +125,12 @@ const publishVendor = async (checkout, ref) => {
 
 const temporary = await mkdtemp(path.join(os.tmpdir(), "trellage-engineersamuel-skills."))
 try {
+  const previousRef = await readFile(path.join(vendor, "REF"), "utf8")
+    .then((value) => value.trim())
+    .catch(() => "")
+  if (previousRef && !refPattern.test(previousRef)) {
+    throw new Error(`invalid vendored ref: ${previousRef}`)
+  }
   await run("git", ["init", "-q", temporary])
   await run("git", ["-C", temporary, "remote", "add", "origin", repository])
   await run("git", ["-C", temporary, "fetch", "--depth", "1", "origin", "main"])
@@ -121,7 +138,7 @@ try {
   const ref = (await run("git", ["-C", temporary, "rev-parse", "HEAD"])).stdout.trim()
   if (!refPattern.test(ref)) throw new Error(`invalid upstream ref: ${ref}`)
   const skillNames = await publishVendor(temporary, ref)
-  await updateRefMarkers(ref, skillNames)
+  await updateRefMarkers(ref, previousRef, skillNames)
   process.stdout.write(`${ref}\n`)
 } catch (error) {
   console.error(`update-engineersamuel-skills: ${error instanceof Error ? error.message : String(error)}`)

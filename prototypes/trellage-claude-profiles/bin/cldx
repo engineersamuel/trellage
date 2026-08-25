@@ -8,7 +8,7 @@ readonly haiku_model_id='claude-haiku-4.5'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
 readonly profile_marker_value='trellage-claude-profile-v1'
-readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'cldx: %s\n' "$1" >&2

@@ -63,7 +63,7 @@ describe("authored Claude Research profile", () => {
     expect(document.profile.skills).toEqual([
       expect.objectContaining({
         repository: "https://github.com/engineersamuel/skills.git",
-        ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+        ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
         select: [
           "audit-ro",
           "finish",
@@ -181,7 +181,7 @@ describe("authored Claude Research profile", () => {
         {
           kind: "skill",
           repository: "https://github.com/engineersamuel/skills.git",
-          ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+          ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
           select: [
             "audit-ro",
             "finish",
@@ -191,7 +191,7 @@ describe("authored Claude Research profile", () => {
             "runwisp-job-authoring",
             "validate-repository",
           ],
-          commit: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+          commit: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
           integrity: `sha256:${"d".repeat(64)}`,
           files: [],
         },
@@ -400,7 +400,7 @@ describe("authored Claude council profile", () => {
     expect(document.profile.skills).toEqual([
       expect.objectContaining({
         repository: "https://github.com/engineersamuel/skills.git",
-        ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+        ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
         select: [
           "audit-ro",
           "finish",

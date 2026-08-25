@@ -9,7 +9,7 @@ readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
 readonly mise_tool='github:can1357/oh-my-pi'
 readonly profile_marker_value='trellage-omp-profile-v1'
 readonly verified_headless_policy_version='17.2.12'
-readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'omp: %s\n' "$1" >&2

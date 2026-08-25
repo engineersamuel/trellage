@@ -36,6 +36,13 @@ for profile in profiles/*/profile.toml; do
   grep -Fq "$expected_select" "$profile" \
     || fail "complete personal skill selection differs: $profile"
 done
+for test_file in \
+  packages/trellage-cli/test/claude-profile.test.ts \
+  packages/trellage-cli/test/lock.test.ts \
+  packages/trellage-cli/test/prime-profile.test.ts; do
+  grep -Fq "$ref" "$test_file" \
+    || fail "personal skill ref assertion differs: $test_file"
+done
 
 native_count=0
 for package in prototypes/trellage-*-profiles; do

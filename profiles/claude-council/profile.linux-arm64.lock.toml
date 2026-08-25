@@ -1,14 +1,14 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:fbf577e20e5e257e9680ae41f3a8d2ffeeb171cd65997e8f95dad01199f67ca6"
+profile_hash = "sha256:4a3528bb5e217706f1bd2179d16dd892dc5f5210a3631170f41893ed21fbc342"
 
 [[sources]]
 kind = "skill"
 repository = "https://github.com/engineersamuel/skills.git"
-ref = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-commit = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+commit = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
 integrity = "sha256:d305d246f2b40c281f75bbb58605cd2720f65a6330f68320adaf8969c835bddf"
 
 [[sources.files]]
@@ -1652,4 +1652,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:419a60d08ccfe22eb2695265b1fb97d0144eb366bb17ac0f55d4051ed75d31f2"
+final_digest = "sha256:278e23c897a48a9a45ce1555e1b0f069f4fc11790f52dd066dd12f4c295067f7"
