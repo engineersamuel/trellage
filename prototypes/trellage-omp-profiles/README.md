@@ -64,7 +64,8 @@ because it adapts pstack skill links and agent roles for OMP. The first
 eligible OMP setup resolves the latest source commits into a shared local
 cache. Later launches work offline and synchronize the cached snapshot
 atomically into each profile's `agent/community-skills` directory without
-removing unrelated skills.
+removing unrelated skills. Run `trx skills update` to refresh both the common
+native skills and this OMP-only cache from the approved default branches.
 
 Setup and repair refuse symlinked paths or unrelated existing profile files.
 They preserve other profile state, including sessions. `doctor` is read-only

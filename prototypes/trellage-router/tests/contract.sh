@@ -296,17 +296,21 @@ rm "$fixture_bin/node"
 cat >"$fixture_bin/node" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$@" >"$TRX_NODE_LOG"
+printf '%s\n' --- "$@" >>"$TRX_NODE_LOG"
 EOF
 chmod 0755 "$fixture_bin/node"
+: >"$fixture_root/skills-update.argv"
 TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
   || fail 'skills update did not delegate to the floating-skills manager'
-sed -n '2p' "$fixture_root/skills-update.argv" | grep -Fxq update \
-  || fail 'skills update delegated the wrong action'
-grep -Fxq -- --bundle "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the bundle option'
 grep -Fxq native-common "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the native bundle'
+grep -Fxq omp-community "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the OMP community bundle'
+grep -Fxq "$fixture_home/.local/share/trellage/common/omp-community-skills" \
+  "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the OMP community cache'
+[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 2 ]] \
+  || fail 'skills update did not invoke both bundle updates'
 rm "$fixture_bin/node"
 ln -s "$real_node" "$fixture_bin/node"
 
