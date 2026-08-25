@@ -8,15 +8,63 @@ root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 launcher="$root/bin/omp"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
+skills_catalog="$root/../../skills.json"
+community_skill_names=()
+while IFS= read -r skill_name; do
+  community_skill_names+=("$skill_name")
+done < <(
+  jq -r '
+    .bundles["omp-community"][] as $source
+    | .sources[$source].select[]
+  ' "$skills_catalog"
+)
 
 fail() {
   printf 'omp contract failed: %s\n' "$1" >&2
   exit 1
 }
 
+assert_community_skills() {
+  local target="$1" label="$2" skill_name skill_count
+
+  [[ -d "$target" && ! -L "$target" ]] \
+    || fail "$label community skill directory is missing"
+  skill_count="$(find "$target" -mindepth 1 -maxdepth 1 -type d ! -name '.trellage-*' | wc -l | tr -d ' ')"
+  [[ "$skill_count" == 49 ]] \
+    || fail "$label community skill count was $skill_count, expected 49"
+  for skill_name in "${community_skill_names[@]}"; do
+    grep -Fqx "# Fixture $skill_name" "$target/$skill_name/SKILL.md" \
+      || fail "$label community skill differs: $skill_name"
+  done
+}
+
+seed_community_skills_cache() {
+  local target="$1" skill_name
+
+  mkdir -p "$target/skills"
+  for skill_name in "${community_skill_names[@]}"; do
+    mkdir -p "$target/skills/$skill_name"
+    printf '# Fixture %s\n' "$skill_name" >"$target/skills/$skill_name/SKILL.md"
+  done
+  printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort >"$target/managed-skills.txt"
+  : >"$target/always-on.md"
+}
+
 for source_file in "$launcher" "$installer" "$uninstaller" "$root/README.md"; do
   [[ -f "$source_file" ]] || fail "missing source file: $source_file"
 done
+[[ "${#community_skill_names[@]}" -eq 49 ]] \
+  || fail "OMP community skill count was ${#community_skill_names[@]}, expected 49"
+[[ "$(printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" == 49 ]] \
+  || fail 'OMP community skill catalog contains duplicate names'
+jq -e '
+  .sources["dsebban-omp"].repository == "https://github.com/dsebban/skills.git"
+  and .sources["dsebban-omp"].select == ["orchestrate-omp", "poteto-mode", "pstack-omp"]
+  and .sources["cursor-pstack"].repository == "https://github.com/cursor/plugins.git"
+  and (.sources["cursor-pstack"].select | length) == 46
+  and (.sources["cursor-pstack"].select | index("poteto-mode")) == null
+  and .bundles["omp-community"] == ["dsebban-omp", "cursor-pstack"]
+' "$skills_catalog" >/dev/null || fail 'OMP community skill catalog differs'
 
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-omp-contract.XXXXXX")" \
   || fail 'could not create fixture root'
@@ -50,7 +98,7 @@ fi
 case "${1-}" in
   latest)
     [[ "${2-}" == "$tool" ]] || exit 90
-    printf '%s\n' "${FAKE_MISE_LATEST:-17.2.12}"
+    printf '%s\n' "${FAKE_MISE_LATEST:-18.0.4}"
     ;;
   install)
     spec="${2-}"
@@ -103,6 +151,10 @@ if [[ "${OMP_PROFILE-}" == trellage-copilot-native \
   && ( -n "${GH_TOKEN-}" || -n "${GITHUB_TOKEN-}" ) ]]; then
   printf 'alternate GitHub tokens were not scrubbed\n' >&2
   exit 43
+fi
+if [[ "${FAKE_OMP_REQUIRE_STDIN-}" == 1 ]]; then
+  IFS= read -r stdin_probe || exit 79
+  [[ "$stdin_probe" == terminal-response ]] || exit 80
 fi
 
 if [[ "$#" -eq 0 ]]; then
@@ -225,6 +277,7 @@ chmod 0755 "$fake_bin/gh"
 
 install_fixture_node "$fake_bin"
 seed_floating_skills_cache "$home"
+seed_community_skills_cache "$home/.local/share/trellage/common/omp-community-skills"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
@@ -247,6 +300,7 @@ unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
 command_path="$HOME/.local/bin/omp"
 runtime_root="$HOME/.local/share/trellage/omp"
 installed_catalog="$runtime_root/catalog.json"
+installed_ownership="$runtime_root/.managed-by-trellage-omp-profiles"
 profile_root="$HOME/.omp/profiles/trellage-qwen-local"
 agent_root="$profile_root/agent"
 copilot_profile_root="$HOME/.omp/profiles/trellage-copilot-native"
@@ -255,6 +309,9 @@ copilot_agent_root="$copilot_profile_root/agent"
 [[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
 [[ "$(readlink "$command_path")" == "$runtime_root/bin/omp" ]] \
   || fail 'command symlink target differs'
+[[ -f "$installed_ownership" \
+  && "$(<"$installed_ownership")" == 'trellage-omp-profiles-v2' ]] \
+  || fail 'installer did not publish the current runtime ownership generation'
 cmp -s "$installed_catalog" "$root/catalog.json" \
   || fail 'installer did not publish the OMP catalog'
 
@@ -319,13 +376,16 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 rm -rf "$profile_root" "$runtime_root/version"
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
-[[ "$(<"$runtime_root/version")" == '17.2.12' ]] || fail 'setup did not pin resolved version'
+[[ "$(<"$runtime_root/version")" == '18.0.4' ]] || fail 'setup did not pin resolved version'
 [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \
   || fail 'setup did not materialize config.yml'
 [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] \
   || fail 'setup did not materialize models.yml'
 [[ -f "$profile_root/.managed-by-trellage-omp-profiles" ]] \
   || fail 'setup did not mark profile ownership'
+grep -Fqx "    - \"$agent_root/community-skills\"" "$agent_root/config.yml" \
+  || fail 'local profile does not discover managed community skills'
+assert_community_skills "$agent_root/community-skills" 'local profile'
 
 model='copilot-proxy-rs/qwen3.6-35b-a3b-local'
 for role in default smol slow vision plan designer commit tiny task advisor; do
@@ -334,7 +394,12 @@ for role in default smol slow vision plan designer commit tiny task advisor; do
 done
 grep -Fqx '  - copilot-proxy-rs/qwen3.6-35b-a3b-local' "$agent_root/config.yml" \
   || fail 'config does not exclusively enable local Qwen'
-[[ "$(grep -Fc '  - ' "$agent_root/config.yml")" -eq 1 ]] \
+[[ "$(awk '
+  /^enabledModels:/ { in_models = 1; next }
+  in_models && /^[^ ]/ { in_models = 0 }
+  in_models && /^  - / { count += 1 }
+  END { print count + 0 }
+' "$agent_root/config.yml")" -eq 1 ]] \
   || fail 'config enabled more than one model'
 grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" \
   || fail 'config does not set explicit yolo approval mode'
@@ -370,6 +435,17 @@ grep -Fqx '  default: github-copilot/gpt-5.6-sol:medium' \
   || fail 'Copilot profile did not default to GPT-5.6 Sol medium'
 ! grep -Fq 'copilot-proxy-rs' "$copilot_agent_root/config.yml" "$copilot_agent_root/models.yml" \
   || fail 'Copilot profile depends on the local proxy'
+grep -Fqx "    - \"$copilot_agent_root/community-skills\"" "$copilot_agent_root/config.yml" \
+  || fail 'Copilot profile does not discover managed community skills'
+assert_community_skills "$copilot_agent_root/community-skills" 'Copilot profile'
+
+rm -f -- "$runtime_root/version"
+FAKE_MISE_LATEST=17.2.12 "$command_path" setup >"$fixture_root/setup-legacy.out" \
+  || fail 'legacy setup failed'
+FAKE_MISE_LATEST=17.2.12 "$command_path" setup copilot \
+  >"$fixture_root/setup-copilot-legacy.out" || fail 'legacy Copilot setup failed'
+! grep -Fq 'community-skills' "$agent_root/config.yml" "$copilot_agent_root/config.yml" \
+  || fail 'unsupported OMP version enabled community skill discovery'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON profile list failed'
 jq -e '
@@ -465,6 +541,10 @@ expected_copilot_launch="$(jq -cn \
   || fail 'Copilot launch did not select the native Copilot profile'
 grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \
   || fail 'Copilot launch did not inherit the host Copilot credential'
+
+printf 'terminal-response\n' \
+  | FAKE_OMP_REQUIRE_STDIN=1 "$command_path" copilot -p stdin-probe \
+  || fail 'Copilot launch did not preserve standard input'
 
 GH_TOKEN=host-copilot-token GITHUB_TOKEN=poison-github \
   FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot -p gh-env-auth \
@@ -674,9 +754,34 @@ if FAKE_MISE_LATEST=17.2.13 FAKE_MISE_INSTALL_FAIL_VERSION=17.2.13 \
 fi
 [[ "$(<"$runtime_root/version")" == '17.2.12' ]] || fail 'failed update replaced pinned version'
 
-FAKE_MISE_LATEST=17.2.13 "$command_path" update >"$fixture_root/update.out" \
+rm -rf -- "$agent_root/community-skills/architect"
+FAKE_MISE_LATEST=18.0.4 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
-[[ "$(<"$runtime_root/version")" == '17.2.13' ]] || fail 'update did not publish new exact version'
+[[ "$(<"$runtime_root/version")" == '18.0.4' ]] || fail 'update did not publish new exact version'
+[[ -f "$agent_root/community-skills/architect/SKILL.md" ]] \
+  || fail 'update did not restore managed community skills'
+mv "$agent_root/community-skills/architect" "$fixture_root/architect.missing"
+if "$command_path" doctor >"$fixture_root/doctor-community-missing.out" 2>&1; then
+  fail 'doctor accepted a missing managed community skill'
+fi
+grep -Fq 'failed to validate OMP community skills: local' \
+  "$fixture_root/doctor-community-missing.out" \
+  || fail 'doctor community skill diagnostic differs'
+mv "$fixture_root/architect.missing" "$agent_root/community-skills/architect"
+"$command_path" doctor >"$fixture_root/doctor-community-restored.out" \
+  || fail 'doctor rejected restored local community skills'
+grep -Fqx 'omp doctor: OK (18.0.4, qwen3.6-35b-a3b-local)' \
+  "$fixture_root/doctor-community-restored.out" \
+  || fail 'restored local community skill doctor output differs'
+
+"$command_path" setup copilot >"$fixture_root/setup-copilot-community.out" \
+  || fail 'Copilot setup failed after community skill update'
+assert_community_skills "$copilot_agent_root/community-skills" 'updated Copilot profile'
+"$command_path" doctor copilot >"$fixture_root/doctor-copilot-community.out" \
+  || fail 'doctor rejected restored Copilot community skills'
+grep -Fqx 'omp doctor copilot: OK (18.0.4, github-copilot)' \
+  "$fixture_root/doctor-copilot-community.out" \
+  || fail 'restored Copilot community skill doctor output differs'
 
 "$command_path" list --json >"$fixture_root/list-updated.json" || fail 'updated JSON profile list failed'
 jq -e '
@@ -705,7 +810,7 @@ if "$command_path" --headless-policy no-user-input -p headless-version-mismatch 
   >"$fixture_root/headless-version-mismatch.out" 2>"$fixture_root/headless-version-mismatch.err"; then
   fail 'headless policy unexpectedly succeeded on an unverified OMP version'
 fi
-grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 17.2.12; pinned version is 17.2.13' \
+grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 17.2.12; pinned version is 18.0.4' \
   "$fixture_root/headless-version-mismatch.err" \
   || fail 'unverified OMP version diagnostic differs'
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$fail_closed_before" ]] \
@@ -722,7 +827,7 @@ fi
   || fail 'failed repair did not roll back config publication'
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" || fail 'repair did not restore config'
-[[ "$(<"$runtime_root/version")" == '17.2.13' ]] || fail 'repair changed pinned version'
+[[ "$(<"$runtime_root/version")" == '18.0.4' ]] || fail 'repair changed pinned version'
 
 printf 'drifted managed config\n' >"$agent_root/config.yml"
 "$command_path" -p 'Reply exactly OMP_SELF_HEAL' >"$fixture_root/self-heal.out" 2>&1 \
@@ -763,12 +868,12 @@ mv "$fixture_root/marker-away" "$profile_root/.managed-by-trellage-omp-profiles"
   || fail 'could not restore ownership marker'
 "$command_path" repair >/dev/null || fail 'repair after drift checks failed'
 
-installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/17.2.13/omp"
+installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/18.0.4/omp"
 rm "$installed_omp" || fail 'could not remove pinned install for launch recovery test'
 "$command_path" -p 'Reply exactly OMP_INSTALL_RECOVERY' \
   >"$fixture_root/install-recovery.out" 2>&1 \
   || fail 'launch did not recover a missing pinned install'
-grep -Fq 'omp: OMP 17.2.13 is not installed; installing' \
+grep -Fq 'omp: OMP 18.0.4 is not installed; installing' \
   "$fixture_root/install-recovery.out" \
   || fail 'launch did not report missing pinned install recovery'
 [[ -x "$installed_omp" ]] || fail 'launch did not reinstall the missing pinned executable'

@@ -251,7 +251,7 @@ create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-co
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
-create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
+create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2
 create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
 

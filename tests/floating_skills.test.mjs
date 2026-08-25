@@ -91,6 +91,14 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   const catalog = await readCatalog(new URL("../skills.json", import.meta.url))
   assert.equal(catalog.schema, 1)
   assert.ok(Object.hasOwn(catalog.bundles, "sandbox-common"))
+  assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "cursor-pstack"])
+  const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
+    (sourceId) => catalog.sources[sourceId].select,
+  )
+  assert.equal(ompCommunityNames.length, 49)
+  assert.equal(new Set(ompCommunityNames).size, 49)
+  assert.ok(catalog.sources["dsebban-omp"].select.includes("poteto-mode"))
+  assert.ok(!catalog.sources["cursor-pstack"].select.includes("poteto-mode"))
   assert.doesNotMatch(source, /"(?:ref|commit|integrity|digest|fetchedAt)"\s*:/)
   assert.throws(
     () =>

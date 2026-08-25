@@ -9,6 +9,7 @@ readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
 readonly mise_tool='github:can1357/oh-my-pi'
 readonly profile_marker_value='trellage-omp-profile-v1'
 readonly verified_headless_policy_version='17.2.12'
+readonly minimum_community_skills_version='17.3.5'
 
 die() {
   printf 'omp: %s\n' "$1" >&2
@@ -59,6 +60,7 @@ if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+readonly community_skills_cache="$runtime_root/../common/omp-community-skills"
 
 profile_key=''
 profile_kind=''
@@ -72,6 +74,7 @@ launch_headless_policy=''
 launch_pending_signal=''
 launch_cancel_status=0
 launch_forwarded_args=()
+community_skills_enabled=false
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
@@ -88,6 +91,54 @@ ensure_floating_skills() {
     --bundle native-common \
     --target "$agent_root/skills" \
     || die "failed to install floating skills: $profile_key"
+}
+
+ensure_community_skills() {
+  [[ "$community_skills_enabled" == true ]] || return 0
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle omp-community \
+    --cache "$community_skills_cache" \
+    --target "$agent_root/community-skills" \
+    || die "failed to install OMP community skills: $profile_key"
+}
+
+check_community_skills() {
+  [[ "$community_skills_enabled" == true ]] || return 0
+  node "$floating_skills_manager" verify \
+    --catalog "$floating_skills_catalog" \
+    --bundle omp-community \
+    --cache "$community_skills_cache" \
+    --target "$agent_root/community-skills" \
+    || die "failed to validate OMP community skills: $profile_key"
+}
+
+version_at_least() {
+  local actual="$1" minimum="$2"
+  local actual_major actual_minor actual_patch minimum_major minimum_minor minimum_patch
+
+  [[ "$actual" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+  actual_major="${BASH_REMATCH[1]}"
+  actual_minor="${BASH_REMATCH[2]}"
+  actual_patch="${BASH_REMATCH[3]}"
+  [[ "$minimum" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+  minimum_major="${BASH_REMATCH[1]}"
+  minimum_minor="${BASH_REMATCH[2]}"
+  minimum_patch="${BASH_REMATCH[3]}"
+
+  (( 10#$actual_major > 10#$minimum_major )) && return 0
+  (( 10#$actual_major < 10#$minimum_major )) && return 1
+  (( 10#$actual_minor > 10#$minimum_minor )) && return 0
+  (( 10#$actual_minor < 10#$minimum_minor )) && return 1
+  (( 10#$actual_patch >= 10#$minimum_patch ))
+}
+
+configure_version_capabilities() {
+  if version_at_least "$1" "$minimum_community_skills_version"; then
+    community_skills_enabled=true
+  else
+    community_skills_enabled=false
+  fi
 }
 
 canonical_directory() {
@@ -286,6 +337,13 @@ startup:
 marketplace:
   autoUpdate: off
 EOF
+  if [[ "$community_skills_enabled" == true ]]; then
+    cat <<EOF
+skills:
+  customDirectories:
+    - "$(printf '%s' "$agent_root/community-skills" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+EOF
+  fi
   if [[ "$profile_kind" == local ]]; then
     cat <<EOF
 modelRoles:
@@ -610,9 +668,11 @@ setup_profile() {
   else
     version="$(resolve_latest_version)"
   fi
+  configure_version_capabilities "$version"
   install_exact_version "$version"
   publish_managed_profile
   ensure_floating_skills
+  ensure_community_skills
   publish_version "$version"
   if [[ "$profile_kind" == local ]]; then
     printf 'omp setup: ready (%s, %s)\n' "$version" "$(profile_ready_label)"
@@ -627,8 +687,11 @@ repair_profile() {
 
   require_command mise
   version="$(read_pinned_version)"
+  configure_version_capabilities "$version"
   install_exact_version "$version"
   publish_managed_profile
+  ensure_floating_skills
+  ensure_community_skills
   if [[ "$profile_kind" == local ]]; then
     printf 'omp repair: restored (%s, %s)\n' "$version" "$(profile_ready_label)"
   else
@@ -658,11 +721,17 @@ update_profile() {
   current="$(read_pinned_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
+    configure_version_capabilities "$current"
+    ensure_community_skills
+    ensure_managed_profile
     printf 'omp update: %s is current\n' "$current"
     return
   fi
   install_exact_version "$latest"
+  configure_version_capabilities "$latest"
+  ensure_community_skills
   publish_version "$latest"
+  publish_managed_profile
   printf 'omp update: %s -> %s installed\n' "$current" "$latest"
 }
 
@@ -736,7 +805,9 @@ doctor_profile() {
 
   require_command mise
   version="$(read_pinned_version)"
+  configure_version_capabilities "$version"
   verify_managed_profile
+  check_community_skills
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
   if [[ "$profile_kind" == local ]]; then
@@ -904,8 +975,10 @@ launch_omp() {
     fi
   fi
   version="$(read_pinned_version)"
+  configure_version_capabilities "$version"
   ensure_managed_profile
   ensure_floating_skills
+  ensure_community_skills
   if cancel_pending_launch; then
     return "$launch_cancel_status"
   fi
@@ -942,17 +1015,17 @@ launch_omp() {
       fi
       env -u GH_TOKEN -u GITHUB_TOKEN \
         COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name" \
-        "$binary" "${launch_args[@]}" &
+        "$binary" "${launch_args[@]}" <&0 &
       launch_child_pid=$!
     else
       if cancel_pending_launch; then
         return "$launch_cancel_status"
       fi
-      env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" &
+      env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" <&0 &
       launch_child_pid=$!
     fi
   else
-    env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" &
+    env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" <&0 &
     launch_child_pid=$!
   fi
   if [[ -n "$launch_pending_signal" ]]; then

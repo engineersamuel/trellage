@@ -453,7 +453,7 @@ cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-
 cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1)"
 grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
-omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v1)"
+omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2)"
 picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1)"
 prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1)"
 
