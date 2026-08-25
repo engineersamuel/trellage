@@ -145,6 +145,15 @@ verify_floating_skills() {
     || die "floating skills are unhealthy: $profile"
 }
 
+verify_repairable_floating_skills() {
+  local profile="$1"
+  node "$floating_skills_manager" verify-repairable \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
+    --target "$(profile_home "$profile")/skills" \
+    || die "floating skills cannot be repaired safely: $profile"
+}
+
 single_json_document() {
   jq -ces '
     if length == 1 then .[0]
@@ -1337,6 +1346,7 @@ validate_profile_capabilities() {
   local profile="$1"
   local plugin_mode="$2"
   local supplied_inventory="${3-}"
+  local skills_mode="${4-exact}"
   local inventory
   local mcp_inventory
   local plugin
@@ -1347,12 +1357,18 @@ validate_profile_capabilities() {
     required|allow-missing) ;;
     *) die "invalid capability validation mode: $plugin_mode" ;;
   esac
+  case "$skills_mode" in
+    exact|repairable) ;;
+    *) die "invalid skill validation mode: $skills_mode" ;;
+  esac
 
   if [[ "$plugin_mode" == allow-missing ]] \
     && [[ ! -L "$(profile_home "$profile")/skills" ]] \
     && { [[ ! -d "$(profile_home "$profile")/skills" ]] \
       || ! find "$(profile_home "$profile")/skills" -mindepth 1 -print -quit | grep -q .; }; then
     :
+  elif [[ "$skills_mode" == repairable ]]; then
+    verify_repairable_floating_skills "$profile"
   else
     verify_floating_skills "$profile"
   fi
@@ -1402,6 +1418,7 @@ validate_profile_capabilities() {
 
 preflight_profile() {
   local profile="$1"
+  local skills_mode="${2-exact}"
   local auth
   local home
   local policy
@@ -1440,7 +1457,7 @@ preflight_profile() {
   if [ ! -e "$home" ] && [ ! -L "$home" ]; then
     return
   fi
-  validate_profile_capabilities "$profile" allow-missing
+  validate_profile_capabilities "$profile" allow-missing '' "$skills_mode"
 }
 
 doctor_profile() {
@@ -1766,7 +1783,7 @@ setup_profile() {
 repair_profile() {
   local profile="$1"
 
-  preflight_profile "$profile"
+  preflight_profile "$profile" repairable
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
   ensure_floating_skills "$profile"

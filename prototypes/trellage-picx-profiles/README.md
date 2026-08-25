@@ -40,6 +40,10 @@ because the managed proxy provider uses no API key.
 
 The local `copilot-proxy-rs` service must be healthy and advertise
 `gpt-5.6-sol` from `/v1/models`. `picx doctor` checks both conditions.
+`picx inventory default --json` applies the same readiness checks without
+changing profile state. It returns structured `healthy`, `unhealthy`, or
+`not-setup` readiness; use `picx doctor` when a profile is unhealthy and the
+detailed diagnostic is needed.
 
 ```bash
 ./install.sh

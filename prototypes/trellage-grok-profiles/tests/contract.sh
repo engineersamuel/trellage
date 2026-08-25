@@ -3065,12 +3065,24 @@ printf 'unexpected\n' >"$hve_home/commands/unexpected"
 assert_doctor_failure 'nonempty commands' "grx: standalone capability directory is not empty: $hve_home/commands"
 rm "$hve_home/commands/unexpected"
 
+printf '%s\n' '# Drifted managed skill' >"$hve_home/skills/fixture-personal/SKILL.md"
+assert_doctor_failure 'drifted managed skill' 'grx: floating skills are unhealthy: hve'
+./bin/grx repair hve >"$fixture_root/drifted-skills-repair.out"
+assert_line 'hve: repaired' "$fixture_root/drifted-skills-repair.out"
+assert_contains '# Fixture personal skill' "$hve_home/skills/fixture-personal/SKILL.md"
+
 chmod -R u+rwx "$hve_home/skills"
 rm -rf "$hve_home/skills"
 empty_skills_target="$fixture_root/empty-skills-target"
 mkdir -p "$empty_skills_target"
 ln -s "$empty_skills_target" "$hve_home/skills"
 assert_doctor_failure 'symlinked skills' 'grx: floating skills are unhealthy: hve'
+if ./bin/grx repair hve >"$fixture_root/symlinked-skills-repair.out" \
+  2>"$fixture_root/symlinked-skills-repair.err"; then
+  fail 'repair accepted a symlinked standalone capability directory'
+fi
+assert_contains 'grx: floating skills cannot be repaired safely: hve' \
+  "$fixture_root/symlinked-skills-repair.err"
 rm "$hve_home/skills"
 ./bin/grx repair hve >/dev/null
 

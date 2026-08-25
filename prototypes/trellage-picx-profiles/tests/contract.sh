@@ -123,6 +123,10 @@ cat >"$fake_bin/curl" <<'FAKE_CURL'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_PROXY_LOG"
+if [[ "${FAKE_PROXY_FAIL_HEALTH-}" == 1 \
+  && "${!#}" == http://127.0.0.1:8080/health ]]; then
+  exit 22
+fi
 case "${!#}" in
   http://127.0.0.1:8080/health)
     printf '%s\n' '{"status":"ok"}'
@@ -265,6 +269,25 @@ status=0
 grep -Fq 'managed pi-fff dependency is missing: @ff-labs/fff-bun' \
   "$fixture_root/missing-fff.err" \
   || fail 'missing FFF dependency did not report a clear error'
+status=0
+"$command_path" inventory default --json \
+  >"$fixture_root/unhealthy-inventory.json" \
+  2>"$fixture_root/unhealthy-inventory.err" || status=$?
+[[ "$status" == 0 ]] || fail "unhealthy inventory exited $status instead of 0"
+[[ ! -s "$fixture_root/unhealthy-inventory.err" ]] \
+  || fail 'unhealthy inventory wrote a diagnostic instead of structured JSON'
+jq -e '
+  .launcher == "picx"
+  and .harness == "pi"
+  and .profile == "default"
+  and .ready == false
+  and .readiness == "unhealthy"
+  and .model == null
+  and (.extensions | length) == 0
+' "$fixture_root/unhealthy-inventory.json" >/dev/null \
+  || fail 'unhealthy inventory differs'
+[[ ! -f "$agent_root/npm/node_modules/@ff-labs/fff-bun/package.json" ]] \
+  || fail 'inventory repaired managed profile state'
 : >"$FAKE_EXTENSION_LOG"
 "$command_path" repair >/dev/null
 [[ -f "$agent_root/npm/node_modules/@ff-labs/fff-bun/package.json" ]] \
@@ -294,6 +317,20 @@ grep -Fqx -- '-fsS --max-time 5 http://127.0.0.1:8080/health' \
   "$FAKE_PROXY_LOG" || fail 'doctor omitted proxy health check'
 grep -Fqx -- '-fsS --max-time 5 http://127.0.0.1:8080/v1/models' \
   "$FAKE_PROXY_LOG" || fail 'doctor omitted proxy model discovery'
+status=0
+FAKE_PROXY_FAIL_HEALTH=1 "$command_path" inventory default --json \
+  >"$fixture_root/unhealthy-proxy-inventory.json" \
+  2>"$fixture_root/unhealthy-proxy-inventory.err" || status=$?
+[[ "$status" == 0 ]] || fail "unhealthy proxy inventory exited $status instead of 0"
+[[ ! -s "$fixture_root/unhealthy-proxy-inventory.err" ]] \
+  || fail 'unhealthy proxy inventory wrote a diagnostic instead of structured JSON'
+jq -e '
+  .launcher == "picx"
+  and .profile == "default"
+  and .ready == false
+  and .readiness == "unhealthy"
+' "$fixture_root/unhealthy-proxy-inventory.json" >/dev/null \
+  || fail 'unhealthy proxy inventory differs'
 
 COPILOT_GITHUB_TOKEN='do-not-forward' \
 GH_TOKEN='do-not-forward' \
