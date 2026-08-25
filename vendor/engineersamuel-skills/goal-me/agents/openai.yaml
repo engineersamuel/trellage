@@ -1,0 +1,4 @@
+interface:
+  display_name: "Goal Me"
+  short_description: "Steer free-form input into a GOAL.md"
+  default_prompt: "Use $goal-me to turn this request into a GOAL.md."

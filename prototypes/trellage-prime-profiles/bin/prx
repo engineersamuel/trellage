@@ -12,6 +12,7 @@ readonly mise_install_name='github-prime-intellect-ai-prime-agent'
 readonly profile_marker_value='trellage-prime-profile-v1'
 readonly managed_extension_name='ask-user'
 readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'prx: %s\n' "$1" >&2
@@ -78,6 +79,22 @@ readonly profile_extension="$profile_extensions/${managed_extension_name}.ts"
 readonly profile_extension_manifest="$profile_home/.trellage-managed-extensions"
 readonly kernel_venv="$profile_home/kernel-venv"
 readonly kernel_python="$kernel_venv/bin/python"
+engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
+if [[ ! -d "$engineersamuel_skills_source" ]]; then
+  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+fi
+
+sync_engineersamuel_skills() {
+  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$profile_home/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die 'failed to sync engineersamuel/skills'
+}
 # UID-global default socket is /tmp/prime-agent-$UID/daemon.sock. Resident workers
 # inherit the supervisor's env at spawn, and PRIME_AGENT_KERNEL_* is not on the
 # client→daemon allowlist — so a daemon started without our kernel paths keeps
@@ -913,6 +930,7 @@ setup_profile() {
   fi
   install_exact_version "$version"
   publish_managed_profile
+  sync_engineersamuel_skills
   publish_version "$version"
   ensure_kernel_runtime
   printf 'prx setup: ready (%s, %s)\n' "$version" "$model_id"
@@ -925,6 +943,7 @@ repair_profile() {
   version="$(read_pinned_version)"
   install_exact_version "$version"
   publish_managed_profile
+  sync_engineersamuel_skills
   ensure_kernel_runtime
   printf 'prx repair: restored (%s, %s)\n' "$version" "$model_id"
 }
@@ -946,6 +965,7 @@ update_profile() {
   local current latest
 
   require_command mise
+  sync_engineersamuel_skills
   current="$(read_pinned_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
@@ -1039,6 +1059,7 @@ launch_prime() {
     setup_profile >/dev/null
   fi
   publish_managed_profile "$selected_model"
+  sync_engineersamuel_skills
   version="$(read_pinned_version)"
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"

@@ -8,6 +8,7 @@ readonly haiku_model_id='claude-haiku-4.5'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
 readonly profile_marker_value='trellage-claude-profile-v1'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'cldx: %s\n' "$1" >&2
@@ -85,6 +86,22 @@ readonly profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
 readonly onboarding="$profile_home/.claude.json"
 readonly output_style_root="$profile_home/output-styles"
 readonly output_style="$output_style_root/rundown.md"
+engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
+if [[ ! -d "$engineersamuel_skills_source" ]]; then
+  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+fi
+
+sync_engineersamuel_skills() {
+  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$profile_home/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die 'failed to sync engineersamuel/skills'
+}
 
 validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
@@ -431,6 +448,7 @@ setup_profile() {
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
   prepare_profile
+  sync_engineersamuel_skills
   ensure_onboarding "$version"
   ensure_output_style
   check_proxy
@@ -444,6 +462,7 @@ repair_profile() {
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
   require_owned_profile
+  sync_engineersamuel_skills
   ensure_onboarding "$version"
   ensure_output_style
   check_proxy
@@ -515,6 +534,7 @@ launch_profile() {
   fi
   ensure_onboarding "$version"
   ensure_output_style
+  sync_engineersamuel_skills
   ensure_trust
   check_proxy
 

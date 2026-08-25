@@ -3061,13 +3061,14 @@ printf 'unexpected\n' >"$hve_home/commands/unexpected"
 assert_doctor_failure 'nonempty commands' "grx: standalone capability directory is not empty: $hve_home/commands"
 rm "$hve_home/commands/unexpected"
 
-rmdir "$hve_home/skills"
+chmod -R u+rwx "$hve_home/skills"
+rm -rf "$hve_home/skills"
 empty_skills_target="$fixture_root/empty-skills-target"
 mkdir -p "$empty_skills_target"
 ln -s "$empty_skills_target" "$hve_home/skills"
 assert_doctor_failure 'symlinked skills' "grx: unsafe standalone capability directory: $hve_home/skills"
 rm "$hve_home/skills"
-mkdir -p "$hve_home/skills"
+./bin/grx repair hve >/dev/null
 
 rmdir "$hve_home/commands"
 printf 'not a directory\n' >"$hve_home/commands"

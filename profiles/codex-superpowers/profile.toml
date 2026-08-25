@@ -31,6 +31,11 @@ ref = "v6.2.0"
 select = ["*"]
 
 [[skills]]
+repository = "https://github.com/engineersamuel/skills.git"
+ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
+select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
+
+[[skills]]
 repository = "https://github.com/JuliusBrussee/caveman.git"
 ref = "v1.10.0"
 select = ["caveman"]

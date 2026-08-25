@@ -32,6 +32,14 @@ update_check_error=""
 # Resolved once so the per-file `file_identity`/`file_mode` probes do not each
 # spawn `uname`.
 host_system_name="$(uname -s 2>/dev/null || :)"
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
+runtime_root="$(cd -P "$script_dir/.." && pwd)"
+engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
+if [[ ! -d "$engineersamuel_skills_source" ]]; then
+  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+fi
 
 cleanup_auth_assets() {
   case "$auth_stage" in
@@ -113,6 +121,48 @@ usage() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+sync_engineersamuel_skills() {
+  local profile="$1"
+  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$(profile_home "$profile")/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die "failed to sync engineersamuel/skills: $profile"
+}
+
+verify_engineersamuel_skills() {
+  local profile="$1" target manifest skill entry name first_entry find_status=0
+  target="$(profile_home "$profile")/skills"
+  manifest="$target/.trellage-engineersamuel-skills"
+  [[ ! -L "$target" ]] || die "unsafe standalone capability directory: $target"
+  first_entry="$(find "$target" -mindepth 1 -print -quit 2>/dev/null)" || find_status=$?
+  [[ "$find_status" -eq 0 ]] \
+    || die "failed to inspect standalone capability directory: $target"
+  if [[ ! -f "$manifest" || -L "$manifest" ]]; then
+    if [[ -n "$first_entry" ]]; then
+      die "standalone capability directory is not empty: $target"
+    fi
+    die "managed personal skill manifest is missing: $manifest"
+  fi
+  [[ -f "$manifest" && ! -L "$manifest" ]] \
+    || die "managed personal skill manifest is missing: $manifest"
+  [[ "$(head -n 1 "$manifest")" == "$engineersamuel_skills_ref" ]] \
+    || die "managed personal skill ref differs: $manifest"
+  for skill in "$engineersamuel_skills_source"/*; do
+    [[ -d "$skill" ]] || continue
+    [[ -f "$target/$(basename "$skill")/SKILL.md" ]] \
+      || die "managed personal skill is missing: $(basename "$skill")"
+  done
+  while IFS= read -r entry; do
+    name="$(basename "$entry")"
+    [[ "$name" == '.trellage-engineersamuel-skills' ]] && continue
+    [[ -d "$engineersamuel_skills_source/$name" ]] \
+      || die "standalone capability directory is not empty: $target"
+  done < <(find "$target" -mindepth 1 -maxdepth 1 -print)
 }
 
 single_json_document() {
@@ -1318,7 +1368,14 @@ validate_profile_capabilities() {
     *) die "invalid capability validation mode: $plugin_mode" ;;
   esac
 
-  check_empty_directory "$(profile_home "$profile")/skills"
+  if [[ "$plugin_mode" == allow-missing ]] \
+    && [[ ! -L "$(profile_home "$profile")/skills" ]] \
+    && { [[ ! -d "$(profile_home "$profile")/skills" ]] \
+      || ! find "$(profile_home "$profile")/skills" -mindepth 1 -print -quit | grep -q .; }; then
+    :
+  else
+    verify_engineersamuel_skills "$profile"
+  fi
   check_empty_directory "$(profile_home "$profile")/commands"
 
   plugin="$(profile_value "$profile" plugin)"
@@ -1692,6 +1749,7 @@ ensure_launch_ready() {
   preflight_profile "$profile"
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
+  sync_engineersamuel_skills "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null
 }
@@ -1702,6 +1760,7 @@ launch_profile() {
   local grok_args=(--sandbox workspace --permission-mode bypassPermissions --always-approve "$@")
 
   ensure_launch_ready "$profile"
+  sync_engineersamuel_skills "$profile"
   resolve_grok
   refresh_auth "$profile"
   exec env \
@@ -1718,6 +1777,7 @@ setup_profile() {
   preflight_profile "$profile"
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
+  sync_engineersamuel_skills "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null
   printf '%s: ready\n' "$profile"
@@ -1729,6 +1789,7 @@ repair_profile() {
   preflight_profile "$profile"
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
+  sync_engineersamuel_skills "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null
   printf '%s: repaired\n' "$profile"
@@ -1837,6 +1898,11 @@ update_profile() {
   [ -d "$home" ] && [ ! -L "$home" ] \
     || die "profile is not set up: $profile"
 
+  check_empty_directory "$home/commands"
+  if [[ -d "$home/skills" ]] && find "$home/skills" -mindepth 1 -print -quit | grep -q .; then
+    verify_engineersamuel_skills "$profile"
+  fi
+  sync_engineersamuel_skills "$profile"
   plugin="$(profile_value "$profile" plugin)"
   validate_profile_capabilities "$profile" required
   run_grok "$profile" plugin update "$plugin"

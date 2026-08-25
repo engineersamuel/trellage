@@ -146,6 +146,11 @@ mkdir -p "$(dirname "$fixture_launcher")" "$(dirname "$fixture_adapter")" "$fixt
 cp "$launcher" "$fixture_launcher"
 cp "$catalog" "$fixture_catalog"
 cp "$adapter" "$fixture_adapter"
+mkdir -p "$fixture_root/common/engineersamuel-skills"
+cp -R "$root/../../vendor/engineersamuel-skills/." \
+  "$fixture_root/common/engineersamuel-skills/"
+install -m 0755 "$root/../../scripts/sync-engineersamuel-skills.sh" \
+  "$fixture_root/common/sync-engineersamuel-skills.sh"
 chmod +x "$fixture_launcher"
 }
 
