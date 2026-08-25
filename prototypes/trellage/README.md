@@ -216,15 +216,19 @@ A bare name resolves to `profiles/<name>/profile.toml`; explicit `.toml` and pat
 
 Bare `trellage` discovers valid immediate child profiles from both the bundled
 source-tree `profiles/` directory and the current Git worktree's `profiles/`
-directory. Choices default to profile-name order; `S` cycles sort order and `/`
-filters the list. A current-worktree profile overrides a bundled profile with the
-same declared name. The detail pane shows the description, harness version/model,
-plugins, skills, and MCPs declared by the selected `profile.toml`.
+directory. The first sorted row is selected when the launcher opens. Typing
+immediately filters by profile, harness, or description, and the arrow keys move
+within the filtered results. Enter or Escape leaves filter mode; `/` re-enters
+it and `S` cycles sort order. A current-worktree profile overrides a bundled
+profile with the same declared name. The detail pane shows the description,
+harness version/model, plugins, skills, and MCPs declared by the selected
+`profile.toml`.
 
-The Ink launcher requires an interactive terminal. Escape or Ctrl-C restores the
-terminal and exits `130`. `M` selects an advertised model where the harness
-supports overrides. Inside Herdr, `H` opens the selected launch in a new pane for
-the current Git worktree. Selection itself never builds or mutates a profile.
+The Ink launcher requires an interactive terminal. Ctrl-C cancels from any mode;
+Escape cancels after filter mode is left. Cancellation restores the terminal and
+exits `130`. `M` selects an advertised model where the harness supports
+overrides. Inside Herdr, `H` opens the selected launch in a new pane for the
+current Git worktree. Selection itself never builds or mutates a profile.
 
 Bare profile launches remain interactive. Headless prompt, JSONL, resume,
 exact-session resume, resume-with-prompt, and model override operations require

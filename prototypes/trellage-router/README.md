@@ -64,12 +64,15 @@ non-interactive and work without a TTY. They validate all seven owned launchers
 and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
 
-Use the arrow keys and Enter to select a profile. `/` filters, `S` sorts, `D`
-opens full details, and `M` selects an advertised or custom model for launchers
-that support overrides. `H` launches the selection in a new Herdr pane when
-available. Escape or Ctrl-C cancels with status 130. Remaining arguments are
-forwarded unchanged after the selected launcher profile. `trx` never runs setup,
-update, or repair.
+The first sorted row is selected when the launcher opens. Start typing to filter
+by profile, harness, or description; no leading `/` is required. The arrow keys
+move within the filtered results. Enter or Escape leaves filter mode, and `/`
+re-enters it. From command mode, `S` sorts, `D` opens full details, and `M`
+selects an advertised or custom model for launchers that support overrides. `H`
+launches the selection in a new Herdr pane when available. Ctrl-C cancels from
+any mode; Escape cancels after filter mode is left. Cancellation exits with
+status 130. Remaining arguments are forwarded unchanged after the selected
+launcher profile. `trx` never runs setup, update, or repair.
 
 `trx` fails closed if a launcher is absent, does not resolve to its owned
 runtime, or has an invalid catalog. The selected native launcher performs its

@@ -2,8 +2,8 @@
 import { constants, openSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import tty from "node:tty"
-import React, { useMemo, useState } from "react"
-import { Box, Text, render, useApp, useInput, useWindowSize } from "ink"
+import React, { useMemo, useState, type Dispatch, type SetStateAction } from "react"
+import { Box, Text, render, useApp, useInput, useWindowSize, type Key } from "ink"
 import { parseLaunchCatalog, type LaunchCatalog } from "./catalog.js"
 import { detailRows, type DetailRow } from "./detail-layout.js"
 import { tableColumns } from "./table-layout.js"
@@ -14,6 +14,7 @@ import {
   selectModel,
   setQuery,
   visibleEntries,
+  type LaunchEntry,
   type LauncherState,
 } from "./state.js"
 
@@ -68,6 +69,421 @@ const DetailLine = ({ row }: { readonly row: DetailRow }) => (
   </Text>
 )
 
+type StateSetter<T> = Dispatch<SetStateAction<T>>
+
+const isSubmitInput = (input: string, key: Key): boolean =>
+  key.return || input === "\r" || input === "\n" || input === ""
+
+const handleDetailsInput = (
+  input: string,
+  key: Key,
+  expandedDetailCount: number,
+  rows: number,
+  setShowingDetails: StateSetter<boolean>,
+  setDetailOffset: StateSetter<number>,
+): void => {
+  const maximumOffset = Math.max(0, expandedDetailCount - Math.max(1, rows - 4))
+  if (key.escape || input === "D" || input === "q") {
+    setShowingDetails(false)
+  } else if (key.upArrow || input === "k") {
+    setDetailOffset((offset) => Math.max(0, offset - 1))
+  } else if (key.downArrow || input === "j") {
+    setDetailOffset((offset) => Math.min(maximumOffset, offset + 1))
+  }
+}
+
+const handleCustomModelInput = (
+  input: string,
+  key: Key,
+  selectedId: string,
+  customModel: string,
+  updateState: StateSetter<LauncherState>,
+  setCustomModel: StateSetter<string>,
+  setEditingCustomModel: StateSetter<boolean>,
+  setChoosingModel: StateSetter<boolean>,
+): void => {
+  if (key.escape) {
+    setEditingCustomModel(false)
+  } else if (isSubmitInput(input, key)) {
+    if (customModel.length > 0) {
+      updateState((current) => selectModel(current, selectedId, customModel))
+      setEditingCustomModel(false)
+      setChoosingModel(false)
+    }
+  } else if (key.backspace || key.delete) {
+    setCustomModel((value) => value.slice(0, -1))
+  } else if (
+    !key.ctrl &&
+    !key.meta &&
+    input.length > 0 &&
+    customModel.length + input.length <= 256 &&
+    !/[\u0000-\u001f\u007f-\u009f]/u.test(input)
+  ) {
+    setCustomModel((value) => value + input)
+  }
+}
+
+const handleModelInput = (
+  input: string,
+  key: Key,
+  selected: LaunchEntry,
+  modelIndex: number,
+  updateState: StateSetter<LauncherState>,
+  setChoosingModel: StateSetter<boolean>,
+  setEditingCustomModel: StateSetter<boolean>,
+  setCustomModel: StateSetter<string>,
+  setModelIndex: StateSetter<number>,
+): void => {
+  const choiceCount = selected.models.length + 1
+  if (key.escape) {
+    setChoosingModel(false)
+  } else if (key.upArrow || input === "k") {
+    setModelIndex((index) => (index - 1 + choiceCount) % choiceCount)
+  } else if (key.downArrow || input === "j") {
+    setModelIndex((index) => (index + 1) % choiceCount)
+  } else if (input.toLocaleLowerCase("en") === "l" || isSubmitInput(input, key)) {
+    if (modelIndex === selected.models.length) {
+      setCustomModel("")
+      setEditingCustomModel(true)
+    } else {
+      updateState((current) => selectModel(current, selected.id, selected.models[modelIndex]!))
+      setChoosingModel(false)
+    }
+  }
+}
+
+const handleSearchInput = (
+  input: string,
+  key: Key,
+  updateState: StateSetter<LauncherState>,
+  setSearching: StateSetter<boolean>,
+): void => {
+  if (key.upArrow) {
+    updateState((current) => moveSelection(current, -1))
+  } else if (key.downArrow) {
+    updateState((current) => moveSelection(current, 1))
+  } else if (key.backspace || key.delete) {
+    updateState((current) => setQuery(current, current.query.slice(0, -1)))
+  } else if (key.escape || isSubmitInput(input, key)) {
+    setSearching(false)
+  } else if (!key.ctrl && !key.meta && input.length > 0) {
+    updateState((current) =>
+      setQuery(current, current.query + (current.query.length === 0 && input.startsWith("/") ? input.slice(1) : input)),
+    )
+  }
+}
+
+const handleCommandMovement = (
+  input: string,
+  key: Key,
+  updateState: StateSetter<LauncherState>,
+  cancel: () => void,
+): boolean => {
+  if (key.escape || input === "q") {
+    cancel()
+  } else if (key.upArrow || input === "k") {
+    updateState((current) => moveSelection(current, -1))
+  } else if (key.downArrow || input === "j") {
+    updateState((current) => moveSelection(current, 1))
+  } else {
+    return false
+  }
+  return true
+}
+
+const handleCommandInput = (
+  input: string,
+  key: Key,
+  state: LauncherState,
+  selected: LaunchEntry | undefined,
+  herdrAvailable: boolean,
+  updateState: StateSetter<LauncherState>,
+  setSearching: StateSetter<boolean>,
+  setModelIndex: StateSetter<number>,
+  setChoosingModel: StateSetter<boolean>,
+  setDetailOffset: StateSetter<number>,
+  setShowingDetails: StateSetter<boolean>,
+  finish: (target: LaunchIntent["target"]) => void,
+  cancel: () => void,
+): void => {
+  if (handleCommandMovement(input, key, updateState, cancel)) return
+  if (input === "/") {
+    setSearching(true)
+  } else if (input.toLocaleLowerCase("en") === "s") {
+    updateState(cycleSort)
+  } else if (input.toLocaleLowerCase("en") === "m" && selected?.modelOverrideSupported) {
+    const active = state.modelByEntry[selected.id] ?? selected.defaultModel
+    setModelIndex(Math.max(0, selected.models.indexOf(active ?? selected.models[0]!)))
+    setChoosingModel(true)
+  } else if (input === "D" && selected !== undefined) {
+    setDetailOffset(0)
+    setShowingDetails(true)
+  } else if (input === "H" && herdrAvailable) {
+    finish("herdr")
+  } else if (input.toLocaleLowerCase("en") === "l" || isSubmitInput(input, key)) {
+    finish("current")
+  }
+}
+
+const DetailsView = ({
+  selected,
+  expandedDetails,
+  visibleDetails,
+  detailOffset,
+  detailCapacity,
+}: {
+  readonly selected: LaunchEntry
+  readonly expandedDetails: ReadonlyArray<DetailRow>
+  readonly visibleDetails: ReadonlyArray<DetailRow>
+  readonly detailOffset: number
+  readonly detailCapacity: number
+}) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Box justifyContent="space-between">
+      <Text bold color="cyan">
+        Profile details
+      </Text>
+      <Text dimColor>
+        {detailOffset + 1}–{Math.min(expandedDetails.length, detailOffset + detailCapacity)} of {expandedDetails.length}
+      </Text>
+    </Box>
+    <Text>
+      <Text bold color="green">
+        {selected.profile}
+      </Text>{" "}
+      <Text dimColor>· {selected.harness}</Text>
+    </Text>
+    <Box flexDirection="column" marginTop={1}>
+      {visibleDetails.map((row, index) => (
+        <DetailLine key={`${detailOffset + index}:${row.label ?? "continuation"}`} row={row} />
+      ))}
+    </Box>
+    <Text dimColor>↑/↓ or j/k scroll · D/Esc/q back</Text>
+  </Box>
+)
+
+type TableWidths = ReturnType<typeof tableColumns>
+
+const ProfileTable = ({
+  shown,
+  state,
+  widths,
+}: {
+  readonly shown: ReadonlyArray<LaunchEntry>
+  readonly state: LauncherState
+  readonly widths: TableWidths
+}) => (
+  <Box flexDirection="column" marginTop={1}>
+    <Box>
+      <Box width={2}>
+        <Text> </Text>
+      </Box>
+      <Box width={widths.harness}>
+        <Text bold color="yellow">
+          HARNESS
+        </Text>
+      </Box>
+      <Box width={widths.profile}>
+        <Text bold color="cyan">
+          PROFILE
+        </Text>
+      </Box>
+      <Box width={widths.sandbox}>
+        {widths.sandbox === 0 ? null : (
+          <Text bold color="green">
+            SANDBOX
+          </Text>
+        )}
+      </Box>
+      <Box width={widths.model}>
+        <Text bold color="magenta">
+          MODEL
+        </Text>
+      </Box>
+    </Box>
+    {shown.length === 0 ? (
+      <Text color="yellow">No matching profiles</Text>
+    ) : (
+      shown.map((entry) => {
+        const active = entry.id === state.selectedId
+        const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel
+        const modelLabel =
+          entryModel === undefined ? "—" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`
+        const sandboxLabel = entry.sandbox === undefined ? "—" : entry.sandbox ? "true" : "false"
+        return (
+          <Box key={entry.id}>
+            <Box width={2}>
+              <Text bold={active} {...(active ? { color: "green" as const } : {})}>
+                {active ? "❯ " : "  "}
+              </Text>
+            </Box>
+            <Box width={widths.harness}>
+              <Text bold={active} color="yellow" dimColor={!active} wrap="truncate-end">
+                {entry.harness}
+              </Text>
+            </Box>
+            <Box width={widths.profile}>
+              <Text bold={active} color="cyan" dimColor={!active} wrap="truncate-end">
+                {entry.profile}
+              </Text>
+            </Box>
+            <Box width={widths.sandbox}>
+              {widths.sandbox === 0 ? null : (
+                <Text bold={active} color="green" dimColor={!active} wrap="truncate-end">
+                  {sandboxLabel}
+                </Text>
+              )}
+            </Box>
+            <Box width={widths.model}>
+              <Text bold={active} color="magenta" dimColor={!active} wrap="truncate-end">
+                {modelLabel}
+              </Text>
+            </Box>
+          </Box>
+        )
+      })
+    )}
+  </Box>
+)
+
+const SelectionSummary = ({
+  selected,
+  summaryRows,
+  summaryTruncated,
+}: {
+  readonly selected: LaunchEntry | undefined
+  readonly summaryRows: ReadonlyArray<DetailRow>
+  readonly summaryTruncated: boolean
+}) => (
+  <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
+    {selected === undefined ? (
+      <Text>Adjust the search to select a profile.</Text>
+    ) : (
+      <>
+        <Text>
+          <Text bold color="green">
+            {selected.profile}
+          </Text>{" "}
+          <Text dimColor>· {selected.harness}</Text>
+        </Text>
+        {summaryRows.map((row, index) => (
+          <DetailLine key={`${index}:${row.label ?? "continuation"}`} row={row} />
+        ))}
+        {summaryTruncated ? <Text color="yellow">More metadata available — press D for full details.</Text> : null}
+      </>
+    )}
+  </Box>
+)
+
+const ModelChooser = ({
+  selected,
+  modelIndex,
+  editingCustomModel,
+  customModel,
+}: {
+  readonly selected: LaunchEntry
+  readonly modelIndex: number
+  readonly editingCustomModel: boolean
+  readonly customModel: string
+}) => (
+  <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
+    <Text bold>Select model</Text>
+    {selected.models.map((candidate, index) => (
+      <Text key={candidate} {...(index === modelIndex ? { color: "magenta" as const } : {})}>
+        {index === modelIndex ? "❯ " : "  "}
+        {candidate}
+        {candidate === selected.defaultModel ? " (default)" : ""}
+      </Text>
+    ))}
+    <Text {...(modelIndex === selected.models.length ? { color: "magenta" as const } : {})}>
+      {modelIndex === selected.models.length ? "❯ " : "  "}Custom…
+    </Text>
+    {editingCustomModel ? (
+      <Text>
+        Model ID: <Text color="yellow">{customModel}█</Text>
+      </Text>
+    ) : null}
+  </Box>
+)
+
+const ShortcutHelp = ({
+  searching,
+  herdrAvailable,
+}: {
+  readonly searching: boolean
+  readonly herdrAvailable: boolean
+}) => (
+  <Text dimColor>
+    {searching
+      ? "Type to filter · ↑↓ move · ↵/Esc commands · Ctrl-C cancel"
+      : `↑↓ move · / search · S sort · M model · D details · ↵ launch${herdrAvailable ? " · H Herdr" : ""} · Esc`}
+  </Text>
+)
+
+const SelectionView = ({
+  catalog,
+  state,
+  searching,
+  herdrAvailable,
+  shown,
+  widths,
+  selected,
+  summaryRows,
+  summaryTruncated,
+  choosingModel,
+  modelIndex,
+  editingCustomModel,
+  customModel,
+}: {
+  readonly catalog: LaunchCatalog
+  readonly state: LauncherState
+  readonly searching: boolean
+  readonly herdrAvailable: boolean
+  readonly shown: ReadonlyArray<LaunchEntry>
+  readonly widths: TableWidths
+  readonly selected: LaunchEntry | undefined
+  readonly summaryRows: ReadonlyArray<DetailRow>
+  readonly summaryTruncated: boolean
+  readonly choosingModel: boolean
+  readonly modelIndex: number
+  readonly editingCustomModel: boolean
+  readonly customModel: string
+}) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Box justifyContent="space-between">
+      <Text bold color="cyan">
+        {catalog.prompt}
+      </Text>
+      <Text dimColor>
+        Sort: {state.sort} · Herdr: {herdrAvailable ? "available" : "unavailable"}
+      </Text>
+    </Box>
+    {catalog.description === undefined ? null : (
+      <Text wrap="wrap">
+        <Text bold color="blue">
+          Context:{" "}
+        </Text>
+        {catalog.description}
+      </Text>
+    )}
+    <Text {...(searching ? { color: "yellow" as const } : {})}>
+      Search: {state.query}
+      {searching ? "█" : ""}
+    </Text>
+    <ProfileTable shown={shown} state={state} widths={widths} />
+    <SelectionSummary selected={selected} summaryRows={summaryRows} summaryTruncated={summaryTruncated} />
+    {choosingModel && selected !== undefined ? (
+      <ModelChooser
+        selected={selected}
+        modelIndex={modelIndex}
+        editingCustomModel={editingCustomModel}
+        customModel={customModel}
+      />
+    ) : null}
+    <ShortcutHelp searching={searching} herdrAvailable={herdrAvailable} />
+  </Box>
+)
+
 const Launcher = ({
   catalog,
   herdrAvailable,
@@ -78,7 +494,7 @@ const Launcher = ({
   const { exit } = useApp()
   const { columns, rows } = useWindowSize()
   const [state, updateState] = useState(() => createLauncherState(catalog.entries))
-  const [searching, setSearching] = useState(false)
+  const [searching, setSearching] = useState(true)
   const [choosingModel, setChoosingModel] = useState(false)
   const [modelIndex, setModelIndex] = useState(0)
   const [editingCustomModel, setEditingCustomModel] = useState(false)
@@ -106,106 +522,61 @@ const Launcher = ({
   }
 
   useInput((input, key) => {
+    const cancel = () => exit({ cancelled: true, exitCode: 130 })
+    if (key.ctrl && input === "c") {
+      cancel()
+      return
+    }
     if (showingDetails) {
-      const maximumOffset = Math.max(0, expandedDetails.length - Math.max(1, rows - 4))
-      if (key.escape || input === "D" || input === "q") {
-        setShowingDetails(false)
-      } else if (key.upArrow || input === "k") {
-        setDetailOffset((offset) => Math.max(0, offset - 1))
-      } else if (key.downArrow || input === "j") {
-        setDetailOffset((offset) => Math.min(maximumOffset, offset + 1))
-      }
+      handleDetailsInput(input, key, expandedDetails.length, rows, setShowingDetails, setDetailOffset)
       return
     }
-
     if (editingCustomModel && selected !== undefined) {
-      if (key.escape) {
-        setEditingCustomModel(false)
-      } else if (key.return || input === "\r" || input === "\n" || input === "") {
-        if (customModel.length > 0) {
-          updateState((current) => selectModel(current, selected.id, customModel))
-          setEditingCustomModel(false)
-          setChoosingModel(false)
-        }
-      } else if (key.backspace || key.delete) {
-        setCustomModel((value) => value.slice(0, -1))
-      } else if (
-        !key.ctrl &&
-        !key.meta &&
-        input.length > 0 &&
-        customModel.length + input.length <= 256 &&
-        !/[\u0000-\u001f\u007f-\u009f]/u.test(input)
-      ) {
-        setCustomModel((value) => value + input)
-      }
+      handleCustomModelInput(
+        input,
+        key,
+        selected.id,
+        customModel,
+        updateState,
+        setCustomModel,
+        setEditingCustomModel,
+        setChoosingModel,
+      )
       return
     }
-
     if (choosingModel && selected !== undefined) {
-      const choiceCount = selected.models.length + 1
-      if (key.escape) {
-        setChoosingModel(false)
-      } else if (key.upArrow || input === "k") {
-        setModelIndex((index) => (index - 1 + choiceCount) % choiceCount)
-      } else if (key.downArrow || input === "j") {
-        setModelIndex((index) => (index + 1) % choiceCount)
-      } else if (
-        input.toLocaleLowerCase("en") === "l" ||
-        key.return ||
-        input === "\r" ||
-        input === "\n" ||
-        input === ""
-      ) {
-        if (modelIndex === selected.models.length) {
-          setCustomModel("")
-          setEditingCustomModel(true)
-        } else {
-          updateState((current) => selectModel(current, selected.id, selected.models[modelIndex]!))
-          setChoosingModel(false)
-        }
-      }
+      handleModelInput(
+        input,
+        key,
+        selected,
+        modelIndex,
+        updateState,
+        setChoosingModel,
+        setEditingCustomModel,
+        setCustomModel,
+        setModelIndex,
+      )
       return
     }
-
     if (searching) {
-      if (key.escape || key.return || input === "\r" || input === "\n" || input === "") {
-        setSearching(false)
-      } else if (key.backspace || key.delete) {
-        updateState((current) => setQuery(current, current.query.slice(0, -1)))
-      } else if (!key.ctrl && !key.meta && input.length > 0) {
-        updateState((current) => setQuery(current, current.query + input))
-      }
+      handleSearchInput(input, key, updateState, setSearching)
       return
     }
-
-    if (key.escape || (key.ctrl && input === "c") || input === "q") {
-      exit({ cancelled: true, exitCode: 130 })
-    } else if (key.upArrow || input === "k") {
-      updateState((current) => moveSelection(current, -1))
-    } else if (key.downArrow || input === "j") {
-      updateState((current) => moveSelection(current, 1))
-    } else if (input === "/") {
-      setSearching(true)
-    } else if (input.toLocaleLowerCase("en") === "s") {
-      updateState(cycleSort)
-    } else if (input.toLocaleLowerCase("en") === "m" && selected?.modelOverrideSupported) {
-      const active = state.modelByEntry[selected.id] ?? selected.defaultModel
-      setModelIndex(Math.max(0, selected.models.indexOf(active ?? selected.models[0]!)))
-      setChoosingModel(true)
-    } else if (input === "D" && selected !== undefined) {
-      setDetailOffset(0)
-      setShowingDetails(true)
-    } else if (input === "H" && herdrAvailable) {
-      finish("herdr")
-    } else if (
-      input.toLocaleLowerCase("en") === "l" ||
-      key.return ||
-      input === "\r" ||
-      input === "\n" ||
-      input === ""
-    ) {
-      finish("current")
-    }
+    handleCommandInput(
+      input,
+      key,
+      state,
+      selected,
+      herdrAvailable,
+      updateState,
+      setSearching,
+      setModelIndex,
+      setChoosingModel,
+      setDetailOffset,
+      setShowingDetails,
+      finish,
+      cancel,
+    )
   })
 
   const maximumSummaryRows = Math.max(4, Math.floor(rows * 0.35))
@@ -228,167 +599,32 @@ const Launcher = ({
 
   if (showingDetails && selected !== undefined) {
     return (
-      <Box flexDirection="column" paddingX={1}>
-        <Box justifyContent="space-between">
-          <Text bold color="cyan">
-            Profile details
-          </Text>
-          <Text dimColor>
-            {detailOffset + 1}–{Math.min(expandedDetails.length, detailOffset + detailCapacity)} of{" "}
-            {expandedDetails.length}
-          </Text>
-        </Box>
-        <Text>
-          <Text bold color="green">
-            {selected.profile}
-          </Text>{" "}
-          <Text dimColor>· {selected.harness}</Text>
-        </Text>
-        <Box flexDirection="column" marginTop={1}>
-          {visibleDetails.map((row, index) => (
-            <DetailLine key={`${detailOffset + index}:${row.label ?? "continuation"}`} row={row} />
-          ))}
-        </Box>
-        <Text dimColor>↑/↓ or j/k scroll · D/Esc/q back</Text>
-      </Box>
+      <DetailsView
+        selected={selected}
+        expandedDetails={expandedDetails}
+        visibleDetails={visibleDetails}
+        detailOffset={detailOffset}
+        detailCapacity={detailCapacity}
+      />
     )
   }
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box justifyContent="space-between">
-        <Text bold color="cyan">
-          {catalog.prompt}
-        </Text>
-        <Text dimColor>
-          Sort: {state.sort} · Herdr: {herdrAvailable ? "available" : "unavailable"}
-        </Text>
-      </Box>
-      {catalog.description === undefined ? null : (
-        <Text wrap="wrap">
-          <Text bold color="blue">
-            Context:{" "}
-          </Text>
-          {catalog.description}
-        </Text>
-      )}
-      <Text {...(searching ? { color: "yellow" as const } : {})}>
-        Search: {state.query}
-        {searching ? "█" : ""}
-      </Text>
-      <Box flexDirection="column" marginTop={1}>
-        <Box>
-          <Box width={2}>
-            <Text> </Text>
-          </Box>
-          <Box width={widths.harness}>
-            <Text bold color="yellow">
-              HARNESS
-            </Text>
-          </Box>
-          <Box width={widths.profile}>
-            <Text bold color="cyan">
-              PROFILE
-            </Text>
-          </Box>
-          <Box width={widths.sandbox}>
-            {widths.sandbox === 0 ? null : (
-              <Text bold color="green">
-                SANDBOX
-              </Text>
-            )}
-          </Box>
-          <Box width={widths.model}>
-            <Text bold color="magenta">
-              MODEL
-            </Text>
-          </Box>
-        </Box>
-        {shown.length === 0 ? (
-          <Text color="yellow">No matching profiles</Text>
-        ) : (
-          shown.map((entry) => {
-            const active = entry.id === state.selectedId
-            const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel
-            const modelLabel =
-              entryModel === undefined ? "—" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`
-            const sandboxLabel = entry.sandbox === undefined ? "—" : entry.sandbox ? "true" : "false"
-            return (
-              <Box key={entry.id}>
-                <Box width={2}>
-                  <Text bold={active} {...(active ? { color: "green" as const } : {})}>
-                    {active ? "❯ " : "  "}
-                  </Text>
-                </Box>
-                <Box width={widths.harness}>
-                  <Text bold={active} color="yellow" dimColor={!active} wrap="truncate-end">
-                    {entry.harness}
-                  </Text>
-                </Box>
-                <Box width={widths.profile}>
-                  <Text bold={active} color="cyan" dimColor={!active} wrap="truncate-end">
-                    {entry.profile}
-                  </Text>
-                </Box>
-                <Box width={widths.sandbox}>
-                  {widths.sandbox === 0 ? null : (
-                    <Text bold={active} color="green" dimColor={!active} wrap="truncate-end">
-                      {sandboxLabel}
-                    </Text>
-                  )}
-                </Box>
-                <Box width={widths.model}>
-                  <Text bold={active} color="magenta" dimColor={!active} wrap="truncate-end">
-                    {modelLabel}
-                  </Text>
-                </Box>
-              </Box>
-            )
-          })
-        )}
-      </Box>
-      <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
-        {selected === undefined ? (
-          <Text>Adjust the search to select a profile.</Text>
-        ) : (
-          <>
-            <Text>
-              <Text bold color="green">
-                {selected.profile}
-              </Text>{" "}
-              <Text dimColor>· {selected.harness}</Text>
-            </Text>
-            {summaryRows.map((row, index) => (
-              <DetailLine key={`${index}:${row.label ?? "continuation"}`} row={row} />
-            ))}
-            {summaryTruncated ? <Text color="yellow">More metadata available — press D for full details.</Text> : null}
-          </>
-        )}
-      </Box>
-      {choosingModel && selected !== undefined ? (
-        <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
-          <Text bold>Select model</Text>
-          {selected.models.map((candidate, index) => (
-            <Text key={candidate} {...(index === modelIndex ? { color: "magenta" as const } : {})}>
-              {index === modelIndex ? "❯ " : "  "}
-              {candidate}
-              {candidate === selected.defaultModel ? " (default)" : ""}
-            </Text>
-          ))}
-          <Text {...(modelIndex === selected.models.length ? { color: "magenta" as const } : {})}>
-            {modelIndex === selected.models.length ? "❯ " : "  "}Custom…
-          </Text>
-          {editingCustomModel ? (
-            <Text>
-              Model ID: <Text color="yellow">{customModel}█</Text>
-            </Text>
-          ) : null}
-        </Box>
-      ) : null}
-      <Text dimColor>
-        ↑↓ move · / search · S sort · M model · D details · ↵ launch{herdrAvailable ? " · H Herdr" : ""} · Esc
-      </Text>
-    </Box>
+    <SelectionView
+      catalog={catalog}
+      state={state}
+      searching={searching}
+      herdrAvailable={herdrAvailable}
+      shown={shown}
+      widths={widths}
+      selected={selected}
+      summaryRows={summaryRows}
+      summaryTruncated={summaryTruncated}
+      choosingModel={choosingModel}
+      modelIndex={modelIndex}
+      editingCustomModel={editingCustomModel}
+      customModel={customModel}
+    />
   )
 }
 
