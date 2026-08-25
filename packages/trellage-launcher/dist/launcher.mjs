@@ -54795,6 +54795,243 @@ var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text,
   ] }),
   row.text
 ] });
+var isSubmitInput = (input, key) => key.return || input === "\r" || input === "\n" || input === "";
+var handleDetailsInput = (input, key, expandedDetailCount, rows, setShowingDetails, setDetailOffset) => {
+  const maximumOffset = Math.max(0, expandedDetailCount - Math.max(1, rows - 4));
+  if (key.escape || input === "D" || input === "q") {
+    setShowingDetails(false);
+  } else if (key.upArrow || input === "k") {
+    setDetailOffset((offset) => Math.max(0, offset - 1));
+  } else if (key.downArrow || input === "j") {
+    setDetailOffset((offset) => Math.min(maximumOffset, offset + 1));
+  }
+};
+var handleCustomModelInput = (input, key, selectedId, customModel, updateState, setCustomModel, setEditingCustomModel, setChoosingModel) => {
+  if (key.escape) {
+    setEditingCustomModel(false);
+  } else if (isSubmitInput(input, key)) {
+    if (customModel.length > 0) {
+      updateState((current) => selectModel(current, selectedId, customModel));
+      setEditingCustomModel(false);
+      setChoosingModel(false);
+    }
+  } else if (key.backspace || key.delete) {
+    setCustomModel((value) => value.slice(0, -1));
+  } else if (!key.ctrl && !key.meta && input.length > 0 && customModel.length + input.length <= 256 && !/[\u0000-\u001f\u007f-\u009f]/u.test(input)) {
+    setCustomModel((value) => value + input);
+  }
+};
+var handleModelInput = (input, key, selected, modelIndex, updateState, setChoosingModel, setEditingCustomModel, setCustomModel, setModelIndex) => {
+  const choiceCount = selected.models.length + 1;
+  if (key.escape) {
+    setChoosingModel(false);
+  } else if (key.upArrow || input === "k") {
+    setModelIndex((index) => (index - 1 + choiceCount) % choiceCount);
+  } else if (key.downArrow || input === "j") {
+    setModelIndex((index) => (index + 1) % choiceCount);
+  } else if (input.toLocaleLowerCase("en") === "l" || isSubmitInput(input, key)) {
+    if (modelIndex === selected.models.length) {
+      setCustomModel("");
+      setEditingCustomModel(true);
+    } else {
+      updateState((current) => selectModel(current, selected.id, selected.models[modelIndex]));
+      setChoosingModel(false);
+    }
+  }
+};
+var handleSearchInput = (input, key, updateState, setSearching) => {
+  if (key.upArrow) {
+    updateState((current) => moveSelection(current, -1));
+  } else if (key.downArrow) {
+    updateState((current) => moveSelection(current, 1));
+  } else if (key.backspace || key.delete) {
+    updateState((current) => setQuery(current, current.query.slice(0, -1)));
+  } else if (key.escape || isSubmitInput(input, key)) {
+    setSearching(false);
+  } else if (!key.ctrl && !key.meta && input.length > 0) {
+    updateState(
+      (current) => setQuery(current, current.query + (current.query.length === 0 && input.startsWith("/") ? input.slice(1) : input))
+    );
+  }
+};
+var handleCommandMovement = (input, key, updateState, cancel) => {
+  if (key.escape || input === "q") {
+    cancel();
+  } else if (key.upArrow || input === "k") {
+    updateState((current) => moveSelection(current, -1));
+  } else if (key.downArrow || input === "j") {
+    updateState((current) => moveSelection(current, 1));
+  } else {
+    return false;
+  }
+  return true;
+};
+var handleCommandInput = (input, key, state, selected, herdrAvailable, updateState, setSearching, setModelIndex, setChoosingModel, setDetailOffset, setShowingDetails, finish, cancel) => {
+  if (handleCommandMovement(input, key, updateState, cancel)) return;
+  if (input === "/") {
+    setSearching(true);
+  } else if (input.toLocaleLowerCase("en") === "s") {
+    updateState(cycleSort);
+  } else if (input.toLocaleLowerCase("en") === "m" && selected?.modelOverrideSupported) {
+    const active = state.modelByEntry[selected.id] ?? selected.defaultModel;
+    setModelIndex(Math.max(0, selected.models.indexOf(active ?? selected.models[0])));
+    setChoosingModel(true);
+  } else if (input === "D" && selected !== void 0) {
+    setDetailOffset(0);
+    setShowingDetails(true);
+  } else if (input === "H" && herdrAvailable) {
+    finish("herdr");
+  } else if (input.toLocaleLowerCase("en") === "l" || isSubmitInput(input, key)) {
+    finish("current");
+  }
+};
+var DetailsView = ({
+  selected,
+  expandedDetails,
+  visibleDetails,
+  detailOffset,
+  detailCapacity
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+      detailOffset + 1,
+      "\u2013",
+      Math.min(expandedDetails.length, detailOffset + detailCapacity),
+      " of ",
+      expandedDetails.length
+    ] })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+    " ",
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+      "\xB7 ",
+      selected.harness
+    ] })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
+] });
+var ProfileTable = ({
+  shown,
+  state,
+  widths
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: " " }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
+  ] }),
+  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
+    const active = entry.id === state.selectedId;
+    const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
+    const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
+    const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
+    ] }, entry.id);
+  })
+] });
+var SelectionSummary = ({
+  selected,
+  summaryRows,
+  summaryTruncated
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+    " ",
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+      "\xB7 ",
+      selected.harness
+    ] })
+  ] }),
+  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
+  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
+] }) });
+var ModelChooser = ({
+  selected,
+  modelIndex,
+  editingCustomModel,
+  customModel
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: "Select model" }),
+  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
+    index === modelIndex ? "\u276F " : "  ",
+    candidate,
+    candidate === selected.defaultModel ? " (default)" : ""
+  ] }, candidate)),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
+    modelIndex === selected.models.length ? "\u276F " : "  ",
+    "Custom\u2026"
+  ] }),
+  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+    "Model ID: ",
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: "yellow", children: [
+      customModel,
+      "\u2588"
+    ] })
+  ] }) : null
+] });
+var ShortcutHelp = ({
+  searching,
+  herdrAvailable
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5/Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""} \xB7 Esc` });
+var SelectionView = ({
+  catalog,
+  state,
+  searching,
+  herdrAvailable,
+  shown,
+  widths,
+  selected,
+  summaryRows,
+  summaryTruncated,
+  choosingModel,
+  modelIndex,
+  editingCustomModel,
+  customModel
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+      "Sort: ",
+      state.sort,
+      " \xB7 Herdr: ",
+      herdrAvailable ? "available" : "unavailable"
+    ] })
+  ] }),
+  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "wrap", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "blue", children: [
+      "Context:",
+      " "
+    ] }),
+    catalog.description
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
+    "Search: ",
+    state.query,
+    searching ? "\u2588" : ""
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProfileTable, { shown, state, widths }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
+  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    ModelChooser,
+    {
+      selected,
+      modelIndex,
+      editingCustomModel,
+      customModel
+    }
+  ) : null,
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShortcutHelp, { searching, herdrAvailable })
+] });
 var Launcher = ({
   catalog,
   herdrAvailable
@@ -54802,7 +55039,7 @@ var Launcher = ({
   const { exit } = use_app_default();
   const { columns, rows } = use_window_size_default();
   const [state, updateState] = (0, import_react34.useState)(() => createLauncherState(catalog.entries));
-  const [searching, setSearching] = (0, import_react34.useState)(false);
+  const [searching, setSearching] = (0, import_react34.useState)(true);
   const [choosingModel, setChoosingModel] = (0, import_react34.useState)(false);
   const [modelIndex, setModelIndex] = (0, import_react34.useState)(0);
   const [editingCustomModel, setEditingCustomModel] = (0, import_react34.useState)(false);
@@ -54827,84 +55064,61 @@ var Launcher = ({
     });
   };
   use_input_default((input, key) => {
+    const cancel = () => exit({ cancelled: true, exitCode: 130 });
+    if (key.ctrl && input === "c") {
+      cancel();
+      return;
+    }
     if (showingDetails) {
-      const maximumOffset = Math.max(0, expandedDetails.length - Math.max(1, rows - 4));
-      if (key.escape || input === "D" || input === "q") {
-        setShowingDetails(false);
-      } else if (key.upArrow || input === "k") {
-        setDetailOffset((offset) => Math.max(0, offset - 1));
-      } else if (key.downArrow || input === "j") {
-        setDetailOffset((offset) => Math.min(maximumOffset, offset + 1));
-      }
+      handleDetailsInput(input, key, expandedDetails.length, rows, setShowingDetails, setDetailOffset);
       return;
     }
     if (editingCustomModel && selected !== void 0) {
-      if (key.escape) {
-        setEditingCustomModel(false);
-      } else if (key.return || input === "\r" || input === "\n" || input === "") {
-        if (customModel.length > 0) {
-          updateState((current) => selectModel(current, selected.id, customModel));
-          setEditingCustomModel(false);
-          setChoosingModel(false);
-        }
-      } else if (key.backspace || key.delete) {
-        setCustomModel((value) => value.slice(0, -1));
-      } else if (!key.ctrl && !key.meta && input.length > 0 && customModel.length + input.length <= 256 && !/[\u0000-\u001f\u007f-\u009f]/u.test(input)) {
-        setCustomModel((value) => value + input);
-      }
+      handleCustomModelInput(
+        input,
+        key,
+        selected.id,
+        customModel,
+        updateState,
+        setCustomModel,
+        setEditingCustomModel,
+        setChoosingModel
+      );
       return;
     }
     if (choosingModel && selected !== void 0) {
-      const choiceCount = selected.models.length + 1;
-      if (key.escape) {
-        setChoosingModel(false);
-      } else if (key.upArrow || input === "k") {
-        setModelIndex((index) => (index - 1 + choiceCount) % choiceCount);
-      } else if (key.downArrow || input === "j") {
-        setModelIndex((index) => (index + 1) % choiceCount);
-      } else if (input.toLocaleLowerCase("en") === "l" || key.return || input === "\r" || input === "\n" || input === "") {
-        if (modelIndex === selected.models.length) {
-          setCustomModel("");
-          setEditingCustomModel(true);
-        } else {
-          updateState((current) => selectModel(current, selected.id, selected.models[modelIndex]));
-          setChoosingModel(false);
-        }
-      }
+      handleModelInput(
+        input,
+        key,
+        selected,
+        modelIndex,
+        updateState,
+        setChoosingModel,
+        setEditingCustomModel,
+        setCustomModel,
+        setModelIndex
+      );
       return;
     }
     if (searching) {
-      if (key.escape || key.return || input === "\r" || input === "\n" || input === "") {
-        setSearching(false);
-      } else if (key.backspace || key.delete) {
-        updateState((current) => setQuery(current, current.query.slice(0, -1)));
-      } else if (!key.ctrl && !key.meta && input.length > 0) {
-        updateState((current) => setQuery(current, current.query + input));
-      }
+      handleSearchInput(input, key, updateState, setSearching);
       return;
     }
-    if (key.escape || key.ctrl && input === "c" || input === "q") {
-      exit({ cancelled: true, exitCode: 130 });
-    } else if (key.upArrow || input === "k") {
-      updateState((current) => moveSelection(current, -1));
-    } else if (key.downArrow || input === "j") {
-      updateState((current) => moveSelection(current, 1));
-    } else if (input === "/") {
-      setSearching(true);
-    } else if (input.toLocaleLowerCase("en") === "s") {
-      updateState(cycleSort);
-    } else if (input.toLocaleLowerCase("en") === "m" && selected?.modelOverrideSupported) {
-      const active = state.modelByEntry[selected.id] ?? selected.defaultModel;
-      setModelIndex(Math.max(0, selected.models.indexOf(active ?? selected.models[0])));
-      setChoosingModel(true);
-    } else if (input === "D" && selected !== void 0) {
-      setDetailOffset(0);
-      setShowingDetails(true);
-    } else if (input === "H" && herdrAvailable) {
-      finish("herdr");
-    } else if (input.toLocaleLowerCase("en") === "l" || key.return || input === "\r" || input === "\n" || input === "") {
-      finish("current");
-    }
+    handleCommandInput(
+      input,
+      key,
+      state,
+      selected,
+      herdrAvailable,
+      updateState,
+      setSearching,
+      setModelIndex,
+      setChoosingModel,
+      setDetailOffset,
+      setShowingDetails,
+      finish,
+      cancel
+    );
   });
   const maximumSummaryRows = Math.max(4, Math.floor(rows * 0.35));
   const summaryRows = expandedDetails.slice(0, maximumSummaryRows);
@@ -54921,111 +55135,35 @@ var Launcher = ({
   const detailCapacity = Math.max(1, rows - 4);
   const visibleDetails = expandedDetails.slice(detailOffset, detailOffset + detailCapacity);
   if (showingDetails && selected !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
-          detailOffset + 1,
-          "\u2013",
-          Math.min(expandedDetails.length, detailOffset + detailCapacity),
-          " of",
-          " ",
-          expandedDetails.length
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
-        " ",
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
-          "\xB7 ",
-          selected.harness
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
-    ] });
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      DetailsView,
+      {
+        selected,
+        expandedDetails,
+        visibleDetails,
+        detailOffset,
+        detailCapacity
+      }
+    );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
-        "Sort: ",
-        state.sort,
-        " \xB7 Herdr: ",
-        herdrAvailable ? "available" : "unavailable"
-      ] })
-    ] }),
-    catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "wrap", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "blue", children: [
-        "Context:",
-        " "
-      ] }),
-      catalog.description
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
-      "Search: ",
-      state.query,
-      searching ? "\u2588" : ""
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: " " }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
-      ] }),
-      shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
-        const active = entry.id === state.selectedId;
-        const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
-        const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
-        const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
-        ] }, entry.id);
-      })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
-        " ",
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
-          "\xB7 ",
-          selected.harness
-        ] })
-      ] }),
-      summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
-      summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
-    ] }) }),
-    choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: "Select model" }),
-      selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
-        index === modelIndex ? "\u276F " : "  ",
-        candidate,
-        candidate === selected.defaultModel ? " (default)" : ""
-      ] }, candidate)),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
-        modelIndex === selected.models.length ? "\u276F " : "  ",
-        "Custom\u2026"
-      ] }),
-      editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
-        "Model ID: ",
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: "yellow", children: [
-          customModel,
-          "\u2588"
-        ] })
-      ] }) : null
-    ] }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
-      "\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch",
-      herdrAvailable ? " \xB7 H Herdr" : "",
-      " \xB7 Esc"
-    ] })
-  ] });
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    SelectionView,
+    {
+      catalog,
+      state,
+      searching,
+      herdrAvailable,
+      shown,
+      widths,
+      selected,
+      summaryRows,
+      summaryTruncated,
+      choosingModel,
+      modelIndex,
+      editingCustomModel,
+      customModel
+    }
+  );
 };
 var main = async () => {
   const catalog = parseLaunchCatalog(await readCatalog());

@@ -49,6 +49,7 @@ describe("launcher state", () => {
 
     expect(initial.sort).toBe("harness")
     expect(visibleEntries(initial).map(({ id }) => id)).toEqual(["claude:council", "codex:hve", "codex:superpowers"])
+    expect(initial.selectedId).toBe("claude:council")
     expect(cycled.sort).toBe("profile")
   })
 
@@ -57,6 +58,16 @@ describe("launcher state", () => {
 
     expect(visibleEntries(state).map(({ id }) => id)).toEqual(["codex:hve"])
     expect(state.selectedId).toBe("codex:hve")
+  })
+
+  it("moves from the current selection within filtered results", () => {
+    const filtered = setQuery(createLauncherState(entries), "codex")
+    const moved = moveSelection(filtered, 1)
+
+    expect(visibleEntries(filtered).map(({ id }) => id)).toEqual(["codex:hve", "codex:superpowers"])
+    expect(filtered.selectedId).toBe("codex:hve")
+    expect(moved.selectedId).toBe("codex:superpowers")
+    expect(moveSelection(moved, 1).selectedId).toBe("codex:hve")
   })
 
   it("selects advertised or custom models only when the entry supports overrides", () => {

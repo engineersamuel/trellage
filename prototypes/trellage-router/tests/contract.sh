@@ -304,15 +304,46 @@ cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
 TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-select.out" \
-  'l' '' "$prototype_root/bin/trx" '--source-mode' \
-  || fail 'worktree source interactive selection failed'
+  'codex\x1e\r\x1el' '' "$prototype_root/bin/trx" '--source-mode' \
+  || fail 'worktree source type-to-filter selection failed'
 python3 - "$argument_log" <<'PY' || fail 'worktree source arguments were not forwarded'
 import pathlib
 import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cldx", b"cldx-p", b"--source-mode", b""]
+expected = [b"cdx", b"cdx-p", b"--source-mode", b""]
 raise SystemExit(0 if actual == expected else 1)
+PY
+
+TRX_ARGUMENT_LOG="$argument_log" \
+  TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-slash-select.out" \
+  '/codex\x1e\r\x1el' '' "$prototype_root/bin/trx" '--source-mode' \
+  || fail 'worktree source leading-slash selection failed'
+python3 - "$argument_log" <<'PY' || fail 'worktree source leading-slash arguments differ'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cdx", b"cdx-p", b"--source-mode", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+TRX_ARGUMENT_LOG="$argument_log" \
+  TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-backspace-select.out" \
+  'codex\x1e\x7f\x1e\x7f\x1e\x7f\x1e\x7f\x1e\x7f\x1ecopilot\x1e\r\x1el' \
+  '' "$prototype_root/bin/trx" '--source-mode' \
+  || fail 'worktree source Backspace filtering failed'
+python3 - "$argument_log" <<'PY' || fail 'worktree source Backspace selection launched the wrong profile'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cpx", b"cpx-p", b"--source-mode", b""]
+if actual != expected:
+    print(f"expected {expected!r}, got {actual!r}", file=sys.stderr)
+    raise SystemExit(1)
 PY
 
 status=0
@@ -508,20 +539,31 @@ raise SystemExit(0 if actual == expected else 1)
 PY
 
 status=0
-TRX_CHILD_EXIT=37 \
+TRX_ARGUMENT_LOG="$argument_log" \
+  TRX_CHILD_EXIT=37 \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/child-exit.out" \
-  '\x1b[Bl' '' "$fixture_bin/trx" || status=$?
+  'co\x1e\x1b[B\x1e\r\x1el' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status instead of 37"
+python3 - "$argument_log" <<'PY' || fail 'filtered arrow selection did not launch the next profile'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cpx", b"cpx-p", b"", b""]
+if actual != expected:
+    print(f"expected {expected!r}, got {actual!r}", file=sys.stderr)
+    raise SystemExit(1)
+PY
 
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/cancel.out" \
-  '\x1b' '' "$fixture_bin/trx" || status=$?
+  '\x03' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 130 ]] || fail "cancellation exited $status instead of 130"
 
 status=0
 TRX_WAIT=1 \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/signal.out" \
-  'l' 'CHILD_READY' "$fixture_bin/trx" || status=$?
+  '\r\x1el' 'CHILD_READY' "$fixture_bin/trx" || status=$?
 [[ "$status" == 143 ]] || fail "terminated child exited $status instead of 143"
 
 mv "$fixture_bin/grx" "$fixture_bin/grx.absent"
