@@ -36,6 +36,10 @@ export const claudeDefaultSettings = {
   disableArtifact: true,
 } as const
 
+export const claudeDefaultUserSettings = {
+  outputStyle: "Rundown",
+} as const
+
 export const claudeDefaultOnboarding = (version: string) => ({
   hasCompletedOnboarding: true,
   lastOnboardingVersion: version,
@@ -51,20 +55,41 @@ export class ClaudeMaterializeError extends Data.TaggedError("ClaudeMaterializeE
 const exactPluginVersion =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 
+type MarketplacePluginEntry = { name?: string; version?: string; [key: string]: unknown }
+
 /**
- * After inventory verification, stamp locked plugin versions into the build-context
- * marketplace copy so `claude plugin install` registers the same version finalize expects.
- * Upstream may omit versions (e.g. caveman); the lock holds the ref-derived fallback.
- * Must run only after verifyInventory against the pristine locked tree.
+ * Stamp a single marketplace plugin entry with its locked version in place, removing
+ * the plugin name from `remaining` once satisfied. Entries not present in `pluginVersions`
+ * are left untouched.
  */
-export const stampClaudeMarketplaceVersions = async (
-  marketplaceRoot: string,
+const applyLockedMarketplacePluginVersion = (
+  plugin: MarketplacePluginEntry,
+  pluginVersions: Readonly<Record<string, string>>,
+  remaining: Set<string>,
+): void => {
+  if (typeof plugin.name !== "string" || !remaining.has(plugin.name)) return
+  const locked = pluginVersions[plugin.name]!
+  if (!exactPluginVersion.test(locked)) {
+    throw new Error(`Claude plugin locked version is not exact: ${plugin.name}`)
+  }
+  const existing = plugin.version
+  if (existing !== undefined && existing !== locked) {
+    throw new Error(
+      `Claude plugin version conflict for ${plugin.name}: marketplace has ${existing}, lock has ${locked}`,
+    )
+  }
+  plugin.version = locked
+  remaining.delete(plugin.name)
+}
+
+/** Stamp locked versions into the marketplace.json plugin list, requiring every locked plugin to be present. */
+const stampClaudeMarketplaceMetadata = async (
+  marketplacePath: string,
   pluginVersions: Readonly<Record<string, string>>,
 ): Promise<void> => {
-  const marketplacePath = path.join(marketplaceRoot, ".claude-plugin", "marketplace.json")
   const marketplaceSource = await readFile(marketplacePath, "utf8")
   const marketplace = JSON.parse(marketplaceSource) as {
-    plugins?: Array<{ name?: string; version?: string; [key: string]: unknown }>
+    plugins?: Array<MarketplacePluginEntry>
     [key: string]: unknown
   }
   if (!Array.isArray(marketplace.plugins)) {
@@ -72,26 +97,19 @@ export const stampClaudeMarketplaceVersions = async (
   }
   const remaining = new Set(Object.keys(pluginVersions))
   for (const plugin of marketplace.plugins) {
-    if (typeof plugin.name !== "string" || !remaining.has(plugin.name)) continue
-    const locked = pluginVersions[plugin.name]!
-    if (!exactPluginVersion.test(locked)) {
-      throw new Error(`Claude plugin locked version is not exact: ${plugin.name}`)
-    }
-    const existing = plugin.version
-    if (existing !== undefined && existing !== locked) {
-      throw new Error(
-        `Claude plugin version conflict for ${plugin.name}: marketplace has ${existing}, lock has ${locked}`,
-      )
-    }
-    plugin.version = locked
-    remaining.delete(plugin.name)
+    applyLockedMarketplacePluginVersion(plugin, pluginVersions, remaining)
   }
   if (remaining.size > 0) {
     throw new Error(`Claude plugin versions missing from marketplace metadata: ${[...remaining].sort().join(", ")}`)
   }
   await writeFile(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`, { mode: 0o644 })
+}
 
-  const pluginManifestPath = path.join(marketplaceRoot, ".claude-plugin", "plugin.json")
+/** Stamp the locked version into a single-plugin plugin.json, tolerating a missing file. */
+const stampClaudePluginManifest = async (
+  pluginManifestPath: string,
+  pluginVersions: Readonly<Record<string, string>>,
+): Promise<void> => {
   try {
     const pluginSource = await readFile(pluginManifestPath, "utf8")
     const pluginManifest = JSON.parse(pluginSource) as { name?: string; version?: string; [key: string]: unknown }
@@ -109,6 +127,23 @@ export const stampClaudeMarketplaceVersions = async (
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
   }
+}
+
+/**
+ * After inventory verification, stamp locked plugin versions into the build-context
+ * marketplace copy so `claude plugin install` registers the same version finalize expects.
+ * Upstream may omit versions (e.g. caveman); the lock holds the ref-derived fallback.
+ * Must run only after verifyInventory against the pristine locked tree.
+ */
+export const stampClaudeMarketplaceVersions = async (
+  marketplaceRoot: string,
+  pluginVersions: Readonly<Record<string, string>>,
+): Promise<void> => {
+  const marketplacePath = path.join(marketplaceRoot, ".claude-plugin", "marketplace.json")
+  await stampClaudeMarketplaceMetadata(marketplacePath, pluginVersions)
+
+  const pluginManifestPath = path.join(marketplaceRoot, ".claude-plugin", "plugin.json")
+  await stampClaudePluginManifest(pluginManifestPath, pluginVersions)
 }
 
 const attempt = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ClaudeMaterializeError> =>
@@ -481,6 +516,11 @@ const materializeClaudeMarketplaceAssets = (
           mode: 0o644,
         }),
         writeFile(
+          path.join(seed, "default-user-settings.json"),
+          `${JSON.stringify(claudeDefaultUserSettings, null, 2)}\n`,
+          { mode: 0o644 },
+        ),
+        writeFile(
           path.join(seed, "default-onboarding.json"),
           `${JSON.stringify(claudeDefaultOnboarding(request.lock.packages.harness.version), null, 2)}\n`,
           { mode: 0o644 },
@@ -581,6 +621,11 @@ const materializeHyperresearchAssets = (
           await writeFile(
             path.join(seed, "default-settings.json"),
             `${JSON.stringify(claudeDefaultSettings, null, 2)}\n`,
+            { mode: 0o644 },
+          )
+          await writeFile(
+            path.join(seed, "default-user-settings.json"),
+            `${JSON.stringify(claudeDefaultUserSettings, null, 2)}\n`,
             { mode: 0o644 },
           )
           await writeFile(

@@ -150,6 +150,7 @@ describe("Hyperresearch seed normalization", () => {
     await mkdir(path.join(root, "agents"), { recursive: true })
     await writeFile(path.join(root, "skills", "hyperresearch", "SKILL.md"), "skill\n")
     await writeFile(path.join(root, "agents", "hyperresearch-z.md"), "agent\n")
+    await writeFile(path.join(root, "default-user-settings.json"), '{"outputStyle":"Rundown"}\n')
 
     await expect(managedClaudeFiles(root)).resolves.toEqual([
       "agents/hyperresearch-z.md",
@@ -370,6 +371,12 @@ describe("native Claude marketplace materialization", () => {
     )
     await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
       '"defaultMode": "bypassPermissions"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.not.toContain(
+      '"outputStyle"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-user-settings.json"), "utf8")).resolves.toContain(
+      '"outputStyle": "Rundown"',
     )
     await expect(readFile(path.join(context, "claude-seed", "default-onboarding.json"), "utf8")).resolves.toContain(
       '"hasCompletedOnboarding": true',
@@ -919,6 +926,12 @@ packages = ["bash", "ca-certificates", "git", "jq"]
     )
     await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
       '"bypassPermissions"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.not.toContain(
+      '"outputStyle"',
+    )
+    await expect(readFile(path.join(context, "claude-seed", "default-user-settings.json"), "utf8")).resolves.toContain(
+      '"outputStyle": "Rundown"',
     )
     await expect(readFile(path.join(context, "claude-seed", "default-onboarding.json"), "utf8")).resolves.toContain(
       '"lastOnboardingVersion": "2.1.218"',

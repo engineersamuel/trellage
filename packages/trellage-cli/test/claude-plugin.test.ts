@@ -71,6 +71,7 @@ describe("readClaudeMarketplace", () => {
       await writeFile(path.join(seed, "CLAUDE.md"), "ACTIVE EVERY RESPONSE\n")
       await mkdir(path.join(seed, "backups"))
       await writeFile(path.join(seed, "default-settings.json"), "{}\n")
+      await writeFile(path.join(seed, "default-user-settings.json"), '{"outputStyle":"Rundown"}\n')
       await writeFile(path.join(seed, ".claude.json"), '{"machineID":"transient"}\n')
       await writeFile(
         path.join(seed, "settings.json"),
@@ -126,6 +127,9 @@ describe("readClaudeMarketplace", () => {
           null,
           2,
         )}\n`,
+      )
+      await expect(readFile(path.join(seed, "default-user-settings.json"), "utf8")).resolves.toBe(
+        '{"outputStyle":"Rundown"}\n',
       )
       await expect(readFile(path.join(seed, "plugin-marketplaces.json"), "utf8")).resolves.toBe(
         `${JSON.stringify(
