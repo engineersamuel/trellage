@@ -2,6 +2,7 @@
 set -euo pipefail
 
 prototype_root="$(cd -P "$(dirname "$0")/.." && pwd -P)"
+. "$prototype_root/../../tests/helpers/floating_skills_fixture.sh"
 fixture_root="$prototype_root/.contract-fixture.$$"
 fixture_home="$fixture_root/home"
 fixture_bin="$fixture_home/.local/bin"
@@ -31,6 +32,7 @@ assert_contains() {
 }
 
 mkdir -p "$fixture_home" "$fixture_bin"
+seed_floating_skills_cache "$fixture_home"
 ln -s "$real_node" "$fixture_bin/node"
 ln -s "$(command -v jq)" "$fixture_bin/jq"
 ln -s "$(command -v python3)" "$fixture_bin/python3"
@@ -275,7 +277,44 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
+assert_contains 'trx skills status' "$fixture_root/help.out"
+assert_contains 'trx skills update' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
+
+mv "$fixture_bin/cpx" "$fixture_root/cpx-link"
+"$fixture_bin/trx" skills status >"$fixture_root/skills-status.json" \
+  || fail 'skills status failed without an installed launcher'
+jq -e '
+  .bundles == ["native-common"]
+  and .installed == true
+  and .skills == ["fixture-personal", "show-me"]
+' "$fixture_root/skills-status.json" >/dev/null \
+  || fail 'skills status output differs'
+mv "$fixture_root/cpx-link" "$fixture_bin/cpx"
+
+rm "$fixture_bin/node"
+cat >"$fixture_bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"$TRX_NODE_LOG"
+EOF
+chmod 0755 "$fixture_bin/node"
+TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
+  || fail 'skills update did not delegate to the floating-skills manager'
+sed -n '2p' "$fixture_root/skills-update.argv" | grep -Fxq update \
+  || fail 'skills update delegated the wrong action'
+grep -Fxq -- --bundle "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the bundle option'
+grep -Fxq native-common "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the native bundle'
+rm "$fixture_bin/node"
+ln -s "$real_node" "$fixture_bin/node"
+
+status=0
+"$fixture_bin/trx" skills refresh >"$fixture_root/skills-invalid.out" \
+  2>"$fixture_root/skills-invalid.err" || status=$?
+[[ "$status" == 1 ]] || fail "invalid skills action exited $status instead of 1"
+assert_contains 'skills requires status or update' "$fixture_root/skills-invalid.err"
 
 "$fixture_bin/trx" list >"$fixture_root/list.out" \
   || fail 'human list failed'

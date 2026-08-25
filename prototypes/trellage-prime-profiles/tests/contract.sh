@@ -4,6 +4,11 @@ set -u
 set -o pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+. "$root/../../tests/helpers/floating_skills_fixture.sh"
+real_node="$(command -v node)" || {
+  printf 'prx contract failed: host node is required\n' >&2
+  exit 1
+}
 launcher="$root/bin/prx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
@@ -199,6 +204,9 @@ fi
 cli="${1-}"
 shift || true
 [[ -n "$cli" && -f "$cli" ]] || exit 97
+case "$cli" in
+  */floating-skills.mjs) exec "$REAL_NODE" "$cli" "$@" ;;
+esac
 # Execute the fake CLI script directly (it is a bash stub, not JS).
 exec bash "$cli" "$@"
 FAKE_NODE
@@ -273,9 +281,11 @@ if ! command -v jq >/dev/null 2>&1; then
   fail 'host jq is required for the contract'
 fi
 ln -s "$(command -v jq)" "$fake_bin/jq"
+seed_floating_skills_cache "$home"
 
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
+export REAL_NODE="$real_node"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
 export FAKE_NPM_LOG="$fixture_root/npm.log"
 export FAKE_CURL_LOG="$fixture_root/curl.log"

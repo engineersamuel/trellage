@@ -16,11 +16,11 @@ instructions_tmp="$(mktemp "$COPILOT_HOME/instructions/.rundown.instructions.md.
 cat -- "$managed_instructions" >"$instructions_tmp"
 chmod 0600 "$instructions_tmp"
 mv -f "$instructions_tmp" "$COPILOT_HOME/instructions/rundown.instructions.md"
-engineersamuel_skills_ref="$(< /opt/engineersamuel-skills/REF)"
-/usr/local/bin/sync-engineersamuel-skills.sh \
-  --source /opt/engineersamuel-skills \
-  --target "$COPILOT_HOME/skills" \
-  --ref "$engineersamuel_skills_ref"
+node /usr/local/bin/floating-skills.mjs sync \
+  --catalog /opt/floating-skills-catalog.json \
+  --bundle comparison-common \
+  --output /opt/floating-skills \
+  --target "$COPILOT_HOME/skills"
 
 plugin_inventory='/workspace/.harness/copilot-plugin-inventory.txt'
 inventory_tmp="$(mktemp /workspace/.harness/copilot-plugin-inventory.XXXXXX)"

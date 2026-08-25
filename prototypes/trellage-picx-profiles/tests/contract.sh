@@ -3,6 +3,7 @@
 set -euo pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+. "$root/../../tests/helpers/floating_skills_fixture.sh"
 launcher="$root/bin/picx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
@@ -18,6 +19,7 @@ fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 node_binary="$(node -p 'process.execPath')"
 mkdir -p "$fake_bin" "$home/.copilot" "$home/.omp/profiles/trellage-picx-default"
+seed_floating_skills_cache "$home"
 printf '%s\n' '{"models":[{"id":"gpt-5.6-sol"}]}' >"$home/.copilot/models.json"
 printf '%s\n' '{"mcpServers":{"plan":{"url":"https://agent-native.example.test/mcp"}}}' \
   >"$home/.claude.json"
@@ -116,15 +118,6 @@ if [[ "$*" == *'what extensions are installed'* ]]; then
 fi
 FAKE_PI
 chmod 0755 "$fixture_root/fake-pi-template"
-
-cat >"$fake_bin/npx" <<'FAKE_NPX'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ "$*" == '--yes skills add humanlayer/skills --skill show-me --agent pi --global --copy --yes' ]]
-mkdir -p "$HOME/.pi/agent/skills/show-me"
-printf '%s\n' '---' 'name: show-me' '---' >"$HOME/.pi/agent/skills/show-me/SKILL.md"
-FAKE_NPX
-chmod 0755 "$fake_bin/npx"
 
 cat >"$fake_bin/curl" <<'FAKE_CURL'
 #!/usr/bin/env bash
@@ -229,8 +222,12 @@ jq -e '
   and (.imports // []) == []
   and .mcpServers == {}
 ' "$agent_root/mcp.json" >/dev/null || fail 'managed MCP isolation differs'
-grep -Fqx 'name: show-me' "$agent_root/skills/show-me/SKILL.md" \
-  || fail 'show-me was not installed'
+grep -Fqx '# Fixture show-me skill' "$agent_root/skills/show-me/SKILL.md" \
+  || fail 'show-me was not installed from the shared floating cache'
+grep -Fqx '# Fixture personal skill' "$agent_root/skills/fixture-personal/SKILL.md" \
+  || fail 'personal skills were not installed from the shared floating cache'
+[[ "$(<"$agent_root/skills/.trellage-managed-skills")" == $'fixture-personal\nshow-me' ]] \
+  || fail 'floating skill manifest differs'
 cmp -s "$HOME/.copilot/models.json" "$profile_root/.copilot-models.json" \
   || fail 'Copilot model catalog snapshot differs'
 

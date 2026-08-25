@@ -25,26 +25,40 @@ function assertCodexProfile(profile: Profile): asserts profile is CodexProfile {
   if (!isCodexProfile(profile)) throw new Error("Codex rendering does not support Copilot profiles")
 }
 
-const renderMcp = (mcp: Mcp): ReadonlyArray<string> => {
-  const lines = [`[mcp_servers.${quoteKey(mcp.name)}]`]
-  if (mcp.transport === "stdio") {
-    lines.push(`command = ${quote(mcp.command)}`)
-    if (mcp.args) lines.push(`args = ${array(mcp.args)}`)
-    if (mcp.required !== undefined) lines.push(`required = ${String(mcp.required)}`)
-    if (mcp.env) lines.push(`env = ${inline(mcp.env)}`)
-    const forwarded = Object.keys(mcp.env_from_secret ?? {}).sort()
-    if (forwarded.length > 0) lines.push(`env_vars = ${array(forwarded)}`)
-  } else {
-    lines.push(`url = ${quote(mcp.url)}`)
-    if (mcp.required !== undefined) lines.push(`required = ${String(mcp.required)}`)
-    if (mcp.bearer_token_env) lines.push(`bearer_token_env_var = ${quote(mcp.bearer_token_env)}`)
-    if (mcp.headers) lines.push(`http_headers = ${inline(mcp.headers)}`)
-    if (mcp.headers_from_secret) lines.push(`env_http_headers = ${inline(mcp.headers_from_secret)}`)
-  }
+const renderStdioMcp = (mcp: Mcp): ReadonlyArray<string> => {
+  if (mcp.transport !== "stdio") return []
+  const lines = [`command = ${quote(mcp.command)}`]
+  if (mcp.args) lines.push(`args = ${array(mcp.args)}`)
+  if (mcp.required !== undefined) lines.push(`required = ${String(mcp.required)}`)
+  if (mcp.env) lines.push(`env = ${inline(mcp.env)}`)
+  const forwarded = Object.keys(mcp.env_from_secret ?? {}).sort()
+  if (forwarded.length > 0) lines.push(`env_vars = ${array(forwarded)}`)
+  return lines
+}
+
+const renderHttpMcp = (mcp: Mcp): ReadonlyArray<string> => {
+  if (mcp.transport !== "http") return []
+  const lines = [`url = ${quote(mcp.url)}`]
+  if (mcp.required !== undefined) lines.push(`required = ${String(mcp.required)}`)
+  if (mcp.bearer_token_env) lines.push(`bearer_token_env_var = ${quote(mcp.bearer_token_env)}`)
+  if (mcp.headers) lines.push(`http_headers = ${inline(mcp.headers)}`)
+  if (mcp.headers_from_secret) lines.push(`env_http_headers = ${inline(mcp.headers_from_secret)}`)
+  return lines
+}
+
+const renderMcpTools = (mcp: Mcp): ReadonlyArray<string> => {
+  const lines: Array<string> = []
   if (mcp.tools?.allow) lines.push(`enabled_tools = ${array(mcp.tools.allow)}`)
   if (mcp.tools?.deny) lines.push(`disabled_tools = ${array(mcp.tools.deny)}`)
   return lines
 }
+
+const renderMcp = (mcp: Mcp): ReadonlyArray<string> => [
+  `[mcp_servers.${quoteKey(mcp.name)}]`,
+  ...renderStdioMcp(mcp),
+  ...renderHttpMcp(mcp),
+  ...renderMcpTools(mcp),
+]
 
 export const renderCodexConfig = (profile: Profile): string => {
   assertCodexProfile(profile)
@@ -137,7 +151,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.codex/config.toml" = { source = "codex-config.toml", mode = "copy" }
 "/home/agent/.codex/skills" = { source = "assets/skills", mode = "copy" }
 "/home/agent/.codex/agents" = { source = "assets/agents", mode = "copy" }
-${profile.skills.some((skill) => skill.adapter === undefined && skill.always_on === true) ? '"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }' : ""}
+${profile.skill_bundles.length > 0 ? '"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}

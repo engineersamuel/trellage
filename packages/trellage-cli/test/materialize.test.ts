@@ -38,7 +38,6 @@ import {
   type ClaudeMaterializer,
   type PluginGenerator,
   type RuntimeSupport,
-  type SkillGenerator,
 } from "../src/materialize.js"
 import { profileHash, type ProfileLock, type SourceLock } from "../src/lock.js"
 import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
@@ -75,11 +74,6 @@ wire_api = "responses"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish"]
-[[skills]]
-repository = "https://github.com/example/skills.git"
-ref = "v1"
-select = ["one"]
-always_on = true
 [[plugins]]
 adapter = "codex-native"
 repository = "https://github.com/example/native.git"
@@ -95,12 +89,9 @@ provider = "env"
 required = ["DO_NOT_WRITE_ME"]
 `
 
-const fixture = async (root: string, kind: "skill" | "native" | "compat") => {
+const fixture = async (root: string, kind: "native" | "compat") => {
   const directory = path.join(root, kind)
-  if (kind === "skill") {
-    await mkdir(path.join(directory, "skills", "one"), { recursive: true })
-    await writeFile(path.join(directory, "skills", "one", "SKILL.md"), "# One\n")
-  } else if (kind === "native") {
+  if (kind === "native") {
     await mkdir(path.join(directory, "plugins", "native", ".codex", "agents"), { recursive: true })
     await writeFile(path.join(directory, "plugins", "native", ".codex", "agents", "native.toml"), 'name = "native"\n')
   } else {
@@ -596,24 +587,15 @@ describe("locked Chromium materialization", () => {
 })
 
 describe("atomic build context", () => {
-  it("materializes the locked standalone Pi executable and isolated runtime state", async () => {
+  it("materializes the Pi runtime seed before floating skill injection", async () => {
     const root = await temporaryRoot("trellage-materialize-pi-")
-    const ompSource = path.join(root, "oh-my-pi")
-    for (const skill of ["semantic-compression", "system-prompts", "tool-prompt-optimization"]) {
-      const skillDirectory = path.join(ompSource, ".omp", "skills", skill)
-      await mkdir(skillDirectory, { recursive: true })
-      await writeFile(
-        path.join(skillDirectory, "SKILL.md"),
-        `---\nname: ${skill}\ndescription: ${skill} test skill\n---\n\n# ${skill}\n`,
-      )
-    }
-    const sourceFiles = await Effect.runPromise(inventoryDirectory(ompSource))
     const document = await Effect.runPromise(
       parseProfile(
         `
 schema = 1
 name = "pi-oh-my-pi"
 description = "Oh My Pi profile"
+skill_bundles = ["pi-oh-my-pi"]
 [harness]
 kind = "pi"
 version = "latest"
@@ -627,11 +609,6 @@ auth = "host-or-login"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
-[[skills]]
-adapter = "omp-native"
-repository = "https://github.com/can1357/oh-my-pi.git"
-ref = "v17.2.6"
-select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
 `,
         path.join(root, "profile.toml"),
       ),
@@ -641,18 +618,7 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
       platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
-      sources: [
-        {
-          kind: "skill",
-          adapter: "omp-native",
-          repository: "https://github.com/can1357/oh-my-pi.git",
-          ref: "v17.2.6",
-          select: ["semantic-compression", "system-prompts", "tool-prompt-optimization"],
-          commit: "a".repeat(40),
-          integrity: `sha256:${"c".repeat(64)}`,
-          files: sourceFiles,
-        },
-      ],
+      sources: [],
       packages: {
         harness: {
           kind: "pi",
@@ -681,20 +647,16 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
     await writeFile(piEntry, "mutated after snapshot\n")
     const unused = () => Effect.fail("unexpected generator call")
 
-    const context = await Effect.runPromise(
-      createBuildContext(document, lock, [ompSource], snapshot, root, unused, unused),
-    )
+    const context = await Effect.runPromise(createBuildContext(document, lock, [], snapshot, root, unused))
 
     await expect(readFile(path.join(context, "runtime-pi-entry.sh"), "utf8")).resolves.toContain('exec omp "$@"')
     await expect(readFile(path.join(context, "pi-config.yml"), "utf8")).resolves.toBe(
       "startup:\n  checkUpdate: false\nmarketplace:\n  autoUpdate: off\n",
     )
-    await expect(readFile(path.join(context, "pi-seed", "managed-skills.txt"), "utf8")).resolves.toBe(
-      "semantic-compression\nsystem-prompts\ntool-prompt-optimization\n",
-    )
+    await expect(readFile(path.join(context, "pi-seed", "managed-skills.txt"), "utf8")).resolves.toBe("")
     await expect(
       readFile(path.join(context, "pi-seed", "skills", "semantic-compression", "SKILL.md"), "utf8"),
-    ).resolves.toContain("semantic-compression test skill")
+    ).rejects.toThrow()
     const miseConfig = await readFile(path.join(context, "mise.toml"), "utf8")
     expect(miseConfig).toContain('rename_exe = "omp"')
     expect(miseConfig).toContain('PI_CODING_AGENT_DIR = "/home/agent/.omp/agent"')
@@ -708,7 +670,7 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
     expect(miseLock).toContain('url = "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64"')
   })
 
-  it("materializes the Prime wrapper, provider seed, and Node-only lock", async () => {
+  it("materializes the Prime wrapper and provider seed before floating skill injection", async () => {
     const root = await temporaryRoot("trellage-materialize-prime-")
     const document = await Effect.runPromise(
       parseProfile(
@@ -716,6 +678,7 @@ select = ["semantic-compression", "system-prompts", "tool-prompt-optimization"]
 schema = 1
 name = "prime-agent"
 description = "Prime Agent profile"
+skill_bundles = ["sandbox-common"]
 [harness]
 kind = "prime"
 version = "latest"
@@ -728,33 +691,16 @@ api = "anthropic-messages"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "gh", "git"]
-[[skills]]
-repository = "https://github.com/example/prime-skill.git"
-ref = "v1.0.0"
-select = ["one"]
-always_on = true
 `,
         path.join(root, "profile.toml"),
       ),
     )
-    const skillSource = await fixture(root, "skill")
-    const skillFiles = await Effect.runPromise(inventoryDirectory(skillSource))
     const lock: ProfileLock = {
       schema: 1,
       platform: "linux/arm64",
       source_date_epoch: 1784379906,
       profile_hash: profileHash(document),
-      sources: [
-        {
-          kind: "skill",
-          repository: "https://github.com/example/prime-skill.git",
-          ref: "v1.0.0",
-          select: ["one"],
-          commit: "a".repeat(40),
-          integrity: `sha256:${"c".repeat(64)}`,
-          files: skillFiles,
-        },
-      ],
+      sources: [],
       packages: {
         harness: {
           kind: "prime",
@@ -778,18 +724,8 @@ always_on = true
     }
     const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("prime", support))
     const unused = () => Effect.fail("unexpected generator call")
-    const skillGenerator: SkillGenerator = (_source, _selection, destination) =>
-      Effect.tryPromise({
-        try: async () => {
-          await mkdir(path.join(destination, ".agents", "skills", "one"), { recursive: true })
-          await writeFile(path.join(destination, ".agents", "skills", "one", "SKILL.md"), "# Generated One\n")
-        },
-        catch: (cause) => cause,
-      })
 
-    const context = await Effect.runPromise(
-      createBuildContext(document, lock, [skillSource], snapshot, root, skillGenerator, unused),
-    )
+    const context = await Effect.runPromise(createBuildContext(document, lock, [], snapshot, root, unused))
 
     await expect(readFile(path.join(context, "runtime-prime-entry.sh"), "utf8")).resolves.toContain(
       'exec prime-agent "$@"',
@@ -816,13 +752,9 @@ always_on = true
         2,
       )}\n`,
     )
-    await expect(readFile(path.join(context, "prime-seed", "skills", "one", "SKILL.md"), "utf8")).resolves.toBe(
-      "# Generated One\n",
-    )
-    await expect(readFile(path.join(context, "prime-seed", "APPEND_SYSTEM.md"), "utf8")).resolves.toContain(
-      "# Trellage managed always-on skill: one\n\n# Generated One\n",
-    )
-    await expect(readFile(path.join(context, "prime-seed", "managed-skills.txt"), "utf8")).resolves.toBe("one\n")
+    await expect(readFile(path.join(context, "prime-seed", "skills", "one", "SKILL.md"), "utf8")).rejects.toThrow()
+    await expect(readFile(path.join(context, "prime-seed", "APPEND_SYSTEM.md"), "utf8")).rejects.toThrow()
+    await expect(readFile(path.join(context, "prime-seed", "managed-skills.txt"), "utf8")).resolves.toBe("")
     const miseConfig = await readFile(path.join(context, "mise.toml"), "utf8")
     expect(miseConfig).toContain(
       '"/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }',
@@ -908,7 +840,6 @@ packages = ["bash", "ca-certificates", "git", "jq"]
           claudeOutputStyleRundown,
         },
         root,
-        unused,
         unused,
         () => {
           materializerCalled = true
@@ -1046,7 +977,6 @@ select = ["light"]
         },
         root,
         unused,
-        unused,
         materializeClaude,
       ),
     )
@@ -1059,7 +989,7 @@ select = ["light"]
     expect(miseLock).toContain('[[tools."http:claude"]]')
     expect(miseLock).toContain('rename_exe = "claude"')
   })
-  it("materializes a legacy Codex lock from a self-verified executable source", async () => {
+  it("materializes a legacy Codex plugin lock from a self-verified executable source", async () => {
     const root = await temporaryRoot("harness-materialize-legacy-codex-")
     const document = await Effect.runPromise(
       parseProfile(
@@ -1081,8 +1011,9 @@ wire_api = "responses"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
-[[skills]]
-repository = "https://github.com/example/skills.git"
+[[plugins]]
+adapter = "codex-native"
+repository = "https://github.com/example/plugins.git"
 ref = "v1"
 select = ["one"]
 `,
@@ -1090,9 +1021,9 @@ select = ["one"]
       ),
     )
     const checkout = path.join(root, "checkout")
-    const executable = path.join(checkout, "skills", "one", "install.sh")
+    const executable = path.join(checkout, "plugins", "one", ".codex", "agents", "one.toml")
     await mkdir(path.dirname(executable), { recursive: true })
-    await writeFile(executable, "#!/bin/sh\n")
+    await writeFile(executable, 'name = "one"\n')
     await chmod(executable, 0o755)
     const cachedInventory = await Effect.runPromise(inventoryDirectory(checkout))
     await expect(Effect.runPromise(verifyInventory(checkout, cachedInventory))).resolves.toBeUndefined()
@@ -1110,8 +1041,9 @@ select = ["one"]
       profile_hash: profileHash(document),
       sources: [
         {
-          kind: "skill",
-          repository: "https://github.com/example/skills.git",
+          kind: "plugin",
+          adapter: "codex-native",
+          repository: "https://github.com/example/plugins.git",
           ref: "v1",
           select: ["one"],
           commit: "a".repeat(40),
@@ -1134,14 +1066,6 @@ select = ["one"]
     }
     const runtimeEntry = path.join(root, "runtime-entry.sh")
     await writeFile(runtimeEntry, "#!/usr/bin/env bash\n")
-    const generateSkill: SkillGenerator = (_source, _selection, destination) =>
-      Effect.tryPromise({
-        try: async () => {
-          await mkdir(path.join(destination, ".agents", "skills", "one"), { recursive: true })
-          await writeFile(path.join(destination, ".agents", "skills", "one", "SKILL.md"), "# One\n")
-        },
-        catch: (cause) => cause,
-      })
     const unusedPlugin: PluginGenerator = () => Effect.fail("unexpected plugin generator call")
 
     const parsedLock = await Effect.runPromise(
@@ -1152,8 +1076,9 @@ source_date_epoch = 1784379906
 profile_hash = ${JSON.stringify(lock.profile_hash)}
 
 [[sources]]
-kind = "skill"
-repository = "https://github.com/example/skills.git"
+kind = "plugin"
+adapter = "codex-native"
+repository = "https://github.com/example/plugins.git"
 ref = "v1"
 select = ["one"]
 commit = "${"a".repeat(40)}"
@@ -1191,27 +1116,25 @@ final_digest = "sha256:final"
           finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
         },
         root,
-        generateSkill,
         unusedPlugin,
       ),
     )
 
-    await expect(readFile(path.join(context, "assets", "skills", "one", "SKILL.md"), "utf8")).resolves.toBe("# One\n")
+    await expect(readFile(path.join(context, "assets", "agents", "one.toml"), "utf8")).resolves.toBe('name = "one"\n')
   })
 
   it("does not let legacy alternate integrity disable modern Codex mode checks", async () => {
     const root = await temporaryRoot("harness-materialize-modern-codex-mode-")
     const document = await Effect.runPromise(parseProfile(profileSource(), path.join(root, "profile.toml")))
-    const directories = [await fixture(root, "skill"), await fixture(root, "native"), await fixture(root, "compat")]
+    const directories = [await fixture(root, "native"), await fixture(root, "compat")]
     const sourceLocks: Array<SourceLock> = []
-    for (const [index, request] of [
-      ...document.profile.skills.map((item) => ({ kind: "skill" as const, ...item })),
-      ...document.profile.plugins.map((item) => ({ kind: "plugin" as const, ...item })),
-    ].entries()) {
+    for (const [index, request] of document.profile.plugins
+      .map((item) => ({ kind: "plugin" as const, ...item }))
+      .entries()) {
       const files = await Effect.runPromise(inventoryDirectory(directories[index]!))
       sourceLocks.push({
         kind: request.kind,
-        ...(request.kind === "plugin" ? { adapter: request.adapter } : {}),
+        adapter: request.adapter,
         repository: request.repository,
         ref: request.ref,
         select: request.select,
@@ -1229,7 +1152,7 @@ final_digest = "sha256:final"
       ...firstSource,
       integrity: `sha256:${createHash("sha256").update(JSON.stringify(legacyFiles)).digest("hex")}`,
     }
-    await chmod(path.join(directories[0]!, "skills", "one", "SKILL.md"), 0o755)
+    await chmod(path.join(directories[0]!, "plugins", "native", ".codex", "agents", "native.toml"), 0o755)
     const lock: ProfileLock = {
       schema: 1,
       platform: "linux/arm64",
@@ -1268,12 +1191,11 @@ final_digest = "sha256:final"
           },
           root,
           unused,
-          unused,
         ),
       ),
     )
 
-    expect(error.message).toBe("source inventory mismatch: https://github.com/example/skills.git")
+    expect(error.message).toBe("source inventory mismatch: https://github.com/example/native.git")
   })
 
   it("rejects an unexpected executable bit for Copilot even with legacy-shaped source integrity", async () => {
@@ -1363,7 +1285,6 @@ select = ["hve-core"]
           },
           root,
           unused,
-          unused,
         ),
       ),
     )
@@ -1371,21 +1292,20 @@ select = ["hve-core"]
     expect(error.message).toBe("source inventory mismatch: https://github.com/microsoft/hve-core.git")
   })
 
-  it("materializes selected skills, native plugins, compatibility output, config, and prompt", async () => {
+  it("materializes native plugins, compatibility output, config, and prompt", async () => {
     const root = await temporaryRoot("harness-materialize-")
     await writeFile(path.join(root, "prompt.md"), "Start here\n")
     const document = await Effect.runPromise(
       parseProfile(profileSource('initial_prompt = "./prompt.md"'), path.join(root, "profile.toml")),
     )
-    const directories = [await fixture(root, "skill"), await fixture(root, "native"), await fixture(root, "compat")]
+    const directories = [await fixture(root, "native"), await fixture(root, "compat")]
     const sourceLocks: Array<SourceLock> = []
-    for (const [index, request] of [
-      ...document.profile.skills.map((item) => ({ kind: "skill" as const, ...item })),
-      ...document.profile.plugins.map((item) => ({ kind: "plugin" as const, ...item })),
-    ].entries()) {
+    for (const [index, request] of document.profile.plugins
+      .map((item) => ({ kind: "plugin" as const, ...item }))
+      .entries()) {
       sourceLocks.push({
         kind: request.kind,
-        ...(request.kind === "plugin" ? { adapter: request.adapter } : {}),
+        adapter: request.adapter,
         repository: request.repository,
         ref: request.ref,
         select: request.select,
@@ -1424,14 +1344,6 @@ select = ["hve-core"]
         },
         catch: (cause) => cause,
       })
-    const skillGenerator: SkillGenerator = (_source, _selection, destination) =>
-      Effect.tryPromise({
-        try: async () => {
-          await mkdir(path.join(destination, ".agents", "skills", "one"), { recursive: true })
-          await writeFile(path.join(destination, ".agents", "skills", "one", "SKILL.md"), "# Generated One\n")
-        },
-        catch: (cause) => cause,
-      })
     const runtimeEntry = path.join(root, "runtime-entry.sh")
     await writeFile(runtimeEntry, "#!/usr/bin/env bash\n")
 
@@ -1446,18 +1358,11 @@ select = ["hve-core"]
           finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
         },
         root,
-        skillGenerator,
         generator,
       ),
     )
 
     expect.soft(path.basename(context)).toMatch(/^trellage-build-/)
-    await expect(readFile(path.join(context, "assets", "skills", "one", "SKILL.md"), "utf8")).resolves.toBe(
-      "# Generated One\n",
-    )
-    await expect(readFile(path.join(context, "assets", "AGENTS.md"), "utf8")).resolves.toContain(
-      "# Trellage managed always-on skill: one\n\n# Generated One\n",
-    )
     await expect(readFile(path.join(context, "assets", "agents", "native.toml"), "utf8")).resolves.toContain("native")
     await expect(readFile(path.join(context, "assets", "skills", "compat", "SKILL.md"), "utf8")).resolves.toBe(
       "# Compat\n",
@@ -1542,7 +1447,6 @@ packages = ["bash"]
             finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
           },
           root,
-          unused,
           unused,
         ),
       ),
@@ -1642,7 +1546,7 @@ select = ["hve-core"]
     const wrongHarnessSnapshot = await Effect.runPromise(createRuntimeSupportSnapshot("codex", support))
     await expect(
       Effect.runPromise(
-        createBuildContext(document, lock, [hve], wrongHarnessSnapshot, root, unused, unused).pipe(Effect.flip),
+        createBuildContext(document, lock, [hve], wrongHarnessSnapshot, root, unused).pipe(Effect.flip),
       ),
     ).resolves.toMatchObject({
       _tag: "MaterializeError",
@@ -1652,7 +1556,7 @@ select = ["hve-core"]
     await writeFile(copilotEntry, "mutated after snapshot\n")
     await writeFile(finalizer, "mutated finalizer after snapshot\n")
 
-    const context = await Effect.runPromise(createBuildContext(document, lock, [hve], snapshot, root, unused, unused))
+    const context = await Effect.runPromise(createBuildContext(document, lock, [hve], snapshot, root, unused))
 
     await expect(
       readFile(path.join(context, "hve-core", "plugins", "hve-core", "commands", "review.md"), "utf8"),
@@ -1773,7 +1677,6 @@ select = ["hve-core"]
           copilotInstructionRundown: instruction,
         },
         root,
-        unused,
         unused,
       ),
     )

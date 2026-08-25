@@ -6,12 +6,16 @@ cd "$repo_root"
 
 copilot_secret_file=''
 collection_staging=''
+skills_staging=''
 cleanup_secret_file() {
   if [[ -n "$copilot_secret_file" && -f "$copilot_secret_file" ]]; then
     rm -f "$copilot_secret_file"
   fi
   if [[ -n "$collection_staging" && -d "$collection_staging" ]]; then
     rm -rf -- "$collection_staging"
+  fi
+  if [[ -n "$skills_staging" && -d "$skills_staging" ]]; then
+    rm -rf -- "$skills_staging"
   fi
 }
 trap cleanup_secret_file EXIT
@@ -146,7 +150,7 @@ compose_for() {
   local secret_file="$2"
   shift 2
 
-  local contestant_id runtime port experiment package_ref package_plugins
+  local contestant_id runtime port experiment package_ref package_plugins skills_context
   local compose_args env_args
   contestant_id="$(jq -r '.id' <<<"$contestant")"
   runtime="$(jq -r '.runtime' <<<"$contestant")"
@@ -154,6 +158,8 @@ compose_for() {
   experiment="$harness_id-$contestant_id"
   package_ref="$(jq -r '.packages[0].ref' <<<"$contestant")"
   package_plugins="$(jq -r '.packages[0].plugins | join(" ")' <<<"$contestant")"
+  skills_context="${skills_staging:+$skills_staging/snapshot}"
+  [[ -n "$skills_context" ]] || skills_context=/dev/null
 
   compose_args=(-f compose.yaml)
   env_args=(
@@ -161,6 +167,7 @@ compose_for() {
     APP_PORT="$port"
     HARNESS_CONTESTANT_ID="$contestant_id"
     HARNESS_PROMPT_SHA256="$prompt_hash"
+    HARNESS_SKILLS_CONTEXT="$skills_context"
   )
 
   case "$runtime" in
@@ -185,7 +192,11 @@ compose_for() {
 }
 
 build_all() {
-  node "$repo_root/scripts/update-engineersamuel-skills.mjs" >/dev/null
+  skills_staging="$(mktemp -d "${TMPDIR:-/tmp}/trellage-harness-skills.XXXXXX")"
+  node "$repo_root/scripts/floating-skills.mjs" stage \
+    --catalog "$repo_root/skills.json" \
+    --bundle comparison-common \
+    --output "$skills_staging/snapshot" >/dev/null
   local contestant service
   for contestant in "${contestants[@]}"; do
     service="$(jq -r '.service' <<<"$contestant")"

@@ -68,78 +68,35 @@ jq -e \
     and .locked == true
     and .image == $image
     and .platform == $platform
+    and .skills_mode == "floating"
+    and .final_digest_locked == false
+    and .image_alias == null
     and (.profile_hash | test("^sha256:[0-9a-f]{64}$"))
-  ' <<<"$metadata" >/dev/null || fail 'profile metadata is invalid, stale, or missing its final OCI digest'
+  ' <<<"$metadata" >/dev/null || fail 'profile metadata does not describe a ready core lock with floating skills'
 
-grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$lock" \
-  || fail 'final OCI digest is not locked'
+! grep -Eq '^final_digest = ' "$lock" \
+  || fail 'floating-skill profile unexpectedly locks a final OCI digest'
 ! grep -Eiq '(token|secret|password|api[_-]?key)[[:space:]]*=[[:space:]]*"[^"[:space:]]+"' "$profile" "$lock" \
   || fail 'credential-like value is embedded in profile inputs'
 ! grep -Eq '(/[U]sers/|/var/[f]olders/|/private/tmp/|/tmp/harness-|harness-build-)' "$profile" "$lock" \
   || fail 'host, temporary, or build path is embedded in profile inputs'
 
-profile_has_caveman() {
-  awk '
-    function complete() {
-      return repository == "https://github.com/JuliusBrussee/caveman.git" \
-        && ref == "v1.10.0" && select == "select = [\"caveman\"]" \
-        && always_on == "always_on = true"
-    }
-    /^\[\[skills\]\]$/ {
-      if (in_skill && complete()) found = 1
-      in_skill = 1
-      repository = ref = select = always_on = ""
-      next
-    }
-    /^\[\[/ {
-      if (in_skill && complete()) found = 1
-      in_skill = 0
-      next
-    }
-    in_skill && /^repository = / { repository = substr($0, 14); gsub(/"/, "", repository) }
-    in_skill && /^ref = / { ref = substr($0, 7); gsub(/"/, "", ref) }
-    in_skill && /^select = / { select = $0 }
-    in_skill && /^always_on = / { always_on = $0 }
-    END {
-      if (in_skill && complete()) found = 1
-      exit(found ? 0 : 1)
-    }
-  ' "$profile"
-}
-
-lock_has_caveman() {
-  awk '
-    function complete() {
-      return repository == "https://github.com/JuliusBrussee/caveman.git" \
-        && ref == "v1.10.0" && select == "select = [\"caveman\"]" \
-        && commit ~ /^[0-9a-f]+$/ && length(commit) == 40
-    }
-    /^\[\[sources\]\]$/ {
-      if (in_source && complete()) found = 1
-      in_source = 1
-      repository = ref = select = commit = ""
-      next
-    }
-    /^\[\[/ {
-      if (in_source && complete()) found = 1
-      in_source = 0
-      next
-    }
-    in_source && /^repository = / { repository = substr($0, 14); gsub(/"/, "", repository) }
-    in_source && /^ref = / { ref = substr($0, 7); gsub(/"/, "", ref) }
-    in_source && /^select = / { select = $0 }
-    in_source && /^commit = / { commit = substr($0, 10); gsub(/"/, "", commit) }
-    END {
-      if (in_source && complete()) found = 1
-      exit(found ? 0 : 1)
-    }
-  ' "$lock"
-}
-
-profile_has_caveman || fail 'profile does not declare always-on Caveman v1.10.0'
-lock_has_caveman || fail 'lock does not contain an exact Caveman v1.10.0 source commit'
-grep -Fqx 'path = "skills/caveman/SKILL.md"' "$lock" \
-  || fail 'Caveman SKILL.md is absent from the locked source inventory'
+grep -Eq '^skill_bundles = \[[^]]*"sandbox-common"' "$profile" \
+  || fail 'profile does not select the common floating-skill bundle'
+jq -e '
+  .sources.caveman == {
+    repository: "https://github.com/JuliusBrussee/caveman.git",
+    select: ["caveman"],
+    alwaysOn: true,
+    allowExecutables: true
+  }
+  and (.bundles["sandbox-common"] | index("caveman") != null)
+' "$repo_root/skills.json" >/dev/null \
+  || fail 'floating-skill catalog does not declare always-on Caveman'
+! grep -Fq 'JuliusBrussee/caveman' "$lock" \
+  || fail 'floating Caveman source leaked into the core lock'
+! grep -Fq 'path = "skills/caveman/SKILL.md"' "$lock" \
+  || fail 'floating Caveman inventory leaked into the core lock'
 
 runtime_package_locked() {
   local name="$1" version="$2" integrity="$3"

@@ -40,9 +40,22 @@ grep -Fq -- '--plugin "${WSHOBSON_AGENTS_PLUGIN}"' Dockerfile.agent \
 grep -Fq '/opt/agent-kit-inventory.txt' scripts/agent-entrypoint.sh \
   || fail 'Codex entrypoint does not validate a plugin-independent inventory'
 
-compose_json="$(docker compose --profile tools config --format json)"
-alternate_compose_json="$(EXPERIMENT_ID=isolation-probe APP_PORT=4273 docker compose --profile tools config --format json)"
+if missing_skills_output="$(
+  env -u HARNESS_SKILLS_CONTEXT docker compose --profile tools config --format json 2>&1
+)"; then
+  fail 'Compose accepted a missing floating-skill build context'
+fi
+grep -Fq 'set HARNESS_SKILLS_CONTEXT to a staged floating-skill snapshot' \
+  <<<"$missing_skills_output" \
+  || fail 'Compose did not explain the missing floating-skill build context'
+
+compose_json="$(HARNESS_SKILLS_CONTEXT=/dev/null docker compose --profile tools config --format json)"
+alternate_compose_json="$(
+  HARNESS_SKILLS_CONTEXT=/dev/null EXPERIMENT_ID=isolation-probe APP_PORT=4273 \
+    docker compose --profile tools config --format json
+)"
 copilot_compose_json="$(
+  HARNESS_SKILLS_CONTEXT=/dev/null \
   HARNESS_COPILOT_TOKEN_FILE='/tmp/contract-sentinel-copilot-token' \
   EXPERIMENT_ID='copilot-isolation-probe' \
   APP_PORT=4274 \

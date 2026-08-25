@@ -192,7 +192,6 @@ describe("production package resolutions", () => {
         selector: "0.144.6",
         platform: "linux/arm64",
         packages: ["bash", "gh", "jq"],
-        needsSkillsCli: true,
       }),
     )
 
@@ -230,7 +229,6 @@ describe("production package resolutions", () => {
         selector: "0.7.0",
         platform: "linux/arm64",
         packages: ["ripgrep"],
-        needsSkillsCli: false,
       }),
     )
 
@@ -250,7 +248,6 @@ describe("production package resolutions", () => {
         selector: "latest",
         platform: "linux/arm64",
         packages: ["bash"],
-        needsSkillsCli: false,
       }),
     )
 
@@ -283,7 +280,6 @@ describe("production package resolutions", () => {
         selector: "latest",
         platform: "linux/arm64",
         packages,
-        needsSkillsCli: false,
       }),
     )
 
@@ -334,7 +330,6 @@ describe("production package resolutions", () => {
         selector: "2.1.218",
         platform: "linux/arm64",
         packages: ["bash", ...browserPackages],
-        needsSkillsCli: false,
         claudeAdapter: "hyperresearch",
       }),
     )
@@ -415,7 +410,6 @@ describe("production package resolutions", () => {
         selector: "2.1.218",
         platform: "linux/arm64",
         packages: ["bash", "git", "jq"],
-        needsSkillsCli: false,
         claudeAdapter: "claude-marketplace",
       }),
     )
@@ -432,19 +426,19 @@ describe("production package resolutions", () => {
           selector: "0.144.6",
           platform: "linux/arm64",
           packages: [name],
-          needsSkillsCli: false,
         }),
       ),
     ).rejects.toThrow(new RegExp(`unsupported runtime package: ${name}`))
   })
 
-  it("resolves Codex sources through the strict source cache", async () => {
+  it("resolves Codex plugin sources through the strict source cache", async () => {
     const result = await Effect.runPromise(
       productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
-        kind: "skill",
+        kind: "plugin",
+        adapter: "codex-native",
         repository: "https://github.com/obra/superpowers.git",
         ref: "v6.2.0",
-        select: ["*"],
+        select: ["example"],
         update: false,
       }),
     )
@@ -452,7 +446,7 @@ describe("production package resolutions", () => {
     expect(result.commit).toBe("a".repeat(40))
     expect(mocks.requests).toEqual([
       expect.objectContaining({
-        include: ["skills", ".agents/skills", ".claude/skills", "plugins/*"],
+        include: ["plugins/example/.codex"],
         inventoryPolicy: {},
       }),
     ])

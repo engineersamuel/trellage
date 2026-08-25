@@ -1,13 +1,19 @@
 import { createHash } from "node:crypto"
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import { Data, Effect } from "effect"
 
 import { verifyInventory } from "./inventory.js"
 import { renderLock } from "./lock-file.js"
-import { hasLegacySourceProvenance, type HarnessPackageLock, type ProfileLock } from "./lock.js"
-import type { ProfileDocument } from "./profile.js"
+import { hasLegacySourceProvenance, type ProfileLock } from "./lock.js"
+import {
+  isClaudeProfile,
+  isPrimeProfile,
+  type ClaudeProfile,
+  type PrimeProfile,
+  type ProfileDocument,
+} from "./profile.js"
 import { renderCodexConfig, renderMiseConfig } from "./render.js"
 import {
   claudeDefaultOnboarding,
@@ -26,12 +32,6 @@ import {
 } from "./runtime-support.js"
 
 export type PluginGenerator = (
-  sourceDirectory: string,
-  selections: ReadonlyArray<string>,
-  destination: string,
-) => Effect.Effect<void, unknown>
-
-export type SkillGenerator = (
   sourceDirectory: string,
   selections: ReadonlyArray<string>,
   destination: string,
@@ -84,113 +84,6 @@ const copy = (source: string, destination: string): Effect.Effect<void, Material
     })
   })
 
-interface GeneratedSkill {
-  readonly name: string
-  readonly alwaysOn: boolean
-  readonly instructions: string
-}
-
-const verifyGeneratedSkillDirectory = (directory: string, name: string): Effect.Effect<string, MaterializeError> =>
-  io(`generated skill is unsafe: ${name}`, async () => {
-    const visit = async (candidate: string): Promise<void> => {
-      const status = await lstat(candidate)
-      if (status.isSymbolicLink()) throw new Error("symlink")
-      if (status.isDirectory()) {
-        for (const entry of (await readdir(candidate)).sort((left, right) => left.localeCompare(right, "en"))) {
-          await visit(path.join(candidate, entry))
-        }
-      } else if (!status.isFile()) {
-        throw new Error("unsupported entry")
-      }
-    }
-    const skill = path.join(directory, name)
-    const skillFile = path.join(skill, "SKILL.md")
-    const [skillStatus, skillFileStatus] = await Promise.all([lstat(skill), lstat(skillFile)])
-    if (!skillStatus.isDirectory() || skillStatus.isSymbolicLink()) throw new Error("skill root")
-    if (!skillFileStatus.isFile() || skillFileStatus.isSymbolicLink()) throw new Error("SKILL.md")
-    await visit(skill)
-    const instructions = await readFile(skillFile, "utf8")
-    if (instructions.includes("\r")) throw new Error("SKILL.md must use LF line endings")
-    return instructions
-  })
-
-const renderAlwaysOnInstructions = (skills: ReadonlyArray<GeneratedSkill>): string =>
-  skills
-    .filter((skill) => skill.alwaysOn)
-    .sort((left, right) => left.name.localeCompare(right.name, "en"))
-    .map((skill) => `# Trellage managed always-on skill: ${skill.name}\n\n${skill.instructions}\n`)
-    .join("")
-
-const materializeGenericSkills = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-  context: string,
-  destination: string,
-  generateSkills: SkillGenerator,
-): Effect.Effect<ReadonlyArray<GeneratedSkill>, MaterializeError> =>
-  Effect.gen(function* () {
-    const candidates = document.profile.skills
-      .map((skill, index) => ({
-        skill,
-        source: lock.sources[index],
-        sourceDirectory: sourceDirectories[index],
-      }))
-      .filter((candidate) => candidate.skill.adapter === undefined)
-      .sort(
-        (left, right) =>
-          (left.source?.repository ?? "").localeCompare(right.source?.repository ?? "", "en") ||
-          (left.source?.ref ?? "").localeCompare(right.source?.ref ?? "", "en") ||
-          JSON.stringify(left.source?.select).localeCompare(JSON.stringify(right.source?.select), "en"),
-      )
-    const generatedSkills: Array<GeneratedSkill> = []
-    for (const candidate of candidates) {
-      const { skill, source, sourceDirectory } = candidate
-      if (
-        source === undefined ||
-        sourceDirectory === undefined ||
-        source.kind !== "skill" ||
-        source.adapter !== undefined ||
-        source.repository !== skill.repository ||
-        source.ref !== skill.ref ||
-        JSON.stringify(source.select) !== JSON.stringify(skill.select)
-      ) {
-        return yield* Effect.fail(new MaterializeError({ message: "generic skill source does not match lock" }))
-      }
-      const generated = path.join(
-        context,
-        `.skills-generated-${createHash("sha256")
-          .update(`${source.repository}\u0000${source.ref}\u0000${JSON.stringify(source.select)}`)
-          .digest("hex")}`,
-      )
-      yield* io("cannot create skills generation directory", () => mkdir(generated, { recursive: true }))
-      yield* generateSkills(
-        sourceDirectory,
-        [...source.select].sort((left, right) => left.localeCompare(right, "en")),
-        generated,
-      ).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Skills CLI generation failed", cause })))
-      const skillRoot = path.join(generated, ".agents", "skills")
-      const actual = yield* io("cannot enumerate Skills CLI output", () => readdir(skillRoot))
-      const expected = [...source.select].sort((left, right) => left.localeCompare(right, "en"))
-      actual.sort((left, right) => left.localeCompare(right, "en"))
-      if (
-        (expected.includes("*") && actual.length === 0) ||
-        (!expected.includes("*") && JSON.stringify(actual) !== JSON.stringify(expected))
-      ) {
-        return yield* Effect.fail(
-          new MaterializeError({ message: "Skills CLI output does not match locked selections" }),
-        )
-      }
-      for (const name of actual) {
-        const instructions = yield* verifyGeneratedSkillDirectory(skillRoot, name)
-        yield* copy(path.join(skillRoot, name), path.join(destination, name))
-        generatedSkills.push({ name, alwaysOn: skill.always_on === true, instructions })
-      }
-      yield* io("cannot remove skills generation staging", () => rm(generated, { recursive: true, force: true }))
-    }
-    return generatedSkills
-  })
-
 const copyCodexTree = (source: string, context: string): Effect.Effect<void, MaterializeError> =>
   Effect.gen(function* () {
     for (const category of ["skills", "agents"] as const) {
@@ -223,44 +116,30 @@ const hasLegacyInventoryIntegrity = (source: ProfileLock["sources"][number]): bo
   return source.integrity === integrity
 }
 
-/** Fail unless the profile and lock agree on the harness kind being materialized. */
-const assertHarnessKindMatches = (
+type RuntimeSupportInput = RuntimeSupportSnapshot | RuntimeSupport | string
+type ProfilePlugin = ProfileDocument["profile"]["plugins"][number]
+
+const buildRequestError = (
   document: ProfileDocument,
   lock: ProfileLock,
-): Effect.Effect<void, MaterializeError> =>
-  document.profile.harness.kind !== lock.packages.harness.kind
-    ? Effect.fail(new MaterializeError({ message: "profile and lock harness kinds do not match" }))
-    : Effect.void
-
-/** Fail unless a full runtime support bundle is provided for non-Codex harnesses. */
-const assertRuntimeSupportProvided = (
-  document: ProfileDocument,
-  runtimeSupport: RuntimeSupportSnapshot | RuntimeSupport | string,
-): Effect.Effect<void, MaterializeError> =>
-  document.profile.harness.kind !== "codex" && typeof runtimeSupport === "string"
-    ? Effect.fail(
-        new MaterializeError({
-          message: "non-Codex build context materialization requires a runtime support bundle",
-        }),
-      )
-    : Effect.void
-
-/** Fail unless the resolved source directories align one-to-one with the lock's sources. */
-const assertSourceDirectoryCountMatches = (
   sourceDirectories: ReadonlyArray<string>,
-  lock: ProfileLock,
-): Effect.Effect<void, MaterializeError> =>
-  sourceDirectories.length !== lock.sources.length
-    ? Effect.fail(new MaterializeError({ message: "resolved source count does not match lock" }))
-    : Effect.void
+  runtimeSupport: RuntimeSupportInput,
+): string | undefined => {
+  if (document.profile.harness.kind !== lock.packages.harness.kind) {
+    return "profile and lock harness kinds do not match"
+  }
+  if (document.profile.harness.kind !== "codex" && typeof runtimeSupport === "string") {
+    return "non-Codex build context materialization requires a runtime support bundle"
+  }
+  return sourceDirectories.length === lock.sources.length ? undefined : "resolved source count does not match lock"
+}
 
-/** Verify every resolved source directory still matches its locked file inventory. */
-const verifySourceInventories = (
+const verifySourceDirectories = (
   document: ProfileDocument,
   lock: ProfileLock,
   sourceDirectories: ReadonlyArray<string>,
 ): Effect.Effect<void, MaterializeError> =>
-  Effect.gen(function* () {
+  Effect.gen(function* verifyResolvedSources() {
     for (let index = 0; index < sourceDirectories.length; index += 1) {
       const source = lock.sources[index]!
       const legacyCodexInventory =
@@ -279,255 +158,134 @@ const verifySourceInventories = (
     }
   })
 
-/** True unless the single locked Copilot marketplace source matches the profile's single plugin, by index. */
-const copilotMarketplaceSourceMismatch = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceIndex: number,
-): boolean => {
+const sourceMatchesPlugin = (source: ProfileLock["sources"][number] | undefined, plugin: ProfilePlugin): boolean =>
+  source !== undefined &&
+  source.kind === "plugin" &&
+  source.adapter === plugin.adapter &&
+  source.repository === plugin.repository &&
+  source.ref === plugin.ref &&
+  JSON.stringify(source.select) === JSON.stringify(plugin.select)
+
+const copilotSourceError = (document: ProfileDocument, lock: ProfileLock): string | undefined => {
+  if (document.profile.harness.kind !== "copilot") return undefined
   const profilePlugin = document.profile.plugins[0]
-  const source = lock.sources[sourceIndex]
-  return (
-    document.profile.plugins.length !== 1 ||
-    lock.sources.length !== sourceIndex + 1 ||
-    profilePlugin === undefined ||
-    !("marketplace" in profilePlugin) ||
-    source === undefined ||
-    source.kind !== "plugin" ||
-    source.adapter !== "copilot-marketplace" ||
-    source.marketplace !== profilePlugin.marketplace ||
-    source.repository !== profilePlugin.repository ||
-    source.ref !== profilePlugin.ref ||
-    JSON.stringify(source.select) !== JSON.stringify(profilePlugin.select)
-  )
+  const source = lock.sources[0]
+  const matchesMarketplace =
+    profilePlugin !== undefined && "marketplace" in profilePlugin && source?.marketplace === profilePlugin.marketplace
+  return document.profile.plugins.length === 1 &&
+    lock.sources.length === 1 &&
+    profilePlugin !== undefined &&
+    source?.adapter === "copilot-marketplace" &&
+    matchesMarketplace &&
+    sourceMatchesPlugin(source, profilePlugin)
+    ? undefined
+    : "Copilot build requires exactly one matching marketplace source"
 }
 
-/** Fail unless a Copilot build has exactly one matching marketplace plugin source. */
-const assertCopilotMarketplaceSourceMatches = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "copilot") return Effect.void
-  const sourceIndex = document.profile.skills.length
-  return copilotMarketplaceSourceMismatch(document, lock, sourceIndex)
-    ? Effect.fail(new MaterializeError({ message: "Copilot build requires exactly one matching marketplace source" }))
-    : Effect.void
-}
-
-/** Fail unless a single locked plugin source matches its profile counterpart, by index. */
-const claudePluginSourceMismatch = (
-  profilePlugin: ProfileDocument["profile"]["plugins"][number],
-  source: ProfileLock["sources"][number] | undefined,
-): boolean =>
-  source === undefined ||
-  source.kind !== "plugin" ||
-  source.adapter !== profilePlugin.adapter ||
-  source.repository !== profilePlugin.repository ||
-  source.ref !== profilePlugin.ref ||
-  JSON.stringify(source.select) !== JSON.stringify(profilePlugin.select)
-
-/** Fail unless every Claude profile plugin has a matching locked plugin source. */
-const assertClaudePluginSourcesMatch = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "claude" || document.profile.plugins.length === 0) return Effect.void
-  const sourceOffset = document.profile.skills.length
-  if (
-    document.profile.plugins.length !== lock.sources.length - sourceOffset ||
-    lock.sources.length !== sourceDirectories.length
-  ) {
-    return Effect.fail(new MaterializeError({ message: "Claude build requires matching plugin sources" }))
-  }
+const claudeSourceError = (document: ProfileDocument, lock: ProfileLock): string | undefined => {
+  if (document.profile.harness.kind !== "claude" || document.profile.plugins.length === 0) return undefined
+  if (document.profile.plugins.length !== lock.sources.length) return "Claude build requires matching plugin sources"
   for (let index = 0; index < document.profile.plugins.length; index += 1) {
-    const profilePlugin = document.profile.plugins[index]!
-    const source = lock.sources[sourceOffset + index]
-    if (claudePluginSourceMismatch(profilePlugin, source)) {
-      return Effect.fail(new MaterializeError({ message: "Claude build requires matching plugin sources" }))
+    if (!sourceMatchesPlugin(lock.sources[index], document.profile.plugins[index]!)) {
+      return "Claude build requires matching plugin sources"
     }
   }
-  return Effect.void
+  return undefined
 }
 
-/** Validate the profile, lock, and resolved sources agree before any build-context files are written. */
-const assertBuildContextInputsValid = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-  runtimeSupport: RuntimeSupportSnapshot | RuntimeSupport | string,
-): Effect.Effect<void, MaterializeError> =>
-  Effect.gen(function* () {
-    yield* assertHarnessKindMatches(document, lock)
-    yield* assertRuntimeSupportProvided(document, runtimeSupport)
-    yield* assertSourceDirectoryCountMatches(sourceDirectories, lock)
-    yield* verifySourceInventories(document, lock, sourceDirectories)
-    yield* assertCopilotMarketplaceSourceMatches(document, lock)
-    yield* assertClaudePluginSourcesMatch(document, lock, sourceDirectories)
-  })
+const profileSourceError = (document: ProfileDocument, lock: ProfileLock): string | undefined =>
+  copilotSourceError(document, lock) ?? claudeSourceError(document, lock)
 
-/** The Claude plugin adapter (if any) that should influence the runtime support snapshot for this profile. */
-const claudeAdapterForRuntimeSupport = (
-  document: ProfileDocument,
-): "claude-marketplace" | "hyperresearch" | undefined => {
+const claudeRuntimeAdapter = (document: ProfileDocument): "claude-marketplace" | "hyperresearch" | undefined => {
   if (document.profile.harness.kind !== "claude") return undefined
   const adapter = document.profile.plugins[0]?.adapter
   return adapter === "claude-marketplace" || adapter === "hyperresearch" ? adapter : undefined
 }
 
-/** The Claude harness mode governing which runtime support files are required, defaulting to "hyperresearch". */
-const claudeModeForRuntimeSupport = (document: ProfileDocument): "core" | "hyperresearch" =>
-  document.profile.harness.kind === "claude"
-    ? (document.profile.harness.claude.mode ?? "hyperresearch")
-    : "hyperresearch"
-
-/** Resolve (or accept an already-resolved) runtime support snapshot, validated against the profile's harness kind. */
-const resolveValidatedRuntimeSupport = (
+const resolveRuntimeSupport = (
   document: ProfileDocument,
-  runtimeSupport: RuntimeSupportSnapshot | RuntimeSupport | string,
-): Effect.Effect<RuntimeSupportSnapshot, MaterializeError> =>
-  Effect.gen(function* () {
-    const support = yield* (
-      isRuntimeSupportSnapshot(runtimeSupport)
-        ? Effect.succeed(runtimeSupport)
-        : createRuntimeSupportSnapshot(
-            document.profile.harness.kind,
-            typeof runtimeSupport === "string"
-              ? { codexEntry: runtimeSupport, copilotEntry: "", finalizeCopilotSeed: "" }
-              : runtimeSupport,
-            claudeAdapterForRuntimeSupport(document),
-            claudeModeForRuntimeSupport(document),
-          )
-    ).pipe(Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })))
-    if (support.harnessKind !== document.profile.harness.kind) {
-      return yield* Effect.fail(
-        new MaterializeError({ message: "runtime support snapshot harness kind does not match profile" }),
+  runtimeSupport: RuntimeSupportInput,
+): Effect.Effect<RuntimeSupportSnapshot, MaterializeError> => {
+  const support = isRuntimeSupportSnapshot(runtimeSupport)
+    ? Effect.succeed(runtimeSupport)
+    : createRuntimeSupportSnapshot(
+        document.profile.harness.kind,
+        typeof runtimeSupport === "string"
+          ? { codexEntry: runtimeSupport, copilotEntry: "", finalizeCopilotSeed: "" }
+          : runtimeSupport,
+        claudeRuntimeAdapter(document),
+        document.profile.harness.kind === "claude"
+          ? (document.profile.harness.claude.mode ?? "hyperresearch")
+          : "hyperresearch",
       )
-    }
-    return support
-  })
-
-/** Read the resolved initial prompt bytes, if any, and verify they still match the profile's recorded integrity. */
-const readValidatedInitialPromptBytes = (
-  document: ProfileDocument,
-): Effect.Effect<Uint8Array | undefined, MaterializeError> =>
-  Effect.gen(function* () {
-    const initialPromptPath = document.resolvedInitialPrompt
-    const initialPromptBytes =
-      initialPromptPath === undefined
-        ? undefined
-        : yield* io("cannot read initial prompt", () => readFile(initialPromptPath))
-    if (initialPromptBytes !== undefined) {
-      const integrity = `sha256:${createHash("sha256").update(initialPromptBytes).digest("hex")}`
-      if (integrity !== document.initialPromptIntegrity) {
-        return yield* Effect.fail(
-          new MaterializeError({
-            message: "initial prompt changed after profile validation; rerun profile validation and build",
-          }),
-        )
-      }
-    }
-    return initialPromptBytes
-  })
-
-/** Codex build contexts stage generated skills and agents under dedicated asset directories. */
-const initializeCodexAssetDirectories = (
-  document: ProfileDocument,
-  context: string,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "codex") return Effect.void
-  return io("cannot initialize build context", () =>
-    Promise.all([
-      mkdir(path.join(context, "assets", "skills"), { recursive: true }),
-      mkdir(path.join(context, "assets", "agents"), { recursive: true }),
-    ]).then(() => undefined),
+  return support.pipe(
+    Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
+    Effect.flatMap((snapshot) =>
+      snapshot.harnessKind === document.profile.harness.kind
+        ? Effect.succeed(snapshot)
+        : Effect.fail(
+            new MaterializeError({ message: "runtime support snapshot harness kind does not match profile" }),
+          ),
+    ),
   )
 }
 
-/** Copilot builds copy the marketplace's HVE core source into the build context and re-verify its inventory. */
-const materializeCopilotCoreAssets = (
-  document: ProfileDocument,
+const readInitialPrompt = (document: ProfileDocument): Effect.Effect<Buffer | undefined, MaterializeError> => {
+  if (document.resolvedInitialPrompt === undefined) return Effect.succeed(undefined)
+  return io("cannot read initial prompt", () => readFile(document.resolvedInitialPrompt!)).pipe(
+    Effect.flatMap((bytes) => {
+      const integrity = `sha256:${createHash("sha256").update(bytes).digest("hex")}`
+      return integrity === document.initialPromptIntegrity
+        ? Effect.succeed(bytes)
+        : Effect.fail(
+            new MaterializeError({
+              message: "initial prompt changed after profile validation; rerun profile validation and build",
+            }),
+          )
+    }),
+  )
+}
+
+const initializeBuildContext = (
+  support: RuntimeSupportSnapshot,
+  context: string,
+  harnessKind: ProfileDocument["profile"]["harness"]["kind"],
+): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* initializeContext() {
+    yield* writeRuntimeSupportSnapshot(support, context).pipe(
+      Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
+    )
+    if (harnessKind !== "codex") return
+    yield* io("cannot initialize build context", () =>
+      Promise.all([
+        mkdir(path.join(context, "assets", "skills"), { recursive: true }),
+        mkdir(path.join(context, "assets", "agents"), { recursive: true }),
+      ]).then(() => undefined),
+    )
+  })
+
+const materializeCopilotProfileAssets = (
   lock: ProfileLock,
   sourceDirectories: ReadonlyArray<string>,
+  support: RuntimeSupportSnapshot,
   context: string,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "copilot") return Effect.void
-  const sourceIndex = document.profile.skills.length
-  return Effect.gen(function* () {
-    yield* copy(sourceDirectories[sourceIndex]!, path.join(context, "hve-core"))
-    yield* verifyInventory(path.join(context, "hve-core"), lock.sources[sourceIndex]!.files, {
+): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* materializeCopilotAssets() {
+    yield* copy(sourceDirectories[0]!, path.join(context, "hve-core"))
+    yield* verifyInventory(path.join(context, "hve-core"), lock.sources[0]!.files, {
       allowSymlinks: true,
     }).pipe(
       Effect.mapError((cause) => new MaterializeError({ message: "copied Copilot source inventory mismatch", cause })),
     )
+    const instruction = runtimeSupportFile(support, "copilot-instruction-rundown")
+    yield* copy(
+      path.join(context, instruction.buildContextPath),
+      path.join(context, "copilot-seed", "instructions", "rundown.instructions.md"),
+    )
   })
-}
 
-/** Claude builds with a plugin adapter (marketplace or Hyperresearch) materialize that plugin's assets. */
-const materializeClaudePluginAssets = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-  context: string,
-  support: RuntimeSupportSnapshot,
-  materializeClaude: ClaudeMaterializer,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "claude" || document.profile.plugins.length === 0) return Effect.void
-  return Effect.gen(function* () {
-    const adapter = document.profile.plugins[0]?.adapter
-    if (adapter !== "hyperresearch" && adapter !== "claude-marketplace") {
-      return yield* Effect.fail(new MaterializeError({ message: "unsupported Claude plugin adapter" }))
-    }
-    const requirements =
-      adapter === "hyperresearch" ? runtimeSupportFile(support, "hyperresearch-requirements") : undefined
-    const browserAgent = adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
-    yield* materializeClaude({
-      adapter,
-      sourceDirectories: sourceDirectories.slice(document.profile.skills.length),
-      context,
-      lock: { ...lock, sources: lock.sources.slice(document.profile.skills.length) },
-      ...(requirements === undefined ? {} : { requirementsPath: path.join(context, requirements.buildContextPath) }),
-      ...(browserAgent === undefined ? {} : { browserAgentPath: path.join(context, browserAgent.buildContextPath) }),
-    }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
-  })
-}
-
-/** Pi builds seed only the locked OMP-native skill selections into the Pi seed directory. */
-const materializePiNativeSkillAssets = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-  context: string,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "pi") return Effect.void
-  return Effect.gen(function* () {
-    const seed = path.join(context, "pi-seed")
-    const skills = path.join(seed, "skills")
-    yield* io("cannot initialize Pi seed", () => mkdir(skills, { recursive: true }))
-    const sourceIndex = lock.sources.findIndex((source) => source.kind === "skill" && source.adapter === "omp-native")
-    if (sourceIndex >= 0) {
-      const source = lock.sources[sourceIndex]!
-      const sourceDirectory = sourceDirectories[sourceIndex]!
-      for (const selection of [...source.select].sort()) {
-        yield* copy(path.join(sourceDirectory, ".omp", "skills", selection), path.join(skills, selection))
-      }
-    }
-  })
-}
-
-/** Claude "core" mode seeds default settings, onboarding, and an empty managed-paths marker. */
-const writeClaudeCoreSeed = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  context: string,
-): Effect.Effect<void, MaterializeError> => {
-  if (
-    document.profile.harness.kind !== "claude" ||
-    (document.profile.harness.claude.mode ?? "hyperresearch") !== "core"
-  ) {
-    return Effect.void
-  }
-  return io("cannot initialize Claude core seed", async () => {
+const writeClaudeCoreSeed = (context: string, harnessVersion: string): Effect.Effect<void, MaterializeError> =>
+  io("cannot initialize Claude core seed", async () => {
     const seed = path.join(context, "claude-seed")
     await mkdir(seed, { recursive: true })
     await writeFile(path.join(seed, "default-settings.json"), `${JSON.stringify(claudeDefaultSettings, null, 2)}\n`)
@@ -537,84 +295,50 @@ const writeClaudeCoreSeed = (
     )
     await writeFile(
       path.join(seed, "default-onboarding.json"),
-      `${JSON.stringify(claudeDefaultOnboarding(lock.packages.harness.version), null, 2)}\n`,
+      `${JSON.stringify(claudeDefaultOnboarding(harnessVersion), null, 2)}\n`,
     )
     await writeFile(path.join(seed, "managed-paths.txt"), "")
   })
-}
 
-/** The per-harness destination directory where generically-generated skills are seeded. */
-const genericSkillDestination = (document: ProfileDocument, context: string): string =>
-  document.profile.harness.kind === "codex"
-    ? path.join(context, "assets", "skills")
-    : document.profile.harness.kind === "copilot"
-      ? path.join(context, "copilot-seed", "skills")
-      : document.profile.harness.kind === "claude"
-        ? path.join(context, "claude-seed", "skills")
-        : document.profile.harness.kind === "prime"
-          ? path.join(context, "prime-seed", "skills")
-          : path.join(context, "pi-seed", "skills")
-
-/** Generate and copy every generic (non-adapter-specific) locked skill into its harness destination. */
-const materializeGenericSkillAssets = (
-  document: ProfileDocument,
+const materializeClaudePlugins = (
+  profile: ClaudeProfile,
   lock: ProfileLock,
   sourceDirectories: ReadonlyArray<string>,
+  support: RuntimeSupportSnapshot,
   context: string,
-  generateSkills: SkillGenerator,
-): Effect.Effect<ReadonlyArray<GeneratedSkill>, MaterializeError> =>
-  Effect.gen(function* () {
-    const destination = genericSkillDestination(document, context)
-    yield* io("cannot initialize generic skill destination", () => mkdir(destination, { recursive: true }))
-    return yield* materializeGenericSkills(document, lock, sourceDirectories, context, destination, generateSkills)
-  })
-
-/** The per-harness destination file where always-on skill instructions are appended. */
-const alwaysOnInstructionsDestination = (document: ProfileDocument, context: string): string =>
-  document.profile.harness.kind === "codex"
-    ? path.join(context, "assets", "AGENTS.md")
-    : document.profile.harness.kind === "copilot"
-      ? path.join(context, "copilot-seed", "copilot-instructions.md")
-      : document.profile.harness.kind === "claude"
-        ? path.join(context, "claude-seed", "CLAUDE.md")
-        : document.profile.harness.kind === "prime"
-          ? path.join(context, "prime-seed", "APPEND_SYSTEM.md")
-          : path.join(context, "pi-seed", "APPEND_SYSTEM.md")
-
-/** Write the rendered always-on skill instructions file, if any always-on skills were generated. */
-const writeAlwaysOnInstructionsFile = (
-  document: ProfileDocument,
-  context: string,
-  generatedSkills: ReadonlyArray<GeneratedSkill>,
+  materializeClaude: ClaudeMaterializer,
 ): Effect.Effect<void, MaterializeError> => {
-  const alwaysOnInstructions = renderAlwaysOnInstructions(generatedSkills)
-  if (alwaysOnInstructions.length === 0) return Effect.void
-  const destination = alwaysOnInstructionsDestination(document, context)
-  return io("cannot write managed always-on instructions", () => writeFile(destination, alwaysOnInstructions))
+  if (profile.plugins.length === 0) return Effect.void
+  const adapter = profile.plugins[0]?.adapter
+  if (adapter !== "hyperresearch" && adapter !== "claude-marketplace") {
+    return Effect.fail(new MaterializeError({ message: "unsupported Claude plugin adapter" }))
+  }
+  const requirements =
+    adapter === "hyperresearch" ? runtimeSupportFile(support, "hyperresearch-requirements") : undefined
+  const browserAgent = adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
+  return materializeClaude({
+    adapter,
+    sourceDirectories,
+    context,
+    lock,
+    ...(requirements === undefined ? {} : { requirementsPath: path.join(context, requirements.buildContextPath) }),
+    ...(browserAgent === undefined ? {} : { browserAgentPath: path.join(context, browserAgent.buildContextPath) }),
+  }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
 }
 
-/** Copilot builds copy the managed Rundown instruction file into the Copilot seed. */
-const materializeCopilotInstructionAssets = (
-  document: ProfileDocument,
-  context: string,
+const materializeClaudeProfileAssets = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  sourceDirectories: ReadonlyArray<string>,
   support: RuntimeSupportSnapshot,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "copilot") return Effect.void
-  const instruction = runtimeSupportFile(support, "copilot-instruction-rundown")
-  return copy(
-    path.join(context, instruction.buildContextPath),
-    path.join(context, "copilot-seed", "instructions", "rundown.instructions.md"),
-  )
-}
-
-/** Claude builds copy the managed Rundown output style and rewrite the managed-paths manifest to include it. */
-const materializeClaudeManagedSeedAssets = (
-  document: ProfileDocument,
   context: string,
-  support: RuntimeSupportSnapshot,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "claude") return Effect.void
-  return Effect.gen(function* () {
+  materializeClaude: ClaudeMaterializer,
+): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* materializeClaudeAssetsForProfile() {
+    yield* materializeClaudePlugins(profile, lock, sourceDirectories, support, context, materializeClaude)
+    if ((profile.harness.claude.mode ?? "hyperresearch") === "core") {
+      yield* writeClaudeCoreSeed(context, lock.packages.harness.version)
+    }
     const outputStyle = runtimeSupportFile(support, "claude-output-style-rundown")
     yield* copy(
       path.join(context, outputStyle.buildContextPath),
@@ -627,168 +351,129 @@ const materializeClaudeManagedSeedAssets = (
       writeFile(path.join(context, "claude-seed", "managed-paths.txt"), `${manifest.join("\n")}\n`),
     )
   })
-}
 
-/** Pi builds record every managed skill name (OMP-native and generic) into a manifest, rejecting collisions. */
-const writePiManagedSkillManifest = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  context: string,
-  generatedSkills: ReadonlyArray<GeneratedSkill>,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "pi") return Effect.void
-  const managedNames = [
-    ...lock.sources
-      .filter((source) => source.kind === "skill" && source.adapter === "omp-native")
-      .flatMap((source) => source.select),
-    ...generatedSkills.map((skill) => skill.name),
-  ].sort((left, right) => left.localeCompare(right, "en"))
-  if (new Set(managedNames).size !== managedNames.length) {
-    return Effect.fail(new MaterializeError({ message: "managed Pi skill names collide" }))
-  }
-  return io("cannot write Pi managed skill manifest", () =>
-    writeFile(path.join(context, "pi-seed", "managed-skills.txt"), managedNames.map((name) => `${name}\n`).join("")),
-  )
-}
+const materializePiProfileAssets = (context: string): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* materializePiAssets() {
+    const seed = path.join(context, "pi-seed")
+    yield* io("cannot initialize Pi seed", () => mkdir(path.join(seed, "skills"), { recursive: true }))
+    yield* io("cannot write Pi managed skill manifest", () => writeFile(path.join(seed, "managed-skills.txt"), ""))
+  })
 
-/** Prime builds record every generated skill name into a manifest. */
-const writePrimeManagedSkillManifest = (
-  context: string,
-  generatedSkills: ReadonlyArray<GeneratedSkill>,
-): Effect.Effect<void, MaterializeError> => {
-  const managedNames = generatedSkills.map((skill) => skill.name).sort((left, right) => left.localeCompare(right, "en"))
-  return io("cannot write Prime managed skill manifest", () =>
-    writeFile(path.join(context, "prime-seed", "managed-skills.txt"), managedNames.map((name) => `${name}\n`).join("")),
-  )
-}
-
-/** Fail unless a single locked Prime extension source matches its profile plugin counterpart. */
-const verifyPrimeExtensionSource = (
-  profilePlugin: ProfileDocument["profile"]["plugins"][number],
+const primeSourceMatches = (
   sourceLock: ProfileLock["sources"][number] | undefined,
   sourceDirectory: string | undefined,
-): Effect.Effect<void, MaterializeError> =>
-  sourceLock === undefined ||
-  sourceDirectory === undefined ||
-  sourceLock.kind !== "plugin" ||
-  sourceLock.adapter !== "prime-extension" ||
-  profilePlugin.adapter !== "prime-extension" ||
-  sourceLock.repository !== profilePlugin.repository ||
-  sourceLock.ref !== profilePlugin.ref ||
-  JSON.stringify(sourceLock.select) !== JSON.stringify(profilePlugin.select)
-    ? Effect.fail(new MaterializeError({ message: "Prime build requires matching prime-extension sources" }))
-    : Effect.void
+  profilePlugin: PrimeProfile["plugins"][number],
+): sourceLock is ProfileLock["sources"][number] =>
+  sourceLock !== undefined &&
+  sourceDirectory !== undefined &&
+  sourceLock.kind === "plugin" &&
+  sourceLock.adapter === "prime-extension" &&
+  profilePlugin.adapter === "prime-extension" &&
+  sourceLock.repository === profilePlugin.repository &&
+  sourceLock.ref === profilePlugin.ref &&
+  JSON.stringify(sourceLock.select) === JSON.stringify(profilePlugin.select)
 
-/** Copy one Prime extension TypeScript file into the destination, registering its name and rejecting collisions. */
-const registerPrimeExtensionFile = (
-  fileName: string,
+const listPrimeExtensionFiles = (
   extensionsRoot: string,
-  extensionsDestination: string,
-  managedExtensionNames: Array<string>,
-): Effect.Effect<void, MaterializeError> => {
-  const extensionName = fileName.slice(0, -".ts".length)
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(extensionName)) {
-    return Effect.fail(new MaterializeError({ message: `Prime extension name is unsafe: ${fileName}` }))
-  }
-  if (managedExtensionNames.includes(extensionName)) {
-    return Effect.fail(new MaterializeError({ message: `managed Prime extension names collide: ${extensionName}` }))
-  }
-  managedExtensionNames.push(extensionName)
-  return copy(path.join(extensionsRoot, fileName), path.join(extensionsDestination, fileName))
-}
-
-/** Materialize every TypeScript extension file from one locked Prime extension selection. */
-const materializePrimeExtensionSelection = (
-  sourceDirectory: string,
   selection: string,
-  extensionsDestination: string,
-  managedExtensionNames: Array<string>,
-): Effect.Effect<void, MaterializeError> =>
-  Effect.gen(function* () {
-    const extensionsRoot = path.join(sourceDirectory, "plugins", selection, "extensions")
-    const entries = yield* io(`cannot list Prime extension source: ${selection}`, () =>
-      readdir(extensionsRoot, { withFileTypes: true }),
-    )
-    const typescriptFiles = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
-      .map((entry) => entry.name)
-      .sort((left, right) => left.localeCompare(right, "en"))
-    if (typescriptFiles.length === 0) {
-      return yield* Effect.fail(
-        new MaterializeError({ message: `Prime extension selection has no TypeScript files: ${selection}` }),
-      )
-    }
-    for (const fileName of typescriptFiles) {
-      yield* registerPrimeExtensionFile(fileName, extensionsRoot, extensionsDestination, managedExtensionNames)
-    }
-  })
+): Effect.Effect<ReadonlyArray<string>, MaterializeError> =>
+  io(`cannot list Prime extension source: ${selection}`, () => readdir(extensionsRoot, { withFileTypes: true })).pipe(
+    Effect.flatMap((entries) => {
+      const files = entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
+        .map((entry) => entry.name)
+        .sort((left, right) => left.localeCompare(right, "en"))
+      return files.length === 0
+        ? Effect.fail(
+            new MaterializeError({ message: `Prime extension selection has no TypeScript files: ${selection}` }),
+          )
+        : Effect.succeed(files)
+    }),
+  )
 
-/** Materialize every locked Prime extension plugin source into the extensions destination. */
-const materializePrimeExtensionAssets = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-  context: string,
+const copyPrimeExtensionFiles = (
+  extensionsRoot: string,
+  destination: string,
+  files: ReadonlyArray<string>,
+  managedNames: Array<string>,
 ): Effect.Effect<void, MaterializeError> =>
-  Effect.gen(function* () {
-    const extensionsDestination = path.join(context, "prime-seed", "extensions")
-    yield* io("cannot initialize Prime extension destination", () => mkdir(extensionsDestination, { recursive: true }))
-    const managedExtensionNames: Array<string> = []
-    const sourceOffset = document.profile.skills.length
-    for (let index = 0; index < document.profile.plugins.length; index += 1) {
-      const profilePlugin = document.profile.plugins[index]!
-      const sourceLock = lock.sources[sourceOffset + index]
-      const sourceDirectory = sourceDirectories[sourceOffset + index]
-      yield* verifyPrimeExtensionSource(profilePlugin, sourceLock, sourceDirectory)
-      for (const selection of [...sourceLock!.select].sort((left, right) => left.localeCompare(right, "en"))) {
-        yield* materializePrimeExtensionSelection(
-          sourceDirectory!,
-          selection,
-          extensionsDestination,
-          managedExtensionNames,
+  Effect.gen(function* copyPrimeExtensions() {
+    for (const fileName of files) {
+      const extensionName = fileName.slice(0, -".ts".length)
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(extensionName)) {
+        return yield* Effect.fail(new MaterializeError({ message: `Prime extension name is unsafe: ${fileName}` }))
+      }
+      if (managedNames.includes(extensionName)) {
+        return yield* Effect.fail(
+          new MaterializeError({ message: `managed Prime extension names collide: ${extensionName}` }),
         )
       }
+      managedNames.push(extensionName)
+      yield* copy(path.join(extensionsRoot, fileName), path.join(destination, fileName))
     }
-    managedExtensionNames.sort((left, right) => left.localeCompare(right, "en"))
-    yield* io("cannot write Prime managed extension manifest", () =>
-      writeFile(
-        path.join(context, "prime-seed", "managed-extensions.txt"),
-        managedExtensionNames.map((name) => `${name}\n`).join(""),
-      ),
-    )
   })
 
-/** Prime builds materialize managed skills and locked Prime extensions. */
-const materializePrimeManagedAssets = (
-  document: ProfileDocument,
+const materializePrimeSource = (
+  sourceLock: ProfileLock["sources"][number],
+  sourceDirectory: string,
+  destination: string,
+  managedNames: Array<string>,
+): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* materializeSelectedPrimeExtensions() {
+    for (const selection of [...sourceLock.select].sort((left, right) => left.localeCompare(right, "en"))) {
+      const extensionsRoot = path.join(sourceDirectory, "plugins", selection, "extensions")
+      const files = yield* listPrimeExtensionFiles(extensionsRoot, selection)
+      yield* copyPrimeExtensionFiles(extensionsRoot, destination, files, managedNames)
+    }
+  })
+
+const materializePrimeProfileAssets = (
+  profile: PrimeProfile,
   lock: ProfileLock,
   sourceDirectories: ReadonlyArray<string>,
   context: string,
-  generatedSkills: ReadonlyArray<GeneratedSkill>,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "prime") return Effect.void
-  return Effect.gen(function* () {
-    yield* writePrimeManagedSkillManifest(context, generatedSkills)
-    yield* materializePrimeExtensionAssets(document, lock, sourceDirectories, context)
+): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* materializePrimeAssets() {
+    const seed = path.join(context, "prime-seed")
+    yield* io("cannot write Prime managed skill manifest", async () => {
+      await mkdir(seed, { recursive: true })
+      await writeFile(path.join(seed, "managed-skills.txt"), "")
+    })
+    const extensionsDestination = path.join(seed, "extensions")
+    yield* io("cannot initialize Prime extension destination", () => mkdir(extensionsDestination, { recursive: true }))
+    const managedNames: Array<string> = []
+    for (let index = 0; index < profile.plugins.length; index += 1) {
+      const sourceLock = lock.sources[index]
+      const sourceDirectory = sourceDirectories[index]
+      if (!primeSourceMatches(sourceLock, sourceDirectory, profile.plugins[index]!)) {
+        return yield* Effect.fail(
+          new MaterializeError({ message: "Prime build requires matching prime-extension sources" }),
+        )
+      }
+      yield* materializePrimeSource(sourceLock, sourceDirectory!, extensionsDestination, managedNames)
+    }
+    managedNames.sort((left, right) => left.localeCompare(right, "en"))
+    yield* io("cannot write Prime managed extension manifest", () =>
+      writeFile(path.join(seed, "managed-extensions.txt"), managedNames.map((name) => `${name}\n`).join("")),
+    )
   })
-}
 
-/** Materialize one Codex plugin source: run its plugin generator (or copy a native `.codex` tree directly). */
-const materializeCodexPluginSource = (
+const materializeCodexSource = (
   sourceLock: ProfileLock["sources"][number],
   sourceDirectory: string,
-  index: number,
+  sourceIndex: number,
   context: string,
   generatePlugin: PluginGenerator,
-): Effect.Effect<void, MaterializeError> =>
-  Effect.gen(function* () {
-    if (sourceLock.adapter === "codex-native") {
-      for (const selection of sourceLock.select) {
-        yield* copyCodexTree(path.join(sourceDirectory, "plugins", selection, ".codex"), context)
-      }
-      return
-    }
-    const generated = path.join(context, `.plugin-generated-${index}`)
+): Effect.Effect<void, MaterializeError> => {
+  if (sourceLock.adapter === "codex-native") {
+    return Effect.forEach(
+      sourceLock.select,
+      (selection) => copyCodexTree(path.join(sourceDirectory, "plugins", selection, ".codex"), context),
+      { discard: true },
+    )
+  }
+  const generated = path.join(context, `.plugin-generated-${sourceIndex}`)
+  return Effect.gen(function* materializeCompatibilityPlugin() {
     yield* io("cannot create plugin generation directory", () => mkdir(generated, { recursive: true }))
     yield* generatePlugin(sourceDirectory, sourceLock.select, generated).pipe(
       Effect.mapError((cause) => new MaterializeError({ message: "compatibility plugin generation failed", cause })),
@@ -796,28 +481,187 @@ const materializeCodexPluginSource = (
     yield* copyCodexTree(path.join(generated, ".codex"), context)
     yield* io("cannot remove plugin generation staging", () => rm(generated, { recursive: true, force: true }))
   })
+}
 
-/** Codex builds materialize every non-skill locked plugin source beyond the profile's declared skills. */
-const materializeCodexPluginAssets = (
-  document: ProfileDocument,
+const materializeCodexProfileAssets = (
   lock: ProfileLock,
   sourceDirectories: ReadonlyArray<string>,
   context: string,
   generatePlugin: PluginGenerator,
-): Effect.Effect<void, MaterializeError> => {
-  if (document.profile.harness.kind !== "codex") return Effect.void
-  return Effect.gen(function* () {
-    for (let index = document.profile.skills.length; index < lock.sources.length; index += 1) {
-      const sourceLock = lock.sources[index]!
-      const sourceDirectory = sourceDirectories[index]!
-      if (sourceLock.kind === "skill") continue
-      yield* materializeCodexPluginSource(sourceLock, sourceDirectory, index, context, generatePlugin)
+): Effect.Effect<void, MaterializeError> =>
+  Effect.gen(function* materializeCodexAssets() {
+    for (let index = 0; index < lock.sources.length; index += 1) {
+      yield* materializeCodexSource(lock.sources[index]!, sourceDirectories[index]!, index, context, generatePlugin)
     }
   })
+
+const claudeToolLock = (
+  harness: ProfileLock["packages"]["harness"],
+  misePlatform: string,
+): string => `[[tools."http:claude"]]
+version = ${JSON.stringify(harness.version)}
+backend = "http:claude"
+
+[tools."http:claude".options]
+rename_exe = "claude"
+
+[tools."http:claude"."platforms.${misePlatform}"]
+checksum = ${JSON.stringify(harness.integrity)}
+url = ${JSON.stringify(harness.url)}
+`
+
+const renderClaudeMiseLock = (
+  document: ProfileDocument,
+  harness: ProfileLock["packages"]["harness"],
+  misePlatform: string,
+): string => {
+  const toolLock = claudeToolLock(harness, misePlatform)
+  if (
+    document.profile.harness.kind === "claude" &&
+    (document.profile.harness.claude.mode ?? "hyperresearch") === "core"
+  ) {
+    return `# @generated by Trellage profile compiler
+
+[[tools.node]]
+version = "22.17.0"
+backend = "core:node"
+
+[tools.node."platforms.${misePlatform}"]
+checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+${toolLock}
+`
+  }
+  const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
+  const pythonLock = claudeMarketplace
+    ? ""
+    : `[[tools.python]]
+version = "3.13.14"
+backend = "core:python"
+
+[tools.python."platforms.${misePlatform}"]
+checksum = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+`
+  const playwrightLock = claudeMarketplace
+    ? ""
+    : `[[tools."npm:@playwright/mcp"]]
+version = "0.0.78"
+backend = "npm:@playwright/mcp"
+`
+  return `# @generated by Trellage profile compiler
+
+[[tools.node]]
+version = "22.17.0"
+backend = "core:node"
+
+[tools.node."platforms.${misePlatform}"]
+checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+${pythonLock}
+${toolLock}
+
+${playwrightLock}
+`
 }
 
-/** The apt-get wrapper script staged into every build context's build-support directory. */
-const aptGetWrapperScript = `#!/bin/sh
+const renderPrimeMiseLock = (misePlatform: string): string => `# @generated by Trellage profile compiler
+
+[[tools.node]]
+version = "22.17.0"
+backend = "core:node"
+
+[tools.node."platforms.${misePlatform}"]
+checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+`
+
+const renderHarnessMiseLock = (harness: ProfileLock["packages"]["harness"], misePlatform: string): string => {
+  const executable = harness.kind
+  const installedExecutable = harness.kind === "pi" ? "omp" : executable
+  return `# @generated by Trellage profile compiler
+
+[[tools."http:${executable}"]]
+version = ${JSON.stringify(harness.version)}
+backend = "http:${executable}"
+
+[tools."http:${executable}".options]
+rename_exe = "${installedExecutable}"
+
+[tools."http:${executable}"."platforms.${misePlatform}"]
+checksum = ${JSON.stringify(harness.integrity)}
+url = ${JSON.stringify(harness.url)}
+`
+}
+
+const renderMaterializedMiseLock = (document: ProfileDocument, lock: ProfileLock): string => {
+  const harness = lock.packages.harness
+  const misePlatform = lock.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
+  if (harness.kind === "claude") return renderClaudeMiseLock(document, harness, misePlatform)
+  return harness.kind === "prime" ? renderPrimeMiseLock(misePlatform) : renderHarnessMiseLock(harness, misePlatform)
+}
+
+export const createBuildContext = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  sourceDirectories: ReadonlyArray<string>,
+  runtimeSupport: RuntimeSupportInput,
+  temporaryParent: string,
+  generatePlugin: PluginGenerator,
+  materializeClaude: ClaudeMaterializer = materializeClaudeAssets,
+): Effect.Effect<string, MaterializeError> =>
+  Effect.gen(function* createProfileBuildContext() {
+    const requestError = buildRequestError(document, lock, sourceDirectories, runtimeSupport)
+    if (requestError !== undefined) return yield* Effect.fail(new MaterializeError({ message: requestError }))
+    yield* verifySourceDirectories(document, lock, sourceDirectories)
+    const sourceError = profileSourceError(document, lock)
+    if (sourceError !== undefined) return yield* Effect.fail(new MaterializeError({ message: sourceError }))
+    const support = yield* resolveRuntimeSupport(document, runtimeSupport)
+    const initialPromptBytes = yield* readInitialPrompt(document)
+
+    yield* io("cannot create build-context parent", () => mkdir(temporaryParent, { recursive: true }))
+    const context = yield* io("cannot create temporary build context", () =>
+      mkdtemp(path.join(temporaryParent, "trellage-build-")),
+    )
+    const build = Effect.gen(function* materializeBuildContext() {
+      yield* initializeBuildContext(support, context, document.profile.harness.kind)
+      if (document.profile.harness.kind === "copilot") {
+        yield* materializeCopilotProfileAssets(lock, sourceDirectories, support, context)
+      }
+      if (isClaudeProfile(document.profile)) {
+        yield* materializeClaudeProfileAssets(
+          document.profile,
+          lock,
+          sourceDirectories,
+          support,
+          context,
+          materializeClaude,
+        )
+      }
+      if (document.profile.harness.kind === "pi") {
+        yield* materializePiProfileAssets(context)
+      }
+      if (isPrimeProfile(document.profile)) {
+        yield* materializePrimeProfileAssets(document.profile, lock, sourceDirectories, context)
+      }
+      if (document.profile.harness.kind === "codex") {
+        yield* materializeCodexProfileAssets(lock, sourceDirectories, context, generatePlugin)
+      }
+
+      const packageVersions = Object.fromEntries(lock.packages.runtime.map((entry) => [entry.name, entry.version]))
+      const baseReference = lock.image.base.includes("@sha256:")
+        ? lock.image.base
+        : `docker.io/library/${lock.image.base.split(":", 1)[0]}@${lock.image.base_digest}`
+      const imageTag = `trellage-profile-${document.profile.name}:locked`
+      yield* io("cannot write rendered build context", async () => {
+        await mkdir(path.join(context, "build-support"), { recursive: true })
+        await writeFile(
+          path.join(context, "build-support", "apt-get"),
+          `#!/bin/sh
 set -eu
 
 /usr/bin/apt-get "$@"
@@ -837,273 +681,46 @@ if [ -n "$rootfs" ]; then
     fi
   done
 fi
-`
-
-/** Write the build-support/apt-get cache-trimming wrapper used during image builds. */
-const writeAptGetWrapper = (context: string): Effect.Effect<void, MaterializeError> =>
-  io("cannot write build-support/apt-get wrapper", async () => {
-    await mkdir(path.join(context, "build-support"), { recursive: true })
-    await writeFile(path.join(context, "build-support", "apt-get"), aptGetWrapperScript, { mode: 0o755 })
-  })
-
-/** Write harness-specific top-level files: Codex's config, and Prime's wrapper script and model config. */
-const writeHarnessSpecificFiles = async (document: ProfileDocument, context: string): Promise<void> => {
-  if (document.profile.harness.kind === "codex") {
-    await writeFile(path.join(context, "codex-config.toml"), renderCodexConfig(document.profile))
-  }
-  if (document.profile.harness.kind === "prime") {
-    await writeFile(
-      path.join(context, "prime-agent-wrapper.sh"),
-      '#!/bin/sh\nexec /mise/installs/node/22.17.0/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n',
-      { mode: 0o755 },
-    )
-    await mkdir(path.join(context, "prime-seed"), { recursive: true })
-    await writeFile(path.join(context, "prime-seed", "models.json"), `${JSON.stringify(primeModels, null, 2)}\n`)
-  }
-}
-
-/** Render the `[[tools.python]]` mise.lock stanza pinned for non-marketplace Claude builds. */
-const renderClaudePythonToolLock = (misePlatform: string): string => `[[tools.python]]
-version = "3.13.14"
-backend = "core:python"
-
-[tools.python."platforms.${misePlatform}"]
-checksum = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
-provenance = "github-attestations"
-
-`
-
-/** Render the `[[tools."npm:@playwright/mcp"]]` mise.lock stanza pinned for non-marketplace Claude builds. */
-const renderClaudePlaywrightToolLock = `[[tools."npm:@playwright/mcp"]]
-version = "0.0.78"
-backend = "npm:@playwright/mcp"
-`
-
-/** Render the `[[tools."http:claude"]]` mise.lock stanza for the locked Claude harness package. */
-const renderClaudeHarnessToolLock = (
-  harnessPackage: HarnessPackageLock,
-  misePlatform: string,
-): string => `[[tools."http:claude"]]
-version = ${JSON.stringify(harnessPackage.version)}
-backend = "http:claude"
-
-[tools."http:claude".options]
-rename_exe = "claude"
-
-[tools."http:claude"."platforms.${misePlatform}"]
-checksum = ${JSON.stringify(harnessPackage.integrity)}
-url = ${JSON.stringify(harnessPackage.url)}
-`
-
-/** Render the `[[tools.node]]` mise.lock stanza pinned for every Claude and Prime build. */
-const renderPinnedNodeToolLock = (misePlatform: string): string => `[[tools.node]]
-version = "22.17.0"
-backend = "core:node"
-
-[tools.node."platforms.${misePlatform}"]
-checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
-url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
-`
-
-/** Render the generic `[[tools."http:<harness>"]]` mise.lock stanza used by every non-Claude/Prime harness. */
-const renderGenericHarnessToolLock = (
-  harnessPackage: HarnessPackageLock,
-  executable: string,
-  installedExecutable: string,
-  misePlatform: string,
-): string => `[[tools."http:${executable}"]]
-version = ${JSON.stringify(harnessPackage.version)}
-backend = "http:${executable}"
-
-[tools."http:${executable}".options]
-rename_exe = "${installedExecutable}"
-
-[tools."http:${executable}"."platforms.${misePlatform}"]
-checksum = ${JSON.stringify(harnessPackage.integrity)}
-url = ${JSON.stringify(harnessPackage.url)}
-`
-
-/** Render the full mise.lock content for a Claude build outside of "core" mode. */
-const renderClaudeHyperresearchMiseLock = (
-  document: ProfileDocument,
-  harnessPackage: HarnessPackageLock,
-  misePlatform: string,
-): string => {
-  const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
-  const claudePythonLock = claudeMarketplace ? "" : renderClaudePythonToolLock(misePlatform)
-  const claudePlaywrightLock = claudeMarketplace ? "" : renderClaudePlaywrightToolLock
-  const claudeToolLock = renderClaudeHarnessToolLock(harnessPackage, misePlatform)
-  return `# @generated by Trellage profile compiler
-
-${renderPinnedNodeToolLock(misePlatform)}
-${claudePythonLock}
-${claudeToolLock}
-
-${claudePlaywrightLock}
-`
-}
-
-/** Render the full mise.lock content for a Claude "core" mode build. */
-const renderClaudeCoreMiseLock = (
-  harnessPackage: HarnessPackageLock,
-  misePlatform: string,
-): string => `# @generated by Trellage profile compiler
-
-${renderPinnedNodeToolLock(misePlatform)}
-${renderClaudeHarnessToolLock(harnessPackage, misePlatform)}
-`
-
-/** Render the full mise.lock content for a Prime build. */
-const renderPrimeMiseLock = (misePlatform: string): string => `# @generated by Trellage profile compiler
-
-${renderPinnedNodeToolLock(misePlatform)}
-`
-
-/** Render the full mise.lock content for every harness kind other than Claude and Prime. */
-const renderGenericMiseLock = (
-  harnessPackage: HarnessPackageLock,
-  executable: string,
-  installedExecutable: string,
-  misePlatform: string,
-): string => `# @generated by Trellage profile compiler
-
-${renderGenericHarnessToolLock(harnessPackage, executable, installedExecutable, misePlatform)}`
-
-/** Render the full mise.lock content, selecting the harness-appropriate stanza layout. */
-const renderMiseLockContent = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  harnessPackage: HarnessPackageLock,
-  executable: string,
-  installedExecutable: string,
-  misePlatform: string,
-): string => {
-  if (harnessPackage.kind === "claude") {
-    return document.profile.harness.kind !== "claude" ||
-      (document.profile.harness.claude.mode ?? "hyperresearch") !== "core"
-      ? renderClaudeHyperresearchMiseLock(document, harnessPackage, misePlatform)
-      : renderClaudeCoreMiseLock(harnessPackage, misePlatform)
-  }
-  return harnessPackage.kind === "prime"
-    ? renderPrimeMiseLock(misePlatform)
-    : renderGenericMiseLock(harnessPackage, executable, installedExecutable, misePlatform)
-}
-
-/** Write mise.toml, mise.lock, profile.lock.toml, and every remaining top-level build-context artifact. */
-const writeFinalBuildArtifacts = async (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  support: RuntimeSupportSnapshot,
-  context: string,
-  harnessPackage: HarnessPackageLock,
-  baseReference: string,
-  imageTag: string,
-  packageVersions: Record<string, string>,
-  initialPromptBytes: Uint8Array | undefined,
-): Promise<void> => {
-  await writeFile(
-    path.join(context, "mise.toml"),
-    renderMiseConfig(document.profile, lock, { baseReference, imageTag, packageVersions, runtimeSupport: support }),
-  )
-  await writeFile(path.join(context, "profile.lock.toml"), renderLock(lock))
-  const executable = harnessPackage.kind
-  const installedExecutable = harnessPackage.kind === "pi" ? "omp" : executable
-  const misePlatform = lock.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
-  await writeFile(
-    path.join(context, "mise.lock"),
-    renderMiseLockContent(document, lock, harnessPackage, executable, installedExecutable, misePlatform),
-  )
-  await writeFile(path.join(context, "workspace.keep"), "")
-  if (document.profile.harness.kind === "pi") {
-    await writeFile(
-      path.join(context, "pi-config.yml"),
-      "startup:\n  checkUpdate: false\nmarketplace:\n  autoUpdate: off\n",
-    )
-  }
-  if (document.profile.harness.kind === "copilot") {
-    await mkdir(path.join(context, "copilot-seed"), { recursive: true })
-  }
-  if (initialPromptBytes !== undefined) {
-    await writeFile(path.join(context, "initial-prompt.md"), initialPromptBytes)
-  }
-}
-
-/** Render and write every remaining build-context file: apt-get wrapper, harness-specific files, mise, and lock artifacts. */
-const writeRenderedBuildContext = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  support: RuntimeSupportSnapshot,
-  context: string,
-  harnessPackage: HarnessPackageLock,
-  initialPromptBytes: Uint8Array | undefined,
-): Effect.Effect<void, MaterializeError> =>
-  Effect.gen(function* () {
-    yield* writeAptGetWrapper(context)
-    yield* io("cannot write harness-specific build-context files", () => writeHarnessSpecificFiles(document, context))
-    const packageVersions = Object.fromEntries(lock.packages.runtime.map((entry) => [entry.name, entry.version]))
-    const baseReference = lock.image.base.includes("@sha256:")
-      ? lock.image.base
-      : `docker.io/library/${lock.image.base.split(":", 1)[0]}@${lock.image.base_digest}`
-    const imageTag = `trellage-profile-${document.profile.name}:locked`
-    yield* io("cannot write rendered build context", () =>
-      writeFinalBuildArtifacts(
-        document,
-        lock,
-        support,
-        context,
-        harnessPackage,
-        baseReference,
-        imageTag,
-        packageVersions,
-        initialPromptBytes,
-      ),
-    )
-  })
-
-export const createBuildContext = (
-  document: ProfileDocument,
-  lock: ProfileLock,
-  sourceDirectories: ReadonlyArray<string>,
-  runtimeSupport: RuntimeSupportSnapshot | RuntimeSupport | string,
-  temporaryParent: string,
-  generateSkills: SkillGenerator,
-  generatePlugin: PluginGenerator,
-  materializeClaude: ClaudeMaterializer = materializeClaudeAssets,
-): Effect.Effect<string, MaterializeError> =>
-  Effect.gen(function* () {
-    yield* assertBuildContextInputsValid(document, lock, sourceDirectories, runtimeSupport)
-    const harnessPackage = lock.packages.harness
-    const support = yield* resolveValidatedRuntimeSupport(document, runtimeSupport)
-    const initialPromptBytes = yield* readValidatedInitialPromptBytes(document)
-
-    yield* io("cannot create build-context parent", () => mkdir(temporaryParent, { recursive: true }))
-    const context = yield* io("cannot create temporary build context", () =>
-      mkdtemp(path.join(temporaryParent, "trellage-build-")),
-    )
-    const build = Effect.gen(function* () {
-      yield* writeRuntimeSupportSnapshot(support, context).pipe(
-        Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
-      )
-      yield* initializeCodexAssetDirectories(document, context)
-      yield* materializeCopilotCoreAssets(document, lock, sourceDirectories, context)
-      yield* materializeClaudePluginAssets(document, lock, sourceDirectories, context, support, materializeClaude)
-      yield* materializePiNativeSkillAssets(document, lock, sourceDirectories, context)
-      yield* writeClaudeCoreSeed(document, lock, context)
-      const generatedSkills = yield* materializeGenericSkillAssets(
-        document,
-        lock,
-        sourceDirectories,
-        context,
-        generateSkills,
-      )
-      yield* writeAlwaysOnInstructionsFile(document, context, generatedSkills)
-      yield* materializeCopilotInstructionAssets(document, context, support)
-      yield* materializeClaudeManagedSeedAssets(document, context, support)
-      yield* writePiManagedSkillManifest(document, lock, context, generatedSkills)
-      yield* materializePrimeManagedAssets(document, lock, sourceDirectories, context, generatedSkills)
-      yield* materializeCodexPluginAssets(document, lock, sourceDirectories, context, generatePlugin)
-      yield* writeRenderedBuildContext(document, lock, support, context, harnessPackage, initialPromptBytes)
+`,
+          { mode: 0o755 },
+        )
+        if (document.profile.harness.kind === "codex") {
+          await writeFile(path.join(context, "codex-config.toml"), renderCodexConfig(document.profile))
+        }
+        if (document.profile.harness.kind === "prime") {
+          await writeFile(
+            path.join(context, "prime-agent-wrapper.sh"),
+            '#!/bin/sh\nexec /mise/installs/node/22.17.0/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n',
+            { mode: 0o755 },
+          )
+          await mkdir(path.join(context, "prime-seed"), { recursive: true })
+          await writeFile(path.join(context, "prime-seed", "models.json"), `${JSON.stringify(primeModels, null, 2)}\n`)
+        }
+        await writeFile(
+          path.join(context, "mise.toml"),
+          renderMiseConfig(document.profile, lock, {
+            baseReference,
+            imageTag,
+            packageVersions,
+            runtimeSupport: support,
+          }),
+        )
+        await writeFile(path.join(context, "profile.lock.toml"), renderLock(lock))
+        await writeFile(path.join(context, "mise.lock"), renderMaterializedMiseLock(document, lock))
+        await writeFile(path.join(context, "workspace.keep"), "")
+        if (document.profile.harness.kind === "pi") {
+          await writeFile(
+            path.join(context, "pi-config.yml"),
+            "startup:\n  checkUpdate: false\nmarketplace:\n  autoUpdate: off\n",
+          )
+        }
+        if (document.profile.harness.kind === "copilot") {
+          await mkdir(path.join(context, "copilot-seed"), { recursive: true })
+        }
+        if (initialPromptBytes !== undefined) {
+          await writeFile(path.join(context, "initial-prompt.md"), initialPromptBytes)
+        }
+      })
       return context
     })
     return yield* build.pipe(

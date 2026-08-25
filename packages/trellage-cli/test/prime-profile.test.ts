@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { profileMetadata } from "../src/application.js"
+import { loadProfile, profileMetadata } from "../src/application.js"
 import { parseLock } from "../src/lock-file.js"
 import { lockIsReady, profileHash } from "../src/lock.js"
 import { isPrimeProfile, parseProfile } from "../src/profile.js"
@@ -33,114 +33,20 @@ describe("authored Prime Agent profile", () => {
       shell: "fish",
       packages: ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "ripgrep", "zsh"],
     })
-    expect(document.profile.skills).toEqual([
-      {
-        repository: "https://github.com/engineersamuel/skills.git",
-        ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
-        select: [
-          "audit-ro",
-          "finish",
-          "goal-me",
-          "grilling-frontend-prototyping",
-          "justify",
-          "runwisp-job-authoring",
-          "validate-repository",
-        ],
-      },
-      {
-        repository: "https://github.com/JuliusBrussee/caveman.git",
-        ref: "v1.10.0",
-        select: ["caveman"],
-        always_on: true,
-      },
-      {
-        repository: "https://github.com/mattpocock/skills.git",
-        ref: "v1.2.3",
-        select: ["grill-with-docs", "improve-codebase-architecture"],
-        always_on: true,
-      },
-      {
-        repository: "https://github.com/humanlayer/skills.git",
-        ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
-        select: ["show-me"],
-      },
-    ])
+    expect(document.profile.skill_bundles).toEqual(["sandbox-common"])
     expect(document.profile.plugins).toEqual([])
     expect(document.profile.mcps).toEqual([])
     expect(document.profile.secrets).toEqual({ provider: "env", required: [] })
   })
 
   it("accepts the generated Linux arm64 lock as complete and deterministic", async () => {
-    const [profileSource, lockSource] = await Promise.all([readFile(profilePath, "utf8"), readFile(lockPath, "utf8")])
-    const document = await Effect.runPromise(parseProfile(profileSource, profilePath))
+    const lockSource = await readFile(lockPath, "utf8")
+    const document = await Effect.runPromise(loadProfile(profilePath))
     const lock = await Effect.runPromise(parseLock(lockSource))
 
     expect(lock.platform).toBe("linux/arm64")
     expect(lock.profile_hash).toBe(profileHash(document))
-    expect(lock.sources).toHaveLength(4)
-    expect(lock.sources[0]).toMatchObject({
-      kind: "skill",
-      repository: "https://github.com/engineersamuel/skills.git",
-      ref: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
-      select: [
-        "audit-ro",
-        "finish",
-        "goal-me",
-        "grilling-frontend-prototyping",
-        "justify",
-        "runwisp-job-authoring",
-        "validate-repository",
-      ],
-      commit: "cddf57e769e8b58ade685c51f447d96f3e66cfba",
-      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[0]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(7)
-    expect(lock.sources[1]).toMatchObject({
-      kind: "skill",
-      repository: "https://github.com/JuliusBrussee/caveman.git",
-      ref: "v1.10.0",
-      select: ["caveman"],
-      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
-      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[1]?.files).toContainEqual({
-      kind: "file",
-      path: "skills/caveman/SKILL.md",
-      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[2]).toMatchObject({
-      kind: "skill",
-      repository: "https://github.com/mattpocock/skills.git",
-      ref: "v1.2.3",
-      select: ["grill-with-docs", "improve-codebase-architecture"],
-      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
-      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[2]?.files).toContainEqual({
-      kind: "file",
-      path: "skills/engineering/grill-with-docs/SKILL.md",
-      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[2]?.files).toContainEqual({
-      kind: "file",
-      path: "skills/engineering/improve-codebase-architecture/SKILL.md",
-      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[3]).toMatchObject({
-      kind: "skill",
-      repository: "https://github.com/humanlayer/skills.git",
-      ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
-      select: ["show-me"],
-      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
-      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.sources[3]?.files).toContainEqual({
-      kind: "file",
-      path: "plugins/show-me/skills/show-me/SKILL.md",
-      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-    })
-    expect(lock.packages.skills_cli_version).toMatch(/^\d+\.\d+\.\d+$/)
-    expect(lock.packages.skills_cli_integrity).toMatch(/^sha512-/)
+    expect(lock.sources).toEqual([])
     expect(lock.packages.harness).toMatchObject({
       kind: "prime",
       selector: "latest",
@@ -153,7 +59,7 @@ describe("authored Prime Agent profile", () => {
     })
     expect(lock.packages.runtime.map(({ name }) => name)).toEqual(document.profile.image.packages)
     expect(lock.packages.artifacts).toBeUndefined()
-    expect(lock.image.final_digest).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(lock.image.final_digest).toBeUndefined()
     expect(lockIsReady(document, lock, "linux/arm64")).toBe(true)
   })
 

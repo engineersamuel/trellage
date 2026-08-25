@@ -1,6 +1,7 @@
 schema = 1
 name = "copilot-hve"
 description = "GitHub Copilot with Microsoft HVE Core (Research→Plan→Implement→Review artifacts). Best for GitHub-native, process-heavy delivery—features, PRs, issues, security/a11y/work-item loops—when you want a default engineering harness with durable SDLC gates. Skip for one-line edits, offline/private-only work, or experimental non-Copilot runtimes."
+skill_bundles = ["sandbox-common"]
 
 [harness]
 kind = "copilot"
@@ -15,30 +16,6 @@ model = "gpt-5.6-sol"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
-
-[[skills]]
-repository = "https://github.com/engineersamuel/skills.git"
-ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
-select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-
-[[skills]]
-repository = "https://github.com/JuliusBrussee/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
-
-[[skills]]
-repository = "https://github.com/mattpocock/skills.git"
-ref = "v1.2.3"
-select = ["grill-with-docs", "improve-codebase-architecture"]
-always_on = true
-
-# Visual explanations (diagrams, code trees, diffs) on demand via /show-me.
-# Upstream project: https://github.com/humanlayer/skills
-[[skills]]
-repository = "https://github.com/humanlayer/skills.git"
-ref = "3c2629142c5d437428269b1b722b08c0b87f574d"
-select = ["show-me"]
 
 [[plugins]]
 adapter = "copilot-marketplace"

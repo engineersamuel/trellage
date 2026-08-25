@@ -1,6 +1,10 @@
 # Trellage
 
-Trellage compiles locked agent profiles and runs them in isolated Docker sandboxes while preserving host worktree and Herdr workflows. Install the CLI from `prototypes/trellage`; it defaults to `~/.local/bin/trellage`.
+Trellage compiles core-locked agent profiles and runs them in isolated Docker
+sandboxes while preserving host worktree and Herdr workflows. Approved skills
+float to their repositories' current default branches; harnesses, plugins,
+packages, MCP servers, and base images remain pinned. Install the CLI from
+`prototypes/trellage`; it defaults to `~/.local/bin/trellage`.
 
 ## Fresh Machine Setup (macOS)
 
@@ -66,16 +70,19 @@ harness status. Check `trellage list --json --full` first.
 
 Three build-shaped commands, three different jobs:
 
-- `trellage build <profile>` reconciles. It refreshes the lock for whatever changed in
-  the profile, reuses the pinned harness release and base image when those fields did
-  not change, and rebuilds the image. This is the one to reach for after editing a
-  profile.
-- `trellage build --locked <profile>` rebuilds strictly from an existing lock and
-  refuses to resolve anything. It cannot repair a stale lock, so it is not the recovery
-  path after an edit.
-- `trellage ci-verify <profile>` asserts that a profile and its lock agree exactly and
-  that the lock records a final OCI digest, without resolving or building. Release
-  gates want this one.
+- `trellage build <profile>` reconciles the core lock, fetches current skill
+  content, and rebuilds the image. Use it after editing a profile.
+- `trellage build --locked <profile>` requires an existing valid core lock. It
+  does not refresh pinned core inputs, but it still fetches current skill
+  content. It cannot repair a stale lock.
+- `trellage ci-verify <profile>` verifies profile and core-lock agreement
+  without resolving or building. For a profile without floating skills, it
+  also requires the final OCI digest. For a floating profile, it reports a
+  ready core lock and no final image digest.
+
+Skill sources and bundles are approved in [`skills.json`](skills.json).
+Profiles select bundle names with `skill_bundles`; they do not store skill
+refs or digests. A skill-bearing rebuild is therefore not byte-reproducible.
 
 Launching handles the common case on its own: `trellage --profile <profile>` refreshes
 a stale lock and rebuilds before starting, reporting the command it ran. Harness
@@ -307,16 +314,20 @@ trellage doctor --profile claude-research
 
 Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.
 
-Profile source files are architecture-neutral editable intent. Production locks currently support native ARM64 only. `trellage` recognizes AMD64 for future lock selection, but rejects it before downloads or Docker mutation until a complete AMD64 artifact catalog and lock are available. `trellage lock` resolves sources and native artifacts only for the Docker server platform. Reproducible builds use `--locked` and reject profile, platform, artifact, or digest drift.
+Profile source files are architecture-neutral editable intent. Production
+locks currently support native ARM64 only. `trellage` recognizes AMD64 for
+future lock selection, but rejects it before downloads or Docker mutation
+until a complete AMD64 artifact catalog and lock are available. `trellage
+lock` resolves pinned sources and native artifacts only for the Docker server
+platform. `--locked` rejects core profile, platform, artifact, and digest
+drift, but it intentionally resolves current skill content at build time.
 
-Every build publishes two tags for the same image: the canonical
-`trellage-profile-<name>-<platform>:locked`, and a content-addressed
-`trellage-profile-<name>-<platform>:h-<profile-hash>-<runtime-hash>`. The canonical tag
-points at the most recent build, so a worktree profile and the deployed profile of the
-same name overwrite each other there. The alias gives each variant its own tag, and
-launching adopts a matching alias back onto the canonical tag instead of rebuilding —
-switching between a worktree and the deployed source no longer forces a rebuild each
-way.
+Every build publishes the canonical
+`trellage-profile-<name>-<platform>:locked` tag. A profile without floating
+skills also gets the content-addressed
+`trellage-profile-<name>-<platform>:h-<profile-hash>-<runtime-hash>` alias and
+a locked final digest. A floating profile gets neither because the same core
+lock can produce different skill bytes on a later build.
 
 A GitHub blob URL also works for locked builds and launches. Trellage resolves the revision once and fetches the profile and selected sibling lock from that same commit:
 
@@ -331,8 +342,9 @@ See [the Trellage prototype guide](prototypes/trellage/README.md) for profile lo
 
 The bundled `prime-agent` profile installs Prime Agent from Prime Intellect's
 official stable release channel and locks the resolved versioned tarball, size,
-SHA-256 digest, and final Linux/arm64 OCI digest. It routes model traffic only
-through the host-managed `copilot-proxy-rs` service, fixes the provider to
+and SHA-256 digest. Its common skills float, so the profile lock does not store
+a final Linux/arm64 OCI digest. It routes model traffic only through the
+host-managed `copilot-proxy-rs` service, fixes the provider to
 `copilot-proxy-rs`, and defaults the model to `claude-opus-5`.
 
 ```bash
@@ -355,11 +367,12 @@ persisted edits cannot redirect this profile to another endpoint. Use
 
 ## Pi with Oh My Pi
 
-The bundled `pi-oh-my-pi` profile runs the standalone `omp` executable from
-`can1357/oh-my-pi`. It is distinct from GitHub Copilot CLI: OMP uses its native
-`github-copilot` provider with model `gpt-5.6-terra`. The profile also locks and
-seeds OMP's `semantic-compression`, `system-prompts`, and
-`tool-prompt-optimization` skills into the isolated OMP state directory.
+The bundled `pi-oh-my-pi` profile runs the pinned standalone `omp` executable
+from `can1357/oh-my-pi`. It is distinct from GitHub Copilot CLI: OMP uses its
+native `github-copilot` provider with model `gpt-5.6-terra`. At build time,
+Trellage fetches current default-branch versions of OMP's
+`semantic-compression`, `system-prompts`, and `tool-prompt-optimization`
+skills and seeds them into the isolated OMP state directory.
 
 ```bash
 trellage validate pi-oh-my-pi
@@ -375,10 +388,10 @@ login and session state persist in the isolated profile/worktree state volume
 under `/home/agent/.omp/agent`. The profile uses Docker `bridge`, not
 `copilot-proxy-rs_default`.
 
-The editable profile pins the same OMP release tag for both the executable and
-its native skills. The selected platform lock records the exact source commit, source
-inventory, release asset URL, size, GitHub SHA-256 digest, and built OCI digest.
-Locked builds never resolve a newer release.
+The editable profile pins the OMP executable release. The selected platform
+lock records its release asset URL, size, and GitHub SHA-256 digest. Native
+skill content is not part of the lock. Locked builds never resolve a newer OMP
+executable release, but they do resolve current skill content.
 
 ## Trellage Native (`trx`)
 
@@ -482,6 +495,18 @@ it's launched. Running `setup`/`doctor` ahead of time is still recommended so
 you can catch missing prerequisites (proxy auth, host CLIs, etc.) before
 diving into a session, rather than mid-launch.
 
+The first native setup or launch fetches `native-common` from the approved
+default branches and publishes one shared cache. Later launches use that cache
+without network access. Refresh it only when you choose:
+
+```bash
+trx skills status
+trx skills update
+```
+
+An update is atomic. If fetch or validation fails, the previous cache and
+profile skills remain available.
+
 The installers publish these commands and managed runtimes:
 
 - `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
@@ -539,8 +564,8 @@ ownership, update, repair, and uninstall behavior.
 
 The standalone `picx` launcher provides one `default` Pi profile with the
 ordered ten-extension daily-coding set on upstream Pi `0.84.2`, isolated
-user-scope package data, `humanlayer/skills` `show-me`, host-MCP discovery
-disabled, and `copilot-proxy-rs/gpt-5.6-sol:medium`. See the
+user-scope package data, the shared floating `native-common` skills, host-MCP
+discovery disabled, and `copilot-proxy-rs/gpt-5.6-sol:medium`. See the
 [native picx guide](prototypes/trellage-picx-profiles/README.md).
 
 Managed Codex profiles use the local proxy by default. Native OpenAI authentication
@@ -633,6 +658,11 @@ The included comparison builds the same TODO app twice:
 - GitHub Copilot CLI with pinned `github/awesome-copilot` plugins, using native GitHub Copilot authentication.
 
 Each contestant gets its own image, Compose project, network, workspace volume, app-data volume, session, and loopback port. The output is normalized evidence for later grading; the harness does not select a winner.
+
+Each comparison build resolves `comparison-common` once and gives the same
+staged skill snapshot to every contestant image. A build fails if the snapshot
+cannot be fetched or validated. Compose does not fall back to the repository
+directory as a skill context.
 
 ## Quick Start
 

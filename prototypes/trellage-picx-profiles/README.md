@@ -31,10 +31,12 @@ Managed `models.json` defines the proxy-backed model. Managed `mcp.json` sets
 Claude, Codex, Cursor, or OMP MCP configuration is not loaded. Standard shared
 MCP files remain available under the documented `pi-mcp-adapter` precedence.
 
-Setup also installs `humanlayer/skills` `show-me` into the isolated Pi profile
-and snapshots `~/.copilot/models.json` as read-only
-`.copilot-models.json`. Launches remove host Copilot, OpenAI, and Azure OpenAI
-credential variables because the managed proxy provider uses no API key.
+Setup installs the shared floating `native-common` skill bundle into the
+isolated Pi profile and snapshots `~/.copilot/models.json` as read-only
+`.copilot-models.json`. The first native setup fetches the bundle; later
+launches reuse the shared cache until `trx skills update` refreshes it.
+Launches remove host Copilot, OpenAI, and Azure OpenAI credential variables
+because the managed proxy provider uses no API key.
 
 The local `copilot-proxy-rs` service must be healthy and advertise
 `gpt-5.6-sol` from `/v1/models`. `picx doctor` checks both conditions.

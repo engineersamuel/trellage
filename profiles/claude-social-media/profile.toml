@@ -1,6 +1,7 @@
 schema = 1
 name = "claude-social-media"
 description = "Claude Code (Opus via proxy) with social-media skills (voice-first posts/threads/carousels) plus Humanizer to strip AI writing tells without inventing facts. Best for public short-form that must sound like a real person. Skip for long-form SEO blogs, deep research, or engineering delivery."
+skill_bundles = ["sandbox-common"]
 
 [harness]
 kind = "claude"
@@ -17,30 +18,6 @@ shell = "fish"
 packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
 
 # Upstream project: https://github.com/charlie947/social-media-skills
-[[skills]]
-repository = "https://github.com/engineersamuel/skills.git"
-ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
-select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-
-[[skills]]
-repository = "https://github.com/JuliusBrussee/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
-
-[[skills]]
-repository = "https://github.com/mattpocock/skills.git"
-ref = "v1.2.3"
-select = ["grill-with-docs", "improve-codebase-architecture"]
-always_on = true
-
-# Visual explanations (diagrams, code trees, diffs) on demand via /show-me.
-# Upstream project: https://github.com/humanlayer/skills
-[[skills]]
-repository = "https://github.com/humanlayer/skills.git"
-ref = "3c2629142c5d437428269b1b722b08c0b87f574d"
-select = ["show-me"]
-
 [[plugins]]
 adapter = "claude-marketplace"
 repository = "https://github.com/charlie947/social-media-skills.git"

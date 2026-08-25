@@ -280,7 +280,13 @@ const ciVerify = Command.make("ci-verify", { profile: profileArgument }, ({ prof
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform).pipe(
       Effect.flatMap((selected) => verifyProfile(selected, target.platform)),
-      Effect.flatMap((result) => Console.log(`verified: ${result.image} (${result.digest})`)),
+      Effect.flatMap((result) =>
+        Console.log(
+          result.digest === null
+            ? `verified: ${result.image} (core lock; floating skills)`
+            : `verified: ${result.image} (${result.digest})`,
+        ),
+      ),
     ),
   ),
 )

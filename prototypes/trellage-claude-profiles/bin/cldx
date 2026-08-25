@@ -8,7 +8,6 @@ readonly haiku_model_id='claude-haiku-4.5'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
 readonly profile_marker_value='trellage-claude-profile-v1'
-readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'cldx: %s\n' "$1" >&2
@@ -87,21 +86,24 @@ readonly onboarding="$profile_home/.claude.json"
 readonly settings="$profile_home/settings.json"
 readonly output_style_root="$profile_home/output-styles"
 readonly output_style="$output_style_root/rundown.md"
-engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
-engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
-if [[ ! -d "$engineersamuel_skills_source" ]]; then
-  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
-  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+if [[ ! -f "$floating_skills_manager" ]]; then
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$runtime_root/../../skills.json"
 fi
 
-sync_engineersamuel_skills() {
-  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
-    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
-  "$engineersamuel_skills_sync" \
-    --source "$engineersamuel_skills_source" \
+ensure_floating_skills() {
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
     --target "$profile_home/skills" \
-    --ref "$engineersamuel_skills_ref" \
-    || die 'failed to sync engineersamuel/skills'
+    || die 'failed to install floating skills'
 }
 
 validate_catalog() {
@@ -475,7 +477,7 @@ setup_profile() {
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
   prepare_profile
-  sync_engineersamuel_skills
+  ensure_floating_skills
   ensure_onboarding "$version"
   ensure_output_style
   ensure_settings
@@ -490,7 +492,7 @@ repair_profile() {
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
   require_owned_profile
-  sync_engineersamuel_skills
+  ensure_floating_skills
   ensure_onboarding "$version"
   ensure_output_style
   ensure_settings
@@ -563,7 +565,7 @@ launch_profile() {
   fi
   ensure_onboarding "$version"
   ensure_output_style
-  sync_engineersamuel_skills
+  ensure_floating_skills
   ensure_settings
   ensure_trust
   check_proxy

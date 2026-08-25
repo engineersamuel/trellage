@@ -101,10 +101,6 @@ describe("profile choice projection", () => {
       "Detailed profile",
       "gpt-5.5",
       `
-[[skills]]
-repository = "https://github.com/example/skills.git"
-ref = "v1"
-select = ["review"]
 [[plugins]]
 adapter = "codex-native"
 repository = "https://github.com/example/plugins.git"
@@ -117,7 +113,7 @@ url = "https://example.test/mcp"
 required = true
 tools = { allow = ["search"], deny = ["delete"] }
 `,
-    )
+    ).replace("schema = 1", 'schema = 1\nskill_bundles = ["sandbox-common"]')
     const document = await Effect.runPromise(parseProfile(source, "/profiles/detailed/profile.toml"))
 
     expect(projectProfileChoice(document)).toEqual({
@@ -127,13 +123,9 @@ tools = { allow = ["search"], deny = ["delete"] }
       supported_platforms: [],
       harness: { kind: "codex", version: "0.144.6", model: "gpt-5.5" },
       headlessRuntime: "codex",
-      skills: [
-        {
-          repository: "https://github.com/example/skills.git",
-          ref: "v1",
-          select: ["review"],
-        },
-      ],
+      skillBundles: ["sandbox-common"],
+      skillsMode: "floating",
+      skills: [],
       plugins: [
         {
           adapter: "codex-native",

@@ -25,99 +25,124 @@ const sortedFrozenRecord = (values: Readonly<Record<string, string>>): Readonly<
   return Object.freeze(sorted)
 }
 
+const renderSourceFile = (
+  lock: ProfileLock,
+  sourceIndex: number,
+  file: ProfileLock["sources"][number]["files"][number],
+): ReadonlyArray<string> => {
+  if (file.kind === "symlink") {
+    return [
+      "",
+      "[[sources.files]]",
+      `kind = ${quote(file.kind)}`,
+      `path = ${quote(file.path)}`,
+      `target = ${quote(file.target)}`,
+    ]
+  }
+  const kind =
+    lock.packages.harness.kind === "codex" && !hasLegacySourceProvenance(lock, sourceIndex)
+      ? [`kind = ${quote(file.kind)}`]
+      : []
+  return [
+    "",
+    "[[sources.files]]",
+    ...kind,
+    `path = ${quote(file.path)}`,
+    `sha256 = ${quote(file.sha256)}`,
+    ...(file.executable === true ? ["executable = true"] : []),
+  ]
+}
+
+const renderSource = (
+  lock: ProfileLock,
+  sourceIndex: number,
+  source: ProfileLock["sources"][number],
+): ReadonlyArray<string> => [
+  "",
+  "[[sources]]",
+  `kind = ${quote(source.kind)}`,
+  ...(source.adapter ? [`adapter = ${quote(source.adapter)}`] : []),
+  ...(source.marketplace ? [`marketplace = ${quote(source.marketplace)}`] : []),
+  ...(source.plugin_versions ? [`plugin_versions = ${stringRecord(source.plugin_versions)}`] : []),
+  `repository = ${quote(source.repository)}`,
+  `ref = ${quote(source.ref)}`,
+  `select = ${strings(source.select)}`,
+  `commit = ${quote(source.commit)}`,
+  `integrity = ${quote(source.integrity)}`,
+  ...source.files.flatMap((file) => renderSourceFile(lock, sourceIndex, file)),
+]
+
+const renderLegacyHarness = (lock: ProfileLock): ReadonlyArray<string> => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "codex" || !hasLegacyPackageProvenance(lock)) return []
+  return [
+    `codex = ${quote(harness.version)}`,
+    `codex_integrity = ${quote(harness.integrity)}`,
+    `codex_url = ${quote(harness.url)}`,
+    `codex_size = ${harness.size}`,
+  ]
+}
+
+const renderHarness = (lock: ProfileLock): ReadonlyArray<string> => {
+  const harness = lock.packages.harness
+  if (harness.kind === "codex" && hasLegacyPackageProvenance(lock)) return []
+  return [
+    "",
+    "[packages.harness]",
+    `kind = ${quote(harness.kind)}`,
+    `selector = ${quote(harness.selector)}`,
+    `version = ${quote(harness.version)}`,
+    `integrity = ${quote(harness.integrity)}`,
+    `url = ${quote(harness.url)}`,
+    `size = ${harness.size}`,
+  ]
+}
+
+const renderRuntime = (runtime: ProfileLock["packages"]["runtime"][number]): ReadonlyArray<string> => [
+  "",
+  "[[packages.runtime]]",
+  `name = ${quote(runtime.name)}`,
+  `version = ${quote(runtime.version)}`,
+  `integrity = ${quote(runtime.integrity)}`,
+]
+
+const renderArtifact = (artifact: NonNullable<ProfileLock["packages"]["artifacts"]>[number]): ReadonlyArray<string> => [
+  "",
+  "[[packages.artifacts]]",
+  `name = ${quote(artifact.name)}`,
+  `version = ${quote(artifact.version)}`,
+  `integrity = ${quote(artifact.integrity)}`,
+  `url = ${quote(artifact.url)}`,
+  ...(artifact.size === undefined ? [] : [`size = ${artifact.size}`]),
+]
+
+const renderImage = (lock: ProfileLock): ReadonlyArray<string> => [
+  "",
+  "[image]",
+  `base = ${quote(lock.image.base)}`,
+  `base_digest = ${quote(lock.image.base_digest)}`,
+  ...(lock.image.final_digest === undefined ? [] : [`final_digest = ${quote(lock.image.final_digest)}`]),
+]
+
 export const renderLock = (lock: ProfileLock): string => {
   const lines = [
     "schema = 1",
     `platform = ${quote(lock.platform)}`,
     `source_date_epoch = ${lock.source_date_epoch}`,
     `profile_hash = ${quote(lock.profile_hash)}`,
+    ...(lock.sources.length === 0 ? ["sources = []"] : []),
+    ...lock.sources.flatMap((source, index) => renderSource(lock, index, source)),
+    "",
+    "[packages]",
+    ...renderLegacyHarness(lock),
+    ...(lock.packages.python_lock_integrity === undefined
+      ? []
+      : [`python_lock_integrity = ${quote(lock.packages.python_lock_integrity)}`]),
+    ...renderHarness(lock),
+    ...lock.packages.runtime.flatMap(renderRuntime),
+    ...(lock.packages.artifacts ?? []).flatMap(renderArtifact),
+    ...renderImage(lock),
   ]
-  if (lock.sources.length === 0) lines.push("sources = []")
-  for (const [sourceIndex, source] of lock.sources.entries()) {
-    lines.push("", "[[sources]]", `kind = ${quote(source.kind)}`)
-    if (source.adapter) lines.push(`adapter = ${quote(source.adapter)}`)
-    if (source.marketplace) lines.push(`marketplace = ${quote(source.marketplace)}`)
-    if (source.plugin_versions) lines.push(`plugin_versions = ${stringRecord(source.plugin_versions)}`)
-    lines.push(
-      `repository = ${quote(source.repository)}`,
-      `ref = ${quote(source.ref)}`,
-      `select = ${strings(source.select)}`,
-      `commit = ${quote(source.commit)}`,
-      `integrity = ${quote(source.integrity)}`,
-    )
-    for (const file of source.files) {
-      if (file.kind === "file") {
-        lines.push("", "[[sources.files]]")
-        if (lock.packages.harness.kind === "codex" && !hasLegacySourceProvenance(lock, sourceIndex)) {
-          lines.push(`kind = ${quote(file.kind)}`)
-        }
-        lines.push(`path = ${quote(file.path)}`, `sha256 = ${quote(file.sha256)}`)
-        if (file.executable === true) lines.push("executable = true")
-      } else {
-        lines.push(
-          "",
-          "[[sources.files]]",
-          `kind = ${quote(file.kind)}`,
-          `path = ${quote(file.path)}`,
-          `target = ${quote(file.target)}`,
-        )
-      }
-    }
-  }
-  lines.push("", "[packages]")
-  if (lock.packages.harness.kind === "codex" && hasLegacyPackageProvenance(lock)) {
-    lines.push(
-      `codex = ${quote(lock.packages.harness.version)}`,
-      `codex_integrity = ${quote(lock.packages.harness.integrity)}`,
-      `codex_url = ${quote(lock.packages.harness.url)}`,
-      `codex_size = ${lock.packages.harness.size}`,
-    )
-  }
-  if (lock.packages.skills_cli_version) lines.push(`skills_cli_version = ${quote(lock.packages.skills_cli_version)}`)
-  if (lock.packages.skills_cli_integrity)
-    lines.push(`skills_cli_integrity = ${quote(lock.packages.skills_cli_integrity)}`)
-  if (lock.packages.python_lock_integrity)
-    lines.push(`python_lock_integrity = ${quote(lock.packages.python_lock_integrity)}`)
-  if (
-    lock.packages.harness.kind === "claude" ||
-    lock.packages.harness.kind === "copilot" ||
-    lock.packages.harness.kind === "pi" ||
-    lock.packages.harness.kind === "prime" ||
-    (lock.packages.harness.kind === "codex" && !hasLegacyPackageProvenance(lock))
-  ) {
-    lines.push(
-      "",
-      "[packages.harness]",
-      `kind = ${quote(lock.packages.harness.kind)}`,
-      `selector = ${quote(lock.packages.harness.selector)}`,
-      `version = ${quote(lock.packages.harness.version)}`,
-      `integrity = ${quote(lock.packages.harness.integrity)}`,
-      `url = ${quote(lock.packages.harness.url)}`,
-      `size = ${lock.packages.harness.size}`,
-    )
-  }
-  for (const runtime of lock.packages.runtime) {
-    lines.push(
-      "",
-      "[[packages.runtime]]",
-      `name = ${quote(runtime.name)}`,
-      `version = ${quote(runtime.version)}`,
-      `integrity = ${quote(runtime.integrity)}`,
-    )
-  }
-  for (const artifact of lock.packages.artifacts ?? []) {
-    lines.push(
-      "",
-      "[[packages.artifacts]]",
-      `name = ${quote(artifact.name)}`,
-      `version = ${quote(artifact.version)}`,
-      `integrity = ${quote(artifact.integrity)}`,
-      `url = ${quote(artifact.url)}`,
-    )
-    if (artifact.size !== undefined) lines.push(`size = ${artifact.size}`)
-  }
-  lines.push("", "[image]", `base = ${quote(lock.image.base)}`, `base_digest = ${quote(lock.image.base_digest)}`)
-  if (lock.image.final_digest !== undefined) lines.push(`final_digest = ${quote(lock.image.final_digest)}`)
   return `${lines.join("\n")}\n`
 }
 
@@ -137,7 +162,7 @@ const SymlinkSchema = Schema.Struct({ kind: Schema.Literal("symlink"), path: Tex
 const InventoryEntrySchema = Schema.Union(LegacyFileSchema, TypedFileSchema, SymlinkSchema)
 const StringRecordSchema = Schema.Record({ key: Text, value: Schema.String })
 const SourceSchema = Schema.Struct({
-  kind: Schema.Literal("skill", "plugin"),
+  kind: Schema.Literal("plugin"),
   adapter: Schema.optional(
     Schema.Literal(
       "claude-marketplace",
@@ -145,7 +170,6 @@ const SourceSchema = Schema.Struct({
       "wshobson-agents",
       "copilot-marketplace",
       "hyperresearch",
-      "omp-native",
       "prime-extension",
     ),
   ),
@@ -213,14 +237,10 @@ const LegacyPackageSchema = Schema.Struct({
   codex_integrity: Schema.optional(Text),
   codex_url: Schema.optional(Text),
   codex_size: Schema.optional(Schema.Number.pipe(Schema.positive())),
-  skills_cli_version: Schema.optional(Text),
-  skills_cli_integrity: Schema.optional(Text),
   runtime: Schema.Array(RuntimeSchema),
 })
 const PackageSchema = Schema.Struct({
   harness: HarnessPackageSchema,
-  skills_cli_version: Schema.optional(Text),
-  skills_cli_integrity: Schema.optional(Text),
   python_lock_integrity: Schema.optional(Text),
   runtime: Schema.Array(RuntimeSchema),
   artifacts: Schema.optional(Schema.Array(ArtifactSchema)),
@@ -294,12 +314,6 @@ export const parseLock = (source: string): Effect.Effect<ProfileLock, LockFileEr
                   url: value.packages.codex_url ?? "",
                   size: value.packages.codex_size ?? 0,
                 },
-                ...(value.packages.skills_cli_version === undefined
-                  ? {}
-                  : { skills_cli_version: value.packages.skills_cli_version }),
-                ...(value.packages.skills_cli_integrity === undefined
-                  ? {}
-                  : { skills_cli_integrity: value.packages.skills_cli_integrity }),
                 runtime: value.packages.runtime,
               },
       } as ProfileLock

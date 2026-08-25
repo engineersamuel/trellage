@@ -94,8 +94,9 @@ grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$live_lock" \
 council_lock='profiles/claude-council/profile.linux-arm64.lock.toml'
 grep -Fqx 'version = "2.1.233"' "$council_lock" \
   || fail 'Council lock does not resolve the recorded marketplace version'
-grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$council_lock" \
-  || fail 'Council lock has no final image digest'
+if grep -Eq '^final_digest[[:space:]]*=' "$council_lock"; then
+  fail 'Council lock unexpectedly pins a final image digest with floating skills'
+fi
 
 ledger='docs/headless-evidence.json'
 jq -e '

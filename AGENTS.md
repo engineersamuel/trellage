@@ -27,21 +27,13 @@ host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, and `p
 - Validate locally: `mise run trellage -- validate <profile name>`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
-  `mise run rebuild-profiles`. This is the canonical all-profile
-  `engineersamuel/skills` refresh path: it fetches the latest upstream commit,
-  replaces the vendored snapshot and `REF`, updates every Sandbox profile ref
-  and generated skill inventory, updates every native launcher ref and
-  exact-ref TypeScript test assertion, installs worktree `trellage`, publishes
-  the refreshed native runtime assets while reinstalling
-  `cdx`/`cpx`/`cldx`/`grx`/`jcx`/`omp`/`picx`/`prx` then `trx`, and runs a non-locked
-  Sandbox `build` for each `profiles/*` to regenerate locks and image digests.
-  Do not edit those synchronized refs, inventories, test assertions, locks,
-  runtime assets, or Sandbox images manually. Use `--native-only` or
-  `--sandbox-only` on the underlying script when you only need one side; the
-  shared skill refresh still runs first. Rebuild comparison images separately
-  with `make build`. Installed `post-merge` and `post-rewrite` hooks rebuild the
-  compiler and refresh native launchers automatically when the local `main`
-  worktree receives merged commits.
+  `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
+  launchers (`cdx`/`cpx`/`cldx`/`grx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
+  runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
+  or `--sandbox-only` on the underlying script when you only need one side.
+  Installed `post-merge` and `post-rewrite` hooks rebuild the compiler and
+  refresh native launchers automatically when the local `main` worktree
+  receives merged commits.
 
 ## Worktrees and mise trust
 
@@ -163,11 +155,24 @@ default = true
 ## Conventions
 
 - Use Effect for TypeScript application logic where practical.
-- Preserve deterministic profile locks and isolated runtime state.
+- Preserve deterministic core profile locks and isolated runtime state. Skill
+  content is intentionally floating and is not part of the lock.
 - Keep static verification free of model inference and paid calls.
 - Do not weaken or skip repository contracts to make a change pass.
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
-- Every new Trellage Sandbox profile under `profiles/` MUST declare the pinned Caveman Agent Skill with `always_on = true`. Its platform lock MUST contain the exact resolved commit and inventory, and the profile MUST pass the deterministic Caveman matrix contract and no-model image probe. Trellage Native profiles are outside this rule unless separately requested.
+- Every new Trellage Sandbox profile under `profiles/` MUST include
+  `sandbox-common` in `skill_bundles`. This bundle supplies Caveman as an
+  always-on skill, the selected mattpocock skills, `show-me`, and every skill
+  from `engineersamuel/skills`.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
-- Every native launcher and container harness (Trellage Sandbox profile, Trellage Native launcher, or comparison-harness container) MUST have the `humanlayer/skills` `show-me` skill installed (equivalent to `npx skills add humanlayer/skills --skill show-me`), so visual explanations (diagrams, code trees, diffs) are available on demand via `/show-me`. For Trellage Sandbox profiles, declare it as a pinned `[[skills]]` entry (`repository = "https://github.com/humanlayer/skills.git"`, a pinned commit `ref`, `select = ["show-me"]`) alongside the Caveman and mattpocock skill blocks; see any `profiles/*/profile.toml` for the pattern. Any future Trellage Native launcher or comparison-harness container MUST add an equivalent install step when one is introduced.
-- Every new native launcher, Trellage Sandbox profile, and comparison-harness container MUST install every skill from `engineersamuel/skills`. Use the shared vendored snapshot and atomic sync helper for native launchers and comparison containers. Sandbox profiles MUST pin `https://github.com/engineersamuel/skills.git` and list the complete generated skill inventory in `select`. Rebuild and comparison build paths MUST refresh the snapshot before installing or building.
+- `skills.json` is the only skill-source allowlist. Skill entries MUST NOT
+  contain a ref, commit, digest, or fetched timestamp. Third-party selections
+  MUST be explicit. Wildcards require `allowWildcard = true`.
+- Every native launcher MUST use the shared floating-skills manager with
+  `native-common`. Every comparison image MUST use the single
+  `comparison-common` snapshot staged for that build operation.
+- Native first use and `trx skills update` fetch current default-branch
+  content. Later native launches reuse the shared cache without network
+  access. Sandbox and comparison builds fetch current skill content at build
+  time. A fetch or validation failure MUST fail closed and preserve any
+  previously published native cache.

@@ -4,6 +4,7 @@ set -u
 set -o pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+. "$root/../../tests/helpers/floating_skills_fixture.sh"
 launcher="$root/bin/jcx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
@@ -109,6 +110,8 @@ esac
 FAKE_CURL
 chmod 0755 "$fake_bin/curl"
 
+install_fixture_node "$fake_bin"
+seed_floating_skills_cache "$home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
 export FAKE_MISE_LOG="$fixture_root/mise.log"

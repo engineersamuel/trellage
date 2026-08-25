@@ -508,10 +508,11 @@ wire_api = "responses"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
-[[skills]]
+[[plugins]]
+adapter = "codex-native"
 repository = "https://github.com/obra/superpowers.git"
 ref = "v6.2.0"
-select = ["*"]
+select = ["example"]
 `
 
 const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock => ({
@@ -521,13 +522,16 @@ const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock
   profile_hash,
   sources: [
     {
-      kind: "skill",
+      kind: "plugin",
+      adapter: "codex-native",
       repository: "https://github.com/obra/superpowers.git",
       ref: "v6.2.0",
-      select: ["*"],
+      select: ["example"],
       commit: "a".repeat(40),
-      integrity: treeIntegrity([{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }]),
-      files: [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }],
+      integrity: treeIntegrity([
+        { kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") },
+      ]),
+      files: [{ kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") }],
     },
   ],
   packages: {
@@ -548,9 +552,6 @@ const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock
         size: 17260137,
       },
     ],
-    skills_cli_version: "1.5.19",
-    skills_cli_integrity:
-      "sha512-SR05cbNk+R17GfaCFv94Hlq5EXDpUCbG0ZL9+EYi5UEHzUPAAl+kls2LxCT+67wAWlOAanUwzZekIVQvpCmp5w==",
     runtime: [
       {
         name: "bash",
@@ -760,7 +761,7 @@ describe("transactional profile upgrade", () => {
         }),
     }
 
-    mocks.sourceFiles = [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }]
+    mocks.sourceFiles = [{ kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") }]
     mocks.lockRenameEvents = events
 
     await expect(Effect.runPromise(upgradeProfile(profilePath, root, support, arm64Target, services))).resolves.toEqual(
@@ -797,7 +798,7 @@ describe("transactional profile upgrade", () => {
     await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), original)
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
-    mocks.sourceFiles = [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }]
+    mocks.sourceFiles = [{ kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") }]
     return {
       root,
       profilePath,
@@ -1281,7 +1282,7 @@ describe("transactional profile upgrade", () => {
       const contentionRoot = process.env.HARNESS_UPGRADE_CONTENTION_ROOT as string
       const profilePath = process.env.HARNESS_UPGRADE_CONTENTION_PROFILE as string
       const support = runtimeSupport(path.dirname(profilePath))
-      mocks.sourceFiles = [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }]
+      mocks.sourceFiles = [{ kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") }]
       await writeFile(path.join(contentionRoot, `ready-${role}`), "ready")
       await waitUntil(() => pathExists(path.join(contentionRoot, "go")), "contention start was not released")
       const services: UpgradeServices = {
@@ -1500,8 +1501,6 @@ select = ["humanizer"]
             size: 17260137,
           },
         ],
-        skills_cli_version: "1.5.19",
-        skills_cli_integrity: "sha512-dGVzdA==",
       },
     }
 
@@ -2038,7 +2037,7 @@ select = ["hve-core"]
     ])
   }, 20_000)
 
-  it("rehydrates Codex sources with the strict inventory policy", async () => {
+  it("rehydrates Codex plugin sources with the strict inventory policy", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-application-codex-"))
     const source = `
 schema = 1
@@ -2058,15 +2057,16 @@ wire_api = "responses"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash"]
-[[skills]]
+[[plugins]]
+adapter = "codex-native"
 repository = "https://github.com/obra/superpowers.git"
 ref = "v6.2.0"
-select = ["*"]
+select = ["example"]
 `
     const files: ProfileLock["sources"][number]["files"] = [
       {
         kind: "file",
-        path: "skills/example/SKILL.md",
+        path: "plugins/example/.codex/agents/example.toml",
         sha256: digest("f"),
       },
     ]
@@ -2076,10 +2076,11 @@ select = ["*"]
       source_date_epoch: 1784379906,
       sources: [
         {
-          kind: "skill",
+          kind: "plugin",
+          adapter: "codex-native",
           repository: "https://github.com/obra/superpowers.git",
           ref: "v6.2.0",
-          select: ["*"],
+          select: ["example"],
           commit: "a".repeat(40),
           integrity: treeIntegrity(files),
           files,
@@ -2103,8 +2104,6 @@ select = ["*"]
             size: 17260137,
           },
         ],
-        skills_cli_version: "1.5.19",
-        skills_cli_integrity: "sha512-dGVzdA==",
         runtime: [
           {
             name: "bash",
@@ -2131,7 +2130,7 @@ select = ["*"]
     )
     expect(mocks.requests).toEqual([
       expect.objectContaining({
-        include: ["skills", ".agents/skills", ".claude/skills", "plugins/*"],
+        include: ["plugins/example/.codex"],
         inventoryPolicy: {},
       }),
     ])

@@ -61,6 +61,8 @@ export interface ProfileChoice {
     readonly model?: string
   }
   readonly headlessRuntime: SandboxHeadlessRuntimeAdapter
+  readonly skillBundles?: ReadonlyArray<string>
+  readonly skillsMode?: "floating" | "locked"
   readonly skills: ReadonlyArray<ProfileChoiceSource>
   readonly plugins: ReadonlyArray<ProfileChoicePlugin>
   readonly mcps: ReadonlyArray<ProfileChoiceMcp>
@@ -126,7 +128,9 @@ export const projectProfileChoice = (
       ...(profileModel === undefined ? {} : { model: profileModel }),
     },
     headlessRuntime: sandboxHeadlessRuntimeAdapter(profile),
-    skills: profile.skills.map(({ repository, ref, select }) => ({ repository, ref, select })),
+    skillBundles: profile.skill_bundles,
+    skillsMode: profile.skill_bundles.length > 0 ? "floating" : "locked",
+    skills: [],
     plugins: profile.plugins.map((plugin) => ({
       adapter: plugin.adapter,
       repository: plugin.repository,

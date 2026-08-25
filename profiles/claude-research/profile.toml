@@ -1,6 +1,7 @@
 schema = 1
 name = "claude-research"
 description = "Claude Code (Opus via proxy) with Hyperresearch light gear plus last30days multi-source social research: a focused 5-step pipeline for bounded factual queries, surveys, and comparisons with a persistent research vault, and recency-scored pulls from Reddit, X, YouTube, HN, Polymarket, GitHub, and the web. Best for source-backed answers without the cost of the full adversarial pipeline. Usage: `/hyperresearch <prompt>` for vault-backed factual research, surveys, and comparisons; `/last30days <topic>` for what people actually said in the last ~30 days (e.g. `/last30days nvidia earnings reaction`, `/last30days OpenClaw vs Hermes`); `/last30days doctor` to diagnose missing sources or auth."
+skill_bundles = ["sandbox-common", "claude-research"]
 
 [harness]
 kind = "claude"
@@ -26,36 +27,6 @@ packages = [
 ]
 
 # Upstream project: https://github.com/jordan-gibbs/hyperresearch
-[[skills]]
-repository = "https://github.com/engineersamuel/skills.git"
-ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
-select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-
-[[skills]]
-repository = "https://github.com/JuliusBrussee/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
-
-[[skills]]
-repository = "https://github.com/mattpocock/skills.git"
-ref = "v1.2.3"
-select = ["grill-with-docs", "improve-codebase-architecture"]
-always_on = true
-
-# Visual explanations (diagrams, code trees, diffs) on demand via /show-me.
-# Upstream project: https://github.com/humanlayer/skills
-[[skills]]
-repository = "https://github.com/humanlayer/skills.git"
-ref = "3c2629142c5d437428269b1b722b08c0b87f574d"
-select = ["show-me"]
-
-# Upstream project: https://github.com/mvanhorn/last30days-skill
-[[skills]]
-repository = "https://github.com/mvanhorn/last30days-skill.git"
-ref = "v3.18.4"
-select = ["last30days"]
-
 [[plugins]]
 adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"

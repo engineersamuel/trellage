@@ -24,12 +24,11 @@ runtime_root="$(cd -P "$script_dir/.." && pwd)"
 catalog="${CPX_CATALOG:-$script_dir/../catalog.json}"
 instruction_asset="$script_dir/../assets/rundown/rundown.instructions.md"
 profiles_root="$HOME/.local/share/trellage/profiles/copilot"
-readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
-engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
-engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
-if [[ ! -d "$engineersamuel_skills_source" ]]; then
-  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
-  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+if [[ ! -f "$floating_skills_manager" ]]; then
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$runtime_root/../../skills.json"
 fi
 
 die() {
@@ -56,36 +55,27 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
-sync_engineersamuel_skills() {
+ensure_floating_skills() {
   local profile="$1"
-  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
-    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
-  "$engineersamuel_skills_sync" \
-    --source "$engineersamuel_skills_source" \
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
-    --ref "$engineersamuel_skills_ref" \
-    || die "failed to sync engineersamuel/skills: $profile"
+    || die "failed to install floating skills: $profile"
 }
 
-verify_engineersamuel_skills() {
-  local profile="$1" target manifest skill entry name
-  target="$(profile_home "$profile")/skills"
-  manifest="$target/.trellage-engineersamuel-skills"
-  [[ -f "$manifest" && ! -L "$manifest" ]] \
-    || die "managed personal skill manifest is missing: $manifest"
-  [[ "$(head -n 1 "$manifest")" == "$engineersamuel_skills_ref" ]] \
-    || die "managed personal skill ref differs: $manifest"
-  for skill in "$engineersamuel_skills_source"/*; do
-    [[ -d "$skill" ]] || continue
-    [[ -f "$target/$(basename "$skill")/SKILL.md" ]] \
-      || die "managed personal skill is missing: $(basename "$skill")"
-  done
-  while IFS= read -r entry; do
-    name="$(basename "$entry")"
-    [[ "$name" == '.trellage-engineersamuel-skills' ]] && continue
-    [[ -d "$engineersamuel_skills_source/$name" ]] \
-      || die "standalone skill configuration is unmanaged: $entry"
-  done < <(find "$target" -mindepth 1 -maxdepth 1 -print)
+verify_floating_skills() {
+  local profile="$1"
+  node "$floating_skills_manager" verify \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
+    --target "$(profile_home "$profile")/skills" \
+    || die "floating skills are unhealthy: $profile"
 }
 
 extract_semver() {
@@ -396,7 +386,7 @@ run_copilot() {
 launch_profile() {
   local profile="$1"
   shift
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
 
   ensure_profile_for_launch "$profile"
   exec env COPILOT_HOME="$(profile_home "$profile")" \
@@ -647,7 +637,7 @@ ensure_profile_for_launch() {
   local version
 
   prepare_profile_home "$profile"
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
   inventory="$(plugin_inventory_snapshot "$profile")" \
     || die "failed to read installed plugins: $profile"
   forbidden="$(forbidden_superpowers_plugins_from_snapshot "$profile" "$inventory")" \
@@ -709,7 +699,7 @@ setup_profile() {
   local current_version
   require_profile "$profile"
   prepare_profile_home "$profile"
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
   remove_forbidden_superpowers "$profile"
   ensure_marketplace "$profile"
   plugin="$(profile_value "$profile" plugin)"
@@ -966,7 +956,7 @@ doctor_profile() {
   [[ "$(profile_value "$profile" standaloneMcps)" == '[]' ]] \
     || die "catalog requests unsupported standalone MCPs: $profile"
 
-  verify_engineersamuel_skills "$profile"
+  verify_floating_skills "$profile"
   check_empty_mcp_file "$home/mcp-config.json"
   check_empty_mcp_file "$home/config/mcp-config.json"
 
@@ -1044,7 +1034,7 @@ update_profile() {
   local plugin
   local version
   require_profile "$profile"
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
   [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
   ensure_marketplace "$profile"
   marketplace_name="$(profile_value "$profile" marketplaceName)"
@@ -1066,7 +1056,7 @@ repair_profile() {
   local version
   require_profile "$profile"
   prepare_profile_home "$profile"
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
   remove_forbidden_superpowers "$profile"
   ensure_marketplace "$profile"
   plugin="$(profile_value "$profile" plugin)"
