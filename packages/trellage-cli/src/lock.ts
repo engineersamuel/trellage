@@ -387,32 +387,34 @@ const missingArtifact = (names: ReadonlySet<string>, required: ReadonlyArray<str
   return undefined
 }
 
-const validateClaudeArtifacts = (
+const validateClaudePythonIntegrity = (integrity: string | undefined): string | undefined => {
+  if (!sha256Pattern.test(integrity ?? "")) return "Python dependency lock integrity is missing or invalid"
+}
+
+const validateClaudeMarketplaceArtifacts = (
   document: ProfileDocument,
   current: ProfileLock,
   artifactNames: ReadonlySet<string>,
 ): string | undefined => {
-  if (current.packages.harness.kind !== "claude") return undefined
-  const missingCommon = missingArtifact(artifactNames, ["node", "builder-oci", "skopeo-oci"])
-  if (missingCommon !== undefined) return `required Claude artifact is missing: ${missingCommon}`
-  const claudeAdapter = document.profile.harness.kind === "claude" ? document.profile.plugins[0]?.adapter : undefined
-  if (claudeAdapter !== "hyperresearch") {
-    const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
-    if (extraPython) {
-      if (!sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
-        return "Python dependency lock integrity is missing or invalid"
-      }
-      return missingArtifact(artifactNames, ["python"]) === undefined
-        ? undefined
-        : "required Claude artifact is missing: python"
-    }
+  const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
+  if (!extraPython) {
     return current.packages.python_lock_integrity === undefined
       ? undefined
       : "Python dependency lock requires Hyperresearch"
   }
-  if (!sha256Pattern.test(current.packages.python_lock_integrity ?? "")) {
-    return "Python dependency lock integrity is missing or invalid"
-  }
+  const integrityError = validateClaudePythonIntegrity(current.packages.python_lock_integrity)
+  if (integrityError !== undefined) return integrityError
+  return missingArtifact(artifactNames, ["python"]) === undefined
+    ? undefined
+    : "required Claude artifact is missing: python"
+}
+
+const validateHyperresearchArtifacts = (
+  current: ProfileLock,
+  artifactNames: ReadonlySet<string>,
+): string | undefined => {
+  const integrityError = validateClaudePythonIntegrity(current.packages.python_lock_integrity)
+  if (integrityError !== undefined) return integrityError
   const missingHyperresearch = missingArtifact(artifactNames, [
     "python",
     "playwright-mcp",
@@ -423,6 +425,19 @@ const validateClaudeArtifacts = (
     "obscura",
   ])
   return missingHyperresearch === undefined ? undefined : `required Claude artifact is missing: ${missingHyperresearch}`
+}
+
+const validateClaudeArtifacts = (
+  document: ProfileDocument,
+  current: ProfileLock,
+  artifactNames: ReadonlySet<string>,
+): string | undefined => {
+  if (current.packages.harness.kind !== "claude") return undefined
+  const missingCommon = missingArtifact(artifactNames, ["node", "builder-oci", "skopeo-oci"])
+  if (missingCommon !== undefined) return `required Claude artifact is missing: ${missingCommon}`
+  const claudeAdapter = document.profile.harness.kind === "claude" ? document.profile.plugins[0]?.adapter : undefined
+  if (claudeAdapter === "hyperresearch") return validateHyperresearchArtifacts(current, artifactNames)
+  return validateClaudeMarketplaceArtifacts(document, current, artifactNames)
 }
 
 const codexCodeModeHostUrl = (version: string, platform: Platform): string => {
@@ -739,6 +754,44 @@ const resolveSources = (
     { concurrency: 1 },
   )
 
+type PackageRequest = Parameters<LockResolvers["resolvePackages"]>[0]
+
+const validCurrentLock = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  platform: Platform,
+): ProfileLock | undefined =>
+  current !== undefined && lockSemanticError(document, current, false, platform) === undefined ? current : undefined
+
+const claudeLockAdapter = (document: ProfileDocument): PackageRequest["claudeAdapter"] => {
+  if (document.profile.harness.kind !== "claude") return undefined
+  const adapter = document.profile.plugins[0]?.adapter
+  if (adapter === "hyperresearch" || adapter === "claude-marketplace") return adapter
+}
+
+const extraPackageFields = (
+  document: ProfileDocument,
+): Pick<PackageRequest, "extraArtifacts" | "extraPythonLockIntegrity"> => {
+  const extraArtifacts = extraClaudeMarketplaceArtifacts(document)
+  if (extraArtifacts.length === 0) return {}
+  if (extraArtifacts.some((artifact) => artifact.name === "python")) {
+    return { extraArtifacts, extraPythonLockIntegrity: arm64ArtifactCatalog.graphOfLoopsPythonLockIntegrity }
+  }
+  return { extraArtifacts }
+}
+
+const packageResolutionRequest = (document: ProfileDocument, platform: Platform): PackageRequest => {
+  const claudeAdapter = claudeLockAdapter(document)
+  return {
+    kind: document.profile.harness.kind,
+    selector: document.profile.harness.version,
+    platform,
+    packages: document.profile.image.packages,
+    ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
+    ...extraPackageFields(document),
+  }
+}
+
 export const compileLock = (
   document: ProfileDocument,
   current: ProfileLock | undefined,
@@ -751,35 +804,13 @@ export const compileLock = (
       Effect.mapError((cause) => new LockError({ message: cause.message, cause })),
     )
     const hash = profileHash(document)
-    const validCurrent =
-      current !== undefined && lockSemanticError(document, current, false, platform) === undefined ? current : undefined
+    const validCurrent = validCurrentLock(document, current, platform)
     if (validCurrent !== undefined && lockMatchesProfile(document, validCurrent) && !update) return validCurrent
     const sources = yield* resolveSources(document, validCurrent, update, resolvers)
-    const claudeAdapter =
-      document.profile.harness.kind === "claude" &&
-      (document.profile.plugins[0]?.adapter === "hyperresearch" ||
-        document.profile.plugins[0]?.adapter === "claude-marketplace")
-        ? document.profile.plugins[0].adapter
-        : undefined
-    const extraArtifacts = extraClaudeMarketplaceArtifacts(document)
     const packages =
       reusablePackages(document, validCurrent, update, platform) ??
       (yield* resolvers
-        .resolvePackages({
-          kind: document.profile.harness.kind,
-          selector: document.profile.harness.version,
-          platform,
-          packages: document.profile.image.packages,
-          ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
-          ...(extraArtifacts.length === 0
-            ? {}
-            : {
-                extraArtifacts,
-                ...(extraArtifacts.some((artifact) => artifact.name === "python")
-                  ? { extraPythonLockIntegrity: arm64ArtifactCatalog.graphOfLoopsPythonLockIntegrity }
-                  : {}),
-              }),
-        })
+        .resolvePackages(packageResolutionRequest(document, platform))
         .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
     const base =
       reusableBase(document, validCurrent, update, platform) ??
