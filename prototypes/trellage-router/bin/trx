@@ -14,6 +14,7 @@ readonly ownership_value='trellage-router-v1'
 readonly trx_herdr_ledger='[
   { "launcher": "cldx", "profile": "default", "status": "verified" },
   { "launcher": "omp", "profile": "copilot", "status": "verified" },
+  { "launcher": "picx", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
   { "launcher": "cpx", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
   { "launcher": "cpx", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrators own repo/worktree; never finished." },
   { "launcher": "cpx", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
@@ -224,15 +225,17 @@ build_choices() {
     --argjson grxCatalog "$4" \
     --argjson jcxCatalog "$5" \
     --argjson ompCatalog "$6" \
-    --argjson prxCatalog "$7" \
-    --arg cpxPath "$8" \
-    --arg cdxPath "$9" \
-    --arg cldxPath "${10}" \
-    --arg grxPath "${11}" \
-    --arg jcxPath "${12}" \
-    --arg ompPath "${13}" \
-    --arg prxPath "${14}" \
-    --argjson passthroughArgs "${15}" '
+    --argjson picxCatalog "$7" \
+    --argjson prxCatalog "$8" \
+    --arg cpxPath "$9" \
+    --arg cdxPath "${10}" \
+    --arg cldxPath "${11}" \
+    --arg grxPath "${12}" \
+    --arg jcxPath "${13}" \
+    --arg ompPath "${14}" \
+    --arg picxPath "${15}" \
+    --arg prxPath "${16}" \
+    --argjson passthroughArgs "${17}" '
     def models($catalog; $profile):
       if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
@@ -240,6 +243,8 @@ build_choices() {
         {defaultModel:"claude-opus-5",models:["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"],modelOverrideSupported:true}
       elif $catalog.launcher == "omp" and $profile.name == "copilot" then
         {defaultModel:"github-copilot/gpt-5.6-sol:medium",models:["github-copilot/gpt-5.6-sol:medium","github-copilot/gpt-5.6-terra:medium"],modelOverrideSupported:true}
+      elif $catalog.launcher == "picx" then
+        {defaultModel:"copilot-proxy-rs/gpt-5.6-sol:medium",models:["copilot-proxy-rs/gpt-5.6-sol:medium"],modelOverrideSupported:false}
       elif $catalog.launcher == "omp" then
         {defaultModel:"copilot-proxy-rs/qwen3.6-35b-a3b-local",models:["copilot-proxy-rs/qwen3.6-35b-a3b-local"],modelOverrideSupported:false}
       elif $catalog.launcher == "grx" then
@@ -251,7 +256,7 @@ build_choices() {
       else {models:[],modelOverrideSupported:false}
       end;
     def display_harness($catalog):
-      if $catalog.launcher == "omp" then "pi" else $catalog.harness end;
+      if $catalog.launcher == "omp" or $catalog.launcher == "picx" then "pi" else $catalog.harness end;
     def display_profile($catalog; $profile):
       if $catalog.launcher == "omp" and $profile.name == "copilot" then "oh-my-pi" else $profile.name end;
     def binary_path($catalog):
@@ -261,6 +266,7 @@ build_choices() {
       elif $catalog.launcher == "grx" then $grxPath
       elif $catalog.launcher == "jcx" then $jcxPath
       elif $catalog.launcher == "omp" then $ompPath
+      elif $catalog.launcher == "picx" then $picxPath
       elif $catalog.launcher == "prx" then $prxPath
       else error("unknown launcher path") end;
     def pair($catalog):
@@ -293,6 +299,7 @@ build_choices() {
         pair($grxCatalog),
         pair($jcxCatalog),
         pair($ompCatalog),
+        pair($picxCatalog),
         pair($prxCatalog)
       ]
     }
@@ -307,7 +314,8 @@ build_profile_list() {
     --argjson grxCatalog "$4" \
     --argjson jcxCatalog "$5" \
     --argjson ompCatalog "$6" \
-    --argjson prxCatalog "$7" \
+    --argjson picxCatalog "$7" \
+    --argjson prxCatalog "$8" \
     --argjson herdrLedger "$trx_herdr_ledger" '
     def herdrCompatibility($launcher; $name):
       ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
@@ -333,6 +341,7 @@ build_profile_list() {
         profiles($grxCatalog),
         profiles($jcxCatalog),
         profiles($ompCatalog),
+        profiles($picxCatalog),
         profiles($prxCatalog)
       ]
     }
@@ -420,6 +429,7 @@ cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-cla
 grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v1)"
+picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1)"
 prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1)"
 
 if [[ "$mode" == inventory ]]; then
@@ -430,6 +440,7 @@ if [[ "$mode" == inventory ]]; then
     grx) inventory_executable="$grx" ;;
     jcx) inventory_executable="$jcx" ;;
     omp) inventory_executable="$omp" ;;
+    picx) inventory_executable="$picx" ;;
     prx) inventory_executable="$prx" ;;
     *) die "unknown launcher: $inventory_launcher" ;;
   esac
@@ -462,17 +473,19 @@ read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" 2>"$catalog_tmp/jcx.err" &
 jcx_catalog_pid=$!
 read_catalog omp oh-my-pi "$omp" >"$catalog_tmp/omp" 2>"$catalog_tmp/omp.err" &
 omp_catalog_pid=$!
+read_catalog picx pi "$picx" >"$catalog_tmp/picx" 2>"$catalog_tmp/picx.err" &
+picx_catalog_pid=$!
 read_catalog prx prime "$prx" >"$catalog_tmp/prx" 2>"$catalog_tmp/prx.err" &
 prx_catalog_pid=$!
 
 catalog_status=0
 for catalog_pid in \
   "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" "$grx_catalog_pid" \
-  "$jcx_catalog_pid" "$omp_catalog_pid" "$prx_catalog_pid"; do
+  "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" "$prx_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
 if ((catalog_status != 0)); then
-  for launcher in cpx cdx cldx grx jcx omp prx; do
+  for launcher in cpx cdx cldx grx jcx omp picx prx; do
     while IFS= read -r diagnostic; do
       printf '%s\n' "$diagnostic" >&2
     done <"$catalog_tmp/$launcher.err"
@@ -486,6 +499,7 @@ cldx_catalog="$(<"$catalog_tmp/cldx")"
 grx_catalog="$(<"$catalog_tmp/grx")"
 jcx_catalog="$(<"$catalog_tmp/jcx")"
 omp_catalog="$(<"$catalog_tmp/omp")"
+picx_catalog="$(<"$catalog_tmp/picx")"
 prx_catalog="$(<"$catalog_tmp/prx")"
 cleanup_catalog_tmp
 trap - EXIT HUP INT TERM
@@ -493,7 +507,7 @@ trap - EXIT HUP INT TERM
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
     "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$prx_catalog")" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
     printf '%s\n' "$profile_list"
@@ -512,8 +526,8 @@ command -v node >/dev/null 2>&1 || die 'required command not found: node'
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$prx_catalog" \
-  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$prx" "$passthrough_args")" \
+  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" \
+  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$picx" "$prx" "$passthrough_args")" \
   || die 'could not build profile choices'
 
 choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
@@ -561,6 +575,10 @@ case "$launcher" in
   omp)
     selected_launcher="$omp"
     selected_catalog="$omp_catalog"
+    ;;
+  picx)
+    selected_launcher="$picx"
+    selected_catalog="$picx_catalog"
     ;;
   prx)
     selected_launcher="$prx"

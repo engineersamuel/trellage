@@ -54,7 +54,7 @@ mise run rebuild-profiles
 That:
 
 1. Installs the worktree `trellage` into `~/.local/bin`
-2. Reinstalls every native launcher (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `prx`) then `trx`
+2. Reinstalls every native launcher (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, `prx`) then `trx`
    from `prototypes/trellage-*-profiles` and `prototypes/trellage-router`
 3. Runs non-locked `trellage build` for every `profiles/*/profile.toml` (pins
    kept; `final_digest` may update)

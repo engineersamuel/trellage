@@ -125,6 +125,7 @@ known_native_packages=(
   trellage-grok-profiles
   trellage-jcode-profiles
   trellage-omp-profiles
+  trellage-picx-profiles
   trellage-prime-profiles
 )
 
@@ -203,7 +204,7 @@ install_native_stack() {
 
   printf 'rebuild-profile-images: verifying native commands on PATH\n' >&2
   local cmd resolved runtime
-  for cmd in cdx cpx cldx grx jcx omp prx trx; do
+  for cmd in cdx cpx cldx grx jcx omp picx prx trx; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       # jcx/omp/prx may be optional on some machines; fail hard for the core set.
       case "$cmd" in

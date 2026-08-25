@@ -2,13 +2,13 @@
 
 **Trellage Native** is the host-native profile family. Its `trx` router
 discovers the installed launchers `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`,
-and `prx`,
+`picx`, and `prx`,
 validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
 
 ## Install
 
-Install the seven native launchers first. Their commands must resolve from
+Install the eight native launchers first. Their commands must resolve from
 `PATH` to their owned runtimes under `~/.local/share/trellage/`.
 
 Prerequisites: Bash, Node.js, and `jq`.
@@ -20,6 +20,7 @@ Prerequisites: Bash, Node.js, and `jq`.
 (cd ../trellage-grok-profiles && ./install.sh)
 (cd ../trellage-jcode-profiles && ./install.sh)
 (cd ../trellage-omp-profiles && ./install.sh)
+(cd ../trellage-picx-profiles && ./install.sh)
 (cd ../trellage-prime-profiles && ./install.sh)
 ./install.sh
 ```
@@ -60,7 +61,7 @@ mise run trx -- list --json
 `launcher`, `harness`, `name`, `description`, `headless`, `sandbox`, and
 `herdrCompatibility`. `trx` copies each launcher's `headless` object unchanged;
 it does not infer headless support from launcher names. Both forms are
-non-interactive and work without a TTY. They validate all seven owned launchers
+non-interactive and work without a TTY. They validate all eight owned launchers
 and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
 
@@ -87,7 +88,7 @@ readiness status. Diagnostic inventory remains available directly from
 launchers that support `inventory PROFILE --json`; `trx` does not collect it on
 the launch path. `doctor` remains the full runtime health diagnostic.
 
-`trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx`
+`trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, and `prx`
 still run
 their selected agents directly on the host with the permissions and safety
 behavior documented by each launcher. Use only trusted repositories, profiles,

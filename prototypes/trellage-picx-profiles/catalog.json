@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "description": "Upstream Pi with proxy-backed GPT-5.6 Sol medium and the ordered Vox daily-coding extension set.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "prompt-only",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "0.84.2"
+      },
+      "kind": "local",
+      "piProfile": "picx-default",
+      "plugin": null,
+      "standaloneMcps": [],
+      "extensions": [
+        {
+          "name": "Ponytail",
+          "package": "@dietrichgebert/ponytail",
+          "installSpec": "git:github.com/DietrichGebert/ponytail"
+        },
+        {
+          "name": "pi-web-access",
+          "package": "pi-web-access",
+          "installSpec": "npm:pi-web-access"
+        },
+        {
+          "name": "pi-subagents",
+          "package": "pi-subagents",
+          "installSpec": "npm:pi-subagents@0.34.0"
+        },
+        {
+          "name": "pi-fff",
+          "package": "@ff-labs/pi-fff",
+          "installSpec": "npm:@ff-labs/pi-fff@0.10.5"
+        },
+        {
+          "name": "pi-context-view",
+          "package": "pi-context-view",
+          "installSpec": "npm:pi-context-view"
+        },
+        {
+          "name": "pi-mcp-adapter",
+          "package": "pi-mcp-adapter",
+          "installSpec": "npm:pi-mcp-adapter"
+        },
+        {
+          "name": "pi-btw",
+          "package": "@narumitw/pi-btw",
+          "installSpec": "npm:@narumitw/pi-btw@0.11.0"
+        },
+        {
+          "name": "Plannotator",
+          "package": "@plannotator/pi-extension",
+          "installSpec": "npm:@plannotator/pi-extension@0.20.3"
+        },
+        {
+          "name": "pi-goal",
+          "package": "@narumitw/pi-goal",
+          "installSpec": "npm:@narumitw/pi-goal@0.48.0"
+        },
+        {
+          "name": "pi-dynamic-workflows",
+          "package": "@quintinshaw/pi-dynamic-workflows",
+          "installSpec": "npm:@quintinshaw/pi-dynamic-workflows@2.14.1"
+        }
+      ]
+    }
+  }
+}
