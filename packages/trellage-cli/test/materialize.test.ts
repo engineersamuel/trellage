@@ -26,6 +26,7 @@ import {
   materializeClaudeAssets,
   materializeChromiumArchives,
   materializeHyperresearchPackage,
+  normalizeHyperresearchHookInstaller,
   normalizeHyperresearchSeed,
   normalizeHyperresearchSitePermissions,
   stampClaudeMarketplaceVersions,
@@ -181,15 +182,100 @@ describe("Hyperresearch seed normalization", () => {
     await expect(readFile(skill, "utf8")).resolves.toBe("invoke /usr/local/bin/hyperresearch\n")
   })
 
+  it("makes project hooks portable and migrates existing absolute commands", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-hooks-")
+    const hooksPath = path.join(root, "hyperresearch", "core", "hooks.py")
+    await mkdir(path.dirname(hooksPath), { recursive: true })
+    await writeFile(
+      hooksPath,
+      `\
+unrelated_before = "keep"
+    hook_path = hook_dir / "hook.js"
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if "hyperresearch" in h.get("command", ""):
+                    return None
+
+    pre_tool.append({
+            "command": f"node {hook_path.as_posix()}",
+unrelated_after = "keep"
+`,
+    )
+
+    await Effect.runPromise(normalizeHyperresearchHookInstaller(root))
+
+    const normalized = await readFile(hooksPath, "utf8")
+    expect(normalized).toContain('hook_path = hook_dir / "hook.cjs"')
+    expect(normalized).toContain(`hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'`)
+    expect(normalized).toContain('if "hyperresearch" not in command:')
+    expect(normalized).toContain("if command == hook_command:")
+    expect(normalized).toContain('h["command"] = hook_command')
+    expect(normalized).toContain('"command": hook_command,')
+    expect(normalized).toContain('settings_path.write_text(json.dumps(settings, indent=2) + "\\n", encoding="utf-8")')
+    expect(normalized).toContain('unrelated_before = "keep"')
+    expect(normalized).toContain('unrelated_after = "keep"')
+    expect(normalized).not.toContain("hook_path.as_posix()")
+  })
+
+  it("leaves an already-portable project hook installer byte-identical", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-portable-hooks-")
+    const hooksPath = path.join(root, "hyperresearch", "core", "hooks.py")
+    const portable = `\
+    hook_path = hook_dir / "hook.cjs"
+    hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'
+                command = h.get("command", "")
+                if "hyperresearch" not in command:
+                    continue
+                if command == hook_command:
+                    return None
+                h["command"] = hook_command
+            "command": hook_command,
+`
+    await mkdir(path.dirname(hooksPath), { recursive: true })
+    await writeFile(hooksPath, portable)
+
+    await Effect.runPromise(normalizeHyperresearchHookInstaller(root))
+    await Effect.runPromise(normalizeHyperresearchHookInstaller(root))
+
+    await expect(readFile(hooksPath, "utf8")).resolves.toBe(portable)
+  })
+
+  it("fails closed when the upstream project hook installer drifts", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-drifted-hooks-")
+    const hooksPath = path.join(root, "hyperresearch", "core", "hooks.py")
+    await mkdir(path.dirname(hooksPath), { recursive: true })
+    await writeFile(hooksPath, 'def _install_claude_hook():\n    command = "python hook.py"\n')
+
+    await expect(Effect.runPromise(normalizeHyperresearchHookInstaller(root))).rejects.toMatchObject({
+      message:
+        "cannot normalize Hyperresearch project hook installer: unsupported Hyperresearch project hook installer source",
+    })
+  })
+
   it("materializes the locked pure-Python package without fetching build dependencies", async () => {
     const root = await temporaryRoot("trellage-hyperresearch-package-")
     const source = path.join(root, "source")
     const sitePackages = path.join(root, "site-packages")
     const executable = path.join(root, "venv", "bin", "hyperresearch")
-    await mkdir(path.join(source, "src", "hyperresearch"), { recursive: true })
+    await mkdir(path.join(source, "src", "hyperresearch", "core"), { recursive: true })
     await mkdir(sitePackages, { recursive: true })
     await mkdir(path.dirname(executable), { recursive: true })
     await writeFile(path.join(source, "src", "hyperresearch", "__main__.py"), "print('ready')\n")
+    await writeFile(
+      path.join(source, "src", "hyperresearch", "core", "hooks.py"),
+      `\
+    hook_path = hook_dir / "hook.js"
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if "hyperresearch" in h.get("command", ""):
+                    return None
+
+    pre_tool.append({
+            "command": f"node {hook_path.as_posix()}",
+`,
+    )
 
     await Effect.runPromise(materializeHyperresearchPackage(source, sitePackages, executable))
 

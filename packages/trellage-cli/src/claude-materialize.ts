@@ -308,22 +308,116 @@ export const normalizeHyperresearchSeed = (
     }
   })
 
+const vulnerableHyperresearchHookLoop = `\
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if "hyperresearch" in h.get("command", ""):
+                    return None
+
+    pre_tool.append({`
+
+const portableHyperresearchHookLoop = `\
+    hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                command = h.get("command", "")
+                if "hyperresearch" not in command:
+                    continue
+                if command == hook_command:
+                    return None
+                h["command"] = hook_command
+                settings_path.write_text(json.dumps(settings, indent=2) + "\\n", encoding="utf-8")
+                return "Claude Code: .claude/settings.json (PreToolUse hook updated)"
+
+    pre_tool.append({`
+
+const vulnerableHyperresearchHookCommand = '            "command": f"node {hook_path.as_posix()}",'
+const portableHyperresearchHookCommand = '            "command": hook_command,'
+const vulnerableHyperresearchHookScriptPath = '    hook_path = hook_dir / "hook.js"'
+const portableHyperresearchHookScriptPath = '    hook_path = hook_dir / "hook.cjs"'
+
+const replaceExactlyOnce = (source: string, vulnerable: string, portable: string): string => {
+  const first = source.indexOf(vulnerable)
+  if (first < 0 || source.indexOf(vulnerable, first + vulnerable.length) >= 0) {
+    throw new Error("unsupported Hyperresearch project hook installer source")
+  }
+  return `${source.slice(0, first)}${portable}${source.slice(first + vulnerable.length)}`
+}
+
+export const normalizeHyperresearchHookInstaller = (
+  sitePackages: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const hooksPath = path.join(sitePackages, "hyperresearch", "core", "hooks.py")
+      const source = await readFile(hooksPath, "utf8")
+      const portableFragments = [
+        portableHyperresearchHookScriptPath,
+        `hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'`,
+        'if "hyperresearch" not in command:',
+        "if command == hook_command:",
+        'h["command"] = hook_command',
+        portableHyperresearchHookCommand,
+      ] as const
+      if (portableFragments.every((fragment) => source.includes(fragment))) {
+        if (
+          source.includes(vulnerableHyperresearchHookLoop) ||
+          source.includes(vulnerableHyperresearchHookCommand) ||
+          source.includes(vulnerableHyperresearchHookScriptPath)
+        ) {
+          throw new Error("unsupported Hyperresearch project hook installer source")
+        }
+        return
+      }
+      if (portableFragments.some((fragment) => source.includes(fragment))) {
+        throw new Error("unsupported Hyperresearch project hook installer source")
+      }
+
+      const normalizedLoop = replaceExactlyOnce(source, vulnerableHyperresearchHookLoop, portableHyperresearchHookLoop)
+      const normalized = replaceExactlyOnce(
+        normalizedLoop,
+        vulnerableHyperresearchHookCommand,
+        portableHyperresearchHookCommand,
+      )
+      const normalizedScriptPath = replaceExactlyOnce(
+        normalized,
+        vulnerableHyperresearchHookScriptPath,
+        portableHyperresearchHookScriptPath,
+      )
+      await writeFile(hooksPath, normalizedScriptPath)
+    },
+    catch: (cause) =>
+      new ClaudeMaterializeError({
+        message: `cannot normalize Hyperresearch project hook installer${
+          cause instanceof Error ? `: ${cause.message}` : ""
+        }`,
+        cause,
+      }),
+  })
+
 export const materializeHyperresearchPackage = (
   sourceDirectory: string,
   sitePackages: string,
   executable?: string,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
-  attempt("cannot materialize Hyperresearch Python package", async () => {
-    await cp(path.join(sourceDirectory, "src", "hyperresearch"), path.join(sitePackages, "hyperresearch"), {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      verbatimSymlinks: true,
-    })
+  Effect.gen(function* () {
+    yield* attempt("cannot materialize Hyperresearch Python package", () =>
+      cp(path.join(sourceDirectory, "src", "hyperresearch"), path.join(sitePackages, "hyperresearch"), {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        verbatimSymlinks: true,
+      }),
+    )
+    yield* normalizeHyperresearchHookInstaller(sitePackages)
     if (executable !== undefined) {
-      await writeFile(executable, '#!/bin/sh\nexec "$(dirname "$0")/python" -m hyperresearch "$@"\n', {
-        mode: 0o755,
-      })
+      yield* attempt("cannot materialize Hyperresearch executable", () =>
+        writeFile(executable, '#!/bin/sh\nexec "$(dirname "$0")/python" -m hyperresearch "$@"\n', {
+          mode: 0o755,
+        }),
+      )
     }
   })
 
