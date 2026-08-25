@@ -38,6 +38,11 @@ cat >"$seed/default-settings.json" <<'JSON'
   "disableArtifact": true
 }
 JSON
+cat >"$seed/default-user-settings.json" <<'JSON'
+{
+  "outputStyle": "Rundown"
+}
+JSON
 cat >"$seed/default-onboarding.json" <<'JSON'
 {
   "hasCompletedOnboarding": true,
@@ -109,6 +114,7 @@ jq -e '
   and .disableRemoteControl == true
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
+  and .outputStyle == "Rundown"
 ' "$runtime/settings.json" >/dev/null
 jq -e '
   .hasCompletedOnboarding == true
@@ -309,7 +315,9 @@ grep -Fqx \
 
 no_token_config="$root/no-token-config"
 warning="$root/warning"
-printf 'keep settings\n' >"$runtime/settings.json"
+jq '.outputStyle = "Explanatory" | .preserve = "user-state"' \
+  "$runtime/settings.json" >"$root/user-settings.json"
+mv "$root/user-settings.json" "$runtime/settings.json"
 PATH="$fake_bin:$PATH" \
 TRELLAGE_CLAUDE_SEED_HOME="$seed" \
 TRELLAGE_CLAUDE_HOME="$runtime" \
@@ -319,7 +327,59 @@ CLAUDE_ARGS_OUT="$root/no-token-args" CLAUDE_CONFIG_OUT="$no_token_config" CLAUD
 ! grep -Fq '"playwright"' "$no_token_config"
 grep -Fq '"obscura"' "$no_token_config"
 grep -Fq 'Playwright extension token is absent' "$warning"
-grep -Fqx 'keep settings' "$runtime/settings.json"
+jq -e '
+  .outputStyle == "Explanatory"
+  and .preserve == "user-state"
+' "$runtime/settings.json" >/dev/null
+
+cp "$runtime/settings.json" "$root/valid-settings.json"
+printf '{invalid json\n' >"$runtime/settings.json"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/invalid-settings-args" CLAUDE_CONFIG_OUT="$root/invalid-settings-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/invalid-settings-config-path" CLAUDE_ENV_OUT="$root/invalid-settings-env" \
+  "$entry" new claude --print hello >"$root/invalid-settings.out" 2>"$root/invalid-settings.err"; then
+  printf 'expected invalid Claude settings to fail\n' >&2
+  exit 1
+fi
+grep -Fq 'Claude settings are invalid' "$root/invalid-settings.err"
+grep -Fqx '{invalid json' "$runtime/settings.json"
+mv "$root/valid-settings.json" "$runtime/settings.json"
+
+cp "$runtime/settings.json" "$root/valid-settings.json"
+printf '{}\n{}\n' >"$runtime/settings.json"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/multiple-settings-args" CLAUDE_CONFIG_OUT="$root/multiple-settings-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/multiple-settings-config-path" CLAUDE_ENV_OUT="$root/multiple-settings-env" \
+  "$entry" new claude --print hello >"$root/multiple-settings.out" 2>"$root/multiple-settings.err"; then
+  printf 'expected multiple Claude settings documents to fail\n' >&2
+  exit 1
+fi
+grep -Fq 'Claude settings are invalid' "$root/multiple-settings.err"
+if [[ "$(grep -Fxc '{}' "$runtime/settings.json")" != 2 ]]; then
+  printf 'multiple Claude settings documents were replaced\n' >&2
+  exit 1
+fi
+mv "$root/valid-settings.json" "$runtime/settings.json"
+
+mv "$runtime/settings.json" "$root/valid-settings.json"
+ln -s "$root/valid-settings.json" "$runtime/settings.json"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/symlink-settings-args" CLAUDE_CONFIG_OUT="$root/symlink-settings-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/symlink-settings-config-path" CLAUDE_ENV_OUT="$root/symlink-settings-env" \
+  "$entry" new claude --print hello >"$root/symlink-settings.out" 2>"$root/symlink-settings.err"; then
+  printf 'expected symlinked Claude settings to fail\n' >&2
+  exit 1
+fi
+grep -Fq 'Claude settings must be a regular file' "$root/symlink-settings.err"
+[[ -L "$runtime/settings.json" ]]
+rm "$runtime/settings.json"
+mv "$root/valid-settings.json" "$runtime/settings.json"
 
 printf 'before rollback\n' >"$runtime/skills/hyperresearch/SKILL.md"
 printf 'skills/hyperresearch/missing.md\n' >"$seed/managed-paths.txt"
@@ -332,7 +392,36 @@ if PATH="$fake_bin:$PATH" \
   exit 1
 fi
 grep -Fqx 'before rollback' "$runtime/skills/hyperresearch/SKILL.md"
-grep -Fqx 'keep settings' "$runtime/settings.json"
+jq -e '
+  .outputStyle == "Explanatory"
+  and .preserve == "user-state"
+' "$runtime/settings.json" >/dev/null
+
+core_seed="$root/core-seed"
+core_runtime="$root/core-home/.claude"
+mkdir -p "$core_seed/output-styles" "$core_runtime"
+cp "$seed/default-settings.json" "$core_seed/default-settings.json"
+cp "$seed/default-user-settings.json" "$core_seed/default-user-settings.json"
+cp "$seed/default-onboarding.json" "$core_seed/default-onboarding.json"
+printf 'Rundown\n' >"$core_seed/output-styles/rundown.md"
+printf 'output-styles/rundown.md\n' >"$core_seed/managed-paths.txt"
+printf '{"enabledPlugins":[]}\n' >"$core_seed/plugin-settings.json"
+printf '{"outputStyle":"Explanatory","preserve":"core-user-state"}\n' \
+  >"$core_runtime/settings.json"
+cp "$core_runtime/settings.json" "$root/core-settings.before"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$core_seed" TRELLAGE_CLAUDE_HOME="$core_runtime" \
+  TRELLAGE_CLAUDE_MODE=core TRELLAGE_CLAUDE_RUNTIME_MODE=core \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/core-rollback-args" CLAUDE_CONFIG_OUT="$root/core-rollback-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/core-rollback-config-path" CLAUDE_ENV_OUT="$root/core-rollback-env" \
+  "$entry" new claude --print hello >"$root/core-rollback.out" 2>"$root/core-rollback.err"; then
+  printf 'expected core Claude settings transaction to fail\n' >&2
+  exit 1
+fi
+grep -Fq 'baked Claude plugin settings are invalid' "$root/core-rollback.err"
+cmp -s "$root/core-settings.before" "$core_runtime/settings.json"
+[[ ! -e "$core_runtime/output-styles/rundown.md" ]]
 
 native_seed="$root/native-seed"
 native_runtime="$root/native-home/.claude"
@@ -373,6 +462,7 @@ cat >"$native_seed/plugin-settings.json" <<'JSON'
 }
 JSON
 cp "$seed/default-settings.json" "$native_seed/default-settings.json"
+cp "$seed/default-user-settings.json" "$native_seed/default-user-settings.json"
 cp "$seed/default-onboarding.json" "$native_seed/default-onboarding.json"
 printf '%s\n' \
   plugins/cache/social-media-skills/social-media-skills/1.0.0/skills/post-writer/SKILL.md \
@@ -407,6 +497,7 @@ grep -Fqx '# Post writer' \
 grep -Fqx 'keep native auth' "$native_runtime/.credentials.json"
 jq -e '
   .theme == "dark"
+  and .outputStyle == "Rundown"
   and .enabledPlugins["social-media-skills@social-media-skills"] == true
 ' "$native_runtime/settings.json" >/dev/null
 jq -e '

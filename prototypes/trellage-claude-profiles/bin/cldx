@@ -84,6 +84,7 @@ readonly profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
 readonly onboarding="$profile_home/.claude.json"
+readonly settings="$profile_home/settings.json"
 readonly output_style_root="$profile_home/output-styles"
 readonly output_style="$output_style_root/rundown.md"
 engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
@@ -395,6 +396,32 @@ ensure_output_style() {
   mv -f "$staged" "$output_style"
 }
 
+ensure_settings() {
+  local staged
+
+  [[ ! -L "$settings" && ( ! -e "$settings" || -f "$settings" ) ]] \
+    || die "unsafe Claude settings: $settings"
+  staged="$(mktemp "$profile_home/.settings.json.XXXXXX")" \
+    || die 'could not stage Claude settings'
+  if [[ -e "$settings" ]]; then
+    if ! jq -s '
+      if length != 1 or (.[0] | type) != "object"
+      then error("settings must contain exactly one object")
+      else .[0]
+      end
+      | .outputStyle = (.outputStyle // "Rundown")
+    ' "$settings" >"$staged"; then
+      rm -f -- "$staged"
+      die "invalid Claude settings: $settings"
+    fi
+  else
+    jq -n '{outputStyle: "Rundown"}' >"$staged" \
+      || die 'could not create Claude settings'
+  fi
+  chmod 0600 "$staged"
+  mv -f "$staged" "$settings"
+}
+
 ensure_trust() {
   local workspace staged
 
@@ -451,6 +478,7 @@ setup_profile() {
   sync_engineersamuel_skills
   ensure_onboarding "$version"
   ensure_output_style
+  ensure_settings
   check_proxy
   printf 'cldx setup: ready (%s, %s)\n' "$version" "$model_id"
 }
@@ -465,6 +493,7 @@ repair_profile() {
   sync_engineersamuel_skills
   ensure_onboarding "$version"
   ensure_output_style
+  ensure_settings
   check_proxy
   printf 'cldx repair: restored (%s, %s)\n' "$version" "$model_id"
 }
@@ -535,6 +564,7 @@ launch_profile() {
   ensure_onboarding "$version"
   ensure_output_style
   sync_engineersamuel_skills
+  ensure_settings
   ensure_trust
   check_proxy
 

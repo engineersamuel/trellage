@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { builderScript, profileMetadata } from "../src/application.js"
-import { claudeDefaultOnboarding, claudeDefaultSettings } from "../src/claude-materialize.js"
+import { claudeDefaultOnboarding, claudeDefaultSettings, claudeDefaultUserSettings } from "../src/claude-materialize.js"
 import { parseLock } from "../src/lock-file.js"
 import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
@@ -37,6 +37,8 @@ describe("authored Claude Research profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
     expect(claudeDefaultSettings.permissions.defaultMode).toBe("bypassPermissions")
     expect(claudeDefaultSettings.skipDangerousModePermissionPrompt).toBe(true)
+    expect(claudeDefaultSettings).not.toHaveProperty("outputStyle")
+    expect(claudeDefaultUserSettings.outputStyle).toBe("Rundown")
     expect(claudeDefaultOnboarding("2.1.222")).toEqual({
       hasCompletedOnboarding: true,
       lastOnboardingVersion: "2.1.222",

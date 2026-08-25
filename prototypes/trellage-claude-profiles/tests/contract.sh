@@ -229,6 +229,10 @@ output_style="$profile_home/output-styles/rundown.md"
 [[ -f "$output_style" && ! -L "$output_style" ]] || fail 'setup did not seed the output style'
 cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
   || fail 'seeded output style differs'
+settings="$profile_home/settings.json"
+[[ -f "$settings" && ! -L "$settings" ]] || fail 'setup did not seed Claude settings'
+jq -e '.outputStyle == "Rundown"' "$settings" >/dev/null \
+  || fail 'setup Claude output style differs'
 
 "$command_path" || fail 'bare launch failed'
 jq -e '
@@ -379,12 +383,19 @@ grep -Fq 'copilot-proxy-rs health response is invalid' "$fixture_root/health-jso
 jq '.theme = "light" | .preserve = "user-state" | .hasCompletedOnboarding = false' \
   "$profile_home/.claude.json" >"$fixture_root/onboarding.json"
 mv "$fixture_root/onboarding.json" "$profile_home/.claude.json"
+jq '.outputStyle = "Explanatory" | .preserve = "user-state"' \
+  "$settings" >"$fixture_root/settings.json"
+mv "$fixture_root/settings.json" "$settings"
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 jq -e '
   .hasCompletedOnboarding == true
   and .theme == "light"
   and .preserve == "user-state"
 ' "$profile_home/.claude.json" >/dev/null || fail 'repair did not preserve user state'
+jq -e '
+  .outputStyle == "Explanatory"
+  and .preserve == "user-state"
+' "$settings" >/dev/null || fail 'repair did not preserve Claude settings'
 [[ "$(<"$profile_home/unrelated-state")" == preserve ]] \
   || fail 'repair changed unrelated profile state'
 
@@ -394,6 +405,29 @@ mv "$fake_bin/claude" "$fake_bin/claude.absent"
 grep -Fq 'required command not found: claude' "$fixture_root/missing.out" \
   || fail 'missing Claude Code error differs'
 mv "$fake_bin/claude.absent" "$fake_bin/claude"
+
+mv "$settings" "$fixture_root/valid-settings.json"
+ln -s /dev/null "$settings"
+"$command_path" repair >"$fixture_root/settings-symlink.out" 2>"$fixture_root/settings-symlink.err" \
+  && fail 'repair accepted symlinked Claude settings'
+grep -Fq 'unsafe Claude settings' "$fixture_root/settings-symlink.err" \
+  || fail 'symlinked Claude settings diagnostic differs'
+rm "$settings"
+mv "$fixture_root/valid-settings.json" "$settings"
+printf '{invalid json\n' >"$settings"
+"$command_path" repair >"$fixture_root/settings-invalid.out" 2>"$fixture_root/settings-invalid.err" \
+  && fail 'repair accepted invalid Claude settings'
+grep -Fq 'invalid Claude settings' "$fixture_root/settings-invalid.err" \
+  || fail 'invalid Claude settings diagnostic differs'
+grep -Fqx '{invalid json' "$settings" || fail 'invalid Claude settings were replaced'
+printf '{}\n{}\n' >"$settings"
+"$command_path" repair >"$fixture_root/settings-multiple.out" 2>"$fixture_root/settings-multiple.err" \
+  && fail 'repair accepted multiple Claude settings documents'
+grep -Fq 'invalid Claude settings' "$fixture_root/settings-multiple.err" \
+  || fail 'multiple Claude settings diagnostic differs'
+[[ "$(grep -Fxc '{}' "$settings")" == 2 ]] \
+  || fail 'multiple Claude settings documents were replaced'
+printf '{"outputStyle":"Explanatory","preserve":"user-state"}\n' >"$settings"
 
 rm -f "$output_style"
 ln -s /dev/null "$output_style"

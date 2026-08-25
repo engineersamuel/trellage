@@ -73,6 +73,9 @@ fi
 default_settings="$seed_home/default-settings.json"
 [[ -f "$default_settings" && ! -L "$default_settings" ]] \
   || fail 'baked Claude default settings are missing or unsafe'
+default_user_settings="$seed_home/default-user-settings.json"
+[[ -f "$default_user_settings" && ! -L "$default_user_settings" ]] \
+  || fail 'baked Claude default user settings are missing or unsafe'
 default_onboarding="$seed_home/default-onboarding.json"
 [[ -f "$default_onboarding" && ! -L "$default_onboarding" ]] \
   || fail 'baked Claude onboarding defaults are missing or unsafe'
@@ -88,6 +91,11 @@ jq -e '
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
 ' "$default_settings" >/dev/null || fail 'baked Claude default settings are invalid'
+jq -e '
+  type == "object"
+  and keys == ["outputStyle"]
+  and .outputStyle == "Rundown"
+' "$default_user_settings" >/dev/null || fail 'baked Claude default user settings are invalid'
 jq -e '
   type == "object"
   and keys == [
@@ -108,7 +116,26 @@ global_state="$runtime_home/.claude.json"
 workspace="$(pwd -P)"
 [[ "$workspace" == /* ]] || fail 'Claude workspace must be an absolute path'
 
-if [[ "$claude_mode" == core ]]; then
+merge_default_user_settings() {
+  local settings="$1" settings_tmp
+
+  [[ -f "$settings" && ! -L "$settings" ]] || fail 'Claude settings must be a regular file'
+  settings_tmp="$runtime_home/.settings.json.trellage.$$"
+  if ! jq -S -s --slurpfile defaults "$default_user_settings" '
+    if length != 1 or (.[0] | type) != "object"
+    then error("settings must contain exactly one object")
+    else .[0]
+    end
+    | .outputStyle = (.outputStyle // $defaults[0].outputStyle)
+  ' "$settings" >"$settings_tmp"; then
+    rm -f -- "$settings_tmp"
+    fail 'Claude settings are invalid'
+  fi
+  chmod 600 "$settings_tmp"
+  mv -f -- "$settings_tmp" "$settings"
+}
+
+if [[ "$runtime_mode" == core && ! -s "$seed_home/managed-paths.txt" ]]; then
   settings="$runtime_home/settings.json"
   if [[ ! -e "$settings" && ! -L "$settings" ]]; then
     settings_tmp="$runtime_home/.settings.json.trellage.$$"
@@ -117,6 +144,7 @@ if [[ "$claude_mode" == core ]]; then
     mv -n -- "$settings_tmp" "$settings"
     rm -f -- "$settings_tmp"
   fi
+  merge_default_user_settings "$settings"
 fi
 
 if [[ "$runtime_mode" != core || -s "$seed_home/managed-paths.txt" ]]; then
@@ -288,6 +316,12 @@ if [[ ! -e "$settings" && ! -L "$settings" ]]; then
     settings_created=true
   fi
 fi
+if [[ "$settings_created" == false ]]; then
+  [[ -f "$settings" && ! -L "$settings" ]] || fail 'Claude settings must be a regular file'
+  cp -- "$settings" "$backup/settings.json"
+  settings_replaced=true
+fi
+merge_default_user_settings "$settings"
 plugin_settings="$seed_home/plugin-settings.json"
 if [[ -e "$plugin_settings" || -L "$plugin_settings" ]]; then
   [[ -f "$plugin_settings" && ! -L "$plugin_settings" ]] \
@@ -301,7 +335,7 @@ if [[ -e "$plugin_settings" || -L "$plugin_settings" ]]; then
   ' "$plugin_settings" >/dev/null || fail 'baked Claude plugin settings are invalid'
   [[ -f "$settings" && ! -L "$settings" ]] || fail 'Claude settings must be a regular file'
   jq -e 'type == "object"' "$settings" >/dev/null || fail 'Claude settings are invalid'
-  if [[ "$settings_created" == false ]]; then
+  if [[ "$settings_created" == false && "$settings_replaced" == false ]]; then
     cp -- "$settings" "$backup/settings.json"
     settings_replaced=true
   fi
