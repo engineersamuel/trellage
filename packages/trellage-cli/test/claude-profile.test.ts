@@ -62,6 +62,19 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain("# Upstream project: https://github.com/mvanhorn/last30days-skill")
     expect(document.profile.skills).toEqual([
       expect.objectContaining({
+        repository: "https://github.com/engineersamuel/skills.git",
+        ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+        select: [
+          "audit-ro",
+          "finish",
+          "goal-me",
+          "grilling-frontend-prototyping",
+          "justify",
+          "runwisp-job-authoring",
+          "validate-repository",
+        ],
+      }),
+      expect.objectContaining({
         repository: "https://github.com/JuliusBrussee/caveman.git",
         ref: "v1.10.0",
         select: ["caveman"],
@@ -165,6 +178,23 @@ describe("authored Claude Research profile", () => {
       source_date_epoch: 1784379906,
       profile_hash: `sha256:${"a".repeat(64)}`,
       sources: [
+        {
+          kind: "skill",
+          repository: "https://github.com/engineersamuel/skills.git",
+          ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+          select: [
+            "audit-ro",
+            "finish",
+            "goal-me",
+            "grilling-frontend-prototyping",
+            "justify",
+            "runwisp-job-authoring",
+            "validate-repository",
+          ],
+          commit: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+          integrity: `sha256:${"d".repeat(64)}`,
+          files: [],
+        },
         {
           kind: "skill",
           repository: "https://github.com/JuliusBrussee/caveman.git",
@@ -369,6 +399,19 @@ describe("authored Claude council profile", () => {
     })
     expect(document.profile.skills).toEqual([
       expect.objectContaining({
+        repository: "https://github.com/engineersamuel/skills.git",
+        ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+        select: [
+          "audit-ro",
+          "finish",
+          "goal-me",
+          "grilling-frontend-prototyping",
+          "justify",
+          "runwisp-job-authoring",
+          "validate-repository",
+        ],
+      }),
+      expect.objectContaining({
         repository: "https://github.com/JuliusBrussee/caveman.git",
         ref: "v1.10.0",
         select: ["caveman"],
@@ -402,7 +445,7 @@ describe("authored Claude council profile", () => {
         select: ["caveman"],
       }),
     ])
-    expect(lock.sources).toHaveLength(5)
+    expect(lock.sources).toHaveLength(6)
     const skillSource = lock.sources.find(
       (candidate) =>
         candidate.kind === "skill" && candidate.repository === "https://github.com/JuliusBrussee/caveman.git",

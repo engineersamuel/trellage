@@ -18,6 +18,11 @@ packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
 
 # Upstream project: https://github.com/charlie947/social-media-skills
 [[skills]]
+repository = "https://github.com/engineersamuel/skills.git"
+ref = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
+
+[[skills]]
 repository = "https://github.com/JuliusBrussee/caveman.git"
 ref = "v1.10.0"
 select = ["caveman"]

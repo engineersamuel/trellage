@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit RO"
+  short_description: "Run a complete read-only simplification audit"
+  default_prompt: "Use $audit-ro to audit this codebase for material simplifications without changing it."

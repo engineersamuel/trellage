@@ -1004,6 +1004,7 @@ describe("compileLock", () => {
 
     expect(calls.filter((call) => call.startsWith("source:"))).toEqual([
       "source:v6.2.0",
+      "source:1e5cd30d73800958271eca0b60d2274b8e0b8382",
       "source:v1.10.0",
       "source:v1.2.3",
       "source:3c2629142c5d437428269b1b722b08c0b87f574d",

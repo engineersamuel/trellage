@@ -35,6 +35,19 @@ describe("authored Prime Agent profile", () => {
     })
     expect(document.profile.skills).toEqual([
       {
+        repository: "https://github.com/engineersamuel/skills.git",
+        ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+        select: [
+          "audit-ro",
+          "finish",
+          "goal-me",
+          "grilling-frontend-prototyping",
+          "justify",
+          "runwisp-job-authoring",
+          "validate-repository",
+        ],
+      },
+      {
         repository: "https://github.com/JuliusBrussee/caveman.git",
         ref: "v1.10.0",
         select: ["caveman"],
@@ -64,8 +77,25 @@ describe("authored Prime Agent profile", () => {
 
     expect(lock.platform).toBe("linux/arm64")
     expect(lock.profile_hash).toBe(profileHash(document))
-    expect(lock.sources).toHaveLength(3)
+    expect(lock.sources).toHaveLength(4)
     expect(lock.sources[0]).toMatchObject({
+      kind: "skill",
+      repository: "https://github.com/engineersamuel/skills.git",
+      ref: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+      select: [
+        "audit-ro",
+        "finish",
+        "goal-me",
+        "grilling-frontend-prototyping",
+        "justify",
+        "runwisp-job-authoring",
+        "validate-repository",
+      ],
+      commit: "1e5cd30d73800958271eca0b60d2274b8e0b8382",
+      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    })
+    expect(lock.sources[0]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(7)
+    expect(lock.sources[1]).toMatchObject({
       kind: "skill",
       repository: "https://github.com/JuliusBrussee/caveman.git",
       ref: "v1.10.0",
@@ -73,12 +103,12 @@ describe("authored Prime Agent profile", () => {
       commit: expect.stringMatching(/^[0-9a-f]{40}$/),
       integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
-    expect(lock.sources[0]?.files).toContainEqual({
+    expect(lock.sources[1]?.files).toContainEqual({
       kind: "file",
       path: "skills/caveman/SKILL.md",
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
-    expect(lock.sources[1]).toMatchObject({
+    expect(lock.sources[2]).toMatchObject({
       kind: "skill",
       repository: "https://github.com/mattpocock/skills.git",
       ref: "v1.2.3",
@@ -86,17 +116,17 @@ describe("authored Prime Agent profile", () => {
       commit: expect.stringMatching(/^[0-9a-f]{40}$/),
       integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
-    expect(lock.sources[1]?.files).toContainEqual({
+    expect(lock.sources[2]?.files).toContainEqual({
       kind: "file",
       path: "skills/engineering/grill-with-docs/SKILL.md",
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
-    expect(lock.sources[1]?.files).toContainEqual({
+    expect(lock.sources[2]?.files).toContainEqual({
       kind: "file",
       path: "skills/engineering/improve-codebase-architecture/SKILL.md",
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
-    expect(lock.sources[2]).toMatchObject({
+    expect(lock.sources[3]).toMatchObject({
       kind: "skill",
       repository: "https://github.com/humanlayer/skills.git",
       ref: "3c2629142c5d437428269b1b722b08c0b87f574d",
@@ -104,7 +134,7 @@ describe("authored Prime Agent profile", () => {
       commit: expect.stringMatching(/^[0-9a-f]{40}$/),
       integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
-    expect(lock.sources[2]?.files).toContainEqual({
+    expect(lock.sources[3]?.files).toContainEqual({
       kind: "file",
       path: "plugins/show-me/skills/show-me/SKILL.md",
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),

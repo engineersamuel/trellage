@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source_dir="$(cd "$(dirname "$0")" && pwd)"
+
 local_dir="$HOME/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
@@ -110,3 +111,4 @@ if [[ ! -L "$command_path" ]]; then
 fi
 
 printf 'Installed cpx at %s\n' "$command_path"
+"$source_dir/../../scripts/install-engineersamuel-skills-runtime.sh"

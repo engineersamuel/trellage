@@ -747,3 +747,4 @@ mv "$command_staging/new-command" "$command_path"
 publication_active=false
 cleanup_staging
 printf 'Installed cdx at %s. Reload Fish to clear the legacy alias from existing shells.\n' "$command_path"
+"$source_dir/../../scripts/install-engineersamuel-skills-runtime.sh"

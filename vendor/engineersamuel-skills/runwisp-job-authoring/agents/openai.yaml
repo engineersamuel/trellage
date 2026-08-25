@@ -1,0 +1,4 @@
+interface:
+  display_name: "RunWisp Job Authoring"
+  short_description: "Create and validate RunWisp job packages"
+  default_prompt: "Use $runwisp-job-authoring to create or validate this RunWisp job package."

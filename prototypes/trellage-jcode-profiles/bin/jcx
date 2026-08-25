@@ -8,6 +8,7 @@ readonly reasoning_effort='medium'
 readonly proxy_base_url='http://127.0.0.1:8080/v1'
 readonly mise_tool='github:1jehuang/jcode'
 readonly profile_marker_value='trellage-jcode-profile-v1'
+readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
 
 die() {
   printf 'jcx: %s\n' "$1" >&2
@@ -67,6 +68,22 @@ readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
 readonly profile_config="$profile_home/config.toml"
 readonly setup_hints="$profile_home/setup_hints.json"
+engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
+if [[ ! -d "$engineersamuel_skills_source" ]]; then
+  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+fi
+
+sync_engineersamuel_skills() {
+  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$profile_home/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die 'failed to sync engineersamuel/skills'
+}
 
 validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
@@ -313,6 +330,7 @@ ensure_managed_profile_for_launch() {
     return
   fi
   publish_managed_profile
+  sync_engineersamuel_skills
 }
 
 ensure_profile_ready_for_launch() {
@@ -481,6 +499,7 @@ setup_profile() {
   fi
   install_exact_version "$version"
   publish_managed_profile
+  sync_engineersamuel_skills
   ensure_onboarding_skipped
   publish_version "$version"
   printf 'jcx setup: ready (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
@@ -514,6 +533,7 @@ update_profile() {
   local current latest
 
   require_command mise
+  sync_engineersamuel_skills
   current="$(read_pinned_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
@@ -589,6 +609,7 @@ launch_jcode() {
 
   require_command mise
   ensure_profile_ready_for_launch
+  sync_engineersamuel_skills
   version="$(read_pinned_version)"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"

@@ -47,6 +47,24 @@ validated_profile=""
 # The exact catalog records the Superpowers marketplace repository, not the
 # plugin source repository. Keep that independently validated invariant here.
 superpowers_plugin_repository="https://github.com/obra/superpowers.git"
+readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
+engineersamuel_skills_source="$script_dir/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$script_dir/../common/sync-engineersamuel-skills.sh"
+if [ ! -d "$engineersamuel_skills_source" ]; then
+  engineersamuel_skills_source="$script_dir/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$script_dir/../../scripts/sync-engineersamuel-skills.sh"
+fi
+
+sync_engineersamuel_skills() {
+  local profile="$1"
+  [ -f "$engineersamuel_skills_sync" ] && [ ! -L "$engineersamuel_skills_sync" ] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$(profile_home "$profile")/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die "failed to sync engineersamuel/skills: $profile"
+}
 
 die() {
   printf 'cdx: %s\n' "$*" >&2
@@ -1928,6 +1946,7 @@ setup_profile() {
 
   require_profile "$profile"
   prepare_profile_home "$profile"
+  sync_engineersamuel_skills "$profile"
   install_initial_config "$profile"
   recover_generated_project_trust "$profile"
   require_profile_config "$profile"
@@ -2087,6 +2106,7 @@ repair_profile() {
 
   require_profile "$profile"
   require_profile_home_ready "$profile"
+  sync_engineersamuel_skills "$profile"
   recover_generated_project_trust "$profile"
   write_repaired_config "$profile" yes
   validate_profile_paths "$profile"
@@ -2940,6 +2960,7 @@ run_codex_child() {
   trust_codex_args=()
   hook_trust_codex_args=()
   shift 2
+  sync_engineersamuel_skills "$profile"
 
   # Codex's interactive "Do you trust the contents of this directory?" gate
   # ignores dotted -c projects."path".trust_level= overrides (PTY stays empty).

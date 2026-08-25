@@ -1,7 +1,67 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:6fa464d5f2cfcc1eb52553032bf9d38c186e83ef4b0415515cb564a43bf68ef0"
+profile_hash = "sha256:fbf577e20e5e257e9680ae41f3a8d2ffeeb171cd65997e8f95dad01199f67ca6"
+
+[[sources]]
+kind = "skill"
+repository = "https://github.com/engineersamuel/skills.git"
+ref = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
+commit = "1e5cd30d73800958271eca0b60d2274b8e0b8382"
+integrity = "sha256:d305d246f2b40c281f75bbb58605cd2720f65a6330f68320adaf8969c835bddf"
+
+[[sources.files]]
+path = ".agents/skills/validate-repository/SKILL.md"
+sha256 = "sha256:262774d03b6aaec5a6777657b6c6d98e3acec0a701cb67cd50e83e405b7de48e"
+
+[[sources.files]]
+path = "skills/audit-ro/agents/openai.yaml"
+sha256 = "sha256:4c3c9616a2f9ef98b6f1e99145846ce1d54316828d3a0b01a63f95b4d5b26790"
+
+[[sources.files]]
+path = "skills/audit-ro/SKILL.md"
+sha256 = "sha256:ac70dda1d2729354f1b210095a9c382f07013d3db1f5489e4e0cee9a0e7e4f68"
+
+[[sources.files]]
+path = "skills/finish/agents/openai.yaml"
+sha256 = "sha256:de3d63ad0fd52d904efedfa86b6d0e308cee0592c5c68ac9ff0f569e45eaba60"
+
+[[sources.files]]
+path = "skills/finish/SKILL.md"
+sha256 = "sha256:bc7312160b43735ce7721d9bf5c27bf6253b1a6e7e959ab15be2dac3315e7281"
+
+[[sources.files]]
+path = "skills/goal-me/agents/openai.yaml"
+sha256 = "sha256:6d71f4bfea6fced6ad63dc8df539c6203c61b7ca441e18842002cfe802af1459"
+
+[[sources.files]]
+path = "skills/goal-me/SKILL.md"
+sha256 = "sha256:9de63eec9013ec524c0c5f39a960aea6d9c0d486da9d2d754ad124f8e157ee62"
+
+[[sources.files]]
+path = "skills/grilling-frontend-prototyping/README.md"
+sha256 = "sha256:4a64b57ee8a742d07612372ea6f7d1ded66474639cb3fe8dd23e1763377f9717"
+
+[[sources.files]]
+path = "skills/grilling-frontend-prototyping/SKILL.md"
+sha256 = "sha256:96e599a53ded8ec7cea1dec7e865f67713e2cee0c730d8f84d8d7ca2ec94ea89"
+
+[[sources.files]]
+path = "skills/justify/agents/openai.yaml"
+sha256 = "sha256:9f73ccba6d7a929d2f6ea51be9d6ecb9f36eb403570a4026e889df518aaf7026"
+
+[[sources.files]]
+path = "skills/justify/SKILL.md"
+sha256 = "sha256:beaafcb4e9fce878a797bd17ca86f68103fe2f3d213b035cb090ba8549d811a4"
+
+[[sources.files]]
+path = "skills/runwisp-job-authoring/agents/openai.yaml"
+sha256 = "sha256:d907f5148043c36a6323dc9005090b135279e1738cffb2dd943aabfc744a222d"
+
+[[sources.files]]
+path = "skills/runwisp-job-authoring/SKILL.md"
+sha256 = "sha256:9be74f5c68b6f72d17ca8f8bec0cd72b85a58e9ec52725b0a3a81232229ea619"
 
 [[sources]]
 kind = "skill"
@@ -1592,4 +1652,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:1c97925050fe52da2ef0152546208a6334abe58f0af9d443be5a733e0ea6afa9"
+final_digest = "sha256:419a60d08ccfe22eb2695265b1fb97d0144eb366bb17ac0f55d4051ed75d31f2"

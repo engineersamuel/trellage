@@ -185,6 +185,7 @@ compose_for() {
 }
 
 build_all() {
+  node "$repo_root/scripts/update-engineersamuel-skills.mjs" >/dev/null
   local contestant service
   for contestant in "${contestants[@]}"; do
     service="$(jq -r '.service' <<<"$contestant")"

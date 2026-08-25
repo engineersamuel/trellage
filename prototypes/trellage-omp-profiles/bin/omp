@@ -9,6 +9,7 @@ readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
 readonly mise_tool='github:can1357/oh-my-pi'
 readonly profile_marker_value='trellage-omp-profile-v1'
 readonly verified_headless_policy_version='17.2.12'
+readonly engineersamuel_skills_ref='1e5cd30d73800958271eca0b60d2274b8e0b8382'
 
 die() {
   printf 'omp: %s\n' "$1" >&2
@@ -53,6 +54,12 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly version_file="$runtime_root/version"
+engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
+if [[ ! -d "$engineersamuel_skills_source" ]]; then
+  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+fi
 
 profile_key=''
 profile_kind=''
@@ -69,6 +76,16 @@ launch_forwarded_args=()
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+sync_engineersamuel_skills() {
+  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$agent_root/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die "failed to sync engineersamuel/skills: $profile_key"
 }
 
 canonical_directory() {
@@ -556,6 +573,7 @@ ensure_managed_profile() {
   require_owned_profile
   managed_profile_is_current && return 0
   publish_managed_profile
+  sync_engineersamuel_skills
   printf 'omp: managed config restored\n' >&2
 }
 
@@ -592,6 +610,7 @@ setup_profile() {
   fi
   install_exact_version "$version"
   publish_managed_profile
+  sync_engineersamuel_skills
   publish_version "$version"
   if [[ "$profile_kind" == local ]]; then
     printf 'omp setup: ready (%s, %s)\n' "$version" "$(profile_ready_label)"
@@ -633,6 +652,7 @@ update_profile() {
   local current latest
 
   require_command mise
+  sync_engineersamuel_skills
   current="$(read_pinned_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
@@ -883,6 +903,7 @@ launch_omp() {
   fi
   version="$(read_pinned_version)"
   ensure_managed_profile
+  sync_engineersamuel_skills
   if cancel_pending_launch; then
     return "$launch_cancel_status"
   fi

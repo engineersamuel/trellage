@@ -5,6 +5,12 @@ umask 077
 
 mkdir -p "$CODEX_HOME" /workspace/.harness /workspace/.npm /workspace/.cache /workspace/.config
 
+engineersamuel_skills_ref="$(< /opt/engineersamuel-skills/REF)"
+/usr/local/bin/sync-engineersamuel-skills.sh \
+  --source /opt/engineersamuel-skills \
+  --target "$CODEX_HOME/skills" \
+  --ref "$engineersamuel_skills_ref"
+
 inventory_path='/opt/agent-kit-inventory.txt'
 needs_seed=false
 while IFS= read -r artifact; do

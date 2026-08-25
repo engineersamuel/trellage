@@ -1,0 +1,4 @@
+interface:
+  display_name: "Justify"
+  short_description: "Audit claims with evidence and dissent"
+  default_prompt: "Use $justify to audit this claim and determine whether it is justified."
