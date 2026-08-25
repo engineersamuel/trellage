@@ -1,6 +1,7 @@
 schema = 1
 name = "claude-frontend-design"
 description = "Claude Code (Opus via proxy) for agency-quality frontend/marketing UI: design intelligence, anti-slop taste, Impeccable craft language, motion (GSAP + Emil animation skills), and HyperFrames HTML-to-video. Best for landing pages, product UI polish, and motion-heavy frontends that need constraints (audience, one CTA, ban lists, reference screenshots) and separate typography/spacing/motion polish passes—not backend-only work or short social copy."
+skill_bundles = ["sandbox-common", "claude-frontend-design"]
 
 [harness]
 kind = "claude"
@@ -15,85 +16,6 @@ gateway = "http://copilot-proxy-rs:8080"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
-
-# Required always-on compressed communication skill.
-# Upstream project: https://github.com/JuliusBrussee/caveman
-[[skills]]
-repository = "https://github.com/engineersamuel/skills.git"
-ref = "cddf57e769e8b58ade685c51f447d96f3e66cfba"
-select = ["audit-ro", "finish", "goal-me", "grilling-frontend-prototyping", "justify", "runwisp-job-authoring", "validate-repository"]
-
-[[skills]]
-repository = "https://github.com/JuliusBrussee/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
-
-[[skills]]
-repository = "https://github.com/mattpocock/skills.git"
-ref = "v1.2.3"
-select = ["grill-with-docs", "improve-codebase-architecture"]
-always_on = true
-
-# Visual explanations (diagrams, code trees, diffs) on demand via /show-me.
-# Upstream project: https://github.com/humanlayer/skills
-[[skills]]
-repository = "https://github.com/humanlayer/skills.git"
-ref = "3c2629142c5d437428269b1b722b08c0b87f574d"
-select = ["show-me"]
-
-# Design language / craft commands (typeset, spacing, polish, critique, motion…).
-# Upstream project: https://github.com/pbakaus/impeccable
-[[skills]]
-repository = "https://github.com/pbakaus/impeccable.git"
-ref = "skill-v4.0.4"
-select = ["impeccable"]
-
-# Animation craft, design-eng polish, prototype, and review skills.
-# Upstream project: https://github.com/emilkowalski/skills
-[[skills]]
-repository = "https://github.com/emilkowalski/skills.git"
-ref = "main"
-select = [
-  "animate",
-  "animation-vocabulary",
-  "apple-design",
-  "emil-design-eng",
-  "find-animation-opportunities",
-  "improve-animations",
-  "pick-ui-library",
-  "prototype",
-  "review-animations",
-]
-
-# HTML → video compositions, captions, motion doctrine (HyperFrames by HeyGen).
-# Installed as generic skills (not claude-marketplace): upstream marketplace.json lists
-# multiple root plugins that share one plugin.json, which Trellage rejects.
-# Upstream project: https://github.com/heygen-com/hyperframes
-[[skills]]
-repository = "https://github.com/heygen-com/hyperframes.git"
-ref = "v0.7.99"
-select = [
-  "embedded-captions",
-  "faceless-explainer",
-  "figma",
-  "general-video",
-  "hyperframes",
-  "hyperframes-animation",
-  "hyperframes-cli",
-  "hyperframes-core",
-  "hyperframes-creative",
-  "hyperframes-keyframes",
-  "hyperframes-registry",
-  "media-use",
-  "motion-graphics",
-  "music-to-video",
-  "pr-to-video",
-  "product-launch-video",
-  "remotion-to-hyperframes",
-  "slideshow",
-  "talking-head-recut",
-]
 
 # UI/UX design intelligence (styles, palettes, type pairings, stack guidelines).
 # Upstream project: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill

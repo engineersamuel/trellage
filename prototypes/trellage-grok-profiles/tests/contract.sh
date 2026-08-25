@@ -3,6 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 prototype_root="$PWD"
+. "$prototype_root/../../tests/helpers/floating_skills_fixture.sh"
 unset GRX_DISABLE_AUTH_CHECK GRX_CATALOG || true
 
 fail() {
@@ -812,6 +813,8 @@ esac
 FAKE_CURL
 chmod 0555 "$fake_bin/curl"
 
+install_fixture_node "$fake_bin"
+seed_floating_skills_cache "$fixture_home"
 export HOME="$fixture_home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export FAKE_GROK_LOG="$fake_grok_log"
@@ -1879,7 +1882,7 @@ assert_poisoned_lifecycle_rejected() {
 }
 
 assert_poisoned_lifecycle_rejected update skills \
-  "grx: standalone capability directory is not empty: $hve_home/skills"
+  'grx: floating skills are unhealthy: hve'
 assert_poisoned_lifecycle_rejected update commands \
   "grx: standalone capability directory is not empty: $hve_home/commands"
 
@@ -3051,10 +3054,11 @@ chmod 0600 "$hve_home/requirements.toml"
 assert_doctor_failure 'requirements policy mode' 'grx: requirements policy must have mode 0644: hve'
 chmod 0644 "$hve_home/requirements.toml"
 
-mkdir -p "$hve_home/skills"
-printf 'unexpected\n' >"$hve_home/skills/unexpected"
-assert_doctor_failure 'nonempty skills' "grx: standalone capability directory is not empty: $hve_home/skills"
-rm "$hve_home/skills/unexpected"
+mkdir -p "$hve_home/skills/unexpected"
+printf '%s\n' '# User-managed skill' >"$hve_home/skills/unexpected/SKILL.md"
+./bin/grx doctor hve >"$fixture_root/doctor-user-skill.out" \
+  || fail 'doctor rejected an unrelated user-managed skill'
+rm -rf "$hve_home/skills/unexpected"
 
 mkdir -p "$hve_home/commands"
 printf 'unexpected\n' >"$hve_home/commands/unexpected"
@@ -3066,7 +3070,7 @@ rm -rf "$hve_home/skills"
 empty_skills_target="$fixture_root/empty-skills-target"
 mkdir -p "$empty_skills_target"
 ln -s "$empty_skills_target" "$hve_home/skills"
-assert_doctor_failure 'symlinked skills' "grx: unsafe standalone capability directory: $hve_home/skills"
+assert_doctor_failure 'symlinked skills' 'grx: floating skills are unhealthy: hve'
 rm "$hve_home/skills"
 ./bin/grx repair hve >/dev/null
 
@@ -3077,7 +3081,7 @@ rm "$hve_home/commands"
 mkdir -p "$hve_home/commands"
 
 chmod 0000 "$hve_home/skills"
-assert_doctor_failure 'unreadable skills' "grx: failed to inspect standalone capability directory: $hve_home/skills"
+assert_doctor_failure 'unreadable skills' 'grx: floating skills are unhealthy: hve'
 chmod 0700 "$hve_home/skills"
 
 export FAKE_GROK_MCP_JSON='[{"name":"personal","scope":"user","enabled":true}]'

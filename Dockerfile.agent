@@ -50,17 +50,18 @@ RUN apt-get update \
 
 COPY --from=adapter /opt/agent-kit /opt/agent-kit
 COPY --from=adapter /opt/agent-kit-inventory.txt /opt/agent-kit-inventory.txt
+COPY --from=floating_skills / /opt/floating-skills
 COPY docker/codex-config.toml /opt/codex-config.toml
-COPY vendor/engineersamuel-skills /opt/engineersamuel-skills
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
-COPY --chmod=0555 scripts/sync-engineersamuel-skills.sh /usr/local/bin/sync-engineersamuel-skills.sh
+COPY --chmod=0555 scripts/floating-skills.mjs /usr/local/bin/floating-skills.mjs
+COPY --chmod=0444 skills.json /opt/floating-skills-catalog.json
 COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
 COPY scripts/run-agent.sh /usr/local/bin/run-agent.sh
 
 RUN chmod 0555 /usr/local/bin/agent-entrypoint.sh /usr/local/bin/run-agent.sh \
     && chmod -R a=rX /opt/agent-kit /opt/agent-kit-inventory.txt /opt/codex-config.toml \
-      /opt/engineersamuel-skills
+      /opt/floating-skills /opt/floating-skills-catalog.json
 
 ENV HOME=/home/agent \
     CODEX_HOME=/workspace/.codex-home \

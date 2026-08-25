@@ -40,16 +40,17 @@ RUN apt-get update \
     && chown -R 10001:10001 /workspace /home/agent
 
 COPY --from=plugins /opt/awesome-plugins /opt/awesome-plugins
-COPY vendor/engineersamuel-skills /opt/engineersamuel-skills
+COPY --from=floating_skills / /opt/floating-skills
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
-COPY --chmod=0555 scripts/sync-engineersamuel-skills.sh /usr/local/bin/sync-engineersamuel-skills.sh
+COPY --chmod=0555 scripts/floating-skills.mjs /usr/local/bin/floating-skills.mjs
+COPY --chmod=0444 skills.json /opt/floating-skills-catalog.json
 COPY scripts/copilot-agent-entrypoint.sh /usr/local/bin/copilot-agent-entrypoint.sh
 COPY --chmod=0444 prototypes/trellage/assets/rundown/rundown.instructions.md \
     /usr/local/share/trellage/copilot-instructions/rundown.instructions.md
 COPY scripts/run-copilot-agent.sh /usr/local/bin/run-copilot-agent.sh
 
 RUN chmod 0555 /usr/local/bin/copilot-agent-entrypoint.sh /usr/local/bin/run-copilot-agent.sh \
-    && chmod -R a=rX /opt/awesome-plugins /opt/engineersamuel-skills
+    && chmod -R a=rX /opt/awesome-plugins /opt/floating-skills /opt/floating-skills-catalog.json
 
 ENV HOME=/home/agent \
     COPILOT_HOME=/workspace/.copilot-home \

@@ -2,7 +2,10 @@
 
 ## Prototype Question and Scope
 
-Trellage runs coding harnesses inside locked, profile-compiled Docker sandboxes while preserving Herdr detection, conversations, and recovery shells. Declarative TOML profiles select the harness configuration and bundled capabilities.
+Trellage runs coding harnesses inside core-locked, profile-compiled Docker
+sandboxes while preserving Herdr detection, conversations, and recovery
+shells. Declarative TOML profiles select the harness configuration and named
+floating-skill bundles.
 
 ## Prerequisites and Setup
 
@@ -31,17 +34,29 @@ Only an explicit update refreshes unchanged Git refs:
 ./trellage lock --update ../../profiles/codex-superpowers/profile.toml
 ```
 
-Profiles and adjacent platform locks are committed. Trellage binds the operation to one local Unix Docker endpoint and refuses endpoint or server changes before mutation. Native ARM64 is the only production platform today. AMD64 is recognized for future lock selection but rejected before downloads or Docker mutation until its artifact catalog and lock are complete. Resolved source content is integrity-checked under the Trellage cache beneath `$XDG_CACHE_HOME` and is safe to delete. Credentials never enter build inputs.
+Profiles and adjacent platform locks are committed. Trellage binds the
+operation to one local Unix Docker endpoint and refuses endpoint or server
+changes before mutation. Native ARM64 is the only production platform today.
+AMD64 is recognized for future lock selection but rejected before downloads
+or Docker mutation until its artifact catalog and lock are complete. Pinned
+plugin source content is integrity-checked under the Trellage cache beneath
+`$XDG_CACHE_HOME` and is safe to delete. Approved skill repositories are
+declared without revisions in the root `skills.json` and are not stored in
+profile locks. Credentials never enter build inputs.
 
 ## Build
 
-Build the lock for the local Docker server platform, verify its manifest digest, and import the platform-qualified image:
+Build with the existing core lock, fetch current skill content, and import the
+platform-qualified image:
 
 ```bash
 ./trellage build --locked ../../profiles/codex-superpowers/profile.toml
 ```
 
-The current production tag is `trellage-profile-codex-superpowers-linux-arm64:locked`.
+The current production tag is
+`trellage-profile-codex-superpowers-linux-arm64:locked`. Because this profile
+has floating skills, its lock has no final image digest and the build has no
+content-addressed image alias.
 
 ### Rebuild everything (post-merge / heavy dev)
 
@@ -56,8 +71,8 @@ That:
 1. Installs the worktree `trellage` into `~/.local/bin`
 2. Reinstalls every native launcher (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, `prx`) then `trx`
    from `prototypes/trellage-*-profiles` and `prototypes/trellage-router`
-3. Runs non-locked `trellage build` for every `profiles/*/profile.toml` (pins
-   kept; `final_digest` may update)
+3. Runs non-locked `trellage build` for every `profiles/*/profile.toml` (core
+   pins are kept and current skills are fetched)
 
 Equivalent: `./scripts/rebuild-profile-images.sh --install`
 
@@ -77,7 +92,18 @@ The deterministic smoke verification requires Bash, Docker, Git, `gh`, jq, and m
 mise run smoke
 ```
 
-The smoke performs a fresh locked image build, static and live contracts, a restricted container probe, proxy checks, persistence recreation, recovery Fish, and an installer dry-run. It usually takes 5-10 minutes, depending on Docker build speed. It creates uniquely named `trellage-codex-smoke-*`, `trellage-codex-runtime-test-*`, and `trellage-codex-persistence-test-*` temporary resources. Each test tracks immutable container IDs and successful volume creation, then revalidates ownership labels before removing only tracked resources. The smoke removes its temporary containers, volumes, bind directories, and installer directory on exit. It retains the built image, proxy, network, Herdr, repository worktrees, and unrelated resources.
+The smoke performs a fresh core-locked image build with one staged skill
+snapshot, static and live contracts, a restricted container probe, proxy
+checks, persistence recreation, recovery Fish, and an installer dry-run. It
+usually takes 5-10 minutes, depending on Docker build speed. It creates
+uniquely named `trellage-codex-smoke-*`,
+`trellage-codex-runtime-test-*`, and
+`trellage-codex-persistence-test-*` temporary resources. Each test tracks
+immutable container IDs and successful volume creation, then revalidates
+ownership labels before removing only tracked resources. The smoke removes
+its temporary containers, volumes, bind directories, and installer directory
+on exit. It retains the built image, proxy, network, Herdr, repository
+worktrees, and unrelated resources.
 
 ## Install
 
@@ -201,7 +227,8 @@ declared with `version = "latest"`, then builds and atomically adopts the new
 lock and image. Exact versions and immutable refs stay pinned. If VPN or
 upstream access blocks one profile, its existing lock and image remain intact,
 the remaining profiles still run, and the command exits nonzero with a failure
-summary.
+summary. Every image build resolves selected skill bundles from current
+default-branch content independently of the core upgrade policy.
 
 For a profile bundled in this repository, use its directory name instead of an absolute path:
 
@@ -327,14 +354,19 @@ volume.
 
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
-Locked builds never refresh mutable selectors. Upgrades never happen automatically. Run the explicit one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to resolve, build, and adopt an upgrade.
+Locked builds never refresh mutable core selectors. They still fetch current
+skill content. Core upgrades never happen automatically. Run the explicit
+one-command `trellage upgrade
+/absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to
+resolve, build, and adopt a core upgrade.
 
 ## Prime Agent
 
 The `prime-agent` profile installs the exact Prime Intellect stable release
 recorded in `profile.linux-arm64.lock.toml`. The lock pins the official
-versioned tarball URL, size, SHA-256 digest, runtime packages, base image, and
-final OCI digest. Locked rebuilds reject any resulting image drift.
+versioned tarball URL, size, SHA-256 digest, runtime packages, and base image.
+Its common skills float, so the lock does not record or enforce a final OCI
+digest.
 
 ```bash
 trellage validate /absolute/path/to/profiles/prime-agent/profile.toml
@@ -383,11 +415,11 @@ force CFS.
 
 ## Pi with Oh My Pi
 
-The `pi-oh-my-pi` profile installs the standalone `omp` executable from
+The `pi-oh-my-pi` profile installs a pinned standalone `omp` executable from
 `can1357/oh-my-pi`. OMP is not GitHub Copilot CLI: this profile selects OMP's
-native `github-copilot` provider and pins model `gpt-5.6-terra`. It also seeds
-the three native skills published under the matching OMP release's
-`.omp/skills`: `semantic-compression`, `system-prompts`, and
+native `github-copilot` provider and pins model `gpt-5.6-terra`. At build time,
+it fetches the current default-branch versions of three native skills:
+`semantic-compression`, `system-prompts`, and
 `tool-prompt-optimization`.
 
 ```bash
@@ -413,17 +445,19 @@ profile/worktree state volume at `/home/agent/.omp/agent`. No host `.omp`,
 `.copilot`, or GitHub CLI configuration directory is mounted or baked.
 
 The profile uses Docker `bridge` and does not require `copilot-proxy-rs`.
-`profile.toml` pins the same release for the OMP executable and native skills.
-The selected `profile.linux-<architecture>.lock.toml` pins the source commit and inventory, architecture-specific
-raw asset URL, size, GitHub-provided SHA-256 digest, and final OCI digest.
-Managed skills are refreshed into the persistent state volume on every launch.
+`profile.toml` pins the OMP executable release. The selected
+`profile.linux-<architecture>.lock.toml` pins its architecture-specific raw
+asset URL, size, and GitHub-provided SHA-256 digest. Native skill content is
+not part of the lock. Managed skills are refreshed from the image snapshot
+into the persistent state volume on every launch.
 
 ## Ten-step Herdr Human Test
 
 1. Create or open a disposable host Git worktree in Herdr.
 2. Run `trellage` in its existing Herdr pane.
 3. Confirm Codex opens at `/mounts/<worktree-name>`.
-4. Invoke a bundled Superpowers skill and the pinned full-stack-orchestration plugin.
+4. Invoke a bundled Superpowers skill and the pinned
+   full-stack-orchestration plugin.
 5. Edit a host-mounted file and confirm two-way host/container visibility.
 6. Observe Herdr detect Codex and follow its status transitions.
 7. Exit or kill Codex, confirm the container stops automatically, then relaunch it.

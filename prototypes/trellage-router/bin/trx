@@ -38,6 +38,8 @@ Usage:
   trx
   trx list [--json]
   trx inventory LAUNCHER PROFILE --json
+  trx skills status
+  trx skills update
 
 Select an installed native harness/profile interactively, or list available
 profiles. Bare trx opens the launcher. `trx inventory` reports the live
@@ -352,6 +354,7 @@ mode=''
 list_json=0
 inventory_launcher=''
 inventory_profile_arg=''
+skills_action=''
 case "${1-}" in
   -h|--help|help)
     usage
@@ -375,6 +378,13 @@ case "${1-}" in
       || die 'inventory requires LAUNCHER PROFILE --json'
     inventory_launcher="$1"
     inventory_profile_arg="$2"
+    ;;
+  skills)
+    mode='skills'
+    shift
+    [[ "$#" -eq 1 && ("$1" == status || "$1" == update) ]] \
+      || die 'skills requires status or update'
+    skills_action="$1"
     ;;
   -i|--interactive|--interactive=*)
     die '-i and --interactive have been removed; run trx with no arguments'
@@ -412,6 +422,8 @@ if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     || die "trx source runtime differs from TRELLAGE_TRX_SOURCE_ROOT: $runtime"
   picker_path="$runtime/../../packages/trellage-launcher/dist/launcher.mjs"
   dependency_bootstrap="$runtime/../../scripts/bootstrap-development-dependencies.sh"
+  floating_skills_manager="$runtime/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$runtime/../../skills.json"
 else
   [[ "$runtime" == "$canonical_home/.local/share/trellage/trx" ]] \
     || die "trx is not running from its owned runtime: $runtime"
@@ -420,8 +432,21 @@ else
   [[ "$(<"$runtime/.managed-by-trellage-router")" == "$ownership_value" ]] \
     || die 'invalid trx ownership marker'
   dependency_bootstrap="$runtime/lib/bootstrap-development-dependencies.sh"
+  floating_skills_manager="$canonical_home/.local/share/trellage/common/floating-skills-runtime/floating-skills.mjs"
+  floating_skills_catalog="$canonical_home/.local/share/trellage/common/floating-skills-runtime/skills.json"
 fi
 [[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
+
+if [[ "$mode" == skills ]]; then
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
+  exec node "$floating_skills_manager" "$skills_action" \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common
+fi
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v1)"

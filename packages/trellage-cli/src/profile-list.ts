@@ -20,6 +20,9 @@ export interface FullProfileListEntry {
   readonly path: string
   readonly supportedPlatforms: ReadonlyArray<string>
   readonly harness: ProfileChoice["harness"]
+  readonly skillBundles: ReadonlyArray<string>
+  readonly skillsMode: "floating" | "locked"
+  readonly finalDigestLocked: boolean
   readonly skills: ProfileChoice["skills"]
   readonly plugins: ProfileChoice["plugins"]
   readonly mcps: ProfileChoice["mcps"]
@@ -74,6 +77,10 @@ export const toFullList = (
       path: choice.value,
       supportedPlatforms: choice.supported_platforms,
       harness: choice.harness,
+      skillBundles: choice.skillBundles ?? [],
+      skillsMode: choice.skillsMode ?? ((choice.skillBundles?.length ?? 0) > 0 ? "floating" : "locked"),
+      finalDigestLocked:
+        (choice.skillsMode ?? ((choice.skillBundles?.length ?? 0) > 0 ? "floating" : "locked")) === "locked",
       skills: choice.skills,
       plugins: choice.plugins,
       mcps: choice.mcps,

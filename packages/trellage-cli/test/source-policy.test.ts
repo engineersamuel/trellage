@@ -4,18 +4,6 @@ import { sourceIncludes, sourceInventoryPolicy } from "../src/source-policy.js"
 
 describe("source inclusion policy", () => {
   it("selects only the inputs required by each adapter", () => {
-    expect(sourceIncludes({ kind: "skill", select: ["*"] })).toEqual([
-      "skills",
-      ".agents/skills",
-      ".claude/skills",
-      "plugins/*",
-    ])
-    expect(sourceIncludes({ kind: "skill", select: ["show-me"] })).toEqual([
-      "skills",
-      ".agents/skills",
-      ".claude/skills",
-      "plugins/show-me",
-    ])
     expect(sourceIncludes({ kind: "plugin", adapter: "codex-native", select: ["one"] })).toEqual(["plugins/one/.codex"])
     expect(sourceIncludes({ kind: "plugin", adapter: "wshobson-agents", select: ["one"] })).toEqual([
       "plugins/one",
@@ -52,7 +40,6 @@ describe("source inclusion policy", () => {
   })
 
   it("keeps symlinks disabled for every other source", () => {
-    expect(sourceInventoryPolicy({ kind: "skill", select: ["*"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "codex-native", select: ["one"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "wshobson-agents", select: ["one"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "prime-extension", select: ["ask-user"] })).toEqual({})

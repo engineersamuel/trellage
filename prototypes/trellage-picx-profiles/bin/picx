@@ -8,7 +8,6 @@ readonly model_selector="$provider/$model_id:medium"
 readonly mise_tool='npm:@earendil-works/pi-coding-agent'
 readonly pinned_pi_version='0.84.2'
 readonly profile_marker_value='trellage-picx-profile-v2'
-readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'picx: %s\n' "$1" >&2
@@ -52,11 +51,11 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly version_file="$runtime_root/version"
-engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
-engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
-if [[ ! -d "$engineersamuel_skills_source" ]]; then
-  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
-  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+if [[ ! -f "$floating_skills_manager" ]]; then
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$runtime_root/../../skills.json"
 fi
 
 profile_key=''
@@ -77,14 +76,17 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
-sync_engineersamuel_skills() {
-  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
-    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
-  "$engineersamuel_skills_sync" \
-    --source "$engineersamuel_skills_source" \
+ensure_floating_skills() {
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
     --target "$agent_root/skills" \
-    --ref "$engineersamuel_skills_ref" \
-    || die "failed to sync engineersamuel/skills: $profile_key"
+    || die "failed to install floating skills: $profile_key"
 }
 
 canonical_directory() {
@@ -675,49 +677,6 @@ install_extensions() {
   publish_extension_manifest
 }
 
-install_show_me() {
-  local staging_home="$profile_root/.show-me-install-home"
-  local source='' candidate destination="$agent_root/skills/show-me"
-
-  require_command npx
-  [[ ! -e "$staging_home" && ! -L "$staging_home" ]] \
-    || die "unsafe show-me staging path: $staging_home"
-  mkdir "$staging_home"
-  if ! HOME="$staging_home" npm_config_cache="$runtime_root/npm-cache" \
-    env -u NODE_OPTIONS -u NODE_PATH -u NODE_COMPILE_CACHE \
-    npx --yes skills add humanlayer/skills --skill show-me --agent pi \
-      --global --copy --yes >/dev/null; then
-    rm -rf -- "$staging_home"
-    die 'could not install humanlayer/skills show-me'
-  fi
-  while IFS= read -r candidate; do
-    [[ -z "$source" ]] || {
-      rm -rf -- "$staging_home"
-      die 'show-me installer produced multiple skill roots'
-    }
-    source="$(dirname "$candidate")"
-  done < <(find "$staging_home" -type f -path '*/show-me/SKILL.md' -print)
-  [[ -n "$source" ]] || {
-    rm -rf -- "$staging_home"
-    die 'show-me installer produced no SKILL.md'
-  }
-  mkdir -p "$agent_root/skills"
-  [[ ! -L "$agent_root/skills" && -d "$agent_root/skills" ]] \
-    || die "unsafe managed skills directory: $agent_root/skills"
-  if [[ -e "$destination" || -L "$destination" ]]; then
-    [[ -d "$destination" && ! -L "$destination" \
-      && -f "$destination/.managed-by-trellage-picx-profiles" ]] \
-      || die "unmanaged show-me skill exists: $destination"
-    rm -rf -- "$destination"
-  fi
-  mkdir "$destination"
-  cp -R "$source/." "$destination/"
-  printf '%s\n' "$profile_marker_value" \
-    >"$destination/.managed-by-trellage-picx-profiles"
-  chmod -R u=rwX,go=rX "$destination"
-  rm -rf -- "$staging_home"
-}
-
 package_path() {
   local package="$1" install_spec="$2"
 
@@ -764,9 +723,11 @@ verify_profile_assets() {
   [[ -f "$agent_root/npm/node_modules/@ff-labs/fff-node/package.json" ]] \
     || die 'managed pi-fff dependency is missing: @ff-labs/fff-node'
   [[ -f "$agent_root/skills/show-me/SKILL.md" \
-    && ! -L "$agent_root/skills/show-me/SKILL.md" \
-    && -f "$agent_root/skills/show-me/.managed-by-trellage-picx-profiles" ]] \
+    && ! -L "$agent_root/skills/show-me/SKILL.md" ]] \
     || die 'managed show-me skill is missing; run picx repair default'
+  [[ -f "$agent_root/skills/.trellage-managed-skills" \
+    && ! -L "$agent_root/skills/.trellage-managed-skills" ]] \
+    || die 'managed skill manifest is missing; run picx repair default'
 }
 
 setup_profile() {
@@ -777,8 +738,7 @@ setup_profile() {
   publish_managed_profile
   binary="$(installed_binary "$version")"
   install_extensions "$binary"
-  install_show_me
-  sync_engineersamuel_skills
+  ensure_floating_skills
   publish_models_catalog
   verify_managed_profile
   verify_profile_assets
@@ -961,7 +921,7 @@ launch_pi() {
     fi
   fi
   ensure_managed_profile
-  sync_engineersamuel_skills
+  ensure_floating_skills
   verify_profile_assets
   if cancel_pending_launch; then
     return "$launch_cancel_status"

@@ -3,6 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 prototype_root="$PWD"
+. "$prototype_root/../../tests/helpers/floating_skills_fixture.sh"
 
 fail() {
   printf 'trellage profiles contract: FAIL: %s\n' "$1" >&2
@@ -284,8 +285,10 @@ EOF
 
 chmod 0555 "$fake_bin/copilot" "$fake_bin/curl" "$fake_bin/mkdir"
 ln -s "$(command -v jq)" "$fake_bin/jq"
+install_fixture_node "$fake_bin"
 ln -s /bin/bash "$fake_bin/bash"
 ln -s "$(command -v dirname)" "$fake_bin/dirname"
+seed_floating_skills_cache "$fixture_home"
 export HOME="$fixture_home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export FAKE_COPILOT_LOG="$fake_copilot_log"
@@ -929,10 +932,12 @@ jq -e '
 ' "$fixture_root/not-setup-inventory.json" >/dev/null \
   || fail 'not-setup inventory output differs'
 mkdir -p "$expected_hve_home/skills/personal"
-if "$launcher" doctor hve >"$fixture_root/doctor-skill.out" 2>"$fixture_root/doctor-skill.err"; then
-  fail 'doctor accepted a standalone profile skill'
-fi
-rm -rf "$expected_hve_home/skills"
+printf '%s\n' '# User-managed personal skill' >"$expected_hve_home/skills/personal/SKILL.md"
+"$launcher" doctor hve >"$fixture_root/doctor-skill.out" \
+  || fail 'doctor rejected an unrelated user-managed skill'
+[[ -f "$expected_hve_home/skills/personal/SKILL.md" ]] \
+  || fail 'doctor removed an unrelated user-managed skill'
+rm -rf "$expected_hve_home/skills/personal"
 printf '%s\n' '{"mcpServers":{"standalone":{}}}' >"$expected_hve_home/mcp-config.json"
 if "$launcher" doctor hve >"$fixture_root/doctor-mcp.out" 2>"$fixture_root/doctor-mcp.err"; then
   fail 'doctor accepted a standalone profile MCP'

@@ -120,3 +120,4 @@ if [[ ! -L "$command_path" ]]; then
 fi
 
 printf 'Installed trx at %s\n' "$command_path"
+"$source_dir/../../scripts/install-floating-skills-runtime.sh"

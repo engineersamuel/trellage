@@ -21,6 +21,7 @@ trap cleanup EXIT
 fake_bin="$fixture_root/bin"
 docker_log_dir="$fixture_root/docker-calls"
 gh_log_dir="$fixture_root/gh-calls"
+skills_stage_log="$fixture_root/skills-stage.log"
 mkdir -p "$fake_bin" "$docker_log_dir" "$gh_log_dir"
 
 real_node="$(command -v node)"
@@ -28,12 +29,25 @@ cat >"$fake_bin/node" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-case "${1-}" in
-  */scripts/update-engineersamuel-skills.mjs)
-    printf '%s\n' "$*" >>"$FAKE_NODE_LOG"
-    exit 0
-    ;;
-esac
+if [[ "${1-}" == */floating-skills.mjs && "${2-}" == stage ]]; then
+  printf 'stage\n' >>"$FAKE_SKILLS_STAGE_LOG"
+  output=''
+  shift 2
+  while [[ "$#" -gt 0 ]]; do
+    if [[ "$1" == --output ]]; then
+      output="$2"
+      shift 2
+    else
+      shift
+    fi
+  done
+  [[ -n "$output" ]]
+  mkdir -p "$output/skills/fixture-skill"
+  printf '%s\n' '# Comparison fixture skill' >"$output/skills/fixture-skill/SKILL.md"
+  printf '%s\n' fixture-skill >"$output/managed-skills.txt"
+  : >"$output/always-on.md"
+  exit 0
+fi
 
 exec "$REAL_NODE" "$@"
 EOF
@@ -43,6 +57,7 @@ cat >"$fake_bin/docker" <<'EOF'
 set -euo pipefail
 
 token_state='absent'
+skills_state='missing'
 token_file="${HARNESS_COPILOT_TOKEN_FILE:-}"
 if [[ -n "$token_file" && -f "$token_file" ]]; then
   case "$(uname -s 2>/dev/null)" in
@@ -52,6 +67,9 @@ if [[ -n "$token_file" && -f "$token_file" ]]; then
   esac
   [[ "$token_mode" == '600' ]] || token_state="unsafe-mode-$token_mode"
   [[ "$token_mode" != '600' ]] || token_state='set'
+fi
+if [[ -f "${HARNESS_SKILLS_CONTEXT:-}/managed-skills.txt" ]]; then
+  skills_state="$(cat "$HARNESS_SKILLS_CONTEXT/managed-skills.txt")"
 fi
 prompt_hash=''
 for argument in "$@"; do
@@ -64,8 +82,11 @@ jq -n \
   --arg tokenState "$token_state" \
   --arg promptHash "$prompt_hash" \
   --arg wshobsonPlugin "${WSHOBSON_AGENTS_PLUGIN:-}" \
+  --arg skillsContext "${HARNESS_SKILLS_CONTEXT:-}" \
+  --arg skillsState "$skills_state" \
   '{tokenState: $tokenState, promptHash: $promptHash,
-    wshobsonPlugin: $wshobsonPlugin, args: $ARGS.positional}' \
+    wshobsonPlugin: $wshobsonPlugin, skillsContext: $skillsContext,
+    skillsState: $skillsState, args: $ARGS.positional}' \
   --args -- "$@" \
   >"$FAKE_DOCKER_LOG_DIR/call.$$.json"
 
@@ -140,9 +161,9 @@ runner_env=(
   PATH="$fake_bin:$PATH"
   FAKE_DOCKER_LOG_DIR="$docker_log_dir"
   FAKE_GH_LOG_DIR="$gh_log_dir"
-  FAKE_NODE_LOG="$fixture_root/node.log"
   FAKE_PLAYWRIGHT_LOG="$fixture_root/playwright.log"
   FAKE_CURL_LOG="$fixture_root/curl.log"
+  FAKE_SKILLS_STAGE_LOG="$skills_stage_log"
   REAL_NODE="$real_node"
   HARNESS_PLAYWRIGHT_BIN="$fake_bin/playwright"
   HARNESS_STATE_ROOT="$fixture_root/state"
@@ -182,8 +203,8 @@ for invalid_mutation in \
 done
 
 "${runner_env[@]}" "$runner" build "$manifest" >/dev/null
-grep -Fxq "$PWD/scripts/update-engineersamuel-skills.mjs" "$fixture_root/node.log" \
-  || fail 'build did not request a personal skill refresh'
+[[ "$(wc -l <"$skills_stage_log" | tr -d ' ')" == 1 ]] \
+  || fail 'build did not stage comparison skills exactly once'
 build_calls=()
 while IFS= read -r call_file; do
   build_calls+=("$call_file")
@@ -193,6 +214,8 @@ jq -s -e '
   any(.[]; (.args | index("todo-side-by-side-codex-wshobson")) and (.args | index("agent")) and (.args | index("build")))
   and any(.[]; (.args | index("todo-side-by-side-codex-wshobson")) and .wshobsonPlugin == "full-stack-orchestration")
   and any(.[]; (.args | index("todo-side-by-side-copilot-awesome")) and (.args | index("copilot_agent")) and (.args | index("compose.copilot.yaml")))
+  and ([.[].skillsContext] | unique | length) == 1
+  and all(.[]; .skillsState == "fixture-skill")
 ' "${build_calls[@]}" >/dev/null || fail 'build did not isolate both contestant projects and services'
 
 rm -f "$docker_log_dir"/* "$gh_log_dir"/*

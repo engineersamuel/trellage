@@ -195,52 +195,11 @@ describe("parseProfile", () => {
     ["Codex", profile()],
     ["Copilot", copilotProfile()],
     ["Claude", claudeProfile()],
-  ])("accepts a generic always-on skill for %s", async (_label, input) => {
-    const result = await decode(
-      `${input}
-[[skills]]
-repository = "https://github.com/example/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
-`,
-    )
+    ["Prime", primeProfile()],
+  ])("accepts floating skill bundles for %s", async (_label, input) => {
+    const result = await decode(input.replace("schema = 1", 'schema = 1\nskill_bundles = ["sandbox-common"]'))
 
-    expect(result.profile.skills).toContainEqual(
-      expect.objectContaining({ repository: "https://github.com/example/caveman.git", always_on: true }),
-    )
-  })
-
-  it("accepts a generic always-on Pi skill alongside native skills", async () => {
-    const result = await decode(`
-schema = 1
-name = "pi-test"
-description = "Pi test profile"
-[harness]
-kind = "pi"
-version = "latest"
-[harness.pi]
-implementation = "oh-my-pi"
-provider = "github-copilot"
-model = "gpt-5.6-terra"
-auth = "host-or-login"
-[image]
-base = "node:22.17.0-bookworm-slim"
-shell = "fish"
-packages = ["bash"]
-[[skills]]
-adapter = "omp-native"
-repository = "https://github.com/example/native-skills.git"
-ref = "v1"
-select = ["native"]
-[[skills]]
-repository = "https://github.com/example/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
-`)
-
-    expect(result.profile.skills).toHaveLength(2)
+    expect(result.profile.skill_bundles).toEqual(["sandbox-common"])
   })
 
   it("decodes a strict Claude Hyperresearch profile", async () => {
@@ -306,33 +265,20 @@ select = ["humanizer"]
       base_url: "http://copilot-proxy-rs:8080",
       api: "anthropic-messages",
     })
-    expect(result.profile.skills).toEqual([])
+    expect(result.profile.skill_bundles).toEqual([])
     expect(result.profile.plugins).toEqual([])
     expect(result.profile.mcps).toEqual([])
     expect(result.profile.secrets).toEqual({ provider: "env", required: [] })
   })
 
-  it("accepts generic Prime skills while rejecting adapter-backed sources", async () => {
-    const skill = `
-[[skills]]
-repository = "https://github.com/JuliusBrussee/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
+  it("rejects inline skill sources for every harness", async () => {
+    const skill = `[[skills]]
+repository = "https://github.com/example/skills.git"
+ref = "v1"
+select = ["one"]
 `
-    const result = await decode(primeProfile(skill))
 
-    expect(result.profile.skills).toEqual([
-      {
-        repository: "https://github.com/JuliusBrussee/caveman.git",
-        ref: "v1.10.0",
-        select: ["caveman"],
-        always_on: true,
-      },
-    ])
-    await expect(
-      decode(primeProfile(skill.replace("[[skills]]", '[[skills]]\nadapter = "omp-native"'))),
-    ).rejects.toThrow(/Prime skill sources/i)
+    await expect(decode(primeProfile(skill))).rejects.toThrow(/inline skills are unsupported; use skill_bundles/i)
   })
 
   it.each(["preview", "1.2", "v1.2.3"])('rejects invalid Prime version "%s"', async (version) => {
@@ -453,67 +399,13 @@ select = ["humanizer"]
     await expect(decode(input)).rejects.toThrow(error)
   })
 
-  it.each([
-    ["Codex", profile()],
-    ["Copilot", copilotProfile()],
-    ["Claude", claudeProfile()],
-  ])("rejects adapter-backed skills for %s", async (_label, input) => {
-    await expect(
-      decode(
-        `${input}
-[[skills]]
-adapter = "omp-native"
-repository = "https://github.com/example/skills.git"
-ref = "v1"
-select = ["one"]
-`,
-      ),
-    ).rejects.toThrow(/adapter/i)
-  })
-
-  it("rejects always_on on an adapter-backed Pi skill", async () => {
-    await expect(
-      decode(`
-schema = 1
-name = "pi-test"
-description = "Pi test profile"
-[harness]
-kind = "pi"
-version = "latest"
-[harness.pi]
-implementation = "oh-my-pi"
-provider = "github-copilot"
-model = "gpt-5.6-terra"
-auth = "host-or-login"
-[image]
-base = "node:22.17.0-bookworm-slim"
-shell = "fish"
-packages = ["bash"]
-[[skills]]
-adapter = "omp-native"
-repository = "https://github.com/example/native-skills.git"
-ref = "v1"
-select = ["native"]
-always_on = true
-`),
-    ).rejects.toThrow(/always_on/i)
-  })
-
-  it("rejects duplicate standalone skill selections across sources", async () => {
-    await expect(
-      decode(
-        profile(`
-[[skills]]
-repository = "https://github.com/example/first-skills.git"
-ref = "v1"
-select = ["one"]
-[[skills]]
-repository = "https://github.com/example/other-skills.git"
-ref = "v1"
-select = ["one"]
-`),
-      ),
-    ).rejects.toThrow(/duplicate selected standalone skill: one/i)
+  it("rejects duplicate and unsafe skill bundle names", async () => {
+    await expect(decode(profile().replace("schema = 1", 'schema = 1\nskill_bundles = ["one", "one"]'))).rejects.toThrow(
+      /duplicate skill bundle: one/i,
+    )
+    await expect(decode(profile().replace("schema = 1", 'schema = 1\nskill_bundles = ["../outside"]'))).rejects.toThrow(
+      /skill bundle is unsafe/i,
+    )
   })
 
   it("rejects adapters used with the wrong harness kind", async () => {
@@ -607,7 +499,8 @@ select = ["one"]
     await expect(
       decode(
         profile(`
-[[skills]]
+[[plugins]]
+adapter = "codex-native"
 repository = "https://token@github.com/example/skills.git"
 ref = "v1"
 select = ["one"]
@@ -620,7 +513,8 @@ select = ["one"]
     await expect(
       decode(
         profile(`
-[[skills]]
+[[plugins]]
+adapter = "codex-native"
 repository = "https://github.com/example/skills.git"
 ref = "v1"
 select = ["../outside"]
@@ -705,6 +599,14 @@ bearer_token_env = "OTHER_TOKEN"
     const second = await Effect.runPromise(parseProfile(input, path.join(root, "profile.toml")))
 
     expect(profileHash(first)).not.toBe(profileHash(second))
+  })
+
+  it("changes the profile hash when selected floating skill policy changes", async () => {
+    const document = await decode(profile().replace("schema = 1", 'schema = 1\nskill_bundles = ["sandbox-common"]'))
+
+    expect(profileHash({ ...document, floatingSkillPolicy: '{"sources":[["one",{"select":["a"]}]]}' })).not.toBe(
+      profileHash({ ...document, floatingSkillPolicy: '{"sources":[["one",{"select":["b"]}]]}' }),
+    )
   })
 
   it("supports native and compatibility plugins plus stdio and HTTP MCPs", async () => {

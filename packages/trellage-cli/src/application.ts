@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process"
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -21,21 +21,22 @@ import {
   type LockResolvers,
   type ProfileLock,
 } from "./lock.js"
-import { createBuildContext, type PluginGenerator, type RuntimeSupport, type SkillGenerator } from "./materialize.js"
+import { createBuildContext, type PluginGenerator, type RuntimeSupport } from "./materialize.js"
 import { parseProfile, type ProfileDocument } from "./profile.js"
 import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
 import { productionResolvers } from "./resolvers.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
 import { createRuntimeSupportSnapshot, type RuntimeSupportSnapshot } from "./runtime-support.js"
 import { dockerHostArguments, dockerSocketPath, verifyDockerTarget, type DockerTarget } from "./docker-target.js"
+import { managedClaudeFiles } from "./claude-materialize.js"
 
 const execFilePromise = promisify(execFile)
 const builderImage = "docker.io/jdxcode/mise@sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
 const skopeoImage = "quay.io/skopeo/stable@sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
-const compatibilityAdapter = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../prototypes/trellage/adapt-agent-kit.sh",
-)
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
+const compatibilityAdapter = path.join(repositoryRoot, "prototypes", "trellage", "adapt-agent-kit.sh")
+const floatingSkillsManager = path.join(repositoryRoot, "scripts", "floating-skills.mjs")
+const floatingSkillsCatalog = path.join(repositoryRoot, "skills.json")
 const skillsCli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../node_modules/skills/bin/cli.mjs")
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
@@ -200,14 +201,10 @@ const impossibleBuilderInput = (message: string): never => {
   throw new ApplicationError({ message })
 }
 
-export const builderScript = (document: ProfileDocument, lock: ProfileLock): string => {
+const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): string => {
   const harness = lock.packages.harness
-  if (document.profile.harness.kind !== harness.kind || !safeLockedVersionPattern.test(harness.version)) {
-    return impossibleBuilderInput("profile and lock harness packages do not match")
-  }
-  const tool = `http:${harness.kind}@${harness.version}`
-  const build = 'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"'
-  if (harness.kind === "codex" && hasLegacyPackageProvenance(lock)) {
+  if (harness.kind !== "codex") return impossibleBuilderInput("Codex builder requires a Codex package")
+  if (hasLegacyPackageProvenance(lock)) {
     // Legacy Codex locks predate the code-mode-host companion binary; install just the CLI.
     return [
       `mise install --locked ${tool}`,
@@ -216,214 +213,265 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
       build,
     ].join("; ")
   }
-  if (harness.kind === "codex") {
-    const artifacts = lock.packages.artifacts ?? []
-    const codeModeHostArtifact = artifacts.find((artifact) => artifact.name === "codex-code-mode-host")
-    if (
-      codeModeHostArtifact === undefined ||
-      artifacts.length !== 1 ||
-      codeModeHostArtifact.version !== harness.version ||
-      !sha256Pattern.test(codeModeHostArtifact.integrity) ||
-      !Number.isSafeInteger(codeModeHostArtifact.size ?? 0) ||
-      (codeModeHostArtifact.size ?? 0) <= 0
-    ) {
-      return impossibleBuilderInput("Codex builder requires an exact locked code-mode host artifact")
-    }
-    const codeModeHostMember =
-      lock.platform === "linux/arm64"
-        ? "codex-code-mode-host-aarch64-unknown-linux-musl"
-        : "codex-code-mode-host-x86_64-unknown-linux-musl"
-    const expectedCodeModeHostUrl = `https://github.com/openai/codex/releases/download/rust-v${harness.version}/${codeModeHostMember}.tar.gz`
-    if (codeModeHostArtifact.url !== expectedCodeModeHostUrl) {
-      return impossibleBuilderInput("Codex builder requires an exact locked code-mode host artifact")
-    }
-    const codeModeHostArchive = "/src/codex-code-mode-host.tar.gz"
-    const codeModeHostStage = "/tmp/trellage-codex-code-mode-host"
-    return [
-      `mise install --locked ${tool}`,
-      `codex_dir=\"$(mise where ${tool})\"`,
-      'rm -f "$codex_dir/metadata.json"',
-      `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(codeModeHostArchive)} ${shellQuote(codeModeHostArtifact.url)}`,
-      `[ "$(wc -c < ${shellQuote(codeModeHostArchive)})" -eq ${codeModeHostArtifact.size} ]`,
-      `printf '%s  %s\\n' ${shellQuote(codeModeHostArtifact.integrity.slice("sha256:".length))} ${shellQuote(codeModeHostArchive)} | sha256sum --check --strict -`,
-      `rm -rf ${shellQuote(codeModeHostStage)}`,
-      `mkdir -p ${shellQuote(codeModeHostStage)}`,
-      `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(codeModeHostArchive)} -C ${shellQuote(codeModeHostStage)}`,
-      `[ "$(find ${shellQuote(codeModeHostStage)} -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]`,
-      `mv ${shellQuote(`${codeModeHostStage}/${codeModeHostMember}`)} \"$codex_dir/codex-code-mode-host\"`,
-      'chmod 0755 "$codex_dir/codex-code-mode-host"',
-      build,
-    ].join("; ")
+  const artifacts = lock.packages.artifacts ?? []
+  const codeModeHostArtifact = artifacts.find((artifact) => artifact.name === "codex-code-mode-host")
+  if (
+    codeModeHostArtifact === undefined ||
+    artifacts.length !== 1 ||
+    codeModeHostArtifact.version !== harness.version ||
+    !sha256Pattern.test(codeModeHostArtifact.integrity) ||
+    !Number.isSafeInteger(codeModeHostArtifact.size ?? 0) ||
+    (codeModeHostArtifact.size ?? 0) <= 0
+  ) {
+    return impossibleBuilderInput("Codex builder requires an exact locked code-mode host artifact")
   }
-  if (harness.kind === "claude") {
-    const claudeDirectory = `claude_dir="$(mise where ${tool})"`
-    const normalizeClaudeMetadata = [
-      'claude_metadata="$claude_dir/metadata.json"',
-      '[ -f "$claude_metadata" ]',
-      `grep -Eq '^  "extracted_at": [0-9]+,$' "$claude_metadata"`,
-      `sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"`,
-      `grep -Fqx "  \\"extracted_at\\": $SOURCE_DATE_EPOCH," "$claude_metadata"`,
-      `find /mise/installs -name metadata.json -type f ! -path "$claude_metadata" -delete`,
-    ].join("; ")
-    if (document.profile.plugins.length === 0) {
-      const isolateCoreTools =
-        document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
-          ? "rm -f /mise/config.toml; "
-          : ""
-      return `${isolateCoreTools}mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
-    }
-    const pluginSourceOffset = document.profile.skills.length
-    const plugin = document.profile.plugins[0]
-    const source = lock.sources[pluginSourceOffset]
+  const codeModeHostMember =
+    lock.platform === "linux/arm64"
+      ? "codex-code-mode-host-aarch64-unknown-linux-musl"
+      : "codex-code-mode-host-x86_64-unknown-linux-musl"
+  const expectedCodeModeHostUrl = `https://github.com/openai/codex/releases/download/rust-v${harness.version}/${codeModeHostMember}.tar.gz`
+  if (codeModeHostArtifact.url !== expectedCodeModeHostUrl) {
+    return impossibleBuilderInput("Codex builder requires an exact locked code-mode host artifact")
+  }
+  const codeModeHostArchive = "/src/codex-code-mode-host.tar.gz"
+  const codeModeHostStage = "/tmp/trellage-codex-code-mode-host"
+  return [
+    `mise install --locked ${tool}`,
+    `codex_dir=\"$(mise where ${tool})\"`,
+    'rm -f "$codex_dir/metadata.json"',
+    `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(codeModeHostArchive)} ${shellQuote(codeModeHostArtifact.url)}`,
+    `[ "$(wc -c < ${shellQuote(codeModeHostArchive)})" -eq ${codeModeHostArtifact.size} ]`,
+    `printf '%s  %s\\n' ${shellQuote(codeModeHostArtifact.integrity.slice("sha256:".length))} ${shellQuote(codeModeHostArchive)} | sha256sum --check --strict -`,
+    `rm -rf ${shellQuote(codeModeHostStage)}`,
+    `mkdir -p ${shellQuote(codeModeHostStage)}`,
+    `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(codeModeHostArchive)} -C ${shellQuote(codeModeHostStage)}`,
+    `[ "$(find ${shellQuote(codeModeHostStage)} -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]`,
+    `mv ${shellQuote(`${codeModeHostStage}/${codeModeHostMember}`)} \"$codex_dir/codex-code-mode-host\"`,
+    'chmod 0755 "$codex_dir/codex-code-mode-host"',
+    build,
+  ].join("; ")
+}
+
+const claudeMarketplaceCommands = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  nativeEnvironment: string,
+): ReadonlyArray<string> => {
+  if (document.profile.plugins.length !== lock.sources.length) {
+    return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
+  }
+  const commands: Array<string> = []
+  for (let index = 0; index < document.profile.plugins.length; index += 1) {
+    const marketplacePlugin = document.profile.plugins[index]!
+    const marketplaceSource = lock.sources[index]
+    const versions =
+      marketplaceSource?.plugin_versions === undefined ? [] : Object.entries(marketplaceSource.plugin_versions)
     if (
-      plugin?.adapter === "hyperresearch" &&
-      source?.adapter === "hyperresearch" &&
-      document.profile.plugins.length === 1 &&
-      lock.sources.length === pluginSourceOffset + 1
-    ) {
-      const materializePythonSite =
-        "mkdir -p /src/hyperresearch-site; mise x uv@0.11.21 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/.runtime-support/hyperresearch-requirements.lock; cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch"
-      return `${materializePythonSite}; mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
-    }
-    if (
-      document.profile.plugins.length === 0 ||
-      document.profile.plugins.length !== lock.sources.length - pluginSourceOffset
+      marketplacePlugin.adapter !== "claude-marketplace" ||
+      marketplaceSource?.adapter !== "claude-marketplace" ||
+      marketplaceSource.marketplace !== marketplacePlugin.marketplace ||
+      marketplaceSource.repository !== marketplacePlugin.repository ||
+      marketplaceSource.ref !== marketplacePlugin.ref ||
+      JSON.stringify(marketplaceSource.select) !== JSON.stringify(marketplacePlugin.select) ||
+      versions.length !== marketplacePlugin.select.length ||
+      versions.some(([name, version]) => !safeIdentifierPattern.test(name) || !safeLockedVersionPattern.test(version))
     ) {
       return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
     }
-    const nativeEnvironment =
-      "HOME=/src/claude-builder-home CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 NO_COLOR=1 TERM=dumb"
-    const marketplaceCommands: Array<string> = []
-    for (let index = 0; index < document.profile.plugins.length; index += 1) {
-      const marketplacePlugin = document.profile.plugins[index]!
-      const marketplaceSource = lock.sources[pluginSourceOffset + index]
-      const versions =
-        marketplaceSource?.plugin_versions === undefined ? [] : Object.entries(marketplaceSource.plugin_versions)
-      if (
-        marketplacePlugin.adapter !== "claude-marketplace" ||
-        marketplaceSource?.adapter !== "claude-marketplace" ||
-        marketplaceSource.marketplace !== marketplacePlugin.marketplace ||
-        marketplaceSource.repository !== marketplacePlugin.repository ||
-        marketplaceSource.ref !== marketplacePlugin.ref ||
-        JSON.stringify(marketplaceSource.select) !== JSON.stringify(marketplacePlugin.select) ||
-        versions.length !== marketplacePlugin.select.length ||
-        versions.some(([name, version]) => !safeIdentifierPattern.test(name) || !safeLockedVersionPattern.test(version))
-      ) {
-        return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
-      }
-      marketplaceCommands.push(
-        `${nativeEnvironment} "$claude_bin" plugin marketplace add /src/claude-marketplace-${index}`,
-        ...marketplacePlugin.select.map(
-          (selection) =>
-            `${nativeEnvironment} "$claude_bin" plugin install ${selection}@${marketplacePlugin.marketplace} --scope user`,
-        ),
-      )
-    }
-    return [
-      `mise install --locked node@22.17.0 ${tool}`,
-      claudeDirectory,
-      'claude_bin="$claude_dir/claude"',
-      '[ -x "$claude_bin" ]',
-      'node_bin="$(mise where node@22.17.0)/bin/node"',
-      '[ -x "$node_bin" ]',
-      normalizeClaudeMetadata,
-      ...marketplaceCommands,
-      `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harness.version}`,
-      build,
-    ].join("; ")
+    commands.push(
+      `${nativeEnvironment} "$claude_bin" plugin marketplace add /src/claude-marketplace-${index}`,
+      ...marketplacePlugin.select.map(
+        (selection) =>
+          `${nativeEnvironment} "$claude_bin" plugin install ${selection}@${marketplacePlugin.marketplace} --scope user`,
+      ),
+    )
   }
-  if (harness.kind === "pi") {
-    return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
-  }
-  if (harness.kind === "prime") {
-    const filename = `prime-agent-${harness.version}.tgz`
-    const expectedUrl = `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v${harness.version}/${filename}`
-    if (
-      harness.url !== expectedUrl ||
-      !sha256Pattern.test(harness.integrity) ||
-      !Number.isSafeInteger(harness.size) ||
-      harness.size <= 0
-    ) {
-      return impossibleBuilderInput("Prime builder requires an exact locked release tarball")
-    }
-    const artifact = `/src/${filename}`
-    const kernelHome = "/home/agent/.trellage/prime-kernel"
-    const kernelSeed = "/src/prime-kernel-seed.tar.gz"
-    const kernelRequirements = "/tmp/trellage-prime-kernel-requirements.txt"
-    const packageCheck =
-      'const p=require("/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json");if(p.name!=="prime-agent"||p.version!==process.argv[1]||p.bin?.["prime-agent"]!=="dist/bundle/cli.js")process.exit(1)'
-    const kernelBootstrap =
-      'import { ensureKernelPython } from "file:///src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js";await ensureKernelPython()'
-    return [
-      `prime_artifact=${shellQuote(artifact)}`,
-      `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
-      `[ "$(wc -c < "$prime_artifact")" -eq ${harness.size} ]`,
-      `printf '%s  %s\\n' ${shellQuote(harness.integrity.slice("sha256:".length))} "$prime_artifact" | sha256sum --check --strict -`,
-      "rm -f /mise/config.toml",
-      "mise install --locked node@22.17.0",
-      'prime_node_dir="$(mise where node@22.17.0)"',
-      '[ -x "$prime_node_dir/bin/node" ]',
-      '[ -x "$prime_node_dir/bin/npm" ]',
-      `PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix --no-fund --no-audit --loglevel=error --progress=false "$prime_artifact"`,
-      `"$prime_node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(harness.version)}`,
-      `prime_kernel_home=${shellQuote(kernelHome)}`,
-      `prime_kernel_seed=${shellQuote(kernelSeed)}`,
-      'rm -rf "$prime_kernel_home" "$prime_kernel_seed"',
-      'mkdir -p "$prime_kernel_home"',
-      // ensureKernelPython installs uv, Python 3.11, seed packages, and the runtime
-      // over HTTPS (normally files.pythonhosted.org). Surface an actionable hint when
-      // that CDN is unreachable; UV_DEFAULT_INDEX is forwarded from the host.
-      "prime_kernel_status=0",
-      `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PYTHONDONTWRITEBYTECODE=1 PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
-      '[ "$prime_kernel_status" -eq 0 ] || { printf \'%s\\n\' "trellage: Prime Python kernel bootstrap failed (exit $prime_kernel_status)." >&2; printf \'%s\\n\' "This step needs a reachable PyPI simple index for uv seed packages, ipykernel, and default runtime packages." >&2; printf \'%s\\n\' "On Microsoft-managed devices, public pypi.org / files.pythonhosted.org are blocked; use the CFS feed (UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/) or configure pip global.index-url, then rebuild." >&2; printf \'%s\\n\' "Elsewhere, set UV_DEFAULT_INDEX or PIP_INDEX_URL to any reachable simple-index mirror." >&2; exit "$prime_kernel_status"; }',
-      `prime_kernel_requirements=${shellQuote(kernelRequirements)}`,
-      `printf '%s\\n' 'platformdirs==4.11.0 --hash=sha256:360ccded2b7fce0af0ff80cc8f5942a1c5d99b0e856033acb030bfc634709e74' > "$prime_kernel_requirements"`,
-      'PYTHONDONTWRITEBYTECODE=1 mise x uv@0.11.21 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall -r "$prime_kernel_requirements"',
-      'rm -f "$prime_kernel_requirements"',
-      'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
-      'find "$prime_kernel_home" -type d -name __pycache__ -prune -exec rm -rf {} +',
-      'prime_runtime_record="$(find "$prime_kernel_home/.prime/agent/kernel-venv/lib" -path \'*/site-packages/prime_agent_runtime-*.dist-info/RECORD\' -type f -print -quit)"',
-      '[ -n "$prime_runtime_record" ]',
-      'prime_runtime_dist_info="$(dirname "$prime_runtime_record")"',
-      'rm -f "$prime_runtime_dist_info/uv_cache.json"',
-      "sed -i '/prime_agent_runtime-.*\\.dist-info\\/uv_cache\\.json,/d' \"$prime_runtime_record\"",
-      'tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -C "$prime_kernel_home" -cf - .trellage-prime-kernel .local/share/uv/python .prime/agent/kernel-venv | gzip -n > "$prime_kernel_seed"',
-      'rm -rf "$prime_kernel_home"',
-      build,
-    ].join("; ")
-  }
+  return commands
+}
 
-  const pluginSourceOffset = document.profile.skills.length
-  const profilePlugin = document.profile.plugins[0]
-  const source = lock.sources[pluginSourceOffset]
-  const selected = profilePlugin?.select[0]
+const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool: string, build: string): string => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "claude") return impossibleBuilderInput("Claude builder requires a Claude package")
+  const claudeDirectory = `claude_dir="$(mise where ${tool})"`
+  const normalizeClaudeMetadata = [
+    'claude_metadata="$claude_dir/metadata.json"',
+    '[ -f "$claude_metadata" ]',
+    `grep -Eq '^  "extracted_at": [0-9]+,$' "$claude_metadata"`,
+    `sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"`,
+    `grep -Fqx "  \\"extracted_at\\": $SOURCE_DATE_EPOCH," "$claude_metadata"`,
+    `find /mise/installs -name metadata.json -type f ! -path "$claude_metadata" -delete`,
+  ].join("; ")
+  if (document.profile.plugins.length === 0) {
+    const isolateCoreTools =
+      document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
+        ? "rm -f /mise/config.toml; "
+        : ""
+    return `${isolateCoreTools}mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
+  }
+  const plugin = document.profile.plugins[0]
+  const source = lock.sources[0]
+  if (
+    plugin?.adapter === "hyperresearch" &&
+    source?.adapter === "hyperresearch" &&
+    document.profile.plugins.length === 1 &&
+    lock.sources.length === 1
+  ) {
+    const materializePythonSite =
+      "mkdir -p /src/hyperresearch-site; mise x uv@0.11.21 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/.runtime-support/hyperresearch-requirements.lock; cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch"
+    return `${materializePythonSite}; mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
+  }
+  const nativeEnvironment =
+    "HOME=/src/claude-builder-home CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 NO_COLOR=1 TERM=dumb"
+  const marketplaceCommands = claudeMarketplaceCommands(document, lock, nativeEnvironment)
+  return [
+    `mise install --locked node@22.17.0 ${tool}`,
+    claudeDirectory,
+    'claude_bin="$claude_dir/claude"',
+    '[ -x "$claude_bin" ]',
+    'node_bin="$(mise where node@22.17.0)/bin/node"',
+    '[ -x "$node_bin" ]',
+    normalizeClaudeMetadata,
+    ...marketplaceCommands,
+    `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harness.version}`,
+    build,
+  ].join("; ")
+}
+
+const primeBuilderScript = (lock: ProfileLock, build: string): string => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "prime") return impossibleBuilderInput("Prime builder requires a Prime package")
+  const filename = `prime-agent-${harness.version}.tgz`
+  const expectedUrl = `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v${harness.version}/${filename}`
+  if (
+    harness.url !== expectedUrl ||
+    !sha256Pattern.test(harness.integrity) ||
+    !Number.isSafeInteger(harness.size) ||
+    harness.size <= 0
+  ) {
+    return impossibleBuilderInput("Prime builder requires an exact locked release tarball")
+  }
+  const artifact = `/src/${filename}`
+  const kernelHome = "/home/agent/.trellage/prime-kernel"
+  const kernelSeed = "/src/prime-kernel-seed.tar.gz"
+  const kernelRequirements = "/tmp/trellage-prime-kernel-requirements.txt"
+  const packageCheck =
+    'const p=require("/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json");if(p.name!=="prime-agent"||p.version!==process.argv[1]||p.bin?.["prime-agent"]!=="dist/bundle/cli.js")process.exit(1)'
+  const kernelBootstrap =
+    'import { ensureKernelPython } from "file:///src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js";await ensureKernelPython()'
+  return [
+    `prime_artifact=${shellQuote(artifact)}`,
+    `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
+    `[ "$(wc -c < "$prime_artifact")" -eq ${harness.size} ]`,
+    `printf '%s  %s\\n' ${shellQuote(harness.integrity.slice("sha256:".length))} "$prime_artifact" | sha256sum --check --strict -`,
+    "rm -f /mise/config.toml",
+    "mise install --locked node@22.17.0",
+    'prime_node_dir="$(mise where node@22.17.0)"',
+    '[ -x "$prime_node_dir/bin/node" ]',
+    '[ -x "$prime_node_dir/bin/npm" ]',
+    `PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix --no-fund --no-audit --loglevel=error --progress=false "$prime_artifact"`,
+    `"$prime_node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(harness.version)}`,
+    `prime_kernel_home=${shellQuote(kernelHome)}`,
+    `prime_kernel_seed=${shellQuote(kernelSeed)}`,
+    'rm -rf "$prime_kernel_home" "$prime_kernel_seed"',
+    'mkdir -p "$prime_kernel_home"',
+    // ensureKernelPython installs uv, Python 3.11, seed packages, and the runtime
+    // over HTTPS (normally files.pythonhosted.org). Surface an actionable hint when
+    // that CDN is unreachable; UV_DEFAULT_INDEX is forwarded from the host.
+    "prime_kernel_status=0",
+    `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PYTHONDONTWRITEBYTECODE=1 PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
+    '[ "$prime_kernel_status" -eq 0 ] || { printf \'%s\\n\' "trellage: Prime Python kernel bootstrap failed (exit $prime_kernel_status)." >&2; printf \'%s\\n\' "This step needs a reachable PyPI simple index for uv seed packages, ipykernel, and default runtime packages." >&2; printf \'%s\\n\' "On Microsoft-managed devices, public pypi.org / files.pythonhosted.org are blocked; use the CFS feed (UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/) or configure pip global.index-url, then rebuild." >&2; printf \'%s\\n\' "Elsewhere, set UV_DEFAULT_INDEX or PIP_INDEX_URL to any reachable simple-index mirror." >&2; exit "$prime_kernel_status"; }',
+    `prime_kernel_requirements=${shellQuote(kernelRequirements)}`,
+    `printf '%s\\n' 'platformdirs==4.11.0 --hash=sha256:360ccded2b7fce0af0ff80cc8f5942a1c5d99b0e856033acb030bfc634709e74' > "$prime_kernel_requirements"`,
+    'PYTHONDONTWRITEBYTECODE=1 mise x uv@0.11.21 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall -r "$prime_kernel_requirements"',
+    'rm -f "$prime_kernel_requirements"',
+    'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
+    'find "$prime_kernel_home" -type d -name __pycache__ -prune -exec rm -rf {} +',
+    'prime_runtime_record="$(find "$prime_kernel_home/.prime/agent/kernel-venv/lib" -path \'*/site-packages/prime_agent_runtime-*.dist-info/RECORD\' -type f -print -quit)"',
+    '[ -n "$prime_runtime_record" ]',
+    'prime_runtime_dist_info="$(dirname "$prime_runtime_record")"',
+    'rm -f "$prime_runtime_dist_info/uv_cache.json"',
+    "sed -i '/prime_agent_runtime-.*\\.dist-info\\/uv_cache\\.json,/d' \"$prime_runtime_record\"",
+    'tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -C "$prime_kernel_home" -cf - .trellage-prime-kernel .local/share/uv/python .prime/agent/kernel-venv | gzip -n > "$prime_kernel_seed"',
+    'rm -rf "$prime_kernel_home"',
+    build,
+  ].join("; ")
+}
+
+interface CopilotPluginSelection {
+  readonly marketplace: string
+  readonly selected: string
+  readonly repository: string
+  readonly ref: string
+}
+
+const copilotPluginSelection = (
+  plugin: ProfileDocument["profile"]["plugins"][number] | undefined,
+): CopilotPluginSelection | undefined => {
+  if (plugin === undefined || !("marketplace" in plugin) || plugin.select.length !== 1) return undefined
+  const selected = plugin.select[0]
+  return selected === undefined
+    ? undefined
+    : { marketplace: plugin.marketplace, selected, repository: plugin.repository, ref: plugin.ref }
+}
+
+const copilotSourceMatches = (
+  source: ProfileLock["sources"][number] | undefined,
+  selection: CopilotPluginSelection,
+): boolean =>
+  source !== undefined &&
+  source.kind === "plugin" &&
+  source.adapter === "copilot-marketplace" &&
+  source.marketplace === selection.marketplace &&
+  source.repository === selection.repository &&
+  source.ref === selection.ref &&
+  source.select.length === 1 &&
+  source.select[0] === selection.selected
+
+const copilotPluginVersion = (
+  source: ProfileLock["sources"][number] | undefined,
+  selection: CopilotPluginSelection,
+  harnessVersion: string,
+): string | undefined => {
   const versions = source?.plugin_versions === undefined ? [] : Object.entries(source.plugin_versions)
+  const version = versions[0]?.[1]
+  if (
+    versions.length !== 1 ||
+    versions[0]?.[0] !== selection.selected ||
+    !exactVersionPattern.test(harnessVersion) ||
+    !safeIdentifierPattern.test(selection.marketplace) ||
+    !safeIdentifierPattern.test(selection.selected) ||
+    version === undefined ||
+    !exactVersionPattern.test(version)
+  ) {
+    return undefined
+  }
+  return version
+}
+
+const copilotPluginDetails = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+): { readonly marketplace: string; readonly selected: string; readonly version: string } => {
+  const source = lock.sources[0]
+  const selection = copilotPluginSelection(document.profile.plugins[0])
   if (
     document.profile.plugins.length !== 1 ||
-    lock.sources.length !== pluginSourceOffset + 1 ||
-    profilePlugin === undefined ||
-    !("marketplace" in profilePlugin) ||
-    profilePlugin.select.length !== 1 ||
-    selected === undefined ||
-    source === undefined ||
-    source.kind !== "plugin" ||
-    source.adapter !== "copilot-marketplace" ||
-    source.marketplace !== profilePlugin.marketplace ||
-    source.repository !== profilePlugin.repository ||
-    source.ref !== profilePlugin.ref ||
-    source.select.length !== 1 ||
-    source.select[0] !== selected ||
-    versions.length !== 1 ||
-    versions[0]?.[0] !== selected ||
-    !exactVersionPattern.test(harness.version) ||
-    !safeIdentifierPattern.test(profilePlugin.marketplace) ||
-    !safeIdentifierPattern.test(selected) ||
-    !exactVersionPattern.test(versions[0]?.[1] ?? "")
+    lock.sources.length !== 1 ||
+    selection === undefined ||
+    !copilotSourceMatches(source, selection)
   ) {
     return impossibleBuilderInput("Copilot builder requires one exact locked marketplace plugin")
   }
-  const marketplace = profilePlugin.marketplace
-  const version = versions[0]![1]
+  const version = copilotPluginVersion(source, selection, lock.packages.harness.version)
+  if (version === undefined)
+    return impossibleBuilderInput("Copilot builder requires one exact locked marketplace plugin")
+  return { ...selection, version }
+}
+
+const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool: string, build: string): string => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "copilot") return impossibleBuilderInput("Copilot builder requires a Copilot package")
+  const { marketplace, selected, version } = copilotPluginDetails(document, lock)
   const plugin = `${selected}@${marketplace}`
   const nativeEnvironment = "COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb"
   const expectedRow = `  • ${plugin} (v${version})`
@@ -445,14 +493,89 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
   ].join("; ")
 }
 
+export const builderScript = (document: ProfileDocument, lock: ProfileLock): string => {
+  const harness = lock.packages.harness
+  if (document.profile.harness.kind !== harness.kind || !safeLockedVersionPattern.test(harness.version)) {
+    return impossibleBuilderInput("profile and lock harness packages do not match")
+  }
+  const tool = `http:${harness.kind}@${harness.version}`
+  const build = 'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"'
+  if (harness.kind === "codex") return codexBuilderScript(lock, tool, build)
+  if (harness.kind === "claude") return claudeBuilderScript(document, lock, tool, build)
+  if (harness.kind === "pi") {
+    return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
+  }
+  if (harness.kind === "prime") return primeBuilderScript(lock, build)
+  return copilotBuilderScript(document, lock, tool, build)
+}
+
 const io = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ApplicationError> =>
   Effect.tryPromise({ try: operation, catch: (cause) => new ApplicationError({ message, cause }) })
 
 export const adjacentLockPath = platformLockPath
 
+const attachSkillBundlePolicy = (document: ProfileDocument): Effect.Effect<ProfileDocument, ApplicationError> => {
+  if (document.profile.skill_bundles.length === 0) return Effect.succeed(document)
+  return io("cannot read floating skill catalog", () => readFile(floatingSkillsCatalog, "utf8")).pipe(
+    Effect.flatMap((source) =>
+      Effect.try({
+        try: () => JSON.parse(source) as unknown,
+        catch: (cause) => new ApplicationError({ message: "floating skill catalog is invalid", cause }),
+      }),
+    ),
+    Effect.flatMap((catalog) => {
+      if (
+        typeof catalog !== "object" ||
+        catalog === null ||
+        !("bundles" in catalog) ||
+        typeof catalog.bundles !== "object" ||
+        catalog.bundles === null
+      ) {
+        return Effect.fail(new ApplicationError({ message: "floating skill catalog has no bundles" }))
+      }
+      const bundles = catalog.bundles as Readonly<Record<string, unknown>>
+      const unknown = document.profile.skill_bundles.find((bundle) => !Object.hasOwn(bundles, bundle))
+      if (unknown !== undefined) {
+        return Effect.fail(new ApplicationError({ message: `unknown skill bundle: ${unknown}` }))
+      }
+      if (!("sources" in catalog) || typeof catalog.sources !== "object" || catalog.sources === null) {
+        return Effect.fail(new ApplicationError({ message: "floating skill catalog has no sources" }))
+      }
+      const sources = catalog.sources as Readonly<Record<string, unknown>>
+      const sourceIds = [
+        ...new Set(
+          document.profile.skill_bundles.flatMap((bundle) => {
+            const sourceIds = bundles[bundle]
+            return Array.isArray(sourceIds) && sourceIds.every((sourceId) => typeof sourceId === "string")
+              ? sourceIds
+              : []
+          }),
+        ),
+      ].sort((left, right) => left.localeCompare(right, "en"))
+      const invalidBundle = document.profile.skill_bundles.find((bundle) => {
+        const sourceIds = bundles[bundle]
+        return !Array.isArray(sourceIds) || !sourceIds.every((sourceId) => typeof sourceId === "string")
+      })
+      if (invalidBundle !== undefined) {
+        return Effect.fail(new ApplicationError({ message: `invalid skill bundle: ${invalidBundle}` }))
+      }
+      const missingSource = sourceIds.find((sourceId) => !Object.hasOwn(sources, sourceId))
+      if (missingSource !== undefined) {
+        return Effect.fail(new ApplicationError({ message: `unknown skill source: ${missingSource}` }))
+      }
+      const floatingSkillPolicy = JSON.stringify({
+        bundles: [...document.profile.skill_bundles].sort((left, right) => left.localeCompare(right, "en")),
+        sources: sourceIds.map((sourceId) => [sourceId, sources[sourceId]]),
+      })
+      return Effect.succeed({ ...document, floatingSkillPolicy })
+    }),
+  )
+}
+
 export const loadProfile = (profilePath: string): Effect.Effect<ProfileDocument, ApplicationError> =>
   io(`cannot read profile: ${profilePath}`, () => readFile(profilePath, "utf8")).pipe(
     Effect.flatMap((source) => parseProfile(source, profilePath)),
+    Effect.flatMap(attachSkillBundlePolicy),
     Effect.mapError(
       (cause) => new ApplicationError({ message: "message" in cause ? String(cause.message) : String(cause), cause }),
     ),
@@ -620,22 +743,6 @@ const pluginGenerator: PluginGenerator = (sourceDirectory, selections, destinati
     { concurrency: 1 },
   ).pipe(Effect.zipRight(run("bash", [compatibilityAdapter, destination])), Effect.asVoid)
 
-const skillGenerator: SkillGenerator = (sourceDirectory, selections, destination) =>
-  run(
-    process.execPath,
-    [skillsCli, "add", sourceDirectory, "--skill", ...selections, "--agent", "codex", "--copy", "--yes"],
-    {
-      cwd: destination,
-      env: {
-        ...process.env,
-        CI: "1",
-        DISABLE_TELEMETRY: "1",
-        DO_NOT_TRACK: "1",
-        npm_config_ignore_scripts: "true",
-      },
-    },
-  )
-
 export type CommandRunner = typeof run
 
 export interface DockerServices {
@@ -752,6 +859,217 @@ const buildOci = (
     return digest
   })
 
+const floatingSkillDestination = (document: ProfileDocument, context: string): string =>
+  document.profile.harness.kind === "codex"
+    ? path.join(context, "assets", "skills")
+    : document.profile.harness.kind === "copilot"
+      ? path.join(context, "copilot-seed", "skills")
+      : document.profile.harness.kind === "claude"
+        ? path.join(context, "claude-seed", "skills")
+        : document.profile.harness.kind === "prime"
+          ? path.join(context, "prime-seed", "skills")
+          : path.join(context, "pi-seed", "skills")
+
+const floatingInstructionDestination = (document: ProfileDocument, context: string): string =>
+  document.profile.harness.kind === "codex"
+    ? path.join(context, "assets", "AGENTS.md")
+    : document.profile.harness.kind === "copilot"
+      ? path.join(context, "copilot-seed", "copilot-instructions.md")
+      : document.profile.harness.kind === "claude"
+        ? path.join(context, "claude-seed", "CLAUDE.md")
+        : document.profile.harness.kind === "prime"
+          ? path.join(context, "prime-seed", "APPEND_SYSTEM.md")
+          : path.join(context, "pi-seed", "APPEND_SYSTEM.md")
+
+const readOptionalText = (candidate: string): Effect.Effect<string, ApplicationError> =>
+  io(`cannot read optional build asset: ${candidate}`, async () => {
+    try {
+      return await readFile(candidate, "utf8")
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return ""
+      throw cause
+    }
+  })
+
+const readFloatingSkillNames = (snapshot: string): Effect.Effect<ReadonlyArray<string>, ApplicationError> =>
+  Effect.gen(function* () {
+    const manifest = yield* io("cannot read floating skill manifest", () =>
+      readFile(path.join(snapshot, "managed-skills.txt"), "utf8"),
+    )
+    const names = manifest.split("\n").filter(Boolean)
+    if (
+      names.length === 0 ||
+      names.some((name) => !safeIdentifierPattern.test(name)) ||
+      new Set(names).size !== names.length
+    ) {
+      return yield* Effect.fail(new ApplicationError({ message: "floating skill manifest is invalid" }))
+    }
+    const root = path.join(snapshot, "skills")
+    const actual = yield* io("cannot enumerate floating skill snapshot", () => readdir(root))
+    actual.sort((left, right) => left.localeCompare(right, "en"))
+    const expected = [...names].sort((left, right) => left.localeCompare(right, "en"))
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      return yield* Effect.fail(new ApplicationError({ message: "floating skill snapshot does not match manifest" }))
+    }
+    return expected
+  })
+
+const copyFloatingSkills = (
+  snapshot: string,
+  destination: string,
+  names: ReadonlyArray<string>,
+): Effect.Effect<void, ApplicationError> =>
+  Effect.forEach(
+    names,
+    (name) =>
+      io(`cannot copy floating skill: ${name}`, async () => {
+        const source = path.join(snapshot, "skills", name)
+        const sourceStatus = await lstat(source)
+        if (!sourceStatus.isDirectory() || sourceStatus.isSymbolicLink()) {
+          throw new Error("skill source is not a regular directory")
+        }
+        try {
+          await lstat(path.join(destination, name))
+          throw new Error("managed skill name collides")
+        } catch (cause) {
+          if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+        }
+        await cp(source, path.join(destination, name), {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+          verbatimSymlinks: true,
+        })
+      }),
+    { concurrency: 1, discard: true },
+  )
+
+const appendFloatingInstructions = (
+  document: ProfileDocument,
+  context: string,
+  snapshot: string,
+): Effect.Effect<void, ApplicationError> =>
+  Effect.gen(function* () {
+    const incoming = yield* io("cannot read floating always-on instructions", () =>
+      readFile(path.join(snapshot, "always-on.md"), "utf8"),
+    )
+    if (incoming.length === 0) return
+    const destination = floatingInstructionDestination(document, context)
+    const current = yield* readOptionalText(destination)
+    const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : ""
+    yield* io("cannot write floating always-on instructions", async () => {
+      await mkdir(path.dirname(destination), { recursive: true })
+      await writeFile(destination, `${current}${separator}${incoming}`)
+    })
+  })
+
+const updateFloatingManagedManifests = (
+  document: ProfileDocument,
+  context: string,
+  names: ReadonlyArray<string>,
+): Effect.Effect<void, ApplicationError> =>
+  Effect.gen(function* () {
+    const harness = document.profile.harness.kind
+    if (harness === "pi" || harness === "prime") {
+      const seed = path.join(context, harness === "pi" ? "pi-seed" : "prime-seed")
+      const manifest = path.join(seed, "managed-skills.txt")
+      const existing = (yield* readOptionalText(manifest)).split("\n").filter(Boolean)
+      const managed = [...new Set([...existing, ...names])].sort((left, right) => left.localeCompare(right, "en"))
+      yield* io("cannot write floating managed skill manifest", () =>
+        writeFile(manifest, managed.map((name) => `${name}\n`).join("")),
+      )
+    }
+    if (harness === "claude") {
+      const seed = path.join(context, "claude-seed")
+      const managed = yield* io("cannot enumerate managed Claude seed", () => managedClaudeFiles(seed))
+      yield* io("cannot write managed Claude seed manifest", () =>
+        writeFile(path.join(seed, "managed-paths.txt"), `${managed.join("\n")}\n`),
+      )
+    }
+  })
+
+const injectFloatingSkills = (
+  document: ProfileDocument,
+  context: string,
+  snapshot: string | undefined,
+): Effect.Effect<void, ApplicationError> =>
+  Effect.gen(function* () {
+    if (snapshot === undefined) return
+    const names = yield* readFloatingSkillNames(snapshot)
+    const destination = floatingSkillDestination(document, context)
+    yield* io("cannot initialize floating skill destination", () => mkdir(destination, { recursive: true }))
+    yield* copyFloatingSkills(snapshot, destination, names)
+    yield* appendFloatingInstructions(document, context, snapshot)
+    yield* updateFloatingManagedManifests(document, context, names)
+  })
+
+const floatingStageArguments = (document: ProfileDocument, snapshot: string): ReadonlyArray<string> => [
+  floatingSkillsManager,
+  "stage",
+  "--catalog",
+  floatingSkillsCatalog,
+  ...document.profile.skill_bundles.flatMap((bundle) => ["--bundle", bundle]),
+  "--output",
+  snapshot,
+  "--skills-cli",
+  skillsCli,
+]
+
+const cleanupBuildDirectory = (
+  candidate: string | undefined,
+  message: string,
+): Effect.Effect<void, ApplicationError> =>
+  candidate === undefined ? Effect.void : io(message, () => rm(candidate, { recursive: true, force: true }))
+
+const buildWithCurrentSkills = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  sourceDirectories: ReadonlyArray<string>,
+  runtimeSupport: RuntimeSupportSnapshot,
+  temporaryParent: string,
+  image: string,
+  target: DockerTarget,
+  docker: DockerServices,
+  expectedDigest?: string,
+  npmRegistry?: string,
+): Effect.Effect<string, ApplicationError> => {
+  let context: string | undefined
+  let floatingRoot: string | undefined
+  const build = Effect.gen(function* () {
+    let snapshot: string | undefined
+    if (document.profile.skill_bundles.length > 0) {
+      floatingRoot = yield* io("cannot create floating skill staging directory", () =>
+        mkdtemp(path.join(temporaryParent, "trellage-floating-skills-")),
+      )
+      snapshot = path.join(floatingRoot, "snapshot")
+      yield* run(process.execPath, floatingStageArguments(document, snapshot))
+    }
+    context = yield* createBuildContext(
+      document,
+      lock,
+      sourceDirectories,
+      runtimeSupport,
+      temporaryParent,
+      pluginGenerator,
+    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
+    yield* injectFloatingSkills(document, context, snapshot)
+    return yield* buildOci(context, image, document, lock, target, docker, expectedDigest, npmRegistry)
+  })
+  return build.pipe(
+    Effect.ensuring(
+      Effect.suspend(() =>
+        Effect.all(
+          [
+            cleanupBuildDirectory(context, "cannot clean build context"),
+            cleanupBuildDirectory(floatingRoot, "cannot clean floating skill staging"),
+          ],
+          { discard: true },
+        ).pipe(Effect.ignore),
+      ),
+    ),
+  )
+}
+
 const buildCandidateImage = (
   document: ProfileDocument,
   lock: ProfileLock,
@@ -780,19 +1098,17 @@ const buildCandidateImage = (
     )
     const temporaryParent = path.join(xdgCacheHome, "trellage", "build")
     yield* io("cannot create build cache", () => mkdir(temporaryParent, { recursive: true }))
-    const context = yield* createBuildContext(
+    return yield* buildWithCurrentSkills(
       document,
       lock,
       directories,
       runtimeSupport,
       temporaryParent,
-      skillGenerator,
-      pluginGenerator,
-    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    return yield* buildOci(context, image, document, lock, target, docker, undefined, npmRegistry).pipe(
-      Effect.ensuring(
-        io("cannot clean build context", () => rm(context, { recursive: true, force: true })).pipe(Effect.ignore),
-      ),
+      image,
+      target,
+      docker,
+      undefined,
+      npmRegistry,
     )
   })
 
@@ -1160,10 +1476,13 @@ export const upgradeProfile = (
               const digest = yield* retryUpgradeStep(
                 activeServices.buildCandidate(document, candidateLock, candidate, npmRegistry),
               )
-              const finalLock: ProfileLock = {
-                ...candidateLock,
-                image: { ...candidateLock.image, final_digest: digest },
-              }
+              const finalLock: ProfileLock =
+                document.profile.skill_bundles.length > 0
+                  ? candidateLock
+                  : {
+                      ...candidateLock,
+                      image: { ...candidateLock.image, final_digest: digest },
+                    }
               canonicalExisted = yield* activeServices.imageExists(canonical)
               return yield* Effect.uninterruptibleMask(() =>
                 Effect.gen(function* () {
@@ -1174,10 +1493,12 @@ export const upgradeProfile = (
                   }
                   canonicalAttempted = true
                   yield* activeServices.tagImage(candidate, canonical)
-                  yield* activeServices.tagImage(
-                    canonical,
-                    profileImageAlias(document.profile.name, platform, finalLock.profile_hash, runtimeSnapshot.hash),
-                  )
+                  if (document.profile.skill_bundles.length === 0) {
+                    yield* activeServices.tagImage(
+                      canonical,
+                      profileImageAlias(document.profile.name, platform, finalLock.profile_hash, runtimeSnapshot.hash),
+                    )
+                  }
                   lockWriteAttempted = true
                   yield* upgradeFileServices.writeLockBytes(profilePath, platform, renderLock(finalLock))
                   committed = true
@@ -1318,57 +1639,52 @@ export const buildProfile = (
     )
     const temporaryParent = path.join(xdgCacheHome, "trellage", "build")
     yield* io("cannot create build cache", () => mkdir(temporaryParent, { recursive: true }))
-    const context = yield* createBuildContext(
+    const image = profileImage(document.profile.name, platform)
+    const floatingSkills = document.profile.skill_bundles.length > 0
+    const digest = yield* buildWithCurrentSkills(
       document,
       lock,
       directories,
       runtimeSnapshot,
       temporaryParent,
-      skillGenerator,
-      pluginGenerator,
-    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const image = profileImage(document.profile.name, platform)
-    const digest = yield* buildOci(
-      context,
       image,
-      document,
-      lock,
       target,
       docker,
-      locked ? lock.image.final_digest : undefined,
+      locked && !floatingSkills ? lock.image.final_digest : undefined,
       npmRegistry,
-    ).pipe(
-      Effect.ensuring(
-        io("cannot clean build context", () => rm(context, { recursive: true, force: true })).pipe(Effect.ignore),
-      ),
     )
-    yield* docker.run(
-      "docker",
-      dockerHostArguments(target, [
-        "image",
-        "tag",
-        image,
-        profileImageAlias(document.profile.name, platform, lock.profile_hash, runtimeSnapshot.hash),
-      ]),
-    )
-    if (!locked && digest !== lock.image.final_digest) {
+    if (!floatingSkills) {
+      yield* docker.run(
+        "docker",
+        dockerHostArguments(target, [
+          "image",
+          "tag",
+          image,
+          profileImageAlias(document.profile.name, platform, lock.profile_hash, runtimeSnapshot.hash),
+        ]),
+      )
+    }
+    if (!locked && !floatingSkills && digest !== lock.image.final_digest) {
       yield* writeLock(profilePath, withFinalDigest(lock, digest))
     }
     return { image, digest }
   })
 
 /**
- * Release gate: assert that a profile and its lock agree exactly and that the lock
- * records a final OCI digest, without resolving anything or touching Docker.
- *
- * This is the job `--locked` was carrying. Giving it its own verb keeps the strict
- * assertion available to CI while leaving the interactive build free to reconcile.
+ * Release gate: assert that a profile and its core lock agree without resolving
+ * anything or touching Docker. Profiles without floating skills must also lock
+ * the final OCI digest.
  */
 export const verifyProfile = (
   profilePath: string,
   platform: Platform,
 ): Effect.Effect<
-  { readonly image: string; readonly profile_hash: string; readonly digest: string },
+  {
+    readonly image: string
+    readonly profile_hash: string
+    readonly digest: string | null
+    readonly skills_mode: "floating" | "locked"
+  },
   ApplicationError
 > =>
   Effect.gen(function* () {
@@ -1378,11 +1694,125 @@ export const verifyProfile = (
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
     const digest = lock.image.final_digest
-    if (digest === undefined) {
+    const skillsMode = document.profile.skill_bundles.length > 0 ? "floating" : "locked"
+    if (digest === undefined && skillsMode === "locked") {
       return yield* Effect.fail(new ApplicationError({ message: "lock has no final OCI digest" }))
     }
-    return { image: profileImage(document.profile.name, platform), profile_hash: lock.profile_hash, digest }
+    return {
+      image: profileImage(document.profile.name, platform),
+      profile_hash: lock.profile_hash,
+      digest: digest ?? null,
+      skills_mode: skillsMode,
+    }
   })
+
+type ProfileHarnessKind = ProfileDocument["profile"]["harness"]["kind"]
+
+const metadataHarnessExecutable = (kind: ProfileHarnessKind): string => {
+  if (kind === "prime") return "prime-agent"
+  if (kind === "pi") return "omp"
+  return kind
+}
+
+const metadataRuntimeEntry = (kind: ProfileHarnessKind): string => {
+  if (kind === "copilot") return "trellage-copilot-entry"
+  if (kind === "claude") return "trellage-claude-entry"
+  if (kind === "pi") return "trellage-pi-entry"
+  if (kind === "prime") return "trellage-prime-entry"
+  return "trellage-codex-entry"
+}
+
+const metadataDefaultNetwork = (kind: ProfileHarnessKind): string =>
+  kind === "copilot" || kind === "pi" ? "bridge" : "copilot-proxy-rs_default"
+
+const metadataAuthPolicy = (document: ProfileDocument): string => {
+  const harness = document.profile.harness
+  if (harness.kind === "copilot") return harness.copilot.auth
+  if (harness.kind === "pi") return harness.pi.auth
+  if (harness.kind === "claude") return "claude-explicit"
+  if (harness.kind === "prime") return "proxy"
+  return "profile-secrets"
+}
+
+const metadataSecretEnvironment = (document: ProfileDocument): Readonly<Record<string, string>> => {
+  const environment: Record<string, string> = Object.fromEntries(
+    document.profile.secrets.required.map((name) => [name, name]),
+  )
+  for (const mcp of document.profile.mcps) {
+    if (mcp.transport === "stdio") Object.assign(environment, mcp.env_from_secret ?? {})
+  }
+  return environment
+}
+
+const metadataResolvedVersion = (
+  document: ProfileDocument,
+  lock: ProfileLock | undefined,
+  ready: boolean,
+): string | null =>
+  ready && lock?.packages.harness.kind === document.profile.harness.kind ? lock.packages.harness.version : null
+
+const harnessSpecificMetadata = (document: ProfileDocument): Readonly<Record<string, unknown>> => {
+  const harness = document.profile.harness
+  if (harness.kind === "claude") {
+    return {
+      claude_mode: harness.claude.mode ?? "hyperresearch",
+      claude_gateway: harness.claude.gateway,
+      claude_opus_model: harness.claude.opus_model ?? "claude-opus-5",
+      claude_sonnet_model: harness.claude.sonnet_model ?? "claude-sonnet-5",
+      claude_haiku_model: harness.claude.haiku_model ?? "claude-haiku-4.5",
+    }
+  }
+  if (harness.kind === "prime") {
+    return {
+      prime_provider: harness.prime.provider,
+      prime_model: harness.prime.model,
+      prime_base_url: harness.prime.base_url,
+    }
+  }
+  return {}
+}
+
+const assembleProfileMetadata = (
+  document: ProfileDocument,
+  lock: ProfileLock | undefined,
+  platform: Platform,
+  hash: string,
+  ready: boolean,
+  runtimeHash: string,
+): Readonly<Record<string, unknown>> => {
+  const harnessKind = document.profile.harness.kind
+  const floatingSkills = document.profile.skill_bundles.length > 0
+  const resolvedVersion = metadataResolvedVersion(document, lock, ready)
+  return {
+    profile_path: document.path,
+    profile_name: document.profile.name,
+    profile_hash: hash,
+    tmpfs_size: document.profile.runtime.tmpfs_size,
+    runtime_hash: runtimeHash,
+    platform,
+    image: profileImage(document.profile.name, platform),
+    image_alias: floatingSkills ? null : profileImageAlias(document.profile.name, platform, hash, runtimeHash),
+    locked: ready,
+    skills_mode: floatingSkills ? "floating" : "locked",
+    final_digest_locked: !floatingSkills,
+    build_command: `trellage build --locked ${document.path}`,
+    refresh_command: `trellage build ${document.path}`,
+    harness_args: document.profile.harness.args ?? [],
+    secrets_provider: document.profile.secrets.provider,
+    required_secrets: document.profile.secrets.required,
+    secret_environment: metadataSecretEnvironment(document),
+    resolved_varlock_path: document.resolvedVarlockPath ?? null,
+    has_initial_prompt: document.resolvedInitialPrompt !== undefined,
+    harness_kind: harnessKind,
+    harness_executable: metadataHarnessExecutable(harnessKind),
+    runtime_entry: metadataRuntimeEntry(harnessKind),
+    default_network: metadataDefaultNetwork(harnessKind),
+    auth_policy: metadataAuthPolicy(document),
+    headless: resolveSandboxHeadlessCapabilities(sandboxHeadlessRuntimeAdapter(document.profile), resolvedVersion),
+    resolved_version: resolvedVersion,
+    ...harnessSpecificMetadata(document),
+  }
+}
 
 export const profileMetadata = (
   profilePath: string,
@@ -1400,80 +1830,5 @@ export const profileMetadata = (
       runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const isCopilot = harnessKind === "copilot"
-    const isClaude = harnessKind === "claude"
-    const isPi = harnessKind === "pi"
-    const isPrime = harnessKind === "prime"
-    const claude = document.profile.harness.kind === "claude" ? document.profile.harness.claude : undefined
-    const prime = document.profile.harness.kind === "prime" ? document.profile.harness.prime : undefined
-    const resolvedVersion = ready && lock?.packages.harness.kind === harnessKind ? lock.packages.harness.version : null
-    const headless = resolveSandboxHeadlessCapabilities(
-      sandboxHeadlessRuntimeAdapter(document.profile),
-      resolvedVersion,
-    )
-    const secretEnvironment: Record<string, string> = Object.fromEntries(
-      document.profile.secrets.required.map((name) => [name, name]),
-    )
-    for (const mcp of document.profile.mcps) {
-      if (mcp.transport !== "stdio") continue
-      Object.assign(secretEnvironment, mcp.env_from_secret ?? {})
-    }
-    return {
-      profile_path: document.path,
-      profile_name: document.profile.name,
-      profile_hash: hash,
-      tmpfs_size: document.profile.runtime.tmpfs_size,
-      runtime_hash: runtimeSnapshot.hash,
-      platform,
-      image: profileImage(document.profile.name, platform),
-      image_alias: profileImageAlias(document.profile.name, platform, hash, runtimeSnapshot.hash),
-      locked: ready,
-      build_command: `trellage build --locked ${document.path}`,
-      refresh_command: `trellage build ${document.path}`,
-      harness_args: document.profile.harness.args ?? [],
-      secrets_provider: document.profile.secrets.provider,
-      required_secrets: document.profile.secrets.required,
-      secret_environment: secretEnvironment,
-      resolved_varlock_path: document.resolvedVarlockPath ?? null,
-      has_initial_prompt: document.resolvedInitialPrompt !== undefined,
-      harness_kind: harnessKind,
-      harness_executable: isPrime ? "prime-agent" : isPi ? "omp" : harnessKind,
-      runtime_entry: isCopilot
-        ? "trellage-copilot-entry"
-        : isClaude
-          ? "trellage-claude-entry"
-          : isPi
-            ? "trellage-pi-entry"
-            : isPrime
-              ? "trellage-prime-entry"
-              : "trellage-codex-entry",
-      default_network: isCopilot || isPi ? "bridge" : "copilot-proxy-rs_default",
-      auth_policy: isCopilot
-        ? document.profile.harness.copilot.auth
-        : isPi
-          ? document.profile.harness.pi.auth
-          : isClaude
-            ? "claude-explicit"
-            : isPrime
-              ? "proxy"
-              : "profile-secrets",
-      headless,
-      resolved_version: resolvedVersion,
-      ...(claude === undefined
-        ? {}
-        : {
-            claude_mode: claude.mode ?? "hyperresearch",
-            claude_gateway: claude.gateway,
-            claude_opus_model: claude.opus_model ?? "claude-opus-5",
-            claude_sonnet_model: claude.sonnet_model ?? "claude-sonnet-5",
-            claude_haiku_model: claude.haiku_model ?? "claude-haiku-4.5",
-          }),
-      ...(prime === undefined
-        ? {}
-        : {
-            prime_provider: prime.provider,
-            prime_model: prime.model,
-            prime_base_url: prime.base_url,
-          }),
-    }
+    return assembleProfileMetadata(document, lock, platform, hash, ready, runtimeSnapshot.hash)
   })

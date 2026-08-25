@@ -1,10 +1,10 @@
-.PHONY: test dependency-bootstrap sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract caveman-profile-contract engineersamuel-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test build compare compare-down clean
+.PHONY: test dependency-bootstrap sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 HEADLESS_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract caveman-profile-contract engineersamuel-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test
+PARALLEL_TEST_TARGETS := dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test
 SERIAL_TEST_TARGETS := native-profile-router headless-matrix
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 
@@ -28,11 +28,8 @@ publication-contract-self-test:
 agent-profile-hup-contract:
 	bash tests/agent_profile_hup_contract.sh
 
-caveman-profile-contract:
-	bash tests/caveman_profile_contract.sh
-
-engineersamuel-skills-contract:
-	bash tests/engineersamuel_skills_contract.sh
+floating-skills-contract:
+	node --test tests/floating_skills.test.mjs
 
 profile-compiler:
 	cd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test
@@ -155,8 +152,13 @@ headless-matrix-test:
 	bash tests/headless_contract_matrix.sh
 
 build:
-	node scripts/update-engineersamuel-skills.mjs >/dev/null
-	docker compose build
+	@skills_stage="$$(mktemp -d "$${TMPDIR:-/tmp}/trellage-make-skills.XXXXXX")"; \
+	trap 'rm -rf -- "$$skills_stage"' EXIT; \
+	node scripts/floating-skills.mjs stage \
+		--catalog skills.json \
+		--bundle comparison-common \
+		--output "$$skills_stage/snapshot" >/dev/null; \
+	HARNESS_SKILLS_CONTEXT="$$skills_stage/snapshot" docker compose build
 
 compare:
 	./scripts/harness compare "$(HARNESS)"

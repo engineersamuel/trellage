@@ -1,31 +1,19 @@
 import type { InventoryPolicy } from "./inventory.js"
 
 export interface SourceSelection {
-  readonly kind: "skill" | "plugin"
-  readonly adapter?:
+  readonly kind: "plugin"
+  readonly adapter:
     | "claude-marketplace"
     | "codex-native"
     | "copilot-marketplace"
     | "hyperresearch"
-    | "omp-native"
     | "prime-extension"
     | "wshobson-agents"
   readonly marketplace?: string
   readonly select: ReadonlyArray<string>
 }
 
-/** Generic skill checkouts keep common agent skill roots (not only top-level skills/). */
-const genericSkillRoots = ["skills", ".agents/skills", ".claude/skills"] as const
-
 export const sourceIncludes = (source: SourceSelection): ReadonlyArray<string> => {
-  if (source.kind === "skill") {
-    // Some upstream skill catalogs nest each skill under a Claude-plugin
-    // directory (`plugins/<name>/skills/<name>`) instead of a top-level
-    // `skills/` root; keep both shapes so the Skills CLI can find either.
-    return source.adapter === "omp-native"
-      ? source.select.map((selection) => `.omp/skills/${selection}`)
-      : [...genericSkillRoots, ...source.select.map((selection) => `plugins/${selection}`)]
-  }
   if (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace") return []
   if (source.adapter === "hyperresearch") return []
   if (source.adapter === "codex-native") {

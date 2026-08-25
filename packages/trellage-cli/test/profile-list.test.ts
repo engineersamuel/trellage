@@ -10,7 +10,9 @@ const sample = (
   supported_platforms: ["linux/arm64"],
   harness: { kind: "codex", version: "latest", model: "gpt-5.6-sol" },
   headlessRuntime: "codex",
-  skills: [{ repository: "https://github.com/example/skills.git", ref: "v1", select: ["a"] }],
+  skillBundles: ["sandbox-common"],
+  skillsMode: "floating",
+  skills: [],
   plugins: [
     {
       adapter: "codex-native",
@@ -63,6 +65,9 @@ describe("profile list DTOs", () => {
           path: "/profiles/detailed/profile.toml",
           supportedPlatforms: ["linux/arm64", "linux/amd64"],
           harness: { kind: "codex", version: "latest", model: "gpt-5.6-sol" },
+          skillBundles: ["sandbox-common"],
+          skillsMode: "floating",
+          finalDigestLocked: false,
           skills: choice.skills,
           plugins: choice.plugins,
           mcps: choice.mcps,

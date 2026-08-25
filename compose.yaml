@@ -26,6 +26,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.agent
+      additional_contexts:
+        floating_skills: ${HARNESS_SKILLS_CONTEXT:?set HARNESS_SKILLS_CONTEXT to a staged floating-skill snapshot}
       args:
         WSHOBSON_AGENTS_REF: ${WSHOBSON_AGENTS_REF:-c4b82b0ad771190355eb8e204b1329732a18449a}
         WSHOBSON_AGENTS_PLUGIN: ${WSHOBSON_AGENTS_PLUGIN:-full-stack-orchestration}

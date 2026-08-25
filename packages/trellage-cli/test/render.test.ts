@@ -13,6 +13,7 @@ const source = `
 schema = 1
 name = "golden"
 description = "Golden render profile"
+skill_bundles = ["sandbox-common"]
 [harness]
 kind = "codex"
 version = "0.144.6"
@@ -32,11 +33,6 @@ stream_idle_timeout_ms = 300000
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish", "git"]
-[[skills]]
-repository = "https://github.com/example/caveman.git"
-ref = "v1.10.0"
-select = ["caveman"]
-always_on = true
 [[mcps]]
 name = "local"
 transport = "stdio"

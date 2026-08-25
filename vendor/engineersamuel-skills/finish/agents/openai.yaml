@@ -1,4 +1,0 @@
-interface:
-  display_name: "Finish"
-  short_description: "Commit, rebase, open, and squash-merge a PR"
-  default_prompt: "Use $finish to commit this work and monitor its PR until merged."

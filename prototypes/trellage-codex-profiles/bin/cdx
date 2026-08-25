@@ -47,23 +47,25 @@ validated_profile=""
 # The exact catalog records the Superpowers marketplace repository, not the
 # plugin source repository. Keep that independently validated invariant here.
 superpowers_plugin_repository="https://github.com/obra/superpowers.git"
-readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
-engineersamuel_skills_source="$script_dir/../common/engineersamuel-skills"
-engineersamuel_skills_sync="$script_dir/../common/sync-engineersamuel-skills.sh"
-if [ ! -d "$engineersamuel_skills_source" ]; then
-  engineersamuel_skills_source="$script_dir/../../vendor/engineersamuel-skills"
-  engineersamuel_skills_sync="$script_dir/../../scripts/sync-engineersamuel-skills.sh"
+floating_skills_manager="$script_dir/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$script_dir/../common/floating-skills-runtime/skills.json"
+if [ ! -f "$floating_skills_manager" ]; then
+  floating_skills_manager="$script_dir/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$script_dir/../../skills.json"
 fi
 
-sync_engineersamuel_skills() {
+ensure_floating_skills() {
   local profile="$1"
-  [ -f "$engineersamuel_skills_sync" ] && [ ! -L "$engineersamuel_skills_sync" ] \
-    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
-  "$engineersamuel_skills_sync" \
-    --source "$engineersamuel_skills_source" \
+  [ -f "$floating_skills_manager" ] && [ ! -L "$floating_skills_manager" ] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [ -f "$floating_skills_catalog" ] && [ ! -L "$floating_skills_catalog" ] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
-    --ref "$engineersamuel_skills_ref" \
-    || die "failed to sync engineersamuel/skills: $profile"
+    || die "failed to install floating skills: $profile"
 }
 
 die() {
@@ -1946,7 +1948,7 @@ setup_profile() {
 
   require_profile "$profile"
   prepare_profile_home "$profile"
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
   install_initial_config "$profile"
   recover_generated_project_trust "$profile"
   require_profile_config "$profile"
@@ -2106,7 +2108,7 @@ repair_profile() {
 
   require_profile "$profile"
   require_profile_home_ready "$profile"
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
   recover_generated_project_trust "$profile"
   write_repaired_config "$profile" yes
   validate_profile_paths "$profile"
@@ -2960,7 +2962,7 @@ run_codex_child() {
   trust_codex_args=()
   hook_trust_codex_args=()
   shift 2
-  sync_engineersamuel_skills "$profile"
+  ensure_floating_skills "$profile"
 
   # Codex's interactive "Do you trust the contents of this directory?" gate
   # ignores dotted -c projects."path".trust_level= overrides (PTY stays empty).

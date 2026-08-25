@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
+import { loadProfile } from "../src/application.js"
 
 import {
   compileLock,
@@ -35,10 +36,11 @@ wire_api = "responses"
 base = "node:22.17.0-bookworm-slim"
 shell = "fish"
 packages = ["bash", "fish"]
-[[skills]]
+[[plugins]]
+adapter = "codex-native"
 repository = "https://github.com/obra/superpowers.git"
 ref = "v6.2.0"
-select = ["*"]
+select = ["example"]
 `
 
 const copilotSource = `
@@ -113,11 +115,46 @@ const commit = (character: string) => character.repeat(40)
 const treeIntegrity = (files: ReadonlyArray<unknown>) =>
   `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`
 
-const fakeResolvers = (
-  commit: string,
-  calls: Array<string>,
-  options: { readonly copilotVersion?: string; readonly pluginVersion?: string } = {},
-): LockResolvers => ({
+type PackageRequest = Parameters<LockResolvers["resolvePackages"]>[0]
+type FakeResolverOptions = { readonly copilotVersion?: string; readonly pluginVersion?: string }
+
+const fakeHarnessVersion = (request: PackageRequest, options: FakeResolverOptions): string => {
+  if (request.kind === "copilot") return options.copilotVersion ?? "1.0.75"
+  if (request.selector !== "latest") return request.selector
+  if (request.kind === "claude") return "2.1.222"
+  if (request.kind === "codex") return "0.146.1"
+  return "17.2.9"
+}
+
+const fakeHarnessUrl = (request: PackageRequest, version: string): string => {
+  if (request.kind === "copilot") {
+    const asset = request.platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
+    return `https://github.com/github/copilot-cli/releases/download/v${version}/${asset}`
+  }
+  if (request.kind === "codex") {
+    const asset =
+      request.platform === "linux/arm64"
+        ? "codex-aarch64-unknown-linux-musl.tar.gz"
+        : "codex-x86_64-unknown-linux-musl.tar.gz"
+    return `https://github.com/openai/codex/releases/download/rust-v${version}/${asset}`
+  }
+  if (request.kind === "claude") {
+    const asset = request.platform === "linux/arm64" ? "claude-linux-arm64.tar.gz" : "claude-linux-x64.tar.gz"
+    return `https://github.com/anthropics/claude-code/releases/download/v${version}/${asset}`
+  }
+  const asset = request.platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
+  return `https://github.com/can1357/oh-my-pi/releases/download/v${version}/${asset}`
+}
+
+const fakeCodeModeHostUrl = (request: PackageRequest, version: string): string => {
+  const asset =
+    request.platform === "linux/arm64"
+      ? "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+      : "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
+  return `https://github.com/openai/codex/releases/download/rust-v${version}/${asset}`
+}
+
+const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolverOptions = {}): LockResolvers => ({
   platform: "linux/arm64",
   resolveSource: (request) =>
     Effect.sync(() => {
@@ -126,7 +163,9 @@ const fakeResolvers = (
         {
           kind: "file" as const,
           path:
-            request.adapter === "copilot-marketplace" ? ".github/plugin/marketplace.json" : "skills/example/SKILL.md",
+            request.adapter === "copilot-marketplace"
+              ? ".github/plugin/marketplace.json"
+              : "plugins/example/.codex/agents/example.toml",
           sha256: digest("f"),
         },
       ]
@@ -142,45 +181,16 @@ const fakeResolvers = (
   resolvePackages: (request) =>
     Effect.sync(() => {
       calls.push("packages")
-      const version =
-        request.kind === "copilot"
-          ? (options.copilotVersion ?? "1.0.75")
-          : request.selector === "latest"
-            ? request.kind === "claude"
-              ? "2.1.222"
-              : request.kind === "codex"
-                ? "0.146.1"
-                : "17.2.9"
-            : request.selector
-      const copilotAsset =
-        request.platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
-      const claudeAsset = request.platform === "linux/arm64" ? "claude-linux-arm64.tar.gz" : "claude-linux-x64.tar.gz"
-      const codexAsset =
-        request.platform === "linux/arm64"
-          ? "codex-aarch64-unknown-linux-musl.tar.gz"
-          : "codex-x86_64-unknown-linux-musl.tar.gz"
-      const piAsset = request.platform === "linux/arm64" ? "omp-linux-arm64" : "omp-linux-x64"
-      const codeModeHostAsset =
-        request.platform === "linux/arm64"
-          ? "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
-          : "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
+      const version = fakeHarnessVersion(request, options)
       return {
         harness: {
           kind: request.kind,
           selector: request.selector,
           version,
           integrity: digest("c"),
-          url:
-            request.kind === "copilot"
-              ? `https://github.com/github/copilot-cli/releases/download/v${version}/${copilotAsset}`
-              : request.kind === "codex"
-                ? `https://github.com/openai/codex/releases/download/rust-v${version}/${codexAsset}`
-                : request.kind === "claude"
-                  ? `https://github.com/anthropics/claude-code/releases/download/v${version}/${claudeAsset}`
-                  : `https://github.com/can1357/oh-my-pi/releases/download/v${version}/${piAsset}`,
+          url: fakeHarnessUrl(request, version),
           size: 1024,
         },
-        ...(request.needsSkillsCli ? { skills_cli_version: "1.5.19", skills_cli_integrity: "sha512-dGVzdA==" } : {}),
         ...(request.kind === "codex"
           ? {
               artifacts: [
@@ -188,7 +198,7 @@ const fakeResolvers = (
                   name: "codex-code-mode-host",
                   version,
                   integrity: digest("c"),
-                  url: `https://github.com/openai/codex/releases/download/rust-v${version}/${codeModeHostAsset}`,
+                  url: fakeCodeModeHostUrl(request, version),
                   size: 1024,
                 },
               ],
@@ -636,12 +646,12 @@ select = ["light"]
     const rendered = renderLock(lock)
 
     expect(rendered).toContain(
-      `[[sources.files]]\nkind = "file"\npath = "skills/example/SKILL.md"\nsha256 = "${digest("f")}"`,
+      `[[sources.files]]\nkind = "file"\npath = "plugins/example/.codex/agents/example.toml"\nsha256 = "${digest("f")}"`,
     )
     expect(rendered).toContain('[packages.harness]\nkind = "codex"')
     expect(rendered).not.toContain(`executable =`)
     await expect(Effect.runPromise(parseLock(rendered))).resolves.toMatchObject({
-      sources: [{ files: [{ kind: "file", path: "skills/example/SKILL.md", sha256: digest("f") }] }],
+      sources: [{ files: [{ kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") }] }],
       packages: { harness: { kind: "codex", selector: "0.144.6", version: "0.144.6" } },
     })
   })
@@ -759,9 +769,8 @@ select = ["light"]
     const lockPath = fileURLToPath(
       new URL("../../../profiles/codex-superpowers/profile.linux-arm64.lock.toml", import.meta.url),
     )
-    const profileSource = await readFile(profilePath, "utf8")
     const serialized = await readFile(lockPath, "utf8")
-    const historicalDocument = await Effect.runPromise(parseProfile(profileSource, profilePath))
+    const historicalDocument = await Effect.runPromise(loadProfile(profilePath))
     const parsed = await Effect.runPromise(parseLock(serialized))
 
     await expect(Effect.runPromise(requireLocked(historicalDocument, parsed))).resolves.toBe(parsed)
@@ -950,7 +959,7 @@ select = ["light"]
 })
 
 describe("compileLock", () => {
-  it("re-resolves genuine legacy sources when only profile content changes", async () => {
+  it("re-resolves locked plugin sources when only profile content changes", async () => {
     const profilePath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.toml", import.meta.url))
     const lockPath = fileURLToPath(
       new URL("../../../profiles/codex-superpowers/profile.linux-arm64.lock.toml", import.meta.url),
@@ -1003,11 +1012,6 @@ describe("compileLock", () => {
     const reparsed = await Effect.runPromise(parseLock(renderLock(complete)))
 
     expect(calls.filter((call) => call.startsWith("source:"))).toEqual([
-      "source:v6.2.0",
-      "source:cddf57e769e8b58ade685c51f447d96f3e66cfba",
-      "source:v1.10.0",
-      "source:v1.2.3",
-      "source:3c2629142c5d437428269b1b722b08c0b87f574d",
       "source:c4b82b0ad771190355eb8e204b1329732a18449a",
     ])
     expect(compiled.sources.every((source) => source.integrity === treeIntegrity(source.files))).toBe(true)
@@ -1035,7 +1039,6 @@ describe("compileLock", () => {
       url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
       size: 1024,
     })
-    expect(lock.packages.skills_cli_version).toBeUndefined()
     expect(calls).toEqual(["source:main", "packages", "base"])
   })
 
@@ -1370,43 +1373,6 @@ describe("compileLock", () => {
     }
 
     await expect(Effect.runPromise(requireLocked(document(), incomplete))).rejects.toThrow(/Codex package size/)
-  })
-
-  it("rejects a locked profile without a Skills CLI version", async () => {
-    const pending = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
-    const { skills_cli_version: _omitted, ...packages } = pending.packages
-    const incomplete: ProfileLock = {
-      ...pending,
-      packages,
-      image: { ...pending.image, final_digest: digest("c") },
-    }
-
-    await expect(Effect.runPromise(requireLocked(document(), incomplete))).rejects.toThrow(/Skills CLI version/)
-  })
-
-  it("rejects a locked profile without Skills CLI integrity", async () => {
-    const pending = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
-    const { skills_cli_integrity: _omitted, ...packages } = pending.packages
-    const incomplete: ProfileLock = {
-      ...pending,
-      packages,
-      image: { ...pending.image, final_digest: digest("c") },
-    }
-
-    await expect(Effect.runPromise(requireLocked(document(), incomplete))).rejects.toThrow(/Skills CLI integrity/)
-  })
-
-  it.each(["latest", "^1.5.19", ">=1.5.19", "1.x"])("rejects a non-exact Skills CLI version %j", async (version) => {
-    const pending = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
-    const incomplete: ProfileLock = {
-      ...pending,
-      packages: { ...pending.packages, skills_cli_version: version },
-      image: { ...pending.image, final_digest: digest("c") },
-    }
-
-    await expect(Effect.runPromise(requireLocked(document(), incomplete))).rejects.toThrow(
-      /Skills CLI version is not exact/,
-    )
   })
 
   it.each(["latest", "^5.2.15", ">=5.2.15", "5.x"])(

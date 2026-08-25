@@ -44,10 +44,6 @@ prototypes_dir="$repo_root/prototypes"
 
 [[ -d "$prototypes_dir" ]] || fail "prototypes directory missing: $prototypes_dir"
 
-printf 'rebuild-profile-images: refreshing engineersamuel/skills\n' >&2
-node "$repo_root/scripts/update-engineersamuel-skills.mjs" >/dev/null
-export TRELLAGE_ENGINEERSAMUEL_SKILLS_REFRESHED=1
-
 do_install=0
 do_native=1
 do_sandbox=1

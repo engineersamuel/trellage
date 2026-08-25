@@ -11,6 +11,7 @@ const NonEmpty = Schema.String.pipe(Schema.minLength(1))
 const TmpfsSize = Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*(?:k|m|g)$/))
 const StringMap = Schema.Record({ key: NonEmpty, value: Schema.String })
 const SecretMap = Schema.Record({ key: NonEmpty, value: NonEmpty })
+const safeName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 const Tools = Schema.Struct({
   allow: Schema.optional(Schema.Array(NonEmpty)),
@@ -37,14 +38,6 @@ const StdioMcp = Schema.Struct({
   env: Schema.optional(StringMap),
   env_from_secret: Schema.optional(SecretMap),
   tools: Schema.optional(Tools),
-})
-
-const Source = Schema.Struct({
-  adapter: Schema.optional(Schema.Literal("omp-native")),
-  repository: NonEmpty,
-  ref: NonEmpty,
-  select: Schema.Array(NonEmpty),
-  always_on: Schema.optional(Schema.Boolean),
 })
 
 const CodexPlugin = Schema.Struct({
@@ -187,7 +180,7 @@ const CommonProfile = {
   description: NonEmpty,
   image: Image,
   runtime: Schema.optional(Runtime),
-  skills: Schema.optional(Schema.Array(Source)),
+  skill_bundles: Schema.optional(Schema.Array(NonEmpty)),
   mcps: Schema.optional(Schema.Array(Schema.Union(HttpMcp, StdioMcp))),
   secrets: Schema.optional(Secrets),
 }
@@ -237,9 +230,12 @@ type DecodedClaudeProfile = Schema.Schema.Type<typeof ClaudeProfileSchema>
 type DecodedPiProfile = Schema.Schema.Type<typeof PiProfileSchema>
 type DecodedPrimeProfile = Schema.Schema.Type<typeof PrimeProfileSchema>
 
-type NormalizedProfile<T extends DecodedProfile> = Omit<T, "runtime" | "skills" | "plugins" | "mcps" | "secrets"> & {
+type NormalizedProfile<T extends DecodedProfile> = Omit<
+  T,
+  "runtime" | "skill_bundles" | "plugins" | "mcps" | "secrets"
+> & {
   readonly runtime: { readonly tmpfs_size: string }
-  readonly skills: NonNullable<T["skills"]>
+  readonly skill_bundles: NonNullable<T["skill_bundles"]>
   readonly plugins: NonNullable<T["plugins"]>
   readonly mcps: NonNullable<T["mcps"]>
   readonly secrets: NonNullable<T["secrets"]>
@@ -279,6 +275,7 @@ export interface ProfileDocument {
   readonly directory: string
   readonly source: string
   readonly profile: Profile
+  readonly floatingSkillPolicy?: string
   readonly resolvedInitialPrompt?: string
   readonly initialPromptIntegrity?: string
   readonly resolvedVarlockPath?: string
@@ -315,6 +312,9 @@ const rejectUnsupportedPrimeSections = (raw: unknown): Effect.Effect<void, Profi
   return Effect.void
 }
 
+const rejectInlineSkills = (raw: unknown): Effect.Effect<void, ProfileError> =>
+  isRecord(raw) && Object.hasOwn(raw, "skills") ? fail("inline skills are unsupported; use skill_bundles") : Effect.void
+
 const unique = (values: ReadonlyArray<string>, label: string): Effect.Effect<void, ProfileError> => {
   const seen = new Set<string>()
   for (const value of values) {
@@ -347,199 +347,145 @@ const resolveContained = (directory: string, candidate: string, label: string): 
   })
 }
 
-const normalize = (profile: DecodedProfile): Profile =>
-  isDecodedCodexProfile(profile)
-    ? {
-        ...profile,
-        runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-        skills: profile.skills ?? [],
-        plugins: profile.plugins ?? [],
-        mcps: profile.mcps ?? [],
-        secrets: profile.secrets ?? { provider: "env", required: [] },
-      }
-    : isDecodedClaudeProfile(profile)
-      ? {
-          ...profile,
-          runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-          skills: profile.skills ?? [],
-          plugins: profile.plugins ?? [],
-          mcps: profile.mcps ?? [],
-          secrets: profile.secrets ?? { provider: "env", required: [] },
-        }
-      : isDecodedPiProfile(profile)
-        ? {
-            ...profile,
-            runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-            skills: profile.skills ?? [],
-            plugins: profile.plugins ?? [],
-            mcps: profile.mcps ?? [],
-            secrets: profile.secrets ?? { provider: "env", required: [] },
-          }
-        : isDecodedPrimeProfile(profile)
-          ? {
-              ...profile,
-              runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-              skills: profile.skills ?? [],
-              plugins: profile.plugins ?? [],
-              mcps: profile.mcps ?? [],
-              secrets: profile.secrets ?? { provider: "env", required: [] },
-            }
-          : {
-              ...profile,
-              runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
-              skills: profile.skills ?? [],
-              plugins: profile.plugins ?? [],
-              mcps: profile.mcps ?? [],
-              secrets: profile.secrets ?? { provider: "env", required: [] },
-            }
+const normalizeCommon = <T extends DecodedProfile>(profile: T): NormalizedProfile<T> =>
+  ({
+    ...profile,
+    runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
+    skill_bundles: profile.skill_bundles ?? [],
+    plugins: profile.plugins ?? [],
+    mcps: profile.mcps ?? [],
+    secrets: profile.secrets ?? { provider: "env", required: [] },
+  }) as NormalizedProfile<T>
 
-const validate = (
-  profile: Profile,
-  directory: string,
-): Effect.Effect<
-  Pick<ProfileDocument, "resolvedInitialPrompt" | "initialPromptIntegrity" | "resolvedVarlockPath">,
-  ProfileError
-> =>
+const normalize = (profile: DecodedProfile): Profile => {
+  if (isDecodedCodexProfile(profile)) return normalizeCommon(profile)
+  if (isDecodedClaudeProfile(profile)) return normalizeCommon(profile)
+  if (isDecodedPiProfile(profile)) return normalizeCommon(profile)
+  if (isDecodedPrimeProfile(profile)) return normalizeCommon(profile)
+  return normalizeCommon(profile)
+}
+
+const validateSkillBundles = (profile: Profile): Effect.Effect<void, ProfileError> =>
   Effect.gen(function* () {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(profile.name)) {
-      return yield* fail(`profile name is unsafe: ${profile.name}`)
+    yield* unique(profile.skill_bundles, "skill bundle")
+    for (const bundle of profile.skill_bundles) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(bundle)) {
+        return yield* fail(`skill bundle is unsafe: ${bundle}`)
+      }
     }
-    if (isCodexProfile(profile)) {
-      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-        return yield* fail(`invalid Codex version: ${profile.harness.version}`)
-      }
-      if (!Object.hasOwn(profile.harness.codex.providers, profile.harness.codex.model_provider)) {
-        return yield* fail(`unknown model provider: ${profile.harness.codex.model_provider}`)
-      }
-      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
-        return yield* fail("Codex skill sources do not support adapters")
-      }
-    } else if (isCopilotProfile(profile)) {
-      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-        return yield* fail(`invalid Copilot version: ${profile.harness.version}`)
-      }
-      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
-        return yield* fail("Copilot skill sources do not support adapters")
-      }
-      if (profile.mcps.length > 0) return yield* fail("Copilot profiles do not support MCPs")
-      if (
-        profile.secrets.required.length > 0 ||
-        profile.secrets.provider !== "env" ||
-        profile.secrets.varlock_path !== undefined
-      ) {
-        return yield* fail("Copilot profiles do not support declared secrets")
-      }
-      const plugin = profile.plugins[0]
-      if (profile.plugins.length !== 1 || plugin === undefined) {
-        return yield* fail("Copilot profiles require exactly one marketplace plugin")
+  })
+
+const validateHarnessVersion = (label: string, version: string): Effect.Effect<void, ProfileError> =>
+  /^(?:latest|\d+\.\d+\.\d+)$/.test(version) ? Effect.void : fail(`invalid ${label} version: ${version}`)
+
+const validateCodexProfile = (profile: CodexProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    yield* validateHarnessVersion("Codex", profile.harness.version)
+    if (!Object.hasOwn(profile.harness.codex.providers, profile.harness.codex.model_provider)) {
+      return yield* fail(`unknown model provider: ${profile.harness.codex.model_provider}`)
+    }
+  })
+
+const hasDeclaredSecrets = (profile: Profile): boolean =>
+  profile.secrets.required.length > 0 ||
+  profile.secrets.provider !== "env" ||
+  profile.secrets.varlock_path !== undefined
+
+const validateCopilotProfile = (profile: CopilotProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    yield* validateHarnessVersion("Copilot", profile.harness.version)
+    if (profile.mcps.length > 0) return yield* fail("Copilot profiles do not support MCPs")
+    if (hasDeclaredSecrets(profile)) return yield* fail("Copilot profiles do not support declared secrets")
+    const plugin = profile.plugins[0]
+    if (profile.plugins.length !== 1 || plugin === undefined) {
+      return yield* fail("Copilot profiles require exactly one marketplace plugin")
+    }
+    yield* unique(plugin.select, "selected asset")
+    if (plugin.select.length !== 1) return yield* fail("Copilot profiles require exactly one plugin selection")
+    yield* unique(
+      profile.plugins.map((candidate) => candidate.marketplace),
+      "Copilot marketplace",
+    )
+  })
+
+const validateClaudeProfile = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    yield* validateHarnessVersion("Claude", profile.harness.version)
+    if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
+    if (hasDeclaredSecrets(profile)) return yield* fail("Claude credentials are selected at launch")
+    if (profile.plugins.length === 0 && profile.harness.claude.mode !== "core") {
+      return yield* fail("Claude profiles require at least one plugin")
+    }
+    const hyperresearch = profile.plugins.filter((plugin) => plugin.adapter === "hyperresearch")
+    if (hyperresearch.length > 0 && profile.plugins.length !== 1) {
+      return yield* fail("Hyperresearch cannot be combined with Claude marketplace plugins")
+    }
+    const marketplaces = profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace")
+    for (const plugin of marketplaces) {
+      if (!safeName.test(plugin.marketplace)) {
+        return yield* fail(`Claude marketplace name is unsafe: ${plugin.marketplace}`)
       }
       yield* unique(plugin.select, "selected asset")
-      if (plugin.select.length !== 1) {
-        return yield* fail("Copilot profiles require exactly one plugin selection")
-      }
-      yield* unique(
-        profile.plugins.map((candidate) => candidate.marketplace),
-        "Copilot marketplace",
-      )
-    } else if (isClaudeProfile(profile)) {
-      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-        return yield* fail(`invalid Claude version: ${profile.harness.version}`)
-      }
-      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
-        return yield* fail("Claude skill sources do not support adapters")
-      }
-      if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
-      if (
-        profile.secrets.required.length > 0 ||
-        profile.secrets.provider !== "env" ||
-        profile.secrets.varlock_path !== undefined
-      ) {
-        return yield* fail("Claude credentials are selected at launch")
-      }
-      if (profile.plugins.length === 0 && profile.harness.claude.mode !== "core") {
-        return yield* fail("Claude profiles require at least one plugin")
-      }
-      const hyperresearch = profile.plugins.filter((plugin) => plugin.adapter === "hyperresearch")
-      if (hyperresearch.length > 0 && profile.plugins.length !== 1) {
-        return yield* fail("Hyperresearch cannot be combined with Claude marketplace plugins")
-      }
-      for (const plugin of profile.plugins) {
-        if (plugin.adapter === "claude-marketplace") {
-          if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plugin.marketplace)) {
-            return yield* fail(`Claude marketplace name is unsafe: ${plugin.marketplace}`)
-          }
-          yield* unique(plugin.select, "selected asset")
-          if (plugin.select.length === 0) return yield* fail("Claude marketplace plugin selection is empty")
-        }
-      }
-      yield* unique(
-        profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace").map((plugin) => plugin.marketplace),
-        "Claude marketplace",
-      )
-    } else if (isPrimeProfile(profile)) {
-      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-        return yield* fail(`invalid Prime version: ${profile.harness.version}`)
-      }
-      if (profile.skills.some((skill) => skill.adapter !== undefined)) {
-        return yield* fail("Prime skill sources use an unsupported adapter")
-      }
-      for (const plugin of profile.plugins) {
-        if (plugin.adapter !== "prime-extension") {
-          return yield* fail("Prime profiles only support prime-extension plugins")
-        }
-        yield* unique(plugin.select, "selected asset")
-        if (plugin.select.length === 0) {
-          return yield* fail("Prime extension plugin selection is empty")
-        }
-      }
-      yield* unique(
-        profile.plugins.flatMap((plugin) => plugin.select),
-        "selected Prime extension",
-      )
-      if (profile.mcps.length > 0) return yield* fail("Prime profiles do not support MCPs")
-      if (
-        profile.secrets.required.length > 0 ||
-        profile.secrets.provider !== "env" ||
-        profile.secrets.varlock_path !== undefined
-      ) {
-        return yield* fail("Prime profiles do not support declared secrets")
-      }
-    } else {
-      if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(profile.harness.version)) {
-        return yield* fail(`invalid Pi version: ${profile.harness.version}`)
-      }
-      if (profile.skills.some((skill) => skill.adapter !== undefined && skill.adapter !== "omp-native")) {
-        return yield* fail("Pi skill sources use an unsupported adapter")
-      }
+      if (plugin.select.length === 0) return yield* fail("Claude marketplace plugin selection is empty")
     }
-    for (const source of [...profile.skills, ...profile.plugins]) {
+    yield* unique(
+      marketplaces.map((plugin) => plugin.marketplace),
+      "Claude marketplace",
+    )
+  })
+
+const validatePrimeProfile = (profile: PrimeProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    yield* validateHarnessVersion("Prime", profile.harness.version)
+    for (const plugin of profile.plugins) {
+      if (plugin.adapter !== "prime-extension") {
+        return yield* fail("Prime profiles only support prime-extension plugins")
+      }
+      yield* unique(plugin.select, "selected asset")
+      if (plugin.select.length === 0) return yield* fail("Prime extension plugin selection is empty")
+    }
+    yield* unique(
+      profile.plugins.flatMap((plugin) => plugin.select),
+      "selected Prime extension",
+    )
+    if (profile.mcps.length > 0) return yield* fail("Prime profiles do not support MCPs")
+    if (hasDeclaredSecrets(profile)) return yield* fail("Prime profiles do not support declared secrets")
+  })
+
+const validatePiProfile = (profile: PiProfile): Effect.Effect<void, ProfileError> =>
+  validateHarnessVersion("Pi", profile.harness.version)
+
+const validateHarness = (profile: Profile): Effect.Effect<void, ProfileError> => {
+  if (isCodexProfile(profile)) return validateCodexProfile(profile)
+  if (isCopilotProfile(profile)) return validateCopilotProfile(profile)
+  if (isClaudeProfile(profile)) return validateClaudeProfile(profile)
+  if (isPrimeProfile(profile)) return validatePrimeProfile(profile)
+  return validatePiProfile(profile)
+}
+
+const validateSourceIdentities = (profile: Profile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    for (const source of profile.plugins) {
       const repositoryError = githubRepositoryError(source.repository)
       if (repositoryError !== undefined) {
         return yield* fail(`${repositoryError}: ${source.repository}`)
       }
       yield* unique(source.select, "selected asset")
     }
-    for (const skill of profile.skills) {
-      if (skill.adapter !== undefined && skill.always_on === true) {
-        return yield* fail("always_on is only supported by generic skill sources")
-      }
-      for (const selection of skill.select) {
-        if (selection !== "*" && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(selection)) {
-          return yield* fail(`unsafe selected asset: ${selection}`)
-        }
-      }
-      yield* unique(
-        profile.skills.flatMap((skill) => skill.select),
-        "selected standalone skill",
-      )
-    }
+  })
+
+const validateSources = (profile: Profile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    yield* validateSourceIdentities(profile)
     for (const plugin of profile.plugins) {
       for (const selection of plugin.select) {
-        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(selection)) {
-          return yield* fail(`unsafe selected asset: ${selection}`)
-        }
+        if (!safeName.test(selection)) return yield* fail(`unsafe selected asset: ${selection}`)
       }
     }
+  })
+
+const validateSecretNames = (profile: Profile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
     yield* unique(
       profile.mcps.map((mcp) => mcp.name),
       "MCP name",
@@ -548,32 +494,53 @@ const validate = (
     for (const secret of profile.secrets.required) {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) return yield* fail(`invalid secret environment name: ${secret}`)
     }
+  })
 
-    const declared = new Set(profile.secrets.required)
-    const references: Array<string> = []
-    for (const mcp of profile.mcps) {
-      if (mcp.tools?.allow && mcp.tools.deny) {
-        const denied = new Set(mcp.tools.deny)
-        const overlap = mcp.tools.allow.find((tool) => denied.has(tool))
-        if (overlap !== undefined) return yield* fail(`MCP ${mcp.name} both allows and denies tool: ${overlap}`)
-      }
-      if (mcp.transport === "http") {
-        if (mcp.bearer_token_env) references.push(mcp.bearer_token_env)
-        references.push(...Object.values(mcp.headers_from_secret ?? {}))
-      } else {
-        for (const target of Object.keys(mcp.env_from_secret ?? {})) {
-          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(target)) return yield* fail(`invalid MCP environment name: ${target}`)
-          if (profile.secrets.provider === "varlock" && mcp.env_from_secret?.[target] !== target) {
-            return yield* fail(`varlock requires identical secret source and target names: ${target}`)
-          }
-        }
-        references.push(...Object.values(mcp.env_from_secret ?? {}))
+const validateMcpTools = (mcp: Mcp): Effect.Effect<void, ProfileError> => {
+  if (!mcp.tools?.allow || !mcp.tools.deny) return Effect.void
+  const denied = new Set(mcp.tools.deny)
+  const overlap = mcp.tools.allow.find((tool) => denied.has(tool))
+  return overlap === undefined ? Effect.void : fail(`MCP ${mcp.name} both allows and denies tool: ${overlap}`)
+}
+
+const mcpSecretReferences = (
+  mcp: Mcp,
+  provider: Profile["secrets"]["provider"],
+): Effect.Effect<ReadonlyArray<string>, ProfileError> =>
+  Effect.gen(function* () {
+    yield* validateMcpTools(mcp)
+    if (mcp.transport === "http") {
+      return [
+        ...(mcp.bearer_token_env === undefined ? [] : [mcp.bearer_token_env]),
+        ...Object.values(mcp.headers_from_secret ?? {}),
+      ]
+    }
+    for (const target of Object.keys(mcp.env_from_secret ?? {})) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(target)) return yield* fail(`invalid MCP environment name: ${target}`)
+      if (provider === "varlock" && mcp.env_from_secret?.[target] !== target) {
+        return yield* fail(`varlock requires identical secret source and target names: ${target}`)
       }
     }
-    for (const reference of references) {
+    return Object.values(mcp.env_from_secret ?? {})
+  })
+
+const validateMcpSecretReferences = (profile: Profile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    const declared = new Set(profile.secrets.required)
+    const references = yield* Effect.forEach(profile.mcps, (mcp) => mcpSecretReferences(mcp, profile.secrets.provider))
+    for (const reference of references.flat()) {
       if (!declared.has(reference)) return yield* fail(`undeclared secret reference: ${reference}`)
     }
+  })
 
+const resolveProfileFiles = (
+  profile: Profile,
+  directory: string,
+): Effect.Effect<
+  Pick<ProfileDocument, "resolvedInitialPrompt" | "initialPromptIntegrity" | "resolvedVarlockPath">,
+  ProfileError
+> =>
+  Effect.gen(function* () {
     let resolvedInitialPrompt: string | undefined
     let initialPromptIntegrity: string | undefined
     if (profile.harness.initial_prompt) {
@@ -602,6 +569,24 @@ const validate = (
     }
   })
 
+const validate = (
+  profile: Profile,
+  directory: string,
+): Effect.Effect<
+  Pick<ProfileDocument, "resolvedInitialPrompt" | "initialPromptIntegrity" | "resolvedVarlockPath">,
+  ProfileError
+> =>
+  Effect.gen(function* () {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(profile.name)) {
+      return yield* fail(`profile name is unsafe: ${profile.name}`)
+    }
+    yield* validateHarness(profile)
+    yield* validateSources(profile)
+    yield* validateSecretNames(profile)
+    yield* validateMcpSecretReferences(profile)
+    return yield* resolveProfileFiles(profile, directory)
+  })
+
 export const parseProfile = (source: string, profilePath: string): Effect.Effect<ProfileDocument, ProfileError> =>
   Effect.gen(function* () {
     const raw = yield* Effect.try({
@@ -615,6 +600,7 @@ export const parseProfile = (source: string, profilePath: string): Effect.Effect
     yield* rejectUnsupportedCopilotSections(raw)
     yield* rejectUnsupportedPiSections(raw)
     yield* rejectUnsupportedPrimeSections(raw)
+    yield* rejectInlineSkills(raw)
     const decoded = yield* Schema.decodeUnknown(ProfileSchema)(raw, {
       onExcessProperty: "error",
     }).pipe(
@@ -628,6 +614,7 @@ export const parseProfile = (source: string, profilePath: string): Effect.Effect
     const absolutePath = path.resolve(profilePath)
     const directory = path.dirname(absolutePath)
     const profile = normalize(decoded)
+    yield* validateSkillBundles(profile)
     const resolved = yield* validate(profile, directory)
     return {
       path: absolutePath,

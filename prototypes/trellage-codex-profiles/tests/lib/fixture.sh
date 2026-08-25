@@ -135,22 +135,34 @@ validate_adapter() {
   ' "$1" >/dev/null
 }
 
-# Copies the launcher, catalog, and adapter into the fixture. Assignments here
-# are deliberately global so callers see `fixture_launcher` and friends.
+# Copies the launcher, catalogs, adapter, and an offline floating-skill cache
+# into the fixture. Assignments here are deliberately global so callers see
+# `fixture_launcher` and friends.
 build_fixture_profiles() {
 fixture_profiles="$fixture_root/profiles"
 fixture_launcher="$fixture_profiles/bin/cdx"
 fixture_catalog="$fixture_profiles/catalog.json"
 fixture_adapter="$fixture_profiles/marketplaces/hve-core/.agents/plugins/marketplace.json"
-mkdir -p "$(dirname "$fixture_launcher")" "$(dirname "$fixture_adapter")" "$fixture_root/home"
+fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
+fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/skills"
+mkdir -p \
+  "$(dirname "$fixture_launcher")" \
+  "$(dirname "$fixture_adapter")" \
+  "$fixture_skills_runtime" \
+  "$fixture_skills_cache/skills/fixture-personal" \
+  "$fixture_skills_cache/skills/show-me"
 cp "$launcher" "$fixture_launcher"
 cp "$catalog" "$fixture_catalog"
 cp "$adapter" "$fixture_adapter"
-mkdir -p "$fixture_root/common/engineersamuel-skills"
-cp -R "$root/../../vendor/engineersamuel-skills/." \
-  "$fixture_root/common/engineersamuel-skills/"
-install -m 0755 "$root/../../scripts/sync-engineersamuel-skills.sh" \
-  "$fixture_root/common/sync-engineersamuel-skills.sh"
+install -m 0555 "$root/../../scripts/floating-skills.mjs" \
+  "$fixture_skills_runtime/floating-skills.mjs"
+install -m 0444 "$root/../../skills.json" "$fixture_skills_runtime/skills.json"
+printf '%s\n' '# Fixture personal skill' \
+  >"$fixture_skills_cache/skills/fixture-personal/SKILL.md"
+printf '%s\n' '# Fixture show-me skill' \
+  >"$fixture_skills_cache/skills/show-me/SKILL.md"
+printf '%s\n' fixture-personal show-me >"$fixture_skills_cache/managed-skills.txt"
+: >"$fixture_skills_cache/always-on.md"
 chmod +x "$fixture_launcher"
 }
 

@@ -28,15 +28,17 @@ Prerequisites: Bash, Node.js, and `jq`.
 `~/.local/bin` must be on `PATH`. The `trx` installer publishes
 `~/.local/bin/trx` as a symlink to its managed runtime.
 
-The installer owns only:
+The router-specific owned paths are:
 
 ```text
 ~/.local/share/trellage/trx/
 ~/.local/bin/trx
 ```
 
-It refuses symlinked, redirected, or unrelated paths instead of replacing
-them.
+It also publishes the shared floating-skill manager and revision-free catalog
+under `~/.local/share/trellage/common/floating-skills-runtime/`. Native
+launcher installers publish the same files. It refuses symlinked, redirected,
+or unrelated paths instead of replacing them.
 
 ## Use
 
@@ -45,6 +47,8 @@ trx
 trx --model gpt-5.6-terra
 trx list
 trx list --json
+trx skills status
+trx skills update
 ```
 
 From the repository root, run the current worktree router without replacing the
@@ -80,6 +84,14 @@ runtime, or has an invalid catalog. The selected native launcher performs its
 own launch-time readiness checks and handles not-setup or unhealthy profiles.
 Interactive use requires stdin and stderr attached to a TTY; a non-TTY
 invocation exits `1`.
+
+The first setup or launch through any native launcher fetches the
+`native-common` bundle from the approved repositories' current default
+branches. The shared snapshot is then reused without network access.
+`trx skills status` reports the installed names. `trx skills update` performs
+the only normal refresh and atomically replaces the shared snapshot. A failed
+update keeps the previous snapshot. These two commands do not require launcher
+discovery and do not start an agent.
 
 Rows show `harness / profile`. The highlighted detail pane shows the resolved
 launcher alias, absolute binary path, and exact JSON argument vector—including
@@ -117,7 +129,8 @@ section “Package feeds on Microsoft-managed devices”.
 ```
 
 Uninstall removes only the owned `trx` runtime and its exact command symlink.
-Native launcher runtimes and all profile homes are preserved.
+The shared floating-skill runtime and cache, native launcher runtimes, and all
+profile homes are preserved because other launchers use them.
 
 ## Test
 

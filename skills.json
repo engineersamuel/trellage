@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "sources": {
+    "engineersamuel": {
+      "repository": "https://github.com/engineersamuel/skills.git",
+      "select": ["*"],
+      "allowWildcard": true,
+      "allowExecutables": true
+    },
+    "caveman": {
+      "repository": "https://github.com/JuliusBrussee/caveman.git",
+      "select": ["caveman"],
+      "alwaysOn": true,
+      "allowExecutables": true
+    },
+    "mattpocock": {
+      "repository": "https://github.com/mattpocock/skills.git",
+      "select": ["grill-with-docs", "improve-codebase-architecture"],
+      "alwaysOn": true,
+      "allowExecutables": true
+    },
+    "show-me": {
+      "repository": "https://github.com/humanlayer/skills.git",
+      "select": ["show-me"],
+      "allowExecutables": true
+    },
+    "superpowers": {
+      "repository": "https://github.com/obra/superpowers.git",
+      "select": [
+        "brainstorming",
+        "dispatching-parallel-agents",
+        "executing-plans",
+        "finishing-a-development-branch",
+        "receiving-code-review",
+        "requesting-code-review",
+        "subagent-driven-development",
+        "systematic-debugging",
+        "test-driven-development",
+        "using-git-worktrees",
+        "using-superpowers",
+        "verification-before-completion",
+        "writing-plans",
+        "writing-skills"
+      ],
+      "allowExecutables": true
+    },
+    "impeccable": {
+      "repository": "https://github.com/pbakaus/impeccable.git",
+      "select": ["impeccable"],
+      "allowExecutables": true
+    },
+    "emil-design": {
+      "repository": "https://github.com/emilkowalski/skills.git",
+      "select": [
+        "animate",
+        "animation-vocabulary",
+        "apple-design",
+        "emil-design-eng",
+        "find-animation-opportunities",
+        "improve-animations",
+        "pick-ui-library",
+        "prototype",
+        "review-animations"
+      ],
+      "allowExecutables": true
+    },
+    "hyperframes": {
+      "repository": "https://github.com/heygen-com/hyperframes.git",
+      "select": [
+        "embedded-captions",
+        "faceless-explainer",
+        "figma",
+        "general-video",
+        "hyperframes",
+        "hyperframes-animation",
+        "hyperframes-cli",
+        "hyperframes-core",
+        "hyperframes-creative",
+        "hyperframes-keyframes",
+        "hyperframes-registry",
+        "media-use",
+        "motion-graphics",
+        "music-to-video",
+        "pr-to-video",
+        "product-launch-video",
+        "remotion-to-hyperframes",
+        "slideshow",
+        "talking-head-recut"
+      ],
+      "allowExecutables": true
+    },
+    "last30days": {
+      "repository": "https://github.com/mvanhorn/last30days-skill.git",
+      "select": ["last30days"],
+      "allowExecutables": true
+    },
+    "omp-native": {
+      "repository": "https://github.com/can1357/oh-my-pi.git",
+      "adapter": "omp-native",
+      "select": ["semantic-compression", "system-prompts", "tool-prompt-optimization"],
+      "allowExecutables": true
+    }
+  },
+  "bundles": {
+    "sandbox-common": ["engineersamuel", "caveman", "mattpocock", "show-me"],
+    "native-common": ["engineersamuel", "show-me"],
+    "comparison-common": ["engineersamuel", "show-me"],
+    "codex-superpowers": ["superpowers"],
+    "claude-frontend-design": ["impeccable", "emil-design", "hyperframes"],
+    "claude-research": ["last30days"],
+    "pi-oh-my-pi": ["omp-native"]
+  }
+}
