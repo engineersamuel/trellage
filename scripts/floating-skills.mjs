@@ -45,6 +45,7 @@ const assertKnownSourcePolicy = (id, candidate) => {
   const allowedKeys = new Set([
     "repository",
     "select",
+    "exclude",
     "adapter",
     "alwaysOn",
     "allowExecutables",
@@ -54,19 +55,30 @@ const assertKnownSourcePolicy = (id, candidate) => {
   if (unknownKey !== undefined) fail(`unknown skill source policy ${unknownKey}: ${id}`)
 }
 
+const parseSourceSelections = (id, candidate) => {
+  const select = assertStringArray(candidate.select, `skill source selections: ${id}`)
+  if (select.some((name) => name !== "*" && !safeName.test(name))) fail(`unsafe selected skill: ${id}`)
+  const exclude = candidate.exclude ?? []
+  if (!Array.isArray(exclude) || exclude.some((name) => typeof name !== "string" || !safeName.test(name))) {
+    fail(`skill source exclusions must be a string array: ${id}`)
+  }
+  if (new Set(exclude).size !== exclude.length) fail(`skill source exclusions contain duplicates: ${id}`)
+  const allowWildcard = parseBooleanPolicy(candidate, "allowWildcard", id)
+  if (select.includes("*") && !allowWildcard) fail(`wildcard selection is not allowed: ${id}`)
+  if (select.includes("*") && select.length !== 1) fail(`wildcard selection must be the only selection: ${id}`)
+  if (exclude.length > 0 && !select.includes("*")) fail(`skill exclusions require wildcard selection: ${id}`)
+  return { select, exclude }
+}
+
 const parseSource = (id, candidate) => {
   if (!safeName.test(id) || !isRecord(candidate)) fail(`invalid skill source: ${id}`)
   assertKnownSourcePolicy(id, candidate)
   if (typeof candidate.repository !== "string" || !safeRepository.test(candidate.repository)) {
     fail(`invalid skill repository: ${id}`)
   }
-  const select = assertStringArray(candidate.select, `skill source selections: ${id}`)
-  if (select.some((name) => name !== "*" && !safeName.test(name))) fail(`unsafe selected skill: ${id}`)
-  const allowWildcard = parseBooleanPolicy(candidate, "allowWildcard", id)
+  const { select, exclude } = parseSourceSelections(id, candidate)
   const allowExecutables = parseBooleanPolicy(candidate, "allowExecutables", id)
   const alwaysOn = parseBooleanPolicy(candidate, "alwaysOn", id)
-  if (select.includes("*") && !allowWildcard) fail(`wildcard selection is not allowed: ${id}`)
-  if (select.includes("*") && select.length !== 1) fail(`wildcard selection must be the only selection: ${id}`)
   const adapter = candidate.adapter ?? "generic"
   if (adapter !== "generic" && adapter !== "omp-native") fail(`invalid skill adapter: ${id}`)
   if (adapter !== "generic" && alwaysOn) fail(`always-on is supported only for generic skills: ${id}`)
@@ -74,6 +86,7 @@ const parseSource = (id, candidate) => {
     id,
     repository: candidate.repository,
     select: Object.freeze([...select]),
+    exclude: Object.freeze([...exclude]),
     adapter,
     alwaysOn,
     allowExecutables,
@@ -281,8 +294,10 @@ const selectedSkillNames = async (source, generatedRoot) => {
     .sort((left, right) => left.localeCompare(right, "en"))
   const expected = [...source.select].sort((left, right) => left.localeCompare(right, "en"))
   if (expected.includes("*")) {
-    if (actual.length === 0) fail(`generated skills do not match selections: ${source.id}`)
-    return actual
+    const excluded = new Set(source.exclude)
+    const included = actual.filter((name) => !excluded.has(name))
+    if (included.length === 0) fail(`generated skills do not match selections: ${source.id}`)
+    return included
   }
   const missing = expected.find((name) => !actual.includes(name))
   if (missing !== undefined) fail(`generated skill is missing from ${source.id}: ${missing}`)

@@ -82,7 +82,9 @@ Three build-shaped commands, three different jobs:
 
 Skill sources and bundles are approved in [`skills.json`](skills.json).
 Profiles select bundle names with `skill_bundles`; they do not store skill
-refs or digests. A skill-bearing rebuild is therefore not byte-reproducible.
+refs or digests. Wildcard sources may declare an `exclude` list for skills
+that must never enter any consuming bundle. A skill-bearing rebuild is
+therefore not byte-reproducible.
 
 Launching handles the common case on its own: `trellage --profile <profile>` refreshes
 a stale lock and rebuilds before starting, reporting the command it ran. Harness
