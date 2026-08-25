@@ -8,6 +8,7 @@ readonly model_selector="$provider/$model_id:medium"
 readonly mise_tool='npm:@earendil-works/pi-coding-agent'
 readonly pinned_pi_version='0.84.2'
 readonly profile_marker_value='trellage-picx-profile-v2'
+readonly engineersamuel_skills_ref='cddf57e769e8b58ade685c51f447d96f3e66cfba'
 
 die() {
   printf 'picx: %s\n' "$1" >&2
@@ -51,6 +52,12 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly version_file="$runtime_root/version"
+engineersamuel_skills_source="$runtime_root/../common/engineersamuel-skills"
+engineersamuel_skills_sync="$runtime_root/../common/sync-engineersamuel-skills.sh"
+if [[ ! -d "$engineersamuel_skills_source" ]]; then
+  engineersamuel_skills_source="$runtime_root/../../vendor/engineersamuel-skills"
+  engineersamuel_skills_sync="$runtime_root/../../scripts/sync-engineersamuel-skills.sh"
+fi
 
 profile_key=''
 profile_name=''
@@ -68,6 +75,16 @@ launch_forwarded_args=()
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+sync_engineersamuel_skills() {
+  [[ -f "$engineersamuel_skills_sync" && ! -L "$engineersamuel_skills_sync" ]] \
+    || die "invalid personal skill sync helper: $engineersamuel_skills_sync"
+  "$engineersamuel_skills_sync" \
+    --source "$engineersamuel_skills_source" \
+    --target "$agent_root/skills" \
+    --ref "$engineersamuel_skills_ref" \
+    || die "failed to sync engineersamuel/skills: $profile_key"
 }
 
 canonical_directory() {
@@ -761,6 +778,7 @@ setup_profile() {
   binary="$(installed_binary "$version")"
   install_extensions "$binary"
   install_show_me
+  sync_engineersamuel_skills
   publish_models_catalog
   verify_managed_profile
   verify_profile_assets
@@ -943,6 +961,7 @@ launch_pi() {
     fi
   fi
   ensure_managed_profile
+  sync_engineersamuel_skills
   verify_profile_assets
   if cancel_pending_launch; then
     return "$launch_cancel_status"
