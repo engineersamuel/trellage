@@ -507,6 +507,8 @@ if [[ "$runtime_mode" == hyperresearch ]]; then
     printf '%s\n' '{"mcpServers":{"obscura":{"command":"obscura","args":["mcp","--stealth"]}}}' >"$mcp_config"
   fi
   managed_args+=(--mcp-config "$mcp_config" --strict-mcp-config)
+elif [[ -f /usr/local/share/trellage/claude-mcp.json ]]; then
+  managed_args+=(--mcp-config /usr/local/share/trellage/claude-mcp.json)
 fi
 set +e
 "$claude_command" "${managed_args[@]}" "${claude_args[@]}"

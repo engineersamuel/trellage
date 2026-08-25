@@ -22,6 +22,9 @@ const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social
 const socialLockPath = fileURLToPath(
   new URL("../../../profiles/claude-social-media/profile.linux-arm64.lock.toml", import.meta.url),
 )
+const graphOfLoopsProfilePath = fileURLToPath(
+  new URL("../../../profiles/claude-graph-of-loops/profile.toml", import.meta.url),
+)
 const blogProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))
 const blogLockPath = fileURLToPath(
   new URL("../../../profiles/claude-blog/profile.linux-arm64.lock.toml", import.meta.url),
@@ -343,6 +346,15 @@ describe("authored Claude council profile", () => {
       commit: "fcf7663366c217dc8f334a11028de52ed950ceab",
     })
     expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
+  })
+})
+
+describe("authored Claude graph-of-loops profile", () => {
+  it("cites Granite's Graph of Loops article", async () => {
+    const source = await readFile(graphOfLoopsProfilePath, "utf8")
+
+    expect(source).toContain('# Source article: Granite, "A Graph of Loops"')
+    expect(source).toContain("https://x.com/granite0x/status/2080665298609328201")
   })
 })
 

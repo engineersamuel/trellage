@@ -1,0 +1,117 @@
+schema = 1
+name = "claude-graph-of-loops"
+description = "Claude Code (Opus via proxy) that wires Granite's graph-of-loops stack: bernstein DAG, git worktree isolation, curated wshobson specialist roles, insane-research fan-out with a code gate, beads memory, the readable waku loop, serena symbol retrieval, Superpowers TDD, a Stop-hook review gate, and local Workshop evals. Best for multi-node coding work that must be able to take 'done' back. Skip for one-shot Q&A or content-only profiles."
+skill_bundles = ["sandbox-common"]
+
+# Source article: Granite, "A Graph of Loops"
+# https://x.com/granite0x/status/2080665298609328201
+
+[harness]
+kind = "claude"
+version = "latest"
+
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+
+[runtime]
+tmpfs_size = "2g"
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
+
+[[image.tools]]
+kind = "pypi"
+name = "bernstein"
+
+[[image.tools]]
+kind = "pypi"
+name = "serena-agent"
+
+[[image.tools]]
+kind = "pypi"
+name = "waku-agent"
+
+[[image.tools]]
+kind = "github-release"
+repository = "gastownhall/beads"
+name = "bd"
+
+[[image.tools]]
+kind = "github-release"
+repository = "raindrop-ai/workshop"
+name = "raindrop"
+
+[[image.tools]]
+kind = "worktree-cli"
+name = "wt"
+
+[[mcps]]
+name = "serena"
+transport = "stdio"
+command = "serena"
+args = ["start-mcp-server", "--context", "claude-code"]
+
+# Upstream project: https://github.com/JuliusBrussee/caveman
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/JuliusBrussee/caveman.git"
+ref = "v1.10.0"
+marketplace = "caveman"
+select = ["caveman"]
+
+# L4 · Superpowers as a native Claude plugin.
+# Upstream project: https://github.com/obra/superpowers
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/obra/superpowers.git"
+ref = "v6.3.0"
+marketplace = "superpowers-dev"
+select = ["superpowers"]
+
+# G4 · A graph that already ships.
+# Upstream project: https://github.com/fivetaku/insane-research
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/fivetaku/insane-research.git"
+ref = "78f4d4a967cdbc06ff34d07d3e7d530804e7238e"
+marketplace = "insane-research"
+select = ["insane-research"]
+
+# L1 · Memory plugin (CLI binary is image.tools bd).
+# Upstream project: https://github.com/gastownhall/beads
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/gastownhall/beads.git"
+ref = "v1.2.2"
+marketplace = "beads-marketplace"
+select = ["beads"]
+
+# L5 · Stop-hook review gate. Upstream has no LICENSE file; marketplace metadata claims MIT.
+# Fail-open if Codex is absent. Do not copy the source into this repository.
+# Upstream project: https://github.com/hamelsmu/claude-review-loop
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/hamelsmu/claude-review-loop.git"
+ref = "244f4c7bc15e98552af7cc5a67e70dfcdea9ab12"
+marketplace = "hamel-review"
+select = ["review-loop"]
+
+# G3 · Specialist roles. Curated set only — staffing all 93 plugins burns the L3 window.
+# Upstream project: https://github.com/wshobson/agents
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/wshobson/agents.git"
+ref = "d82998e7df393c671ede2387a8435075f0b633f5"
+marketplace = "claude-code-workflows"
+select = [
+  "full-stack-orchestration",
+  "agent-orchestration",
+  "agent-teams",
+  "comprehensive-review",
+  "tdd-workflows",
+  "conductor",
+]

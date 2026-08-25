@@ -218,10 +218,188 @@ describe("readClaudeMarketplace", () => {
       // Source may still be a symlink; only the baked cache must be a regular file.
       expect((await lstat(path.join(source, "skills", "council", "SKILL.md"))).isSymbolicLink()).toBe(true)
     })
+
+    it("compares a nested plugin cache against the plugin subdirectory, not the marketplace root", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-nested-finalizer-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const pluginRoot = path.join(source, "plugins", "beads")
+      const cache = path.join(seed, "plugins", "cache", "beads-marketplace", "beads", "1.2.2")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(pluginRoot, "skills", "beads"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "beads-marketplace",
+          owner: { name: "Steve Yegge" },
+          plugins: [
+            {
+              name: "beads",
+              source: "./plugins/beads",
+              description: "Beads",
+              version: "1.2.2",
+            },
+          ],
+        })}\n`,
+      )
+      await writeFile(path.join(source, "README.md"), "# marketplace root must not be required in the cache\n")
+      await writeFile(path.join(pluginRoot, "skills", "beads", "SKILL.md"), "# Beads\n")
+      await cp(pluginRoot, cache, { recursive: true })
+      await writeFile(path.join(seed, "settings.json"), '{"enabledPlugins":{"beads@beads-marketplace":true}}\n')
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "beads@beads-marketplace": [
+              { scope: "user", installPath: cache, version: "1.2.2", installedAt: "nondeterministic" },
+            ],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "beads-marketplace",
+              source,
+              commit: "c".repeat(40),
+              plugins: [{ plugin: "beads", version: "1.2.2" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+
+      const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
+      expect(managed).toContain("plugins/cache/beads-marketplace/beads/1.2.2/skills/beads/SKILL.md")
+      expect(managed).not.toContain("README.md")
+    })
+
+    it("accepts a Claude plugin cache that omits extra source-only harness files", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-subset-finalizer-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const pluginRoot = path.join(source, "plugins", "beads")
+      const cache = path.join(seed, "plugins", "cache", "beads-marketplace", "beads", "1.2.2")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(pluginRoot, "skills", "beads"), { recursive: true })
+      await mkdir(path.join(pluginRoot, ".codex-plugin"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "beads-marketplace",
+          owner: { name: "Steve Yegge" },
+          plugins: [
+            {
+              name: "beads",
+              source: "./plugins/beads",
+              description: "Beads",
+              version: "1.2.2",
+            },
+          ],
+        })}\n`,
+      )
+      await writeFile(path.join(pluginRoot, "skills", "beads", "SKILL.md"), "# Beads\n")
+      await writeFile(path.join(pluginRoot, ".codex-plugin", "plugin.json"), '{"name":"beads"}\n')
+      await writeFile(path.join(pluginRoot, "copilot_manifest.go"), "package beads\n")
+      await mkdir(path.join(cache, "skills", "beads"), { recursive: true })
+      await writeFile(path.join(cache, "skills", "beads", "SKILL.md"), "# Beads\n")
+      await writeFile(path.join(seed, "settings.json"), '{"enabledPlugins":{"beads@beads-marketplace":true}}\n')
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "beads@beads-marketplace": [
+              { scope: "user", installPath: cache, version: "1.2.2", installedAt: "nondeterministic" },
+            ],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "beads-marketplace",
+              source,
+              commit: "c".repeat(40),
+              plugins: [{ plugin: "beads", version: "1.2.2" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+
+      const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
+      expect(managed).toContain("plugins/cache/beads-marketplace/beads/1.2.2/skills/beads/SKILL.md")
+      expect(managed).not.toContain("copilot_manifest.go")
+      expect(managed).not.toContain(".codex-plugin")
+    })
+
+    it("rejects a plugin cache that adds files not in the marketplace source", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-extra-cache-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const cache = path.join(seed, "plugins", "cache", "beads-marketplace", "beads", "1.2.2")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(source, "plugins", "beads", "skills", "beads"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "beads-marketplace",
+          owner: { name: "Steve Yegge" },
+          plugins: [{ name: "beads", source: "./plugins/beads", description: "Beads", version: "1.2.2" }],
+        })}\n`,
+      )
+      await writeFile(path.join(source, "plugins", "beads", "skills", "beads", "SKILL.md"), "# Beads\n")
+      await mkdir(path.join(cache, "skills", "beads"), { recursive: true })
+      await writeFile(path.join(cache, "skills", "beads", "SKILL.md"), "# Beads\n")
+      await writeFile(path.join(cache, "injected.txt"), "not in source\n")
+      await writeFile(path.join(seed, "settings.json"), '{"enabledPlugins":{"beads@beads-marketplace":true}}\n')
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "beads@beads-marketplace": [
+              { scope: "user", installPath: cache, version: "1.2.2", installedAt: "nondeterministic" },
+            ],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "beads-marketplace",
+              source,
+              commit: "c".repeat(40),
+              plugins: [{ plugin: "beads", version: "1.2.2" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await expect(execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])).rejects.toThrow(
+        /installed Claude plugin does not match locked marketplace source: beads@beads-marketplace/,
+      )
+    })
   })
 
-  it.each(["", "..", "../plugin", "/plugin", "C:\\plugin", "skills/plugin"])(
-    "rejects non-root native Claude plugin source %j",
+  it.each(["", "..", "../plugin", "/plugin", "C:\\plugin", "plugins/../escape", "plugins//beads"])(
+    "rejects unsafe native Claude plugin source %j",
     async (source) => {
       const root = await marketplace({
         ...valid,
@@ -233,6 +411,90 @@ describe("readClaudeMarketplace", () => {
       ).rejects.toThrow(/source/)
     },
   )
+
+  it.each(["./plugins/beads", "plugins/full-stack-orchestration"])(
+    "accepts a relative in-tree Claude plugin source %j",
+    async (source) => {
+      const root = await marketplace({
+        ...valid,
+        plugins: [{ ...valid.plugins[0], source, version: "1.2.2" }],
+      })
+
+      await expect(
+        Effect.runPromise(readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"])),
+      ).resolves.toEqual({ "social-media-skills": "1.2.2" })
+    },
+  )
+
+  it("ignores unselected plugins whose source is not a path string", async () => {
+    const root = await marketplace({
+      ...valid,
+      plugins: [
+        valid.plugins[0],
+        {
+          name: "pensyve",
+          source: { source: "git-subdir", url: "https://github.com/example/pensyve.git" },
+          description: "External memory",
+          version: "1.3.0",
+        },
+      ],
+    })
+
+    await expect(
+      Effect.runPromise(readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"])),
+    ).resolves.toEqual({ "social-media-skills": "1.0.0" })
+  })
+
+  it("rejects a selected plugin whose source is not a path string", async () => {
+    const root = await marketplace({
+      ...valid,
+      plugins: [
+        {
+          ...valid.plugins[0],
+          source: { source: "git-subdir", url: "https://github.com/example/pensyve.git" },
+        },
+      ],
+    })
+
+    await expect(
+      Effect.runPromise(readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"])),
+    ).rejects.toThrow(/source/)
+  })
+
+  it("reads an exact plugin manifest version from a nested plugin source", async () => {
+    const root = await marketplace({
+      ...valid,
+      plugins: [{ ...valid.plugins[0], source: "./plugins/beads", version: undefined }],
+    })
+    await mkdir(path.join(root, "plugins", "beads", ".claude-plugin"), { recursive: true })
+    await writeFile(
+      path.join(root, "plugins", "beads", ".claude-plugin", "plugin.json"),
+      '{"name":"social-media-skills","version":"1.2.2","description":"nested"}\n',
+    )
+
+    await expect(
+      Effect.runPromise(readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"])),
+    ).resolves.toEqual({ "social-media-skills": "1.2.2" })
+  })
+
+  it("treats a plugin.json-only Claude repo as a one-plugin marketplace", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-plugin-json-"))
+    roots.push(root)
+    await mkdir(path.join(root, ".claude-plugin"))
+    await writeFile(
+      path.join(root, ".claude-plugin", "plugin.json"),
+      `${JSON.stringify({
+        name: "insane-research",
+        version: "2.9.0",
+        description: "Multi-agent deep research",
+        author: { name: "fivetaku" },
+      })}\n`,
+    )
+
+    await expect(
+      Effect.runPromise(readClaudeMarketplace(root, "insane-research", ["insane-research"])),
+    ).resolves.toEqual({ "insane-research": "2.9.0" })
+  })
 
   it("reads an exact plugin manifest version when the root marketplace omits it", async () => {
     const root = await marketplace({

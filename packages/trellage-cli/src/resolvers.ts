@@ -7,7 +7,7 @@ import { resolveCodexRelease } from "./codex-release.js"
 import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
 import { resolveCopilotRelease } from "./copilot-release.js"
 import { resolveGitHubSource } from "./github-cache.js"
-import type { LockResolvers } from "./lock.js"
+import type { ArtifactLock, LockResolvers } from "./lock.js"
 import { resolvePiRelease } from "./pi-release.js"
 import { resolvePrimeRelease } from "./prime-release.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
@@ -32,6 +32,8 @@ const resolveHarnessPackages = (
   selector: string,
   platform: "linux/arm64" | "linux/amd64",
   claudeAdapter?: "claude-marketplace" | "hyperresearch",
+  extraArtifacts?: ReadonlyArray<ArtifactLock>,
+  extraPythonLockIntegrity?: string,
 ) => {
   if (kind === "codex") {
     return resolveCodexRelease(selector, platform).pipe(
@@ -41,16 +43,16 @@ const resolveHarnessPackages = (
   if (kind === "copilot") return resolveCopilotRelease(selector, platform).pipe(Effect.map((harness) => ({ harness })))
   if (kind === "pi") return resolvePiRelease(selector, platform).pipe(Effect.map((harness) => ({ harness })))
   if (kind === "prime") return resolvePrimeRelease(selector, platform).pipe(Effect.map((harness) => ({ harness })))
+  const pythonLock =
+    claudeAdapter === "hyperresearch" ? arm64ArtifactCatalog.hyperresearchPythonLockIntegrity : extraPythonLockIntegrity
   return resolveClaudeRelease(selector, platform).pipe(
     Effect.map((harness) => ({
       harness,
       artifacts:
         claudeAdapter === "hyperresearch"
           ? [...arm64ArtifactCatalog.fixedArtifacts, ...arm64ArtifactCatalog.hyperresearchArtifacts]
-          : [...arm64ArtifactCatalog.fixedArtifacts],
-      ...(claudeAdapter === "hyperresearch"
-        ? { python_lock_integrity: arm64ArtifactCatalog.hyperresearchPythonLockIntegrity }
-        : {}),
+          : [...arm64ArtifactCatalog.fixedArtifacts, ...(extraArtifacts ?? [])],
+      ...(pythonLock === undefined ? {} : { python_lock_integrity: pythonLock }),
     })),
   )
 }
@@ -92,11 +94,26 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
       )
       return { ...resolution, plugin_versions }
     }),
-  resolvePackages: ({ kind, selector, platform: requestedPlatform, packages, claudeAdapter }) =>
+  resolvePackages: ({
+    kind,
+    selector,
+    platform: requestedPlatform,
+    packages,
+    claudeAdapter,
+    extraArtifacts,
+    extraPythonLockIntegrity,
+  }) =>
     Effect.gen(function* () {
       if (requestedPlatform !== platform) return yield* Effect.fail("resolver platform mismatch")
       const runtime = yield* resolveRuntimePackages(packages)
-      const resolved = yield* resolveHarnessPackages(kind, selector, requestedPlatform, claudeAdapter)
+      const resolved = yield* resolveHarnessPackages(
+        kind,
+        selector,
+        requestedPlatform,
+        claudeAdapter,
+        extraArtifacts,
+        extraPythonLockIntegrity,
+      )
       return { ...resolved, runtime }
     }),
   resolveBase: ({ reference, platform: requestedPlatform }) => {

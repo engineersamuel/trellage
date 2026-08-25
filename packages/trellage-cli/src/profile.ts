@@ -158,10 +158,29 @@ const PrimeHarness = Schema.Struct({
   prime: Prime,
 })
 
+const ImagePypiTool = Schema.Struct({
+  kind: Schema.Literal("pypi"),
+  name: NonEmpty,
+})
+
+const ImageGithubReleaseTool = Schema.Struct({
+  kind: Schema.Literal("github-release"),
+  repository: NonEmpty,
+  name: NonEmpty,
+})
+
+const ImageWorktreeCliTool = Schema.Struct({
+  kind: Schema.Literal("worktree-cli"),
+  name: NonEmpty,
+})
+
+const ImageTool = Schema.Union(ImagePypiTool, ImageGithubReleaseTool, ImageWorktreeCliTool)
+
 const Image = Schema.Struct({
   base: NonEmpty,
   shell: Schema.Literal("bash", "fish", "zsh"),
   packages: Schema.Array(NonEmpty),
+  tools: Schema.optional(Schema.Array(ImageTool)),
 })
 
 const Secrets = Schema.Struct({
@@ -242,6 +261,7 @@ type NormalizedProfile<T extends DecodedProfile> = Omit<
 }
 
 export type Mcp = NonNullable<DecodedProfile["mcps"]>[number]
+export type ImageTool = NonNullable<DecodedProfile["image"]["tools"]>[number]
 export type CodexProfile = NormalizedProfile<DecodedCodexProfile>
 export type CopilotProfile = NormalizedProfile<DecodedCopilotProfile>
 export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
@@ -254,6 +274,17 @@ export const isCodexProfile = (profile: Profile): profile is CodexProfile => pro
 export const isCopilotProfile = (profile: Profile): profile is CopilotProfile => profile.harness.kind === "copilot"
 
 export const isClaudeProfile = (profile: Profile): profile is ClaudeProfile => profile.harness.kind === "claude"
+
+export const claudePypiToolNames = (profile: ClaudeProfile): ReadonlyArray<string> =>
+  (profile.image.tools ?? []).flatMap((tool) => (tool.kind === "pypi" ? [tool.name] : []))
+
+export const claudeGithubReleaseTools = (
+  profile: ClaudeProfile,
+): ReadonlyArray<Extract<ImageTool, { kind: "github-release" }>> =>
+  (profile.image.tools ?? []).flatMap((tool) => (tool.kind === "github-release" ? [tool] : []))
+
+export const claudeHasWorktreeCli = (profile: ClaudeProfile): boolean =>
+  (profile.image.tools ?? []).some((tool) => tool.kind === "worktree-cli")
 
 export const isPiProfile = (profile: Profile): profile is PiProfile => profile.harness.kind === "pi"
 
@@ -408,10 +439,33 @@ const validateCopilotProfile = (profile: CopilotProfile): Effect.Effect<void, Pr
     )
   })
 
+const validateClaudeExtras = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    const hyperresearch = profile.plugins.filter((plugin) => plugin.adapter === "hyperresearch")
+    if (hyperresearch.length > 0) {
+      if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
+      if ((profile.image.tools ?? []).length > 0) {
+        return yield* fail("Hyperresearch cannot declare extra image tools")
+      }
+      return
+    }
+    yield* unique(
+      profile.mcps.map((mcp) => mcp.name),
+      "MCP",
+    )
+    for (const mcp of profile.mcps) {
+      if (mcp.transport !== "stdio") return yield* fail(`Claude extra MCP ${mcp.name} must use stdio`)
+    }
+    yield* unique(
+      (profile.image.tools ?? []).map((tool) => tool.name),
+      "image tool",
+    )
+  })
+
 const validateClaudeProfile = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
   Effect.gen(function* () {
     yield* validateHarnessVersion("Claude", profile.harness.version)
-    if (profile.mcps.length > 0) return yield* fail("Claude profile MCPs are managed by Trellage")
+    yield* validateClaudeExtras(profile)
     if (hasDeclaredSecrets(profile)) return yield* fail("Claude credentials are selected at launch")
     if (profile.plugins.length === 0 && profile.harness.claude.mode !== "core") {
       return yield* fail("Claude profiles require at least one plugin")

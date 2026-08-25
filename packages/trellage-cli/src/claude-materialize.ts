@@ -8,8 +8,9 @@ import { promisify } from "node:util"
 import { Data, Effect } from "effect"
 
 import { verifyInventory } from "./inventory.js"
-import type { ArtifactLock } from "./lock.js"
+import type { ArtifactLock, ProfileLock } from "./lock.js"
 import type { ClaudeMaterializeRequest } from "./materialize.js"
+import { claudeGithubReleaseTools, claudeHasWorktreeCli, claudePypiToolNames, type ClaudeProfile } from "./profile.js"
 
 const execFilePromise = promisify(execFile)
 
@@ -135,12 +136,63 @@ const stampClaudePluginManifest = async (
  * Upstream may omit versions (e.g. caveman); the lock holds the ref-derived fallback.
  * Must run only after verifyInventory against the pristine locked tree.
  */
+const synthesizeClaudeMarketplaceMetadata = async (
+  marketplaceRoot: string,
+  pluginVersions: Readonly<Record<string, string>>,
+): Promise<string> => {
+  const pluginManifestPath = path.join(marketplaceRoot, ".claude-plugin", "plugin.json")
+  const pluginSource = await readFile(pluginManifestPath, "utf8")
+  const pluginManifest = JSON.parse(pluginSource) as {
+    name?: string
+    version?: string
+    description?: string
+    author?: { name?: string }
+  }
+  if (typeof pluginManifest.name !== "string" || pluginManifest.name.length === 0) {
+    throw new Error("Claude plugin metadata name is missing")
+  }
+  const locked = pluginVersions[pluginManifest.name]
+  const version = locked ?? pluginManifest.version
+  if (version === undefined) {
+    throw new Error(`Claude plugin version is missing: ${pluginManifest.name}`)
+  }
+  const description =
+    typeof pluginManifest.description === "string" && pluginManifest.description.length > 0
+      ? pluginManifest.description
+      : pluginManifest.name
+  const ownerName =
+    typeof pluginManifest.author?.name === "string" && pluginManifest.author.name.length > 0
+      ? pluginManifest.author.name
+      : pluginManifest.name
+  const marketplace = {
+    name: pluginManifest.name,
+    owner: { name: ownerName },
+    plugins: [
+      {
+        name: pluginManifest.name,
+        source: ".",
+        description,
+        version,
+      },
+    ],
+  }
+  const marketplacePath = path.join(marketplaceRoot, ".claude-plugin", "marketplace.json")
+  await writeFile(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`, { mode: 0o644 })
+  return marketplacePath
+}
+
 export const stampClaudeMarketplaceVersions = async (
   marketplaceRoot: string,
   pluginVersions: Readonly<Record<string, string>>,
 ): Promise<void> => {
   const marketplacePath = path.join(marketplaceRoot, ".claude-plugin", "marketplace.json")
-  await stampClaudeMarketplaceMetadata(marketplacePath, pluginVersions)
+  try {
+    await stampClaudeMarketplaceMetadata(marketplacePath, pluginVersions)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+    await synthesizeClaudeMarketplaceMetadata(marketplaceRoot, pluginVersions)
+    await stampClaudeMarketplaceMetadata(marketplacePath, pluginVersions)
+  }
 
   const pluginManifestPath = path.join(marketplaceRoot, ".claude-plugin", "plugin.json")
   await stampClaudePluginManifest(pluginManifestPath, pluginVersions)
@@ -665,6 +717,187 @@ const materializeHyperresearchAssets = (
       }),
     (staging) =>
       attempt("cannot clean Claude materialization staging", () => rm(staging, { recursive: true, force: true })).pipe(
+        Effect.orDie,
+      ),
+  )
+
+const graphToolWrapperScript = `#!/bin/sh
+name="$(basename "$0")"
+case "$name" in
+  serena-agent|serena)
+    exec python -c 'import sys; from serena.cli import top_level; sys.argv[0] = "serena"; top_level()' "$@"
+    ;;
+  waku-agent) name=waku ;;
+esac
+exec python -m "$name" "$@"
+`
+
+const worktreeCliScript = `#!/bin/sh
+set -eu
+cmd="\${1:-help}"
+[ "$#" -gt 0 ] && shift
+case "$cmd" in
+  new)
+    branch="\${1:-wt-$(date +%s)}"
+    root="\${AGENT_WORKTREE_DIR:-$HOME/.agent-worktree}"
+    mkdir -p "$root"
+    git worktree add -b "$branch" "$root/$branch"
+    ;;
+  ls)
+    git worktree list --porcelain
+    ;;
+  merge)
+    if ! git merge --no-commit --no-ff --dry-run HEAD; then
+      printf 'Merge aborted due to conflicts\\n' >&2
+      git merge --abort >/dev/null 2>&1 || true
+      exit 1
+    fi
+    git merge --no-edit
+    ;;
+  --help|help)
+    printf 'wt new [branch]\\nwt ls\\nwt merge\\n'
+    ;;
+  *)
+    printf 'wt: unknown command %s\\n' "$cmd" >&2
+    exit 2
+    ;;
+esac
+`
+
+const claudeMcpConfig = (profile: ClaudeProfile): string =>
+  `${JSON.stringify(
+    {
+      mcpServers: Object.fromEntries(
+        profile.mcps
+          .filter((mcp) => mcp.transport === "stdio")
+          .map((mcp) => [
+            mcp.name,
+            {
+              command: mcp.command,
+              ...(mcp.args === undefined ? {} : { args: mcp.args }),
+            },
+          ]),
+      ),
+    },
+    null,
+    2,
+  )}\n`
+
+const materializeClaudePypiRuntime = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  context: string,
+  pythonRequirementsPath?: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    if (claudePypiToolNames(profile).length === 0) return
+    if (pythonRequirementsPath === undefined) {
+      return yield* Effect.fail(
+        new ClaudeMaterializeError({ message: "Python extra-tool requirements path is missing" }),
+      )
+    }
+    const expected = lock.packages.python_lock_integrity
+    const actual = yield* digestFile(pythonRequirementsPath)
+    if (expected === undefined || actual !== expected) {
+      return yield* Effect.fail(
+        new ClaudeMaterializeError({
+          message: `Python dependency lock integrity mismatch; expected ${expected ?? "missing"}, actual ${actual}`,
+        }),
+      )
+    }
+    yield* attempt("cannot copy graph-of-loops Python lock", () =>
+      cp(pythonRequirementsPath, path.join(context, "graph-of-loops-requirements.lock")),
+    )
+    yield* attempt("cannot write graph tool wrapper", () =>
+      writeFile(path.join(context, "graph-tool-wrapper.sh"), graphToolWrapperScript, { mode: 0o755 }),
+    )
+  })
+
+const installBdBinary = (
+  staging: string,
+  archivePath: string,
+  context: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    const listing = yield* run("tar", ["-tzf", archivePath])
+    if (!safeArchivePaths(listing)) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "bd archive has unsafe paths" }))
+    }
+    const extract = path.join(staging, "bd")
+    yield* attempt("cannot extract bd", () => mkdir(extract, { recursive: true }))
+    yield* run("tar", ["-xzf", archivePath, "-C", extract])
+    const binary = path.join(extract, "bd")
+    yield* attempt("cannot install bd", async () => {
+      await chmod(binary, 0o755)
+      await cp(binary, path.join(context, "binaries", "bd"))
+    })
+  })
+
+const installRaindropBinary = (archivePath: string, context: string): Effect.Effect<void, ClaudeMaterializeError> =>
+  attempt("cannot install raindrop", async () => {
+    const destination = path.join(context, "binaries", "raindrop")
+    const result = await execFilePromise("gzip", ["-dc", archivePath], {
+      encoding: "buffer",
+      maxBuffer: 128 * 1024 * 1024,
+    })
+    await writeFile(destination, result.stdout, { mode: 0o755 })
+  })
+
+const materializeClaudeGithubBinaries = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  context: string,
+  staging: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    const githubTools = claudeGithubReleaseTools(profile)
+    if (githubTools.length === 0) return
+    yield* attempt("cannot create extra binary destination", () =>
+      mkdir(path.join(context, "binaries"), { recursive: true }),
+    )
+    const request = { lock } as ClaudeMaterializeRequest
+    for (const tool of githubTools) {
+      const locked = yield* artifact(request, tool.name)
+      const archivePath = path.join(staging, path.posix.basename(new URL(locked.url).pathname))
+      yield* download(locked, archivePath)
+      if (tool.name === "bd") yield* installBdBinary(staging, archivePath, context)
+      else if (tool.name === "raindrop") yield* installRaindropBinary(archivePath, context)
+    }
+  })
+
+const materializeClaudeExtraSidecars = (
+  profile: ClaudeProfile,
+  context: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    if (claudeHasWorktreeCli(profile)) {
+      yield* attempt("cannot write worktree CLI wrapper", () =>
+        writeFile(path.join(context, "wt-wrapper.sh"), worktreeCliScript, { mode: 0o755 }),
+      )
+    }
+    if (profile.mcps.length > 0) {
+      yield* attempt("cannot write Claude extra MCP config", () =>
+        writeFile(path.join(context, "claude-mcp.json"), claudeMcpConfig(profile), { mode: 0o644 }),
+      )
+    }
+  })
+
+export const materializeClaudeExtraRuntime = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  context: string,
+  pythonRequirementsPath?: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.acquireUseRelease(
+    attempt("cannot create Claude extra-tool staging", () => mkdtemp(path.join(os.tmpdir(), "trellage-claude-tools-"))),
+    (staging) =>
+      Effect.gen(function* () {
+        yield* materializeClaudePypiRuntime(profile, lock, context, pythonRequirementsPath)
+        yield* materializeClaudeExtraSidecars(profile, context)
+        yield* materializeClaudeGithubBinaries(profile, lock, context, staging)
+      }),
+    (staging) =>
+      attempt("cannot clean Claude extra-tool staging", () => rm(staging, { recursive: true, force: true })).pipe(
         Effect.orDie,
       ),
   )

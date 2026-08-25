@@ -1,4 +1,7 @@
 import {
+  claudeGithubReleaseTools,
+  claudeHasWorktreeCli,
+  claudePypiToolNames,
   isClaudeProfile,
   isCodexProfile,
   isPiProfile,
@@ -198,15 +201,91 @@ ${renderOci(
 )}`
 }
 
+const optionalMiseLines = (lines: ReadonlyArray<string>): string => (lines.length === 0 ? "" : `${lines.join("\n")}\n`)
+
+const claudeMisePythonTools = (hyperresearch: boolean, extraPython: boolean): string => {
+  if (hyperresearch) return 'python = "3.13.14"\n"npm:@playwright/mcp" = "0.0.78"'
+  if (extraPython) return 'python = "3.13.14"'
+  return ""
+}
+
+const claudePypiBinDotfiles = (profile: ClaudeProfile): ReadonlyArray<string> =>
+  claudePypiToolNames(profile).flatMap((name) => {
+    const aliases =
+      name === "serena-agent" ? ["serena-agent", "serena"] : name === "waku-agent" ? ["waku-agent", "waku"] : [name]
+    return aliases.map(
+      (alias) => `"${`/usr/local/bin/${alias}`}" = { source = "graph-tool-wrapper.sh", mode = "copy" }`,
+    )
+  })
+
+const claudeDotfilesBeforeSeed = (profile: ClaudeProfile): ReadonlyArray<string> => {
+  const hyperresearch = profile.plugins[0]?.adapter === "hyperresearch"
+  const lines: Array<string> = []
+  if (hyperresearch) {
+    lines.push(
+      '"/opt/trellage/hyperresearch-site" = { source = "hyperresearch-site", mode = "copy" }',
+      '"/usr/local/bin/hyperresearch" = { source = "hyperresearch-wrapper.sh", mode = "copy" }',
+      '"/usr/local/bin/hpr" = { source = "hyperresearch-wrapper.sh", mode = "copy" }',
+    )
+  }
+  if (claudePypiToolNames(profile).length > 0) {
+    lines.push('"/opt/trellage/graph-tools" = { source = "graph-tools-site", mode = "copy" }')
+  }
+  lines.push(...claudePypiBinDotfiles(profile))
+  for (const tool of claudeGithubReleaseTools(profile)) {
+    lines.push(`"${`/usr/local/bin/${tool.name}`}" = { source = ${quote(`binaries/${tool.name}`)}, mode = "copy" }`)
+  }
+  if (claudeHasWorktreeCli(profile)) lines.push('"/usr/local/bin/wt" = { source = "wt-wrapper.sh", mode = "copy" }')
+  if (profile.mcps.length > 0) {
+    lines.push('"/usr/local/share/trellage/claude-mcp.json" = { source = "claude-mcp.json", mode = "copy" }')
+  }
+  return lines
+}
+
+const claudeDotfilesAfterSeed = (profile: ClaudeProfile): ReadonlyArray<string> =>
+  profile.plugins[0]?.adapter === "hyperresearch"
+    ? [
+        '"/ms-playwright/chromium-1228" = { source = "chromium-1228", mode = "copy" }',
+        '"/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }',
+        '"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }',
+        '"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }',
+      ]
+    : []
+
+const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> => {
+  const hyperresearch = profile.plugins[0]?.adapter === "hyperresearch"
+  const extraPython = claudePypiToolNames(profile).length > 0
+  if (hyperresearch) {
+    return [
+      'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
+      'TRELLAGE_CLAUDE_RUNTIME_MODE = "hyperresearch"',
+      'PYTHONPATH = "/opt/trellage/hyperresearch-site"',
+      'PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"',
+    ]
+  }
+  return [
+    'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
+    'TRELLAGE_CLAUDE_RUNTIME_MODE = "native-plugin"',
+    ...(extraPython ? ['PYTHONPATH = "/opt/trellage/graph-tools"'] : []),
+  ]
+}
+
+const claudeMiseLabels = (profile: ClaudeProfile, version: string): ReadonlyArray<string> => [
+  '"dev.trellage.harness.kind" = "claude"',
+  `"dev.trellage.claude.version" = ${quote(version)}`,
+  ...(profile.plugins[0]?.adapter === "hyperresearch" ? ['"dev.trellage.hyperresearch.version" = "0.9.1"'] : []),
+]
+
 const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "claude") throw new Error("profile and lock harness kinds do not match")
   const hyperresearch = profile.plugins[0]?.adapter === "hyperresearch"
+  const extraPython = claudePypiToolNames(profile).length > 0
   return `min_version = "2026.6.14"
 
 [tools]
 node = "22.17.0"
-${hyperresearch ? 'python = "3.13.14"\n"npm:@playwright/mcp" = "0.0.78"' : ""}
+${claudeMisePythonTools(hyperresearch, extraPython)}
 
 [tools."http:claude"]
 version = ${quote(harness.version)}
@@ -219,36 +298,13 @@ ${renderBootstrap(profile, options)}
 
 [dotfiles]
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
-${hyperresearch ? '"/opt/trellage/hyperresearch-site" = { source = "hyperresearch-site", mode = "copy" }' : ""}
-${hyperresearch ? '"/usr/local/bin/hyperresearch" = { source = "hyperresearch-wrapper.sh", mode = "copy" }' : ""}
-${hyperresearch ? '"/usr/local/bin/hpr" = { source = "hyperresearch-wrapper.sh", mode = "copy" }' : ""}
-"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
-${hyperresearch ? '"/ms-playwright/chromium-1228" = { source = "chromium-1228", mode = "copy" }' : ""}
-${hyperresearch ? '"/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }' : ""}
-${hyperresearch ? '"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }' : ""}
-${hyperresearch ? '"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }' : ""}
-${renderRuntimeDotfile(options, "runtime-claude-entry")}
+${optionalMiseLines(claudeDotfilesBeforeSeed(profile))}"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
+${optionalMiseLines(claudeDotfilesAfterSeed(profile))}${renderRuntimeDotfile(options, "runtime-claude-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
-${renderOci(
-  profile,
-  lock,
-  options,
-  [
-    'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
-    `TRELLAGE_CLAUDE_RUNTIME_MODE = "${hyperresearch ? "hyperresearch" : "native-plugin"}"`,
-    ...(hyperresearch
-      ? ['PYTHONPATH = "/opt/trellage/hyperresearch-site"', 'PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"']
-      : []),
-  ],
-  [
-    '"dev.trellage.harness.kind" = "claude"',
-    `"dev.trellage.claude.version" = ${quote(harness.version)}`,
-    ...(hyperresearch ? ['"dev.trellage.hyperresearch.version" = "0.9.1"'] : []),
-  ],
-  "/home/agent/.cache",
-)}`
+${renderOci(profile, lock, options, claudeMiseEnvironment(profile), claudeMiseLabels(profile, harness.version), "/home/agent/.cache")}
+`
 }
 
 const renderPiMiseConfig = (profile: Profile, lock: ProfileLock, options: MiseRenderOptions): string => {
