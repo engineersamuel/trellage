@@ -168,6 +168,7 @@ const runtimeSupport = (root: string) => ({
   piEntry: path.join(root, "runtime-pi-entry.sh"),
   primeEntry: path.join(root, "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
+  copilotInstructionRundown: path.join(root, "instruction-rundown.md"),
 })
 
 const pathExists = async (candidate: string) => {
@@ -1980,6 +1981,7 @@ select = ["hve-core"]
     await Promise.all([
       writeFile(support.copilotEntry, "#!/bin/sh\n"),
       writeFile(support.finalizeCopilotSeed, "export {}\n"),
+      writeFile(support.copilotInstructionRundown, "instruction\n"),
     ])
     const scripts: Array<string> = []
     const builderArgs: Array<string> = []

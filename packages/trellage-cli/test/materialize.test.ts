@@ -882,6 +882,8 @@ packages = ["bash", "ca-certificates", "git", "jq"]
     }
     const claudeEntry = path.join(root, "runtime-claude-entry.sh")
     await writeFile(claudeEntry, "#!/bin/sh\n")
+    const claudeOutputStyleRundown = path.join(root, "output-style-rundown.md")
+    await writeFile(claudeOutputStyleRundown, "---\nname: Rundown\n---\n")
     const unused = () => Effect.fail("unexpected generator call")
     let materializerCalled = false
 
@@ -896,6 +898,7 @@ packages = ["bash", "ca-certificates", "git", "jq"]
           piEntry: path.join(root, "unused-pi-entry.sh"),
           finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
           claudeEntry,
+          claudeOutputStyleRundown,
         },
         root,
         unused,
@@ -908,6 +911,12 @@ packages = ["bash", "ca-certificates", "git", "jq"]
     )
 
     expect(materializerCalled).toBe(false)
+    await expect(readFile(path.join(context, "claude-seed", "output-styles", "rundown.md"), "utf8")).resolves.toContain(
+      "name: Rundown",
+    )
+    await expect(readFile(path.join(context, "claude-seed", "managed-paths.txt"), "utf8")).resolves.toContain(
+      "output-styles/rundown.md",
+    )
     await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
       '"bypassPermissions"',
     )
@@ -989,6 +998,8 @@ select = ["light"]
     await writeFile(requirements, "pydantic==2.13.4 --hash=sha256:test\n")
     await writeFile(browserAgent, "browser adapter\n")
     await writeFile(claudeFinalizer, "// finalizer\n")
+    const outputStyle = path.join(root, "output-style-rundown.md")
+    await writeFile(outputStyle, "---\nname: Rundown\n---\n")
     const calls: Array<string> = []
     const materializeClaude: ClaudeMaterializer = (request) =>
       Effect.tryPromise({
@@ -1018,6 +1029,7 @@ select = ["light"]
           claudeEntry: entry,
           hyperresearchRequirements: requirements,
           claudeBrowserAgent: browserAgent,
+          claudeOutputStyleRundown: outputStyle,
         },
         root,
         unused,
@@ -1605,10 +1617,13 @@ select = ["hve-core"]
     const finalizer = path.join(root, "finalize-copilot-seed.mjs")
     await writeFile(copilotEntry, '#!/bin/sh\nexec copilot "$@"\n')
     await writeFile(finalizer, "// finalizer fixture\n")
+    const instruction = path.join(root, "instruction-rundown.md")
+    await writeFile(instruction, '---\napplyTo: "**"\n---\n')
     const support: RuntimeSupport = {
       codexEntry: path.join(root, "unused-codex-entry.sh"),
       copilotEntry,
       finalizeCopilotSeed: finalizer,
+      copilotInstructionRundown: instruction,
     }
     await writeFile(support.codexEntry, "codex fixture\n")
     const wrongHarnessSnapshot = await Effect.runPromise(createRuntimeSupportSnapshot("codex", support))
@@ -1729,6 +1744,8 @@ select = ["hve-core"]
     const finalizer = path.join(root, "finalize-copilot-seed.mjs")
     await writeFile(copilotEntry, "#!/bin/sh\n")
     await writeFile(finalizer, "// finalizer\n")
+    const instruction = path.join(root, "instruction-rundown.md")
+    await writeFile(instruction, '---\napplyTo: "**"\n---\n')
     const unused = () => Effect.fail("unexpected generator call")
 
     const context = await Effect.runPromise(
@@ -1740,12 +1757,16 @@ select = ["hve-core"]
           codexEntry: path.join(root, "unused-codex-entry.sh"),
           copilotEntry,
           finalizeCopilotSeed: finalizer,
+          copilotInstructionRundown: instruction,
         },
         root,
         unused,
         unused,
       ),
     )
+    await expect(
+      readFile(path.join(context, "copilot-seed", "instructions", "rundown.instructions.md"), "utf8"),
+    ).resolves.toContain('applyTo: "**"')
     const rendered = await readFile(path.join(context, "mise.lock"), "utf8")
 
     expect(rendered).toContain('[tools."http:copilot"."platforms.linux-x64"]')

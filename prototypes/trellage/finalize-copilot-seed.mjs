@@ -567,6 +567,37 @@ const inventoryGenericSkills = async (seed, forbiddenBuildPaths) => {
   return entries
 }
 
+const instructionFilePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*\.instructions\.md$/
+
+const inventoryInstructionFiles = async (seed, forbiddenBuildPaths) => {
+  const directory = path.join(seed, "instructions")
+  if (await pathIsMissing(directory)) return []
+  const rootStatus = await lstat(directory)
+  if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) fail("instructions path must be a directory")
+  const root = await realpath(directory)
+  const entries = []
+  const children = await readdir(directory, { withFileTypes: true })
+  children.sort((left, right) => lexical(left.name, right.name))
+  for (const child of children) {
+    if (!instructionFilePattern.test(child.name)) fail(`unsafe instruction path: ${child.name}`)
+    const absolute = path.join(directory, child.name)
+    const status = await lstat(absolute)
+    if (status.isSymbolicLink() || !status.isFile()) fail(`instruction symlink rejected: ${child.name}`)
+    if (!inside(root, await realpath(absolute))) fail(`instruction path escapes seed: ${child.name}`)
+    const content = await readFile(absolute)
+    if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
+      fail(`temporary build root leaked in instruction: ${child.name}`)
+    }
+    entries.push({
+      path: path.posix.join("instructions", child.name),
+      kind: "file",
+      mode: modeString(status.mode),
+      sha256: sha256(content),
+    })
+  }
+  return entries
+}
+
 const inventoryGenericInstructions = async (seed, forbiddenBuildPaths) => {
   const instructions = path.join(seed, "copilot-instructions.md")
   if (await pathIsMissing(instructions)) return []
@@ -659,6 +690,7 @@ const validateSeedTree = async (seed, marketplace, plugin, forbiddenBuildPaths) 
     "config.json",
     "installed-plugins",
     "skills",
+    "instructions",
     "copilot-instructions.md",
     ...outputNames,
     lockName,
@@ -676,7 +708,7 @@ const validateSeedTree = async (seed, marketplace, plugin, forbiddenBuildPaths) 
       if (name === recoveryName && isMissing(error)) continue
       throw error
     }
-    if (name === "installed-plugins" || name === "skills") {
+    if (name === "installed-plugins" || name === "skills" || name === "instructions") {
       if (!status.isDirectory() || status.isSymbolicLink()) fail(`${name} must be a directory`)
       continue
     }
@@ -824,6 +856,7 @@ const main = async () => {
     const genericEntries = [
       ...await inventoryGenericSkills(seed, forbiddenBuildPaths),
       ...await inventoryGenericInstructions(seed, forbiddenBuildPaths),
+      ...await inventoryInstructionFiles(seed, forbiddenBuildPaths),
     ]
     const managedEntries = [...pluginEntries, ...genericEntries].sort((left, right) => lexical(left.path, right.path))
     const marker = {

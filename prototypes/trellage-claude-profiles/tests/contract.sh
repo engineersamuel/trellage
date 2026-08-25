@@ -115,6 +115,18 @@ profile_home="$profile_root/home"
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
+for asset in rundown.md NOTICE.md; do
+  [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \
+    || fail "installer did not publish asset: $asset"
+  cmp -s "$runtime_root/assets/rundown/$asset" "$root/assets/rundown/$asset" \
+    || fail "installed asset differs: $asset"
+done
+cmp -s "$root/assets/rundown/rundown.md" \
+  "$root/../trellage/assets/rundown/rundown.md" \
+  || fail 'vendored output style differs from the canonical copy'
+cmp -s "$root/assets/rundown/NOTICE.md" \
+  "$root/../trellage/assets/rundown/NOTICE.md" \
+  || fail 'vendored notice differs from the canonical copy'
 
 "$installer" >"$fixture_root/reinstall.out" || fail 'repeat install failed'
 
@@ -213,6 +225,10 @@ jq -e '
   and .shiftEnterKeyBindingInstalled == true
   and .theme == "dark"
 ' "$profile_home/.claude.json" >/dev/null || fail 'setup onboarding state differs'
+output_style="$profile_home/output-styles/rundown.md"
+[[ -f "$output_style" && ! -L "$output_style" ]] || fail 'setup did not seed the output style'
+cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
+  || fail 'seeded output style differs'
 
 "$command_path" || fail 'bare launch failed'
 jq -e '
@@ -378,6 +394,18 @@ mv "$fake_bin/claude" "$fake_bin/claude.absent"
 grep -Fq 'required command not found: claude' "$fixture_root/missing.out" \
   || fail 'missing Claude Code error differs'
 mv "$fake_bin/claude.absent" "$fake_bin/claude"
+
+rm -f "$output_style"
+ln -s /dev/null "$output_style"
+"$command_path" repair >"$fixture_root/style-symlink.out" 2>"$fixture_root/style-symlink.err" \
+  && fail 'repair accepted a symlinked output style'
+grep -Fq 'unsafe managed output style' "$fixture_root/style-symlink.err" \
+  || fail 'symlinked output style diagnostic differs'
+rm -f "$output_style"
+printf 'stale\n' >"$output_style"
+"$command_path" repair >"$fixture_root/style-repair.out" || fail 'repair failed'
+cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
+  || fail 'repair did not refresh the output style'
 
 unrelated_home="$fixture_root/unrelated-home"
 mkdir -p "$unrelated_home/.local/bin"

@@ -42,6 +42,8 @@ RUN apt-get update \
 COPY --from=plugins /opt/awesome-plugins /opt/awesome-plugins
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
 COPY scripts/copilot-agent-entrypoint.sh /usr/local/bin/copilot-agent-entrypoint.sh
+COPY --chmod=0444 prototypes/trellage/assets/rundown/rundown.instructions.md \
+    /usr/local/share/trellage/copilot-instructions/rundown.instructions.md
 COPY scripts/run-copilot-agent.sh /usr/local/bin/run-copilot-agent.sh
 
 RUN chmod 0555 /usr/local/bin/copilot-agent-entrypoint.sh /usr/local/bin/run-copilot-agent.sh \

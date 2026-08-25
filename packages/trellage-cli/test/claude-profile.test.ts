@@ -246,6 +246,8 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('"hyperresearch-requirements.lock"')
     expect(source).toContain("claudeBrowserAgent: path.join(")
     expect(source).toContain('"hyperresearch-browser-fetcher.md"')
+    expect(source).toContain("claudeOutputStyleRundown: path.join(")
+    expect(source).toContain('"rundown.md"')
     expect(source).toContain(
       'finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs")',
     )

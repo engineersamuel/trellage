@@ -78,10 +78,13 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
+readonly output_style_asset="$runtime_root/assets/rundown/rundown.md"
 readonly profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
 readonly onboarding="$profile_home/.claude.json"
+readonly output_style_root="$profile_home/output-styles"
+readonly output_style="$output_style_root/rundown.md"
 
 validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
@@ -355,6 +358,26 @@ ensure_onboarding() {
   mv -f "$staged" "$onboarding"
 }
 
+ensure_output_style() {
+  local staged
+
+  [[ -f "$output_style_asset" && -r "$output_style_asset" && ! -L "$output_style_asset" ]] \
+    || die "missing managed output style: $output_style_asset"
+  [[ ! -L "$output_style_root" ]] || die "unsafe output style directory: $output_style_root"
+  [[ -e "$output_style_root" ]] || mkdir "$output_style_root"
+  [[ -d "$output_style_root" && ! -L "$output_style_root" ]] \
+    || die "unsafe output style directory: $output_style_root"
+  chmod 0700 "$output_style_root"
+  [[ ! -L "$output_style" && ( ! -e "$output_style" || -f "$output_style" ) ]] \
+    || die "unsafe managed output style: $output_style"
+  staged="$(mktemp "$output_style_root/.rundown.md.XXXXXX")" \
+    || die 'could not stage the managed output style'
+  cat -- "$output_style_asset" >"$staged" \
+    || die 'could not stage the managed output style'
+  chmod 0600 "$staged"
+  mv -f "$staged" "$output_style"
+}
+
 ensure_trust() {
   local workspace staged
 
@@ -409,6 +432,7 @@ setup_profile() {
   version="$(claude_version "$executable")"
   prepare_profile
   ensure_onboarding "$version"
+  ensure_output_style
   check_proxy
   printf 'cldx setup: ready (%s, %s)\n' "$version" "$model_id"
 }
@@ -421,6 +445,7 @@ repair_profile() {
   version="$(claude_version "$executable")"
   require_owned_profile
   ensure_onboarding "$version"
+  ensure_output_style
   check_proxy
   printf 'cldx repair: restored (%s, %s)\n' "$version" "$model_id"
 }
@@ -489,6 +514,7 @@ launch_profile() {
     require_owned_profile
   fi
   ensure_onboarding "$version"
+  ensure_output_style
   ensure_trust
   check_proxy
 

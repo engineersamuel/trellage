@@ -21,6 +21,7 @@ resolve_script_dir() {
 
 script_dir="$(resolve_script_dir)"
 catalog="${CPX_CATALOG:-$script_dir/../catalog.json}"
+instruction_asset="$script_dir/../assets/rundown/rundown.instructions.md"
 profiles_root="$HOME/.local/share/trellage/profiles/copilot"
 
 die() {
@@ -315,6 +316,34 @@ prepare_profile_home() {
   require_safe_profile_home "$profile"
   chmod 0700 "$(profile_home "$profile")" \
     || die "failed to secure profile home: $(profile_home "$profile")"
+  ensure_instructions "$profile"
+}
+
+ensure_instructions() {
+  local profile="$1"
+  local root
+  local destination
+  local staged
+
+  root="$(profile_home "$profile")/instructions"
+  destination="$root/rundown.instructions.md"
+  [[ -f "$instruction_asset" && -r "$instruction_asset" && ! -L "$instruction_asset" ]] \
+    || die "missing managed instructions: $instruction_asset"
+  [[ ! -L "$root" ]] || die "unsafe instructions path: $root"
+  if [[ ! -e "$root" ]]; then
+    mkdir "$root" || die "failed to create instructions path: $root"
+  fi
+  [[ -d "$root" && ! -L "$root" ]] || die "unsafe instructions path: $root"
+  chmod 0700 "$root" || die "failed to secure instructions path: $root"
+  [[ ! -L "$destination" && ( ! -e "$destination" || -f "$destination" ) ]] \
+    || die "unsafe managed instructions: $destination"
+  staged="$(mktemp "$root/.rundown.instructions.md.XXXXXX")" \
+    || die "failed to stage managed instructions: $destination"
+  cat -- "$instruction_asset" >"$staged" \
+    || die "failed to stage managed instructions: $destination"
+  chmod 0600 "$staged" || die "failed to secure managed instructions: $destination"
+  mv -f "$staged" "$destination" \
+    || die "failed to publish managed instructions: $destination"
 }
 
 run_copilot() {
