@@ -27,12 +27,21 @@ host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, and `prx`.
 - Validate locally: `mise run trellage -- validate <profile name>`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
-  `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
-  launchers (`cdx`/`cpx`/`cldx`/`grx`/`jcx`/`omp`/`prx`) then `trx`, then non-locked sandbox
-  `build` for each `profiles/*`. Use `--native-only` or `--sandbox-only` on the
-  underlying script when you only need one side. Installed `post-merge` and
-  `post-rewrite` hooks rebuild the compiler and refresh native launchers
-  automatically when the local `main` worktree receives merged commits.
+  `mise run rebuild-profiles`. This is the canonical all-profile
+  `engineersamuel/skills` refresh path: it fetches the latest upstream commit,
+  replaces the vendored snapshot and `REF`, updates every Sandbox profile ref
+  and generated skill inventory, updates every native launcher ref and
+  exact-ref TypeScript test assertion, installs worktree `trellage`, publishes
+  the refreshed native runtime assets while reinstalling
+  `cdx`/`cpx`/`cldx`/`grx`/`jcx`/`omp`/`prx` then `trx`, and runs a non-locked
+  Sandbox `build` for each `profiles/*` to regenerate locks and image digests.
+  Do not edit those synchronized refs, inventories, test assertions, locks,
+  runtime assets, or Sandbox images manually. Use `--native-only` or
+  `--sandbox-only` on the underlying script when you only need one side; the
+  shared skill refresh still runs first. Rebuild comparison images separately
+  with `make build`. Installed `post-merge` and `post-rewrite` hooks rebuild the
+  compiler and refresh native launchers automatically when the local `main`
+  worktree receives merged commits.
 
 ## Worktrees and mise trust
 
