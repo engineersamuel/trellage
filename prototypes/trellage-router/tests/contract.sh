@@ -118,6 +118,45 @@ create_native_launcher() {
   ]
 }
 EOF
+  elif [[ "$launcher" == picx ]]; then
+    cat >"$runtime/catalog.json" <<EOF
+{
+  "schemaVersion": 1,
+  "launcher": "picx",
+  "harness": "pi",
+  "sandbox": false,
+  "profiles": [
+    {
+      "name": "default",
+      "description": "Ordered Pi extension profile",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "prompt-only",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "0.84.2"
+      },
+      "plugin": null,
+      "source": null,
+      "marketplace": null,
+      "standaloneMcps": [],
+      "extensions": [
+        {"name":"Ponytail","package":"@dietrichgebert/ponytail","installSpec":"git:github.com/DietrichGebert/ponytail"}
+      ]
+    }
+  ]
+}
+EOF
   else
     cat >"$runtime/catalog.json" <<EOF
 {
@@ -211,6 +250,7 @@ create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v1
+create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
 
 export HOME="$fixture_home"
@@ -246,6 +286,7 @@ assert_contains $'grx/grx-p\tgrx' "$fixture_root/list.out"
 assert_contains $'jcx/jcx-p\tjcx' "$fixture_root/list.out"
 assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
 assert_contains $'omp/local\tLocal Qwen' "$fixture_root/list.out"
+assert_contains $'picx/default\tOrdered Pi extension profile' "$fixture_root/list.out"
 assert_contains $'prx/prx-p\tprx' "$fixture_root/list.out"
 
 "$fixture_bin/trx" list --json >"$fixture_root/list.json" \
@@ -263,6 +304,7 @@ jq -e '
     "jcx/jcx-p",
     "omp/copilot",
     "omp/local",
+    "picx/default",
     "prx/prx-p"
   ]
   and [.profiles[] | .harness] == [
@@ -273,6 +315,7 @@ jq -e '
     "jcode",
     "oh-my-pi",
     "oh-my-pi",
+    "pi",
     "prime"
   ]
   and [.profiles[] | .sandbox] == [
@@ -283,11 +326,13 @@ jq -e '
     false,
     false,
     false,
+    false,
     false
   ]
   and all(.profiles[]; .herdrCompatibility.status | . == "untested" or . == "verified" or . == "known-issue")
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .herdrCompatibility) == { status: "verified" }
   and (.profiles[] | select(.launcher == "omp" and .name == "local") | .herdrCompatibility.status) == "known-issue"
+  and (.profiles[] | select(.launcher == "picx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
   and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
@@ -411,6 +456,14 @@ jq -e '
       and .[0].label == "pi / local"
       and .[0].harness == "pi"
       and .[0].profile == "local")
+  and ([.choices[] | select(.id == "picx:default")]
+    | length == 1
+      and .[0].label == "pi / default"
+      and .[0].harness == "pi"
+      and .[0].profile == "default"
+      and .[0].defaultModel == "copilot-proxy-rs/gpt-5.6-sol:medium"
+      and .[0].models == ["copilot-proxy-rs/gpt-5.6-sol:medium"]
+      and .[0].modelOverrideSupported == false)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices did not expose Claude and Pi harness/profile identities'
 jq -e '
@@ -424,14 +477,14 @@ jq -e '
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted prime profile'
 jq -e '
-  ([.choices[] | select(.id == "omp:local") | .modelOverrideSupported] == [false])
-  and ([.choices[] | select(.id != "omp:local") | .modelOverrideSupported] | all)
+  ([.choices[] | select(.id == "omp:local" or .id == "picx:default") | .modelOverrideSupported] | all(. == false))
+  and ([.choices[] | select(.id != "omp:local" and .id != "picx:default") | .modelOverrideSupported] | all)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not enable model overrides for every launcher except local Qwen'
 jq -e '
   ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
-  and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "prx") | .sandbox] | all(. == false))
+  and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'
 [[ ! -e "$inventory_log" ]] \
@@ -596,6 +649,15 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-omp.out" \
 assert_contains 'required launcher not found on PATH: omp' "$fixture_root/missing-omp.out"
 mv "$fixture_bin/omp.absent" "$fixture_bin/omp"
 
+mv "$fixture_bin/picx" "$fixture_bin/picx.absent"
+status=0
+"$fixture_bin/trx" list >"$fixture_root/list-missing-picx.out" \
+  2>"$fixture_root/list-missing-picx.err" || status=$?
+[[ "$status" == 1 ]] || fail "missing picx list exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: picx' \
+  "$fixture_root/list-missing-picx.err"
+mv "$fixture_bin/picx.absent" "$fixture_bin/picx"
+
 mv "$fixture_bin/jcx" "$fixture_bin/jcx.absent"
 status=0
 python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-jcx.out" \
@@ -698,7 +760,8 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
   && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/grx/bin/grx" \
   && -x "$runtime_parent/jcx/bin/jcx" \
-  && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/prx/bin/prx" ]] \
+  && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/picx/bin/picx" \
+  && -x "$runtime_parent/prx/bin/prx" ]] \
   || fail 'uninstaller changed native launchers'
 assert_contains 'Uninstalled trx.' "$fixture_root/uninstall.out"
 

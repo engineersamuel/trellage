@@ -1,0 +1,1082 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly provider='copilot-proxy-rs'
+readonly model_id='gpt-5.6-sol'
+readonly model_selector="$provider/$model_id:medium"
+readonly mise_tool='npm:@earendil-works/pi-coding-agent'
+readonly pinned_pi_version='0.84.2'
+readonly profile_marker_value='trellage-picx-profile-v2'
+
+die() {
+  printf 'picx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  picx [PI_ARGS...]
+  picx default [PI_ARGS...]
+  picx [default] --headless-policy no-user-input [PI_ARGS...]
+  picx list [--json]
+  picx inventory default --json
+  picx setup [default]
+  picx doctor [default]
+  picx repair [default]
+  picx update [--check] [default]
+
+Bare picx invocations use the default profile.
+EOF
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve runtime root'
+readonly catalog="$runtime_root/catalog.json"
+readonly version_file="$runtime_root/version"
+
+profile_key=''
+profile_name=''
+profile_root=''
+agent_root=''
+profile_marker=''
+profile_session_dir=''
+profile_extensions=''
+profile_models_catalog=''
+launch_child_pid=''
+launch_headless_policy=''
+launch_pending_signal=''
+launch_cancel_status=0
+launch_forwarded_args=()
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+validate_catalog() {
+  [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
+    || die "invalid catalog: $catalog"
+  jq -e '
+    def validHeadless:
+      type == "object"
+      and keys == [
+        "changedFiles",
+        "cost",
+        "effortOverride",
+        "eventContract",
+        "modelOverride",
+        "outputFormats",
+        "prompt",
+        "questionToolControl",
+        "resume",
+        "resumeWithPrompt",
+        "schemaVersion",
+        "sessionId",
+        "testedHarnessVersion",
+        "trellageEventContract",
+        "usage"
+      ]
+      and .schemaVersion == 1
+      and (.prompt | type == "boolean")
+      and (.outputFormats
+        | type == "array"
+        and length == (unique | length)
+        and all(.[]; . == "text" or . == "json" or . == "jsonl"))
+      and (.eventContract == null
+        or (.eventContract | type == "string" and length > 0))
+      and (.trellageEventContract == null
+        or .trellageEventContract == "trellage-headless-v1")
+      and (.sessionId == "native"
+        or .sessionId == "trellage"
+        or .sessionId == "none")
+      and (.resume | type == "boolean")
+      and (.resumeWithPrompt | type == "boolean")
+      and (.questionToolControl == "hard-deny"
+        or .questionToolControl == "prompt-only"
+        or .questionToolControl == "none")
+      and (.changedFiles == "native"
+        or .changedFiles == "git-diff"
+        or .changedFiles == "none")
+      and (.usage | type == "boolean")
+      and (.cost | type == "boolean")
+      and (.modelOverride | type == "boolean")
+      and (.effortOverride | type == "boolean")
+      and (.testedHarnessVersion == null
+        or (.testedHarnessVersion | type == "string" and length > 0));
+    type == "object"
+    and keys == ["profiles", "schemaVersion"]
+    and .schemaVersion == 1
+    and (.profiles | type == "object" and keys == ["default"])
+    and all(.profiles | to_entries[];
+      (.key | test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+      and (.value | type == "object")
+      and (.value | keys
+        == ["description", "extensions", "headless", "kind", "piProfile", "plugin", "standaloneMcps"])
+      and (.value.description
+        | type == "string"
+        and length > 0
+        and (test("[\u0000-\u001f\u007f-\u009f]") | not))
+      and (.value.headless | validHeadless)
+      and .value.kind == "local"
+      and (.value.piProfile
+        | type == "string"
+        and test("^picx-[a-z0-9]+(-[a-z0-9]+)*$"))
+      and .value.plugin == null
+      and (.value.standaloneMcps | type == "array" and length == 0)
+      and (.value.extensions
+        | type == "array"
+        and length == 10
+        and ([.[].package] | length == (unique | length))
+        and ([.[].installSpec] | length == (unique | length))
+        and all(.[];
+          keys == ["installSpec", "name", "package"]
+          and (.name | type == "string" and length > 0)
+          and (.package | type == "string" and length > 0)
+          and (.installSpec | type == "string" and test("^(git|npm):")))))
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+}
+
+select_profile() {
+  local requested="$1"
+
+  jq -e --arg profile "$requested" '.profiles[$profile] != null' "$catalog" \
+    >/dev/null || die "unknown profile: $requested"
+  profile_key="$requested"
+  profile_name="$(jq -r --arg profile "$requested" '.profiles[$profile].piProfile' "$catalog")"
+  profile_root="$HOME/.local/share/trellage/profiles/pi/$profile_name"
+  agent_root="$profile_root/agent"
+  profile_marker="$profile_root/.managed-by-trellage-picx-profiles"
+  profile_session_dir="$profile_root/sessions"
+  profile_extensions="$profile_root/extensions.json"
+  profile_models_catalog="$profile_root/.copilot-models.json"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries | sort_by(.key)[] | [.key, .value.description] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  local headless_map
+
+  headless_map="$(projected_headless_map_json)"
+  jq -S --argjson headless "$headless_map" '
+    {
+      schemaVersion: 1,
+      launcher: "picx",
+      harness: "pi",
+      sandbox: false,
+      profiles: [
+        .profiles
+        | to_entries
+        | sort_by(.key)[]
+        | {
+            name: .key,
+            description: .value.description,
+            headless: $headless[.key],
+            plugin: .value.plugin,
+            source: null,
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps,
+            extensions: .value.extensions
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+require_safe_home() {
+  local canonical_home
+
+  [[ "$HOME" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die "unsafe HOME: $HOME"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+}
+
+require_safe_profile_path() {
+  local path="$HOME" component canonical_home canonical_path
+
+  require_safe_home
+  canonical_home="$(canonical_directory "$HOME")"
+  for component in .local share trellage profiles pi "$profile_name" agent; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe profile path: $path"
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || die "unsafe profile path: $path"
+      canonical_path="$(canonical_directory "$path")" || die "cannot resolve profile path: $path"
+      case "$canonical_path" in
+        "$canonical_home"/*) ;;
+        *) die "redirected profile path: $path" ;;
+      esac
+    fi
+  done
+}
+
+profile_is_owned_or_empty() {
+  local existing
+
+  if [[ -e "$profile_marker" || -L "$profile_marker" ]]; then
+    [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+    [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] || return 1
+    return 0
+  fi
+  [[ ! -e "$profile_root" ]] && return 0
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  [[ -z "$existing" ]]
+}
+
+require_owned_profile() {
+  require_safe_profile_path
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
+    || die "profile is not managed; run picx setup $profile_key"
+  [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
+    || die "profile ownership marker differs: $profile_marker"
+}
+
+prepare_profile_directories() {
+  local path="$HOME" component
+
+  require_safe_profile_path
+  profile_is_owned_or_empty || die "refusing unrelated existing profile files: $profile_root"
+  for component in .local share trellage profiles pi "$profile_name" agent; do
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+  mkdir -p "$profile_session_dir"
+  [[ -d "$profile_session_dir" && ! -L "$profile_session_dir" ]] \
+    || die "unsafe session directory: $profile_session_dir"
+  chmod 0700 "$profile_root" "$agent_root" "$profile_session_dir"
+  require_safe_profile_path
+}
+
+managed_settings() {
+  jq -S \
+    --arg provider "$provider" \
+    --arg model "$model_id" \
+    --arg version "$pinned_pi_version" '
+    {
+      defaultProvider: $provider,
+      defaultModel: $model,
+      defaultThinkingLevel: "medium",
+      enabledModels: [($provider + "/" + $model + ":medium")],
+      defaultProjectTrust: "never",
+      enableInstallTelemetry: false,
+      lastChangelogVersion: $version,
+      packages: [.profiles.default.extensions[].installSpec]
+    }
+  ' "$catalog"
+}
+
+managed_models() {
+  jq -Sn \
+    --arg provider "$provider" \
+    --arg model "$model_id" '
+    {
+      providers: {
+        ($provider): {
+          baseUrl: "http://127.0.0.1:8080/v1",
+          api: "openai-responses",
+          apiKey: "none",
+          authHeader: false,
+          models: [
+            {
+              id: $model,
+              name: "GPT-5.6 Sol",
+              reasoning: true,
+              input: ["text", "image"],
+              contextWindow: 1050000,
+              maxTokens: 128000,
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0
+              }
+            }
+          ]
+        }
+      }
+    }
+  '
+}
+
+managed_mcp() {
+  jq -Sn '
+    {
+      settings: {
+        hostConfigDiscovery: "off"
+      },
+      mcpServers: {}
+    }
+  '
+}
+
+transaction_active=false
+settings_backup=''
+models_backup=''
+mcp_backup=''
+marker_backup=''
+settings_existed=false
+models_existed=false
+mcp_existed=false
+marker_existed=false
+
+restore_target() {
+  local target="$1" backup="$2" existed="$3" staged
+
+  if [[ "$existed" == true && -f "$backup" ]]; then
+    staged="$(mktemp "$(dirname "$target")/.pi-rollback.XXXXXX")" || return
+    cp -p "$backup" "$staged" && mv -f "$staged" "$target"
+    return
+  fi
+  rm -f -- "$target"
+}
+
+rollback_profile_transaction() {
+  [[ "$transaction_active" == true ]] || return 0
+  restore_target "$agent_root/settings.json" "$settings_backup" "$settings_existed"
+  restore_target "$agent_root/models.json" "$models_backup" "$models_existed"
+  restore_target "$agent_root/mcp.json" "$mcp_backup" "$mcp_existed"
+  restore_target "$profile_marker" "$marker_backup" "$marker_existed"
+}
+
+cleanup_profile_transaction() {
+  rm -f -- "$settings_backup" "$models_backup" "$mcp_backup" "$marker_backup"
+  settings_backup=''
+  models_backup=''
+  mcp_backup=''
+  marker_backup=''
+}
+
+publish_managed_profile() {
+  local settings_stage models_stage mcp_stage marker_stage target
+
+  prepare_profile_directories
+  for target in "$agent_root/settings.json" "$agent_root/models.json" "$agent_root/mcp.json"; do
+    [[ ! -L "$target" && ( ! -e "$target" || -f "$target" ) ]] \
+      || die "unsafe managed profile file: $target"
+  done
+
+  settings_stage="$(mktemp "$agent_root/.settings.json.XXXXXX")"
+  models_stage="$(mktemp "$agent_root/.models.json.XXXXXX")"
+  mcp_stage="$(mktemp "$agent_root/.mcp.json.XXXXXX")"
+  marker_stage="$(mktemp "$profile_root/.profile-marker.XXXXXX")"
+  managed_settings >"$settings_stage"
+  managed_models >"$models_stage"
+  managed_mcp >"$mcp_stage"
+  printf '%s\n' "$profile_marker_value" >"$marker_stage"
+  chmod 0600 "$settings_stage" "$models_stage" "$mcp_stage" "$marker_stage"
+
+  settings_backup="$(mktemp "$agent_root/.settings-backup.XXXXXX")"
+  models_backup="$(mktemp "$agent_root/.models-backup.XXXXXX")"
+  mcp_backup="$(mktemp "$agent_root/.mcp-backup.XXXXXX")"
+  marker_backup="$(mktemp "$profile_root/.marker-backup.XXXXXX")"
+  settings_existed=false
+  models_existed=false
+  mcp_existed=false
+  marker_existed=false
+  if [[ -e "$agent_root/settings.json" ]]; then
+    settings_existed=true
+    cp -p "$agent_root/settings.json" "$settings_backup"
+  fi
+  if [[ -e "$agent_root/models.json" ]]; then
+    models_existed=true
+    cp -p "$agent_root/models.json" "$models_backup"
+  fi
+  if [[ -e "$agent_root/mcp.json" ]]; then
+    mcp_existed=true
+    cp -p "$agent_root/mcp.json" "$mcp_backup"
+  fi
+  if [[ -e "$profile_marker" ]]; then
+    marker_existed=true
+    cp -p "$profile_marker" "$marker_backup"
+  fi
+
+  transaction_active=true
+  trap 'rollback_profile_transaction; cleanup_profile_transaction' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  mv -f "$settings_stage" "$agent_root/settings.json"
+  [[ "${PI_TEST_FAIL_AT-}" != after-settings ]] || die 'injected failure after settings publication'
+  mv -f "$models_stage" "$agent_root/models.json"
+  [[ "${PI_TEST_FAIL_AT-}" != after-models ]] || die 'injected failure after models publication'
+  mv -f "$mcp_stage" "$agent_root/mcp.json"
+  [[ "${PI_TEST_FAIL_AT-}" != after-mcp ]] || die 'injected failure after MCP publication'
+  mv -f "$marker_stage" "$profile_marker"
+  transaction_active=false
+  cleanup_profile_transaction
+  trap - EXIT HUP INT TERM
+}
+
+require_exact_version() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid Pi version: $1"
+}
+
+pi_version_if_available() {
+  local version binary actual
+
+  [[ -f "$version_file" && ! -L "$version_file" ]] || return 0
+  version="$(<"$version_file")"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  binary="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version/bin/pi"
+  [[ -x "$binary" ]] || return 0
+  actual="$("$binary" --version 2>/dev/null || :)"
+  [[ "$actual" == "$version" ]] || return 0
+  printf '%s\n' "$version"
+}
+
+conservative_headless() {
+  local question_tool_control="${1-none}"
+
+  jq -cn \
+    --arg questionToolControl "$question_tool_control" '
+    {
+      schemaVersion: 1,
+      prompt: false,
+      outputFormats: ["text"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "none",
+      resume: false,
+      resumeWithPrompt: false,
+      questionToolControl: $questionToolControl,
+      changedFiles: "none",
+      usage: false,
+      cost: false,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null
+    }
+  '
+}
+
+projected_headless() {
+  local profile="$1"
+  local current_version expected_version
+
+  current_version="$(pi_version_if_available)"
+  expected_version="$(jq -r --arg profile "$profile" \
+    '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
+  if [[ -z "$expected_version" ]]; then
+    jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+    return
+  fi
+  if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
+    conservative_headless
+    return
+  fi
+  jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+}
+
+projected_headless_map_json() {
+  jq -cn \
+    --argjson defaultProfile "$(projected_headless default)" '
+    {
+      default: $defaultProfile
+    }
+  '
+}
+
+mise_env() {
+  local ignored_paths="$HOME"
+  if [[ -n "${MISE_IGNORED_CONFIG_PATHS-}" ]]; then
+    ignored_paths="$MISE_IGNORED_CONFIG_PATHS:$ignored_paths"
+  fi
+  MISE_DATA_DIR="$runtime_root/mise" \
+    MISE_CACHE_DIR="$runtime_root/cache" \
+    MISE_CONFIG_DIR="$runtime_root/mise-config" \
+    MISE_GLOBAL_CONFIG_FILE=/dev/null \
+    MISE_IGNORED_CONFIG_PATHS="$ignored_paths" \
+    mise "$@"
+}
+
+resolve_latest_version() {
+  printf '%s\n' "$pinned_pi_version"
+}
+
+read_pinned_version() {
+  local version
+
+  [[ -f "$version_file" && ! -L "$version_file" ]] \
+    || die "Pi version is not pinned: $version_file"
+  version="$(<"$version_file")"
+  require_exact_version "$version"
+  [[ "$version" == "$pinned_pi_version" ]] \
+    || die "Pi version pin differs: expected $pinned_pi_version, got $version"
+  printf '%s\n' "$version"
+}
+
+installed_binary() {
+  local version="$1" install_dir expected binary resolved
+
+  install_dir="$(mise_env where "$mise_tool@$version")" \
+    || die "Pi $version is not installed; run picx repair $profile_key"
+  expected="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version"
+  [[ "$install_dir" == "$expected" ]] || die "mise returned unexpected Pi path: $install_dir"
+  binary="$install_dir/bin/pi"
+  [[ -x "$binary" ]] || die "Pi executable is missing: $binary"
+  resolved="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$binary")" \
+    || die "could not resolve Pi executable: $binary"
+  case "$resolved" in
+    "$install_dir"/*) ;;
+    *) die "Pi executable resolves outside its managed installation: $binary" ;;
+  esac
+  printf '%s\n' "$binary"
+}
+
+verify_binary_version() {
+  local binary="$1" version="$2" actual
+
+  actual="$("$binary" --version)" || die "could not run Pi $version"
+  [[ "$actual" == "$version" ]] \
+    || die "Pi version differs: expected $version, got $actual"
+}
+
+install_exact_version() {
+  local version="$1" binary
+
+  require_command mise
+  require_command node
+  mise_env install "$mise_tool@$version" || die "mise could not install Pi $version"
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+}
+
+verify_managed_profile() {
+  require_owned_profile
+  [[ -f "$agent_root/settings.json" && ! -L "$agent_root/settings.json" ]] \
+    || die "managed settings are missing: $agent_root/settings.json"
+  [[ -f "$agent_root/models.json" && ! -L "$agent_root/models.json" ]] \
+    || die "managed models config is missing: $agent_root/models.json"
+  [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] \
+    || die "managed MCP config is missing: $agent_root/mcp.json"
+  cmp -s "$agent_root/settings.json" <(managed_settings) \
+    || die "managed settings differ; run picx repair $profile_key"
+  cmp -s "$agent_root/models.json" <(managed_models) \
+    || die "managed models config differs; run picx repair $profile_key"
+  cmp -s "$agent_root/mcp.json" <(managed_mcp) \
+    || die "managed MCP config differs; run picx repair $profile_key"
+}
+
+managed_profile_is_current() {
+  [[ -f "$agent_root/settings.json" && ! -L "$agent_root/settings.json" ]] || return 1
+  [[ -f "$agent_root/models.json" && ! -L "$agent_root/models.json" ]] || return 1
+  [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] || return 1
+  cmp -s "$agent_root/settings.json" <(managed_settings) || return 1
+  cmp -s "$agent_root/models.json" <(managed_models) || return 1
+  cmp -s "$agent_root/mcp.json" <(managed_mcp)
+}
+
+ensure_managed_profile() {
+  require_owned_profile
+  managed_profile_is_current && return 0
+  publish_managed_profile
+  printf 'picx: managed Pi configuration restored\n' >&2
+}
+
+ensure_installed_binary() {
+  local version="$1" binary
+
+  if binary="$(installed_binary "$version" 2>/dev/null)"; then
+    printf '%s\n' "$binary"
+    return 0
+  fi
+  printf 'picx: Pi %s is not installed; installing\n' "$version" >&2
+  install_exact_version "$version" >&2
+  installed_binary "$version"
+}
+
+profile_ready_label() {
+  printf '%s\n' "$provider"
+}
+
+publish_models_catalog() {
+  local source="$HOME/.copilot/models.json" staged
+
+  [[ -f "$source" && -r "$source" && ! -L "$source" ]] \
+    || die "unsafe or missing Copilot models catalog: $source"
+  jq -e 'type == "object" or type == "array"' "$source" >/dev/null \
+    || die "invalid Copilot models catalog: $source"
+  staged="$(mktemp "$profile_root/.copilot-models.XXXXXX")" \
+    || die 'could not stage Copilot models catalog'
+  install -m 0444 "$source" "$staged"
+  mv -f "$staged" "$profile_models_catalog"
+}
+
+publish_extension_manifest() {
+  local staged
+
+  staged="$(mktemp "$profile_root/.extensions.XXXXXX")" \
+    || die 'could not stage extension manifest'
+  jq -S '.profiles.default.extensions' "$catalog" >"$staged"
+  chmod 0444 "$staged"
+  mv -f "$staged" "$profile_extensions"
+}
+
+install_extensions() {
+  local binary="$1" spec
+  local extension_specs=()
+
+  while IFS= read -r spec; do
+    [[ -n "$spec" ]] || continue
+    extension_specs+=("$spec")
+  done < <(jq -r '.profiles.default.extensions[].installSpec' "$catalog")
+  [[ "${#extension_specs[@]}" -eq 10 ]] || die 'extension manifest does not contain 10 entries'
+
+  for spec in "${extension_specs[@]}"; do
+    env -u NODE_OPTIONS -u NODE_PATH -u NODE_COMPILE_CACHE \
+      PI_CODING_AGENT_DIR="$agent_root" \
+      PI_SKIP_VERSION_CHECK=1 \
+      PI_TELEMETRY=0 \
+      "$binary" install "$spec" \
+      || die "could not install managed extension: $spec"
+  done
+  publish_managed_profile
+  publish_extension_manifest
+}
+
+install_show_me() {
+  local staging_home="$profile_root/.show-me-install-home"
+  local source='' candidate destination="$agent_root/skills/show-me"
+
+  require_command npx
+  [[ ! -e "$staging_home" && ! -L "$staging_home" ]] \
+    || die "unsafe show-me staging path: $staging_home"
+  mkdir "$staging_home"
+  if ! HOME="$staging_home" npm_config_cache="$runtime_root/npm-cache" \
+    env -u NODE_OPTIONS -u NODE_PATH -u NODE_COMPILE_CACHE \
+    npx --yes skills add humanlayer/skills --skill show-me --agent pi \
+      --global --copy --yes >/dev/null; then
+    rm -rf -- "$staging_home"
+    die 'could not install humanlayer/skills show-me'
+  fi
+  while IFS= read -r candidate; do
+    [[ -z "$source" ]] || {
+      rm -rf -- "$staging_home"
+      die 'show-me installer produced multiple skill roots'
+    }
+    source="$(dirname "$candidate")"
+  done < <(find "$staging_home" -type f -path '*/show-me/SKILL.md' -print)
+  [[ -n "$source" ]] || {
+    rm -rf -- "$staging_home"
+    die 'show-me installer produced no SKILL.md'
+  }
+  mkdir -p "$agent_root/skills"
+  [[ ! -L "$agent_root/skills" && -d "$agent_root/skills" ]] \
+    || die "unsafe managed skills directory: $agent_root/skills"
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    [[ -d "$destination" && ! -L "$destination" \
+      && -f "$destination/.managed-by-trellage-picx-profiles" ]] \
+      || die "unmanaged show-me skill exists: $destination"
+    rm -rf -- "$destination"
+  fi
+  mkdir "$destination"
+  cp -R "$source/." "$destination/"
+  printf '%s\n' "$profile_marker_value" \
+    >"$destination/.managed-by-trellage-picx-profiles"
+  chmod -R u=rwX,go=rX "$destination"
+  rm -rf -- "$staging_home"
+}
+
+package_path() {
+  local package="$1" install_spec="$2"
+
+  case "$install_spec" in
+    npm:*)
+      printf '%s/npm/node_modules/%s/package.json\n' "$agent_root" "$package"
+      ;;
+    git:github.com/*)
+      printf '%s/git/%s/package.json\n' "$agent_root" "${install_spec#git:}"
+      ;;
+    *)
+      die "unsupported extension install spec: $install_spec"
+      ;;
+  esac
+}
+
+verify_profile_assets() {
+  local install_spec package path expected_version actual_version
+
+  [[ -f "$profile_models_catalog" && -r "$profile_models_catalog" \
+    && ! -L "$profile_models_catalog" ]] \
+    || die "managed Copilot models catalog is missing: $profile_models_catalog"
+  cmp -s "$profile_models_catalog" "$HOME/.copilot/models.json" \
+    || die 'managed Copilot models catalog differs; run picx repair default'
+  [[ -f "$profile_extensions" && ! -L "$profile_extensions" ]] \
+    || die "managed extension manifest is missing: $profile_extensions"
+  cmp -s "$profile_extensions" <(jq -S '.profiles.default.extensions' "$catalog") \
+    || die 'managed extension manifest differs; run picx repair default'
+
+  while IFS=$'\t' read -r package install_spec; do
+    path="$(package_path "$package" "$install_spec")"
+    [[ -f "$path" && ! -L "$path" ]] || die "managed extension is missing: $package"
+    if [[ "$install_spec" =~ @([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+      expected_version="${BASH_REMATCH[1]}"
+      actual_version="$(jq -er '.version | select(type == "string")' "$path")" \
+        || die "managed extension version is invalid: $package"
+      [[ "$actual_version" == "$expected_version" ]] \
+        || die "managed extension version differs: $package@$actual_version (expected $expected_version)"
+    fi
+  done < <(jq -r '.profiles.default.extensions[] | [.package, .installSpec] | @tsv' "$catalog")
+
+  [[ -f "$agent_root/npm/node_modules/@ff-labs/fff-bun/package.json" ]] \
+    || die 'managed pi-fff dependency is missing: @ff-labs/fff-bun'
+  [[ -f "$agent_root/npm/node_modules/@ff-labs/fff-node/package.json" ]] \
+    || die 'managed pi-fff dependency is missing: @ff-labs/fff-node'
+  [[ -f "$agent_root/skills/show-me/SKILL.md" \
+    && ! -L "$agent_root/skills/show-me/SKILL.md" \
+    && -f "$agent_root/skills/show-me/.managed-by-trellage-picx-profiles" ]] \
+    || die 'managed show-me skill is missing; run picx repair default'
+}
+
+setup_profile() {
+  local version binary
+
+  version="$(read_pinned_version)"
+  install_exact_version "$version"
+  publish_managed_profile
+  binary="$(installed_binary "$version")"
+  install_extensions "$binary"
+  install_show_me
+  publish_models_catalog
+  verify_managed_profile
+  verify_profile_assets
+  printf 'picx setup %s: ready (Pi %s, %s, 10 extensions)\n' \
+    "$profile_key" "$version" "$(profile_ready_label)"
+}
+
+repair_profile() {
+  setup_profile >/dev/null
+  printf 'picx repair %s: restored (Pi %s, %s, 10 extensions)\n' \
+    "$profile_key" "$(read_pinned_version)" "$(profile_ready_label)"
+}
+
+check_for_update() {
+  printf 'picx update: %s is current\n' "$(read_pinned_version)"
+}
+
+update_profile() {
+  setup_profile >/dev/null
+  printf 'picx update: %s installed\n' "$(read_pinned_version)"
+}
+
+doctor_local() {
+  local health models
+
+  require_command curl
+  health="$(curl -fsS --max-time 5 http://127.0.0.1:8080/health)" \
+    || die 'copilot-proxy-rs health check failed'
+  jq -e '.status == "ok" or .status == "healthy"' <<<"$health" >/dev/null \
+    || die 'copilot-proxy-rs health response is invalid'
+  models="$(curl -fsS --max-time 5 http://127.0.0.1:8080/v1/models)" \
+    || die 'copilot-proxy-rs model discovery failed'
+  jq -e --arg model "$model_id" '.data | any(.id == $model)' <<<"$models" >/dev/null \
+    || die "copilot-proxy-rs model is missing: $model_id"
+}
+
+doctor_profile() {
+  local version binary
+
+  version="$(read_pinned_version)"
+  verify_managed_profile
+  verify_profile_assets
+  binary="$(installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  doctor_local
+  printf 'picx doctor %s: OK (Pi %s, %s, 10 extensions, host MCP discovery off)\n' \
+    "$profile_key" "$version" "$(profile_ready_label)"
+}
+
+not_ready_inventory() {
+  local profile="$1" readiness="$2"
+
+  jq -cn \
+    --arg profile "$profile" \
+    --arg readiness "$readiness" '
+    {
+      schemaVersion: 1,
+      launcher: "picx",
+      profile: $profile,
+      harness: "pi",
+      ready: false,
+      readiness: $readiness,
+      model: null,
+      extensions: []
+    }
+  '
+}
+
+inventory_profile() {
+  local requested="$1" version binary
+
+  select_profile "$requested"
+  if [[ ! -f "$profile_marker" || ! -f "$version_file" ]]; then
+    not_ready_inventory "$requested" "not-setup"
+    return
+  fi
+  if ! version="$(read_pinned_version 2>/dev/null)" \
+    || ! binary="$(installed_binary "$version" 2>/dev/null)" \
+    || ! verify_binary_version "$binary" "$version" 2>/dev/null \
+    || ! verify_managed_profile 2>/dev/null \
+    || ! verify_profile_assets 2>/dev/null; then
+    not_ready_inventory "$requested" "unhealthy"
+    return
+  fi
+  jq -S \
+    --arg profile "$requested" \
+    --arg version "$version" \
+    --arg model "$model_selector" '
+    {
+      schemaVersion: 1,
+      launcher: "picx",
+      profile: $profile,
+      harness: "pi",
+      harnessVersion: $version,
+      ready: true,
+      readiness: "healthy",
+      model: $model,
+      extensions: .profiles[$profile].extensions
+    }
+  ' "$catalog"
+}
+
+parse_launch_arguments() {
+  local argument
+
+  launch_headless_policy=''
+  launch_forwarded_args=()
+  while [[ "$#" -gt 0 ]]; do
+    argument="$1"
+    shift
+    if [[ "$argument" == --headless-policy ]]; then
+      [[ "$#" -gt 0 ]] || die '--headless-policy requires a value'
+      [[ -z "$launch_headless_policy" ]] || die '--headless-policy may be specified only once'
+      launch_headless_policy="$1"
+      shift
+      [[ "$launch_headless_policy" == no-user-input ]] \
+        || die "unsupported headless policy: $launch_headless_policy"
+      continue
+    fi
+    launch_forwarded_args+=("$argument")
+  done
+}
+
+forward_launch_signal() {
+  local signal="$1"
+
+  launch_cancel_status=1
+  case "$signal" in
+    HUP) launch_cancel_status=129 ;;
+    INT) launch_cancel_status=130 ;;
+    TERM) launch_cancel_status=143 ;;
+  esac
+  if [[ -n "$launch_child_pid" ]] && kill -0 "$launch_child_pid" 2>/dev/null; then
+    kill "-$signal" "$launch_child_pid" 2>/dev/null || :
+  else
+    launch_pending_signal="$signal"
+  fi
+}
+
+cancel_pending_launch() {
+  [[ -n "$launch_pending_signal" ]] || return 1
+  launch_pending_signal=''
+  launch_child_pid=''
+  trap - EXIT HUP INT TERM
+  return 0
+}
+
+wait_for_launch_child() {
+  local status
+
+  while :; do
+    if wait "$launch_child_pid"; then
+      status=0
+    else
+      status=$?
+    fi
+    if [[ "$status" -ge 128 ]] && kill -0 "$launch_child_pid" 2>/dev/null; then
+      continue
+    fi
+    return "$status"
+  done
+}
+
+launch_pi() {
+  local version binary status extension_context
+  local launch_args=()
+
+  launch_child_pid=''
+  launch_pending_signal=''
+  launch_cancel_status=0
+  trap 'forward_launch_signal HUP' HUP
+  trap 'forward_launch_signal INT' INT
+  trap 'forward_launch_signal TERM' TERM
+
+  version="$(read_pinned_version)"
+  if [[ ! -f "$profile_marker" ]]; then
+    setup_profile >/dev/null
+    if cancel_pending_launch; then
+      return "$launch_cancel_status"
+    fi
+  fi
+  ensure_managed_profile
+  verify_profile_assets
+  if cancel_pending_launch; then
+    return "$launch_cancel_status"
+  fi
+  binary="$(ensure_installed_binary "$version")"
+  verify_binary_version "$binary" "$version"
+  doctor_local
+  parse_launch_arguments "$@"
+  extension_context="$(
+    jq -r '
+      "This picx profile has exactly these Pi extensions installed, in order:",
+      (.profiles.default.extensions
+        | to_entries[]
+        | "\(.key + 1). \(.value.name) (`\(.value.package)`)"),
+      "When asked what extensions are installed, report this ordered list. Do not report editor or browser extensions instead."
+    ' "$catalog"
+  )"
+  launch_args=(
+    --session-dir "$profile_session_dir"
+    --provider "$provider"
+    --model "$model_id"
+    --thinking medium
+    --append-system-prompt "$extension_context"
+  )
+  if [[ "$launch_headless_policy" == no-user-input ]]; then
+    launch_args+=(--exclude-tools ask_question)
+  fi
+  if [[ "${#launch_forwarded_args[@]}" -gt 0 ]]; then
+    launch_args+=("${launch_forwarded_args[@]}")
+  fi
+
+  env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+    -u OPENAI_API_KEY -u OPENAI_BASE_URL -u OPENAI_API_BASE \
+    -u OPENAI_ORG_ID -u OPENAI_ORGANIZATION -u OPENAI_PROJECT \
+    -u AZURE_OPENAI_API_KEY -u AZURE_OPENAI_ENDPOINT \
+    -u AZURE_OPENAI_API_VERSION -u NODE_OPTIONS -u NODE_PATH \
+    -u NODE_COMPILE_CACHE \
+    PI_CODING_AGENT_DIR="$agent_root" \
+    PI_SKIP_VERSION_CHECK=1 \
+    PI_TELEMETRY=0 \
+    COPILOT_MODELS_PATH="$profile_models_catalog" \
+    "$binary" "${launch_args[@]}" &
+  launch_child_pid=$!
+  if [[ -n "$launch_pending_signal" ]]; then
+    forward_launch_signal "$launch_pending_signal"
+    launch_pending_signal=''
+  fi
+  if wait_for_launch_child; then
+    status=0
+  else
+    status=$?
+  fi
+  if [[ "$launch_cancel_status" -ne 0 ]]; then
+    status="$launch_cancel_status"
+  fi
+  launch_child_pid=''
+  launch_pending_signal=''
+  launch_cancel_status=0
+  trap - HUP INT TERM
+  return "$status"
+}
+
+run_for_selection() {
+  local selection="$1" callback="$2"
+
+  select_profile "$selection"
+  "$callback"
+}
+
+require_command jq
+validate_catalog
+
+command_name="${1-}"
+case "$command_name" in
+  help | --help | -h)
+    usage
+    ;;
+  list)
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      list_profiles
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory)
+    shift
+    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
+    ;;
+  setup)
+    shift
+    [[ "$#" -le 1 ]] || die 'setup accepts only default'
+    run_for_selection "${1-default}" setup_profile
+    ;;
+  doctor)
+    shift
+    [[ "$#" -le 1 ]] || die 'doctor accepts only default'
+    select_profile "${1-default}"
+    doctor_profile
+    ;;
+  repair)
+    shift
+    [[ "$#" -le 1 ]] || die 'repair accepts only default'
+    select_profile "${1-default}"
+    repair_profile
+    ;;
+  update)
+    shift
+    check_only=false
+    selection=default
+    if [[ "${1-}" == --check ]]; then
+      check_only=true
+      shift
+    fi
+    [[ "$#" -le 1 ]] || die 'usage: picx update [--check] [default]'
+    selection="${1-default}"
+    [[ "$selection" == default ]] || die 'usage: picx update [--check] [default]'
+    select_profile default
+    if [[ "$check_only" == true ]]; then
+      check_for_update
+    else
+      update_profile
+    fi
+    ;;
+  default)
+    select_profile "$command_name"
+    shift
+    launch_pi "$@"
+    ;;
+  *)
+    select_profile default
+    launch_pi "$@"
+    ;;
+esac

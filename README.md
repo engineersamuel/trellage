@@ -456,6 +456,7 @@ repository root:
 (cd prototypes/trellage-grok-profiles && ./install.sh)
 (cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
+(cd prototypes/trellage-picx-profiles && ./install.sh)
 (cd prototypes/trellage-prime-profiles && ./install.sh)
 (cd prototypes/trellage-router && ./install.sh)
 ```
@@ -468,13 +469,14 @@ cpx setup --all
 grx setup --all
 jcx setup
 omp setup
+picx setup
 prx setup
 cpx doctor awesome
 trx list
 ```
 
 An explicit `setup` step is not strictly required: every native launcher
-(`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `prx`) self-heals on first launch,
+(`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, `prx`) self-heals on first launch,
 automatically running the equivalent of `setup` for a profile the first time
 it's launched. Running `setup`/`doctor` ahead of time is still recommended so
 you can catch missing prerequisites (proxy auth, host CLIs, etc.) before
@@ -488,6 +490,7 @@ The installers publish these commands and managed runtimes:
 - `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
 - `jcx`: `~/.local/bin/jcx` and `~/.local/share/trellage/jcx/`
 - `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
+- `picx`: `~/.local/bin/picx` and `~/.local/share/trellage/picx/`
 - `prx`: `~/.local/bin/prx` and `~/.local/share/trellage/prx/`
 - `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
 
@@ -501,6 +504,7 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/jcode/default/home/
 ~/.local/share/trellage/profiles/prime/default/home/
 ~/.omp/profiles/trellage-qwen-local/
+~/.local/share/trellage/profiles/pi/picx-default/
 ```
 
 The native `omp` launcher is independent of the Docker `pi-oh-my-pi` profile.
@@ -533,6 +537,12 @@ Bare `omp` remains an alias for the `local` profile. `trx` includes both
 See the [native OMP guide](prototypes/trellage-omp-profiles/README.md) for
 ownership, update, repair, and uninstall behavior.
 
+The standalone `picx` launcher provides one `default` Pi profile with the
+ordered ten-extension daily-coding set on upstream Pi `0.84.2`, isolated
+user-scope package data, `humanlayer/skills` `show-me`, host-MCP discovery
+disabled, and `copilot-proxy-rs/gpt-5.6-sol:medium`. See the
+[native picx guide](prototypes/trellage-picx-profiles/README.md).
+
 Managed Codex profiles use the local proxy by default. Native OpenAI authentication
 is an explicit per-launch opt-in:
 
@@ -556,7 +566,7 @@ No host model credentials are copied. Launch scrubs ambient provider and token
 variables before setting only the local proxy environment. See the
 [native Claude guide](prototypes/trellage-claude-profiles/README.md).
 
-After the seven native profile launchers and `trx` are installed, list the
+After the eight native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
 
 ```bash

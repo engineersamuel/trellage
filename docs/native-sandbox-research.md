@@ -31,7 +31,7 @@ proved unreliable for some of the Grok config claims below.
 | Grok (`grx`) | **Yes** — `--sandbox <PROFILE>` (`workspace`, `devbox`, `read-only`, `strict`), enforced by Landlock (Linux, network) / Seatbelt (macOS, filesystem). Confirmed via installed `grok 1.0.0 (stable) --help` and https://docs.x.ai/build/features/sandbox. | `grx` passed no sandbox-related flag at all | **Now sandboxed** (this change) |
 | Claude Code (`cldx`) | **Partial** — `/sandbox` mode exists (bubblewrap/Seatbelt-backed Bash sandboxing), but requires enabling per-session and doesn't compose with `--dangerously-skip-permissions` the way `cldx` invokes Claude today | `cldx` invokes `claude --dangerously-skip-permissions --permission-mode bypassPermissions` (full bypass) | Not flipped — see §3 |
 | Copilot CLI (`cpx`) | **No** — no built-in OS-level sandbox (seatbelt/seccomp/landlock/container); only a trust-directory + tool-approval prompt layer. Real isolation requires an external container. | No sandbox flags exist to pass | Not flippable natively — see §3 |
-| jcode (`jcx`), oh-my-pi (`omp`), Prime (`prx`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
+| jcode (`jcx`), oh-my-pi (`omp`), Pi (`picx`), Prime (`prx`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
 
 ## 2. Codex and Grok: what changed
 
@@ -75,7 +75,7 @@ not the process flags.
   already invokes Claude exactly the way clawk expects to wrap it — no
   conflict, unlike trying to reconcile Claude's own `/sandbox` mode with the
   current bypass invocation.
-- **`cpx` (Copilot), `jcx` (jcode), `omp` (oh-my-pi), `prx` (Prime)** are not
+- **`cpx` (Copilot), `jcx` (jcode), `omp` (oh-my-pi), `picx` (Pi), `prx` (Prime)** are not
   first-class clawk runners (only `claude`, `codex`, `opencode`, `shell`
   are). Integration would go through the generic `shell` runner, losing
   clawk's auth/state auto-wiring for these harnesses and effectively
@@ -101,5 +101,5 @@ gets non-experimental Linux support, but is not scheduled work today.
 The statement "Trellage Native profiles isolate agent state but are not
 containers or security boundaries" (previously universal) now has two
 exceptions: `cdx` and `grx` enable a real native OS-level sandbox as
-described above. `cldx`, `cpx`, `jcx`, `omp`, and `prx` remain exactly as
+described above. `cldx`, `cpx`, `jcx`, `omp`, `picx`, and `prx` remain exactly as
 that statement describes.
