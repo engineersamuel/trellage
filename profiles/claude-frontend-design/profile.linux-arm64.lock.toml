@@ -8005,8 +8005,8 @@ plugin_versions = { "taste-skill" = "1.0.0" }
 repository = "https://github.com/leonxlnx/taste-skill.git"
 ref = "main"
 select = ["taste-skill"]
-commit = "72e299530e2eb31ed8da06181bc19f6c18a00821"
-integrity = "sha256:b2a3ef79ac222d61b52188640613551141f3bb990cbb6a576cc043e107a6c7ac"
+commit = "ccbc15639c97057cbfcf32ecebc38ef716e4bb37"
+integrity = "sha256:a9b9c6265ccd6688fbdf676de0073e47d14d66b293ce36bf8a145e6f67baaf7b"
 
 [[sources.files]]
 path = ".claude-plugin/marketplace.json"
@@ -8134,7 +8134,7 @@ sha256 = "sha256:4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326d
 
 [[sources.files]]
 path = "README.md"
-sha256 = "sha256:c36548efd83ef69eb889230764f1c19a446f20cf9d76b4e2c0cb1ce0d09974a7"
+sha256 = "sha256:6e3c818b8c561e16a743cc68143d14dfa9f5da69f834c389f278657d60ca37be"
 
 [[sources.files]]
 path = "research/laziness/findings/empirical-results.md"
@@ -8526,4 +8526,4 @@ url = "oci://quay.io/skopeo/stable"
 [image]
 base = "node:22.17.0-bookworm-slim"
 base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "sha256:54d453c4dce6f448a801e7517a0d47c0525205508fce14d01fc94f34339fb479"
+final_digest = "sha256:d673d92e025d04f0e704e25ac322d823cdd56b9be84d4200e9bf213a8a0bf52b"
