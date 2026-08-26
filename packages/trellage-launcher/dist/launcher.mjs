@@ -54673,30 +54673,6 @@ var detailRows = (entry, model, columns, forwardedModel) => {
   ];
 };
 
-// src/table-layout.ts
-var longest = (values, heading) => Math.max(heading.length, ...values.map((value) => value.length));
-var bounded = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
-var tableColumns = (entries, terminalWidth) => {
-  const available = Math.max(30, terminalWidth - 6);
-  const profile = bounded(
-    longest(entries.map(({ profile: profile2 }) => profile2), "PROFILE") + 2,
-    12,
-    Math.max(12, Math.floor(available * 0.42))
-  );
-  const harness = bounded(
-    longest(entries.map(({ harness: harness2 }) => harness2), "HARNESS") + 2,
-    10,
-    Math.max(10, Math.floor(available * 0.25))
-  );
-  const sandbox = entries.some((entry) => entry.sandbox !== void 0) ? "SANDBOX".length + 2 : 0;
-  return {
-    profile,
-    harness,
-    sandbox,
-    model: Math.max(8, available - profile - harness - sandbox)
-  };
-};
-
 // src/state.ts
 var compareText = (left, right) => left.localeCompare(right, "en");
 var compareEntries = (sort) => (left, right) => {
@@ -54758,44 +54734,8 @@ var selectModel = (state, entryId, model) => {
   return { ...state, modelByEntry: { ...state.modelByEntry, [entryId]: model } };
 };
 
-// src/cli.tsx
-var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
-var readCatalog = async () => {
-  const path = process.argv[2];
-  if (path !== void 0) return readFile(path, "utf8");
-  const chunks = [];
-  let length = 0;
-  for await (const chunk of process.stdin) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    length += buffer.length;
-    if (length > 1024 * 1024) throw new Error("stdin exceeds 1048576 bytes");
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-};
-var selectedEntry = (state) => state.entries.find(({ id }) => id === state.selectedId);
-var detailColors = {
-  Alias: "green",
-  Binary: "blue",
-  Arguments: "yellow",
-  Description: "cyan",
-  Harness: "yellow",
-  Model: "magenta",
-  Plugins: "blue",
-  Skills: "green",
-  MCPs: "cyan",
-  Sandbox: "green",
-  Status: "gray"
-};
-var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "wrap", children: [
-  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
-    row.label,
-    ":",
-    " "
-  ] }),
-  row.text
-] });
-var isSubmitInput = (input, key) => key.return || input === "\r" || input === "\n" || input === "";
+// src/input.ts
+var isSubmitInput = (input, key) => key.return || input === "\r" || input === "\n";
 var handleDetailsInput = (input, key, expandedDetailCount, rows, setShowingDetails, setDetailOffset) => {
   const maximumOffset = Math.max(0, expandedDetailCount - Math.max(1, rows - 4));
   if (key.escape || input === "D" || input === "q") {
@@ -54839,14 +54779,16 @@ var handleModelInput = (input, key, selected, modelIndex, updateState, setChoosi
     }
   }
 };
-var handleSearchInput = (input, key, updateState, setSearching) => {
+var handleSearchInput = (input, key, updateState, setSearching, finish) => {
   if (key.upArrow) {
     updateState((current) => moveSelection(current, -1));
   } else if (key.downArrow) {
     updateState((current) => moveSelection(current, 1));
   } else if (key.backspace || key.delete) {
     updateState((current) => setQuery(current, current.query.slice(0, -1)));
-  } else if (key.escape || isSubmitInput(input, key)) {
+  } else if (isSubmitInput(input, key)) {
+    finish("current");
+  } else if (key.escape) {
     setSearching(false);
   } else if (!key.ctrl && !key.meta && input.length > 0) {
     updateState(
@@ -54885,6 +54827,68 @@ var handleCommandInput = (input, key, state, selected, herdrAvailable, updateSta
     finish("current");
   }
 };
+
+// src/table-layout.ts
+var longest = (values, heading) => Math.max(heading.length, ...values.map((value) => value.length));
+var bounded = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
+var tableColumns = (entries, terminalWidth) => {
+  const available = Math.max(30, terminalWidth - 6);
+  const profile = bounded(
+    longest(entries.map(({ profile: profile2 }) => profile2), "PROFILE") + 2,
+    12,
+    Math.max(12, Math.floor(available * 0.42))
+  );
+  const harness = bounded(
+    longest(entries.map(({ harness: harness2 }) => harness2), "HARNESS") + 2,
+    10,
+    Math.max(10, Math.floor(available * 0.25))
+  );
+  const sandbox = entries.some((entry) => entry.sandbox !== void 0) ? "SANDBOX".length + 2 : 0;
+  return {
+    profile,
+    harness,
+    sandbox,
+    model: Math.max(8, available - profile - harness - sandbox)
+  };
+};
+
+// src/cli.tsx
+var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+var readCatalog = async () => {
+  const path = process.argv[2];
+  if (path !== void 0) return readFile(path, "utf8");
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    length += buffer.length;
+    if (length > 1024 * 1024) throw new Error("stdin exceeds 1048576 bytes");
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+};
+var selectedEntry = (state) => state.entries.find(({ id }) => id === state.selectedId);
+var detailColors = {
+  Alias: "green",
+  Binary: "blue",
+  Arguments: "yellow",
+  Description: "cyan",
+  Harness: "yellow",
+  Model: "magenta",
+  Plugins: "blue",
+  Skills: "green",
+  MCPs: "cyan",
+  Sandbox: "green",
+  Status: "gray"
+};
+var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "wrap", children: [
+  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
+    row.label,
+    ":",
+    " "
+  ] }),
+  row.text
+] });
 var DetailsView = ({
   selected,
   expandedDetails,
@@ -54982,7 +54986,7 @@ var ModelChooser = ({
 var ShortcutHelp = ({
   searching,
   herdrAvailable
-}) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5/Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""} \xB7 Esc` });
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""} \xB7 Esc` });
 var SelectionView = ({
   catalog,
   state,
@@ -55101,7 +55105,7 @@ var Launcher = ({
       return;
     }
     if (searching) {
-      handleSearchInput(input, key, updateState, setSearching);
+      handleSearchInput(input, key, updateState, setSearching, finish);
       return;
     }
     handleCommandInput(

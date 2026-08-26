@@ -392,7 +392,7 @@ cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
 TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-select.out" \
-  'codex\x1e\r\x1el' '' "$prototype_root/bin/trx" '--source-mode' \
+  'codex\x1e\r' '' "$prototype_root/bin/trx" '--source-mode' \
   || fail 'worktree source type-to-filter selection failed'
 python3 - "$argument_log" <<'PY' || fail 'worktree source arguments were not forwarded'
 import pathlib
@@ -406,7 +406,7 @@ PY
 TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-slash-select.out" \
-  '/codex\x1e\r\x1el' '' "$prototype_root/bin/trx" '--source-mode' \
+  '/codex\x1e\r' '' "$prototype_root/bin/trx" '--source-mode' \
   || fail 'worktree source leading-slash selection failed'
 python3 - "$argument_log" <<'PY' || fail 'worktree source leading-slash arguments differ'
 import pathlib
@@ -420,7 +420,7 @@ PY
 TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-backspace-select.out" \
-  'codex\x1e\x7f\x1e\x7f\x1e\x7f\x1e\x7f\x1e\x7f\x1ecopilot\x1e\r\x1el' \
+  'codex\x1e\x7f\x1e\x7f\x1e\x7f\x1e\x7f\x1e\x7f\x1ecopilot\x1e\r' \
   '' "$prototype_root/bin/trx" '--source-mode' \
   || fail 'worktree source Backspace filtering failed'
 python3 - "$argument_log" <<'PY' || fail 'worktree source Backspace selection launched the wrong profile'
@@ -638,7 +638,7 @@ status=0
 TRX_ARGUMENT_LOG="$argument_log" \
   TRX_CHILD_EXIT=37 \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/child-exit.out" \
-  'co\x1e\x1b[B\x1e\r\x1el' '' "$fixture_bin/trx" || status=$?
+  'co\x1e\x1b[B\x1e\r' '' "$fixture_bin/trx" || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status instead of 37"
 python3 - "$argument_log" <<'PY' || fail 'filtered arrow selection did not launch the next profile'
 import pathlib
@@ -659,7 +659,7 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/cancel.out" \
 status=0
 TRX_WAIT=1 \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/signal.out" \
-  '\r\x1el' 'CHILD_READY' "$fixture_bin/trx" || status=$?
+  '\r' 'CHILD_READY' "$fixture_bin/trx" || status=$?
 [[ "$status" == 143 ]] || fail "terminated child exited $status instead of 143"
 
 mv "$fixture_bin/grx" "$fixture_bin/grx.absent"
