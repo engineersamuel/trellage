@@ -61,6 +61,7 @@ chmod 666 "$seed_commit"
 cat >"$seed/tools/headlong-init" <<'FAKE_INIT'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "${HEADLONG_NO_THINKERS-}" \
   "${HEADLONG_NO_DASH-}" \
@@ -110,6 +111,7 @@ chmod 755 "$seed/tools/headlong-init"
 cat >"$seed/bin/persona" <<'FAKE_PERSONA'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 if [[ "${1:-}" == dash ]]; then
   printf 'dash\n' >>"$TRELLAGE_TEST_OUTPUT/dash.log"
   mkdir -p "$HEADLONG_HOME/run"
@@ -125,6 +127,7 @@ chmod 755 "$seed/bin/persona"
 cat >"$seed/install.sh" <<'FAKE_INSTALL'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Mirror upstream install.sh: only a checkout (bin/shellm present) may
 # install directly; anything else would be the forbidden network bootstrap.
@@ -152,6 +155,7 @@ chmod 755 "$seed/install.sh"
 cat >"$fake_bin/attach-shell" <<'FAKE_SHELL'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 # The public seam: an attached shell must never observe a provider
 # credential, regardless of which phase or branch preceded it.
 for var in ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY \
