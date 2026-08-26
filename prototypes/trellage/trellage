@@ -314,6 +314,7 @@ prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
 dependency_bootstrap="$prototype_dir/../../scripts/bootstrap-development-dependencies.sh"
 [[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
+guide_core_package_dir="$(cd "$prototype_dir/../../packages/trellage-guide-core" && pwd -P)"
 compiler="$compiler_package_dir/dist/cli.js"
 headless_event_bridge="$compiler_package_dir/dist/headless-event-bridge.js"
 compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
@@ -324,6 +325,9 @@ picker="$prototype_dir/../../packages/trellage-launcher/dist/launcher.mjs"
 profile_compiler_is_fresh() {
   local actual_fingerprint expected_fingerprint
   [[ -f "$compiler" && -x "$compiler_fingerprint" ]] || return 1
+  [[ -f "$guide_core_package_dir/node_modules/yaml/package.json" \
+    || -f "$prototype_dir/../../packages/node_modules/yaml/package.json" \
+    || -f "$prototype_dir/../../node_modules/yaml/package.json" ]] || return 1
   expected_fingerprint="$($compiler_fingerprint)" || return 1
   actual_fingerprint="$(head -n 1 "$compiler_stamp" 2>/dev/null || true)"
   [[ "$actual_fingerprint" == "$expected_fingerprint" ]]
@@ -353,6 +357,12 @@ ensure_profile_compiler() {
     printf 'trellage: installing profile compiler dependencies\n' >&2
     (cd "$compiler_package_dir" && run_lifecycle_command npm ci) \
       || fail "profile compiler dependency installation failed in $compiler_package_dir"
+  fi
+  if [[ ! -x "$guide_core_package_dir/node_modules/.bin/tsc" \
+    || ! -f "$guide_core_package_dir/node_modules/yaml/package.json" ]]; then
+    printf 'trellage: installing profile guide dependencies\n' >&2
+    (cd "$guide_core_package_dir" && run_lifecycle_command npm ci) \
+      || fail "profile guide dependency installation failed in $guide_core_package_dir"
   fi
 
   printf 'trellage: building profile compiler\n' >&2

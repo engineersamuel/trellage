@@ -38,15 +38,31 @@ usage() {
 Usage:
   trx
   trx list [--json]
+  trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL]
   trx inventory LAUNCHER PROFILE --json
   trx skills status
   trx skills update
 
 Select an installed native harness/profile interactively, or list available
-profiles. Bare trx opens the launcher. `trx inventory` reports the live
+profiles. Bare trx opens the launcher. `trx guide` recommends a profile and
+builds prompt candidates; its JSON mode is non-interactive and has no launch
+or Herdr side effects. `trx inventory` reports the live
 readiness (healthy/unhealthy/not-setup) of a single profile by delegating to
 that launcher's own `inventory` command; it is not called during `list` or
 interactive selection so those stay fast.
+EOF
+}
+
+guide_usage() {
+  cat <<'EOF'
+Usage:
+  trx guide [INTENT]
+  trx guide --intent INTENT [--model MODEL] [--effort LEVEL]
+  trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
+
+PROFILE_REF is native:<launcher>/<profile> or sandbox:<profile>. JSON mode
+uses schemaVersion 1, has no launch or Herdr side effects, and accepts a JSON
+request on stdin when --intent is omitted.
 EOF
 }
 
@@ -356,6 +372,7 @@ list_json=0
 inventory_launcher=''
 inventory_profile_arg=''
 skills_action=''
+guide_args=()
 case "${1-}" in
   -h|--help|help)
     usage
@@ -371,6 +388,15 @@ case "${1-}" in
     else
       die 'list accepts only --json'
     fi
+    ;;
+  guide)
+    mode='guide'
+    shift
+    if [[ "$#" -eq 1 && ("$1" == -h || "$1" == --help || "$1" == help) ]]; then
+      guide_usage
+      exit 0
+    fi
+    guide_args=("$@")
     ;;
   inventory)
     mode='inventory'
@@ -422,6 +448,15 @@ if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
   [[ "$runtime" == "$source_root" ]] \
     || die "trx source runtime differs from TRELLAGE_TRX_SOURCE_ROOT: $runtime"
   picker_path="$runtime/../../packages/trellage-launcher/dist/launcher.mjs"
+  guide_root="$runtime/../../profile-guides"
+  if [[ -n "${TRELLAGE_TRX_GUIDE_ROOT-}" ]]; then
+    [[ "$TRELLAGE_TRX_GUIDE_ROOT" == /* ]] \
+      || die "TRELLAGE_TRX_GUIDE_ROOT must be absolute: $TRELLAGE_TRX_GUIDE_ROOT"
+    [[ -d "$TRELLAGE_TRX_GUIDE_ROOT" && ! -L "$TRELLAGE_TRX_GUIDE_ROOT" ]] \
+      || die "unsafe TRELLAGE_TRX_GUIDE_ROOT: $TRELLAGE_TRX_GUIDE_ROOT"
+    guide_root="$(canonical_directory "$TRELLAGE_TRX_GUIDE_ROOT")" \
+      || die "cannot resolve TRELLAGE_TRX_GUIDE_ROOT: $TRELLAGE_TRX_GUIDE_ROOT"
+  fi
   dependency_bootstrap="$runtime/../../scripts/bootstrap-development-dependencies.sh"
   floating_skills_manager="$runtime/../../scripts/floating-skills.mjs"
   floating_skills_catalog="$runtime/../../skills.json"
@@ -433,6 +468,7 @@ else
   [[ "$(<"$runtime/.managed-by-trellage-router")" == "$ownership_value" ]] \
     || die 'invalid trx ownership marker'
   dependency_bootstrap="$runtime/lib/bootstrap-development-dependencies.sh"
+  guide_root="$runtime/share/profile-guides"
   floating_skills_manager="$canonical_home/.local/share/trellage/common/floating-skills-runtime/floating-skills.mjs"
   floating_skills_catalog="$canonical_home/.local/share/trellage/common/floating-skills-runtime/skills.json"
 fi
@@ -548,12 +584,102 @@ if [[ "$mode" == list ]]; then
     "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
-    printf '%s\n' "$profile_list"
+    command -v node >/dev/null 2>&1 || die 'required command not found: node'
+    [[ -f "$picker_path" && ! -L "$picker_path" ]] \
+      || die 'Ink launcher is missing or unsafe'
+    [[ -d "$guide_root" && ! -L "$guide_root" ]] \
+      || die 'profile guide registry is missing or unsafe'
+    printf '%s\n' "$profile_list" \
+      | node "$picker_path" enrich-native-list "$guide_root" \
+      || die 'could not enrich profile list with guides'
   else
     jq -r '.profiles[] | [(.launcher + "/" + .name), .description] | @tsv' \
       <<<"$profile_list" || die 'could not format profile list'
   fi
   exit 0
+fi
+
+if [[ "$mode" == guide ]]; then
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  [[ -f "$picker_path" && ! -L "$picker_path" ]] \
+    || die 'Ink launcher is missing or unsafe'
+  [[ -d "$guide_root" && ! -L "$guide_root" ]] \
+    || die 'profile guide registry is missing or unsafe'
+
+  profile_list="$(build_profile_list \
+    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog")" \
+    || die 'could not build native profile list'
+
+  if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
+    sandbox_cli="$runtime/../trellage/trellage"
+  else
+    sandbox_cli="$(command -v trellage || true)"
+  fi
+  [[ -n "$sandbox_cli" && -x "$sandbox_cli" ]] \
+    || die 'trellage command not found; guide mode requires the Sandbox catalog'
+  sandbox_cli="$(resolve_file "$sandbox_cli")" \
+    || die "cannot resolve trellage command: $sandbox_cli"
+  [[ -f "$sandbox_cli" && -x "$sandbox_cli" ]] \
+    || die "trellage command is not an executable regular file: $sandbox_cli"
+
+  guide_catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx-guide.XXXXXX")" \
+    || die 'cannot create guide catalog workspace'
+  cleanup_guide_catalog_tmp() {
+    rm -rf -- "$guide_catalog_tmp"
+  }
+  trap cleanup_guide_catalog_tmp EXIT HUP INT TERM
+
+  printf '%s\n' "$profile_list" \
+    | node "$picker_path" enrich-native-list "$guide_root" \
+      >"$guide_catalog_tmp/native-public.json" \
+    || die 'could not enrich native profile list with guides'
+  jq \
+    --arg cpxPath "$cpx" \
+    --arg cdxPath "$cdx" \
+    --arg cldxPath "$cldx" \
+    --arg grxPath "$grx" \
+    --arg jcxPath "$jcx" \
+    --arg ompPath "$omp" \
+    --arg picxPath "$picx" \
+    --arg prxPath "$prx" '
+      .profiles |= map(
+        . + {
+          commandPath:
+            (if .launcher == "cpx" then $cpxPath
+             elif .launcher == "cdx" then $cdxPath
+             elif .launcher == "cldx" then $cldxPath
+             elif .launcher == "grx" then $grxPath
+             elif .launcher == "jcx" then $jcxPath
+             elif .launcher == "omp" then $ompPath
+             elif .launcher == "picx" then $picxPath
+             elif .launcher == "prx" then $prxPath
+             else error("unknown native launcher")
+             end)
+        }
+      )
+    ' "$guide_catalog_tmp/native-public.json" >"$guide_catalog_tmp/native.json" \
+    || die 'could not add validated native launcher paths to the guide catalog'
+  "$sandbox_cli" list --json-full >"$guide_catalog_tmp/sandbox.json" \
+    || die 'could not load the Sandbox profile guide catalog'
+  jq -n \
+    --arg sandboxCommandPath "$sandbox_cli" \
+    --slurpfile native "$guide_catalog_tmp/native.json" \
+    --slurpfile sandbox "$guide_catalog_tmp/sandbox.json" \
+    '{
+      schemaVersion: 1,
+      sandboxCommandPath: $sandboxCommandPath,
+      native: $native[0].profiles,
+      sandbox: $sandbox[0].profiles
+    }' >"$guide_catalog_tmp/combined.json" \
+    || die 'could not combine profile guide catalogs'
+
+  guide_status=0
+  node "$picker_path" guide "$guide_root" "${guide_args[@]}" \
+    3<"$guide_catalog_tmp/combined.json" || guide_status=$?
+  cleanup_guide_catalog_tmp
+  trap - EXIT HUP INT TERM
+  exit "$guide_status"
 fi
 
 command -v node >/dev/null 2>&1 || die 'required command not found: node'

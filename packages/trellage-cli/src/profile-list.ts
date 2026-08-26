@@ -1,4 +1,5 @@
 import type { ProfileChoice } from "./profile-discovery.js"
+import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { resolveSandboxHeadlessCapabilities, type HeadlessCapabilitiesV1 } from "./headless-capabilities.js"
 import type { HerdrCompatibilityEntry } from "./herdr-compatibility.js"
 import type { ProfileReadiness } from "./profile-readiness.js"
@@ -8,6 +9,7 @@ export interface SimplifiedProfileList {
   readonly profiles: ReadonlyArray<{
     readonly name: string
     readonly description: string
+    readonly guide: ProfileGuideV1
     // Trellage Sandbox profiles always execute inside a locked, built Docker
     // container, so every entry is implicitly sandboxed regardless of harness.
     readonly sandbox: true
@@ -17,6 +19,7 @@ export interface SimplifiedProfileList {
 export interface FullProfileListEntry {
   readonly name: string
   readonly description: string
+  readonly guide: ProfileGuideV1
   readonly path: string
   readonly supportedPlatforms: ReadonlyArray<string>
   readonly harness: ProfileChoice["harness"]
@@ -56,15 +59,30 @@ const singleLine = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim()
 
-export const toSimplifiedList = (choices: ReadonlyArray<ProfileChoice>): SimplifiedProfileList => ({
+const guideAt = (guides: ReadonlyArray<ProfileGuideV1>, index: number, name: string): ProfileGuideV1 => {
+  const guide = guides[index]
+  if (guide === undefined) throw new Error(`missing projected profile guide for ${name}`)
+  return guide
+}
+
+export const toSimplifiedList = (
+  choices: ReadonlyArray<ProfileChoice>,
+  guides: ReadonlyArray<ProfileGuideV1>,
+): SimplifiedProfileList => ({
   schemaVersion: 1,
-  profiles: choices.map(({ name, description }) => ({ name, description, sandbox: true as const })),
+  profiles: choices.map(({ name, description }, index) => ({
+    name,
+    description,
+    guide: guideAt(guides, index, name),
+    sandbox: true as const,
+  })),
 })
 
 const untestedCompatibility: HerdrCompatibilityEntry = { status: "untested" }
 
 export const toFullList = (
   choices: ReadonlyArray<ProfileChoice>,
+  guides: ReadonlyArray<ProfileGuideV1>,
   readiness: ReadonlyArray<ProfileReadiness> = [],
   herdrCompatibility: ReadonlyArray<HerdrCompatibilityEntry> = [],
 ): FullProfileList => ({
@@ -74,6 +92,7 @@ export const toFullList = (
     return {
       name: choice.name,
       description: choice.description,
+      guide: guideAt(guides, index, choice.name),
       path: choice.value,
       supportedPlatforms: choice.supported_platforms,
       harness: choice.harness,

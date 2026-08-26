@@ -122,6 +122,13 @@ trellage list --json
 trellage list --json-full
 ```
 
+Both JSON forms include a nested `guide` object for each profile. The examples,
+workflows, prerequisites, and prompt templates are authored in
+`profile-guides/sandbox/*.md`; JSON is only the runtime projection. Human list
+output stays concise. A worktree-local `profiles/<name>/profile.toml` must pair
+with `profile-guides/sandbox/<name>.md` in that worktree before it can appear in
+JSON or guide mode.
+
 The repository-root `mise.toml` prepends `prototypes/trellage` to `PATH`, so an
 activated mise shell resolves a worktree-local `trellage` without changing
 directories. Trust the root config once; mise shares that trust with linked Git
@@ -466,7 +473,7 @@ machine:
    - `prx` (Prime Agent) needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
      `uv`** (`mise use -g uv` if it is not already on `PATH`) to bootstrap its
      Python kernel venv.
-3. **`trx` requires every one of the seven launchers to be installed** before
+3. **`trx` requires every one of the eight launchers to be installed** before
    it will list or launch anything — it errors with `required launcher not
    found on PATH: <name>` otherwise. If you only use a subset of harnesses,
    skip `trx` and run that launcher's binary (`cpx`, `grx`, …) directly
@@ -663,6 +670,8 @@ available launcher/profile pairs or use one flat picker:
 trx
 trx list
 trx list --json
+trx guide
+trx guide "Write a LinkedIn post about AI agents"
 trx --model gpt-5.6-terra
 ```
 
@@ -673,10 +682,12 @@ replacing the installed native command:
 mise run trx
 mise run trx -- list
 mise run trx -- list --json
+mise run trx -- guide "Write a LinkedIn post about AI agents"
 ```
 
 `trx list` prints `launcher/profile` plus the catalog description; `--json`
-returns the same discovery data with launcher and harness identity. `trx` reads
+returns the same discovery data with launcher and harness identity plus a
+nested guide projected from `profile-guides/native/*/*.md`. `trx` reads
 the launchers' declared catalogs before listing or opening the picker. Picker
 rows show `harness / profile`; the detail pane shows the resolved launcher alias,
 absolute binary path, exact JSON argument vector, catalog metadata, and readiness
@@ -689,6 +700,47 @@ up, repair, update, call a model, use the network, or mutate profile state.
 The native `jcx` launcher runs jcode against `copilot-proxy-rs`, defaulting to
 `gpt-5.6-sol` with `medium` reasoning in an isolated `JCODE_HOME`. Install and
 manage it from `prototypes/trellage-jcode-profiles`.
+
+### Profile and prompt guide
+
+Bare `trx` remains the fast, model-free profile search. `trx guide` is a
+separate Ink flow that matches an intent across both Trellage Native and
+Trellage Sandbox profiles, compares three recommendations, and creates three
+editable prompt candidates. It uses `mai-code-1.1-flash` with medium reasoning
+by default. Override the model or effort only when needed:
+
+```bash
+trx guide --intent "Turn a technical outline into a LinkedIn post"
+trx guide --intent "Review this architecture" --model mai-code-1.1-flash --effort medium
+```
+
+The guide shows the exact command and asks for confirmation before it starts a
+profile, creates a Herdr pane, or creates a Herdr worktree. A profile receives
+`-p` only when its published headless contract supports prompt input.
+Otherwise, the guide starts the interactive profile and shows the prompt for
+manual paste, or sends it through the Herdr agent API after the agent is idle.
+
+Agent Skills can use the side-effect-free JSON API:
+
+```bash
+trx guide --intent "Write a post about AI agents" --json
+trx guide --intent "Write a post about AI agents" \
+  --profile sandbox:claude-social-media --json
+printf '%s' \
+  '{"schemaVersion":1,"intent":"Write a post about AI agents"}' \
+  | trx guide --json
+```
+
+JSON mode does not require a TTY and never launches a profile or changes
+Herdr. The stdin object accepts `schemaVersion`, `intent`, and optional
+`profile`, `model`, and `effort` fields. Match responses contain
+`phase: "match"` and exactly three enriched `recommendations`. Generation
+responses contain `phase: "generation"`, the selected `profile`, and exactly
+three prompt `candidates` with path-free command previews. Interactive model
+failures can be retried or replaced with deterministic literal/template
+fallbacks. Model sessions have no tools, repository attachments, file
+tracking, skill loading, or persistent history. Guide content and user intent
+are sent only to the selected Copilot model.
 
 The native `prx` launcher runs Prime Agent against `copilot-proxy-rs`, pinning
 the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic

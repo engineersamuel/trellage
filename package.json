@@ -17,16 +17,24 @@
     "packages/trellage-cli/tsconfig.json",
     "packages/trellage-cli/tsconfig.build.json",
     "packages/trellage-cli/dist/.source-hash",
+    "packages/trellage-guide-core/dist/**/*",
+    "packages/trellage-guide-core/package.json",
+    "packages/trellage-guide-core/package-lock.json",
+    "packages/trellage-guide-core/src",
+    "packages/trellage-guide-core/tsconfig.json",
+    "packages/trellage-guide-core/tsconfig.build.json",
     "packages/trellage-launcher/dist/**/*",
+    "packages/trellage-launcher/prompts",
+    "profile-guides",
     "profiles",
     "prototypes",
     "scripts/build-profile-compiler.sh",
     "scripts/profile-compiler-fingerprint.sh"
   ],
   "scripts": {
-    "build": "npm run build --prefix packages/trellage-launcher",
+    "build": "npm run build --prefix packages/trellage-guide-core && npm run build --prefix packages/trellage-launcher",
     "prepare": "npm run build",
-    "test": "npm test --prefix packages/trellage-launcher"
+    "test": "npm test --prefix packages/trellage-guide-core && npm test --prefix packages/trellage-launcher"
   },
   "dependencies": {
     "@effect/cli": "0.76.0",
@@ -34,6 +42,7 @@
     "@effect/platform-node": "0.108.0",
     "@effect/printer": "0.50.0",
     "@effect/printer-ansi": "0.50.0",
+    "@github/copilot-sdk": "1.0.11",
     "effect": "3.22.1",
     "esbuild": "0.27.0",
     "ink": "7.1.1",
@@ -42,7 +51,8 @@
     "react-devtools-core": "7.0.1",
     "skills": "1.5.19",
     "smol-toml": "1.7.0",
-    "varlock": "1.13.0"
+    "varlock": "1.13.0",
+    "yaml": "2.9.0"
   },
   "engines": {
     "node": ">=22"
@@ -50,5 +60,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/engineersamuel/trellage.git"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
   }
 }

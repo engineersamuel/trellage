@@ -24,6 +24,7 @@ import { environmentMetadata } from "./environment.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
 import { resolveSandboxHeadlessCapabilities } from "./headless-capabilities.js"
 import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
+import { loadSandboxProfileGuides } from "./profile-guides.js"
 import { resolveProfilesReadiness } from "./profile-readiness.js"
 import { containerHerdrCompatibility, loadHerdrCompatibilityLedger } from "./herdr-compatibility.js"
 import { selectProfilePath } from "./selection.js"
@@ -252,13 +253,19 @@ const list = Command.make("list", { json, jsonFull, full }, ({ json: asJson, jso
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
     if (asJson && !asFull) {
-      return yield* Console.log(JSON.stringify(toSimplifiedList(choices)))
+      const guides = yield* loadSandboxProfileGuides(repositoryRoot, choices).pipe(
+        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+      )
+      return yield* Console.log(JSON.stringify(toSimplifiedList(choices, guides)))
     }
     if (asJsonFull || asFull) {
+      const guides = yield* loadSandboxProfileGuides(repositoryRoot, choices).pipe(
+        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+      )
       const readiness = yield* resolveProfilesReadiness(choices)
       const ledger = yield* loadHerdrCompatibilityLedger(repositoryRoot)
       const herdrCompatibility = choices.map((choice) => containerHerdrCompatibility(ledger, choice.name))
-      return yield* Console.log(JSON.stringify(toFullList(choices, readiness, herdrCompatibility)))
+      return yield* Console.log(JSON.stringify(toFullList(choices, guides, readiness, herdrCompatibility)))
     }
     const human = formatProfileListHuman(choices)
     if (human.length > 0) {
