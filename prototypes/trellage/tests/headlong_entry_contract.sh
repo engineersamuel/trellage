@@ -159,6 +159,10 @@ ln -sf "$script_dir/tools/headlong-init" "$3/headlong-init"
 ln -sf "$script_dir/bin/persona" "$3/persona"
 FAKE_INSTALL
 chmod 755 "$seed/install.sh"
+# Mutation cases mount these host-created fixtures as UID 10001. Keep the
+# production-facing mounts read-only, but let the test owner inside Linux
+# containers revise the fixture between runs.
+chmod -R a+rwX "$seed" "$skill_seed"
 
 cat >"$fake_bin/attach-shell" <<'FAKE_SHELL'
 #!/usr/bin/env bash
