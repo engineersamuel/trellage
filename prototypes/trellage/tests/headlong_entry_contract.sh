@@ -449,9 +449,6 @@ in_fixture '
 '
 grep -Fqx $'collision\t0' "$skill_seed/managed-skills.tsv" \
   || fail 'collision fixture manifest was not updated'
-[[ -f "$home/.headlong/identities/ada/skills/collision" \
-  && ! -L "$home/.headlong/identities/ada/skills/collision" ]] \
-  || fail 'collision fixture did not create an unmanaged regular file'
 in_fixture '
   test -f /home/agent/.headlong/identities/ada/skills/collision
   test ! -L /home/agent/.headlong/identities/ada/skills/collision
