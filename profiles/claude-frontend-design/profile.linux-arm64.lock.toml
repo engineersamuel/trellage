@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:84e121bd8c9d931dac1a28f113ae67259b5cdcf209c029e76b94b227e341bd09"
+profile_hash = "sha256:046a377a1970ce8fff5bbf621a696b16c642454c072aec4dda8cfeabda309035"
 
 [[sources]]
 kind = "plugin"

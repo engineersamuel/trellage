@@ -4,6 +4,7 @@
     "engineersamuel": {
       "repository": "https://github.com/engineersamuel/skills.git",
       "select": ["*"],
+      "exclude": ["deja-history"],
       "allowWildcard": true,
       "allowExecutables": true
     },

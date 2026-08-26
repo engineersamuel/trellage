@@ -163,7 +163,7 @@ default = true
 - Every new Trellage Sandbox profile under `profiles/` MUST include
   `sandbox-common` in `skill_bundles`. This bundle supplies Caveman as an
   always-on skill, the selected mattpocock skills, `show-me`, and every skill
-  from `engineersamuel/skills`.
+  from `engineersamuel/skills` except cataloged exclusions.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
 - `skills.json` is the only skill-source allowlist. Skill entries MUST NOT
   contain a ref, commit, digest, or fetched timestamp. Third-party selections

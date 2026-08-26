@@ -99,6 +99,7 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.equal(new Set(ompCommunityNames).size, 49)
   assert.ok(catalog.sources["dsebban-omp"].select.includes("poteto-mode"))
   assert.ok(!catalog.sources["cursor-pstack"].select.includes("poteto-mode"))
+  assert.deepEqual(catalog.sources.engineersamuel.exclude, ["deja-history"])
   assert.doesNotMatch(source, /"(?:ref|commit|integrity|digest|fetchedAt)"\s*:/)
   assert.throws(
     () =>
@@ -117,6 +118,42 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
       ),
     /unknown skill source policy ref/,
   )
+})
+
+test("wildcard exclusions do not enter a generated snapshot", async () => {
+  const root = await temporaryRoot()
+  const repository = path.join(root, "repository")
+  await initRepository(repository)
+  for (const name of ["deja-history", "keep-me"]) {
+    const directory = path.join(repository, ".omp", "skills", name)
+    await mkdir(directory, { recursive: true })
+    await writeFile(path.join(directory, "SKILL.md"), `---\nname: ${name}\n---\n\nfixture\n`)
+  }
+  await commit(repository, "add wildcard skills")
+
+  const output = path.join(root, "snapshot")
+  await stageLatest({
+    catalog: {
+      schema: 1,
+      sources: {
+        fixture: {
+          id: "fixture",
+          repository,
+          select: ["*"],
+          exclude: ["deja-history"],
+          adapter: "omp-native",
+          alwaysOn: false,
+          allowExecutables: false,
+        },
+      },
+      bundles: { test: ["fixture"] },
+    },
+    bundleIds: ["test"],
+    destination: output,
+  })
+
+  assert.deepEqual((await readFile(path.join(output, "managed-skills.txt"), "utf8")).trim().split("\n"), ["keep-me"])
+  assert.equal(await lstat(path.join(output, "skills", "deja-history")).catch(() => undefined), undefined)
 })
 
 test("first use installs, later use is offline, and update observes the latest commit", async () => {
