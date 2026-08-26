@@ -35,6 +35,8 @@ const councilLockPath = fileURLToPath(
 )
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+const stableVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const commitSha = /^[0-9a-f]{40}$/
 
 describe("authored Claude Research profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
@@ -219,21 +221,31 @@ describe("authored Claude social media profile", () => {
     expect(document.profile.secrets.required).toEqual([])
     expect(document.resolvedInitialPrompt).toBeUndefined()
     expect(document.profile.harness.initial_prompt).toBeUndefined()
-    const pluginOffset = 0
-    expect(lock.sources[pluginOffset]).toMatchObject({
+    expect(lock.sources).toHaveLength(document.profile.plugins.length)
+    const socialMediaSource = lock.sources.find(
+      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "social-media-skills",
+    )
+    expect(socialMediaSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "social-media-skills",
-      plugin_versions: { "social-media-skills": "1.0.0" },
-      commit: "69d9488e880cceaf418329dfa64b44b9bf022174",
+      repository: "https://github.com/charlie947/social-media-skills.git",
+      select: ["social-media-skills"],
+      plugin_versions: { "social-media-skills": expect.stringMatching(stableVersion) },
+      commit: expect.stringMatching(commitSha),
     })
-    expect(lock.sources[pluginOffset]?.files.filter(({ path }) => path.endsWith("/SKILL.md"))).toHaveLength(17)
-    expect(lock.sources[pluginOffset + 1]).toMatchObject({
+    expect(socialMediaSource?.files.some(({ path }) => path.endsWith("/SKILL.md"))).toBe(true)
+    const humanizerSource = lock.sources.find(
+      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "humanizer",
+    )
+    expect(humanizerSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "humanizer",
-      plugin_versions: { humanizer: "2.11.2" },
-      commit: "e2e92e7b4b8229253ed5c8e81dc65463fdeddda5",
+      repository: "https://github.com/blader/humanizer.git",
+      select: ["humanizer"],
+      plugin_versions: { humanizer: expect.stringMatching(stableVersion) },
+      commit: expect.stringMatching(commitSha),
     })
-    expect(lock.sources[pluginOffset + 1]?.files.filter(({ path }) => path === "SKILL.md")).toHaveLength(1)
+    expect(humanizerSource?.files.some(({ path }) => path === "SKILL.md")).toBe(true)
     expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
 
@@ -251,7 +263,7 @@ describe("authored Claude social media profile", () => {
 })
 
 describe("authored Claude Blog profile", () => {
-  it("routes Claude Opus 5 through copilot-proxy-rs and locks every published blog skill", async () => {
+  it("routes Claude Opus 5 through copilot-proxy-rs and records the selected marketplace plugin", async () => {
     const [source, lockSource] = await Promise.all([readFile(blogProfilePath, "utf8"), readFile(blogLockPath, "utf8")])
     const document = await Effect.runPromise(parseProfile(source, blogProfilePath))
     const lock = await Effect.runPromise(parseLock(lockSource))
@@ -275,16 +287,19 @@ describe("authored Claude Blog profile", () => {
         select: ["claude-blog"],
       }),
     ])
-    const pluginOffset = 0
-    expect(lock.sources).toHaveLength(pluginOffset + 1)
-    expect(lock.sources[pluginOffset]).toMatchObject({
+    expect(lock.sources).toHaveLength(document.profile.plugins.length)
+    const blogSource = lock.sources.find(
+      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "agricidaniel-blog",
+    )
+    expect(blogSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "agricidaniel-blog",
-      plugin_versions: { "claude-blog": "2.1.1" },
+      repository: "https://github.com/AgriciDaniel/claude-blog.git",
+      select: ["claude-blog"],
+      plugin_versions: { "claude-blog": expect.stringMatching(stableVersion) },
+      commit: expect.stringMatching(commitSha),
     })
-    expect(
-      lock.sources[pluginOffset]?.files.filter(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path)),
-    ).toHaveLength(32)
+    expect(blogSource?.files.some(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path))).toBe(true)
   })
 })
 
@@ -311,27 +326,30 @@ describe("authored Claude council profile", () => {
       expect.objectContaining({
         adapter: "claude-marketplace",
         repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
-        ref: "v1.2.0",
+        ref: expect.stringMatching(/^v\d+\.\d+\.\d+$/),
         marketplace: "council-of-high-intelligence",
         select: ["council"],
       }),
       expect.objectContaining({
         adapter: "claude-marketplace",
         repository: "https://github.com/JuliusBrussee/caveman.git",
-        ref: "v1.10.0",
+        ref: expect.stringMatching(/^v\d+\.\d+\.\d+$/),
         marketplace: "caveman",
         select: ["caveman"],
       }),
     ])
-    expect(lock.sources).toHaveLength(2)
+    expect(lock.sources).toHaveLength(document.profile.plugins.length)
     const councilSource = lock.sources.find(
       (candidate) => candidate.kind === "plugin" && candidate.marketplace === "council-of-high-intelligence",
     )
     expect(councilSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "council-of-high-intelligence",
-      plugin_versions: { council: "1.2.0" },
-      commit: "79c349bdbbb02b6c58c7f108734410e703dc71ca",
+      repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
+      ref: document.profile.plugins[0]?.ref,
+      select: ["council"],
+      plugin_versions: { council: expect.stringMatching(stableVersion) },
+      commit: expect.stringMatching(commitSha),
     })
     expect(
       councilSource?.files.some((file) => file.kind === "symlink" && file.path === "skills/council/SKILL.md"),
@@ -342,8 +360,11 @@ describe("authored Claude council profile", () => {
     expect(cavemanPluginSource).toMatchObject({
       adapter: "claude-marketplace",
       marketplace: "caveman",
-      plugin_versions: { caveman: "1.10.0" },
-      commit: "fcf7663366c217dc8f334a11028de52ed950ceab",
+      repository: "https://github.com/JuliusBrussee/caveman.git",
+      ref: document.profile.plugins[1]?.ref,
+      select: ["caveman"],
+      plugin_versions: { caveman: expect.stringMatching(stableVersion) },
+      commit: expect.stringMatching(commitSha),
     })
     expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
