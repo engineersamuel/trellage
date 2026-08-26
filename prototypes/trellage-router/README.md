@@ -47,6 +47,8 @@ trx
 trx --model gpt-5.6-terra
 trx list
 trx list --json
+trx guide
+trx guide --intent "Write a technical LinkedIn post"
 trx skills status
 trx skills update
 ```
@@ -58,16 +60,47 @@ installed `trx`:
 mise run trx
 mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
+mise run trx -- guide --intent "Write a technical LinkedIn post"
 ```
 
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
-`launcher`, `harness`, `name`, `description`, `headless`, `sandbox`, and
-`herdrCompatibility`. `trx` copies each launcher's `headless` object unchanged;
+`launcher`, `harness`, `name`, `description`, `guide`, `headless`, `sandbox`,
+and `herdrCompatibility`. The nested guide is projected from the installed
+Markdown registry; Markdown remains the authored source. `trx` copies each
+launcher's `headless` object unchanged;
 it does not infer headless support from launcher names. Both forms are
 non-interactive and work without a TTY. They validate all eight owned launchers
 and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
+
+`trx guide` is separate from the search-first bare launcher. It loads the
+native and Sandbox JSON catalogs, uses `mai-code-1.1-flash` with medium
+reasoning to rank three profiles, and generates three prompt candidates from
+the selected Markdown guide. The model session has no tools, repository
+attachments, or persistent history. Use `--model` and `--effort` for an
+explicit override.
+
+The non-interactive API is side-effect-free:
+
+```sh
+trx guide --intent "Write a post about AI agents" --json
+trx guide --intent "Write a post about AI agents" \
+  --profile sandbox:claude-social-media --json
+printf '%s' \
+  '{"schemaVersion":1,"intent":"Write a post about AI agents"}' \
+  | trx guide --json
+```
+
+Without `--profile`, JSON mode returns the match phase. With an exact profile
+reference, it returns the generation phase. The stdin object accepts
+`schemaVersion`, `intent`, and optional `profile`, `model`, and `effort`
+fields. Match output has exactly three enriched recommendations. Generation
+output has the selected profile and exactly three prompt candidates with
+path-free command previews. JSON mode never launches a profile or changes
+Herdr. Interactive model failures can use deterministic literal/template
+fallbacks. Interactive guide mode previews the exact command and requires
+confirmation before current-terminal, Herdr-pane, or Herdr-worktree handoff.
 
 The first sorted row is selected when the launcher opens. Start typing to filter
 by profile, harness, or description; no leading `/` is required. The arrow keys

@@ -15,7 +15,20 @@ import {
   type LaunchTarget,
 } from "./input.js"
 import { tableColumns } from "./table-layout.js"
+import { enrichNativeProfileList } from "./native-guide-list.js"
 import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.js"
+import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelConfig } from "./guide-api.js"
+import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
+import { CopilotGuideProvider } from "./copilot-guide-provider.js"
+import { executeGuideUiResult } from "./guide-interactive-execution.js"
+import {
+  createNodeCommandRunner,
+  getHerdrContext,
+  probeHerdrAvailability,
+  type HerdrEnvironment,
+} from "./guide-launch.js"
+import { loadDefaultGuidePrompts } from "./guide-prompts.js"
+import { GuideApp, type GuideUiResult } from "./guide-ui.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -23,9 +36,8 @@ interface LaunchIntent {
   readonly model?: string
 }
 
-const readCatalog = async (): Promise<string> => {
-  const path = process.argv[2]
-  if (path !== undefined) return readFile(path, "utf8")
+const readInput = async (filename: string | undefined): Promise<string> => {
+  if (filename !== undefined) return readFile(filename, "utf8")
   const chunks: Array<Buffer> = []
   let length = 0
   for await (const chunk of process.stdin) {
@@ -471,8 +483,137 @@ const Launcher = ({
   )
 }
 
+const runEnrichNativeList = async (): Promise<void> => {
+  const guideRoot = process.argv[3]
+  if (guideRoot === undefined) throw new Error("enrich-native-list requires GUIDE_ROOT")
+  process.stdout.write(`${await enrichNativeProfileList(await readInput(undefined), guideRoot)}\n`)
+}
+
+const runGuideJsonMode = async (argv: ReadonlyArray<string>, guideRoot: string): Promise<void> => {
+  const args = parseGuideHeadlessArgv(argv)
+  const catalog = readGuideCatalog()
+  const stdinRequest = args.intent === undefined ? await readInput(undefined) : undefined
+  const response = await runGuideJsonCommand({
+    argv,
+    catalog,
+    guideRoot,
+    ...(stdinRequest === undefined ? {} : { stdinRequest }),
+    env: process.env,
+  })
+  process.stdout.write(`${JSON.stringify(response)}\n`)
+}
+
+const herdrEnvironment = (): HerdrEnvironment => ({
+  ...(process.env.HERDR_ENV === undefined ? {} : { HERDR_ENV: process.env.HERDR_ENV }),
+  ...(process.env.HERDR_WORKSPACE_ID === undefined ? {} : { HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID }),
+  ...(process.env.HERDR_PANE_ID === undefined ? {} : { HERDR_PANE_ID: process.env.HERDR_PANE_ID }),
+})
+
+const probeInteractiveHerdr = async (runner: ReturnType<typeof createNodeCommandRunner>): Promise<boolean> => {
+  if (getHerdrContext(herdrEnvironment()) === null) return false
+  try {
+    return await probeHerdrAvailability(runner, { cwd: process.cwd(), timeoutMs: 5_000 })
+  } catch {
+    return false
+  }
+}
+
+const runInteractiveGuideMode = async (argv: ReadonlyArray<string>, guideRoot: string): Promise<void> => {
+  const args = parseGuideHeadlessArgv(argv)
+  const catalog = readGuideCatalog()
+  const config = resolveGuideModelConfig(
+    {
+      ...(args.model === undefined ? {} : { model: args.model }),
+      ...(args.effort === undefined ? {} : { effort: args.effort }),
+    },
+    process.env,
+  )
+  const prompts = await loadDefaultGuidePrompts()
+  const provider = new CopilotGuideProvider({
+    model: config.model,
+    effort: config.effort,
+    prompts,
+  })
+  const runner = createNodeCommandRunner()
+  const herdrAvailabilityProbe = await probeInteractiveHerdr(runner)
+  let outputFd: number | undefined
+  let input: NodeJS.ReadStream
+  let output: NodeJS.WriteStream
+  try {
+    input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
+    output = process.stderr.isTTY
+      ? process.stderr
+      : new tty.WriteStream((outputFd = openSync("/dev/tty", constants.O_WRONLY)))
+  } catch {
+    throw new Error("an interactive controlling terminal is required")
+  }
+  let result: GuideUiResult
+  try {
+    const instance = render(
+      <GuideApp
+        catalog={catalog}
+        guideRoot={guideRoot}
+        provider={provider}
+        model={config.model}
+        effort={config.effort}
+        runner={runner}
+        cwd={process.cwd()}
+        herdrEnv={herdrEnvironment()}
+        herdrAvailabilityProbe={herdrAvailabilityProbe}
+        {...(args.intent === undefined ? {} : { initialIntent: args.intent })}
+      />,
+      {
+        stdin: input,
+        stdout: output,
+        interactive: true,
+        exitOnCtrlC: false,
+        kittyKeyboard: { mode: "disabled" },
+        alternateScreen: true,
+        maxFps: 30,
+      },
+    )
+    const resolved = await instance.waitUntilExit()
+    if (resolved === undefined) {
+      process.exitCode = 130
+      return
+    }
+    result = resolved as GuideUiResult
+  } finally {
+    if (input !== process.stdin) input.destroy()
+    if (output !== process.stderr) output.destroy()
+  }
+  process.exitCode = await executeGuideUiResult(result, {
+    runner,
+    write: (text) => process.stdout.write(text),
+  })
+}
+
+const runGuideMode = async (): Promise<void> => {
+  const guideRoot = process.argv[3]
+  if (guideRoot === undefined) throw new Error("guide requires GUIDE_ROOT")
+  const argv = process.argv.slice(4)
+  const args = parseGuideHeadlessArgv(argv)
+  if (args.help) {
+    process.stdout.write(`${guideHeadlessHelpText}\n`)
+    return
+  }
+  if (args.json) {
+    await runGuideJsonMode(argv, guideRoot)
+    return
+  }
+  await runInteractiveGuideMode(argv, guideRoot)
+}
+
 const main = async () => {
-  const catalog = parseLaunchCatalog(await readCatalog())
+  if (process.argv[2] === "enrich-native-list") {
+    await runEnrichNativeList()
+    return
+  }
+  if (process.argv[2] === "guide") {
+    await runGuideMode()
+    return
+  }
+  const catalog = parseLaunchCatalog(await readInput(process.argv[2]))
   let outputFd: number | undefined
   let input: NodeJS.ReadStream
   let output: NodeJS.WriteStream

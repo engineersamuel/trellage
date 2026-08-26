@@ -4,6 +4,7 @@ export LC_ALL=C
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 package_root="$repo_root/packages/trellage-cli"
+guide_core="$repo_root/packages/trellage-guide-core"
 inputs=(
   "$package_root/package.json"
   "$package_root/package-lock.json"
@@ -11,6 +12,11 @@ inputs=(
   "$package_root/tsconfig.build.json"
   "$repo_root/scripts/build-profile-compiler.sh"
   "$repo_root/scripts/profile-compiler-fingerprint.sh"
+  "$guide_core/package.json"
+  "$guide_core/package-lock.json"
+  "$guide_core/tsconfig.json"
+  "$guide_core/tsconfig.build.json"
+  "$guide_core"/src/*.ts
   "$package_root"/src/*.ts
 )
 

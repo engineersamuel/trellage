@@ -18,12 +18,17 @@ fixture_git() {
 seed_fixture() {
   local fixture="$1"
   fixture_git init -q -b main "$fixture"
-  mkdir -p "$fixture/tests" "$fixture/packages/trellage-cli"
+  mkdir -p \
+    "$fixture/tests" \
+    "$fixture/packages/trellage-cli" \
+    "$fixture/packages/trellage-guide-core"
   cp tests/publication_contract.sh "$fixture/tests/publication_contract.sh"
   cp .gitignore "$fixture/.gitignore"
   cp LICENSE "$fixture/LICENSE"
   printf '%s\n' '{"name":"@trellage/profile-compiler","license":"MIT"}' \
     >"$fixture/packages/trellage-cli/package.json"
+  printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
+    >"$fixture/packages/trellage-guide-core/package.json"
   printf 'Generic fixture\n' >"$fixture/README.md"
 }
 

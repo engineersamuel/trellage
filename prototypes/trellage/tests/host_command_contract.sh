@@ -3740,6 +3740,7 @@ test_profile_compiler_bootstraps_when_missing_or_stale() {
   mkdir -p \
     "$fixture_root/prototypes/trellage" \
     "$fixture_root/packages/trellage-cli" \
+    "$fixture_root/packages/trellage-guide-core" \
     "$fixture_root/scripts" \
     "$fake_bin"
   cp "$prototype_dir/trellage" "$fixture_launcher"
@@ -3751,8 +3752,9 @@ set -eu
 printf '%s\n' "$*" >>"$FAKE_NPM_LOG"
 case "$*" in
   ci)
-    mkdir -p node_modules/.bin
+    mkdir -p node_modules/.bin node_modules/yaml
     : >node_modules/.bin/tsc
+    : >node_modules/yaml/package.json
     chmod +x node_modules/.bin/tsc
     ;;
   'run build')
@@ -3773,12 +3775,14 @@ EOF
 
   output="$(FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
     "$fixture_launcher" upgrade all 2>&1)"
-  grep -Fqx 'ci' "$npm_log" \
-    || fail 'missing profile compiler dependencies did not trigger npm ci'
+  [[ "$(grep -Fxc 'ci' "$npm_log")" == 2 ]] \
+    || fail 'missing profile compiler and guide dependencies did not trigger npm ci'
   grep -Fqx 'run build' "$npm_log" \
     || fail 'missing profile compiler did not trigger npm run build'
   grep -Fqx 'trellage: installing profile compiler dependencies' <<<"$output" \
     || fail 'profile compiler dependency bootstrap was not reported'
+  grep -Fqx 'trellage: installing profile guide dependencies' <<<"$output" \
+    || fail 'profile guide dependency bootstrap was not reported'
   grep -Fqx 'trellage: building profile compiler' <<<"$output" \
     || fail 'profile compiler build was not reported'
 

@@ -33,6 +33,12 @@ jq -e '
   and .license == "MIT"
 ' packages/trellage-cli/package.json >/dev/null \
   || fail 'profile compiler package identity or MIT license changed'
+jq -e '
+  .name == "@trellage/guide-core"
+  and .private == true
+  and .license == "MIT"
+' packages/trellage-guide-core/package.json >/dev/null \
+  || fail 'profile guide core package identity or MIT license changed'
 
 for required_ignore in \
   '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/' '/evidence/' \

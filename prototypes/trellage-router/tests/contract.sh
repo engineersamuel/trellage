@@ -268,6 +268,38 @@ create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-o
 create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
 
+write_fixture_guide() {
+  local launcher="$1"
+  local profile="$2"
+  local destination="$runtime_parent/trx/share/profile-guides/native/$launcher/$profile.md"
+
+  mkdir -p "$(dirname "$destination")"
+  cat >"$destination" <<'EOF'
+---
+schemaVersion: 1
+capabilities:
+  - fixture-delivery
+bestFor:
+  - Fixture delivery
+avoidFor:
+  - Unrelated fixture work
+prerequisites: []
+workflows:
+  - id: deliver
+    description: Deliver fixture work
+    examples:
+      - Build the fixture
+      - Test the fixture
+      - Review the fixture
+    promptTemplate: |
+      {{intent}}
+---
+# Fixture profile
+
+Use this profile for router contract fixtures.
+EOF
+}
+
 export HOME="$fixture_home"
 export PATH="$fixture_bin:/usr/bin:/bin"
 
@@ -287,12 +319,37 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
   || fail 'upgrade did not install the dependency bootstrap'
 [[ ! -e "$runtime_parent/trx/lib/terminal-picker.mjs" ]] \
   || fail 'upgrade left the legacy terminal picker'
+[[ -f "$runtime_parent/trx/share/profile-guides/native/cpx/awesome.md" ]] \
+  || fail 'installer did not publish profile guides'
+
+rm -rf -- "$runtime_parent/trx/share/profile-guides"
+for pair in \
+  cpx:cpx-p \
+  cdx:cdx-p \
+  cdx:pstack \
+  cldx:cldx-p \
+  grx:grx-p \
+  jcx:jcx-p \
+  omp:copilot \
+  omp:local \
+  picx:default \
+  prx:prx-p; do
+  write_fixture_guide "${pair%%:*}" "${pair#*:}"
+done
+export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
+assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
+
+"$fixture_bin/trx" guide --help >"$fixture_root/guide-help.out"
+assert_contains 'native:<launcher>/<profile> or sandbox:<profile>' \
+  "$fixture_root/guide-help.out"
+assert_contains 'schemaVersion 1' "$fixture_root/guide-help.out"
+assert_contains 'schemaVersion 1' "$fixture_root/guide-help.out"
 
 mv "$fixture_bin/cpx" "$fixture_root/cpx-link"
 "$fixture_bin/trx" skills status >"$fixture_root/skills-status.json" \
@@ -352,7 +409,11 @@ jq -e '
   type == "object"
   and keys == ["profiles", "schemaVersion"]
   and .schemaVersion == 1
-  and ([.profiles[] | keys] | all(. == ["description", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"]))
+  and ([.profiles[] | keys] | all(. == ["description", "guide", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"]))
+  and all(.profiles[];
+    .guide.schemaVersion == 1
+    and .guide.capabilities == ["fixture-delivery"]
+    and .guide.workflows[0].id == "deliver")
   and [.profiles[] | .launcher + "/" + .name] == [
     "cpx/cpx-p",
     "cdx/cdx-p",
@@ -406,6 +467,73 @@ TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   || fail 'worktree source JSON list failed'
 cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
   || fail 'worktree source list differs from installed router list'
+
+cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
+cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+#!/usr/bin/env node
+import { readFileSync } from "node:fs"
+
+const guide = {
+  schemaVersion: 1,
+  capabilities: ["fixture-delivery"],
+  bestFor: ["Fixture delivery"],
+  avoidFor: ["Unrelated fixture work"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "deliver",
+      description: "Deliver fixture work",
+      examples: ["Build the fixture", "Test the fixture", "Review the fixture"],
+      promptTemplate: "{{intent}}",
+    },
+  ],
+}
+
+if (process.argv[2] === "enrich-native-list") {
+  const input = JSON.parse(readFileSync(0, "utf8"))
+  process.stdout.write(`${JSON.stringify({
+    ...input,
+    profiles: input.profiles.map((profile) => ({ ...profile, guide })),
+  })}\n`)
+} else if (process.argv[2] === "guide") {
+  process.stdout.write(`${JSON.stringify({
+    guideRoot: process.argv[3],
+    args: process.argv.slice(4),
+    catalog: JSON.parse(readFileSync(3, "utf8")),
+  })}\n`)
+} else {
+  process.exitCode = 64
+}
+EOF
+chmod 0755 "$runtime_parent/trx/lib/launcher.mjs"
+cat >"$fixture_bin/trellage" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" -eq 2 && "$1" == list && "$2" == --json-full ]] || exit 64
+cat <<'JSON'
+{"schemaVersion":1,"profiles":[{"name":"sandbox-fixture","description":"Sandbox fixture","guide":{"schemaVersion":1,"capabilities":["fixture-delivery"],"bestFor":["Fixture delivery"],"avoidFor":["Unrelated fixture work"],"prerequisites":[],"workflows":[{"id":"deliver","description":"Deliver fixture work","examples":["Build the fixture","Test the fixture","Review the fixture"],"promptTemplate":"{{intent}}"}]},"path":"/fixture/profiles/sandbox-fixture/profile.toml","supportedPlatforms":["linux/arm64"],"harness":{"kind":"codex","version":"latest","model":"gpt-5.6-sol"},"skillBundles":["sandbox-common"],"skillsMode":"floating","finalDigestLocked":false,"skills":[],"plugins":[],"mcps":[],"sandbox":true,"headless":{"schemaVersion":1,"prompt":true,"outputFormats":["text"],"eventContract":null,"trellageEventContract":null,"sessionId":"none","resume":false,"resumeWithPrompt":false,"questionToolControl":"hard-deny","changedFiles":"none","usage":false,"cost":false,"modelOverride":true,"effortOverride":false,"testedHarnessVersion":"1.0.0"},"locked":true,"herdrCompatibility":{"status":"untested"}}]}
+JSON
+EOF
+chmod 0755 "$fixture_bin/trellage"
+"$fixture_bin/trx" guide --intent 'fixture intent' --json \
+  >"$fixture_root/guide-catalog.json" \
+  || fail 'guide mode did not aggregate native and Sandbox catalogs'
+jq -e \
+  --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
+  --arg sandboxCommandPath "$fixture_bin/trellage" \
+  --arg runtimeParent "$runtime_parent" '
+    .guideRoot == $guideRoot
+    and .args == ["--intent", "fixture intent", "--json"]
+    and .catalog.schemaVersion == 1
+    and .catalog.sandboxCommandPath == $sandboxCommandPath
+    and .catalog.sandbox[0].name == "sandbox-fixture"
+    and (.catalog.native | length == 10)
+    and all(.catalog.native[];
+      (.commandPath | startswith($runtimeParent + "/"))
+      and .guide.schemaVersion == 1)
+  ' "$fixture_root/guide-catalog.json" >/dev/null \
+  || fail 'guide mode combined catalog or arguments differ'
+mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 
 TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
@@ -811,6 +939,26 @@ assert_contains 'launcher is not the owned Trellage runtime: cpx' "$fixture_root
 rm "$fixture_bin/cpx"
 ln -s "$runtime_parent/cpx/bin/cpx" "$fixture_bin/cpx"
 
+printf 'unrelated\n' \
+  >"$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+status=0
+"$prototype_root/install.sh" >"$fixture_root/unrelated-guide-install.out" \
+  2>"$fixture_root/unrelated-guide-install.err" || status=$?
+[[ "$status" == 1 ]] || fail "unrelated profile guide install exited $status instead of 1"
+assert_contains 'refusing unrelated profile guide path' \
+  "$fixture_root/unrelated-guide-install.err"
+rm "$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+
+ln -s "$fixture_root/unrelated-command" \
+  "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+status=0
+"$prototype_root/install.sh" >"$fixture_root/symlink-guide-install.out" \
+  2>"$fixture_root/symlink-guide-install.err" || status=$?
+[[ "$status" == 1 ]] || fail "symlinked profile guide install exited $status instead of 1"
+assert_contains 'refusing symlinked profile guide path' \
+  "$fixture_root/symlink-guide-install.err"
+rm "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+
 printf 'unrelated\n' >"$fixture_root/unrelated-command"
 rm "$fixture_bin/trx"
 cp "$fixture_root/unrelated-command" "$fixture_bin/trx"
@@ -821,6 +969,28 @@ status=0
 assert_contains 'refusing to replace unrelated command' "$fixture_root/unrelated-install.err"
 rm "$fixture_bin/trx"
 ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
+
+printf 'unrelated\n' \
+  >"$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+status=0
+"$prototype_root/uninstall.sh" >"$fixture_root/unrelated-guide-uninstall.out" \
+  2>"$fixture_root/unrelated-guide-uninstall.err" || status=$?
+[[ "$status" == 1 ]] || fail "unrelated profile guide uninstall exited $status instead of 1"
+assert_contains 'refusing unrelated profile guide path' \
+  "$fixture_root/unrelated-guide-uninstall.err"
+[[ -d "$runtime_parent/trx" ]] || fail 'unsafe guide uninstall removed trx runtime'
+rm "$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+
+ln -s "$fixture_root/unrelated-command" \
+  "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+status=0
+"$prototype_root/uninstall.sh" >"$fixture_root/symlink-guide-uninstall.out" \
+  2>"$fixture_root/symlink-guide-uninstall.err" || status=$?
+[[ "$status" == 1 ]] || fail "symlinked profile guide uninstall exited $status instead of 1"
+assert_contains 'refusing symlinked profile guide path' \
+  "$fixture_root/symlink-guide-uninstall.err"
+[[ -d "$runtime_parent/trx" ]] || fail 'symlinked guide uninstall removed trx runtime'
+rm "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
 
 mv "$runtime_parent/trx/lib/launcher.mjs" \
   "$runtime_parent/trx/lib/terminal-picker.mjs"

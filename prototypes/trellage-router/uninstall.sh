@@ -9,6 +9,8 @@ command_dir="$local_dir/bin"
 command_path="$command_dir/trx"
 installed_launcher="$install_root/bin/trx"
 installed_dependency_bootstrap="$install_root/lib/bootstrap-development-dependencies.sh"
+installed_share="$install_root/share"
+installed_guides="$installed_share/profile-guides"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
 ownership_value='trellage-router-v1'
@@ -42,10 +44,21 @@ require_owned_runtime_contents() {
     case "$path" in
       "$ownership_marker"|"$install_root/bin"|"$installed_launcher"|\
       "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
-      "$installed_dependency_bootstrap"|"$legacy_picker") ;;
+      "$installed_dependency_bootstrap"|"$legacy_picker"|\
+      "$installed_share"|"$installed_guides") ;;
+      "$installed_guides"/*)
+        [[ ! -L "$path" ]] || refuse "refusing symlinked profile guide path: $path"
+        if [[ -d "$path" ]]; then
+          :
+        elif [[ -f "$path" && "$path" == *.md ]]; then
+          :
+        else
+          refuse "refusing unrelated profile guide path: $path"
+        fi
+        ;;
       *) refuse "refusing unrelated runtime path: $path" ;;
     esac
-  done < <(find "$install_root" -mindepth 1 -maxdepth 2 -print)
+  done < <(find "$install_root" -mindepth 1 -print)
 }
 
 case "$HOME" in
@@ -77,6 +90,8 @@ fi
   || refuse "refusing unsafe managed runtime: $install_root/bin"
 [[ -d "$install_root/lib" && ! -L "$install_root/lib" ]] \
   || refuse "refusing unsafe managed runtime: $install_root/lib"
+[[ ! -e "$installed_share" || (-d "$installed_share" && ! -L "$installed_share") ]] \
+  || refuse "refusing unsafe managed runtime: $installed_share"
 [[ -f "$installed_launcher" && ! -L "$installed_launcher" ]] \
   || refuse "refusing unsafe managed launcher: $installed_launcher"
 for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "$legacy_picker"; do
@@ -88,6 +103,11 @@ done
 [[ -f "$install_root/lib/launcher.mjs" || -f "$legacy_picker" ]] \
   || refuse "refusing incomplete managed launcher UI"
 require_owned_runtime_contents
+if [[ -e "$installed_guides" ]]; then
+  [[ -d "$installed_guides" && ! -L "$installed_guides" ]] \
+    || refuse "refusing unsafe profile guide registry: $installed_guides"
+  rm -rf -- "$installed_guides"
+fi
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
@@ -101,5 +121,7 @@ for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "
     rm "$path"
   fi
 done
-rmdir "$install_root/bin" "$install_root/lib" "$install_root"
+rmdir "$install_root/bin" "$install_root/lib"
+[[ ! -d "$installed_share" ]] || rmdir "$installed_share"
+rmdir "$install_root"
 printf 'Uninstalled trx.\n'

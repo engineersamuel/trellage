@@ -10,6 +10,21 @@ const cliHarness = vi.hoisted(() => ({
   selected: [] as Array<string>,
   upgraded: [] as Array<string>,
   registries: [] as Array<string | undefined>,
+  guide: {
+    schemaVersion: 1,
+    capabilities: ["test"],
+    bestFor: ["CLI list tests"],
+    avoidFor: ["Production use"],
+    prerequisites: [],
+    workflows: [
+      {
+        id: "test",
+        description: "Exercise list output",
+        examples: ["List alpha", "List beta", "List gamma"],
+        promptTemplate: "{{intent}}",
+      },
+    ],
+  },
 }))
 
 vi.mock("@effect/platform-node", async (importOriginal) => {
@@ -109,6 +124,16 @@ vi.mock("../src/profile-discovery.js", async (importOriginal) => {
           mcps: [],
         },
       ]),
+  }
+})
+
+vi.mock("../src/profile-guides.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/profile-guides.js")>()
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    ...actual,
+    loadSandboxProfileGuides: (_repositoryRoot: string, choices: ReadonlyArray<unknown>) =>
+      EffectModule.succeed(choices.map(() => cliHarness.guide)),
   }
 })
 
@@ -249,9 +274,9 @@ describe("CLI identity and failure reporting", () => {
     expect(JSON.parse(simplified.logs.join("\n"))).toEqual({
       schemaVersion: 1,
       profiles: [
-        { name: "alpha", description: "Alpha description", sandbox: true },
-        { name: "beta", description: "Beta description", sandbox: true },
-        { name: "gamma", description: "Gamma description", sandbox: true },
+        { name: "alpha", description: "Alpha description", guide: cliHarness.guide, sandbox: true },
+        { name: "beta", description: "Beta description", guide: cliHarness.guide, sandbox: true },
+        { name: "gamma", description: "Gamma description", guide: cliHarness.guide, sandbox: true },
       ],
     })
 

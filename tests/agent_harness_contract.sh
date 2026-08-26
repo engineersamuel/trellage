@@ -61,6 +61,8 @@ for required_ci_line in \
   '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
   "        run: ${ci_tool_probe}" \
   '        run: npm ci --prefix packages/trellage-cli' \
+  '        run: npm ci --prefix packages/trellage-guide-core' \
+  '        run: npm ci --prefix packages/trellage-launcher' \
   '        run: npm ci --prefix tests/playwright' \
   '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \

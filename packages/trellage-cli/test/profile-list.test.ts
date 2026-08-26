@@ -4,6 +4,22 @@ import { resolveSandboxHeadlessCapabilities } from "../src/headless-capabilities
 import type { ProfileChoice } from "../src/profile-discovery.js"
 import { formatProfileListHuman, toFullList, toSimplifiedList } from "../src/profile-list.js"
 
+const guide = {
+  schemaVersion: 1 as const,
+  capabilities: ["delivery"],
+  bestFor: ["Repository delivery"],
+  avoidFor: ["Unrelated content work"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "deliver",
+      description: "Deliver repository work",
+      examples: ["Build the feature", "Fix the bug", "Review the change"],
+      promptTemplate: "{{intent}}",
+    },
+  ],
+}
+
 const sample = (
   overrides: Partial<ProfileChoice> & Pick<ProfileChoice, "name" | "description" | "value">,
 ): ProfileChoice => ({
@@ -31,11 +47,11 @@ describe("profile list DTOs", () => {
       sample({ name: "beta", description: "Beta blurb", value: "/p/beta/profile.toml" }),
       sample({ name: "alpha", description: "Alpha blurb", value: "/p/alpha/profile.toml" }),
     ]
-    expect(toSimplifiedList(choices)).toEqual({
+    expect(toSimplifiedList(choices, [guide, guide])).toEqual({
       schemaVersion: 1,
       profiles: [
-        { name: "beta", description: "Beta blurb", sandbox: true },
-        { name: "alpha", description: "Alpha blurb", sandbox: true },
+        { name: "beta", description: "Beta blurb", guide, sandbox: true },
+        { name: "alpha", description: "Alpha blurb", guide, sandbox: true },
       ],
     })
   })
@@ -56,12 +72,15 @@ describe("profile list DTOs", () => {
         },
       ],
     })
-    expect(toFullList([choice], [{ locked: true, resolvedVersion: "0.147.0" }], [{ status: "verified" }])).toEqual({
+    expect(
+      toFullList([choice], [guide], [{ locked: true, resolvedVersion: "0.147.0" }], [{ status: "verified" }]),
+    ).toEqual({
       schemaVersion: 1,
       profiles: [
         {
           name: "detailed",
           description: "Detailed blurb",
+          guide,
           path: "/profiles/detailed/profile.toml",
           supportedPlatforms: ["linux/arm64", "linux/amd64"],
           harness: { kind: "codex", version: "latest", model: "gpt-5.6-sol" },
@@ -83,6 +102,7 @@ describe("profile list DTOs", () => {
   it("keeps current Codex full-list entries conservative despite a resolved lock version", () => {
     const [entry] = toFullList(
       [sample({ name: "codex-superpowers", description: "Codex profile", value: "/profiles/codex/profile.toml" })],
+      [guide],
       [{ locked: true, resolvedVersion: "0.147.0" }],
     ).profiles
 
@@ -91,7 +111,7 @@ describe("profile list DTOs", () => {
 
   it("defaults locked to false and herdrCompatibility to untested when not supplied", () => {
     const choice = sample({ name: "bare", description: "Bare blurb", value: "/p/bare/profile.toml" })
-    const [entry] = toFullList([choice]).profiles
+    const [entry] = toFullList([choice], [guide]).profiles
     expect(entry?.locked).toBe(false)
     expect(entry?.headless).toEqual(resolveSandboxHeadlessCapabilities("codex", null))
     expect(entry?.herdrCompatibility).toEqual({ status: "untested" })
@@ -115,7 +135,7 @@ describe("profile list DTOs", () => {
       ],
     })
 
-    const [entry] = toFullList([choice], [{ locked: true, resolvedVersion: "2.1.233" }]).profiles
+    const [entry] = toFullList([choice], [guide], [{ locked: true, resolvedVersion: "2.1.233" }]).profiles
 
     expect(entry?.headless).toMatchObject({
       prompt: true,
@@ -126,7 +146,7 @@ describe("profile list DTOs", () => {
       testedHarnessVersion: "2.1.233",
     })
 
-    const [drifted] = toFullList([choice], [{ locked: true, resolvedVersion: "2.1.234" }]).profiles
+    const [drifted] = toFullList([choice], [guide], [{ locked: true, resolvedVersion: "2.1.234" }]).profiles
 
     expect(drifted?.headless).toMatchObject({
       prompt: false,
