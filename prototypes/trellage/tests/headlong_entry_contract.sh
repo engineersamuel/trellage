@@ -72,6 +72,7 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "${GEMINI_API_KEY-}" \
   "${OPENROUTER_API_KEY-}" >>"$TRELLAGE_TEST_OUTPUT/init.log"
 printf '%s\t%s\t%s\n' "${LLM_API_URL-}" "${SHELLM_API_URL-}" "${SHELLM_MODEL-}" >>"$TRELLAGE_TEST_OUTPUT/proxy.log"
+chmod 0666 "$TRELLAGE_TEST_OUTPUT/init.log" "$TRELLAGE_TEST_OUTPUT/proxy.log"
 [[ "${HEADLONG_HOME-}" == /home/agent/.headlong ]]
 [[ "${HEADLONG_APP_DIR-}" == /home/agent/.headlong/app ]]
 [[ "${HEADLONG_UNSANDBOXED-}" == 1 ]]
@@ -114,6 +115,7 @@ set -euo pipefail
 umask 022
 if [[ "${1:-}" == dash ]]; then
   printf 'dash\n' >>"$TRELLAGE_TEST_OUTPUT/dash.log"
+  chmod 0666 "$TRELLAGE_TEST_OUTPUT/dash.log"
   mkdir -p "$HEADLONG_HOME/run"
   sleep 300 &
   printf '%s\n' "$!" >"$HEADLONG_HOME/run/web.pid"
@@ -137,12 +139,18 @@ if [[ ! -f "$script_dir/bin/shellm" ]]; then
 fi
 if [[ -f /test-control/fail-install ]]; then
   printf 'forced-failure\n' >>"$TRELLAGE_TEST_OUTPUT/install.log"
+  chmod 0666 "$TRELLAGE_TEST_OUTPUT/install.log"
   exit 1
 fi
 [[ "$#" -eq 4 && "$1" == --symlinks && "$2" == --prefix \
   && "$3" == /home/agent/.local/bin && "$4" == --no-init ]] \
-  || { printf 'unexpected-args:%s\n' "$*" >>"$TRELLAGE_TEST_OUTPUT/install.log"; exit 1; }
+  || {
+    printf 'unexpected-args:%s\n' "$*" >>"$TRELLAGE_TEST_OUTPUT/install.log"
+    chmod 0666 "$TRELLAGE_TEST_OUTPUT/install.log"
+    exit 1
+  }
 printf '%s\t%s\n' "$PWD" "$*" >>"$TRELLAGE_TEST_OUTPUT/install.log"
+chmod 0666 "$TRELLAGE_TEST_OUTPUT/install.log"
 mkdir -p -- "$3"
 ln -sf "$script_dir/bin/llm" "$3/llm"
 # Mirror pinned install.sh --symlinks: it installs the entry point the
@@ -164,6 +172,7 @@ for var in ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY \
 done
 printf '%s\n' "$PWD" >"$TRELLAGE_TEST_OUTPUT/shell.cwd"
 printf '%s\n' "$@" >"$TRELLAGE_TEST_OUTPUT/shell.argv"
+chmod 0666 "$TRELLAGE_TEST_OUTPUT/shell.cwd" "$TRELLAGE_TEST_OUTPUT/shell.argv"
 FAKE_SHELL
 chmod 755 "$fake_bin/attach-shell"
 
@@ -263,6 +272,7 @@ in_fixture '
   test -x /home/agent/.local/bin/headlong-tui
   test "$(cat /home/agent/.local/bin/headlong-tui)" = "$(cat /usr/local/share/trellage/headlong-tui)"
   test "$(cat /home/agent/.headlong/.trellage/source.commit)" = 1111111111111111111111111111111111111111
+  test "$(stat -c %a /test-output/install.log)" = 666
 ' || fail 'initial hydration did not run the managed checkout installer locally, or did not install headlong-init/persona'
 [[ "$(cat "$output/install.log")" == $'/home/agent/.headlong/app\t--symlinks --prefix /home/agent/.local/bin --no-init' ]] \
   || fail 'checkout installer did not receive the required local-only invocation'
@@ -289,6 +299,11 @@ expected_init_log=$'1\t1\t\t\ttrellage-local-proxy\t\t\t\n\t\t1\t--host 0.0.0.0 
 [[ "$(cat "$output/shell.argv")" == -l ]] \
   || fail 'attach did not start a login shell'
 in_fixture '
+  test "$(stat -c %a /test-output/init.log)" = 666
+  test "$(stat -c %a /test-output/proxy.log)" = 666
+  test "$(stat -c %a /test-output/dash.log)" = 666
+  test "$(stat -c %a /test-output/shell.cwd)" = 666
+  test "$(stat -c %a /test-output/shell.argv)" = 666
   test "$(stat -c %a /home/agent/.headlong/.env)" = 600
   test -f /home/agent/.headlong/.trellage/initialized
   test "$(readlink /home/agent/.headlong/identities/ada/kernel/always-on)" = /home/agent/.headlong/.trellage/skills/always-on
