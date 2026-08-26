@@ -7,12 +7,12 @@ profile_hash = "sha256:762bf0555a55b6cda68508c7d20b247c40c9731c335f1ed5e08274179
 kind = "plugin"
 adapter = "claude-marketplace"
 marketplace = "agricidaniel-blog"
-plugin_versions = { "claude-blog" = "2.1.1" }
+plugin_versions = { "claude-blog" = "2.2.0" }
 repository = "https://github.com/AgriciDaniel/claude-blog.git"
 ref = "main"
 select = ["claude-blog"]
-commit = "aec971ac511370c6216cd93776c9cf2fec97b32a"
-integrity = "sha256:8a2cd9fdca129a78438a9a93ef7ea1b4ab5705e708e4570aa50848e8173859b2"
+commit = "7b6ca107adb40b7c59030568420c117e2ea61301"
+integrity = "sha256:76f5e978d183bcb6cb9cf98bd8076324d5c6407fa0d5f7f10eb20db626c54cf1"
 
 [[sources.files]]
 path = ".claude-plugin/marketplace.json"
@@ -20,7 +20,7 @@ sha256 = "sha256:7546890953fd3014b1e586480f2baa636ec42d62b907afefd33d3e05ebaa75b
 
 [[sources.files]]
 path = ".claude-plugin/plugin.json"
-sha256 = "sha256:98875cbfd45ca03e5f093dea871d75b6e4e1d29864cc04717ebb366c233c68f6"
+sha256 = "sha256:3ff064529216dd3cfbbab1888925cecc707a2647c0fae99f01b7812f8e2344bf"
 
 [[sources.files]]
 path = ".gitattributes"
@@ -64,7 +64,7 @@ sha256 = "sha256:35a88579781a00617bfc2c250806a54e564a5e257bdddde3ebf3b45544a5b76
 
 [[sources.files]]
 path = ".github/SECURITY.md"
-sha256 = "sha256:deab052188c7feb7884f7c376c8e0bb7560758401dc6a39fe42f7cf6c4cfd50f"
+sha256 = "sha256:85539a259546288085be8252ef92428137a86de7199e725c2a26b73f84796a74"
 
 [[sources.files]]
 path = ".github/SUPPORT.md"
@@ -72,7 +72,11 @@ sha256 = "sha256:0c4a599b1b80df0e287e22bc3d2f2bcc0099275205a8b8348d5c6c487d70e31
 
 [[sources.files]]
 path = ".github/workflows/ci.yml"
-sha256 = "sha256:ebf4fd8c1948cb121a303d575dbe7fd1fd6a822e11c70a3a2e12d9465c1439e7"
+sha256 = "sha256:0ec05075303cadd636895be93373217ca9bbb00cc31706588d59010616a46221"
+
+[[sources.files]]
+path = ".github/workflows/google-currentness.yml"
+sha256 = "sha256:4590a77c2f52daa990105d873e2a6d8530b0cb38df813e92b8f7d6d577966b2b"
 
 [[sources.files]]
 path = ".gitignore"
@@ -140,11 +144,11 @@ sha256 = "sha256:eac70ac099b4c9d18fcafcdbedb2a42f95bf95ca8294c9cb0cd2d992c09dce3
 
 [[sources.files]]
 path = "brain/.claude-plugin/marketplace.json"
-sha256 = "sha256:47843c39a0f399ce6d38ce6f91df28dba25aa6f5f7b6752af0db92710baf9c00"
+sha256 = "sha256:e3f26aae0bce58bbaeeadf81ed6a12d7d1edee6e9e3a6a90675d97a41f85b8fa"
 
 [[sources.files]]
 path = "brain/.claude-plugin/plugin.json"
-sha256 = "sha256:2b4d57d60d4e6f3a1619a5f1ad1370b3e40dca293002427a2379d312f380583d"
+sha256 = "sha256:35e532d1d71811cb2aa8bbb5c5db824dce97d3962cb567ad53ce8aea0db726fd"
 
 [[sources.files]]
 path = "brain/.github/CODEOWNERS"
@@ -604,7 +608,7 @@ sha256 = "sha256:0d4bb67dac2376cfcff792f32230110089570f3ff86941cf1bcc14c740e7694
 
 [[sources.files]]
 path = "brain/AGENTS.md"
-sha256 = "sha256:88cb8d90339cce36b63d1991868959d481e024d789d7a18a13fb82281431a528"
+sha256 = "sha256:32764edf2e121b5a0b2f197059ca7026fd5b74ecc0320536b6cc6cb652b0556b"
 
 [[sources.files]]
 path = "brain/agents/blog-cluster-curator.md"
@@ -644,7 +648,7 @@ sha256 = "sha256:21509558a88b010fc251e830b3240ad2dbcd28be28be43e6de70cd95c43fbb6
 
 [[sources.files]]
 path = "brain/agents/blog-quality-curator.md"
-sha256 = "sha256:46df24a0b091db2dd8e093ce65ef7f1229a4c8050f621dcc99ce6f9a11737cb6"
+sha256 = "sha256:bc51da13400585331af51c93c7bb9da020c9e3928255be80ae899a4cd8dd9aee"
 
 [[sources.files]]
 path = "brain/agents/blog-schema-curator.md"
@@ -660,11 +664,11 @@ sha256 = "sha256:5b759d17ceb6e698bd60836e5c9b1ffe5f88b6beff18de9399014e11e2d9ad6
 
 [[sources.files]]
 path = "brain/agents/claude-blog-secretary.md"
-sha256 = "sha256:2c6eafc57cf1b76cdc7de84333eca5110f0e8675c26d572031d941f03599261c"
+sha256 = "sha256:9edd1bcc0be2ffe277495116389201ef690266edfac9266a63bf9e022336f2eb"
 
 [[sources.files]]
 path = "brain/agents/workflow-coverage.md"
-sha256 = "sha256:29e0d52ac0aaa69ee0e55b027b4bfa362611563eaa552fa610f639591c08cde5"
+sha256 = "sha256:1c1bf505ca20fbb4cb5aaaff5f24e6c30b67d5016239c3637abf261a40c849aa"
 
 [[sources.files]]
 path = "brain/assets/svg/hero-frontispiece.svg"
@@ -744,7 +748,7 @@ sha256 = "sha256:f743ec7d912fd5d55d1a25249cb49542d0e61b044440823d38bfc2ae060c4b5
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/concepts/Best Practices Kernel.md"
-sha256 = "sha256:e412bfed361f9c83bcc8a4a9aebc86936cd0686957e0b2473e56c61ca7e6fd07"
+sha256 = "sha256:1f4a17930fc92e34b658973f16c1dd67ef67cbc0611d894dd5db732237e69be3"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/decisions/_index.md"
@@ -752,7 +756,7 @@ sha256 = "sha256:2ea55b931d1e2703f73d6b9dbd34d1e817c8cbc9ddf522516b13fbac606a2ef
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/decisions/Approval Queue.md"
-sha256 = "sha256:9932c05c3887fc6068ddc99ca53505a4beed1bd002fd632b653204e484bbfe19"
+sha256 = "sha256:c3b32e849dbc5c6deb3b7261cd08c6ac335e99313c3c3ad32605297f6450ab27"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/deliverables/_index.md"
@@ -760,11 +764,11 @@ sha256 = "sha256:0da146ff55f4481ac0343ebc1b33ab0ef69cb5078b3b126d1c0755941401b0a
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/deliverables/Action Roadmap.md"
-sha256 = "sha256:454b4e11e3413a99645ea2684d806c7240cafed3aec3d637d48165093dec01e3"
+sha256 = "sha256:180036cfcb54a0c82eb5972426d0ae839ae213c58c43f227659af60353466eb7"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/deliverables/Health Scorecard.md"
-sha256 = "sha256:28e35e836e44419996b17730696e7d97f0896af9c1a13dfa9e2c50cc61620aa2"
+sha256 = "sha256:1ff1d998e94317ccdaf1c61691efeb61f7f16b0f5bfb843e8deb83196c1b6554"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/entities/_index.md"
@@ -780,19 +784,19 @@ sha256 = "sha256:ed9ed9983d948fe074a194a0c679b47e3550cf0110c3af751b0b29481f92263
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/flows/Reporting Workflow.md"
-sha256 = "sha256:a250d08cb7d252653ef8dd9d7fee26e862db5b54b06e524b65b4e13da13ba348"
+sha256 = "sha256:8fc62d4cbccdef8884e983e5c1903d1f3e52e6fb79de1a4b33183badd41d17b4"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/flows/Research Refresh Workflow.md"
-sha256 = "sha256:77e09ad10cd4ded5fe9211bac079f3bb61470fb472b4127758d80495f0fbfb63"
+sha256 = "sha256:9c7f133262eefb6bfcdaabb242fae27238fb556ca80824deedf6ddf0de7137b2"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/flows/Source Intake Workflow.md"
-sha256 = "sha256:3920370ee4546d6e0277d51364e35944ddf5058e21b4894a12460585ca2d70d0"
+sha256 = "sha256:dc48fa5f6fe6d9b7d0705d528f4d33dea4169a098203338273a6624de199f5b5"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/flows/Synthesis Workflow.md"
-sha256 = "sha256:381c895aeb6f1554a1f569981efa245087869e653b7e39fbd71d1a63b6f70d69"
+sha256 = "sha256:bf9672e2f38fb06a2033dbb439d42be2f70d2b1f927bfcc349193ab940245760"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/gaps/_index.md"
@@ -812,11 +816,11 @@ sha256 = "sha256:4f35b843a4f55034b6a6e600e2bc72c557c5c2f12f0f3c4bbc5bcae4a7a67e7
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/meta/dashboard.md"
-sha256 = "sha256:81cee57040c4a835acae37841cf94201ef86d10be2805996dc61b5f0cf823895"
+sha256 = "sha256:e65dd88ab220a507151206c0d1a8e4331d49ca9eb5c78b3cca9573623deee4ed"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/meta/Start Here.md"
-sha256 = "sha256:0297fe9717fe2dc22262fcb7a79385e6a096d95bf9b5e7bc662d621a62f70d77"
+sha256 = "sha256:566a4263105635613f9b143e68095b9b9428b9addb7c3b3e3250b68e0efcba71"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/overview.md"
@@ -836,7 +840,7 @@ sha256 = "sha256:30aa537e3a9260d798670a4dac2afd7cd81956ac39e2c3230b66ba1524d6523
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/reports/Weekly Report.md"
-sha256 = "sha256:b42d2e004ed3bab772c91df3ac81ebdecae9205a6803bb03b9a46b9f638dc2c3"
+sha256 = "sha256:27a4d771aeb7d4c3d8169bbcdbedc63707bed7ada96ffc1c0fbc0c3e7fc8e9b6"
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/sources/_index.md"
@@ -844,15 +848,15 @@ sha256 = "sha256:832ca36324fdf2e89cbb972d16607ae934ce558e072048cef80983e4b033613
 
 [[sources.files]]
 path = "brain/assets/template-brain/wiki/sources/Source Manifest Guide.md"
-sha256 = "sha256:749d783b0eb45455b7877a59f1f0c7ae1dc3a9b124e935ccd0929d234d1a8a7d"
+sha256 = "sha256:3170c8424f113b78cf22d48df1efd38bd806b776e85a86249b258bc052110cda"
 
 [[sources.files]]
 path = "brain/CHANGELOG.md"
-sha256 = "sha256:35f1d7d62f65f1f41404ef74937556f329e5f4c4c4a9ffbb6a65eaaab9f6b030"
+sha256 = "sha256:d3237b3da308d52a4b55cb913b7447d2f7d1aebd23808bce4ac227e433181bc8"
 
 [[sources.files]]
 path = "brain/claude_blog_brain/__init__.py"
-sha256 = "sha256:98ccfc419e6ca4bfacf467625558dd1501d4b774015f4059620c40f69d811ad0"
+sha256 = "sha256:2738549de62062502458e05c708b8a20f37d1ff096673c607a7f852f8ec422d0"
 
 [[sources.files]]
 path = "brain/claude_blog_brain/__main__.py"
@@ -876,7 +880,7 @@ sha256 = "sha256:da5ae92100560bb58c6ebdf28f88d3c1c552bf9cb3770303218ab7bea158daf
 
 [[sources.files]]
 path = "brain/data/google-updates.json"
-sha256 = "sha256:9ca5e729bdf30f27b4e6d49139c4c50a128a4dc48e7791621515d6b800d7e86b"
+sha256 = "sha256:77253bb09ebafdc1bff9ad6d607c3af6f1766d076f7726b99abe6a82b1086cc1"
 
 [[sources.files]]
 path = "brain/docs/OPERATOR_KIT.md"
@@ -884,23 +888,23 @@ sha256 = "sha256:44325cecc8dc85ce0b3d564faef9cb837ba05296bebcc1979b93946588f0fc0
 
 [[sources.files]]
 path = "brain/docs/PRODUCT_BOUNDARIES.md"
-sha256 = "sha256:dbd69d62a1b95cf72528e9746c72a2fd4cd729fa47bd76d01d5f2f28ca57cebb"
+sha256 = "sha256:38314a1e87d8ec056b744767b6246bded336ccefc53224df48aa09e59f186b6e"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/_attachments/brain-relationship-map.svg"
-sha256 = "sha256:b4bf1ff049f94380dd1cbbaac3ac6d683322c76de34e3349d9c46a3cbbfbbb00"
+sha256 = "sha256:28a749cc351601e1c0170c26c4cf239ef5534a6d32bb5b524ac512d1c7300816"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/_templates/decision.md"
-sha256 = "sha256:61490be219a6f48aa5a2dbfb2bd516c1b8a41121a3a3b1e0c284906fdb2026b8"
+sha256 = "sha256:4eff6f40204584fc34967bcb898f420db17f628337ac380b9fd49850717ba57f"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/_templates/source-note.md"
-sha256 = "sha256:cbc0d8593b230891593488b15b173c2255f776cb2bb89de06ba9065815f21124"
+sha256 = "sha256:1e8197a1ba63db258187ab0e3015837184fa5045f2e82d2f5817c9d2372ab84e"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/_templates/standard-note.md"
-sha256 = "sha256:6878fca64d773afd036b70bd4ee41d6db29ac3159094cdf7cbf24b0a8f7cac2f"
+sha256 = "sha256:b0a543b4521e0daca239210dd8ff822e191ad29fe912880aa1a938b4c100b06a"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/.obsidian/app.json"
@@ -924,7 +928,7 @@ sha256 = "sha256:14666ea9fb1762103d662aad7365a960b969671d583c3a67c8cc864348cec3f
 
 [[sources.files]]
 path = "brain/examples/sample-vault/.raw/.manifest.json"
-sha256 = "sha256:179c6778d753a513a5c9ef8020267f3470fcd6413124e712b938bf1f6aee47e5"
+sha256 = "sha256:251906d6634b25014c9234ef665b3baf820708d63960cadfa6399beba0da9bbc"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/.raw/sources/sample-source.md"
@@ -944,15 +948,15 @@ sha256 = "sha256:31124d0dd54a81cf6562022685c8a3ce26e1255287f9676e8ac1ffdc1fac24c
 
 [[sources.files]]
 path = "brain/examples/sample-vault/weekly-report.html"
-sha256 = "sha256:4aa3782b4fd62265d22349ba717dbefdf80fda316d6a94c9e75bcb8ba3166fa5"
+sha256 = "sha256:591dbd4aaced05e412ddd3ac71619218b3dd8c5546b9a661b2f9257c0457d1a7"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/accounts/_index.md"
-sha256 = "sha256:1fef86ff3a8f5184081090cfc7a42c8c5d379dcb3f290b4b9049f37eaee433c8"
+sha256 = "sha256:9a771776d880010972f92a24cebbf1143b395885da46f59a6af01245101c409b"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/canvases/_index.md"
-sha256 = "sha256:4c5d093cda26f42a00fee3673692afb258155af4b6489e5fcdb8f1dc9881585d"
+sha256 = "sha256:62d5a8af9508c2ebcfbbe13516a6688132f286289b238f3327b37194dd8d563f"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/canvases/main.canvas"
@@ -964,115 +968,115 @@ sha256 = "sha256:e21e709fe7fad806e3012acc132fa2299eefbed52a36ad9db9a174d7db0b6ac
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/concepts/_index.md"
-sha256 = "sha256:c74f4d5aa8b1fb42e57e1b15052afa10badc09c7f725f8aa78d1bd90ba3e54ad"
+sha256 = "sha256:24716018e91716e88830217c20bed2652428fd5bff1715015f6d6735f14703af"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/concepts/Best Practices Kernel.md"
-sha256 = "sha256:606d4d6ac49ad8d4432e3753b59399a16ae35ef7aa0a1849630460729772c9b9"
+sha256 = "sha256:4bee3adf7555ef3eaee48dac02f75f33bcd9ce68daabd379efaa165e737c62e9"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/decisions/_index.md"
-sha256 = "sha256:71b3cc010ea993a8987dfb41429b59b1aa170dd551fe48ece4b53523f8e53191"
+sha256 = "sha256:9af73d42de53fad5d3b6b10a45d152aa664b08d4a4622b6db9a1d7e235fad951"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/decisions/Approval Queue.md"
-sha256 = "sha256:efe265bff2a20d68621922f1e5d7742cddc242e408039e504ffb9bf88c721155"
+sha256 = "sha256:21f3800807e71a3c4bed5006ca2cdea654f00088a5d023ed29c0009007bafc1c"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/deliverables/_index.md"
-sha256 = "sha256:bf236d7bfdf9fb9d10d00f78170f76b75922d739241d6ea2a0a3cad087777571"
+sha256 = "sha256:d8bd8e9eb6149548c2d04d955c699d12ba2d022079a53c810720580975e6ec0a"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/deliverables/Action Roadmap.md"
-sha256 = "sha256:a1a6ac802b7410a58bd63f4e116ee3ae941dc1bb123991e42ff038def553253b"
+sha256 = "sha256:c387d301bffb136c8187c288e331b7184b501a80cd3fa09df671396757824a93"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/deliverables/Health Scorecard.md"
-sha256 = "sha256:c2be3cd2edd275f6f627187cbf0be00f464f690cc5d33a40f5a8e61c6476d89a"
+sha256 = "sha256:15af7437503148d4363b711822a0b90d1bc65ab821bca6b8a6071b5ee697fae5"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/entities/_index.md"
-sha256 = "sha256:d95d0bb829b2dd95df13e018b95ec83da8493b16e1792b13eba8f1d7b72ec933"
+sha256 = "sha256:a9cfd88cacd08c61d4bed9bd72435879d63b71016708f8284139397191cdac48"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/experiments/_index.md"
-sha256 = "sha256:5935a6268ed0e87a97df6be2b358b1a258e1a6d81bd54a253af5326288adb6d8"
+sha256 = "sha256:8c542ad85543730949d613c462b79566e81a0bb6770d3db87f37163c911aa2ad"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/flows/_index.md"
-sha256 = "sha256:10dff925d4d3cf65894bc944a4383c2756ba822323f8595fcf44205f5b9a38b4"
+sha256 = "sha256:bbf01b092a6e5dfbb4c92374c29087a4245ba7d17f6ff3de2656e5c0ec3f63f7"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/flows/Reporting Workflow.md"
-sha256 = "sha256:ebe56c29516865e6a0cc6b7af220eba5de45d77e9505131b3b3cde855c4ce316"
+sha256 = "sha256:b81aa9b156091c95cb231ac332871fdc1e3f2aac57035358b34b4f4a042e627a"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/flows/Research Refresh Workflow.md"
-sha256 = "sha256:cd03fd703e3d5141a82147ef119ac31d4cdcc791963c798221fd9832bb9b2ebe"
+sha256 = "sha256:cc24ebf9eb88b45271afaf667023c90ed2b60476b573d7aacefb8cb73eca8015"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/flows/Source Intake Workflow.md"
-sha256 = "sha256:24cda87d25ea128d623d9e5f7f9c20c2df27fa07f43f8287c46631d72e5be02e"
+sha256 = "sha256:9468a44b5e8f16d18cf7f30d4b483e4260da6238d6c0d30dad61081ca3ccfd0f"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/flows/Synthesis Workflow.md"
-sha256 = "sha256:ac992ce9a366c5e01c7d3dbd7dbeaaf6b451053a118667c762fe90153cebafdf"
+sha256 = "sha256:cbe6b066c263342bc2f119b3478440698740ce8f2c2c614171d9d528141b99ad"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/gaps/_index.md"
-sha256 = "sha256:eb1de5937da37b758de9771ebe8aa17ba231da1a018964989ccb57b51ebdb091"
+sha256 = "sha256:02714139bf9c2b7d61c9799374aa063a536b040dda5dff92e58db08fe84f2efa"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/hot.md"
-sha256 = "sha256:3819993d40b5b1fb894173f9edec1de69bcdf5157f5e84ec1b9c3481f184d793"
+sha256 = "sha256:76ae5ce6c1005de3254f62a0e2df2f9c5ad55cb368c0a2d1641573761da01ae5"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/index.md"
-sha256 = "sha256:ec7b41811f0e20e3923880b8d6ab371f752120993ce68a59e01f4a6cecf1a6d3"
+sha256 = "sha256:b0f8f4d08e2d296f2bc275f47293625903242668d252403e6239a2fc2480c2ef"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/log.md"
-sha256 = "sha256:0ceed05c818a7b42f95f8cd126f0848e3531eb8ee1d8eb4036cc5990f717fcf6"
+sha256 = "sha256:67daa1a6d72828477e68f30dfe2a564a20a4b76669e91b46232db5f16436272e"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/meta/dashboard.md"
-sha256 = "sha256:08e8e0d0a95553883ce767be040b3cd59044c49cb18c843aa1d3f8c2e2e21dba"
+sha256 = "sha256:d04b25c1656c82659418179d5ea6eeba81b234a8f71baf5e34a08742f7afb9b3"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/meta/Start Here.md"
-sha256 = "sha256:2a5ec5b0065569d4f9258dccbaf495ee5f4f617dee7f0b595bb21a2481291250"
+sha256 = "sha256:e6399fa8da2597631fd9e1d5b64bb3cef2e1dbb107b575398c144ee392f44177"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/overview.md"
-sha256 = "sha256:234cf46dccc571fe7c5cfb9ed294e55c0206bfb8e0ad5d582d1b67df21549b65"
+sha256 = "sha256:31dcc086dce8f10fe24e5778b2c7ea21b106c86245f08b6e52a99a8ecb559510"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/platforms/_index.md"
-sha256 = "sha256:736aaec526a9b5443c6e09449e18a94ec996a2e49ab75aa99d0e48e43ccf7884"
+sha256 = "sha256:66b052011866580c9bad09d970f1bbd40aa8c03b21c50be5f446e4008a50dcdd"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/questions/_index.md"
-sha256 = "sha256:c16f57a3cd393482a5e7315706912c8edb642e7111886d528276a8418996189f"
+sha256 = "sha256:b5b13375786a97cb2cad20b8248df16c90032751a867fd68d2b78a79356663fb"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/reports/_index.md"
-sha256 = "sha256:b745f446d54252ef424369c3d290d9361303b698524392c54d249b5ce7b01de0"
+sha256 = "sha256:2015a4a53bae1d28fbe7560aa68b5ce23a03bebebd3d83b56cbde0fc09fd513c"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/reports/Weekly Report.md"
-sha256 = "sha256:bc011dadfb5c9e19d8bdeffcb52f8ed6f4e2eca1a0319935fb5f39744303b510"
+sha256 = "sha256:288c1f12709022356f7eca34d403b8719b49c32d8633de823a263d72406444c6"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/sources/_index.md"
-sha256 = "sha256:e2d2fd4827dc21545e21c7c3c00ca0450fa22394952ab48386b82990869a7c17"
+sha256 = "sha256:ecc51d665174414147fbc47bd67cb5fc5fa826a9fc7103958eb9d9f415f6f0c6"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/sources/sample-source.md"
-sha256 = "sha256:c55e96922dc9fe067e46663618fc9a919974385f8e558a9cd070c9e4b8e5a040"
+sha256 = "sha256:95829fa1c8fbd70b98cb2e67dc4a7a8fc14ea4d056eff8874156a80c89b29b29"
 
 [[sources.files]]
 path = "brain/examples/sample-vault/wiki/sources/Source Manifest Guide.md"
-sha256 = "sha256:59eba0865f99fcb5d4e1a4ded96d3e19ad2f46d116648a9d4cb7cbab30244cfe"
+sha256 = "sha256:80ca36af6c793eb5edb24aae76d52e385d9214c9617e826319aaa621ac50694a"
 
 [[sources.files]]
 path = "brain/GEMINI.md"
@@ -1088,20 +1092,24 @@ path = "brain/LICENSE"
 sha256 = "sha256:fd1b082eb35b3284584209f82ee341f6b753b319b900c690eb0b46d694f3df94"
 
 [[sources.files]]
+path = "brain/PUBLISHING_NOTICE.md"
+sha256 = "sha256:e867d39cc005a665155b033801d938a41f45ef2e26b9314025e52fee2c5eca49"
+
+[[sources.files]]
 path = "brain/pyproject.toml"
-sha256 = "sha256:01725b5629f9fdd2ff83585e451c85e1c034fde21ce248cafcc4851c6764d546"
+sha256 = "sha256:b6f1ac93fd1d9cc77c31ac02f4026d3110c427dd7aaea7344bdd63a82bbeaf37"
 
 [[sources.files]]
 path = "brain/README.md"
-sha256 = "sha256:cdcfd4a4b90f7f21ab37ea5476818ccae9d8d16813a6ea095fd8febeccf3e577"
+sha256 = "sha256:bf514ee198db99a56d2d82548fd3e9d5d2ef45037e536ea90500b297f4f48877"
 
 [[sources.files]]
 path = "brain/references/adapter-manifest.json"
-sha256 = "sha256:93811237192dfb25d524e9bf75542a2c4ae859317126b5cc30685143537b4c43"
+sha256 = "sha256:1bc0a7914ae2b3593c523f8ab550b1ac3ccd008327b09e2cee802310cc79751f"
 
 [[sources.files]]
 path = "brain/references/adapter-plan.md"
-sha256 = "sha256:4f2d4d490b5d9db60535aef2d61c0083dac630f5609dec5f366686c1e4f38794"
+sha256 = "sha256:66c8be4af458f7205ea68adade47ad394e060aa831bb8bc8ecc9ab1eb2c7f4dd"
 
 [[sources.files]]
 path = "brain/references/canon/_index.md"
@@ -1109,43 +1117,43 @@ sha256 = "sha256:b0a9b46b11290d179407e6ff07cb0f4af7beff92e95218cbd6c325f46affb19
 
 [[sources.files]]
 path = "brain/references/canon/001-google-search-essentials.md"
-sha256 = "sha256:74a46c96c16a7f83d94459a397d317c3ba7dc07c16d3ef127444583c6d34da29"
+sha256 = "sha256:7725adf985601984543bac716f7796f32825d06fc78932a1a2b356ff264b46e1"
 
 [[sources.files]]
 path = "brain/references/canon/002-search-quality-rater-guidelines.md"
-sha256 = "sha256:8aa1a571e1bb983f0e28ca40c16884ed41e021545d195baa3c3b4c6ce2cb3f54"
+sha256 = "sha256:df8e33652d6f0106bc71afc5aec2e899187c85e79d3139c31b933e821d6e5a11"
 
 [[sources.files]]
 path = "brain/references/canon/003-structured-data-general-guidelines.md"
-sha256 = "sha256:c041a2e5024e953dcbb166e5221df7fced9283f2759deecb395be2049e789d92"
+sha256 = "sha256:cd99e215e2faa75663b24ddad40e62d022790327b43c89d1c1aee0df5ad9bc63"
 
 [[sources.files]]
 path = "brain/references/canon/004-spam-policies.md"
-sha256 = "sha256:b46f589a38f05eebcde400b77dda9a383c2e1e076b739d04ee01a9a4ea3c7650"
+sha256 = "sha256:9a3de0ccb4ffbb9920d7784ad64473c664815ef9c839a6a09566117a0ec9f109"
 
 [[sources.files]]
 path = "brain/references/canon/005-generative-ai-optimization-guide.md"
-sha256 = "sha256:2bb47128918a5b439ccb0d5a6b513f95f1ba8bb1ff0bab5560c49f7c799c5f88"
+sha256 = "sha256:6b00ede87a4e85595b047aa36f7c4ae59796f42f1f8d7f57551fb01ae3519d17"
 
 [[sources.files]]
 path = "brain/references/canon/006-helpful-people-first-content.md"
-sha256 = "sha256:251204db45dab8a6e6493b4496881d0ed80eb9eaf0c7d8e5a614af0154d38a94"
+sha256 = "sha256:388f6012cbf31f5c8c1e337bda6e8dcbf3e5885a0cd016828402262a8758bfe6"
 
 [[sources.files]]
 path = "brain/references/canon/007-core-web-vitals-inp.md"
-sha256 = "sha256:b9d13f8fc8e12abad0125b5d20b6a5db73e045a8fc0af0d252f9adfc1e5a21e8"
+sha256 = "sha256:7ae2c86e659e493ae87f364b3cea2fae2ce5d2976181d171c6e62b209164c6fb"
 
 [[sources.files]]
 path = "brain/references/canon/008-faqpage-deprecation.md"
-sha256 = "sha256:a2f8f7e25c29f7de0778e65e95efd1588cacc53c18c11f930121f4f1952c2124"
+sha256 = "sha256:4e7ff4c8a1162b2b555de3f4bdfdd759ad73b6337fdc660387590a8812232d15"
 
 [[sources.files]]
 path = "brain/references/canon/009-ai-features-your-website.md"
-sha256 = "sha256:61864a57309cf75d83d8ce18c9c750ff119a4e54d7ef0883729fcc95c6ff765a"
+sha256 = "sha256:9491019fd1932af221753198eb9508f3f15e923706330650a3ca446049c43dc7"
 
 [[sources.files]]
 path = "brain/references/canon/010-search-console-gen-ai-reports.md"
-sha256 = "sha256:ed9b6d22516093d7f7774404bf28b41854eff2d8b67c0fbaaa96dc2fd8ac677a"
+sha256 = "sha256:985cd6a335d1b4dab0d308c381feb09f276f4b4d05d5494cac342f7fe1747da7"
 
 [[sources.files]]
 path = "brain/references/claim-ledger.md"
@@ -1165,7 +1173,7 @@ sha256 = "sha256:02a0f89569a9e9edac65daeb678a42f0fecdb25eafdd416a6a9cf33b9a8b7c4
 
 [[sources.files]]
 path = "brain/references/product-spec.md"
-sha256 = "sha256:19a96ebda0da5cce75bc4c794b383cf34141f517834ee57bd4f0df3ad1320cc4"
+sha256 = "sha256:a34d27c0d1b81a180384e3a2ca053b1f8392ab8191544ec19c128f0f386835a7"
 
 [[sources.files]]
 path = "brain/references/README.md"
@@ -1181,7 +1189,7 @@ sha256 = "sha256:003f90781c701e5790421fc84d64f143bc661940a291f37579dae1364d3a9e8
 
 [[sources.files]]
 path = "brain/references/source-ledger.json"
-sha256 = "sha256:19ce0ecab2bc515f9edd96353f7b320f3a6a2202fa7e18e2fb6782aceeda53db"
+sha256 = "sha256:ce3345acab466095cd732b81f20d659aeeb8826b090b027b05eb11278252efed"
 
 [[sources.files]]
 path = "brain/references/source-manifest-template.md"
@@ -1189,11 +1197,15 @@ sha256 = "sha256:d6070ecde6d699663dbdb6a13ade3fd765cf29f650baeb9d1efbbd93fa6eee4
 
 [[sources.files]]
 path = "brain/references/source-map.md"
-sha256 = "sha256:44a1738931f16be590f0a37a2ed8ca6e56e8e7f65e360aff5cd26a29fb14a3a7"
+sha256 = "sha256:349d2bd3544000630c155037d834e183fceb8442d02592b70f17424338703482"
+
+[[sources.files]]
+path = "brain/references/source-review-2026-08-25.json"
+sha256 = "sha256:79069c4390884519ec3f8ca805925b4898baeeb08abbf6a77c23558b86d15979"
 
 [[sources.files]]
 path = "brain/RELEASE_CHECKLIST.md"
-sha256 = "sha256:3d8b841cc9b06ec2d3aa7df5ba6fb9c118fa2adf9aabebf20c0d2a12c3c5eb85"
+sha256 = "sha256:8cdf10d3456a4f9e9afa32ba508f4457fe2ffcadf2c3336ecabbef3f6fab2a8b"
 
 [[sources.files]]
 path = "brain/schemas/blog-post-input.schema.json"
@@ -1209,7 +1221,7 @@ sha256 = "sha256:b90b0209f90107a7e2b39263d62803c8d4ca3180339121117569a086c6dff7c
 
 [[sources.files]]
 path = "brain/scripts/audit_brain.py"
-sha256 = "sha256:174c05dbc72b0b36e1382448e769fa46550f43c0c394f751f31ef2e0ff7548f8"
+sha256 = "sha256:19b6cf6753107b28ec3ed1ac8d7986d8cd295a9534565e1ef33a1fc221b1e058"
 executable = true
 
 [[sources.files]]
@@ -1294,12 +1306,36 @@ path = "brain/scripts/synthesize_topic_cluster.py"
 sha256 = "sha256:01302a922a68a82638c9a97d6049a01e2d3e263cac32c782cd3c896d0e2424a3"
 
 [[sources.files]]
+path = "brain/scripts/verify_source_ledger.py"
+sha256 = "sha256:30ba7e29af8dd46a3ccbff9d3d824358d97983ef1f9f66c9bdb23e3ed912f1f0"
+
+[[sources.files]]
 path = "brain/SECURITY.md"
 sha256 = "sha256:7e3c40343a9f71d6b3ffad07ab3c244fdee8b60ae12d00383f28c4c06b83d9b3"
 
 [[sources.files]]
 path = "brain/shipping-rules.md"
 sha256 = "sha256:31124d0dd54a81cf6562022685c8a3ce26e1255287f9676e8ac1ffdc1fac24c4"
+
+[[sources.files]]
+path = "brain/site/.gitignore"
+sha256 = "sha256:5fdd3534797444ab1c2328b38c571956711882df705cabc097320e580b786a44"
+
+[[sources.files]]
+path = "brain/site/package.json"
+sha256 = "sha256:dace7cf53082d6dfe222b7cef5fb83b84e2e11326cd99b4b9e4fae0c9991b54c"
+
+[[sources.files]]
+path = "brain/site/quartz.config.ts"
+sha256 = "sha256:a360620805a4fccfbf4bdc8fa1756cad3ac89733594ea54188b2fa1d2b444261"
+
+[[sources.files]]
+path = "brain/site/scripts/sanitize-public.mjs"
+sha256 = "sha256:f57146bb51b5972cf6a60b83b257da30d0cee0ae56f20f197438eb4f4a7b4d45"
+
+[[sources.files]]
+path = "brain/site/scripts/sanitize-public.test.mjs"
+sha256 = "sha256:60446277aba310cccfbc566b5c2aff4bce3f955c34d4c39e1fc6f6d043f6b927"
 
 [[sources.files]]
 path = "brain/SKILL.md"
@@ -1343,7 +1379,7 @@ sha256 = "sha256:e2a6b0579bc6066875fa72f0e0f0bbdf49aa64ed6b8b09813a03070b1843b5a
 
 [[sources.files]]
 path = "brain/tests/test_pipeline.py"
-sha256 = "sha256:ef2b1aa81c075f64b8ae1f287b1ed35542d8c66109ea0a44c350d10d5c82fd4c"
+sha256 = "sha256:9f9026dfd23503c9acc0988e663b9b7a1877e7dc2ebc45958c0dccb77aea2280"
 
 [[sources.files]]
 path = "brain/tests/test_wiki_substance.py"
@@ -1839,6 +1875,10 @@ path = "brain/wiki/entities/Google Search Central.md"
 sha256 = "sha256:c4d302832988f41faf064ba2ed22f0515501d077204d6e75383525d25ee91ee9"
 
 [[sources.files]]
+path = "brain/wiki/experiments/Claim Drift Detection Experiment.md"
+sha256 = "sha256:d5c49e84f38e98399be3b8d839dbda7cd14b9f98f9748bb4763477f411e9a574"
+
+[[sources.files]]
 path = "brain/wiki/flow/_index.md"
 sha256 = "sha256:a93b5132edda4107d135b0d62df6c155597b3cafabe2c8989c981b60ac688d0e"
 
@@ -1893,6 +1933,26 @@ sha256 = "sha256:3f0ef18a5e6e84ab27ac19c3fe1bd30cf59465068f08ef687cd5cdae394c9c6
 [[sources.files]]
 path = "brain/wiki/flow/grand-audit-upgrade-flow-output.txt"
 sha256 = "sha256:9363518e3cfa09713b51e5b1e715adabd662180625edf8c3df3023fd626af4b3"
+
+[[sources.files]]
+path = "brain/wiki/flows/Claim Verification Flow.md"
+sha256 = "sha256:1527122d4fe51954c1ea1abbb54989bc5a550c67685da91b26968c761124fe3a"
+
+[[sources.files]]
+path = "brain/wiki/flows/Context Compaction Routine.md"
+sha256 = "sha256:feb5375b889c1470590f6242b28ca20348a457a5ffaf49d4512d39f73c42877b"
+
+[[sources.files]]
+path = "brain/wiki/flows/Explore Plan Code Commit.md"
+sha256 = "sha256:b949aa0ae36e0f68a75c0d42f93b9436dfa23d8bc07f350abbbef22c36359003"
+
+[[sources.files]]
+path = "brain/wiki/flows/Multi-Agent Fan-Out Research Flow.md"
+sha256 = "sha256:5775a8041812075d84247200289f23e69d27fb184f7259f2fcba821771990176"
+
+[[sources.files]]
+path = "brain/wiki/gaps/First Party Data Availability Gap.md"
+sha256 = "sha256:c70a6e9a3c9c647e0598f79db02f3a3d9ee96ced9ac0acfb88af7bf1b6bc4e1a"
 
 [[sources.files]]
 path = "brain/wiki/geo-aeo/_index.md"
@@ -2035,12 +2095,28 @@ path = "brain/wiki/meta/_index.md"
 sha256 = "sha256:186d3998a86b62614c4c90a9122cff115dac4e90d54548745cb4781994827dc8"
 
 [[sources.files]]
+path = "brain/wiki/meta/Answer Engine Citability Policy.md"
+sha256 = "sha256:877c80d62b351797ff608fdc796b59cba43de90888f47bbb7da5420ae6811722"
+
+[[sources.files]]
 path = "brain/wiki/meta/CONVENTIONS.md"
-sha256 = "sha256:ea7b90683698fd15fa1ed55618f2bb31c9c1ece22f4cbc04e4ca38b24de8fb17"
+sha256 = "sha256:5cd2ff94d3c4c3d50faa05633180c0afed206d539792340f556fc412b119fda7"
+
+[[sources.files]]
+path = "brain/wiki/meta/Corpus Scope Policy.md"
+sha256 = "sha256:b4fb4b4c820ade2f7ec498aa46e455ad0547ddb4d616ad434dae317676735ed0"
 
 [[sources.files]]
 path = "brain/wiki/meta/dashboard.md"
-sha256 = "sha256:b89ce204d32497476ce142090b122ad04817892e6dd817893b1d12344b5f217d"
+sha256 = "sha256:1fc40280f67fc0057c71be48ae7778bcdafffb5cbeff65dd8a0d48d34006b88b"
+
+[[sources.files]]
+path = "brain/wiki/meta/Memory Governance Policy.md"
+sha256 = "sha256:fbdba692409f961877d20a68fa784aa3508cb9acab0ae37bf8e61a1377ab6caf"
+
+[[sources.files]]
+path = "brain/wiki/meta/Provenance Trace Policy.md"
+sha256 = "sha256:86cc29d405e490a2ac40d68ebbc914d202fc1bd33b392d620afedddd967cf021"
 
 [[sources.files]]
 path = "brain/wiki/meta/Start Here.md"
@@ -2049,6 +2125,10 @@ sha256 = "sha256:9beec7096e8e8442876fc63643af543b2f7f557d4f29979350d3dd0a1b792b6
 [[sources.files]]
 path = "brain/wiki/meta/Tag Taxonomy.md"
 sha256 = "sha256:a7297c9308ae025598e8bf90ce2fef80109d20344123e73528622e03ef50725e"
+
+[[sources.files]]
+path = "brain/wiki/meta/Uncertainty Eval Policy.md"
+sha256 = "sha256:804ec2e5c7c94e5ddeffd5f1d636b398fa3b82b7c376d2f10ecd971c51aa76e1"
 
 [[sources.files]]
 path = "brain/wiki/monitoring/_index.md"
@@ -2064,7 +2144,7 @@ sha256 = "sha256:69bc71947ea8839ff5594d23155eebd152a7e00e9108d2502effa748958beef
 
 [[sources.files]]
 path = "brain/wiki/monitoring/2026 Google Update Timeline.md"
-sha256 = "sha256:b181a72ad52163334f514ef67c3cda6c3f1c5f6df87914aaa2d87cc551dddc5b"
+sha256 = "sha256:ceedf167a1fa4b480e273949709b52f702ccedeb90f2ac497bf20323b7829952"
 
 [[sources.files]]
 path = "brain/wiki/monitoring/AI Search Update Watch.md"
@@ -2080,7 +2160,7 @@ sha256 = "sha256:9f55a3dbd4535fdc0b0762d4dfeead78c17389c942cd9989c144a864f5b158a
 
 [[sources.files]]
 path = "brain/wiki/monitoring/Google Algorithm Update Ledger.md"
-sha256 = "sha256:dedfe7974017bc818071517910f4639d3f63bfdb0df446dca15777e2a075ad9f"
+sha256 = "sha256:b70f9376a1050dc58a33b4d97f689c21e3b90059bf3823733d751e880d6b4d29"
 
 [[sources.files]]
 path = "brain/wiki/monitoring/grand-audit-upgrade-monitoring-output.txt"
@@ -2088,7 +2168,7 @@ sha256 = "sha256:a279a7a18e6838566a08fc34df7302835bf3c2f85a0e297c21fb83dbf16b39b
 
 [[sources.files]]
 path = "brain/wiki/monitoring/Monthly Source Refresh.md"
-sha256 = "sha256:1284adc07ca40c7ef11a68985a133e0f4c440d5c6a1bf128a6a527b47ee9152b"
+sha256 = "sha256:11b7f0da3937fe23d59ac3b3dd6186b434ba4898977e06d183b8ca7b40694938"
 
 [[sources.files]]
 path = "brain/wiki/monitoring/QRG Revision Watch.md"
@@ -2100,7 +2180,7 @@ sha256 = "sha256:9f4b6349bff0140d609c870c1dedf11e7f0801bf8bf01982a70096a4e29bbd9
 
 [[sources.files]]
 path = "brain/wiki/monitoring/Spam Update Response Playbook.md"
-sha256 = "sha256:0b98a7dbee2a2c80b32e71c8ce65ebab3ccc26d72d01b08400e926d934f72531"
+sha256 = "sha256:4e593994f13f976ea4a068022c9cba35098a081288c3d20c07e6275755a0cd68"
 
 [[sources.files]]
 path = "brain/wiki/monitoring/Unverified Volatility Quarantine.md"
@@ -2299,6 +2379,10 @@ path = "brain/wiki/quality/Technical Schema Subscore.md"
 sha256 = "sha256:da51d71c405be627d1c3a70f61901c96bd8d3df9835c3b5339761e170f55de3d"
 
 [[sources.files]]
+path = "brain/wiki/questions/AI Citation Attribution Question.md"
+sha256 = "sha256:fa121ef6c5834cc8d150f54823529e9bf09c21f060019dcf10b887f431a2e8a9"
+
+[[sources.files]]
 path = "brain/wiki/rewriting/_index.md"
 sha256 = "sha256:e04eabad7c64f303579eaaa58f5e787d5c607ce0d97bd7062ccdfe7a0c5868f9"
 
@@ -2431,8 +2515,8 @@ path = "brain/wiki/sources/Claim To Source Mapping.md"
 sha256 = "sha256:09ba38e465d0d716d8e5610479a07444401ec44b201bf857567ba244ec6225fa"
 
 [[sources.files]]
-path = "brain/wiki/sources/Claim Verification Flow.md"
-sha256 = "sha256:07d1d77ed4e221e01e73d5fd17214256c13b56ce99a80dc8d5dc3350dce75b74"
+path = "brain/wiki/sources/Claim Verification Evidence Guide.md"
+sha256 = "sha256:79a41b305722bb673d659425a68607db9fcdce2977dbd5d4c2b7e66cdb8600ac"
 
 [[sources.files]]
 path = "brain/wiki/sources/Current Requirements Digest.md"
@@ -2560,23 +2644,27 @@ sha256 = "sha256:765e3a02eaf50ce5d34a8702f32689e7d193b099ef9d3787f1ba3e5cec9b8b1
 
 [[sources.files]]
 path = "CHANGELOG.md"
-sha256 = "sha256:512410953314d47f9655244a3396765b7a824dbebaed78d5b7659472d0dd0702"
+sha256 = "sha256:333b1783777ceddfb28a8c23729f19337d8251ef522f4be131e5203a6bf44680"
 
 [[sources.files]]
 path = "CITATION.cff"
-sha256 = "sha256:50f78db4928e47d80b5843efbd747825266c02e45b20d47580e901caab1a3fa0"
+sha256 = "sha256:8f4baa157c04f8932df1c1a80fb599c8943b445997903bb3aa3298c7b3fa4ddb"
 
 [[sources.files]]
 path = "CLAUDE.md"
-sha256 = "sha256:8d74f129c405528d95e5dbdf3e27083fbb89eebc7d212e5c64ec4ae4c20da018"
+sha256 = "sha256:2327fda0f10eb936c547f8cc5764cf68d91f322f8e189fa99c7b050facf8a451"
 
 [[sources.files]]
 path = "data/google-updates.json"
-sha256 = "sha256:fe1d03b33e3a640f327738a3a425600919223a329dbbf006800e8e79a53c583b"
+sha256 = "sha256:77253bb09ebafdc1bff9ad6d607c3af6f1766d076f7726b99abe6a82b1086cc1"
 
 [[sources.files]]
 path = "docs/ARCHITECTURE.md"
-sha256 = "sha256:c6aa0d95d33fddd116a38304bc4359d88c023c444a70fa228f0424267d2a94c1"
+sha256 = "sha256:9f80fb69d36f06fd06352fb0f5c29b34522db4e3470f430583d6ddbd487d7ecb"
+
+[[sources.files]]
+path = "docs/AUDIT-2026-08-25.md"
+sha256 = "sha256:d494a77fa18b5da20e5d280618064890d36675a789ed6f4657c37e6782d6c4ee"
 
 [[sources.files]]
 path = "docs/COMMANDS.md"
@@ -2584,15 +2672,15 @@ sha256 = "sha256:0cececab4d9b9a8b4f527372d12384b8fd7807916d74ec4391f89f805a5f7b5
 
 [[sources.files]]
 path = "docs/CONTRIBUTORS.md"
-sha256 = "sha256:02fae9354f4b37f07223eaa935353b07a6c83dcb5461b25bd9900d35df5c63f6"
+sha256 = "sha256:0f3529f93905832074adc52216a913305c233238ea146f825f964f976bb5c8ce"
 
 [[sources.files]]
 path = "docs/DEMO.md"
-sha256 = "sha256:7ea6b2afd5baa483397970763414ed710d038a7fb1b558588b4ca7a7e46a47ce"
+sha256 = "sha256:7a5d0da2bc4ebaa9e39a8768a247d50ac5fe5d0c58a18094c0402f39fab3d3a3"
 
 [[sources.files]]
 path = "docs/INSTALLATION.md"
-sha256 = "sha256:b4ac150dd4ea804625e393936951aa6a657e4dcbf84e9f758de84f22d7e60a64"
+sha256 = "sha256:321a2acdae55210135aff0f385732dd1d0cd2dcc5c17421ed8f03752b00236cb"
 
 [[sources.files]]
 path = "docs/MCP-INTEGRATION.md"
@@ -2624,11 +2712,11 @@ sha256 = "sha256:b57b29c601c416f30f6a1e153867504fae10f62d012b1bd00aa97901d8e565e
 
 [[sources.files]]
 path = "install.ps1"
-sha256 = "sha256:0893f15fdaebaa5d8d391a03712c67d76c7bd032ce15182c40e50e5cf562be9e"
+sha256 = "sha256:68c9f0ea666fb35dce8997f08721056ff0b7b370514a4a21c60d7b9ebd8dcc75"
 
 [[sources.files]]
 path = "install.sh"
-sha256 = "sha256:b4fcd5aa6767529bc8d11017699bd8211519c93b0d6c28c5cf032f76ada98381"
+sha256 = "sha256:25f73e7efbe9e714d00af34d2c6b48bd59d60a14976e2eb032b8ad5c2f756ce4"
 executable = true
 
 [[sources.files]]
@@ -2641,11 +2729,11 @@ sha256 = "sha256:d55d027b4e159c562dc7d96a6413174730dcdbd8bbf912829a4b65091d8ab4f
 
 [[sources.files]]
 path = "pyproject.toml"
-sha256 = "sha256:3880adc2fffc2c045434b6d04c7447dfbe6f50257912e462b39748ffffc3b6cc"
+sha256 = "sha256:bf650b58e63c53966b69b6c5a4cb1029677714565f52e4b3a9961be3ebd0ac19"
 
 [[sources.files]]
 path = "README.md"
-sha256 = "sha256:77d2085a657d75ccd2ede8b22d95c62712f138c7cf06bdb29faa96c39bcaae96"
+sha256 = "sha256:7b35bd2212bb8255927c317a9474f5400308965f9f0c5286f949bc2f5c312633"
 
 [[sources.files]]
 path = "requirements.lock"
@@ -2661,7 +2749,7 @@ sha256 = "sha256:43ded191f35d50da4b21ea3fe8adf85c691b54db241880acd53165196391887
 
 [[sources.files]]
 path = "scripts/analyze_blog.py"
-sha256 = "sha256:3417a53f8c2c61db80c7d8fd79507af31a3d93d06410bda55d685a381b2e6de1"
+sha256 = "sha256:71346890615dac82e31db243bcaf45b8f179b899824658ab6e7831e674859a33"
 executable = true
 
 [[sources.files]]
@@ -2675,6 +2763,14 @@ sha256 = "sha256:f2d363ff3d60100464561e4087f4063677f390d757851b58776d30f7a1f57cf
 [[sources.files]]
 path = "scripts/blog_render.py"
 sha256 = "sha256:b764527fa3d3c8add4389ff2edd500ca1f24de4dfb3c5ae1607bc4d656948b14"
+
+[[sources.files]]
+path = "scripts/check_google_currentness.py"
+sha256 = "sha256:4b59a31da579b8746ffb41d0ac0bd2d16e34da12d1a75b9f6b3c3662f9546dc3"
+
+[[sources.files]]
+path = "scripts/check_secrets.py"
+sha256 = "sha256:62df1b0a9098449852c85c1b9b37c7a77c1d23b5f68de1ab8d2c9dadd98b30bb"
 
 [[sources.files]]
 path = "scripts/cognitive_load.py"
@@ -2721,8 +2817,12 @@ path = "scripts/sync_flow.py"
 sha256 = "sha256:4e4459d42f884e7d8ecf9dfb01fe39ea6529f2f951198a521b87e800748f914f"
 
 [[sources.files]]
+path = "scripts/sync_google_updates.py"
+sha256 = "sha256:affeb2aefc316cc325fe05273597cf51a8a2b0357753b7291488be2a9ceb544e"
+
+[[sources.files]]
 path = "scripts/validate_public_release.py"
-sha256 = "sha256:bb057cbe666b53e07db41a99422f49e4dba6ddaf32ad33c1fed90ada7fbe2cdf"
+sha256 = "sha256:75fe2ba93215fdad4e6ff89b86572c8e5dd85e395e30e40f979b8087cd9634c6"
 
 [[sources.files]]
 path = "skills/blog-analyze/SKILL.md"
@@ -2758,7 +2858,7 @@ sha256 = "sha256:52e7ae33fa5e89660f48c615ebcf65bf11a361b0d96da0c671ccd0b98fe1945
 
 [[sources.files]]
 path = "skills/blog-audio/SKILL.md"
-sha256 = "sha256:27d6e9337a80e271127f40ff975dc9fe906071548a8c70164ded3dd75a755e67"
+sha256 = "sha256:db7fb80abdc0ec41a1fe7b9116da8b7e72c2cdad2c58767dbedc2eb87c98e89c"
 
 [[sources.files]]
 path = "skills/blog-audit/SKILL.md"
@@ -2802,7 +2902,7 @@ sha256 = "sha256:81c9730b79d59d6fe75a97d86709c015a7240ead9f31384f0927e8134e76746
 
 [[sources.files]]
 path = "skills/blog-cluster/SKILL.md"
-sha256 = "sha256:3fc39c706a3dd620b34e76217969ef4977e8e60b6ae7564c9d30ab4f3b1c76c6"
+sha256 = "sha256:c79e96299f965aad169c938c35ca7554c5bdd694ea8790c101ddcb3e79e7c50f"
 
 [[sources.files]]
 path = "skills/blog-decay/SKILL.md"
@@ -2962,7 +3062,7 @@ sha256 = "sha256:af9529e2a5fad14aa3445092c180f4b83dc48e703e704b6ec71fcf8f0fdb7f7
 
 [[sources.files]]
 path = "skills/blog-flow/SKILL.md"
-sha256 = "sha256:b3a642aa89b657d16c0c10472a3e57ec250f8e519d859758500cedddc29b9b80"
+sha256 = "sha256:82054b14b3f389e5a4e26e4462644b71a7ab8e64e0d167e193c0dd77e605aecb"
 
 [[sources.files]]
 path = "skills/blog-geo/SKILL.md"
@@ -2982,11 +3082,11 @@ sha256 = "sha256:afc337905d82f83659a229382432876edba9bd9af6e589b3e4de4786974f13b
 
 [[sources.files]]
 path = "skills/blog-google/references/api-reference.md"
-sha256 = "sha256:c128c117e2fba0e6af5012c540c6996982f27d2e040d8abdbffdd27ecd0577a6"
+sha256 = "sha256:eafa6686d29c17e0a718239830a819b1367f70afb1e08a80df5629eb237fb43a"
 
 [[sources.files]]
 path = "skills/blog-google/references/auth-setup.md"
-sha256 = "sha256:aab207479bde594791215d0b5e25570f10a0908e76e1438054e125b2ac582348"
+sha256 = "sha256:e8e49d7e0a000523b36b1112a56bf972e9035dcc42ec25ea386adf327d18ceac"
 
 [[sources.files]]
 path = "skills/blog-google/references/rate-limits-quotas.md"
@@ -2994,7 +3094,7 @@ sha256 = "sha256:8ab54974bf45e575dc015f414da74104a0fee7f04ed83caaca754802c4a37ae
 
 [[sources.files]]
 path = "skills/blog-google/references/search-currentness.md"
-sha256 = "sha256:d229d16d0d7cb63082a5d98b86e28aed8a2e54a237a600d7c390425b1bf86c42"
+sha256 = "sha256:0faec024f388e01b4a102c6a2ca9973d851ffeb1b6ed0a149cb7b13b1cb1b22f"
 
 [[sources.files]]
 path = "skills/blog-google/scripts/__init__.py"
@@ -3010,7 +3110,7 @@ sha256 = "sha256:6b2108de4e946d9b5235057fff92c2f383965b4544b600b2cef4a7b1e179063
 
 [[sources.files]]
 path = "skills/blog-google/scripts/google_auth.py"
-sha256 = "sha256:f59efe54c4441c191528716a1fd1871391ed51d59735c322bbe4356fd49296bd"
+sha256 = "sha256:b02d38700236e2867c86544bb4407c4d8665c3084507650b826f29d0c563235f"
 
 [[sources.files]]
 path = "skills/blog-google/scripts/google_report.py"
@@ -3042,11 +3142,11 @@ sha256 = "sha256:ab530e2919aba38dec4ac01cbe38aef94121259454be1211854ae793e9b4bf4
 
 [[sources.files]]
 path = "skills/blog-google/scripts/requirements.lock"
-sha256 = "sha256:5dba489b37ca128e3d8d3739626febb0a7b171ec5463cfc1c4e2366e0f6925a4"
+sha256 = "sha256:fccdb2ad56411a4409198efeae3b6c868b9e623c1b71f76cd7bd5693762997af"
 
 [[sources.files]]
 path = "skills/blog-google/scripts/requirements.txt"
-sha256 = "sha256:51ebf99b98fdd3e631a09f2e045ecbe0dc0f28de85ec3ebd7404d78f2a1bc7ad"
+sha256 = "sha256:f609a6ff041ed11975961d595171187aeeb5a2c88f8d086f71c0275477456afa"
 
 [[sources.files]]
 path = "skills/blog-google/scripts/run.py"
@@ -3062,7 +3162,7 @@ sha256 = "sha256:2a4065a2ba2638a6c3130b2fd2e9e79a61f9583375fe607cf797ab5bad64583
 
 [[sources.files]]
 path = "skills/blog-google/SKILL.md"
-sha256 = "sha256:8abdea21419d364dbfe556db1953cdd012731a1c00d8f50eadfccb90bd42c222"
+sha256 = "sha256:7406cd6b5f78bb50cc7b0fe6fe9828ca8c5ad054ed498cd30791043ab31428fd"
 
 [[sources.files]]
 path = "skills/blog-image/references/gemini-models.md"
@@ -3086,19 +3186,19 @@ sha256 = "sha256:2e4a753eb32f5617f155a93a1cf9ce9c6f8d454fb6fbc21e33e689054679e48
 
 [[sources.files]]
 path = "skills/blog-image/SKILL.md"
-sha256 = "sha256:f5cb3abe7b21003080e8a83e404cccdcf7837093bcbc90bc7274a091e95e59d0"
+sha256 = "sha256:3d802efe079b76b3da09c7b40fd0f90ab5fb414b5839b5b177b60c8c269bc3ec"
 
 [[sources.files]]
 path = "skills/blog-locale-audit/SKILL.md"
-sha256 = "sha256:891a51aed0bd31fa7ece519d1c5ab8d3ddae3bc565b565a3327a80e319415b20"
+sha256 = "sha256:3a6136a83f9e46b134f6831862c33dabf0a6486b65f5872541e527aa7ff898b7"
 
 [[sources.files]]
 path = "skills/blog-localize/SKILL.md"
-sha256 = "sha256:ed2e37f572b3d61178db8668c98f3241d3d2fb9b94afcf4ed3f2f01d124e45bd"
+sha256 = "sha256:f30f565d9a7a8d0e02a2d7fb7166600b8dd61e447c030891d3ff339eb5db1418"
 
 [[sources.files]]
 path = "skills/blog-multilingual/SKILL.md"
-sha256 = "sha256:c679f9125893a5a2335c5c9dba6598f895fad3e1dfb2dfb2100f9c7593c7b7d1"
+sha256 = "sha256:e7819afdcd008dbeb47632474214a482a379bbdbfbc450c276d371c17aad1761"
 
 [[sources.files]]
 path = "skills/blog-notebooklm/references/commands.md"
@@ -3158,7 +3258,7 @@ sha256 = "sha256:5a90e53bd48ce6b89b9648b51104f1e6b535f95435dca2aaa7197914625ae1a
 
 [[sources.files]]
 path = "skills/blog-notebooklm/SKILL.md"
-sha256 = "sha256:287c07423a30360b86a98f0a239804f115db1fd712530b7402e18fd08efb1ad1"
+sha256 = "sha256:5ef9bc8d318d7e6af7a5f0858d265004a645eebed5cf7bafb5769efbeb1893db"
 
 [[sources.files]]
 path = "skills/blog-outline/SKILL.md"
@@ -3210,7 +3310,7 @@ sha256 = "sha256:163a899f678aa1aa29ea8b07f0d3cf6e038c4ae8e2d686f8a506d2f8a6cdbb7
 
 [[sources.files]]
 path = "skills/blog-translate/SKILL.md"
-sha256 = "sha256:49d4f776793d68702b3c69cd4c2974f91af1c5a65bf5b7d49bf941b57b50fb62"
+sha256 = "sha256:f391cd910732ebbcd8ed5d633b74261ff011e0b91cb0927a5f5c47c79b856566"
 
 [[sources.files]]
 path = "skills/blog-write/references/delivery.md"
@@ -3270,7 +3370,7 @@ sha256 = "sha256:8e13668c4107a9ed707f86726916206047ba00da6d23cfb6b10ddb751b34efa
 
 [[sources.files]]
 path = "skills/blog/references/google-landscape-2026.md"
-sha256 = "sha256:3328fe77e51f5eaff3993a73a4e1a065540a7a9b4415d98ac1dd12ed9d4fe1f0"
+sha256 = "sha256:181321fc89f8570679d98bd668f8d7a1bc445e8fecd121528328904db7d36627"
 
 [[sources.files]]
 path = "skills/blog/references/internal-linking.md"
@@ -3310,7 +3410,7 @@ sha256 = "sha256:cf972559ef46e4a712d19289fd18577a8364ed8732561940093b0a56070c7be
 
 [[sources.files]]
 path = "skills/blog/SKILL.md"
-sha256 = "sha256:19baaee9989f1334e7df86d7e3fd4a604feab76939c667b05dc89de486330478"
+sha256 = "sha256:7ce5833fb6905f8451552304ef95678a18eec658901e0cc975b8a19fed5ebc4c"
 
 [[sources.files]]
 path = "skills/blog/templates/case-study.md"
@@ -3346,7 +3446,7 @@ sha256 = "sha256:e8409dec628cf8ac99969ae7d3e9f283d1a2c239d364041619d8ee3a7ca8ede
 
 [[sources.files]]
 path = "skills/blog/templates/product-review.md"
-sha256 = "sha256:f206e506194e705f34fba995efd225180ed1a3cfb414a134c040860987de3143"
+sha256 = "sha256:52005ac49d613fa624cc77b22de0c0e683fd03a9661e4eea2f4e52afecd6a9ce"
 
 [[sources.files]]
 path = "skills/blog/templates/roundup.md"
@@ -3390,7 +3490,7 @@ sha256 = "sha256:d868c43ba2d9fbdcf17d9d61eb9c2bb3ecefe3f84fa7cf8679d3ed55742ffe0
 
 [[sources.files]]
 path = "tests/test_analyze_blog.py"
-sha256 = "sha256:04bb94b8d5dc9005c65fac6016f93f920bf9ade158120de3167e3d34b18bd7b8"
+sha256 = "sha256:82377acf6c5ed553bc99883a678b588eca60a14b7cce86090a8175041166a859"
 
 [[sources.files]]
 path = "tests/test_blog_chart_generator.py"
@@ -3430,7 +3530,7 @@ sha256 = "sha256:b2a70004b3283ecc3d7dcbea73a686d36ca5ed310467455244524bbfc96d648
 
 [[sources.files]]
 path = "tests/test_google_updates_ledger.py"
-sha256 = "sha256:b2c14a5a7a8d17365830b11277ef0b915d8ae14458d103940e2228b8b05de29d"
+sha256 = "sha256:7358cf0d89843258347720c446975457cc7175f64a6382d64c33fc552f389320"
 
 [[sources.files]]
 path = "tests/test_installer_sync.py"
@@ -3462,7 +3562,7 @@ sha256 = "sha256:98bc5579be5e3874146f37fda6d00e1a0467dd7a0056ade453603a1f843465e
 
 [[sources.files]]
 path = "tests/test_release_safeguards.py"
-sha256 = "sha256:15a69c53848327849aae2481e7b68e727d4a5e0eae3edc37e29993a6883cc145"
+sha256 = "sha256:02368ffb895e52779e47aa07a6cc8baa2cc38159c7d665ca1c147d9ed6f96674"
 
 [[sources.files]]
 path = "tests/test_review_nonce.py"
@@ -3486,26 +3586,26 @@ sha256 = "sha256:16306d80df8f7719d3970a807bcd291cf2966f0df2dad013a8422b5dc59c63d
 
 [[sources.files]]
 path = "uninstall.ps1"
-sha256 = "sha256:5e5e61cd16abce741c7c35788b2db29075a3f51f91bffb41461d3c95c1fc5d88"
+sha256 = "sha256:d6557f5953f7957dcb7c10106af6206f0fd0731d26a3ff08b5ba368ed35ebdb1"
 
 [[sources.files]]
 path = "uninstall.sh"
-sha256 = "sha256:de76b83365eefe892c870ecf250b3fe4c049e8a574872419cb40e48b2cb71542"
+sha256 = "sha256:975594dc5d4cd4bfb629b8e79ea0723482d32fbbe0f0e265718dcca272a251bd"
 executable = true
 
 [[sources.files]]
 path = "uv.lock"
-sha256 = "sha256:af8f233b66f475f857ffbe7f81083b5b3a406fb81ac7a7cda94f03a430dc1a83"
+sha256 = "sha256:c1a8044460ce5de92f155a631cf5eb6d683ee5d950816e741f2f9b068255c991"
 
 [packages]
 
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.245"
-integrity = "sha256:ec08af5c412a4456f200c20e586e0268eda62fac7952fe14ff97f0aab485c7b6"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.245/claude-linux-arm64.tar.gz"
-size = 120536454
+version = "2.1.246"
+integrity = "sha256:baeb4f7d0f459e1d1f11f2f7ff90efd666a0764188921385294c73753345ec08"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.246/claude-linux-arm64.tar.gz"
+size = 100586406
 
 [[packages.runtime]]
 name = "bash"
