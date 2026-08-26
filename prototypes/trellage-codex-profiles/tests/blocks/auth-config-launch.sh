@@ -22,7 +22,7 @@ fi
 
 jq -e '
   .schemaVersion == 1
-  and (.profiles | keys | sort) == ["hve", "superpowers"]
+  and (.profiles | keys | sort) == ["hve", "pstack", "superpowers"]
   and .profiles.hve.description == "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access."
   and .profiles.hve.marketplaceKind == "local-adapter"
   and .profiles.hve.marketplaceSource == "marketplaces/hve-core"
@@ -32,6 +32,12 @@ jq -e '
   and .profiles.hve.manifestUrl == "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
   and .profiles.hve.plugin == "hve-core-all@hve-core"
   and .profiles.hve.standaloneMcps == []
+  and .profiles.pstack.marketplaceKind == "git-local"
+  and .profiles.pstack.marketplaceSource == "Aqua-123/pstack-for-codex"
+  and .profiles.pstack.marketplaceName == "pstack-for-codex-local"
+  and .profiles.pstack.upstreamRepository == "https://github.com/Aqua-123/pstack-for-codex.git"
+  and .profiles.pstack.plugin == "pstack-for-codex@pstack-for-codex-local"
+  and .profiles.pstack.standaloneMcps == []
   and .profiles.superpowers.description == "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow."
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
@@ -46,6 +52,7 @@ build_fixture_profiles
 HOME="$fixture_root/home" "$fixture_launcher" list >"$fixture_root/list.out" || fail 'list failed'
 cmp -s "$fixture_root/list.out" <(printf '%s\n' \
   $'hve\thve-core-all@hve-core' \
+  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace') \
   || fail 'list output differs'
 
@@ -56,7 +63,7 @@ jq -e '
   and .launcher == "cdx"
   and .harness == "codex"
   and .sandbox == true
-  and [.profiles[].name] == ["hve", "superpowers"]
+  and [.profiles[].name] == ["hve", "pstack", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -76,6 +83,7 @@ jq -e '
     "testedHarnessVersion": null
   }
   and .profiles[1].headless == .profiles[0].headless
+  and .profiles[2].headless == .profiles[0].headless
   and .profiles[0].plugin == "hve-core-all@hve-core"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
@@ -85,8 +93,11 @@ jq -e '
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
   }
   and .profiles[0].standaloneMcps == []
-  and .profiles[1].marketplace.kind == "git"
+  and .profiles[1].marketplace.kind == "git-local"
+  and .profiles[1].marketplace.source == "Aqua-123/pstack-for-codex"
   and .profiles[1].standaloneMcps == []
+  and .profiles[2].marketplace.kind == "git"
+  and .profiles[2].standaloneMcps == []
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list output differs'
 
 if HOME="$fixture_root/home" "$fixture_launcher" >"$fixture_root/bare.out" 2>&1; then

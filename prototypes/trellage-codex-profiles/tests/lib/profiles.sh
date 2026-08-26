@@ -60,6 +60,8 @@ establish_main_profiles() {
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" setup --all \
     >"$fixture_root/prelude-setup-all.out" || fail 'setup --all failed'
+  pstack_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
+  [ -d "$pstack_home" ] || fail 'setup --all did not create pstack home'
   superpowers_home="$fixture_root/home/.local/share/trellage/profiles/codex/superpowers/home"
   [ -d "$superpowers_home" ] || fail 'setup --all did not create superpowers home'
 

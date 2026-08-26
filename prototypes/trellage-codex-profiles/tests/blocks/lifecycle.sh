@@ -60,10 +60,12 @@ write_isolation_snapshot setup-all-ordinary
 HOME="$fixture_root/home" fake_env "$fixture_launcher" setup --all \
   >"$fixture_root/setup-all-idempotent.out" || fail 'idempotent setup --all failed'
 assert_isolation_snapshot_unchanged setup-all-ordinary
-jq -se --arg hve "$hve_home" --arg superpowers "$superpowers_home" '
-  length == 8
+jq -se --arg hve "$hve_home" --arg pstack "$pstack_home" \
+  --arg superpowers "$superpowers_home" '
+  length == 12
   and all(.[0:4][]; .codexHome == $hve)
-  and all(.[4:8][]; .codexHome == $superpowers)
+  and all(.[4:8][]; .codexHome == $pstack)
+  and all(.[8:12][]; .codexHome == $superpowers)
   and all(.[]; (.args | join(" ") | test(" add | remove | upgrade ") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'setup --all order or idempotence differs'
 

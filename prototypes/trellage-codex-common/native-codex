@@ -1,0 +1,3343 @@
+#!/usr/bin/env bash
+# Shared implementation for Trellage's native Codex launcher.
+
+set -u
+
+launcher_name="${TRELLAGE_CODEX_LAUNCHER_NAME-}"
+script_dir="${TRELLAGE_CODEX_RUNTIME_ROOT-}"
+profile_storage_key="${TRELLAGE_CODEX_PROFILE_STORAGE_KEY-}"
+case "$launcher_name" in
+  cdx) ;;
+  *) printf 'native-codex: invalid launcher identity\n' >&2; exit 1 ;;
+esac
+case "$script_dir" in
+  /*) ;;
+  *) printf '%s: invalid runtime root\n' "$launcher_name" >&2; exit 1 ;;
+esac
+[ -d "$script_dir" ] && [ ! -L "$script_dir" ] || {
+  printf '%s: invalid runtime root\n' "$launcher_name" >&2
+  exit 1
+}
+resolved_runtime_root="$(CDPATH= cd -P -- "$script_dir" >/dev/null 2>&1 && pwd)" || {
+  printf '%s: could not resolve runtime root\n' "$launcher_name" >&2
+  exit 1
+}
+[ "$resolved_runtime_root" = "$script_dir" ] || {
+  printf '%s: redirected runtime root\n' "$launcher_name" >&2
+  exit 1
+}
+catalog="$script_dir/catalog.json"
+profiles_root="${HOME%/}/.local/share/trellage/profiles/codex"
+codex_executable=""
+active_stage=""
+active_auth_profile=""
+catalog_cache=""
+owned_temp_files=("")
+owned_temp_count=0
+created_temp=""
+launch_child_pid=""
+launch_signal_status=0
+active_launch_lock=""
+active_launch_lock_owner=""
+# Resolved once so `file_mode` does not spawn `uname` on every mode check.
+host_system_name="$(uname -s 2>/dev/null || :)"
+validated_profile=""
+# The exact catalog records the Superpowers marketplace repository, not the
+# plugin source repository. Keep that independently validated invariant here.
+superpowers_plugin_repository="https://github.com/obra/superpowers.git"
+floating_skills_manager="$script_dir/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$script_dir/../common/floating-skills-runtime/skills.json"
+if [ ! -f "$floating_skills_manager" ]; then
+  floating_skills_manager="$script_dir/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$script_dir/../../skills.json"
+fi
+
+ensure_floating_skills() {
+  local profile="$1"
+  [ -f "$floating_skills_manager" ] && [ ! -L "$floating_skills_manager" ] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [ -f "$floating_skills_catalog" ] && [ ! -L "$floating_skills_catalog" ] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
+    --target "$(profile_home "$profile")/skills" \
+    || die "failed to install floating skills: $profile"
+}
+
+die() {
+  printf '%s: %s\n' "$launcher_name" "$*" >&2
+  exit 1
+}
+
+usage() {
+  printf '%s\n' \
+    'Usage: cdx COMMAND' \
+    '' \
+    'Commands:' \
+    '  list' \
+    '  list --json' \
+    '  inventory PROFILE --json' \
+    '  setup PROFILE|--all' \
+    '  doctor PROFILE' \
+    '  update --check PROFILE|--all' \
+    '  update PROFILE|--all' \
+    '  repair PROFILE' \
+    '  --native-auth PROFILE [CODEX_ARGS...]' \
+    '  PROFILE [CODEX_ARGS...]'
+}
+
+extract_semver() {
+  sed -nE 's/.*(^|[^0-9])([0-9]+\.[0-9]+\.[0-9]+)([^0-9]|$).*/\2/p' | head -n 1
+}
+
+codex_version_if_available() {
+  local candidate output version
+
+  candidate="$(command -v codex 2>/dev/null || :)"
+  case "$candidate" in
+    /*) ;;
+    */*)
+      candidate="$(CDPATH= cd -- "$(dirname "$candidate")" >/dev/null 2>&1 && pwd -P)/$(basename "$candidate")" || return 0
+      ;;
+    *) return 0 ;;
+  esac
+  [[ -f "$candidate" && -x "$candidate" ]] || return 0
+  if [ "$candidate" -ef "$0" ]; then
+    return 0
+  fi
+  output="$("$candidate" --version 2>/dev/null || :)"
+  version="$(printf '%s\n' "$output" | extract_semver)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  printf '%s\n' "$version"
+}
+
+conservative_headless() {
+  local question_tool_control="${1-none}"
+
+  jq -cn \
+    --arg questionToolControl "$question_tool_control" '
+    {
+      schemaVersion: 1,
+      prompt: false,
+      outputFormats: ["text"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "none",
+      resume: false,
+      resumeWithPrompt: false,
+      questionToolControl: $questionToolControl,
+      changedFiles: "none",
+      usage: false,
+      cost: false,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null
+    }
+  '
+}
+
+projected_headless() {
+  local profile="$1"
+  local current_version expected_version
+
+  current_version="$(codex_version_if_available)"
+  expected_version="$(jq -r --arg profile "$profile" \
+    '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
+  if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
+    conservative_headless
+    return
+  fi
+  jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
+}
+
+projected_headless_map_json() {
+  jq -cn \
+    --argjson hve "$(projected_headless hve)" \
+    --argjson pstack "$(projected_headless pstack)" \
+    --argjson superpowers "$(projected_headless superpowers)" '
+    {
+      hve: $hve,
+      pstack: $pstack,
+      superpowers: $superpowers
+    }
+  '
+}
+
+validate_catalog() {
+  jq -se '
+    length == 1
+    and .[0] == {
+      "schemaVersion": 1,
+      "profiles": {
+        "hve": {
+          "description": "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": false,
+            "outputFormats": ["text"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "none",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": false,
+            "effortOverride": false,
+            "testedHarnessVersion": null
+          },
+          "marketplaceKind": "local-adapter",
+          "marketplaceSource": "marketplaces/hve-core",
+          "marketplaceName": "hve-core",
+          "upstreamRepository": "https://github.com/microsoft/hve-core.git",
+          "upstreamSkillsPath": ".github/skills",
+          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
+          "plugin": "hve-core-all@hve-core",
+          "standaloneMcps": []
+        },
+        "pstack": {
+          "description": "Codex CLI with Aqua-123’s pstack skill and Poteto Mode playbook collection.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": false,
+            "outputFormats": ["text"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "none",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": false,
+            "effortOverride": false,
+            "testedHarnessVersion": null
+          },
+          "marketplaceKind": "git-local",
+          "marketplaceSource": "Aqua-123/pstack-for-codex",
+          "marketplaceName": "pstack-for-codex-local",
+          "upstreamRepository": "https://github.com/Aqua-123/pstack-for-codex.git",
+          "manifestUrl": "https://raw.githubusercontent.com/Aqua-123/pstack-for-codex/main/.codex-plugin/marketplace.json",
+          "plugin": "pstack-for-codex@pstack-for-codex-local",
+          "standaloneMcps": []
+        },
+        "superpowers": {
+          "description": "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": false,
+            "outputFormats": ["text"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "none",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": false,
+            "effortOverride": false,
+            "testedHarnessVersion": null
+          },
+          "marketplaceKind": "git",
+          "marketplaceSource": "obra/superpowers-marketplace",
+          "marketplaceName": "superpowers-marketplace",
+          "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
+          "plugin": "superpowers@superpowers-marketplace",
+          "standaloneMcps": []
+        }
+      }
+    }
+  ' "$catalog" >/dev/null || die "invalid catalog: $catalog"
+  catalog_cache="$(jq -r '
+    .profiles | to_entries[] | .key as $profile |
+    .value | to_entries[] | select(.value | type == "string") |
+    [$profile, .key, .value] | @tsv
+  ' "$catalog")" || die "invalid catalog: $catalog"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries[] | [.key, .value.plugin] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  local headless_map
+
+  headless_map="$(projected_headless_map_json)"
+  jq -S --arg launcher "$launcher_name" --argjson headless "$headless_map" '
+    {
+      schemaVersion: 1,
+      launcher: $launcher,
+      harness: "codex",
+      # cdx now enables the Codex native --sandbox workspace-write profile
+      # (network access re-enabled via config override, approvals never
+      # prompted). See docs/native-sandbox-research.md.
+      sandbox: true,
+      profiles: [
+        .profiles
+        | to_entries
+        | sort_by(.key)[]
+        | {
+            name: .key,
+            description: .value.description,
+            headless: $headless[.key],
+            plugin: .value.plugin,
+            source: null,
+            marketplace: {
+              kind: .value.marketplaceKind,
+              source: .value.marketplaceSource,
+              name: .value.marketplaceName,
+              manifestUrl: .value.manifestUrl
+            },
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+require_profile() {
+  profile="$1"
+  [ -n "$profile" ] || die 'profile is required'
+  case "$profile" in
+    *[!a-z0-9-]*|-*|*-|*--*) die "unknown profile: $profile" ;;
+  esac
+  # Callers re-assert the profile several times per run; the catalog cannot
+  # change under a single launcher process, so one `jq` lookup is enough.
+  [ "$profile" != "$validated_profile" ] || return 0
+  jq -e --arg profile "$profile" '.profiles | has($profile)' "$catalog" >/dev/null \
+    || die "unknown profile: $profile"
+  validated_profile="$profile"
+}
+
+require_profile_or_all() {
+  target="$1"
+  [ "$target" = '--all' ] || require_profile "$target"
+}
+
+profile_home() {
+  if [ -n "$profile_storage_key" ]; then
+    printf '%s/%s/home\n' "$profiles_root" "$profile_storage_key"
+  else
+    printf '%s/%s/home\n' "$profiles_root" "$1"
+  fi
+}
+
+profile_storage_component() {
+  if [ -n "$profile_storage_key" ]; then
+    printf '%s\n' "$profile_storage_key"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+file_mode() {
+  local value
+
+  case "$host_system_name" in
+    Darwin) value="$(stat -f '%Lp' "$1" 2>/dev/null)" || return 1 ;;
+    Linux) value="$(stat -c '%a' "$1" 2>/dev/null)" || return 1 ;;
+    *) return 1 ;;
+  esac
+  case "$value" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
+file_owner_is_readable() {
+  local mode
+
+  mode="$(file_mode "$1")" || return 1
+  case "$mode" in
+    ''|*[!0-7]*) return 1 ;;
+    *[4567][0-7][0-7]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+source_auth_is_readable() {
+  local source="$1"
+
+  [ -f "$source" ] \
+    && [ ! -L "$source" ] \
+    && [ -r "$source" ] \
+    && file_owner_is_readable "$source"
+}
+
+profile_home_is_safe() {
+  local profile="$1"
+  local storage
+
+  storage="$(profile_storage_component "$profile")"
+
+  case "$HOME" in
+    /|'') return 1 ;;
+    /*) ;;
+    *) return 1 ;;
+  esac
+  case "$HOME/" in
+    */../*) return 1 ;;
+  esac
+  [ -d "$HOME" ] && [ ! -L "$HOME" ] || return 1
+
+  # Canonicalize every component inside one subshell: `cd -P` only mutates the
+  # child, so the walk costs a single fork instead of one per component. This
+  # runs on every safety re-check, so the fork count dominates launcher latency.
+  (
+    canonical_home=''
+    canonical_path=''
+    path="$HOME"
+    component=''
+
+    cd -P "$HOME" >/dev/null 2>&1 || exit 1
+    canonical_home="$PWD"
+    [ "$canonical_home" -ef / ] && exit 1
+
+    for component in .local share trellage profiles codex "$storage" home; do
+      path="$path/$component"
+      [ ! -L "$path" ] || exit 1
+      if [ -e "$path" ]; then
+        [ -d "$path" ] || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_home"|"$canonical_home"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+    exit 0
+  )
+}
+
+require_safe_profile_home() {
+  local profile="$1"
+
+  profile_home_is_safe "$profile" \
+    || die "unsafe profile home path: $(profile_home "$profile")"
+}
+
+prepare_profile_home() {
+  local profile="$1"
+  local path="$HOME"
+  local component
+  local storage
+
+  storage="$(profile_storage_component "$profile")"
+
+  require_safe_profile_home "$profile"
+  for component in .local share trellage profiles codex "$storage" home; do
+    path="$path/$component"
+    if [ ! -e "$path" ]; then
+      mkdir "$path" || die "failed to create profile home path: $path"
+    fi
+    [ -d "$path" ] && [ ! -L "$path" ] \
+      || die "unsafe profile home path: $(profile_home "$profile")"
+  done
+  require_safe_profile_home "$profile"
+  chmod 0700 "$(profile_home "$profile")" \
+    || die "failed to secure profile home: $(profile_home "$profile")"
+}
+
+config_prefix() {
+  cat <<'EOF'
+# trellage-managed-codex-config-begin
+model = "gpt-5.6-sol"
+model_provider = "copilotproxy"
+model_reasoning_effort = "medium"
+# trellage-managed-codex-config-end
+
+# trellage-profile-local-config-begin
+EOF
+}
+
+config_provider_prefix() {
+  cat <<'EOF'
+# trellage-profile-local-config-end
+
+# trellage-managed-codex-provider-begin
+[model_providers.copilotproxy]
+name = "Copilot Proxy RS"
+base_url = "http://127.0.0.1:8080/v1"
+wire_api = "responses"
+EOF
+}
+
+config_suffix() {
+  config_provider_prefix && cat <<'EOF'
+# trellage-managed-codex-provider-end
+EOF
+}
+
+initial_config_content() {
+  config_prefix \
+    && printf '%s\n' '# Add profile-local MCP and other user sections here.' \
+    && config_suffix
+}
+
+safe_config_target() {
+  local profile="$1"
+  local target="$(profile_home "$profile")/config.toml"
+
+  require_safe_profile_home "$profile"
+  [ ! -L "$target" ] && { [ ! -e "$target" ] || [ -f "$target" ]; } \
+    || die "unsafe profile config path: $target"
+}
+
+register_owned_temp() {
+  local path="$1"
+
+  owned_temp_files[$owned_temp_count]="$path"
+  owned_temp_count=$((owned_temp_count + 1))
+}
+
+make_owned_temp() {
+  local template="$1" failure_message="$2"
+  local path
+
+  path="$(mktemp "$template")" || die "$failure_message"
+  register_owned_temp "$path"
+  created_temp="$path"
+}
+
+remove_owned_temp() {
+  local target="$1" index=0 found_index=-1
+
+  while [ "$index" -lt "$owned_temp_count" ]; do
+    if [ "${owned_temp_files[$index]}" = "$target" ]; then
+      found_index="$index"
+      break
+    fi
+    index=$((index + 1))
+  done
+  [ "$found_index" -ge 0 ] || return 1
+  if ! rm -f -- "$target"; then
+    if [ -n "$active_auth_profile" ]; then
+      printf '%s: failed to remove temporary file for profile %s: %s\n' \
+        "$launcher_name" "$active_auth_profile" "$target" >&2
+    else
+      printf '%s: failed to remove temporary file: %s\n' \
+        "$launcher_name" "$target" >&2
+    fi
+    return 1
+  fi
+  index="$found_index"
+  while [ "$index" -lt $((owned_temp_count - 1)) ]; do
+    owned_temp_files[$index]="${owned_temp_files[$((index + 1))]}"
+    index=$((index + 1))
+  done
+  owned_temp_count=$((owned_temp_count - 1))
+  unset "owned_temp_files[$owned_temp_count]"
+}
+
+forget_owned_temp() {
+  local target="$1" index=0 found_index=-1
+
+  while [ "$index" -lt "$owned_temp_count" ]; do
+    if [ "${owned_temp_files[$index]}" = "$target" ]; then
+      found_index="$index"
+      break
+    fi
+    index=$((index + 1))
+  done
+  [ "$found_index" -ge 0 ] || return 1
+  index="$found_index"
+  while [ "$index" -lt $((owned_temp_count - 1)) ]; do
+    owned_temp_files[$index]="${owned_temp_files[$((index + 1))]}"
+    index=$((index + 1))
+  done
+  owned_temp_count=$((owned_temp_count - 1))
+  unset "owned_temp_files[$owned_temp_count]"
+}
+
+cleanup_owned_temps() {
+  local path index=0 cleanup_status=0
+
+  while [ "$index" -lt "$owned_temp_count" ]; do
+    path="${owned_temp_files[$index]}"
+    if ! rm -f -- "$path"; then
+      if [ -n "$active_auth_profile" ]; then
+        printf '%s: failed to remove temporary file for profile %s: %s\n' \
+          "$launcher_name" "$active_auth_profile" "$path" >&2
+      else
+        printf '%s: failed to remove temporary file: %s\n' \
+          "$launcher_name" "$path" >&2
+      fi
+      cleanup_status=1
+    fi
+    index=$((index + 1))
+  done
+  owned_temp_files=("")
+  owned_temp_count=0
+  return "$cleanup_status"
+}
+
+cleanup_owned_temps_on_exit() {
+  local status=$?
+
+  trap - EXIT
+  release_profile_launch_lock || :
+  cleanup_owned_temps || :
+  exit "$status"
+}
+
+owned_temp_signal_exit() {
+  local signal="$1" status
+
+  trap - HUP INT TERM
+  if [ -n "$active_auth_profile" ]; then
+    printf '%s: native authentication refresh interrupted for profile %s: %s\n' \
+      "$launcher_name" "$active_auth_profile" "$signal" >&2
+  fi
+  case "$signal" in
+    HUP) status=129 ;;
+    INT) status=130 ;;
+    TERM) status=143 ;;
+    *) status=1 ;;
+  esac
+  exit "$status"
+}
+
+install_owned_temp_traps() {
+  trap cleanup_owned_temps_on_exit EXIT
+  trap 'owned_temp_signal_exit HUP' HUP
+  trap 'owned_temp_signal_exit INT' INT
+  trap 'owned_temp_signal_exit TERM' TERM
+}
+
+cleanup_active_stage() {
+  local path="$active_stage"
+
+  [ -n "$path" ] || return 0
+  remove_owned_temp "$path" || return 1
+  active_stage=""
+}
+
+activate_stage() {
+  local template="$1"
+  local failure_message="$2"
+
+  [ -z "$active_stage" ] || die 'internal error: staged file already active'
+  make_owned_temp "$template" "$failure_message"
+  active_stage="$created_temp"
+}
+
+finish_stage_cleanup() {
+  cleanup_active_stage || die 'failed to clean up staged file'
+}
+
+install_initial_config() {
+  local profile="$1"
+  local target="$(profile_home "$profile")/config.toml"
+
+  safe_config_target "$profile"
+  if [ -e "$target" ]; then
+    return
+  fi
+  activate_stage "$(profile_home "$profile")/.config.XXXXXX" \
+    'failed to stage profile config'
+  initial_config_content >"$active_stage" \
+    || die 'failed to write profile config'
+  chmod 0600 "$active_stage" || die 'failed to secure profile config'
+  safe_config_target "$profile"
+  ln "$active_stage" "$target" \
+    || die 'failed to publish profile config without replacing existing file'
+  finish_stage_cleanup
+}
+
+config_marker_lines() {
+  local target="$1"
+
+  # One awk pass replaces a grep/cut pair per marker: the six markers each cost
+  # three processes otherwise, and this runs on every config validation.
+  awk '
+    BEGIN {
+      total = split("# trellage-managed-codex-config-begin\n" \
+        "# trellage-managed-codex-config-end\n" \
+        "# trellage-profile-local-config-begin\n" \
+        "# trellage-profile-local-config-end\n" \
+        "# trellage-managed-codex-provider-begin\n" \
+        "# trellage-managed-codex-provider-end", markers, "\n")
+    }
+    { count[$0]++; line[$0] = NR }
+    END {
+      for (index_ = 1; index_ <= total; index_++) {
+        marker = markers[index_]
+        if (count[marker] != 1) exit 1
+        print line[marker]
+      }
+    }
+  ' "$target"
+}
+
+# Split the six marker line numbers into globals. `read` in the current shell
+# avoids the fork-plus-`sed` that extracting each field separately would cost.
+read_config_marker_lines() {
+  local lines="$1"
+
+  marker_config_begin=''
+  marker_config_end=''
+  marker_local_begin=''
+  marker_local_end=''
+  marker_provider_begin=''
+  marker_provider_end=''
+  {
+    read -r marker_config_begin
+    read -r marker_config_end
+    read -r marker_local_begin
+    read -r marker_local_end
+    read -r marker_provider_begin
+    read -r marker_provider_end
+  } <<EOF
+$lines
+EOF
+}
+
+validate_native_provider_tail() {
+  local target="$1" first_line="$2" last_line="$3"
+  local second_first="${4:-1}" second_last="${5:-0}"
+
+  [ "$first_line" -le "$last_line" ] \
+    || [ "$second_first" -le "$second_last" ] \
+    || return 0
+  {
+    if [ "$first_line" -le "$last_line" ]; then
+      sed -n "${first_line},${last_line}p" "$target"
+    fi
+    if [ "$second_first" -le "$second_last" ]; then
+      sed -n "${second_first},${second_last}p" "$target"
+    fi
+  } | awk '
+    function hex_digit(char) {
+      return index("0123456789abcdef", tolower(char)) - 1
+    }
+    function hex_value(value, i, result) {
+      result = 0
+      for (i = 1; i <= length(value); i++)
+        result = (result * 16) + hex_digit(substr(value, i, 1))
+      return result
+    }
+    function valid_hex(value) {
+      return value ~ /^[0-9A-Fa-f]+$/
+    }
+    function valid_basic_string(value, i, char, escaped, digits, scalar) {
+      for (i = 1; i <= length(value); i++) {
+        char = substr(value, i, 1)
+        if (char == "\"") return 0
+        if (char == "\\") {
+          i++
+          if (i > length(value)) return 0
+          escaped = substr(value, i, 1)
+          if (index("\"\\btnfr", escaped) > 0) continue
+          if (escaped == "u" || escaped == "U") {
+            digits = escaped == "u" ? 4 : 8
+            if (i + digits > length(value) ||
+                !valid_hex(substr(value, i + 1, digits))) return 0
+            scalar = hex_value(substr(value, i + 1, digits))
+            if ((scalar >= 55296 && scalar <= 57343) || scalar > 1114111)
+              return 0
+            i += digits
+            continue
+          }
+          return 0
+        }
+        if (char ~ /[[:cntrl:]]/) return 0
+      }
+      return 1
+    }
+    function normalize_plugin_key(value, i, char, escaped, digits, scalar, result) {
+      result = ""
+      for (i = 1; i <= length(value); i++) {
+        char = substr(value, i, 1)
+        if (char == "\\") {
+          escaped = substr(value, ++i, 1)
+          if (escaped != "u" && escaped != "U") return ""
+          digits = escaped == "u" ? 4 : 8
+          scalar = hex_value(substr(value, i + 1, digits))
+          i += digits
+          if (!((scalar >= 48 && scalar <= 57) ||
+                (scalar >= 97 && scalar <= 122) ||
+                scalar == 45 || scalar == 64)) return ""
+          char = sprintf("%c", scalar)
+        } else if (char !~ /^[a-z0-9@-]$/) {
+          return ""
+        }
+        result = result char
+      }
+      if (result !~ /^[a-z0-9]+(-[a-z0-9]+)*@[a-z0-9]+(-[a-z0-9]+)*$/)
+        return ""
+      return result
+    }
+    BEGIN {
+      # Codex writes these two header tables with zero fields when they are
+      # only namespaces for nested subtables (hooks.state) or happen to have
+      # no entries yet (tui nux flags).
+      zero_field_ok["hooks-state-root"] = 1
+      zero_field_ok["tui-nux"] = 1
+      # Concurrent cdx sessions may leave ephemeral project-trust stanzas in the
+      # shared native tail. Accept them here so prepare does not mutate live
+      # config; post-exit cleanup still strips the generated chain.
+      max_project_trust = 8
+      project_trust_count = 0
+    }
+    function complete() {
+      return table_type != "" && (have_field || zero_field_ok[table_type])
+    }
+    function begin_table(key, type, field) {
+      if (table_type != "" && !complete()) exit 1
+      if (seen_names[type ":" key]) exit 1
+      seen_names[type ":" key] = 1
+      for (field in seen_fields) delete seen_fields[field]
+      table_type = type
+      have_field = 0
+    }
+    /^$/ { next }
+    /^\[marketplaces\.[a-z0-9]+(-[a-z0-9]+)*\]$/ {
+      name = $0
+      sub(/^\[marketplaces\./, "", name)
+      sub(/\]$/, "", name)
+      if (length(name) > 64) exit 1
+      begin_table(name, "marketplace")
+      next
+    }
+    /^\[plugins\.".*"\]$/ {
+      name = substr($0, 11, length($0) - 12)
+      if (!valid_basic_string(name)) exit 1
+      normalized_name = normalize_plugin_key(name)
+      if (normalized_name == "" || length(normalized_name) > 128) exit 1
+      begin_table(normalized_name, "plugin")
+      next
+    }
+    /^\[projects\.".*"\]$/ {
+      name = substr($0, 12, length($0) - 13)
+      if (!valid_basic_string(name)) exit 1
+      if (length(name) > 4096) exit 1
+      project_trust_count++
+      if (project_trust_count > max_project_trust) exit 1
+      begin_table(name, "project-trust")
+      next
+    }
+    $0 == "[hooks.state]" {
+      begin_table("state", "hooks-state-root")
+      next
+    }
+    /^\[hooks\.state\.".*"\]$/ {
+      name = substr($0, 15, length($0) - 16)
+      if (!valid_basic_string(name)) exit 1
+      if (length(name) > 512 || name !~ /:[0-9]+:[0-9]+$/) exit 1
+      begin_table(name, "hooks-state-entry")
+      next
+    }
+    $0 == "[tui.model_availability_nux]" {
+      begin_table("nux", "tui-nux")
+      next
+    }
+    {
+      separator = index($0, " = ")
+      if (table_type == "" || separator == 0) exit 1
+      field = substr($0, 1, separator - 1)
+      value = substr($0, separator + 3)
+      if (table_type == "tui-nux") {
+        if (length(field) > 130 || field !~ /^".*"$/ ||
+            !valid_basic_string(substr(field, 2, length(field) - 2)) ||
+            seen_fields[field]) exit 1
+        if (value !~ /^[0-9]{1,3}$/) exit 1
+      } else if (table_type == "hooks-state-entry") {
+        if (field != "trusted_hash" || seen_fields[field]) exit 1
+        if (value !~ /^"sha256:[0-9a-f]{64}"$/) exit 1
+      } else if (table_type == "project-trust") {
+        if (field != "trust_level" || seen_fields[field]) exit 1
+        if (value != "\"trusted\"") exit 1
+      } else {
+        if (length(field) > 64 || field !~ /^[a-z][a-z0-9_-]*$/ ||
+            seen_fields[field]) exit 1
+        if (value != "true" && value != "false") {
+          if (value !~ /^".*"$/ ||
+              !valid_basic_string(substr(value, 2, length(value) - 2))) exit 1
+        }
+      }
+      seen_fields[field] = 1
+      have_field = 1
+      next
+    }
+    END {
+      if (table_type != "" && !complete()) exit 1
+    }
+  '
+}
+
+strip_generated_project_trust() {
+  local target="$1" output="$2"
+  local separator_style="${3:-blank}"
+  local lines provider_begin provider_end
+  # Normal Codex writes one stanza; eight keeps recovery compatibility bounded.
+  local max_generated_projects=8
+
+  case "$separator_style" in
+    none|blank) ;;
+    *) return 1 ;;
+  esac
+  lines="$(config_marker_lines "$target")" || return 1
+  read_config_marker_lines "$lines"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
+  awk -v first="$((provider_begin + 5))" -v last="$((provider_end - 1))" \
+    -v max_projects="$max_generated_projects" \
+    -v keep_separator="$([ "$separator_style" = blank ] && printf 1 || printf 0)" '
+    function hex_digit(char) {
+      return index("0123456789abcdef", tolower(char)) - 1
+    }
+    function hex_value(value, i, result) {
+      result = 0
+      for (i = 1; i <= length(value); i++)
+        result = (result * 16) + hex_digit(substr(value, i, 1))
+      return result
+    }
+    function valid_hex(value) { return value ~ /^[0-9A-Fa-f]+$/ }
+    function valid_basic_string(value, i, char, escaped, digits, scalar) {
+      for (i = 1; i <= length(value); i++) {
+        char = substr(value, i, 1)
+        if (char == "\"") return 0
+        if (char == "\\") {
+          i++
+          if (i > length(value)) return 0
+          escaped = substr(value, i, 1)
+          if (index("\"\\btnfr", escaped) > 0) continue
+          if (escaped == "u" || escaped == "U") {
+            digits = escaped == "u" ? 4 : 8
+            if (i + digits > length(value) ||
+                !valid_hex(substr(value, i + 1, digits))) return 0
+            scalar = hex_value(substr(value, i + 1, digits))
+            if ((scalar >= 55296 && scalar <= 57343) || scalar > 1114111)
+              return 0
+            i += digits
+            continue
+          }
+          return 0
+        }
+        if (char ~ /[[:cntrl:]]/) return 0
+      }
+      return 1
+    }
+    function exact_project(table, path) {
+      if (table + 1 > last ||
+          line[table] !~ /^\[projects\.".*"\]$/ ||
+          line[table + 1] != "trust_level = \"trusted\"") return 0
+      path = substr(line[table], 12, length(line[table]) - 13)
+      return valid_basic_string(path)
+    }
+    function native_entry_open(entry) {
+      # Any other Codex-managed native tail entry may legitimately follow a
+      # generated project-trust chain (hooks approvals, TUI nux flags, or
+      # additional marketplaces/plugins added after the project was trusted).
+      return entry ~ /^\[marketplaces\.[a-z0-9]+(-[a-z0-9]+)*\]$/ ||
+        entry ~ /^\[plugins\".*"\]$/ ||
+        entry == "[hooks.state]" ||
+        entry ~ /^\[hooks\.state\.".*"\]$/ ||
+        entry == "[tui.model_availability_nux]"
+    }
+    function generated_project_tail(separator, table, trust, trailing, count) {
+      if (separator > first && line[separator - 1] == "") return 0
+      table = separator + 1
+      if (line[table] == "") {
+        if (!exact_project(table + 1)) return 0
+        table++
+      }
+      while (exact_project(table)) {
+        count++
+        if (count > max_projects) return 0
+        trust = table + 1
+        if (trust == last) return trust
+        trailing = trust + 1
+        if (line[trailing] != "") return 0
+        if (trailing == last) return trailing
+        if (exact_project(trailing + 1)) {
+          table = trailing + 1
+          continue
+        }
+        if (trailing + 2 <= last && line[trailing + 1] == "" &&
+            exact_project(trailing + 2)) {
+          table = trailing + 2
+          continue
+        }
+        if (native_entry_open(line[trailing + 1])) return trailing
+        return 0
+      }
+      return 0
+    }
+    { line[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        if (i >= first && i <= last && line[i] == "") {
+          tail_end = generated_project_tail(i)
+          if (tail_end != 0) {
+            if (keep_separator) print ""
+            i = tail_end
+            continue
+          }
+        }
+        print line[i]
+      }
+    }
+  ' "$target" >"$output"
+}
+
+config_marker_count() {
+  grep -Fxc -- "$1" "$2"
+}
+
+validate_config_structure() {
+  local profile="$1"
+  local target="${2:-$(profile_home "$profile")/config.toml}"
+  local lines
+  local config_begin config_end local_begin local_end provider_begin provider_end
+  local native_first native_last second_first=1 second_last=0 provider_prefix
+  local old_begin_count old_end_count old_begin old_end layout
+
+  if [ "$target" = "$(profile_home "$profile")/config.toml" ]; then
+    safe_config_target "$profile"
+  else
+    [ -f "$target" ] && [ ! -L "$target" ] || return 1
+  fi
+  [ -f "$target" ] || return 1
+  lines="$(config_marker_lines "$target")" || return 1
+  read_config_marker_lines "$lines"
+  config_begin="$marker_config_begin"
+  config_end="$marker_config_end"
+  local_begin="$marker_local_begin"
+  local_end="$marker_local_end"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
+  [ "$config_begin" -lt "$config_end" ] \
+    && [ "$config_end" -lt "$local_begin" ] \
+    && [ "$local_begin" -lt "$local_end" ] \
+    && [ "$local_end" -lt "$provider_begin" ] \
+    && [ "$provider_begin" -lt "$provider_end" ] \
+    || return 1
+
+  provider_prefix="$(sed -n "$((provider_begin + 1)),$((provider_begin + 4))p" \
+    "$target")"
+  [ "$provider_prefix" = $'[model_providers.copilotproxy]\nname = "Copilot Proxy RS"\nbase_url = "http://127.0.0.1:8080/v1"\nwire_api = "responses"' ] \
+    || return 1
+  native_first=$((provider_begin + 5))
+  native_last=$((provider_end - 1))
+  old_begin_count="$(config_marker_count \
+    '# trellage-codex-native-marketplaces-begin' "$target")"
+  old_end_count="$(config_marker_count \
+    '# trellage-codex-native-marketplaces-end' "$target")"
+  if [ "$old_begin_count" -eq 0 ] && [ "$old_end_count" -eq 0 ]; then
+    [ "$provider_end" -eq "$(wc -l <"$target")" ] || return 1
+    layout=canonical
+  elif [ "$old_begin_count" -eq 1 ] && [ "$old_end_count" -eq 1 ]; then
+    old_begin="$(grep -Fnx -- '# trellage-codex-native-marketplaces-begin' \
+      "$target" | cut -d: -f1)"
+    old_end="$(grep -Fnx -- '# trellage-codex-native-marketplaces-end' \
+      "$target" | cut -d: -f1)"
+    [ "$old_begin" -eq $((provider_end + 2)) ] \
+      && [ -z "$(sed -n "$((provider_end + 1))p" "$target")" ] \
+      && [ "$old_begin" -lt "$old_end" ] \
+      && [ "$old_end" -eq "$(wc -l <"$target")" ] \
+      || return 1
+    second_first=$((old_begin + 1))
+    second_last=$((old_end - 1))
+    layout=marker-migration
+  else
+    return 1
+  fi
+  validate_native_provider_tail "$target" "$native_first" "$native_last" \
+    "$second_first" "$second_last" \
+    || return 1
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$local_begin" "$local_end" "$native_first" "$native_last" \
+    "$second_first" "$second_last" "$layout"
+}
+
+append_local_config() {
+  local target="$1"
+  local local_begin="$2"
+  local local_end="$3"
+  local first_line=$((local_begin + 1))
+  local last_line=$((local_end - 1))
+
+  if [ "$first_line" -le "$last_line" ]; then
+    sed -n "${first_line},${last_line}p" "$target"
+  fi
+}
+
+append_native_provider_tail() {
+  local target="$1" first_line="$2" last_line="$3"
+  local second_first="${4:-1}" second_last="${5:-0}"
+
+  if [ "$first_line" -le "$last_line" ]; then
+    sed -n "${first_line},${last_line}p" "$target"
+  fi
+  if [ "$second_first" -le "$second_last" ]; then
+    sed -n "${second_first},${second_last}p" "$target"
+  fi
+}
+
+write_repaired_config() {
+  local profile="$1"
+  local publish="$2"
+  local target="$(profile_home "$profile")/config.toml"
+  local snapshot
+  local marker_lines local_begin local_end native_first native_last
+  local second_first second_last layout
+
+  safe_config_target "$profile"
+  make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
+    'failed to stage profile config snapshot'
+  snapshot="$created_temp"
+  chmod 0600 "$snapshot" || die 'failed to secure profile config snapshot'
+  cp "$target" "$snapshot" || die 'failed to snapshot profile config'
+  safe_config_target "$profile"
+  cmp -s "$snapshot" "$target" \
+    || die "profile config changed during snapshot: $profile"
+  marker_lines="$(validate_config_structure "$profile" "$snapshot")" \
+    || die "profile config markers are invalid: $profile"
+  IFS=$'\t' read -r local_begin local_end native_first native_last \
+    second_first second_last layout \
+    <<<"$marker_lines"
+  activate_stage "$(profile_home "$profile")/.config.XXXXXX" \
+    'failed to stage profile config'
+  {
+    config_prefix \
+      && append_local_config "$snapshot" "$local_begin" "$local_end" \
+      && config_provider_prefix \
+      && append_native_provider_tail "$snapshot" "$native_first" "$native_last" \
+        "$second_first" "$second_last" \
+      && printf '%s\n' '# trellage-managed-codex-provider-end'
+  } >"$active_stage" || die 'failed to write profile config'
+  chmod 0600 "$active_stage" || die 'failed to secure profile config'
+  if [ "$publish" = 'yes' ]; then
+    safe_config_target "$profile"
+    cmp -s "$snapshot" "$target" \
+      || die "profile config changed during repair: $profile"
+    mv -f "$active_stage" "$target" || die 'failed to publish profile config'
+    forget_owned_temp "$active_stage" || die 'internal error: unowned staged config'
+    active_stage=""
+  else
+    cmp -s "$active_stage" "$target"
+    comparison_status=$?
+    finish_stage_cleanup
+    remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
+    return "$comparison_status"
+  fi
+  remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
+}
+
+recover_generated_project_trust() {
+  local profile="$1"
+  local target="$(profile_home "$profile")/config.toml"
+  local snapshot
+
+  safe_config_target "$profile"
+  [ -f "$target" ] || return 0
+  [ "$(file_mode "$target")" = '600' ] || return 0
+  make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
+    'failed to stage profile config snapshot'
+  snapshot="$created_temp"
+  chmod 0600 "$snapshot" || die 'failed to secure profile config snapshot'
+  cp "$target" "$snapshot" || die 'failed to snapshot profile config'
+  safe_config_target "$profile"
+  cmp -s "$snapshot" "$target" \
+    || die "profile config changed during snapshot: $profile"
+  [ "$(file_mode "$target")" = '600' ] \
+    || die "profile config must have mode 0600: $profile"
+  activate_stage "$(profile_home "$profile")/.config.XXXXXX" \
+    'failed to stage profile config recovery'
+  strip_generated_project_trust "$snapshot" "$active_stage" \
+    || die "profile config markers are invalid: $profile"
+  chmod 0600 "$active_stage" || die 'failed to secure profile config recovery'
+  if cmp -s "$snapshot" "$active_stage"; then
+    finish_stage_cleanup
+    safe_config_target "$profile"
+    cmp -s "$snapshot" "$target" \
+      || die "profile config changed during recovery: $profile"
+    [ "$(file_mode "$target")" = '600' ] \
+      || die "profile config must have mode 0600: $profile"
+    # Strip is a no-op when no generated native chain matches. Leftover native
+    # project-trust means the chain is malformed and must fail closed.
+    # Profile-local [projects] tables are outside this check.
+    if config_has_native_project_trust_stanza "$target"; then
+      remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
+      die "profile config markers are invalid: $profile"
+    fi
+    remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
+    return 0
+  fi
+  validate_config_structure "$profile" "$active_stage" >/dev/null \
+    || die "profile config markers are invalid: $profile"
+  safe_config_target "$profile"
+  [ "$(file_mode "$target")" = '600' ] \
+    || die "profile config must have mode 0600: $profile"
+  cmp -s "$snapshot" "$target" \
+    || die "profile config changed during recovery: $profile"
+  mv -f "$active_stage" "$target" || die 'failed to publish profile config recovery'
+  forget_owned_temp "$active_stage" || die 'internal error: unowned staged config'
+  active_stage=""
+  remove_owned_temp "$snapshot" || die 'failed to clean profile config snapshot'
+}
+
+refresh_auth() {
+  local profile="$1" source="$HOME/.codex/auth.json"
+  local target="$(profile_home "$profile")/auth.json"
+
+  active_auth_profile="$profile"
+  source_auth_is_readable "$source" \
+    || die "source authentication is missing or unreadable for profile $profile: $source"
+  profile_home_is_safe "$profile" \
+    || die "unsafe native authentication profile home for profile $profile: $(profile_home "$profile")"
+  [ ! -L "$target" ] && { [ ! -e "$target" ] || [ -f "$target" ]; } \
+    || die "unsafe profile authentication path for profile $profile: $target"
+  if [ -f "$target" ]; then
+    if cmp -s "$source" "$target"; then
+      chmod 0600 "$target" \
+        || die "failed to secure profile authentication for profile $profile: $target"
+      active_auth_profile=""
+      return
+    fi
+  fi
+  activate_stage "$(profile_home "$profile")/.auth.XXXXXX" \
+    "failed to stage profile authentication for profile $profile"
+  chmod 0600 "$active_stage" \
+    || die "failed to secure staged authentication for profile $profile: $active_stage"
+  cp "$source" "$active_stage" \
+    || die "failed to copy profile authentication for profile $profile: $source"
+  source_auth_is_readable "$source" \
+    || die "source authentication is missing or unreadable for profile $profile: $source"
+  cmp -s "$source" "$active_stage" \
+    || die "source authentication changed during copy for profile $profile: $source"
+  profile_home_is_safe "$profile" \
+    || die "unsafe native authentication profile home for profile $profile: $(profile_home "$profile")"
+  [ ! -L "$target" ] && { [ ! -e "$target" ] || [ -f "$target" ]; } \
+    || die "unsafe profile authentication path for profile $profile: $target"
+  mv -f "$active_stage" "$target" \
+    || die "failed to publish profile authentication for profile $profile: $target"
+  forget_owned_temp "$active_stage" \
+    || die "internal error: unowned staged authentication for profile $profile: $active_stage"
+  active_stage=""
+  active_auth_profile=""
+}
+
+require_profile_config() {
+  local profile="$1"
+  local target="$(profile_home "$profile")/config.toml"
+
+  safe_config_target "$profile"
+  [ -f "$target" ] || die "profile config is missing: $profile"
+  [ "$(file_mode "$target")" = '600' ] \
+    || die "profile config must have mode 0600: $profile"
+  # Do not strip live project-trust here. Concurrent cdx sessions share one
+  # profile home; prepare must not mutate another session's in-flight trust.
+  # doctor/setup/repair recover stale trust explicitly. Launch cleanup strips
+  # generated trust after the Codex child exits.
+  write_repaired_config "$profile" no \
+    || die "profile managed config does not match: $profile"
+}
+
+require_profile_auth() {
+  local profile="$1"
+  local target="$(profile_home "$profile")/auth.json"
+
+  [ -f "$target" ] && [ ! -L "$target" ] && [ -r "$target" ] \
+    || die "profile authentication is missing or unreadable: $profile"
+  [ "$(file_mode "$target")" = '600' ] \
+    || die "profile authentication must have mode 0600: $profile"
+}
+
+require_profile_home_ready() {
+  local profile="$1"
+  local home="$(profile_home "$profile")"
+
+  require_safe_profile_home "$profile"
+  [ -d "$home" ] && [ ! -L "$home" ] \
+    || die "profile is not set up: $profile"
+  [ "$(file_mode "$home")" = '700' ] \
+    || die "profile home must have mode 0700: $profile"
+}
+
+ensure_profile_home_ready() {
+  local profile="$1"
+  local home="$(profile_home "$profile")"
+
+  require_safe_profile_home "$profile"
+  if [ -d "$home" ] && [ ! -L "$home" ]; then
+    require_profile_home_ready "$profile"
+    return
+  fi
+  setup_profile "$profile" >/dev/null
+  require_profile_home_ready "$profile"
+}
+
+catalog_value() {
+  local profile="$1" key="$2"
+  local cached_profile cached_key cached_value
+
+  while IFS=$'\t' read -r cached_profile cached_key cached_value; do
+    if [ "$cached_profile" = "$profile" ] && [ "$cached_key" = "$key" ]; then
+      printf '%s\n' "$cached_value"
+      return 0
+    fi
+  done <<<"$catalog_cache"
+  die "invalid catalog: $catalog"
+}
+
+plugin_name() {
+  printf '%s\n' "${1%@*}"
+}
+
+canonical_directory() {
+  (CDPATH= cd -- "$1" >/dev/null 2>&1 && pwd -P)
+}
+
+existing_directory_is_within() {
+  local root="$1" candidate="$2"
+  local canonical_root canonical_candidate
+
+  [ -d "$root" ] && [ -d "$candidate" ] || return 1
+  canonical_root="$(CDPATH= cd -P -- "$root" >/dev/null 2>&1 && pwd -P)" \
+    || return 1
+  canonical_candidate="$(CDPATH= cd -P -- "$candidate" >/dev/null 2>&1 && pwd -P)" \
+    || return 1
+  case "$canonical_candidate" in
+    "$canonical_root"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_local_adapter() {
+  local profile="$1"
+  local source expected_root canonical_source path component marketplace plugin repository skills_path
+
+  [ "$(catalog_value "$profile" marketplaceKind)" = 'local-adapter' ] \
+    || die "profile marketplace is not a local adapter: $profile"
+  source="$script_dir/$(catalog_value "$profile" marketplaceSource)"
+  expected_root="$(canonical_directory "$script_dir")" \
+    || die "unsafe catalog runtime root: $script_dir"
+  case "$source" in "$script_dir"/*) ;; *) die "unsafe local marketplace path: $source" ;; esac
+  path="$script_dir"
+  for component in $(printf '%s\n' "$(catalog_value "$profile" marketplaceSource)" | tr '/' ' '); do
+    path="$path/$component"
+    [ -d "$path" ] && [ ! -L "$path" ] \
+      || die "unsafe local marketplace path: $source"
+  done
+  for component in .agents plugins; do
+    path="$path/$component"
+    [ -d "$path" ] && [ ! -L "$path" ] \
+      || die "unsafe local marketplace path: $source"
+  done
+  path="$path/marketplace.json"
+  [ -f "$path" ] && [ ! -L "$path" ] \
+    || die "unsafe local marketplace path: $source"
+  canonical_source="$(canonical_directory "$source")" \
+    || die "unsafe local marketplace path: $source"
+  case "$canonical_source" in "$expected_root"/*) ;; *) die "unsafe local marketplace path: $source" ;; esac
+  marketplace="$(catalog_value "$profile" marketplaceName)"
+  plugin="$(plugin_name "$(catalog_value "$profile" plugin)")"
+  repository="$(catalog_value "$profile" upstreamRepository)"
+  skills_path="$(catalog_value "$profile" upstreamSkillsPath)"
+  jq -se --arg marketplace "$marketplace" --arg plugin "$plugin" \
+    --arg repository "$repository" --arg skillsPath "./$skills_path" '
+    length == 1 and
+    (.[0].plugins[0].version as $version |
+      ($version | type) == "string" and ($version | length) > 0 and
+      .[0] == {
+        "name":$marketplace,
+        "owner":{"name":"Trellage"},
+        "plugins":[{
+          "name":$plugin,
+          "source":{"source":"url","url":$repository,"ref":"main"},
+          "version":$version,
+          "skills":$skillsPath
+        }]
+      })
+  ' "$path" >/dev/null || die "invalid local marketplace adapter: $path"
+  printf '%s\n' "$canonical_source"
+}
+
+local_adapter_plugin_version() {
+  local profile="$1" adapter path plugin
+
+  adapter="$(resolve_local_adapter "$profile")" || return 1
+  path="$adapter/.agents/plugins/marketplace.json"
+  plugin="$(plugin_name "$(catalog_value "$profile" plugin)")"
+  jq -ser --arg plugin "$plugin" \
+    '.[0].plugins | map(select(.name == $plugin))[0].version' "$path"
+}
+
+validate_profile_paths() {
+  local profile="$1" kind
+
+  require_profile_home_ready "$profile"
+  require_profile_config "$profile"
+  kind="$(catalog_value "$profile" marketplaceKind)"
+  case "$kind" in
+    local-adapter) resolve_local_adapter "$profile" >/dev/null ;;
+    git|git-local) [ -n "$(catalog_value "$profile" marketplaceSource)" ] || return 1 ;;
+    *) die "invalid marketplace kind for profile: $profile" ;;
+  esac
+}
+
+run_codex_capture() {
+  local profile="$1" output="$2"
+  local error status local_adapter_add=no adapter
+  shift 2
+
+  if [ "${1:-}" = '--local-marketplace-add' ]; then
+    local_adapter_add=yes
+    shift
+  fi
+
+  validate_profile_paths "$profile"
+  resolve_codex
+  make_owned_temp "${TMPDIR:-/tmp}/${launcher_name}-native-error.XXXXXX" \
+    'failed to stage native Codex error output'
+  error="$created_temp"
+  if [ "$local_adapter_add" = yes ]; then
+    # Codex accepts a pathname, not an open descriptor. Revalidate after all
+    # preparation and immediately before exec. A same-user replacement in the
+    # remaining syscall window is inside the profile asset trust boundary.
+    adapter="$(resolve_local_adapter "$profile")" \
+      || die "unsafe local marketplace path: $script_dir"
+    set -- plugin marketplace add "$adapter" --json
+  fi
+  env CODEX_HOME="$(profile_home "$profile")" "$codex_executable" "$@" >"$output" 2>"$error"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    cat "$error" >&2 || :
+  fi
+  remove_owned_temp "$error" || return 1
+  return "$status"
+}
+
+run_codex_mutation() {
+  local profile="$1"
+  shift
+  local output status
+
+  make_owned_temp "${TMPDIR:-/tmp}/${launcher_name}-native.XXXXXX" \
+    'failed to stage native Codex output'
+  output="$created_temp"
+  run_codex_capture "$profile" "$output" "$@"
+  status=$?
+  remove_owned_temp "$output" || return 1
+  return "$status"
+}
+
+read_marketplace_inventory() {
+  local profile="$1" output="$2"
+
+  run_codex_capture "$profile" "$output" plugin marketplace list --json
+}
+
+read_plugin_inventory() {
+  local profile="$1" output="$2"
+
+  run_codex_capture "$profile" "$output" plugin list --json
+}
+
+marketplace_inventory_status() {
+  local profile="$1" input="$2"
+  local name kind source adapter home root
+
+  name="$(catalog_value "$profile" marketplaceName)"
+  kind="$(catalog_value "$profile" marketplaceKind)"
+  source="$(catalog_value "$profile" marketplaceSource)"
+  home="$(profile_home "$profile")"
+  if ! jq -se 'length == 1 and (.[0] | type == "object") and (.[0] | keys) == ["marketplaces"] and (.[0].marketplaces | type == "array")' "$input" >/dev/null; then
+    return 2
+  fi
+  count="$(jq -sr --arg name "$name" '.[0].marketplaces | map(select(.name == $name)) | length' "$input")" \
+    || return 2
+  [ "$count" -le 1 ] || return 2
+  [ "$count" -eq 1 ] || return 1
+  case "$kind" in
+    local-adapter)
+      adapter="$(resolve_local_adapter "$profile")" || return 2
+      jq -se --arg name "$name" --arg adapter "$adapter" '
+        length == 1 and
+        (.[0].marketplaces | map(select(.name == $name)) | length) == 1 and
+        ((.[0].marketplaces | map(select(.name == $name))[0]) as $m |
+          ($m | type == "object") and
+          ($m | keys) == ["marketplaceSource","name","root"] and
+          ($m.name == $name) and ($m.root == $adapter) and
+          ($m.marketplaceSource == {sourceType:"local",source:$adapter}))
+      ' "$input" >/dev/null || return 2
+      ;;
+    git|git-local)
+      jq -se --arg name "$name" --arg source "https://github.com/$source.git" '
+        length == 1 and
+        ((.[0].marketplaces | map(select(.name == $name))[0]) as $m |
+          ($m | type == "object") and ($m.name == $name) and
+          ($m | keys) == ["marketplaceSource","name","root"] and
+          ($m.root | type == "string") and
+          ($m.marketplaceSource == {sourceType:"git",source:$source}))
+      ' "$input" >/dev/null || return 2
+      root="$(jq -ser --arg name "$name" \
+        '.[0].marketplaces | map(select(.name == $name))[0].root' "$input")" \
+        || return 2
+      existing_directory_is_within "$home" "$root" || return 2
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+plugin_inventory_status() {
+  local profile="$1" input="$2"
+  local plugin name marketplace kind source adapter count repository home installed_path version
+
+  plugin="$(catalog_value "$profile" plugin)"
+  name="$(plugin_name "$plugin")"
+  marketplace="$(catalog_value "$profile" marketplaceName)"
+  kind="$(catalog_value "$profile" marketplaceKind)"
+  source="$(catalog_value "$profile" marketplaceSource)"
+  home="$(profile_home "$profile")"
+  if ! jq -se '
+    length == 1 and (.[0] | type == "object") and
+    (.[0] | keys) == ["available","installed"] and
+    (.[0].installed | type == "array") and (.[0].available | type == "array")
+  ' "$input" >/dev/null; then
+    return 2
+  fi
+  count="$(jq -sr --arg plugin "$plugin" '.[0].installed | map(select(.pluginId == $plugin)) | length' "$input")" \
+    || return 2
+  [ "$count" -le 1 ] || return 2
+  [ "$count" -eq 1 ] || return 1
+  case "$kind" in
+    local-adapter)
+      adapter="$(resolve_local_adapter "$profile")" || return 2
+      repository="$(catalog_value "$profile" upstreamRepository)"
+      version="$(local_adapter_plugin_version "$profile")" || return 2
+      jq -se --arg plugin "$plugin" --arg name "$name" --arg marketplace "$marketplace" \
+        --arg adapter "$adapter" --arg repository "$repository" --arg version "$version" '
+        (.[0].installed | map(select(.pluginId == $plugin))[0]) as $p |
+        ($p | type == "object") and $p.pluginId == $plugin and $p.name == $name and
+        (($p | keys) == ["authPolicy","enabled","installPolicy","installed","marketplaceName","marketplaceSource","name","pluginId","source","version"] or
+         ($p | keys) == ["authPolicy","enabled","installPolicy","installed","installedPath","marketplaceName","marketplaceSource","name","pluginId","source","version"]) and
+        $p.marketplaceName == $marketplace and $p.installed == true and $p.enabled == true and
+        $p.version == $version and
+        $p.source == {source:"git",url:$repository,ref:"main"} and
+        $p.marketplaceSource == {sourceType:"local",source:$adapter} and
+        $p.installPolicy == "AVAILABLE" and $p.authPolicy == "ON_INSTALL" and
+        (($p | has("installedPath") | not) or
+         (($p.installedPath | type) == "string"))
+      ' "$input" >/dev/null || return 3
+      if jq -se --arg plugin "$plugin" \
+        '.[0].installed | map(select(.pluginId == $plugin))[0] | has("installedPath")' \
+        "$input" >/dev/null; then
+        installed_path="$(jq -ser --arg plugin "$plugin" \
+          '.[0].installed | map(select(.pluginId == $plugin))[0].installedPath' "$input")" \
+          || return 3
+        existing_directory_is_within "$home" "$installed_path" || return 3
+      fi
+      ;;
+    git)
+      jq -se --arg plugin "$plugin" --arg name "$name" --arg marketplace "$marketplace" \
+        --arg source "https://github.com/$source.git" \
+        --arg repository "$superpowers_plugin_repository" '
+        (.[0].installed | map(select(.pluginId == $plugin))[0]) as $p |
+        ($p | type == "object") and $p.pluginId == $plugin and $p.name == $name and
+        ($p | keys) == ["authPolicy","enabled","installPolicy","installed","marketplaceName","marketplaceSource","name","pluginId","source","version"] and
+        $p.marketplaceName == $marketplace and $p.installed == true and $p.enabled == true and
+        ($p.version | type == "string" and
+          test("^[A-Za-z0-9][A-Za-z0-9._+-]*$")) and
+        $p.source == {source:"git",url:$repository} and
+        $p.marketplaceSource == {sourceType:"git",source:$source} and
+        $p.installPolicy == "AVAILABLE" and $p.authPolicy == "ON_INSTALL"
+      ' "$input" >/dev/null || return 3
+      ;;
+    git-local)
+      adapter="$home/.tmp/marketplaces/$marketplace"
+      jq -se --arg plugin "$plugin" --arg name "$name" --arg marketplace "$marketplace" \
+        --arg source "https://github.com/$source.git" --arg adapter "$adapter" '
+        (.[0].installed | map(select(.pluginId == $plugin))[0]) as $p |
+        ($p | type == "object") and $p.pluginId == $plugin and $p.name == $name and
+        (($p | keys) == ["authPolicy","enabled","installPolicy","installed","marketplaceName","marketplaceSource","name","pluginId","source","version"] or
+         ($p | keys) == ["authPolicy","enabled","installPolicy","installed","installedPath","marketplaceName","marketplaceSource","name","pluginId","source","version"]) and
+        $p.marketplaceName == $marketplace and $p.installed == true and $p.enabled == true and
+        ($p.version | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$")) and
+        $p.source == {source:"local",path:$adapter} and
+        $p.marketplaceSource == {sourceType:"git",source:$source} and
+        $p.installPolicy == "AVAILABLE" and $p.authPolicy == "ON_INSTALL" and
+        (($p | has("installedPath") | not) or (.installedPath | type == "string"))
+      ' "$input" >/dev/null || return 3
+      safe_relative_directory_within "$home" ".tmp/marketplaces/$marketplace" \
+        || return 3
+      if jq -se --arg plugin "$plugin" \
+        '.[0].installed | map(select(.pluginId == $plugin))[0] | has("installedPath")' \
+        "$input" >/dev/null; then
+        installed_path="$(jq -ser --arg plugin "$plugin" \
+          '.[0].installed | map(select(.pluginId == $plugin))[0].installedPath' "$input")" \
+          || return 3
+        existing_directory_is_within "$home" "$installed_path" || return 3
+      fi
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+git_marketplace_revision_is_primed() {
+  local revision
+
+  revision="$(installed_git_marketplace_revision "$1")" || return 1
+  [ -n "$revision" ]
+}
+
+require_git_marketplace_primed() {
+  local profile="$1"
+
+  git_marketplace_revision_is_primed "$profile" \
+    || die "selected Git marketplace revision is unprimed: $profile; run: $launcher_name repair $profile"
+}
+
+marketplace_upgrade_inventory_status() {
+  local profile="$1" input="$2" allow_selected="$3"
+  local marketplace plugin
+
+  marketplace="$(catalog_value "$profile" marketplaceName)"
+  plugin="$(catalog_value "$profile" plugin)"
+  jq -se --arg marketplace "$marketplace" --arg plugin "$plugin" \
+    --arg allowSelected "$allow_selected" '
+      length == 1 and
+      (.[0].installed | type) == "array" and
+      all(.[0].installed[];
+        (type == "object") and
+        (.pluginId | type) == "string" and
+        (.marketplaceName | type) == "string") and
+      ([.[0].installed[] |
+        select(.marketplaceName == $marketplace) |
+        select($allowSelected != "yes" or .pluginId != $plugin)] | length) == 0
+    ' "$input" >/dev/null
+}
+
+require_marketplace_upgrade_safe() {
+  local profile="$1" input="$2" allow_selected="$3"
+
+  marketplace_upgrade_inventory_status "$profile" "$input" "$allow_selected" \
+    || die "cannot prime selected Git marketplace with unrelated installed plugins: $profile"
+}
+
+require_marketplace_upgrade_safe_now() {
+  local profile="$1" file
+
+  inventory_file
+  file="$created_temp"
+  read_plugin_inventory "$profile" "$file" || {
+    remove_owned_temp "$file" || :
+    die "failed to read plugin inventory: $profile"
+  }
+  require_marketplace_upgrade_safe "$profile" "$file" no
+  remove_owned_temp "$file" || die 'failed to clean plugin inventory'
+}
+
+require_marketplace_update_safe_now() {
+  local profile="$1" file status
+
+  inventory_file
+  file="$created_temp"
+  read_plugin_inventory "$profile" "$file" || {
+    remove_owned_temp "$file" || :
+    die "failed to read plugin inventory: $profile"
+  }
+  marketplace_upgrade_inventory_status "$profile" "$file" yes
+  status=$?
+  remove_owned_temp "$file" || die 'failed to clean plugin inventory'
+  [ "$status" -eq 0 ] \
+    || die "cannot upgrade selected Git marketplace with unrelated installed plugins: $profile"
+}
+
+safe_relative_directory_within() {
+  local root="$1" relative="$2"
+  local path component old_ifs
+
+  case "$relative" in
+    ./*) relative="${relative#./}" ;;
+  esac
+  case "$relative" in
+    */) relative="${relative%/}" ;;
+  esac
+  case "$relative" in
+    ''|/*|*/|*//*|*[!A-Za-z0-9._+/-]*) return 1 ;;
+  esac
+  old_ifs="$IFS"
+  IFS=/
+  set -- $relative
+  IFS="$old_ifs"
+  path="$root"
+  for component in "$@"; do
+    case "$component" in ''|.|..) return 1 ;; esac
+    path="$path/$component"
+    [ -d "$path" ] && [ ! -L "$path" ] || return 1
+  done
+  existing_directory_is_within "$root" "$path"
+}
+
+selected_plugin_cache_skill_count() {
+  local profile="$1" input="$2"
+  local plugin marketplace name version home cache manifest skills_paths skills_path
+  local path_count
+  local skill_count=0
+
+  plugin="$(catalog_value "$profile" plugin)"
+  marketplace="$(catalog_value "$profile" marketplaceName)"
+  name="$(plugin_name "$plugin")"
+  version="$(jq -ser --arg plugin "$plugin" \
+    '.[0].installed | map(select(.pluginId == $plugin))[0].version' "$input")" \
+    || return 1
+  case "$version" in ''|.|..|*[!A-Za-z0-9._+-]*|*/*) return 1 ;; esac
+  home="$(profile_home "$profile")"
+  cache="$home/plugins/cache/$marketplace/$name/$version"
+  safe_relative_directory_within "$home" \
+    "plugins/cache/$marketplace/$name/$version" || return 1
+  safe_relative_directory_within "$cache" ".codex-plugin" || return 1
+  manifest="$cache/.codex-plugin/plugin.json"
+  [ -f "$manifest" ] && [ ! -L "$manifest" ] || return 1
+  jq -se --arg name "$name" --arg version "$version" '
+    def safe_skill_path:
+      type == "string" and
+      length > 0 and
+      test("^[A-Za-z0-9._+/-]+$");
+    length == 1 and
+    (.[0] | type) == "object" and
+    .[0].name == $name and
+    .[0].version == $version and
+    ((.[0].skills | safe_skill_path) or
+      ((.[0].skills | type) == "array" and
+       (.[0].skills | length) > 0 and
+       all(.[0].skills[]; safe_skill_path)))
+  ' "$manifest" >/dev/null || return 1
+  skills_paths="$(jq -ser '
+    if (.[0].skills | type) == "string"
+    then .[0].skills
+    else .[0].skills[]
+    end
+  ' "$manifest")" || return 1
+  while IFS= read -r skills_path; do
+    safe_relative_directory_within "$cache" "$skills_path" || return 1
+    case "$skills_path" in ./*) skills_path="${skills_path#./}" ;; esac
+    path_count="$(find "$cache/$skills_path" -type f -name SKILL.md \
+      -exec printf '.\n' \; 2>/dev/null | awk 'END { print NR }')" || return 1
+    case "$path_count" in ''|*[!0-9]*) return 1 ;; esac
+    skill_count=$((skill_count + path_count))
+  done <<EOF
+$skills_paths
+EOF
+  [ "$skill_count" -gt 0 ] || return 1
+  printf '%s\n' "$skill_count"
+}
+
+selected_git_plugin_cache_status() {
+  selected_plugin_cache_skill_count "$@" >/dev/null
+}
+
+inventory_file() {
+  make_owned_temp "${TMPDIR:-/tmp}/${launcher_name}-inventory.XXXXXX" \
+    'failed to stage native Codex inventory'
+}
+
+require_marketplace_inventory() {
+  local profile="$1" file status
+  inventory_file
+  file="$created_temp"
+  read_marketplace_inventory "$profile" "$file" || { remove_owned_temp "$file"; die "failed to read marketplace inventory: $profile"; }
+  marketplace_inventory_status "$profile" "$file"
+  status=$?
+  remove_owned_temp "$file" || die 'failed to clean marketplace inventory'
+  [ "$status" -eq 0 ] || die "invalid selected marketplace inventory: $profile"
+}
+
+require_plugin_inventory() {
+  local profile="$1" file status
+  inventory_file
+  file="$created_temp"
+  read_plugin_inventory "$profile" "$file" || { remove_owned_temp "$file"; die "failed to read plugin inventory: $profile"; }
+  plugin_inventory_status "$profile" "$file"
+  status=$?
+  [ "$status" -eq 0 ] || die "invalid selected plugin inventory: $profile"
+  complete_plugin_inventory_is_safe "$profile" "$file" \
+    || die "invalid plugin inventory: $profile"
+  if forbidden_superpowers_plugin_ids "$profile" "$file" >/dev/null; then
+    remove_owned_temp "$file" || :
+    die "forbidden Superpowers plugin is installed: $profile; run: $launcher_name repair $profile"
+  fi
+  case "$(catalog_value "$profile" marketplaceKind)" in
+    git|git-local)
+      selected_git_plugin_cache_status "$profile" "$file" \
+        || die "selected plugin cache is invalid: $profile; run: $launcher_name repair $profile"
+      ;;
+  esac
+  remove_owned_temp "$file" || die 'failed to clean plugin inventory'
+}
+
+complete_plugin_inventory_is_safe() {
+  local profile="$1" file="$2" home paths path source_paths
+
+  home="$(profile_home "$profile")"
+  jq -se '
+    length == 1
+    and (.[0] | type) == "object"
+    and (.[0] | keys) == ["available", "installed"]
+    and (.[0].available | type) == "array"
+    and (.[0].installed | type) == "array"
+    and all(.[0].installed[];
+      type == "object"
+      and (.pluginId | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?$"))
+      and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+      and (.version | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+      and .installed == true
+      and (.enabled | type == "boolean")
+      and (.source | type == "object")
+      and (
+        (.source.url | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        or
+        (.source.source == "local" and
+         (.source | keys) == ["path","source"] and
+         (.source.path | type == "string" and length > 0 and (test("[[:cntrl:]]") | not)))
+      )
+      and (.marketplaceName == null or (.marketplaceName | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._+-]*$")))
+      and (.marketplaceSource == null or (.marketplaceSource | type == "object"))
+      and (.installPolicy | type == "string")
+      and (.authPolicy | type == "string")
+      and ((has("installedPath") | not) or (.installedPath | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))))
+  ' "$file" >/dev/null 2>&1 || return 1
+  paths="$(jq -sr '.[0].installed[] | select(has("installedPath")) | .installedPath' "$file")" \
+    || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    existing_directory_is_within "$home" "$path" || return 1
+  done <<EOF
+$paths
+EOF
+  source_paths="$(jq -sr '
+    .[0].installed[] | select(.source.source == "local") | .source.path
+  ' "$file")" || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    existing_directory_is_within "$home" "$path" || return 1
+  done <<EOF
+$source_paths
+EOF
+}
+
+forbidden_superpowers_plugin_ids() {
+  local profile="$1" file="$2" ids status=0
+
+  [ "$profile" != superpowers ] || return 1
+  ids="$(jq -sr '
+    if length == 1
+      and (.[0] | type) == "object"
+      and (.[0].installed | type) == "array"
+      and all(.[0].installed[];
+        (type == "object") and
+        (.pluginId | type == "string") and
+        (.name | type == "string"))
+    then [.[0].installed[] |
+      select(
+        .name == "superpowers"
+        or (
+          (.source.url // "")
+          | ascii_downcase
+          | sub("^git\\+"; "")
+          | sub("^https://github\\.com/"; "")
+          | sub("^ssh://git@github\\.com/"; "")
+          | sub("^git@github\\.com:"; "")
+          | sub("^github:"; "")
+          | sub("^github\\.com/"; "")
+          | sub("/+$"; "")
+          | sub("\\.git$"; "")
+        ) == "obra/superpowers"
+      ) |
+      .pluginId] | unique[]
+    else error("invalid plugin inventory")
+    end
+  ' "$file" 2>/dev/null)" || status=2
+  [ "$status" -eq 0 ] || return "$status"
+  [ -n "$ids" ] || return 1
+  printf '%s\n' "$ids"
+}
+
+remove_forbidden_superpowers() {
+  local profile="$1" file="$2" ids status=0 plugin
+
+  ids="$(forbidden_superpowers_plugin_ids "$profile" "$file")" || status=$?
+  case "$status" in
+    0) ;;
+    1) return 0 ;;
+    *) die "failed to read plugin inventory: $profile" ;;
+  esac
+  while IFS= read -r plugin; do
+    case "$plugin" in
+      ''|[!A-Za-z0-9]*|*@*@*|*[!A-Za-z0-9._@+-]* )
+        die "invalid forbidden Superpowers plugin selector: $profile" ;;
+    esac
+    run_codex_mutation "$profile" plugin remove "$plugin" --json \
+      || die "failed to remove forbidden Superpowers plugin: $profile"
+  done <<EOF
+$ids
+EOF
+}
+
+require_forbidden_superpowers_removed() {
+  local profile="$1" file="$2" status=0
+
+  forbidden_superpowers_plugin_ids "$profile" "$file" >/dev/null || status=$?
+  case "$status" in
+    0) die "failed to remove forbidden Superpowers plugin: $profile" ;;
+    1) ;;
+    *) die "failed to read plugin inventory: $profile" ;;
+  esac
+}
+
+ensure_profile_lifecycle() {
+  local profile="$1" repair_wrong="$2"
+  local marketplace_file plugin_file marketplace_status plugin_status forbidden_status kind source plugin
+  local revision_primed=no allow_selected=no
+
+  inventory_file
+  marketplace_file="$created_temp"
+  inventory_file
+  plugin_file="$created_temp"
+  read_marketplace_inventory "$profile" "$marketplace_file" || {
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    die "failed to read marketplace inventory: $profile"
+  }
+  marketplace_inventory_status "$profile" "$marketplace_file"; marketplace_status=$?
+  read_plugin_inventory "$profile" "$plugin_file" || {
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    die "failed to read plugin inventory: $profile"
+  }
+  complete_plugin_inventory_is_safe "$profile" "$plugin_file" \
+    || die "invalid plugin inventory: $profile"
+  plugin_inventory_status "$profile" "$plugin_file"; plugin_status=$?
+  [ "$marketplace_status" -le 1 ] \
+    || die "invalid selected marketplace inventory: $profile"
+  kind="$(catalog_value "$profile" marketplaceKind)"
+  case "$kind" in
+    git|git-local)
+      if [ "$plugin_status" -eq 0 ] \
+        && ! selected_git_plugin_cache_status "$profile" "$plugin_file"; then
+        plugin_status=4
+      fi
+      ;;
+  esac
+  case "$plugin_status" in
+    0|1) ;;
+    3) [ "$repair_wrong" = yes ] || die "invalid selected plugin inventory: $profile" ;;
+    4) [ "$repair_wrong" = yes ] \
+      || die "selected plugin cache is invalid: $profile; run: $launcher_name repair $profile" ;;
+    *) die "invalid selected plugin inventory: $profile" ;;
+  esac
+  forbidden_status=0
+  forbidden_superpowers_plugin_ids "$profile" "$plugin_file" >/dev/null \
+    || forbidden_status=$?
+  case "$forbidden_status" in
+    0)
+      [ "$plugin_status" -eq 0 ] || [ "$plugin_status" -eq 1 ] \
+        || die "invalid selected plugin inventory: $profile"
+      remove_forbidden_superpowers "$profile" "$plugin_file"
+      ;;
+    1) ;;
+    *) die "failed to read plugin inventory: $profile" ;;
+  esac
+  if [ "$forbidden_status" -eq 0 ]; then
+    read_plugin_inventory "$profile" "$plugin_file" \
+      || die "failed to read plugin inventory: $profile"
+    complete_plugin_inventory_is_safe "$profile" "$plugin_file" \
+      || die "invalid plugin inventory: $profile"
+    require_forbidden_superpowers_removed "$profile" "$plugin_file"
+    plugin_inventory_status "$profile" "$plugin_file"; plugin_status=$?
+    case "$plugin_status" in
+      0|1) ;;
+      3|4) [ "$repair_wrong" = yes ] \
+        || die "invalid selected plugin inventory: $profile" ;;
+      *) die "invalid selected plugin inventory: $profile" ;;
+    esac
+  fi
+  plugin="$(catalog_value "$profile" plugin)"
+
+  if [ "$kind" = git ] || [ "$kind" = git-local ]; then
+    if git_marketplace_revision_is_primed "$profile"; then
+      revision_primed=yes
+    elif [ "$plugin_status" -ne 1 ]; then
+      if [ "$repair_wrong" != yes ]; then
+        die "selected Git marketplace revision is unprimed: $profile; run: $launcher_name repair $profile"
+      fi
+      allow_selected=yes
+    fi
+    if [ "$revision_primed" = no ]; then
+      require_marketplace_upgrade_safe "$profile" "$plugin_file" "$allow_selected"
+    fi
+  fi
+  remove_owned_temp "$marketplace_file" || die 'failed to clean marketplace inventory'
+  remove_owned_temp "$plugin_file" || die 'failed to clean plugin inventory'
+
+  if [ "$marketplace_status" -eq 1 ]; then
+    case "$kind" in
+      local-adapter)
+        run_codex_mutation "$profile" --local-marketplace-add \
+          || die "failed to add selected marketplace: $profile"
+        ;;
+      git|git-local)
+        source="$(catalog_value "$profile" marketplaceSource)"
+        run_codex_mutation "$profile" plugin marketplace add "$source" --json \
+          || die "failed to add selected marketplace: $profile"
+        ;;
+      *) die "invalid marketplace kind for profile: $profile" ;;
+    esac
+    require_marketplace_inventory "$profile"
+  fi
+
+  if { [ "$kind" = git ] || [ "$kind" = git-local ]; } \
+    && [ "$revision_primed" = no ]; then
+    if [ "$plugin_status" -ne 1 ]; then
+      run_codex_mutation "$profile" plugin remove "$plugin" --json \
+        || die "failed to remove invalid selected plugin: $profile"
+    fi
+    require_marketplace_upgrade_safe_now "$profile"
+    run_codex_mutation "$profile" plugin marketplace upgrade \
+      "$(catalog_value "$profile" marketplaceName)" --json \
+      || die "failed to materialize selected Git marketplace: $profile"
+    require_marketplace_inventory "$profile"
+    git_marketplace_revision_is_primed "$profile" \
+      || die "failed to materialize selected Git marketplace: $profile"
+    run_codex_mutation "$profile" plugin add "$plugin" --json \
+      || die "failed to add selected plugin: $profile"
+    require_plugin_inventory "$profile"
+    return
+  fi
+
+  if [ "$plugin_status" -eq 3 ] || [ "$plugin_status" -eq 4 ]; then
+    run_codex_mutation "$profile" plugin remove "$plugin" --json \
+      || die "failed to remove invalid selected plugin: $profile"
+  fi
+  if [ "$plugin_status" -eq 1 ] || [ "$plugin_status" -eq 3 ] \
+    || [ "$plugin_status" -eq 4 ]; then
+    run_codex_mutation "$profile" plugin add "$plugin" --json \
+      || die "failed to add selected plugin: $profile"
+    require_plugin_inventory "$profile"
+  fi
+}
+
+setup_profile() {
+  local profile="$1"
+
+  require_profile "$profile"
+  prepare_profile_home "$profile"
+  ensure_floating_skills "$profile"
+  install_initial_config "$profile"
+  recover_generated_project_trust "$profile"
+  require_profile_config "$profile"
+  validate_profile_paths "$profile"
+  ensure_profile_lifecycle "$profile" no
+  doctor_profile "$profile" >/dev/null
+  printf '%s: ready\n' "$profile"
+}
+
+doctor_profile() {
+  local profile="$1"
+
+  require_profile "$profile"
+  require_profile_home_ready "$profile"
+  recover_generated_project_trust "$profile"
+  require_profile_config "$profile"
+  validate_profile_paths "$profile"
+  require_marketplace_inventory "$profile"
+  require_plugin_inventory "$profile"
+  case "$(catalog_value "$profile" marketplaceKind)" in
+    git|git-local) require_git_marketplace_primed "$profile" ;;
+  esac
+  printf '%s: healthy\n' "$profile"
+}
+
+not_ready_inventory() {
+  local profile="$1" readiness="$2"
+
+  jq -cn --arg launcher "$launcher_name" --arg profile "$profile" --arg readiness "$readiness" '{
+    schemaVersion: 1,
+    launcher: $launcher,
+    harness: "codex",
+    profile: $profile,
+    readiness: $readiness,
+    plugins: [],
+    skills: {packageCount: null, visibleCount: null},
+    mcps: []
+  }'
+}
+
+inventory_profile() {
+  local profile="$1"
+  local home plugin_file plugins package_count mcp_inventory prompt_input skill_names visible_count
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  home="$(profile_home "$profile")"
+  if [ ! -d "$home" ]; then
+    not_ready_inventory "$profile" not-setup
+    return
+  fi
+  if ! (doctor_profile "$profile" >/dev/null 2>&1); then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+
+  validate_profile_paths "$profile"
+  resolve_codex
+  inventory_file
+  plugin_file="$created_temp"
+  read_plugin_inventory "$profile" "$plugin_file" || {
+    remove_owned_temp "$plugin_file"
+    die "failed to read plugin inventory: $profile"
+  }
+  plugin_inventory_status "$profile" "$plugin_file"
+  [ "$?" -eq 0 ] || {
+    remove_owned_temp "$plugin_file"
+    die "invalid plugin inventory for $profile"
+  }
+  package_count="$(selected_plugin_cache_skill_count "$profile" "$plugin_file")" || {
+    remove_owned_temp "$plugin_file"
+    die "selected plugin cache is invalid: $profile; run: $launcher_name repair $profile"
+  }
+  plugins="$(jq -ce '
+    if type == "object"
+      and keys == ["available", "installed"]
+      and (.installed | type == "array")
+      and all(.installed[];
+        type == "object"
+        and (.pluginId | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and (.version | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and (.installed == true)
+        and (.enabled | type == "boolean"))
+    then [.installed[] | select(.enabled) | {name: .pluginId, version}] | sort_by(.name)
+    else error("invalid plugin inventory")
+    end
+  ' "$plugin_file" 2>/dev/null)" || {
+    remove_owned_temp "$plugin_file"
+    die "invalid plugin inventory for $profile"
+  }
+  remove_owned_temp "$plugin_file" || die 'failed to clean plugin inventory'
+
+  mcp_inventory="$(env CODEX_HOME="$home" "$codex_executable" mcp list --json)" \
+    || die "failed to read MCP inventory: $profile"
+  mcp_inventory="$(printf '%s\n' "$mcp_inventory" | jq -ce '
+    if type == "array"
+      and all(.[];
+        type == "object"
+        and (.name | type == "string" and length > 0 and (test("[[:cntrl:]]") | not))
+        and ((has("enabled") | not) or (.enabled | type == "boolean")))
+    then [.[] | select(.enabled != false) | .name] | unique | sort
+    else error("invalid MCP inventory")
+    end
+  ' 2>/dev/null)" || die "invalid MCP inventory for $profile"
+
+  prompt_input="$(env CODEX_HOME="$home" "$codex_executable" debug prompt-input inventory)" \
+    || die "failed to read visible skill inventory: $profile"
+  skill_names="$(printf '%s\n' "$prompt_input" | jq -re '
+    [
+      .[]?.content[]?
+      | select(type == "object" and .type == "input_text" and (.text | type == "string"))
+      | .text
+    ]
+    | if length == 0 then error("missing prompt text") else join("\n") end
+  ' 2>/dev/null | awk '
+    $0 == "### Available skills" {
+      sections += 1
+      in_skills = 1
+      next
+    }
+    in_skills && /^### / { in_skills = 0 }
+    in_skills && /^- [A-Za-z0-9][A-Za-z0-9._:-]*: .* \(file: [^)]+\)$/ {
+      line = substr($0, 3)
+      separator = index(line, ": ")
+      if (separator > 1) print substr(line, 1, separator - 1)
+    }
+    END { if (sections != 1) exit 1 }
+  ')" || die "invalid visible skill inventory for $profile"
+  [ -n "$skill_names" ] \
+    || die "invalid visible skill inventory for $profile"
+  if ! printf '%s\n' "$skill_names" \
+    | awk 'NF == 0 || $0 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]*$/ { exit 1 }'; then
+    die "invalid visible skill inventory for $profile"
+  fi
+  visible_count="$(printf '%s\n' "$skill_names" | awk 'END { print NR }')"
+
+  jq -cn \
+    --arg launcher "$launcher_name" \
+    --arg profile "$profile" \
+    --argjson plugins "$plugins" \
+    --argjson packageCount "$package_count" \
+    --argjson visibleCount "$visible_count" \
+    --argjson mcps "$mcp_inventory" \
+    '{
+      schemaVersion: 1,
+      launcher: $launcher,
+      harness: "codex",
+      profile: $profile,
+      readiness: "healthy",
+      plugins: $plugins,
+      skills: {packageCount: $packageCount, visibleCount: $visibleCount},
+      mcps: $mcps
+    }'
+}
+
+repair_profile() {
+  local profile="$1"
+
+  require_profile "$profile"
+  require_profile_home_ready "$profile"
+  ensure_floating_skills "$profile"
+  recover_generated_project_trust "$profile"
+  write_repaired_config "$profile" yes
+  validate_profile_paths "$profile"
+  ensure_profile_lifecycle "$profile" yes
+  doctor_profile "$profile" >/dev/null
+  printf '%s: repaired\n' "$profile"
+}
+
+fetch_available_version() {
+  local profile="$1" output="$2"
+  local url plugin name
+
+  url="$(catalog_value "$profile" manifestUrl)"
+  plugin="$(catalog_value "$profile" plugin)"
+  name="$(plugin_name "$plugin")"
+  command -v curl >/dev/null 2>&1 || return 2
+  curl -fsSL "$url" >"$output" || return 2
+  jq -ser --arg name "$name" '
+    if length != 1 or (.[0] | type) != "object" or (.[0].plugins | type) != "array" then
+      error("invalid manifest")
+    else
+      (.[0].plugins | map(select(.name == $name))) as $selected |
+      if ($selected | length) != 1 or ($selected[0].version | type) != "string" or ($selected[0].version | length) == 0 then
+        error("invalid selected plugin")
+      else $selected[0].version end
+    end
+  ' "$output"
+}
+
+installed_git_marketplace_revision() {
+  local profile="$1" home target name metadata repository revision
+
+  home="$(profile_home "$profile")"
+  target="$home/config.toml"
+  name="$(catalog_value "$profile" marketplaceName)"
+  metadata="$home/.tmp/marketplaces/$name/.codex-marketplace-install.json"
+  repository="$(catalog_value "$profile" upstreamRepository)"
+
+  if [ -e "$metadata" ] || [ -L "$metadata" ]; then
+    safe_relative_directory_within "$home" ".tmp/marketplaces/$name" \
+      || return 1
+    [ -f "$metadata" ] && [ ! -L "$metadata" ] || return 1
+    jq -e --arg repository "$repository" '
+      (keys == ["ref_name","revision","source","source_type","sparse_paths"]) and
+      .source_type == "git" and
+      .source == $repository and
+      (.ref_name == null or (.ref_name | type) == "string") and
+      (.sparse_paths | type) == "array" and
+      (.revision | type == "string" and test("^[0-9A-Fa-f]{40}$"))
+    ' "$metadata" >/dev/null 2>&1 || return 1
+    revision="$(jq -er '.revision | ascii_downcase' "$metadata" 2>/dev/null)" \
+      || return 1
+    printf '%s\n' "$revision"
+    return 0
+  fi
+
+  awk -v header="[marketplaces.$name]" '
+    $0 == header { selected = 1; next }
+    selected && /^\[/ { exit }
+    selected && /^last_revision = / {
+      value = substr($0, 17)
+      if (value !~ /^".*"$/) exit
+      value = substr(value, 2, length(value) - 2)
+      if (length(value) == 40 && value !~ /[^0-9A-Fa-f]/) print tolower(value)
+      exit
+    }
+  ' "$target"
+}
+
+official_git_marketplace_revision() {
+  local profile="$1" repository output revision extra
+
+  repository="$(catalog_value "$profile" upstreamRepository)"
+  command -v git >/dev/null 2>&1 || return 1
+  output="$(git ls-remote "$repository" refs/heads/main 2>/dev/null)" || return 1
+  IFS='	' read -r revision extra <<EOF
+$output
+EOF
+  case "$revision" in
+    ''|*[!0-9A-Fa-f]*) return 1 ;;
+  esac
+  [ "${#revision}" -eq 40 ] && [ "$extra" = refs/heads/main ] || return 1
+  printf '%s\n' "$revision" | tr 'A-F' 'a-f'
+}
+
+update_check_git_revision_profile() {
+  local profile="$1" installed available
+
+  doctor_profile "$profile" >/dev/null || return 2
+  installed="$(installed_git_marketplace_revision "$profile")" || return 2
+  available="$(official_git_marketplace_revision "$profile")" || return 2
+  [ -n "$installed" ] && [ -n "$available" ] || return 2
+  if [ "$installed" = "$available" ]; then
+    printf '%s: current (%s)\n' "$profile" "$installed"
+    return 0
+  fi
+  printf '%s: update available (%s -> %s)\n' "$profile" "$installed" "$available"
+  return 10
+}
+
+update_check_profile() {
+  local profile="$1" marketplace_file plugin_file manifest_file status installed available
+
+  require_profile "$profile"
+  validate_profile_paths "$profile"
+  if [ "$(catalog_value "$profile" marketplaceKind)" = git-local ]; then
+    update_check_git_revision_profile "$profile"
+    return
+  fi
+  inventory_file
+  marketplace_file="$created_temp"
+  inventory_file
+  plugin_file="$created_temp"
+  inventory_file
+  manifest_file="$created_temp"
+  read_marketplace_inventory "$profile" "$marketplace_file" || {
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    remove_owned_temp "$manifest_file" || :
+    return 2
+  }
+  marketplace_inventory_status "$profile" "$marketplace_file"; status=$?
+  if [ "$status" -ne 0 ]; then
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    remove_owned_temp "$manifest_file" || :
+    return 2
+  fi
+  read_plugin_inventory "$profile" "$plugin_file" || {
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    remove_owned_temp "$manifest_file" || :
+    return 2
+  }
+  plugin_inventory_status "$profile" "$plugin_file"; status=$?
+  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    remove_owned_temp "$manifest_file" || :
+    return 2
+  fi
+  available="$(fetch_available_version "$profile" "$manifest_file")" || {
+    remove_owned_temp "$marketplace_file" || :
+    remove_owned_temp "$plugin_file" || :
+    remove_owned_temp "$manifest_file" || :
+    return 2
+  }
+  if [ "$status" -eq 1 ]; then
+    printf '%s: not installed (available %s)\n' "$profile" "$available"
+    remove_owned_temp "$marketplace_file" || return 2
+    remove_owned_temp "$plugin_file" || return 2
+    remove_owned_temp "$manifest_file" || return 2
+    return 10
+  fi
+  installed="$(jq -sr --arg plugin "$(catalog_value "$profile" plugin)" '.[0].installed[] | select(.pluginId == $plugin) | .version' "$plugin_file")" \
+    || {
+      remove_owned_temp "$marketplace_file" || :
+      remove_owned_temp "$plugin_file" || :
+      remove_owned_temp "$manifest_file" || :
+      return 2
+    }
+  remove_owned_temp "$marketplace_file" || return 2
+  remove_owned_temp "$plugin_file" || return 2
+  remove_owned_temp "$manifest_file" || return 2
+  if [ "$installed" = "$available" ]; then
+    printf '%s: current (%s)\n' "$profile" "$installed"
+    return 0
+  fi
+  printf '%s: update available (%s -> %s)\n' "$profile" "$installed" "$available"
+  return 10
+}
+
+update_profile() {
+  local profile="$1" kind plugin marketplace
+
+  require_profile "$profile"
+  validate_profile_paths "$profile"
+  require_marketplace_inventory "$profile"
+  require_plugin_inventory "$profile"
+  kind="$(catalog_value "$profile" marketplaceKind)"
+  plugin="$(catalog_value "$profile" plugin)"
+  marketplace="$(catalog_value "$profile" marketplaceName)"
+  case "$kind" in
+    local-adapter)
+      run_codex_mutation "$profile" plugin remove "$plugin" --json || return 2
+      run_codex_mutation "$profile" plugin add "$plugin" --json || return 2
+      ;;
+    git)
+      require_marketplace_update_safe_now "$profile"
+      run_codex_mutation "$profile" plugin marketplace upgrade "$marketplace" --json || return 2
+      ;;
+    git-local)
+      require_marketplace_update_safe_now "$profile"
+      run_codex_mutation "$profile" plugin marketplace upgrade "$marketplace" --json || return 2
+      run_codex_mutation "$profile" plugin remove "$plugin" --json || return 2
+      run_codex_mutation "$profile" plugin add "$plugin" --json || return 2
+      ;;
+    *) return 2 ;;
+  esac
+  doctor_profile "$profile" >/dev/null || return 2
+  printf '%s: updated\n' "$profile"
+}
+
+for_selected_profiles_status() {
+  local selected="$1" action="$2" profile status aggregate=0
+
+  if [ "$selected" = '--all' ]; then
+    while IFS= read -r profile; do
+      (install_owned_temp_traps; run_locked_profile_action "$profile" "$action")
+      status=$?
+      if [ "$action" = update_check_profile ] && [ "$status" -eq 10 ]; then
+        [ "$aggregate" -eq 2 ] || aggregate=1
+      elif [ "$status" -ne 0 ]; then
+        aggregate=2
+      fi
+    done < <(jq -r '.profiles | keys | sort[]' "$catalog")
+  else
+    (install_owned_temp_traps; run_locked_profile_action "$selected" "$action")
+    status=$?
+    if [ "$action" = update_check_profile ] && [ "$status" -eq 10 ]; then
+      [ "$aggregate" -eq 2 ] || aggregate=1
+    elif [ "$status" -ne 0 ]; then
+      aggregate=2
+    fi
+  fi
+  return "$aggregate"
+}
+
+for_selected_profiles() {
+  local selected="$1"
+  local action="$2"
+  local profile
+
+  if [ "$selected" = '--all' ]; then
+    while IFS= read -r profile; do
+      run_locked_profile_action "$profile" "$action"
+    done < <(jq -r '.profiles | keys | sort[]' "$catalog")
+  else
+    run_locked_profile_action "$selected" "$action"
+  fi
+}
+
+require_launch_ready() {
+  local profile="$1"
+
+  require_profile "$profile"
+  require_profile_home_ready "$profile"
+  require_profile_config "$profile"
+}
+
+ensure_launch_ready() {
+  local profile="$1"
+
+  if (
+    require_profile_config "$profile"
+    [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
+  ) 2>/dev/null; then
+    return
+  fi
+  repair_profile "$profile" >/dev/null
+}
+
+resolve_codex() {
+  local candidate
+  local candidate_directory
+
+  [ -z "$codex_executable" ] || return
+  candidate="$(command -v codex 2>/dev/null)" \
+    || die 'required command not found: codex'
+  case "$candidate" in
+    /*) ;;
+    */*)
+      candidate_directory="$(CDPATH= cd -- "$(dirname "$candidate")" >/dev/null 2>&1 && pwd -P)" \
+        || die 'required command not found: codex'
+      candidate="$candidate_directory/$(basename "$candidate")"
+      ;;
+    *) die 'required command not found: codex' ;;
+  esac
+  [ -f "$candidate" ] && [ -x "$candidate" ] \
+    || die 'required command not found: codex'
+  if [ "$candidate" -ef "$0" ]; then
+    die 'refusing recursive Codex launcher'
+  fi
+  codex_executable="$candidate"
+}
+
+require_host_native_login() {
+  local profile="$1"
+
+  resolve_codex
+  env CODEX_HOME="$HOME/.codex" "$codex_executable" login status \
+    >/dev/null 2>&1 \
+    || die "native authentication is unavailable: $profile"
+}
+
+require_safe_host_native_auth_source() {
+  local profile="$1" source="$HOME/.codex/auth.json"
+
+  source_auth_is_readable "$source" \
+    || die "native authentication source is missing or unreadable: $profile: $source"
+}
+
+launch_lock_file_is_safe() {
+  local path="$1"
+
+  [ -f "$path" ] && [ ! -L "$path" ] && [ "$(file_mode "$path")" = '600' ]
+}
+
+process_birth_identity() {
+  local pid="$1" value
+
+  value="$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null)" || return 1
+  value="$(printf '%s' "$value" | tr -cd '[:alnum:]')"
+  [ -n "$value" ] || return 1
+  printf '%s\n' "$value"
+}
+
+read_launch_lock_owner() {
+  local path="$1" pid birth token extra
+
+  launch_lock_file_is_safe "$path" || return 1
+  IFS=' ' read -r pid birth token extra <"$path" || return 1
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$birth" in ''|*[!A-Za-z0-9]*) return 1 ;; esac
+  case "$token" in ''|*[!0-9-]*) return 1 ;; esac
+  [ -z "$extra" ] || return 1
+  [ "$(wc -l <"$path")" -eq 1 ] || return 1
+  printf '%s %s %s\n' "$pid" "$birth" "$token"
+}
+
+describe_launch_lock_wait() {
+  local profile="$1" pid="$2" started
+
+  started="$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null)" || started=''
+  started="$(printf '%s' "$started" | sed -e 's/^ *//' -e 's/ *$//')"
+  if [ -n "$started" ]; then
+    printf '%s: waiting for profile lock: %s is held by pid %s (running since %s); concurrent Codex sessions are allowed, but setup/doctor/update/repair and brief launch prepare/cleanup still serialize.\n' \
+      "$launcher_name" "$profile" "$pid" "$started" >&2
+  else
+    printf '%s: waiting for profile lock: %s is held by pid %s; concurrent Codex sessions are allowed, but setup/doctor/update/repair and brief launch prepare/cleanup still serialize.\n' \
+      "$launcher_name" "$profile" "$pid" >&2
+  fi
+}
+
+acquire_profile_launch_lock() {
+  local profile="$1"
+  local home="$(profile_home "$profile")"
+  local lock="$home/.launch.lock"
+  local reap="$home/.launch-lock-reap"
+  local candidate owner claimed_owner pid candidate_birth owner_birth current_birth token owner_remainder
+  local announced_pid=''
+
+  [ -z "$active_launch_lock" ] || die 'internal error: launch lock already held'
+  require_profile_home_ready "$profile"
+  make_owned_temp "$home/.launch-owner.XXXXXX" \
+    "failed to stage launch lock owner for profile $profile"
+  candidate="$created_temp"
+  token="$$-${RANDOM:-0}"
+  candidate_birth="$(process_birth_identity "$$" 2>/dev/null || printf '%s\n' unavailable)"
+  printf '%s %s %s\n' "$$" "$candidate_birth" "$token" >"$candidate" \
+    || die "failed to write launch lock owner for profile $profile"
+  chmod 0600 "$candidate" \
+    || die "failed to secure launch lock owner for profile $profile"
+
+  while :; do
+    require_safe_profile_home "$profile"
+    [ ! -L "$lock" ] || die "unsafe profile launch lock: $profile"
+    if ln "$candidate" "$lock" 2>/dev/null; then
+      active_launch_lock="$lock"
+      active_launch_lock_owner="$$ $candidate_birth $token"
+      remove_owned_temp "$candidate" \
+        || die "failed to clean launch lock owner for profile $profile"
+      return 0
+    fi
+    [ -e "$lock" ] || continue
+    if ! owner="$(read_launch_lock_owner "$lock")"; then
+      if [ ! -e "$lock" ] && [ ! -L "$lock" ]; then
+        continue
+      fi
+      die "unsafe profile launch lock: $profile"
+    fi
+    pid="${owner%% *}"
+    owner_remainder="${owner#* }"
+    owner_birth="${owner_remainder%% *}"
+    if kill -0 "$pid" 2>/dev/null; then
+      current_birth="$(process_birth_identity "$pid" 2>/dev/null || printf '%s\n' unavailable)"
+      if [ "$owner_birth" = unavailable ] || [ "$current_birth" = unavailable ] \
+        || [ "$owner_birth" = "$current_birth" ]; then
+        if [ "$announced_pid" != "$pid" ]; then
+          describe_launch_lock_wait "$profile" "$pid"
+          announced_pid="$pid"
+        fi
+        sleep 0.05
+        continue
+      fi
+    fi
+    if [ -e "$reap" ] || [ -L "$reap" ]; then
+      launch_lock_file_is_safe "$reap" \
+        || die "unsafe profile launch lock recovery: $profile"
+      if [ ! -e "$lock" ] || [ "$lock" -ef "$reap" ]; then
+        rm -f -- "$reap" \
+          || die "failed to recover profile launch lock: $profile"
+      else
+        rm -f -- "$reap" \
+          || die "failed to remove superseded profile launch lock recovery: $profile"
+      fi
+      continue
+    fi
+    if ln "$lock" "$reap" 2>/dev/null; then
+      claimed_owner="$(read_launch_lock_owner "$reap" 2>/dev/null || :)"
+      if [ "$claimed_owner" != "$owner" ]; then
+        rm -f -- "$reap" \
+          || die "failed to discard changed profile launch lock recovery: $profile"
+        continue
+      fi
+      if [ -e "$lock" ] && [ "$lock" -ef "$reap" ]; then
+        rm -f -- "$lock" \
+          || die "failed to recover profile launch lock: $profile"
+      fi
+      rm -f -- "$reap" \
+        || die "failed to clean profile launch lock recovery: $profile"
+    fi
+  done
+}
+
+release_profile_launch_lock() {
+  local lock="$active_launch_lock"
+  local owner
+
+  [ -n "$lock" ] || return 0
+  owner="$(read_launch_lock_owner "$lock")" || return 1
+  [ "$owner" = "$active_launch_lock_owner" ] || return 1
+  rm -f -- "$lock" || return 1
+  active_launch_lock=""
+  active_launch_lock_owner=""
+}
+
+run_locked_profile_action() {
+  local profile="$1" action="$2" status release_status=0
+
+  if [ "$action" = setup_profile ]; then
+    require_profile "$profile"
+    prepare_profile_home "$profile"
+  fi
+  acquire_profile_launch_lock "$profile"
+  "$action" "$profile"
+  status=$?
+  release_profile_launch_lock || release_status=1
+  install_owned_temp_traps
+  [ "$release_status" -eq 0 ] \
+    || die "failed to release profile launch lock: $profile"
+  return "$status"
+}
+
+launch_signal() {
+  local signal="$1"
+  local attempt=0
+
+  case "$signal" in
+    HUP) launch_signal_status=129 ;;
+    INT) launch_signal_status=130 ;;
+    TERM) launch_signal_status=143 ;;
+    *) launch_signal_status=1 ;;
+  esac
+  [ -n "$launch_child_pid" ] || return 0
+  while [ "$attempt" -lt 20 ]; do
+    if kill -s "$signal" -- "-$launch_child_pid" 2>/dev/null; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.01
+  done
+  kill -s "$signal" "$launch_child_pid" 2>/dev/null || :
+}
+
+config_has_project_trust_stanza() {
+  local target="$1"
+
+  awk '
+    BEGIN { in_project = 0 }
+    /^\[projects\.".*"\]$/ { in_project = 1; next }
+    /^\[/ { in_project = 0 }
+    in_project && $0 == "trust_level = \"trusted\"" { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$target"
+}
+
+# True only when generated project-trust lives in the managed native provider
+# tail. Profile-local [projects] tables are user state and must not fail recover.
+config_has_native_project_trust_stanza() {
+  local target="$1"
+  local lines provider_begin provider_end
+
+  lines="$(config_marker_lines "$target")" || return 1
+  read_config_marker_lines "$lines"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
+  awk -v first="$((provider_begin + 5))" -v last="$((provider_end - 1))" '
+    BEGIN { in_project = 0 }
+    NR < first || NR > last { in_project = 0; next }
+    /^\[projects\.".*"\]$/ { in_project = 1; next }
+    /^\[/ { in_project = 0 }
+    in_project && $0 == "trust_level = \"trusted\"" { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$target"
+}
+
+# Remove Codex session-live native tables for comparison only: hooks.state*
+# and tui.model_availability_nux. Marketplace/plugin/managed bytes stay so
+# unexpected mutations still fail cleanup.
+strip_native_session_live_state() {
+  local target="$1" output="$2"
+  local lines provider_begin provider_end
+
+  lines="$(config_marker_lines "$target")" || return 1
+  read_config_marker_lines "$lines"
+  provider_begin="$marker_provider_begin"
+  provider_end="$marker_provider_end"
+  awk -v first="$((provider_begin + 5))" -v last="$((provider_end - 1))" '
+    function is_live_header(line) {
+      return line == "[hooks.state]" ||
+        line ~ /^\[hooks\.state\.".*"\]$/ ||
+        line == "[tui.model_availability_nux]"
+    }
+    {
+      if (NR < first || NR > last) {
+        skip = 0
+        print
+        next
+      }
+      if (is_live_header($0)) {
+        skip = 1
+        next
+      }
+      if (skip) {
+        if ($0 ~ /^\[/) {
+          skip = 0
+        } else {
+          next
+        }
+      }
+      print
+    }
+  ' "$target" >"$output"
+}
+
+# True when left/right differ only by project-trust (already stripped by caller)
+# and/or hooks.state / tui nux session-live tables.
+configs_match_aside_from_session_live() {
+  local left="$1" right="$2"
+  local left_norm right_norm
+
+  make_owned_temp "$(dirname "$left")/.config-live-norm-left.XXXXXX" \
+    'failed to stage left session-live normalization'
+  left_norm="$created_temp"
+  chmod 0600 "$left_norm" || {
+    remove_owned_temp "$left_norm" || :
+    return 1
+  }
+  make_owned_temp "$(dirname "$right")/.config-live-norm-right.XXXXXX" \
+    'failed to stage right session-live normalization'
+  right_norm="$created_temp"
+  chmod 0600 "$right_norm" || {
+    remove_owned_temp "$right_norm" || :
+    remove_owned_temp "$left_norm" || :
+    return 1
+  }
+  if ! strip_native_session_live_state "$left" "$left_norm" \
+    || ! strip_native_session_live_state "$right" "$right_norm"; then
+    remove_owned_temp "$right_norm" || :
+    remove_owned_temp "$left_norm" || :
+    return 1
+  fi
+  if cmp -s "$left_norm" "$right_norm"; then
+    remove_owned_temp "$right_norm" || :
+    remove_owned_temp "$left_norm" || :
+    return 0
+  fi
+  remove_owned_temp "$right_norm" || :
+  remove_owned_temp "$left_norm" || :
+  return 1
+}
+
+# Strip Codex-generated project-trust stanzas from the live config.
+# Keep hooks.state and tui nux writes Codex makes during a normal session.
+# Refuse marketplace/plugin/managed mutations (leave live bytes unchanged).
+# `before` is a pre-launch hint for trust-only and concurrent trust cleanup.
+cleanup_launch_config() {
+  local profile="$1" before="$2"
+  local target="$(profile_home "$profile")/config.toml"
+  local after none_stage blank_stage before_none_stage before_blank_stage attempt=0
+  local none_ok=0 blank_ok=0 chosen=""
+  local before_none_ok=0 before_blank_ok=0
+  local after_has_trust=0 publish=0
+
+  while [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt + 1))
+    none_ok=0
+    blank_ok=0
+    before_none_ok=0
+    before_blank_ok=0
+    chosen=""
+    none_stage=""
+    blank_stage=""
+    before_none_stage=""
+    before_blank_stage=""
+    after_has_trust=0
+    publish=0
+    safe_config_target "$profile" || return 1
+    [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] || return 1
+    make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
+      'failed to stage post-launch config snapshot'
+    after="$created_temp"
+    chmod 0600 "$after" || return 1
+    cp "$target" "$after" || return 1
+    safe_config_target "$profile" || return 1
+    [ "$(file_mode "$target")" = '600' ] || return 1
+    if ! cmp -s "$after" "$target"; then
+      remove_owned_temp "$after" || :
+      continue
+    fi
+
+    if cmp -s "$before" "$after"; then
+      remove_owned_temp "$after" || return 1
+      return 0
+    fi
+
+    make_owned_temp "$(profile_home "$profile")/.config-cleanup-before-none.XXXXXX" \
+      'failed to stage before none-style cleanup'
+    before_none_stage="$created_temp"
+    chmod 0600 "$before_none_stage" || {
+      remove_owned_temp "$before_none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    if strip_generated_project_trust "$before" "$before_none_stage" none \
+      && validate_config_structure "$profile" "$before_none_stage" >/dev/null; then
+      before_none_ok=1
+    fi
+    make_owned_temp "$(profile_home "$profile")/.config-cleanup-before-blank.XXXXXX" \
+      'failed to stage before blank-style cleanup'
+    before_blank_stage="$created_temp"
+    chmod 0600 "$before_blank_stage" || {
+      remove_owned_temp "$before_blank_stage" || :
+      remove_owned_temp "$before_none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    if strip_generated_project_trust "$before" "$before_blank_stage" blank \
+      && validate_config_structure "$profile" "$before_blank_stage" >/dev/null; then
+      before_blank_ok=1
+    fi
+
+    if config_has_project_trust_stanza "$after"; then
+      after_has_trust=1
+    fi
+
+    if [ "$after_has_trust" -eq 1 ]; then
+      make_owned_temp "$(profile_home "$profile")/.config-cleanup-none.XXXXXX" \
+        'failed to stage none-style cleanup'
+      none_stage="$created_temp"
+      chmod 0600 "$none_stage" || {
+        remove_owned_temp "$none_stage" || :
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$after" || :
+        return 1
+      }
+      if strip_generated_project_trust "$after" "$none_stage" none \
+        && validate_config_structure "$profile" "$none_stage" >/dev/null; then
+        none_ok=1
+      fi
+
+      make_owned_temp "$(profile_home "$profile")/.config-cleanup-blank.XXXXXX" \
+        'failed to stage blank-style cleanup'
+      blank_stage="$created_temp"
+      chmod 0600 "$blank_stage" || {
+        remove_owned_temp "$blank_stage" || :
+        remove_owned_temp "$none_stage" || :
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$after" || :
+        return 1
+      }
+      if strip_generated_project_trust "$after" "$blank_stage" blank \
+        && validate_config_structure "$profile" "$blank_stage" >/dev/null; then
+        blank_ok=1
+      fi
+
+      # Prefer exact pre-launch restore, then trust-stripped baselines, then
+      # trust-stripped baselines that also allow hooks/tui session-live deltas.
+      if [ "$none_ok" -eq 1 ] && cmp -s "$before" "$none_stage"; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && cmp -s "$before" "$blank_stage"; then
+        chosen="$blank_stage"
+      elif [ "$none_ok" -eq 1 ] && [ "$before_none_ok" -eq 1 ] \
+        && cmp -s "$before_none_stage" "$none_stage"; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && [ "$before_blank_ok" -eq 1 ] \
+        && cmp -s "$before_blank_stage" "$blank_stage"; then
+        chosen="$blank_stage"
+      elif [ "$none_ok" -eq 1 ] && [ "$before_blank_ok" -eq 1 ] \
+        && cmp -s "$before_blank_stage" "$none_stage"; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && [ "$before_none_ok" -eq 1 ] \
+        && cmp -s "$before_none_stage" "$blank_stage"; then
+        chosen="$blank_stage"
+      elif [ "$none_ok" -eq 1 ] && {
+          cmp -s "$before" "$none_stage" 2>/dev/null \
+            || { [ "$before_none_ok" -eq 1 ] \
+              && configs_match_aside_from_session_live "$before_none_stage" "$none_stage"; } \
+            || { [ "$before_blank_ok" -eq 1 ] \
+              && configs_match_aside_from_session_live "$before_blank_stage" "$none_stage"; } \
+            || configs_match_aside_from_session_live "$before" "$none_stage"
+        }; then
+        chosen="$none_stage"
+      elif [ "$blank_ok" -eq 1 ] && {
+          { [ "$before_blank_ok" -eq 1 ] \
+            && configs_match_aside_from_session_live "$before_blank_stage" "$blank_stage"; } \
+            || { [ "$before_none_ok" -eq 1 ] \
+              && configs_match_aside_from_session_live "$before_none_stage" "$blank_stage"; } \
+            || configs_match_aside_from_session_live "$before" "$blank_stage"
+        }; then
+        chosen="$blank_stage"
+      fi
+
+      if [ -z "$chosen" ]; then
+        printf '%s: post-launch config cleanup refused unrelated mutation: %s\n' \
+          "$launcher_name" "$profile" >&2
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$blank_stage" || :
+        remove_owned_temp "$none_stage" || :
+        remove_owned_temp "$after" || :
+        return 1
+      fi
+      publish=1
+      remove_owned_temp "$before_blank_stage" || :
+      remove_owned_temp "$before_none_stage" || :
+      before_blank_stage=""
+      before_none_stage=""
+    else
+      # No project trust left. Success when after matches trust-stripped before,
+      # or differs only by hooks/tui session-live tables (Codex normal writes).
+      if { [ "$before_none_ok" -eq 1 ] && cmp -s "$before_none_stage" "$after"; } \
+        || { [ "$before_blank_ok" -eq 1 ] && cmp -s "$before_blank_stage" "$after"; } \
+        || { [ "$before_none_ok" -eq 1 ] \
+          && configs_match_aside_from_session_live "$before_none_stage" "$after"; } \
+        || { [ "$before_blank_ok" -eq 1 ] \
+          && configs_match_aside_from_session_live "$before_blank_stage" "$after"; } \
+        || configs_match_aside_from_session_live "$before" "$after"; then
+        remove_owned_temp "$before_blank_stage" || :
+        remove_owned_temp "$before_none_stage" || :
+        remove_owned_temp "$after" || return 1
+        return 0
+      fi
+      printf '%s: post-launch config cleanup refused unrelated mutation: %s\n' \
+        "$launcher_name" "$profile" >&2
+      remove_owned_temp "$before_blank_stage" || :
+      remove_owned_temp "$before_none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    fi
+
+    if [ "$publish" -ne 1 ]; then
+      remove_owned_temp "$after" || :
+      return 1
+    fi
+
+    safe_config_target "$profile" || {
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    [ "$(file_mode "$target")" = '600' ] || {
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    if ! cmp -s "$after" "$target"; then
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      continue
+    fi
+    mv -f "$chosen" "$target" || {
+      [ -n "$blank_stage" ] && remove_owned_temp "$blank_stage" || :
+      [ -n "$none_stage" ] && remove_owned_temp "$none_stage" || :
+      remove_owned_temp "$after" || :
+      return 1
+    }
+    forget_owned_temp "$chosen" || return 1
+    if [ -n "$none_stage" ] && [ "$chosen" != "$none_stage" ]; then
+      remove_owned_temp "$none_stage" || :
+    fi
+    if [ -n "$blank_stage" ] && [ "$chosen" != "$blank_stage" ]; then
+      remove_owned_temp "$blank_stage" || :
+    fi
+    remove_owned_temp "$after" || return 1
+    return 0
+  done
+
+  printf '%s: post-launch config cleanup detected concurrent mutation: %s\n' \
+    "$launcher_name" "$profile" >&2
+  return 1
+}
+
+toml_escape_basic_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+# Print unique physical directories Codex may use for the trust gate.
+# Codex trusts the Git repository root when cwd is a worktree or subdirectory;
+# for linked worktrees that root is the main working tree (dirname of the
+# common .git), not always `git rev-parse --show-toplevel`.
+collect_launch_trust_dirs() {
+  local cwd candidate common
+
+  cwd="$(pwd -P)" \
+    || die 'failed to resolve working directory for project trust override'
+  printf '%s\n' "$cwd"
+
+  if candidate="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" \
+    && [ -n "$candidate" ]; then
+    if candidate="$(CDPATH= cd -P -- "$candidate" 2>/dev/null && pwd -P)"; then
+      printf '%s\n' "$candidate"
+    fi
+  fi
+
+  common="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null \
+    || git -C "$cwd" rev-parse --git-common-dir 2>/dev/null \
+    || true)"
+  if [ -n "$common" ]; then
+    case "$common" in
+      /*) ;;
+      *)
+        common="$(CDPATH= cd -P -- "$cwd/$common" 2>/dev/null && pwd -P)" || common=""
+        ;;
+    esac
+  fi
+  if [ -n "$common" ] && [ -d "$common" ] \
+    && [ "$(basename "$common")" = '.git' ]; then
+    if candidate="$(CDPATH= cd -P -- "$(dirname "$common")" 2>/dev/null && pwd -P)"; then
+      printf '%s\n' "$candidate"
+    fi
+  fi
+}
+
+# Populate trust_codex_args with one merged -c projects={...} override.
+# Current Codex ignores/breaks on dotted projects."path".trust_level= form; an
+# inline table override is what skips the interactive trust gate.
+build_launch_trust_codex_args() {
+  local dir escaped dirs entry
+  local parts=""
+
+  trust_codex_args=()
+  dirs="$(collect_launch_trust_dirs | awk 'NF && !seen[$0]++')"
+  [ -n "$dirs" ] \
+    || die 'failed to resolve working directory for project trust override'
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    escaped="$(toml_escape_basic_string "$dir")"
+    entry="\"${escaped}\"={trust_level=\"trusted\"}"
+    if [ -n "$parts" ]; then
+      parts="${parts},${entry}"
+    else
+      parts="$entry"
+    fi
+  done <<EOF
+$dirs
+EOF
+  [ -n "$parts" ] \
+    || die 'failed to resolve working directory for project trust override'
+  trust_codex_args+=(-c "projects={${parts}}")
+}
+
+# Populate hook_trust_codex_args with optional --dangerously-bypass-hook-trust.
+# CDX_HOOK_TRUST:
+#   auto   (default) bypass when launch is non-interactive or automation-marked
+#   bypass always pass the flag (unattended / forced)
+#   prompt never pass the flag (human review / persisted hooks.state trust)
+build_launch_hook_trust_codex_args() {
+  local mode automation hook_trust_variable
+
+  hook_trust_codex_args=()
+  mode="${CDX_HOOK_TRUST:-auto}"
+  automation="${CDX_AUTOMATION:-}"
+  hook_trust_variable=CDX_HOOK_TRUST
+  case "$mode" in
+    bypass|always|1|yes|true)
+      hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
+      return 0
+      ;;
+    prompt|never|0|no|false)
+      return 0
+      ;;
+    auto|'')
+      ;;
+    *)
+      die "$hook_trust_variable must be auto, bypass, or prompt (got: $mode)"
+      ;;
+  esac
+
+  # Automation markers always bypass so unattended launches cannot block on
+  # hook-trust prompts.
+  case "$automation" in
+    1|yes|true|on) hook_trust_codex_args+=(--dangerously-bypass-hook-trust); return 0 ;;
+  esac
+  if [ -n "${CI:-}" ] || [ -n "${TRELLAGE_AUTOMATION:-}" ]; then
+    hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
+    return 0
+  fi
+
+  # Full interactive TTY: omit bypass. Profile hooks.state trusted_hash entries
+  # avoid repeat prompts; new/changed hooks can be reviewed once.
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    return 0
+  fi
+
+  hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
+}
+
+run_codex_child() {
+  local profile="$1" native="$2"
+  local target="$(profile_home "$profile")/config.toml"
+  local before child_status cleanup_status wait_status release_status=0
+  local monitor_child=yes
+  # Bash 3.2-safe: builders fill these arrays.
+  trust_codex_args=()
+  hook_trust_codex_args=()
+  shift 2
+  ensure_floating_skills "$profile"
+
+  # Codex's interactive "Do you trust the contents of this directory?" gate
+  # ignores dotted -c projects."path".trust_level= overrides (PTY stays empty).
+  # One inline -c projects={"/path"={trust_level="trusted"},...} skips it for
+  # cwd, git toplevel, and main repository root. Do not write trust into
+  # config.toml here: that races concurrent sessions and breaks cleanup caps.
+  # If Codex itself appends project-trust during the session, post-exit cleanup
+  # strips those generated stanzas while keeping other live writes.
+  build_launch_trust_codex_args
+  build_launch_hook_trust_codex_args
+
+  safe_config_target "$profile"
+  [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] \
+    || die "profile config must have mode 0600: $profile"
+  # Snapshot is a cleanup hint only; the session does not hold the profile lock.
+  make_owned_temp "$(profile_home "$profile")/.config-snapshot.XXXXXX" \
+    'failed to stage prelaunch config snapshot'
+  before="$created_temp"
+  chmod 0600 "$before" || die 'failed to secure prelaunch config snapshot'
+  cp "$target" "$before" || die 'failed to snapshot prelaunch config'
+  safe_config_target "$profile"
+  [ "$(file_mode "$target")" = '600' ] \
+    || die "profile config must have mode 0600: $profile"
+  cmp -s "$before" "$target" \
+    || die "profile config changed during prelaunch snapshot: $profile"
+
+  launch_signal_status=0
+  trap 'launch_signal HUP' HUP
+  trap 'launch_signal INT' INT
+  trap 'launch_signal TERM' TERM
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    monitor_child=no
+  else
+    set -m
+  fi
+  # Bash 3.2 + set -u: empty array [@] is unbound; expand only when set/non-empty.
+  if [ "$native" = yes ]; then
+    env CODEX_HOME="$(profile_home "$profile")" \
+      "$codex_executable" --sandbox workspace-write \
+      -c sandbox_workspace_write.network_access=true \
+      --ask-for-approval never \
+      --disable default_mode_request_user_input \
+      ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
+      -c 'model_provider="openai"' \
+      ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
+      "$@" <&0 &
+  else
+    env CODEX_HOME="$(profile_home "$profile")" \
+      "$codex_executable" --sandbox workspace-write \
+      -c sandbox_workspace_write.network_access=true \
+      --ask-for-approval never \
+      --disable default_mode_request_user_input \
+      ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
+      ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
+      "$@" <&0 &
+  fi
+  launch_child_pid=$!
+  case "$launch_signal_status" in
+    129) launch_signal HUP ;;
+    130) launch_signal INT ;;
+    143) launch_signal TERM ;;
+  esac
+  [ "$monitor_child" = no ] || set +m
+  while :; do
+    wait "$launch_child_pid" 2>/dev/null
+    wait_status=$?
+    if kill -0 "$launch_child_pid" 2>/dev/null; then
+      continue
+    fi
+    child_status="$wait_status"
+    break
+  done
+  launch_child_pid=""
+  trap '' HUP INT TERM
+  cleanup_status=0
+  acquire_profile_launch_lock "$profile"
+  cleanup_launch_config "$profile" "$before" || cleanup_status=$?
+  release_profile_launch_lock || release_status=1
+  install_owned_temp_traps
+  remove_owned_temp "$before" || cleanup_status=1
+  [ "$release_status" -eq 0 ] \
+    || die "failed to release profile launch lock: $profile"
+  [ "$cleanup_status" -eq 0 ] || {
+    printf '%s: post-launch config cleanup failed: %s\n' "$launcher_name" "$profile" >&2
+    return 1
+  }
+  [ "$launch_signal_status" -eq 0 ] || return "$launch_signal_status"
+  return "$child_status"
+}
+
+run_proxy_launch() {
+  local profile="$1" status release_status=0
+  shift
+
+  ensure_profile_home_ready "$profile"
+  resolve_codex
+  # Hold the profile lock only for brief prepare work. The Codex session itself
+  # runs unlocked so multiple cdx PROFILE instances may share one home.
+  acquire_profile_launch_lock "$profile"
+  ensure_launch_ready "$profile"
+  release_profile_launch_lock || release_status=1
+  install_owned_temp_traps
+  [ "$release_status" -eq 0 ] \
+    || die "failed to release profile launch lock: $profile"
+  run_codex_child "$profile" no "$@"
+  status=$?
+  return "$status"
+}
+
+run_native_launch() {
+  local profile="$1" status release_status=0
+  shift
+
+  resolve_codex
+  require_host_native_login "$profile"
+  require_safe_host_native_auth_source "$profile"
+  ensure_profile_home_ready "$profile"
+  acquire_profile_launch_lock "$profile"
+  ensure_launch_ready "$profile"
+  refresh_auth "$profile"
+  release_profile_launch_lock || release_status=1
+  install_owned_temp_traps
+  [ "$release_status" -eq 0 ] \
+    || die "failed to release profile launch lock: $profile"
+  run_codex_child "$profile" yes "$@"
+  status=$?
+  return "$status"
+}
+
+install_owned_temp_traps
+
+command="${1:-}"
+
+case "$command" in
+  '' )
+    usage >&2
+    exit 2
+    ;;
+  --help|-h )
+    usage
+    ;;
+  --native-auth )
+    validate_catalog
+    [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+    profile="$2"
+    shift 2
+    case "$profile" in
+      list|inventory|setup|doctor|update|repair|--help|-h)
+        usage >&2
+        exit 2
+        ;;
+    esac
+    require_profile "$profile"
+    run_native_launch "$profile" "$@"
+    exit $?
+    ;;
+  list )
+    validate_catalog
+    if [ "$#" -eq 1 ]; then
+      list_profiles
+    elif [ "$#" -eq 2 ] && [ "$2" = '--json' ]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory )
+    validate_catalog
+    [ "$#" -eq 3 ] && [ "$3" = '--json' ] \
+      || die "usage: $launcher_name inventory PROFILE --json"
+    inventory_profile "$2"
+    ;;
+  setup )
+    validate_catalog
+    [ "$#" -eq 2 ] || die "usage: $launcher_name setup PROFILE|--all"
+    require_profile_or_all "$2"
+    for_selected_profiles "$2" setup_profile
+    ;;
+  doctor )
+    validate_catalog
+    [ "$#" -eq 2 ] || die "usage: $launcher_name doctor PROFILE"
+    require_profile "$2"
+    run_locked_profile_action "$2" doctor_profile
+    ;;
+  update )
+    validate_catalog
+    if [ "${2:-}" = '--check' ]; then
+      [ "$#" -eq 3 ] || die "usage: $launcher_name update --check PROFILE|--all"
+      require_profile_or_all "$3"
+      for_selected_profiles_status "$3" update_check_profile
+      exit $?
+    fi
+    [ "$#" -eq 2 ] || die "usage: $launcher_name update PROFILE|--all"
+    require_profile_or_all "$2"
+    for_selected_profiles_status "$2" update_profile
+    exit $?
+    ;;
+  repair )
+    validate_catalog
+    [ "$#" -eq 2 ] || die "usage: $launcher_name repair PROFILE"
+    require_profile "$2"
+    run_locked_profile_action "$2" repair_profile
+    ;;
+  * )
+    validate_catalog
+    require_profile "$command"
+    shift
+    run_proxy_launch "$command" "$@"
+    exit $?
+    ;;
+esac

@@ -101,7 +101,8 @@ readiness status. Diagnostic inventory remains available directly from
 launchers that support `inventory PROFILE --json`; `trx` does not collect it on
 the launch path. `doctor` remains the full runtime health diagnostic.
 
-`trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, and `prx`
+`trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`,
+and `prx`
 still run
 their selected agents directly on the host with the permissions and safety
 behavior documented by each launcher. Use only trusted repositories, profiles,

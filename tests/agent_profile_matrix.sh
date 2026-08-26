@@ -126,9 +126,9 @@ fi
 default_test_make_output="$(normalize_make_output <<<"$default_test_make_output")"
 default_test_make_output="$(sed -E 's#^([^[:space:]]*/)?make #make #' \
   <<<"$default_test_make_output")"
-expected_parallel_test_targets='dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test'
+expected_parallel_test_targets='dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test'
 expected_default_test_make_output="make --no-print-directory -j4 $expected_parallel_test_targets"$'\n'
-expected_default_test_make_output+=$'bash tests/dependency_bootstrap_contract.sh\nbash tests/publication_contract.sh\nbash tests/publication_contract_self_test.sh\nbash tests/agent_profile_hup_contract.sh\nnode --test tests/floating_skills.test.mjs\ncd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test\ncd packages/trellage-launcher && npm run check && npm run build && npm test\nbash tests/profile_compiler_fingerprint_contract.sh\nbash tests/trellage_identity_contract.sh\nbash tests/trellage_orphan_cleanup_contract.sh\nbash tests/agent_harness_contract.sh\nbash prototypes/trellage/tests/claude_entry_contract.sh\ndocker image inspect "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af" >/dev/null 2>&1 || docker image pull "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af"\nbash prototypes/trellage/tests/copilot_entry_contract.sh\nbash prototypes/trellage/tests/pi_entry_contract.sh\nbash prototypes/trellage/tests/prime_entry_contract.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/auth-config-launch.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/lifecycle.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/catalog.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/installation.sh\nbash prototypes/trellage-copilot-profiles/tests/contract.sh\nbash prototypes/trellage-claude-profiles/tests/contract.sh\nbash prototypes/trellage-grok-profiles/tests/contract.sh\nbash prototypes/trellage-jcode-profiles/tests/contract.sh\nbash prototypes/trellage-omp-profiles/tests/contract.sh\nbash prototypes/trellage-picx-profiles/tests/contract.sh\nbash prototypes/trellage-prime-profiles/tests/contract.sh\nbash tests/manifest_contract.sh\nbash tests/harness_contract.sh\nbash tests/agent_kit_adapter.sh\nbash tests/awesome_copilot_adapter.sh\nbash tests/copilot_agent_image.sh\nbash tests/harness_runner.sh\nbash tests/run_agent_session.sh\nbash tests/harness_session_discovery.sh\nbash tests/workspace_checks.sh\nbash tests/playwright_matrix.sh\nbash tests/evidence_contract.sh\nbash tests/headless_contract_matrix.sh\nmake --no-print-directory native-profile-router headless-matrix\nbash prototypes/trellage-router/tests/contract.sh\nscripts/verify-headless-contracts'
+expected_default_test_make_output+=$'bash tests/dependency_bootstrap_contract.sh\nbash tests/publication_contract.sh\nbash tests/publication_contract_self_test.sh\nbash tests/agent_profile_hup_contract.sh\nnode --test tests/floating_skills.test.mjs\ncd packages/trellage-cli && npm run lint && npm run format:check && npm run check && npm run build && npm test\ncd packages/trellage-launcher && npm run check && npm run build && npm test\nbash tests/profile_compiler_fingerprint_contract.sh\nbash tests/trellage_identity_contract.sh\nbash tests/trellage_orphan_cleanup_contract.sh\nbash tests/agent_harness_contract.sh\nbash prototypes/trellage/tests/claude_entry_contract.sh\ndocker image inspect "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af" >/dev/null 2>&1 || docker image pull "mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af"\nbash prototypes/trellage/tests/copilot_entry_contract.sh\nbash prototypes/trellage/tests/pi_entry_contract.sh\nbash prototypes/trellage/tests/prime_entry_contract.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/auth-config-launch.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/lifecycle.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/catalog.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/installation.sh\nbash prototypes/trellage-codex-profiles/tests/blocks/pstack.sh\nbash prototypes/trellage-copilot-profiles/tests/contract.sh\nbash prototypes/trellage-claude-profiles/tests/contract.sh\nbash prototypes/trellage-grok-profiles/tests/contract.sh\nbash prototypes/trellage-jcode-profiles/tests/contract.sh\nbash prototypes/trellage-omp-profiles/tests/contract.sh\nbash prototypes/trellage-picx-profiles/tests/contract.sh\nbash prototypes/trellage-prime-profiles/tests/contract.sh\nbash tests/manifest_contract.sh\nbash tests/harness_contract.sh\nbash tests/agent_kit_adapter.sh\nbash tests/awesome_copilot_adapter.sh\nbash tests/copilot_agent_image.sh\nbash tests/harness_runner.sh\nbash tests/run_agent_session.sh\nbash tests/harness_session_discovery.sh\nbash tests/workspace_checks.sh\nbash tests/playwright_matrix.sh\nbash tests/evidence_contract.sh\nbash tests/headless_contract_matrix.sh\nmake --no-print-directory native-profile-router headless-matrix\nbash prototypes/trellage-router/tests/contract.sh\nscripts/verify-headless-contracts'
 [ "$default_test_make_output" = "$expected_default_test_make_output" ] \
   || fail 'default test dry-run differs from the established parallel dependency graph'
 
@@ -166,7 +166,7 @@ for required_statement in \
   'Static mode performs native profile discovery plus non-inference health, inventory, and context validation. It never invokes a model.' \
   'All launchers are required; failures are not skips.' \
   'Live mode invokes every statically passing discovered profile, may consume paid model quota, and may create product-local telemetry or state where a CLI lacks ephemeral mode.' \
-  'Codex discovery and static checks require the managed `cdx` launcher and its isolated profile roots under `~/.local/share/trellage/profiles/codex/<profile>/home`.' \
+  'Codex discovery and static checks require the managed `cdx` launcher and isolated profile roots under `~/.local/share/trellage/profiles/codex/`.' \
   'Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.' \
   'Static verification performs no native marketplace/plugin mutation or live prompt and never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.' \
   'Exit statuses:' \
@@ -257,26 +257,28 @@ mkdir -p "$fixture_home" "$fixture_codex_home" "$fixture_bin" "$fixture_core_bin
 : >"$fixture_codex_home/ignored.config.toml"
 mkdir -p \
   "$fixture_home/.local/share/trellage/profiles/codex/hve/home" \
-  "$fixture_home/.local/share/trellage/profiles/codex/superpowers/home"
+  "$fixture_home/.local/share/trellage/profiles/codex/superpowers/home" \
+  "$fixture_home/.local/share/trellage/profiles/codex/pstack/home"
 
 cat >"$fixture_bin/cdx" <<'FAKE_CDX'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'cdx' >>"$FAKE_COMMAND_LOG"
+launcher="$(basename "$0")"
+printf '%s' "$launcher" >>"$FAKE_COMMAND_LOG"
 printf '\t%s' "$@" >>"$FAKE_COMMAND_LOG"
 printf '\n' >>"$FAKE_COMMAND_LOG"
 if [ "$#" -eq 1 ] && [ "$1" = 'list' ]; then
-  [ ! -f "$FAKE_DATA/fail-cdx-list" ] || exit 65
-  cat "$FAKE_DATA/cdx-list"
+  [ ! -f "$FAKE_DATA/fail-$launcher-list" ] || exit 65
+  cat "$FAKE_DATA/$launcher-list"
 elif [ "$#" -eq 2 ] && [ "$1" = 'doctor' ]; then
-  [ ! -f "$FAKE_DATA/fail-cdx-doctor-$2" ] || {
+  [ ! -f "$FAKE_DATA/fail-$launcher-doctor-$2" ] || {
     printf 'CDX_DOCTOR_SECRET_DO_NOT_LEAK\n' >&2
     exit 65
   }
   printf '%s: healthy\n' "$2"
 elif [ "$#" -eq 4 ] && [ "$2" = 'debug' ] \
   && [ "$3" = 'prompt-input' ] && [ "$4" = 'profile verification' ]; then
-  if [ "${FAKE_BLOCK_STATIC:-}" = "cdx-$1" ]; then
+  if [ "${FAKE_BLOCK_STATIC:-}" = "$launcher-$1" ]; then
     : >"$FAKE_STATIC_READY_FILE"
     static_released=0
     for static_attempt in {1..500}; do
@@ -288,11 +290,13 @@ elif [ "$#" -eq 4 ] && [ "$2" = 'debug' ] \
     done
     [ "$static_released" -eq 1 ] || exit 124
   fi
-  [ ! -f "$FAKE_DATA/fail-cdx-$1" ] || {
+  [ ! -f "$FAKE_DATA/fail-$launcher-$1" ] || {
     printf 'CDX_COMMAND_SECRET_DO_NOT_LEAK\n' >&2
     exit 65
   }
-  cat "$FAKE_DATA/codex-$1.json"
+  data_prefix="$launcher"
+  [ "$launcher" != cdx ] || data_prefix=codex
+  cat "$FAKE_DATA/$data_prefix-$1.json"
 else
   exit 64
 fi
@@ -489,13 +493,14 @@ FAKE_TERM_IGNORER
 chmod 0755 "$fixture_bin/cdx" "$fixture_bin/codex" "$fixture_bin/cpx" "$fixture_bin/grx" \
   "$fixture_bin/fake-live-descendant" "$fixture_bin/fake-term-ignorer"
 ln -s "$real_jq" "$fixture_bin/jq"
-for core_command in bash mktemp rm cut grep sort awk head cat sleep; do
+for core_command in bash mktemp rm cut grep sort awk head cat sleep basename; do
   ln -s "$(command -v "$core_command")" "$fixture_core_bin/$core_command"
 done
 
 printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/cpx-list"
 printf '%s\n' \
   $'hve\thve-core-all@hve-core' \
+  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
 printf '%s\n' $'hve\thve-plugin' $'awesome\tawesome-plugin' >"$fixture_data/grx-list"
 printf '%s\n' 'Installed plugins:' '  • pack-alpha (v1)' >"$fixture_data/cpx-alpha-plugins"
@@ -507,6 +512,9 @@ printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/cpx-ze
 "$real_jq" -cn --arg text $'### Available skills\n- zskill: Z (file: /z)\n### End' \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
   >"$fixture_data/codex-superpowers.json"
+"$real_jq" -cn --arg text $'### Available skills\n- poteto: Pstack skill (file: /pstack)\n### End' \
+  '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
+  >"$fixture_data/codex-pstack.json"
 "$real_jq" -cn '[
   {name:"p6",source:"plugin",enabled:true}, {name:"p5",source:"plugin",enabled:true},
   {name:"p4",source:"plugin",enabled:true}, {name:"p3",source:"plugin",enabled:true},
@@ -537,10 +545,13 @@ printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/cpx-ze
 for live_profile in hve superpowers; do
   printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-$live_profile-live-events.jsonl"
 done
+printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-pstack-live-events.jsonl"
 "$real_jq" -cn '{launcher:"cdx",profile:"hve",skills:["skilla","skillb"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-hve-live.json"
 "$real_jq" -cn '{launcher:"cdx",profile:"superpowers",skills:["zskill"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-superpowers-live.json"
+"$real_jq" -cn '{launcher:"cdx",profile:"pstack",skills:["poteto"],emptyPackageConfirmed:false}' \
+  >"$fixture_data/codex-pstack-live.json"
 "$real_jq" -cn --arg content \
   '{"launcher":"cpx","profile":"alpha","skills":["p1","p2","p3","p4","p5"],"emptyPackageConfirmed":false}' \
   '{type:"assistant.message",data:{content:$content}}' >"$fixture_data/cpx-alpha-live.jsonl"
@@ -810,6 +821,7 @@ cat >"$expected_table" <<'TABLE'
 | Launcher | Profile | Package | Package skills | Visible skills | Sample | Static | Live |
 |---|---|---|---:|---:|---|---|---|
 | cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | pass | not run |
+| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | not run |
 | cdx | superpowers | superpowers@superpowers-marketplace | n/a | 1 | zskill | pass | not run |
 | cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | not run |
 | cpx | zeta | pack-zeta | 1 | 1 | zplugin | pass | not run |
@@ -827,6 +839,10 @@ grep -Fqx $'cdx\tdoctor\thve' "$command_log" \
   || fail 'managed Codex hve profile was not checked through cdx doctor'
 grep -Fqx $'cdx\thve\tdebug\tprompt-input\tprofile verification' "$command_log" \
   || fail 'managed Codex hve profile was not verified through prompt-input'
+grep -Fqx $'cdx\tdoctor\tpstack' "$command_log" \
+  || fail 'managed pstack profile was not checked through cdx doctor'
+grep -Fqx $'cdx\tpstack\tdebug\tprompt-input\tprofile verification' "$command_log" \
+  || fail 'managed pstack profile was not verified through prompt-input'
 grep -Fqx $'cpx\tdoctor\talpha' "$command_log" || fail 'Copilot doctor was not called'
 grep -Fqx $'grx\tdoctor\thve' "$command_log" || fail 'Grok doctor was not called'
 awk -F '\t' '
@@ -1100,6 +1116,7 @@ grep -Fq '| cpx | alpha |' "$output_file" \
   || fail 'malformed cdx list row stopped later adapters'
 
 printf '%s\n' $'hve\thve-core-all@hve-core' $'hve\thve-core-all@hve-core' \
+  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate cdx list row did not return 1'
@@ -1119,6 +1136,7 @@ grep -Fq '| cpx | alpha |' "$output_file" \
 
 printf '%s\n' \
   $'hve\thve-core-all@hve-core' \
+  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'third\tthird-package' >"$fixture_data/cdx-list"
 run_matrix
@@ -1130,6 +1148,7 @@ grep -Fq '| grx | hve |' "$output_file" \
 
 printf '%s\n' \
   $'hve\twrong-package' \
+  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'wrong managed cdx package did not return 1'
@@ -1251,8 +1270,8 @@ cp "$fixture_data/codex-hve.sample-good.json" "$fixture_data/codex-hve.json"
 : >"$command_log"
 run_live_matrix
 [ "$matrix_status" -eq 0 ] || fail '--live happy path returned nonzero'
-[ "$(grep -Fc '| pass | pass |' "$output_file")" -eq 6 ] \
-  || fail '--live did not report six passing live rows'
+[ "$(grep -Fc '| pass | pass |' "$output_file")" -eq 7 ] \
+  || fail '--live did not report seven passing live rows'
 for live_row in \
   $'codex\texec' \
   $'cpx\talpha\t--prompt' \
@@ -1263,6 +1282,8 @@ for live_row in \
 done
 grep -Fq '| grx | awesome | awesome-plugin | 0 | 1 |  | pass | pass |' "$output_file" \
   || fail 'zero-package-skill Grok row was not live-probed successfully'
+grep -Fq '| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | pass |' "$output_file" \
+  || fail 'pstack row was not live-probed successfully'
 if grep -Eq $'\t(--dangerously-bypass-approvals-and-sandbox|--allow-all|--allow-all-tools|--yolo|--always-approve|--permission-mode\tbypassPermissions)(\t|$)' "$command_log"; then
   fail 'live verifier used a dangerous approval or sandbox bypass'
 fi
@@ -1296,7 +1317,7 @@ awk -F '\t' -v temp_prefix="$fixture_tmp/verify-agent-profiles." '
       $15 != "--max-turns" || $16 != "1" || $17 != "--no-memory" ||
       $18 != "--permission-mode" || $19 != "dontAsk") bad = 1
   }
-  END { exit bad || codex_count != 2 }
+  END { exit bad || codex_count != 3 }
 ' "$command_log" || fail 'live verifier changed a safety-critical argument shape'
 if grep -Eq $'^cdx\t.*\t(exec|-p|--prompt|--dangerously-bypass-approvals-and-sandbox)(\t|$)|\t(--model|--resume|--continue|--session-id|--autopilot|--always-approve|--allow-all|--allow-all-tools|--yolo)(\t|$)' "$command_log"; then
   fail 'live verifier used a forbidden launcher, model, lifecycle, or multi-turn variant'

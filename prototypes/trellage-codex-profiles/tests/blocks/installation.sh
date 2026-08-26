@@ -203,6 +203,7 @@ HOME="$install_home" "$install_home/.local/bin/cdx" list \
   || fail "installed cdx list failed: $(cat "$fixture_root/installed-list.err")"
 cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
   $'hve\thve-core-all@hve-core' \
+  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace') \
   || fail 'installed cdx list output differs'
 ln -s cdx "$install_home/.local/bin/cdx-relative"
@@ -230,6 +231,12 @@ cmp -s "$recovery/removed-line" \
   <(printf 'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"\n') \
   || fail 'Fish recovery did not record the exact removed line'
 assert_no_install_staging "$install_home"
+
+rm "$install_home/.local/share/trellage/cdx/lib/native-codex"
+rmdir "$install_home/.local/share/trellage/cdx/lib"
+HOME="$install_home" /bin/bash "$install_script" >"$fixture_root/install-legacy-runtime.out" \
+  || fail 'legacy owned runtime upgrade failed'
+assert_install_published "$install_home"
 
 mkdir -p "$install_home/.local/share/trellage/profiles/codex/hve/home"
 printf 'preserved profile\n' \

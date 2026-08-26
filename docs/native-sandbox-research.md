@@ -7,8 +7,8 @@ re-discovered.
 Background: Trellage Sandbox profiles (compiled by `packages/trellage-cli`,
 built and run via `trellage build`) always execute inside a locked, built
 Docker container, so they are implicitly sandboxed regardless of harness
-kind. Trellage Native launchers (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`,
-`prx`) run the underlying harness CLI directly on the host. This repo's own
+kind. Trellage Native launchers (`cdx`, `cpx`, `cldx`, `grx`, `jcx`,
+`omp`, `prx`) run the underlying harness CLI directly on the host. This repo's own
 guidance previously stated flatly that "Trellage Native profiles isolate
 agent state but are not containers or security boundaries" — this document
 records why that statement now has two exceptions (`cdx`, `grx`) and why the
@@ -40,7 +40,7 @@ permissions are granted within the sandbox boundary** (no per-action approval
 prompts) — the filesystem/network sandbox scope is the security control here,
 not approval fatigue.
 
-- **`cdx`**: replaced `--dangerously-bypass-approvals-and-sandbox` with
+- **`cdx`**, including its `pstack` profile: uses
   `--sandbox workspace-write -c sandbox_workspace_write.network_access=true --ask-for-approval never`.
   `workspace-write` restricts writes to the workspace + temp dirs (reads
   elsewhere are still permitted by this Codex sandbox mode); the `-c`
@@ -55,7 +55,7 @@ not approval fatigue.
   limits what an approved call can do"), so the existing bypass/auto-approve
   flags are unaffected by adding the sandbox restriction.
 
-Both launchers' `list --json` now report `sandbox: true`.
+Both sandboxed launchers' `list --json` report `sandbox: true`.
 
 ## 3. clawk fit-check for the remaining five launchers
 

@@ -9,6 +9,7 @@ root="$(CDPATH= cd -- "$contract_lib_dir/../.." && pwd)"
 adapter="$root/marketplaces/hve-core/.agents/plugins/marketplace.json"
 catalog="$root/catalog.json"
 launcher="$root/bin/cdx"
+common_launcher="$root/../trellage-codex-common/native-codex"
 
 fail() {
   printf 'contract failed: %s\n' "$1" >&2
@@ -141,17 +142,20 @@ validate_adapter() {
 build_fixture_profiles() {
 fixture_profiles="$fixture_root/profiles"
 fixture_launcher="$fixture_profiles/bin/cdx"
+fixture_common_launcher="$fixture_profiles/lib/native-codex"
 fixture_catalog="$fixture_profiles/catalog.json"
 fixture_adapter="$fixture_profiles/marketplaces/hve-core/.agents/plugins/marketplace.json"
 fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
 fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/skills"
 mkdir -p \
   "$(dirname "$fixture_launcher")" \
+  "$(dirname "$fixture_common_launcher")" \
   "$(dirname "$fixture_adapter")" \
   "$fixture_skills_runtime" \
   "$fixture_skills_cache/skills/fixture-personal" \
   "$fixture_skills_cache/skills/show-me"
 cp "$launcher" "$fixture_launcher"
+cp "$common_launcher" "$fixture_common_launcher"
 cp "$catalog" "$fixture_catalog"
 cp "$adapter" "$fixture_adapter"
 install -m 0555 "$root/../../scripts/floating-skills.mjs" \
@@ -163,7 +167,7 @@ printf '%s\n' '# Fixture show-me skill' \
   >"$fixture_skills_cache/skills/show-me/SKILL.md"
 printf '%s\n' fixture-personal show-me >"$fixture_skills_cache/managed-skills.txt"
 : >"$fixture_skills_cache/always-on.md"
-chmod +x "$fixture_launcher"
+chmod +x "$fixture_launcher" "$fixture_common_launcher"
 }
 
 # Writes the fake `codex` and `curl` stubs the blocks drive, and the `fake_env`
@@ -171,6 +175,7 @@ chmod +x "$fixture_launcher"
 write_fake_bin() {
 fake_bin="$fixture_root/fake-bin"
 fake_state="$fixture_root/fake-state"
+REAL_GIT="$(command -v git)"
 fake_adapter_root="$(CDPATH= cd -P -- "${fixture_adapter%/.agents/plugins/marketplace.json}" && pwd -P)"
 mkdir -p "$fake_bin" "$fake_state" "$fixture_root/home"
 cat >"$fake_bin/codex" <<'EOF'
@@ -378,6 +383,9 @@ case "$*" in
     elif [ -f "$state/marketplace" ]; then
       if [ "$profile" = hve ]; then
         jq -cn --arg root "$FAKE_HVE_ADAPTER_ROOT" '{marketplaces:[{name:"hve-core",root:$root,marketplaceSource:{sourceType:"local",source:$root}}]}'
+      elif [ "$profile" = pstack ]; then
+        jq -cn --arg root "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local" \
+          '{marketplaces:[{name:"pstack-for-codex-local",root:$root,marketplaceSource:{sourceType:"git",source:"https://github.com/Aqua-123/pstack-for-codex.git"}}]}'
       else
         jq -cn --arg root "$CODEX_HOME/.tmp/marketplaces/superpowers-marketplace" '{marketplaces:[{name:"superpowers-marketplace",root:$root,marketplaceSource:{sourceType:"git",source:"https://github.com/obra/superpowers-marketplace.git"}}]}'
       fi
@@ -393,6 +401,12 @@ case "$*" in
     : >"$state/marketplace"
     if [ "$profile" = hve ]; then
       persist_marketplace_config hve-core local "$FAKE_HVE_ADAPTER_ROOT"
+    elif [ "$profile" = pstack ]; then
+      mkdir -p "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local"
+      persist_marketplace_config pstack-for-codex-local git \
+        'https://github.com/Aqua-123/pstack-for-codex.git'
+      persist_marketplace_revision pstack-for-codex-local \
+        '0123456789abcdef0123456789abcdef01234567'
     else
       mkdir -p "$CODEX_HOME/.tmp/marketplaces/superpowers-marketplace"
       persist_marketplace_config superpowers-marketplace git \
@@ -413,6 +427,9 @@ case "$*" in
           + (if $forbidden then [{pluginId:"superpowers@openai-curated",name:"superpowers",marketplaceName:"openai-curated",version:"6.2.0",installed:true,enabled:true,source:{source:"git",url:"https://github.com/obra/superpowers.git"},marketplaceSource:{sourceType:"git",source:"openai/plugins"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)
           + (if $direct then [{pluginId:"superpowers",name:"superpowers",marketplaceName:null,version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"obra/superpowers"},marketplaceSource:null,installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)
           + (if $renamed then [{pluginId:"workflow-kit@custom",name:"workflow-kit",marketplaceName:"custom",version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"git@github.com:obra/superpowers.git"},marketplaceSource:{sourceType:"git",source:"custom/plugins"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)),available:[]}'
+    elif [ "$profile" = pstack ] && [ -f "$state/plugin" ]; then
+      jq -cn --arg checkout "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local" \
+        '{installed:[{pluginId:"pstack-for-codex@pstack-for-codex-local",name:"pstack-for-codex",marketplaceName:"pstack-for-codex-local",version:"0.1.0",installed:true,enabled:true,source:{source:"local",path:$checkout},marketplaceSource:{sourceType:"git",source:"https://github.com/Aqua-123/pstack-for-codex.git"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}],available:[]}'
     elif [ "$profile" = superpowers ] \
       && { [ -f "$state/plugin" ] || [ -f "$state/unrelated-same-marketplace" ]; }; then
       if [ -f "$state/plugin" ] && [ -f "$state/unrelated-same-marketplace" ]; then
@@ -447,6 +464,18 @@ case "$*" in
       printf '%s\n' 'plugin-add selected plugin install metadata' \
         >"$CODEX_HOME/plugins/.fake-installed-superpowers"
       materialize_selected_plugin_cache plugin-add
+    elif [ "$profile" = pstack ]; then
+      pstack_cache="$CODEX_HOME/plugins/cache/pstack-for-codex-local/pstack-for-codex/0.1.0"
+      mkdir -p "$pstack_cache/.codex-plugin" "$pstack_cache/skills"
+      printf '%s\n' '{"name":"pstack-for-codex","version":"0.1.0","skills":"./skills"}' \
+        >"$pstack_cache/.codex-plugin/plugin.json"
+      pstack_skill_index=1
+      while [ "$pstack_skill_index" -le 45 ]; do
+        mkdir -p "$pstack_cache/skills/skill-$pstack_skill_index"
+        printf '# Skill %s\n' "$pstack_skill_index" \
+          >"$pstack_cache/skills/skill-$pstack_skill_index/SKILL.md"
+        pstack_skill_index=$((pstack_skill_index + 1))
+      done
     fi
     printf '%s\n' '{"installed":true}'
     ;;
@@ -460,6 +489,8 @@ case "$*" in
     esac
     if [ "$profile" = superpowers ]; then
       rm -rf "$CODEX_HOME/plugins/cache/superpowers-marketplace/superpowers/6.2.0"
+    elif [ "$profile" = pstack ]; then
+      rm -rf "$CODEX_HOME/plugins/cache/pstack-for-codex-local/pstack-for-codex/0.1.0"
     fi
     remove_plugin_config "${3:-}"
     printf '%s\n' '{"removed":true}'
@@ -633,9 +664,20 @@ case "$2" in
 esac
 EOF
 chmod +x "$fake_bin/curl"
+cat >"$fake_bin/git" <<'EOF'
+#!/usr/bin/env bash
+set -u
+if [ "$*" = 'ls-remote https://github.com/Aqua-123/pstack-for-codex.git refs/heads/main' ]; then
+  printf '%s\trefs/heads/main\n' '0123456789abcdef0123456789abcdef01234567'
+  exit 0
+fi
+exec "$REAL_GIT" "$@"
+EOF
+chmod +x "$fake_bin/git"
 
 fake_env() {
   env PATH="$fake_bin:$PATH" \
+    REAL_GIT="$(command -v git)" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_STATE="$fake_state" \
     FAKE_HVE_ADAPTER_ROOT="$fake_adapter_root" \
@@ -644,6 +686,7 @@ fake_env() {
     "$@"
 }
 export FAKE_CODEX_STATE="$fake_state"
+export REAL_GIT
 export FAKE_HVE_ADAPTER_ROOT="$fake_adapter_root"
 export FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override"
 export FAKE_CODEX_PLUGIN_OVERRIDE="$fixture_root/no-plugin-override"

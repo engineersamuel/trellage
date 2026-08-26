@@ -31,6 +31,35 @@
       "plugin": "hve-core-all@hve-core",
       "standaloneMcps": []
     },
+    "pstack": {
+      "description": "Codex CLI with Aqua-123’s pstack skill and Poteto Mode playbook collection.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "marketplaceKind": "git-local",
+      "marketplaceSource": "Aqua-123/pstack-for-codex",
+      "marketplaceName": "pstack-for-codex-local",
+      "upstreamRepository": "https://github.com/Aqua-123/pstack-for-codex.git",
+      "manifestUrl": "https://raw.githubusercontent.com/Aqua-123/pstack-for-codex/main/.codex-plugin/marketplace.json",
+      "plugin": "pstack-for-codex@pstack-for-codex-local",
+      "standaloneMcps": []
+    },
     "superpowers": {
       "description": "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow.",
       "headless": {

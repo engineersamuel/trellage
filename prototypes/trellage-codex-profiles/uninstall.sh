@@ -62,6 +62,8 @@ expected_entries="$(printf '%s\n' \
   './bin' \
   './bin/cdx' \
   './catalog.json' \
+  './lib' \
+  './lib/native-codex' \
   './marketplaces' \
   './marketplaces/hve-core' \
   './marketplaces/hve-core/.agents' \
@@ -79,7 +81,7 @@ for name in config-before original-mode sha256-before sha256-after removed-line;
   [ -f "$recovery/$name" ] && [ ! -L "$recovery/$name" ] && [ -r "$recovery/$name" ] \
     || refuse "missing or unsafe Fish recovery data: $recovery/$name"
 done
-for path in "$installed_launcher" "$install_root/catalog.json" \
+for path in "$installed_launcher" "$install_root/lib/native-codex" "$install_root/catalog.json" \
   "$install_root/marketplaces/hve-core/.agents/plugins/marketplace.json"; do
   [ -f "$path" ] && [ ! -L "$path" ] || refuse "unsafe managed runtime file: $path"
 done

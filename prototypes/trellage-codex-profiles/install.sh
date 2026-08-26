@@ -14,6 +14,7 @@ home="$(cd -L "$home" >/dev/null 2>&1 && pwd -L)" || refuse "refusing unsafe HOM
 [ "$home" != / ] || refuse 'refusing unsafe HOME: HOME resolves to /'
 
 source_dir="$(cd "$(dirname "$0")" && pwd)"
+common_launcher="$source_dir/../trellage-codex-common/native-codex"
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
@@ -397,7 +398,7 @@ for path in \
   [ -d "$path" ] && [ ! -L "$path" ] || refuse "unsafe source adapter directory: $path"
 done
 for path in \
-  "$source_dir/bin/cdx" "$source_dir/catalog.json" \
+  "$source_dir/bin/cdx" "$common_launcher" "$source_dir/catalog.json" \
   "$source_dir/marketplaces/hve-core/.agents/plugins/marketplace.json"; do
   [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] \
     || refuse "unsafe source runtime file: $path"
@@ -434,12 +435,32 @@ if [ -d "$install_root" ]; then
     './bin' \
     './bin/cdx' \
     './catalog.json' \
+    './lib' \
+    './lib/native-codex' \
+    './marketplaces' \
+    './marketplaces/hve-core' \
+    './marketplaces/hve-core/.agents' \
+    './marketplaces/hve-core/.agents/plugins' \
+    './marketplaces/hve-core/.agents/plugins/marketplace.json')"
+  legacy_expected_entries="$(printf '%s\n' \
+    '.' \
+    './.fish-recovery' \
+    './.fish-recovery/config-before' \
+    './.fish-recovery/original-mode' \
+    './.fish-recovery/removed-line' \
+    './.fish-recovery/sha256-after' \
+    './.fish-recovery/sha256-before' \
+    './.managed-by-trellage-codex-profiles' \
+    './bin' \
+    './bin/cdx' \
+    './catalog.json' \
     './marketplaces' \
     './marketplaces/hve-core' \
     './marketplaces/hve-core/.agents' \
     './marketplaces/hve-core/.agents/plugins' \
     './marketplaces/hve-core/.agents/plugins/marketplace.json')"
   [ "$actual_entries" = "$expected_entries" ] \
+    || [ "$actual_entries" = "$legacy_expected_entries" ] \
     || refuse "refusing unexpected content in owned runtime: $install_root"
   [ -z "$(find "$install_root" -type l -print -quit)" ] \
     || refuse "refusing symlinked content in owned runtime: $install_root"
@@ -453,6 +474,11 @@ if [ -d "$install_root" ]; then
     "$install_root/.fish-recovery/sha256-before"; do
     [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
   done
+  if [ "$actual_entries" = "$expected_entries" ]; then
+    [ -f "$install_root/lib/native-codex" ] \
+      && [ ! -L "$install_root/lib/native-codex" ] \
+      || refuse "refusing unsafe managed runtime file: $install_root/lib/native-codex"
+  fi
   runtime_owned=true
 fi
 if [ -e "$command_path" ] || [ -L "$command_path" ]; then
@@ -653,17 +679,20 @@ staging_root="$(mktemp -d "$runtime_parent/.cdx-install.XXXXXX")" \
   || refuse "could not create runtime staging in: $runtime_parent"
 chmod 0700 "$staging_root"
 mkdir -p "$staging_root/new-runtime/bin" \
+  "$staging_root/new-runtime/lib" \
   "$staging_root/new-runtime/marketplaces/hve-core/.agents/plugins" \
   "$staging_root/new-runtime/.fish-recovery"
 chmod 0755 \
   "$staging_root/new-runtime" \
   "$staging_root/new-runtime/bin" \
+  "$staging_root/new-runtime/lib" \
   "$staging_root/new-runtime/marketplaces" \
   "$staging_root/new-runtime/marketplaces/hve-core" \
   "$staging_root/new-runtime/marketplaces/hve-core/.agents" \
   "$staging_root/new-runtime/marketplaces/hve-core/.agents/plugins"
 chmod 0700 "$staging_root/new-runtime/.fish-recovery"
 install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
+install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json"
 install -m 0644 "$source_dir/marketplaces/hve-core/.agents/plugins/marketplace.json" \
   "$staging_root/new-runtime/marketplaces/hve-core/.agents/plugins/marketplace.json"

@@ -10,6 +10,7 @@ runtime_parent="$fixture_home/.local/share/trellage"
 argument_log="$fixture_root/arguments.bin"
 inventory_log="$fixture_root/inventory.log"
 real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
+real_jq="$(command -v jq)"
 
 cleanup() {
   if [[ "${TRX_KEEP_FIXTURE-}" == 1 ]]; then
@@ -34,7 +35,7 @@ assert_contains() {
 mkdir -p "$fixture_home" "$fixture_bin"
 seed_floating_skills_cache "$fixture_home"
 ln -s "$real_node" "$fixture_bin/node"
-ln -s "$(command -v jq)" "$fixture_bin/jq"
+ln -s "$real_jq" "$fixture_bin/jq"
 ln -s "$(command -v python3)" "$fixture_bin/python3"
 
 create_native_launcher() {
@@ -45,6 +46,7 @@ create_native_launcher() {
   local runtime="$runtime_parent/$launcher"
   local description="$launcher"
   local standalone_mcps='[]'
+  local profile_name="${launcher}-p"
 
   if [[ "$launcher" == cpx ]]; then
     printf -v description '%1200s' ''
@@ -168,7 +170,7 @@ EOF
   "sandbox": $sandbox,
   "profiles": [
     {
-      "name": "${launcher}-p",
+      "name": "$profile_name",
       "description": "$description",
       "headless": {
         "schemaVersion": 1,
@@ -248,6 +250,17 @@ EOF
 
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
 create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v1
+catalog_stage="$fixture_root/cdx-catalog.json"
+"$real_jq" '.profiles += [{
+  name:"pstack",
+  description:"Aqua-123 pstack for Codex",
+  headless:.profiles[0].headless,
+  plugin:"pstack-for-codex@pstack-for-codex-local",
+  source:null,
+  marketplace:null,
+  standaloneMcps:[]
+}]' "$runtime_parent/cdx/catalog.json" >"$catalog_stage"
+mv "$catalog_stage" "$runtime_parent/cdx/catalog.json"
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
@@ -330,6 +343,7 @@ assert_contains $'jcx/jcx-p\tjcx' "$fixture_root/list.out"
 assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
 assert_contains $'omp/local\tLocal Qwen' "$fixture_root/list.out"
 assert_contains $'picx/default\tOrdered Pi extension profile' "$fixture_root/list.out"
+assert_contains $'cdx/pstack\tAqua-123 pstack for Codex' "$fixture_root/list.out"
 assert_contains $'prx/prx-p\tprx' "$fixture_root/list.out"
 
 "$fixture_bin/trx" list --json >"$fixture_root/list.json" \
@@ -342,6 +356,7 @@ jq -e '
   and [.profiles[] | .launcher + "/" + .name] == [
     "cpx/cpx-p",
     "cdx/cdx-p",
+    "cdx/pstack",
     "cldx/cldx-p",
     "grx/grx-p",
     "jcx/jcx-p",
@@ -353,6 +368,7 @@ jq -e '
   and [.profiles[] | .harness] == [
     "copilot",
     "codex",
+    "codex",
     "claude",
     "grok",
     "jcode",
@@ -363,6 +379,7 @@ jq -e '
   ]
   and [.profiles[] | .sandbox] == [
     false,
+    true,
     true,
     false,
     true,
@@ -376,6 +393,7 @@ jq -e '
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .herdrCompatibility) == { status: "verified" }
   and (.profiles[] | select(.launcher == "omp" and .name == "local") | .herdrCompatibility.status) == "known-issue"
   and (.profiles[] | select(.launcher == "picx" and .name == "default") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "cdx" and .name == "pstack") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
   and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
@@ -507,8 +525,16 @@ jq -e '
       and .[0].defaultModel == "copilot-proxy-rs/gpt-5.6-sol:medium"
       and .[0].models == ["copilot-proxy-rs/gpt-5.6-sol:medium"]
       and .[0].modelOverrideSupported == false)
+  and ([.choices[] | select(.id == "cdx:pstack")]
+    | length == 1
+      and .[0].label == "codex / pstack"
+      and .[0].harness == "codex"
+      and .[0].profile == "pstack"
+      and .[0].commandAlias == "cdx"
+      and .[0].defaultModel == "gpt-5.6-sol"
+      and .[0].modelOverrideSupported == true)
 ' "$fixture_root/picker-input.json" >/dev/null \
-  || fail 'router choices did not expose Claude and Pi harness/profile identities'
+  || fail 'router choices did not expose launcher harness/profile identities'
 jq -e '
   [.choices[] | select(.label == "jcode / jcx-p")]
   | length == 1
@@ -527,6 +553,7 @@ jq -e '
 jq -e '
   ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
+  and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [true])
   and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'
@@ -645,7 +672,7 @@ import pathlib
 import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cpx", b"cpx-p", b"", b""]
+expected = [b"cdx", b"pstack", b"", b""]
 if actual != expected:
     print(f"expected {expected!r}, got {actual!r}", file=sys.stderr)
     raise SystemExit(1)
@@ -700,6 +727,7 @@ status=0
 assert_contains 'required launcher not found on PATH: picx' \
   "$fixture_root/list-missing-picx.err"
 mv "$fixture_bin/picx.absent" "$fixture_bin/picx"
+
 
 mv "$fixture_bin/jcx" "$fixture_bin/jcx.absent"
 status=0
