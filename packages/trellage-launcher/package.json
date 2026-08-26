@@ -8,7 +8,7 @@
     "trellage-launcher": "dist/launcher.mjs"
   },
   "scripts": {
-    "build": "esbuild src/cli.tsx --bundle --platform=node --format=esm --target=node22 --loader:.md=text --banner:js=\"import { createRequire as __trellageCreateRequire } from 'node:module'; const require = __trellageCreateRequire(import.meta.url);\" --outfile=dist/launcher.mjs",
+    "build": "esbuild src/cli.tsx --bundle --platform=node --format=esm --target=node22 --loader:.md=text --banner:js=\"import { createRequire as __trellageCreateRequire } from 'node:module'; const require = __trellageCreateRequire(import.meta.url);\" --outfile=dist/launcher.mjs && node scripts/normalize-bundle.mjs",
     "check": "tsc --noEmit",
     "test": "vitest run"
   },
