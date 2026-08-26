@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { builderScript, profileMetadata } from "../src/application.js"
 import { claudeDefaultOnboarding, claudeDefaultSettings, claudeDefaultUserSettings } from "../src/claude-materialize.js"
 import { parseLock } from "../src/lock-file.js"
-import type { ProfileLock } from "../src/lock.js"
+import { harnessPackageRevision, type ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
@@ -94,7 +94,7 @@ describe("authored Claude Research profile", () => {
       claude_opus_model: "claude-opus-5",
       claude_sonnet_model: "claude-sonnet-5",
       claude_haiku_model: "claude-haiku-4.5",
-      resolved_version: lock.packages.harness.version,
+      resolved_version: harnessPackageRevision(lock.packages.harness),
       headless: {
         schemaVersion: 1,
         prompt: false,
@@ -454,7 +454,7 @@ describe("authored standalone Claude Qwen profile", () => {
       claude_opus_model: "qwen3.6-35b-a3b-local",
       claude_sonnet_model: "qwen3.6-35b-a3b-local",
       claude_haiku_model: "qwen3.6-35b-a3b-local",
-      resolved_version: lock.packages.harness.version,
+      resolved_version: harnessPackageRevision(lock.packages.harness),
       headless: {
         outputFormats: ["text"],
         trellageEventContract: null,

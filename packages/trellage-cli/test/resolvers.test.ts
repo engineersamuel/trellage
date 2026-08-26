@@ -452,6 +452,56 @@ describe("production package resolutions", () => {
     ])
   })
 
+  it("resolves Headlong as a complete source-backed harness without a release lookup", async () => {
+    const source = await Effect.runPromise(
+      productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
+        kind: "harness",
+        adapter: "headlong",
+        repository: "https://github.com/laude-institute/headlong.git",
+        ref: "main",
+        select: [],
+        update: false,
+      }),
+    )
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache", "linux/arm64").resolvePackages({
+        kind: "headlong",
+        selector: "latest",
+        platform: "linux/arm64",
+        packages: ["bash"],
+        headlongSource: source,
+      }),
+    )
+
+    expect(mocks.requests).toEqual([
+      expect.objectContaining({
+        repository: "https://github.com/laude-institute/headlong.git",
+        ref: "main",
+        include: [],
+        inventoryPolicy: {},
+      }),
+    ])
+    expect(result.harness).toEqual({
+      kind: "headlong",
+      selector: "latest",
+      commit: "a".repeat(40),
+      integrity: `sha256:${"b".repeat(64)}`,
+    })
+    expect(result.artifacts?.map(({ name, version }) => ({ name, version }))).toEqual([
+      { name: "node", version: "22.17.0" },
+      { name: "uv", version: "0.11.21" },
+      { name: "rust", version: "1.96.0" },
+      { name: "rust-std-musl", version: "1.96.0" },
+    ])
+    expect([
+      ...mocks.releaseRequests,
+      ...mocks.piReleaseRequests,
+      ...mocks.primeReleaseRequests,
+      ...mocks.claudeReleaseRequests,
+      ...mocks.codexReleaseRequests,
+    ]).toEqual([])
+  })
+
   it("resolves Copilot source through the full cache before reading marketplace metadata", async () => {
     const result = await Effect.runPromise(
       productionResolvers("/tmp/cache", "linux/arm64").resolveSource({

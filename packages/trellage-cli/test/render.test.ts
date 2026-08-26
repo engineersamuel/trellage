@@ -467,6 +467,9 @@ rename_exe = "copilot"`)
     )
     expect(rendered).toContain('"dev.trellage.harness.kind" = "claude"')
     expect(rendered).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|PLAYWRIGHT_MCP_EXTENSION_TOKEN/)
+    // Claude mise locks have no uv entry; a uv tool declaration here would make
+    // `mise install --locked` fail against the Claude lock.
+    expect(rendered).not.toMatch(/^uv = /m)
   })
 
   it("renders native Claude marketplace images without Hyperresearch assets", () => {

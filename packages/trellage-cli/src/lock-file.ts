@@ -86,6 +86,16 @@ const renderLegacyHarness = (lock: ProfileLock): ReadonlyArray<string> => {
 const renderHarness = (lock: ProfileLock): ReadonlyArray<string> => {
   const harness = lock.packages.harness
   if (harness.kind === "codex" && hasLegacyPackageProvenance(lock)) return []
+  if (harness.kind === "headlong") {
+    return [
+      "",
+      "[packages.harness]",
+      `kind = ${quote(harness.kind)}`,
+      `selector = ${quote(harness.selector)}`,
+      `commit = ${quote(harness.commit)}`,
+      `integrity = ${quote(harness.integrity)}`,
+    ]
+  }
   return [
     "",
     "[packages.harness]",
@@ -162,13 +172,14 @@ const SymlinkSchema = Schema.Struct({ kind: Schema.Literal("symlink"), path: Tex
 const InventoryEntrySchema = Schema.Union(LegacyFileSchema, TypedFileSchema, SymlinkSchema)
 const StringRecordSchema = Schema.Record({ key: Text, value: Schema.String })
 const SourceSchema = Schema.Struct({
-  kind: Schema.Literal("plugin"),
+  kind: Schema.Literal("plugin", "harness"),
   adapter: Schema.optional(
     Schema.Literal(
       "claude-marketplace",
       "codex-native",
       "wshobson-agents",
       "copilot-marketplace",
+      "headlong",
       "hyperresearch",
       "prime-extension",
     ),
@@ -230,6 +241,12 @@ const HarnessPackageSchema = Schema.Union(
     integrity: Text,
     url: Text,
     size: Schema.Number.pipe(Schema.positive()),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("headlong"),
+    selector: Text,
+    commit: Text,
+    integrity: Text,
   }),
 )
 const LegacyPackageSchema = Schema.Struct({

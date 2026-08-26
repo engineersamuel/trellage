@@ -189,6 +189,73 @@ case "$harness_kind" in
         || fail 'last30days SKILL.md is missing from lock inventory'
     fi
     ;;
+  headlong)
+    runtime_entry="$prototype_dir/runtime-headlong-entry.sh"
+    [[ -f "$runtime_entry" ]] || fail "missing required file: $runtime_entry"
+    [[ "$profile_name" == headlong ]] || fail 'Headlong profile name is not exact'
+    [[ "$(jq -r '.harness_executable' <<<"$metadata")" == headlong-init ]] \
+      || fail 'Headlong executable metadata is not exact'
+    [[ "$(jq -r '.runtime_entry' <<<"$metadata")" == runtime-headlong-entry ]] \
+      || fail 'Headlong runtime entry metadata is not exact'
+    [[ "$(jq -r '.default_network' <<<"$metadata")" == copilot-proxy-rs_default ]] \
+      || fail 'Headlong network metadata is not exact'
+    [[ "$(jq -r '.auth_policy' <<<"$metadata")" == proxy ]] \
+      || fail 'Headlong auth policy metadata is not exact'
+    [[ "$(jq -c '.container_command' <<<"$metadata")" == '["runtime-headlong-entry","service"]' ]] \
+      || fail 'Headlong service command metadata is not exact'
+    [[ "$(jq -r '.container_restart_policy' <<<"$metadata")" == unless-stopped ]] \
+      || fail 'Headlong restart policy metadata is not exact'
+    [[ "$(locked_value '[packages.harness]' kind)" == headlong ]] \
+      || fail 'Headlong lock kind is not exact'
+    [[ "$(locked_value '[packages.harness]' selector)" == latest ]] \
+      || fail 'Headlong lock selector is not upgradeable'
+    headlong_commit="$(locked_value '[packages.harness]' commit)"
+    [[ "$headlong_commit" =~ ^[0-9a-f]{40}$ ]] \
+      || fail 'Headlong harness commit is not exact'
+    [[ "$(locked_value '[packages.harness]' integrity)" =~ ^sha256:[0-9a-f]{64}$ ]] \
+      || fail 'Headlong harness integrity is not exact'
+    awk -v commit="$headlong_commit" '
+      /^\[\[sources\]\]$/ { active = 1; kind = adapter = repository = ref = source_commit = ""; next }
+      active && /^\[\[/ {
+        if (kind == "harness" && adapter == "headlong" && repository == "https://github.com/laude-institute/headlong.git" && ref == "main" && source_commit == commit) found = 1
+        active = 0
+      }
+      active && /^kind = / { kind = $0; sub(/^kind = "/, "", kind); sub(/"$/, "", kind) }
+      active && /^adapter = / { adapter = $0; sub(/^adapter = "/, "", adapter); sub(/"$/, "", adapter) }
+      active && /^repository = / { repository = $0; sub(/^repository = "/, "", repository); sub(/"$/, "", repository) }
+      active && /^ref = / { ref = $0; sub(/^ref = "/, "", ref); sub(/"$/, "", ref) }
+      active && /^commit = / { source_commit = $0; sub(/^commit = "/, "", source_commit); sub(/"$/, "", source_commit) }
+      END {
+        if (active && kind == "harness" && adapter == "headlong" && repository == "https://github.com/laude-institute/headlong.git" && ref == "main" && source_commit == commit) found = 1
+        exit(found ? 0 : 1)
+      }
+    ' "$lock" || fail 'official Headlong source identity is not exact'
+    grep -Fqx 'path = "install.sh"' "$lock" \
+      || fail 'Headlong installer is absent from the locked source inventory'
+    grep -Fqx 'path = "tools/headlong-init"' "$lock" \
+      || fail 'Headlong initializer is absent from the locked source inventory'
+    grep -Fqx 'path = "web/uv.lock"' "$lock" \
+      || fail 'Headlong dashboard Python lock is absent from the source inventory'
+    grep -Fqx 'path = "web/viewer/bun.lock"' "$lock" \
+      || fail 'Headlong dashboard frontend lock is absent from the source inventory'
+    awk '
+      /^\[\[packages\.artifacts\]\]$/ {
+        if (name == "uv" && version == "0.11.21" && integrity ~ /^sha256:[0-9a-f]{64}$/ && url == "https://github.com/astral-sh/uv/releases/download/0.11.21/uv-aarch64-unknown-linux-musl.tar.gz") found = 1
+        name = version = integrity = url = ""
+        active = 1
+        next
+      }
+      active && /^\[/ { active = 0 }
+      active && /^name = / { name = $0; sub(/^name = "/, "", name); sub(/"$/, "", name) }
+      active && /^version = / { version = $0; sub(/^version = "/, "", version); sub(/"$/, "", version) }
+      active && /^integrity = / { integrity = $0; sub(/^integrity = "/, "", integrity); sub(/"$/, "", integrity) }
+      active && /^url = / { url = $0; sub(/^url = "/, "", url); sub(/"$/, "", url) }
+      END {
+        if (name == "uv" && version == "0.11.21" && integrity ~ /^sha256:[0-9a-f]{64}$/ && url == "https://github.com/astral-sh/uv/releases/download/0.11.21/uv-aarch64-unknown-linux-musl.tar.gz") found = 1
+        exit(found ? 0 : 1)
+      }
+    ' "$lock" || fail 'Headlong uv artifact is not exactly locked'
+    ;;
   pi)
     runtime_entry="$prototype_dir/runtime-pi-entry.sh"
     [[ -f "$runtime_entry" ]] || fail "missing required file: $runtime_entry"
@@ -245,9 +312,15 @@ IMAGE_REF="${IMAGE_REF:-$image_name}"
 [[ "$IMAGE_REF" == trellage-profile-*:locked ]] \
   || fail "live image reference is not a locked Trellage profile tag: $IMAGE_REF"
 image_config="$(docker image inspect "$IMAGE_REF")"
-locked_version="$(locked_value '[packages.harness]' version)"
-[[ "$locked_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]] \
-  || fail 'harness version is not exact in the lock'
+if [[ "$harness_kind" == headlong ]]; then
+  locked_version="$(locked_value '[packages.harness]' commit)"
+  [[ "$locked_version" =~ ^[0-9a-f]{40}$ ]] \
+    || fail 'Headlong harness commit is not exact in the lock'
+else
+  locked_version="$(locked_value '[packages.harness]' version)"
+  [[ "$locked_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]] \
+    || fail 'harness version is not exact in the lock'
+fi
 
 jq -e \
   --arg hash "$profile_hash" \
@@ -256,7 +329,10 @@ jq -e \
   --arg shell "$profile_shell" \
   --arg version "$locked_version" '
     .[0].Config.User == "10001:10001"
-    and .[0].Config.Cmd == [$shell, "-l"]
+    and (if $kind == "headlong"
+      then .[0].Config.Cmd == ["runtime-headlong-entry", "service"]
+      else .[0].Config.Cmd == [$shell, "-l"]
+    end)
     and .[0].Config.Labels["dev.trellage.prototype"] == "trellage"
     and .[0].Config.Labels["dev.trellage.profile"] == $name
     and .[0].Config.Labels["dev.trellage.profile.hash"] == $hash
@@ -269,6 +345,13 @@ jq -e \
       and (.[0].Config.Env | any(. == "COPILOT_AUTO_UPDATE=false"))
       and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
       and (.[0].Config.Env | all(startswith("CODEX_HOME=") | not))
+    elif $kind == "headlong" then
+      .[0].Config.Labels["dev.trellage.harness.kind"] == $kind
+      and .[0].Config.Labels["dev.trellage.headlong.commit"] == $version
+      and (.[0].Config.Env | any(. == "HEADLONG_WEB_ARGS=--host 0.0.0.0 --port 8080"))
+      and (.[0].Config.Env | any(. == "HEADLONG_WEB_JS=npm"))
+      and (.[0].Config.Env | any(. == "XDG_CACHE_HOME=/home/agent/.cache"))
+      and (.[0].Config.Env | all(test("^(CODEX_HOME|COPILOT_HOME|CLAUDE_CONFIG_DIR|PI_CODING_AGENT_DIR|PRIME_AGENT_CODING_AGENT_DIR)=") | not))
     elif $kind == "pi" then
       .[0].Config.Labels["dev.trellage.harness.kind"] == $kind
       and .[0].Config.Labels["dev.trellage.pi.implementation"] == "oh-my-pi"
@@ -307,7 +390,49 @@ inspect_and_history="$(printf '%s\n' "$image_config"; docker history --no-trunc 
 ! grep -Eiq '(COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|Authorization:|Bearer[[:space:]]+[[:graph:]]+|/[U]sers/|/var/[f]olders/|/private/tmp/|harness-build-|harness-profile-|dev\.sandbox-harness|/usr/local/share/harness|/usr/local/bin/harness-(codex|copilot|claude|pi|prime)-entry|(^|[/[:space:]])harness-(codex|copilot|claude|pi|prime)-entry([[:space:]]|$))' <<<"$inspect_and_history" \
   || fail 'image inspect or history contains auth, host, temporary, build, or old-brand data'
 
-if [[ "$harness_kind" == copilot ]]; then
+if [[ "$harness_kind" == headlong ]]; then
+  docker run --rm \
+    --network none \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+    --tmpfs /home/agent:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+    --entrypoint bash \
+    "$IMAGE_REF" -ceu '
+      locked_commit="$1"
+      test "$(id -u):$(id -g)" = 10001:10001
+      command -v bash git curl jq gh rg flock uv >/dev/null
+      case "$(uv --version)" in "uv 0.11.21"*) ;; *) exit 1 ;; esac
+      test -x /usr/local/bin/runtime-headlong-entry
+      test -x /usr/local/share/trellage/headlong-tui
+      /usr/local/share/trellage/headlong-tui --help >/dev/null
+      test -f /etc/profile.d/trellage-headlong-path.sh
+      HOME=/home/agent bash -lc '\''case ":$PATH:" in *:/home/agent/.local/bin:*) ;; *) exit 1 ;; esac'\''
+      seed=/usr/local/share/trellage/headlong-seed
+      skills=/usr/local/share/trellage/headlong-skills
+      test -d "$seed" && test ! -L "$seed"
+      test -x "$seed/install.sh"
+      test -x "$seed/tools/headlong-init"
+      test -f "$seed/web/uv.lock"
+      test -f "$seed/web/viewer/bun.lock"
+      test "$(cat /usr/local/share/trellage/headlong-seed.commit)" = "$locked_commit"
+      test -f "$skills/managed-skills.tsv"
+      test -f "$skills/skills/caveman/SKILL.md"
+      grep -Fqx "$(printf "caveman\t1")" "$skills/managed-skills.tsv"
+      awk -F "\t" '\''NF != 2 || ($2 != 0 && $2 != 1) { exit 1 }'\'' "$skills/managed-skills.tsv"
+      test "$(sort "$skills/managed-skills.tsv")" = "$(cat "$skills/managed-skills.tsv")"
+      test ! -e /home/agent/.headlong
+      test ! -e /home/agent/.codex
+      test ! -e /home/agent/.copilot
+      test ! -e /home/agent/.claude
+      test ! -e /home/agent/.omp
+      test ! -e /home/agent/.prime
+      test ! -e /home/agent/.config/gh
+      test ! -e /usr/local/share/harness
+      test ! -e /usr/local/bin/harness-headlong-entry
+      test -z "$(find "$seed" "$skills" -type f -name .env -print -quit)"
+    ' -- "$locked_version" \
+    || fail 'Headlong commit, uv, runtime, source, skills, credential, or no-model isolation probe failed'
+elif [[ "$harness_kind" == copilot ]]; then
   [[ "$(docker run --rm --entrypoint stat "$IMAGE_REF" -c '%u:%g' /home/agent)" == 10001:10001 ]] \
     || fail 'Copilot image home directory is missing or not owned by the runtime user'
   hve_version="$(sed -n 's/^plugin_versions = { "hve-core" = "\([0-9.]*\)" }$/\1/p' "$lock")"

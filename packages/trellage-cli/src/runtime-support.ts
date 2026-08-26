@@ -9,6 +9,7 @@ import type { Profile } from "./profile.js"
 export interface RuntimeSupportPaths {
   readonly codexEntry: string
   readonly copilotEntry: string
+  readonly headlongEntry?: string
   readonly piEntry?: string
   readonly primeEntry?: string
   readonly finalizeCopilotSeed: string
@@ -101,6 +102,16 @@ const selectedFiles = (
           mode: 0o644,
         },
       ]
+    case "headlong":
+      return [
+        {
+          property: "headlongEntry",
+          role: "runtime-headlong-entry",
+          destination: "/usr/local/bin/runtime-headlong-entry",
+          buildContextPath: "runtime-headlong-entry.sh",
+          mode: 0o755,
+        },
+      ]
     case "claude":
       const entry: SelectedFile = {
         property: "claudeEntry",
@@ -186,6 +197,15 @@ const framedText = (value: string): ReadonlyArray<Buffer> => {
   return [uint32(bytes.length), bytes]
 }
 
+const harnessLabels: Readonly<Record<Profile["harness"]["kind"], string>> = {
+  codex: "Codex",
+  copilot: "Copilot",
+  claude: "Claude",
+  pi: "Pi",
+  prime: "Prime",
+  headlong: "Headlong",
+}
+
 const runtimeHash = (files: ReadonlyArray<CapturedFile>): string => {
   const hash = createHash("sha256")
   hash.update(Buffer.from("trellage-runtime-support", "utf8"))
@@ -210,16 +230,7 @@ export const createRuntimeSupportSnapshot = (
   Effect.gen(function* () {
     const opener = typeof selection === "function" ? selection : open
     const claudeAdapter = typeof selection === "string" ? selection : undefined
-    const label =
-      harnessKind === "codex"
-        ? "Codex"
-        : harnessKind === "copilot"
-          ? "Copilot"
-          : harnessKind === "pi"
-            ? "Pi"
-            : harnessKind === "prime"
-              ? "Prime"
-              : "Claude"
+    const label = harnessLabels[harnessKind]
     const files = yield* Effect.forEach(
       selectedFiles(harnessKind, claudeAdapter, claudeMode),
       (selected) => {

@@ -34,6 +34,7 @@ const resolveHarnessPackages = (
   claudeAdapter?: "claude-marketplace" | "hyperresearch",
   extraArtifacts?: ReadonlyArray<ArtifactLock>,
   extraPythonLockIntegrity?: string,
+  headlongSource?: { readonly commit: string; readonly integrity: string },
 ) => {
   if (kind === "codex") {
     return resolveCodexRelease(selector, platform).pipe(
@@ -43,6 +44,18 @@ const resolveHarnessPackages = (
   if (kind === "copilot") return resolveCopilotRelease(selector, platform).pipe(Effect.map((harness) => ({ harness })))
   if (kind === "pi") return resolvePiRelease(selector, platform).pipe(Effect.map((harness) => ({ harness })))
   if (kind === "prime") return resolvePrimeRelease(selector, platform).pipe(Effect.map((harness) => ({ harness })))
+  if (kind === "headlong") {
+    if (headlongSource === undefined) return Effect.fail("Headlong source resolution is missing")
+    return Effect.succeed({
+      harness: {
+        kind: "headlong" as const,
+        selector,
+        commit: headlongSource.commit,
+        integrity: headlongSource.integrity,
+      },
+      artifacts: [...arm64ArtifactCatalog.headlongArtifacts],
+    })
+  }
   const pythonLock =
     claudeAdapter === "hyperresearch" ? arm64ArtifactCatalog.hyperresearchPythonLockIntegrity : extraPythonLockIntegrity
   return resolveClaudeRelease(selector, platform).pipe(
@@ -102,6 +115,7 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
     claudeAdapter,
     extraArtifacts,
     extraPythonLockIntegrity,
+    headlongSource,
   }) =>
     Effect.gen(function* () {
       if (requestedPlatform !== platform) return yield* Effect.fail("resolver platform mismatch")
@@ -113,6 +127,7 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
         claudeAdapter,
         extraArtifacts,
         extraPythonLockIntegrity,
+        headlongSource,
       )
       return { ...resolved, runtime }
     }),

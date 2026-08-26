@@ -490,6 +490,59 @@ const primeLock = (profile_hash: string): ProfileLock => ({
   },
 })
 
+const headlongSource = `
+schema = 1
+name = "headlong"
+description = "Persistent Headlong agent"
+[harness]
+kind = "headlong"
+version = "latest"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "bash"
+packages = ["bash", "gh", "git"]
+`
+
+const headlongCommit = "a".repeat(40)
+const headlongFiles = [{ kind: "file" as const, path: "install.sh", sha256: digest("f") }]
+const headlongLock = (profile_hash: string): ProfileLock => ({
+  schema: 1,
+  platform: "linux/arm64",
+  source_date_epoch: 1784379906,
+  profile_hash,
+  sources: [
+    {
+      kind: "harness",
+      adapter: "headlong",
+      repository: "https://github.com/laude-institute/headlong.git",
+      ref: "main",
+      select: [],
+      commit: headlongCommit,
+      integrity: treeIntegrity(headlongFiles),
+      files: headlongFiles,
+    },
+  ],
+  packages: {
+    harness: {
+      kind: "headlong",
+      selector: "latest",
+      commit: headlongCommit,
+      integrity: treeIntegrity(headlongFiles),
+    },
+    artifacts: [...arm64ArtifactCatalog.headlongArtifacts],
+    runtime: ["bash", "gh", "git"].map((name) => ({
+      name,
+      version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
+      integrity: arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
+    })),
+  },
+  image: {
+    base: "node:22.17.0-bookworm-slim",
+    base_digest: arm64ArtifactCatalog.base.digest,
+    final_digest: digest("e"),
+  },
+})
+
 const codexSource = `
 schema = 1
 name = "codex-upgrade"
@@ -710,6 +763,47 @@ describe("profile metadata", () => {
     expect(JSON.stringify(metadata)).not.toMatch(
       /ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN/,
     )
+  })
+
+  it("reports the persistent Headlong lifecycle without provider values", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-headlong-"))
+    const profilePath = await writeReadyProfile(root, headlongSource, headlongLock("replaced-by-writeReadyProfile"))
+
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+
+    expect(metadata).toMatchObject({
+      harness_kind: "headlong",
+      harness_executable: "headlong-init",
+      image: "trellage-profile-headlong-linux-arm64:locked",
+      locked: true,
+      resolved_version: headlongCommit,
+      runtime_entry: "runtime-headlong-entry",
+      default_network: "copilot-proxy-rs_default",
+      auth_policy: "proxy",
+      container_lifecycle: "persistent",
+      container_restart_policy: "unless-stopped",
+      container_command: ["runtime-headlong-entry", "service"],
+      published_ports: [{ host_ip: "127.0.0.1", host_port: 18080, container_port: 8080, protocol: "tcp" }],
+      optional_secrets: [],
+    })
+    expect(metadata.headless).toEqual({
+      schemaVersion: 1,
+      prompt: false,
+      outputFormats: ["text"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "none",
+      resume: false,
+      resumeWithPrompt: false,
+      questionToolControl: "none",
+      changedFiles: "none",
+      usage: false,
+      cost: false,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null,
+    })
+    expect(JSON.stringify(metadata)).not.toContain("fixture-provider-key")
   })
 })
 
@@ -1515,6 +1609,27 @@ select = ["humanizer"]
     expect(builderScript(document, piLock(profileHash(document)))).toBe(
       'mise install --locked http:pi@17.2.6; pi_dir="$(mise where http:pi@17.2.6)"; rm -f "$pi_dir/metadata.json"; PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     )
+  })
+
+  it("isolates the locked Headlong toolchain from the builder image defaults", async () => {
+    const document = await Effect.runPromise(parseProfile(headlongSource, "/profiles/headlong/profile.toml"))
+    const script = builderScript(document, headlongLock(profileHash(document)))
+
+    for (const expected of [
+      "rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz",
+      "20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b",
+      "325287063",
+      "rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
+      "1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea",
+      "42333691",
+      "cargo build --locked --release --target aarch64-unknown-linux-musl",
+      "/src/headlong-seed/tui/headlong/Cargo.toml",
+      "/src/headlong-tui",
+      'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
+    ]) {
+      expect(script).toContain(expected)
+    }
+    expect(script).not.toContain("rustup")
   })
 
   it("verifies and installs only the exact locked Prime tarball before the OCI build", async () => {

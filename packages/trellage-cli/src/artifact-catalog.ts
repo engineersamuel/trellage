@@ -190,6 +190,30 @@ const graphOfLoopsArtifacts: ReadonlyArray<ArtifactLock> = [
   },
 ]
 
+const headlongArtifacts: ReadonlyArray<ArtifactLock> = [
+  fixedArtifacts[0]!,
+  {
+    name: "uv",
+    version: "0.11.21",
+    integrity: "sha256:e71badaed2a2c3a404a0a00974b51c7ed5f5bc7be947916846005b739c68a5a2",
+    url: "https://github.com/astral-sh/uv/releases/download/0.11.21/uv-aarch64-unknown-linux-musl.tar.gz",
+  },
+  {
+    name: "rust",
+    version: "1.96.0",
+    integrity: "sha256:20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b",
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz",
+    size: 325287063,
+  },
+  {
+    name: "rust-std-musl",
+    version: "1.96.0",
+    integrity: "sha256:1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea",
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
+    size: 42333691,
+  },
+]
+
 export const extraClaudeMarketplaceArtifacts = (document: ProfileDocument): ReadonlyArray<ArtifactLock> => {
   if (!isClaudeProfile(document.profile) || document.profile.plugins[0]?.adapter === "hyperresearch") return []
   const artifacts: ArtifactLock[] = []
@@ -217,6 +241,7 @@ export const arm64ArtifactCatalog = {
   fixedArtifacts,
   hyperresearchArtifacts,
   graphOfLoopsArtifacts,
+  headlongArtifacts,
   hyperresearchPythonLockIntegrity: "sha256:3566ca82f16dceab7ef7c6afad8889991c3c0fa13e305e91e3eab30207a454c6",
   graphOfLoopsPythonLockIntegrity: "sha256:4f384d281b261fb57077b5f99fc2d17310b6562fa26be0b76c1fac516eb43460",
 } as const
@@ -232,6 +257,18 @@ const sameArtifact = (actual: ArtifactLock, expected: ArtifactLock): boolean =>
   actual.integrity === expected.integrity &&
   actual.url === expected.url &&
   actual.size === expected.size
+
+const artifactSetError = (lock: ProfileLock, expectedArtifacts: ReadonlyArray<ArtifactLock>): string | undefined => {
+  const actual = new Map((lock.packages.artifacts ?? []).map((artifact) => [artifact.name, artifact]))
+  if (actual.size !== expectedArtifacts.length) return "artifact set does not match platform catalog"
+  for (const expected of expectedArtifacts) {
+    const artifact = actual.get(expected.name)
+    if (artifact === undefined || !sameArtifact(artifact, expected)) {
+      return `artifact does not match platform catalog: ${expected.name}`
+    }
+  }
+  return undefined
+}
 
 const runtimeCatalogError = (lock: ProfileLock): string | undefined => {
   const catalog = arm64ArtifactCatalog
@@ -291,6 +328,10 @@ export const lockedArtifactError = (
   if (lock.packages.harness.kind === "claude") {
     const claudeError = claudeArtifactSetError(document, lock)
     if (claudeError !== undefined) return claudeError
+  }
+  if (lock.packages.harness.kind === "headlong") {
+    const headlongError = artifactSetError(lock, catalog.headlongArtifacts)
+    if (headlongError !== undefined) return headlongError
   }
   if (document.profile.image.base !== catalog.base.reference) return "profile base image is unsupported for platform"
   return undefined

@@ -1,10 +1,10 @@
-.PHONY: test dependency-bootstrap sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test build compare compare-down clean
+.PHONY: test dependency-bootstrap sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 HEADLESS_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test
+PARALLEL_TEST_TARGETS := dependency-bootstrap publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-compiler launcher trellage-identity trellage-orphan-cleanup agent-harness claude-entry copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test
 SERIAL_TEST_TARGETS := native-profile-router headless-matrix
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 
@@ -56,6 +56,8 @@ claude-entry:
 copilot-entry: sandbox-entry-fixture
 	bash prototypes/trellage/tests/copilot_entry_contract.sh
 
+headlong-entry: sandbox-entry-fixture
+	bash prototypes/trellage/tests/headlong_entry_contract.sh
 
 pi-entry: sandbox-entry-fixture
 	bash prototypes/trellage/tests/pi_entry_contract.sh

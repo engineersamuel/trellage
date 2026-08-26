@@ -17,11 +17,12 @@ interface LegacyLockProvenance {
 }
 
 export interface SourceLock {
-  readonly kind: "plugin"
+  readonly kind: "plugin" | "harness"
   readonly adapter:
     | "claude-marketplace"
     | "codex-native"
     | "copilot-marketplace"
+    | "headlong"
     | "hyperresearch"
     | "prime-extension"
     | "wshobson-agents"
@@ -76,6 +77,17 @@ export type HarnessPackageLock =
       readonly url: string
       readonly size: number
     }
+  | {
+      readonly kind: "headlong"
+      readonly selector: string
+      readonly commit: string
+      readonly integrity: string
+    }
+
+export type ReleaseHarnessPackageLock = Exclude<HarnessPackageLock, { readonly kind: "headlong" }>
+
+export const harnessPackageRevision = (harness: HarnessPackageLock): string =>
+  harness.kind === "headlong" ? harness.commit : harness.version
 
 export interface ArtifactLock {
   readonly name: string
@@ -162,11 +174,12 @@ export interface SourceResolution {
 export interface LockResolvers {
   readonly platform: Platform
   readonly resolveSource: (request: {
-    readonly kind: "plugin"
+    readonly kind: "plugin" | "harness"
     readonly adapter:
       | "claude-marketplace"
       | "codex-native"
       | "copilot-marketplace"
+      | "headlong"
       | "hyperresearch"
       | "prime-extension"
       | "wshobson-agents"
@@ -178,13 +191,14 @@ export interface LockResolvers {
     readonly update: boolean
   }) => Effect.Effect<SourceResolution, unknown>
   readonly resolvePackages: (request: {
-    readonly kind: "claude" | "codex" | "copilot" | "pi" | "prime"
+    readonly kind: "claude" | "codex" | "copilot" | "headlong" | "pi" | "prime"
     readonly selector: string
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
     readonly claudeAdapter?: "claude-marketplace" | "hyperresearch"
     readonly extraArtifacts?: ReadonlyArray<ArtifactLock>
     readonly extraPythonLockIntegrity?: string
+    readonly headlongSource?: Pick<SourceLock, "commit" | "integrity">
   }) => Effect.Effect<PackageLock, unknown>
   readonly resolveBase: (request: {
     readonly reference: string
@@ -216,8 +230,8 @@ const sameSource = (current: SourceLock, requested: SourceRequest): boolean =>
   current.ref === requested.ref &&
   JSON.stringify(current.select) === JSON.stringify(requested.select)
 
-const sourceRequests = (document: ProfileDocument): Array<SourceRequest> =>
-  document.profile.plugins.map((plugin) => ({
+const sourceRequests = (document: ProfileDocument): Array<SourceRequest> => {
+  const plugins = document.profile.plugins.map((plugin) => ({
     kind: "plugin" as const,
     adapter: plugin.adapter,
     ...("marketplace" in plugin ? { marketplace: plugin.marketplace } : {}),
@@ -225,6 +239,19 @@ const sourceRequests = (document: ProfileDocument): Array<SourceRequest> =>
     ref: plugin.ref,
     select: plugin.select,
   }))
+  return document.profile.harness.kind === "headlong"
+    ? [
+        ...plugins,
+        {
+          kind: "harness",
+          adapter: "headlong",
+          repository: "https://github.com/laude-institute/headlong.git",
+          ref: "main",
+          select: [],
+        } as const,
+      ]
+    : plugins
+}
 
 const sha256Pattern = /^sha256:[0-9a-f]{64}$/
 const commitPattern = /^[0-9a-f]{40}$/
@@ -288,11 +315,12 @@ const harnessLabels: Readonly<Record<HarnessPackageLock["kind"], string>> = {
   claude: "Claude",
   codex: "Codex",
   copilot: "Copilot",
+  headlong: "Headlong",
   pi: "Pi",
   prime: "Prime",
 }
 
-const expectedHarnessUrl = (harness: HarnessPackageLock, platform: Platform): string => {
+const expectedHarnessUrl = (harness: ReleaseHarnessPackageLock, platform: Platform): string => {
   if (harness.kind === "copilot") {
     const asset = platform === "linux/arm64" ? "copilot-linux-arm64.tar.gz" : "copilot-linux-x64.tar.gz"
     return `https://github.com/github/copilot-cli/releases/download/v${harness.version}/${asset}`
@@ -321,15 +349,20 @@ const isHttpsUrl = (value: string): boolean => {
   }
 }
 
-const validateHarnessPackage = (
-  document: ProfileDocument,
+const validateHeadlongHarnessPackage = (
   current: ProfileLock,
-  platform: Platform,
+  harness: Extract<HarnessPackageLock, { readonly kind: "headlong" }>,
 ): string | undefined => {
-  const harness = current.packages.harness
+  const source = current.sources.find((candidate) => candidate.kind === "harness" && candidate.adapter === "headlong")
+  if (source === undefined) return "Headlong harness source is missing"
+  if (!commitPattern.test(harness.commit)) return "Headlong package commit is invalid"
+  if (harness.commit !== source.commit) return "Headlong package commit does not match harness source"
+  if (!sha256Pattern.test(harness.integrity)) return "Headlong package integrity is missing or invalid"
+  return harness.integrity === source.integrity ? undefined : "Headlong package integrity does not match harness source"
+}
+
+const validateReleaseHarnessPackage = (harness: ReleaseHarnessPackageLock, platform: Platform): string | undefined => {
   const harnessLabel = harnessLabels[harness.kind]
-  if (harness.kind !== document.profile.harness.kind) return "harness package kind does not match profile"
-  if (harness.selector.length === 0) return `${harnessLabel} package selector is missing`
   if (!stableSemverPattern.test(harness.version)) return `${harnessLabel} package version is not stable`
   if (harness.selector !== "latest" && harness.version !== harness.selector) {
     return "explicit harness selector does not match resolved version"
@@ -343,6 +376,20 @@ const validateHarnessPackage = (
     return `${harnessLabel} package size is missing or invalid`
   }
   return undefined
+}
+
+const validateHarnessPackage = (
+  document: ProfileDocument,
+  current: ProfileLock,
+  platform: Platform,
+): string | undefined => {
+  const harness = current.packages.harness
+  const harnessLabel = harnessLabels[harness.kind]
+  if (harness.kind !== document.profile.harness.kind) return "harness package kind does not match profile"
+  if (harness.selector.length === 0) return `${harnessLabel} package selector is missing`
+  return harness.kind === "headlong"
+    ? validateHeadlongHarnessPackage(current, harness)
+    : validateReleaseHarnessPackage(harness, platform)
 }
 
 interface ArtifactValidation {
@@ -468,9 +515,19 @@ const validateCodexArtifacts = (current: ProfileLock, platform: Platform): strin
     : "Python dependency lock requires the Claude harness"
 }
 
+const validateHeadlongArtifacts = (current: ProfileLock, artifactNames: ReadonlySet<string>): string | undefined => {
+  if (current.packages.harness.kind !== "headlong") return undefined
+  const missing = missingArtifact(artifactNames, ["node", "uv", "rust", "rust-std-musl"])
+  if (missing !== undefined) return `required Headlong artifact is missing: ${missing}`
+  if (artifactNames.size !== 4) return "Headlong artifact locks require exactly node, uv, rust, and rust-std-musl"
+  return current.packages.python_lock_integrity === undefined
+    ? undefined
+    : "Python dependency lock requires the Claude harness"
+}
+
 const validateOtherHarnessArtifacts = (current: ProfileLock): string | undefined => {
   const kind = current.packages.harness.kind
-  if (kind === "claude" || kind === "codex") return undefined
+  if (kind === "claude" || kind === "codex" || kind === "headlong") return undefined
   return current.packages.artifacts === undefined && current.packages.python_lock_integrity === undefined
     ? undefined
     : "Claude artifact locks require the Claude harness"
@@ -631,6 +688,8 @@ const lockSemanticError = (
   if (claudeArtifactError !== undefined) return claudeArtifactError
   const codexArtifactError = validateCodexArtifacts(current, platform)
   if (codexArtifactError !== undefined) return codexArtifactError
+  const headlongArtifactError = validateHeadlongArtifacts(current, artifacts.names)
+  if (headlongArtifactError !== undefined) return headlongArtifactError
   const otherArtifactError = validateOtherHarnessArtifacts(current)
   if (otherArtifactError !== undefined) return otherArtifactError
   const runtimeError = validateRuntimePackages(current)
@@ -780,14 +839,25 @@ const extraPackageFields = (
   return { extraArtifacts }
 }
 
-const packageResolutionRequest = (document: ProfileDocument, platform: Platform): PackageRequest => {
+const packageResolutionRequest = (
+  document: ProfileDocument,
+  platform: Platform,
+  sources: ReadonlyArray<SourceLock>,
+): PackageRequest => {
   const claudeAdapter = claudeLockAdapter(document)
+  const headlongSource =
+    document.profile.harness.kind === "headlong"
+      ? sources.find((source) => source.kind === "harness" && source.adapter === "headlong")
+      : undefined
   return {
     kind: document.profile.harness.kind,
     selector: document.profile.harness.version,
     platform,
     packages: document.profile.image.packages,
     ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
+    ...(headlongSource === undefined
+      ? {}
+      : { headlongSource: { commit: headlongSource.commit, integrity: headlongSource.integrity } }),
     ...extraPackageFields(document),
   }
 }
@@ -810,7 +880,7 @@ export const compileLock = (
     const packages =
       reusablePackages(document, validCurrent, update, platform) ??
       (yield* resolvers
-        .resolvePackages(packageResolutionRequest(document, platform))
+        .resolvePackages(packageResolutionRequest(document, platform, sources))
         .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
     const base =
       reusableBase(document, validCurrent, update, platform) ??

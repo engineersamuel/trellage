@@ -512,6 +512,10 @@ const materializeClaudeMarketplaceAssets = (
   request: ClaudeMaterializeRequest,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
   Effect.gen(function* () {
+    if (request.lock.packages.harness.kind !== "claude") {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
+    }
+    const harnessVersion = request.lock.packages.harness.version
     if (request.sourceDirectories.length !== request.lock.sources.length || request.sourceDirectories.length === 0) {
       return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace sources do not match lock" }))
     }
@@ -574,7 +578,7 @@ const materializeClaudeMarketplaceAssets = (
         ),
         writeFile(
           path.join(seed, "default-onboarding.json"),
-          `${JSON.stringify(claudeDefaultOnboarding(request.lock.packages.harness.version), null, 2)}\n`,
+          `${JSON.stringify(claudeDefaultOnboarding(harnessVersion), null, 2)}\n`,
           { mode: 0o644 },
         ),
         writeFile(
@@ -593,6 +597,10 @@ const materializeHyperresearchAssets = (
     attempt("cannot create Claude materialization staging", () => mkdtemp(path.join(os.tmpdir(), "trellage-claude-"))),
     (staging) =>
       Effect.gen(function* () {
+        if (request.lock.packages.harness.kind !== "claude") {
+          return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
+        }
+        const harnessVersion = request.lock.packages.harness.version
         if (request.requirementsPath === undefined || request.browserAgentPath === undefined) {
           return yield* Effect.fail(new ClaudeMaterializeError({ message: "Hyperresearch runtime support is missing" }))
         }
@@ -682,7 +690,7 @@ const materializeHyperresearchAssets = (
           )
           await writeFile(
             path.join(seed, "default-onboarding.json"),
-            `${JSON.stringify(claudeDefaultOnboarding(request.lock.packages.harness.version), null, 2)}\n`,
+            `${JSON.stringify(claudeDefaultOnboarding(harnessVersion), null, 2)}\n`,
             { mode: 0o644 },
           )
         })

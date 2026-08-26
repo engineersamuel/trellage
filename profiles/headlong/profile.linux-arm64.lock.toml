@@ -1,0 +1,1713 @@
+schema = 1
+platform = "linux/arm64"
+source_date_epoch = 1784379906
+profile_hash = "sha256:487e58fd0c8c0779108228098e1f205842b7ceafd9b2aae1a9952088b7c7a50c"
+
+[[sources]]
+kind = "harness"
+adapter = "headlong"
+repository = "https://github.com/laude-institute/headlong.git"
+ref = "main"
+select = []
+commit = "b076bbf89aab696493c27b796e148dd7db3de10d"
+integrity = "sha256:073d18de0df866c0e50656cc0906825d6a6b199c362a0be1ecb84c80c4c8d92a"
+
+[[sources.files]]
+path = ".github/workflows/ci.yml"
+sha256 = "sha256:e2d6b601e5d5f7ff4d9aae0ca3e903cb0ce5833b75926d95522d4bbdc53cac00"
+
+[[sources.files]]
+path = ".gitignore"
+sha256 = "sha256:89e6a73807c2d317ea49c920087b28c73de9935022be7beadb560aba6c711685"
+
+[[sources.files]]
+path = ".gitleaks.toml"
+sha256 = "sha256:f289716e419bf534336db33b03827816837b22c885c9fdc9f535cb370914875e"
+
+[[sources.files]]
+path = "AGENTS.md"
+sha256 = "sha256:cb88981be5d131005055166542155bf30d2fd09bd91b104029275987d03d973f"
+
+[[sources.files]]
+path = "bin/chat"
+sha256 = "sha256:600e3873fbffc7dafc41e36a8aab8ded3257b229e20a1e701e77b2a58edea458"
+executable = true
+
+[[sources.files]]
+path = "bin/context"
+sha256 = "sha256:50c0fd2880c2eb7294ecb72c41e12b5cae1696985b830c26d9d136ff776c0a7f"
+executable = true
+
+[[sources.files]]
+path = "bin/focus"
+sha256 = "sha256:2957170e77e15658426733bc28b5a9907b53a5e27b2946de7a5a680a5d94610e"
+executable = true
+
+[[sources.files]]
+path = "bin/glob"
+sha256 = "sha256:b00f1e3e0eaef500a3c33f1274ff84211c7de0e0d806b90162d7c95e25b606ec"
+executable = true
+
+[[sources.files]]
+path = "bin/llm"
+sha256 = "sha256:8970c03788500468875417ae09e5388d49e2f4edf85fd1d97529ce90c694a291"
+executable = true
+
+[[sources.files]]
+path = "bin/mem"
+sha256 = "sha256:4d7bdff4ffb8810f358333eb6e65fd400fd7fda30620996711b5e4b40900b476"
+executable = true
+
+[[sources.files]]
+path = "bin/put"
+sha256 = "sha256:5643528078a720130099ab75c2726c136b3ebc8a84fe1e8d3b847174d5a35d8a"
+executable = true
+
+[[sources.files]]
+path = "bin/README.md"
+sha256 = "sha256:e4872be99927d8421135abd14cc74d177fe4d435d4c2699018258cece77646c0"
+
+[[sources.files]]
+path = "bin/recap"
+sha256 = "sha256:633594f9d39a6e1778db0bf370a604f95611c584099b7617a080472c728c49c2"
+executable = true
+
+[[sources.files]]
+path = "bin/shellm"
+sha256 = "sha256:cdf434cc14e79c18e14e664aeb4776661d2580e2f86a17cfd66fa157fe7dfd7e"
+executable = true
+
+[[sources.files]]
+path = "bin/shellm-docker"
+sha256 = "sha256:3fe5692e07eadf10e5bf4faf2e52a9430b7febac8886eb0595c045b069405de1"
+executable = true
+
+[[sources.files]]
+path = "bin/skills"
+sha256 = "sha256:93718bff0af1bfa026827ae4049853530d77d6a151a3396fc03ca8f10e5f5bdb"
+executable = true
+
+[[sources.files]]
+path = "bin/sub"
+sha256 = "sha256:9fcf39582c0eaae3f0ffb1feff3f2c05497fbddcfcef57b1c34863920215b317"
+executable = true
+
+[[sources.files]]
+path = "bin/thinkers"
+sha256 = "sha256:b89a786f22835a7144eda68f019d337fdab6c6fbe2dc27d9143f06998b789cf0"
+executable = true
+
+[[sources.files]]
+path = "bin/traj"
+sha256 = "sha256:afeacf8f7442c3c18dd6181f4e194abd4f4d7225b573f3a664358b941a61f633"
+executable = true
+
+[[sources.files]]
+path = "bin/view"
+sha256 = "sha256:8b2bd61ab410df8ba51c2e0c716b4227a2445d071173d481053fdc3847434009"
+executable = true
+
+[[sources.files]]
+path = "deploy/audit-headlong-signals.rules"
+sha256 = "sha256:72bd1215a89ed406e0208ffd3531508c2f79b2487e4a49a03e7f1ac9c1df0a03"
+
+[[sources.files]]
+path = "deploy/bootstrap-slack-identity.sh"
+sha256 = "sha256:d17e7415251366d8bbe286593689a69fa817fd76777e9de0ed4f7d4cfcb56063"
+executable = true
+
+[[sources.files]]
+path = "deploy/DEPLOY.md"
+sha256 = "sha256:0dccc3947a1e4b405229e8ca68cd768192b31d295e24ed4aecd6bf395ebe041c"
+
+[[sources.files]]
+path = "deploy/headlong-slack-agent.service"
+sha256 = "sha256:36cf59eb5f45ebc53502044b59c4051dfbc6ec345ef5efadc6a9f108139cae63"
+
+[[sources.files]]
+path = "deploy/headlong-slack-bridge.service"
+sha256 = "sha256:c9f7937fa539a5671410c4fdaea2248b7be43836ffd1c955689e31fe2dbac815"
+
+[[sources.files]]
+path = "deploy/headlong-telegram-bridge.service"
+sha256 = "sha256:bae15172c493516e4216b971f1538b3e731fa156b8b24b15acf80acbde905cf7"
+
+[[sources.files]]
+path = "deploy/headlong-thinkers-alert@.service"
+sha256 = "sha256:2576ce50afdd682d725207379d065257bf31cc98360c41466ccc48237af686ef"
+
+[[sources.files]]
+path = "deploy/headlong-thinkers@.service"
+sha256 = "sha256:4501890943caab1945d58fb57b46f33c909583de9ccfc6849b7a45bf81043161"
+
+[[sources.files]]
+path = "deploy/headlong-thinkersctl"
+sha256 = "sha256:70cf36acd9992b7bd48bb18b06da0a64d6f5b3dc3db6e4e5e022b77332dd57b5"
+executable = true
+
+[[sources.files]]
+path = "deploy/headlong-web.service"
+sha256 = "sha256:b582aaee5dd3dc933f1131ab90dfbd6d5c0dca64710c9455615abee906ec7f5b"
+
+[[sources.files]]
+path = "deploy/migrate-units.sh"
+sha256 = "sha256:a07c9939ad5e899bec21fb6acc2351c6bf2d4c3ebf848557c43f79bc766b6205"
+executable = true
+
+[[sources.files]]
+path = "deploy/MIGRATIONS.md"
+sha256 = "sha256:c69b955a3be06c401f465ba9c186d9935756b8b4421ffc71b50b1a27402ee491"
+
+[[sources.files]]
+path = "deploy/README.md"
+sha256 = "sha256:e7148537aa9e1c1186174572a13196d5c26a750f47a990b3fffd45d28dbb2cf8"
+
+[[sources.files]]
+path = "deploy/scripts/audel-commits"
+sha256 = "sha256:889967ffc47d902813b3cac1f0111ff03e93274d5490b329a8e8215abdfa956c"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/audel-export"
+sha256 = "sha256:9704fe04e297515c46a49cc383192b99dc2e3ac5a3aff8fcd7f3f8786e350e19"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/audel-metrics"
+sha256 = "sha256:96092a92d3b96aaa71da90b60926679868833d0f151225285327d12170c846ff"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/audel-metrics-render.py"
+sha256 = "sha256:c5fb762111739b65a33793a39044d68bec541b319f98e1bcc6750e8b78db0316"
+
+[[sources.files]]
+path = "deploy/scripts/audel-rlm"
+sha256 = "sha256:5c056aea5a2fe0eb3e4a49b9b54fb6d5f3714986b887752928e282a4e31458c3"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/audel-rlm-extract.py"
+sha256 = "sha256:37c298537293597df26f4fd81f312b80c4c7197ce9a04c10ec80251a130584ae"
+
+[[sources.files]]
+path = "deploy/scripts/audel-stash"
+sha256 = "sha256:4ceb931f81f422c5a7c3817416763eb087d16223259d52c1aa28455815ac96d4"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/audel-usage"
+sha256 = "sha256:b3a9e0c3d26764f02b2515cb7ca3276a754e0f5381f0d450a71ee3f43c80ac2b"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/audel-usage-render.py"
+sha256 = "sha256:9846c1e0eaaee937c0670b01e1dc6d501711b003d24c597a157c01276bb1b83a"
+
+[[sources.files]]
+path = "deploy/scripts/env-push"
+sha256 = "sha256:a95695cb5bb5e2f7ac3e3267162a19c18eb6c455d47f1fa87831f52b4ca8f60d"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/lib.sh"
+sha256 = "sha256:36104d6d29d9ba47bab9057b02debfb544de4f653e1991c7df280486698817c3"
+
+[[sources.files]]
+path = "deploy/scripts/pull"
+sha256 = "sha256:e497fd720c5834904903e884f2e43aba5b8002392dcea946d2ee7abd4992230f"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/rebuild"
+sha256 = "sha256:b978e308becfee7d65bb2dc89acd504c13c6240a9180bdb8b6a9d63f9ed91792"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/run"
+sha256 = "sha256:b33640642e3eaf980ebf2c261f1bb6e3b066c5fd7f111d5faa3899df8f6a554e"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/shell"
+sha256 = "sha256:f7254abf35e02de58b1ac7e723751e32d2d31b1efe48bfba27f4c4f1a5a74d2c"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/start"
+sha256 = "sha256:5b75f703b0102bd17fe893b4b37f067b56b0844e0ccc0809136e9a700d67f968"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/status"
+sha256 = "sha256:fc9e9b7730dce9aca5a818661c3611cf32dd2ee5789cac94ee4e7862f402f318"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/stop"
+sha256 = "sha256:e13950c9227bce61c2261d020a9247a89f402d1b248cebe4b7899ec04c64a8ed"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/telegram-env"
+sha256 = "sha256:b27aab468c4eb83c4da21c4ddd49ae55a411a3652f7d0e7f621cb94c4626c89f"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/update"
+sha256 = "sha256:3772173f7d27baa24986c1496b9640d133a57058c8cd27f315526c7ff7e8e496"
+executable = true
+
+[[sources.files]]
+path = "deploy/scripts/watch"
+sha256 = "sha256:081e83f984ddb71aeecc75bdd5af8cc70480ed69fa089cd81ce02ba62531eea2"
+executable = true
+
+[[sources.files]]
+path = "deploy/SECURITY.md"
+sha256 = "sha256:96bf067acfdf10c29a3c9b7e02dcf0d8a96e2a15c3110e5b9c9bd2fd313f8eaf"
+
+[[sources.files]]
+path = "deploy/setup.sh"
+sha256 = "sha256:d12ced542e38fc9d59abfe6dca98bf7becf61158328625dd588c85288816ab94"
+executable = true
+
+[[sources.files]]
+path = "deploy/slack-persona.md"
+sha256 = "sha256:9c282115757112c5cc7ea47fd3a64c33904baf2b7a607df1796d326c66a33ac2"
+
+[[sources.files]]
+path = "deploy/sudoers-headlong-thinkers"
+sha256 = "sha256:725c7f2a901fea432b467e027b3d36e803e218a563e594760fb62a0d62e2e8d8"
+
+[[sources.files]]
+path = "deploy/terraform-slack/.gitignore"
+sha256 = "sha256:46f6aded5432f06120a6f08672b02e61a192ea1304ccf64b1ca2a738baf28890"
+
+[[sources.files]]
+path = "deploy/terraform-slack/alerting.tf"
+sha256 = "sha256:506d4814ee2800794f777d69e37469c2b50511dd978f1e0b05aa7756280ab5a7"
+
+[[sources.files]]
+path = "deploy/terraform-slack/aws-policy.json"
+sha256 = "sha256:f8042ce74d30b1aa4829ecbd9736ced727e3acc8b88400ac5815700b452f63bb"
+
+[[sources.files]]
+path = "deploy/terraform-slack/env.sh.example"
+sha256 = "sha256:11da989ac83f20e7f505d8b369a4dd716f481ec20f2bf94b7e6a60c57186d59e"
+
+[[sources.files]]
+path = "deploy/terraform-slack/envrc.example"
+sha256 = "sha256:b68e7f652adcf2115e81311471e9b2d35989f150c2c1516c98a642f26d351dba"
+
+[[sources.files]]
+path = "deploy/terraform-slack/lambda/slack_alert.py"
+sha256 = "sha256:8a50a7f1b1e10ec7c6910f13fda16932ebc8ae0dc9d81a89cd4223bf30f9c212"
+
+[[sources.files]]
+path = "deploy/terraform-slack/main.tf"
+sha256 = "sha256:0d45c4866647a64f40dadfb0a1f727362410af95b68004ddf0f8e34c0e1856e4"
+
+[[sources.files]]
+path = "deploy/terraform-slack/outputs.tf"
+sha256 = "sha256:b41589646baef4068754633b1c1a80666d2694be1d719fde72ec171f0c69a7e1"
+
+[[sources.files]]
+path = "deploy/terraform-slack/README.md"
+sha256 = "sha256:dc7f71a1b0f88b3cac22ea5e2068db2aa7ce248ea4a597dfb0f68114a69068a8"
+
+[[sources.files]]
+path = "deploy/terraform-slack/terraform.tfvars.example"
+sha256 = "sha256:39f09febfe76a4caed39fbe815bd04aebb94f3e0dc609c55a7271fe44c358486"
+
+[[sources.files]]
+path = "deploy/terraform-slack/user_data.sh.tpl"
+sha256 = "sha256:fa3652ad967a70c22a3b13cc93f8c0ff055671d3aca5bfa9c4e4ac9a82dbc8a2"
+
+[[sources.files]]
+path = "deploy/terraform-slack/variables.tf"
+sha256 = "sha256:9b7bb65390bc83bb64691fadca9820b8dc811252ecd57bfb638f1b3c0f419efb"
+
+[[sources.files]]
+path = "deploy/terraform/.gitignore"
+sha256 = "sha256:44bb4332483211e16eefb5cd74a7c48bd027c7772a0d45be430544644533748b"
+
+[[sources.files]]
+path = "deploy/terraform/aws-policy.json"
+sha256 = "sha256:f8042ce74d30b1aa4829ecbd9736ced727e3acc8b88400ac5815700b452f63bb"
+
+[[sources.files]]
+path = "deploy/terraform/env.sh.example"
+sha256 = "sha256:11da989ac83f20e7f505d8b369a4dd716f481ec20f2bf94b7e6a60c57186d59e"
+
+[[sources.files]]
+path = "deploy/terraform/envrc.example"
+sha256 = "sha256:c59ece1921a124f305bdcdef817d0e3dc6c97fc87ce9f61c92a985b16f6d1935"
+
+[[sources.files]]
+path = "deploy/terraform/main.tf"
+sha256 = "sha256:df5b6556e202c844235ae0dbecb51bfde827358a97e29d77a19a4cad8db23f76"
+
+[[sources.files]]
+path = "deploy/terraform/outputs.tf"
+sha256 = "sha256:3fa0d743af04dd5787e8cb1a45ff17a3ff7ee1c090a395fb9bf7ab870155ac2d"
+
+[[sources.files]]
+path = "deploy/terraform/README.md"
+sha256 = "sha256:2c0670621ae344c318105e03f6db3da883d32c4b1b9daf2de022b3967e668318"
+
+[[sources.files]]
+path = "deploy/terraform/terraform.tfvars.example"
+sha256 = "sha256:088e0fbc48135e9710b892c944d38236fcb35547a5203fcba69bb704450d644e"
+
+[[sources.files]]
+path = "deploy/terraform/user_data.sh.tpl"
+sha256 = "sha256:8b8185dab986d2ed7d24dbf0e2367d89b0364243e4025bcdd08363cd8744bfec"
+
+[[sources.files]]
+path = "deploy/terraform/variables.tf"
+sha256 = "sha256:f296c46f673509f9663c49508686eafe68181b38ce08dfdc16133d39fd14e2a8"
+
+[[sources.files]]
+path = "deploy/thinkers-death-alert.sh"
+sha256 = "sha256:79a5137ec6b56b23ecc2766ce4285435ca7f10e93a09f5d36c0b7156e5febef3"
+executable = true
+
+[[sources.files]]
+path = "deploy/thinkers-failure-alert.sh"
+sha256 = "sha256:cbc660fbf1ba31e2f6153f196753f28b6886072f4fabe4b9ea79f251a8eda809"
+executable = true
+
+[[sources.files]]
+path = "deploy/thinkers-service.sh"
+sha256 = "sha256:19e36f2d76184d88b47a9142c3acdde1fae17eec08c6fb54b55dc22a5ce75fb7"
+executable = true
+
+[[sources.files]]
+path = "deploy/update.sh"
+sha256 = "sha256:4314c4f98683e7b66cc585ae257f6533aaeb261060dcaa497a28e4d78b6cd551"
+executable = true
+
+[[sources.files]]
+path = "design/agent-native-docs.md"
+sha256 = "sha256:dbed7e59a8499caad5099f348e2548eb92a09a28f229aa6ae01393918331f0b7"
+
+[[sources.files]]
+path = "design/context_assembly.md"
+sha256 = "sha256:65d14f911e1e3e413ab8a74094b0d5f9ba1d9d4ea9c1897325f1203c029a36eb"
+
+[[sources.files]]
+path = "design/headlong.md"
+sha256 = "sha256:49e7d166923f90245937ec9cab064efed27d3d5dd329e09605d447af9f03bdd3"
+
+[[sources.files]]
+path = "design/macos_client.md"
+sha256 = "sha256:978b5f45e2bf65a973939997d649f2fe1bb05f0a11faee131c2938be310b7c55"
+
+[[sources.files]]
+path = "design/model-resolution.md"
+sha256 = "sha256:ceaa8f8bda74d26e7a263e1780fe875187fb8ff3b69b189ad1714612048db8a0"
+
+[[sources.files]]
+path = "design/monolith_backoff.md"
+sha256 = "sha256:6d3f9e5a10ea24cce61729e64e97224a2d181b4951b4959da91cfa19b8b583a1"
+
+[[sources.files]]
+path = "design/monolith_run_health.md"
+sha256 = "sha256:02a31615b2a6fa19d98ab1173e0dfd8832a378fe6b98f66fe86275d76b3f61c3"
+
+[[sources.files]]
+path = "design/monolith_thinker.md"
+sha256 = "sha256:4e2bfa89faf81522e9d87b6d0b8b20c3e82722d4890e12d26a59e0436496d4d7"
+
+[[sources.files]]
+path = "design/porting-shelly-to-be-headlong-like.md"
+sha256 = "sha256:14c273e259469b58f18048d435fd4e5115af5d8eb67a78ef89c161b9fba2b4f2"
+
+[[sources.files]]
+path = "design/README.md"
+sha256 = "sha256:01ba87c8fc318da3bbe97809c112751c4ffdd369050404e75b8ca47bf039016a"
+
+[[sources.files]]
+path = "design/recap.md"
+sha256 = "sha256:ba4a589f43bb31e97bfdf8029dbceb021f3e48329fea856737e2d5429b1f7376"
+
+[[sources.files]]
+path = "design/responder_thinker.md"
+sha256 = "sha256:2b4a9cc24721636f11f9d9c64c5d5b4b7352e45f50e2fa563fe228dbeef5af96"
+
+[[sources.files]]
+path = "design/thinkers_revamp_plan.md"
+sha256 = "sha256:93a4ce62336b7fa06f59b8ee0cacc85be52ab7193706f52eced39d2fbcc0fe8d"
+
+[[sources.files]]
+path = "design/THINKERS_spec.md"
+sha256 = "sha256:a775b31c144027ac03c7afcfbf09478e0ccde73d9c23c4f8dabe7d0f8c74fef8"
+
+[[sources.files]]
+path = "design/tiered_memory.md"
+sha256 = "sha256:61ee85c1ad6da55ca36946eecbce5a687e5d697429f8e18c44738686ce21be43"
+
+[[sources.files]]
+path = "design/trajectory_spec.md"
+sha256 = "sha256:7a40a5d2a6fa95f211213c4c6159cb92470568d5cac46efa0f20b65a78e24409"
+
+[[sources.files]]
+path = "design/unified_progressive_resolution_memory.md"
+sha256 = "sha256:f5fb7a375d0a4f0637850b541b7508b50e81504f79836758f7447e2f7c2ef053"
+
+[[sources.files]]
+path = "docs/install.md"
+sha256 = "sha256:2d79add5b69128b4f6fe429bdeea69dce930f3abb300e92fd657e377fc2e3060"
+
+[[sources.files]]
+path = "docs/README.md"
+sha256 = "sha256:58919555fd5b5a6fe066bfb6036ddb9f3868aeadc799cc16f2546f2bd9a63a4e"
+
+[[sources.files]]
+path = "docs/RELEASING.md"
+sha256 = "sha256:e79784c431ffb248e429cf4838f126d7dccb2ac3c8a1aa0cf09dc64f27a80523"
+
+[[sources.files]]
+path = "docs/shellm.md"
+sha256 = "sha256:9c2d59c84761fa5475394510acdc7d4ce2e5897c0d3d98439a3ed24eb5ef39c7"
+
+[[sources.files]]
+path = "identities/README.md"
+sha256 = "sha256:9d05a3796bc13afd3619bbcd9465cbfc641d0fc0f711c9b0f109ee93890809f5"
+
+[[sources.files]]
+path = "identities/starter-persona.md"
+sha256 = "sha256:865405ab425f594072a6f3cb723489262820250d2f5e32650cf724b5e106d610"
+
+[[sources.files]]
+path = "install.sh"
+sha256 = "sha256:00effb9fe36edc86950e3efdf9b561f1b214084ebf1addf40aa909b74285594e"
+executable = true
+
+[[sources.files]]
+path = "LICENSE"
+sha256 = "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+
+[[sources.files]]
+path = "macos/README.md"
+sha256 = "sha256:5cb2a5d5a308503dfddda7eba5a3fa0a03b37576064813cf76f7869499ecb277"
+
+[[sources.files]]
+path = "macos/Shellm/Info.plist"
+sha256 = "sha256:b629485824f59e5b48351d96761d72c86cdca513b287636288bd593ca2926c70"
+
+[[sources.files]]
+path = "macos/Shellm/main.swift"
+sha256 = "sha256:81ef8cb9c23503f73bbb8e84f2be10d8383e7616645584100de23274cd75b9db"
+
+[[sources.files]]
+path = "macos/Shellm/Makefile"
+sha256 = "sha256:bc66300433bbb1cc5ae8b0b8d4e13880f61ca255d8080ba5da68f77ed04fd40d"
+
+[[sources.files]]
+path = "philosophy.md"
+sha256 = "sha256:d2e466bc23927784cb29e79b056aedc2fe41b9b09d84fd5d386aeab50f215372"
+
+[[sources.files]]
+path = "README.md"
+sha256 = "sha256:359ba645c7f366d4c3f70f55b76c15209fd5b74e92b9a6d3a1849460a99e519a"
+
+[[sources.files]]
+path = "skills/chat/SKILL.md"
+sha256 = "sha256:c886c9088db71c818a9726cc809c049f47b55066dbbeee05acedf2ae5d40c140"
+
+[[sources.files]]
+path = "skills/file-tools/SKILL.md"
+sha256 = "sha256:d895c2d1b2dcbb12c45a64371fb3221f880774321856ba4168dfe2fee8decab7"
+
+[[sources.files]]
+path = "skills/goals/SKILL.md"
+sha256 = "sha256:3c1fa355a2fed0af7b1ac5d451eb2435c5b59442d81f22683a71fdf2d09c8051"
+
+[[sources.files]]
+path = "skills/googleworkspace/SKILL.md"
+sha256 = "sha256:8520c992cc3684c5a472e8975aa0f8b4dc9ba35e72a0b51b3f9751328252e32d"
+
+[[sources.files]]
+path = "skills/mem/SKILL.md"
+sha256 = "sha256:91420bf33dae9b7468b66aa7dbcba7cae68391dedf8063e90b6fe2c9b9621bad"
+
+[[sources.files]]
+path = "skills/obsidian/SKILL.md"
+sha256 = "sha256:466c250a5dd7680f9c3e013b55344792e1298374a6e2940059475237e8253752"
+
+[[sources.files]]
+path = "skills/README.md"
+sha256 = "sha256:863f2782d85eacbb645ed64d4daee8ddc420829e56df99d5ef125c5cedbd5d2d"
+
+[[sources.files]]
+path = "skills/shellm/SKILL.md"
+sha256 = "sha256:ad6ec193260ebbbdae20d0eff26a6ee63fcf238d6dbe039b0816fdef0d999f65"
+
+[[sources.files]]
+path = "skills/skill-author/SKILL.md"
+sha256 = "sha256:f54b6db8341cb10ab1028cd650a19943c2a7e43b04c70da68e59dcedb5bf1bc6"
+
+[[sources.files]]
+path = "skills/slack/SKILL.md"
+sha256 = "sha256:8034be6f8dca481aafdb077189677698063a0259790ff24c8b267bdd3e986eed"
+
+[[sources.files]]
+path = "skills/telegram/SKILL.md"
+sha256 = "sha256:f951ce72fc336fad891d0e4be3528868774ec9b6aa6fc000998e3fc580820570"
+
+[[sources.files]]
+path = "skills/web-research/SKILL.md"
+sha256 = "sha256:51cee33b3adda117032855ca4243a322e3302be1d915f132a5817f0eef188352"
+
+[[sources.files]]
+path = "slack/.gitignore"
+sha256 = "sha256:3dab993101ad7595379da5ae408c09d80f1a43389413da699206e829af008607"
+
+[[sources.files]]
+path = "slack/manifest.json"
+sha256 = "sha256:adec1bc996a471b55698c642f10117d6611cdb1619c88bcf1c0a7ddd34761652"
+
+[[sources.files]]
+path = "slack/PLAYBOOK.md"
+sha256 = "sha256:4b4cea28ccb42573c2fee4d22d90ed095cbe45769d78ecc5fc38940c1a576a8c"
+
+[[sources.files]]
+path = "slack/pyproject.toml"
+sha256 = "sha256:87b7ffcfbf2a99a5fe39ea9384328202a4dc5db16fac61c4cd4396593ae21e17"
+
+[[sources.files]]
+path = "slack/README.md"
+sha256 = "sha256:21c4d381f59a33dabeefc20fcdebc709533de3b49bb89238be0dc1c8e23199b3"
+
+[[sources.files]]
+path = "slack/slack.json"
+sha256 = "sha256:c11671a0d42547c1c2d44a0dfd6166b75732c535446c54b904ac25fb19ea4287"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/cli.py"
+sha256 = "sha256:95fb8f89517caa6c46682878337e451dc6ccc843150c3aeacf99cb10bdfb207a"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/config.py"
+sha256 = "sha256:91e29a32d1a46f40b31612a1f4b399066db264f14387a8b29cedc4e111fb2a1e"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/inbound.py"
+sha256 = "sha256:8f725bf6f52a329edb25c41eaf550edff9b304b7a485e251b30cf76b0d46569c"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/mindlog.py"
+sha256 = "sha256:b7fe3dde47b633a28375c44d0c295411c8ccc7789b973fe10075d8b3fef6ad34"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/naming.py"
+sha256 = "sha256:9ff75922af827f54b65fff82ba5ecdb23d16dd52611eb67f5c4c488a93d57781"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/outbound.py"
+sha256 = "sha256:489da449ebfb860f3e270b4276072c0f828daeb09dde5b86e4ef15a9fa3aac32"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/slackfmt.py"
+sha256 = "sha256:ef0b8aa032631c4e622d329f26017cac21c192e066ef2919c5fc11f38b425f8d"
+
+[[sources.files]]
+path = "slack/src/headlong_slack/state.py"
+sha256 = "sha256:3bd908d22a4760acfc070321c4ba345ff071cbcc28f894119d91b54c426b9976"
+
+[[sources.files]]
+path = "slack/tests/test_mindlog.py"
+sha256 = "sha256:e28c47941355b2d03b65665f1dcbfb98746f607dee9d5c14e6370041997bc60b"
+
+[[sources.files]]
+path = "slack/tests/test_naming.py"
+sha256 = "sha256:be840148eec7472a8c50a1d12d1dbf72244727045f97b7e5d1ae910169e7e373"
+
+[[sources.files]]
+path = "slack/tests/test_outbound.py"
+sha256 = "sha256:8f2ac89ec5c703b9fb6f5ab1f008e013c17a7c729136eb64bbbf6eaba5a2c7ed"
+
+[[sources.files]]
+path = "slack/tests/test_slackfmt.py"
+sha256 = "sha256:ad65e15f2a09b3539602e1688345cbe6cdee9444f7fefb529bd04eeb5a4e3b9d"
+
+[[sources.files]]
+path = "slack/uv.lock"
+sha256 = "sha256:e731614d0250035a70b957257c6e3f8ae6ff081c369610eacc969cee1963763e"
+
+[[sources.files]]
+path = "status.sh"
+sha256 = "sha256:1204545edec8d9477a586429dddd4a0a8b3668a29259f0359ac26e0c0af14b16"
+executable = true
+
+[[sources.files]]
+path = "telegram/.gitignore"
+sha256 = "sha256:08239aadebf9a9b105e2efecca3129f9198067993418529ddc8117d41997b7ec"
+
+[[sources.files]]
+path = "telegram/pyproject.toml"
+sha256 = "sha256:6d4d3e0951bcc9ee2dde31ba32d7e16bea0ac51776da5fc8c005c4093f0e6fc7"
+
+[[sources.files]]
+path = "telegram/README.md"
+sha256 = "sha256:a3cbbada10cb99345958534c9a10af3c9a2cfb9acef37165c90a2d14288f906a"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/__init__.py"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/allowlist.py"
+sha256 = "sha256:66890c0aff7d8c5512bc4ebf145030fb8ebb135ae6a175e01f09b4c625288119"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/api.py"
+sha256 = "sha256:8320d27e06a966c80dee39b2c09a86831621a0c35a52d8fc682055b8700f031f"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/cli.py"
+sha256 = "sha256:d2de1326f8995a164a8ee4811b00c256c5adfeec78123cd8e290cdd72831ba0c"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/config.py"
+sha256 = "sha256:52bd167ae623e7452950f818097d4b8ea2bd169860fbd263d8756cc73c06f27b"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/inbound.py"
+sha256 = "sha256:a5aa24d980d2034cc28fd2a25cc1b2312ffdd3d2c64ab1ba8f8dce1d799ee639"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/mindlog.py"
+sha256 = "sha256:b22db4234454ac6ee854c8ff06547fb5b252460b101cf2b4569317142101f923"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/naming.py"
+sha256 = "sha256:84d7189ffc5bf485b678ebe7e5bd86b5ef073fe898ecfc2f8a82abf428ac3bd4"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/outbound.py"
+sha256 = "sha256:c5a66e6adf2877b2de45318a0c68fc7b3006a6337ef70cefd14831faecf6c44b"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/state.py"
+sha256 = "sha256:33a963e483e7ff92abbe2ce0c2b2fd4cc0a9ee50252b9f3d11b921e1183f0d73"
+
+[[sources.files]]
+path = "telegram/src/headlong_telegram/tgfmt.py"
+sha256 = "sha256:4733ba2a07b8a9550ff09597379b60ccd328abad14694419899bc7590881170d"
+
+[[sources.files]]
+path = "telegram/tests/test_allowlist.py"
+sha256 = "sha256:3088f8578cce8ca9eb08f4751202779803d460fd61879fbed0e50cb720612e83"
+
+[[sources.files]]
+path = "telegram/tests/test_api.py"
+sha256 = "sha256:31f6608ca92d5ff2193518a6dd5fd6cf77733bf112cac782c4834d8374d0ecf9"
+
+[[sources.files]]
+path = "telegram/tests/test_inbound.py"
+sha256 = "sha256:ce39b7200cdece87d79210e4861ae3c609ea410605ddb3381862ec9c29f9f1d1"
+
+[[sources.files]]
+path = "telegram/tests/test_naming.py"
+sha256 = "sha256:f1afd7bbd94f26e3ee40f8b72978ed2cbc9d55ad8f24d66d6fa3da3f0ff6defd"
+
+[[sources.files]]
+path = "telegram/tests/test_outbound.py"
+sha256 = "sha256:c62359afb9f5417a86ebf8cbbf6330d8315fb077f3ea85578e1be20e53466f35"
+
+[[sources.files]]
+path = "telegram/tests/test_tgfmt.py"
+sha256 = "sha256:aab15f5e045af49adbe3c79537c6c3fddead3928a418a8e5fc98c57e687ae676"
+
+[[sources.files]]
+path = "telegram/uv.lock"
+sha256 = "sha256:28d010fdf4d8a91145f7dcf194a08d44ced5173972a074a3e065f912e8b1c79b"
+
+[[sources.files]]
+path = "terminal_bench2_eval/failure_analysis.md"
+sha256 = "sha256:7f21fa9bf6cb48e79b5fd5588f4d75eb6c0e423035671ca8f8611df8a5ccdf17"
+
+[[sources.files]]
+path = "terminal_bench2_eval/harbor_assets/run_full_eval.sh"
+sha256 = "sha256:6c74c879c173c3ce260c6d45414d1fbd0039213bc27f3db9d216f3c209f3394b"
+executable = true
+
+[[sources.files]]
+path = "terminal_bench2_eval/harbor_assets/run_headlong_eval.sh"
+sha256 = "sha256:82713c0c68b069f90a086bb14fbb9e3ec9150e980aa2c34c4c38dc6cccf94fa2"
+executable = true
+
+[[sources.files]]
+path = "terminal_bench2_eval/harbor_assets/shellm_prompt.j2"
+sha256 = "sha256:e06f2b6990f1cdca45efa14c3f830ca173492f87f0ddae4b861d102504e84079"
+
+[[sources.files]]
+path = "terminal_bench2_eval/harbor_headlong_agent.py"
+sha256 = "sha256:294ef3e98fc396fccac303cbf0833bc259ca0b210f99a88df918abc269ae756d"
+
+[[sources.files]]
+path = "terminal_bench2_eval/harbor_headlong_environment.py"
+sha256 = "sha256:ba1e0155de01b1601f220338c17a18fca48ef4f43806b2c7a3ec474694511502"
+
+[[sources.files]]
+path = "terminal_bench2_eval/harbor_shellm_agent.py"
+sha256 = "sha256:bf618ddb1312482e98271b131c21b9342b13aa87a9f8affa162f72904e3bf2ab"
+
+[[sources.files]]
+path = "terminal_bench2_eval/headlong_tbench2_report_v2.md"
+sha256 = "sha256:2f00bedd6403d35037a2a2614ceb2b0f8550859e0cc80eb0f5f676cbfbca8137"
+
+[[sources.files]]
+path = "terminal_bench2_eval/headlong_tbench2_report.md"
+sha256 = "sha256:ffb44c293e13e6e79832cfff0d7b565dc1a97bd2d1e56efaf4dc961ce3153bc2"
+
+[[sources.files]]
+path = "terminal_bench2_eval/README.md"
+sha256 = "sha256:5e3e5450110a25820504c38cc1dee166e9df6f2f3754deead3df018990731c16"
+
+[[sources.files]]
+path = "terminal_bench2_eval/tbench2_report.md"
+sha256 = "sha256:8301a19204ec129c7b2b35bd3d8c86f27fa9b5de76ccaa8d4bb630c192575730"
+
+[[sources.files]]
+path = "tests/fixtures/basic/trajectory.jsonl"
+sha256 = "sha256:9e809f1798155bd8b08ec834635a354d2ad418d811e156df4e23d4a4ef6b9c15"
+
+[[sources.files]]
+path = "tests/fixtures/blobs/blobs/b1.stdout"
+sha256 = "sha256:c2a63a31e0150346bec0fe5c23eac81c857bc05e56a70f6f277ddfa35efb9ce6"
+
+[[sources.files]]
+path = "tests/fixtures/blobs/blobs/b2.stderr"
+sha256 = "sha256:6b123593c8cd1b0a02af3a8ac869dac8771cda8d4e37e753b7e814e6f45537e0"
+
+[[sources.files]]
+path = "tests/fixtures/blobs/trajectory.jsonl"
+sha256 = "sha256:d8b42ed97c2b545eecc4b029b0dd071eb0cdd0c9400adec4b8e8aabd1e1dd175"
+
+[[sources.files]]
+path = "tests/fixtures/empty/trajectory.jsonl"
+sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[[sources.files]]
+path = "tests/fixtures/junk/trajectory.jsonl"
+sha256 = "sha256:f8403fa59f6c100a062cd64713c6d0f265033a59cb46e9eadfa333ad75cedbdc"
+
+[[sources.files]]
+path = "tests/fixtures/multibyte/trajectory.jsonl"
+sha256 = "sha256:98ae00103357aafaa3a80c159476d4aff449b1032cf1248f98f35dc2f36cce53"
+
+[[sources.files]]
+path = "tests/golden/budget_basic.out"
+sha256 = "sha256:187da95add0c6b652a49964f74104b53488f3aeed0b0ad5fa1bac7b9fa8c22d2"
+
+[[sources.files]]
+path = "tests/golden/default_basic.out"
+sha256 = "sha256:5cd5a1bcf34fb1dadcd3121a333b1ad6d3ae4e509fc4f15c1b258cb88f1f7e42"
+
+[[sources.files]]
+path = "tests/golden/default_junk.out"
+sha256 = "sha256:bafb0a1b4f2afb79ec20bc2e64fc7cb8171982bf427b47702f996e39b0b93ba3"
+
+[[sources.files]]
+path = "tests/golden/elnone_basic.out"
+sha256 = "sha256:1ff81408780b116d6838329ada76723e287eb8679a2844612d7208e16d4046c0"
+
+[[sources.files]]
+path = "tests/golden/headtail_basic.out"
+sha256 = "sha256:cc7e77d28a0d7b068d1a5f0ef380c95cce26ae64f28ccece1dcb5a423061ff85"
+
+[[sources.files]]
+path = "tests/golden/pin_basic.out"
+sha256 = "sha256:9fe96f39648f4ae983b5a71a18013d88371ef78c1f215e2f76f43bb18fb042b5"
+
+[[sources.files]]
+path = "tests/golden/prod_basic.out"
+sha256 = "sha256:940920991f05952ae12ff22a5890511a27abdd819d3e3100164eb27c89b4b9fc"
+
+[[sources.files]]
+path = "tests/golden/prod_blobs.out"
+sha256 = "sha256:f8ed96bd43126f249a57b9820c90f343c0c5a0e119c4d24cdc37675679ea2b94"
+
+[[sources.files]]
+path = "tests/golden/prod_empty.out"
+sha256 = "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+
+[[sources.files]]
+path = "tests/golden/prod_junk.out"
+sha256 = "sha256:bafb0a1b4f2afb79ec20bc2e64fc7cb8171982bf427b47702f996e39b0b93ba3"
+
+[[sources.files]]
+path = "tests/golden/prod_multibyte.out"
+sha256 = "sha256:0ae6d4fde9a3cd791a1a39771f404dcda36a38ca7839c6f314040ea33500c8db"
+
+[[sources.files]]
+path = "tests/golden/trunc_basic.out"
+sha256 = "sha256:792563e5608ece075b629656667987d4a44ff9307df499c7e8b83dcd43e0aca2"
+
+[[sources.files]]
+path = "tests/golden/trunc_blobs.out"
+sha256 = "sha256:af29ae2ecc78465ac6e276ff7d062e2539aedf6875ec9752ee0184312348923e"
+
+[[sources.files]]
+path = "tests/golden/trunc_multibyte.out"
+sha256 = "sha256:81acc340af0b7f69d5078a08293363f3e470f0a8fdb0f85cceb687475de14d29"
+
+[[sources.files]]
+path = "tests/README.md"
+sha256 = "sha256:93c12383b3cbdbce9227c4ed9af6b959864755687d1752bf3171356e3c5ad90a"
+
+[[sources.files]]
+path = "tests/run-all.sh"
+sha256 = "sha256:52132d8edcf93110cde448700062ebc2e88a33ef1ae3746d70b2735a7eeedeb4"
+executable = true
+
+[[sources.files]]
+path = "tests/smoke_install.sh"
+sha256 = "sha256:709b51ae79e9c72197c09069a27bf6254f98a5ad0f864a9c39dffbc54536825a"
+executable = true
+
+[[sources.files]]
+path = "tests/test_context.sh"
+sha256 = "sha256:b1febbcba33800db525e2cd704d73e29db8b95adc132bdffae29c64d431305ce"
+executable = true
+
+[[sources.files]]
+path = "tests/test_identity_export_import.sh"
+sha256 = "sha256:e01668b7370c27629783519b39dd7f0b873fa78f2ead71062962efcfaa4cdfd8"
+executable = true
+
+[[sources.files]]
+path = "tests/test_identity_sync_thinkers.sh"
+sha256 = "sha256:5abe440bf42db949f91c281433bd236034aa3c09a01950788e40e409823396f8"
+executable = true
+
+[[sources.files]]
+path = "tests/test_inactivity_beacon.sh"
+sha256 = "sha256:56373773b21256ee558e792ac1acbc03ecefadb4f06fe32c07d260ab1b1c5790"
+executable = true
+
+[[sources.files]]
+path = "tests/test_llm_provider_env.sh"
+sha256 = "sha256:25941b72212c66b524f8e29daa351f2832652ed79f6aa2d4d877f0516b35d11c"
+executable = true
+
+[[sources.files]]
+path = "tests/test_llm_retry.sh"
+sha256 = "sha256:8de540dff73879730755df51c89ac119b12a7ae4886992bb5bf9de0c71e0f013"
+executable = true
+
+[[sources.files]]
+path = "tests/test_mem_frontmatter.sh"
+sha256 = "sha256:1365dbcdf1661134c27150ffff29eb5b76a3b430d4531d63ef62fe60d7b09d04"
+executable = true
+
+[[sources.files]]
+path = "tests/test_monolith_backoff.sh"
+sha256 = "sha256:8942d4efe9f3342ef383654ed54fff66c879b7a7820cb996f8700626dca17308"
+executable = true
+
+[[sources.files]]
+path = "tests/test_persona_bugreport.sh"
+sha256 = "sha256:06359ddf88d1c907464e95adbe44de3eb50b76ec30276068b1a31471ba3130dc"
+executable = true
+
+[[sources.files]]
+path = "tests/test_prompt_file.sh"
+sha256 = "sha256:63abe6a54746c48f7b0495d978b003739653a01270b511084153f744f99ac444"
+executable = true
+
+[[sources.files]]
+path = "tests/test_recap_context_upgrade.sh"
+sha256 = "sha256:82d5c14f27c1d87bfa41c8ca90ea206d70269f1acae849a504059a1ef6429f82"
+executable = true
+
+[[sources.files]]
+path = "tests/test_recap_render_cache.sh"
+sha256 = "sha256:a985a88b72a4257f1e2b100c51f26df8dfdd712605972279747d36a08e1f3970"
+executable = true
+
+[[sources.files]]
+path = "tests/test_recap.sh"
+sha256 = "sha256:3c231942746bd02e68461fe43b87cb4c8b21e171b6627f96a9e43d04dd3af668"
+executable = true
+
+[[sources.files]]
+path = "tests/test_responder_idempotency.sh"
+sha256 = "sha256:cf21351496b0255ec2a4a581d8c191ae43ee27d515f714e6b21f9cfbd99385e5"
+executable = true
+
+[[sources.files]]
+path = "tests/test_retrieval_thinker.sh"
+sha256 = "sha256:47a9d80da09492f3e94a05af6d3ba0dfa1e2c40e8ae5d8635c4c7221af3ab363"
+executable = true
+
+[[sources.files]]
+path = "tests/test_sandbox_gate.sh"
+sha256 = "sha256:d482bc065e8ba9dd1dd7ad1117ff8df61ab13cf26fef70515be04581e24a4282"
+
+[[sources.files]]
+path = "tests/test_sandbox_symlink_mounts.sh"
+sha256 = "sha256:4249665288d2479eb694f63c57e5c666ee6d1cab08da3e123426a1d76787e2e8"
+executable = true
+
+[[sources.files]]
+path = "tests/test_status.sh"
+sha256 = "sha256:0b23640e520ad5c869005c41c247ef28897987316470083b9a33d3a067e0f515"
+executable = true
+
+[[sources.files]]
+path = "tests/test_thinker_env_fallback.sh"
+sha256 = "sha256:e344340b674b06204f22a524f62441e858d86b4e5173be1338b512d259f1f042"
+executable = true
+
+[[sources.files]]
+path = "tests/test_thinker_set_coupling.sh"
+sha256 = "sha256:baa396ee1b80575a3239bf0f84f68b15c82a8d15c182bad6d4c26a28761c49a0"
+executable = true
+
+[[sources.files]]
+path = "tests/test_thinkers_drain.sh"
+sha256 = "sha256:f3de4c9760c8f75c3896b04b757aabf9cc2f6e260a90895048ad9e0385cd865a"
+executable = true
+
+[[sources.files]]
+path = "tests/test_thinkers_pending.sh"
+sha256 = "sha256:ce29af136d9d6de561ea525c7b19e2867500b71ec0823ca2e4982bbcd98a0532"
+executable = true
+
+[[sources.files]]
+path = "tests/test_thinkers_wake_at.sh"
+sha256 = "sha256:40978507457017ce0a7c33b643e5af9830a95a6898220be85479e1ccf45c36d6"
+executable = true
+
+[[sources.files]]
+path = "tests/test_uninstall.sh"
+sha256 = "sha256:9ea22b839a7f114022cf256ff5472366b5d343a24a1355eddca40265dd239078"
+executable = true
+
+[[sources.files]]
+path = "tests/test_unit_name_couplings.sh"
+sha256 = "sha256:0216f8e49cf8219aee1e1de092d8d941cff468d402cc95994ceb50ce54b34db4"
+executable = true
+
+[[sources.files]]
+path = "tests/test_var_secrets.sh"
+sha256 = "sha256:015eae39499524f688524443a38d6c67d1b091704dd59cfb9e0a066176953323"
+executable = true
+
+[[sources.files]]
+path = "thinkers/_lib/common.sh"
+sha256 = "sha256:2837e4c931a9cc1d959f42a219bf546a809292de9148a086f9d11b223942f455"
+executable = true
+
+[[sources.files]]
+path = "thinkers/monolith/prompt.md"
+sha256 = "sha256:0d9efca2991c8feb16b0c92fff487f30677b8e6e359e7435da25bdce76d0b97c"
+
+[[sources.files]]
+path = "thinkers/monolith/step"
+sha256 = "sha256:b598d341fb13105307f1bb87c715357967878074a6622629405e5333274c919f"
+executable = true
+
+[[sources.files]]
+path = "thinkers/monolith/subscriptions.jsonl"
+sha256 = "sha256:6e6a8a4447cc1f169af8f5c0d80f6b53beacf36ed69d987b8f23d497cead5028"
+
+[[sources.files]]
+path = "thinkers/README.md"
+sha256 = "sha256:5171e93c7da016a34a8416fb26179591f5fc7b9e79e11ee071dfe150790f5ead"
+
+[[sources.files]]
+path = "thinkers/responder/step"
+sha256 = "sha256:9494c86bc556c8d3240e40299a3585da8be8df31e4bc5d4fceeebdf1912986d9"
+executable = true
+
+[[sources.files]]
+path = "thinkers/responder/subscriptions.jsonl"
+sha256 = "sha256:5c00ae6083333167e62a104ae933b3026c863aa17fb8088bc1bc8f7bc4f23092"
+
+[[sources.files]]
+path = "thinkers/retrieval/build-index.sh"
+sha256 = "sha256:d6437ed8d3b6d6ab57069e6595849bc2284940267d14b340fe9544b5e9371ba4"
+executable = true
+
+[[sources.files]]
+path = "thinkers/retrieval/disabled"
+sha256 = "sha256:4471b590b9bb8d251c884e6058bcb3801eea823b214cfdbbe3967377878218fd"
+
+[[sources.files]]
+path = "thinkers/retrieval/prompt.md"
+sha256 = "sha256:4298c95e067b1446f879cc47992c88372b76ec728a80588f2a516de993c207ad"
+
+[[sources.files]]
+path = "thinkers/retrieval/step"
+sha256 = "sha256:0a499afca154f0ecfd742f6144139aa50e39d9c8e4ace013deb0c82b4bd4b328"
+executable = true
+
+[[sources.files]]
+path = "thinkers/retrieval/stopwords"
+sha256 = "sha256:0419a8913f13fad90bc8d35a655d172be0cf7fabe871cf593c471ffd41b3886c"
+
+[[sources.files]]
+path = "thinkers/retrieval/subscriptions.jsonl"
+sha256 = "sha256:4e0a23713f8c09dc1ca167fdf1ebca2d29d44a943f4eee8da8968c035909d303"
+
+[[sources.files]]
+path = "tools/headlong-init"
+sha256 = "sha256:831e6441ac2cf62c2fa352ca340232ab7e66c71817373ce1a0924557a13be87c"
+executable = true
+
+[[sources.files]]
+path = "tools/headlong-killall"
+sha256 = "sha256:d67875cefab898d8a1cae2a51cb933c33e715dc42b17ffc939b1862a56027ad4"
+executable = true
+
+[[sources.files]]
+path = "tools/headlong-slack-bridge"
+sha256 = "sha256:0ac9adc0a83a73dbb9881f09a152522bce58a1ee9ad59e6b39d7605fb9211464"
+executable = true
+
+[[sources.files]]
+path = "tools/headlong-telegram-bridge"
+sha256 = "sha256:6d8974fc9200e5865dfb197f82430028cbc7239518a473ece3428003d0046d30"
+executable = true
+
+[[sources.files]]
+path = "tools/headlong-web"
+sha256 = "sha256:44bd71ea2543ca59c756a8fc8cfc75b94ea18eebd4ca96fa2b5132d1d6af85c1"
+executable = true
+
+[[sources.files]]
+path = "tools/identity"
+sha256 = "sha256:90a72008d2aeb3b1384ac8400d53c708d0bc0bd31aa24af7fea58c0416c28aeb"
+executable = true
+
+[[sources.files]]
+path = "tools/persona"
+sha256 = "sha256:4adbf73f30a8c988a6f04cae77935f1de29365ee74f2539b81dd737abd8fcf4d"
+executable = true
+
+[[sources.files]]
+path = "tools/pr-committee"
+sha256 = "sha256:cf7e52126c27c66f320503eead87bce0b458105afa6182abff85d0ed9f385242"
+executable = true
+
+[[sources.files]]
+path = "tools/README.md"
+sha256 = "sha256:cea2a55e890ec7030bb2ce7994d5f2347844baac7422e1fe635488125a00ceff"
+
+[[sources.files]]
+path = "tools/shellm-docker-broker"
+sha256 = "sha256:8578094f2ba8d274766b82f17c1bf5eb4689f7a4edadb1e659b21d812567d899"
+executable = true
+
+[[sources.files]]
+path = "tools/shellm-explore"
+sha256 = "sha256:4a74e8f29608c6a296ade52f1c323760549d50d0df9da530124972ba2097ad68"
+executable = true
+
+[[sources.files]]
+path = "tui/headlong/.gitignore"
+sha256 = "sha256:b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d"
+
+[[sources.files]]
+path = "tui/headlong/Cargo.lock"
+sha256 = "sha256:a9a7f59646a71cd72f73c4816ce263b4176bd8aed8d647b277aabd50e6f0cce3"
+
+[[sources.files]]
+path = "tui/headlong/Cargo.toml"
+sha256 = "sha256:e0f81dcae0a3f076be07c276bdfc6a072f89418a03e6074bb02c92a8dedf6a69"
+
+[[sources.files]]
+path = "tui/headlong/src/main.rs"
+sha256 = "sha256:a6711f39aa2e95e242dd096d97e5c5470e8988910b00aa9fad44c3b1d2891202"
+
+[[sources.files]]
+path = "tui/README.md"
+sha256 = "sha256:133449bcf6f458ad68eecb4f42800a36de624b2b4a416deb19ce2ad91417a520"
+
+[[sources.files]]
+path = "uninstall.sh"
+sha256 = "sha256:f079c494b5c3b1a71622452ac63cdfe9184c4e93fca3706194a0e3f7c0be6dfe"
+executable = true
+
+[[sources.files]]
+path = "web/design/data-model.md"
+sha256 = "sha256:b5f31d0a9ada5c084c4d218b71b242dfdccf06d68cdf89a5abfe917a51b46ed0"
+
+[[sources.files]]
+path = "web/design/future-work.md"
+sha256 = "sha256:5c751206808f63f203e9b0f3f00695255df2603c7922b9926a379326f3c7f3fc"
+
+[[sources.files]]
+path = "web/design/overview.md"
+sha256 = "sha256:df62e604946557cb923a7e5498b263028d65d196812bd421d12bd0e5263841c3"
+
+[[sources.files]]
+path = "web/pyproject.toml"
+sha256 = "sha256:5598f1035452fd3f46a80d5a48b91fe14e1b97f54edb2e302df1bf76de0237d1"
+
+[[sources.files]]
+path = "web/README.md"
+sha256 = "sha256:5193b64768a8906e21eccf6e5c06c8ca6070e5dd35b0c9548c3f3418e8c941e0"
+
+[[sources.files]]
+path = "web/src/headlong_web/__init__.py"
+sha256 = "sha256:9100c957bb8d5983d7e4629eeb28a62f318071d2230f965cf91d5e2fd735aaad"
+
+[[sources.files]]
+path = "web/src/headlong_web/activity.py"
+sha256 = "sha256:54737b3ea1996e90ae4d5d06513e3c4c6de832c532198c9e94110388def78224"
+
+[[sources.files]]
+path = "web/src/headlong_web/chat.py"
+sha256 = "sha256:ae8b5792b8705809cea53fece05eae129427c02a62519189d0d12c07bc3582ef"
+
+[[sources.files]]
+path = "web/src/headlong_web/cli.py"
+sha256 = "sha256:0544574dcf4fbeabf1401529556f3ae58fa8f5225a8e6726516e73e3652030c1"
+
+[[sources.files]]
+path = "web/src/headlong_web/control.py"
+sha256 = "sha256:c03fad9ab635afefc1e8a9436094386278fb314577422c7a40b96a2f3d5a1f3d"
+
+[[sources.files]]
+path = "web/src/headlong_web/discovery.py"
+sha256 = "sha256:9f99ec22ff3599ecd7692a5cc6e4f4d4c5b11da8766c9454b3e077a271d97fea"
+
+[[sources.files]]
+path = "web/src/headlong_web/env.py"
+sha256 = "sha256:690d876be8d6dcc8b517cecb87ae413776813505b4ae213da26e03e02acceabf"
+
+[[sources.files]]
+path = "web/src/headlong_web/envfile.py"
+sha256 = "sha256:1ce9e6fce5ecaa6e16659a24d797ee8be9027bdaca2667d990021d512d628e2d"
+
+[[sources.files]]
+path = "web/src/headlong_web/health.py"
+sha256 = "sha256:97ae99be212f20382db86771959cbfa74408a26eefff5bd56cb092bc4d745d8e"
+
+[[sources.files]]
+path = "web/src/headlong_web/liveness.py"
+sha256 = "sha256:9ba8be08adb9db710d38438b945b30f40fa57cfbad7c7d834f25e1b4fac776d0"
+
+[[sources.files]]
+path = "web/src/headlong_web/llm_health.py"
+sha256 = "sha256:8ccc631c51775a39bc111f64d597b84aaf6d3be3197734e20556f480006171ba"
+
+[[sources.files]]
+path = "web/src/headlong_web/logs.py"
+sha256 = "sha256:651b280bb16e6615916334f15924c05c62142e3e70a13947043b8d563ac76163"
+
+[[sources.files]]
+path = "web/src/headlong_web/memories.py"
+sha256 = "sha256:d7a572a59fd3f32e9fa152c21977c49abaa103cac68fe89c9447c0f4fbe612d3"
+
+[[sources.files]]
+path = "web/src/headlong_web/openrouter.py"
+sha256 = "sha256:98d10cef164c6477a957cfcc6086a65a323f5148bdb74a4fd995d5b117562228"
+
+[[sources.files]]
+path = "web/src/headlong_web/push.py"
+sha256 = "sha256:c4d448de3242d2cabdc2dc410bc58ecf8dbbec67f7e43aea522126ec19f0765c"
+
+[[sources.files]]
+path = "web/src/headlong_web/safety.py"
+sha256 = "sha256:7da2f0c85ebc68711381ab4380c0ba386985e557bc73a54a13539b344cfb6a94"
+
+[[sources.files]]
+path = "web/src/headlong_web/search.py"
+sha256 = "sha256:b6928cd848b29e3b7f829b4bf7caba87a968b85fa63d9345df322469711f2322"
+
+[[sources.files]]
+path = "web/src/headlong_web/server.py"
+sha256 = "sha256:a3eca197b5f1a9c727770b6b0b626cfcbbdac8562327852f0412a97998b56ac3"
+
+[[sources.files]]
+path = "web/src/headlong_web/thinker_sync.py"
+sha256 = "sha256:2fc1e897fcc8a795b40a243ec741125f6a02a9b41dcf4f7825f078d519d6dcdc"
+
+[[sources.files]]
+path = "web/src/headlong_web/thinkers.py"
+sha256 = "sha256:6bf8ce487b3eb3427131805255be85cb89bff246a20d47a23f6331ac7c18a6a1"
+
+[[sources.files]]
+path = "web/src/headlong_web/trajectory.py"
+sha256 = "sha256:56180d2c84b9276b2173edc474660e3dbaab8e9db4cc8a13985aff637baf5209"
+
+[[sources.files]]
+path = "web/src/headlong_web/tree.py"
+sha256 = "sha256:c34b2b56fd004495576c3a8ae5de64fa3f4a82362c96fde8bae59d945c91693e"
+
+[[sources.files]]
+path = "web/src/headlong_web/usage.py"
+sha256 = "sha256:00dc3cbe13d0f11cd242a629f7c63914d4716a60d4dc4cf4b44017fb4902a821"
+
+[[sources.files]]
+path = "web/tests/conftest.py"
+sha256 = "sha256:29df39a85cdcb5c62932e37001667193c8181dcff0dd3ea274debba8c3aea357"
+
+[[sources.files]]
+path = "web/tests/test_activity_api.py"
+sha256 = "sha256:d37c71b40b44d71ca4f999a91fc1cebb50ee56de1f8f58dc8d77b7c27be084d8"
+
+[[sources.files]]
+path = "web/tests/test_chat_api.py"
+sha256 = "sha256:4ffad38ee67700460253aa8bf09676b54f2f21e26647ef358abcc0c15f923c6a"
+
+[[sources.files]]
+path = "web/tests/test_health_api.py"
+sha256 = "sha256:4716e181309b53adb673ee6cbdc7afa3fd6cde82947bbabc5929e290f1fb97c1"
+
+[[sources.files]]
+path = "web/tests/test_import_export.py"
+sha256 = "sha256:2daf76f46a15b3407885e49b8c4660e9466eeb3dec4934267d55da9cfe12b225"
+
+[[sources.files]]
+path = "web/tests/test_llm_health.py"
+sha256 = "sha256:2dd80f619bae3affa8669d696f66afcb223f5f84bc6cccdf90a0db34a48d28fa"
+
+[[sources.files]]
+path = "web/tests/test_memories_api.py"
+sha256 = "sha256:6b7faec34241057404bdce202461adc71d60135cdf67287e8b1a0b9c27b3c3a0"
+
+[[sources.files]]
+path = "web/tests/test_mindlog_search.py"
+sha256 = "sha256:833f61d47893f22cf51e5dedd4bd8f57d0d518a8c3ea11308a9d7069dd3853c6"
+
+[[sources.files]]
+path = "web/tests/test_openrouter.py"
+sha256 = "sha256:fb5d15aa5d73b55c303e7829e633d72626e3e7eb06c06e0b4aea0d30f3a60bcc"
+
+[[sources.files]]
+path = "web/tests/test_push_api.py"
+sha256 = "sha256:5bf652072ea0189993b565416f76282e095385b5ecd573611cd1667bb336aa97"
+
+[[sources.files]]
+path = "web/tests/test_recap_api.py"
+sha256 = "sha256:a6585a7ed0153b62ae0ae91fa607a5d517e724ec4a896f6d73a88f5a2bf45a71"
+
+[[sources.files]]
+path = "web/tests/test_self_update.py"
+sha256 = "sha256:756cca306b0fb836182ce0a33be08889011d9e732980216cda9cf7f9d1e3b048"
+
+[[sources.files]]
+path = "web/tests/test_thinker_sync.py"
+sha256 = "sha256:b61763167c829a408dd3ab4d9a9f41a27cc6c9a18978c2c6d2736bf22c190b32"
+
+[[sources.files]]
+path = "web/tests/test_thinkers_and_control.py"
+sha256 = "sha256:0d3c5c5c67213209b34fcab7124479fab3f262ddd0b949a4a99924e44ba1b25e"
+
+[[sources.files]]
+path = "web/tests/test_trajectory_cache.py"
+sha256 = "sha256:724960f4344cc5bfcbe53a092eda32f33b47dd510b5f235bc80fb5360c601be8"
+
+[[sources.files]]
+path = "web/tests/test_trajectory.py"
+sha256 = "sha256:ee69606740ecc817e0e199e9b4c7033d84538439371810505e1d3eabe18fc17a"
+
+[[sources.files]]
+path = "web/tests/test_tree_and_safety.py"
+sha256 = "sha256:d418c774422730b2d2c2ca73c1eed8b30844b400ec0be1e8388507a3a4cd313b"
+
+[[sources.files]]
+path = "web/tests/test_usage_api.py"
+sha256 = "sha256:088b36792f932c20342e04f944a4dfe16582f15509cce3d1220f6c38cb931c74"
+
+[[sources.files]]
+path = "web/uv.lock"
+sha256 = "sha256:fb220f7f854e6acd4e7d7c7c6c15a069ef0382b01b4fdd8bf01be6471a1fd04d"
+
+[[sources.files]]
+path = "web/viewer/app/app.css"
+sha256 = "sha256:d01fb9a1dacd289bd67991e946d2b32d78a4b4bf6aea6f8b7f98723b65c6d436"
+
+[[sources.files]]
+path = "web/viewer/app/components/activity-badge.tsx"
+sha256 = "sha256:1cc1e9a36379ad6a8957fb802e9c45f89f4cf764b563f7c3cab91493a39a32ac"
+
+[[sources.files]]
+path = "web/viewer/app/components/blob-output.tsx"
+sha256 = "sha256:a48d1884168a3fa64ed5846ca233fc4cacafc424e9f62516a92cb6f48a4433b2"
+
+[[sources.files]]
+path = "web/viewer/app/components/expandable-text.tsx"
+sha256 = "sha256:96d7289dbda520f94603aff9a9123a1a96ed9d64e8c0de64b5896d4309fcd7e4"
+
+[[sources.files]]
+path = "web/viewer/app/components/follow-pin.tsx"
+sha256 = "sha256:fd7cdd07ca630100d97735269595b8c016816a3e125956086d66e96a053dd571"
+
+[[sources.files]]
+path = "web/viewer/app/components/fork-tree.tsx"
+sha256 = "sha256:84027ca65d8a6e40d7aa7f57cdf66cae3cfba135b4f34fddec971d7e4e80ec90"
+
+[[sources.files]]
+path = "web/viewer/app/components/identity-tabs.tsx"
+sha256 = "sha256:2737de051772a891579c4f37f7ea170dcd751800c2971eae8ca2235cc4aacf15"
+
+[[sources.files]]
+path = "web/viewer/app/components/live-badge.tsx"
+sha256 = "sha256:8d1b3ecb67891cb8eb930821b320566439af7661684fe9de31e055f8b3e19b64"
+
+[[sources.files]]
+path = "web/viewer/app/components/mindlog-search.tsx"
+sha256 = "sha256:0fa2a58ea6a6932fed3c028f81fc64dcb2787b2a5626347177e6570ee7b565bb"
+
+[[sources.files]]
+path = "web/viewer/app/components/model-config.tsx"
+sha256 = "sha256:e8ab7d192be18fb3a631d811882adacf00695f9ffb0536d29cbcbd7dbfd97062"
+
+[[sources.files]]
+path = "web/viewer/app/components/navbar.tsx"
+sha256 = "sha256:160cf4eea4799c410de1acb77c57c9bd183707f39b5c0d5f49f1db24d42b7e50"
+
+[[sources.files]]
+path = "web/viewer/app/components/push-bell.tsx"
+sha256 = "sha256:892afcf7aa6fc28292735320aa375e8a38718e01ef95d74f151b244a7ab89dfb"
+
+[[sources.files]]
+path = "web/viewer/app/components/run-group.tsx"
+sha256 = "sha256:093e27b7c327340c8aaac5323a21f4ca2fd74839aa407163574ffe107d29a8d8"
+
+[[sources.files]]
+path = "web/viewer/app/components/step-card.tsx"
+sha256 = "sha256:e682fbd2aa6d8cacfabb49b4dba2076f6a6613bb67eccb8ea875510dacc125a1"
+
+[[sources.files]]
+path = "web/viewer/app/components/step-header.tsx"
+sha256 = "sha256:17254562c86b0ddbc3153773a301d833cbeabb5a56bc140769531d01dbf59a19"
+
+[[sources.files]]
+path = "web/viewer/app/components/stream.tsx"
+sha256 = "sha256:ec6d36260454155810238cbdae0b1b2bf91a38a55161bb66fcd686fc2ed7601c"
+
+[[sources.files]]
+path = "web/viewer/app/components/thinker-controls.tsx"
+sha256 = "sha256:84af73da18a1a251db311d277207a2173ae928f1a00ca525b4029ee8a3abd0c6"
+
+[[sources.files]]
+path = "web/viewer/app/components/timeline-bar.tsx"
+sha256 = "sha256:2b49833b6ef7562b21b796366ddc0b9e068b31deb84012534d6577dacc0385e3"
+
+[[sources.files]]
+path = "web/viewer/app/components/timeline-detail.tsx"
+sha256 = "sha256:a6f7fde3317f11141d2d21f14404f3676417a1f4065225b8aea5d4fe25324ebc"
+
+[[sources.files]]
+path = "web/viewer/app/components/timeline-view.tsx"
+sha256 = "sha256:327c8dc509e74085c8710c2a15b86a0d15f6371c7bec75235e6a591c38b10808"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/badge.tsx"
+sha256 = "sha256:43feb3255273695c791674158dccd756dc0627d929691779ae5e686bc0e90a78"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/button.tsx"
+sha256 = "sha256:7cc8247182e09bb36f559f5025dcf0c9e15a5ebfabec38ca3e22c381d4d048b9"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/card.tsx"
+sha256 = "sha256:c1e6e89e1bc2a29dfe9ec326977055e6e6745756f05c08f3033c58df5be2e203"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/checkbox.tsx"
+sha256 = "sha256:13749d740e719cd77b471788d6155747afa29c00b26491d842f4374d8973990d"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/code-block.tsx"
+sha256 = "sha256:0d9b5a9eec9f79b52b46c7d3b7225bbda201d19610706bb7c72ea15740cd1040"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/collapsible.tsx"
+sha256 = "sha256:661444318605c90d19e47e4d21289a68b4c5f7f01782be70dafa80d3f7a4cd08"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/copy-button.tsx"
+sha256 = "sha256:d8e854fc5305909261210ce3fc532382a6734aef61cf301951245e5719ec57e0"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/empty.tsx"
+sha256 = "sha256:9137c83b460dd51c7017000b3610e2f4d2f5a49c97293caa8a54be58f0366ef9"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/input.tsx"
+sha256 = "sha256:b9af3f1bbb833b68c4c611d8dcf569f358457787fcee12b0f47ce252a64f5ba2"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/loading-dots.tsx"
+sha256 = "sha256:6d09decb752844ec7a00a2abd046e8bea9559be1655d7cdfff9235b58eb88443"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/markdown.tsx"
+sha256 = "sha256:0fa6bd077cd38f6836f982a0794cc5ba8f235f430c947d0d2ebc4d2d3f245171"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/scroll-area.tsx"
+sha256 = "sha256:d96391c8ec4a3d638c1e22ab337fad1430aa3153fb6da18d26c6c1d7714d3223"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/select.tsx"
+sha256 = "sha256:6c8d4da6e4e42976fbf4cfd1eca2f665cc5819b4d44771608fa43f9f3fe243dd"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/table.tsx"
+sha256 = "sha256:7e4455a8476e98d0ec7e818b6e255dab69305dc2712dd330cfe7d5cf2008138d"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/tabs.tsx"
+sha256 = "sha256:25ffb69f4446ccff8edb4ef0e8b9e7da3e0a7f322a7a25693ec7bcea4eb0d42b"
+
+[[sources.files]]
+path = "web/viewer/app/components/ui/tooltip.tsx"
+sha256 = "sha256:7782b766c4dfc1db497202cc762314a38b7c2c0f4dff35548400d53e810261cd"
+
+[[sources.files]]
+path = "web/viewer/app/lib/api.ts"
+sha256 = "sha256:d10f99219684a19c0d44ff8d2508f17598e8418e600dff4b7d55fb895fa0d03e"
+
+[[sources.files]]
+path = "web/viewer/app/lib/highlighter.tsx"
+sha256 = "sha256:773c9dba55f075378fd34bfa0604f60a90b9e92f894f735d915ee29469887abf"
+
+[[sources.files]]
+path = "web/viewer/app/lib/mindlog2-model.ts"
+sha256 = "sha256:b52bead5af664fbd5eb184ef57b93d1d271acea1d236a69267a037367cd290d9"
+
+[[sources.files]]
+path = "web/viewer/app/lib/pwa.ts"
+sha256 = "sha256:5cfa55d13caa8629cb43b15890014b002ade524ff6a04c283e0a0971a55cc4c9"
+
+[[sources.files]]
+path = "web/viewer/app/lib/step-colors.ts"
+sha256 = "sha256:baec6c4fc625f63cd849a59660d01a016595bb64bce03a49d870c18a60a7fc19"
+
+[[sources.files]]
+path = "web/viewer/app/lib/timeline-model.ts"
+sha256 = "sha256:c3d7a647d5004790a1ecc6d7377dd07c80e5bbcb219bcbb5a29fcd5ed9bd77fa"
+
+[[sources.files]]
+path = "web/viewer/app/lib/traj-context.ts"
+sha256 = "sha256:3449990a2fffc84e06e2368d95877bfd2c7f5f62c4b9effbf43a0feed51971e3"
+
+[[sources.files]]
+path = "web/viewer/app/lib/types.ts"
+sha256 = "sha256:0d765b11a1deba0a5e6566adc6fe6197930638813f4e50476b7b9aaea31f1136"
+
+[[sources.files]]
+path = "web/viewer/app/lib/use-mindlog.ts"
+sha256 = "sha256:9dc8abb085669476fff1df75c1d4eb18ddea810ae026e2da3c94f572f6a014b5"
+
+[[sources.files]]
+path = "web/viewer/app/lib/utils.ts"
+sha256 = "sha256:3e3d7017d536b6e2350faed463bba47371551d63b597483b84c1c23e3061f45a"
+
+[[sources.files]]
+path = "web/viewer/app/root.tsx"
+sha256 = "sha256:6621b271dc14abc57921bd48f130b70406bab77d97ba7463fc2c3d6d3208aa85"
+
+[[sources.files]]
+path = "web/viewer/app/routes.ts"
+sha256 = "sha256:44eba6989bf7338e387ccd04d9d9694bbf36f878ac8cd06b60966cf46a98d46b"
+
+[[sources.files]]
+path = "web/viewer/app/routes/chat.tsx"
+sha256 = "sha256:41f2a8ee0aa052df6ec53cc9f5e8d2e1beccde691b53554776ca6eadc2a66de5"
+
+[[sources.files]]
+path = "web/viewer/app/routes/config.tsx"
+sha256 = "sha256:061c7550f0adc452f863444cfbf3203d6da7287f4c2fb7a60f96ddae2597e24d"
+
+[[sources.files]]
+path = "web/viewer/app/routes/health.tsx"
+sha256 = "sha256:675b41f1a8d68b3fbcde5440417e504237747df6d7a4e1c7ff4bb043b07e943c"
+
+[[sources.files]]
+path = "web/viewer/app/routes/home.tsx"
+sha256 = "sha256:1759d60dfba4e8eac112d2ee831402f9aa9a83541542359212db573248747bbb"
+
+[[sources.files]]
+path = "web/viewer/app/routes/identity.tsx"
+sha256 = "sha256:f898464c787960fa482391acd87f5877a34f8404febe5112bab008ebf51f1451"
+
+[[sources.files]]
+path = "web/viewer/app/routes/memories.tsx"
+sha256 = "sha256:7a68be6eea5b4e43cc50872bbef9eb714511ee3d58ab317adaa6cabfaf06584f"
+
+[[sources.files]]
+path = "web/viewer/app/routes/mindlog2.tsx"
+sha256 = "sha256:b70ab3d19c1fdee4ae8e87b107452c1fccd92568aa591a64687155ac9f021f7a"
+
+[[sources.files]]
+path = "web/viewer/app/routes/recap.tsx"
+sha256 = "sha256:b73c5c9b9ebd3335ba660031fe084f901b89b74bcd25588f469c662ecb28bb2a"
+
+[[sources.files]]
+path = "web/viewer/app/routes/sub-traj.tsx"
+sha256 = "sha256:3e9b357927c04e67cb4a556985b74368ef39276fda894d6e4b00ec3b91ad7917"
+
+[[sources.files]]
+path = "web/viewer/app/routes/talk-chat.tsx"
+sha256 = "sha256:ab8e84bec21de268d89e806d2969bd7195c2ca431a1d33eb4cb1911026dc8b8e"
+
+[[sources.files]]
+path = "web/viewer/app/routes/talk.tsx"
+sha256 = "sha256:8adfbc69b694ad8c72ef44e497b4e0691ea9b262ae4770a948b5a562e692b7dc"
+
+[[sources.files]]
+path = "web/viewer/app/routes/thinkers.tsx"
+sha256 = "sha256:118061e5fc8a9d978d9b8e0f8ca478c657e663790598b80758d4726a5b3fe6bc"
+
+[[sources.files]]
+path = "web/viewer/app/routes/timeline.tsx"
+sha256 = "sha256:503f8e9c788aeec7081964dcb5036bf28748f6f419fd81cde738c83a8d3e26c1"
+
+[[sources.files]]
+path = "web/viewer/app/routes/usage.tsx"
+sha256 = "sha256:e740585504c0419638504f4d9a1b3eef3268696392e55cef087ec3fea7bf8af4"
+
+[[sources.files]]
+path = "web/viewer/bun.lock"
+sha256 = "sha256:16332a3103cde98689f18248968d271f5c55082de24dd57c1aa9a419b1ba59ce"
+
+[[sources.files]]
+path = "web/viewer/components.json"
+sha256 = "sha256:5de3154193e6f4bc3cfafd7a820605829b3a473821c6f6d4e12dd00a8290745b"
+
+[[sources.files]]
+path = "web/viewer/package.json"
+sha256 = "sha256:4d8a7d241caa8fae043a415b87a84a75966dafc78e157f92a8fb3a84610a8d74"
+
+[[sources.files]]
+path = "web/viewer/public/favicon.ico"
+sha256 = "sha256:7758780c9a56645aa7e509e8d6719bfc8495575fd78430bcdb90ec2089257ea7"
+
+[[sources.files]]
+path = "web/viewer/public/fonts/GoogleSansCode-VariableFont_wght.ttf"
+sha256 = "sha256:88be64849506a7a70a57668a8d580c999718bdac0a85a59ff47e1ab2173f77b4"
+
+[[sources.files]]
+path = "web/viewer/public/fonts/OFL.txt"
+sha256 = "sha256:ff8f4fbc4f1a71c7d4c6481c48dc2b21c43f8dc15872536667fee45c15d20928"
+
+[[sources.files]]
+path = "web/viewer/public/icons/apple-touch-icon.png"
+sha256 = "sha256:883558424957345dff91b99cdc38b008b8dc47496da4d2ac6ab391c35fb1b98d"
+
+[[sources.files]]
+path = "web/viewer/public/icons/badge-96.png"
+sha256 = "sha256:7d1d4027ad8ad0691a25dce90d1a083cc684b087aca80ee5f60902fe1d4c059e"
+
+[[sources.files]]
+path = "web/viewer/public/icons/icon-192.png"
+sha256 = "sha256:400c7f73e2b5616ec99eb3906d7d1d1e8847a7350b9658b3d40dc12027ac07ad"
+
+[[sources.files]]
+path = "web/viewer/public/icons/icon-512-maskable.png"
+sha256 = "sha256:03e61d830bf01165ddc4128df1bb0bdfec4584fe55d66d53e663acec60ab368d"
+
+[[sources.files]]
+path = "web/viewer/public/icons/icon-512.png"
+sha256 = "sha256:1b94adbedb98498c4d49a4c2f41bc765e2e6bd4c122895c94d4f14b931be4bda"
+
+[[sources.files]]
+path = "web/viewer/public/manifest.webmanifest"
+sha256 = "sha256:9e37447f59a2448eeba60e1171445702f03f2c7c1af054c2b35857a69b8c846e"
+
+[[sources.files]]
+path = "web/viewer/public/sw.js"
+sha256 = "sha256:09a73a2606331288089717b499f9f8e6be4f36f0578043051842cedaf447eebd"
+
+[[sources.files]]
+path = "web/viewer/react-router.config.ts"
+sha256 = "sha256:f69447def7b05865699659f5212531152ce19b8acb4bae2f6ed400066d993766"
+
+[[sources.files]]
+path = "web/viewer/tsconfig.json"
+sha256 = "sha256:3bd0eebed53134457845b088d0a857d2715e962c8046f28b35e02ef44e7a8de5"
+
+[[sources.files]]
+path = "web/viewer/vite.config.ts"
+sha256 = "sha256:cd1204f4c3353f5fbf7805be6d9b360a21eafe492c1ff7e2554d4a02dbad16fe"
+
+[packages]
+
+[packages.harness]
+kind = "headlong"
+selector = "latest"
+commit = "b076bbf89aab696493c27b796e148dd7db3de10d"
+integrity = "sha256:073d18de0df866c0e50656cc0906825d6a6b199c362a0be1ecb84c80c4c8d92a"
+
+[[packages.runtime]]
+name = "bash"
+version = "5.2.15-2+b13"
+integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
+
+[[packages.runtime]]
+name = "ca-certificates"
+version = "20230311+deb12u1"
+integrity = "sha256:0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+
+[[packages.runtime]]
+name = "curl"
+version = "7.88.1-10+deb12u15"
+integrity = "sha256:880d20cb636d2c36b2f57c58ab284b442a1680365b488d3e696c147c4d84ef25"
+
+[[packages.runtime]]
+name = "gh"
+version = "2.23.0+dfsg1-1"
+integrity = "sha256:7aeed4b288718660cda8e18ea1b06b69da42f3072ec599343965b01cf01b4a12"
+
+[[packages.runtime]]
+name = "git"
+version = "1:2.39.5-0+deb12u3"
+integrity = "sha256:435176549a9f5c8bbadaa126b64a036b38ea34ad9f3eb128dc40b8407a5b5620"
+
+[[packages.runtime]]
+name = "jq"
+version = "1.6-2.1+deb12u2"
+integrity = "sha256:c232e9407e0f47006dd6077804c1274fd2e4f8be02efc78822db748ed65bea99"
+
+[[packages.runtime]]
+name = "ripgrep"
+version = "13.0.0-4+b2"
+integrity = "sha256:82bd2ff67cedf892c1906d7ecd2831605ec1f8ad74825f576f5519a9c82a02a3"
+
+[[packages.artifacts]]
+name = "node"
+version = "22.17.0"
+integrity = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
+url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+
+[[packages.artifacts]]
+name = "uv"
+version = "0.11.21"
+integrity = "sha256:e71badaed2a2c3a404a0a00974b51c7ed5f5bc7be947916846005b739c68a5a2"
+url = "https://github.com/astral-sh/uv/releases/download/0.11.21/uv-aarch64-unknown-linux-musl.tar.gz"
+
+[[packages.artifacts]]
+name = "rust"
+version = "1.96.0"
+integrity = "sha256:20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b"
+url = "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz"
+size = 325287063
+
+[[packages.artifacts]]
+name = "rust-std-musl"
+version = "1.96.0"
+integrity = "sha256:1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea"
+url = "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz"
+size = 42333691
+
+[image]
+base = "node:22.17.0-bookworm-slim"
+base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"

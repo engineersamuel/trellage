@@ -7,9 +7,10 @@ import type { Platform } from "./platform.js"
 import { sandboxHeadlessRuntimeAdapter, type SandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
 import {
   isClaudeProfile,
-  isCopilotProfile,
   isCodexProfile,
+  isCopilotProfile,
   isPiProfile,
+  isPrimeProfile,
   parseProfile,
   type Mcp,
   type Profile,
@@ -86,16 +87,34 @@ interface DiscoveredProfile {
   readonly supportedPlatforms: ReadonlyArray<Platform>
 }
 
-const model = (profile: Profile): string =>
-  isCodexProfile(profile)
-    ? profile.harness.codex.model
-    : isCopilotProfile(profile)
-      ? (profile.harness.copilot.model ?? "gpt-5.6-sol")
-      : isClaudeProfile(profile)
-        ? profile.harness.claude.model
-        : isPiProfile(profile)
-          ? profile.harness.pi.model
-          : profile.harness.prime.model
+// Each projector reports whether its harness matched (Some) with the model
+// resolved from that harness (including Copilot's default), or that it did
+// not match (None). Headlong has no projector, so it falls through to None.
+const codexModel = (profile: Profile): Option.Option<string> =>
+  isCodexProfile(profile) ? Option.some(profile.harness.codex.model) : Option.none()
+
+const copilotModel = (profile: Profile): Option.Option<string> =>
+  isCopilotProfile(profile) ? Option.some(profile.harness.copilot.model ?? "gpt-5.6-sol") : Option.none()
+
+const claudeModel = (profile: Profile): Option.Option<string> =>
+  isClaudeProfile(profile) ? Option.some(profile.harness.claude.model) : Option.none()
+
+const piModel = (profile: Profile): Option.Option<string> =>
+  isPiProfile(profile) ? Option.some(profile.harness.pi.model) : Option.none()
+
+const primeModel = (profile: Profile): Option.Option<string> =>
+  isPrimeProfile(profile) ? Option.some(profile.harness.prime.model) : Option.none()
+
+const modelProjectors: ReadonlyArray<(profile: Profile) => Option.Option<string>> = [
+  codexModel,
+  copilotModel,
+  claudeModel,
+  piModel,
+  primeModel,
+]
+
+const model = (profile: Profile): string | undefined =>
+  Option.getOrUndefined(Option.firstSomeOf(modelProjectors.map((project) => project(profile))))
 
 const projectMcp = (mcp: Mcp): ProfileChoiceMcp => {
   const common = {

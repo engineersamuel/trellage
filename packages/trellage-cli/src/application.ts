@@ -14,10 +14,13 @@ import { parseLock, renderLock } from "./lock-file.js"
 import {
   compileLock,
   hasLegacyPackageProvenance,
+  harnessPackageRevision,
   lockIsReady,
   profileHash,
   requireLocked,
   withFinalDigest,
+  type ArtifactLock,
+  type HarnessPackageLock,
   type LockResolvers,
   type ProfileLock,
 } from "./lock.js"
@@ -199,6 +202,72 @@ export const builderNetworkEnv = (
 
 const impossibleBuilderInput = (message: string): never => {
   throw new ApplicationError({ message })
+}
+
+const resolveHeadlongRustArtifacts = (
+  lock: ProfileLock,
+): { readonly rust: ArtifactLock; readonly rustStandardLibrary: ArtifactLock } => {
+  const rust = lock.packages.artifacts?.find((artifact) => artifact.name === "rust")
+  if (
+    rust === undefined ||
+    rust.version !== "1.96.0" ||
+    rust.url !== "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz" ||
+    rust.integrity !== "sha256:20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b" ||
+    rust.size !== 325287063
+  ) {
+    return impossibleBuilderInput("Headlong builder requires the exact locked Rust toolchain artifact")
+  }
+  const rustStandardLibrary = lock.packages.artifacts?.find((artifact) => artifact.name === "rust-std-musl")
+  if (
+    rustStandardLibrary === undefined ||
+    rustStandardLibrary.version !== "1.96.0" ||
+    rustStandardLibrary.url !==
+      "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz" ||
+    rustStandardLibrary.integrity !== "sha256:1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea" ||
+    rustStandardLibrary.size !== 42333691
+  ) {
+    return impossibleBuilderInput("Headlong builder requires the exact locked musl standard library artifact")
+  }
+  return { rust, rustStandardLibrary }
+}
+
+const headlongBuilderScript = (
+  lock: ProfileLock,
+  harness: Extract<HarnessPackageLock, { readonly kind: "headlong" }>,
+  build: string,
+): string => {
+  if (!/^[0-9a-f]{40}$/.test(harness.commit)) {
+    return impossibleBuilderInput("Headlong builder requires an exact locked commit")
+  }
+  const { rust, rustStandardLibrary } = resolveHeadlongRustArtifacts(lock)
+  const target = "aarch64-unknown-linux-musl"
+  const archive = "/src/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz"
+  const standardLibraryArchive = `/src/rust-std-1.96.0-${target}.tar.gz`
+  const stage = "/tmp/trellage-headlong-rust"
+  const standardLibraryStage = "/tmp/trellage-headlong-rust-std"
+  const toolchain = "/tmp/trellage-headlong-rust-toolchain"
+  return [
+    "rm -f /mise/config.toml",
+    "mise install --locked",
+    `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(archive)} ${shellQuote(rust.url)}`,
+    `[ "$(wc -c < ${shellQuote(archive)})" -eq ${rust.size} ]`,
+    `printf '%s  %s\\n' ${shellQuote(rust.integrity.slice("sha256:".length))} ${shellQuote(archive)} | sha256sum --check --strict -`,
+    `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(standardLibraryArchive)} ${shellQuote(rustStandardLibrary.url)}`,
+    `[ "$(wc -c < ${shellQuote(standardLibraryArchive)})" -eq ${rustStandardLibrary.size} ]`,
+    `printf '%s  %s\\n' ${shellQuote(rustStandardLibrary.integrity.slice("sha256:".length))} ${shellQuote(standardLibraryArchive)} | sha256sum --check --strict -`,
+    `rm -rf ${shellQuote(stage)} ${shellQuote(standardLibraryStage)} ${shellQuote(toolchain)}`,
+    `mkdir -p ${shellQuote(stage)} ${shellQuote(standardLibraryStage)} ${shellQuote(toolchain)}`,
+    `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(archive)} -C ${shellQuote(stage)}`,
+    `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(standardLibraryArchive)} -C ${shellQuote(standardLibraryStage)}`,
+    `${shellQuote(`${stage}/rust-1.96.0-aarch64-unknown-linux-gnu/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig --without=rust-docs`,
+    `${shellQuote(`${standardLibraryStage}/rust-std-1.96.0-${target}/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH CARGO_HOME=/tmp/trellage-headlong-cargo RUSTC=${shellQuote(`${toolchain}/bin/rustc`)} RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= cargo build --locked --release --target ${target} --manifest-path /src/headlong-seed/tui/headlong/Cargo.toml`,
+    `cp /src/headlong-seed/tui/headlong/target/${target}/release/headlong-tui /src/headlong-tui`,
+    "chmod 0755 /src/headlong-tui",
+    "rm -rf /src/headlong-seed/tui/headlong/target",
+    `rm -f ${shellQuote(archive)} ${shellQuote(standardLibraryArchive)}`,
+    build,
+  ].join("; ")
 }
 
 const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): string => {
@@ -459,6 +528,10 @@ const copilotPluginDetails = (
   document: ProfileDocument,
   lock: ProfileLock,
 ): { readonly marketplace: string; readonly selected: string; readonly version: string } => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "copilot") {
+    return impossibleBuilderInput("Copilot builder requires a Copilot package")
+  }
   const source = lock.sources[0]
   const selection = copilotPluginSelection(document.profile.plugins[0])
   if (
@@ -469,7 +542,7 @@ const copilotPluginDetails = (
   ) {
     return impossibleBuilderInput("Copilot builder requires one exact locked marketplace plugin")
   }
-  const version = copilotPluginVersion(source, selection, lock.packages.harness.version)
+  const version = copilotPluginVersion(source, selection, harness.version)
   if (version === undefined)
     return impossibleBuilderInput("Copilot builder requires one exact locked marketplace plugin")
   return { ...selection, version }
@@ -502,11 +575,15 @@ const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool
 
 export const builderScript = (document: ProfileDocument, lock: ProfileLock): string => {
   const harness = lock.packages.harness
-  if (document.profile.harness.kind !== harness.kind || !safeLockedVersionPattern.test(harness.version)) {
+  if (document.profile.harness.kind !== harness.kind) {
+    return impossibleBuilderInput("profile and lock harness packages do not match")
+  }
+  const build = 'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"'
+  if (harness.kind === "headlong") return headlongBuilderScript(lock, harness, build)
+  if (!safeLockedVersionPattern.test(harness.version)) {
     return impossibleBuilderInput("profile and lock harness packages do not match")
   }
   const tool = `http:${harness.kind}@${harness.version}`
-  const build = 'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"'
   if (harness.kind === "codex") return codexBuilderScript(lock, tool, build)
   if (harness.kind === "claude") return claudeBuilderScript(document, lock, tool, build)
   if (harness.kind === "pi") {
@@ -873,9 +950,11 @@ const floatingSkillDestination = (document: ProfileDocument, context: string): s
       ? path.join(context, "copilot-seed", "skills")
       : document.profile.harness.kind === "claude"
         ? path.join(context, "claude-seed", "skills")
-        : document.profile.harness.kind === "prime"
-          ? path.join(context, "prime-seed", "skills")
-          : path.join(context, "pi-seed", "skills")
+        : document.profile.harness.kind === "headlong"
+          ? path.join(context, "headlong-skills", "skills")
+          : document.profile.harness.kind === "prime"
+            ? path.join(context, "prime-seed", "skills")
+            : path.join(context, "pi-seed", "skills")
 
 const floatingInstructionDestination = (document: ProfileDocument, context: string): string =>
   document.profile.harness.kind === "codex"
@@ -957,6 +1036,7 @@ const appendFloatingInstructions = (
   snapshot: string,
 ): Effect.Effect<void, ApplicationError> =>
   Effect.gen(function* () {
+    if (document.profile.harness.kind === "headlong") return
     const incoming = yield* io("cannot read floating always-on instructions", () =>
       readFile(path.join(snapshot, "always-on.md"), "utf8"),
     )
@@ -973,10 +1053,28 @@ const appendFloatingInstructions = (
 const updateFloatingManagedManifests = (
   document: ProfileDocument,
   context: string,
+  snapshot: string,
   names: ReadonlyArray<string>,
 ): Effect.Effect<void, ApplicationError> =>
   Effect.gen(function* () {
     const harness = document.profile.harness.kind
+    if (harness === "headlong") {
+      const alwaysOnInstructions = yield* io("cannot read floating always-on instructions", () =>
+        readFile(path.join(snapshot, "always-on.md"), "utf8"),
+      )
+      const alwaysOn = new Set(
+        [...alwaysOnInstructions.matchAll(/^# Trellage managed always-on skill: ([A-Za-z0-9][A-Za-z0-9._-]*)$/gm)].map(
+          (match) => match[1]!,
+        ),
+      )
+      if ([...alwaysOn].some((name) => !names.includes(name))) {
+        return yield* Effect.fail(new ApplicationError({ message: "floating always-on skill manifest is invalid" }))
+      }
+      const manifest = names.map((name) => `${name}\t${alwaysOn.has(name) ? "1" : "0"}\n`).join("")
+      yield* io("cannot write Headlong managed skill manifest", () =>
+        writeFile(path.join(context, "headlong-skills", "managed-skills.tsv"), manifest),
+      )
+    }
     if (harness === "pi" || harness === "prime") {
       const seed = path.join(context, harness === "pi" ? "pi-seed" : "prime-seed")
       const manifest = path.join(seed, "managed-skills.txt")
@@ -1007,7 +1105,7 @@ const injectFloatingSkills = (
     yield* io("cannot initialize floating skill destination", () => mkdir(destination, { recursive: true }))
     yield* copyFloatingSkills(snapshot, destination, names)
     yield* appendFloatingInstructions(document, context, snapshot)
-    yield* updateFloatingManagedManifests(document, context, names)
+    yield* updateFloatingManagedManifests(document, context, snapshot, names)
   })
 
 const floatingStageArguments = (document: ProfileDocument, snapshot: string): ReadonlyArray<string> => [
@@ -1151,6 +1249,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
   copilotEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-copilot-entry.sh",
+  ),
+  headlongEntry: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/runtime-headlong-entry.sh",
   ),
   piEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -1309,7 +1411,9 @@ const upgradeResolvers = (
             return Effect.fail(cause)
           }
           return Effect.sync(() => {
-            fallbacks.push(`harness ${request.kind}@${request.selector} -> ${current.packages.harness.version}`)
+            fallbacks.push(
+              `harness ${request.kind}@${request.selector} -> ${harnessPackageRevision(current.packages.harness)}`,
+            )
             return current.packages
           })
         }),
@@ -1716,12 +1820,14 @@ export const verifyProfile = (
 type ProfileHarnessKind = ProfileDocument["profile"]["harness"]["kind"]
 
 const metadataHarnessExecutable = (kind: ProfileHarnessKind): string => {
+  if (kind === "headlong") return "headlong-init"
   if (kind === "prime") return "prime-agent"
   if (kind === "pi") return "omp"
   return kind
 }
 
 const metadataRuntimeEntry = (kind: ProfileHarnessKind): string => {
+  if (kind === "headlong") return "runtime-headlong-entry"
   if (kind === "copilot") return "trellage-copilot-entry"
   if (kind === "claude") return "trellage-claude-entry"
   if (kind === "pi") return "trellage-pi-entry"
@@ -1734,6 +1840,7 @@ const metadataDefaultNetwork = (kind: ProfileHarnessKind): string =>
 
 const metadataAuthPolicy = (document: ProfileDocument): string => {
   const harness = document.profile.harness
+  if (harness.kind === "headlong") return "proxy"
   if (harness.kind === "copilot") return harness.copilot.auth
   if (harness.kind === "pi") return harness.pi.auth
   if (harness.kind === "claude") return "claude-explicit"
@@ -1756,7 +1863,9 @@ const metadataResolvedVersion = (
   lock: ProfileLock | undefined,
   ready: boolean,
 ): string | null =>
-  ready && lock?.packages.harness.kind === document.profile.harness.kind ? lock.packages.harness.version : null
+  ready && lock?.packages.harness.kind === document.profile.harness.kind
+    ? harnessPackageRevision(lock.packages.harness)
+    : null
 
 const harnessSpecificMetadata = (document: ProfileDocument): Readonly<Record<string, unknown>> => {
   const harness = document.profile.harness
@@ -1790,6 +1899,7 @@ const assembleProfileMetadata = (
   const harnessKind = document.profile.harness.kind
   const floatingSkills = document.profile.skill_bundles.length > 0
   const resolvedVersion = metadataResolvedVersion(document, lock, ready)
+  const headlong = harnessKind === "headlong"
   return {
     profile_path: document.path,
     profile_name: document.profile.name,
@@ -1811,6 +1921,13 @@ const assembleProfileMetadata = (
     resolved_varlock_path: document.resolvedVarlockPath ?? null,
     has_initial_prompt: document.resolvedInitialPrompt !== undefined,
     harness_kind: harnessKind,
+    container_lifecycle: headlong ? "persistent" : "ephemeral",
+    container_restart_policy: headlong ? "unless-stopped" : "no",
+    container_command: headlong ? ["runtime-headlong-entry", "service"] : [],
+    published_ports: headlong
+      ? [{ host_ip: "127.0.0.1", host_port: 18080, container_port: 8080, protocol: "tcp" }]
+      : [],
+    optional_secrets: [],
     harness_executable: metadataHarnessExecutable(harnessKind),
     runtime_entry: metadataRuntimeEntry(harnessKind),
     default_network: metadataDefaultNetwork(harnessKind),

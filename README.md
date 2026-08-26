@@ -367,6 +367,46 @@ persisted edits cannot redirect this profile to another endpoint. Use
 `--model MODEL` only when the full inventory publishes
 `modelOverride: true`.
 
+## Headlong
+
+The bundled `headlong` profile installs the official
+[`laude-institute/headlong`](https://github.com/laude-institute/headlong)
+checkout from its exact locked commit. It runs as a persistent service with
+identity, memory, background thinkers, and a web dashboard published only at
+<http://127.0.0.1:18080>.
+
+The image builds the locked Rust `headlong-tui` during image creation and
+installs it with `ada` on the login-shell `PATH`. Headlong starts and supervises
+the dashboard by default, including after a container restart.
+
+```bash
+trellage validate headlong
+trellage build --locked headlong
+trellage --profile headlong
+trellage stop --profile headlong
+trellage start --profile headlong
+trellage destroy --profile headlong
+```
+
+Headlong uses the local `copilot-proxy-rs` service on Docker network
+`copilot-proxy-rs_default`. Trellage fixes Headlong to the Anthropic Messages
+route with model `claude-sonnet-5`; it does not request, forward, or store a
+provider API key. Start and authenticate `copilot-proxy-rs` before the first
+launch. The Headlong initializer then runs identity setup without a provider
+key prompt.
+
+Exiting the attached shell does not stop Headlong. Use `stop` to pause it and
+`start` to resume it. `destroy` removes the container and its Headlong state
+only after confirmation. `trellage upgrade headlong` can replace a clean
+managed checkout while preserving identity state. If Headlong or
+the user changed tracked or untracked source, the runtime refuses the
+replacement; inspect and back up the checkout with
+`trellage shell --profile headlong`.
+
+Headlong uses the outer Trellage container as its sandbox. The profile does not
+mount the Docker socket or start nested Docker, and prompt, resume, model
+override, and structured-output modes remain disabled.
+
 ## Pi with Oh My Pi
 
 The bundled `pi-oh-my-pi` profile runs the pinned standalone `omp` executable
