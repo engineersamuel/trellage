@@ -14,6 +14,7 @@ runtime_home="${TRELLAGE_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-/home/agent/.claude}}
 auth_mode="${TRELLAGE_CLAUDE_AUTH_MODE:-proxy}"
 claude_mode="${TRELLAGE_CLAUDE_MODE:-hyperresearch}"
 runtime_mode="${TRELLAGE_CLAUDE_RUNTIME_MODE:-$claude_mode}"
+codex_reviewer_config="${TRELLAGE_CODEX_REVIEWER_CONFIG-}"
 resume_profile="${TRELLAGE_RESUME_PROFILE-}"
 resume_session_id="${TRELLAGE_RESUME_SESSION_ID-}"
 output_format="${TRELLAGE_OUTPUT_FORMAT-}"
@@ -66,6 +67,19 @@ print_resume_hint() {
 [[ "$runtime_mode" == core || "$runtime_mode" == hyperresearch || "$runtime_mode" == native-plugin ]] \
   || fail "unsupported Claude runtime mode: $runtime_mode"
 [[ -d "$seed_home" && ! -L "$seed_home" ]] || fail "missing baked Claude seed: $seed_home"
+if [[ -n "$codex_reviewer_config" ]]; then
+  [[ "$codex_reviewer_config" == /* && -f "$codex_reviewer_config" && ! -L "$codex_reviewer_config" ]] \
+    || fail 'Codex reviewer config must be an absolute regular file'
+  codex_home="${CODEX_HOME:-/home/agent/.codex}"
+  [[ "$codex_home" == /* && ! -L "$codex_home" ]] || fail 'Codex reviewer home must be an absolute directory'
+  mkdir -p "$codex_home"
+  [[ -d "$codex_home" && ! -L "$codex_home" ]] || fail 'Codex reviewer home must be a directory'
+  codex_config="$codex_home/config.toml"
+  codex_config_tmp="$codex_home/.config.toml.trellage.$$"
+  cp -- "$codex_reviewer_config" "$codex_config_tmp"
+  chmod 600 "$codex_config_tmp"
+  mv -f -- "$codex_config_tmp" "$codex_config"
+fi
 if [[ "$runtime_mode" != core ]]; then
   [[ -f "$seed_home/managed-paths.txt" && ! -L "$seed_home/managed-paths.txt" ]] \
     || fail 'baked Claude managed-path manifest is missing or unsafe'

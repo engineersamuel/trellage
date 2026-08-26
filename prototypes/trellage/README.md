@@ -494,9 +494,15 @@ Dry-run changes nothing. Real uninstall removes only the exact owned `trellage` 
 
 ## Safety Boundary
 
-The container is non-root, read-only, capability-free, and resource-limited. The only host-backed mounts are the current worktree, its writable Git common directory, the read-only `~/.copilot/models.json` catalog at `/home/agent/.copilot-models.json`, and its owned `/home/agent` state volume. The container also receives a private `/tmp` tmpfs with `noexec`, `nosuid`, and `nodev`; GitHub CLI credentials exist only in that tmpfs. Host-visible Docker exec uses the supported `HERDR_AGENT=codex` hint. `HERDR_AGENT=codex is host-only wrapper metadata`. The hint is not passed into the container. Herdr is not installed or mounted in the container. No bridge, socket, or plugin was added for Herdr.
+The container is non-root, read-only, capability-free, and resource-limited. Docker starts a minimal init process to reap orphaned children while preserving the 256-task PID limit. The only host-backed mounts are the current worktree, its writable Git common directory, the read-only `~/.copilot/models.json` catalog at `/home/agent/.copilot-models.json`, and its owned `/home/agent` state volume. The container also receives a private `/tmp` tmpfs with `noexec`, `nosuid`, and `nodev`; GitHub CLI credentials exist only in that tmpfs. Host-visible Docker exec uses the supported `HERDR_AGENT=codex` hint. `HERDR_AGENT=codex is host-only wrapper metadata`. The hint is not passed into the container. Herdr is not installed or mounted in the container. No bridge, socket, or plugin was added for Herdr.
 
-Resource names include the profile, normalized worktree basename, and a canonical-path hash. Ownership labels and exact mounts are revalidated before stop, attach, or removal; collisions with unrelated Docker resources fail closed. Legacy managed containers missing the Git common-directory or models-catalog mount are recreated while preserving the profile/worktree state volume. Rebuilt images replace stale containers while retaining the profile/worktree state volume.
+Resource names include the profile, normalized worktree basename, and a canonical-path hash. Ownership labels and exact mounts are revalidated before stop, attach, or removal; collisions with unrelated Docker resources fail closed. Legacy managed containers missing the Git common-directory mount, models-catalog mount, private Fish runtime directory, or init process are recreated while preserving the profile/worktree state volume. Rebuilt images replace stale containers while retaining the profile/worktree state volume.
+
+The graph-of-loops profile disables Beads metrics and event flushing because
+Beads 1.2.2 can leave detached telemetry processes behind
+([gastownhall/beads#5900](https://github.com/gastownhall/beads/issues/5900)).
+Trellage does not increase the PID limit or delete retained Beads telemetry
+queues.
 
 ## Observations
 
@@ -504,14 +510,14 @@ Resource names include the profile, normalized worktree basename, and a canonica
 - Codex YOLO/dangerous bypass was active inside the external Docker sandbox.
 - Herdr followed `idle -> working -> done -> release` for the host-visible launch.
 - Native resume continued the same conversation after exit and restart.
-- The recovery Fish opened but printed `/tmp/fish` and `error: Runtime path not available. Try deleting the directory /tmp/fish.`
+- The recovery Fish opened without runtime-path warnings by using its private `/run/user/10001` tmpfs.
 
 ## Verdict
 
 NATIVE_HERDR_DETECTION_WORKS
 
-The supported host hint was sufficient for the tested manual Herdr flow. The recovery-shell warning remains a narrow defect, not evidence for a broader integration layer.
+The supported host hint was sufficient for the tested manual Herdr flow.
 
 ## Smallest Next Experiment
 
-Isolate and correct only the recovery-shell Fish runtime-path warning, then repeat the recovery shell check. Do not generalize Prototype A into a registry or framework yet.
+Repeat the recovery shell check after Fish or Docker changes. Do not generalize Prototype A into a registry or framework yet.

@@ -1,5 +1,9 @@
 import {
   claudeGithubReleaseTools,
+  claudeHasBeads,
+  claudeHasCodexReviewer,
+  claudeHasLefthook,
+  claudeHasSerena,
   claudeHasWorktreeCli,
   claudePypiToolNames,
   isClaudeProfile,
@@ -65,7 +69,10 @@ const renderMcp = (mcp: Mcp): ReadonlyArray<string> => [
 
 export const renderCodexConfig = (profile: Profile): string => {
   assertCodexProfile(profile)
-  const codex = profile.harness.codex
+  return renderCodexConfiguration(profile.harness.codex, profile.mcps)
+}
+
+export const renderCodexConfiguration = (codex: CodexProfile["harness"]["codex"], mcps: ReadonlyArray<Mcp>): string => {
   const lines = [
     `model = ${quote(codex.model)}`,
     `model_provider = ${quote(codex.model_provider)}`,
@@ -80,7 +87,7 @@ export const renderCodexConfig = (profile: Profile): string => {
     if (provider.stream_idle_timeout_ms !== undefined)
       lines.push(`stream_idle_timeout_ms = ${provider.stream_idle_timeout_ms}`)
   }
-  for (const mcp of profile.mcps) lines.push("", ...renderMcp(mcp))
+  for (const mcp of mcps) lines.push("", ...renderMcp(mcp))
   return `${lines.join("\n")}\n`
 }
 
@@ -203,10 +210,12 @@ ${renderOci(
 
 const optionalMiseLines = (lines: ReadonlyArray<string>): string => (lines.length === 0 ? "" : `${lines.join("\n")}\n`)
 
-const claudeMisePythonTools = (hyperresearch: boolean, extraPython: boolean): string => {
-  if (hyperresearch) return 'python = "3.13.14"\n"npm:@playwright/mcp" = "0.0.78"'
-  if (extraPython) return 'python = "3.13.14"'
-  return ""
+const claudeMiseTools = (profile: ClaudeProfile, hyperresearch: boolean, extraPython: boolean): string => {
+  const tools: Array<string> = []
+  if (hyperresearch || extraPython) tools.push('python = "3.13.14"')
+  if (hyperresearch) tools.push('"npm:@playwright/mcp" = "0.0.78"')
+  if (claudeHasSerena(profile)) tools.push('uv = "0.11.21"')
+  return tools.join("\n")
 }
 
 const claudePypiBinDotfiles = (profile: ClaudeProfile): ReadonlyArray<string> =>
@@ -233,9 +242,28 @@ const claudeDotfilesBeforeSeed = (profile: ClaudeProfile): ReadonlyArray<string>
   }
   lines.push(...claudePypiBinDotfiles(profile))
   for (const tool of claudeGithubReleaseTools(profile)) {
-    lines.push(`"${`/usr/local/bin/${tool.name}`}" = { source = ${quote(`binaries/${tool.name}`)}, mode = "copy" }`)
+    if (tool.name === "lefthook-linux-arm64") {
+      lines.push(
+        '"/usr/local/lib/trellage/node_modules/lefthook-linux-arm64" = { source = "lefthook-linux-arm64", mode = "copy" }',
+      )
+    } else {
+      lines.push(`"${`/usr/local/bin/${tool.name}`}" = { source = ${quote(`binaries/${tool.name}`)}, mode = "copy" }`)
+    }
   }
   if (claudeHasWorktreeCli(profile)) lines.push('"/usr/local/bin/wt" = { source = "wt-wrapper.sh", mode = "copy" }')
+  if (claudeHasCodexReviewer(profile)) {
+    lines.push(
+      '"/home/agent/.codex/config.toml" = { source = "codex-reviewer-config.toml", mode = "copy" }',
+      '"/usr/local/share/trellage/codex-reviewer-config.toml" = { source = "codex-reviewer-config.toml", mode = "copy" }',
+      '"/usr/local/bin/codex-code-mode-host" = { source = "binaries/codex-code-mode-host", mode = "copy" }',
+    )
+    if (claudeHasBeads(profile)) {
+      lines.push(
+        '"/etc/codex/skills/graph-of-loops/SKILL.md" = { source = "codex-graph-of-loops-skill.md", mode = "copy" }',
+        '"/etc/codex/skills/graph-of-loops/agents/openai.yaml" = { source = "codex-graph-of-loops-skill.yaml", mode = "copy" }',
+      )
+    }
+  }
   if (profile.mcps.length > 0) {
     lines.push('"/usr/local/share/trellage/claude-mcp.json" = { source = "claude-mcp.json", mode = "copy" }')
   }
@@ -266,6 +294,14 @@ const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> =>
   return [
     'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
     'TRELLAGE_CLAUDE_RUNTIME_MODE = "native-plugin"',
+    ...(claudeHasCodexReviewer(profile)
+      ? [
+          'CODEX_HOME = "/home/agent/.codex"',
+          'TRELLAGE_CODEX_REVIEWER_CONFIG = "/usr/local/share/trellage/codex-reviewer-config.toml"',
+        ]
+      : []),
+    ...(claudeHasBeads(profile) ? ['BD_DISABLE_METRICS = "1"', 'BD_DISABLE_EVENT_FLUSH = "1"'] : []),
+    ...(claudeHasLefthook(profile) ? ['NODE_PATH = "/usr/local/lib/trellage/node_modules"'] : []),
     ...(extraPython ? ['PYTHONPATH = "/opt/trellage/graph-tools"'] : []),
   ]
 }
@@ -285,7 +321,7 @@ const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, optio
 
 [tools]
 node = "22.17.0"
-${claudeMisePythonTools(hyperresearch, extraPython)}
+${claudeMiseTools(profile, hyperresearch, extraPython)}
 
 [tools."http:claude"]
 version = ${quote(harness.version)}

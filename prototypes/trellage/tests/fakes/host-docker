@@ -516,6 +516,26 @@ case "${1:-} ${2:-}" in
         ;;
       *State.Running*) printf '%s\n' "$running" ;;
       *State.Pid*) printf '100\n' ;;
+      *HostConfig.Init*)
+        if [[ "${FAKE_DOCKER_RUNTIME_STATE:-matching}" == absent \
+          || "${FAKE_DOCKER_RUNTIME_STATE:-matching}" == missing-init ]]; then
+          printf '<nil>\n'
+        else
+          printf 'true\n'
+        fi
+        ;;
+      *HostConfig.Tmpfs*)
+        if [[ "${FAKE_DOCKER_RUNTIME_STATE:-matching}" == absent ]]; then
+          printf '\n'
+        else
+          printf 'rw,noexec,nosuid,nodev,size=1m,mode=700,uid=10001,gid=10001\n'
+        fi
+        ;;
+      *'.Config.Env'*)
+        if [[ "${FAKE_DOCKER_RUNTIME_STATE:-matching}" != absent ]]; then
+          printf 'XDG_RUNTIME_DIR=/run/user/10001\n'
+        fi
+        ;;
       *'.Mounts'*)
         fake_state_volume="${FAKE_DOCKER_STATE_VOLUME:-}"
         if [[ -z "$fake_state_volume" && -f "$log.created-volume-name" ]]; then

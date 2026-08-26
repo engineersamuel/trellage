@@ -22,8 +22,14 @@ from shortener.store import Store
 CODE_PATTERN = re.compile(r"^[0-9a-z]{6}$")
 
 
-class ShortenerHTTPTest(unittest.TestCase):
-    """Drives a real HTTPServer bound to an ephemeral port."""
+class HTTPFixture(unittest.TestCase):
+    """Shared HTTPServer-backed fixture for shortener HTTP tests.
+
+    Both this module and ``tests/test_review_findings.py`` drive a real
+    server bound to an ephemeral port with the same setup/teardown and the
+    same "POST /shorten, read back the code" helper; factored out here so
+    neither copy can drift from the other.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -65,6 +71,10 @@ class ShortenerHTTPTest(unittest.TestCase):
         status, _, payload = self.post_shorten(json.dumps({"url": url}))
         self.assertEqual(status, 200, payload)
         return json.loads(payload.decode("utf-8"))["code"]
+
+
+class ShortenerHTTPTest(HTTPFixture):
+    """Drives a real HTTPServer bound to an ephemeral port."""
 
     # -- tests -----------------------------------------------------------
 

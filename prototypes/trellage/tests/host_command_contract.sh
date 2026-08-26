@@ -17,6 +17,21 @@ fail() {
   exit 1
 }
 
+profile_hash_for() {
+  local profile="$1"
+  (
+    cd "$prototype_dir/../../packages/trellage-cli"
+    "$real_node" --input-type=module - "$profile" <<'NODE'
+import { Effect } from "effect"
+import { loadProfile } from "./dist/application.js"
+import { profileHash } from "./dist/lock.js"
+
+const document = await Effect.runPromise(loadProfile(process.argv[2]))
+console.log(profileHash(document))
+NODE
+  )
+}
+
 fake_bin="$test_root/fake-bin"
 runtime_dir="$test_root/runtime"
 mkdir -p "$fake_bin" "$runtime_dir"
@@ -567,6 +582,7 @@ test_new_container_from_subdirectory() {
   assert_arg "$docker_log" 'ALL'
   assert_arg "$docker_log" '--security-opt'
   assert_arg "$docker_log" 'no-new-privileges'
+  assert_arg "$docker_log" '--init'
   assert_arg "$docker_log" '--pids-limit'
   assert_arg "$docker_log" '256'
   assert_arg "$docker_log" '--memory'
@@ -576,6 +592,8 @@ test_new_container_from_subdirectory() {
   assert_arg "$docker_log" "type=bind,src=$worktree/.git,dst=$worktree/.git"
   assert_arg "$docker_log" '--tmpfs'
   assert_arg "$docker_log" '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001'
+  assert_arg "$docker_log" '/run/user/10001:rw,noexec,nosuid,nodev,size=1m,mode=700,uid=10001,gid=10001'
+  assert_arg "$docker_log" 'XDG_RUNTIME_DIR=/run/user/10001'
   assert_arg "$docker_log" "type=bind,src=$worktree,dst=$mount_path"
   assert_arg "$docker_log" "type=volume,src=$state_volume,dst=/home/agent"
   assert_arg "$docker_log" "type=bind,src=$HOME/.copilot/models.json,dst=/home/agent/.copilot-models.json,readonly"
@@ -1420,6 +1438,30 @@ test_shell_and_stop_modes() {
   assert_arg "$docker_log" "type=volume,src=$state_volume,dst=/home/agent"
   grep -Fqx $'ARG\texec fish -l' "$docker_log" \
     || fail 'recreated container did not open recovery Fish'
+
+  : >"$docker_log"
+  FAKE_DOCKER_RUNTIME_STATE=absent \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" shell
+  [[ "$(grep -Fxc $'ARG\trm' "$docker_log")" -eq 1 ]] \
+    || fail 'legacy runtime container was not replaced'
+  [[ "$(grep -Fxc $'ARG\tcreate' "$docker_log")" -eq 1 ]] \
+    || fail 'legacy runtime container replacement was not created'
+  assert_arg "$docker_log" "type=volume,src=$state_volume,dst=/home/agent"
+  assert_arg "$docker_log" 'XDG_RUNTIME_DIR=/run/user/10001'
+
+  : >"$docker_log"
+  FAKE_DOCKER_RUNTIME_STATE=missing-init \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" shell
+  [[ "$(grep -Fxc $'ARG\trm' "$docker_log")" -eq 1 ]] \
+    || fail 'runtime container without Docker init was not replaced'
+  [[ "$(grep -Fxc $'ARG\tcreate' "$docker_log")" -eq 1 ]] \
+    || fail 'runtime container replacement with Docker init was not created'
+  assert_arg "$docker_log" "type=volume,src=$state_volume,dst=/home/agent"
+  assert_arg "$docker_log" '--init'
 
   : >"$docker_log"
   (
@@ -2605,7 +2647,7 @@ env_from_secret = { TOKEN = "DOCS_TOKEN" }\
 ' \
     "$prototype_dir/../../profiles/codex-superpowers/profile.toml" >"$profile"
   cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$lock"
-  profile_hash="$(shasum -a 256 "$profile" | awk '{print "sha256:" $1}')"
+  profile_hash="$(profile_hash_for "$profile")"
   sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" "$lock"
   rm -f "$lock.bak"
   state_volume="$(resource_names "$worktree" secret-test | tail -n 1)"
@@ -2688,7 +2730,7 @@ env_from_secret = { DOCS_TOKEN = "DOCS_TOKEN" }\
 ' \
     "$prototype_dir/../../profiles/codex-superpowers/profile.toml" >"$profile"
   cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$lock"
-  profile_hash="$(shasum -a 256 "$profile" | awk '{print "sha256:" $1}')"
+  profile_hash="$(profile_hash_for "$profile")"
   sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" "$lock"
   rm -f "$lock.bak"
   state_volume="$(resource_names "$worktree" varlock-test | tail -n 1)"

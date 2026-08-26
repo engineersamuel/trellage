@@ -77,6 +77,3 @@ class Store:
         if not isinstance(code, str):
             return None
         return self._code_to_url.get(code)
-
-    def __len__(self) -> int:
-        return len(self._code_to_url)

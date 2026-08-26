@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from .store import Store
 
@@ -18,11 +18,97 @@ __all__ = ["make_handler"]
 # attacker-controlled, so it is checked before a single byte is read.
 MAX_BODY_BYTES = 64 * 1024
 
-# Reserved characters a URL may legitimately contain; everything else gets
-# percent-encoded on its way into the Location header. This keeps CR/LF out of
-# the response and makes non-Latin-1 URLs encodable, without validating what
-# the URL means (a spec non-goal).
-_LOCATION_SAFE = "!#$%&'()*+,/:;=?@[]~"
+# --- Location header safety --------------------------------------------
+#
+# The stored value is an arbitrary non-empty string (URL validation beyond
+# that is a spec non-goal), so it may not parse as a well-formed URL at all.
+# `_safe_location` renders it as a single-line, ASCII-only header value:
+#
+#   * If it splits into scheme://authority/path?query#fragment, the
+#     hostname is IDNA-encoded (non-ASCII labels only; ASCII hosts, including
+#     IPv6 literals, pass through unchanged) and the userinfo/path/query/
+#     fragment components are UTF-8 percent-encoded, each against the
+#     RFC 3986 characters that are structurally meaningful in that
+#     component. A URL that was already header-safe round-trips unchanged.
+#   * Anything else (no parseable authority, or one `urlsplit`/`.port`
+#     rejects, e.g. a malformed IPv6 literal or non-numeric port) falls back
+#     to whole-string UTF-8 percent-encoding: still ASCII-safe, just not
+#     component-split.
+#
+# `urlsplit` itself silently deletes bare CR/LF/TAB from its input (a
+# hardening fix against header-injection-by-newline). That is a safe outcome
+# but a silent one, so those controls are percent-escaped first. Existing
+# percent escapes remain unchanged because "%" is safe in every later quote.
+_CONTROL_ESCAPES = (("\r", "%0D"), ("\n", "%0A"), ("\t", "%09"))
+
+_SUB_DELIMS = "!$&'()*+,;="
+_HOST_SAFE = "%-._~"
+_USERINFO_SAFE = _SUB_DELIMS + "%:"
+_PATH_SAFE = _SUB_DELIMS + "%:@/"
+_QUERY_SAFE = _PATH_SAFE + "?"
+_FRAGMENT_SAFE = _QUERY_SAFE
+_OPAQUE_SAFE = _SUB_DELIMS + "%:@/?"
+
+
+def _escape_controls(value: str) -> str:
+    """Percent-encode CR, LF, and TAB before any URL parsing."""
+    for char, escape in _CONTROL_ESCAPES:
+        value = value.replace(char, escape)
+    return value
+
+
+def _idna_host(hostname: str) -> str | None:
+    """Return an ASCII-safe hostname, or None if it cannot be made one."""
+    if not hostname:
+        return None
+    if ":" in hostname:
+        return f"[{hostname}]"  # IPv6 literal; urlsplit already validated it.
+    if not hostname.isascii():
+        try:
+            hostname = hostname.encode("idna").decode("ascii")
+        except (UnicodeError, UnicodeDecodeError):
+            return None
+    return quote(hostname, safe=_HOST_SAFE, encoding="utf-8")
+
+
+def _safe_authority(parts) -> str | None:
+    """Return an ASCII-safe 'userinfo@host:port' authority, or None."""
+    host = _idna_host(parts.hostname) if parts.hostname else None
+    if not host:
+        return None
+
+    authority = f"{host}:{parts.port}" if parts.port is not None else host
+
+    if parts.username is not None:
+        userinfo = quote(parts.username, safe=_USERINFO_SAFE, encoding="utf-8")
+        if parts.password is not None:
+            userinfo += ":" + quote(parts.password, safe=_USERINFO_SAFE, encoding="utf-8")
+        authority = f"{userinfo}@{authority}"
+
+    return authority
+
+
+def _safe_location(url: str) -> str:
+    """Render `url` as a single-line, ASCII-only `Location` header value."""
+    escaped = _escape_controls(url)
+    try:
+        parts = urlsplit(escaped)
+        if not parts.netloc:
+            raise ValueError("no authority to anchor component-aware encoding")
+
+        authority = _safe_authority(parts)
+        if authority is None or not parts.scheme.isascii():
+            raise ValueError("authority could not be made ASCII-safe")
+
+        path = quote(parts.path, safe=_PATH_SAFE, encoding="utf-8")
+        query = quote(parts.query, safe=_QUERY_SAFE, encoding="utf-8")
+        fragment = quote(parts.fragment, safe=_FRAGMENT_SAFE, encoding="utf-8")
+        return urlunsplit((parts.scheme, authority, path, query, fragment))
+    except ValueError:
+        # Not a URL with a parseable authority (or `urlsplit`/`.port` itself
+        # rejected it) — still a non-empty string per the spec, so fall back
+        # to treating it as one opaque, whole-string-encoded value.
+        return quote(escaped, safe=_OPAQUE_SAFE, encoding="utf-8")
 
 
 def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
@@ -102,7 +188,7 @@ def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
                 return
 
             self.send_response(302)
-            self.send_header("Location", quote(url, safe=_LOCATION_SAFE))
+            self.send_header("Location", _safe_location(url))
             self.send_header("Content-Length", "0")
             self.end_headers()
 

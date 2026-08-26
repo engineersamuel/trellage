@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -747,15 +747,28 @@ case "$cmd" in
     git worktree list --porcelain
     ;;
   merge)
-    if ! git merge --no-commit --no-ff --dry-run HEAD; then
-      printf 'Merge aborted due to conflicts\\n' >&2
-      git merge --abort >/dev/null 2>&1 || true
-      exit 1
+    if [ "$#" -ne 1 ]; then
+      printf 'usage: wt merge <source-branch>\\n' >&2
+      exit 2
     fi
-    git merge --no-edit
+    source_branch="$1"
+    if ! git rev-parse --verify --quiet "$source_branch^{commit}" >/dev/null; then
+      printf 'wt: unknown source branch: %s\\n' "$source_branch" >&2
+      exit 2
+    fi
+    if git merge --no-edit "$source_branch"; then
+      exit 0
+    else
+      status=$?
+      if git rev-parse --verify --quiet MERGE_HEAD >/dev/null; then
+        git merge --abort
+      fi
+      printf 'wt: merge aborted due to conflicts\\n' >&2
+      exit "$status"
+    fi
     ;;
   --help|help)
-    printf 'wt new [branch]\\nwt ls\\nwt merge\\n'
+    printf 'wt new [branch]\\nwt ls\\nwt merge <source-branch>\\n'
     ;;
   *)
     printf 'wt: unknown command %s\\n' "$cmd" >&2
@@ -833,6 +846,30 @@ const installBdBinary = (
     })
   })
 
+const installBvBinary = (
+  staging: string,
+  archivePath: string,
+  context: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    const listing = yield* run("tar", ["-tzf", archivePath])
+    if (!safeArchivePaths(listing)) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "bv archive has unsafe paths" }))
+    }
+    const entries = listing.split("\n").filter((entry) => entry.length > 0 && !entry.endsWith("/"))
+    if (entries.filter((entry) => entry === "bv").length !== 1) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "bv archive has an unexpected layout" }))
+    }
+    const extract = path.join(staging, "bv")
+    yield* attempt("cannot extract bv", () => mkdir(extract, { recursive: true }))
+    yield* run("tar", ["-xzf", archivePath, "-C", extract, "bv"])
+    yield* attempt("cannot install bv", async () => {
+      const destination = path.join(context, "binaries", "bv")
+      await rename(path.join(extract, "bv"), destination)
+      await chmod(destination, 0o755)
+    })
+  })
+
 const installRaindropBinary = (archivePath: string, context: string): Effect.Effect<void, ClaudeMaterializeError> =>
   attempt("cannot install raindrop", async () => {
     const destination = path.join(context, "binaries", "raindrop")
@@ -841,6 +878,40 @@ const installRaindropBinary = (archivePath: string, context: string): Effect.Eff
       maxBuffer: 128 * 1024 * 1024,
     })
     await writeFile(destination, result.stdout, { mode: 0o755 })
+  })
+
+const installCodexBinary = (
+  archivePath: string,
+  context: string,
+  staging: string,
+  archiveMember: string,
+  destinationName: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    const listing = yield* run("tar", ["-tzf", archivePath])
+    if (!safeArchivePaths(listing)) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "codex archive has unsafe paths" }))
+    }
+    const entries = listing.split("\n").filter((entry) => entry.length > 0 && !entry.endsWith("/"))
+    if (entries.length !== 1 || path.posix.basename(entries[0]!) !== archiveMember) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "codex archive has an unexpected layout" }))
+    }
+    const extract = path.join(staging, destinationName)
+    yield* attempt("cannot extract codex", () => mkdir(extract, { recursive: true }))
+    yield* run("tar", ["-xzf", archivePath, "-C", extract])
+    yield* attempt("cannot install codex", async () => {
+      const destination = path.join(context, "binaries", destinationName)
+      await rename(path.join(extract, entries[0]!), destination)
+      await chmod(destination, 0o755)
+    })
+  })
+
+const installLefthookBinary = (artifactPath: string, context: string): Effect.Effect<void, ClaudeMaterializeError> =>
+  attempt("cannot install Lefthook", async () => {
+    const destination = path.join(context, "lefthook-linux-arm64", "bin", "lefthook")
+    await mkdir(path.dirname(destination), { recursive: true })
+    await cp(artifactPath, destination)
+    await chmod(destination, 0o755)
   })
 
 const materializeClaudeGithubBinaries = (
@@ -861,7 +932,26 @@ const materializeClaudeGithubBinaries = (
       const archivePath = path.join(staging, path.posix.basename(new URL(locked.url).pathname))
       yield* download(locked, archivePath)
       if (tool.name === "bd") yield* installBdBinary(staging, archivePath, context)
+      else if (tool.name === "bv") yield* installBvBinary(staging, archivePath, context)
       else if (tool.name === "raindrop") yield* installRaindropBinary(archivePath, context)
+      else if (tool.name === "codex") {
+        yield* installCodexBinary(archivePath, context, staging, "codex-aarch64-unknown-linux-musl", "codex")
+        const host = yield* artifact(request, "codex-code-mode-host")
+        if (host.version !== locked.version) {
+          return yield* Effect.fail(new ClaudeMaterializeError({ message: "Codex code-mode host version mismatch" }))
+        }
+        const hostArchive = path.join(staging, path.posix.basename(new URL(host.url).pathname))
+        yield* download(host, hostArchive)
+        yield* installCodexBinary(
+          hostArchive,
+          context,
+          staging,
+          "codex-code-mode-host-aarch64-unknown-linux-musl",
+          "codex-code-mode-host",
+        )
+      } else if (tool.name === "lefthook-linux-arm64") {
+        yield* installLefthookBinary(archivePath, context)
+      }
     }
   })
 
