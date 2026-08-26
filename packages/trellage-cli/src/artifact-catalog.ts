@@ -154,11 +154,39 @@ const graphOfLoopsArtifacts: ReadonlyArray<ArtifactLock> = [
     size: 45556402,
   },
   {
+    name: "bv",
+    version: "0.22.0",
+    integrity: "sha256:23d451b87bb9dccfb94fab416b0243d107919d9d56458087475afda5a617aa89",
+    url: "https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.22.0/bv_linux_arm64.tar.gz",
+    size: 12981421,
+  },
+  {
     name: "raindrop",
     version: "0.1.21",
     integrity: "sha256:04e0b57073d9be1d7059dbc23f10212c503c2252aa26f60ce9e5ab215ebd0522",
     url: "https://github.com/raindrop-ai/workshop/releases/download/v0.1.21/raindrop-bun-linux-arm64.gz",
     size: 41964676,
+  },
+  {
+    name: "codex",
+    version: "0.149.1",
+    integrity: "sha256:14df6802e39a956de994e844b90d51d8254bcc8057b6e66f0f3e3b8f7e2da5b0",
+    url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-aarch64-unknown-linux-musl.tar.gz",
+    size: 91899352,
+  },
+  {
+    name: "codex-code-mode-host",
+    version: "0.149.1",
+    integrity: "sha256:962e029df772b53cb977a0204ec4284d0c693207a25a491106e8294aae8dfa04",
+    url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+    size: 19857866,
+  },
+  {
+    name: "lefthook-linux-arm64",
+    version: "2.1.10",
+    integrity: "sha256:9e4e2eac3f72eb6757eb01ff147622dd16a4805d3a5c2c7a701982df79eb1bd5",
+    url: "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Linux_arm64",
+    size: 13435042,
   },
 ]
 
@@ -170,6 +198,10 @@ export const extraClaudeMarketplaceArtifacts = (document: ProfileDocument): Read
     const match = graphOfLoopsArtifacts.find((artifact) => artifact.name === tool.name)
     if (match === undefined) continue
     if (!artifacts.some((artifact) => artifact.name === match.name)) artifacts.push(match)
+    if (tool.name === "codex") {
+      const host = graphOfLoopsArtifacts.find((artifact) => artifact.name === "codex-code-mode-host")!
+      if (!artifacts.some((artifact) => artifact.name === host.name)) artifacts.push(host)
+    }
   }
   return artifacts
 }

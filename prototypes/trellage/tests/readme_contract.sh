@@ -822,14 +822,13 @@ for qualification in \
   'Codex YOLO/dangerous bypass was active' \
   'idle -> working -> done -> release' \
   'Native resume continued the same conversation' \
-  'recovery Fish opened but printed `/tmp/fish`' \
-  'error: Runtime path not available. Try deleting the directory /tmp/fish.'; do
+  'recovery Fish opened without runtime-path warnings' \
+  'private `/run/user/10001` tmpfs'; do
   require_section_text '## Observations' "$qualification"
 done
 
 for qualification in \
-  'correct only the recovery-shell Fish runtime-path warning' \
-  'repeat the recovery shell check' \
+  'Repeat the recovery shell check' \
   'Do not generalize Prototype A into a registry or framework yet'; do
   require_section_text '## Smallest Next Experiment' "$qualification"
 done

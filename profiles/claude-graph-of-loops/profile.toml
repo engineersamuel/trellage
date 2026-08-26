@@ -42,8 +42,23 @@ name = "bd"
 
 [[image.tools]]
 kind = "github-release"
+repository = "Dicklesworthstone/beads_viewer"
+name = "bv"
+
+[[image.tools]]
+kind = "github-release"
 repository = "raindrop-ai/workshop"
 name = "raindrop"
+
+[[image.tools]]
+kind = "github-release"
+repository = "openai/codex"
+name = "codex"
+
+[[image.tools]]
+kind = "github-release"
+repository = "evilmartians/lefthook"
+name = "lefthook-linux-arm64"
 
 [[image.tools]]
 kind = "worktree-cli"

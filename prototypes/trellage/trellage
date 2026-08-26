@@ -1146,6 +1146,8 @@ container_integrity_label_args=(
 )
 volume_ownership_format="{{ printf \"%s\\t%s\\t%s\\t%s\" (index .Labels \"$prototype_label\") (index .Labels \"$worktree_label\") (index .Labels \"$profile_label\") (index .Labels \"$platform_label\") }}"
 mounts_format='{{ range .Mounts }}{{ printf "%s\t%s\t%s\t%s\t%t\n" .Type .Name .Source .Destination .RW }}{{ end }}'
+container_runtime_dir='/run/user/10001'
+container_runtime_tmpfs='rw,noexec,nosuid,nodev,size=1m,mode=700,uid=10001,gid=10001'
 container_platform_is_legacy=false
 
 probe_container_presence() {
@@ -1336,6 +1338,45 @@ validate_container_mounts() {
     || fail "refusing Docker container with unexpected mounts: $container_name"
   [[ "$state" == current || "$state" == legacy ]] \
     || fail "refusing Docker container with unexpected mounts: $container_name"
+}
+
+container_runtime_state() {
+  local configured_tmpfs configured_env configured_init
+  configured_tmpfs="$(docker container inspect \
+    --format "{{ index .HostConfig.Tmpfs \"$container_runtime_dir\" }}" \
+    "$container_id" 2>/dev/null)" || return 2
+  configured_env="$(docker container inspect \
+    --format '{{ range .Config.Env }}{{ println . }}{{ end }}' \
+    "$container_id" 2>/dev/null)" || return 2
+  configured_init="$(docker container inspect \
+    --format '{{ .HostConfig.Init }}' \
+    "$container_id" 2>/dev/null)" || return 2
+  if [[ "$configured_init" != true ]]; then
+    if [[ -z "$configured_tmpfs" ]] \
+      && ! grep -Fqx "XDG_RUNTIME_DIR=$container_runtime_dir" <<<"$configured_env"; then
+      printf 'legacy\n'
+      return
+    fi
+    if [[ "$configured_tmpfs" == "$container_runtime_tmpfs" ]] \
+      && [[ "$(grep -Fxc "XDG_RUNTIME_DIR=$container_runtime_dir" <<<"$configured_env")" -eq 1 ]]; then
+      printf 'legacy\n'
+      return
+    fi
+    return 1
+  fi
+  [[ "$configured_tmpfs" == "$container_runtime_tmpfs" ]] || return 1
+  [[ "$(grep -Fxc "XDG_RUNTIME_DIR=$container_runtime_dir" <<<"$configured_env")" -eq 1 ]] \
+    || return 1
+  [[ "$configured_init" == true ]] || return 1
+  printf 'current\n'
+}
+
+validate_container_runtime() {
+  local state
+  state="$(container_runtime_state)" \
+    || fail "refusing Docker container with unexpected runtime configuration: $container_name"
+  [[ "$state" == current || "$state" == legacy ]] \
+    || fail "refusing Docker container with unexpected runtime configuration: $container_name"
 }
 
 image="${TRELLAGE_IMAGE:-$profile_image}"
@@ -1830,9 +1871,12 @@ if container_is_present; then
   volume_is_present || fail "Docker state volume is missing: $state_volume"
   validate_state_volume
   validate_container_mounts
+  validate_container_runtime
   mount_state="$(container_mount_state)" \
     || fail "refusing Docker container with unexpected mounts: $container_name"
-  if [[ "$mount_state" == legacy ]] || ! container_is_current; then
+  runtime_state="$(container_runtime_state)" \
+    || fail "refusing Docker container with unexpected runtime configuration: $container_name"
+  if [[ "$mount_state" == legacy || "$runtime_state" == legacy ]] || ! container_is_current; then
     require_copilot_models
     remove_stale_container
     container_id=
@@ -1880,10 +1924,13 @@ if [[ "$reuse_container" != true ]]; then
     --read-only \
     --cap-drop ALL \
     --security-opt no-new-privileges \
+    --init \
     --pids-limit 256 \
     --memory 2g \
     --cpus 2 \
     --tmpfs "/tmp:rw,noexec,nosuid,nodev,size=${tmpfs_size},uid=10001,gid=10001" \
+    --tmpfs "$container_runtime_dir:$container_runtime_tmpfs" \
+    --env "XDG_RUNTIME_DIR=$container_runtime_dir" \
     --mount "type=bind,src=$worktree,dst=$mount_path" \
     --mount "type=bind,src=$git_common_dir,dst=$git_common_dir" \
     --mount "type=volume,src=$state_volume,dst=/home/agent" \

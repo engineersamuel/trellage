@@ -9,6 +9,9 @@ import { verifyInventory } from "./inventory.js"
 import { renderLock } from "./lock-file.js"
 import { hasLegacySourceProvenance, type ProfileLock } from "./lock.js"
 import {
+  claudeHasBeads,
+  claudeHasCodexReviewer,
+  claudeHasSerena,
   claudePypiToolNames,
   isClaudeProfile,
   isPrimeProfile,
@@ -16,7 +19,7 @@ import {
   type PrimeProfile,
   type ProfileDocument,
 } from "./profile.js"
-import { renderCodexConfig, renderMiseConfig } from "./render.js"
+import { renderCodexConfig, renderCodexConfiguration, renderMiseConfig } from "./render.js"
 import {
   claudeDefaultOnboarding,
   claudeDefaultSettings,
@@ -513,6 +516,28 @@ checksum = ${JSON.stringify(harness.integrity)}
 url = ${JSON.stringify(harness.url)}
 `
 
+const claudeUvLock = (misePlatform: string): string => {
+  const platform =
+    misePlatform === "linux-arm64"
+      ? {
+          checksum: "sha256:e71badaed2a2c3a404a0a00974b51c7ed5f5bc7be947916846005b739c68a5a2",
+          asset: "uv-aarch64-unknown-linux-musl.tar.gz",
+        }
+      : {
+          checksum: "sha256:9dadff5b9e7b1d2d011e41852a1cbca713d9d5d88194f2eb6bd240fa4fb0a719",
+          asset: "uv-x86_64-unknown-linux-musl.tar.gz",
+        }
+  return `[[tools.uv]]
+version = "0.11.21"
+backend = "aqua:astral-sh/uv"
+
+[tools.uv."platforms.${misePlatform}"]
+checksum = "${platform.checksum}"
+url = "https://github.com/astral-sh/uv/releases/download/0.11.21/${platform.asset}"
+provenance = "github-attestations"
+`
+}
+
 const renderClaudeMiseLock = (
   document: ProfileDocument,
   harness: ProfileLock["packages"]["harness"],
@@ -538,6 +563,8 @@ ${toolLock}
   }
   const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
   const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
+  const uvLock =
+    isClaudeProfile(document.profile) && claudeHasSerena(document.profile) ? claudeUvLock(misePlatform) : ""
   const pythonLock =
     claudeMarketplace && !extraPython
       ? ""
@@ -570,6 +597,7 @@ url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
 ${pythonLock}
 ${toolLock}
 
+${uvLock}
 ${playwrightLock}
 `
 }
@@ -700,6 +728,46 @@ fi
         )
         if (document.profile.harness.kind === "codex") {
           await writeFile(path.join(context, "codex-config.toml"), renderCodexConfig(document.profile))
+        }
+        if (isClaudeProfile(document.profile) && claudeHasCodexReviewer(document.profile)) {
+          await writeFile(
+            path.join(context, "codex-reviewer-config.toml"),
+            `approval_policy = "never"\nsandbox_mode = "danger-full-access"\n\n${renderCodexConfiguration(
+              {
+                model: "gpt-5.6-sol",
+                reasoning_effort: "medium",
+                model_provider: "copilot_proxy",
+                providers: {
+                  copilot_proxy: {
+                    name: "Copilot Proxy RS",
+                    base_url: "http://copilot-proxy-rs:8080/v1",
+                    wire_api: "responses",
+                    request_max_retries: 3,
+                    stream_max_retries: 5,
+                    stream_idle_timeout_ms: 300000,
+                  },
+                },
+              },
+              [],
+            )}\n[features]\nmulti_agent = true\n`,
+          )
+          if (claudeHasBeads(document.profile)) {
+            const graphOfLoopsPromptPath = path.resolve(
+              document.directory,
+              "../../.github/prompts/graph-of-loops.prompt.md",
+            )
+            await writeFile(path.join(context, "codex-graph-of-loops-skill.md"), await readFile(graphOfLoopsPromptPath))
+            await writeFile(
+              path.join(context, "codex-graph-of-loops-skill.yaml"),
+              `interface:
+  display_name: "Graph of Loops"
+  short_description: "Run a dependency-aware engineering workflow"
+  default_prompt: '$graph-of-loops OBJECTIVE="<objective>" CONSTRAINTS="<constraints and evidence>"'
+policy:
+  allow_implicit_invocation: false
+`,
+            )
+          }
         }
         if (document.profile.harness.kind === "prime") {
           await writeFile(

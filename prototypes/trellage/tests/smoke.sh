@@ -210,6 +210,8 @@ create_smoke_container() {
     --memory 2g \
     --cpus 2 \
     --tmpfs '/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001' \
+    --tmpfs '/run/user/10001:rw,noexec,nosuid,nodev,size=1m,mode=700,uid=10001,gid=10001' \
+    --env 'XDG_RUNTIME_DIR=/run/user/10001' \
     --mount "type=bind,src=$smoke_root,dst=$mount_path" \
     --mount "type=volume,src=$volume_name,dst=/home/agent" \
     --network "$network" \
@@ -347,7 +349,7 @@ probe_proxy() {
 probe_recovery_fish() {
   local output_file="$smoke_root/recovery.out"
   local error_file="$smoke_root/recovery.err"
-  local recovery_status line warning_count=0
+  local recovery_status
   set +e
   docker container exec --workdir "$mount_path" "$container_id" \
     fish -Nlc 'exec fish -l -c "printf recovery-fish-ok\\n"' \
@@ -358,20 +360,13 @@ probe_recovery_fish() {
     || fail "recovery Fish exited $recovery_status: $(cat "$error_file")"
   [[ "$(tr -d '\r' <"$output_file")" == 'recovery-fish-ok' ]] \
     || fail "recovery Fish returned unexpected output: $(cat "$output_file")"
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "$line" ]] && continue
-    case "$line" in
-      '/tmp/fish'|'error: Runtime path not available. Try deleting the directory /tmp/fish.')
-        warning_count=$((warning_count + 1))
-        ;;
-      *) fail "recovery Fish emitted an unknown warning: $line" ;;
-    esac
-  done <"$error_file"
-  if [[ "$warning_count" -gt 0 ]]; then
-    printf 'trellage smoke: accepted known recovery Fish /tmp/fish warning\n'
-  fi
+  [[ ! -s "$error_file" ]] \
+    || fail "recovery Fish emitted a warning: $(cat "$error_file")"
+  docker container exec "$container_id" bash -ceu '
+    test "$XDG_RUNTIME_DIR" = /run/user/10001
+    test "$(stat -c %a "$XDG_RUNTIME_DIR")" = 700
+    test "$(stat -c %u:%g "$XDG_RUNTIME_DIR")" = 10001:10001
+  ' || fail 'recovery Fish runtime directory is invalid'
   docker container exec "$container_id" bash -ceu 'test ! -e "$CODEX_HOME/sessions"' \
     || fail 'recovery Fish started Codex or created native session state'
   docker container top "$container_id" -eo pid,comm \

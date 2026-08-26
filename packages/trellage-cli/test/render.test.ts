@@ -120,6 +120,49 @@ marketplace = "social-media-skills"
 select = ["social-media-skills"]
 `
 
+const claudeGraphSource = `
+schema = 1
+name = "claude-graph-of-loops"
+description = "Claude graph tools"
+skill_bundles = ["sandbox-common"]
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "git", "jq"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/example/graph.git"
+ref = "main"
+marketplace = "graph"
+select = ["graph"]
+[[image.tools]]
+kind = "pypi"
+name = "serena-agent"
+[[image.tools]]
+kind = "github-release"
+repository = "gastownhall/beads"
+name = "bd"
+[[image.tools]]
+kind = "github-release"
+repository = "openai/codex"
+name = "codex"
+[[image.tools]]
+kind = "github-release"
+repository = "evilmartians/lefthook"
+name = "lefthook-linux-arm64"
+[[mcps]]
+name = "serena"
+transport = "stdio"
+command = "serena"
+`
+
 const piSource = `
 schema = 1
 name = "pi-oh-my-pi"
@@ -165,6 +208,7 @@ const primeProfile = Effect.runSync(parseProfile(primeSource, "/profile/prime.to
 const claudeMarketplaceProfile = Effect.runSync(
   parseProfile(claudeMarketplaceSource, "/profile/claude-marketplace.toml"),
 ).profile
+const claudeGraphProfile = Effect.runSync(parseProfile(claudeGraphSource, "/profile/claude-graph.toml")).profile
 const runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "trellage-render-runtime-"))
 afterAll(() => rm(runtimeRoot, { recursive: true, force: true }))
 const runtimePaths = {
@@ -435,6 +479,24 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('TRELLAGE_CLAUDE_RUNTIME_MODE = "native-plugin"')
     expect(rendered).toContain('"/usr/local/share/trellage/claude-seed"')
     expect(rendered).not.toMatch(/hyperresearch|playwright|chromium|obscura|PYTHONPATH/)
+  })
+
+  it("renders graph profile process and companion-tool safeguards", () => {
+    const rendered = renderMiseConfig(claudeGraphProfile, lock("claude"), {
+      baseReference: "docker.io/library/node@sha256:base",
+      imageTag: "trellage-profile-claude-graph-of-loops:locked",
+      runtimeSupport: claudeMarketplaceRuntime,
+    })
+
+    expect(rendered).toContain('uv = "0.11.21"')
+    expect(rendered).toContain('BD_DISABLE_METRICS = "1"')
+    expect(rendered).toContain('BD_DISABLE_EVENT_FLUSH = "1"')
+    expect(rendered).toContain('NODE_PATH = "/usr/local/lib/trellage/node_modules"')
+    expect(rendered).toContain('"/usr/local/bin/codex-code-mode-host"')
+    expect(rendered).toContain('"/etc/codex/skills/graph-of-loops/SKILL.md"')
+    expect(rendered).toContain('"/etc/codex/skills/graph-of-loops/agents/openai.yaml"')
+    expect(rendered).toContain('"/usr/local/lib/trellage/node_modules/lefthook-linux-arm64"')
+    expect(rendered).not.toContain('"/usr/local/bin/lefthook-linux-arm64"')
   })
 
   it("renders locked mise OCI input", () => {

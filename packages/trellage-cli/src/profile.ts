@@ -283,6 +283,19 @@ export const claudeGithubReleaseTools = (
 ): ReadonlyArray<Extract<ImageTool, { kind: "github-release" }>> =>
   (profile.image.tools ?? []).flatMap((tool) => (tool.kind === "github-release" ? [tool] : []))
 
+const claudeHasGithubReleaseTool = (profile: ClaudeProfile, name: string): boolean =>
+  claudeGithubReleaseTools(profile).some((tool) => tool.name === name)
+
+export const claudeHasCodexReviewer = (profile: ClaudeProfile): boolean => claudeHasGithubReleaseTool(profile, "codex")
+
+export const claudeHasBeads = (profile: ClaudeProfile): boolean => claudeHasGithubReleaseTool(profile, "bd")
+
+export const claudeHasLefthook = (profile: ClaudeProfile): boolean =>
+  claudeHasGithubReleaseTool(profile, "lefthook-linux-arm64")
+
+export const claudeHasSerena = (profile: ClaudeProfile): boolean =>
+  claudePypiToolNames(profile).includes("serena-agent") || profile.mcps.some((mcp) => mcp.name === "serena")
+
 export const claudeHasWorktreeCli = (profile: ClaudeProfile): boolean =>
   (profile.image.tools ?? []).some((tool) => tool.kind === "worktree-cli")
 

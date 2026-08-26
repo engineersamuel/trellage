@@ -25,6 +25,9 @@ const socialLockPath = fileURLToPath(
 const graphOfLoopsProfilePath = fileURLToPath(
   new URL("../../../profiles/claude-graph-of-loops/profile.toml", import.meta.url),
 )
+const graphOfLoopsLockPath = fileURLToPath(
+  new URL("../../../profiles/claude-graph-of-loops/profile.linux-arm64.lock.toml", import.meta.url),
+)
 const blogProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))
 const blogLockPath = fileURLToPath(
   new URL("../../../profiles/claude-blog/profile.linux-arm64.lock.toml", import.meta.url),
@@ -34,6 +37,7 @@ const councilLockPath = fileURLToPath(
   new URL("../../../profiles/claude-council/profile.linux-arm64.lock.toml", import.meta.url),
 )
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
+const claudeEntryPath = fileURLToPath(new URL("../../../prototypes/trellage/runtime-claude-entry.sh", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 const stableVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const commitSha = /^[0-9a-f]{40}$/
@@ -376,6 +380,57 @@ describe("authored Claude graph-of-loops profile", () => {
 
     expect(source).toContain('# Source article: Granite, "A Graph of Loops"')
     expect(source).toContain("https://x.com/granite0x/status/2080665298609328201")
+  })
+
+  it("pins an independent Codex reviewer configured for copilot-proxy-rs", async () => {
+    const [source, lockSource] = await Promise.all([
+      readFile(graphOfLoopsProfilePath, "utf8"),
+      readFile(graphOfLoopsLockPath, "utf8"),
+    ])
+    const document = await Effect.runPromise(parseProfile(source, graphOfLoopsProfilePath))
+    const lock = await Effect.runPromise(parseLock(lockSource))
+
+    expect(document.profile.image.tools).toContainEqual({
+      kind: "github-release",
+      repository: "openai/codex",
+      name: "codex",
+    })
+    expect(lock.packages.artifacts).toContainEqual(
+      expect.objectContaining({
+        name: "bv",
+        version: "0.22.0",
+        url: "https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.22.0/bv_linux_arm64.tar.gz",
+      }),
+    )
+    expect(lock.packages.artifacts).toContainEqual(
+      expect.objectContaining({
+        name: "codex",
+        version: "0.149.1",
+        url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-aarch64-unknown-linux-musl.tar.gz",
+      }),
+    )
+    expect(lock.packages.artifacts).toContainEqual(
+      expect.objectContaining({
+        name: "codex-code-mode-host",
+        version: "0.149.1",
+        url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+      }),
+    )
+    expect(lock.packages.artifacts).toContainEqual(
+      expect.objectContaining({
+        name: "lefthook-linux-arm64",
+        version: "2.1.10",
+      }),
+    )
+  })
+
+  it("refreshes the Codex reviewer config in persistent Claude state", async () => {
+    const source = await readFile(claudeEntryPath, "utf8")
+
+    expect(source).toContain('codex_reviewer_config="${TRELLAGE_CODEX_REVIEWER_CONFIG-}"')
+    expect(source).toContain('codex_home="${CODEX_HOME:-/home/agent/.codex}"')
+    expect(source).toContain('cp -- "$codex_reviewer_config" "$codex_config_tmp"')
+    expect(source).toContain('mv -f -- "$codex_config_tmp" "$codex_config"')
   })
 })
 
