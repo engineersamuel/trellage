@@ -245,9 +245,10 @@ Bare `trellage` discovers valid immediate child profiles from both the bundled
 source-tree `profiles/` directory and the current Git worktree's `profiles/`
 directory. The first sorted row is selected when the launcher opens. Typing
 immediately filters by profile, harness, or description, and the arrow keys move
-within the filtered results. Enter or Escape leaves filter mode; `/` re-enters
-it and `S` cycles sort order. A current-worktree profile overrides a bundled
-profile with the same declared name. The detail pane shows the description,
+within the filtered results. Enter launches the selected profile directly from
+filter mode; Escape leaves filter mode, `/` re-enters it, and `S` cycles sort
+order. A current-worktree profile overrides a bundled profile with the same
+declared name. The detail pane shows the description,
 harness version/model, plugins, skills, and MCPs declared by the selected
 `profile.toml`.
 

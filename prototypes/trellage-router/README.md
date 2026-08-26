@@ -71,9 +71,10 @@ launchers fail closed.
 
 The first sorted row is selected when the launcher opens. Start typing to filter
 by profile, harness, or description; no leading `/` is required. The arrow keys
-move within the filtered results. Enter or Escape leaves filter mode, and `/`
-re-enters it. From command mode, `S` sorts, `D` opens full details, and `M`
-selects an advertised or custom model for launchers that support overrides. `H`
+move within the filtered results. Enter launches the selected profile directly
+from filter mode, Escape leaves filter mode, and `/` re-enters it. From command
+mode, `S` sorts, `D` opens full details, and `M` selects an advertised or custom
+model for launchers that support overrides. `H`
 launches the selection in a new Herdr pane when available. Ctrl-C cancels from
 any mode; Escape cancels after filter mode is left. Cancellation exits with
 status 130. Remaining arguments are forwarded unchanged after the selected

@@ -1,6 +1,7 @@
 .codebase-memory/
 .playwright-mcp/
 /.claude/
+/.copilot-tracking/
 /.hyperresearch/
 /.scratch/
 /research/
