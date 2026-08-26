@@ -166,7 +166,6 @@ prompt_argument_set=false
 interactive=false
 (( $# > 0 )) || [[ -n "${TRELLAGE_PROFILE:-}" ]] || interactive=true
 resume_session_id=
-remote_argument=
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
   while (( $# > 0 )); do
@@ -254,16 +253,6 @@ if [[ "$compiler_mode" == false ]]; then
       --proflie|--proflie=*)
         fail "unknown option: $1"
         ;;
-      -r|--remote)
-        [[ -z "$remote_argument" ]] || fail '--remote/--local may be specified only once'
-        remote_argument=remote
-        shift
-        ;;
-      -l|--local)
-        [[ -z "$remote_argument" ]] || fail '--remote/--local may be specified only once'
-        remote_argument=local
-        shift
-        ;;
       *)
         parsed_arguments+=("$1")
         shift
@@ -322,12 +311,6 @@ if [[ "$output_format_set" == true ]]; then
     *) fail '--output-format is supported only for agent launches' ;;
   esac
 fi
-if [[ "$remote_argument" == remote ]]; then
-  case "$mode" in
-    new|prompt|resume) ;;
-    *) fail '--remote/-r is supported only for agent launches (new, prompt, resume)' ;;
-  esac
-fi
 
 case "$mode" in
   new|prompt|resume|doctor) ;;
@@ -345,32 +328,6 @@ compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.
 compiler_stamp="$compiler_package_dir/dist/.source-hash"
 varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
 picker="$prototype_dir/../../packages/trellage-launcher/dist/launcher.mjs"
-
-if [[ "$remote_argument" == remote ]]; then
-  [[ -n "$profile_argument" ]] \
-    || fail '--remote requires an explicit --profile (interactive profile selection is not supported with --remote)'
-  command -v az >/dev/null 2>&1 \
-    || fail '--remote requires the Azure CLI (az); install it, run `az login`, or omit --remote/-r for local execution'
-  az account show >/dev/null 2>&1 \
-    || fail '--remote requires an authenticated Azure CLI session; run `az login` or omit --remote/-r for local execution'
-  remote_launcher="$prototype_dir/remote-azure-launch.sh"
-  [[ -x "$remote_launcher" ]] || fail "remote launcher is unavailable: $remote_launcher"
-  remote_forward_args=(--local --profile "$profile_argument")
-  [[ -z "$model_argument" ]] || remote_forward_args+=(--model "$model_argument")
-  [[ -z "$auth_mode_argument" ]] || remote_forward_args+=(--auth-mode "$auth_mode_argument")
-  [[ "$output_format_set" != true ]] || remote_forward_args+=(--output-format "$output_format")
-  case "$mode" in
-    prompt) remote_forward_args+=(--prompt "$prompt_argument") ;;
-    resume)
-      remote_forward_args+=(resume)
-      [[ -z "$resume_session_id" ]] || remote_forward_args+=("$resume_session_id")
-      ;;
-  esac
-  [[ -z "$ambient_copilot_github_token" ]] || export COPILOT_GITHUB_TOKEN="$ambient_copilot_github_token"
-  [[ -z "$ambient_gh_token" ]] || export GH_TOKEN="$ambient_gh_token"
-  [[ -z "$ambient_github_token" ]] || export GITHUB_TOKEN="$ambient_github_token"
-  exec "$remote_launcher" "$profile_argument" "${remote_forward_args[@]}"
-fi
 
 profile_compiler_is_fresh() {
   local actual_fingerprint expected_fingerprint
@@ -482,8 +439,6 @@ esac
 if [[ "$interactive" == true ]]; then
   [[ -t 0 && -t 1 ]] || fail 'interactive profile selection requires an interactive terminal'
   [[ -f "$picker" ]] || fail "terminal picker is unavailable: $picker"
-  remote_available=false
-  command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1 && remote_available=true
   profile_choices="$("${clean_child_environment[@]}" node "$compiler" choices)" \
     || fail 'profile choices resolution failed'
   picker_input="$(jq -ce '
@@ -518,7 +473,7 @@ if [[ "$interactive" == true ]]; then
     || { rm -f -- "$picker_input_file"; fail 'could not create launcher result file'; }
   printf '%s\n' "$picker_input" >"$picker_input_file"
   picker_status=0
-  TRELLAGE_REMOTE_AVAILABLE="$remote_available" node "$picker" "$picker_input_file" "$picker_result_file" || picker_status=$?
+  node "$picker" "$picker_input_file" "$picker_result_file" || picker_status=$?
   launch_intent="$(<"$picker_result_file")"
   rm -f -- "$picker_input_file" "$picker_result_file"
   if [[ "$picker_status" -ne 0 ]]; then
@@ -526,7 +481,7 @@ if [[ "$interactive" == true ]]; then
   fi
   selected_choice="$(jq -er '.id | select(type == "string")' <<<"$launch_intent")" \
     || fail 'terminal picker returned an invalid launch intent'
-  launch_target="$(jq -er '.target | select(. == "current" or . == "herdr" or . == "remote")' <<<"$launch_intent")" \
+  launch_target="$(jq -er '.target | select(. == "current" or . == "herdr")' <<<"$launch_intent")" \
     || fail 'terminal picker returned an invalid launch target'
   selected_model="$(jq -r '.model // empty' <<<"$launch_intent")" \
     || fail 'terminal picker returned an invalid model selection'
@@ -550,13 +505,6 @@ if [[ "$interactive" == true ]]; then
       || command_line+="$(printf '%q ' --model "$model_argument")"
     herdr pane run "$pane" "$command_line" || fail 'could not start the selected profile in Herdr'
     exit 0
-  fi
-  if [[ "$launch_target" == remote ]]; then
-    [[ "$remote_available" == true ]] \
-      || fail 'Remote launch requested but the Azure CLI (az) is unavailable or unauthenticated; run `az login` and retry'
-    remote_arguments=(--remote --profile "$profile_argument")
-    [[ -z "$model_argument" ]] || remote_arguments+=(--model "$model_argument")
-    exec "$source_path" "${remote_arguments[@]}"
   fi
   [[ -z "$ambient_copilot_github_token" ]] || export COPILOT_GITHUB_TOKEN="$ambient_copilot_github_token"
   [[ -z "$ambient_gh_token" ]] || export GH_TOKEN="$ambient_gh_token"

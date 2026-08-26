@@ -49,6 +49,8 @@ trellage build --locked /absolute/path/to/profile.toml
 trellage ci-verify /absolute/path/to/profile.toml
 trellage
 trellage --profile /absolute/path/to/profile.toml
+trellage resume --profile /absolute/path/to/profile.toml
+trellage resume --profile /absolute/path/to/profile.toml SESSION_ID
 trellage list --json --full
 trellage doctor --profile /absolute/path/to/profile.toml
 trellage destroy --profile /absolute/path/to/profile.toml

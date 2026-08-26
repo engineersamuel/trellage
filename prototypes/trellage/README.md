@@ -92,18 +92,7 @@ The deterministic smoke verification requires Bash, Docker, Git, `gh`, jq, and m
 mise run smoke
 ```
 
-The smoke performs a fresh core-locked image build with one staged skill
-snapshot, static and live contracts, a restricted container probe, proxy
-checks, persistence recreation, recovery Fish, and an installer dry-run. It
-usually takes 5-10 minutes, depending on Docker build speed. It creates
-uniquely named `trellage-codex-smoke-*`,
-`trellage-codex-runtime-test-*`, and
-`trellage-codex-persistence-test-*` temporary resources. Each test tracks
-immutable container IDs and successful volume creation, then revalidates
-ownership labels before removing only tracked resources. The smoke removes
-its temporary containers, volumes, bind directories, and installer directory
-on exit. It retains the built image, proxy, network, Herdr, repository
-worktrees, and unrelated resources.
+The smoke performs a fresh locked image build with one staged skill snapshot, static and live contracts, a restricted container probe, proxy checks, persistence recreation, recovery Fish, and an installer dry-run. It usually takes 5-10 minutes, depending on Docker build speed. It creates uniquely named `trellage-codex-smoke-*`, `trellage-codex-runtime-test-*`, and `trellage-codex-persistence-test-*` temporary resources. Each test tracks immutable container IDs and successful volume creation, then revalidates ownership labels before removing only tracked resources. The smoke removes its temporary containers, volumes, bind directories, and installer directory on exit. It retains the built image, proxy, network, Herdr, repository worktrees, and unrelated resources.
 
 ## Install
 
@@ -310,15 +299,13 @@ Qwen profile is the sole pinned model.
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
 `trellage` invocation starts a new native session. When the selected profile
-publishes resume support, `trellage resume` selects the newest recorded native
-session. A profile with `sessionId` other than `none` can also accept an exact
-session ID. After a supported interactive session exits, Trellage prints a
-copyable exact resume command. All sessions share one container and durable
-profile volume.
-Trellage automatically stops an ephemeral shared container after the last
-harness exits. Headlong is persistent: its service remains running after the
-attachment exits. Concurrent harnesses and recovery shells keep ephemeral
-containers running.
+publishes resume support, `trellage resume` selects the newest recorded native session.
+A profile with `sessionId` other than `none` can also accept an exact session ID.
+After a supported interactive session exits, Trellage prints a copyable exact resume command.
+All sessions share one container and durable profile volume.
+Trellage automatically stops an ephemeral shared container after the last harness exits.
+Headlong is persistent: its service remains running after the attachment exits.
+Concurrent harnesses and recovery shells keep ephemeral containers running.
 The container and state volume remain retained, so the next launch restarts the
 same container with durable agent state.
 A `trellage shell` exit alone does not request shutdown.
@@ -371,26 +358,17 @@ Use absolute profile paths when invoking the installed command from any worktree
 trellage validate /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage build --locked /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage --profile /absolute/path/to/profiles/copilot-hve/profile.toml
+trellage resume --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml
 ```
 
-For a launch, and for a resume when the inventory publishes resume support,
-host authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
-`GITHUB_TOKEN`, then `gh auth token`, then device login. Host authentication
-is ephemeral: the resolved host token is supplied only to the Copilot process
-and is not saved in the profile state volume. If no host token is available,
-Copilot falls back to device login. Device login persists in the profile state
-volume.
+For a launch, and for a resume when the inventory publishes resume support, host authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`, then device login. Host authentication is ephemeral: the resolved host token is supplied only to the Copilot process and is not saved in the profile state volume. If no host token is available, Copilot falls back to device login. Device login persists in the profile state volume.
 
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
-Locked builds never refresh mutable core selectors. They still fetch current
-skill content. Core upgrades never happen automatically. Run the explicit
-one-command `trellage upgrade
-/absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to
-resolve, build, and adopt a core upgrade.
+Locked builds never refresh mutable core selectors. They still fetch current skill content. Upgrades never happen automatically. Run the explicit one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to resolve, build, and adopt a core upgrade.
 
 ## Prime Agent
 
@@ -529,15 +507,13 @@ it fetches the current default-branch versions of three native skills:
 trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"
+trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 ```
 
-When the exact resolved version publishes prompt support, prompt mode
-translates to OMP `--print`. Interactive launch uses a new native OMP session.
-When resume support is published, resume uses OMP `--continue` for the current
-worktree. All modes force `github-copilot/gpt-5.6-terra` and preserve OMP's
-exit status.
+Prompt mode translates to OMP `--print` when the exact resolved version publishes prompt support. Interactive launch uses a new native OMP session. When resume support is published, resume uses OMP `--continue` for the current worktree. All modes force `github-copilot/gpt-5.6-terra` and preserve OMP's exit status.
 
 Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
 `GITHUB_TOKEN`, then `gh auth token`, then OMP's native interactive login. A
@@ -572,8 +548,8 @@ into the persistent state volume on every launch.
 ## Cleanup
 
 Automatic shutdown preserves an ephemeral container and state volume after the
-last harness exits. Persistent Headlong containers keep running. Explicit stop
-preserves the same resources:
+last harness exits. Persistent Headlong containers keep running.
+Explicit stop preserves the same resources:
 
 ```bash
 trellage stop
