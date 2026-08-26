@@ -12,8 +12,10 @@ import {
   lockIsReady,
   profileHash,
   requireLocked,
+  withFinalDigest,
   type LockResolvers,
   type ProfileLock,
+  type ReleaseHarnessPackageLock,
 } from "../src/lock.js"
 import { parseLock, renderLock } from "../src/lock-file.js"
 import { parseProfile } from "../src/profile.js"
@@ -101,6 +103,19 @@ shell = "fish"
 packages = ["bash"]
 `
 
+const headlongSource = `
+schema = 1
+name = "headlong"
+description = "Persistent Headlong agent"
+[harness]
+kind = "headlong"
+version = "latest"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "bash"
+packages = ["bash"]
+`
+
 const document = (model?: string) => Effect.runSync(parseProfile(source(model), "/profiles/test/profile.toml"))
 
 const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
@@ -109,6 +124,13 @@ const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64
 const piDocument = () => Effect.runSync(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
 
 const primeDocument = () => Effect.runSync(parseProfile(primeSource, "/profiles/prime-agent/profile.toml"))
+
+const headlongDocument = () => Effect.runSync(parseProfile(headlongSource, "/profiles/headlong/profile.toml"))
+
+const releaseHarnessPackage = (lock: ProfileLock): ReleaseHarnessPackageLock => {
+  if (lock.packages.harness.kind === "headlong") throw new Error("expected release-backed harness package")
+  return lock.packages.harness
+}
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
 const commit = (character: string) => character.repeat(40)
@@ -183,14 +205,22 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
       calls.push("packages")
       const version = fakeHarnessVersion(request, options)
       return {
-        harness: {
-          kind: request.kind,
-          selector: request.selector,
-          version,
-          integrity: digest("c"),
-          url: fakeHarnessUrl(request, version),
-          size: 1024,
-        },
+        harness:
+          request.kind === "headlong"
+            ? {
+                kind: "headlong" as const,
+                selector: request.selector,
+                commit: request.headlongSource!.commit,
+                integrity: request.headlongSource!.integrity,
+              }
+            : {
+                kind: request.kind,
+                selector: request.selector,
+                version,
+                integrity: digest("c"),
+                url: fakeHarnessUrl(request, version),
+                size: 1024,
+              },
         ...(request.kind === "codex"
           ? {
               artifacts: [
@@ -203,7 +233,9 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
                 },
               ],
             }
-          : {}),
+          : request.kind === "headlong"
+            ? { artifacts: [...arm64ArtifactCatalog.headlongArtifacts] }
+            : {}),
         runtime: request.packages.map((name) => ({
           name,
           version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
@@ -734,9 +766,10 @@ select = ["light"]
     "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-other.tgz",
   ])("rejects forged Prime artifact URL %j", async (url) => {
     const complete = completePrimeLock()
+    const harness = releaseHarnessPackage(complete)
     const lock: ProfileLock = {
       ...complete,
-      packages: { ...complete.packages, harness: { ...complete.packages.harness, url } },
+      packages: { ...complete.packages, harness: { ...harness, url } },
     }
 
     expect(lockIsReady(primeDocument(), lock)).toBe(false)
@@ -915,7 +948,7 @@ select = ["light"]
       ...complete,
       packages: {
         ...complete.packages,
-        harness: { ...complete.packages.harness, kind: "codex" },
+        harness: { ...releaseHarnessPackage(complete), kind: "codex" },
       },
     }
 
@@ -1081,12 +1114,13 @@ describe("compileLock", () => {
   it.each(["1.0.75-alpha.1", "1.0.75+build.1"])("rejects non-stable Copilot lock version %j", async (version) => {
     const profile = copilotDocument()
     const complete = completeCopilotLock()
+    const harness = releaseHarnessPackage(complete)
     const lock: ProfileLock = {
       ...complete,
       packages: {
         ...complete.packages,
         harness: {
-          ...complete.packages.harness,
+          ...harness,
           version,
           url: `https://github.com/github/copilot-cli/releases/download/v${version}/copilot-linux-arm64.tar.gz`,
         },
@@ -1104,11 +1138,12 @@ describe("compileLock", () => {
   ])("rejects forged Copilot artifact URL %j", async (url) => {
     const profile = copilotDocument()
     const complete = completeCopilotLock()
+    const harness = releaseHarnessPackage(complete)
     const lock: ProfileLock = {
       ...complete,
       packages: {
         ...complete.packages,
-        harness: { ...complete.packages.harness, url },
+        harness: { ...harness, url },
       },
     }
 
@@ -1144,12 +1179,13 @@ describe("compileLock", () => {
         kind === "codex"
           ? await Effect.runPromise(compileLock(profile, undefined, false, fakeResolvers(commit("a"), [])))
           : completeCopilotLock()
+      const harness = releaseHarnessPackage(base)
       const lock: ProfileLock = {
         ...base,
         packages: {
           ...base.packages,
           harness: {
-            ...base.packages.harness,
+            ...harness,
             selector: kind === "codex" ? "0.144.6" : "1.0.75",
             version: kind === "codex" ? "0.145.0" : "1.0.76",
           },
@@ -1197,7 +1233,7 @@ describe("compileLock", () => {
       commit: commit("b"),
       plugin_versions: { "hve-core": "3.3.102" },
     })
-    expect(updated.packages.harness.version).toBe("1.0.76")
+    expect(releaseHarnessPackage(updated).version).toBe("1.0.76")
     expect(updateCalls).toEqual(["source:main", "packages", "base"])
   })
 
@@ -1212,6 +1248,45 @@ describe("compileLock", () => {
     expect(first.image.final_digest).toBeUndefined()
     expect(first.source_date_epoch).toBe(1784379906)
     expect(calls).toEqual(["source:v6.2.0", "packages", "base"])
+  })
+
+  it("requests the complete official Headlong checkout as a harness source", async () => {
+    const calls: Array<string> = []
+    const lock = await Effect.runPromise(
+      compileLock(headlongDocument(), undefined, false, fakeResolvers(commit("a"), calls)),
+    )
+
+    expect(lock.sources[0]).toMatchObject({
+      kind: "harness",
+      adapter: "headlong",
+      repository: "https://github.com/laude-institute/headlong.git",
+      ref: "main",
+      select: [],
+      commit: commit("a"),
+    })
+    expect(lock.packages.harness).toEqual({
+      kind: "headlong",
+      selector: "latest",
+      commit: commit("a"),
+      integrity: lock.sources[0]!.integrity,
+    })
+    expect(calls).toContain("source:main")
+  })
+
+  it("round-trips and replays a locked Headlong source without resolving main", async () => {
+    const pending = await Effect.runPromise(
+      compileLock(headlongDocument(), undefined, false, fakeResolvers(commit("a"), [])),
+    )
+    const complete = withFinalDigest(pending, digest("e"))
+    const parsed = await Effect.runPromise(parseLock(renderLock(complete)))
+    const calls: Array<string> = []
+
+    expect(parsed).toEqual(complete)
+    await expect(Effect.runPromise(requireLocked(headlongDocument(), parsed))).resolves.toBe(parsed)
+    await expect(
+      Effect.runPromise(compileLock(headlongDocument(), parsed, false, fakeResolvers(commit("b"), calls))),
+    ).resolves.toBe(parsed)
+    expect(calls).toEqual([])
   })
 
   it("reuses an unchanged lock without resolution", async () => {
@@ -1349,11 +1424,12 @@ describe("compileLock", () => {
 
   it("rejects a locked profile without a Codex archive URL", async () => {
     const pending = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
+    const harness = releaseHarnessPackage(pending)
     const incomplete: ProfileLock = {
       ...pending,
       packages: {
         ...pending.packages,
-        harness: { ...pending.packages.harness, url: "" },
+        harness: { ...harness, url: "" },
       },
       image: { ...pending.image, final_digest: digest("c") },
     }
@@ -1363,11 +1439,12 @@ describe("compileLock", () => {
 
   it("rejects a locked profile without a Codex archive size", async () => {
     const pending = await Effect.runPromise(compileLock(document(), undefined, false, fakeResolvers(commit("a"), [])))
+    const harness = releaseHarnessPackage(pending)
     const incomplete: ProfileLock = {
       ...pending,
       packages: {
         ...pending.packages,
-        harness: { ...pending.packages.harness, size: 0 },
+        harness: { ...harness, size: 0 },
       },
       image: { ...pending.image, final_digest: digest("c") },
     }

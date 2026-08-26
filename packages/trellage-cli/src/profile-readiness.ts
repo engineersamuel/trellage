@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 
 import { loadLock, loadProfile } from "./application.js"
-import { lockIsReady } from "./lock.js"
+import { harnessPackageRevision, lockIsReady } from "./lock.js"
 import { productionPlatforms } from "./platform.js"
 import type { ProfileChoice } from "./profile-discovery.js"
 
@@ -27,7 +27,9 @@ export const resolveProfileReadiness = (choice: ProfileChoice): Effect.Effect<Pr
     return {
       locked,
       resolvedVersion:
-        locked && lock?.packages.harness.kind === document.profile.harness.kind ? lock.packages.harness.version : null,
+        locked && lock?.packages.harness.kind === document.profile.harness.kind
+          ? harnessPackageRevision(lock.packages.harness)
+          : null,
     }
   }).pipe(
     // A profile that can't be read/locked here (e.g. discovered from a

@@ -40,6 +40,41 @@ ln -s "$prototype_dir/tests/fakes/host-git" "$fake_bin/git"
 ln -s "$prototype_dir/tests/fakes/host-mise" "$fake_bin/mise"
 ln -s "$prototype_dir/tests/fakes/host-env" "$fake_bin/env"
 
+headlong_fake_bin="$test_root/headlong-fake-bin"
+mkdir -p "$headlong_fake_bin"
+cat >"$headlong_fake_bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+original_args=("$@")
+if [[ "${1:-}" == --host ]]; then
+  shift 2
+fi
+if [[ "${1:-}" == container && "${2:-}" == inspect && "${4:-}" == *HostConfig.NetworkMode* ]]; then
+  printf 'CALL\n' >>"$FAKE_DOCKER_LOG"
+  printf 'ENV\tHERDR_AGENT=%s\n' "${HERDR_AGENT:-}" >>"$FAKE_DOCKER_LOG"
+  printf 'ARG\t%s\n' "${original_args[@]}" >>"$FAKE_DOCKER_LOG"
+  if [[ "${FAKE_DOCKER_HEADLONG_CONFIG_STATE:-matching}" == error ]]; then
+    exit 70
+  fi
+  if [[ -n "${FAKE_DOCKER_HEADLONG_CONFIG:-}" ]]; then
+    printf '%s\n' "$FAKE_DOCKER_HEADLONG_CONFIG"
+  else
+    printf 'copilot-proxy-rs_default\tunless-stopped\t[{"HostIp":"127.0.0.1","HostPort":"18080"}]\t["runtime-headlong-entry","service"]\t10001:10001\ttrue\t["ALL"]\t["no-new-privileges"]\t256\t2147483648\t2000000000\t{"/tmp":"rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001"}\t/mounts/%s\n' \
+      "$(basename "$FAKE_GIT_ROOT")"
+  fi
+  exit 0
+fi
+if [[ "${1:-}" == container && "${2:-}" == create \
+  && -n "${FAKE_DOCKER_HEADLONG_CREATE_EXIT:-}" ]]; then
+  printf 'CALL\n' >>"$FAKE_DOCKER_LOG"
+  printf 'ENV\tHERDR_AGENT=%s\n' "${HERDR_AGENT:-}" >>"$FAKE_DOCKER_LOG"
+  printf 'ARG\t%s\n' "${original_args[@]}" >>"$FAKE_DOCKER_LOG"
+  exit "$FAKE_DOCKER_HEADLONG_CREATE_EXIT"
+fi
+exec "$(dirname "$0")/../fake-bin/docker" "${original_args[@]}"
+EOF
+chmod +x "$headlong_fake_bin/docker"
+
 metadata_docker_log="$test_root/metadata-docker.log"
 : >"$metadata_docker_log"
 default_metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
@@ -152,6 +187,7 @@ copilot_metadata="$test_root/copilot-metadata.json"
 claude_metadata="$test_root/claude-metadata.json"
 pi_metadata="$test_root/pi-metadata.json"
 prime_metadata="$test_root/prime-metadata.json"
+headlong_metadata="$test_root/headlong-metadata.json"
 copilot_profile="$test_root/copilot-profile.toml"
 copilot_node_log="$test_root/copilot-node.log"
 copilot_gh_log="$test_root/copilot-gh.log"
@@ -307,6 +343,25 @@ jq --argjson headless "$claude_headless" '
   | .claude_haiku_model = "claude-haiku-4.5"
   | .headless = $headless
 ' "$copilot_metadata" >"$claude_metadata"
+jq '
+  .profile_name = "headlong-test"
+  | .harness_args = []
+  | .harness_kind = "headlong"
+  | .harness_executable = "headlong-init"
+  | .runtime_entry = "runtime-headlong-entry"
+  | .default_network = "copilot-proxy-rs_default"
+  | .auth_policy = "proxy"
+  | .container_lifecycle = "persistent"
+  | .container_restart_policy = "unless-stopped"
+  | .container_command = ["runtime-headlong-entry", "service"]
+  | .published_ports = [{
+      host_ip: "127.0.0.1",
+      host_port: 18080,
+      container_port: 8080,
+      protocol: "tcp"
+    }]
+  | .optional_secrets = []
+' "$copilot_metadata" >"$headlong_metadata"
 : >"$copilot_node_log"
 : >"$copilot_gh_log"
 
@@ -379,6 +434,35 @@ run_copilot_non_tty() {
     "$@"
 }
 
+run_headlong_tty() {
+  local work_dir="$1"
+  local docker_log="$2"
+  local git_root="$3"
+  shift 3
+  FAKE_HARNESS_METADATA_OVERRIDE="$headlong_metadata" \
+    run_tty "$work_dir" "$docker_log" "$git_root" \
+      env PATH="$copilot_fake_bin:$headlong_fake_bin:$fake_bin:$PATH" \
+      FAKE_HARNESS_METADATA="$headlong_metadata" \
+      FAKE_NODE_LOG="$copilot_node_log" \
+      FAKE_REAL_NODE="$real_node" \
+      FAKE_GH_LOG="$copilot_gh_log" \
+      "$@"
+}
+
+run_headlong_non_tty() {
+  local work_dir="$1"
+  local docker_log="$2"
+  local git_root="$3"
+  shift 3
+  run_non_tty "$work_dir" "$docker_log" "$git_root" \
+    env PATH="$copilot_fake_bin:$headlong_fake_bin:$fake_bin:$PATH" \
+    FAKE_HARNESS_METADATA="$headlong_metadata" \
+    FAKE_NODE_LOG="$copilot_node_log" \
+    FAKE_REAL_NODE="$real_node" \
+    FAKE_GH_LOG="$copilot_gh_log" \
+    "$@"
+}
+
 resource_names() {
   local worktree="$1"
   local profile="${2:-codex-superpowers}"
@@ -428,6 +512,32 @@ assert_docker_env() {
   ' "$log" || fail "missing Docker environment: $value"
 }
 
+assert_create_env() {
+  local log="$1"
+  local value="$2"
+  awk -v expected="ARG\t$value" '
+    function finish() {
+      if (create && found) matches++
+    }
+    $0 == "CALL" { finish(); create = found = 0; previous = ""; next }
+    $0 == "ARG\tcreate" { create = 1 }
+    create && previous == "ARG\t--env" && $0 == expected { found = 1 }
+    { previous = $0 }
+    END { finish(); exit(matches == 1 ? 0 : 1) }
+  ' "$log" || fail "missing persistent Docker environment: $value"
+}
+
+assert_not_create_env() {
+  local log="$1"
+  local value="$2"
+  awk -v expected="ARG\t$value" '
+    $0 == "CALL" { create = 0; previous = ""; next }
+    $0 == "ARG\tcreate" { create = 1 }
+    create && previous == "ARG\t--env" && $0 == expected { exit 1 }
+    { previous = $0 }
+  ' "$log" || fail "private package feed persisted in Docker environment: $value"
+}
+
 assert_terminal_contract() {
   local log="$1"
   local expected_colorterm="${2:-}"
@@ -450,11 +560,21 @@ assert_terminal_contract() {
   fi
   awk -v expected="$expected_env_count" '
     function validate_agent_exec() {
-      if (agent && environment_count != expected) exit 1
+      if (agent && environment_count - package_feed_count != expected) exit 1
       if (agent) found++
     }
-    $0 == "CALL" { validate_agent_exec(); agent = environment_count = 0; next }
-    $0 == "ARG\t--env" { environment_count++; next }
+    $0 == "CALL" {
+      validate_agent_exec()
+      agent = environment_count = package_feed_count = pending_environment = 0
+      next
+    }
+    pending_environment {
+      if ($0 ~ /^ARG\t(UV_DEFAULT_INDEX|PIP_INDEX_URL|UV_INDEX_URL|UV_EXTRA_INDEX_URL|npm_config_registry|NPM_CONFIG_REGISTRY)$/) {
+        package_feed_count++
+      }
+      pending_environment = 0
+    }
+    $0 == "ARG\t--env" { environment_count++; pending_environment = 1; next }
     /^ARG\t.*trellage-[a-z-]+-entry/ || $0 == "ARG\texec fish -l" { agent = 1 }
     END { validate_agent_exec(); exit(found == 1 ? 0 : 1) }
   ' "$log" || fail 'Docker received an unexpected terminal environment'
@@ -629,6 +749,221 @@ test_new_container_from_subdirectory() {
   container_name="$(resource_names "$worktree" | sed -n '1p')"
   assert_arg "$docker_log" "$container_name"
   printf 'Trellage host test: PASS: secure new container from subdirectory\n'
+}
+
+test_headlong_persistent_service_create_attach_and_proxy_routing() {
+  local worktree="$test_root/headlong-worktree"
+  local docker_log="$test_root/headlong-create.docker.log"
+  local state_volume
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  state_volume="$(resource_names "$worktree" headlong-test headlong | tail -n 1)"
+
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$(jq -r '.profile_hash' "$headlong_metadata")" \
+    ANTHROPIC_API_KEY=anthropic-test OPENAI_API_KEY=openai-test \
+    GEMINI_API_KEY=gemini-test OPENROUTER_API_KEY=openrouter-test \
+    run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+      env UV_DEFAULT_INDEX=https://packages.example.test/pypi/simple/ \
+      npm_config_registry=https://packagefeedproxy.microsoft.io/npm/ \
+      TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage"
+
+  awk '
+    function finish() {
+      if (create) {
+        if (last_two != "runtime-headlong-entry\nservice") exit 1
+        found_create++
+      }
+      if (attach) found_attach++
+    }
+    $0 == "CALL" { finish(); create = attach = 0; last_two = previous = ""; next }
+    /^ARG\t/ {
+      if ($0 == "ARG\tcreate") create = 1
+      if ($0 == "ARG\tattach") attach = 1
+      last_two = previous "\n" substr($0, 5)
+      previous = substr($0, 5)
+    }
+    END { finish(); exit(found_create == 1 && found_attach == 1 ? 0 : 1) }
+  ' "$docker_log" || fail 'Headlong did not create its service and attach through its runtime entry'
+  assert_arg "$docker_log" '--restart'
+  assert_arg "$docker_log" 'unless-stopped'
+  assert_arg "$docker_log" '--publish'
+  assert_arg "$docker_log" '127.0.0.1:18080:8080/tcp'
+  assert_arg "$docker_log" '--network'
+  assert_arg "$docker_log" 'copilot-proxy-rs_default'
+  for provider_key in ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY; do
+    ! grep -Fqx $'ARG\t'"$provider_key" "$docker_log" \
+      || fail "Headlong forwarded host provider variable $provider_key instead of using the proxy"
+  done
+  assert_docker_env "$docker_log" UV_DEFAULT_INDEX
+  assert_docker_env "$docker_log" npm_config_registry
+  assert_not_create_env "$docker_log" UV_DEFAULT_INDEX
+  assert_create_env "$docker_log" npm_config_registry
+  ! grep -Fq 'packages.example.test' "$docker_log" \
+    || fail 'Headlong exposed the package-feed URL in Docker command arguments'
+  ! grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'Headlong stopped its persistent service after attach exited'
+
+  printf 'Trellage host test: PASS: Headlong persistent service create, attach, and proxy routing\n'
+}
+
+test_headlong_reuse_validation_start_stop_and_port_conflict() {
+  local worktree="$test_root/headlong-reuse-worktree"
+  local docker_log="$test_root/headlong-reuse.docker.log"
+  local container_name state_volume profile_hash output expected_config bad_config
+  mkdir -p "$worktree"
+  container_name="$(resource_names "$worktree" headlong-test headlong | sed -n '1p')"
+  state_volume="$(resource_names "$worktree" headlong-test headlong | tail -n 1)"
+  profile_hash="$(jq -r '.profile_hash' "$headlong_metadata")"
+  expected_config=$'copilot-proxy-rs_default\tunless-stopped\t[{"HostIp":"127.0.0.1","HostPort":"18080"}]\t["runtime-headlong-entry","service"]\t10001:10001\ttrue\t["ALL"]\t["no-new-privileges"]\t256\t2147483648\t2000000000\t{"/tmp":"rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001"}\t/mounts/headlong-reuse-worktree'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    OPENAI_API_KEY=openai-only \
+    run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage"
+  ! grep -Fqx $'ARG\tcreate' "$docker_log" || fail 'Headlong recreated a matching service container'
+  ! grep -Fqx $'ARG\tstart' "$docker_log" || fail 'Headlong restarted an already-running service container'
+  for provider_key in ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY; do
+    ! grep -Fqx $'ARG\t'"$provider_key" "$docker_log" \
+      || fail "Headlong forwarded host provider variable $provider_key instead of using the proxy"
+  done
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-stopped \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+      run_headlong_non_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage" start
+  grep -Fqx $'ARG\tstart' "$docker_log" || fail 'Headlong did not start its stopped service container'
+    ! grep -Fqx $'ARG\texec' "$docker_log" || fail 'explicit Headlong start attached to the service container'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    run_headlong_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage" stop
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'explicit Headlong stop did not stop the service container'
+
+  for bad_config in \
+    "${expected_config/copilot-proxy-rs_default/wrong-network}" \
+    "${expected_config/unless-stopped/no}" \
+    "${expected_config/127.0.0.1/0.0.0.0}" \
+    "${expected_config/runtime-headlong-entry/runtime-wrong-entry}" \
+    "${expected_config/10001:10001/0:0}"; do
+    : >"$docker_log"
+    if output="$(FAKE_DOCKER_HEADLONG_CONFIG="$bad_config" \
+      FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+      FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+      FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+      run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage" 2>&1)"; then
+      fail 'Headlong reused a container with mismatched persistent configuration'
+    fi
+    grep -Fq 'refusing Headlong Docker container with unexpected configuration' <<<"$output" \
+      || fail 'Headlong configuration mismatch lacked a clear refusal'
+    assert_no_mutation "$docker_log"
+  done
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_IMAGE_ID=unexpected-image \
+    FAKE_DOCKER_ACTIVE_SESSION=1 \
+    run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage"
+  grep -Fqx $'ARG\trm' "$docker_log" \
+    || fail 'Headlong did not remove a container with a mismatched image'
+  grep -Fqx $'ARG\tcreate' "$docker_log" \
+    || fail 'Headlong did not recreate a container with a mismatched image'
+  awk '
+    $0 == "CALL" { first = second = ""; next }
+    /^ARG\t/ && first == "" { first = $0; next }
+    /^ARG\t/ && second == "" {
+      second = $0
+      if (first == "ARG\tvolume" && (second == "ARG\tcreate" || second == "ARG\trm")) exit 1
+    }
+  ' "$docker_log" || fail 'Headlong image drift mutated its persistent state volume'
+  ! grep -Fqx $'ARG\ttop' "$docker_log" \
+    || fail 'Headlong treated expected persistent service processes as an attached session'
+
+  : >"$docker_log"
+  if output="$(FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-wrong-mount \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+    run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage" 2>&1)"; then
+    fail 'Headlong reused a container with mismatched mounts'
+  fi
+  grep -Fq 'refusing Docker container with unexpected mounts' <<<"$output" \
+    || fail 'Headlong mount mismatch lacked a clear refusal'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    FAKE_DOCKER_CONTAINER_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
+    run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage"
+  grep -Fqx $'ARG\trm' "$docker_log" \
+    || fail 'Headlong did not remove a container with stale integrity labels'
+  grep -Fqx $'ARG\tcreate' "$docker_log" \
+    || fail 'Headlong did not recreate a container with stale integrity labels'
+  awk '
+    $0 == "CALL" { first = second = ""; next }
+    /^ARG\t/ && first == "" { first = $0; next }
+    /^ARG\t/ && second == "" {
+      second = $0
+      if (first == "ARG\tvolume" && (second == "ARG\tcreate" || second == "ARG\trm")) exit 1
+    }
+  ' "$docker_log" || fail 'Headlong integrity drift mutated its persistent state volume'
+
+  : >"$docker_log"
+  if output="$(FAKE_DOCKER_HEADLONG_CREATE_EXIT=125 \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+    run_headlong_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage" 2>&1)"; then
+    fail 'Headlong launch succeeded after a simulated host port conflict'
+  fi
+  grep -Fq 'host port 127.0.0.1:18080 may already be in use' <<<"$output" \
+    || fail 'Headlong host port conflict lacked a clear diagnostic'
+
+  : >"$docker_log"
+  printf 'destroy %s %s\n' "$container_name" "$state_volume" \
+    | FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_PROFILE=headlong-test FAKE_DOCKER_PROTOTYPE=trellage-headlong \
+      FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+      FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+      run_headlong_non_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE=test/headlong:locked "$prototype_dir/trellage" destroy
+  [[ "$(grep -Fxc $'ARG\trm' "$docker_log")" -eq 2 ]] \
+    || fail 'explicit Headlong destroy did not remove its container and state volume'
+
+  printf 'Trellage host test: PASS: Headlong reuse validation, explicit lifecycle, and port conflict\n'
 }
 
 test_copilot_models_catalog_lifecycle() {
@@ -997,6 +1332,7 @@ test_portable_prompt_parser_contract() {
 --prompt cannot be combined with positional arguments|destroy --prompt hello
 --prompt cannot be combined with positional arguments|positional -p hello
 --prompt cannot be combined with positional arguments|-p hello positional
+unknown option: --proflie|--proflie headlong
 --prompt is not supported for compiler commands|build --prompt hello
 --prompt is not supported for compiler commands|validate -p hello
 --prompt is not supported for compiler commands|lock --prompt hello
@@ -4715,6 +5051,12 @@ if [[ "${TRELLAGE_HOST_PRIME_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_HEADLONG_ONLY:-}" == 1 ]]; then
+  test_headlong_persistent_service_create_attach_and_proxy_routing
+  test_headlong_reuse_validation_start_stop_and_port_conflict
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_RECOVERY_SHELL_ONLY:-}" == 1 ]]; then
   test_copilot_rebuild_shell_and_doctor
   exit 0
@@ -4885,6 +5227,8 @@ test_copilot_rebuild_shell_and_doctor
 test_copilot_auth_precedence_and_leakage
 test_pi_host_auth_dispatch_and_doctor
 test_prime_proxy_dispatch_and_metadata_validation
+test_headlong_persistent_service_create_attach_and_proxy_routing
+test_headlong_reuse_validation_start_stop_and_port_conflict
 test_copilot_launches_when_gh_is_genuinely_absent
 test_copilot_auth_isolated_across_create_start_stop_destroy
 test_codex_scrubs_github_auth_before_children

@@ -1,11 +1,12 @@
 import type { InventoryPolicy } from "./inventory.js"
 
 export interface SourceSelection {
-  readonly kind: "plugin"
-  readonly adapter:
+  readonly kind: "plugin" | "harness"
+  readonly adapter?:
     | "claude-marketplace"
     | "codex-native"
     | "copilot-marketplace"
+    | "headlong"
     | "hyperresearch"
     | "prime-extension"
     | "wshobson-agents"
@@ -14,6 +15,7 @@ export interface SourceSelection {
 }
 
 export const sourceIncludes = (source: SourceSelection): ReadonlyArray<string> => {
+  if (source.kind === "harness") return []
   if (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace") return []
   if (source.adapter === "hyperresearch") return []
   if (source.adapter === "codex-native") {

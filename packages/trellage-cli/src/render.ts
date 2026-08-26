@@ -8,10 +8,12 @@ import {
   claudePypiToolNames,
   isClaudeProfile,
   isCodexProfile,
+  isHeadlongProfile,
   isPiProfile,
   isPrimeProfile,
   type ClaudeProfile,
   type CodexProfile,
+  type HeadlongProfile,
   type Mcp,
   type PrimeProfile,
   type Profile,
@@ -119,11 +121,12 @@ const renderOci = (
   environment: ReadonlyArray<string>,
   labels: ReadonlyArray<string>,
   cacheHome = "/tmp/.cache",
+  command: ReadonlyArray<string> = [profile.image.shell, "-l"],
 ): string => `[oci]
 from = ${quote(options.baseReference)}
 tag = ${quote(options.imageTag)}
 workdir = "/workspace"
-cmd = [${quote(profile.image.shell)}, "-l"]
+cmd = [${command.map(quote).join(", ")}]
 user = "10001:10001"
 user_id = 10001
 group_id = 10001
@@ -417,6 +420,38 @@ ${renderOci(
 )}`
 }
 
+const renderHeadlongMiseConfig = (profile: HeadlongProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "headlong") throw new Error("profile and lock harness kinds do not match")
+  return `min_version = "2026.6.14"
+
+[tools]
+node = "22.17.0"
+uv = "0.11.21"
+
+${renderBootstrap(profile, options)}
+
+[dotfiles]
+"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
+"/usr/local/share/trellage/headlong-seed" = { source = "headlong-seed", mode = "copy" }
+"/usr/local/share/trellage/headlong-seed.commit" = { source = "headlong-seed.commit", mode = "copy" }
+"/usr/local/share/trellage/headlong-skills" = { source = "headlong-skills", mode = "copy" }
+"/usr/local/share/trellage/headlong-tui" = { source = "headlong-tui", mode = "copy" }
+"/etc/profile.d/trellage-headlong-path.sh" = { source = "headlong-login-path.sh", mode = "copy" }
+${renderRuntimeDotfile(options, "runtime-headlong-entry")}
+"/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
+
+${renderOci(
+  profile,
+  lock,
+  options,
+  ['HEADLONG_WEB_ARGS = "--host 0.0.0.0 --port 8080"', 'HEADLONG_WEB_JS = "npm"'],
+  ['"dev.trellage.harness.kind" = "headlong"', `"dev.trellage.headlong.commit" = ${quote(harness.commit)}`],
+  "/home/agent/.cache",
+  ["runtime-headlong-entry", "service"],
+)}`
+}
+
 export const renderMiseConfig = (profile: Profile, lock: ProfileLock, options: MiseRenderOptions): string =>
   isCodexProfile(profile)
     ? renderCodexMiseConfig(profile, lock, options)
@@ -426,4 +461,6 @@ export const renderMiseConfig = (profile: Profile, lock: ProfileLock, options: M
         ? renderPiMiseConfig(profile, lock, options)
         : isPrimeProfile(profile)
           ? renderPrimeMiseConfig(profile, lock, options)
-          : renderCopilotMiseConfig(profile, lock, options)
+          : isHeadlongProfile(profile)
+            ? renderHeadlongMiseConfig(profile, lock, options)
+            : renderCopilotMiseConfig(profile, lock, options)

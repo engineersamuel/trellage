@@ -158,6 +158,11 @@ const PrimeHarness = Schema.Struct({
   prime: Prime,
 })
 
+const HeadlongHarness = Schema.Struct({
+  ...CommonHarness,
+  kind: Schema.Literal("headlong"),
+})
+
 const ImagePypiTool = Schema.Struct({
   kind: Schema.Literal("pypi"),
   name: NonEmpty,
@@ -234,12 +239,19 @@ const PrimeProfileSchema = Schema.Struct({
   plugins: Schema.optional(Schema.Array(PrimeExtensionPlugin)),
 })
 
+const HeadlongProfileSchema = Schema.Struct({
+  ...CommonProfile,
+  harness: HeadlongHarness,
+  plugins: Schema.optional(Schema.Array(CodexPlugin)),
+})
+
 export const ProfileSchema = Schema.Union(
   CodexProfileSchema,
   CopilotProfileSchema,
   ClaudeProfileSchema,
   PiProfileSchema,
   PrimeProfileSchema,
+  HeadlongProfileSchema,
 )
 
 type DecodedProfile = Schema.Schema.Type<typeof ProfileSchema>
@@ -248,6 +260,7 @@ type DecodedCopilotProfile = Schema.Schema.Type<typeof CopilotProfileSchema>
 type DecodedClaudeProfile = Schema.Schema.Type<typeof ClaudeProfileSchema>
 type DecodedPiProfile = Schema.Schema.Type<typeof PiProfileSchema>
 type DecodedPrimeProfile = Schema.Schema.Type<typeof PrimeProfileSchema>
+type DecodedHeadlongProfile = Schema.Schema.Type<typeof HeadlongProfileSchema>
 
 type NormalizedProfile<T extends DecodedProfile> = Omit<
   T,
@@ -267,7 +280,8 @@ export type CopilotProfile = NormalizedProfile<DecodedCopilotProfile>
 export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
 export type PiProfile = NormalizedProfile<DecodedPiProfile>
 export type PrimeProfile = NormalizedProfile<DecodedPrimeProfile>
-export type Profile = CodexProfile | CopilotProfile | ClaudeProfile | PiProfile | PrimeProfile
+export type HeadlongProfile = NormalizedProfile<DecodedHeadlongProfile>
+export type Profile = CodexProfile | CopilotProfile | ClaudeProfile | PiProfile | PrimeProfile | HeadlongProfile
 
 export const isCodexProfile = (profile: Profile): profile is CodexProfile => profile.harness.kind === "codex"
 
@@ -303,6 +317,8 @@ export const isPiProfile = (profile: Profile): profile is PiProfile => profile.h
 
 export const isPrimeProfile = (profile: Profile): profile is PrimeProfile => profile.harness.kind === "prime"
 
+export const isHeadlongProfile = (profile: Profile): profile is HeadlongProfile => profile.harness.kind === "headlong"
+
 const isDecodedCodexProfile = (profile: DecodedProfile): profile is DecodedCodexProfile =>
   profile.harness.kind === "codex"
 
@@ -313,6 +329,9 @@ const isDecodedPiProfile = (profile: DecodedProfile): profile is DecodedPiProfil
 
 const isDecodedPrimeProfile = (profile: DecodedProfile): profile is DecodedPrimeProfile =>
   profile.harness.kind === "prime"
+
+const isDecodedHeadlongProfile = (profile: DecodedProfile): profile is DecodedHeadlongProfile =>
+  profile.harness.kind === "headlong"
 
 export interface ProfileDocument {
   readonly path: string
@@ -353,6 +372,16 @@ const rejectUnsupportedPrimeSections = (raw: unknown): Effect.Effect<void, Profi
   if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "prime") return Effect.void
   if (Object.hasOwn(raw, "mcps")) return fail("Prime profiles do not support MCPs")
   if (Object.hasOwn(raw, "secrets")) return fail("Prime profiles do not support declared secrets")
+  return Effect.void
+}
+
+const rejectUnsupportedHeadlongSections = (raw: unknown): Effect.Effect<void, ProfileError> => {
+  if (!isRecord(raw) || !isRecord(raw.harness) || raw.harness.kind !== "headlong") return Effect.void
+  if (Object.hasOwn(raw.harness, "args")) return fail("Headlong profiles do not support harness arguments")
+  if (Object.hasOwn(raw.harness, "initial_prompt")) return fail("Headlong profiles do not support initial prompts")
+  if (Object.hasOwn(raw, "plugins")) return fail("Headlong profiles do not support plugins")
+  if (Object.hasOwn(raw, "mcps")) return fail("Headlong profiles do not support MCPs")
+  if (Object.hasOwn(raw, "secrets")) return fail("Headlong profiles do not support declared secrets")
   return Effect.void
 }
 
@@ -406,6 +435,7 @@ const normalize = (profile: DecodedProfile): Profile => {
   if (isDecodedClaudeProfile(profile)) return normalizeCommon(profile)
   if (isDecodedPiProfile(profile)) return normalizeCommon(profile)
   if (isDecodedPrimeProfile(profile)) return normalizeCommon(profile)
+  if (isDecodedHeadlongProfile(profile)) return normalizeCommon(profile)
   return normalizeCommon(profile)
 }
 
@@ -522,11 +552,22 @@ const validatePrimeProfile = (profile: PrimeProfile): Effect.Effect<void, Profil
 const validatePiProfile = (profile: PiProfile): Effect.Effect<void, ProfileError> =>
   validateHarnessVersion("Pi", profile.harness.version)
 
+const validateHeadlongProfile = (profile: HeadlongProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    if (!/^(?:latest|[0-9a-f]{40})$/.test(profile.harness.version)) {
+      return yield* fail(`invalid Headlong version: ${profile.harness.version}`)
+    }
+    if (profile.plugins.length > 0) return yield* fail("Headlong profiles do not support plugins")
+    if (profile.mcps.length > 0) return yield* fail("Headlong profiles do not support MCPs")
+    if (hasDeclaredSecrets(profile)) return yield* fail("Headlong profiles do not support declared secrets")
+  })
+
 const validateHarness = (profile: Profile): Effect.Effect<void, ProfileError> => {
   if (isCodexProfile(profile)) return validateCodexProfile(profile)
   if (isCopilotProfile(profile)) return validateCopilotProfile(profile)
   if (isClaudeProfile(profile)) return validateClaudeProfile(profile)
   if (isPrimeProfile(profile)) return validatePrimeProfile(profile)
+  if (isHeadlongProfile(profile)) return validateHeadlongProfile(profile)
   return validatePiProfile(profile)
 }
 
@@ -667,6 +708,7 @@ export const parseProfile = (source: string, profilePath: string): Effect.Effect
     yield* rejectUnsupportedCopilotSections(raw)
     yield* rejectUnsupportedPiSections(raw)
     yield* rejectUnsupportedPrimeSections(raw)
+    yield* rejectUnsupportedHeadlongSections(raw)
     yield* rejectInlineSkills(raw)
     const decoded = yield* Schema.decodeUnknown(ProfileSchema)(raw, {
       onExcessProperty: "error",

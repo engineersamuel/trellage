@@ -20,6 +20,7 @@ import { promisify } from "node:util"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
 import {
   hyperresearchSeedInstallArguments,
   managedClaudeFiles,
@@ -587,6 +588,93 @@ describe("locked Chromium materialization", () => {
 })
 
 describe("atomic build context", () => {
+  it("materializes the locked Headlong source and service image command", async () => {
+    const root = await temporaryRoot("trellage-materialize-headlong-")
+    const headlongSource = path.join(root, "headlong")
+    await mkdir(path.join(headlongSource, "tools"), { recursive: true })
+    await writeFile(path.join(headlongSource, "install.sh"), "#!/bin/bash\nset -euo pipefail\n")
+    await writeFile(path.join(headlongSource, "tools", "headlong-init"), "#!/bin/bash\nexit 0\n")
+    await chmod(path.join(headlongSource, "install.sh"), 0o755)
+    await chmod(path.join(headlongSource, "tools", "headlong-init"), 0o755)
+    const files = await Effect.runPromise(inventoryDirectory(headlongSource))
+    const document = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "headlong"
+description = "Persistent Headlong agent"
+[harness]
+kind = "headlong"
+version = "latest"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "bash"
+packages = ["bash"]
+`,
+        path.join(root, "profile.toml"),
+      ),
+    )
+    const sourceIntegrity = `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`
+    const lock: ProfileLock = {
+      schema: 1,
+      platform: "linux/arm64",
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [
+        {
+          kind: "harness",
+          adapter: "headlong",
+          repository: "https://github.com/laude-institute/headlong.git",
+          ref: "main",
+          select: [],
+          commit: "a".repeat(40),
+          integrity: sourceIntegrity,
+          files,
+        },
+      ],
+      packages: {
+        harness: {
+          kind: "headlong",
+          selector: "latest",
+          commit: "a".repeat(40),
+          integrity: sourceIntegrity,
+        },
+        runtime: [{ name: "bash", version: "5.2.15", integrity: `sha256:${"d".repeat(64)}` }],
+        artifacts: [...arm64ArtifactCatalog.headlongArtifacts],
+      },
+      image: { base: document.profile.image.base, base_digest: `sha256:${"c".repeat(64)}` },
+    }
+    const headlongEntry = path.join(root, "runtime-headlong-entry.sh")
+    await writeFile(headlongEntry, "#!/bin/bash\nexit 0\n")
+    const support: RuntimeSupport = {
+      codexEntry: path.join(root, "unused-codex-entry.sh"),
+      copilotEntry: path.join(root, "unused-copilot-entry.sh"),
+      headlongEntry,
+      finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
+    }
+    const snapshot = await Effect.runPromise(createRuntimeSupportSnapshot("headlong", support))
+    const unused = () => Effect.fail("unexpected generator call")
+
+    const context = await Effect.runPromise(
+      createBuildContext(document, lock, [headlongSource], snapshot, root, unused),
+    )
+
+    await expect(readFile(path.join(context, "headlong-seed", "install.sh"), "utf8")).resolves.toContain(
+      "set -euo pipefail",
+    )
+    await expect(readFile(path.join(context, "headlong-seed.commit"), "utf8")).resolves.toBe(`${"a".repeat(40)}\n`)
+    await expect(readFile(path.join(context, "headlong-skills", "managed-skills.tsv"), "utf8")).resolves.toBe("")
+    const miseConfig = await readFile(path.join(context, "mise.toml"), "utf8")
+    expect(miseConfig).toContain('cmd = ["runtime-headlong-entry", "service"]')
+    expect(miseConfig).toContain(
+      '"/usr/local/share/trellage/headlong-seed" = { source = "headlong-seed", mode = "copy" }',
+    )
+    expect(miseConfig).toContain('"dev.trellage.headlong.commit" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"')
+    const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
+    expect(miseLock).not.toContain("http:headlong")
+    expect(miseLock).toContain("[[tools.uv]]")
+  })
+
   it("materializes the Pi runtime seed before floating skill injection", async () => {
     const root = await temporaryRoot("trellage-materialize-pi-")
     const document = await Effect.runPromise(

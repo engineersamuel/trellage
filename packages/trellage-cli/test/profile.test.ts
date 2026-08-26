@@ -6,7 +6,14 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { profileHash } from "../src/lock.js"
-import { isClaudeProfile, isCodexProfile, isCopilotProfile, isPrimeProfile, parseProfile } from "../src/profile.js"
+import {
+  isClaudeProfile,
+  isCodexProfile,
+  isCopilotProfile,
+  isHeadlongProfile,
+  isPrimeProfile,
+  parseProfile,
+} from "../src/profile.js"
 
 const profile = (extra = "") => `
 schema = 1
@@ -131,6 +138,20 @@ packages = ["bash", "gh", "git"]
 ${extra}
 `
 
+const headlongProfile = (extra = "") => `
+schema = 1
+name = "headlong"
+description = "Persistent Headlong agent"
+[harness]
+kind = "headlong"
+version = "latest"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "bash"
+packages = ["bash", "ca-certificates", "curl", "gh", "git", "jq"]
+${extra}
+`
+
 const decode = (source: string) => Effect.runPromise(parseProfile(source, "/profiles/example/profile.toml"))
 
 describe("parseProfile", () => {
@@ -189,6 +210,35 @@ describe("parseProfile", () => {
       marketplace: "hve-core",
       select: ["hve-core"],
     })
+  })
+
+  it("decodes a first-class Headlong profile without harness-specific configuration", async () => {
+    const result = await decode(headlongProfile())
+
+    expect(isHeadlongProfile(result.profile)).toBe(true)
+    if (!isHeadlongProfile(result.profile)) throw new Error("expected Headlong profile")
+    expect(result.profile.harness).toEqual({ kind: "headlong", version: "latest" })
+    expect(result.profile.image.shell).toBe("bash")
+    expect(result.profile.plugins).toEqual([])
+  })
+
+  it("accepts exact Headlong commits and rejects other selectors", async () => {
+    const commit = "d8f83042c30ba34931259408077ead20e6bd93c3"
+    const result = await decode(headlongProfile().replace('version = "latest"', `version = "${commit}"`))
+
+    expect(result.profile.harness.version).toBe(commit)
+    await expect(decode(headlongProfile().replace('version = "latest"', 'version = "main"'))).rejects.toThrow(
+      /invalid Headlong version/,
+    )
+  })
+
+  it("rejects explicitly declared Headlong MCP and secret sections", async () => {
+    await expect(decode(headlongProfile().replace("[harness]", "mcps = []\n[harness]"))).rejects.toThrow(
+      /Headlong profiles do not support MCPs/,
+    )
+    await expect(decode(headlongProfile('[secrets]\nprovider = "env"\nrequired = []'))).rejects.toThrow(
+      /Headlong profiles do not support declared secrets/,
+    )
   })
 
   it.each([

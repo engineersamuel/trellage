@@ -201,7 +201,7 @@ trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage [--profile CLAUDE_PROFILE] [--model MODEL] [-p|--prompt PROMPT]
 trellage [--profile PROFILE] --output-format jsonl [--trellage-events] -p PROMPT
 trellage resume [SESSION_ID] [--profile PROFILE] [--model MODEL]
-trellage shell|stop|doctor|destroy [--profile PROFILE]
+trellage shell|start|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
 trellage build [--locked] [PROFILE]
@@ -215,6 +215,7 @@ trellage resume             # resume the latest conversation when advertised
 trellage resume SESSION_ID  # resume an exact session when advertised
 trellage shell              # recovery Fish without secrets
 trellage stop               # preserve state
+trellage start              # restart a persistent profile without attaching
 trellage destroy            # confirmed profile/worktree cleanup
 trellage upgrade all         # transactionally upgrade every discovered profile
 ```
@@ -288,14 +289,18 @@ session. A profile with `sessionId` other than `none` can also accept an exact
 session ID. After a supported interactive session exits, Trellage prints a
 copyable exact resume command. All sessions share one container and durable
 profile volume.
-Trellage automatically stops the shared container after the last harness exits.
-Concurrent harnesses and recovery shells keep the container running.
+Trellage automatically stops an ephemeral shared container after the last
+harness exits. Headlong is persistent: its service remains running after the
+attachment exits. Concurrent harnesses and recovery shells keep ephemeral
+containers running.
 The container and state volume remain retained, so the next launch restarts the
 same container with durable agent state.
 A `trellage shell` exit alone does not request shutdown.
 
 `trellage stop` remains the force/recovery operation: it stops the shared
 container and terminates every active attachment for that profile and worktree.
+`trellage start` is available only for persistent profiles and starts their
+service without opening an attachment.
 
 New and resumed sessions run Codex with `--dangerously-bypass-approvals-and-sandbox`; Docker is the external sandbox. `trellage shell` does not start or label a Codex process.
 
@@ -414,6 +419,77 @@ trellage build --locked /absolute/path/to/profiles/prime-agent/profile.toml
 Hosts that use public registries leave those variables unset; Trellage does not
 force CFS.
 
+## Headlong
+
+The `headlong` profile installs the official
+[`laude-institute/headlong`](https://github.com/laude-institute/headlong)
+checkout. Its platform lock records the exact upstream commit, complete source
+inventory, runtime artifacts, managed skills, base image, and final OCI
+digest. Locked builds do not resolve `main` again.
+
+```bash
+trellage validate /absolute/path/to/profiles/headlong/profile.toml
+trellage build --locked /absolute/path/to/profiles/headlong/profile.toml
+trellage --profile /absolute/path/to/profiles/headlong/profile.toml
+trellage doctor --profile /absolute/path/to/profiles/headlong/profile.toml
+trellage stop --profile /absolute/path/to/profiles/headlong/profile.toml
+trellage start --profile /absolute/path/to/profiles/headlong/profile.toml
+trellage destroy --profile /absolute/path/to/profiles/headlong/profile.toml
+```
+
+The first launch runs the upstream checkout installer and `headlong-init`
+identity interview. Headlong uses `copilot-proxy-rs` on Docker network
+`copilot-proxy-rs_default`, route `/v1/messages`, and model
+`claude-sonnet-5`. Start and authenticate the proxy before launch. Trellage
+supplies a fixed non-secret compatibility token because Headlong's Anthropic
+client requires that variable, and it ignores all host provider API keys. The
+runtime supplies proxy settings only to initializer and service processes; it
+removes them before opening the attached shell.
+
+The image compiles the locked Rust `headlong-tui` with the pinned Rust
+toolchain, then keeps only the resulting executable in the runtime image. The
+runtime installs both `ada` and `headlong-tui` under
+`/home/agent/.local/bin`; login shells include that directory on `PATH`.
+Headlong starts `persona dash` by default and the persistent service restarts
+the dashboard if it exits.
+
+The proxy settings are absent from the platform lock, container configuration,
+labels, and command arguments. GitHub CLI authentication remains separate and
+exists only in the container `/tmp` tmpfs. The dashboard is available only on
+<http://127.0.0.1:18080>. A process already using that host port blocks
+container creation with a direct diagnostic.
+
+Headlong differs from ephemeral harness profiles:
+
+- The container command is `runtime-headlong-entry service`.
+- Docker restart policy is `unless-stopped`.
+- Exiting the attached shell leaves the dashboard and thinkers running.
+- `trellage stop` explicitly pauses the container.
+- `trellage start` restarts it without attaching.
+- `trellage destroy` removes the container and state volume only after the
+  normal exact-name confirmation.
+
+The writable application lives at `/home/agent/.headlong/app`. Identity state
+lives in its real `.identities` directory so the dashboard can discover it;
+Trellage ownership metadata lives beside the application in the same volume.
+A new locked image replaces a clean managed application transactionally and
+preserves identities. If tracked or
+untracked application source changed, the runtime refuses the replacement and
+prints the old and new upstream commits. Inspect and back up the checkout
+before retrying:
+
+```bash
+trellage shell --profile /absolute/path/to/profiles/headlong/profile.toml
+git -C /home/agent/.headlong/app status --short
+```
+
+The managed checkout has no upstream Git remote, so the dashboard cannot
+bypass the profile lock with a pull. Profile-managed skills are synchronized
+without overwriting user-owned collisions; `always_on` skills are linked into
+the active identity kernel. Headlong uses the outer Trellage container as its
+sandbox. No Docker socket is mounted and no nested Docker daemon is started.
+Prompt, resume, model override, and structured output remain unsupported.
+
 ## Pi with Oh My Pi
 
 The `pi-oh-my-pi` profile installs a pinned standalone `omp` executable from
@@ -469,8 +545,9 @@ into the persistent state volume on every launch.
 
 ## Cleanup
 
-Automatic shutdown preserves the container and state volume after the last
-harness exits. Explicit stop preserves the same resources:
+Automatic shutdown preserves an ephemeral container and state volume after the
+last harness exits. Persistent Headlong containers keep running. Explicit stop
+preserves the same resources:
 
 ```bash
 trellage stop

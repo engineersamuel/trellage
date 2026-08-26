@@ -37,6 +37,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const runtimeSupport = {
   codexEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-entry.sh"),
   copilotEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-copilot-entry.sh"),
+  headlongEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-headlong-entry.sh"),
   piEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-pi-entry.sh"),
   primeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-copilot-seed.mjs"),

@@ -62,6 +62,9 @@ dispatch_to_current_trellage_worktree() {
   [[ -z "${ambient_playwright_mcp_extension_token-}" ]] || export PLAYWRIGHT_MCP_EXTENSION_TOKEN="$ambient_playwright_mcp_extension_token"
   [[ -z "${ambient_apify_api_token-}" ]] || export APIFY_API_TOKEN="$ambient_apify_api_token"
   [[ -z "${ambient_google_ai_api_key-}" ]] || export GOOGLE_AI_API_KEY="$ambient_google_ai_api_key"
+  [[ -z "${ambient_openai_api_key-}" ]] || export OPENAI_API_KEY="$ambient_openai_api_key"
+  [[ -z "${ambient_gemini_api_key-}" ]] || export GEMINI_API_KEY="$ambient_gemini_api_key"
+  [[ -z "${ambient_openrouter_api_key-}" ]] || export OPENROUTER_API_KEY="$ambient_openrouter_api_key"
   exec "$candidate" "$@"
 }
 
@@ -70,6 +73,7 @@ unset \
   ambient_copilot_github_token ambient_gh_token ambient_github_token \
   ambient_claude_code_oauth_token ambient_anthropic_api_key \
   ambient_playwright_mcp_extension_token ambient_apify_api_token ambient_google_ai_api_key \
+  ambient_openai_api_key ambient_gemini_api_key ambient_openrouter_api_key \
   copilot_token secret_value secret_source_values
 ambient_copilot_github_token="${COPILOT_GITHUB_TOKEN-}"
 ambient_gh_token="${GH_TOKEN-}"
@@ -79,7 +83,11 @@ ambient_anthropic_api_key="${ANTHROPIC_API_KEY-}"
 ambient_playwright_mcp_extension_token="${PLAYWRIGHT_MCP_EXTENSION_TOKEN-}"
 ambient_apify_api_token="${APIFY_API_TOKEN-}"
 ambient_google_ai_api_key="${GOOGLE_AI_API_KEY-}"
+ambient_openai_api_key="${OPENAI_API_KEY-}"
+ambient_gemini_api_key="${GEMINI_API_KEY-}"
+ambient_openrouter_api_key="${OPENROUTER_API_KEY-}"
 unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
+  OPENAI_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY \
   PLAYWRIGHT_MCP_EXTENSION_TOKEN APIFY_API_TOKEN GOOGLE_AI_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL \
   ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
   TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID TRELLAGE_OUTPUT_FORMAT \
@@ -235,6 +243,9 @@ if [[ "$compiler_mode" == false ]]; then
       -i|--interactive|--interactive=*)
         fail '-i and --interactive have been removed; run trellage with no arguments'
         ;;
+      --proflie|--proflie=*)
+        fail "unknown option: $1"
+        ;;
       *)
         parsed_arguments+=("$1")
         shift
@@ -260,7 +271,7 @@ if [[ "$compiler_mode" == false ]]; then
         fi
         mode=resume
         ;;
-      shell|stop|doctor|destroy)
+      shell|start|stop|doctor|destroy)
         [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with positional arguments'
         [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
         mode="$1"
@@ -550,7 +561,7 @@ profile_metadata="$("${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoin
 harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
 if [[ "$harness_kind" != claude ]]; then
   [[ -z "$auth_mode_argument" ]] || fail '--auth-mode is supported only for Claude profiles'
-  discard_ambient_claude_auth
+  [[ "$harness_kind" == headlong ]] || discard_ambient_claude_auth
 fi
 claude_auth_mode="${auth_mode_argument:-proxy}"
 profile_name="$(jq -er '.profile_name' <<<"$profile_metadata")" || fail 'profile metadata has no name'
@@ -578,6 +589,16 @@ harness_executable="$(jq -er '.harness_executable' <<<"$profile_metadata")" || f
 runtime_entry="$(jq -er '.runtime_entry' <<<"$profile_metadata")" || fail 'profile metadata has no runtime entry'
 default_network="$(jq -er '.default_network' <<<"$profile_metadata")" || fail 'profile metadata has no default network'
 auth_policy="$(jq -er '.auth_policy' <<<"$profile_metadata")" || fail 'profile metadata has no auth policy'
+container_lifecycle="$(jq -r '.container_lifecycle // "ephemeral"' <<<"$profile_metadata")" \
+  || fail 'profile metadata has no container lifecycle'
+container_restart_policy="$(jq -r '.container_restart_policy // "no"' <<<"$profile_metadata")" \
+  || fail 'profile metadata has no container restart policy'
+container_command="$(jq -ce '.container_command // []' <<<"$profile_metadata")" \
+  || fail 'profile metadata has invalid container command'
+published_ports="$(jq -ce '.published_ports // []' <<<"$profile_metadata")" \
+  || fail 'profile metadata has invalid published ports'
+optional_secrets="$(jq -ce '.optional_secrets // []' <<<"$profile_metadata")" \
+  || fail 'profile metadata has invalid optional secrets'
 resolved_version="$(jq -r '.resolved_version // empty' <<<"$profile_metadata")"
 tmpfs_size="$(jq -r 'if has("tmpfs_size") then .tmpfs_size else "256m" end' <<<"$profile_metadata")" \
   || fail 'profile metadata has no tmpfs size'
@@ -708,8 +729,25 @@ if [[ "$harness_kind" == prime ]]; then
   [[ "$runtime_entry" == trellage-prime-entry ]] || fail 'profile metadata has an unsupported Prime runtime entry'
   [[ "$default_network" == copilot-proxy-rs_default ]] || fail 'profile metadata has an unsupported Prime network'
 fi
+if [[ "$harness_kind" == headlong ]]; then
+  [[ "$auth_policy" == proxy ]] || fail 'profile metadata has an unsupported Headlong auth policy'
+  [[ "$runtime_entry" == runtime-headlong-entry ]] || fail 'profile metadata has an unsupported Headlong runtime entry'
+  [[ "$default_network" == copilot-proxy-rs_default ]] || fail 'profile metadata has an unsupported Headlong network'
+  [[ "$container_lifecycle" == persistent ]] || fail 'profile metadata has an unsupported Headlong container lifecycle'
+  [[ "$container_restart_policy" == unless-stopped ]] \
+    || fail 'profile metadata has an unsupported Headlong restart policy'
+  [[ "$container_command" == '["runtime-headlong-entry","service"]' ]] \
+    || fail 'profile metadata has an unsupported Headlong container command'
+  [[ "$published_ports" == '[{"host_ip":"127.0.0.1","host_port":18080,"container_port":8080,"protocol":"tcp"}]' ]] \
+    || fail 'profile metadata has unsupported Headlong published ports'
+  [[ "$optional_secrets" == '[]' ]] \
+    || fail 'profile metadata has unsupported Headlong optional secrets'
+fi
+if [[ "$mode" == start && "$container_lifecycle" != persistent ]]; then
+  fail 'start is supported only for persistent profile containers'
+fi
 case "$harness_kind" in
-  claude|codex|copilot|pi|prime) ;;
+  claude|codex|copilot|headlong|pi|prime) ;;
   *) fail 'profile metadata has an unsupported harness kind' ;;
 esac
 [[ "$harness_executable" =~ ^[A-Za-z0-9._-]+$ ]] \
@@ -816,7 +854,7 @@ if [[ "$harness_kind" == claude ]]; then
   if [[ "$mode" != new && "$mode" != prompt && "$mode" != resume ]]; then
     discard_ambient_claude_auth
   fi
-else
+elif [[ "$harness_kind" != headlong ]]; then
   discard_ambient_claude_auth
 fi
 
@@ -832,7 +870,7 @@ sha256() {
   fail 'sha256sum or shasum is required'
 }
 
-if [[ "$mode" != prompt && "$mode" != stop && "$mode" != doctor && "$mode" != destroy \
+if [[ "$mode" != prompt && "$mode" != start && "$mode" != stop && "$mode" != doctor && "$mode" != destroy \
   && ! ( "$mode" == resume && "$prompt_argument_set" == true ) \
   && "$output_format" != jsonl ]]; then
   [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
@@ -1003,7 +1041,9 @@ scrub_cleanup_environment() {
     secret_value ambient_copilot_github_token ambient_gh_token ambient_github_token \
     ambient_claude_code_oauth_token ambient_anthropic_api_key \
     ambient_playwright_mcp_extension_token ambient_apify_api_token \
-    ambient_google_ai_api_key TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID \
+    ambient_google_ai_api_key ambient_openai_api_key ambient_gemini_api_key \
+    ambient_openrouter_api_key OPENAI_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY \
+    TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID \
     TRELLAGE_OUTPUT_FORMAT
 }
 
@@ -1258,20 +1298,31 @@ container_is_current() {
 }
 
 remove_stale_container() {
-  local running main_pid processes
+  local lease running main_pid processes
   running="$(docker container inspect --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
     || fail "cannot inspect Docker container state: $container_name"
   [[ "$running" == true || "$running" == false ]] \
     || fail "Docker container has an invalid running state: $container_name"
   if [[ "$running" == true ]]; then
-    main_pid="$(docker container inspect --format '{{ .State.Pid }}' "$container_id" 2>/dev/null)" \
-      || fail "cannot inspect Docker container PID: $container_name"
-    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || fail "Docker container has an invalid PID: $container_name"
-    processes="$(docker container top "$container_id" -eo pid,ppid,comm 2>/dev/null)" \
-      || fail "cannot inspect Docker container processes: $container_name"
-    if awk -v main_pid="$main_pid" 'NR > 1 && $1 != main_pid { found = 1 } END { exit(found ? 0 : 1) }' \
-      <<<"$processes"; then
-      fail "profile container is stale but has an active session; exit it and retry: $container_name"
+    if [[ "$container_lifecycle" == persistent ]]; then
+      prune_lifecycle_leases
+      shopt -s nullglob
+      for lease in "$lifecycle_resource_dir"/leases/*; do
+        [[ "$lease" == "$lifecycle_lease" ]] && continue
+        shopt -u nullglob
+        fail "profile container is stale but has an active session; exit it and retry: $container_name"
+      done
+      shopt -u nullglob
+    else
+      main_pid="$(docker container inspect --format '{{ .State.Pid }}' "$container_id" 2>/dev/null)" \
+        || fail "cannot inspect Docker container PID: $container_name"
+      [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || fail "Docker container has an invalid PID: $container_name"
+      processes="$(docker container top "$container_id" -eo pid,ppid,comm 2>/dev/null)" \
+        || fail "cannot inspect Docker container processes: $container_name"
+      if awk -v main_pid="$main_pid" 'NR > 1 && $1 != main_pid { found = 1 } END { exit(found ? 0 : 1) }' \
+        <<<"$processes"; then
+        fail "profile container is stale but has an active session; exit it and retry: $container_name"
+      fi
     fi
   fi
   verify_docker_server
@@ -1379,6 +1430,20 @@ validate_container_runtime() {
     || fail "refusing Docker container with unexpected runtime configuration: $container_name"
 }
 
+validate_headlong_container_config() {
+  local actual expected
+  [[ "$harness_kind" == headlong ]] || return 0
+  printf -v expected \
+    'copilot-proxy-rs_default\tunless-stopped\t[{"HostIp":"127.0.0.1","HostPort":"18080"}]\t["runtime-headlong-entry","service"]\t10001:10001\ttrue\t["ALL"]\t["no-new-privileges"]\t256\t2147483648\t2000000000\t{"/tmp":"rw,noexec,nosuid,nodev,size=%s,uid=10001,gid=10001"}\t%s' \
+    "$tmpfs_size" "$mount_path"
+  actual="$(docker container inspect --format \
+    '{{.HostConfig.NetworkMode}}{{"\t"}}{{.HostConfig.RestartPolicy.Name}}{{"\t"}}{{json (index .HostConfig.PortBindings "8080/tcp")}}{{"\t"}}{{json .Config.Cmd}}{{"\t"}}{{.Config.User}}{{"\t"}}{{.HostConfig.ReadonlyRootfs}}{{"\t"}}{{json .HostConfig.CapDrop}}{{"\t"}}{{json .HostConfig.SecurityOpt}}{{"\t"}}{{with .HostConfig.PidsLimit}}{{.}}{{end}}{{"\t"}}{{.HostConfig.Memory}}{{"\t"}}{{.HostConfig.NanoCpus}}{{"\t"}}{{json .HostConfig.Tmpfs}}{{"\t"}}{{.Config.WorkingDir}}' \
+    "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Headlong Docker container configuration: $container_name"
+  [[ "$actual" == "$expected" ]] \
+    || fail "refusing Headlong Docker container with unexpected configuration: $container_name"
+}
+
 image="${TRELLAGE_IMAGE:-$profile_image}"
 network="${TRELLAGE_NETWORK:-$default_network}"
 
@@ -1440,18 +1505,29 @@ prepare_codex_secrets() {
 # private mirrors, etc.). Empty on machines that use public registries.
 # Images stay universal; feeds are launch-time host policy, not baked digests.
 package_feed_args=()
+persistent_package_feed_args=()
 is_https_package_feed_url() {
   local value="$1"
   [[ -n "$value" ]] || return 1
-  [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *$'\0'* ]] || return 1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || return 1
   case "$value" in
     https://*/*) return 0 ;;
     https://*) return 0 ;;
     *) return 1 ;;
   esac
 }
+is_public_cfs_package_feed_url() {
+  case "$1" in
+    https://packagefeedproxy.microsoft.io/npm \
+      | https://packagefeedproxy.microsoft.io/npm/ \
+      | https://packagefeedproxy.microsoft.io/pypi/simple \
+      | https://packagefeedproxy.microsoft.io/pypi/simple/) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 prepare_package_feed_args() {
   package_feed_args=()
+  persistent_package_feed_args=()
   local name value npm_registry
   # Prefer explicit host env (fish/MDM). Fill gaps from host npm config the same
   # way the profile compiler discovers npm_config_registry for image builds.
@@ -1484,6 +1560,9 @@ prepare_package_feed_args() {
     value="$(printenv "$name" 2>/dev/null || true)"
     is_https_package_feed_url "$value" || continue
     package_feed_args+=(--env "$name")
+    if is_public_cfs_package_feed_url "$value"; then
+      persistent_package_feed_args+=(--env "$name")
+    fi
   done
 }
 prepare_package_feed_args
@@ -1861,7 +1940,8 @@ expected_image_id="$resolved_image_id"
 [[ -n "$expected_image_id" ]] || fail "Docker image has an empty ID: $image"
 
 register_lifecycle_lease
-if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
+if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) \
+  && "$container_lifecycle" != persistent ]]; then
   lifecycle_auto_stop=true
 fi
 
@@ -1872,6 +1952,7 @@ if container_is_present; then
   validate_state_volume
   validate_container_mounts
   validate_container_runtime
+  validate_headlong_container_config
   mount_state="$(container_mount_state)" \
     || fail "refusing Docker container with unexpected mounts: $container_name"
   runtime_state="$(container_runtime_state)" \
@@ -1916,7 +1997,20 @@ if [[ "$reuse_container" != true ]]; then
       || fail "Docker state volume could not be verified after creation: $state_volume"
   fi
   verify_docker_server
-  container_id="$(docker container create \
+  container_create_lifecycle_args=()
+  container_create_package_feed_args=()
+  container_create_command=(sleep infinity)
+  if [[ "$container_lifecycle" == persistent ]]; then
+    container_create_lifecycle_args=(
+      --restart "$container_restart_policy"
+      --publish '127.0.0.1:18080:8080/tcp'
+    )
+    # Docker persists create-time environment values. Only public CFS URLs
+    # may enter persistent service metadata; private feeds remain exec-only.
+    container_create_package_feed_args=("${persistent_package_feed_args[@]}")
+    container_create_command=(runtime-headlong-entry service)
+  fi
+  if ! container_id="$(docker container create \
     --name "$container_name" \
     "${resource_label_args[@]}" \
     "${container_integrity_label_args[@]}" \
@@ -1936,8 +2030,15 @@ if [[ "$reuse_container" != true ]]; then
     --mount "type=volume,src=$state_volume,dst=/home/agent" \
     --mount "type=bind,src=$copilot_models,dst=/home/agent/.copilot-models.json,readonly" \
     --network "$network" \
+    ${container_create_lifecycle_args[@]+"${container_create_lifecycle_args[@]}"} \
+    ${container_create_package_feed_args[@]+"${container_create_package_feed_args[@]}"} \
     --workdir "$mount_path" \
-    "$expected_image_id" sleep infinity)"
+    "$expected_image_id" "${container_create_command[@]}")"; then
+    if [[ "$container_lifecycle" == persistent ]]; then
+      fail 'cannot create Headlong service container; host port 127.0.0.1:18080 may already be in use'
+    fi
+    fail "cannot create Docker container: $container_name"
+  fi
   [[ -n "$container_id" ]] || fail "Docker create returned an empty container ID: $container_name"
   created_container_image_id="$(docker container inspect \
     --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
@@ -1950,6 +2051,9 @@ if [[ "$reuse_container" != true ]]; then
   docker container start "$container_id" >/dev/null
 fi
 release_lifecycle_mutex
+if [[ "$mode" == start ]]; then
+  exit 0
+fi
 if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
   resolve_github_cli_auth
   if [[ ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ]]; then
@@ -1958,11 +2062,13 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
     discard_ambient_github_auth
   fi
   if [[ -z "$github_cli_token" \
+    && "$harness_kind" != headlong \
     && ! ( ( "$harness_kind" == copilot || "$harness_kind" == pi ) && "$auth_policy" == host-or-login ) ]]; then
     fail "GitHub CLI authentication unavailable: set GH_TOKEN or GITHUB_TOKEN, or run gh auth login for $github_cli_host"
   fi
 fi
-if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) && -n "$github_cli_token" ]]; then
+if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) \
+  && "$harness_kind" != headlong && -n "$github_cli_token" ]]; then
   prepare_github_cli_auth
 fi
 
@@ -1988,6 +2094,15 @@ if [[ -n "$resume_session_id" ]]; then
   TRELLAGE_RESUME_SESSION_ID="$resume_session_id"
   export TRELLAGE_RESUME_SESSION_ID
   resume_hint_args+=(--env TRELLAGE_RESUME_SESSION_ID)
+fi
+
+if [[ "$harness_kind" == headlong && ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) ]]; then
+  HERDR_AGENT="$harness_executable" run_supervised_attachment command docker container exec \
+    "${terminal_args[@]}" \
+    ${package_feed_args[@]+"${package_feed_args[@]}"} \
+    --workdir "$mount_path" \
+    "$container_id" \
+    "$runtime_entry" attach
 fi
 
 herdr_agent="$harness_executable"

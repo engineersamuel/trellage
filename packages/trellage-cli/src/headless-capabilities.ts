@@ -87,6 +87,7 @@ export type SandboxHeadlessRuntimeAdapter =
   | "claude-core"
   | "claude-marketplace"
   | "claude-hyperresearch"
+  | "headlong"
   | "pi"
   | "prime"
 
@@ -122,6 +123,7 @@ export const sandboxHeadlessCapabilityDeclarations = {
     ...verifiedClaudeHeadlessCapabilities("2.1.229"),
     modelOverride: true,
   }),
+  headlong: conservativeHeadlessCapabilitiesV1,
   pi: conservativeHeadlessCapabilitiesV1,
   prime: conservativeHeadlessCapabilitiesV1,
 } as const satisfies Readonly<Record<SandboxHeadlessRuntimeAdapter, HeadlessCapabilitiesV1>>

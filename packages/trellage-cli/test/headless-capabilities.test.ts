@@ -15,6 +15,7 @@ import { parseProfile } from "../src/profile.js"
 const researchProfilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
 const marketplaceProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
+const headlongProfilePath = fileURLToPath(new URL("../../../profiles/headlong/profile.toml", import.meta.url))
 
 describe("headless capability contract", () => {
   it("accepts the canonical V1 capability object with exact keys", async () => {
@@ -79,6 +80,7 @@ describe("headless capability contract", () => {
   it.each([
     ["codex", "0.147.0"],
     ["copilot", "1.0.80"],
+    ["headlong", "d8f83042c30ba34931259408077ead20e6bd93c3"],
     ["pi", "17.3.4"],
     ["prime", "0.7.2"],
   ] as const)("keeps the unverified %s adapter conservative even at current locked version %s", (adapter, version) => {
@@ -106,20 +108,24 @@ describe("headless capability contract", () => {
   })
 
   it("maps parsed Sandbox profiles to runtime adapters without a profile-name allowlist", async () => {
-    const [researchSource, marketplaceSource, qwenSource] = await Promise.all([
+    const [researchSource, marketplaceSource, qwenSource, headlongSource] = await Promise.all([
       readFile(researchProfilePath, "utf8"),
       readFile(marketplaceProfilePath, "utf8"),
       readFile(qwenProfilePath, "utf8"),
+      readFile(headlongProfilePath, "utf8"),
     ])
-    const [research, marketplace, qwen] = await Promise.all([
+    const [research, marketplace, qwen, headlong] = await Promise.all([
       Effect.runPromise(parseProfile(researchSource, researchProfilePath)),
       Effect.runPromise(parseProfile(marketplaceSource, marketplaceProfilePath)),
       Effect.runPromise(parseProfile(qwenSource, qwenProfilePath)),
+      Effect.runPromise(parseProfile(headlongSource, headlongProfilePath)),
     ])
 
     expect(sandboxHeadlessRuntimeAdapter(research.profile)).toBe("claude-hyperresearch")
     expect(sandboxHeadlessRuntimeAdapter(marketplace.profile)).toBe("claude-marketplace")
     expect(sandboxHeadlessRuntimeAdapter(qwen.profile)).toBe("claude-core")
+    expect(sandboxHeadlessRuntimeAdapter(headlong.profile)).toBe("headlong")
     expect(resolveSandboxHeadlessCapabilities("claude-core", "2.1.229").modelOverride).toBe(false)
+    expect(resolveSandboxHeadlessCapabilities("headlong", null)).toEqual(conservativeHeadlessCapabilitiesV1)
   })
 })
