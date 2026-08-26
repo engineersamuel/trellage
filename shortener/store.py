@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 
 __all__ = ["Store", "ALPHABET", "CODE_LENGTH"]
 
@@ -38,6 +39,10 @@ class Store:
     def __init__(self) -> None:
         self._code_to_url: dict[str, str] = {}
         self._url_to_code: dict[str, str] = {}
+        # shorten() does a check-then-set while probing for a free code.
+        # ThreadingHTTPServer calls it from several threads at once, so the
+        # probe has to be serialized or two URLs can claim the same code.
+        self._lock = threading.Lock()
 
     def shorten(self, url: str) -> str:
         """Return the 6-character code for ``url``, creating one if needed.
@@ -50,21 +55,22 @@ class Store:
         if not url:
             raise ValueError("url must not be empty")
 
-        existing = self._url_to_code.get(url)
-        if existing is not None:
-            return existing
+        with self._lock:
+            existing = self._url_to_code.get(url)
+            if existing is not None:
+                return existing
 
-        attempt = 0
-        while True:
-            code = _derive(url, attempt)
-            owner = self._code_to_url.get(code)
-            if owner is None:
-                self._code_to_url[code] = url
-                self._url_to_code[url] = code
-                return code
-            if owner == url:  # pragma: no cover - guarded by the lookup above
-                return code
-            attempt += 1
+            attempt = 0
+            while True:
+                code = _derive(url, attempt)
+                owner = self._code_to_url.get(code)
+                if owner is None:
+                    self._code_to_url[code] = url
+                    self._url_to_code[url] = code
+                    return code
+                if owner == url:  # pragma: no cover - guarded by the lookup above
+                    return code
+                attempt += 1
 
     def resolve(self, code: str) -> str | None:
         """Return the URL for ``code``, or None when the code is unknown."""

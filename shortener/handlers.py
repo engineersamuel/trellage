@@ -8,11 +8,21 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from .store import Store
 
 __all__ = ["make_handler"]
+
+# A request body big enough to hold a URL and nothing else. Content-Length is
+# attacker-controlled, so it is checked before a single byte is read.
+MAX_BODY_BYTES = 64 * 1024
+
+# Reserved characters a URL may legitimately contain; everything else gets
+# percent-encoded on its way into the Location header. This keeps CR/LF out of
+# the response and makes non-Latin-1 URLs encodable, without validating what
+# the URL means (a spec non-goal).
+_LOCATION_SAFE = "!#$%&'()*+,/:;=?@[]~"
 
 
 def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
@@ -55,6 +65,9 @@ def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
             if length < 0:
                 self._send_error_json(400, "invalid Content-Length")
                 return
+            if length > MAX_BODY_BYTES:
+                self._send_error_json(413, "request body too large")
+                return
 
             raw = self.rfile.read(length) if length else b""
 
@@ -89,7 +102,7 @@ def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
                 return
 
             self.send_response(302)
-            self.send_header("Location", url)
+            self.send_header("Location", quote(url, safe=_LOCATION_SAFE))
             self.send_header("Content-Length", "0")
             self.end_headers()
 
