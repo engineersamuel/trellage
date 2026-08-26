@@ -411,6 +411,50 @@ const readLegacyManagedNames = async (file) => {
   return names
 }
 
+const readLegacyOwnedNames = async (targetPath) => {
+  const marker = path.join(targetPath, "show-me", ".managed-by-trellage-picx-profiles")
+  const status = await lstat(marker).catch(() => undefined)
+  if (status === undefined) return []
+  if (!status.isFile() || status.isSymbolicLink()) fail(`invalid legacy managed skill marker: ${marker}`)
+  if ((await readFile(marker, "utf8")) !== "trellage-picx-profile-v2\n") {
+    fail(`invalid legacy managed skill marker: ${marker}`)
+  }
+  const skill = path.dirname(marker)
+  const skillStatus = await lstat(skill)
+  if (!skillStatus.isDirectory() || skillStatus.isSymbolicLink()) fail(`invalid managed skill target: ${skill}`)
+  return ["show-me"]
+}
+
+const readTargetManagedNames = async (targetPath) => {
+  const currentManaged = await readManagedNames(
+    path.join(targetPath, ".trellage-managed-skills"),
+    "managed skill manifest",
+  )
+  if (currentManaged.length > 0) return currentManaged
+  const legacyManaged = await readLegacyManagedNames(path.join(targetPath, ".trellage-engineersamuel-skills"))
+  const legacyOwned = await readLegacyOwnedNames(targetPath)
+  return [...new Set([...legacyManaged, ...legacyOwned])]
+}
+
+export const verifyRepairableTarget = async (target) => {
+  const targetPath = path.resolve(target)
+  const targetStatus = await lstat(targetPath).catch(() => undefined)
+  if (targetStatus === undefined) return []
+  if (!targetStatus.isDirectory() || targetStatus.isSymbolicLink()) fail(`invalid skill target: ${targetPath}`)
+  const entries = await readdir(targetPath)
+
+  const managed = await readTargetManagedNames(targetPath)
+  for (const name of entries) {
+    if (name === ".trellage-managed-skills" || name === ".trellage-engineersamuel-skills") continue
+    const candidate = path.join(targetPath, name)
+    const status = await lstat(candidate)
+    if (!status.isDirectory() || status.isSymbolicLink()) {
+      fail(`invalid managed skill target: ${candidate}`)
+    }
+  }
+  return managed
+}
+
 const removeAbandonedLock = async (directory) => {
   await rm(directory, { recursive: true, force: true }).catch((cause) => {
     if (cause?.code !== "ENOENT") throw cause
@@ -551,8 +595,7 @@ const commitTargetSkills = async ({
 const syncSnapshotUnlocked = async (sourceSkills, sourceNames, targetPath) => {
   const manifest = path.join(targetPath, ".trellage-managed-skills")
   const legacyManifest = path.join(targetPath, ".trellage-engineersamuel-skills")
-  const currentManaged = await readManagedNames(manifest, "managed skill manifest")
-  const managed = currentManaged.length > 0 ? currentManaged : await readLegacyManagedNames(legacyManifest)
+  const managed = await readTargetManagedNames(targetPath)
   await assertNoUnmanagedCollisions(targetPath, sourceNames, managed)
   const transaction = await mkdtemp(path.join(targetPath, ".trellage-floating-skills."))
   const staged = path.join(transaction, "new")
@@ -660,7 +703,7 @@ const parseArguments = (arguments_) => {
       index += 1
     } else {
       fail(
-        "usage: floating-skills.mjs <stage|ensure|update|status|sync|verify> [--bundle NAME] [--catalog FILE] [--output DIR] [--target DIR] [--cache DIR] [--skills-cli FILE]",
+        "usage: floating-skills.mjs <stage|ensure|update|status|sync|verify|verify-repairable> [--bundle NAME] [--catalog FILE] [--output DIR] [--target DIR] [--cache DIR] [--skills-cli FILE]",
       )
     }
   }
@@ -739,6 +782,11 @@ const verifyCommand = async (cache, options) => {
   await verifyTarget(cache, options.target)
 }
 
+const verifyRepairableCommand = async (options) => {
+  if (options.target === undefined) fail("verify-repairable requires --target")
+  await verifyRepairableTarget(options.target)
+}
+
 const dispatch = (command, catalog, bundles, cache, options) => {
   if (command === "stage") return stageCommand(catalog, bundles, options)
   if (command === "sync") return syncCommand(options)
@@ -746,7 +794,8 @@ const dispatch = (command, catalog, bundles, cache, options) => {
   if (command === "update") return updateCommand(catalog, bundles, cache, options)
   if (command === "status") return statusCommand(bundles, cache)
   if (command === "verify") return verifyCommand(cache, options)
-  fail("usage: floating-skills.mjs <stage|ensure|update|status|sync|verify>")
+  if (command === "verify-repairable") return verifyRepairableCommand(options)
+  fail("usage: floating-skills.mjs <stage|ensure|update|status|sync|verify|verify-repairable>")
 }
 
 const main = async () => {

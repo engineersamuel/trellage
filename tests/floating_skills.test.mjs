@@ -14,6 +14,7 @@ import {
   stageLatest,
   syncSnapshot,
   updateNative,
+  verifyRepairableTarget,
   verifyTarget,
 } from "../scripts/floating-skills.mjs"
 
@@ -258,6 +259,41 @@ test("refresh removes stale managed skills and preserves unmanaged skills", asyn
   assert.equal(await readFile(path.join(fixture.target, "unmanaged", "SKILL.md"), "utf8"), "keep\n")
 })
 
+test("legacy Pi ownership marker migrates show-me without weakening collision checks", async () => {
+  const fixture = await createFixture()
+  await rm(path.join(fixture.repository, ".omp", "skills", "fixture"), { recursive: true })
+  const showMe = path.join(fixture.repository, ".omp", "skills", "show-me")
+  await mkdir(showMe)
+  await writeFile(path.join(showMe, "SKILL.md"), "---\nname: show-me\n---\n\ncurrent\n")
+  fixture.catalog.sources.fixture.select = ["show-me"]
+  await commit(fixture.repository, "replace fixture with show-me")
+  await updateNative({
+    catalog: fixture.catalog,
+    bundleIds: ["test"],
+    cache: fixture.cache,
+  })
+
+  const targetShowMe = path.join(fixture.target, "show-me")
+  await mkdir(targetShowMe, { recursive: true })
+  await writeFile(path.join(targetShowMe, "SKILL.md"), "legacy\n")
+  await writeFile(
+    path.join(targetShowMe, ".managed-by-trellage-picx-profiles"),
+    "trellage-picx-profile-v2\n",
+  )
+  await writeFile(path.join(fixture.target, ".trellage-engineersamuel-skills"), `${"a".repeat(40)}\n`)
+  await syncSnapshot(fixture.cache, fixture.target)
+  assert.match(await readFile(path.join(targetShowMe, "SKILL.md"), "utf8"), /current/)
+  assert.equal(
+    await lstat(path.join(targetShowMe, ".managed-by-trellage-picx-profiles")).catch(() => undefined),
+    undefined,
+  )
+
+  await rm(fixture.target, { recursive: true })
+  await mkdir(targetShowMe, { recursive: true })
+  await writeFile(path.join(targetShowMe, "SKILL.md"), "unmanaged\n")
+  await assert.rejects(syncSnapshot(fixture.cache, fixture.target), /refusing to replace unmanaged skill/)
+})
+
 test("publication rejects unmanaged collisions and source symlinks", async () => {
   const fixture = await createFixture()
   await updateNative({
@@ -297,6 +333,22 @@ test("verification rejects modified targets and unsafe cached content", async ()
   await rm(path.join(fixture.cache, "skills", "fixture", "SKILL.md"))
   await symlink("outside", path.join(fixture.cache, "skills", "fixture", "SKILL.md"))
   await assert.rejects(syncSnapshot(fixture.cache, fixture.target), /skill contains a symlink/)
+})
+
+test("repair preflight accepts managed drift and rejects unsafe targets", async () => {
+  const fixture = await createFixture()
+  await ensureNative({
+    catalog: fixture.catalog,
+    bundleIds: ["test"],
+    cache: fixture.cache,
+    target: fixture.target,
+  })
+  await writeFile(path.join(fixture.target, "fixture", "SKILL.md"), "modified\n")
+  assert.deepEqual(await verifyRepairableTarget(fixture.target), ["fixture"])
+
+  await rm(fixture.target, { recursive: true })
+  await symlink(fixture.cache, fixture.target)
+  await assert.rejects(verifyRepairableTarget(fixture.target), /invalid skill target/)
 })
 
 test("generic sources use the configured materializer", async (t) => {
