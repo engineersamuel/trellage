@@ -501,8 +501,8 @@ in_fixture '
 
 # File modes are part of the locked source inventory and therefore part of
 # runtime seed identity. A mode-only seed revision must replace a clean app.
+chmod 0744 "$seed/bin/persona"
 in_fixture '
-  chmod 0744 /usr/local/share/trellage/headlong-seed/bin/persona
   printf "3333333333333333333333333333333333333333\n" >/usr/local/share/trellage/headlong-seed.commit
 '
 run_entry attach
