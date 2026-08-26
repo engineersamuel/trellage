@@ -525,16 +525,19 @@ validate_live_result() {
 }
 
 probe_codex_live() {
-  local profile="$1"
-  local package="$2"
-  local source_skills="$3"
-  local profile_home="${HOME%/}/.local/share/trellage/profiles/codex/$profile/home"
-  local events_file="$temp_dir/live-cdx-$profile-events.jsonl"
-  local result_file="$temp_dir/live-cdx-$profile-result.json"
-  local error_file="$temp_dir/live-cdx-$profile.stderr"
+  local launcher="$1"
+  local profile="$2"
+  local package="$3"
+  local source_skills="$4"
+  local storage_key="$profile"
+  local profile_home
+  local events_file="$temp_dir/live-$launcher-$profile-events.jsonl"
+  local result_file="$temp_dir/live-$launcher-$profile-result.json"
+  local error_file="$temp_dir/live-$launcher-$profile.stderr"
   local command_status=0
 
-  prepare_live_probe cdx "$profile" "$package" "$source_skills"
+  profile_home="${HOME%/}/.local/share/trellage/profiles/codex/$storage_key/home"
+  prepare_live_probe "$launcher" "$profile" "$package" "$source_skills"
   CODEX_HOME="$profile_home" run_live_process \
     "$live_prompt_file" "$events_file" "$error_file" \
     codex exec \
@@ -558,7 +561,7 @@ probe_codex_live() {
     report_error "codex live probe attempted tool use for $profile"
     set_live_failure 'tool use'
   else
-    validate_live_result cdx "$profile" "$live_expected_file" "$result_file"
+    validate_live_result "$launcher" "$profile" "$live_expected_file" "$result_file"
   fi
 }
 
@@ -648,8 +651,9 @@ probe_grx_live() {
 }
 
 verify_codex_profiles() {
-  local list_output="$temp_dir/cdx-list"
-  local inventory="$temp_dir/codex-inventory"
+  local launcher="$1"
+  local list_output="$temp_dir/$launcher-list"
+  local inventory="$temp_dir/$launcher-inventory"
   local profile
   local package
   local json_file
@@ -661,40 +665,44 @@ verify_codex_profiles() {
   local row_static
   local row_live
   local command_status
+  local inventory_valid
 
-  command -v cdx >/dev/null 2>&1 || return 0
+  command -v "$launcher" >/dev/null 2>&1 || return 0
   command -v codex >/dev/null 2>&1 || return 0
-  discover_catalog cdx "$list_output" "$inventory" || return 0
-  if ! awk -F '\t' '
+  discover_catalog "$launcher" "$list_output" "$inventory" || return 0
+  if awk -F '\t' '
     NR == 1 && $1 == "hve" && $2 == "hve-core-all@hve-core" { next }
-    NR == 2 && $1 == "superpowers" \
+    NR == 2 && $1 == "pstack" \
+      && $2 == "pstack-for-codex@pstack-for-codex-local" { next }
+    NR == 3 && $1 == "superpowers" \
       && $2 == "superpowers@superpowers-marketplace" { next }
     { invalid = 1 }
-    END { exit invalid || NR != 2 }
-  ' "$inventory"; then
-    report_error 'cdx profile inventory does not match managed catalog'
+    END { exit invalid || NR != 3 }
+  ' "$inventory"; then inventory_valid=yes; else inventory_valid=no; fi
+  if [ "$inventory_valid" != yes ]; then
+    report_error "$launcher profile inventory does not match managed catalog"
     return 0
   fi
 
   while IFS=$'\t' read -r profile package; do
-    json_file="$temp_dir/codex-$profile.json"
-    text_file="$temp_dir/codex-$profile-text"
-    skills_file="$temp_dir/codex-$profile-skills"
+    json_file="$temp_dir/$launcher-$profile.json"
+    text_file="$temp_dir/$launcher-$profile-text"
+    skills_file="$temp_dir/$launcher-$profile-skills"
     row_static='pass'
     visible_count='?'
     sample=''
     row_live='not run'
 
     command_status=0
-    cdx doctor "$profile" >"$temp_dir/codex-$profile-doctor" \
-      2>"$temp_dir/codex-$profile-doctor.stderr" || command_status=$?
+    "$launcher" doctor "$profile" >"$temp_dir/$launcher-$profile-doctor" \
+      2>"$temp_dir/$launcher-$profile-doctor.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
-      report_error "cdx doctor failed for $profile (exit $command_status)"
+      report_error "$launcher doctor failed for $profile (exit $command_status)"
       set_row_failure 'doctor command'
     fi
     command_status=0
-    cdx "$profile" debug prompt-input 'profile verification' \
-      >"$json_file" 2>"$temp_dir/codex-$profile.stderr" || command_status=$?
+    "$launcher" "$profile" debug prompt-input 'profile verification' \
+      >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
       report_error "Codex prompt-input failed for $profile (exit $command_status)"
       set_row_failure 'prompt input command'
@@ -733,12 +741,12 @@ verify_codex_profiles() {
       fi
     fi
     if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
-      probe_codex_live "$profile" "$package" "$skills_file"
+      probe_codex_live "$launcher" "$profile" "$package" "$skills_file"
       if [ "$row_live" = 'not run' ]; then
         row_live='pass'
       fi
     fi
-    emit_row cdx "$profile" "$package" n/a "$visible_count" "$sample" "$row_static" "$row_live"
+    emit_row "$launcher" "$profile" "$package" n/a "$visible_count" "$sample" "$row_static" "$row_live"
   done <"$inventory"
 }
 
@@ -984,7 +992,7 @@ verify_grx_profiles() {
   done <"$inventory"
 }
 
-verify_codex_profiles
+verify_codex_profiles cdx
 verify_cpx_profiles
 verify_grx_profiles
 exit "$status"

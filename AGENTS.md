@@ -2,7 +2,8 @@
 
 **Trellage Sandbox** compiles locked agent profiles and runs them in isolated
 Docker containers. **Trellage Native** runs profile launchers directly on the
-host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, and `prx`.
+host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`,
+and `prx`.
 
 ## Project overview
 

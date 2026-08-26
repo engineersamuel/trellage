@@ -54,6 +54,10 @@ scan_public_branding() {
 [[ ! -e "$repo_root/packages/harness-cli" ]] || fail 'legacy compiler package path remains'
 [[ -d "$repo_root/prototypes/trellage-codex-profiles" ]] \
   || fail 'Codex profiles prototype path is missing'
+[[ -d "$repo_root/prototypes/trellage-codex-common" ]] \
+  || fail 'shared native Codex prototype path is missing'
+[[ ! -e "$repo_root/prototypes/trellage-pstack-profiles" ]] \
+  || fail 'standalone pstack launcher prototype remains'
 [[ -d "$repo_root/prototypes/trellage-copilot-profiles" ]] \
   || fail 'Copilot profiles prototype path is missing'
 [[ -d "$repo_root/prototypes/trellage-claude-profiles" ]] \
@@ -81,13 +85,13 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile; do
+for target in native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-for block in auth-config-launch lifecycle catalog installation; do
+for block in auth-config-launch lifecycle catalog installation pstack; do
   grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/blocks/'"$block"'.sh' \
     "$repo_root/Makefile" || fail "Makefile Codex ${block} target is stale"
 done
@@ -154,6 +158,7 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage/finalize-copilot-seed.mjs" \
   "$repo_root/prototypes/trellage/mise.toml" \
   "$repo_root/prototypes/trellage-codex-profiles" \
+  "$repo_root/prototypes/trellage-codex-common" \
   "$repo_root/prototypes/trellage-copilot-profiles" \
   "$repo_root/prototypes/trellage-claude-profiles" \
   "$repo_root/prototypes/trellage-grok-profiles" \

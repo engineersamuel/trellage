@@ -485,6 +485,7 @@ grx setup --all
 jcx setup
 omp setup
 picx setup
+cdx setup pstack
 prx setup
 cpx doctor awesome
 trx list
@@ -592,6 +593,28 @@ cldx repair
 No host model credentials are copied. Launch scrubs ambient provider and token
 variables before setting only the local proxy environment. See the
 [native Claude guide](prototypes/trellage-claude-profiles/README.md).
+
+The native `cdx pstack` profile runs Codex with
+[pstack for Codex](https://github.com/Aqua-123/pstack-for-codex), created and
+maintained by Aqua-123. It installs only the upstream marketplace plugin in
+`~/.local/share/trellage/profiles/codex/pstack/home/`; optional pstack agent
+profiles, Poteto Mode activation, and Benny automations are not enabled
+automatically.
+Its Trellage identity is launcher `cdx`, harness `codex`, and profile
+`pstack`.
+
+```bash
+cdx setup pstack
+cdx doctor pstack
+cdx pstack
+cdx update --check pstack
+cdx update pstack
+```
+
+It uses the same native Codex `workspace-write` sandbox and authentication
+policy as `cdx`. Node.js is required by upstream hooks and validation. Bun is
+optional. Pstack is a Codex profile, so Trellage does not install a `pstack`
+executable and does not shadow the Unix debugger with that name.
 
 After the eight native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
@@ -727,7 +750,7 @@ Run the focused contract with:
 make profile-matrix-test
 ```
 
-Codex discovery and static checks require the managed `cdx` launcher and its isolated profile roots under `~/.local/share/trellage/profiles/codex/<profile>/home`.
+Codex discovery and static checks require the managed `cdx` launcher and isolated profile roots under `~/.local/share/trellage/profiles/codex/`.
 
 Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
 

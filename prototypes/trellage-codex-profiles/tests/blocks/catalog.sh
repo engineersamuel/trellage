@@ -13,9 +13,9 @@ build_fixture_profiles
 write_fake_bin
 
 
-[ "$(grep -Fc -- '3.3.101' "$fixture_launcher")" -eq 0 ] \
+[ "$(grep -Fc -- '3.3.101' "$fixture_common_launcher")" -eq 0 ] \
   || fail 'launcher duplicates the HVE adapter version literal'
-[ "$(grep -Fc -- 'https://github.com/obra/superpowers.git' "$fixture_launcher")" -eq 1 ] \
+[ "$(grep -Fc -- 'https://github.com/obra/superpowers.git' "$fixture_common_launcher")" -eq 1 ] \
   || fail 'launcher does not centralize the Superpowers plugin repository'
 
 restore_catalog() {
@@ -86,6 +86,11 @@ mutate_catalog changed-headless-question '.profiles.hve.headless.questionToolCon
 mutate_catalog changed-headless-tested-version '.profiles.hve.headless.testedHarnessVersion = 1'
 mutate_catalog wrong-type '.profiles.hve.plugin = 1'
 mutate_catalog extra-profile-field '.profiles.hve.untrusted = "value"'
+mutate_catalog changed-pstack-source '.profiles.pstack.marketplaceSource = "other/source"'
+mutate_catalog changed-pstack-kind '.profiles.pstack.marketplaceKind = "git"'
+mutate_catalog changed-pstack-name '.profiles.pstack.marketplaceName = "other-marketplace"'
+mutate_catalog changed-pstack-upstream '.profiles.pstack.upstreamRepository = "https://example.com/pstack.git"'
+mutate_catalog changed-pstack-plugin '.profiles.pstack.plugin = "other@pstack-for-codex-local"'
 mutate_catalog changed-superpowers-source '.profiles.superpowers.marketplaceSource = "other/source"'
 mutate_catalog changed-superpowers-kind '.profiles.superpowers.marketplaceKind = "local-adapter"'
 mutate_catalog changed-superpowers-name '.profiles.superpowers.marketplaceName = "other-marketplace"'
