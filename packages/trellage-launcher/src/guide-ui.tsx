@@ -18,6 +18,7 @@ import { Box, Text, useApp, useInput, type Key } from "ink"
 import { profileGuideIdentityKey, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
+  applyWorkflowPromptTemplate,
   literalGuideMatch,
   publicGuideLaunchCommand,
   runGuideMatch,
@@ -318,7 +319,7 @@ export type GuideUiAction =
  * so it stays trivially simple regardless of how many action types exist.
  */
 
-const reduceIntentAndMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.IntentChange:
       return state.stage === GuideUiStage.Intent ? { ...state, textDraft: action.text } : state
@@ -333,6 +334,26 @@ const reduceIntentAndMatch = (state: GuideUiState, action: GuideUiAction): Guide
       return { ...emptyState, stage: GuideUiStage.Matching, intent: trimmed }
     }
 
+    default:
+      return state
+  }
+}
+
+const recommendationsState = (
+  state: GuideUiState,
+  recommendations: Triple<GuideRecommendation>,
+  usedLiteralFallback: boolean,
+): GuideUiState => ({
+  ...state,
+  stage: GuideUiStage.Recommendations,
+  recommendations,
+  recommendationIndex: 0,
+  usedLiteralFallback,
+  errorMessage: undefined,
+})
+
+const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.MatchRetry:
       return state.stage === GuideUiStage.MatchFailed
         ? { ...state, stage: GuideUiStage.Matching, errorMessage: undefined }
@@ -340,14 +361,7 @@ const reduceIntentAndMatch = (state: GuideUiState, action: GuideUiAction): Guide
 
     case GuideUiActionType.MatchSucceeded:
       return state.stage === GuideUiStage.Matching
-        ? {
-            ...state,
-            stage: GuideUiStage.Recommendations,
-            recommendations: action.recommendations,
-            recommendationIndex: 0,
-            usedLiteralFallback: false,
-            errorMessage: undefined,
-          }
+        ? recommendationsState(state, action.recommendations, false)
         : state
 
     case GuideUiActionType.MatchFailed:
@@ -357,14 +371,7 @@ const reduceIntentAndMatch = (state: GuideUiState, action: GuideUiAction): Guide
 
     case GuideUiActionType.MatchLiteral:
       return state.stage === GuideUiStage.MatchFailed
-        ? {
-            ...state,
-            stage: GuideUiStage.Recommendations,
-            recommendations: action.recommendations,
-            recommendationIndex: 0,
-            usedLiteralFallback: true,
-            errorMessage: undefined,
-          }
+        ? recommendationsState(state, action.recommendations, true)
         : state
 
     case GuideUiActionType.MatchLiteralFailed:
@@ -375,7 +382,7 @@ const reduceIntentAndMatch = (state: GuideUiState, action: GuideUiAction): Guide
   }
 }
 
-const reduceRecommendationsAndGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.RecommendationsMove:
       return state.stage === GuideUiStage.Recommendations
@@ -396,6 +403,26 @@ const reduceRecommendationsAndGenerate = (state: GuideUiState, action: GuideUiAc
       }
     }
 
+    default:
+      return state
+  }
+}
+
+const candidatesState = (
+  state: GuideUiState,
+  candidates: Triple<GuideGenerateCandidate>,
+  usedTemplateFallback: boolean,
+): GuideUiState => ({
+  ...state,
+  stage: GuideUiStage.Candidates,
+  candidates,
+  candidateIndex: 0,
+  usedTemplateFallback,
+  errorMessage: undefined,
+})
+
+const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.GenerateGuideLoaded:
       return state.stage === GuideUiStage.Generating ? { ...state, guideDocument: action.guideDocument } : state
 
@@ -406,14 +433,7 @@ const reduceRecommendationsAndGenerate = (state: GuideUiState, action: GuideUiAc
 
     case GuideUiActionType.GenerateSucceeded:
       return state.stage === GuideUiStage.Generating
-        ? {
-            ...state,
-            stage: GuideUiStage.Candidates,
-            candidates: action.candidates,
-            candidateIndex: 0,
-            usedTemplateFallback: false,
-            errorMessage: undefined,
-          }
+        ? candidatesState(state, action.candidates, false)
         : state
 
     case GuideUiActionType.GenerateFailed:
@@ -423,14 +443,7 @@ const reduceRecommendationsAndGenerate = (state: GuideUiState, action: GuideUiAc
 
     case GuideUiActionType.GenerateTemplateFallback:
       return state.stage === GuideUiStage.GenerateFailed
-        ? {
-            ...state,
-            stage: GuideUiStage.Candidates,
-            candidates: action.candidates,
-            candidateIndex: 0,
-            usedTemplateFallback: true,
-            errorMessage: undefined,
-          }
+        ? candidatesState(state, action.candidates, true)
         : state
 
     case GuideUiActionType.GenerateTemplateFallbackFailed:
@@ -446,7 +459,7 @@ const reduceRecommendationsAndGenerate = (state: GuideUiState, action: GuideUiAc
   }
 }
 
-const reduceCandidates = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceCandidateSelection = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.CandidatesMove:
       return state.stage === GuideUiStage.Candidates
@@ -478,6 +491,13 @@ const reduceCandidates = (state: GuideUiState, action: GuideUiAction): GuideUiSt
           }
         : state
 
+    default:
+      return state
+  }
+}
+
+const reduceDirectEdit = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.DirectEditSubmit:
       return state.stage === GuideUiStage.DirectEditor &&
         state.candidates !== undefined &&
@@ -550,7 +570,7 @@ const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState 
   }
 }
 
-const reduceReadinessAndDestination = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceReadiness = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.ReadinessReady:
       return state.stage === GuideUiStage.CheckingReadiness
@@ -572,6 +592,13 @@ const reduceReadinessAndDestination = (state: GuideUiState, action: GuideUiActio
         ? { ...state, stage: GuideUiStage.Candidates, readiness: undefined }
         : state
 
+    default:
+      return state
+  }
+}
+
+const reduceDestination = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.DestinationMove:
       return state.stage === GuideUiStage.Destination && action.optionCount > 0
         ? {
@@ -599,7 +626,7 @@ const reduceReadinessAndDestination = (state: GuideUiState, action: GuideUiActio
   }
 }
 
-const reduceWorktree = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceWorktreeBranch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.WorktreeSubmitBranch:
       return state.stage === GuideUiStage.WorktreeBranchEditor && state.textDraft.trim().length > 0
@@ -631,6 +658,13 @@ const reduceWorktree = (state: GuideUiState, action: GuideUiAction): GuideUiStat
           }
         : state
 
+    default:
+      return state
+  }
+}
+
+const reduceWorktreeInspection = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.WorktreeCollision:
       return state.stage === GuideUiStage.InspectingWorktree
         ? { ...state, stage: GuideUiStage.WorktreeCollision, worktreeInspection: action.inspection }
@@ -646,6 +680,13 @@ const reduceWorktree = (state: GuideUiState, action: GuideUiAction): GuideUiStat
           }
         : state
 
+    default:
+      return state
+  }
+}
+
+const reduceWorktreeResolution = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.WorktreeConfirm:
       return state.stage === GuideUiStage.WorktreeReady
         ? { ...state, worktreeConfirmations: state.worktreeConfirmations + 1 }
@@ -677,29 +718,29 @@ type GuideUiDomainReducer = (state: GuideUiState, action: GuideUiAction) => Guid
 
 /** Routes every action type to the single domain reducer that owns it. A plain table lookup, so this stays O(1) and trivially simple regardless of how many action types exist. */
 const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer> = {
-  [GuideUiActionType.IntentChange]: reduceIntentAndMatch,
-  [GuideUiActionType.IntentBackspace]: reduceIntentAndMatch,
-  [GuideUiActionType.IntentSubmit]: reduceIntentAndMatch,
-  [GuideUiActionType.MatchRetry]: reduceIntentAndMatch,
-  [GuideUiActionType.MatchSucceeded]: reduceIntentAndMatch,
-  [GuideUiActionType.MatchFailed]: reduceIntentAndMatch,
-  [GuideUiActionType.MatchLiteral]: reduceIntentAndMatch,
-  [GuideUiActionType.MatchLiteralFailed]: reduceIntentAndMatch,
-  [GuideUiActionType.RecommendationsMove]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.RecommendationsConfirm]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateGuideLoaded]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateRetry]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateSucceeded]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateFailed]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateTemplateFallback]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateTemplateFallbackFailed]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.GenerateBack]: reduceRecommendationsAndGenerate,
-  [GuideUiActionType.CandidatesMove]: reduceCandidates,
-  [GuideUiActionType.CandidatesConfirm]: reduceCandidates,
-  [GuideUiActionType.CandidatesRefineStart]: reduceCandidates,
-  [GuideUiActionType.CandidatesDirectEditStart]: reduceCandidates,
-  [GuideUiActionType.DirectEditSubmit]: reduceCandidates,
-  [GuideUiActionType.DirectEditBack]: reduceCandidates,
+  [GuideUiActionType.IntentChange]: reduceIntent,
+  [GuideUiActionType.IntentBackspace]: reduceIntent,
+  [GuideUiActionType.IntentSubmit]: reduceIntent,
+  [GuideUiActionType.MatchRetry]: reduceMatch,
+  [GuideUiActionType.MatchSucceeded]: reduceMatch,
+  [GuideUiActionType.MatchFailed]: reduceMatch,
+  [GuideUiActionType.MatchLiteral]: reduceMatch,
+  [GuideUiActionType.MatchLiteralFailed]: reduceMatch,
+  [GuideUiActionType.RecommendationsMove]: reduceRecommendations,
+  [GuideUiActionType.RecommendationsConfirm]: reduceRecommendations,
+  [GuideUiActionType.GenerateGuideLoaded]: reduceGenerate,
+  [GuideUiActionType.GenerateRetry]: reduceGenerate,
+  [GuideUiActionType.GenerateSucceeded]: reduceGenerate,
+  [GuideUiActionType.GenerateFailed]: reduceGenerate,
+  [GuideUiActionType.GenerateTemplateFallback]: reduceGenerate,
+  [GuideUiActionType.GenerateTemplateFallbackFailed]: reduceGenerate,
+  [GuideUiActionType.GenerateBack]: reduceGenerate,
+  [GuideUiActionType.CandidatesMove]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesConfirm]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesRefineStart]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesDirectEditStart]: reduceCandidateSelection,
+  [GuideUiActionType.DirectEditSubmit]: reduceDirectEdit,
+  [GuideUiActionType.DirectEditBack]: reduceDirectEdit,
   [GuideUiActionType.EditorChange]: reduceEditor,
   [GuideUiActionType.EditorBackspace]: reduceEditor,
   [GuideUiActionType.RefineSubmit]: reduceRefine,
@@ -707,21 +748,21 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.RefineFailed]: reduceRefine,
   [GuideUiActionType.RefineRetry]: reduceRefine,
   [GuideUiActionType.RefineBack]: reduceRefine,
-  [GuideUiActionType.ReadinessReady]: reduceReadinessAndDestination,
-  [GuideUiActionType.ReadinessBlocked]: reduceReadinessAndDestination,
-  [GuideUiActionType.ReadinessRetry]: reduceReadinessAndDestination,
-  [GuideUiActionType.ReadinessBack]: reduceReadinessAndDestination,
-  [GuideUiActionType.DestinationMove]: reduceReadinessAndDestination,
-  [GuideUiActionType.DestinationBack]: reduceReadinessAndDestination,
-  [GuideUiActionType.DestinationStartWorktree]: reduceReadinessAndDestination,
-  [GuideUiActionType.WorktreeSubmitBranch]: reduceWorktree,
-  [GuideUiActionType.WorktreeInvalidBranch]: reduceWorktree,
-  [GuideUiActionType.WorktreeInspectFailed]: reduceWorktree,
-  [GuideUiActionType.WorktreeCollision]: reduceWorktree,
-  [GuideUiActionType.WorktreeReady]: reduceWorktree,
-  [GuideUiActionType.WorktreeConfirm]: reduceWorktree,
-  [GuideUiActionType.WorktreeEditBranch]: reduceWorktree,
-  [GuideUiActionType.WorktreeBack]: reduceWorktree,
+  [GuideUiActionType.ReadinessReady]: reduceReadiness,
+  [GuideUiActionType.ReadinessBlocked]: reduceReadiness,
+  [GuideUiActionType.ReadinessRetry]: reduceReadiness,
+  [GuideUiActionType.ReadinessBack]: reduceReadiness,
+  [GuideUiActionType.DestinationMove]: reduceDestination,
+  [GuideUiActionType.DestinationBack]: reduceDestination,
+  [GuideUiActionType.DestinationStartWorktree]: reduceDestination,
+  [GuideUiActionType.WorktreeSubmitBranch]: reduceWorktreeBranch,
+  [GuideUiActionType.WorktreeInvalidBranch]: reduceWorktreeBranch,
+  [GuideUiActionType.WorktreeInspectFailed]: reduceWorktreeBranch,
+  [GuideUiActionType.WorktreeCollision]: reduceWorktreeInspection,
+  [GuideUiActionType.WorktreeReady]: reduceWorktreeInspection,
+  [GuideUiActionType.WorktreeConfirm]: reduceWorktreeResolution,
+  [GuideUiActionType.WorktreeEditBranch]: reduceWorktreeResolution,
+  [GuideUiActionType.WorktreeBack]: reduceWorktreeResolution,
 }
 
 export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -860,7 +901,14 @@ export const runGuideGenerationStep = async (
   if (first === undefined || second === undefined || third === undefined) {
     throw new Error("Generation must return exactly three prompt candidates")
   }
-  return { guideDocument, candidates: [first, second, third] }
+  return {
+    guideDocument,
+    candidates: [
+      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, first),
+      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, second),
+      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, third),
+    ],
+  }
 }
 
 /**
@@ -885,7 +933,7 @@ export const runGuideRefinementStep = async (
     candidate,
     feedback,
   })
-  return refined.candidate
+  return applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, refined.candidate)
 }
 
 // ---------------------------------------------------------------------------
@@ -1272,23 +1320,9 @@ const WorktreeCollisionView = ({ inspection }: { readonly inspection: WorktreeCo
   </Box>
 )
 
-/**
- * The exported `trx guide` interactive UI. Renders one view per
- * `GuideUiState.stage`, drives model/git/readiness I/O via `useEffect`s keyed
- * on the current stage, and calls `useApp().exit(result)` exactly once, with
- * a fully validated `GuideUiResult`, when the user confirms a destination or
- * cancels.
- */
-export const GuideApp = (props: GuideUiProps): React.ReactElement => {
-  const { exit } = useApp()
-  const [state, dispatch] = useReducer(guideUiReducer, props.initialIntent, createInitialGuideUiState)
+type GuideUiDispatch = React.Dispatch<GuideUiAction>
 
-  const herdrContext = getHerdrContext(props.herdrEnv)
-  const herdrEnabled = herdrContext !== null && props.herdrAvailabilityProbe
-
-  const cancel = (): void => exit(buildCancelResult())
-
-  // Match phase.
+const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (state.stage !== GuideUiStage.Matching) return undefined
     let cancelled = false
@@ -1308,9 +1342,9 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       cancelled = true
     }
   }, [state.stage, state.intent])
+}
 
-  // Generation phase: load the selected guide, then call provider.generate
-  // with the recommendation's own workflow — never re-matching.
+const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (
       state.stage !== GuideUiStage.Generating ||
@@ -1343,8 +1377,9 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       cancelled = true
     }
   }, [state.stage, state.selectedRecommendation, state.intent])
+}
 
-  // Refinement phase.
+const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (
       state.stage !== GuideUiStage.Refining ||
@@ -1356,11 +1391,11 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       return undefined
     }
     let cancelled = false
+    const intent = state.intent
     const recommendation = state.selectedRecommendation
     const guideDocument = state.guideDocument
     const candidate = tripleAt(state.candidates, state.candidateIndex)
     const feedback = state.textDraft
-    const intent = state.intent
     void (async () => {
       try {
         const refinedCandidate = await runGuideRefinementStep(
@@ -1380,8 +1415,9 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       cancelled = true
     }
   }, [state.stage])
+}
 
-  // Readiness phase: checked exactly once per entry into destination selection.
+const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (state.stage !== GuideUiStage.CheckingReadiness || state.selectedProfile === undefined) return undefined
     let cancelled = false
@@ -1412,8 +1448,17 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       cancelled = true
     }
   }, [state.stage])
+}
 
-  // Worktree inspection phase.
+const worktreeInspectionAction = (
+  inspection: Awaited<ReturnType<typeof inspectGitWorktreeIntent>>,
+): GuideUiAction => {
+  if (inspection.kind === "invalid-branch") return { type: GuideUiActionType.WorktreeInvalidBranch }
+  if (inspection.kind === "collision") return { type: GuideUiActionType.WorktreeCollision, inspection }
+  return { type: GuideUiActionType.WorktreeReady, inspection }
+}
+
+const useGuideWorktreeEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (state.stage !== GuideUiStage.InspectingWorktree || state.worktreeBranch === undefined) return undefined
     let cancelled = false
@@ -1421,10 +1466,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
     void (async () => {
       try {
         const inspection = await inspectGitWorktreeIntent(props.runner, { cwd: props.cwd, branch })
-        if (cancelled) return
-        if (inspection.kind === "invalid-branch") dispatch({ type: GuideUiActionType.WorktreeInvalidBranch })
-        else if (inspection.kind === "collision") dispatch({ type: GuideUiActionType.WorktreeCollision, inspection })
-        else dispatch({ type: GuideUiActionType.WorktreeReady, inspection })
+        if (!cancelled) dispatch(worktreeInspectionAction(inspection))
       } catch (error) {
         if (!cancelled)
           dispatch({ type: GuideUiActionType.WorktreeInspectFailed, message: describeGuideUiError(error) })
@@ -1434,338 +1476,432 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       cancelled = true
     }
   }, [state.stage, state.worktreeBranch])
+}
 
-  useInput((input, key) => {
-    if (key.ctrl && input === "c") {
-      cancel()
-      return
-    }
+interface GuideInputContext {
+  readonly props: GuideUiProps
+  readonly state: GuideUiState
+  readonly dispatch: GuideUiDispatch
+  readonly complete: (result: GuideUiResult) => void
+  readonly cancel: () => void
+  readonly herdrContext: HerdrContext | null
+  readonly herdrEnabled: boolean
+}
 
-    switch (state.stage) {
-      case GuideUiStage.Intent: {
-        if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
-        else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.IntentBackspace })
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, intentMaxLength)) {
-          dispatch({ type: GuideUiActionType.IntentChange, text: state.textDraft + input })
-        }
-        return
-      }
+type GuideInputHandler = (context: GuideInputContext, input: string, key: Key) => void
 
-      case GuideUiStage.MatchFailed: {
-        if (input === "r") dispatch({ type: GuideUiActionType.MatchRetry })
-        else if (input === "l" && state.intent !== undefined) {
-          try {
-            dispatch({
-              type: GuideUiActionType.MatchLiteral,
-              recommendations: literalGuideRecommendations(props.catalog, state.intent),
-            })
-          } catch (error) {
-            dispatch({ type: GuideUiActionType.MatchLiteralFailed, message: describeGuideUiError(error) })
-          }
-        } else if (input === "q") cancel()
-        return
-      }
+const handleNoInput: GuideInputHandler = () => undefined
 
-      case GuideUiStage.Recommendations: {
-        if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
-        else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
-        else if (key.return && state.recommendations !== undefined) {
-          const recommendation = tripleAt(state.recommendations, state.recommendationIndex)
-          dispatch({
-            type: GuideUiActionType.RecommendationsConfirm,
-            selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef),
-          })
-        } else if (input === "q") cancel()
-        return
-      }
-
-      case GuideUiStage.GenerateFailed: {
-        if (input === "r") dispatch({ type: GuideUiActionType.GenerateRetry })
-        else if (
-          input === "t" &&
-          state.guideDocument !== undefined &&
-          state.selectedRecommendation !== undefined &&
-          state.intent !== undefined
-        ) {
-          try {
-            dispatch({
-              type: GuideUiActionType.GenerateTemplateFallback,
-              candidates: templateGuideCandidates(
-                state.guideDocument.guide,
-                state.selectedRecommendation.workflowId,
-                state.intent,
-              ),
-            })
-          } catch (error) {
-            dispatch({ type: GuideUiActionType.GenerateTemplateFallbackFailed, message: describeGuideUiError(error) })
-          }
-        } else if (input === "b") dispatch({ type: GuideUiActionType.GenerateBack })
-        else if (input === "q") cancel()
-        return
-      }
-
-      case GuideUiStage.Candidates: {
-        if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.CandidatesMove, delta: -1 })
-        else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.CandidatesMove, delta: 1 })
-        else if (key.return) dispatch({ type: GuideUiActionType.CandidatesConfirm })
-        else if (input === "r") dispatch({ type: GuideUiActionType.CandidatesRefineStart })
-        else if (input === "e") dispatch({ type: GuideUiActionType.CandidatesDirectEditStart })
-        else if (input === "c" && state.candidates !== undefined) {
-          // Printing a prompt is not a launch: it bypasses profile readiness entirely.
-          exit(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt))
-        } else if (input === "q") cancel()
-        return
-      }
-
-      case GuideUiStage.RefineEditor: {
-        if (key.escape) dispatch({ type: GuideUiActionType.RefineBack })
-        else if (key.return) dispatch({ type: GuideUiActionType.RefineSubmit })
-        else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.EditorBackspace })
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, feedbackMaxLength)) {
-          dispatch({ type: GuideUiActionType.EditorChange, text: state.textDraft + input })
-        }
-        return
-      }
-
-      case GuideUiStage.RefineFailed: {
-        if (input === "r") dispatch({ type: GuideUiActionType.RefineRetry })
-        else if (input === "b") dispatch({ type: GuideUiActionType.RefineBack })
-        return
-      }
-
-      case GuideUiStage.DirectEditor: {
-        if (key.escape) dispatch({ type: GuideUiActionType.DirectEditBack })
-        else if (key.return) dispatch({ type: GuideUiActionType.DirectEditSubmit })
-        else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.EditorBackspace })
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
-          dispatch({ type: GuideUiActionType.EditorChange, text: state.textDraft + input })
-        }
-        return
-      }
-
-      case GuideUiStage.ReadinessBlocked: {
-        if (input === "r") dispatch({ type: GuideUiActionType.ReadinessRetry })
-        else if (input === "b") dispatch({ type: GuideUiActionType.ReadinessBack })
-        else if (input === "q") cancel()
-        return
-      }
-
-      case GuideUiStage.Destination: {
-        const options = destinationOptions(herdrEnabled)
-        if (key.upArrow || input === "k")
-          dispatch({ type: GuideUiActionType.DestinationMove, delta: -1, optionCount: options.length })
-        else if (key.downArrow || input === "j")
-          dispatch({ type: GuideUiActionType.DestinationMove, delta: 1, optionCount: options.length })
-        else if (input === "c" && state.selectedCandidate !== undefined) {
-          exit(buildPrintResult(state.selectedCandidate.prompt))
-        } else if (key.return && state.selectedProfile !== undefined && state.selectedCandidate !== undefined) {
-          const option = options[state.destinationIndex]
-          const prompt = state.selectedCandidate.prompt
-          if (option === GuideUiDestination.CurrentTerminal) {
-            exit(buildCurrentTerminalResult(state.selectedProfile, prompt, props.cwd))
-          } else if (option === GuideUiDestination.CurrentHerdrWorkspace && herdrContext !== null) {
-            exit(buildCurrentHerdrWorkspaceResult(state.selectedProfile, prompt, props.cwd, herdrContext))
-          } else if (option === GuideUiDestination.NewHerdrWorktree) {
-            dispatch({ type: GuideUiActionType.DestinationStartWorktree })
-          }
-        } else if (input === "b") dispatch({ type: GuideUiActionType.DestinationBack })
-        else if (input === "q") cancel()
-        return
-      }
-
-      case GuideUiStage.WorktreeBranchEditor: {
-        if (key.escape) dispatch({ type: GuideUiActionType.WorktreeBack })
-        else if (key.return) dispatch({ type: GuideUiActionType.WorktreeSubmitBranch })
-        else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.EditorBackspace })
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, branchMaxLength)) {
-          dispatch({ type: GuideUiActionType.EditorChange, text: state.textDraft + input })
-        }
-        return
-      }
-
-      case GuideUiStage.WorktreeCollision: {
-        if (input === "e") dispatch({ type: GuideUiActionType.WorktreeEditBranch })
-        else if (input === "q") cancel()
-        else if (
-          key.return &&
-          state.worktreeInspection !== undefined &&
-          "collision" in state.worktreeInspection &&
-          state.worktreeInspection.collision.path !== undefined &&
-          state.selectedProfile !== undefined &&
-          state.selectedCandidate !== undefined
-        ) {
-          exit(
-            buildExistingHerdrWorktreeResult(
-              state.selectedProfile,
-              state.selectedCandidate.prompt,
-              state.worktreeInspection.primaryCheckoutPath,
-              state.worktreeInspection.collision.path,
-            ),
-          )
-        }
-        return
-      }
-
-      case GuideUiStage.WorktreeReady: {
-        if (key.escape) dispatch({ type: GuideUiActionType.WorktreeBack })
-        else if (key.return || input === "y") {
-          if (
-            state.worktreeInspection !== undefined &&
-            !("collision" in state.worktreeInspection) &&
-            isWorktreeConfirmed(state.worktreeConfirmations + 1, state.worktreeInspection.dirty) &&
-            state.selectedProfile !== undefined &&
-            state.selectedCandidate !== undefined
-          ) {
-            exit(
-              buildNewHerdrWorktreeResult(
-                state.selectedProfile,
-                state.selectedCandidate.prompt,
-                state.worktreeInspection.primaryCheckoutPath,
-                state.worktreeInspection.branch,
-                state.worktreeInspection.baseRef,
-              ),
-            )
-          } else {
-            dispatch({ type: GuideUiActionType.WorktreeConfirm })
-          }
-        }
-        return
-      }
-
-      default:
-        return
-    }
-  })
-
-  switch (state.stage) {
-    case GuideUiStage.Intent:
-      return <IntentEditor textDraft={state.textDraft} />
-
-    case GuideUiStage.Matching:
-      return <Spinner label="Matching profiles" detail={`Model: ${props.model} · Effort: ${props.effort}`} />
-
-    case GuideUiStage.MatchFailed:
-      return (
-        <ErrorPanel title="Match failed" message={state.errorMessage} keys="r retry · l literal match · q cancel" />
-      )
-
-    case GuideUiStage.Recommendations:
-      return state.recommendations === undefined ? (
-        <Spinner label="Matching profiles" detail={`Model: ${props.model} · Effort: ${props.effort}`} />
-      ) : (
-        <RecommendationsView
-          intent={state.intent ?? ""}
-          model={props.model}
-          effort={props.effort}
-          recommendations={state.recommendations}
-          index={state.recommendationIndex}
-          usedLiteralFallback={state.usedLiteralFallback}
-        />
-      )
-
-    case GuideUiStage.Generating:
-      return <Spinner label="Generating prompts" />
-
-    case GuideUiStage.GenerateFailed:
-      return (
-        <ErrorPanel
-          title="Generation failed"
-          message={state.errorMessage}
-          keys={`r retry${state.guideDocument === undefined ? "" : " · t template fallback"} · b back · q cancel`}
-        />
-      )
-
-    case GuideUiStage.Candidates:
-    case GuideUiStage.RefineEditor:
-    case GuideUiStage.Refining:
-    case GuideUiStage.RefineFailed:
-    case GuideUiStage.DirectEditor: {
-      if (state.candidates === undefined || state.selectedRecommendation === undefined)
-        return <Spinner label="Loading" />
-      if (state.stage === GuideUiStage.RefineEditor) {
-        return <TextEditor title="Refinement feedback" textDraft={state.textDraft} keys="↵ submit · Esc back" />
-      }
-      if (state.stage === GuideUiStage.Refining) return <Spinner label="Refining prompt" />
-      if (state.stage === GuideUiStage.RefineFailed) {
-        return <ErrorPanel title="Refinement failed" message={state.errorMessage} keys="r retry · b back" />
-      }
-      if (state.stage === GuideUiStage.DirectEditor) {
-        return <TextEditor title="Edit prompt" textDraft={state.textDraft} keys="↵ submit · Esc back" />
-      }
-      return (
-        <CandidatesView
-          candidates={state.candidates}
-          index={state.candidateIndex}
-          usedTemplateFallback={state.usedTemplateFallback}
-          command={publicGuideLaunchCommand(
-            props.catalog,
-            state.selectedRecommendation.profileRef,
-            tripleAt(state.candidates, state.candidateIndex).prompt,
-          )}
-        />
-      )
-    }
-
-    case GuideUiStage.CheckingReadiness:
-      return <Spinner label="Checking profile readiness" />
-
-    case GuideUiStage.ReadinessBlocked:
-      return (
-        <ErrorPanel
-          title={state.readiness?.summary ?? "Profile is not ready"}
-          message={state.readiness?.kind === ProfileReadinessKind.Blocked ? state.readiness.diagnostic : undefined}
-          keys="r retry · b back · q cancel"
-        />
-      )
-
-    case GuideUiStage.Destination: {
-      const options = destinationOptions(herdrEnabled)
-      const option = options[state.destinationIndex]
-      const previewCommand =
-        state.selectedProfile === undefined
-          ? undefined
-          : option === GuideUiDestination.CurrentTerminal
-            ? buildGuideLaunchCommand(state.selectedProfile, {
-                mode: "argv",
-                prompt: state.selectedCandidate?.prompt ?? "",
-              }).command
-            : buildGuideLaunchCommand(state.selectedProfile).command
-      return (
-        <DestinationView
-          options={options}
-          index={state.destinationIndex}
-          commandPreview={previewCommand === undefined ? "" : renderCommandPreview(previewCommand)}
-        />
-      )
-    }
-
-    case GuideUiStage.WorktreeBranchEditor:
-      return (
-        <TextEditor
-          title="Worktree branch"
-          textDraft={state.textDraft}
-          keys={`${state.errorMessage ?? ""}${state.errorMessage === undefined ? "" : " · "}↵ submit · Esc back`}
-        />
-      )
-
-    case GuideUiStage.InspectingWorktree:
-      return <Spinner label="Inspecting git worktree" />
-
-    case GuideUiStage.WorktreeCollision:
-      return state.worktreeInspection === undefined || !("collision" in state.worktreeInspection) ? (
-        <Spinner label="Inspecting git worktree" />
-      ) : (
-        <WorktreeCollisionView inspection={state.worktreeInspection} />
-      )
-
-    case GuideUiStage.WorktreeReady:
-      return state.worktreeInspection === undefined || "collision" in state.worktreeInspection ? (
-        <Spinner label="Inspecting git worktree" />
-      ) : (
-        <WorktreeReadyView inspection={state.worktreeInspection} confirmations={state.worktreeConfirmations} />
-      )
-
-    default:
-      return <Text>Unexpected state.</Text>
+const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+  if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
+  else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.IntentBackspace })
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, intentMaxLength)) {
+    dispatch({ type: GuideUiActionType.IntentChange, text: state.textDraft + input })
   }
+}
+
+const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input) => {
+  if (input === "r") {
+    dispatch({ type: GuideUiActionType.MatchRetry })
+    return
+  }
+  if (input === "q") {
+    cancel()
+    return
+  }
+  if (input !== "l" || state.intent === undefined) return
+  try {
+    dispatch({
+      type: GuideUiActionType.MatchLiteral,
+      recommendations: literalGuideRecommendations(props.catalog, state.intent),
+    })
+  } catch (error) {
+    dispatch({ type: GuideUiActionType.MatchLiteralFailed, message: describeGuideUiError(error) })
+  }
+}
+
+const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
+  else if (key.return && state.recommendations !== undefined) {
+    const recommendation = tripleAt(state.recommendations, state.recommendationIndex)
+    dispatch({
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef),
+    })
+  } else if (input === "q") cancel()
+}
+
+const handleGenerateFailedInput: GuideInputHandler = ({ state, dispatch, cancel }, input) => {
+  if (input === "r") dispatch({ type: GuideUiActionType.GenerateRetry })
+  else if (input === "b") dispatch({ type: GuideUiActionType.GenerateBack })
+  else if (input === "q") cancel()
+  else if (
+    input === "t" &&
+    state.guideDocument !== undefined &&
+    state.selectedRecommendation !== undefined &&
+    state.intent !== undefined
+  ) {
+    try {
+      dispatch({
+        type: GuideUiActionType.GenerateTemplateFallback,
+        candidates: templateGuideCandidates(
+          state.guideDocument.guide,
+          state.selectedRecommendation.workflowId,
+          state.intent,
+        ),
+      })
+    } catch (error) {
+      dispatch({ type: GuideUiActionType.GenerateTemplateFallbackFailed, message: describeGuideUiError(error) })
+    }
+  }
+}
+
+const handleCandidatesInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.CandidatesMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.CandidatesMove, delta: 1 })
+  else if (key.return) dispatch({ type: GuideUiActionType.CandidatesConfirm })
+  else if (input === "r") dispatch({ type: GuideUiActionType.CandidatesRefineStart })
+  else if (input === "e") dispatch({ type: GuideUiActionType.CandidatesDirectEditStart })
+  else if (input === "c" && state.candidates !== undefined) {
+    complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt))
+  } else if (input === "q") cancel()
+}
+
+const handleTextEditorInput = (
+  context: GuideInputContext,
+  input: string,
+  key: Key,
+  maximum: number,
+  submit: GuideUiAction,
+  back: GuideUiAction,
+): void => {
+  if (key.escape) context.dispatch(back)
+  else if (key.return) context.dispatch(submit)
+  else if (key.backspace || key.delete) context.dispatch({ type: GuideUiActionType.EditorBackspace })
+  else if (isPrintableInput(input, key) && isWithinTextBound(context.state.textDraft, input, maximum)) {
+    context.dispatch({ type: GuideUiActionType.EditorChange, text: context.state.textDraft + input })
+  }
+}
+
+const handleRefineEditorInput: GuideInputHandler = (context, input, key) =>
+  handleTextEditorInput(
+    context,
+    input,
+    key,
+    feedbackMaxLength,
+    { type: GuideUiActionType.RefineSubmit },
+    { type: GuideUiActionType.RefineBack },
+  )
+
+const handleDirectEditorInput: GuideInputHandler = (context, input, key) =>
+  handleTextEditorInput(
+    context,
+    input,
+    key,
+    promptMaxLength,
+    { type: GuideUiActionType.DirectEditSubmit },
+    { type: GuideUiActionType.DirectEditBack },
+  )
+
+const handleBranchEditorInput: GuideInputHandler = (context, input, key) =>
+  handleTextEditorInput(
+    context,
+    input,
+    key,
+    branchMaxLength,
+    { type: GuideUiActionType.WorktreeSubmitBranch },
+    { type: GuideUiActionType.WorktreeBack },
+  )
+
+const handleRefineFailedInput: GuideInputHandler = ({ dispatch }, input) => {
+  if (input === "r") dispatch({ type: GuideUiActionType.RefineRetry })
+  else if (input === "b") dispatch({ type: GuideUiActionType.RefineBack })
+}
+
+const handleReadinessBlockedInput: GuideInputHandler = ({ dispatch, cancel }, input) => {
+  if (input === "r") dispatch({ type: GuideUiActionType.ReadinessRetry })
+  else if (input === "b") dispatch({ type: GuideUiActionType.ReadinessBack })
+  else if (input === "q") cancel()
+}
+
+const completeDestination = (context: GuideInputContext, option: GuideUiDestination): void => {
+  const { state, props, herdrContext, dispatch, complete } = context
+  if (state.selectedProfile === undefined || state.selectedCandidate === undefined) return
+  const prompt = state.selectedCandidate.prompt
+  if (option === GuideUiDestination.CurrentTerminal) {
+    complete(buildCurrentTerminalResult(state.selectedProfile, prompt, props.cwd))
+    return
+  }
+  if (option === GuideUiDestination.CurrentHerdrWorkspace && herdrContext !== null) {
+    complete(buildCurrentHerdrWorkspaceResult(state.selectedProfile, prompt, props.cwd, herdrContext))
+    return
+  }
+  if (option === GuideUiDestination.NewHerdrWorktree) {
+    dispatch({ type: GuideUiActionType.DestinationStartWorktree })
+  }
+}
+
+const handleDestinationInput: GuideInputHandler = (context, input, key) => {
+  const { state, dispatch, complete, cancel, herdrEnabled } = context
+  const options = destinationOptions(herdrEnabled)
+  if (key.upArrow || input === "k")
+    dispatch({ type: GuideUiActionType.DestinationMove, delta: -1, optionCount: options.length })
+  else if (key.downArrow || input === "j")
+    dispatch({ type: GuideUiActionType.DestinationMove, delta: 1, optionCount: options.length })
+  else if (input === "c" && state.selectedCandidate !== undefined)
+    complete(buildPrintResult(state.selectedCandidate.prompt))
+  else if (key.return) {
+    const option = options[state.destinationIndex]
+    if (option !== undefined) completeDestination(context, option)
+  }
+  else if (input === "b") dispatch({ type: GuideUiActionType.DestinationBack })
+  else if (input === "q") cancel()
+}
+
+const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
+  if (input === "e") {
+    dispatch({ type: GuideUiActionType.WorktreeEditBranch })
+    return
+  }
+  if (input === "q") {
+    cancel()
+    return
+  }
+  const inspection = state.worktreeInspection
+  if (
+    !key.return ||
+    inspection === undefined ||
+    !("collision" in inspection) ||
+    inspection.collision.path === undefined ||
+    state.selectedProfile === undefined ||
+    state.selectedCandidate === undefined
+  ) {
+    return
+  }
+  complete(
+    buildExistingHerdrWorktreeResult(
+      state.selectedProfile,
+      state.selectedCandidate.prompt,
+      inspection.primaryCheckoutPath,
+      inspection.collision.path,
+    ),
+  )
+}
+
+const confirmedWorktreeResult = (state: GuideUiState): GuideUiNewHerdrWorktreeResult | undefined => {
+  const inspection = state.worktreeInspection
+  if (
+    inspection === undefined ||
+    "collision" in inspection ||
+    !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty) ||
+    state.selectedProfile === undefined ||
+    state.selectedCandidate === undefined
+  ) {
+    return undefined
+  }
+  return buildNewHerdrWorktreeResult(
+    state.selectedProfile,
+    state.selectedCandidate.prompt,
+    inspection.primaryCheckoutPath,
+    inspection.branch,
+    inspection.baseRef,
+  )
+}
+
+const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
+  if (key.escape) {
+    dispatch({ type: GuideUiActionType.WorktreeBack })
+    return
+  }
+  if (!key.return && input !== "y") return
+  const result = confirmedWorktreeResult(state)
+  if (result === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
+  else complete(result)
+}
+
+const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
+  [GuideUiStage.Intent]: handleIntentInput,
+  [GuideUiStage.Matching]: handleNoInput,
+  [GuideUiStage.MatchFailed]: handleMatchFailedInput,
+  [GuideUiStage.Recommendations]: handleRecommendationsInput,
+  [GuideUiStage.Generating]: handleNoInput,
+  [GuideUiStage.GenerateFailed]: handleGenerateFailedInput,
+  [GuideUiStage.Candidates]: handleCandidatesInput,
+  [GuideUiStage.RefineEditor]: handleRefineEditorInput,
+  [GuideUiStage.Refining]: handleNoInput,
+  [GuideUiStage.RefineFailed]: handleRefineFailedInput,
+  [GuideUiStage.DirectEditor]: handleDirectEditorInput,
+  [GuideUiStage.CheckingReadiness]: handleNoInput,
+  [GuideUiStage.ReadinessBlocked]: handleReadinessBlockedInput,
+  [GuideUiStage.Destination]: handleDestinationInput,
+  [GuideUiStage.WorktreeBranchEditor]: handleBranchEditorInput,
+  [GuideUiStage.InspectingWorktree]: handleNoInput,
+  [GuideUiStage.WorktreeCollision]: handleWorktreeCollisionInput,
+  [GuideUiStage.WorktreeReady]: handleWorktreeReadyInput,
+}
+
+const handleGuideInput = (context: GuideInputContext, input: string, key: Key): void => {
+  if (key.ctrl && input === "c") {
+    context.cancel()
+    return
+  }
+  inputHandlerByStage[context.state.stage](context, input, key)
+}
+
+interface GuideRenderContext {
+  readonly props: GuideUiProps
+  readonly state: GuideUiState
+  readonly herdrEnabled: boolean
+}
+
+type GuideStageRenderer = (context: GuideRenderContext) => React.ReactElement
+
+const matchingSpinner = ({ props }: GuideRenderContext): React.ReactElement => (
+  <Spinner label="Matching profiles" detail={`Model: ${props.model} · Effort: ${props.effort}`} />
+)
+
+const renderRecommendations: GuideStageRenderer = ({ props, state }) =>
+  state.recommendations === undefined ? (
+    <Spinner label="Matching profiles" detail={`Model: ${props.model} · Effort: ${props.effort}`} />
+  ) : (
+    <RecommendationsView
+      intent={state.intent ?? ""}
+      model={props.model}
+      effort={props.effort}
+      recommendations={state.recommendations}
+      index={state.recommendationIndex}
+      usedLiteralFallback={state.usedLiteralFallback}
+    />
+  )
+
+const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
+  if (state.candidates === undefined || state.selectedRecommendation === undefined) return <Spinner label="Loading" />
+  if (state.stage === GuideUiStage.RefineEditor)
+    return <TextEditor title="Refinement feedback" textDraft={state.textDraft} keys="↵ submit · Esc back" />
+  if (state.stage === GuideUiStage.Refining) return <Spinner label="Refining prompt" />
+  if (state.stage === GuideUiStage.RefineFailed)
+    return <ErrorPanel title="Refinement failed" message={state.errorMessage} keys="r retry · b back" />
+  if (state.stage === GuideUiStage.DirectEditor)
+    return <TextEditor title="Edit prompt" textDraft={state.textDraft} keys="↵ submit · Esc back" />
+  return (
+    <CandidatesView
+      candidates={state.candidates}
+      index={state.candidateIndex}
+      usedTemplateFallback={state.usedTemplateFallback}
+      command={publicGuideLaunchCommand(
+        props.catalog,
+        state.selectedRecommendation.profileRef,
+        tripleAt(state.candidates, state.candidateIndex).prompt,
+      )}
+    />
+  )
+}
+
+const renderDestination: GuideStageRenderer = ({ state, herdrEnabled }) => {
+  const options = destinationOptions(herdrEnabled)
+  const option = options[state.destinationIndex]
+  const command =
+    state.selectedProfile === undefined
+      ? undefined
+      : option === GuideUiDestination.CurrentTerminal
+        ? buildGuideLaunchCommand(state.selectedProfile, {
+            mode: "argv",
+            prompt: state.selectedCandidate?.prompt ?? "",
+          }).command
+        : buildGuideLaunchCommand(state.selectedProfile).command
+  return (
+    <DestinationView
+      options={options}
+      index={state.destinationIndex}
+      commandPreview={command === undefined ? "" : renderCommandPreview(command)}
+    />
+  )
+}
+
+const renderWorktreeCollision: GuideStageRenderer = ({ state }) =>
+  state.worktreeInspection === undefined || !("collision" in state.worktreeInspection) ? (
+    <Spinner label="Inspecting git worktree" />
+  ) : (
+    <WorktreeCollisionView inspection={state.worktreeInspection} />
+  )
+
+const renderWorktreeReady: GuideStageRenderer = ({ state }) =>
+  state.worktreeInspection === undefined || "collision" in state.worktreeInspection ? (
+    <Spinner label="Inspecting git worktree" />
+  ) : (
+    <WorktreeReadyView inspection={state.worktreeInspection} confirmations={state.worktreeConfirmations} />
+  )
+
+const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
+  [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
+  [GuideUiStage.Matching]: matchingSpinner,
+  [GuideUiStage.MatchFailed]: ({ state }) => (
+    <ErrorPanel title="Match failed" message={state.errorMessage} keys="r retry · l literal match · q cancel" />
+  ),
+  [GuideUiStage.Recommendations]: renderRecommendations,
+  [GuideUiStage.Generating]: () => <Spinner label="Generating prompts" />,
+  [GuideUiStage.GenerateFailed]: ({ state }) => (
+    <ErrorPanel
+      title="Generation failed"
+      message={state.errorMessage}
+      keys={`r retry${state.guideDocument === undefined ? "" : " · t template fallback"} · b back · q cancel`}
+    />
+  ),
+  [GuideUiStage.Candidates]: renderCandidateStage,
+  [GuideUiStage.RefineEditor]: renderCandidateStage,
+  [GuideUiStage.Refining]: renderCandidateStage,
+  [GuideUiStage.RefineFailed]: renderCandidateStage,
+  [GuideUiStage.DirectEditor]: renderCandidateStage,
+  [GuideUiStage.CheckingReadiness]: () => <Spinner label="Checking profile readiness" />,
+  [GuideUiStage.ReadinessBlocked]: ({ state }) => (
+    <ErrorPanel
+      title={state.readiness?.summary ?? "Profile is not ready"}
+      message={state.readiness?.kind === ProfileReadinessKind.Blocked ? state.readiness.diagnostic : undefined}
+      keys="r retry · b back · q cancel"
+    />
+  ),
+  [GuideUiStage.Destination]: renderDestination,
+  [GuideUiStage.WorktreeBranchEditor]: ({ state }) => (
+    <TextEditor
+      title="Worktree branch"
+      textDraft={state.textDraft}
+      keys={`${state.errorMessage ?? ""}${state.errorMessage === undefined ? "" : " · "}↵ submit · Esc back`}
+    />
+  ),
+  [GuideUiStage.InspectingWorktree]: () => <Spinner label="Inspecting git worktree" />,
+  [GuideUiStage.WorktreeCollision]: renderWorktreeCollision,
+  [GuideUiStage.WorktreeReady]: renderWorktreeReady,
+}
+
+/**
+ * The exported `trx guide` interactive UI. Side effects and stage-specific
+ * input/render behavior are delegated to focused helpers.
+ */
+export const GuideApp = (props: GuideUiProps): React.ReactElement => {
+  const { exit } = useApp()
+  const [state, dispatch] = useReducer(guideUiReducer, props.initialIntent, createInitialGuideUiState)
+  const herdrContext = getHerdrContext(props.herdrEnv)
+  const herdrEnabled = herdrContext !== null && props.herdrAvailabilityProbe
+  const complete = (result: GuideUiResult): void => exit(result)
+  const cancel = (): void => complete(buildCancelResult())
+
+  useGuideMatchEffect(props, state, dispatch)
+  useGuideGenerationEffect(props, state, dispatch)
+  useGuideRefinementEffect(props, state, dispatch)
+  useGuideReadinessEffect(props, state, dispatch)
+  useGuideWorktreeEffect(props, state, dispatch)
+
+  const inputContext: GuideInputContext = {
+    props,
+    state,
+    dispatch,
+    complete,
+    cancel,
+    herdrContext,
+    herdrEnabled,
+  }
+  useInput((input, key) => handleGuideInput(inputContext, input, key))
+
+  return stageRenderer[state.stage]({ props, state, herdrEnabled })
 }

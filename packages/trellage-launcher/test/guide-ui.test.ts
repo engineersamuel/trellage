@@ -819,6 +819,39 @@ describe("runGuideRefinementStep", () => {
     })
     expect(refined).toEqual({ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." })
   })
+
+  it("restores the selected workflow skill invocation when refinement returns plain prose", async () => {
+    const provider = new FakeGuideProvider()
+    const skillGuide: ProfileGuideV1 = {
+      ...guideReviewer,
+      workflows: guideReviewer.workflows.map((workflow) =>
+        workflow.id === "review"
+          ? {
+              ...workflow,
+              skill: "social-media-skills:post-writer",
+              promptTemplate: "/social-media-skills:post-writer {{intent}}",
+            }
+          : workflow,
+      ),
+    }
+    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: skillGuide,
+      body: "guide body",
+    }
+
+    const refined = await runGuideRefinementStep(
+      provider,
+      "Write about AI agents",
+      chosen,
+      guideDocument,
+      candidate(),
+      "Make it shorter.",
+    )
+
+    expect(refined.prompt).toBe("/social-media-skills:post-writer Do the focused thing.")
+  })
 })
 
 // ---------------------------------------------------------------------------
