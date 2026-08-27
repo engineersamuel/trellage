@@ -6,7 +6,6 @@
 
 contract_lib_dir="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(CDPATH= cd -- "$contract_lib_dir/../.." && pwd)"
-adapter="$root/marketplaces/hve-core/.agents/plugins/marketplace.json"
 catalog="$root/catalog.json"
 launcher="$root/bin/cdx"
 common_launcher="$root/../trellage-codex-common/native-codex"
@@ -116,27 +115,7 @@ cleanup() {
 
 trap cleanup EXIT HUP INT TERM
 
-validate_adapter() {
-  jq -se '
-    length == 1
-    and .[0] == {
-      "name": "hve-core",
-      "owner": {"name": "Trellage"},
-      "plugins": [{
-        "name": "hve-core-all",
-        "source": {
-          "source": "url",
-          "url": "https://github.com/microsoft/hve-core.git",
-          "ref": "main"
-        },
-        "version": "3.3.101",
-        "skills": "./.github/skills"
-      }]
-    }
-  ' "$1" >/dev/null
-}
-
-# Copies the launcher, catalogs, adapter, and an offline floating-skill cache
+# Copies the launcher, catalogs, and an offline floating-skill cache
 # into the fixture. Assignments here are deliberately global so callers see
 # `fixture_launcher` and friends.
 build_fixture_profiles() {
@@ -144,20 +123,17 @@ fixture_profiles="$fixture_root/profiles"
 fixture_launcher="$fixture_profiles/bin/cdx"
 fixture_common_launcher="$fixture_profiles/lib/native-codex"
 fixture_catalog="$fixture_profiles/catalog.json"
-fixture_adapter="$fixture_profiles/marketplaces/hve-core/.agents/plugins/marketplace.json"
 fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
 fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/skills"
 mkdir -p \
   "$(dirname "$fixture_launcher")" \
   "$(dirname "$fixture_common_launcher")" \
-  "$(dirname "$fixture_adapter")" \
   "$fixture_skills_runtime" \
   "$fixture_skills_cache/skills/fixture-personal" \
   "$fixture_skills_cache/skills/show-me"
 cp "$launcher" "$fixture_launcher"
 cp "$common_launcher" "$fixture_common_launcher"
 cp "$catalog" "$fixture_catalog"
-cp "$adapter" "$fixture_adapter"
 install -m 0555 "$root/../../scripts/floating-skills.mjs" \
   "$fixture_skills_runtime/floating-skills.mjs"
 install -m 0444 "$root/../../skills.json" "$fixture_skills_runtime/skills.json"
@@ -176,7 +152,6 @@ write_fake_bin() {
 fake_bin="$fixture_root/fake-bin"
 fake_state="$fixture_root/fake-state"
 REAL_GIT="$(command -v git)"
-fake_adapter_root="$(CDPATH= cd -P -- "${fixture_adapter%/.agents/plugins/marketplace.json}" && pwd -P)"
 mkdir -p "$fake_bin" "$fake_state" "$fixture_root/home"
 cat >"$fake_bin/codex" <<'EOF'
 #!/usr/bin/env bash
@@ -380,15 +355,19 @@ case "$*" in
   'plugin marketplace list --json')
     if [ -f "$FAKE_CODEX_MARKETPLACE_OVERRIDE" ]; then
       cat "$FAKE_CODEX_MARKETPLACE_OVERRIDE"
-    elif [ -f "$state/marketplace" ]; then
-      if [ "$profile" = hve ]; then
-        jq -cn --arg root "$FAKE_HVE_ADAPTER_ROOT" '{marketplaces:[{name:"hve-core",root:$root,marketplaceSource:{sourceType:"local",source:$root}}]}'
-      elif [ "$profile" = pstack ]; then
+    elif [ "$profile" = pstack ]; then
+      # pstack is git-local: its marketplace checkout lives in the profile home,
+      # so report it present only when that per-home directory exists. This keeps
+      # the fake stub faithful to real Codex when a fresh home has not yet been
+      # materialized, instead of leaking the shared global add marker.
+      if [ -d "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local" ]; then
         jq -cn --arg root "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local" \
           '{marketplaces:[{name:"pstack-for-codex-local",root:$root,marketplaceSource:{sourceType:"git",source:"https://github.com/Aqua-123/pstack-for-codex.git"}}]}'
       else
-        jq -cn --arg root "$CODEX_HOME/.tmp/marketplaces/superpowers-marketplace" '{marketplaces:[{name:"superpowers-marketplace",root:$root,marketplaceSource:{sourceType:"git",source:"https://github.com/obra/superpowers-marketplace.git"}}]}'
+        printf '%s\n' '{"marketplaces":[]}'
       fi
+    elif [ -f "$state/marketplace" ]; then
+      jq -cn --arg root "$CODEX_HOME/.tmp/marketplaces/superpowers-marketplace" '{marketplaces:[{name:"superpowers-marketplace",root:$root,marketplaceSource:{sourceType:"git",source:"https://github.com/obra/superpowers-marketplace.git"}}]}'
     else
       printf '%s\n' '{"marketplaces":[]}'
     fi
@@ -399,9 +378,7 @@ case "$*" in
   plugin\ marketplace\ add\ *\ --json)
     [ "${FAKE_CODEX_FAIL_MUTATION:-}" != 'marketplace-add' ] || exit 71
     : >"$state/marketplace"
-    if [ "$profile" = hve ]; then
-      persist_marketplace_config hve-core local "$FAKE_HVE_ADAPTER_ROOT"
-    elif [ "$profile" = pstack ]; then
+    if [ "$profile" = pstack ]; then
       mkdir -p "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local"
       persist_marketplace_config pstack-for-codex-local git \
         'https://github.com/Aqua-123/pstack-for-codex.git'
@@ -418,18 +395,15 @@ case "$*" in
     if [ -f "$FAKE_CODEX_PLUGIN_OVERRIDE" ]; then
       cat "$FAKE_CODEX_PLUGIN_OVERRIDE"
       [ "${FAKE_CODEX_PLUGIN_OVERRIDE_ONCE:-}" != 1 ] || rm -f "$FAKE_CODEX_PLUGIN_OVERRIDE"
-    elif [ "$profile" = hve ] && [ -f "$state/plugin" ]; then
-      jq -cn --arg root "$FAKE_HVE_ADAPTER_ROOT" \
+    elif [ "$profile" = pstack ] && [ -d "$CODEX_HOME/plugins/cache/pstack-for-codex-local/pstack-for-codex/0.1.0" ]; then
+      jq -cn --arg checkout "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local" \
         --argjson forbidden "$([ -f "$state/forbidden-superpowers" ] && printf true || printf false)" \
         --argjson direct "$([ -f "$state/forbidden-superpowers-direct" ] && printf true || printf false)" \
         --argjson renamed "$([ -f "$state/forbidden-superpowers-renamed" ] && printf true || printf false)" \
-        '{installed:([{pluginId:"hve-core-all@hve-core",name:"hve-core-all",marketplaceName:"hve-core",version:"3.3.101",installed:true,enabled:true,source:{source:"git",url:"https://github.com/microsoft/hve-core.git",ref:"main"},marketplaceSource:{sourceType:"local",source:$root},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}]
+        '{installed:([{pluginId:"pstack-for-codex@pstack-for-codex-local",name:"pstack-for-codex",marketplaceName:"pstack-for-codex-local",version:"0.1.0",installed:true,enabled:true,source:{source:"local",path:$checkout},marketplaceSource:{sourceType:"git",source:"https://github.com/Aqua-123/pstack-for-codex.git"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}]
           + (if $forbidden then [{pluginId:"superpowers@openai-curated",name:"superpowers",marketplaceName:"openai-curated",version:"6.2.0",installed:true,enabled:true,source:{source:"git",url:"https://github.com/obra/superpowers.git"},marketplaceSource:{sourceType:"git",source:"openai/plugins"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)
           + (if $direct then [{pluginId:"superpowers",name:"superpowers",marketplaceName:null,version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"obra/superpowers"},marketplaceSource:null,installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)
           + (if $renamed then [{pluginId:"workflow-kit@custom",name:"workflow-kit",marketplaceName:"custom",version:"6.2.0",installed:true,enabled:false,source:{source:"git",url:"git@github.com:obra/superpowers.git"},marketplaceSource:{sourceType:"git",source:"custom/plugins"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}] else [] end)),available:[]}'
-    elif [ "$profile" = pstack ] && [ -f "$state/plugin" ]; then
-      jq -cn --arg checkout "$CODEX_HOME/.tmp/marketplaces/pstack-for-codex-local" \
-        '{installed:[{pluginId:"pstack-for-codex@pstack-for-codex-local",name:"pstack-for-codex",marketplaceName:"pstack-for-codex-local",version:"0.1.0",installed:true,enabled:true,source:{source:"local",path:$checkout},marketplaceSource:{sourceType:"git",source:"https://github.com/Aqua-123/pstack-for-codex.git"},installPolicy:"AVAILABLE",authPolicy:"ON_INSTALL"}],available:[]}'
     elif [ "$profile" = superpowers ] \
       && { [ -f "$state/plugin" ] || [ -f "$state/unrelated-same-marketplace" ]; }; then
       if [ -f "$state/plugin" ] && [ -f "$state/unrelated-same-marketplace" ]; then
@@ -485,13 +459,15 @@ case "$*" in
       superpowers@openai-curated) rm -f "$state/forbidden-superpowers" ;;
       superpowers) rm -f "$state/forbidden-superpowers-direct" ;;
       workflow-kit@custom) rm -f "$state/forbidden-superpowers-renamed" ;;
-      *) rm -f "$state/plugin" ;;
+      *)
+        rm -f "$state/plugin"
+        if [ "$profile" = superpowers ]; then
+          rm -rf "$CODEX_HOME/plugins/cache/superpowers-marketplace/superpowers/6.2.0"
+        elif [ "$profile" = pstack ]; then
+          rm -rf "$CODEX_HOME/plugins/cache/pstack-for-codex-local/pstack-for-codex/0.1.0"
+        fi
+        ;;
     esac
-    if [ "$profile" = superpowers ]; then
-      rm -rf "$CODEX_HOME/plugins/cache/superpowers-marketplace/superpowers/6.2.0"
-    elif [ "$profile" = pstack ]; then
-      rm -rf "$CODEX_HOME/plugins/cache/pstack-for-codex-local/pstack-for-codex/0.1.0"
-    fi
     remove_plugin_config "${3:-}"
     printf '%s\n' '{"removed":true}'
     ;;
@@ -656,8 +632,6 @@ if [ -f "${FAKE_CURL_OVERRIDE:-/nonexistent}" ]; then
   exit 0
 fi
 case "$2" in
-  https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json)
-    jq -cn --arg version "${FAKE_HVE_AVAILABLE_VERSION:-3.3.101}" '{plugins:[{name:"hve-core-all",version:$version}]}' ;;
   https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json)
     jq -cn --arg version "${FAKE_SUPERPOWERS_AVAILABLE_VERSION:-6.2.0}" '{plugins:[{name:"superpowers",version:$version}]}' ;;
   *) exit 82 ;;
@@ -680,14 +654,12 @@ fake_env() {
     REAL_GIT="$(command -v git)" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_STATE="$fake_state" \
-    FAKE_HVE_ADAPTER_ROOT="$fake_adapter_root" \
     FAKE_CODEX_MARKETPLACE_OVERRIDE="${FAKE_CODEX_MARKETPLACE_OVERRIDE:-$fixture_root/no-marketplace-override}" \
     FAKE_CODEX_PLUGIN_OVERRIDE="${FAKE_CODEX_PLUGIN_OVERRIDE:-$fixture_root/no-plugin-override}" \
     "$@"
 }
 export FAKE_CODEX_STATE="$fake_state"
 export REAL_GIT
-export FAKE_HVE_ADAPTER_ROOT="$fake_adapter_root"
 export FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override"
 export FAKE_CODEX_PLUGIN_OVERRIDE="$fixture_root/no-plugin-override"
 export FAKE_CURL_LOG="$fixture_root/fake-curl.log"

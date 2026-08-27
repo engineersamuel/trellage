@@ -13,8 +13,6 @@ build_fixture_profiles
 write_fake_bin
 
 
-[ "$(grep -Fc -- '3.3.101' "$fixture_common_launcher")" -eq 0 ] \
-  || fail 'launcher duplicates the HVE adapter version literal'
 [ "$(grep -Fc -- 'https://github.com/obra/superpowers.git' "$fixture_common_launcher")" -eq 1 ] \
   || fail 'launcher does not centralize the Superpowers plugin repository'
 
@@ -45,7 +43,7 @@ assert_catalog_rejected() {
   label="$1"
   rm -f "$fixture_root/fake-codex.log"
   assert_invalid_catalog_command "$label" list list
-  assert_invalid_catalog_command "$label" deferred setup hve
+  assert_invalid_catalog_command "$label" deferred setup superpowers
   [ ! -e "$fixture_root/fake-codex.log" ] || fail "untrusted catalog invoked fake Codex for $label"
 }
 
@@ -72,20 +70,12 @@ printf '\n' >>"$fixture_catalog"
 cat "$catalog" >>"$fixture_catalog"
 assert_catalog_rejected multiple-documents
 
-mutate_catalog renamed-profile '.profiles.renamed = .profiles.hve | del(.profiles.hve)'
-mutate_catalog missing-profile 'del(.profiles.hve)'
-mutate_catalog extra-profile '.profiles.extra = .profiles.hve'
-mutate_catalog changed-source '.profiles.hve.marketplaceSource = "other/source"'
-mutate_catalog changed-kind '.profiles.hve.marketplaceKind = "git"'
-mutate_catalog changed-name '.profiles.hve.marketplaceName = "other-marketplace"'
-mutate_catalog changed-manifest '.profiles.hve.manifestUrl = "https://example.com/marketplace.json"'
-mutate_catalog changed-upstream-repository '.profiles.hve.upstreamRepository = "https://example.com/hve.git"'
-mutate_catalog changed-upstream-path '.profiles.hve.upstreamSkillsPath = ".github/other"'
-mutate_catalog changed-plugin '.profiles.hve.plugin = "other@hve-core"'
-mutate_catalog changed-headless-question '.profiles.hve.headless.questionToolControl = "invalid"'
-mutate_catalog changed-headless-tested-version '.profiles.hve.headless.testedHarnessVersion = 1'
-mutate_catalog wrong-type '.profiles.hve.plugin = 1'
-mutate_catalog extra-profile-field '.profiles.hve.untrusted = "value"'
+mutate_catalog renamed-profile '.profiles.renamed = .profiles.superpowers | del(.profiles.superpowers)'
+mutate_catalog missing-profile 'del(.profiles.superpowers)'
+mutate_catalog extra-profile '.profiles.extra = .profiles.superpowers'
+mutate_catalog changed-headless-question '.profiles.superpowers.headless.questionToolControl = "invalid"'
+mutate_catalog changed-headless-tested-version '.profiles.superpowers.headless.testedHarnessVersion = 1'
+mutate_catalog wrong-type '.profiles.superpowers.plugin = 1'
 mutate_catalog changed-pstack-source '.profiles.pstack.marketplaceSource = "other/source"'
 mutate_catalog changed-pstack-kind '.profiles.pstack.marketplaceKind = "git"'
 mutate_catalog changed-pstack-name '.profiles.pstack.marketplaceName = "other-marketplace"'

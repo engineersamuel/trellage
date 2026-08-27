@@ -1,10 +1,10 @@
-# Machinery for the two blocks that drive the real `hve` and `superpowers`
+# Machinery for the two blocks that drive the real `pstack` and `superpowers`
 # profile homes. Sourced after lib/fixture.sh.
 
 write_isolation_snapshot() {
   local label="$1" profile home
 
-  for profile in hve superpowers; do
+  for profile in pstack superpowers; do
     home="$fixture_root/home/.local/share/trellage/profiles/codex/$profile/home"
     printf '%s\t%s\n' "$profile.config" "$(state_file_hash "$home/config.toml")"
     printf '%s\t%s\n' "$profile.session" "$(state_file_hash "$home/sessions/keep.jsonl")"
@@ -51,52 +51,47 @@ establish_main_profiles() {
     '[mcp_servers.host-only]' \
     'command = "must-not-copy"' >"$fixture_root/home/.codex/config.toml"
 
-  HOME="$fixture_root/home" fake_env "$fixture_launcher" setup hve \
-    >"$fixture_root/prelude-setup-hve.out" || fail 'setup hve failed'
-  hve_home="$fixture_root/home/.local/share/trellage/profiles/codex/hve/home"
-  [ -d "$hve_home" ] || fail 'setup did not create hve home'
+  HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
+    >"$fixture_root/prelude-setup-pstack.out" || fail 'setup pstack failed'
+  pstack_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
+  [ -d "$pstack_home" ] || fail 'setup did not create pstack home'
 
   : >"$fixture_root/fake-codex.log"
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" setup --all \
     >"$fixture_root/prelude-setup-all.out" || fail 'setup --all failed'
-  pstack_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
-  [ -d "$pstack_home" ] || fail 'setup --all did not create pstack home'
   superpowers_home="$fixture_root/home/.local/share/trellage/profiles/codex/superpowers/home"
   [ -d "$superpowers_home" ] || fail 'setup --all did not create superpowers home'
 
-  write_hve_plugin_cache
-  cp "$hve_home/config.toml" "$fixture_root/prelude-managed-config.toml"
-  write_custom_hve_config "$fixture_root/prelude-managed-config.toml"
-  cp "$custom_config" "$hve_home/config.toml"
-  chmod 0600 "$hve_home/config.toml"
+  write_main_plugin_cache
+  cp "$pstack_home/config.toml" "$fixture_root/prelude-managed-config.toml"
+  write_custom_main_config "$fixture_root/prelude-managed-config.toml"
+  cp "$custom_config" "$pstack_home/config.toml"
+  chmod 0600 "$pstack_home/config.toml"
 
   mkdir -p "$superpowers_home/plugins/cache/superpowers-marketplace/unrelated/1.0.0"
   printf '%s\n' 'unrelated cache bytes must stay exact' \
     >"$superpowers_home/plugins/cache/superpowers-marketplace/unrelated/1.0.0/.fake-materialized-cache"
 }
 
-# The selected and unrelated HVE plugin caches the launcher inspects. Shared so
-# the config block and the lifecycle block's prelude build identical trees.
-write_hve_plugin_cache() {
-hve_cache="$hve_home/plugins/cache/hve-core/hve-core-all/3.3.101"
-mkdir -p "$hve_cache/.codex-plugin" \
-  "$hve_cache/.github/skills/package-one" \
-  "$hve_cache/.github/skills/package-two" \
-  "$hve_home/plugins/cache/hve-core/unrelated/9.9.9/skills/not-selected"
-printf '%s\n' '{"name":"hve-core-all","version":"3.3.101","skills":"./.github/skills"}' \
-  >"$hve_cache/.codex-plugin/plugin.json"
-printf '%s\n' '# Package one' >"$hve_cache/.github/skills/package-one/SKILL.md"
-printf '%s\n' '# Package two' >"$hve_cache/.github/skills/package-two/SKILL.md"
+# The selected and unrelated pstack plugin caches the launcher inspects. `setup`
+# already materializes the selected cache through the fake Codex stub, so this
+# only records its path and adds an unrelated cache to prove it is never counted.
+# Shared so the config block and the lifecycle block's prelude build identical
+# trees.
+write_main_plugin_cache() {
+pstack_cache="$pstack_home/plugins/cache/pstack-for-codex-local/pstack-for-codex/0.1.0"
+[ -d "$pstack_cache" ] || fail 'setup did not materialize the pstack plugin cache'
+mkdir -p "$pstack_home/plugins/cache/pstack-for-codex-local/unrelated/9.9.9/skills/not-selected"
 printf '%s\n' '# Unrelated package' \
-  >"$hve_home/plugins/cache/hve-core/unrelated/9.9.9/skills/not-selected/SKILL.md"
+  >"$pstack_home/plugins/cache/pstack-for-codex-local/unrelated/9.9.9/skills/not-selected/SKILL.md"
 }
 
 # Layers the profile-local and user-owned sections onto a pristine managed
 # config, producing `$custom_config`. Shared for the same reason: the lifecycle
 # block asserts against these user-owned tables, so its prelude must build them
 # exactly as the config block does.
-write_custom_hve_config() {
+write_custom_main_config() {
   local base_config="$1"
 
 profile_local="$fixture_root/profile-local.bytes"

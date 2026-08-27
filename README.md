@@ -622,7 +622,7 @@ Managed Codex profiles use the local proxy by default. Native OpenAI authenticat
 is an explicit per-launch opt-in:
 
 ```sh
-cdx --native-auth hve exec "Review this repository"
+cdx --native-auth superpowers exec "Review this repository"
 ```
 
 The native `cldx` launcher runs the host `claude` executable with isolated

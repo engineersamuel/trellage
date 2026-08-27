@@ -1,7 +1,7 @@
 # Isolated Codex profiles
 
 `cdx` runs the host Codex CLI with named, isolated user-state homes. The
-catalog contains `hve` and `superpowers`.
+catalog contains `pstack` and `superpowers`.
 
 ## Install
 
@@ -43,19 +43,19 @@ retain the old function until it reloads.
 
 ```sh
 cdx list
-cdx inventory hve --json
-cdx setup hve
+cdx inventory superpowers --json
 cdx setup superpowers
+cdx setup pstack
 cdx setup --all
-cdx hve
-cdx superpowers -p "Review this repository"
-cdx --native-auth hve exec "Review this repository"
-cdx doctor hve
-cdx update --check hve
+cdx superpowers
+cdx pstack -p "Review this repository"
+cdx --native-auth superpowers exec "Review this repository"
+cdx doctor superpowers
+cdx update --check superpowers
 cdx update --check --all
-cdx update hve
+cdx update superpowers
 cdx update --all
-cdx repair hve
+cdx repair superpowers
 ```
 
 Use `cdx list --json` for the stable machine-readable catalog, including
@@ -106,8 +106,7 @@ Doctor performs no native marketplace/plugin mutation, but may atomically remove
 `repair` restores
 managed policy and a missing cataloged plugin while preserving profile-local
 user state. `update --check` reads official manifests. Superpowers update uses
-the native marketplace upgrade. HVE update deliberately removes and reinstalls
-only `hve-core-all@hve-core`; a failed reinstall remains visible and repairable.
+the native marketplace upgrade.
 
 Default `cdx PROFILE ...` launches use the configured local `copilotproxy` and
 do not require or copy `~/.codex/auth.json`.
@@ -145,16 +144,6 @@ On exit, cleanup strips generated project-trust stanzas and keeps normal Codex
 session-live native writes (`hooks.state`, `tui.model_availability_nux`).
 Marketplace/plugin/managed mutations still fail cleanup and leave live bytes
 unchanged so unexpected drift stays visible.
-
-## HVE adapter boundary
-
-Trellage owns only the small local marketplace adapter shipped at
-`marketplaces/hve-core/.agents/plugins/marketplace.json`. It points Codex at the
-official whole-repository Git source `https://github.com/microsoft/hve-core.git`
-on `main`, with `.github/skills` fallback metadata. Trellage does not vendor or
-rewrite HVE's skills. Install and reinstall publish the adapter bytes, launcher,
-catalog, Fish config, and command through sequential atomic renames with guarded
-rollback if a later rename or interruption fails.
 
 ## Uninstall
 

@@ -291,7 +291,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
         {
           launcher: "cdx",
           harness: "codex",
-          name: "hve",
+          name: "pstack",
           description: "Codex host-native launcher.",
           headless: headless({ prompt: true }),
           sandbox: false,
@@ -419,12 +419,12 @@ describe("parseGuideHeadlessArgv", () => {
   })
 
   it("accepts --profile only alongside --json", () => {
-    const args = parseGuideHeadlessArgv(["--json", "--intent", "Review my PR", "--profile", "native:cdx/hve"])
-    expect(args.profile).toBe("native:cdx/hve")
+    const args = parseGuideHeadlessArgv(["--json", "--intent", "Review my PR", "--profile", "native:cdx/pstack"])
+    expect(args.profile).toBe("native:cdx/pstack")
   })
 
   it("rejects --profile without --json", () => {
-    expect(() => parseGuideHeadlessArgv(["--intent", "Review my PR", "--profile", "native:cdx/hve"])).toThrow(
+    expect(() => parseGuideHeadlessArgv(["--intent", "Review my PR", "--profile", "native:cdx/pstack"])).toThrow(
       GuideArgsError,
     )
   })
@@ -501,7 +501,7 @@ describe("parseGuideServiceRequestJson", () => {
       JSON.stringify({
         schemaVersion: 1,
         intent: "Review my PR",
-        profile: "native:cdx/hve",
+        profile: "native:cdx/pstack",
         model: "gpt-5.4",
         effort: "xhigh",
       }),
@@ -509,7 +509,7 @@ describe("parseGuideServiceRequestJson", () => {
     expect(request).toEqual({
       schemaVersion: 1,
       intent: "Review my PR",
-      profile: "native:cdx/hve",
+      profile: "native:cdx/pstack",
       model: "gpt-5.4",
       effort: GuideEffort.XHigh,
     })
@@ -589,7 +589,7 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:cdx/hve",
+              profileRef: "native:cdx/pstack",
               workflowId: "review",
               confidence: 0.9,
               reason: "Strong fit for reviewing diffs.",
@@ -626,11 +626,11 @@ describe("runGuideMatch", () => {
 
       const [first, second, third] = response.recommendations
       expect(first).toMatchObject({
-        profileRef: "native:cdx/hve",
+        profileRef: "native:cdx/pstack",
         workflowId: "review",
         surface: "native",
         launcher: "cdx",
-        name: "hve",
+        name: "pstack",
         sandbox: false,
       })
       expect(first?.workflow).toEqual({
@@ -667,7 +667,7 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:cdx/hve",
+              profileRef: "native:cdx/pstack",
               workflowId: "review",
               confidence: 0.9,
               reason: "Strong fit.",
@@ -708,7 +708,7 @@ describe("runGuideGenerate", () => {
               tradeoff: "Sandboxed.",
             },
             {
-              profileRef: "native:cdx/hve",
+              profileRef: "native:cdx/pstack",
               workflowId: "review",
               confidence: 0.5,
               reason: "Alternative.",
@@ -767,7 +767,7 @@ describe("runGuideGenerate", () => {
         {
           candidates: [
             {
-              profileRef: "native:cdx/hve",
+              profileRef: "native:cdx/pstack",
               workflowId: "review",
               confidence: 0.9,
               reason: "Top pick.",
@@ -837,11 +837,11 @@ describe("runGuideGenerate", () => {
 describe("publicGuideLaunchCommand", () => {
   it("uses the launcher alias and appends -p <prompt> when headless.prompt is true", () => {
     const catalog = buildCatalog("/tmp-unused")
-    const command = publicGuideLaunchCommand(catalog, "native:cdx/hve", "say hello world")
+    const command = publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world")
     expect(command.executable).toBe("cdx")
-    expect(command.args).toEqual(["hve", "-p", "say hello world"])
+    expect(command.args).toEqual(["pstack", "-p", "say hello world"])
     expect(command.promptHandling).toBe("argv")
-    expect(command.preview).toBe(`cdx hve -p 'say hello world'`)
+    expect(command.preview).toBe(`cdx pstack -p 'say hello world'`)
     expect(command.preview).not.toContain("/opt/trellage")
   })
 
@@ -863,11 +863,11 @@ describe("publicGuideLaunchCommand", () => {
 describe("selectedProfileFromCatalogRef", () => {
   it("uses the native entry's own commandPath", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(selectedProfileFromCatalogRef(catalog, "native:cdx/hve")).toEqual({
+    expect(selectedProfileFromCatalogRef(catalog, "native:cdx/pstack")).toEqual({
       surface: "native",
       launcher: "cdx",
       commandPath: "/opt/trellage/cdx/bin/cdx",
-      profile: "hve",
+      profile: "pstack",
       headlessPrompt: true,
     })
   })
@@ -924,7 +924,7 @@ describe("literalGuideMatch", () => {
           {
             launcher: "cdx",
             harness: "codex",
-            name: "hve",
+            name: "pstack",
             description: "Codex host-native launcher.",
             headless: headless({ prompt: true }),
             sandbox: false,

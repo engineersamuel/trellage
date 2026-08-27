@@ -150,7 +150,7 @@ assert_contains 'does not import MCP servers from `~/.grok/config.toml`' "$readm
 assert_contains 'not a security boundary' "$readme"
 assert_contains 'grx setup --all' "$readme"
 assert_contains 'grx update --check --all' "$readme"
-assert_contains 'grx repair hve' "$readme"
+assert_contains 'grx repair superpowers' "$readme"
 assert_contains 'GRX_DISABLE_AUTH_CHECK=1' "$readme"
 assert_contains '~/.local/share/trellage/profiles/grok/<profile>/home/' "$readme"
 assert_contains 'repository `CLAUDE.md`' "$readme"
@@ -188,48 +188,23 @@ readme_commands="$(awk '
 ' "$readme")"
 expected_readme_commands="$(printf '%s\n' \
   'grx list' \
-  'grx inventory hve --json' \
-  'grx setup hve' \
+  'grx inventory superpowers --json' \
   'grx setup superpowers' \
   'grx setup --all' \
-  'grx hve' \
+  'grx superpowers' \
   'grx superpowers -p "Review this repository"' \
-  'grx doctor hve' \
-  'grx update --check hve' \
+  'grx doctor superpowers' \
+  'grx update --check superpowers' \
   'grx update --check --all' \
-  'grx update hve' \
+  'grx update superpowers' \
   'grx update --all' \
-  'grx repair hve')"
+  'grx repair superpowers')"
 [ "$readme_commands" = "$expected_readme_commands" ] \
   || fail 'README command block does not match the supported grx command forms'
 
 jq -e '
   .schemaVersion == 1
-  and (.profiles | keys | sort) == ["hve", "superpowers"]
-  and .profiles.hve.headless == {
-    "schemaVersion": 1,
-    "prompt": false,
-    "outputFormats": ["text"],
-    "eventContract": null,
-    "trellageEventContract": null,
-    "sessionId": "none",
-    "resume": false,
-    "resumeWithPrompt": false,
-    "questionToolControl": "none",
-    "changedFiles": "none",
-    "usage": false,
-    "cost": false,
-    "modelOverride": false,
-    "effortOverride": false,
-    "testedHarnessVersion": null
-  }
-  and (.profiles.hve | del(.headless)) == {
-    "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
-    "source": "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all",
-    "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json",
-    "plugin": "hve-core-all",
-    "standaloneMcps": []
-  }
+  and (.profiles | keys | sort) == ["superpowers"]
   and .profiles.superpowers.headless == {
     "schemaVersion": 1,
     "prompt": false,
@@ -273,7 +248,6 @@ mkdir -p "$fixture_home" "$fake_bin"
 HOME="$fixture_home" "$prototype_root/bin/grx" list >"$fixture_root/list.out" \
   || fail 'list failed'
 cmp -s "$fixture_root/list.out" <(printf '%s\n' \
-  $'hve\thve-core-all' \
   $'superpowers\tsuperpowers') \
   || fail 'list output differs'
 HOME="$fixture_home" "$prototype_root/bin/grx" list --json >"$fixture_root/list.json" \
@@ -283,7 +257,7 @@ jq -e '
   and .launcher == "grx"
   and .harness == "grok"
   and .sandbox == true
-  and [.profiles[].name] == ["hve", "superpowers"]
+  and [.profiles[].name] == ["superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -302,13 +276,10 @@ jq -e '
     "effortOverride": false,
     "testedHarnessVersion": null
   }
-  and .profiles[1].headless == .profiles[0].headless
-  and .profiles[0].plugin == "hve-core-all"
-  and .profiles[0].source == "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all"
+  and .profiles[0].plugin == "superpowers"
+  and .profiles[0].source == "obra/superpowers"
   and .profiles[0].marketplace == null
   and .profiles[0].standaloneMcps == []
-  and .profiles[1].source == "obra/superpowers"
-  and .profiles[1].standaloneMcps == []
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list output differs'
 
 real_jq="$(command -v jq)"
@@ -443,13 +414,6 @@ if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'install' ]; then
   fi
 
   case "$source" in
-    'microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all')
-      name='hve-core-all'
-      version='3.3.101'
-      repo_key='hve-core-fixture'
-      repo_url='https://github.com/microsoft/hve-core'
-      manifest_relative='plugins/hve-core-all/plugin.json'
-      ;;
     'obra/superpowers')
       name='superpowers'
       version='6.2.0'
@@ -488,12 +452,6 @@ if [ "${1:-}" = 'plugin' ] && [ "${2:-}" = 'update' ]; then
   fi
 
   case "$plugin" in
-    'hve-core-all')
-      version='3.3.101'
-      repo_key='hve-core-fixture'
-      repo_url='https://github.com/microsoft/hve-core'
-      manifest_relative='plugins/hve-core-all/plugin.json'
-      ;;
     'superpowers')
       version='6.2.0'
       repo_key='superpowers-fixture'
@@ -657,7 +615,7 @@ if [ "${1:-}" = 'inspect' ] && [ "${2:-}" = '--json' ]; then
     {
       skills: ([
         (active("plugin-skill"; "plugin"; ($grokHome + "/installed-plugins/plugin/skills/plugin-skill"))
-          | .source.plugin_name = "hve-core-all"),
+          | .source.plugin_name = "superpowers"),
         (active("support-skill"; "plugin"; ($grokHome + "/installed-plugins/support-plugin/skills/support"))
           | .source.plugin_name = "support-plugin"),
         active("repository-grok-skill"; "repository"; ($repository + "/.grok/skills/grok-skill")),
@@ -685,9 +643,9 @@ if [ "${1:-}" = 'inspect' ] && [ "${2:-}" = '--json' ]; then
       + compat_entries("hooks"; "hooks"; true)
       + plugin_children("hooks"; "hooks"; true)),
       plugins: ([{
-        name: "hve-core-all",
+        name: "superpowers",
         scope: "user",
-        path: ($grokHome + "/installed-plugins/hve-core-fixture"),
+        path: ($grokHome + "/installed-plugins/superpowers-fixture"),
         enabled: true,
         provides: {skills: 1, agents: 1, hooks: false, mcpServers: 0}
       }, {
@@ -795,15 +753,12 @@ if [ "${FAKE_CURL_RAW_NUL_URL:-}" = "$url" ]; then
 fi
 
 case "$url" in
-  'https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json')
-    if [ -n "${FAKE_CURL_HVE_MANIFEST_JSON:-}" ]; then
-      printf '%s\n' "$FAKE_CURL_HVE_MANIFEST_JSON"
-    else
-      printf '%s\n' '{"plugins":[{"name":"hve-core-all","version":"3.3.101"}]}'
-    fi
-    ;;
   'https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json')
-    printf '%s\n' '{"plugins":[{"name":"superpowers","version":"6.2.0"}]}'
+    if [ -n "${FAKE_CURL_SUPERPOWERS_MANIFEST_JSON:-}" ]; then
+      printf '%s\n' "$FAKE_CURL_SUPERPOWERS_MANIFEST_JSON"
+    else
+      printf '%s\n' '{"plugins":[{"name":"superpowers","version":"6.2.0"}]}'
+    fi
     ;;
   *)
     printf 'fixture curl unknown URL: %s\n' "$url" >&2
@@ -839,7 +794,6 @@ jq -e '
     "effortOverride": false,
     "testedHarnessVersion": null
   }
-  and .profiles[1].headless == .profiles[0].headless
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list output differs'
 
 mkdir -p \
@@ -895,29 +849,29 @@ assert_invalid_catalog() {
 
 unsafe_key_catalog="$fixture_root/unsafe-key.json"
 jq --arg profile '../../../../../../tmp/grx-escape' \
-  '.profiles = {($profile): .profiles.hve}' \
+  '.profiles = {($profile): .profiles.superpowers}' \
   "$prototype_root/catalog.json" >"$unsafe_key_catalog"
 assert_invalid_catalog "$unsafe_key_catalog" 'unsafe profile key'
 
 reserved_key_catalog="$fixture_root/reserved-key.json"
 jq --arg profile 'list' \
-  '.profiles = {($profile): .profiles.hve}' \
+  '.profiles = {($profile): .profiles.superpowers}' \
   "$prototype_root/catalog.json" >"$reserved_key_catalog"
 assert_invalid_catalog "$reserved_key_catalog" 'reserved profile key'
 
 invalid_headless_catalog="$fixture_root/invalid-headless.json"
-jq '.profiles.hve.headless.outputFormats = ["text", "yaml"]' \
+jq '.profiles.superpowers.headless.outputFormats = ["text", "yaml"]' \
   "$prototype_root/catalog.json" >"$invalid_headless_catalog"
 assert_invalid_catalog "$invalid_headless_catalog" 'invalid headless schema'
 
 changed_trust_catalog="$fixture_root/changed-trust-catalog.json"
 jq '
-  .profiles.hve.source = "fixture/alternate#plugins/alternate"
-  | .profiles.hve.manifestUrl = "https://example.test/alternate.json"
-  | .profiles.hve.plugin = "alternate"
+  .profiles.superpowers.source = "fixture/alternate#plugins/alternate"
+  | .profiles.superpowers.manifestUrl = "https://example.test/alternate.json"
+  | .profiles.superpowers.plugin = "alternate"
 ' "$prototype_root/catalog.json" >"$changed_trust_catalog"
 calls_before_changed_trust="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-if GRX_CATALOG="$changed_trust_catalog" ./bin/grx setup hve \
+if GRX_CATALOG="$changed_trust_catalog" ./bin/grx setup superpowers \
   >"$fixture_root/changed-trust.out" 2>"$fixture_root/changed-trust.err"; then
   fail 'launcher accepted an otherwise-valid changed trust catalog'
 fi
@@ -929,13 +883,13 @@ calls_after_changed_trust="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 
 unsafe_source_index=0
 for unsafe_source in \
-  'microsoft/hve-core#../hve-core-all' \
-  'microsoft/hve-core#/plugins/hve-core-all' \
-  'microsoft/hve-core#plugins//hve-core-all' \
-  'microsoft/hve-core#plugins/./hve-core-all' \
-  $'microsoft/hve-core\nmicrosoft/hve-core'; do
+  'microsoft/superpowers-core#../superpowers' \
+  'microsoft/superpowers-core#/plugins/superpowers' \
+  'microsoft/superpowers-core#plugins//superpowers' \
+  'microsoft/superpowers-core#plugins/./superpowers' \
+  $'microsoft/superpowers-core\nmicrosoft/superpowers-core'; do
   unsafe_source_catalog="$fixture_root/unsafe-source-$(printf '%s' "$unsafe_source" | sha256_digest).json"
-  jq --arg source "$unsafe_source" '.profiles.hve.source = $source' \
+  jq --arg source "$unsafe_source" '.profiles.superpowers.source = $source' \
     "$prototype_root/catalog.json" >"$unsafe_source_catalog"
   assert_invalid_catalog "$unsafe_source_catalog" \
     "unsafe-plugin-source-$unsafe_source_index"
@@ -961,23 +915,23 @@ assert_invalid_catalog "$catalog_valid_then_unexpected" \
 worktree_with_spaces="$fixture_root/worktree with spaces"
 mkdir -p "$worktree_with_spaces"
 calls_before_self_heal_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-if ! ./bin/grx hve --version >"$fixture_root/self-heal-launch.out" \
+if ! ./bin/grx superpowers --version >"$fixture_root/self-heal-launch.out" \
   2>"$fixture_root/self-heal-launch.err"; then
   fail 'launch before setup did not self-heal'
 fi
-[ -d "$HOME/.local/share/trellage/profiles/grok/hve/home" ] \
+[ -d "$HOME/.local/share/trellage/profiles/grok/superpowers/home" ] \
   || fail 'self-healed launch did not materialize the profile home'
 calls_after_self_heal_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 [ "$calls_after_self_heal_launch" -gt "$calls_before_self_heal_launch" ] \
   || fail 'self-healed launch did not invoke Grok'
-rm -rf "$HOME/.local/share/trellage/profiles/grok/hve/home"
+rm -rf "$HOME/.local/share/trellage/profiles/grok/superpowers"
 
 calls_before_root_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-if HOME=/ ./bin/grx hve --version >"$fixture_root/root-home-launch.out" \
+if HOME=/ ./bin/grx superpowers --version >"$fixture_root/root-home-launch.out" \
   2>"$fixture_root/root-home-launch.err"; then
   fail 'launch accepted HOME=/'
 fi
-assert_line 'grx: unsafe profile home path: /.local/share/trellage/profiles/grok/hve/home' \
+assert_line 'grx: unsafe profile home path: /.local/share/trellage/profiles/grok/superpowers/home' \
   "$fixture_root/root-home-launch.err"
 calls_after_root_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 [ "$calls_after_root_home_launch" = "$calls_before_root_home_launch" ] \
@@ -986,7 +940,7 @@ calls_after_root_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 calls_before_list="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 list_output="$fixture_root/list.out"
 ./bin/grx list >"$list_output"
-if ! cmp -s "$list_output" <(printf 'hve\thve-core-all\nsuperpowers\tsuperpowers\n'); then
+if ! cmp -s "$list_output" <(printf 'superpowers\tsuperpowers\n'); then
   fail 'list output does not match the catalog'
 fi
 calls_after_list="$(wc -l <"$fake_grok_log" | tr -d ' ')"
@@ -1041,28 +995,28 @@ sessions = false
 ignore = ["~/.agents/skills", "~/.agents/commands"]
 EXPECTED_POLICY
 
-hve_home="$HOME/.local/share/trellage/profiles/grok/hve/home"
-hve_setup_output="$fixture_root/hve-setup.out"
-calls_before_hve_setup="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-./bin/grx setup hve >"$hve_setup_output"
-assert_line 'hve: ready' "$hve_setup_output"
-if ! cmp -s "$hve_setup_output" <(printf 'hve: ready\n'); then
+superpowers_home="$HOME/.local/share/trellage/profiles/grok/superpowers/home"
+superpowers_setup_output="$fixture_root/superpowers-setup.out"
+calls_before_superpowers_setup="$(wc -l <"$fake_grok_log" | tr -d ' ')"
+./bin/grx setup superpowers >"$superpowers_setup_output"
+assert_line 'superpowers: ready' "$superpowers_setup_output"
+if ! cmp -s "$superpowers_setup_output" <(printf 'superpowers: ready\n'); then
   fail 'setup emitted output other than the exact ready line'
 fi
-cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
   || fail 'setup did not copy source authentication'
-[ "$(path_mode "$hve_home/auth.json")" = '600' ] \
+[ "$(path_mode "$superpowers_home/auth.json")" = '600' ] \
   || fail 'setup did not set authentication mode 0600'
-cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
   || fail 'setup did not write the exact capability policy'
-jq -s -e --arg home "$hve_home" --arg since "$calls_before_hve_setup" '
+jq -s -e --arg home "$superpowers_home" --arg since "$calls_before_superpowers_setup" '
   .[($since | tonumber):]
   | any(.[];
     .grokHome == $home
-    and .args == ["plugin","install","microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all","--trust"]
+    and .args == ["plugin","install","obra/superpowers","--trust"]
   )
-' "$fake_grok_log" >/dev/null || fail 'setup did not install the exact trusted HVE source'
-if ! jq -s -e --arg since "$calls_before_hve_setup" '
+' "$fake_grok_log" >/dev/null || fail 'setup did not install the exact trusted Superpowers source'
+if ! jq -s -e --arg since "$calls_before_superpowers_setup" '
   .[($since | tonumber):]
   | all(.[];
     .modelsBaseUrl == ""
@@ -1071,25 +1025,28 @@ if ! jq -s -e --arg since "$calls_before_hve_setup" '
   )' "$fake_grok_log" >/dev/null; then
   fail 'setup received proxy routing variables'
 fi
-./bin/grx inventory hve --json >"$fixture_root/inventory-hve.json"
+./bin/grx inventory superpowers --json >"$fixture_root/inventory-superpowers.json"
 jq -e '
   .schemaVersion == 1
   and .launcher == "grx"
   and .harness == "grok"
-  and .profile == "hve"
+  and .profile == "superpowers"
   and .readiness == "healthy"
   and .plugins == [
-    {name:"hve-core-all",version:"3.3.101"},
+    {name:"superpowers",version:"6.2.0"},
     {name:"support-plugin",version:"unknown"}
   ]
   and .skills == {packageCount:1,visibleCount:8}
   and .mcps == ["native-mcp","plugin-mcp","repository-mcp"]
-' "$fixture_root/inventory-hve.json" >/dev/null \
+' "$fixture_root/inventory-superpowers.json" >/dev/null \
   || {
-    cat "$fixture_root/inventory-hve.json" >&2
+    cat "$fixture_root/inventory-superpowers.json" >&2
     fail 'Grok inventory output differs'
   }
+superpowers_setup_home_backup="$superpowers_home.setup-backup"
+mv "$superpowers_home" "$superpowers_setup_home_backup"
 ./bin/grx inventory superpowers --json >"$fixture_root/inventory-not-setup.json"
+mv "$superpowers_setup_home_backup" "$superpowers_home"
 jq -e '
   .profile == "superpowers"
   and .readiness == "not-setup"
@@ -1099,10 +1056,10 @@ jq -e '
 ' "$fixture_root/inventory-not-setup.json" >/dev/null \
   || fail 'Grok not-setup inventory differs'
 
-mkdir -p "$hve_home/sessions" "$hve_home/mcp-state"
-printf 'session sentinel\n' >"$hve_home/sessions/keep"
-printf 'mcp sentinel\n' >"$hve_home/mcp-state/keep"
-printf 'profile config sentinel\n' >"$hve_home/config.toml"
+mkdir -p "$superpowers_home/sessions" "$superpowers_home/mcp-state"
+printf 'session sentinel\n' >"$superpowers_home/sessions/keep"
+printf 'mcp sentinel\n' >"$superpowers_home/mcp-state/keep"
+printf 'profile config sentinel\n' >"$superpowers_home/config.toml"
 
 assert_auth_refresh_preserves_profile_state() {
   local label="$1"
@@ -1110,63 +1067,63 @@ assert_auth_refresh_preserves_profile_state() {
   local before_hash="$3"
   local before_outside_auth_hash="$4"
 
-  cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+  cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
     || fail "$label did not refresh authentication exactly"
-  [ "$(path_mode "$hve_home/auth.json")" = '600' ] \
+  [ "$(path_mode "$superpowers_home/auth.json")" = '600' ] \
     || fail "$label did not leave authentication mode 0600"
-  [ "$(profile_tree_hash "$hve_home")" != "$before_hash" ] \
+  [ "$(profile_tree_hash "$superpowers_home")" != "$before_hash" ] \
     || fail "$label did not change stale authentication"
-  [ "$(profile_tree_hash "$hve_home" outside-auth)" = "$before_outside_auth_hash" ] \
+  [ "$(profile_tree_hash "$superpowers_home" outside-auth)" = "$before_outside_auth_hash" ] \
     || fail "$label changed profile config, MCP, session, or plugin state outside auth.json"
-  assert_auth_marker "$expected_auth" "$hve_home/auth.json"
-  assert_line 'session sentinel' "$hve_home/sessions/keep"
-  assert_line 'mcp sentinel' "$hve_home/mcp-state/keep"
-  assert_line 'profile config sentinel' "$hve_home/config.toml"
+  assert_auth_marker "$expected_auth" "$superpowers_home/auth.json"
+  assert_line 'session sentinel' "$superpowers_home/sessions/keep"
+  assert_line 'mcp sentinel' "$superpowers_home/mcp-state/keep"
+  assert_line 'profile config sentinel' "$superpowers_home/config.toml"
 }
 
 auth_marker_json 'refresh-launch' >"$HOME/.grok/auth.json"
-hve_refresh_before="$(profile_tree_hash "$hve_home")"
-hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
-./bin/grx hve --auth-refresh-launch >"$fixture_root/auth-refresh-launch.out"
-assert_auth_refresh_preserves_profile_state launch refresh-launch "$hve_refresh_before" "$hve_refresh_outside_auth_before"
+superpowers_refresh_before="$(profile_tree_hash "$superpowers_home")"
+superpowers_refresh_outside_auth_before="$(profile_tree_hash "$superpowers_home" outside-auth)"
+./bin/grx superpowers --auth-refresh-launch >"$fixture_root/auth-refresh-launch.out"
+assert_auth_refresh_preserves_profile_state launch refresh-launch "$superpowers_refresh_before" "$superpowers_refresh_outside_auth_before"
 
 auth_marker_json 'refresh-doctor' >"$HOME/.grok/auth.json"
-hve_refresh_before="$(profile_tree_hash "$hve_home")"
-hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
-./bin/grx doctor hve >"$fixture_root/auth-refresh-doctor.out"
-assert_auth_refresh_preserves_profile_state doctor refresh-doctor "$hve_refresh_before" "$hve_refresh_outside_auth_before"
+superpowers_refresh_before="$(profile_tree_hash "$superpowers_home")"
+superpowers_refresh_outside_auth_before="$(profile_tree_hash "$superpowers_home" outside-auth)"
+./bin/grx doctor superpowers >"$fixture_root/auth-refresh-doctor.out"
+assert_auth_refresh_preserves_profile_state doctor refresh-doctor "$superpowers_refresh_before" "$superpowers_refresh_outside_auth_before"
 
 auth_marker_json 'refresh-update-check' >"$HOME/.grok/auth.json"
-hve_refresh_before="$(profile_tree_hash "$hve_home")"
-hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
-./bin/grx update --check hve >"$fixture_root/auth-refresh-update-check.out"
-assert_auth_refresh_preserves_profile_state update-check refresh-update-check "$hve_refresh_before" "$hve_refresh_outside_auth_before"
+superpowers_refresh_before="$(profile_tree_hash "$superpowers_home")"
+superpowers_refresh_outside_auth_before="$(profile_tree_hash "$superpowers_home" outside-auth)"
+./bin/grx update --check superpowers >"$fixture_root/auth-refresh-update-check.out"
+assert_auth_refresh_preserves_profile_state update-check refresh-update-check "$superpowers_refresh_before" "$superpowers_refresh_outside_auth_before"
 
 auth_marker_json 'refresh-update' >"$HOME/.grok/auth.json"
-hve_refresh_before="$(profile_tree_hash "$hve_home")"
-hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
-./bin/grx update hve >"$fixture_root/auth-refresh-update.out"
-assert_auth_refresh_preserves_profile_state update refresh-update "$hve_refresh_before" "$hve_refresh_outside_auth_before"
+superpowers_refresh_before="$(profile_tree_hash "$superpowers_home")"
+superpowers_refresh_outside_auth_before="$(profile_tree_hash "$superpowers_home" outside-auth)"
+./bin/grx update superpowers >"$fixture_root/auth-refresh-update.out"
+assert_auth_refresh_preserves_profile_state update refresh-update "$superpowers_refresh_before" "$superpowers_refresh_outside_auth_before"
 
 auth_marker_json 'refresh-repair' >"$HOME/.grok/auth.json"
-hve_refresh_before="$(profile_tree_hash "$hve_home")"
-hve_refresh_outside_auth_before="$(profile_tree_hash "$hve_home" outside-auth)"
-./bin/grx repair hve >"$fixture_root/auth-refresh-repair.out"
-assert_auth_refresh_preserves_profile_state repair refresh-repair "$hve_refresh_before" "$hve_refresh_outside_auth_before"
+superpowers_refresh_before="$(profile_tree_hash "$superpowers_home")"
+superpowers_refresh_outside_auth_before="$(profile_tree_hash "$superpowers_home" outside-auth)"
+./bin/grx repair superpowers >"$fixture_root/auth-refresh-repair.out"
+assert_auth_refresh_preserves_profile_state repair refresh-repair "$superpowers_refresh_before" "$superpowers_refresh_outside_auth_before"
 
-chmod 0644 "$hve_home/auth.json"
-hve_auth_inode="$(path_inode "$hve_home/auth.json")"
-./bin/grx update --check hve >"$fixture_root/auth-identical-update-check.out"
-[ "$(path_inode "$hve_home/auth.json")" = "$hve_auth_inode" ] \
+chmod 0644 "$superpowers_home/auth.json"
+superpowers_auth_inode="$(path_inode "$superpowers_home/auth.json")"
+./bin/grx update --check superpowers >"$fixture_root/auth-identical-update-check.out"
+[ "$(path_inode "$superpowers_home/auth.json")" = "$superpowers_auth_inode" ] \
   || fail 'identical authentication refresh replaced destination inode'
-[ "$(path_mode "$hve_home/auth.json")" = '600' ] \
+[ "$(path_mode "$superpowers_home/auth.json")" = '600' ] \
   || fail 'identical authentication refresh did not enforce mode 0600'
 
 auth_marker_json 'refresh-list-must-not-copy' >"$HOME/.grok/auth.json"
-hve_auth_inode="$(path_inode "$hve_home/auth.json")"
-cp "$hve_home/auth.json" "$fixture_root/auth-before-list"
+superpowers_auth_inode="$(path_inode "$superpowers_home/auth.json")"
+cp "$superpowers_home/auth.json" "$fixture_root/auth-before-list"
 managed_stale_guard_status=0
-GROK_HOME="$hve_home" "$fake_bin/grok" --managed-stale-auth-control \
+GROK_HOME="$superpowers_home" "$fake_bin/grok" --managed-stale-auth-control \
   >"$fixture_root/managed-stale-auth-control.out" \
   2>"$fixture_root/managed-stale-auth-control.err" \
   || managed_stale_guard_status=$?
@@ -1174,9 +1131,9 @@ GROK_HOME="$hve_home" "$fake_bin/grok" --managed-stale-auth-control \
   || fail "managed stale-auth control exited $managed_stale_guard_status instead of 93"
 calls_before_auth_list="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 ./bin/grx list >"$fixture_root/auth-refresh-list.out"
-cmp -s "$fixture_root/auth-before-list" "$hve_home/auth.json" \
+cmp -s "$fixture_root/auth-before-list" "$superpowers_home/auth.json" \
   || fail 'list refreshed profile authentication'
-[ "$(path_inode "$hve_home/auth.json")" = "$hve_auth_inode" ] \
+[ "$(path_inode "$superpowers_home/auth.json")" = "$superpowers_auth_inode" ] \
   || fail 'list replaced profile authentication inode'
 calls_after_auth_list="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 [ "$calls_after_auth_list" = "$calls_before_auth_list" ] \
@@ -1185,7 +1142,7 @@ calls_after_auth_list="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 calls_before_auth_failure="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 mv "$HOME/.grok/auth.json" "$fixture_root/source-auth-saved"
 ln -s "$fixture_root/source-auth-saved" "$HOME/.grok/auth.json"
-if ./bin/grx hve --source-auth-symlink >"$fixture_root/source-auth-symlink.out" \
+if ./bin/grx superpowers --source-auth-symlink >"$fixture_root/source-auth-symlink.out" \
   2>"$fixture_root/source-auth-symlink.err"; then
   fail 'launch accepted symlinked source authentication'
 fi
@@ -1196,23 +1153,23 @@ mv "$fixture_root/source-auth-saved" "$HOME/.grok/auth.json"
 [ "$(wc -l <"$fake_grok_log" | tr -d ' ')" = "$calls_before_auth_failure" ] \
   || fail 'symlinked source authentication invoked Grok'
 
-mv "$hve_home/auth.json" "$fixture_root/profile-auth-saved"
+mv "$superpowers_home/auth.json" "$fixture_root/profile-auth-saved"
 printf 'outside auth sentinel\n' >"$fixture_root/outside-auth"
-ln -s "$fixture_root/outside-auth" "$hve_home/auth.json"
-if ./bin/grx hve --destination-auth-symlink \
+ln -s "$fixture_root/outside-auth" "$superpowers_home/auth.json"
+if ./bin/grx superpowers --destination-auth-symlink \
   >"$fixture_root/destination-auth-symlink.out" \
   2>"$fixture_root/destination-auth-symlink.err"; then
   fail 'launch accepted symlinked destination authentication'
 fi
 assert_line 'outside auth sentinel' "$fixture_root/outside-auth"
-rm "$hve_home/auth.json"
-mv "$fixture_root/profile-auth-saved" "$hve_home/auth.json"
+rm "$superpowers_home/auth.json"
+mv "$fixture_root/profile-auth-saved" "$superpowers_home/auth.json"
 [ "$(wc -l <"$fake_grok_log" | tr -d ' ')" = "$calls_before_auth_failure" ] \
   || fail 'symlinked destination authentication invoked Grok'
 
 auth_marker_json 'refresh-publication-failure' >"$HOME/.grok/auth.json"
-cp "$hve_home/auth.json" "$fixture_root/auth-before-publication-failure"
-hve_auth_inode="$(path_inode "$hve_home/auth.json")"
+cp "$superpowers_home/auth.json" "$fixture_root/auth-before-publication-failure"
+superpowers_auth_inode="$(path_inode "$superpowers_home/auth.json")"
 real_mv="$(command -v mv)"
 cat >"$fake_bin/mv" <<'FAKE_MV'
 #!/bin/bash
@@ -1225,26 +1182,26 @@ done
 exec "$GRX_TEST_REAL_MV" "$@"
 FAKE_MV
 chmod 0555 "$fake_bin/mv"
-if GRX_TEST_REAL_MV="$real_mv" ./bin/grx hve --auth-publication-failure \
+if GRX_TEST_REAL_MV="$real_mv" ./bin/grx superpowers --auth-publication-failure \
   >"$fixture_root/auth-publication-failure.out" \
   2>"$fixture_root/auth-publication-failure.err"; then
   fail 'authentication publication failure unexpectedly launched Grok'
 fi
 assert_line 'grx: failed to publish profile authentication' \
   "$fixture_root/auth-publication-failure.err"
-cmp -s "$fixture_root/auth-before-publication-failure" "$hve_home/auth.json" \
+cmp -s "$fixture_root/auth-before-publication-failure" "$superpowers_home/auth.json" \
   || fail 'failed authentication publication changed prior bytes'
-[ "$(path_inode "$hve_home/auth.json")" = "$hve_auth_inode" ] \
+[ "$(path_inode "$superpowers_home/auth.json")" = "$superpowers_auth_inode" ] \
   || fail 'failed authentication publication changed prior inode'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'failed authentication publication left staging debris'
 rm "$fake_bin/mv"
-cp "$HOME/.grok/auth.json" "$hve_home/auth.json"
-chmod 0600 "$hve_home/auth.json"
+cp "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
+chmod 0600 "$superpowers_home/auth.json"
 
 mv "$HOME/.grok/auth.json" "$fixture_root/missing-update-auth-saved"
 missing_update_auth_status=0
-./bin/grx update --check hve >"$fixture_root/missing-update-auth.out" \
+./bin/grx update --check superpowers >"$fixture_root/missing-update-auth.out" \
   2>"$fixture_root/missing-update-auth.err" || missing_update_auth_status=$?
 [ "$missing_update_auth_status" -eq 2 ] \
   || fail "missing-auth update check exited $missing_update_auth_status instead of 2"
@@ -1254,7 +1211,7 @@ mv "$fixture_root/missing-update-auth-saved" "$HOME/.grok/auth.json"
 
 chmod 0000 "$HOME/.grok/auth.json"
 unreadable_update_auth_status=0
-./bin/grx update --check hve >"$fixture_root/unreadable-update-auth.out" \
+./bin/grx update --check superpowers >"$fixture_root/unreadable-update-auth.out" \
   2>"$fixture_root/unreadable-update-auth.err" || unreadable_update_auth_status=$?
 [ "$unreadable_update_auth_status" -eq 2 ] \
   || fail "unreadable-auth update check exited $unreadable_update_auth_status instead of 2"
@@ -1271,7 +1228,7 @@ cp "$HOME/.grok/auth.json" "$fixture_root/unviable-update-auth-saved"
 calls_before_unviable_auth="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 printf '{"stale-session":{"auth_mode":"oidc"}}\n' >"$HOME/.grok/auth.json"
 unviable_update_auth_status=0
-./bin/grx update --check hve >"$fixture_root/unviable-update-auth.out" \
+./bin/grx update --check superpowers >"$fixture_root/unviable-update-auth.out" \
   2>"$fixture_root/unviable-update-auth.err" || unviable_update_auth_status=$?
 [ "$unviable_update_auth_status" -eq 2 ] \
   || fail "unviable-auth update check exited $unviable_update_auth_status instead of 2"
@@ -1287,98 +1244,98 @@ chmod 0600 "$HOME/.grok/auth.json"
 # The same guarantee must hold for a profile's own already-copied
 # auth.json: doctor must refuse to call it healthy, and a fresh launch
 # must refuse to run rather than falling through to Grok's own login UI.
-cp "$hve_home/auth.json" "$fixture_root/unviable-profile-auth-saved"
+cp "$superpowers_home/auth.json" "$fixture_root/unviable-profile-auth-saved"
 calls_before_unviable_profile_auth="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-printf '{"stale-session":{"auth_mode":"oidc"}}\n' >"$hve_home/auth.json"
-chmod 0600 "$hve_home/auth.json"
+printf '{"stale-session":{"auth_mode":"oidc"}}\n' >"$superpowers_home/auth.json"
+chmod 0600 "$superpowers_home/auth.json"
 unviable_doctor_status=0
-./bin/grx doctor hve >"$fixture_root/unviable-doctor.out" \
+./bin/grx doctor superpowers >"$fixture_root/unviable-doctor.out" \
   2>"$fixture_root/unviable-doctor.err" || unviable_doctor_status=$?
 [ "$unviable_doctor_status" -ne 0 ] \
   || fail 'doctor accepted a structurally invalid profile authentication'
-assert_line "grx: profile authentication is unusable: hve; run 'grok login' once on the host (outside grx), then retry" \
+assert_line "grx: profile authentication is unusable: superpowers; run 'grok login' once on the host (outside grx), then retry" \
   "$fixture_root/unviable-doctor.err"
 [ "$(wc -l <"$fake_grok_log" | tr -d ' ')" = "$calls_before_unviable_profile_auth" ] \
   || fail 'structurally invalid profile authentication invoked Grok during doctor'
-cp "$fixture_root/unviable-profile-auth-saved" "$hve_home/auth.json"
-chmod 0600 "$hve_home/auth.json"
+cp "$fixture_root/unviable-profile-auth-saved" "$superpowers_home/auth.json"
+chmod 0600 "$superpowers_home/auth.json"
 
-mkdir "$hve_home/.auth.lock-owned.stale"
-printf '.auth.lock-owned.stale\n' >"$hve_home/.auth.lock-owned.stale/token"
-printf '999999999\n' >"$hve_home/.auth.lock-owned.stale/pid"
-ln "$hve_home/.auth.lock-owned.stale/token" "$hve_home/.auth.lock"
+mkdir "$superpowers_home/.auth.lock-owned.stale"
+printf '.auth.lock-owned.stale\n' >"$superpowers_home/.auth.lock-owned.stale/token"
+printf '999999999\n' >"$superpowers_home/.auth.lock-owned.stale/pid"
+ln "$superpowers_home/.auth.lock-owned.stale/token" "$superpowers_home/.auth.lock"
 stale_auth_lock_status=0
-./bin/grx update --check hve >"$fixture_root/stale-auth-lock.out" \
+./bin/grx update --check superpowers >"$fixture_root/stale-auth-lock.out" \
   2>"$fixture_root/stale-auth-lock.err" || stale_auth_lock_status=$?
 [ "$stale_auth_lock_status" -eq 2 ] \
   || fail "stale auth lock update check exited $stale_auth_lock_status instead of 2"
-assert_line "grx: stale profile authentication lock: $hve_home/.auth.lock" \
+assert_line "grx: stale profile authentication lock: $superpowers_home/.auth.lock" \
   "$fixture_root/stale-auth-lock.err"
-rm "$hve_home/.auth.lock" "$hve_home/.auth.lock-owned.stale/pid" \
-  "$hve_home/.auth.lock-owned.stale/token"
-rmdir "$hve_home/.auth.lock-owned.stale"
+rm "$superpowers_home/.auth.lock" "$superpowers_home/.auth.lock-owned.stale/pid" \
+  "$superpowers_home/.auth.lock-owned.stale/token"
+rmdir "$superpowers_home/.auth.lock-owned.stale"
 
 for auth_signal in HUP INT TERM; do
   auth_marker_json "signal-source-$auth_signal" >"$HOME/.grok/auth.json"
-  auth_marker_json 'signal-target-before' >"$hve_home/auth.json"
-  chmod 0600 "$hve_home/auth.json"
-  signal_auth_inode="$(path_inode "$hve_home/auth.json")"
+  auth_marker_json 'signal-target-before' >"$superpowers_home/auth.json"
+  chmod 0600 "$superpowers_home/auth.json"
+  signal_auth_inode="$(path_inode "$superpowers_home/auth.json")"
   signal_status=0
   GRX_AUTH_TEST_SIGNAL_AFTER_STAGE="$auth_signal" \
-    ./bin/grx update --check hve >"$fixture_root/auth-signal-$auth_signal.out" \
+    ./bin/grx update --check superpowers >"$fixture_root/auth-signal-$auth_signal.out" \
     2>"$fixture_root/auth-signal-$auth_signal.err" || signal_status=$?
   case "$auth_signal:$signal_status" in
     HUP:129|INT:130|TERM:143) ;;
     *) fail "$auth_signal-interrupted auth refresh exited $signal_status" ;;
   esac
-  assert_auth_marker 'signal-target-before' "$hve_home/auth.json"
-  [ "$(path_inode "$hve_home/auth.json")" = "$signal_auth_inode" ] \
+  assert_auth_marker 'signal-target-before' "$superpowers_home/auth.json"
+  [ "$(path_inode "$superpowers_home/auth.json")" = "$signal_auth_inode" ] \
     || fail "$auth_signal-interrupted auth refresh replaced prior target"
-  [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+  [ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
     || fail "$auth_signal-interrupted auth refresh left credential staging debris"
-  [ ! -e "$hve_home/.auth.lock" ] && [ ! -L "$hve_home/.auth.lock" ] \
+  [ ! -e "$superpowers_home/.auth.lock" ] && [ ! -L "$superpowers_home/.auth.lock" ] \
     || fail "$auth_signal-interrupted auth refresh left its lock"
 done
 
 for signal_window in LOCK_ACQUIRE AFTER_PUBLISH LOCK_RELEASE; do
   for auth_signal in HUP INT TERM; do
     auth_marker_json "window-source-$signal_window-$auth_signal" >"$HOME/.grok/auth.json"
-    auth_marker_json 'window-target-before' >"$hve_home/auth.json"
-    chmod 0640 "$hve_home/auth.json"
-    window_inode="$(path_inode "$hve_home/auth.json")"
+    auth_marker_json 'window-target-before' >"$superpowers_home/auth.json"
+    chmod 0640 "$superpowers_home/auth.json"
+    window_inode="$(path_inode "$superpowers_home/auth.json")"
     window_status=0
     env "GRX_AUTH_TEST_SIGNAL_${signal_window}=$auth_signal" \
-      ./bin/grx update --check hve >"$fixture_root/window-$signal_window-$auth_signal.out" \
+      ./bin/grx update --check superpowers >"$fixture_root/window-$signal_window-$auth_signal.out" \
       2>"$fixture_root/window-$signal_window-$auth_signal.err" || window_status=$?
     case "$auth_signal:$window_status" in HUP:129|INT:130|TERM:143) ;; *)
       fail "$signal_window/$auth_signal exited $window_status" ;; esac
     if [ "$signal_window" = 'LOCK_RELEASE' ]; then
-      assert_auth_marker "window-source-$signal_window-$auth_signal" "$hve_home/auth.json"
-      [ "$(path_mode "$hve_home/auth.json")" = '600' ] \
+      assert_auth_marker "window-source-$signal_window-$auth_signal" "$superpowers_home/auth.json"
+      [ "$(path_mode "$superpowers_home/auth.json")" = '600' ] \
         || fail "$signal_window/$auth_signal did not retain committed target mode"
     else
-      assert_auth_marker 'window-target-before' "$hve_home/auth.json"
-      [ "$(path_inode "$hve_home/auth.json")" = "$window_inode" ] \
+      assert_auth_marker 'window-target-before' "$superpowers_home/auth.json"
+      [ "$(path_inode "$superpowers_home/auth.json")" = "$window_inode" ] \
         || fail "$signal_window/$auth_signal changed entry inode"
-      [ "$(path_mode "$hve_home/auth.json")" = '640' ] \
+      [ "$(path_mode "$superpowers_home/auth.json")" = '640' ] \
         || fail "$signal_window/$auth_signal changed entry mode"
     fi
-    [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+    [ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
       || fail "$signal_window/$auth_signal left auth debris"
   done
 done
 
 auth_marker_json 'release-window-first' >"$HOME/.grok/auth.json"
-auth_marker_json 'release-window-entry' >"$hve_home/auth.json"
+auth_marker_json 'release-window-entry' >"$superpowers_home/auth.json"
 release_window_marker="$fixture_root/release-window-marker"
 GRX_AUTH_TEST_RELEASE_MARKER="$release_window_marker" \
-  ./bin/grx update --check hve >"$fixture_root/release-window-first.out" \
+  ./bin/grx update --check superpowers >"$fixture_root/release-window-first.out" \
   2>"$fixture_root/release-window-first.err" &
 release_window_pid=$!
 wait_for_file "$release_window_marker"
 auth_marker_json 'release-window-second' >"$HOME/.grok/auth.json"
 release_window_second_status=0
-./bin/grx update --check hve >"$fixture_root/release-window-second.out" \
+./bin/grx update --check superpowers >"$fixture_root/release-window-second.out" \
   2>"$fixture_root/release-window-second.err" || release_window_second_status=$?
 [ "$release_window_second_status" -eq 0 ] \
   || fail "release-window second refresh exited $release_window_second_status"
@@ -1387,29 +1344,29 @@ release_window_first_status=0
 wait "$release_window_pid" || release_window_first_status=$?
 [ "$release_window_first_status" -eq 143 ] \
   || fail "release-window first refresh exited $release_window_first_status"
-assert_auth_marker 'release-window-second' "$hve_home/auth.json"
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+assert_auth_marker 'release-window-second' "$superpowers_home/auth.json"
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'release-window concurrency left auth debris'
 
 for auth_signal in HUP INT TERM; do
   auth_marker_json "absent-source-$auth_signal" >"$HOME/.grok/auth.json"
-  rm -f "$hve_home/auth.json"
+  rm -f "$superpowers_home/auth.json"
   absent_status=0
   GRX_AUTH_TEST_SIGNAL_AFTER_PUBLISH="$auth_signal" \
-    ./bin/grx update --check hve >"$fixture_root/absent-$auth_signal.out" \
+    ./bin/grx update --check superpowers >"$fixture_root/absent-$auth_signal.out" \
     2>"$fixture_root/absent-$auth_signal.err" || absent_status=$?
   case "$auth_signal:$absent_status" in HUP:129|INT:130|TERM:143) ;; *)
     fail "absent AFTER_PUBLISH/$auth_signal exited $absent_status" ;; esac
-  [ ! -e "$hve_home/auth.json" ] && [ ! -L "$hve_home/auth.json" ] \
+  [ ! -e "$superpowers_home/auth.json" ] && [ ! -L "$superpowers_home/auth.json" ] \
     || fail "absent AFTER_PUBLISH/$auth_signal created auth target"
-  [ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+  [ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
     || fail "absent AFTER_PUBLISH/$auth_signal left auth debris"
 done
 
 auth_marker_json 'rotation-source-0' >"$HOME/.grok/auth.json"
-auth_marker_json 'rotation-entry-state' >"$hve_home/auth.json"
-chmod 0640 "$hve_home/auth.json"
-rotation_inode="$(path_inode "$hve_home/auth.json")"
+auth_marker_json 'rotation-entry-state' >"$superpowers_home/auth.json"
+chmod 0640 "$superpowers_home/auth.json"
+rotation_inode="$(path_inode "$superpowers_home/auth.json")"
 real_mv="$(command -v mv)"
 cat >"$fake_bin/mv" <<'FAKE_MV_ROTATE'
 #!/bin/bash
@@ -1433,43 +1390,43 @@ esac
 FAKE_MV_ROTATE
 chmod 0555 "$fake_bin/mv"
 rotation_status=0
-GRX_TEST_REAL_MV="$real_mv" GRX_TEST_AUTH_TARGET="$hve_home/auth.json" \
+GRX_TEST_REAL_MV="$real_mv" GRX_TEST_AUTH_TARGET="$superpowers_home/auth.json" \
   GRX_TEST_AUTH_SOURCE="$HOME/.grok/auth.json" \
   GRX_TEST_ROTATION_COUNT="$fixture_root/rotation-count" \
-  ./bin/grx update --check hve >"$fixture_root/rotation-exhaustion.out" \
+  ./bin/grx update --check superpowers >"$fixture_root/rotation-exhaustion.out" \
   2>"$fixture_root/rotation-exhaustion.err" || rotation_status=$?
 [ "$rotation_status" -eq 2 ] || fail "rotation exhaustion exited $rotation_status"
 assert_line "grx: source authentication did not stabilize: $HOME/.grok/auth.json" \
   "$fixture_root/rotation-exhaustion.err"
-assert_auth_marker 'rotation-entry-state' "$hve_home/auth.json"
-[ "$(path_inode "$hve_home/auth.json")" = "$rotation_inode" ] \
+assert_auth_marker 'rotation-entry-state' "$superpowers_home/auth.json"
+[ "$(path_inode "$superpowers_home/auth.json")" = "$rotation_inode" ] \
   || fail 'rotation exhaustion did not restore entry inode'
-[ "$(path_mode "$hve_home/auth.json")" = '640' ] \
+[ "$(path_mode "$superpowers_home/auth.json")" = '640' ] \
   || fail 'rotation exhaustion did not restore entry mode'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'rotation exhaustion left auth debris'
 
 auth_marker_json 'rotation-absent-source-0' >"$HOME/.grok/auth.json"
-rm -f "$hve_home/auth.json" "$fixture_root/rotation-count"
+rm -f "$superpowers_home/auth.json" "$fixture_root/rotation-count"
 rotation_absent_status=0
-GRX_TEST_REAL_MV="$real_mv" GRX_TEST_AUTH_TARGET="$hve_home/auth.json" \
+GRX_TEST_REAL_MV="$real_mv" GRX_TEST_AUTH_TARGET="$superpowers_home/auth.json" \
   GRX_TEST_AUTH_SOURCE="$HOME/.grok/auth.json" \
   GRX_TEST_ROTATION_COUNT="$fixture_root/rotation-count" \
-  ./bin/grx update --check hve >"$fixture_root/rotation-absent.out" \
+  ./bin/grx update --check superpowers >"$fixture_root/rotation-absent.out" \
   2>"$fixture_root/rotation-absent.err" || rotation_absent_status=$?
 [ "$rotation_absent_status" -eq 2 ] \
   || fail "absent rotation exhaustion exited $rotation_absent_status"
 assert_line "grx: source authentication did not stabilize: $HOME/.grok/auth.json" \
   "$fixture_root/rotation-absent.err"
-[ ! -e "$hve_home/auth.json" ] && [ ! -L "$hve_home/auth.json" ] \
+[ ! -e "$superpowers_home/auth.json" ] && [ ! -L "$superpowers_home/auth.json" ] \
   || fail 'absent rotation exhaustion created auth target'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'absent rotation exhaustion left auth debris'
 rm "$fake_bin/mv"
 
 auth_marker_json 'fast-path-stable' >"$HOME/.grok/auth.json"
-auth_marker_json 'fast-path-entry-before' >"$hve_home/auth.json"
-chmod 0640 "$hve_home/auth.json"
+auth_marker_json 'fast-path-entry-before' >"$superpowers_home/auth.json"
+chmod 0640 "$superpowers_home/auth.json"
 fast_path_real_cp="$(command -v cp)"
 cat >"$fake_bin/mv" <<'FAKE_MV_FAST_PATH'
 #!/bin/bash
@@ -1493,22 +1450,22 @@ FAKE_MV_FAST_PATH
 chmod 0555 "$fake_bin/mv"
 fast_path_status=0
 GRX_TEST_REAL_MV="$real_mv" GRX_TEST_REAL_CP="$fast_path_real_cp" \
-  GRX_TEST_AUTH_TARGET="$hve_home/auth.json" \
+  GRX_TEST_AUTH_TARGET="$superpowers_home/auth.json" \
   GRX_TEST_AUTH_SOURCE="$HOME/.grok/auth.json" \
   GRX_TEST_FAST_PATH_MARKER="$fixture_root/fast-path-marker" \
-  ./bin/grx update --check hve >"$fixture_root/fast-path.out" \
+  ./bin/grx update --check superpowers >"$fixture_root/fast-path.out" \
   2>"$fixture_root/fast-path.err" || fast_path_status=$?
 [ "$fast_path_status" -eq 0 ] || fail "fast-path stabilization exited $fast_path_status"
-assert_auth_marker 'fast-path-stable' "$hve_home/auth.json"
-[ "$(path_mode "$hve_home/auth.json")" = '600' ] \
+assert_auth_marker 'fast-path-stable' "$superpowers_home/auth.json"
+[ "$(path_mode "$superpowers_home/auth.json")" = '600' ] \
   || fail 'fast-path stabilization did not commit target mode'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'fast-path stabilization left auth debris'
 rm "$fake_bin/mv"
 
 auth_marker_json 'race-old' >"$HOME/.grok/auth.json"
-auth_marker_json 'race-target-before' >"$hve_home/auth.json"
-chmod 0600 "$HOME/.grok/auth.json" "$hve_home/auth.json"
+auth_marker_json 'race-target-before' >"$superpowers_home/auth.json"
+chmod 0600 "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
 real_cp="$(command -v cp)"
 cat >"$fake_bin/cp" <<'FAKE_CP_RACE'
 #!/bin/bash
@@ -1549,7 +1506,7 @@ race_marker="$fixture_root/auth-race-copied-old"
 race_release="$fixture_root/auth-race-release"
 GRX_TEST_REAL_CP="$real_cp" GRX_TEST_RACE_MARKER="$race_marker" \
   GRX_TEST_RACE_RELEASE="$race_release" \
-  ./bin/grx update --check hve \
+  ./bin/grx update --check superpowers \
   >"$fixture_root/auth-race-old.out" 2>"$fixture_root/auth-race-old.err" &
 race_old_pid=$!
 wait_for_file "$race_marker"
@@ -1558,10 +1515,10 @@ GRX_TEST_REAL_CP="$real_cp" GRX_TEST_RACE_MARKER="$race_marker" \
   GRX_TEST_RACE_RELEASE="$race_release" \
   GRX_TEST_REAL_SED="$real_sed" \
   GRX_TEST_LOCK_READ_MODE='release-before-read' \
-  GRX_TEST_AUTH_LOCK="$hve_home/.auth.lock" \
+  GRX_TEST_AUTH_LOCK="$superpowers_home/.auth.lock" \
   GRX_TEST_LOCK_READ_MARKER="$fixture_root/auth-race-lock-read" \
   GRX_TEST_LOCK_READ_CONTINUE="$fixture_root/auth-race-lock-read-continue" \
-  ./bin/grx update --check hve \
+  ./bin/grx update --check superpowers \
   >"$fixture_root/auth-race-new.out" 2>"$fixture_root/auth-race-new.err" &
 race_new_pid=$!
 wait_for_file "$fixture_root/auth-race-lock-read"
@@ -1573,23 +1530,23 @@ race_new_status=0
 wait "$race_new_pid" || race_new_status=$?
 [ "$race_old_status" -eq 0 ] && [ "$race_new_status" -eq 0 ] \
   || fail "concurrent auth refreshes failed: old=$race_old_status new=$race_new_status"
-assert_auth_marker 'race-new' "$hve_home/auth.json"
-cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+assert_auth_marker 'race-new' "$superpowers_home/auth.json"
+cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
   || fail 'concurrent auth refresh returned with stale destination bytes'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'concurrent auth refresh left staging debris'
-[ ! -e "$hve_home/.auth.lock" ] && [ ! -L "$hve_home/.auth.lock" ] \
+[ ! -e "$superpowers_home/.auth.lock" ] && [ ! -L "$superpowers_home/.auth.lock" ] \
   || fail 'concurrent auth refresh left its lock'
 
 auth_marker_json 'handoff-new' >"$HOME/.grok/auth.json"
-auth_marker_json 'handoff-target-before' >"$hve_home/auth.json"
-chmod 0600 "$HOME/.grok/auth.json" "$hve_home/auth.json"
+auth_marker_json 'handoff-target-before' >"$superpowers_home/auth.json"
+chmod 0600 "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
 handoff_owner_one_marker="$fixture_root/auth-handoff-owner-one"
 handoff_owner_one_release="$fixture_root/auth-handoff-owner-one-release"
 GRX_TEST_REAL_CP="$real_cp" \
   GRX_TEST_RACE_MARKER="$handoff_owner_one_marker" \
   GRX_TEST_RACE_RELEASE="$handoff_owner_one_release" \
-  ./bin/grx update --check hve \
+  ./bin/grx update --check superpowers \
   >"$fixture_root/auth-handoff-owner-one.out" \
   2>"$fixture_root/auth-handoff-owner-one.err" &
 handoff_owner_one_pid=$!
@@ -1602,10 +1559,10 @@ GRX_TEST_REAL_CP="$real_cp" \
   GRX_TEST_RACE_RELEASE="$fixture_root/auth-handoff-waiter-unused-release" \
   GRX_TEST_REAL_SED="$real_sed" \
   GRX_TEST_LOCK_READ_MODE='capture-before-handoff' \
-  GRX_TEST_AUTH_LOCK="$hve_home/.auth.lock" \
+  GRX_TEST_AUTH_LOCK="$superpowers_home/.auth.lock" \
   GRX_TEST_LOCK_READ_MARKER="$fixture_root/auth-handoff-lock-captured" \
   GRX_TEST_LOCK_READ_CONTINUE="$fixture_root/auth-handoff-lock-continue" \
-  ./bin/grx update --check hve \
+  ./bin/grx update --check superpowers \
   >"$fixture_root/auth-handoff-waiter.out" \
   2>"$fixture_root/auth-handoff-waiter.err" &
 handoff_waiter_pid=$!
@@ -1621,7 +1578,7 @@ handoff_owner_two_release="$fixture_root/auth-handoff-owner-two-release"
 GRX_TEST_REAL_CP="$real_cp" \
   GRX_TEST_RACE_MARKER="$handoff_owner_two_marker" \
   GRX_TEST_RACE_RELEASE="$handoff_owner_two_release" \
-  ./bin/grx update --check hve \
+  ./bin/grx update --check superpowers \
   >"$fixture_root/auth-handoff-owner-two.out" \
   2>"$fixture_root/auth-handoff-owner-two.err" &
 handoff_owner_two_pid=$!
@@ -1637,10 +1594,10 @@ wait "$handoff_waiter_pid" || handoff_waiter_status=$?
   && [ "$handoff_owner_two_status" -eq 0 ] \
   && [ "$handoff_waiter_status" -eq 0 ] \
   || fail "lock-owner handoff failed: first=$handoff_owner_one_status second=$handoff_owner_two_status waiter=$handoff_waiter_status"
-assert_auth_marker 'handoff-owner-two' "$hve_home/auth.json"
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
+assert_auth_marker 'handoff-owner-two' "$superpowers_home/auth.json"
+[ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'lock-owner handoff left auth debris'
-[ ! -e "$hve_home/.auth.lock" ] && [ ! -L "$hve_home/.auth.lock" ] \
+[ ! -e "$superpowers_home/.auth.lock" ] && [ ! -L "$superpowers_home/.auth.lock" ] \
   || fail 'lock-owner handoff left its lock'
 rm "$fake_bin/cp" "$fake_bin/sed"
 
@@ -1653,10 +1610,10 @@ fi
 (
   cd "$worktree_with_spaces"
   FAKE_GROK_TTY_LOG="$launch_tty_log" \
-    "$prototype_root/bin/grx" hve --model 'grok-code-fast-1' -p 'hello world' -- --literal
+    "$prototype_root/bin/grx" superpowers --model 'grok-code-fast-1' -p 'hello world' -- --literal
 ) >"$launch_output"
 expected_launch_json="$(jq -cn \
-  --arg grokHome "$hve_home" \
+  --arg grokHome "$superpowers_home" \
   --arg home "$HOME" \
   --arg cwd "$worktree_with_spaces" \
   '{
@@ -1673,7 +1630,7 @@ last_launch_json="$(tail -n 1 "$fake_grok_log")"
   || fail 'launch did not set proxy routing while preserving profile home, HOME, cwd, and ordered arguments'
 assert_line "$expected_launch_tty" "$launch_tty_log"
 
-./bin/grx hve -m 'gpt-5.2-codex' -p 'short model flag' \
+./bin/grx superpowers -m 'gpt-5.2-codex' -p 'short model flag' \
   >"$fixture_root/short-model-launch.out"
 jq -s -e '
   last
@@ -1684,7 +1641,7 @@ jq -s -e '
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not preserve the explicit short model override'
 
-./bin/grx hve --permission-mode plan -p 'explicit permission mode' \
+./bin/grx superpowers --permission-mode plan -p 'explicit permission mode' \
   >"$fixture_root/explicit-permission-mode-launch.out"
 jq -s -e '
   last
@@ -1692,7 +1649,7 @@ jq -s -e '
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not preserve an explicit permission mode'
 
-./bin/grx hve --deny shell -p 'explicit deny rule' \
+./bin/grx superpowers --deny shell -p 'explicit deny rule' \
   >"$fixture_root/explicit-deny-launch.out"
 jq -s -e '
   last
@@ -1707,7 +1664,7 @@ for permission_option in \
   '--allowedTools=shell' \
   '--deny=shell' \
   '--disallowedTools=shell'; do
-  ./bin/grx hve "$permission_option" -p 'explicit permission option' \
+  ./bin/grx superpowers "$permission_option" -p 'explicit permission option' \
     >"$fixture_root/explicit-permission-option-launch.out"
   jq -s -e --arg option "$permission_option" '
     last
@@ -1716,7 +1673,7 @@ for permission_option in \
     || fail "launch did not preserve explicit permission option: $permission_option"
 done
 
-./bin/grx hve -p 'literal permission option' -- --permission-mode=plan \
+./bin/grx superpowers -p 'literal permission option' -- --permission-mode=plan \
   >"$fixture_root/literal-permission-option-launch.out"
 jq -s -e '
   last
@@ -1724,18 +1681,18 @@ jq -s -e '
 ' "$fake_grok_log" >/dev/null \
   || fail 'a literal permission-looking argument suppressed the default permission mode'
 
-hve_policy_before_live_launch="$fixture_root/hve-policy-before-live-launch.toml"
-cp "$hve_home/requirements.toml" "$hve_policy_before_live_launch"
-./bin/grx hve --fixture-live-session >"$fixture_root/hve-live-launch.out"
-[ -f "$hve_home/requirements.toml" ] \
+superpowers_policy_before_live_launch="$fixture_root/superpowers-policy-before-live-launch.toml"
+cp "$superpowers_home/requirements.toml" "$superpowers_policy_before_live_launch"
+./bin/grx superpowers --fixture-live-session >"$fixture_root/superpowers-live-launch.out"
+[ -f "$superpowers_home/requirements.toml" ] \
   || fail 'live launch removed the managed requirements policy'
-cmp -s "$hve_policy_before_live_launch" "$hve_home/requirements.toml" \
+cmp -s "$superpowers_policy_before_live_launch" "$superpowers_home/requirements.toml" \
   || fail 'live launch changed the managed requirements policy'
-[ "$(path_mode "$hve_home/requirements.toml")" = '644' ] \
+[ "$(path_mode "$superpowers_home/requirements.toml")" = '644' ] \
   || fail 'live launch changed the managed requirements policy mode'
-./bin/grx doctor hve >"$fixture_root/hve-after-live-doctor.out"
-assert_line 'hve: healthy (plugin hve-core-all, version 3.3.101)' \
-  "$fixture_root/hve-after-live-doctor.out"
+./bin/grx doctor superpowers >"$fixture_root/superpowers-after-live-doctor.out"
+assert_line 'superpowers: healthy (plugin superpowers, version 6.2.0)' \
+  "$fixture_root/superpowers-after-live-doctor.out"
 jq -s -e '
   [ .[] | select(
       .args == ["plugin","list","--json"]
@@ -1755,62 +1712,62 @@ assert_launch_repairs_current_policy() {
   local calls_after
 
   calls_before="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-  ./bin/grx hve inspect --json >"$fixture_root/$fixture_name-inspect.out" \
+  ./bin/grx superpowers inspect --json >"$fixture_root/$fixture_name-inspect.out" \
     2>"$fixture_root/$fixture_name-inspect.err" \
     || fail "launch did not repair the $fixture_name policy"
-  cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+  cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
     || fail "launch did not restore the $fixture_name policy"
   calls_after="$(wc -l <"$fake_grok_log" | tr -d ' ')"
   [ "$calls_after" -gt "$calls_before" ] \
     || fail "launch did not invoke Grok after repairing the $fixture_name policy"
 }
 
-hve_old_policy="$fixture_root/hve-old-requirements.toml"
-sed '1,2d' "$expected_policy" >"$hve_old_policy"
-cp "$hve_old_policy" "$hve_home/requirements.toml"
-if ./bin/grx doctor hve >"$fixture_root/missing-fail-closed.out" \
+superpowers_old_policy="$fixture_root/superpowers-old-requirements.toml"
+sed '1,2d' "$expected_policy" >"$superpowers_old_policy"
+cp "$superpowers_old_policy" "$superpowers_home/requirements.toml"
+if ./bin/grx doctor superpowers >"$fixture_root/missing-fail-closed.out" \
   2>"$fixture_root/missing-fail-closed.err"; then
   fail 'doctor accepted policy without fail_closed'
 fi
-assert_line 'grx: requirements policy does not match: hve' \
+assert_line 'grx: requirements policy does not match: superpowers' \
   "$fixture_root/missing-fail-closed.err"
 assert_launch_repairs_current_policy 'missing-fail-closed'
-cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
   || fail 'launch did not restore missing fail_closed = true'
-cp "$hve_old_policy" "$hve_home/requirements.toml"
-./bin/grx setup hve >"$fixture_root/hve-old-policy-upgrade.out"
-assert_line 'hve: ready' "$fixture_root/hve-old-policy-upgrade.out"
-cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+cp "$superpowers_old_policy" "$superpowers_home/requirements.toml"
+./bin/grx setup superpowers >"$fixture_root/superpowers-old-policy-upgrade.out"
+assert_line 'superpowers: ready' "$fixture_root/superpowers-old-policy-upgrade.out"
+cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
   || fail 'setup did not upgrade the otherwise-safe old policy'
 
-hve_plugins_file="$hve_home/fake-state/plugins.json"
-hve_install_path="$hve_home/installed-plugins/hve-core-fixture"
-hve_local_manifest="$hve_install_path/plugins/hve-core-all/plugin.json"
-jq -e --arg path "$hve_install_path" '. == [{
+superpowers_plugins_file="$superpowers_home/fake-state/plugins.json"
+superpowers_install_path="$superpowers_home/installed-plugins/superpowers-fixture"
+superpowers_local_manifest="$superpowers_install_path/.claude-plugin/plugin.json"
+jq -e --arg path "$superpowers_install_path" '. == [{
   status:"installed",
-  name:"hve-core-all",
-  repo_key:"hve-core-fixture",
+  name:"superpowers",
+  repo_key:"superpowers-fixture",
   version:null,
   path:$path,
-  source:"https://github.com/microsoft/hve-core",
+  source:"https://github.com/obra/superpowers",
   marketplace:null
-}]' "$hve_plugins_file" >/dev/null \
-  || fail 'fake Grok did not emit native HVE inventory'
+}]' "$superpowers_plugins_file" >/dev/null \
+  || fail 'fake Grok did not emit native Superpowers inventory'
 jq -e '. == {
-  name:"hve-core-all",
-  version:"3.3.101",
-  repository:"https://github.com/microsoft/hve-core"
-}' "$hve_local_manifest" >/dev/null \
-  || fail 'fake Grok did not materialize the HVE plugin manifest'
+  name:"superpowers",
+  version:"6.2.0",
+  repository:"https://github.com/obra/superpowers"
+}' "$superpowers_local_manifest" >/dev/null \
+  || fail 'fake Grok did not materialize the Superpowers plugin manifest'
 
-hve_doctor_output="$fixture_root/hve-doctor.out"
-./bin/grx doctor hve >"$hve_doctor_output"
-if ! cmp -s "$hve_doctor_output" <(printf 'hve: healthy (plugin hve-core-all, version 3.3.101)\n'); then
-  fail 'doctor did not report the exact healthy HVE version'
+superpowers_doctor_output="$fixture_root/superpowers-doctor.out"
+./bin/grx doctor superpowers >"$superpowers_doctor_output"
+if ! cmp -s "$superpowers_doctor_output" <(printf 'superpowers: healthy (plugin superpowers, version 6.2.0)\n'); then
+  fail 'doctor did not report the exact healthy Superpowers version'
 fi
 
-hve_poisoned_base_inventory="$(cat "$hve_plugins_file")"
-hve_poisoned_inventory="$(printf '%s\n' "$hve_poisoned_base_inventory" | jq -c '. + [{
+superpowers_poisoned_base_inventory="$(cat "$superpowers_plugins_file")"
+superpowers_poisoned_inventory="$(printf '%s\n' "$superpowers_poisoned_base_inventory" | jq -c '. + [{
   status: "installed",
   name: "rogue-personal-plugin",
   repo_key: "rogue-personal-plugin",
@@ -1828,35 +1785,35 @@ assert_poisoned_lifecycle_rejected() {
   local calls_before
   local new_log="$fixture_root/$fixture_name-grok.jsonl"
 
-  printf '%s\n' "$hve_poisoned_base_inventory" >"$hve_plugins_file"
+  printf '%s\n' "$superpowers_poisoned_base_inventory" >"$superpowers_plugins_file"
   unset FAKE_GROK_MCP_JSON || true
-  rm -rf "$hve_home/skills" "$hve_home/commands"
+  rm -rf "$superpowers_home/skills" "$superpowers_home/commands"
   case "$poison" in
     plugin)
-      printf '%s\n' "$hve_poisoned_inventory" >"$hve_plugins_file"
+      printf '%s\n' "$superpowers_poisoned_inventory" >"$superpowers_plugins_file"
       ;;
     skills)
-      mkdir -p "$hve_home/skills"
-      printf 'personal leakage\n' >"$hve_home/skills/personal"
+      mkdir -p "$superpowers_home/skills"
+      printf 'personal leakage\n' >"$superpowers_home/skills/personal"
       ;;
     commands)
-      mkdir -p "$hve_home/commands"
-      printf 'personal leakage\n' >"$hve_home/commands/personal"
+      mkdir -p "$superpowers_home/commands"
+      printf 'personal leakage\n' >"$superpowers_home/commands/personal"
       ;;
     *) fail "unknown poisoned lifecycle fixture: $poison" ;;
   esac
 
-  tree_before="$(profile_tree_hash "$hve_home")"
+  tree_before="$(profile_tree_hash "$superpowers_home")"
   calls_before="$(wc -l <"$fake_grok_log" | tr -d ' ')"
   case "$lifecycle" in
     launch)
-      if ./bin/grx hve --poisoned-launch >"$fixture_root/$fixture_name.out" \
+      if ./bin/grx superpowers --poisoned-launch >"$fixture_root/$fixture_name.out" \
         2>"$fixture_root/$fixture_name.err"; then
         fail "launch accepted $poison state"
       fi
       ;;
     setup|repair|update)
-      if ./bin/grx "$lifecycle" hve >"$fixture_root/$fixture_name.out" \
+      if ./bin/grx "$lifecycle" superpowers >"$fixture_root/$fixture_name.out" \
         2>"$fixture_root/$fixture_name.err"; then
         fail "$lifecycle accepted $poison state"
       fi
@@ -1864,7 +1821,7 @@ assert_poisoned_lifecycle_rejected() {
     *) fail "unknown poisoned lifecycle: $lifecycle" ;;
   esac
   assert_line "$expected" "$fixture_root/$fixture_name.err"
-  [ "$(profile_tree_hash "$hve_home")" = "$tree_before" ] \
+  [ "$(profile_tree_hash "$superpowers_home")" = "$tree_before" ] \
     || fail "$lifecycle mutated the $poison profile before rejection"
   tail -n "+$((calls_before + 1))" "$fake_grok_log" >"$new_log"
   if jq -s -e 'any(.[].args; .[0:2] == ["plugin","install"] or .[0:2] == ["plugin","update"])' \
@@ -1877,183 +1834,183 @@ assert_poisoned_lifecycle_rejected() {
   fi
 
   unset FAKE_GROK_MCP_JSON || true
-  printf '%s\n' "$hve_poisoned_base_inventory" >"$hve_plugins_file"
-  rm -rf "$hve_home/skills" "$hve_home/commands"
+  printf '%s\n' "$superpowers_poisoned_base_inventory" >"$superpowers_plugins_file"
+  rm -rf "$superpowers_home/skills" "$superpowers_home/commands"
 }
 
 assert_poisoned_lifecycle_rejected update skills \
-  'grx: floating skills are unhealthy: hve'
+  'grx: floating skills are unhealthy: superpowers'
 assert_poisoned_lifecycle_rejected update commands \
-  "grx: standalone capability directory is not empty: $hve_home/commands"
+  "grx: standalone capability directory is not empty: $superpowers_home/commands"
 
-auth_marker_json 'profile-auth' >"$hve_home/auth.json"
-chmod 0600 "$hve_home/auth.json"
-chmod 0600 "$hve_home/requirements.toml"
-installs_before_repeat="$(jq -s --arg home "$hve_home" '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","install"])] | length' "$fake_grok_log")"
-./bin/grx setup hve >"$fixture_root/hve-repeat-setup.out"
-installs_after_repeat="$(jq -s --arg home "$hve_home" '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","install"])] | length' "$fake_grok_log")"
+auth_marker_json 'profile-auth' >"$superpowers_home/auth.json"
+chmod 0600 "$superpowers_home/auth.json"
+chmod 0600 "$superpowers_home/requirements.toml"
+installs_before_repeat="$(jq -s --arg home "$superpowers_home" '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","install"])] | length' "$fake_grok_log")"
+./bin/grx setup superpowers >"$fixture_root/superpowers-repeat-setup.out"
+installs_after_repeat="$(jq -s --arg home "$superpowers_home" '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","install"])] | length' "$fake_grok_log")"
 [ "$installs_after_repeat" = "$installs_before_repeat" ] \
   || fail 'repeated setup reinstalled an existing plugin'
-cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
   || fail 'repeated setup did not refresh authentication'
-[ "$(path_mode "$hve_home/requirements.toml")" = '644' ] \
+[ "$(path_mode "$superpowers_home/requirements.toml")" = '644' ] \
   || fail 'repeated setup did not normalize policy mode 0644'
 
-hve_hash_before_check="$(profile_tree_hash "$hve_home")"
-./bin/grx update --check hve >"$fixture_root/hve-current.out"
-if ! cmp -s "$fixture_root/hve-current.out" <(printf 'hve: current (3.3.101)\n'); then
-  fail 'healthy HVE update check did not report the exact current version'
+superpowers_hash_before_check="$(profile_tree_hash "$superpowers_home")"
+./bin/grx update --check superpowers >"$fixture_root/superpowers-current.out"
+if ! cmp -s "$fixture_root/superpowers-current.out" <(printf 'superpowers: current (6.2.0)\n'); then
+  fail 'healthy Superpowers update check did not report the exact current version'
 fi
-hve_hash_after_check="$(profile_tree_hash "$hve_home")"
-[ "$hve_hash_after_check" = "$hve_hash_before_check" ] \
-  || fail 'healthy HVE update check mutated the profile tree'
+superpowers_hash_after_check="$(profile_tree_hash "$superpowers_home")"
+[ "$superpowers_hash_after_check" = "$superpowers_hash_before_check" ] \
+  || fail 'healthy Superpowers update check mutated the profile tree'
 
-assert_hve_inventory_check_failure() {
+assert_superpowers_inventory_check_failure() {
   local fixture_name="$1"
   local inventory="$2"
   local status=0
 
-  printf '%s\n' "$inventory" >"$hve_plugins_file"
-  ./bin/grx update --check hve >"$fixture_root/$fixture_name.out" \
+  printf '%s\n' "$inventory" >"$superpowers_plugins_file"
+  ./bin/grx update --check superpowers >"$fixture_root/$fixture_name.out" \
     2>"$fixture_root/$fixture_name.err" || status=$?
   [ "$status" -eq 2 ] \
     || fail "$fixture_name inventory check exited $status instead of 2"
-  assert_line 'grx: failed to read installed plugin version for hve' \
+  assert_line 'grx: failed to read installed plugin version for superpowers' \
     "$fixture_root/$fixture_name.err"
 }
 
-hve_native_inventory="$(cat "$hve_plugins_file")"
-hve_native_manifest="$(cat "$hve_local_manifest")"
-hve_wrong_source_inventory="$(printf '%s\n' "$hve_native_inventory" \
+superpowers_native_inventory="$(cat "$superpowers_plugins_file")"
+superpowers_native_manifest="$(cat "$superpowers_local_manifest")"
+superpowers_wrong_source_inventory="$(printf '%s\n' "$superpowers_native_inventory" \
   | jq -c '.[0].source = "https://github.com/fixture/wrong-source"')"
-assert_hve_inventory_check_failure 'hve-wrong-source' "$hve_wrong_source_inventory"
-hve_updates_before_invalid="$(jq -s --arg home "$hve_home" \
+assert_superpowers_inventory_check_failure 'superpowers-wrong-source' "$superpowers_wrong_source_inventory"
+superpowers_updates_before_invalid="$(jq -s --arg home "$superpowers_home" \
   '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","update"])] | length' \
   "$fake_grok_log")"
-if ./bin/grx update hve >"$fixture_root/hve-invalid-update.out" \
-  2>"$fixture_root/hve-invalid-update.err"; then
+if ./bin/grx update superpowers >"$fixture_root/superpowers-invalid-update.out" \
+  2>"$fixture_root/superpowers-invalid-update.err"; then
   fail 'update accepted an installed plugin with the wrong source'
 fi
-hve_updates_after_invalid="$(jq -s --arg home "$hve_home" \
+superpowers_updates_after_invalid="$(jq -s --arg home "$superpowers_home" \
   '[.[] | select(.grokHome == $home and .args[0:2] == ["plugin","update"])] | length' \
   "$fake_grok_log")"
-[ "$hve_updates_after_invalid" = "$hve_updates_before_invalid" ] \
+[ "$superpowers_updates_after_invalid" = "$superpowers_updates_before_invalid" ] \
   || fail 'invalid plugin provenance invoked native update'
 
-printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
-assert_hve_inventory_check_failure 'hve-object-inventory' \
-  "$(printf '%s\n' "$hve_native_inventory" | jq -c '.[0]')"
-assert_hve_inventory_check_failure 'hve-empty-version' \
-  "$(printf '%s\n' "$hve_native_inventory" | jq -c '.[0].version = ""')"
-assert_hve_inventory_check_failure 'hve-duplicate-inventory' \
-  "$(printf '%s\n' "$hve_native_inventory" | jq -c '. + .')"
-assert_hve_inventory_check_failure 'hve-unexpected-then-valid-document' \
-  "$(printf '{}\n%s\n' "$hve_native_inventory")"
-assert_hve_inventory_check_failure 'hve-valid-then-unexpected-document' \
-  "$(printf '%s\n{}\n' "$hve_native_inventory")"
-assert_hve_inventory_check_failure 'hve-unexpected-then-empty-document' \
+printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
+assert_superpowers_inventory_check_failure 'superpowers-object-inventory' \
+  "$(printf '%s\n' "$superpowers_native_inventory" | jq -c '.[0]')"
+assert_superpowers_inventory_check_failure 'superpowers-empty-version' \
+  "$(printf '%s\n' "$superpowers_native_inventory" | jq -c '.[0].version = ""')"
+assert_superpowers_inventory_check_failure 'superpowers-duplicate-inventory' \
+  "$(printf '%s\n' "$superpowers_native_inventory" | jq -c '. + .')"
+assert_superpowers_inventory_check_failure 'superpowers-unexpected-then-valid-document' \
+  "$(printf '{}\n%s\n' "$superpowers_native_inventory")"
+assert_superpowers_inventory_check_failure 'superpowers-valid-then-unexpected-document' \
+  "$(printf '%s\n{}\n' "$superpowers_native_inventory")"
+assert_superpowers_inventory_check_failure 'superpowers-unexpected-then-empty-document' \
   "$(printf '{}\n[]\n')"
-assert_hve_inventory_check_failure 'hve-empty-then-unexpected-document' \
+assert_superpowers_inventory_check_failure 'superpowers-empty-then-unexpected-document' \
   "$(printf '[]\n{}\n')"
-assert_hve_inventory_check_failure 'hve-missing-path' \
-  "$(printf '%s\n' "$hve_native_inventory" | jq -c 'del(.[0].path)')"
+assert_superpowers_inventory_check_failure 'superpowers-missing-path' \
+  "$(printf '%s\n' "$superpowers_native_inventory" | jq -c 'del(.[0].path)')"
 
-hve_outside_install="$fixture_root/outside-hve-plugin"
-mkdir -p "$hve_outside_install/plugins/hve-core-all"
-printf '%s\n' "$hve_native_manifest" \
-  >"$hve_outside_install/plugins/hve-core-all/plugin.json"
-assert_hve_inventory_check_failure 'hve-path-outside-profile' \
-  "$(printf '%s\n' "$hve_native_inventory" \
-    | jq -c --arg path "$hve_outside_install" '.[0].path = $path')"
+superpowers_outside_install="$fixture_root/outside-superpowers-plugin"
+mkdir -p "$superpowers_outside_install/.claude-plugin"
+printf '%s\n' "$superpowers_native_manifest" \
+  >"$superpowers_outside_install/.claude-plugin/plugin.json"
+assert_superpowers_inventory_check_failure 'superpowers-path-outside-profile' \
+  "$(printf '%s\n' "$superpowers_native_inventory" \
+    | jq -c --arg path "$superpowers_outside_install" '.[0].path = $path')"
 
-hve_symlink_install="$hve_home/installed-plugins/hve-symlink-escape"
-ln -s "$hve_outside_install" "$hve_symlink_install"
-assert_hve_inventory_check_failure 'hve-path-symlink-escape' \
-  "$(printf '%s\n' "$hve_native_inventory" \
-    | jq -c --arg path "$hve_symlink_install" '.[0].path = $path')"
-rm "$hve_symlink_install"
+superpowers_symlink_install="$superpowers_home/installed-plugins/superpowers-symlink-escape"
+ln -s "$superpowers_outside_install" "$superpowers_symlink_install"
+assert_superpowers_inventory_check_failure 'superpowers-path-symlink-escape' \
+  "$(printf '%s\n' "$superpowers_native_inventory" \
+    | jq -c --arg path "$superpowers_symlink_install" '.[0].path = $path')"
+rm "$superpowers_symlink_install"
 
-mv "$hve_local_manifest" "$fixture_root/hve-local-manifest.saved"
-assert_hve_inventory_check_failure 'hve-missing-local-manifest' "$hve_native_inventory"
-mv "$fixture_root/hve-local-manifest.saved" "$hve_local_manifest"
+mv "$superpowers_local_manifest" "$fixture_root/superpowers-local-manifest.saved"
+assert_superpowers_inventory_check_failure 'superpowers-missing-local-manifest' "$superpowers_native_inventory"
+mv "$fixture_root/superpowers-local-manifest.saved" "$superpowers_local_manifest"
 
-printf '{not-json\n' >"$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-malformed-local-manifest' "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '{not-json\n' >"$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-malformed-local-manifest' "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '{}\n%s\n' "$hve_native_manifest" >"$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-unexpected-then-valid' \
-  "$hve_native_inventory"
-printf '%s\n{}\n' "$hve_native_manifest" >"$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-valid-then-unexpected' \
-  "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '{}\n%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-unexpected-then-valid' \
+  "$superpowers_native_inventory"
+printf '%s\n{}\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-valid-then-unexpected' \
+  "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '%s\n' "$hve_native_manifest" \
-  | jq '.name = "wrong-plugin"' >"$fixture_root/hve-wrong-manifest-name.json"
-mv "$fixture_root/hve-wrong-manifest-name.json" "$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-name-mismatch' "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '%s\n' "$superpowers_native_manifest" \
+  | jq '.name = "wrong-plugin"' >"$fixture_root/superpowers-wrong-manifest-name.json"
+mv "$fixture_root/superpowers-wrong-manifest-name.json" "$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-name-mismatch' "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '%s\n' "$hve_native_manifest" \
+printf '%s\n' "$superpowers_native_manifest" \
   | jq '.repository = "https://github.com/fixture/wrong-repository"' \
-    >"$fixture_root/hve-wrong-manifest-repository.json"
-mv "$fixture_root/hve-wrong-manifest-repository.json" "$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-repository-mismatch' \
-  "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+    >"$fixture_root/superpowers-wrong-manifest-repository.json"
+mv "$fixture_root/superpowers-wrong-manifest-repository.json" "$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-repository-mismatch' \
+  "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '%s\n' "$hve_native_manifest" | jq '.repository = 42' \
-  >"$fixture_root/hve-number-manifest-repository.json"
-mv "$fixture_root/hve-number-manifest-repository.json" "$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-repository-number' \
-  "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '%s\n' "$superpowers_native_manifest" | jq '.repository = 42' \
+  >"$fixture_root/superpowers-number-manifest-repository.json"
+mv "$fixture_root/superpowers-number-manifest-repository.json" "$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-repository-number' \
+  "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '%s\n' "$hve_native_manifest" | jq '.repository = {url:"https://github.com/microsoft/hve-core"}' \
-  >"$fixture_root/hve-object-manifest-repository.json"
-mv "$fixture_root/hve-object-manifest-repository.json" "$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-repository-object' \
-  "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '%s\n' "$superpowers_native_manifest" | jq '.repository = {url:"https://github.com/obra/superpowers"}' \
+  >"$fixture_root/superpowers-object-manifest-repository.json"
+mv "$fixture_root/superpowers-object-manifest-repository.json" "$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-repository-object' \
+  "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '%s\n' "$hve_native_manifest" | jq '.repository = null' \
-  >"$fixture_root/hve-null-manifest-repository.json"
-mv "$fixture_root/hve-null-manifest-repository.json" "$hve_local_manifest"
-./bin/grx update --check hve >"$fixture_root/hve-null-manifest-repository.out"
-assert_line 'hve: current (3.3.101)' \
-  "$fixture_root/hve-null-manifest-repository.out"
+printf '%s\n' "$superpowers_native_manifest" | jq '.repository = null' \
+  >"$fixture_root/superpowers-null-manifest-repository.json"
+mv "$fixture_root/superpowers-null-manifest-repository.json" "$superpowers_local_manifest"
+./bin/grx update --check superpowers >"$fixture_root/superpowers-null-manifest-repository.out"
+assert_line 'superpowers: current (6.2.0)' \
+  "$fixture_root/superpowers-null-manifest-repository.out"
 
-printf '%s\n' "$hve_native_manifest" | jq 'del(.repository)' \
-  >"$fixture_root/hve-absent-manifest-repository.json"
-mv "$fixture_root/hve-absent-manifest-repository.json" "$hve_local_manifest"
-./bin/grx update --check hve >"$fixture_root/hve-absent-manifest-repository.out"
-assert_line 'hve: current (3.3.101)' \
-  "$fixture_root/hve-absent-manifest-repository.out"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '%s\n' "$superpowers_native_manifest" | jq 'del(.repository)' \
+  >"$fixture_root/superpowers-absent-manifest-repository.json"
+mv "$fixture_root/superpowers-absent-manifest-repository.json" "$superpowers_local_manifest"
+./bin/grx update --check superpowers >"$fixture_root/superpowers-absent-manifest-repository.out"
+assert_line 'superpowers: current (6.2.0)' \
+  "$fixture_root/superpowers-absent-manifest-repository.out"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-printf '%s\n' "$hve_native_manifest" \
-  | jq '.version = ""' >"$fixture_root/hve-empty-manifest-version.json"
-mv "$fixture_root/hve-empty-manifest-version.json" "$hve_local_manifest"
-assert_hve_inventory_check_failure 'hve-local-manifest-version-mismatch' "$hve_native_inventory"
-printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+printf '%s\n' "$superpowers_native_manifest" \
+  | jq '.version = ""' >"$fixture_root/superpowers-empty-manifest-version.json"
+mv "$fixture_root/superpowers-empty-manifest-version.json" "$superpowers_local_manifest"
+assert_superpowers_inventory_check_failure 'superpowers-local-manifest-version-mismatch' "$superpowers_native_inventory"
+printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
-assert_hve_inventory_check_failure 'hve-inventory-manifest-version-mismatch' \
-  "$(printf '%s\n' "$hve_native_inventory" | jq -c '.[0].version = "9.9.9"')"
+assert_superpowers_inventory_check_failure 'superpowers-inventory-manifest-version-mismatch' \
+  "$(printf '%s\n' "$superpowers_native_inventory" | jq -c '.[0].version = "9.9.9"')"
 
-hve_legacy_inventory="$(printf '%s\n' "$hve_native_inventory" | jq -c '
-  .[0].source = "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all"
-  | .[0].version = "3.3.101"
+superpowers_legacy_inventory="$(printf '%s\n' "$superpowers_native_inventory" | jq -c '
+  .[0].source = "obra/superpowers"
+  | .[0].version = "6.2.0"
 ')"
-printf '%s\n' "$hve_legacy_inventory" >"$hve_plugins_file"
-./bin/grx update --check hve >"$fixture_root/hve-legacy-current.out"
-assert_line 'hve: current (3.3.101)' "$fixture_root/hve-legacy-current.out"
-printf '%s\n' "$hve_native_inventory" | jq -c 'del(.[0].version)' \
-  >"$hve_plugins_file"
-./bin/grx update --check hve >"$fixture_root/hve-missing-version-current.out"
-assert_line 'hve: current (3.3.101)' \
-  "$fixture_root/hve-missing-version-current.out"
-printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
+printf '%s\n' "$superpowers_legacy_inventory" >"$superpowers_plugins_file"
+./bin/grx update --check superpowers >"$fixture_root/superpowers-legacy-current.out"
+assert_line 'superpowers: current (6.2.0)' "$fixture_root/superpowers-legacy-current.out"
+printf '%s\n' "$superpowers_native_inventory" | jq -c 'del(.[0].version)' \
+  >"$superpowers_plugins_file"
+./bin/grx update --check superpowers >"$fixture_root/superpowers-missing-version-current.out"
+assert_line 'superpowers: current (6.2.0)' \
+  "$fixture_root/superpowers-missing-version-current.out"
+printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
 
 assert_read_only_lifecycle_preflight() {
   local lifecycle="$1"
@@ -2064,48 +2021,48 @@ assert_read_only_lifecycle_preflight() {
   local native_mutations_before
   local native_mutations_after
 
-  printf 'preflight policy sentinel\n' >"$hve_home/requirements.toml"
-  cp "$HOME/.grok/auth.json" "$hve_home/auth.json"
-  chmod 0711 "$hve_home"
-  chmod 0600 "$hve_home/requirements.toml"
-  chmod 0600 "$hve_home/auth.json"
-  printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
-  printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+  printf 'preflight policy sentinel\n' >"$superpowers_home/requirements.toml"
+  cp "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
+  chmod 0711 "$superpowers_home"
+  chmod 0600 "$superpowers_home/requirements.toml"
+  chmod 0600 "$superpowers_home/auth.json"
+  printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
+  printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
   case "$unsafe_kind" in
     source)
-      printf '%s\n' "$hve_native_inventory" \
+      printf '%s\n' "$superpowers_native_inventory" \
         | jq '.[0].source = "https://github.com/fixture/wrong-source"' \
-          >"$hve_plugins_file"
+          >"$superpowers_plugins_file"
       ;;
     path)
-      printf '%s\n' "$hve_native_inventory" \
-        | jq --arg path "$hve_outside_install" '.[0].path = $path' \
-          >"$hve_plugins_file"
+      printf '%s\n' "$superpowers_native_inventory" \
+        | jq --arg path "$superpowers_outside_install" '.[0].path = $path' \
+          >"$superpowers_plugins_file"
       ;;
     manifest)
-      printf '{not-json\n' >"$hve_local_manifest"
+      printf '{not-json\n' >"$superpowers_local_manifest"
       ;;
     *) fail "unknown lifecycle preflight fixture: $unsafe_kind" ;;
   esac
 
-  before_hash="$(profile_tree_hash "$hve_home")"
-  native_mutations_before="$(jq -s --arg home "$hve_home" '
+  before_hash="$(profile_tree_hash "$superpowers_home")"
+  native_mutations_before="$(jq -s --arg home "$superpowers_home" '
     [.[] | select(
       .grokHome == $home
       and (.args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])
     )] | length
   ' "$fake_grok_log")"
 
-  if ./bin/grx "$lifecycle" hve >"$fixture_root/$fixture_name.out" \
+  if ./bin/grx "$lifecycle" superpowers >"$fixture_root/$fixture_name.out" \
     2>"$fixture_root/$fixture_name.err"; then
     fail "$lifecycle accepted unsafe existing $unsafe_kind plugin state"
   fi
 
-  after_hash="$(profile_tree_hash "$hve_home")"
+  after_hash="$(profile_tree_hash "$superpowers_home")"
   [ "$after_hash" = "$before_hash" ] \
     || fail "$lifecycle changed existing profile tree before rejecting unsafe $unsafe_kind"
-  native_mutations_after="$(jq -s --arg home "$hve_home" '
+  native_mutations_after="$(jq -s --arg home "$superpowers_home" '
     [.[] | select(
       .grokHome == $home
       and (.args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])
@@ -2113,23 +2070,23 @@ assert_read_only_lifecycle_preflight() {
   ' "$fake_grok_log")"
   [ "$native_mutations_after" = "$native_mutations_before" ] \
     || fail "$lifecycle invoked install or update for unsafe existing $unsafe_kind state"
-  assert_line 'preflight policy sentinel' "$hve_home/requirements.toml"
-  cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+  assert_line 'preflight policy sentinel' "$superpowers_home/requirements.toml"
+  cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
     || fail "$lifecycle changed authentication while rejecting unsafe $unsafe_kind plugin state"
-  [ "$(path_mode "$hve_home")" = '711' ] \
+  [ "$(path_mode "$superpowers_home")" = '711' ] \
     || fail "$lifecycle changed profile mode before rejecting unsafe $unsafe_kind"
-  [ "$(path_mode "$hve_home/requirements.toml")" = '600' ] \
+  [ "$(path_mode "$superpowers_home/requirements.toml")" = '600' ] \
     || fail "$lifecycle changed policy mode before rejecting unsafe $unsafe_kind"
-  [ "$(path_mode "$hve_home/auth.json")" = '600' ] \
+  [ "$(path_mode "$superpowers_home/auth.json")" = '600' ] \
     || fail "$lifecycle changed auth mode before rejecting unsafe $unsafe_kind"
 
-  chmod 0700 "$hve_home"
-  printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
-  printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
-  cp "$expected_policy" "$hve_home/requirements.toml"
-  chmod 0644 "$hve_home/requirements.toml"
-  cp "$HOME/.grok/auth.json" "$hve_home/auth.json"
-  chmod 0600 "$hve_home/auth.json"
+  chmod 0700 "$superpowers_home"
+  printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
+  printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
+  cp "$expected_policy" "$superpowers_home/requirements.toml"
+  chmod 0644 "$superpowers_home/requirements.toml"
+  cp "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
+  chmod 0600 "$superpowers_home/auth.json"
 }
 
 for lifecycle in setup repair; do
@@ -2148,71 +2105,71 @@ assert_filesystem_preflight_failure() {
   local native_mutations_before
   local native_mutations_after
 
-  chmod 0700 "$hve_home"
-  chmod -R u+rwx "$hve_home/skills" "$hve_home/commands" 2>/dev/null || true
-  rm -rf "$hve_home/skills" "$hve_home/commands"
-  rm -rf "$hve_home/auth.json" "$hve_home/requirements.toml"
-  printf 'preflight policy sentinel\n' >"$hve_home/requirements.toml"
-  cp "$HOME/.grok/auth.json" "$hve_home/auth.json"
-  chmod 0711 "$hve_home"
-  chmod 0600 "$hve_home/requirements.toml"
-  chmod 0600 "$hve_home/auth.json"
-  printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
-  printf '%s\n' "$hve_native_manifest" >"$hve_local_manifest"
+  chmod 0700 "$superpowers_home"
+  chmod -R u+rwx "$superpowers_home/skills" "$superpowers_home/commands" 2>/dev/null || true
+  rm -rf "$superpowers_home/skills" "$superpowers_home/commands"
+  rm -rf "$superpowers_home/auth.json" "$superpowers_home/requirements.toml"
+  printf 'preflight policy sentinel\n' >"$superpowers_home/requirements.toml"
+  cp "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
+  chmod 0711 "$superpowers_home"
+  chmod 0600 "$superpowers_home/requirements.toml"
+  chmod 0600 "$superpowers_home/auth.json"
+  printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
+  printf '%s\n' "$superpowers_native_manifest" >"$superpowers_local_manifest"
 
   case "$unsafe_kind" in
     auth-mode)
-      chmod 0644 "$hve_home/auth.json"
+      chmod 0644 "$superpowers_home/auth.json"
       ;;
     auth-symlink)
-      rm "$hve_home/auth.json"
+      rm "$superpowers_home/auth.json"
       printf 'outside auth sentinel\n' >"$outside_target"
-      ln -s "$outside_target" "$hve_home/auth.json"
+      ln -s "$outside_target" "$superpowers_home/auth.json"
       ;;
     policy-directory)
-      rm "$hve_home/requirements.toml"
-      mkdir "$hve_home/requirements.toml"
+      rm "$superpowers_home/requirements.toml"
+      mkdir "$superpowers_home/requirements.toml"
       ;;
     policy-symlink)
-      rm "$hve_home/requirements.toml"
+      rm "$superpowers_home/requirements.toml"
       printf 'outside policy sentinel\n' >"$outside_target"
-      ln -s "$outside_target" "$hve_home/requirements.toml"
+      ln -s "$outside_target" "$superpowers_home/requirements.toml"
       ;;
     skills-symlink)
       mkdir "$outside_target"
-      ln -s "$outside_target" "$hve_home/skills"
+      ln -s "$outside_target" "$superpowers_home/skills"
       ;;
     commands-file)
-      printf 'not a directory\n' >"$hve_home/commands"
+      printf 'not a directory\n' >"$superpowers_home/commands"
       ;;
     skills-nonempty)
-      mkdir -p "$hve_home/skills"
-      printf 'unexpected\n' >"$hve_home/skills/unexpected"
+      mkdir -p "$superpowers_home/skills"
+      printf 'unexpected\n' >"$superpowers_home/skills/unexpected"
       ;;
     commands-unreadable)
-      mkdir -p "$hve_home/commands"
-      chmod 0000 "$hve_home/commands"
+      mkdir -p "$superpowers_home/commands"
+      chmod 0000 "$superpowers_home/commands"
       ;;
     *) fail "unknown filesystem preflight fixture: $unsafe_kind" ;;
   esac
 
-  before_hash="$(profile_tree_hash "$hve_home")"
-  native_mutations_before="$(jq -s --arg home "$hve_home" '
+  before_hash="$(profile_tree_hash "$superpowers_home")"
+  native_mutations_before="$(jq -s --arg home "$superpowers_home" '
     [.[] | select(
       .grokHome == $home
       and (.args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])
     )] | length
   ' "$fake_grok_log")"
 
-  if ./bin/grx "$lifecycle" hve >"$fixture_root/$fixture_name.out" \
+  if ./bin/grx "$lifecycle" superpowers >"$fixture_root/$fixture_name.out" \
     2>"$fixture_root/$fixture_name.err"; then
     fail "$lifecycle accepted unsafe existing filesystem state: $unsafe_kind"
   fi
 
-  after_hash="$(profile_tree_hash "$hve_home")"
+  after_hash="$(profile_tree_hash "$superpowers_home")"
   [ "$after_hash" = "$before_hash" ] \
     || fail "$lifecycle changed profile tree before rejecting $unsafe_kind"
-  native_mutations_after="$(jq -s --arg home "$hve_home" '
+  native_mutations_after="$(jq -s --arg home "$superpowers_home" '
     [.[] | select(
       .grokHome == $home
       and (.args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])
@@ -2221,14 +2178,14 @@ assert_filesystem_preflight_failure() {
   [ "$native_mutations_after" = "$native_mutations_before" ] \
     || fail "$lifecycle invoked install or update before rejecting $unsafe_kind"
 
-  chmod 0700 "$hve_home"
-  chmod -R u+rwx "$hve_home/skills" "$hve_home/commands" 2>/dev/null || true
-  rm -rf "$hve_home/skills" "$hve_home/commands"
-  rm -rf "$hve_home/auth.json" "$hve_home/requirements.toml"
-  cp "$expected_policy" "$hve_home/requirements.toml"
-  chmod 0644 "$hve_home/requirements.toml"
-  cp "$HOME/.grok/auth.json" "$hve_home/auth.json"
-  chmod 0600 "$hve_home/auth.json"
+  chmod 0700 "$superpowers_home"
+  chmod -R u+rwx "$superpowers_home/skills" "$superpowers_home/commands" 2>/dev/null || true
+  rm -rf "$superpowers_home/skills" "$superpowers_home/commands"
+  rm -rf "$superpowers_home/auth.json" "$superpowers_home/requirements.toml"
+  cp "$expected_policy" "$superpowers_home/requirements.toml"
+  chmod 0644 "$superpowers_home/requirements.toml"
+  cp "$HOME/.grok/auth.json" "$superpowers_home/auth.json"
+  chmod 0600 "$superpowers_home/auth.json"
 }
 
 for lifecycle in setup repair; do
@@ -2255,49 +2212,49 @@ assert_launch_readiness_refusal() {
   local tree_before
   local tree_after
 
-  cp "$expected_policy" "$hve_home/requirements.toml"
-  chmod 0644 "$hve_home/requirements.toml"
-  auth_marker_json 'profile-auth' >"$hve_home/auth.json"
-  chmod 0600 "$hve_home/auth.json"
-  chmod 0700 "$hve_home"
+  cp "$expected_policy" "$superpowers_home/requirements.toml"
+  chmod 0644 "$superpowers_home/requirements.toml"
+  auth_marker_json 'profile-auth' >"$superpowers_home/auth.json"
+  chmod 0600 "$superpowers_home/auth.json"
+  chmod 0700 "$superpowers_home"
 
   case "$unsafe_kind" in
     missing-policy)
-      rm "$hve_home/requirements.toml"
+      rm "$superpowers_home/requirements.toml"
       ;;
     policy-symlink)
-      rm "$hve_home/requirements.toml"
+      rm "$superpowers_home/requirements.toml"
       printf 'outside policy\n' >"$outside"
-      ln -s "$outside" "$hve_home/requirements.toml"
+      ln -s "$outside" "$superpowers_home/requirements.toml"
       ;;
     auth-mode)
-      chmod 0644 "$hve_home/auth.json"
+      chmod 0644 "$superpowers_home/auth.json"
       ;;
     auth-unreadable)
-      chmod 0000 "$hve_home/auth.json"
+      chmod 0000 "$superpowers_home/auth.json"
       ;;
     auth-symlink)
-      rm "$hve_home/auth.json"
+      rm "$superpowers_home/auth.json"
       printf 'outside auth\n' >"$outside"
-      ln -s "$outside" "$hve_home/auth.json"
+      ln -s "$outside" "$superpowers_home/auth.json"
       ;;
     profile-mode)
-      chmod 0711 "$hve_home"
+      chmod 0711 "$superpowers_home"
       ;;
     policy-mode)
-      chmod 0600 "$hve_home/requirements.toml"
+      chmod 0600 "$superpowers_home/requirements.toml"
       ;;
     *) fail "unknown launch readiness fixture: $unsafe_kind" ;;
   esac
 
-  tree_before="$(profile_tree_hash "$hve_home")"
+  tree_before="$(profile_tree_hash "$superpowers_home")"
   calls_before="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-  if ./bin/grx hve --version >"$fixture_root/$fixture_name.out" \
+  if ./bin/grx superpowers --version >"$fixture_root/$fixture_name.out" \
     2>"$fixture_root/$fixture_name.err"; then
     fail "launch accepted unsafe readiness state: $unsafe_kind"
   fi
   assert_line "$expected" "$fixture_root/$fixture_name.err"
-  tree_after="$(profile_tree_hash "$hve_home")"
+  tree_after="$(profile_tree_hash "$superpowers_home")"
   [ "$tree_after" = "$tree_before" ] \
     || fail "launch changed unsafe readiness state: $unsafe_kind"
   calls_after="$(wc -l <"$fake_grok_log" | tr -d ' ')"
@@ -2305,95 +2262,95 @@ assert_launch_readiness_refusal() {
     || fail "launch invoked Grok for unsafe readiness state: $unsafe_kind"
 
   if [ "$unsafe_kind" = auth-unreadable ]; then
-    chmod 0600 "$hve_home/auth.json"
-    assert_auth_marker 'profile-auth' "$hve_home/auth.json"
-    chmod 0000 "$hve_home/auth.json"
+    chmod 0600 "$superpowers_home/auth.json"
+    assert_auth_marker 'profile-auth' "$superpowers_home/auth.json"
+    chmod 0000 "$superpowers_home/auth.json"
   fi
 
-  chmod 0700 "$hve_home"
-  rm -f "$hve_home/auth.json" "$hve_home/requirements.toml" "$outside"
-  cp "$expected_policy" "$hve_home/requirements.toml"
-  chmod 0644 "$hve_home/requirements.toml"
-  auth_marker_json 'profile-auth' >"$hve_home/auth.json"
-  chmod 0600 "$hve_home/auth.json"
+  chmod 0700 "$superpowers_home"
+  rm -f "$superpowers_home/auth.json" "$superpowers_home/requirements.toml" "$outside"
+  cp "$expected_policy" "$superpowers_home/requirements.toml"
+  chmod 0644 "$superpowers_home/requirements.toml"
+  auth_marker_json 'profile-auth' >"$superpowers_home/auth.json"
+  chmod 0600 "$superpowers_home/auth.json"
 }
 
 assert_launch_readiness_refusal policy-symlink \
-  "grx: unsafe requirements path: $hve_home/requirements.toml"
+  "grx: unsafe requirements path: $superpowers_home/requirements.toml"
 assert_launch_readiness_refusal auth-mode \
-  'grx: profile authentication must have mode 0600: hve'
+  'grx: profile authentication must have mode 0600: superpowers'
 assert_launch_readiness_refusal auth-unreadable \
-  'grx: profile authentication is missing or unreadable: hve'
+  'grx: profile authentication is missing or unreadable: superpowers'
 assert_launch_readiness_refusal auth-symlink \
-  'grx: profile authentication is missing or unreadable: hve'
+  'grx: profile authentication is missing or unreadable: superpowers'
 
-rm "$hve_home/requirements.toml"
-./bin/grx hve --version >/dev/null \
+rm "$superpowers_home/requirements.toml"
+./bin/grx superpowers --version >/dev/null \
   || fail 'launch did not restore missing requirements policy'
-cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
   || fail 'launch restored incorrect requirements policy'
 
-chmod 0711 "$hve_home"
-./bin/grx hve --version >/dev/null \
+chmod 0711 "$superpowers_home"
+./bin/grx superpowers --version >/dev/null \
   || fail 'launch did not restore profile home mode'
-[ "$(path_mode "$hve_home")" = '700' ] \
+[ "$(path_mode "$superpowers_home")" = '700' ] \
   || fail 'launch restored incorrect profile home mode'
 
-chmod 0600 "$hve_home/requirements.toml"
-./bin/grx hve --version >/dev/null \
+chmod 0600 "$superpowers_home/requirements.toml"
+./bin/grx superpowers --version >/dev/null \
   || fail 'launch did not restore requirements policy mode'
-[ "$(path_mode "$hve_home/requirements.toml")" = '644' ] \
+[ "$(path_mode "$superpowers_home/requirements.toml")" = '644' ] \
   || fail 'launch restored incorrect requirements policy mode'
 
-hve_launch_safe_home="$fixture_root/hve-launch-safe-home"
-hve_launch_safe_hash_before="$(profile_tree_hash "$hve_home")"
-mv "$hve_home" "$hve_launch_safe_home"
-ln -s "$hve_launch_safe_home" "$hve_home"
+superpowers_launch_safe_home="$fixture_root/superpowers-launch-safe-home"
+superpowers_launch_safe_hash_before="$(profile_tree_hash "$superpowers_home")"
+mv "$superpowers_home" "$superpowers_launch_safe_home"
+ln -s "$superpowers_launch_safe_home" "$superpowers_home"
 calls_before_symlink_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
-if ./bin/grx hve --version >"$fixture_root/symlink-home-launch.out" \
+if ./bin/grx superpowers --version >"$fixture_root/symlink-home-launch.out" \
   2>"$fixture_root/symlink-home-launch.err"; then
   fail 'launch accepted a symlinked profile home'
 fi
-assert_line "grx: unsafe profile home path: $hve_home" \
+assert_line "grx: unsafe profile home path: $superpowers_home" \
   "$fixture_root/symlink-home-launch.err"
 calls_after_symlink_home_launch="$(wc -l <"$fake_grok_log" | tr -d ' ')"
 [ "$calls_after_symlink_home_launch" = "$calls_before_symlink_home_launch" ] \
   || fail 'symlinked-home launch invoked Grok'
-hve_launch_safe_hash_after="$(profile_tree_hash "$hve_launch_safe_home")"
-[ "$hve_launch_safe_hash_after" = "$hve_launch_safe_hash_before" ] \
+superpowers_launch_safe_hash_after="$(profile_tree_hash "$superpowers_launch_safe_home")"
+[ "$superpowers_launch_safe_hash_after" = "$superpowers_launch_safe_hash_before" ] \
   || fail 'symlinked-home launch changed the profile target'
-rm "$hve_home"
-mv "$hve_launch_safe_home" "$hve_home"
+rm "$superpowers_home"
+mv "$superpowers_launch_safe_home" "$superpowers_home"
 
-assert_hve_manifest_failure() {
+assert_superpowers_manifest_failure() {
   local fixture_name="$1"
   local manifest="$2"
   local status=0
 
-  export FAKE_CURL_HVE_MANIFEST_JSON="$manifest"
-  ./bin/grx update --check hve >"$fixture_root/$fixture_name.out" \
+  export FAKE_CURL_SUPERPOWERS_MANIFEST_JSON="$manifest"
+  ./bin/grx update --check superpowers >"$fixture_root/$fixture_name.out" \
     2>"$fixture_root/$fixture_name.err" || status=$?
-  unset FAKE_CURL_HVE_MANIFEST_JSON
+  unset FAKE_CURL_SUPERPOWERS_MANIFEST_JSON
   [ "$status" -eq 2 ] \
     || fail "$fixture_name manifest check exited $status instead of 2"
-  assert_line 'grx: failed to fetch or parse official manifest for hve' \
+  assert_line 'grx: failed to fetch or parse official manifest for superpowers' \
     "$fixture_root/$fixture_name.err"
 }
 
-assert_hve_manifest_failure 'hve-malformed-duplicate' \
-  '{"plugins":[{"name":"hve-core-all","version":"3.3.101"},{"name":"hve-core-all","version":null}]}'
-assert_hve_manifest_failure 'hve-array-manifest' \
-  '[{"plugins":[{"name":"hve-core-all","version":"3.3.101"}]}]'
-assert_hve_manifest_failure 'hve-object-plugins' \
-  '{"plugins":{"name":"hve-core-all","version":"3.3.101"}}'
-assert_hve_manifest_failure 'hve-scalar-plugins' \
-  '{"plugins":"hve-core-all"}'
-assert_hve_manifest_failure 'hve-remote-unexpected-then-valid-document' \
-  $'{}\n{"plugins":[{"name":"hve-core-all","version":"3.3.101"}]}'
-assert_hve_manifest_failure 'hve-remote-valid-then-unexpected-document' \
-  $'{"plugins":[{"name":"hve-core-all","version":"3.3.101"}]}\n{}'
-assert_hve_manifest_failure 'hve-remote-newline-version' \
-  '{"plugins":[{"name":"hve-core-all","version":"3.3.101\nforged"}]}'
+assert_superpowers_manifest_failure 'superpowers-malformed-duplicate' \
+  '{"plugins":[{"name":"superpowers","version":"6.2.0"},{"name":"superpowers","version":null}]}'
+assert_superpowers_manifest_failure 'superpowers-array-manifest' \
+  '[{"plugins":[{"name":"superpowers","version":"6.2.0"}]}]'
+assert_superpowers_manifest_failure 'superpowers-object-plugins' \
+  '{"plugins":{"name":"superpowers","version":"6.2.0"}}'
+assert_superpowers_manifest_failure 'superpowers-scalar-plugins' \
+  '{"plugins":"superpowers"}'
+assert_superpowers_manifest_failure 'superpowers-remote-unexpected-then-valid-document' \
+  $'{}\n{"plugins":[{"name":"superpowers","version":"6.2.0"}]}'
+assert_superpowers_manifest_failure 'superpowers-remote-valid-then-unexpected-document' \
+  $'{"plugins":[{"name":"superpowers","version":"6.2.0"}]}\n{}'
+assert_superpowers_manifest_failure 'superpowers-remote-newline-version' \
+  '{"plugins":[{"name":"superpowers","version":"6.2.0\nforged"}]}'
 
 assert_raw_nul_boundary_failure() {
   local boundary="$1"
@@ -2404,8 +2361,8 @@ assert_raw_nul_boundary_failure() {
   local native_mutations_after
   local status=0
 
-  before_hash="$(profile_tree_hash "$hve_home")"
-  native_mutations_before="$(jq -s --arg home "$hve_home" '
+  before_hash="$(profile_tree_hash "$superpowers_home")"
+  native_mutations_before="$(jq -s --arg home "$superpowers_home" '
     [.[] | select(
       .grokHome == $home
       and (.args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])
@@ -2414,41 +2371,41 @@ assert_raw_nul_boundary_failure() {
 
   case "$boundary" in
     plugin-inventory)
-      export FAKE_GROK_PLUGIN_RAW_NUL_HOME="$hve_home"
-      ./bin/grx update --check hve >"$fixture_root/$fixture_name.out" \
+      export FAKE_GROK_PLUGIN_RAW_NUL_HOME="$superpowers_home"
+      ./bin/grx update --check superpowers >"$fixture_root/$fixture_name.out" \
         2>"$fixture_root/$fixture_name.err" || status=$?
       unset FAKE_GROK_PLUGIN_RAW_NUL_HOME
       [ "$status" -eq 2 ] \
         || fail "raw-NUL plugin inventory exited $status instead of 2"
-      assert_line 'grx: failed to read installed plugin version for hve' \
+      assert_line 'grx: failed to read installed plugin version for superpowers' \
         "$fixture_root/$fixture_name.err"
       ;;
     remote-manifest)
-      export FAKE_CURL_RAW_NUL_URL='https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json'
-      ./bin/grx update --check hve >"$fixture_root/$fixture_name.out" \
+      export FAKE_CURL_RAW_NUL_URL='https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json'
+      ./bin/grx update --check superpowers >"$fixture_root/$fixture_name.out" \
         2>"$fixture_root/$fixture_name.err" || status=$?
       unset FAKE_CURL_RAW_NUL_URL
       [ "$status" -eq 2 ] \
         || fail "raw-NUL remote manifest exited $status instead of 2"
-      assert_line 'grx: failed to fetch or parse official manifest for hve' \
+      assert_line 'grx: failed to fetch or parse official manifest for superpowers' \
         "$fixture_root/$fixture_name.err"
       ;;
     mcp-inventory)
-      export FAKE_GROK_MCP_RAW_NUL_HOME="$hve_home"
-      ./bin/grx doctor hve >"$fixture_root/$fixture_name.out" \
+      export FAKE_GROK_MCP_RAW_NUL_HOME="$superpowers_home"
+      ./bin/grx doctor superpowers >"$fixture_root/$fixture_name.out" \
         2>"$fixture_root/$fixture_name.err" || status=$?
       unset FAKE_GROK_MCP_RAW_NUL_HOME
       [ "$status" -ne 0 ] || fail 'raw-NUL MCP inventory unexpectedly passed doctor'
-      assert_line 'grx: invalid MCP inventory for hve' \
+      assert_line 'grx: invalid MCP inventory for superpowers' \
         "$fixture_root/$fixture_name.err"
       ;;
     *) fail "unknown raw-NUL boundary: $boundary" ;;
   esac
 
-  after_hash="$(profile_tree_hash "$hve_home")"
+  after_hash="$(profile_tree_hash "$superpowers_home")"
   [ "$after_hash" = "$before_hash" ] \
     || fail "raw-NUL $boundary mutated the profile tree"
-  native_mutations_after="$(jq -s --arg home "$hve_home" '
+  native_mutations_after="$(jq -s --arg home "$superpowers_home" '
     [.[] | select(
       .grokHome == $home
       and (.args[0:2] == ["plugin","install"] or .args[0:2] == ["plugin","update"])
@@ -2462,83 +2419,68 @@ for raw_nul_boundary in plugin-inventory remote-manifest mcp-inventory; do
   assert_raw_nul_boundary_failure "$raw_nul_boundary"
 done
 
-export FAKE_GROK_LIST_FAILURE_HOME="$hve_home"
-hve_inventory_failure_status=0
-./bin/grx update --check hve >"$fixture_root/hve-inventory-failure.out" \
-  2>"$fixture_root/hve-inventory-failure.err" || hve_inventory_failure_status=$?
+export FAKE_GROK_LIST_FAILURE_HOME="$superpowers_home"
+superpowers_inventory_failure_status=0
+./bin/grx update --check superpowers >"$fixture_root/superpowers-inventory-failure.out" \
+  2>"$fixture_root/superpowers-inventory-failure.err" || superpowers_inventory_failure_status=$?
 unset FAKE_GROK_LIST_FAILURE_HOME
-[ "$hve_inventory_failure_status" -eq 2 ] \
-  || fail "failed HVE inventory check exited $hve_inventory_failure_status instead of 2"
-assert_line 'grx: failed to read installed plugin version for hve' \
-  "$fixture_root/hve-inventory-failure.err"
+[ "$superpowers_inventory_failure_status" -eq 2 ] \
+  || fail "failed Superpowers inventory check exited $superpowers_inventory_failure_status instead of 2"
+assert_line 'grx: failed to read installed plugin version for superpowers' \
+  "$fixture_root/superpowers-inventory-failure.err"
 
-jq '.version = "3.3.102"' "$hve_local_manifest" \
-  >"$fixture_root/hve-newer.json"
-mv "$fixture_root/hve-newer.json" "$hve_local_manifest"
-hve_newer_status=0
-./bin/grx update --check hve >"$fixture_root/hve-newer.out" \
-  2>"$fixture_root/hve-newer.err" || hve_newer_status=$?
-[ "$hve_newer_status" -eq 1 ] \
-  || fail "unequal newer HVE check exited $hve_newer_status instead of 1"
-if ! cmp -s "$fixture_root/hve-newer.out" \
-  <(printf 'hve: update available (3.3.102 -> 3.3.101)\n'); then
-  fail 'unequal newer HVE check changed the approved update-available wording'
+jq '.version = "6.2.1"' "$superpowers_local_manifest" \
+  >"$fixture_root/superpowers-newer.json"
+mv "$fixture_root/superpowers-newer.json" "$superpowers_local_manifest"
+superpowers_newer_status=0
+./bin/grx update --check superpowers >"$fixture_root/superpowers-newer.out" \
+  2>"$fixture_root/superpowers-newer.err" || superpowers_newer_status=$?
+[ "$superpowers_newer_status" -eq 1 ] \
+  || fail "unequal newer Superpowers check exited $superpowers_newer_status instead of 1"
+if ! cmp -s "$fixture_root/superpowers-newer.out" \
+  <(printf 'superpowers: update available (6.2.1 -> 6.2.0)\n'); then
+  fail 'unequal newer Superpowers check changed the approved update-available wording'
 fi
-[ ! -s "$fixture_root/hve-newer.err" ] \
-  || fail 'unequal newer HVE check wrote stderr'
+[ ! -s "$fixture_root/superpowers-newer.err" ] \
+  || fail 'unequal newer Superpowers check wrote stderr'
 
-jq '.version = "3.3.100"' "$hve_local_manifest" \
-  >"$fixture_root/hve-outdated.json"
-mv "$fixture_root/hve-outdated.json" "$hve_local_manifest"
-hve_outdated_status=0
-./bin/grx update --check hve >"$fixture_root/hve-outdated.out" \
-  2>"$fixture_root/hve-outdated.err" || hve_outdated_status=$?
-[ "$hve_outdated_status" -eq 1 ] \
-  || fail "outdated HVE update check exited $hve_outdated_status instead of 1"
-if ! cmp -s "$fixture_root/hve-outdated.out" \
-  <(printf 'hve: update available (3.3.100 -> 3.3.101)\n'); then
-  fail 'outdated HVE update check did not report the exact available version'
+jq '.version = "6.1.0"' "$superpowers_local_manifest" \
+  >"$fixture_root/superpowers-outdated.json"
+mv "$fixture_root/superpowers-outdated.json" "$superpowers_local_manifest"
+superpowers_outdated_status=0
+./bin/grx update --check superpowers >"$fixture_root/superpowers-outdated.out" \
+  2>"$fixture_root/superpowers-outdated.err" || superpowers_outdated_status=$?
+[ "$superpowers_outdated_status" -eq 1 ] \
+  || fail "outdated Superpowers update check exited $superpowers_outdated_status instead of 1"
+if ! cmp -s "$fixture_root/superpowers-outdated.out" \
+  <(printf 'superpowers: update available (6.1.0 -> 6.2.0)\n'); then
+  fail 'outdated Superpowers update check did not report the exact available version'
 fi
-[ ! -s "$fixture_root/hve-outdated.err" ] \
-  || fail 'outdated HVE update check wrote stderr'
+[ ! -s "$fixture_root/superpowers-outdated.err" ] \
+  || fail 'outdated Superpowers update check wrote stderr'
 
-mkdir -p "$hve_home/sessions" "$hve_home/memory" "$hve_home/permissions"
-printf 'keep session\n' >"$hve_home/sessions/keep"
-printf 'keep memory\n' >"$hve_home/memory/keep"
-printf 'keep permissions\n' >"$hve_home/permissions/keep"
-./bin/grx update hve >"$fixture_root/hve-update.out"
-if ! cmp -s "$fixture_root/hve-update.out" <(printf 'hve: updated\n'); then
-  fail 'HVE update did not emit only the exact updated line'
+mkdir -p "$superpowers_home/sessions" "$superpowers_home/memory" "$superpowers_home/permissions"
+printf 'keep session\n' >"$superpowers_home/sessions/keep"
+printf 'keep memory\n' >"$superpowers_home/memory/keep"
+printf 'keep permissions\n' >"$superpowers_home/permissions/keep"
+./bin/grx update superpowers >"$fixture_root/superpowers-update.out"
+if ! cmp -s "$fixture_root/superpowers-update.out" <(printf 'superpowers: updated\n'); then
+  fail 'Superpowers update did not emit only the exact updated line'
 fi
-cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
   || fail 'update did not refresh authentication'
-assert_line 'keep session' "$hve_home/sessions/keep"
-assert_line 'keep memory' "$hve_home/memory/keep"
-assert_line 'keep permissions' "$hve_home/permissions/keep"
+assert_line 'keep session' "$superpowers_home/sessions/keep"
+assert_line 'keep memory' "$superpowers_home/memory/keep"
+assert_line 'keep permissions' "$superpowers_home/permissions/keep"
 
-jq '. + [
-  {status:"installed",name:"superpowers",repo_key:"superpowers-direct",version:null,path:"/fixture/superpowers",source:"obra/superpowers",marketplace:null},
-  {status:"installed",name:"renamed-workflow",repo_key:"superpowers-renamed",version:null,path:"/fixture/renamed",source:"ssh://git@github.com/obra/superpowers.git/",marketplace:null}
-]' \
-  "$hve_plugins_file" >"$fixture_root/hve-with-superpowers.json"
-mv "$fixture_root/hve-with-superpowers.json" "$hve_plugins_file"
-if ./bin/grx doctor hve >"$fixture_root/hve-superpowers-doctor.out" \
-  2>"$fixture_root/hve-superpowers-doctor.err"; then
-  fail 'doctor accepted Superpowers in the HVE profile'
-fi
-assert_contains 'grx: forbidden Superpowers plugin is installed: hve; run: grx repair hve' \
-  "$fixture_root/hve-superpowers-doctor.err"
-./bin/grx repair hve >"$fixture_root/hve-superpowers-repair.out"
-jq -e 'length == 1 and .[0].name == "hve-core-all"' "$hve_plugins_file" \
-  >/dev/null || fail 'repair did not remove only forbidden Superpowers plugin'
-jq -s -e --arg home "$hve_home" '
+jq -s -e --arg home "$superpowers_home" '
   any(.[];
     .grokHome == $home
-    and .args == ["plugin","update","hve-core-all"]
+    and .args == ["plugin","update","superpowers"]
   )
-' "$fake_grok_log" >/dev/null || fail 'update did not invoke the native HVE plugin update'
-jq -e '.version == "3.3.101"' "$hve_local_manifest" >/dev/null \
-  || fail 'native HVE update did not refresh the local plugin manifest version'
+' "$fake_grok_log" >/dev/null || fail 'update did not invoke the native Superpowers plugin update'
+jq -e '.version == "6.2.0"' "$superpowers_local_manifest" >/dev/null \
+  || fail 'native Superpowers update did not refresh the local plugin manifest version'
 
 repository_fixture="$fixture_root/repository"
 mkdir -p \
@@ -2555,10 +2497,10 @@ mkdir -p \
 inventory_output="$fixture_root/inventory.out"
 (
   cd "$repository_fixture"
-  "$prototype_root/bin/grx" hve --fixture-capability-inventory
+  "$prototype_root/bin/grx" superpowers --fixture-capability-inventory
 ) >"$inventory_output"
 if ! cmp -s "$inventory_output" <(printf '%s\n' \
-  'plugin:hve-core-all' \
+  'plugin:superpowers' \
   'repository:grok-skill' \
   'repository:agents-skill' \
   'repository:AGENTS.md' \
@@ -2574,15 +2516,15 @@ mcp_output="$fixture_root/mcp.json"
 plugin_output="$fixture_root/plugin.json"
 (
   cd "$repository_fixture"
-  "$prototype_root/bin/grx" hve inspect --json
+  "$prototype_root/bin/grx" superpowers inspect --json
 ) >"$inspect_output"
 (
   cd "$repository_fixture"
-  "$prototype_root/bin/grx" hve mcp list --json
+  "$prototype_root/bin/grx" superpowers mcp list --json
 ) >"$mcp_output"
 (
   cd "$repository_fixture"
-  "$prototype_root/bin/grx" hve plugin list --json
+  "$prototype_root/bin/grx" superpowers plugin list --json
 ) >"$plugin_output"
 
 inspect_gate="$fixture_root/inspect-isolation.jq"
@@ -2726,7 +2668,7 @@ jq -e '
     | any($inspect[$class][]; .source.type == "plugin")
     and any($inspect[$class][]; .source.type == "repository"))
   and any(.plugins[]; .scope == "project" and .enabled == true)
-  and any(.plugins[]; .name == "hve-core-all" and .enabled == true)
+  and any(.plugins[]; .name == "superpowers" and .enabled == true)
 ' "$inspect_output" >/dev/null \
   || fail 'inspect fixture hid builtin, plugin, or project-native capabilities'
 
@@ -2734,7 +2676,7 @@ for personal_surface in skills agents hooks plugins mcps; do
   personal_surface_path="$HOME/.cursor/$personal_surface"
   filesystem_probe="$fixture_root/inspect-without-cursor-$personal_surface.json"
   rm -rf "$personal_surface_path"
-  GROK_HOME="$hve_home" "$fake_bin/grok" inspect --json >"$filesystem_probe"
+  GROK_HOME="$superpowers_home" "$fake_bin/grok" inspect --json >"$filesystem_probe"
   if [ "$personal_surface" = 'plugins' ]; then
     jq -e --arg root "$HOME/.cursor/plugins/" '
       all(.plugins[]; ((.path? // "") | startswith($root) | not))
@@ -2990,128 +2932,128 @@ jq -e '
 ' "$mcp_output" >/dev/null \
   || fail 'MCP fixture did not isolate user MCPs while preserving native capabilities'
 jq -e '
-  length == 1 and .[0].status == "installed" and .[0].name == "hve-core-all"
+  length == 1 and .[0].status == "installed" and .[0].name == "superpowers"
 ' "$plugin_output" >/dev/null \
   || fail 'plugin fixture did not expose exactly the expected profile plugin'
 
-printf 'damaged policy\n' >"$hve_home/requirements.toml"
-rm "$hve_home/fake-state/plugins.json"
-./bin/grx hve --version >"$fixture_root/hve-launch-repair.out" \
+printf 'damaged policy\n' >"$superpowers_home/requirements.toml"
+rm "$superpowers_home/fake-state/plugins.json"
+./bin/grx superpowers --version >"$fixture_root/superpowers-launch-repair.out" \
   || fail 'launch did not restore managed policy and plugin'
-cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
   || fail 'launch did not restore the exact capability policy'
-jq -e --arg path "$hve_install_path" '. == [{
+jq -e --arg path "$superpowers_install_path" '. == [{
   status:"installed",
-  name:"hve-core-all",
-  repo_key:"hve-core-fixture",
+  name:"superpowers",
+  repo_key:"superpowers-fixture",
   version:null,
   path:$path,
-  source:"https://github.com/microsoft/hve-core",
+  source:"https://github.com/obra/superpowers",
   marketplace:null
-}]' "$hve_plugins_file" >/dev/null || fail 'launch did not restore the HVE plugin'
-cmp -s "$HOME/.grok/auth.json" "$hve_home/auth.json" \
+}]' "$superpowers_plugins_file" >/dev/null || fail 'launch did not restore the Superpowers plugin'
+cmp -s "$HOME/.grok/auth.json" "$superpowers_home/auth.json" \
   || fail 'launch repair did not refresh authentication'
-assert_line 'keep session' "$hve_home/sessions/keep"
-assert_line 'keep memory' "$hve_home/memory/keep"
-assert_line 'keep permissions' "$hve_home/permissions/keep"
+assert_line 'keep session' "$superpowers_home/sessions/keep"
+assert_line 'keep memory' "$superpowers_home/memory/keep"
+assert_line 'keep permissions' "$superpowers_home/permissions/keep"
 
 assert_doctor_failure() {
   local fixture_name="$1"
   local expected="$2"
   local stderr_file="$fixture_root/$fixture_name.err"
 
-  if ./bin/grx doctor hve >"$fixture_root/$fixture_name.out" 2>"$stderr_file"; then
+  if ./bin/grx doctor superpowers >"$fixture_root/$fixture_name.out" 2>"$stderr_file"; then
     fail "$fixture_name doctor unexpectedly succeeded"
   fi
   assert_contains "$expected" "$stderr_file"
 }
 
 sed 's/^fail_closed = true$/fail_closed = false/' "$expected_policy" \
-  >"$hve_home/requirements.toml"
+  >"$superpowers_home/requirements.toml"
 assert_doctor_failure 'false fail_closed' \
-  'grx: requirements policy does not match: hve'
+  'grx: requirements policy does not match: superpowers'
 assert_launch_repairs_current_policy 'false-fail-closed'
-cmp -s "$expected_policy" "$hve_home/requirements.toml" \
+cmp -s "$expected_policy" "$superpowers_home/requirements.toml" \
   || fail 'launch did not restore fail_closed = true'
 
-jq '.[0].name = "unexpected"' "$hve_plugins_file" \
-  >"$fixture_root/hve-unexpected-plugin.json"
-mv "$fixture_root/hve-unexpected-plugin.json" "$hve_plugins_file"
-assert_doctor_failure 'unexpected plugin' 'grx: installed plugin inventory does not match: hve'
-printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
+jq '.[0].name = "unexpected"' "$superpowers_plugins_file" \
+  >"$fixture_root/superpowers-unexpected-plugin.json"
+mv "$fixture_root/superpowers-unexpected-plugin.json" "$superpowers_plugins_file"
+assert_doctor_failure 'unexpected plugin' 'grx: installed plugin inventory does not match: superpowers'
+printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
 
-jq '.[0].source = "https://github.com/fixture/wrong-source"' "$hve_plugins_file" \
-  >"$fixture_root/hve-wrong-plugin-source.json"
-mv "$fixture_root/hve-wrong-plugin-source.json" "$hve_plugins_file"
-assert_doctor_failure 'wrong plugin source' 'grx: installed plugin inventory does not match: hve'
-printf '%s\n' "$hve_native_inventory" >"$hve_plugins_file"
+jq '.[0].source = "https://github.com/fixture/wrong-source"' "$superpowers_plugins_file" \
+  >"$fixture_root/superpowers-wrong-plugin-source.json"
+mv "$fixture_root/superpowers-wrong-plugin-source.json" "$superpowers_plugins_file"
+assert_doctor_failure 'wrong plugin source' 'grx: installed plugin inventory does not match: superpowers'
+printf '%s\n' "$superpowers_native_inventory" >"$superpowers_plugins_file"
 
-chmod 0755 "$hve_home"
-assert_doctor_failure 'profile home mode' 'grx: profile home must have mode 0700: hve'
-chmod 0700 "$hve_home"
+chmod 0755 "$superpowers_home"
+assert_doctor_failure 'profile home mode' 'grx: profile home must have mode 0700: superpowers'
+chmod 0700 "$superpowers_home"
 
-chmod 0600 "$hve_home/requirements.toml"
-assert_doctor_failure 'requirements policy mode' 'grx: requirements policy must have mode 0644: hve'
-chmod 0644 "$hve_home/requirements.toml"
+chmod 0600 "$superpowers_home/requirements.toml"
+assert_doctor_failure 'requirements policy mode' 'grx: requirements policy must have mode 0644: superpowers'
+chmod 0644 "$superpowers_home/requirements.toml"
 
-mkdir -p "$hve_home/skills/unexpected"
-printf '%s\n' '# User-managed skill' >"$hve_home/skills/unexpected/SKILL.md"
-./bin/grx doctor hve >"$fixture_root/doctor-user-skill.out" \
+mkdir -p "$superpowers_home/skills/unexpected"
+printf '%s\n' '# User-managed skill' >"$superpowers_home/skills/unexpected/SKILL.md"
+./bin/grx doctor superpowers >"$fixture_root/doctor-user-skill.out" \
   || fail 'doctor rejected an unrelated user-managed skill'
-rm -rf "$hve_home/skills/unexpected"
+rm -rf "$superpowers_home/skills/unexpected"
 
-mkdir -p "$hve_home/commands"
-printf 'unexpected\n' >"$hve_home/commands/unexpected"
-assert_doctor_failure 'nonempty commands' "grx: standalone capability directory is not empty: $hve_home/commands"
-rm "$hve_home/commands/unexpected"
+mkdir -p "$superpowers_home/commands"
+printf 'unexpected\n' >"$superpowers_home/commands/unexpected"
+assert_doctor_failure 'nonempty commands' "grx: standalone capability directory is not empty: $superpowers_home/commands"
+rm "$superpowers_home/commands/unexpected"
 
-printf '%s\n' '# Drifted managed skill' >"$hve_home/skills/fixture-personal/SKILL.md"
-assert_doctor_failure 'drifted managed skill' 'grx: floating skills are unhealthy: hve'
-./bin/grx repair hve >"$fixture_root/drifted-skills-repair.out"
-assert_line 'hve: repaired' "$fixture_root/drifted-skills-repair.out"
-assert_contains '# Fixture personal skill' "$hve_home/skills/fixture-personal/SKILL.md"
+printf '%s\n' '# Drifted managed skill' >"$superpowers_home/skills/fixture-personal/SKILL.md"
+assert_doctor_failure 'drifted managed skill' 'grx: floating skills are unhealthy: superpowers'
+./bin/grx repair superpowers >"$fixture_root/drifted-skills-repair.out"
+assert_line 'superpowers: repaired' "$fixture_root/drifted-skills-repair.out"
+assert_contains '# Fixture personal skill' "$superpowers_home/skills/fixture-personal/SKILL.md"
 
-chmod -R u+rwx "$hve_home/skills"
-rm -rf "$hve_home/skills"
+chmod -R u+rwx "$superpowers_home/skills"
+rm -rf "$superpowers_home/skills"
 empty_skills_target="$fixture_root/empty-skills-target"
 mkdir -p "$empty_skills_target"
-ln -s "$empty_skills_target" "$hve_home/skills"
-assert_doctor_failure 'symlinked skills' 'grx: floating skills are unhealthy: hve'
-if ./bin/grx repair hve >"$fixture_root/symlinked-skills-repair.out" \
+ln -s "$empty_skills_target" "$superpowers_home/skills"
+assert_doctor_failure 'symlinked skills' 'grx: floating skills are unhealthy: superpowers'
+if ./bin/grx repair superpowers >"$fixture_root/symlinked-skills-repair.out" \
   2>"$fixture_root/symlinked-skills-repair.err"; then
   fail 'repair accepted a symlinked standalone capability directory'
 fi
-assert_contains 'grx: floating skills cannot be repaired safely: hve' \
+assert_contains 'grx: floating skills cannot be repaired safely: superpowers' \
   "$fixture_root/symlinked-skills-repair.err"
-rm "$hve_home/skills"
-./bin/grx repair hve >/dev/null
+rm "$superpowers_home/skills"
+./bin/grx repair superpowers >/dev/null
 
-rmdir "$hve_home/commands"
-printf 'not a directory\n' >"$hve_home/commands"
-assert_doctor_failure 'nondirectory commands' "grx: unsafe standalone capability directory: $hve_home/commands"
-rm "$hve_home/commands"
-mkdir -p "$hve_home/commands"
+rmdir "$superpowers_home/commands"
+printf 'not a directory\n' >"$superpowers_home/commands"
+assert_doctor_failure 'nondirectory commands' "grx: unsafe standalone capability directory: $superpowers_home/commands"
+rm "$superpowers_home/commands"
+mkdir -p "$superpowers_home/commands"
 
-chmod 0000 "$hve_home/skills"
-assert_doctor_failure 'unreadable skills' 'grx: floating skills are unhealthy: hve'
-chmod 0700 "$hve_home/skills"
+chmod 0000 "$superpowers_home/skills"
+assert_doctor_failure 'unreadable skills' 'grx: floating skills are unhealthy: superpowers'
+chmod 0700 "$superpowers_home/skills"
 
 export FAKE_GROK_MCP_JSON='[{"name":"personal","scope":"user","enabled":true}]'
-profile_config="$hve_home/config.toml"
+profile_config="$superpowers_home/config.toml"
 printf '%s\n' \
   '[mcp_servers.personal]' \
   'command = "profile-local-mcp"' \
   >"$profile_config"
 cp "$profile_config" "$fixture_root/profile-config-before-lifecycle.toml"
-./bin/grx doctor hve >"$fixture_root/profile-user-mcp-doctor.out"
-assert_line 'hve: healthy (plugin hve-core-all, version 3.3.101)' \
+./bin/grx doctor superpowers >"$fixture_root/profile-user-mcp-doctor.out"
+assert_line 'superpowers: healthy (plugin superpowers, version 6.2.0)' \
   "$fixture_root/profile-user-mcp-doctor.out"
-./bin/grx setup hve >"$fixture_root/profile-user-mcp-setup.out"
-assert_line 'hve: ready' "$fixture_root/profile-user-mcp-setup.out"
-./bin/grx repair hve >"$fixture_root/profile-user-mcp-repair.out"
-assert_line 'hve: repaired' "$fixture_root/profile-user-mcp-repair.out"
-./bin/grx hve --profile-user-mcp >"$fixture_root/profile-user-mcp-launch.out"
-jq -s -e --arg home "$hve_home" '
+./bin/grx setup superpowers >"$fixture_root/profile-user-mcp-setup.out"
+assert_line 'superpowers: ready' "$fixture_root/profile-user-mcp-setup.out"
+./bin/grx repair superpowers >"$fixture_root/profile-user-mcp-repair.out"
+assert_line 'superpowers: repaired' "$fixture_root/profile-user-mcp-repair.out"
+./bin/grx superpowers --profile-user-mcp >"$fixture_root/profile-user-mcp-launch.out"
+jq -s -e --arg home "$superpowers_home" '
   last
   | .grokHome == $home
   and .args == ["--sandbox","workspace","--permission-mode","bypassPermissions","--always-approve","--profile-user-mcp"]
@@ -3121,26 +3063,26 @@ cmp -s "$profile_config" "$fixture_root/profile-config-before-lifecycle.toml" \
   || fail 'profile-local MCP config changed during lifecycle operations'
 rm "$profile_config"
 export FAKE_GROK_MCP_JSON='[{"name":"project-native","scope":"project","enabled":true},{"name":"repository-native","scope":"repository","enabled":true},{"name":"built-in","scope":"native","enabled":true}]'
-./bin/grx doctor hve >"$fixture_root/native-mcp-doctor.out"
-assert_line 'hve: healthy (plugin hve-core-all, version 3.3.101)' \
+./bin/grx doctor superpowers >"$fixture_root/native-mcp-doctor.out"
+assert_line 'superpowers: healthy (plugin superpowers, version 6.2.0)' \
   "$fixture_root/native-mcp-doctor.out"
 export FAKE_GROK_MCP_JSON='[{"name":"unknown","scope":"team","enabled":true}]'
-assert_doctor_failure 'unknown mcp scope' 'grx: invalid MCP inventory for hve'
+assert_doctor_failure 'unknown mcp scope' 'grx: invalid MCP inventory for superpowers'
 export FAKE_GROK_MCP_JSON='[{"scope":"plugin","enabled":true}]'
-assert_doctor_failure 'malformed mcp record' 'grx: invalid MCP inventory for hve'
+assert_doctor_failure 'malformed mcp record' 'grx: invalid MCP inventory for superpowers'
 export FAKE_GROK_MCP_JSON='[{"name":"incomplete","scope":"plugin"}]'
-assert_doctor_failure 'incomplete mcp record' 'grx: invalid MCP inventory for hve'
+assert_doctor_failure 'incomplete mcp record' 'grx: invalid MCP inventory for superpowers'
 export FAKE_GROK_MCP_JSON=$'{}\n[]'
-assert_doctor_failure 'mcp unexpected then valid document' 'grx: invalid MCP inventory for hve'
+assert_doctor_failure 'mcp unexpected then valid document' 'grx: invalid MCP inventory for superpowers'
 export FAKE_GROK_MCP_JSON=$'[]\n{}'
-assert_doctor_failure 'mcp valid then unexpected document' 'grx: invalid MCP inventory for hve'
+assert_doctor_failure 'mcp valid then unexpected document' 'grx: invalid MCP inventory for superpowers'
 export FAKE_GROK_MCP_JSON='[{"name":"bundled","scope":"plugin","enabled":true}]'
-./bin/grx doctor hve >"$fixture_root/plugin-mcp-doctor.out"
-assert_line 'hve: healthy (plugin hve-core-all, version 3.3.101)' "$fixture_root/plugin-mcp-doctor.out"
+./bin/grx doctor superpowers >"$fixture_root/plugin-mcp-doctor.out"
+assert_line 'superpowers: healthy (plugin superpowers, version 6.2.0)' "$fixture_root/plugin-mcp-doctor.out"
 unset FAKE_GROK_MCP_JSON
 
-export FAKE_GROK_LIST_FAILURE_HOME="$hve_home"
-assert_doctor_failure 'plugin list failure' 'grx: failed to read installed plugin inventory: hve'
+export FAKE_GROK_LIST_FAILURE_HOME="$superpowers_home"
+assert_doctor_failure 'plugin list failure' 'grx: failed to read installed plugin inventory: superpowers'
 unset FAKE_GROK_LIST_FAILURE_HOME
 
 missing_auth_home="$fixture_root/missing-auth-home"
@@ -3148,7 +3090,7 @@ mkdir -p "$missing_auth_home"
 for lifecycle in setup repair; do
   rm -rf "$missing_auth_home/.local" "$missing_auth_home/.grok"
   missing_auth_before="$(profile_tree_hash "$missing_auth_home")"
-  missing_profile_home="$missing_auth_home/.local/share/trellage/profiles/grok/hve/home"
+  missing_profile_home="$missing_auth_home/.local/share/trellage/profiles/grok/superpowers/home"
   missing_auth_mutations_before="$(jq -s --arg home "$missing_profile_home" '
     [.[] | select(
       .grokHome == $home
@@ -3156,7 +3098,7 @@ for lifecycle in setup repair; do
     )] | length
   ' "$fake_grok_log")"
   missing_auth_stderr="$fixture_root/missing-auth-$lifecycle.err"
-  if HOME="$missing_auth_home" ./bin/grx "$lifecycle" hve \
+  if HOME="$missing_auth_home" ./bin/grx "$lifecycle" superpowers \
     >"$fixture_root/missing-auth-$lifecycle.out" 2>"$missing_auth_stderr"; then
     fail "$lifecycle without source authentication unexpectedly succeeded"
   fi
@@ -3181,18 +3123,18 @@ auth_marker_json 'source-auth' >"$symlink_home/.grok/auth.json"
 chmod 0600 "$symlink_home/.grok/auth.json"
 ln -s "$escaped_profiles" "$symlink_home/.local"
 symlink_home_stderr="$fixture_root/symlink-home.err"
-if HOME="$symlink_home" ./bin/grx setup hve \
+if HOME="$symlink_home" ./bin/grx setup superpowers \
   >"$fixture_root/symlink-home.out" 2>"$symlink_home_stderr"; then
   fail 'setup accepted a symlinked managed profile ancestor'
 fi
 assert_contains 'grx: unsafe profile home path:' "$symlink_home_stderr"
-[ ! -e "$escaped_profiles/share/trellage/profiles/grok/hve/home" ] \
+[ ! -e "$escaped_profiles/share/trellage/profiles/grok/superpowers/home" ] \
   || fail 'setup wrote through a symlinked managed profile ancestor'
 
 rm -rf "$HOME/.local/share/trellage/profiles/grok"
 all_setup_output="$fixture_root/all-setup.out"
 ./bin/grx setup --all >"$all_setup_output"
-for profile in hve superpowers; do
+for profile in superpowers; do
   profile_home="$HOME/.local/share/trellage/profiles/grok/$profile/home"
   cmp -s "$expected_policy" "$profile_home/requirements.toml" \
     || fail "setup --all did not provision policy for $profile"
@@ -3235,27 +3177,37 @@ unset FAKE_CURL_FAILURE_URL
 jq '.version = "6.1.0"' "$superpowers_local_manifest" \
   >"$fixture_root/superpowers-outdated.json"
 mv "$fixture_root/superpowers-outdated.json" "$superpowers_local_manifest"
-hve_safe_home="$fixture_root/hve-safe-home"
-mv "$hve_home" "$hve_safe_home"
-ln -s "$hve_safe_home" "$hve_home"
-mixed_check_status=0
-./bin/grx update --check --all >"$fixture_root/mixed-check.out" \
-  2>"$fixture_root/mixed-check.err" || mixed_check_status=$?
-rm "$hve_home"
-mv "$hve_safe_home" "$hve_home"
+all_update_available_status=0
+./bin/grx update --check --all >"$fixture_root/all-update-available.out" \
+  2>"$fixture_root/all-update-available.err" || all_update_available_status=$?
+[ "$all_update_available_status" -eq 1 ] \
+  || fail "update check --all with an available update exited $all_update_available_status instead of 1"
+assert_line 'superpowers: update available (6.1.0 -> 6.2.0)' \
+  "$fixture_root/all-update-available.out"
+[ ! -s "$fixture_root/all-update-available.err" ] \
+  || fail 'update check --all with an available update wrote stderr'
 jq '.version = "6.2.0"' "$superpowers_local_manifest" \
   >"$fixture_root/superpowers-current.json"
 mv "$fixture_root/superpowers-current.json" "$superpowers_local_manifest"
-[ "$mixed_check_status" -eq 2 ] \
-  || fail "mixed update check exited $mixed_check_status instead of 2"
-assert_line 'superpowers: update available (6.1.0 -> 6.2.0)' "$fixture_root/mixed-check.out"
-assert_line "grx: unsafe profile home path: $hve_home" "$fixture_root/mixed-check.err"
+
+superpowers_safe_home="$fixture_root/superpowers-safe-home"
+mv "$superpowers_home" "$superpowers_safe_home"
+ln -s "$superpowers_safe_home" "$superpowers_home"
+unsafe_home_check_status=0
+./bin/grx update --check --all >"$fixture_root/unsafe-home-check.out" \
+  2>"$fixture_root/unsafe-home-check.err" || unsafe_home_check_status=$?
+rm "$superpowers_home"
+mv "$superpowers_safe_home" "$superpowers_home"
+[ "$unsafe_home_check_status" -eq 2 ] \
+  || fail "unsafe-home update check exited $unsafe_home_check_status instead of 2"
+assert_line "grx: unsafe profile home path: $superpowers_home" \
+  "$fixture_root/unsafe-home-check.err"
 
 if ./bin/grx setup >"$fixture_root/setup-arity.out" 2>"$fixture_root/setup-arity.err"; then
   fail 'setup without a profile unexpectedly succeeded'
 fi
 assert_line 'grx: setup requires PROFILE or --all' "$fixture_root/setup-arity.err"
-if ./bin/grx doctor hve extra >"$fixture_root/doctor-arity.out" 2>"$fixture_root/doctor-arity.err"; then
+if ./bin/grx doctor superpowers extra >"$fixture_root/doctor-arity.out" 2>"$fixture_root/doctor-arity.err"; then
   fail 'doctor with extra arguments unexpectedly succeeded'
 fi
 assert_line 'grx: doctor requires PROFILE' "$fixture_root/doctor-arity.err"
@@ -3563,7 +3515,6 @@ assert_line 'trellage-grok-profiles-v1' \
   || fail 'installer did not set ownership marker mode 0644'
 "$installed_command" list >"$fixture_root/installed-list.out"
 if ! cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
-  $'hve\thve-core-all' \
   $'superpowers\tsuperpowers'); then
   fail 'installed command list output does not match the catalog'
 fi
@@ -3575,7 +3526,7 @@ fi
 [ "$(path_mode "$(dirname "$installed_command")")" = '700' ] \
   || fail 'repeated install changed the pre-existing command directory mode'
 
-install_preflight_sentinel="$HOME/.local/share/trellage/profiles/grok/hve/home/install-preflight-sentinel"
+install_preflight_sentinel="$HOME/.local/share/trellage/profiles/grok/superpowers/home/install-preflight-sentinel"
 printf 'preserve installer preflight user data\n' >"$install_preflight_sentinel"
 
 printf 'preserve unexpected reinstall root content\n' >"$runtime_root/unexpected-reinstall"
@@ -3629,7 +3580,7 @@ assert_line "grx install: refusing unreadable owned runtime file: $installed_lau
 chmod 0755 "$installed_launcher"
 assert_line 'preserve installer preflight user data' "$install_preflight_sentinel"
 
-uninstall_preflight_sentinel="$HOME/.local/share/trellage/profiles/grok/hve/home/uninstall-preflight-sentinel"
+uninstall_preflight_sentinel="$HOME/.local/share/trellage/profiles/grok/superpowers/home/uninstall-preflight-sentinel"
 printf 'preserve uninstaller preflight user data\n' >"$uninstall_preflight_sentinel"
 
 mv "$installed_launcher" "$fixture_root/marker-only-launcher"
@@ -3729,7 +3680,7 @@ rm "$installed_command"
 mv "$fixture_root/expected-uninstall-command" "$installed_command"
 assert_line 'preserve uninstaller preflight user data' "$uninstall_preflight_sentinel"
 
-command_preflight_sentinel="$HOME/.local/share/trellage/profiles/grok/hve/home/command-preflight-sentinel"
+command_preflight_sentinel="$HOME/.local/share/trellage/profiles/grok/superpowers/home/command-preflight-sentinel"
 printf 'preserve command preflight user data\n' >"$command_preflight_sentinel"
 command_dir="$(dirname "$installed_command")"
 command_dir_original_mode="$(path_mode "$command_dir")"
@@ -3878,7 +3829,6 @@ for signal_case in $installer_signal_cases; do
   if [ "$signal_state_after" = "$signal_state_before" ]; then
     "$signal_command" list >"$fixture_root/$signal_case-list.out"
     if ! cmp -s "$fixture_root/$signal_case-list.out" <(printf '%s\n' \
-      $'hve\thve-core-all' \
       $'superpowers\tsuperpowers'); then
       installer_signal_failures="$installer_signal_failures $signal_case:command"
     fi
@@ -3905,7 +3855,6 @@ signal_publish_state="$(managed_install_state)"
   || fail 'TERM-interrupted publication left command staging debris'
 "$installed_command" list >"$fixture_root/signal-during-publish-list.out"
 if ! cmp -s "$fixture_root/signal-during-publish-list.out" <(printf '%s\n' \
-  $'hve\thve-core-all' \
   $'superpowers\tsuperpowers'); then
   fail 'TERM-interrupted publication left the prior command unusable'
 fi
@@ -3927,7 +3876,6 @@ interrupt_publish_state="$(managed_install_state)"
   || fail 'INT-interrupted publication left command staging debris'
 "$installed_command" list >"$fixture_root/interrupt-during-publish-list.out"
 if ! cmp -s "$fixture_root/interrupt-during-publish-list.out" <(printf '%s\n' \
-  $'hve\thve-core-all' \
   $'superpowers\tsuperpowers'); then
   fail 'INT-interrupted publication left the prior command unusable'
 fi
@@ -3963,7 +3911,6 @@ cleanup_failure_install_state="$(managed_install_state)"
   || fail 'cleanup-failed TERM did not restore the exact prior install'
 "$installed_command" list >"$fixture_root/signal-cleanup-failure-list.out"
 if ! cmp -s "$fixture_root/signal-cleanup-failure-list.out" <(printf '%s\n' \
-  $'hve\thve-core-all' \
   $'superpowers\tsuperpowers'); then
   fail 'cleanup-failed TERM left the prior command unusable'
 fi
@@ -4047,7 +3994,6 @@ for failure_point in \
     || fail "$failure_point failure left a command staging directory behind"
   "$installed_command" list >"$fixture_root/$failure_point-list.out"
   if ! cmp -s "$fixture_root/$failure_point-list.out" <(printf '%s\n' \
-    $'hve\thve-core-all' \
     $'superpowers\tsuperpowers'); then
     fail "$failure_point failure left the prior installed command unusable"
   fi
@@ -4056,7 +4002,7 @@ done
 [ "$(path_mode "$(dirname "$installed_command")")" = '700' ] \
   || fail 'reinstall changed the pre-existing command directory mode'
 
-preserved_session="$HOME/.local/share/trellage/profiles/grok/hve/home/sessions/keep"
+preserved_session="$HOME/.local/share/trellage/profiles/grok/superpowers/home/sessions/keep"
 mkdir -p "$(dirname "$preserved_session")"
 printf 'preserve\n' >"$preserved_session"
 
@@ -4106,7 +4052,6 @@ for failure_point in $transaction_failure_points; do
     && [ "$transaction_state_after" = "$transaction_state_before" ]; then
     "$transaction_command" list >"$fixture_root/transaction-$failure_point-list.out"
     if ! cmp -s "$fixture_root/transaction-$failure_point-list.out" <(printf '%s\n' \
-      $'hve\thve-core-all' \
       $'superpowers\tsuperpowers'); then
       transaction_baseline_failures="$transaction_baseline_failures $failure_point:command"
     fi

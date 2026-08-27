@@ -671,13 +671,12 @@ verify_codex_profiles() {
   command -v codex >/dev/null 2>&1 || return 0
   discover_catalog "$launcher" "$list_output" "$inventory" || return 0
   if awk -F '\t' '
-    NR == 1 && $1 == "hve" && $2 == "hve-core-all@hve-core" { next }
-    NR == 2 && $1 == "pstack" \
+    NR == 1 && $1 == "pstack" \
       && $2 == "pstack-for-codex@pstack-for-codex-local" { next }
-    NR == 3 && $1 == "superpowers" \
+    NR == 2 && $1 == "superpowers" \
       && $2 == "superpowers@superpowers-marketplace" { next }
     { invalid = 1 }
-    END { exit invalid || NR != 3 }
+    END { exit invalid || NR != 2 }
   ' "$inventory"; then inventory_valid=yes; else inventory_valid=no; fi
   if [ "$inventory_valid" != yes ]; then
     report_error "$launcher profile inventory does not match managed catalog"

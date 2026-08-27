@@ -154,11 +154,9 @@ projected_headless() {
 
 projected_headless_map_json() {
   jq -cn \
-    --argjson hve "$(projected_headless hve)" \
     --argjson pstack "$(projected_headless pstack)" \
     --argjson superpowers "$(projected_headless superpowers)" '
     {
-      hve: $hve,
       pstack: $pstack,
       superpowers: $superpowers
     }
@@ -171,34 +169,6 @@ validate_catalog() {
     and .[0] == {
       "schemaVersion": 1,
       "profiles": {
-        "hve": {
-          "description": "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access.",
-          "headless": {
-            "schemaVersion": 1,
-            "prompt": false,
-            "outputFormats": ["text"],
-            "eventContract": null,
-            "trellageEventContract": null,
-            "sessionId": "none",
-            "resume": false,
-            "resumeWithPrompt": false,
-            "questionToolControl": "none",
-            "changedFiles": "none",
-            "usage": false,
-            "cost": false,
-            "modelOverride": false,
-            "effortOverride": false,
-            "testedHarnessVersion": null
-          },
-          "marketplaceKind": "local-adapter",
-          "marketplaceSource": "marketplaces/hve-core",
-          "marketplaceName": "hve-core",
-          "upstreamRepository": "https://github.com/microsoft/hve-core.git",
-          "upstreamSkillsPath": ".github/skills",
-          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
-          "plugin": "hve-core-all@hve-core",
-          "standaloneMcps": []
-        },
         "pstack": {
           "description": "Codex CLI with Aqua-123’s pstack skill and Poteto Mode playbook collection.",
           "headless": {
@@ -1293,10 +1263,6 @@ plugin_name() {
   printf '%s\n' "${1%@*}"
 }
 
-canonical_directory() {
-  (CDPATH= cd -- "$1" >/dev/null 2>&1 && pwd -P)
-}
-
 existing_directory_is_within() {
   local root="$1" candidate="$2"
   local canonical_root canonical_candidate
@@ -1312,66 +1278,6 @@ existing_directory_is_within() {
   esac
 }
 
-resolve_local_adapter() {
-  local profile="$1"
-  local source expected_root canonical_source path component marketplace plugin repository skills_path
-
-  [ "$(catalog_value "$profile" marketplaceKind)" = 'local-adapter' ] \
-    || die "profile marketplace is not a local adapter: $profile"
-  source="$script_dir/$(catalog_value "$profile" marketplaceSource)"
-  expected_root="$(canonical_directory "$script_dir")" \
-    || die "unsafe catalog runtime root: $script_dir"
-  case "$source" in "$script_dir"/*) ;; *) die "unsafe local marketplace path: $source" ;; esac
-  path="$script_dir"
-  for component in $(printf '%s\n' "$(catalog_value "$profile" marketplaceSource)" | tr '/' ' '); do
-    path="$path/$component"
-    [ -d "$path" ] && [ ! -L "$path" ] \
-      || die "unsafe local marketplace path: $source"
-  done
-  for component in .agents plugins; do
-    path="$path/$component"
-    [ -d "$path" ] && [ ! -L "$path" ] \
-      || die "unsafe local marketplace path: $source"
-  done
-  path="$path/marketplace.json"
-  [ -f "$path" ] && [ ! -L "$path" ] \
-    || die "unsafe local marketplace path: $source"
-  canonical_source="$(canonical_directory "$source")" \
-    || die "unsafe local marketplace path: $source"
-  case "$canonical_source" in "$expected_root"/*) ;; *) die "unsafe local marketplace path: $source" ;; esac
-  marketplace="$(catalog_value "$profile" marketplaceName)"
-  plugin="$(plugin_name "$(catalog_value "$profile" plugin)")"
-  repository="$(catalog_value "$profile" upstreamRepository)"
-  skills_path="$(catalog_value "$profile" upstreamSkillsPath)"
-  jq -se --arg marketplace "$marketplace" --arg plugin "$plugin" \
-    --arg repository "$repository" --arg skillsPath "./$skills_path" '
-    length == 1 and
-    (.[0].plugins[0].version as $version |
-      ($version | type) == "string" and ($version | length) > 0 and
-      .[0] == {
-        "name":$marketplace,
-        "owner":{"name":"Trellage"},
-        "plugins":[{
-          "name":$plugin,
-          "source":{"source":"url","url":$repository,"ref":"main"},
-          "version":$version,
-          "skills":$skillsPath
-        }]
-      })
-  ' "$path" >/dev/null || die "invalid local marketplace adapter: $path"
-  printf '%s\n' "$canonical_source"
-}
-
-local_adapter_plugin_version() {
-  local profile="$1" adapter path plugin
-
-  adapter="$(resolve_local_adapter "$profile")" || return 1
-  path="$adapter/.agents/plugins/marketplace.json"
-  plugin="$(plugin_name "$(catalog_value "$profile" plugin)")"
-  jq -ser --arg plugin "$plugin" \
-    '.[0].plugins | map(select(.name == $plugin))[0].version' "$path"
-}
-
 validate_profile_paths() {
   local profile="$1" kind
 
@@ -1379,7 +1285,6 @@ validate_profile_paths() {
   require_profile_config "$profile"
   kind="$(catalog_value "$profile" marketplaceKind)"
   case "$kind" in
-    local-adapter) resolve_local_adapter "$profile" >/dev/null ;;
     git|git-local) [ -n "$(catalog_value "$profile" marketplaceSource)" ] || return 1 ;;
     *) die "invalid marketplace kind for profile: $profile" ;;
   esac
@@ -1387,27 +1292,14 @@ validate_profile_paths() {
 
 run_codex_capture() {
   local profile="$1" output="$2"
-  local error status local_adapter_add=no adapter
+  local error status
   shift 2
-
-  if [ "${1:-}" = '--local-marketplace-add' ]; then
-    local_adapter_add=yes
-    shift
-  fi
 
   validate_profile_paths "$profile"
   resolve_codex
   make_owned_temp "${TMPDIR:-/tmp}/${launcher_name}-native-error.XXXXXX" \
     'failed to stage native Codex error output'
   error="$created_temp"
-  if [ "$local_adapter_add" = yes ]; then
-    # Codex accepts a pathname, not an open descriptor. Revalidate after all
-    # preparation and immediately before exec. A same-user replacement in the
-    # remaining syscall window is inside the profile asset trust boundary.
-    adapter="$(resolve_local_adapter "$profile")" \
-      || die "unsafe local marketplace path: $script_dir"
-    set -- plugin marketplace add "$adapter" --json
-  fi
   env CODEX_HOME="$(profile_home "$profile")" "$codex_executable" "$@" >"$output" 2>"$error"
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -1445,7 +1337,7 @@ read_plugin_inventory() {
 
 marketplace_inventory_status() {
   local profile="$1" input="$2"
-  local name kind source adapter home root
+  local name kind source home root
 
   name="$(catalog_value "$profile" marketplaceName)"
   kind="$(catalog_value "$profile" marketplaceKind)"
@@ -1459,18 +1351,6 @@ marketplace_inventory_status() {
   [ "$count" -le 1 ] || return 2
   [ "$count" -eq 1 ] || return 1
   case "$kind" in
-    local-adapter)
-      adapter="$(resolve_local_adapter "$profile")" || return 2
-      jq -se --arg name "$name" --arg adapter "$adapter" '
-        length == 1 and
-        (.[0].marketplaces | map(select(.name == $name)) | length) == 1 and
-        ((.[0].marketplaces | map(select(.name == $name))[0]) as $m |
-          ($m | type == "object") and
-          ($m | keys) == ["marketplaceSource","name","root"] and
-          ($m.name == $name) and ($m.root == $adapter) and
-          ($m.marketplaceSource == {sourceType:"local",source:$adapter}))
-      ' "$input" >/dev/null || return 2
-      ;;
     git|git-local)
       jq -se --arg name "$name" --arg source "https://github.com/$source.git" '
         length == 1 and
@@ -1491,7 +1371,7 @@ marketplace_inventory_status() {
 
 plugin_inventory_status() {
   local profile="$1" input="$2"
-  local plugin name marketplace kind source adapter count repository home installed_path version
+  local plugin name marketplace kind source adapter count home installed_path
 
   plugin="$(catalog_value "$profile" plugin)"
   name="$(plugin_name "$plugin")"
@@ -1511,33 +1391,6 @@ plugin_inventory_status() {
   [ "$count" -le 1 ] || return 2
   [ "$count" -eq 1 ] || return 1
   case "$kind" in
-    local-adapter)
-      adapter="$(resolve_local_adapter "$profile")" || return 2
-      repository="$(catalog_value "$profile" upstreamRepository)"
-      version="$(local_adapter_plugin_version "$profile")" || return 2
-      jq -se --arg plugin "$plugin" --arg name "$name" --arg marketplace "$marketplace" \
-        --arg adapter "$adapter" --arg repository "$repository" --arg version "$version" '
-        (.[0].installed | map(select(.pluginId == $plugin))[0]) as $p |
-        ($p | type == "object") and $p.pluginId == $plugin and $p.name == $name and
-        (($p | keys) == ["authPolicy","enabled","installPolicy","installed","marketplaceName","marketplaceSource","name","pluginId","source","version"] or
-         ($p | keys) == ["authPolicy","enabled","installPolicy","installed","installedPath","marketplaceName","marketplaceSource","name","pluginId","source","version"]) and
-        $p.marketplaceName == $marketplace and $p.installed == true and $p.enabled == true and
-        $p.version == $version and
-        $p.source == {source:"git",url:$repository,ref:"main"} and
-        $p.marketplaceSource == {sourceType:"local",source:$adapter} and
-        $p.installPolicy == "AVAILABLE" and $p.authPolicy == "ON_INSTALL" and
-        (($p | has("installedPath") | not) or
-         (($p.installedPath | type) == "string"))
-      ' "$input" >/dev/null || return 3
-      if jq -se --arg plugin "$plugin" \
-        '.[0].installed | map(select(.pluginId == $plugin))[0] | has("installedPath")' \
-        "$input" >/dev/null; then
-        installed_path="$(jq -ser --arg plugin "$plugin" \
-          '.[0].installed | map(select(.pluginId == $plugin))[0].installedPath' "$input")" \
-          || return 3
-        existing_directory_is_within "$home" "$installed_path" || return 3
-      fi
-      ;;
     git)
       jq -se --arg plugin "$plugin" --arg name "$name" --arg marketplace "$marketplace" \
         --arg source "https://github.com/$source.git" \
@@ -1982,10 +1835,6 @@ ensure_profile_lifecycle() {
 
   if [ "$marketplace_status" -eq 1 ]; then
     case "$kind" in
-      local-adapter)
-        run_codex_mutation "$profile" --local-marketplace-add \
-          || die "failed to add selected marketplace: $profile"
-        ;;
       git|git-local)
         source="$(catalog_value "$profile" marketplaceSource)"
         run_codex_mutation "$profile" plugin marketplace add "$source" --json \
@@ -2377,10 +2226,6 @@ update_profile() {
   plugin="$(catalog_value "$profile" plugin)"
   marketplace="$(catalog_value "$profile" marketplaceName)"
   case "$kind" in
-    local-adapter)
-      run_codex_mutation "$profile" plugin remove "$plugin" --json || return 2
-      run_codex_mutation "$profile" plugin add "$plugin" --json || return 2
-      ;;
     git)
       require_marketplace_update_safe_now "$profile"
       run_codex_mutation "$profile" plugin marketplace upgrade "$marketplace" --json || return 2

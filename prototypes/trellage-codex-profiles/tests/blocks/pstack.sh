@@ -192,7 +192,7 @@ run_cdx() {
 
 run_cdx list --json >"$fixture/list.json"
 jq -e '.launcher == "cdx" and .sandbox == true
-  and (.profiles | map(.name)) == ["hve", "pstack", "superpowers"]' "$fixture/list.json" >/dev/null \
+  and (.profiles | map(.name)) == ["pstack", "superpowers"]' "$fixture/list.json" >/dev/null \
   || fail 'list JSON differs'
 run_cdx inventory pstack --json >"$fixture/inventory-before.json"
 jq -e '.readiness == "not-setup" and .launcher == "cdx"' \

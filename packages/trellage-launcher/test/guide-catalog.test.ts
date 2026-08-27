@@ -50,7 +50,7 @@ const validCatalog = {
     {
       launcher: "cdx",
       harness: "codex",
-      name: "hve",
+      name: "pstack",
       description: "Codex host-native launcher.",
       headless,
       sandbox: false,
@@ -114,8 +114,8 @@ describe("parseGuideCatalog", () => {
     const entries = guideCatalogEntries(catalog)
 
     expect(entries).toHaveLength(2)
-    expect(entries.map((entry) => entry.ref)).toEqual(["native:cdx/hve", "sandbox:prime-agent"])
-    expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", harness: "codex", name: "hve" })
+    expect(entries.map((entry) => entry.ref)).toEqual(["native:cdx/pstack", "sandbox:prime-agent"])
+    expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", harness: "codex", name: "pstack" })
     expect(entries[1]).toMatchObject({ surface: "sandbox", harness: "copilot", name: "prime-agent" })
   })
 
@@ -123,7 +123,7 @@ describe("parseGuideCatalog", () => {
     const catalog = parseGuideCatalog(JSON.stringify(validCatalog))
     const index = guideCatalogWorkflowIndex(catalog)
 
-    expect(index.get("native:cdx/hve")).toEqual(new Set(["review"]))
+    expect(index.get("native:cdx/pstack")).toEqual(new Set(["review"]))
     expect(index.get("sandbox:prime-agent")).toEqual(new Set(["review"]))
     expect(index.get("sandbox:unknown")).toBeUndefined()
   })
@@ -271,7 +271,7 @@ describe("compactProfileGuide / guideMatchCatalogEntries", () => {
     expect(matchEntries).toHaveLength(2)
     expect(matchEntries).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ ref: "native:cdx/hve", harness: "codex" }),
+        expect.objectContaining({ ref: "native:cdx/pstack", harness: "codex" }),
         expect.objectContaining({ ref: "sandbox:prime-agent", harness: "copilot" }),
       ]),
     )

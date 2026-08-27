@@ -11,27 +11,9 @@ blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 . "$blocks_dir/../lib/profiles.sh"
 
 
-validate_adapter "$adapter" || fail 'adapter contract failed'
-
-multiple_adapter="$fixture_root/multiple-adapter.json"
-printf '{}\n' >"$multiple_adapter"
-cat "$adapter" >>"$multiple_adapter"
-if validate_adapter "$multiple_adapter"; then
-  fail 'adapter validator accepted multiple JSON documents'
-fi
-
 jq -e '
   .schemaVersion == 1
-  and (.profiles | keys | sort) == ["hve", "pstack", "superpowers"]
-  and .profiles.hve.description == "Codex CLI with HVE Core’s portable skill inventory for RPI evidence and specialist engineering workflows, defaulting to proxy-backed gpt-5.6-sol with unrestricted host access."
-  and .profiles.hve.marketplaceKind == "local-adapter"
-  and .profiles.hve.marketplaceSource == "marketplaces/hve-core"
-  and .profiles.hve.marketplaceName == "hve-core"
-  and .profiles.hve.upstreamRepository == "https://github.com/microsoft/hve-core.git"
-  and .profiles.hve.upstreamSkillsPath == ".github/skills"
-  and .profiles.hve.manifestUrl == "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
-  and .profiles.hve.plugin == "hve-core-all@hve-core"
-  and .profiles.hve.standaloneMcps == []
+  and (.profiles | keys | sort) == ["pstack", "superpowers"]
   and .profiles.pstack.marketplaceKind == "git-local"
   and .profiles.pstack.marketplaceSource == "Aqua-123/pstack-for-codex"
   and .profiles.pstack.marketplaceName == "pstack-for-codex-local"
@@ -52,7 +34,6 @@ build_fixture_profiles
 
 HOME="$fixture_root/home" "$fixture_launcher" list >"$fixture_root/list.out" || fail 'list failed'
 cmp -s "$fixture_root/list.out" <(printf '%s\n' \
-  $'hve\thve-core-all@hve-core' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace') \
   || fail 'list output differs'
@@ -64,7 +45,7 @@ jq -e '
   and .launcher == "cdx"
   and .harness == "codex"
   and .sandbox == true
-  and [.profiles[].name] == ["hve", "pstack", "superpowers"]
+  and [.profiles[].name] == ["pstack", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -84,21 +65,18 @@ jq -e '
     "testedHarnessVersion": null
   }
   and .profiles[1].headless == .profiles[0].headless
-  and .profiles[2].headless == .profiles[0].headless
-  and .profiles[0].plugin == "hve-core-all@hve-core"
+  and .profiles[0].plugin == "pstack-for-codex@pstack-for-codex-local"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
-    "kind": "local-adapter",
-    "source": "marketplaces/hve-core",
-    "name": "hve-core",
-    "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json"
+    "kind": "git-local",
+    "manifestUrl": "https://raw.githubusercontent.com/Aqua-123/pstack-for-codex/main/.codex-plugin/marketplace.json",
+    "name": "pstack-for-codex-local",
+    "source": "Aqua-123/pstack-for-codex"
   }
   and .profiles[0].standaloneMcps == []
-  and .profiles[1].marketplace.kind == "git-local"
-  and .profiles[1].marketplace.source == "Aqua-123/pstack-for-codex"
+  and .profiles[1].marketplace.kind == "git"
+  and .profiles[1].marketplace.source == "obra/superpowers-marketplace"
   and .profiles[1].standaloneMcps == []
-  and .profiles[2].marketplace.kind == "git"
-  and .profiles[2].standaloneMcps == []
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list output differs'
 
 if HOME="$fixture_root/home" "$fixture_launcher" >"$fixture_root/bare.out" 2>&1; then
@@ -133,7 +111,7 @@ jq -e '
   and .profiles[1].headless == .profiles[0].headless
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list output differs'
 
-profile_login_home="$fixture_root/home/.local/share/trellage/profiles/codex/hve/home"
+profile_login_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
 HOME="$fixture_root/home" CODEX_HOME="$profile_login_home" \
   FAKE_CODEX_LOGIN_STATUS=0 fake_env codex login status \
   >"$fixture_root/login-status-profile-home.out" 2>&1
@@ -172,7 +150,7 @@ assert_usage_status() {
 
 assert_usage_status native-missing --native-auth
 for lifecycle_profile in list setup doctor update repair --help -h; do
-  assert_usage_status "native-$lifecycle_profile" --native-auth "$lifecycle_profile" hve
+  assert_usage_status "native-$lifecycle_profile" --native-auth "$lifecycle_profile" pstack
 done
 native_unknown_status=0
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -219,39 +197,39 @@ printf '%s\n' \
   '[mcp_servers.host-only]' \
   'command = "must-not-copy"' >"$fixture_root/home/.codex/config.toml"
 
-HOME="$fixture_root/home" fake_env "$fixture_launcher" setup hve \
-  >"$fixture_root/setup-hve.out" || fail 'setup hve failed'
-hve_home="$fixture_root/home/.local/share/trellage/profiles/codex/hve/home"
-[ -d "$hve_home" ] || fail 'setup did not create hve home'
+HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
+  >"$fixture_root/setup-pstack.out" || fail 'setup pstack failed'
+pstack_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
+[ -d "$pstack_home" ] || fail 'setup did not create pstack home'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'setup created host authentication'
-auth_is_absent "$hve_home/auth.json" || fail 'setup created profile authentication'
-[ -f "$hve_home/config.toml" ] || fail 'setup did not create profile config'
+auth_is_absent "$pstack_home/auth.json" || fail 'setup created profile authentication'
+[ -f "$pstack_home/config.toml" ] || fail 'setup did not create profile config'
 if grep -F -e 'host-only-secret' -e 'mcp_servers.host-only' -e 'must-not-copy' \
-  "$hve_home/config.toml" >/dev/null; then
+  "$pstack_home/config.toml" >/dev/null; then
   fail 'setup imported host config bytes'
 fi
 
 jq -se '
   any(.[]; .args == ["plugin","marketplace","list","--json"])
   and any(.[]; .args == ["plugin","list","--json"])
-  and any(.[]; .args == ["plugin","marketplace","add",$adapter,"--json"])
-  and any(.[]; .args == ["plugin","add","hve-core-all@hve-core","--json"])
-' --arg adapter "$fake_adapter_root" \
-  "$fixture_root/fake-codex.log" >/dev/null \
-  || fail 'setup hve native lifecycle calls differ'
+  and any(.[]; .args == ["plugin","marketplace","add","Aqua-123/pstack-for-codex","--json"])
+  and any(.[]; .args == ["plugin","marketplace","upgrade","pstack-for-codex-local","--json"])
+  and any(.[]; .args == ["plugin","add","pstack-for-codex@pstack-for-codex-local","--json"])
+' "$fixture_root/fake-codex.log" >/dev/null \
+  || fail 'setup pstack native lifecycle calls differ'
 
 printf '%s\n' '{"tokens":{"access_token":"host-only-access","refresh_token":"host-only-refresh"},"last_refresh":"2026-07-30T00:00:00Z"}' \
   >"$fixture_root/home/.codex/auth.json"
 chmod 0600 "$fixture_root/home/.codex/auth.json"
 host_auth_hash="$(shasum -a 256 "$fixture_root/home/.codex/auth.json" | awk '{print $1}')"
-cp "$hve_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
+cp "$pstack_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
 (cd "$original_cwd" && \
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
-  "$fixture_launcher" hve -m gpt-5.5 exec --json 'hello world') \
-  || fail 'hve launch failed'
+  "$fixture_launcher" pstack -m gpt-5.5 exec --json 'hello world') \
+  || fail 'pstack launch failed'
 
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
 FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
@@ -269,7 +247,7 @@ pid, terminal = pty.fork()
 if pid == 0:
     environment = os.environ.copy()
     environment["FAKE_CODEX_TTY_READ"] = "1"
-    os.execvpe(launcher, [launcher, "hve", "--version"], environment)
+    os.execvpe(launcher, [launcher, "pstack", "--version"], environment)
 
 output = bytearray()
 sent = False
@@ -301,10 +279,10 @@ if status != 0 or b"TTY_READ_DONE" not in output:
     raise SystemExit(1)
 PY
 
-cmp -s "$fixture_root/proxy-launch-config-before.toml" "$hve_home/config.toml" \
+cmp -s "$fixture_root/proxy-launch-config-before.toml" "$pstack_home/config.toml" \
   || fail 'proxy launch did not restore exact prelaunch config bytes'
 original_cwd_physical="$(CDPATH= cd -P -- "$original_cwd" && pwd)"
-jq -se --arg codexHome "$hve_home" \
+jq -se --arg codexHome "$pstack_home" \
   --arg home "$fixture_root/home" \
   --arg cwd "$original_cwd" \
   --arg trustOverride "projects={\"$original_cwd_physical\"={trust_level=\"trusted\"}}" '
@@ -328,7 +306,7 @@ jq -se --arg codexHome "$hve_home" \
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   CDX_HOOK_TRUST=prompt \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   || fail 'CDX_HOOK_TRUST=prompt launch failed'
 jq -se '
   map(select(.args[0] == "--sandbox")) as $launches |
@@ -340,7 +318,7 @@ jq -se '
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   CDX_HOOK_TRUST=bypass \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   || fail 'CDX_HOOK_TRUST=bypass launch failed'
 jq -se '
   map(select(.args[0] == "--sandbox")) as $launches |
@@ -352,7 +330,7 @@ jq -se '
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   CDX_HOOK_TRUST=invalid-mode \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   >"$fixture_root/hook-trust-invalid.out" 2>&1 \
   && fail 'invalid CDX_HOOK_TRUST was accepted'
 grep -F 'CDX_HOOK_TRUST must be auto, bypass, or prompt' \
@@ -360,7 +338,7 @@ grep -F 'CDX_HOOK_TRUST must be auto, bypass, or prompt' \
   || fail 'invalid CDX_HOOK_TRUST diagnostic missing'
 : >"$fixture_root/fake-codex.log"
 
-auth_is_absent "$hve_home/auth.json" || fail 'launch copied host authentication'
+auth_is_absent "$pstack_home/auth.json" || fail 'launch copied host authentication'
 [ "$(shasum -a 256 "$fixture_root/home/.codex/auth.json" | awk '{print $1}')" = "$host_auth_hash" ] \
   || fail 'launch changed host authentication'
 rm "$fixture_root/home/.codex/auth.json"
@@ -388,7 +366,7 @@ worktree_trust_log="$fixture_root/fake-codex-worktree-trust.log"
 (cd "$worktree_trust_link" && \
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$worktree_trust_log" \
-  "$fixture_launcher" hve --version) \
+  "$fixture_launcher" pstack --version) \
   || fail 'launch from linked worktree failed'
 jq -se \
   --arg linkPath "$worktree_trust_link_physical" \
@@ -412,8 +390,8 @@ proxy_config_before="$fixture_root/proxy-launch-config-before.toml"
 assert_early_status 37 proxy-launch-child-status env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_APPEND_PROJECT_TRUST_TWICE=1 \
-  FAKE_CODEX_EXIT_STATUS=37 "$fixture_launcher" hve --version
-cmp -s "$proxy_config_before" "$hve_home/config.toml" \
+  FAKE_CODEX_EXIT_STATUS=37 "$fixture_launcher" pstack --version
+cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
   || fail 'failed proxy child did not restore exact prelaunch config bytes'
 
 proxy_config_with_separator="$fixture_root/proxy-launch-config-with-separator.toml"
@@ -421,17 +399,17 @@ awk -v marker='# trellage-managed-codex-provider-end' '
   $0 == marker { print "" }
   { print }
 ' "$proxy_config_before" >"$proxy_config_with_separator"
-cp "$proxy_config_with_separator" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_with_separator" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   || fail 'separator-preserving project trust launch failed'
-cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
+cmp -s "$proxy_config_with_separator" "$pstack_home/config.toml" \
   || fail 'separator-preserving launch did not restore exact prelaunch bytes'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 # Eight bounds compatibility well above normal one-stanza writes and the
 # two-stanza recovery case while keeping accepted native-tail growth small.
@@ -440,9 +418,9 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_APPEND_PROJECT_TRUST_COUNT="$generated_project_trust_cap" \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   || fail 'boundary generated project trust chain was rejected'
-cmp -s "$proxy_config_before" "$hve_home/config.toml" \
+cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
   || fail 'boundary project trust cleanup changed prelaunch config bytes'
 
 over_cap_project_config="$fixture_root/over-cap-project-config.toml"
@@ -452,15 +430,15 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_APPEND_PROJECT_TRUST_COUNT="$((generated_project_trust_cap + 1))" \
   FAKE_CODEX_CAPTURE_PROJECT_CONFIG="$over_cap_project_config" \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   >"$fixture_root/over-cap-project-launch.out" 2>&1 \
   || over_cap_status=$?
 [ "$over_cap_status" -eq 1 ] \
   || fail 'over-cap generated project trust chain was accepted'
-cmp -s "$over_cap_project_config" "$hve_home/config.toml" \
+cmp -s "$over_cap_project_config" "$pstack_home/config.toml" \
   || fail 'over-cap project trust rejection changed live config bytes'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 pending_signal_bash_env="$fixture_root/pending-launch-signal.bashenv"
 cat >"$pending_signal_bash_env" <<'EOF'
@@ -511,7 +489,7 @@ while [ "$pending_signal_iteration" -le 3 ]; do
     CDX_TEST_PENDING_SIGNAL_NAME=TERM \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TREE_DIR="$pending_signal_dir" \
-    "$fixture_launcher" hve --version \
+    "$fixture_launcher" pstack --version \
     >"$fixture_root/pending-launch-signal-$pending_signal_iteration.out" 2>&1 &
   pending_signal_launcher_pid=$!
   track_async_pid "$pending_signal_launcher_pid"
@@ -605,9 +583,9 @@ while [ "$pending_signal_iteration" -le 3 ]; do
     && kill -0 "$(cat "$pending_signal_dir/grandchild.pid")" 2>/dev/null; then
     fail "pending launch signal iteration $pending_signal_iteration left grandchild running"
   fi
-  cmp -s "$proxy_config_before" "$hve_home/config.toml" \
+  cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
     || fail "pending launch signal iteration $pending_signal_iteration bypassed exact config cleanup"
-  [ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+  [ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
     || fail "pending launch signal iteration $pending_signal_iteration left profile launch lock"
   untrack_async_pid "$pending_signal_launcher_pid"
   untrack_async_group "$pending_signal_child_pid"
@@ -619,7 +597,7 @@ mkdir "$overlap_dir"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_OVERLAP_DIR="$overlap_dir" \
-  "$fixture_launcher" hve --version >"$fixture_root/overlap-first.out" 2>&1 &
+  "$fixture_launcher" pstack --version >"$fixture_root/overlap-first.out" 2>&1 &
 overlap_first_pid=$!
 track_async_pid "$overlap_first_pid"
 overlap_wait=0
@@ -633,7 +611,7 @@ track_async_group "$overlap_first_group"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_OVERLAP_DIR="$overlap_dir" \
-  "$fixture_launcher" hve --version >"$fixture_root/overlap-second.out" 2>&1 &
+  "$fixture_launcher" pstack --version >"$fixture_root/overlap-second.out" 2>&1 &
 overlap_second_pid=$!
 track_async_pid "$overlap_second_pid"
 overlap_wait=0
@@ -666,60 +644,60 @@ wait "$overlap_second_pid" || overlap_second_status=$?
 [ "$overlap_second_status" -eq 0 ] \
   || { cat "$fixture_root/overlap-second.out" >&2; fail 'second overlapping launch failed'; }
 [ -f "$overlap_dir/second-started" ] || fail 'second overlapping launch never started'
-grep -E '^\[projects\."' "$hve_home/config.toml" >/dev/null \
+grep -E '^\[projects\."' "$pstack_home/config.toml" >/dev/null \
   && fail 'overlapping launches left generated project trust in config'
 # Managed marker envelope must remain intact after concurrent sessions.
-grep -Fxc -- '# trellage-managed-codex-config-begin' "$hve_home/config.toml" \
+grep -Fxc -- '# trellage-managed-codex-config-begin' "$pstack_home/config.toml" \
   | grep -qx 1 \
   || fail 'overlapping launches damaged managed config begin marker'
-grep -Fxc -- '# trellage-managed-codex-provider-end' "$hve_home/config.toml" \
+grep -Fxc -- '# trellage-managed-codex-provider-end' "$pstack_home/config.toml" \
   | grep -qx 1 \
   || fail 'overlapping launches damaged managed provider end marker'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'overlapping launches left profile lock state'
 untrack_async_pid "$overlap_first_pid"
 untrack_async_group "$overlap_first_group"
 untrack_async_pid "$overlap_second_pid"
 [ -z "$overlap_second_group" ] || untrack_async_group "$overlap_second_group"
 # Restore canonical bytes before later exact-restore assertions.
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
-printf '%s %s %s\n' 2147483647 stalebirth 999-1 >"$hve_home/.launch.lock"
-chmod 0600 "$hve_home/.launch.lock"
+printf '%s %s %s\n' 2147483647 stalebirth 999-1 >"$pstack_home/.launch.lock"
+chmod 0600 "$pstack_home/.launch.lock"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" hve --version \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" pstack --version \
   || fail 'launch did not recover stale profile lock'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'stale profile lock recovery left lock state'
 
-printf '%s %s %s\n' "$$" mismatchedbirth 999-2 >"$hve_home/.launch.lock"
-chmod 0600 "$hve_home/.launch.lock"
+printf '%s %s %s\n' "$$" mismatchedbirth 999-2 >"$pstack_home/.launch.lock"
+chmod 0600 "$pstack_home/.launch.lock"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" hve --version \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" pstack --version \
   || fail 'launch did not recover reused-PID lock identity mismatch'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'reused-PID lock recovery left lock state'
 
-printf '%s %s %s\n' 2147483647 stalebirth 999-3 >"$hve_home/.launch.lock"
-printf '%s %s %s\n' 2147483646 olderbirth 999-4 >"$hve_home/.launch-lock-reap"
-chmod 0600 "$hve_home/.launch.lock" "$hve_home/.launch-lock-reap"
+printf '%s %s %s\n' 2147483647 stalebirth 999-3 >"$pstack_home/.launch.lock"
+printf '%s %s %s\n' 2147483646 olderbirth 999-4 >"$pstack_home/.launch-lock-reap"
+chmod 0600 "$pstack_home/.launch.lock" "$pstack_home/.launch-lock-reap"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" hve --version \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" pstack --version \
   || fail 'launch did not recover mismatched stale recovery link'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'mismatched recovery-link test left profile lock'
-[ ! -e "$hve_home/.launch-lock-reap" ] \
-  && [ ! -L "$hve_home/.launch-lock-reap" ] \
+[ ! -e "$pstack_home/.launch-lock-reap" ] \
+  && [ ! -L "$pstack_home/.launch-lock-reap" ] \
   || fail 'mismatched recovery-link test left recovery link'
 
 release_race_dir="$fixture_root/launch-lock-owner-release"
 mkdir "$release_race_dir"
-printf '%s %s %s\n' 2147483647 stalebirth 999-5 >"$hve_home/.launch.lock"
-chmod 0600 "$hve_home/.launch.lock"
+printf '%s %s %s\n' 2147483647 stalebirth 999-5 >"$pstack_home/.launch.lock"
+chmod 0600 "$pstack_home/.launch.lock"
 release_race_bash_env="$release_race_dir/release.bashenv"
 cat >"$release_race_bash_env" <<'EOF'
 set -T
@@ -740,11 +718,11 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   BASH_ENV="$release_race_bash_env" \
   CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
   CDX_TEST_RELEASE_RACE_DIR="$release_race_dir" \
-  CDX_TEST_RELEASE_RACE_LOCK="$hve_home/.launch.lock" \
+  CDX_TEST_RELEASE_RACE_LOCK="$pstack_home/.launch.lock" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_RELEASE_RACE_DIR="$release_race_dir" \
-  "$fixture_launcher" hve --version >"$release_race_dir/waiter.out" 2>&1 \
+  "$fixture_launcher" pstack --version >"$release_race_dir/waiter.out" 2>&1 \
   || release_race_status=$?
 [ -f "$release_race_dir/injected" ] \
   || fail 'owner release race was not injected before owner read'
@@ -752,7 +730,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   || fail 'waiter did not retry after owner released launch lock'
 [ -f "$release_race_dir/child-started" ] \
   || fail 'waiter did not launch after owner released launch lock'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'owner release race left profile lock state'
 
 takeover_dir="$fixture_root/launch-lock-takeover"
@@ -760,9 +738,9 @@ mkdir "$takeover_dir"
 takeover_birth="$(LC_ALL=C ps -p "$$" -o lstart= | tr -cd '[:alnum:]')"
 [ -n "$takeover_birth" ] || fail 'could not determine takeover lock owner birth'
 takeover_owner="$$ $takeover_birth 999-5"
-printf '%s %s %s\n' 2147483647 stalebirth 999-4 >"$hve_home/.launch.lock"
+printf '%s %s %s\n' 2147483647 stalebirth 999-4 >"$pstack_home/.launch.lock"
 printf '%s\n' "$takeover_owner" >"$takeover_dir/active-owner"
-chmod 0600 "$hve_home/.launch.lock" "$takeover_dir/active-owner"
+chmod 0600 "$pstack_home/.launch.lock" "$takeover_dir/active-owner"
 takeover_bash_env="$takeover_dir/takeover.bashenv"
 cat >"$takeover_bash_env" <<'EOF'
 set -T
@@ -783,10 +761,10 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   BASH_ENV="$takeover_bash_env" \
   CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
   CDX_TEST_TAKEOVER_DIR="$takeover_dir" \
-  CDX_TEST_TAKEOVER_LOCK="$hve_home/.launch.lock" \
+  CDX_TEST_TAKEOVER_LOCK="$pstack_home/.launch.lock" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TAKEOVER_DIR="$takeover_dir" \
-  "$fixture_launcher" hve --version >"$takeover_dir/contender.out" 2>&1 &
+  "$fixture_launcher" pstack --version >"$takeover_dir/contender.out" 2>&1 &
 takeover_contender_pid=$!
 track_async_pid "$takeover_contender_pid"
 takeover_wait=0
@@ -803,23 +781,23 @@ while [ ! -f "$takeover_dir/child-started" ] \
   sleep 0.05
   takeover_wait=$((takeover_wait + 1))
 done
-[ -f "$hve_home/.launch.lock" ] \
-  && [ "$(cat "$hve_home/.launch.lock")" = "$takeover_owner" ] \
+[ -f "$pstack_home/.launch.lock" ] \
+  && [ "$(cat "$pstack_home/.launch.lock")" = "$takeover_owner" ] \
   || fail 'takeover race removed active profile lock'
 [ ! -f "$takeover_dir/child-started" ] \
   || fail 'takeover contender entered Codex while active lock was held'
 kill -0 "$takeover_contender_pid" 2>/dev/null \
   || fail 'takeover contender did not wait for active lock release'
-rm -f -- "$hve_home/.launch.lock"
+rm -f -- "$pstack_home/.launch.lock"
 takeover_status=0
 wait "$takeover_contender_pid" || takeover_status=$?
 [ "$takeover_status" -eq 0 ] || fail 'takeover contender failed after lock release'
 [ -f "$takeover_dir/child-started" ] \
   || fail 'takeover contender did not launch after lock release'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'takeover contender left profile lock state'
-[ ! -e "$hve_home/.launch-lock-reap" ] \
-  && [ ! -L "$hve_home/.launch-lock-reap" ] \
+[ ! -e "$pstack_home/.launch-lock-reap" ] \
+  && [ ! -L "$pstack_home/.launch-lock-reap" ] \
   || fail 'takeover contender left recovery link'
 untrack_async_pid "$takeover_contender_pid"
 
@@ -831,8 +809,8 @@ for launch_signal_case in HUP:129 INT:130 TERM:143; do
     PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
     FAKE_CODEX_SIGNAL_PARENT="$launch_signal_name" \
-    "$fixture_launcher" hve --version
-  cmp -s "$proxy_config_before" "$hve_home/config.toml" \
+    "$fixture_launcher" pstack --version
+  cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
     || fail "$launch_signal_name proxy launch did not restore exact prelaunch config bytes"
 done
 
@@ -860,7 +838,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_WAIT_SECOND_SIGNAL=1 \
   CDX_TEST_RETRY_WAIT_DIR="$retry_wait_dir" \
   CDX_TEST_RETRY_WAIT_REAL_CP="$retry_wait_real_cp" \
-  "$fixture_launcher" hve --version >"$fixture_root/retry-wait-signal.out" 2>&1 &
+  "$fixture_launcher" pstack --version >"$fixture_root/retry-wait-signal.out" 2>&1 &
 retry_wait_launcher_pid=$!
 track_async_pid "$retry_wait_launcher_pid"
 set +m
@@ -898,9 +876,9 @@ wait "$retry_wait_launcher_pid" || retry_wait_status=$?
 if kill -0 "$(cat "$retry_wait_dir/grandchild.pid")" 2>/dev/null; then
   fail 'retrying wait left grandchild running'
 fi
-cmp -s "$proxy_config_before" "$hve_home/config.toml" \
+cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
   || fail 'retrying wait bypassed exact config cleanup'
-[ ! -e "$hve_home/.launch.lock" ] && [ ! -L "$hve_home/.launch.lock" ] \
+[ ! -e "$pstack_home/.launch.lock" ] && [ ! -L "$pstack_home/.launch.lock" ] \
   || fail 'retrying wait released lock before process tree reaped'
 untrack_async_pid "$retry_wait_launcher_pid"
 untrack_async_group "$retry_wait_group"
@@ -910,14 +888,14 @@ assert_early_status 1 proxy-launch-unrelated-mutation env HOME="$fixture_root/ho
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_PROJECT_EXTRA_FIELD='unexpected = true' \
-  "$fixture_launcher" hve --version
-grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: hve' \
+  "$fixture_launcher" pstack --version
+grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: pstack' \
   "$fixture_root/proxy-launch-unrelated-mutation.out" >/dev/null \
   || fail 'unrelated launch mutation cleanup diagnostic differs'
-grep -F -- 'unexpected = true' "$hve_home/config.toml" >/dev/null \
+grep -F -- 'unexpected = true' "$pstack_home/config.toml" >/dev/null \
   || fail 'cleanup clobbered unrelated launch mutation'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 # Codex often bumps tui nux counters and rewrites hooks.state during a normal
 # session while also persisting project trust. Cleanup must strip trust, keep
@@ -932,22 +910,22 @@ awk -v marker='# trellage-managed-codex-provider-end' '
   }
   { print }
 ' "$proxy_config_before" >"$fixture_root/session-live-before.toml"
-cp "$fixture_root/session-live-before.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$fixture_root/session-live-before.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_BUMP_TUI_NUX=1 \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   || fail 'session-live hooks/tui launch cleanup failed'
-grep -E '^\[projects\."' "$hve_home/config.toml" >/dev/null \
+grep -E '^\[projects\."' "$pstack_home/config.toml" >/dev/null \
   && fail 'session-live launch left generated project trust'
-grep -F -- '"gpt-5.6-sol" = 2' "$hve_home/config.toml" >/dev/null \
+grep -F -- '"gpt-5.6-sol" = 2' "$pstack_home/config.toml" >/dev/null \
   || fail 'session-live launch cleanup dropped tui nux mutation'
-grep -F -- '[hooks.state]' "$hve_home/config.toml" >/dev/null \
+grep -F -- '[hooks.state]' "$pstack_home/config.toml" >/dev/null \
   || fail 'session-live launch cleanup dropped hooks.state'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
   $0 == marker {
@@ -957,13 +935,13 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print ""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/stale-project-config.toml"
-mv "$fixture_root/stale-project-config.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+' "$pstack_home/config.toml" >"$fixture_root/stale-project-config.toml"
+mv "$fixture_root/stale-project-config.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
   >"$fixture_root/doctor-stale-project.out" \
   || fail 'doctor did not recover stale generated project trust'
-cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
+cmp -s "$proxy_config_with_separator" "$pstack_home/config.toml" \
   || fail 'stale project trust recovery changed other config bytes'
 
 awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
@@ -974,13 +952,13 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print ""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/stale-project-repair.toml"
-mv "$fixture_root/stale-project-repair.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" repair hve \
+' "$pstack_home/config.toml" >"$fixture_root/stale-project-repair.toml"
+mv "$fixture_root/stale-project-repair.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" repair pstack \
   >"$fixture_root/repair-stale-project.out" \
   || fail 'repair did not recover stale generated project trust'
-cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
+cmp -s "$proxy_config_with_separator" "$pstack_home/config.toml" \
   || fail 'repair stale project recovery changed other config bytes'
 
 awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
@@ -992,21 +970,21 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print ""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/stale-project-extra-blanks.toml"
-mv "$fixture_root/stale-project-extra-blanks.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-cp "$hve_home/config.toml" "$fixture_root/stale-project-extra-blanks-before.toml"
+' "$pstack_home/config.toml" >"$fixture_root/stale-project-extra-blanks.toml"
+mv "$fixture_root/stale-project-extra-blanks.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+cp "$pstack_home/config.toml" "$fixture_root/stale-project-extra-blanks-before.toml"
 extra_blank_status=0
-HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
   >"$fixture_root/doctor-stale-project-extra-blanks.out" 2>&1 \
   || extra_blank_status=$?
 [ "$extra_blank_status" -eq 1 ] \
   || fail 'doctor accepted multiple trailing project trust blanks'
 cmp -s "$fixture_root/stale-project-extra-blanks-before.toml" \
-  "$hve_home/config.toml" \
+  "$pstack_home/config.toml" \
   || fail 'doctor changed project trust with multiple trailing blanks'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
   $0 == marker {
@@ -1015,13 +993,13 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print "trust_level = \"trusted\""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/stale-project-setup.toml"
-mv "$fixture_root/stale-project-setup.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" setup hve \
+' "$pstack_home/config.toml" >"$fixture_root/stale-project-setup.toml"
+mv "$fixture_root/stale-project-setup.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
   >"$fixture_root/setup-stale-project.out" \
   || fail 'setup did not recover stale generated project trust'
-cmp -s "$proxy_config_with_separator" "$hve_home/config.toml" \
+cmp -s "$proxy_config_with_separator" "$pstack_home/config.toml" \
   || fail 'setup stale project recovery changed other config bytes'
 
 awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
@@ -1031,17 +1009,17 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print "trust_level = \"trusted\""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/stale-project-launch.toml"
-mv "$fixture_root/stale-project-launch.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+' "$pstack_home/config.toml" >"$fixture_root/stale-project-launch.toml"
+mv "$fixture_root/stale-project-launch.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" hve --version \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" pstack --version \
   || fail 'launch did not recover stale generated project trust'
 # Launch prepare no longer mutates live trust (concurrent sessions share the
 # home). Cleanup strips trust and prefers none-style so concurrent cleanups do
 # not leave cosmetic blank separators.
-cmp -s "$proxy_config_before" "$hve_home/config.toml" \
+cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
   || fail 'launch stale project recovery changed other config bytes'
 
 # Codex writes hook-approval trust hashes and TUI nux flags into config.toml
@@ -1063,25 +1041,25 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print "\"gpt-5.6-sol\" = 1"
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/stale-project-with-hooks-nux.toml"
-mv "$fixture_root/stale-project-with-hooks-nux.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+' "$pstack_home/config.toml" >"$fixture_root/stale-project-with-hooks-nux.toml"
+mv "$fixture_root/stale-project-with-hooks-nux.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
   >"$fixture_root/doctor-stale-project-hooks-nux.out" \
   || fail 'doctor rejected hooks state and tui nux native content'
-grep -F -- '[projects."' "$hve_home/config.toml" >/dev/null \
+grep -F -- '[projects."' "$pstack_home/config.toml" >/dev/null \
   && fail 'doctor left stale project trust alongside hooks state and tui nux'
-grep -F -- '[hooks.state]' "$hve_home/config.toml" >/dev/null \
+grep -F -- '[hooks.state]' "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor stripped hooks state alongside stale project trust'
 grep -F -- 'trusted_hash = "sha256:398989e9bdf95b43657a40589049a298a170f1946642abe2124fe9ee222caa5a"' \
-  "$hve_home/config.toml" >/dev/null \
+  "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor lost a hook approval trust hash'
-grep -F -- '[tui.model_availability_nux]' "$hve_home/config.toml" >/dev/null \
+grep -F -- '[tui.model_availability_nux]' "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor stripped tui nux flags alongside stale project trust'
-grep -F -- '"gpt-5.6-sol" = 1' "$hve_home/config.toml" >/dev/null \
+grep -F -- '"gpt-5.6-sol" = 1' "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor lost a tui nux flag'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 # Hooks state and tui nux content with no project trust stanza at all must be
 # accepted and left byte-for-byte unchanged (no stale content to recover).
@@ -1097,17 +1075,17 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print ""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/hooks-nux-only.toml"
-mv "$fixture_root/hooks-nux-only.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-cp "$hve_home/config.toml" "$fixture_root/hooks-nux-only-before.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+' "$pstack_home/config.toml" >"$fixture_root/hooks-nux-only.toml"
+mv "$fixture_root/hooks-nux-only.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+cp "$pstack_home/config.toml" "$fixture_root/hooks-nux-only-before.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
   >"$fixture_root/doctor-hooks-nux-only.out" \
   || fail 'doctor rejected hooks state and tui nux native content with no project trust'
-cmp -s "$fixture_root/hooks-nux-only-before.toml" "$hve_home/config.toml" \
+cmp -s "$fixture_root/hooks-nux-only-before.toml" "$pstack_home/config.toml" \
   || fail 'doctor changed hooks state and tui nux bytes with no project trust to recover'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 awk '
   $0 == "# trellage-profile-local-config-end" {
@@ -1115,23 +1093,23 @@ awk '
     print "trust_level = \"trusted\""
   }
   { print }
-' "$hve_home/config.toml" >"$fixture_root/local-project-config.toml"
-mv "$fixture_root/local-project-config.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-cp "$hve_home/config.toml" "$fixture_root/local-project-config-before.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
+' "$pstack_home/config.toml" >"$fixture_root/local-project-config.toml"
+mv "$fixture_root/local-project-config.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+cp "$pstack_home/config.toml" "$fixture_root/local-project-config-before.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
   >"$fixture_root/doctor-local-project.out" \
   || fail 'doctor rejected profile-local project table'
-cmp -s "$fixture_root/local-project-config-before.toml" "$hve_home/config.toml" \
+cmp -s "$fixture_root/local-project-config-before.toml" "$pstack_home/config.toml" \
   || fail 'recovery changed profile-local project table bytes'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" hve --version \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 "$fixture_launcher" pstack --version \
   || fail 'launch with profile-local project table failed'
-cmp -s "$fixture_root/local-project-config-before.toml" "$hve_home/config.toml" \
+cmp -s "$fixture_root/local-project-config-before.toml" "$pstack_home/config.toml" \
   || fail 'launch cleanup changed profile-local project table bytes'
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 real_cmp="$(command -v cmp)"
 sed 's/model = "gpt-5.6-sol"/model = "concurrent-launch-winner"/' \
@@ -1162,19 +1140,19 @@ assert_early_status 1 proxy-launch-cleanup-race env HOME="$fixture_root/home" \
   CDX_TEST_REAL_MV="$(command -v mv)" \
   CDX_TEST_CLEANUP_RACE_ARM="$fixture_root/arm-launch-cleanup-race" \
   CDX_TEST_CLEANUP_RACE_EXTERNAL="$fixture_root/concurrent-launch-config.toml" \
-  CDX_TEST_CLEANUP_RACE_TARGET="$hve_home/config.toml" \
-  "$fixture_launcher" hve --version
-if ! grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: hve' \
+  CDX_TEST_CLEANUP_RACE_TARGET="$pstack_home/config.toml" \
+  "$fixture_launcher" pstack --version
+if ! grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: pstack' \
   "$fixture_root/proxy-launch-cleanup-race.out" >/dev/null \
-  && ! grep -F -- 'cdx: post-launch config cleanup detected concurrent mutation: hve' \
+  && ! grep -F -- 'cdx: post-launch config cleanup detected concurrent mutation: pstack' \
   "$fixture_root/proxy-launch-cleanup-race.out" >/dev/null; then
   fail 'concurrent launch cleanup diagnostic differs'
 fi
-grep -F -- 'model = "concurrent-launch-winner"' "$hve_home/config.toml" >/dev/null \
+grep -F -- 'model = "concurrent-launch-winner"' "$pstack_home/config.toml" >/dev/null \
   || fail 'launch cleanup clobbered concurrent config mutation'
 rm "$fake_bin/cmp"
-cp "$proxy_config_before" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 
 dangling_auth_probe="$fixture_root/dangling-auth.json"
@@ -1207,7 +1185,7 @@ for blocked_command in mkdir chmod mktemp ln cp mv; do
   ln -s write-blocker "$root_write_blocker_bin/$blocked_command"
 done
 root_write_log="$fixture_root/root-write.log"
-root_profile_target='/.local/share/trellage/profiles/codex/hve/home'
+root_profile_target='/.local/share/trellage/profiles/codex/pstack/home'
 if [ -e "$root_profile_target" ] || [ -L "$root_profile_target" ]; then
   root_target_identity="$(file_inode "$root_profile_target"):$(file_mode "$root_profile_target")"
 else
@@ -1216,16 +1194,16 @@ fi
 assert_root_home_rejected() {
   local label="$1"
   local unsafe_home="$2"
-  local expected_path="${unsafe_home%/}/.local/share/trellage/profiles/codex/hve/home"
+  local expected_path="${unsafe_home%/}/.local/share/trellage/profiles/codex/pstack/home"
   assert_command_fails "root-home-doctor-$label" env HOME="$unsafe_home" \
     PATH="$root_write_blocker_bin:$PATH" CDX_TEST_ROOT_WRITE_LOG="$root_write_log" \
-    "$fixture_launcher" doctor hve
+    "$fixture_launcher" doctor pstack
   grep -F -- "cdx: unsafe profile home path: $expected_path" \
     "$fixture_root/root-home-doctor-$label.out" >/dev/null \
     || fail "canonical root HOME doctor diagnostic differs for $label"
   assert_command_fails "root-home-setup-$label" env HOME="$unsafe_home" \
     PATH="$root_write_blocker_bin:$PATH" CDX_TEST_ROOT_WRITE_LOG="$root_write_log" \
-    "$fixture_launcher" setup hve
+    "$fixture_launcher" setup pstack
   grep -F -- "cdx: unsafe profile home path: $expected_path" \
     "$fixture_root/root-home-setup-$label.out" >/dev/null \
     || fail "canonical root HOME setup diagnostic differs for $label"
@@ -1259,41 +1237,42 @@ name = "Copilot Proxy RS"
 base_url = "http://127.0.0.1:8080/v1"
 wire_api = "responses"
 
-[marketplaces.hve-core]
+[marketplaces.pstack-for-codex-local]
 last_updated = "2026-07-30T21:16:34Z"
-source_type = "local"
-source = "$fake_adapter_root"
+source_type = "git"
+source = "https://github.com/Aqua-123/pstack-for-codex.git"
+last_revision = "0123456789abcdef0123456789abcdef01234567"
 
-[plugins."hve-core-all@hve-core"]
+[plugins."pstack-for-codex@pstack-for-codex-local"]
 enabled = true
 # trellage-managed-codex-provider-end
 EOF
 
-cmp -s "$expected_config" "$hve_home/config.toml" || fail 'initial managed config differs'
-[ "$(file_mode "$hve_home")" = '700' ] || fail 'hve home mode is not 0700'
-[ "$(file_mode "$hve_home/config.toml")" = '600' ] || fail 'hve config mode is not 0600'
-write_hve_plugin_cache
+cmp -s "$expected_config" "$pstack_home/config.toml" || fail 'initial managed config differs'
+[ "$(file_mode "$pstack_home")" = '700' ] || fail 'pstack home mode is not 0700'
+[ "$(file_mode "$pstack_home/config.toml")" = '600' ] || fail 'pstack config mode is not 0600'
+write_main_plugin_cache
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor hve \
-  >"$fixture_root/doctor-hve.out" || fail 'doctor hve failed'
-: >"$fake_state/hve/forbidden-superpowers"
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor pstack \
+  >"$fixture_root/doctor-pstack.out" || fail 'doctor pstack failed'
+: >"$fake_state/pstack/forbidden-superpowers"
 if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor hve \
-  >"$fixture_root/doctor-hve-superpowers.out" \
-  2>"$fixture_root/doctor-hve-superpowers.err"; then
-  fail 'doctor accepted Superpowers in the HVE profile'
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor pstack \
+  >"$fixture_root/doctor-pstack-superpowers.out" \
+  2>"$fixture_root/doctor-pstack-superpowers.err"; then
+  fail 'doctor accepted Superpowers in the pstack profile'
 fi
-grep -F -- 'cdx: forbidden Superpowers plugin is installed: hve; run: cdx repair hve' \
-  "$fixture_root/doctor-hve-superpowers.err" >/dev/null \
+grep -F -- 'cdx: forbidden Superpowers plugin is installed: pstack; run: cdx repair pstack' \
+  "$fixture_root/doctor-pstack-superpowers.err" >/dev/null \
   || fail 'Codex forbidden-Superpowers diagnostic differs'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair hve \
-  >"$fixture_root/repair-hve-superpowers.out" \
-  || fail 'repair did not remove forbidden Superpowers from HVE'
-[ ! -e "$fake_state/hve/forbidden-superpowers" ] \
-  || fail 'repair preserved forbidden Superpowers in HVE'
-: >"$fake_state/hve/forbidden-superpowers-direct"
-: >"$fake_state/hve/forbidden-superpowers-renamed"
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair pstack \
+  >"$fixture_root/repair-pstack-superpowers.out" \
+  || fail 'repair did not remove forbidden Superpowers from pstack'
+[ ! -e "$fake_state/pstack/forbidden-superpowers" ] \
+  || fail 'repair preserved forbidden Superpowers in pstack'
+: >"$fake_state/pstack/forbidden-superpowers-direct"
+: >"$fake_state/pstack/forbidden-superpowers-renamed"
 launches_before="$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")"
 mkdir -p "$fixture_root/home/.codex"
@@ -1302,9 +1281,9 @@ printf '%s\n' '{"tokens":{"access_token":"contamination-check"}}' \
 chmod 0600 "$fixture_root/home/.codex/auth.json"
 export FAKE_CODEX_LOGIN_STATUS=0
 for contaminated_launch in proxy native; do
-  contaminated_args=(hve --version)
+  contaminated_args=(pstack --version)
   [ "$contaminated_launch" = proxy ] \
-    || contaminated_args=(--native-auth hve --version)
+    || contaminated_args=(--native-auth pstack --version)
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     "$fixture_launcher" "${contaminated_args[@]}" \
@@ -1314,43 +1293,51 @@ for contaminated_launch in proxy native; do
 done
 unset FAKE_CODEX_LOGIN_STATUS
 rm "$fixture_root/home/.codex/auth.json"
-[ -f "$hve_home/auth.json" ] \
+[ -f "$pstack_home/auth.json" ] \
   || fail 'self-healed native launch did not refresh profile authentication'
-rm "$hve_home/auth.json"
-[ ! -e "$fake_state/hve/forbidden-superpowers-direct" ] \
-  && [ ! -e "$fake_state/hve/forbidden-superpowers-renamed" ] \
+rm "$pstack_home/auth.json"
+[ ! -e "$fake_state/pstack/forbidden-superpowers-direct" ] \
+  && [ ! -e "$fake_state/pstack/forbidden-superpowers-renamed" ] \
   || fail 'contaminated launch preserved forbidden Superpowers variants'
 [ "$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
   "$fixture_root/fake-codex.log")" = "$((launches_before + 2))" ] \
   || fail 'self-healed launches did not start the underlying Codex agent'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" inventory hve --json \
-  >"$fixture_root/inventory-hve.json" || fail 'inventory hve failed'
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" inventory pstack --json \
+  >"$fixture_root/inventory-pstack.json" || fail 'inventory pstack failed'
 jq -e '
   .schemaVersion == 1
   and .launcher == "cdx"
   and .harness == "codex"
-  and .profile == "hve"
+  and .profile == "pstack"
   and .readiness == "healthy"
-  and .plugins == [{name:"hve-core-all@hve-core",version:"3.3.101"}]
-  and .skills == {packageCount:2,visibleCount:2}
+  and .plugins == [{name:"pstack-for-codex@pstack-for-codex-local",version:"0.1.0"}]
+  and .skills == {packageCount:45,visibleCount:2}
   and .mcps == ["docs"]
-' "$fixture_root/inventory-hve.json" >/dev/null \
+' "$fixture_root/inventory-pstack.json" >/dev/null \
   || fail 'Codex inventory output differs'
-mv "$hve_cache" "$hve_cache.safe"
-ln -s "$hve_home/plugins/cache/hve-core/unrelated/9.9.9" "$hve_cache"
+mv "$pstack_cache" "$pstack_cache.safe"
+ln -s "$pstack_home/plugins/cache/pstack-for-codex-local/unrelated/9.9.9" "$pstack_cache"
 if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  "$fixture_launcher" inventory hve --json \
-  >"$fixture_root/inventory-hve-symlink.out" \
-  2>"$fixture_root/inventory-hve-symlink.err"; then
-  fail 'Codex inventory accepted a redirected selected plugin cache'
+  "$fixture_launcher" doctor pstack \
+  >"$fixture_root/doctor-pstack-symlink.out" \
+  2>"$fixture_root/doctor-pstack-symlink.err"; then
+  fail 'Codex doctor accepted a redirected selected plugin cache'
 fi
-grep -F -- 'selected plugin cache is invalid: hve' \
-  "$fixture_root/inventory-hve-symlink.err" >/dev/null \
+grep -F -- 'selected plugin cache is invalid: pstack' \
+  "$fixture_root/doctor-pstack-symlink.err" >/dev/null \
   || fail 'Codex redirected-cache diagnostic differs'
-rm "$hve_cache"
-mv "$hve_cache.safe" "$hve_cache"
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  "$fixture_launcher" inventory pstack --json \
+  >"$fixture_root/inventory-pstack-symlink.json" \
+  || fail 'inventory failed on redirected selected plugin cache'
+jq -e '.profile == "pstack" and .readiness == "unhealthy"' \
+  "$fixture_root/inventory-pstack-symlink.json" >/dev/null \
+  || fail 'redirected selected plugin cache was not reported unhealthy'
+rm "$pstack_cache"
+mv "$pstack_cache.safe" "$pstack_cache"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   "$fixture_launcher" inventory superpowers --json \
   >"$fixture_root/inventory-not-setup.json" || fail 'not-setup inventory failed'
@@ -1364,22 +1351,22 @@ jq -e '
   || fail 'Codex not-setup inventory differs'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'doctor created host authentication'
-auth_is_absent "$hve_home/auth.json" || fail 'doctor created profile authentication'
+auth_is_absent "$pstack_home/auth.json" || fail 'doctor created profile authentication'
 
 sed 's/2026-07-30T21:16:34Z/2026-07-30T22:17:35Z/' \
-  "$hve_home/config.toml" >"$fixture_root/config-new-timestamp.toml"
-mv "$fixture_root/config-new-timestamp.toml" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
-HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor hve \
-  >"$fixture_root/doctor-hve-new-timestamp.out" \
+  "$pstack_home/config.toml" >"$fixture_root/config-new-timestamp.toml"
+mv "$fixture_root/config-new-timestamp.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
+  >"$fixture_root/doctor-pstack-new-timestamp.out" \
   || fail 'doctor rejected mutable native marketplace timestamp'
-HOME="$fixture_root/home" fake_env "$fixture_launcher" setup hve \
-  >"$fixture_root/setup-hve-new-timestamp.out" \
+HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
+  >"$fixture_root/setup-pstack-new-timestamp.out" \
   || fail 'repeated setup rejected mutable native marketplace timestamp'
 grep -F -- 'last_updated = "2026-07-30T22:17:35Z"' \
-  "$hve_home/config.toml" >/dev/null \
+  "$pstack_home/config.toml" >/dev/null \
   || fail 'repeated setup changed native marketplace timestamp'
-cp "$expected_config" "$hve_home/config.toml"
+cp "$expected_config" "$pstack_home/config.toml"
 
 : >"$fixture_root/fake-codex.log"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1389,24 +1376,10 @@ superpowers_home="$fixture_root/home/.local/share/trellage/profiles/codex/superp
 [ -d "$superpowers_home" ] || fail 'setup --all did not create superpowers home'
 expected_superpowers_config="$fixture_root/expected-superpowers-config.toml"
 sed \
-  -e 's/\[marketplaces\.hve-core\]/[marketplaces.superpowers-marketplace]/' \
-  -e 's/\[plugins\."hve-core-all@hve-core"\]/[plugins."superpowers@superpowers-marketplace"]/' \
-  -e 's/source_type = "local"/source_type = "git"/' \
-  -e 's|^source = ".*"$|source = "https://github.com/obra/superpowers-marketplace.git"|' \
+  -e 's/\[marketplaces\.pstack-for-codex-local\]/[marketplaces.superpowers-marketplace]/' \
+  -e 's/\[plugins\."pstack-for-codex@pstack-for-codex-local"\]/[plugins."superpowers@superpowers-marketplace"]/' \
+  -e 's|^source = "https://github.com/Aqua-123/pstack-for-codex.git"$|source = "https://github.com/obra/superpowers-marketplace.git"|' \
   "$expected_config" >"$expected_superpowers_config"
-awk '
-  /^source = "https:\/\/github.com\/obra\/superpowers-marketplace.git"$/ {
-    print
-    getline
-    print "last_revision = \"0123456789abcdef0123456789abcdef01234567\""
-    print ""
-    next
-  }
-  { print }
-' "$expected_superpowers_config" \
-  >"$fixture_root/expected-superpowers-config-with-revision.toml"
-mv "$fixture_root/expected-superpowers-config-with-revision.toml" \
-  "$expected_superpowers_config"
 cmp -s "$expected_superpowers_config" "$superpowers_home/config.toml" \
   || {
     diff -u "$expected_superpowers_config" "$superpowers_home/config.toml" >&2 || :
@@ -1438,19 +1411,14 @@ jq -se --arg superpowers "$superpowers_home" '
       "$fixture_root/fake-codex.log" >&2 || :
     fail 'fresh Superpowers setup did not prime marketplace before plugin add'
   }
-jq -se --arg hve "$hve_home" '
-  all(.[] | select(.codexHome == $hve);
-    .args[0:3] != ["plugin","marketplace","upgrade"])
-' "$fixture_root/fake-codex.log" >/dev/null \
-  || fail 'HVE setup upgraded its local marketplace'
 [ "$(file_mode "$superpowers_home")" = '700' ] \
   || fail 'superpowers home mode is not 0700'
 [ "$(file_mode "$superpowers_home/config.toml")" = '600' ] \
   || fail 'superpowers config mode is not 0600'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'setup --all created host authentication'
-auth_is_absent "$hve_home/auth.json" \
-  || fail 'setup --all created hve authentication'
+auth_is_absent "$pstack_home/auth.json" \
+  || fail 'setup --all created pstack authentication'
 auth_is_absent "$superpowers_home/auth.json" \
   || fail 'setup --all created superpowers authentication'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1458,7 +1426,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   >"$fixture_root/doctor-superpowers.out" || fail 'doctor superpowers failed'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'doctor created host authentication'
-auth_is_absent "$hve_home/auth.json" || fail 'doctor created hve authentication'
+auth_is_absent "$pstack_home/auth.json" || fail 'doctor created pstack authentication'
 auth_is_absent "$superpowers_home/auth.json" \
   || fail 'doctor created superpowers authentication'
 
@@ -1724,41 +1692,41 @@ jq -se '
 real_mv="$(command -v mv)"
 real_ln="$(command -v ln)"
 
-write_custom_hve_config "$expected_config"
+write_custom_main_config "$expected_config"
 sed 's/model = "gpt-5.6-sol"/model = "wrong-managed-model"/' \
-  "$custom_config" >"$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+  "$custom_config" >"$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 assert_command_fails doctor-wrong-managed env HOME="$fixture_root/home" \
-  "$fixture_launcher" doctor hve
+  "$fixture_launcher" doctor pstack
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair hve \
-  >"$fixture_root/repair-hve.out" || fail 'repair hve failed'
-cmp -s "$custom_config" "$hve_home/config.toml" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair pstack \
+  >"$fixture_root/repair-pstack.out" || fail 'repair pstack failed'
+cmp -s "$custom_config" "$pstack_home/config.toml" \
   || fail 'repair did not restore managed config and preserve profile-local bytes'
 root_key_line="$(grep -Fn 'profile_root_key = "stays-root"' \
-  "$hve_home/config.toml" | cut -d: -f1)"
+  "$pstack_home/config.toml" | cut -d: -f1)"
 provider_table_line="$(grep -Fn '[model_providers.copilotproxy]' \
-  "$hve_home/config.toml" | cut -d: -f1)"
+  "$pstack_home/config.toml" | cut -d: -f1)"
 [ "$root_key_line" -lt "$provider_table_line" ] \
   || fail 'repair moved a root-level profile-local key into provider table scope'
-grep -F -- '[marketplaces.hve-core]' "$hve_home/config.toml" >/dev/null \
-  && grep -F -- '[marketplaces.user-owned]' "$hve_home/config.toml" >/dev/null \
+grep -F -- '[marketplaces.pstack-for-codex-local]' "$pstack_home/config.toml" >/dev/null \
+  && grep -F -- '[marketplaces.user-owned]' "$pstack_home/config.toml" >/dev/null \
   && grep -F -- 'source = "C:\\Users\"quoted\""' \
-    "$hve_home/config.toml" >/dev/null \
+    "$pstack_home/config.toml" >/dev/null \
   && grep -F -- '[plugins."unrelated@user-owned"]' \
-    "$hve_home/config.toml" >/dev/null \
+    "$pstack_home/config.toml" >/dev/null \
   && grep -F -- 'source = "\uD7FF\uE000\U0010FFFF"' \
-    "$hve_home/config.toml" >/dev/null \
+    "$pstack_home/config.toml" >/dev/null \
   && grep -F -- '[plugins."valid\u002Dplugin@user-owned"]' \
-    "$hve_home/config.toml" >/dev/null \
+    "$pstack_home/config.toml" >/dev/null \
   && grep -F -- 'future_scalar = "preserve-marketplace-field"' \
-    "$hve_home/config.toml" >/dev/null \
-  && grep -F -- 'future_flag = true' "$hve_home/config.toml" >/dev/null \
+    "$pstack_home/config.toml" >/dev/null \
+  && grep -F -- 'future_flag = true' "$pstack_home/config.toml" >/dev/null \
   || fail 'repair lost selected or unrelated native config state'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'repair created host authentication'
-auth_is_absent "$hve_home/auth.json" || fail 'repair created profile authentication'
-[ "$(file_mode "$hve_home/config.toml")" = '600' ] \
+auth_is_absent "$pstack_home/auth.json" || fail 'repair created profile authentication'
+[ "$(file_mode "$pstack_home/config.toml")" = '600' ] \
   || fail 'repair did not enforce config mode 0600'
 
 real_cp="$(command -v cp)"
@@ -1778,21 +1746,21 @@ esac
 EOF
 chmod +x "$fake_bin/cp"
 sed 's/model = "gpt-5.6-sol"/model = "snapshot-race-model"/' \
-  "$custom_config" >"$hve_home/config.toml"
+  "$custom_config" >"$pstack_home/config.toml"
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:35Z/' \
-  "$hve_home/config.toml" >"$fixture_root/config-snapshot-race-expected.toml"
+  "$pstack_home/config.toml" >"$fixture_root/config-snapshot-race-expected.toml"
 assert_command_fails config-snapshot-race env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" CDX_TEST_REAL_CP="$real_cp" \
   CDX_TEST_REAL_SED="$real_sed" CDX_TEST_REAL_MV="$real_mv" \
-  CDX_TEST_CONFIG_TARGET="$hve_home/config.toml" \
+  CDX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
   CDX_TEST_CONFIG_EXTERNAL="$fixture_root/config-snapshot-race-external.toml" \
-  "$fixture_launcher" repair hve
-grep -F -- 'cdx: profile config changed during snapshot: hve' \
+  "$fixture_launcher" repair pstack
+grep -F -- 'cdx: profile config changed during snapshot: pstack' \
   "$fixture_root/config-snapshot-race.out" >/dev/null \
   || fail 'snapshot-race diagnostic differs'
 cmp -s "$fixture_root/config-snapshot-race-expected.toml" \
-  "$hve_home/config.toml" || fail 'snapshot race overwrote external config bytes'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
+  "$pstack_home/config.toml" || fail 'snapshot race overwrote external config bytes'
+[ -z "$(find "$pstack_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
   || fail 'snapshot race left config staging debris'
 rm "$fake_bin/cp"
 
@@ -1813,24 +1781,24 @@ done
 EOF
 chmod +x "$fake_bin/chmod"
 sed 's/model = "gpt-5.6-sol"/model = "publish-race-model"/' \
-  "$custom_config" >"$hve_home/config.toml"
+  "$custom_config" >"$pstack_home/config.toml"
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:36Z/' \
-  "$hve_home/config.toml" >"$fixture_root/config-publish-race-expected.toml"
+  "$pstack_home/config.toml" >"$fixture_root/config-publish-race-expected.toml"
 assert_command_fails config-publish-race env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" CDX_TEST_REAL_CHMOD="$real_chmod" \
   CDX_TEST_REAL_SED="$real_sed" CDX_TEST_REAL_MV="$real_mv" \
-  CDX_TEST_CONFIG_TARGET="$hve_home/config.toml" \
+  CDX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
   CDX_TEST_CONFIG_EXTERNAL="$fixture_root/config-publish-race-external.toml" \
-  "$fixture_launcher" repair hve
-grep -F -- 'cdx: profile config changed during repair: hve' \
+  "$fixture_launcher" repair pstack
+grep -F -- 'cdx: profile config changed during repair: pstack' \
   "$fixture_root/config-publish-race.out" >/dev/null \
   || fail 'publish-race diagnostic differs'
 cmp -s "$fixture_root/config-publish-race-expected.toml" \
-  "$hve_home/config.toml" || fail 'publish race overwrote external config bytes'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
+  "$pstack_home/config.toml" || fail 'publish race overwrote external config bytes'
+[ -z "$(find "$pstack_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
   || fail 'publish race left config staging debris'
 rm "$fake_bin/chmod"
-cp "$custom_config" "$hve_home/config.toml"
+cp "$custom_config" "$pstack_home/config.toml"
 
 real_cat="$(command -v cat)"
 cat >"$fake_bin/cat" <<'EOF'
@@ -1842,28 +1810,28 @@ exec "$CDX_TEST_REAL_CAT" "$@"
 EOF
 chmod +x "$fake_bin/cat"
 sed 's/model = "gpt-5.6-sol"/model = "write-failure-model"/' \
-  "$custom_config" >"$hve_home/config.toml"
-cp "$hve_home/config.toml" "$fixture_root/config-write-failure-before.toml"
+  "$custom_config" >"$pstack_home/config.toml"
+cp "$pstack_home/config.toml" "$fixture_root/config-write-failure-before.toml"
 assert_command_fails config-write-failure env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" CDX_TEST_REAL_CAT="$real_cat" \
-  "$fixture_launcher" repair hve
+  "$fixture_launcher" repair pstack
 grep -F -- 'cdx: failed to write profile config' \
   "$fixture_root/config-write-failure.out" >/dev/null \
   || fail 'config write-failure diagnostic differs'
 cmp -s "$fixture_root/config-write-failure-before.toml" \
-  "$hve_home/config.toml" || fail 'config write failure published partial bytes'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
+  "$pstack_home/config.toml" || fail 'config write failure published partial bytes'
+[ -z "$(find "$pstack_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
   || fail 'config write failure left staging debris'
 rm "$fake_bin/cat"
-cp "$custom_config" "$hve_home/config.toml"
+cp "$custom_config" "$pstack_home/config.toml"
 
-cp "$hve_home/config.toml" "$fixture_root/config-valid"
+cp "$pstack_home/config.toml" "$fixture_root/config-valid"
 
 marker_migration="$fixture_root/config-marker-migration.toml"
 {
   sed -n '1,/^wire_api = "responses"$/p' "$custom_config"
   printf '\n'
-  sed -n '/^\[marketplaces\.hve-core\]$/,/^enabled = true$/p' \
+  sed -n '/^\[marketplaces\.pstack-for-codex-local\]$/,/^enabled = true$/p' \
     "$custom_config"
   printf '%s\n\n' '# trellage-managed-codex-provider-end'
   printf '%s\n' '# trellage-codex-native-marketplaces-begin'
@@ -1871,48 +1839,48 @@ marker_migration="$fixture_root/config-marker-migration.toml"
     "$custom_config" | sed '$d'
   printf '%s\n' '# trellage-codex-native-marketplaces-end'
 } >"$marker_migration"
-cp "$marker_migration" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$marker_migration" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 assert_command_fails doctor-marker-migration env HOME="$fixture_root/home" \
-  "$fixture_launcher" doctor hve
-HOME="$fixture_root/home" fake_env "$fixture_launcher" repair hve \
+  "$fixture_launcher" doctor pstack
+HOME="$fixture_root/home" fake_env "$fixture_launcher" repair pstack \
   >"$fixture_root/repair-marker-migration.out" \
   || fail 'repair rejected bounded marker migration layout'
-cmp -s "$custom_config" "$hve_home/config.toml" \
+cmp -s "$custom_config" "$pstack_home/config.toml" \
   || fail 'marker migration did not merge and preserve both native tails'
-cp "$hve_home/config.toml" "$fixture_root/config-valid"
+cp "$pstack_home/config.toml" "$fixture_root/config-valid"
 
 assert_invalid_markers_rejected() {
   label="$1"
   before="$fixture_root/config-before-$label"
-  cp "$hve_home/config.toml" "$before"
-  inode="$(file_inode "$hve_home/config.toml")"
+  cp "$pstack_home/config.toml" "$before"
+  inode="$(file_inode "$pstack_home/config.toml")"
   assert_command_fails "doctor-$label" env HOME="$fixture_root/home" \
-    "$fixture_launcher" doctor hve
+    "$fixture_launcher" doctor pstack
   assert_command_fails "repair-$label" env HOME="$fixture_root/home" \
-    "$fixture_launcher" repair hve
-  cmp -s "$before" "$hve_home/config.toml" \
+    "$fixture_launcher" repair pstack
+  cmp -s "$before" "$pstack_home/config.toml" \
     || fail "repair changed invalid $label config bytes"
-  [ "$(file_inode "$hve_home/config.toml")" = "$inode" ] \
+  [ "$(file_inode "$pstack_home/config.toml")" = "$inode" ] \
     || fail "repair changed invalid $label config inode"
-  [ -z "$(find "$hve_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
+  [ -z "$(find "$pstack_home" -maxdepth 1 -name '.config*' -print -quit)" ] \
     || fail "repair left staging debris for $label"
 }
 
 grep -Fv '# trellage-profile-local-config-end' "$fixture_root/config-valid" \
-  >"$hve_home/config.toml"
+  >"$pstack_home/config.toml"
 assert_invalid_markers_rejected missing-marker
-cp "$fixture_root/config-valid" "$hve_home/config.toml"
-printf '%s\n' '# trellage-profile-local-config-begin' >>"$hve_home/config.toml"
+cp "$fixture_root/config-valid" "$pstack_home/config.toml"
+printf '%s\n' '# trellage-profile-local-config-begin' >>"$pstack_home/config.toml"
 assert_invalid_markers_rejected duplicate-marker
 sed \
   -e 's/# trellage-profile-local-config-begin/# local-marker-temporary/' \
   -e 's/# trellage-profile-local-config-end/# trellage-profile-local-config-begin/' \
   -e 's/# local-marker-temporary/# trellage-profile-local-config-end/' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected out-of-order-markers
 sed 's/\[marketplaces\.user-owned\]/[plugins.user-owned]/' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected non-marketplace-native-table
 invalid_native_block="$fixture_root/invalid-native-block.toml"
 write_config_with_invalid_native() {
@@ -1920,7 +1888,7 @@ write_config_with_invalid_native() {
     sed '$d' "$fixture_root/config-valid"
     cat "$invalid_native_block"
     printf '%s\n' '# trellage-managed-codex-provider-end'
-  } >"$hve_home/config.toml"
+  } >"$pstack_home/config.toml"
 }
 cat >"$invalid_native_block" <<'EOF'
 [marketplaces.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]
@@ -1950,7 +1918,7 @@ EOF
 write_config_with_invalid_native
 assert_invalid_markers_rejected unsafe-native-plugin-name
 sed 's|source = "example/user-owned"|source = "bad\\q"|' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected malformed-marketplace-source-escape
 cat >"$invalid_native_block" <<'EOF'
 [marketplaces.invalid-scalar]
@@ -1971,7 +1939,7 @@ assert_invalid_markers_rejected out-of-range-marketplace-source-escape
 sed '/source = "example\/user-owned"/c\
 source = "safe"\
 [plugins.table-breakout]
-' "$fixture_root/config-valid" >"$hve_home/config.toml"
+' "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected marketplace-source-table-breakout
 cat >"$invalid_native_block" <<'EOF'
 [marketplaces.invalid-syntax]
@@ -2023,8 +1991,8 @@ EOF
 write_config_with_invalid_native
 assert_invalid_markers_rejected duplicate-native-field-name
 sed '/# trellage-managed-codex-provider-end/i\
-[plugins."hve-core-all@hve-core"]\
-enabled = true' "$fixture_root/config-valid" >"$hve_home/config.toml"
+[plugins."pstack-for-codex@pstack-for-codex-local"]\
+enabled = true' "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected duplicate-native-plugin-table
 cat >"$invalid_native_block" <<'EOF'
 [plugins."valid-plugin@user-owned"]
@@ -2050,30 +2018,30 @@ EOF
 write_config_with_invalid_native
 assert_invalid_markers_rejected empty-native-plugin-table
 sed '/\[plugins\."unrelated@user-owned"\]/{n;s/$/\nenabled = false/;}' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected duplicate-native-plugin-enabled
 sed '/# trellage-codex-native-marketplaces-end/i\
-[plugins."hve-core-all@hve-core"]\
-enabled = true' "$marker_migration" >"$hve_home/config.toml"
+[plugins."pstack-for-codex@pstack-for-codex-local"]\
+enabled = true' "$marker_migration" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected duplicate-plugin-across-marker-regions
 sed '/# trellage-managed-codex-provider-end/a\
-unexpected-native-tail-content' "$marker_migration" >"$hve_home/config.toml"
+unexpected-native-tail-content' "$marker_migration" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected invalid-marker-layout-separator
 grep -Fv '# trellage-codex-native-marketplaces-end' "$marker_migration" \
-  >"$hve_home/config.toml"
+  >"$pstack_home/config.toml"
 assert_invalid_markers_rejected partial-marker-migration-layout
-sed '/\[marketplaces\.hve-core\]/i\
+sed '/\[marketplaces\.pstack-for-codex-local\]/i\
 provider_api_key = "must-reject"
 ' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
 assert_invalid_markers_rejected bare-provider-assignment-before-marketplace
-cp "$fixture_root/config-valid" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$fixture_root/config-valid" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
 sed 's/model = "gpt-5.6-sol"/model = "publication-must-fail"/' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
-cp "$hve_home/config.toml" "$fixture_root/config-before-publication-failure"
-config_inode="$(file_inode "$hve_home/config.toml")"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
+cp "$pstack_home/config.toml" "$fixture_root/config-before-publication-failure"
+config_inode="$(file_inode "$pstack_home/config.toml")"
 outside_config="$fixture_root/outside-config"
 : >"$outside_config"
 cat >"$fake_bin/chmod" <<'EOF'
@@ -2092,19 +2060,19 @@ chmod +x "$fake_bin/chmod"
 assert_command_fails config-post-stage-safety env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" CDX_TEST_REAL_CHMOD="$real_chmod" \
   CDX_TEST_REAL_MV="$real_mv" CDX_TEST_REAL_LN="$real_ln" \
-  CDX_TEST_CONFIG_TARGET="$hve_home/config.toml" \
+  CDX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
   CDX_TEST_CONFIG_SAVED="$fixture_root/config-post-stage.saved" \
-  CDX_TEST_CONFIG_OUTSIDE="$outside_config" "$fixture_launcher" repair hve
-grep -F -- "cdx: unsafe profile config path: $hve_home/config.toml" \
+  CDX_TEST_CONFIG_OUTSIDE="$outside_config" "$fixture_launcher" repair pstack
+grep -F -- "cdx: unsafe profile config path: $pstack_home/config.toml" \
   "$fixture_root/config-post-stage-safety.out" >/dev/null \
   || fail 'config post-stage safety diagnostic differs'
-rm "$hve_home/config.toml"
-mv "$fixture_root/config-post-stage.saved" "$hve_home/config.toml"
-cmp -s "$fixture_root/config-before-publication-failure" "$hve_home/config.toml" \
+rm "$pstack_home/config.toml"
+mv "$fixture_root/config-post-stage.saved" "$pstack_home/config.toml"
+cmp -s "$fixture_root/config-before-publication-failure" "$pstack_home/config.toml" \
   || fail 'config post-stage safety failure changed prior bytes'
-[ "$(file_inode "$hve_home/config.toml")" = "$config_inode" ] \
+[ "$(file_inode "$pstack_home/config.toml")" = "$config_inode" ] \
   || fail 'config post-stage safety failure changed prior inode'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.config.*' -print -quit)" ] \
+[ -z "$(find "$pstack_home" -maxdepth 1 -name '.config.*' -print -quit)" ] \
   || fail 'config post-stage safety failure left staging debris'
 rm "$fake_bin/chmod"
 
@@ -2120,12 +2088,12 @@ EOF
 chmod +x "$fake_bin/chmod"
 assert_command_fails config-stage-signal env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" CDX_TEST_REAL_CHMOD="$real_chmod" \
-  "$fixture_launcher" repair hve
-cmp -s "$fixture_root/config-before-publication-failure" "$hve_home/config.toml" \
+  "$fixture_launcher" repair pstack
+cmp -s "$fixture_root/config-before-publication-failure" "$pstack_home/config.toml" \
   || fail 'config stage signal changed prior bytes'
-[ "$(file_inode "$hve_home/config.toml")" = "$config_inode" ] \
+[ "$(file_inode "$pstack_home/config.toml")" = "$config_inode" ] \
   || fail 'config stage signal changed prior inode'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.config.*' -print -quit)" ] \
+[ -z "$(find "$pstack_home" -maxdepth 1 -name '.config.*' -print -quit)" ] \
   || fail 'config stage signal left staging debris'
 rm "$fake_bin/chmod"
 
@@ -2141,44 +2109,44 @@ EOF
 chmod +x "$fake_bin/mv"
 assert_command_fails config-publication-failure env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" CDX_TEST_REAL_MV="$real_mv" CDX_TEST_FAIL_MV=config \
-  "$fixture_launcher" repair hve
-cmp -s "$fixture_root/config-before-publication-failure" "$hve_home/config.toml" \
+  "$fixture_launcher" repair pstack
+cmp -s "$fixture_root/config-before-publication-failure" "$pstack_home/config.toml" \
   || fail 'failed config publication changed prior bytes'
-[ "$(file_inode "$hve_home/config.toml")" = "$config_inode" ] \
+[ "$(file_inode "$pstack_home/config.toml")" = "$config_inode" ] \
   || fail 'failed config publication changed prior inode'
-[ -z "$(find "$hve_home" -maxdepth 1 -name '.config.*' -print -quit)" ] \
+[ -z "$(find "$pstack_home" -maxdepth 1 -name '.config.*' -print -quit)" ] \
   || fail 'failed config publication left staging debris'
 rm "$fake_bin/mv"
-cp "$fixture_root/config-valid" "$hve_home/config.toml"
-chmod 0600 "$hve_home/config.toml"
+cp "$fixture_root/config-valid" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
 
-config_inode="$(file_inode "$hve_home/config.toml")"
+config_inode="$(file_inode "$pstack_home/config.toml")"
 sed 's/model = "gpt-5.6-sol"/model = "setup-must-not-replace"/' \
-  "$fixture_root/config-valid" >"$hve_home/config.toml"
-cp "$hve_home/config.toml" "$fixture_root/config-before-setup"
+  "$fixture_root/config-valid" >"$pstack_home/config.toml"
+cp "$pstack_home/config.toml" "$fixture_root/config-before-setup"
 assert_command_fails setup-does-not-replace env HOME="$fixture_root/home" \
-  "$fixture_launcher" setup hve
-cmp -s "$fixture_root/config-before-setup" "$hve_home/config.toml" \
+  "$fixture_launcher" setup pstack
+cmp -s "$fixture_root/config-before-setup" "$pstack_home/config.toml" \
   || fail 'setup replaced existing profile config'
-cp "$fixture_root/config-valid" "$hve_home/config.toml"
-chmod 0644 "$hve_home/config.toml"
+cp "$fixture_root/config-valid" "$pstack_home/config.toml"
+chmod 0644 "$pstack_home/config.toml"
 assert_command_fails config-mode env HOME="$fixture_root/home" \
-  "$fixture_launcher" doctor hve
-chmod 0600 "$hve_home/config.toml"
+  "$fixture_launcher" doctor pstack
+chmod 0600 "$pstack_home/config.toml"
 
-mv "$hve_home/config.toml" "$fixture_root/config-target.saved"
-ln -s "$fixture_root/config-target.saved" "$hve_home/config.toml"
+mv "$pstack_home/config.toml" "$fixture_root/config-target.saved"
+ln -s "$fixture_root/config-target.saved" "$pstack_home/config.toml"
 assert_command_fails symlink-config env HOME="$fixture_root/home" \
-  "$fixture_launcher" doctor hve
-rm "$hve_home/config.toml"
-mv "$fixture_root/config-target.saved" "$hve_home/config.toml"
+  "$fixture_launcher" doctor pstack
+rm "$pstack_home/config.toml"
+mv "$fixture_root/config-target.saved" "$pstack_home/config.toml"
 
-mv "$hve_home/config.toml" "$fixture_root/config-target.saved"
-mkdir "$hve_home/config.toml"
+mv "$pstack_home/config.toml" "$fixture_root/config-target.saved"
+mkdir "$pstack_home/config.toml"
 assert_command_fails non-regular-config env HOME="$fixture_root/home" \
-  "$fixture_launcher" doctor hve
-rmdir "$hve_home/config.toml"
-mv "$fixture_root/config-target.saved" "$hve_home/config.toml"
+  "$fixture_launcher" doctor pstack
+rmdir "$pstack_home/config.toml"
+mv "$fixture_root/config-target.saved" "$pstack_home/config.toml"
 
 race_home="$fixture_root/config-race-home"
 prepare_test_home "$race_home"
@@ -2202,8 +2170,8 @@ chmod +x "$fake_bin/chmod"
 assert_command_fails config-create-race env HOME="$race_home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" CDX_TEST_REAL_CHMOD="$real_chmod" \
   CDX_TEST_REAL_LN="$real_ln" CDX_TEST_RACE_SOURCE="$race_source" \
-  "$fixture_launcher" setup hve
-race_config="$race_home/.local/share/trellage/profiles/codex/hve/home/config.toml"
+  "$fixture_launcher" setup pstack
+race_config="$race_home/.local/share/trellage/profiles/codex/pstack/home/config.toml"
 grep -F -- 'cdx: failed to publish profile config without replacing existing file' \
   "$fixture_root/config-create-race.out" >/dev/null \
   || fail 'config create race diagnostic differs'
@@ -2222,7 +2190,7 @@ prepare_test_home "$unsafe_home"
 mkdir "$fixture_root/unsafe-home-target"
 mv "$unsafe_home" "$fixture_root/unsafe-home-real"
 ln -s "$fixture_root/unsafe-home-real" "$unsafe_home"
-assert_command_fails symlink-home env HOME="$unsafe_home" "$fixture_launcher" setup hve
+assert_command_fails symlink-home env HOME="$unsafe_home" "$fixture_launcher" setup pstack
 
 unsafe_local_home="$fixture_root/unsafe-local-home"
 prepare_test_home "$unsafe_local_home"
@@ -2235,16 +2203,16 @@ collision_home="$fixture_root/collision-home"
 prepare_test_home "$collision_home"
 : >"$collision_home/.local"
 assert_command_fails non-directory-component env HOME="$collision_home" \
-  "$fixture_launcher" setup hve
+  "$fixture_launcher" setup pstack
 
 symlink_profile_home="$fixture_root/symlink-profile-home"
 prepare_test_home "$symlink_profile_home"
 mkdir -p "$symlink_profile_home/.local/share/trellage/profiles/codex"
 mkdir "$fixture_root/profile-target"
 ln -s "$fixture_root/profile-target" \
-  "$symlink_profile_home/.local/share/trellage/profiles/codex/hve"
+  "$symlink_profile_home/.local/share/trellage/profiles/codex/pstack"
 assert_command_fails symlink-profile-component env HOME="$symlink_profile_home" \
-  "$fixture_launcher" setup hve
+  "$fixture_launcher" setup pstack
 
 symlink_leaf_home="$fixture_root/symlink-leaf-home"
 prepare_test_home "$symlink_leaf_home"
@@ -2260,7 +2228,7 @@ prepare_test_home "$fresh_home"
 codex_count="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
 if ! HOME="$fresh_home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  "$fixture_launcher" hve --version \
+  "$fixture_launcher" pstack --version \
   >"$fixture_root/launch-self-heals-before-setup.out" 2>&1; then
   fail 'launch before setup did not self-heal'
 fi
@@ -2268,7 +2236,7 @@ fi
   || fail 'self-healed launch did not invoke Codex'
 tail -n1 "$fixture_root/fake-codex.log" | jq -e '.args[-1] == "--version"' >/dev/null \
   || fail 'self-healed launch did not end with the requested launch invocation'
-[ -d "$fresh_home/.local/share/trellage/profiles/codex/hve/home" ] \
+[ -d "$fresh_home/.local/share/trellage/profiles/codex/pstack/home" ] \
   || fail 'self-healed launch did not materialize the profile home'
 codex_count="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
 assert_command_fails native-launch-before-setup env HOME="$fresh_home" PATH="$fake_bin:$PATH" \
@@ -2284,7 +2252,7 @@ assert_command_fails native-launch-before-setup env HOME="$fresh_home" PATH="$fa
   && fail 'missing native auth unexpectedly self-healed the profile home'
 codex_count="$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')"
 assert_command_fails unsafe-profile-slug env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" '../hve' --version
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" '../pstack' --version
 [ "$(wc -l <"$fixture_root/fake-codex.log" | tr -d ' ')" = "$codex_count" ] \
   || fail 'unsafe profile slug invoked Codex'
 
@@ -2292,7 +2260,7 @@ ln -s "$fixture_launcher" "$fake_bin/codex-recursive"
 mv "$fake_bin/codex" "$fake_bin/codex-real"
 ln -s "$fixture_launcher" "$fake_bin/codex"
 assert_command_fails recursive-launcher env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" hve --version
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" pstack --version
 rm "$fake_bin/codex"
 mv "$fake_bin/codex-real" "$fake_bin/codex"
 
