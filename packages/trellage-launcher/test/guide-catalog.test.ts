@@ -49,6 +49,7 @@ const validCatalog = {
   native: [
     {
       launcher: "cdx",
+      harness: "codex",
       name: "hve",
       description: "Codex host-native launcher.",
       headless,
@@ -65,13 +66,40 @@ const validCatalog = {
       guide,
       path: "/profiles/prime-agent",
       supportedPlatforms: ["linux/amd64"],
-      harness: "copilot",
+      harness: {
+        kind: "copilot",
+        version: "1.0.0",
+        model: "mai-code-1.1-flash",
+      },
       skillBundles: ["sandbox-common"],
       skillsMode: "floating",
       finalDigestLocked: false,
-      skills: ["show-me"],
-      plugins: [],
-      mcps: [],
+      skills: [
+        {
+          repository: "https://github.com/example/skills.git",
+          ref: "main",
+          select: ["show-me"],
+        },
+      ],
+      plugins: [
+        {
+          adapter: "claude-marketplace",
+          repository: "https://github.com/example/plugin.git",
+          ref: "main",
+          select: ["example"],
+          marketplace: "example",
+        },
+      ],
+      mcps: [
+        {
+          name: "example",
+          required: false,
+          tools: { allow: [], deny: [] },
+          transport: "stdio",
+          command: "example",
+          args: [],
+        },
+      ],
       sandbox: true,
       headless,
       locked: false,
@@ -87,8 +115,8 @@ describe("parseGuideCatalog", () => {
 
     expect(entries).toHaveLength(2)
     expect(entries.map((entry) => entry.ref)).toEqual(["native:cdx/hve", "sandbox:prime-agent"])
-    expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", name: "hve" })
-    expect(entries[1]).toMatchObject({ surface: "sandbox", name: "prime-agent" })
+    expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", harness: "codex", name: "hve" })
+    expect(entries[1]).toMatchObject({ surface: "sandbox", harness: "copilot", name: "prime-agent" })
   })
 
   it("builds a workflow index keyed by ref", () => {
@@ -241,6 +269,12 @@ describe("compactProfileGuide / guideMatchCatalogEntries", () => {
     const serialized = JSON.stringify(matchEntries)
     expect(serialized).not.toContain("promptTemplate")
     expect(matchEntries).toHaveLength(2)
+    expect(matchEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ref: "native:cdx/hve", harness: "codex" }),
+        expect.objectContaining({ ref: "sandbox:prime-agent", harness: "copilot" }),
+      ]),
+    )
   })
 
   it("accepts a multiline promptTemplate containing real newlines (item 1 regression)", () => {

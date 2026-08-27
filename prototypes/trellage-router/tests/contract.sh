@@ -530,6 +530,7 @@ jq -e \
     and (.catalog.native | length == 10)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
+      and (.harness | type == "string" and length > 0)
       and .guide.schemaVersion == 1)
   ' "$fixture_root/guide-catalog.json" >/dev/null \
   || fail 'guide mode combined catalog or arguments differ'

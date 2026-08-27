@@ -196,6 +196,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
       native: [
         {
           launcher: "cdx",
+          harness: "codex",
           name: "hve",
           description: "Codex host-native launcher.",
           headless: headless({ prompt: true }),
@@ -206,6 +207,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
         },
         {
           launcher: "jcx",
+          harness: "jules",
           name: "foo",
           description: "Jules code-native launcher.",
           headless: headless({ prompt: true }),
@@ -222,7 +224,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           guide: guidePrimeAgent,
           path: path.join(tmpRoot, "profiles", "prime-agent", "profile.toml"),
           supportedPlatforms: ["linux/amd64"],
-          harness: "copilot",
+          harness: { kind: "copilot", version: "1.0.0" },
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -240,7 +242,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           guide: guideOther,
           path: path.join(tmpRoot, "profiles", "other", "profile.toml"),
           supportedPlatforms: ["linux/amd64"],
-          harness: "copilot",
+          harness: { kind: "copilot", version: "1.0.0" },
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -824,6 +826,7 @@ describe("literalGuideMatch", () => {
         native: [
           {
             launcher: "cdx",
+            harness: "codex",
             name: "hve",
             description: "Codex host-native launcher.",
             headless: headless({ prompt: true }),

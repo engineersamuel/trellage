@@ -66671,6 +66671,7 @@ var validateNativeEntry = (value, path5) => {
   const fields = record4(value, path5);
   exactKeys2(fields, path5, [
     "launcher",
+    "harness",
     "name",
     "description",
     "headless",
@@ -66681,6 +66682,7 @@ var validateNativeEntry = (value, path5) => {
   ]);
   return {
     launcher: identifier3(fields.launcher, `${path5}.launcher`),
+    harness: identifier3(fields.harness, `${path5}.harness`),
     name: identifier3(fields.name, `${path5}.name`),
     description: text3(fields.description, `${path5}.description`, 2e3),
     headless: validateHeadlessCapabilitiesV1(fields.headless, `${path5}.headless`),
@@ -66711,6 +66713,8 @@ var validateSandboxEntry = (value, path5) => {
     "herdrCompatibility"
   ]);
   if (fields.sandbox !== true) fail2(`${path5}.sandbox`, "must equal true");
+  const harness = record4(fields.harness, `${path5}.harness`);
+  exactKeys2(harness, `${path5}.harness`, ["kind", "version"], ["model"]);
   return {
     name: identifier3(fields.name, `${path5}.name`),
     description: text3(fields.description, `${path5}.description`, 2e3),
@@ -66721,13 +66725,23 @@ var validateSandboxEntry = (value, path5) => {
       maximumItems: 16,
       itemMaximum: 64
     }),
-    harness: text3(fields.harness, `${path5}.harness`, 64),
+    harness: {
+      kind: identifier3(harness.kind, `${path5}.harness.kind`),
+      version: text3(harness.version, `${path5}.harness.version`, 128),
+      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path5}.harness.model`, 128) }
+    },
     skillBundles: stringArray3(fields.skillBundles, `${path5}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
     skillsMode: literal(fields.skillsMode, `${path5}.skillsMode`, ["floating", "locked"]),
     finalDigestLocked: boolean(fields.finalDigestLocked, `${path5}.finalDigestLocked`),
-    skills: stringArray3(fields.skills, `${path5}.skills`, { maximumItems: 256, itemMaximum: 128 }),
-    plugins: stringArray3(fields.plugins, `${path5}.plugins`, { maximumItems: 64, itemMaximum: 128 }),
-    mcps: stringArray3(fields.mcps, `${path5}.mcps`, { maximumItems: 64, itemMaximum: 128 }),
+    skills: array(fields.skills, `${path5}.skills`, { maximum: 256 }).map(
+      (item, index) => record4(item, `${path5}.skills[${index}]`)
+    ),
+    plugins: array(fields.plugins, `${path5}.plugins`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path5}.plugins[${index}]`)
+    ),
+    mcps: array(fields.mcps, `${path5}.mcps`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path5}.mcps[${index}]`)
+    ),
     sandbox: true,
     headless: validateHeadlessCapabilitiesV1(fields.headless, `${path5}.headless`),
     locked: boolean(fields.locked, `${path5}.locked`),
@@ -66767,6 +66781,7 @@ var guideCatalogEntries = (catalog) => [
       surface: "native",
       name: entry.name,
       launcher: entry.launcher,
+      harness: entry.harness,
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide
@@ -66777,7 +66792,7 @@ var guideCatalogEntries = (catalog) => [
       ref: profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }),
       surface: "sandbox",
       name: entry.name,
-      harness: entry.harness,
+      harness: entry.harness.kind,
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide
@@ -67890,7 +67905,7 @@ var enrichRecommendation = (catalog, candidate) => {
     tradeoff: candidate.tradeoff,
     surface: native2 ? "native" : "sandbox",
     name: entry.name,
-    ...native2 ? { launcher: entry.launcher } : { harness: entry.harness },
+    ...native2 ? { launcher: entry.launcher } : { harness: entry.harness.kind },
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,
@@ -67984,7 +67999,7 @@ var runGuideGenerate = async (provider, catalog, guideRoot, request) => {
     workflowId,
     surface: native2 ? "native" : "sandbox",
     name: entry.name,
-    ...native2 ? { launcher: entry.launcher } : { harness: entry.harness },
+    ...native2 ? { launcher: entry.launcher } : { harness: entry.harness.kind },
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,
@@ -75593,6 +75608,7 @@ var CopilotGuideProvider = class {
     let session;
     let outcome;
     try {
+      await client.start();
       const models = await client.listModels();
       const modelInfo = models.find((candidate) => candidate.id === this.model);
       if (modelInfo === void 0) {
@@ -76285,7 +76301,7 @@ var enrichLiteralCandidate = (catalog, candidate) => {
     tradeoff: candidate.tradeoff,
     surface: native2 ? "native" : "sandbox",
     name: entry.name,
-    ...native2 ? { launcher: entry.launcher } : { harness: entry.harness },
+    ...native2 ? { launcher: entry.launcher } : { harness: entry.harness.kind },
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,

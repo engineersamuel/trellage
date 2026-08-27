@@ -152,6 +152,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
       native: [
         {
           launcher: "cdx",
+          harness: "codex",
           name: "reviewer",
           description: "Codex host-native launcher.",
           headless: headless({ prompt: true }),
@@ -162,6 +163,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
         },
         {
           launcher: "jcx",
+          harness: "jules",
           name: "writer",
           description: "Jules code-native launcher.",
           headless: headless({ prompt: true }),
@@ -178,7 +180,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           guide: guidePlanner,
           path: path.join(tmpRoot, "profiles", "planner", "profile.toml"),
           supportedPlatforms: ["linux/amd64"],
-          harness: "copilot",
+          harness: { kind: "copilot", version: "1.0.0" },
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -856,7 +858,7 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
         const entry = catalog.sandbox.find((candidateEntry) => `sandbox:${candidateEntry.name}` === rec.profileRef)
         expect(entry).toBeDefined()
         expect(rec.name).toBe(entry?.name)
-        expect(rec.harness).toBe(entry?.harness)
+        expect(rec.harness).toBe(entry?.harness.kind)
       }
     }
   })
