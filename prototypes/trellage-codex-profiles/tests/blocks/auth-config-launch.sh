@@ -42,6 +42,7 @@ jq -e '
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
   and .profiles.superpowers.marketplaceName == "superpowers-marketplace"
+  and .profiles.superpowers.upstreamRepository == "https://github.com/obra/superpowers-marketplace.git"
   and .profiles.superpowers.manifestUrl == "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json"
   and .profiles.superpowers.plugin == "superpowers@superpowers-marketplace"
   and .profiles.superpowers.standaloneMcps == []

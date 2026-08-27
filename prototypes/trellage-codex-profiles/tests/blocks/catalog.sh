@@ -94,6 +94,7 @@ mutate_catalog changed-pstack-plugin '.profiles.pstack.plugin = "other@pstack-fo
 mutate_catalog changed-superpowers-source '.profiles.superpowers.marketplaceSource = "other/source"'
 mutate_catalog changed-superpowers-kind '.profiles.superpowers.marketplaceKind = "local-adapter"'
 mutate_catalog changed-superpowers-name '.profiles.superpowers.marketplaceName = "other-marketplace"'
+mutate_catalog changed-superpowers-upstream '.profiles.superpowers.upstreamRepository = "https://example.com/superpowers-marketplace.git"'
 mutate_catalog changed-superpowers-manifest '.profiles.superpowers.manifestUrl = "https://example.com/marketplace.json"'
 mutate_catalog changed-superpowers-plugin '.profiles.superpowers.plugin = "other@superpowers-marketplace"'
 mutate_catalog changed-superpowers-headless-output '.profiles.superpowers.headless.outputFormats = ["text", "xml"]'
