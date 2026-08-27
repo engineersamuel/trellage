@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trellage → Rust Migration Plan</title>
+<style>
+  :root{
+    --ink:#241c18;
+    --ink-soft:#4a3c34;
+    --paper:#faf5ef;
+    --paper-raised:#fffdfa;
+    --line:#ddccbe;
+    --line-soft:#ece0d3;
+    --rust:#b5502d;
+    --rust-deep:#8a3a1f;
+    --rust-tint:#f3e2d6;
+    --ok:#4d7a4a;
+    --ok-tint:#e6efe2;
+    --warn:#a3771f;
+    --warn-tint:#f4e9d2;
+    --open:#5b6b8a;
+    --open-tint:#e6e9f2;
+    --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: ui-sans-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --radius: 6px;
+    --maxw: 920px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#f1e6da;
+      --ink-soft:#cdb9a8;
+      --paper:#211a16;
+      --paper-raised:#2a221d;
+      --line:#4a3c32;
+      --line-soft:#382d26;
+      --rust:#e08655;
+      --rust-deep:#f0a276;
+      --rust-tint:#3a2419;
+      --ok:#8fc086;
+      --ok-tint:#20301e;
+      --warn:#e0b45a;
+      --warn-tint:#3a2e14;
+      --open:#a9b6d6;
+      --open-tint:#212636;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.55;
+    font-size:16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--rust-deep);}
+  a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible{
+    outline:3px solid var(--rust);
+    outline-offset:2px;
+  }
+  .skip-link{
+    position:absolute; left:-999px; top:0; background:var(--ink); color:var(--paper);
+    padding:.6rem 1rem; z-index:100;
+  }
+  .skip-link:focus{ left:1rem; top:1rem; }
+
+  .masthead{
+    border-bottom:1px solid var(--line);
+    background:var(--paper-raised);
+  }
+  .masthead-inner{
+    max-width:var(--maxw); margin:0 auto; padding:2.4rem 1.5rem 1.6rem;
+  }
+  .kicker{
+    font-family:var(--mono); text-transform:uppercase; letter-spacing:.14em;
+    font-size:.72rem; color:var(--rust-deep); margin:0 0 .6rem;
+  }
+  h1{ font-size:1.9rem; margin:0 0 .5rem; line-height:1.2; }
+  .subtitle{ margin:0; color:var(--ink-soft); max-width:60ch; }
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap:.5rem 1.4rem; margin-top:1.1rem;
+    font-family:var(--mono); font-size:.78rem; color:var(--ink-soft);
+  }
+  .meta-row strong{ color:var(--ink); }
+
+  main{ max-width:var(--maxw); margin:0 auto; padding:2rem 1.5rem 4rem; }
+
+  section{ margin-bottom:2.6rem; }
+  section > h2{
+    font-size:1.15rem; margin:0 0 .3rem;
+    padding-bottom:.5rem; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:.6rem;
+  }
+  section > h2 .num{
+    font-family:var(--mono); color:var(--rust-deep); font-size:.85em;
+  }
+  section > .lede{ color:var(--ink-soft); margin:.7rem 0 1.1rem; max-width:68ch; }
+
+  /* TL;DR */
+  .tldr{
+    background:var(--rust-tint); border:1px solid var(--line);
+    border-left:4px solid var(--rust); border-radius:var(--radius);
+    padding:1rem 1.2rem; margin-bottom:2rem;
+  }
+  .tldr p{ margin:0; font-size:1.02rem; }
+  .tldr strong{ color:var(--rust-deep); }
+
+  /* status pills */
+  .pill{
+    display:inline-flex; align-items:center; gap:.35rem;
+    font-family:var(--mono); font-size:.72rem; padding:.15rem .55rem;
+    border-radius:999px; white-space:nowrap; line-height:1.6;
+  }
+  .pill.open{ background:var(--open-tint); color:var(--open); }
+  .pill.warn{ background:var(--warn-tint); color:var(--warn); }
+  .pill.ok{ background:var(--ok-tint); color:var(--ok); }
+
+  /* inventory table */
+  table{ width:100%; border-collapse:collapse; font-size:.92rem; }
+  caption{ text-align:left; font-family:var(--mono); font-size:.75rem; color:var(--ink-soft); margin-bottom:.4rem; }
+  th, td{ text-align:left; padding:.5rem .6rem; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:2px solid var(--line); }
+  tbody tr:hover{ background:var(--paper-raised); }
+  td.num, th.num{ text-align:right; font-family:var(--mono); }
+  code{ font-family:var(--mono); font-size:.88em; background:var(--paper-raised); border:1px solid var(--line-soft); border-radius:3px; padding:.05rem .3rem; }
+  .tablewrap{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); }
+  .tablewrap table{ min-width:560px; }
+
+  /* phase list */
+  .phase{
+    border:1px solid var(--line); border-radius:var(--radius);
+    background:var(--paper-raised); margin-bottom:1rem; overflow:hidden;
+  }
+  .phase > summary{
+    list-style:none; cursor:pointer; padding:.85rem 1.1rem;
+    display:flex; align-items:center; gap:.8rem; flex-wrap:wrap;
+  }
+  .phase > summary::-webkit-details-marker{ display:none; }
+  .phase > summary::before{
+    content:"▸"; color:var(--rust-deep); transition:transform .15s ease; flex:none;
+  }
+  .phase[open] > summary::before{ transform:rotate(90deg); }
+  .phase-id{ font-family:var(--mono); font-weight:700; color:var(--rust-deep); }
+  .phase-name{ font-weight:600; flex:1; min-width:12ch; }
+  .phase-body{ padding:0 1.1rem 1.1rem; border-top:1px solid var(--line-soft); }
+  .phase-body h4{ font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); margin:.9rem 0 .35rem; }
+  .phase-body ul{ margin:0; padding-left:1.2rem; }
+  .phase-body li{ margin-bottom:.3rem; }
+  .dep-line{ font-family:var(--mono); font-size:.78rem; color:var(--ink-soft); }
+
+  /* dependency chain */
+  .chain{
+    display:flex; flex-wrap:wrap; align-items:center; gap:.4rem;
+    font-family:var(--mono); font-size:.82rem; padding:1rem; overflow-x:auto;
+  }
+  .chain .node{
+    border:1px solid var(--line); border-radius:4px; padding:.35rem .6rem;
+    background:var(--paper-raised); white-space:nowrap;
+  }
+  .chain .node.branch{ border-style:dashed; }
+  .chain .arrow{ color:var(--ink-soft); }
+
+  /* two-col assumption / risk cards */
+  .cards{ display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); }
+  .card{ border:1px solid var(--line); border-radius:var(--radius); background:var(--paper-raised); padding:1rem 1.1rem; }
+  .card h3{ margin:0 0 .4rem; font-size:.95rem; }
+  .card p{ margin:0; color:var(--ink-soft); font-size:.9rem; }
+  .card .tag{ font-family:var(--mono); font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
+
+  footer{ max-width:var(--maxw); margin:0 auto; padding:0 1.5rem 3rem; color:var(--ink-soft); font-size:.82rem; }
+  footer p{ max-width:70ch; }
+
+  @media (max-width:600px){
+    h1{ font-size:1.5rem; }
+    .masthead-inner{ padding:1.6rem 1rem 1.2rem; }
+    main{ padding:1.4rem 1rem 3rem; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .phase > summary::before{ transition:none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to plan</a>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="kicker">Trellage — Engineering Plan — Draft</p>
+    <h1>Migrating Trellage to Rust</h1>
+    <p class="subtitle">
+      A phased, strangler-style path from the current Node/TypeScript profile
+      compiler and ~39k lines of Bash orchestration to a Rust toolchain,
+      without breaking locked profile digests, contract tests, or the
+      Docker/`gh` delivery model.
+    </p>
+    <div class="meta-row">
+      <span><strong>Scope:</strong> compiler, CLI, native launchers, orchestration scripts</span>
+      <span><strong>Status:</strong> proposal, not started</span>
+      <span><strong>Generated from:</strong> repository inventory, this session</span>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="tldr">
+    <p><strong>TL;DR —</strong> Rewrite Trellage in Rust as a six-phase strangler migration:
+      port the Effect-based compiler core first (<code>packages/trellage-cli/src</code>, 9,552 lines),
+      then the CLI shell, then GitHub/release integrations, then the ~39,000 lines of Bash
+      that do the actual orchestration and testing, then native launcher installers, then
+      retire the Node toolchain. No phase changes locked profile digests or the
+      external CLI contract that <code>tests/*.sh</code> exercises.</p>
+  </div>
+
+  <section aria-labelledby="s-context">
+    <h2 id="s-context"><span class="num">01</span> Why this plan exists</h2>
+    <p class="lede">
+      The user asked to "plan out migrating Trellage to Rust." Trellage does not
+      currently document a Rust migration goal anywhere in its instructions,
+      READMEs, or CI. The rationale, timeline, and staffing below are therefore
+      <strong>assumptions</strong>, called out explicitly in §7, not commitments
+      the project has made. Everything else — file paths, line counts, build
+      targets, test names — is read directly from the repository as it exists
+      today.
+    </p>
+  </section>
+
+  <section aria-labelledby="s-inventory">
+    <h2 id="s-inventory"><span class="num">02</span> What exists today</h2>
+    <p class="lede">Composition of the current codebase, by language and role.</p>
+    <div class="tablewrap">
+      <table>
+        <caption>Line counts by area (non-vendored, non-<code>node_modules</code> sources)</caption>
+        <thead>
+          <tr><th>Area</th><th>Language</th><th class="num">Lines</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>packages/trellage-cli/src</code></td>
+            <td>TypeScript (Effect)</td>
+            <td class="num">9,552</td>
+            <td>Profile compiler: parses, locks, and materializes profile TOML into Docker build/run artifacts</td>
+          </tr>
+          <tr>
+            <td><code>packages/trellage-cli/test</code></td>
+            <td>TypeScript (Vitest)</td>
+            <td class="num">13,255</td>
+            <td>Unit/property tests for the compiler</td>
+          </tr>
+          <tr>
+            <td>All <code>*.ts</code> repo-wide</td>
+            <td>TypeScript</td>
+            <td class="num">24,071</td>
+            <td>Compiler + tests + tooling combined</td>
+          </tr>
+          <tr>
+            <td><code>scripts/</code></td>
+            <td>Bash / Node scripts</td>
+            <td class="num">1,967</td>
+            <td>Repository orchestration: bootstrap, build, harness, cleanup</td>
+          </tr>
+          <tr>
+            <td><code>tests/</code></td>
+            <td>Bash (shell contracts)</td>
+            <td class="num">4,240</td>
+            <td>Black-box contracts for manifests, adapters, runners, sessions, evidence</td>
+          </tr>
+          <tr>
+            <td>All <code>*.sh</code> repo-wide</td>
+            <td>Bash</td>
+            <td class="num">39,055</td>
+            <td>Includes <code>prototypes/trellage*</code> native launchers and profile installers — the largest single surface area in the repository</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:1rem;">
+      The dominant fact for this migration: <strong>Bash, not TypeScript, is the
+      bulk of Trellage</strong> (39k vs 24k lines). A migration that only ports
+      <code>packages/trellage-cli</code> and stops would rewrite the smaller half
+      of the system.
+    </p>
+    <h3 style="font-size:.95rem; margin:1.4rem 0 .5rem;">Largest compiler modules (candidates for early, high-value ports)</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Module</th><th class="num">Lines</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/application.ts</code></td><td class="num">1,479</td><td>Top-level command wiring and orchestration</td></tr>
+          <tr><td><code>src/materialize.ts</code></td><td class="num">784</td><td>Renders a locked profile into build context / compose files</td></tr>
+          <tr><td><code>src/lock.ts</code></td><td class="num">721</td><td>Resolves and freezes profile dependency versions into a lockfile</td></tr>
+          <tr><td><code>src/claude-materialize.ts</code></td><td class="num">632</td><td>Claude-specific materialization rules</td></tr>
+          <tr><td><code>src/headless-event-bridge.ts</code></td><td class="num">600</td><td>Headless session event streaming</td></tr>
+          <tr><td><code>src/cli.ts</code></td><td class="num">330</td><td>CLI entrypoint (<code>@effect/cli</code>)</td></tr>
+          <tr><td><code>src/render.ts</code></td><td class="num">323</td><td>Output rendering / formatting</td></tr>
+          <tr><td><code>src/copilot-plugin.ts</code>, <code>src/github-cache.ts</code></td><td class="num">318 / 315</td><td>Copilot plugin integration; GitHub API caching</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:1rem;">
+      Build/verify entry points that any migrated component must keep passing:
+      <code>make test</code>, <code>make profile-compiler</code>,
+      <code>make profile-matrix-test</code>, <code>make profile-matrix</code>,
+      plus <code>npm run lint</code>, <code>format:check</code>, and
+      <code>check</code> inside <code>packages/trellage-cli</code>.
+    </p>
+  </section>
+
+  <section aria-labelledby="s-goals">
+    <h2 id="s-goals"><span class="num">03</span> Goals and non-goals</h2>
+    <div class="cards">
+      <div class="card">
+        <span class="tag" style="color:var(--ok);">Goal</span>
+        <h3>Preserve every external contract</h3>
+        <p>Locked profile digests, the CLI's observable behavior, and every <code>tests/*.sh</code> black-box contract must keep passing, unmodified, after each phase.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--ok);">Goal</span>
+        <h3>Strangler, not rewrite</h3>
+        <p>Ship a working Rust binary alongside the Node one at each phase boundary; never have a period where neither builds.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--ok);">Goal</span>
+        <h3>Single static binary</h3>
+        <p>Replace the Node runtime dependency for the CLI with a compiled <code>trellage</code> binary distributable without <code>npm install</code>.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--warn);">Non-goal</span>
+        <h3>Rewriting Docker itself</h3>
+        <p>Trellage Sandbox still shells out to <code>docker</code> and <code>gh</code>. Rust changes what issues those commands, not the commands themselves.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--warn);">Non-goal</span>
+        <h3>Changing profile TOML format</h3>
+        <p>Profile definitions under <code>profiles/*/profile.toml</code> and their lock format are a stable interface this migration must read/write byte-compatibly.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--warn);">Non-goal</span>
+        <h3>A visible behavior change</h3>
+        <p>This is an implementation-language migration. No new user-facing feature is in scope unless called out separately.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-sequence">
+    <h2 id="s-sequence"><span class="num">04</span> Phase sequence</h2>
+    <p class="lede">Six phases, mostly sequential. Expand a phase for its scope, exit checks, and what it deliberately leaves untouched.</p>
+
+    <div class="chain" role="img" aria-label="Phase dependency chain: Phase 0 leads to Phase 1, then Phase 2, then Phase 3, then Phase 4, then Phase 5, then Phase 6. Phase 4 and Phase 5 can overlap once Phase 3 is done.">
+      <span class="node">P0 Foundations</span><span class="arrow">→</span>
+      <span class="node">P1 Compiler core</span><span class="arrow">→</span>
+      <span class="node">P2 CLI shell</span><span class="arrow">→</span>
+      <span class="node">P3 Integrations</span><span class="arrow">→</span>
+      <span class="node branch">P4 Scripts</span>
+      <span class="arrow">⇄</span>
+      <span class="node branch">P5 Native launchers</span><span class="arrow">→</span>
+      <span class="node">P6 Decommission Node</span>
+    </div>
+
+    <details class="phase" open>
+      <summary><span class="phase-id">P0</span><span class="phase-name">Foundations &amp; feasibility spike</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>Stand up a Cargo workspace (e.g. <code>rust/</code>) alongside <code>packages/trellage-cli</code>; decide crate boundaries (compiler core, CLI, GitHub client, TOML/lock types).</li>
+          <li>Pick a TOML crate compatible with the existing <code>smol-toml</code>/<code>toml</code> parsing behavior used for <code>profile.toml</code> and lockfiles; diff output on real profiles under <code>profiles/*</code>.</li>
+          <li>Decide the async/error-handling equivalent to Effect (e.g. <code>tokio</code> + <code>thiserror</code>/<code>anyhow</code>, or a small in-house effect-style abstraction) — this is a load-bearing design decision, not a detail.</li>
+          <li>Prototype one already-small module end to end, e.g. <code>src/platform.ts</code> (28 lines) or <code>src/source-policy.ts</code> (43 lines), to validate the toolchain before committing to larger ports.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li>A trivial Rust binary builds via <code>cargo build</code> and runs inside the same mise-managed dev environment as the existing CLI.</li>
+          <li>One ported module produces byte-identical output to its TypeScript counterpart on the same fixture inputs.</li>
+        </ul>
+        <p class="dep-line">Depends on: nothing. Blocks: P1.</p>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="phase-id">P1</span><span class="phase-name">Port the compiler core</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>Port, in order of size and centrality: <code>lock.ts</code> (721 lines), <code>materialize.ts</code> (784 lines), <code>profile.ts</code> (639 lines), <code>github-cache.ts</code> (315), <code>inventory.ts</code> (176), <code>profile-discovery.ts</code> (227).</li>
+          <li>Keep the existing TypeScript CLI as the only caller during this phase — the Rust crate is a library, invoked from Node via a thin FFI/CLI shim or reference-tested standalone, not yet user-facing.</li>
+          <li>Re-run the existing Vitest fixtures (<code>packages/trellage-cli/test</code>, 13,255 lines) as golden files against the Rust output for parity, rather than hand-porting every test by feel.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li><code>make profile-compiler</code> and <code>make profile-matrix-test</code> pass unchanged.</li>
+          <li>Locked profile digests for every profile under <code>profiles/*</code> are bit-identical between the old and new compiler on the same source inputs.</li>
+        </ul>
+        <p class="dep-line">Depends on: P0. Blocks: P2.</p>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="phase-id">P2</span><span class="phase-name">Port the CLI shell</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>Replace <code>src/cli.ts</code> (330 lines, <code>@effect/cli</code>) and <code>src/render.ts</code> (323 lines) with a Rust CLI (e.g. <code>clap</code>) wired to the P1 crate.</li>
+          <li>Ship a single static <code>trellage</code> binary as an alternative install path alongside the existing Node-based <code>prototypes/trellage/install-trellage.sh</code>, without removing the Node path yet.</li>
+          <li>Re-validate every subcommand's help text, exit codes, and stdout/stderr shape against what <code>tests/*.sh</code> contracts currently assert.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li><code>tests/manifest_contract.sh</code>, <code>tests/profile_compiler_fingerprint_contract.sh</code>, and <code>tests/agent_profile_matrix.sh</code> pass against the Rust binary with zero edits to the test scripts.</li>
+        </ul>
+        <p class="dep-line">Depends on: P1. Blocks: P3.</p>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="phase-id">P3</span><span class="phase-name">Port GitHub / release integrations</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>Port the per-harness release resolvers: <code>codex-release.ts</code> (162), <code>copilot-release.ts</code> (123), <code>claude-release.ts</code> (121), <code>prime-release.ts</code> (160), <code>pi-release.ts</code> (117), plus <code>github-repository.ts</code> (17) and <code>resolvers.ts</code> (117).</li>
+          <li>Choose an HTTP/GitHub client (<code>reqwest</code> + a thin GitHub REST wrapper, or <code>octocrab</code>) that reproduces existing caching semantics in <code>github-cache.ts</code>.</li>
+          <li>Preserve the ephemeral, never-persisted <code>gh</code> auth model described in the project's GitHub delivery rules — this phase must not introduce credential caching or logging.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li><code>make caveman-profile-contract</code> and <code>make engineersamuel-skills-contract</code> pass, proving pinned-skill resolution still works end to end.</li>
+        </ul>
+        <p class="dep-line">Depends on: P2. Blocks: P4, P5.</p>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="phase-id">P4</span><span class="phase-name">Migrate orchestration scripts</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>This is the largest phase by volume: <code>scripts/</code> (1,967 lines) and the harness/verification scripts it calls, prioritized by which already have a contract in <code>tests/</code> to prove parity against (e.g. <code>dependency_bootstrap_contract.sh</code> ↔ <code>bootstrap-development-dependencies.sh</code>; <code>harness_contract.sh</code> ↔ <code>scripts/harness</code>).</li>
+          <li>Introduce a Rust <code>xtask</code>-style subcommand set (or extend the P2 binary) for repository automation, rather than a second, separate binary.</li>
+          <li>Leave scripts with no contract coverage for last, and consider writing a contract before porting them, not after.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li>Every script in <code>tests/</code>'s coverage list passes against its ported Rust equivalent, run through the same <code>make</code> targets.</li>
+        </ul>
+        <p class="dep-line">Depends on: P3. Overlaps with: P5.</p>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="phase-id">P5</span><span class="phase-name">Migrate native launcher installers</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>Port <code>prototypes/trellage-router</code> (the <code>trx</code> router) and the per-harness installer scripts in <code>prototypes/trellage-claude-profiles</code>, <code>trellage-codex-profiles</code>, <code>trellage-copilot-profiles</code>, <code>trellage-grok-profiles</code>, <code>trellage-jcode-profiles</code>, <code>trellage-omp-profiles</code>, <code>trellage-prime-profiles</code>.</li>
+          <li>Preserve the Trellage Native vs. Trellage Sandbox distinction exactly: native launchers isolate state on the host and are not a security boundary (except <code>cdx</code>/<code>grx</code>, which invoke each harness's own OS sandbox) — a Rust rewrite must not blur this line or silently add sandboxing where none is documented.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li><code>make native-profile-router</code> and each <code>make native-*-profile(s)</code> target pass against the Rust-built launchers.</li>
+        </ul>
+        <p class="dep-line">Depends on: P3. Overlaps with: P4.</p>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="phase-id">P6</span><span class="phase-name">Decommission the Node toolchain</span><span class="pill open">not started</span></summary>
+      <div class="phase-body">
+        <h4>Scope</h4>
+        <ul>
+          <li>Remove <code>packages/trellage-cli</code>'s Node dependency graph (Effect, Vitest, oxlint/oxfmt) once the Rust binary is the only shipped artifact; keep or port the test suite's assertions, not just delete them.</li>
+          <li>Update <code>Makefile</code>, <code>.github/workflows/ci.yml</code>, <code>AGENTS.md</code>, and the CLI-specific instructions file (<code>.github/instructions/trellage-cli.instructions.md</code>) to describe the Rust build/lint/test commands instead of npm scripts.</li>
+          <li>Update <code>README.md</code>'s "Fresh Machine Setup" so it no longer tells new users to <code>brew install node</code> to build the compiler.</li>
+        </ul>
+        <h4>Exit check</h4>
+        <ul>
+          <li><code>make test</code> passes with no Node/npm invocation anywhere in the dependency graph it exercises.</li>
+        </ul>
+        <p class="dep-line">Depends on: P4 and P5 both complete.</p>
+      </div>
+    </details>
+  </section>
+
+  <section aria-labelledby="s-risks">
+    <h2 id="s-risks"><span class="num">05</span> Risks</h2>
+    <div class="cards">
+      <div class="card">
+        <span class="tag" style="color:var(--rust-deep);">🔴 High</span>
+        <h3>Bash is the majority of the system</h3>
+        <p>39,055 lines of shell vs. 24,071 lines of TypeScript. A plan that treats P1–P3 as "the migration" and stops has ported the minority. P4–P5 are not optional cleanup — they are most of the work.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--rust-deep);">🔴 High</span>
+        <h3>Lock/digest drift</h3>
+        <p>Locked profile digests and the Caveman skill's platform lock must stay bit-for-bit stable. Any change in serialization order, whitespace, or hashing in a rewritten TOML/lock layer silently invalidates every existing lock file.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--warn);">🟡 Medium</span>
+        <h3>Effect has no drop-in Rust equivalent</h3>
+        <p>The project's own convention is "use Effect for TypeScript application logic where practical." Rust has no single library with the same structured-concurrency-plus-typed-errors model; P0 must pick a deliberate substitute rather than default to bare <code>Result</code> everywhere and lose error context.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--warn);">🟡 Medium</span>
+        <h3>Docker/<code>gh</code> shellouts remain</h3>
+        <p>Rust changes what issues <code>docker build</code>/<code>docker exec</code>/<code>gh</code> commands, not the commands themselves. Do not scope this as "eliminating shell dependencies" — it doesn't.</p>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--warn);">🟡 Medium</span>
+        <h3>Contract tests are black-box by design</h3>
+        <p><code>tests/*.sh</code> exercises the CLI's external behavior, which is good for this migration (it won't need rewriting) — but it also means passing contracts don't guarantee internal correctness of the Rust port; golden-file diffing (P1) is still required.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-assumptions">
+    <h2 id="s-assumptions"><span class="num">06</span> Assumptions this plan makes</h2>
+    <p class="lede">The request was "plan out migrating trellage to rust" with no stated motivation, timeline, or team size. This plan assumes:</p>
+    <ul>
+      <li>The goal is full replacement of the compiler <em>and</em> the orchestration scripts, since a Rust migration that leaves 39k lines of Bash untouched would not be a meaningful "migration to Rust" — see the corresponding open question in §7 if this scope is too broad.</li>
+      <li>A strangler pattern (old and new coexisting per phase) is acceptable, versus a single big-bang cutover.</li>
+      <li>Existing contract tests in <code>tests/</code> and Make targets are the source of truth for "still works," rather than a new Rust-native test suite replacing them outright.</li>
+      <li>No calendar timeline, budget, or staffing is assumed or estimated here — none was supplied, and none is fabricated.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="s-open">
+    <h2 id="s-open"><span class="num">07</span> Open questions</h2>
+    <ul>
+      <li>Is the intended scope the profile compiler only (P0–P3), or the full repository including Bash orchestration and native launchers (P0–P6)? This plan assumes the latter; confirm before P4 begins.</li>
+      <li>Should the Rust CLI aim for <code>@effect/cli</code>-equivalent structured concurrency, or is a simpler synchronous/blocking model acceptable given Trellage's usage pattern (interactive, single invocation, not a long-running service)?</li>
+      <li>Is there an appetite for a temporary period where both a Node-based and Rust-based <code>trellage</code> binary are documented as install options (P2–P5), or must the switch be atomic?</li>
+      <li>Who owns golden-file generation and review for lock/digest parity in P1 — this is the single highest-risk verification step and needs an explicit owner before it starts.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <p>
+    Generated as a planning artifact from a live inventory of this repository
+    (line counts, module names, Make targets, and test names read directly
+    from source on the date this plan was produced). No Rust code, crate, or
+    workspace has been created yet; this document is the plan, not the
+    implementation.
+  </p>
+</footer>
+
+<script>
+  // Keep exactly one phase open at a time isn't required; allow independent toggling.
+  // No other interactive behavior — this is a static reference document.
+</script>
+</body>
+</html>

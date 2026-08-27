@@ -128,6 +128,14 @@ if [[ "${1-} ${2-} ${3-} ${4-}" == '--autopilot --allow-all --no-ask-user --fixt
           'plugin-skill:suggest-awesome-github-copilot-agents' \
           'plugin-skill:suggest-awesome-github-copilot-instructions' \
           'plugin-skill:suggest-awesome-github-copilot-skills'
+      elif [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
+        printf '%s\n' \
+          'plugin-skill:design-artifact' \
+          'plugin-skill:html' \
+          'plugin-skill:html-diagram' \
+          'plugin-skill:html-plan' \
+          'plugin-skill:html-prototype' \
+          'plugin-skill:html-wireframe'
       fi
     done <"$installed"
   fi
@@ -181,7 +189,11 @@ case "${1-} ${2-}" in
     if [[ -f "$installed" ]]; then
       printf 'Installed plugins:\n'
       while IFS=$'\t' read -r plugin version; do
-        printf '  • %s (v%s)\n' "$plugin" "$version"
+        if [[ -n "$version" ]]; then
+          printf '  • %s (v%s)\n' "$plugin" "$version"
+        else
+          printf '  • %s\n' "$plugin"
+        fi
       done <"$installed"
     else
       # Matches installed GitHub Copilot CLI 1.0.80 output: trailing period
@@ -196,10 +208,28 @@ case "${1-} ${2-}" in
     case "$plugin" in
       awesome-copilot@awesome-copilot) version='1.1.0' ;;
       hve-core@hve-core) version='3.2.2' ;;
+      plannotator-effective-html@effective-html) version='' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
     esac
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
+    if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
+      plugin_root="$COPILOT_HOME/installed-plugins/effective-html/plannotator-effective-html"
+      mkdir -p "$plugin_root/.codex-plugin"
+      printf '%s\n' \
+        '{"name":"plannotator-effective-html","version":"0.4.0","skills":"./skills/"}' \
+        >"$plugin_root/.codex-plugin/plugin.json"
+      for skill in \
+        design-artifact \
+        html \
+        html-diagram \
+        html-plan \
+        html-prototype \
+        html-wireframe; do
+        mkdir -p "$plugin_root/skills/$skill"
+        printf '# %s\n' "$skill" >"$plugin_root/skills/$skill/SKILL.md"
+      done
+    fi
     ;;
   'plugin update')
     plugin="${3:?plugin required}"
@@ -207,6 +237,7 @@ case "${1-} ${2-}" in
     case "$plugin" in
       awesome-copilot@awesome-copilot) version='1.1.0' ;;
       hve-core@hve-core) version='3.2.2' ;;
+      plannotator-effective-html@effective-html) version='' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
     esac
     mkdir -p "$(dirname "$installed")"
@@ -224,11 +255,28 @@ case "${1-} ${2-}" in
     IFS=$'\t' read -r plugin version <"$installed"
     plugin_name="${plugin%%@*}"
     marketplace_name="${plugin#*@}"
-    jq -cn --arg root "$COPILOT_HOME/installed-plugins/$marketplace_name/$plugin_name/" '[
-      {name:"package-one",description:"Package skill",source:"plugin",path:($root + "skills/package-one"),enabled:true},
-      {name:"package-two",description:"Package skill",source:"plugin",path:($root + "skills/package-two"),enabled:true},
-      {name:"builtin-one",description:"Built-in skill",source:"builtin",path:"/fixture/builtin-one",enabled:true}
-    ]'
+    if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
+      jq -cn \
+        --arg root "$COPILOT_HOME/installed-plugins/$marketplace_name/$plugin_name/" \
+        --arg disabled "${FAKE_COPILOT_DISABLED_SKILL-}" \
+        --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '[
+        {name:"design-artifact",description:"Design artifact",source:"plugin",path:($root + "skills/design-artifact"),enabled:true},
+        {name:"html",description:"HTML",source:"plugin",path:($root + "skills/html"),enabled:true},
+        {name:"html-diagram",description:"HTML diagram",source:"plugin",path:($root + "skills/html-diagram"),enabled:true},
+        {name:"html-plan",description:"HTML plan",source:"plugin",path:($root + "skills/html-plan"),enabled:true},
+        {name:"html-prototype",description:"HTML prototype",source:"plugin",path:($root + "skills/html-prototype"),enabled:true},
+        {name:"html-wireframe",description:"HTML wireframe",source:"plugin",path:($root + "skills/html-wireframe"),enabled:true},
+        {name:"builtin-one",description:"Built-in skill",source:"builtin",path:"/fixture/builtin-one",enabled:true}
+      ]
+      | map(select(.name != $omitted))
+      | map(if .name == $disabled then .enabled = false else . end)'
+    else
+      jq -cn --arg root "$COPILOT_HOME/installed-plugins/$marketplace_name/$plugin_name/" '[
+        {name:"package-one",description:"Package skill",source:"plugin",path:($root + "skills/package-one"),enabled:true},
+        {name:"package-two",description:"Package skill",source:"plugin",path:($root + "skills/package-two"),enabled:true},
+        {name:"builtin-one",description:"Built-in skill",source:"builtin",path:"/fixture/builtin-one",enabled:true}
+      ]'
+    fi
     exit 0
     ;;
   'mcp list')
@@ -254,12 +302,22 @@ if [[ "${FAKE_CURL_FAILURE_URL-}" == "$url" ]]; then
   printf 'fixture transport failure: %s\n' "$url" >&2
   exit 22
 fi
+if [[ "${FAKE_CURL_MALFORMED_VERSION_URL-}" == "$url" ]]; then
+  printf '%s\n' '{"name":"plannotator-effective-html","version":42}'
+  exit 0
+fi
 case "$url" in
   https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json)
     printf '%s\n' '{"name":"awesome-copilot","plugins":[{"name":"awesome-copilot","version":"1.1.0"}]}'
     ;;
   https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json)
     printf '%s\n' '{"name":"hve-core","plugins":[{"name":"hve-core","version":"3.2.2"}]}'
+    ;;
+  https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json)
+    printf '%s\n' '{"name":"effective-html","plugins":[{"name":"plannotator-effective-html"}]}'
+    ;;
+  https://raw.githubusercontent.com/plannotator/effective-html/main/.codex-plugin/plugin.json)
+    printf '%s\n' '{"name":"plannotator-effective-html","version":"0.4.0","skills":"./skills/"}'
     ;;
   https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json)
     printf '%s\n' '{"name":"superpowers-marketplace","plugins":[{"name":"superpowers","version":"6.2.0"}]}'
@@ -311,7 +369,7 @@ printf '%s\n' '{"mcpServers":{"global-mcp-one":{},"global-mcp-two":{},"global-mc
 printf '%s\n' 'host session sentinel' >"$HOME/.copilot/sessions/host-session"
 printf '%s\n' 'host encryption sentinel' >"$HOME/.copilot/encryption_key"
 
-for profile in awesome hve superpowers; do
+for profile in awesome hve plannotator superpowers; do
   profile_home="$HOME/.local/share/trellage/profiles/copilot/$profile/home"
   mkdir -p \
     "$profile_home/sessions" \
@@ -333,7 +391,7 @@ readme="$prototype_root/README.md"
 assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.' "$readme"
 jq -e '
   .schemaVersion == 1
-  and (.profiles | keys | sort) == ["awesome", "hve", "superpowers"]
+  and (.profiles | keys | sort) == ["awesome", "hve", "plannotator", "superpowers"]
   and .profiles.awesome.headless == {
     "schemaVersion": 1,
     "prompt": true,
@@ -383,6 +441,41 @@ jq -e '
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
     "plugin": "hve-core@hve-core",
     "retiredPlugins": ["hve-core-all@hve-core"],
+    "standaloneMcps": []
+  }
+  and .profiles.plannotator.headless == {
+    "schemaVersion": 1,
+    "prompt": true,
+    "outputFormats": ["text", "json"],
+    "eventContract": null,
+    "trellageEventContract": null,
+    "sessionId": "none",
+    "resume": false,
+    "resumeWithPrompt": false,
+    "questionToolControl": "hard-deny",
+    "changedFiles": "none",
+    "usage": false,
+    "cost": false,
+    "modelOverride": true,
+    "effortOverride": false,
+    "testedHarnessVersion": "1.0.80"
+  }
+  and (.profiles.plannotator | del(.headless)) == {
+    "description": "GitHub Copilot CLI with Effective HTML’s six focused skills for visual artifacts, wireframes, interactive prototypes, plans, and diagrams.",
+    "marketplace": "plannotator/effective-html",
+    "marketplaceName": "effective-html",
+    "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json",
+    "versionManifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.codex-plugin/plugin.json",
+    "installedVersionManifest": ".codex-plugin/plugin.json",
+    "plugin": "plannotator-effective-html@effective-html",
+    "requiredPackageSkills": [
+      "design-artifact",
+      "html",
+      "html-diagram",
+      "html-plan",
+      "html-prototype",
+      "html-wireframe"
+    ],
     "standaloneMcps": []
   }
   and .profiles.superpowers.headless == {
@@ -493,6 +586,7 @@ actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
 
 expected_awesome_home="$HOME/.local/share/trellage/profiles/copilot/awesome/home"
+expected_plannotator_home="$HOME/.local/share/trellage/profiles/copilot/plannotator/home"
 (
   cd "$worktree"
   "$prototype_root/bin/cpx" awesome --prompt 'find useful skills' --deny-url=example.com --model 'gpt-5.5'
@@ -624,7 +718,7 @@ after_unsafe_log_lines="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 rm "$expected_hve_home"
 mv "$safe_hve_home" "$expected_hve_home"
 
-for profile in awesome hve superpowers; do
+for profile in awesome hve plannotator superpowers; do
   inventory_output="$fixture_root/$profile-inventory.out"
   (
     cd "$worktree"
@@ -765,6 +859,7 @@ before_list_calls="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 list_output="$fixture_root/list.out"
 "$launcher" list >"$list_output"
 assert_contains $'hve\thve-core@hve-core' "$list_output"
+assert_contains $'plannotator\tplannotator-effective-html@effective-html' "$list_output"
 assert_contains $'superpowers\tsuperpowers@superpowers-marketplace' "$list_output"
 assert_contains $'awesome\tawesome-copilot@awesome-copilot' "$list_output"
 json_list_output="$fixture_root/list.json"
@@ -774,7 +869,7 @@ jq -e '
   and .launcher == "cpx"
   and .harness == "copilot"
   and .sandbox == false
-  and [.profiles[].name] == ["awesome", "hve", "superpowers"]
+  and [.profiles[].name] == ["awesome", "hve", "plannotator", "superpowers"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -795,6 +890,7 @@ jq -e '
   }
   and .profiles[1].headless == .profiles[0].headless
   and .profiles[2].headless == .profiles[0].headless
+  and .profiles[3].headless == .profiles[0].headless
   and .profiles[0].plugin == "awesome-copilot@awesome-copilot"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
@@ -805,7 +901,14 @@ jq -e '
   }
   and .profiles[0].standaloneMcps == []
   and .profiles[1].marketplace.kind == "git"
-  and .profiles[2].standaloneMcps == []
+  and .profiles[2].plugin == "plannotator-effective-html@effective-html"
+  and .profiles[2].marketplace == {
+    "kind": "git",
+    "source": "plannotator/effective-html",
+    "name": "effective-html",
+    "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json"
+  }
+  and .profiles[3].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
 
 FAKE_COPILOT_VERSION=1.0.81 "$launcher" list --json >"$fixture_root/list-drift.json"
@@ -896,6 +999,151 @@ jq -e '
   and .skills == {packageCount:2,visibleCount:3}
   and .mcps == ["docs","files"]
 ' "$inventory_output" >/dev/null || fail 'healthy inventory output differs'
+
+plannotator_plugin_root="$expected_plannotator_home/installed-plugins/effective-html/plannotator-effective-html"
+plannotator_install_count="$(grep -Fc \
+  'args=plugin install plannotator-effective-html@effective-html ' "$fake_copilot_log")"
+"$launcher" setup plannotator >"$fixture_root/plannotator-setup.out"
+[[ "$(grep -Fc 'args=plugin install plannotator-effective-html@effective-html ' \
+  "$fake_copilot_log")" == "$plannotator_install_count" ]] \
+  || fail 'repeated Plannotator setup reinstalled its versionless plugin'
+"$launcher" plannotator --prompt 'reuse versionless plugin' \
+  >"$fixture_root/plannotator-launch.out"
+"$launcher" repair plannotator >"$fixture_root/plannotator-repair.out"
+[[ "$(grep -Fc 'args=plugin install plannotator-effective-html@effective-html ' \
+  "$fake_copilot_log")" == "$plannotator_install_count" ]] \
+  || fail 'Plannotator launch or repair reinstalled its versionless plugin'
+"$launcher" doctor plannotator >"$fixture_root/plannotator-doctor.out"
+assert_contains \
+  'plannotator: healthy (plugin plannotator-effective-html@effective-html, version 0.4.0)' \
+  "$fixture_root/plannotator-doctor.out"
+"$launcher" inventory plannotator --json >"$fixture_root/plannotator-inventory.json"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cpx"
+  and .harness == "copilot"
+  and .profile == "plannotator"
+  and .readiness == "healthy"
+  and .plugins == [{name:"plannotator-effective-html@effective-html",version:"0.4.0"}]
+  and .skills == {packageCount:6,visibleCount:7}
+  and .mcps == ["docs","files"]
+' "$fixture_root/plannotator-inventory.json" >/dev/null \
+  || fail 'Plannotator inventory output differs'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" plannotator --fixture-capability-inventory
+) >"$fixture_root/plannotator-capabilities.out"
+assert_line 'plugin:plannotator-effective-html@effective-html' \
+  "$fixture_root/plannotator-capabilities.out"
+for skill in \
+  design-artifact \
+  html \
+  html-diagram \
+  html-plan \
+  html-prototype \
+  html-wireframe; do
+  assert_line "plugin-skill:$skill" "$fixture_root/plannotator-capabilities.out"
+done
+[[ "$(grep -c '^plugin-skill:' "$fixture_root/plannotator-capabilities.out")" == '6' ]] \
+  || fail 'Plannotator capability inventory did not expose exactly six plugin skills'
+
+mv "$plannotator_plugin_root/skills/html-plan/SKILL.md" \
+  "$plannotator_plugin_root/skills/html-plan/SKILL.md.safe"
+if "$launcher" doctor plannotator \
+  >"$fixture_root/plannotator-missing-skill.out" \
+  2>"$fixture_root/plannotator-missing-skill.err"; then
+  fail 'doctor accepted a missing required Plannotator skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: plannotator/html-plan' \
+  "$fixture_root/plannotator-missing-skill.err"
+if "$launcher" plannotator --prompt 'missing required skill' \
+  >"$fixture_root/plannotator-missing-skill-launch.out" \
+  2>"$fixture_root/plannotator-missing-skill-launch.err"; then
+  fail 'launch accepted a missing required Plannotator skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: plannotator/html-plan' \
+  "$fixture_root/plannotator-missing-skill-launch.err"
+mv "$plannotator_plugin_root/skills/html-plan/SKILL.md.safe" \
+  "$plannotator_plugin_root/skills/html-plan/SKILL.md"
+
+if FAKE_COPILOT_DISABLED_SKILL=html-plan "$launcher" doctor plannotator \
+  >"$fixture_root/plannotator-disabled-skill.out" \
+  2>"$fixture_root/plannotator-disabled-skill.err"; then
+  fail 'doctor accepted a disabled required Plannotator skill'
+fi
+assert_contains \
+  'cpx: required package skill is not enabled by Copilot: plannotator/html-plan' \
+  "$fixture_root/plannotator-disabled-skill.err"
+if FAKE_COPILOT_DISABLED_SKILL=html-plan \
+  "$launcher" plannotator --prompt 'disabled required skill' \
+  >"$fixture_root/plannotator-disabled-skill-launch.out" \
+  2>"$fixture_root/plannotator-disabled-skill-launch.err"; then
+  fail 'launch accepted a disabled required Plannotator skill'
+fi
+assert_contains \
+  'cpx: required package skill is not enabled by Copilot: plannotator/html-plan' \
+  "$fixture_root/plannotator-disabled-skill-launch.err"
+
+mv "$plannotator_plugin_root/skills/html-diagram" \
+  "$plannotator_plugin_root/skills/html-diagram.safe"
+ln -s "$plannotator_plugin_root/skills/html" \
+  "$plannotator_plugin_root/skills/html-diagram"
+if "$launcher" doctor plannotator \
+  >"$fixture_root/plannotator-symlink-skill.out" \
+  2>"$fixture_root/plannotator-symlink-skill.err"; then
+  fail 'doctor accepted a redirected Plannotator skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: plannotator/html-diagram' \
+  "$fixture_root/plannotator-symlink-skill.err"
+rm "$plannotator_plugin_root/skills/html-diagram"
+mv "$plannotator_plugin_root/skills/html-diagram.safe" \
+  "$plannotator_plugin_root/skills/html-diagram"
+
+mv "$plannotator_plugin_root/.codex-plugin/plugin.json" \
+  "$plannotator_plugin_root/.codex-plugin/plugin.json.safe"
+ln -s "$plannotator_plugin_root/.codex-plugin/plugin.json.safe" \
+  "$plannotator_plugin_root/.codex-plugin/plugin.json"
+if "$launcher" doctor plannotator \
+  >"$fixture_root/plannotator-symlink-version.out" \
+  2>"$fixture_root/plannotator-symlink-version.err"; then
+  fail 'doctor accepted a redirected Plannotator version manifest'
+fi
+assert_contains \
+  'cpx: failed to resolve installed plugin version: plannotator-effective-html@effective-html' \
+  "$fixture_root/plannotator-symlink-version.err"
+rm "$plannotator_plugin_root/.codex-plugin/plugin.json"
+mv "$plannotator_plugin_root/.codex-plugin/plugin.json.safe" \
+  "$plannotator_plugin_root/.codex-plugin/plugin.json"
+
+before_plannotator_check_hash="$(profile_tree_hash "$expected_plannotator_home")"
+export FAKE_FORBID_PROFILE_MUTATION=1
+"$launcher" update --check plannotator >"$fixture_root/plannotator-check.out"
+unset FAKE_FORBID_PROFILE_MUTATION
+assert_contains 'plannotator: current (0.4.0)' "$fixture_root/plannotator-check.out"
+assert_contains \
+  'https://raw.githubusercontent.com/plannotator/effective-html/main/.codex-plugin/plugin.json' \
+  "$fake_curl_log"
+[[ "$(profile_tree_hash "$expected_plannotator_home")" == "$before_plannotator_check_hash" ]] \
+  || fail 'Plannotator update --check mutated the profile home tree'
+
+export FAKE_CURL_MALFORMED_VERSION_URL='https://raw.githubusercontent.com/plannotator/effective-html/main/.codex-plugin/plugin.json'
+malformed_version_status=0
+"$launcher" update --check plannotator \
+  >"$fixture_root/plannotator-malformed-version.out" \
+  2>"$fixture_root/plannotator-malformed-version.err" \
+  || malformed_version_status=$?
+unset FAKE_CURL_MALFORMED_VERSION_URL
+[[ "$malformed_version_status" == '2' ]] \
+  || fail "malformed Plannotator version returned status $malformed_version_status instead of 2"
+assert_contains 'failed to fetch or parse official manifest for plannotator' \
+  "$fixture_root/plannotator-malformed-version.err"
+assert_not_contains 'plannotator: update available' \
+  "$fixture_root/plannotator-malformed-version.out"
+
 mv "$expected_hve_home/installed-plugins/hve-core/hve-core" \
   "$expected_hve_home/installed-plugins/hve-core/hve-core.safe"
 ln -s "$expected_hve_home/installed-plugins/unrelated/unrelated" \
@@ -1013,8 +1261,13 @@ next_awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace ad
 "$launcher" setup --all
 assert_contains 'args=plugin marketplace add obra/superpowers-marketplace ' "$fake_copilot_log"
 assert_contains 'args=plugin install superpowers@superpowers-marketplace ' "$fake_copilot_log"
+assert_contains 'args=plugin marketplace add plannotator/effective-html ' "$fake_copilot_log"
+assert_contains 'args=plugin install plannotator-effective-html@effective-html ' \
+  "$fake_copilot_log"
 [[ -f "$expected_superpowers_home/fake-state/plugins" ]] \
   || fail 'setup --all did not provision superpowers'
+[[ -f "$expected_plannotator_home/fake-state/plugins" ]] \
+  || fail 'setup --all did not provision Plannotator'
 assert_contains $'awesome-copilot@awesome-copilot\t1.1.0' \
   "$expected_awesome_home/fake-state/plugins"
 [[ "$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")" == "$awesome_marketplace_add_count" ]] \
@@ -1053,7 +1306,7 @@ assert_contains $'hve-core@hve-core\t3.2.2' \
 [[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" -gt "$launch_calls_before" ]] \
   || fail 'self-healed launch did not start the underlying Copilot agent'
 
-for profile in awesome hve superpowers; do
+for profile in awesome hve plannotator superpowers; do
   "$launcher" doctor "$profile" >"$fixture_root/$profile-native-auth-doctor.out"
   assert_contains "$profile: healthy" "$fixture_root/$profile-native-auth-doctor.out"
 done
@@ -1188,6 +1441,8 @@ for asset in rundown.instructions.md NOTICE.md; do
 done
 "$installed" list >"$fixture_root/installed-list.out"
 assert_contains $'hve\thve-core@hve-core' "$fixture_root/installed-list.out"
+assert_contains $'plannotator\tplannotator-effective-html@effective-html' \
+  "$fixture_root/installed-list.out"
 "$installer"
 "$uninstaller"
 [[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/bin/cpx behind'

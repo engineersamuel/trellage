@@ -294,6 +294,7 @@
         "profiles": [
           "awesome",
           "hve",
+          "plannotator",
           "superpowers"
         ]
       },
