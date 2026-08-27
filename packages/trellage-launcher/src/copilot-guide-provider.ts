@@ -48,6 +48,7 @@
  *   masked by a cleanup failure; if cleanup fails and there was no primary
  *   error, the cleanup failure is surfaced instead.
  */
+import { accessSync, constants } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import {
@@ -154,6 +155,8 @@ export interface CopilotGuideProviderOptions {
   readonly workingDirectory?: string
   /** Client identifier included in the User-Agent header. @default "trellage-trx-guide" */
   readonly clientName?: string
+  /** Copilot CLI executable. Defaults to the first executable `copilot` entry on PATH. */
+  readonly copilotCliPath?: string
   /** @default "append" */
   readonly systemMessageMode?: "append" | "replace"
   /** Milliseconds allowed for the match phase's `sendAndWait`. @default 30000 */
@@ -167,6 +170,21 @@ export interface CopilotGuideProviderOptions {
 }
 
 const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => new CopilotClient(options)
+
+const findExecutableOnPath = (name: string, searchPath = process.env.PATH): string | undefined => {
+  if (searchPath === undefined) return undefined
+  for (const directory of searchPath.split(path.delimiter)) {
+    if (directory.length === 0) continue
+    const candidate = path.resolve(directory, name)
+    try {
+      accessSync(candidate, constants.X_OK)
+      return candidate
+    } catch {
+      // Continue until an executable entry is found.
+    }
+  }
+  return undefined
+}
 
 /** Maximum size (in UTF-8 bytes) of a completed assistant message accepted before attempting `JSON.parse`. */
 const maximumResponseBytes = 64 * 1024
@@ -225,6 +243,7 @@ export class CopilotGuideProvider implements GuideProvider {
   private readonly baseDirectory: string
   private readonly workingDirectory: string
   private readonly clientName: string
+  private readonly copilotCliPath: string | undefined
   private readonly systemMessageMode: "append" | "replace"
   private readonly matchTimeoutMs: number
   private readonly generateTimeoutMs: number
@@ -238,6 +257,7 @@ export class CopilotGuideProvider implements GuideProvider {
     this.baseDirectory = options.baseDirectory ?? path.join(os.homedir(), ".copilot", "trx-guide")
     this.workingDirectory = options.workingDirectory ?? os.tmpdir()
     this.clientName = options.clientName ?? "trellage-trx-guide"
+    this.copilotCliPath = options.copilotCliPath ?? findExecutableOnPath("copilot")
     this.systemMessageMode = options.systemMessageMode ?? "append"
     this.matchTimeoutMs = options.matchTimeoutMs ?? 30_000
     this.generateTimeoutMs = options.generateTimeoutMs ?? 60_000
@@ -273,7 +293,9 @@ export class CopilotGuideProvider implements GuideProvider {
   ): Promise<Output> {
     const client = this.clientFactory({
       mode: "empty",
-      connection: RuntimeConnection.forStdio({ path: "copilot" }),
+      ...(this.copilotCliPath === undefined
+        ? {}
+        : { connection: RuntimeConnection.forStdio({ path: this.copilotCliPath }) }),
       baseDirectory: this.baseDirectory,
       workingDirectory: this.workingDirectory,
     })

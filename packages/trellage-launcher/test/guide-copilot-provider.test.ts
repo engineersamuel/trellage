@@ -221,6 +221,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     const client = new FakeClient([workingModel], [message(validMatchResponse)])
     const provider = new CopilotGuideProvider({
       prompts,
+      copilotCliPath: "/opt/bin/copilot",
       clientFactory: (options) => {
         capturedClientOptions = options
         return client
@@ -277,7 +278,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
     // Item 5: client and session working directories are outside the repository.
     expect(capturedClientOptions?.workingDirectory).toBeDefined()
-    expect(capturedClientOptions?.connection).toMatchObject({ kind: "stdio", path: "copilot" })
+    expect(capturedClientOptions?.connection).toMatchObject({ kind: "stdio", path: "/opt/bin/copilot" })
     const workingDirectory = capturedClientOptions?.workingDirectory as string
     expect(path.isAbsolute(workingDirectory)).toBe(true)
     expect(workingDirectory.startsWith(process.cwd())).toBe(false)
