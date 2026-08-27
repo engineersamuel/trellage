@@ -56590,7 +56590,7 @@ var require_jsx_runtime = __commonJS({
 
 // src/cli.tsx
 var import_react35 = __toESM(require_react(), 1);
-import { constants as constants2, openSync } from "node:fs";
+import { constants as constants3, openSync } from "node:fs";
 import { readFile as readFile2, writeFile } from "node:fs/promises";
 import tty3 from "node:tty";
 
@@ -68104,6 +68104,7 @@ After completing the work, verify it and report the verification evidence.`,
 import { fstatSync, readFileSync as readFileSync2 } from "node:fs";
 
 // src/copilot-guide-provider.ts
+import { accessSync, constants as constants2 } from "node:fs";
 import os3 from "node:os";
 import path4 from "node:path";
 
@@ -75554,6 +75555,19 @@ var GuideModelCleanupError = class extends Error {
   }
 };
 var defaultClientFactory = (options) => new CopilotClient(options);
+var findExecutableOnPath = (name, searchPath = process.env.PATH) => {
+  if (searchPath === void 0) return void 0;
+  for (const directory of searchPath.split(path4.delimiter)) {
+    if (directory.length === 0) continue;
+    const candidate = path4.resolve(directory, name);
+    try {
+      accessSync(candidate, constants2.X_OK);
+      return candidate;
+    } catch {
+    }
+  }
+  return void 0;
+};
 var maximumResponseBytes = 64 * 1024;
 var untrustedMessage = (payload) => ["Respond with raw JSON only, per your instructions.", "", "<untrusted-data>", payload, "</untrusted-data>"].join(
   "\n"
@@ -75602,6 +75616,7 @@ var CopilotGuideProvider = class {
   baseDirectory;
   workingDirectory;
   clientName;
+  copilotCliPath;
   systemMessageMode;
   matchTimeoutMs;
   generateTimeoutMs;
@@ -75614,6 +75629,7 @@ var CopilotGuideProvider = class {
     this.baseDirectory = options.baseDirectory ?? path4.join(os3.homedir(), ".copilot", "trx-guide");
     this.workingDirectory = options.workingDirectory ?? os3.tmpdir();
     this.clientName = options.clientName ?? "trellage-trx-guide";
+    this.copilotCliPath = options.copilotCliPath ?? findExecutableOnPath("copilot");
     this.systemMessageMode = options.systemMessageMode ?? "append";
     this.matchTimeoutMs = options.matchTimeoutMs ?? 3e4;
     this.generateTimeoutMs = options.generateTimeoutMs ?? 6e4;
@@ -75643,7 +75659,7 @@ var CopilotGuideProvider = class {
   async run(systemPrompt, input, timeoutMs, validate2) {
     const client = this.clientFactory({
       mode: "empty",
-      connection: RuntimeConnection.forStdio({ path: "copilot" }),
+      ...this.copilotCliPath === void 0 ? {} : { connection: RuntimeConnection.forStdio({ path: this.copilotCliPath }) },
       baseDirectory: this.baseDirectory,
       workingDirectory: this.workingDirectory
     });
@@ -77411,8 +77427,8 @@ var runInteractiveGuideMode = async (argv, guideRoot) => {
   let input;
   let output;
   try {
-    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants2.O_RDONLY));
-    output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(outputFd = openSync("/dev/tty", constants2.O_WRONLY));
+    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants3.O_RDONLY));
+    output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(outputFd = openSync("/dev/tty", constants3.O_WRONLY));
   } catch {
     throw new Error("an interactive controlling terminal is required");
   }
@@ -77489,8 +77505,8 @@ var main = async () => {
   let input;
   let output;
   try {
-    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants2.O_RDONLY));
-    output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(outputFd = openSync("/dev/tty", constants2.O_WRONLY));
+    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants3.O_RDONLY));
+    output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(outputFd = openSync("/dev/tty", constants3.O_WRONLY));
   } catch {
     throw new Error("an interactive controlling terminal is required");
   }
