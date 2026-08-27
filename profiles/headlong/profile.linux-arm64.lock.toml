@@ -9,8 +9,8 @@ adapter = "headlong"
 repository = "https://github.com/laude-institute/headlong.git"
 ref = "main"
 select = []
-commit = "b076bbf89aab696493c27b796e148dd7db3de10d"
-integrity = "sha256:073d18de0df866c0e50656cc0906825d6a6b199c362a0be1ecb84c80c4c8d92a"
+commit = "15f20b4b991ec36ae88039058c765ef526fe14da"
+integrity = "sha256:362b4886057770e9c459e60294e3dac359596149836bfbc15c646c423b8e80ff"
 
 [[sources.files]]
 path = ".github/workflows/ci.yml"
@@ -50,7 +50,7 @@ executable = true
 
 [[sources.files]]
 path = "bin/llm"
-sha256 = "sha256:8970c03788500468875417ae09e5388d49e2f4edf85fd1d97529ce90c694a291"
+sha256 = "sha256:e03bcae8e8bf0868e647286bf731555247a5cdee30ba1558aab13c6d01384574"
 executable = true
 
 [[sources.files]]
@@ -74,7 +74,7 @@ executable = true
 
 [[sources.files]]
 path = "bin/shellm"
-sha256 = "sha256:cdf434cc14e79c18e14e664aeb4776661d2580e2f86a17cfd66fa157fe7dfd7e"
+sha256 = "sha256:0bb150a399a8bbcc22ce803997422c90da28d097d36bf724fd24b0d7b4ce4b99"
 executable = true
 
 [[sources.files]]
@@ -470,7 +470,7 @@ sha256 = "sha256:e79784c431ffb248e429cf4838f126d7dccb2ac3c8a1aa0cf09dc64f27a8052
 
 [[sources.files]]
 path = "docs/shellm.md"
-sha256 = "sha256:9c2d59c84761fa5475394510acdc7d4ce2e5897c0d3d98439a3ed24eb5ef39c7"
+sha256 = "sha256:eeb6923753531aab9e8608a5428274b7a58ee9bd0a8f0822499e514e99159c3d"
 
 [[sources.files]]
 path = "identities/README.md"
@@ -482,7 +482,7 @@ sha256 = "sha256:865405ab425f594072a6f3cb723489262820250d2f5e32650cf724b5e106d61
 
 [[sources.files]]
 path = "install.sh"
-sha256 = "sha256:00effb9fe36edc86950e3efdf9b561f1b214084ebf1addf40aa909b74285594e"
+sha256 = "sha256:4b392deab4c92a042e6d273c032bf5cee038ad4fa71f0f86dedb2521b4e3bb26"
 executable = true
 
 [[sources.files]]
@@ -579,7 +579,7 @@ sha256 = "sha256:87b7ffcfbf2a99a5fe39ea9384328202a4dc5db16fac61c4cd4396593ae21e1
 
 [[sources.files]]
 path = "slack/README.md"
-sha256 = "sha256:21c4d381f59a33dabeefc20fcdebc709533de3b49bb89238be0dc1c8e23199b3"
+sha256 = "sha256:13c942cbac4afc1ccfe5cdf4eaae399d038a97f9757f7b81266b2cf5d671b313"
 
 [[sources.files]]
 path = "slack/slack.json"
@@ -595,7 +595,7 @@ sha256 = "sha256:95fb8f89517caa6c46682878337e451dc6ccc843150c3aeacf99cb10bdfb207
 
 [[sources.files]]
 path = "slack/src/headlong_slack/config.py"
-sha256 = "sha256:91e29a32d1a46f40b31612a1f4b399066db264f14387a8b29cedc4e111fb2a1e"
+sha256 = "sha256:9580703fa7dca33b9339e6d74eaf4c937f89b1dcb45a860c16c9612aa0b4cde2"
 
 [[sources.files]]
 path = "slack/src/headlong_slack/inbound.py"
@@ -620,6 +620,10 @@ sha256 = "sha256:ef0b8aa032631c4e622d329f26017cac21c192e066ef2919c5fc11f38b425f8
 [[sources.files]]
 path = "slack/src/headlong_slack/state.py"
 sha256 = "sha256:3bd908d22a4760acfc070321c4ba345ff071cbcc28f894119d91b54c426b9976"
+
+[[sources.files]]
+path = "slack/tests/test_config.py"
+sha256 = "sha256:c21c34b98b181a25d9e9bf924d80c945a55b668f5b579415fe18ec27295a0670"
 
 [[sources.files]]
 path = "slack/tests/test_mindlog.py"
@@ -656,7 +660,7 @@ sha256 = "sha256:6d4d3e0951bcc9ee2dde31ba32d7e16bea0ac51776da5fc8c005c4093f0e6fc
 
 [[sources.files]]
 path = "telegram/README.md"
-sha256 = "sha256:a3cbbada10cb99345958534c9a10af3c9a2cfb9acef37165c90a2d14288f906a"
+sha256 = "sha256:f7af87a9b15a9376ea5490ffb454560e8fcfa8285a9d029aeabcab81dbfe7cdb"
 
 [[sources.files]]
 path = "telegram/src/headlong_telegram/__init__.py"
@@ -676,7 +680,7 @@ sha256 = "sha256:d2de1326f8995a164a8ee4811b00c256c5adfeec78123cd8e290cdd72831ba0
 
 [[sources.files]]
 path = "telegram/src/headlong_telegram/config.py"
-sha256 = "sha256:52bd167ae623e7452950f818097d4b8ea2bd169860fbd263d8756cc73c06f27b"
+sha256 = "sha256:5f5a9f3096d82c1c055777a3d7711f5bfebf49dbeef11e8eca91a86feb0071c8"
 
 [[sources.files]]
 path = "telegram/src/headlong_telegram/inbound.py"
@@ -709,6 +713,10 @@ sha256 = "sha256:3088f8578cce8ca9eb08f4751202779803d460fd61879fbed0e50cb720612e8
 [[sources.files]]
 path = "telegram/tests/test_api.py"
 sha256 = "sha256:31f6608ca92d5ff2193518a6dd5fd6cf77733bf112cac782c4834d8374d0ecf9"
+
+[[sources.files]]
+path = "telegram/tests/test_config.py"
+sha256 = "sha256:ee35fb836e349b836c24b4efab4ecddf718abbae946fe2b18a6384e4757e61b0"
 
 [[sources.files]]
 path = "telegram/tests/test_inbound.py"
@@ -875,8 +883,23 @@ sha256 = "sha256:709b51ae79e9c72197c09069a27bf6254f98a5ad0f864a9c39dffbc54536825
 executable = true
 
 [[sources.files]]
+path = "tests/test_bridge_env.sh"
+sha256 = "sha256:53dacbe350484de6f63c866801390fa09c0e43e7d8b1705abfaae9b766642638"
+executable = true
+
+[[sources.files]]
+path = "tests/test_broker_compose_containment.sh"
+sha256 = "sha256:6cf659bac42ee2f03c581e4ddfc9afc1ef2821ef56f62d84579b26db19b58f90"
+executable = true
+
+[[sources.files]]
 path = "tests/test_context.sh"
 sha256 = "sha256:b1febbcba33800db525e2cd704d73e29db8b95adc132bdffae29c64d431305ce"
+executable = true
+
+[[sources.files]]
+path = "tests/test_explore_report_argv.sh"
+sha256 = "sha256:9b6aeb4ec0c71a69642c645fef08b33f58c73d698c1812c31412a255dc710c71"
 executable = true
 
 [[sources.files]]
@@ -892,6 +915,16 @@ executable = true
 [[sources.files]]
 path = "tests/test_inactivity_beacon.sh"
 sha256 = "sha256:56373773b21256ee558e792ac1acbc03ecefadb4f06fe32c07d260ab1b1c5790"
+executable = true
+
+[[sources.files]]
+path = "tests/test_install_secret_argv.sh"
+sha256 = "sha256:16f665a44e2d493b3fdeb78fdbe8ca24a628588bcc516ae16343c6722e6bcc35"
+executable = true
+
+[[sources.files]]
+path = "tests/test_key_var_resolution.sh"
+sha256 = "sha256:23762e58596d6415eedae5dc491a91c9f770468f2cecb8269add542c456c4846"
 executable = true
 
 [[sources.files]]
@@ -1005,7 +1038,7 @@ executable = true
 
 [[sources.files]]
 path = "thinkers/_lib/common.sh"
-sha256 = "sha256:2837e4c931a9cc1d959f42a219bf546a809292de9148a086f9d11b223942f455"
+sha256 = "sha256:332617d0dc154695bdf0dd13a9a8b86ea666b9a09d1c5ad9767465a7c6b20a18"
 executable = true
 
 [[sources.files]]
@@ -1062,7 +1095,7 @@ sha256 = "sha256:4e0a23713f8c09dc1ca167fdf1ebca2d29d44a943f4eee8da8968c035909d30
 
 [[sources.files]]
 path = "tools/headlong-init"
-sha256 = "sha256:831e6441ac2cf62c2fa352ca340232ab7e66c71817373ce1a0924557a13be87c"
+sha256 = "sha256:1f149a38ad9c556aaac6864c1f2f7e0cae2b842b0693a019af4989b182b83b5f"
 executable = true
 
 [[sources.files]]
@@ -1072,12 +1105,12 @@ executable = true
 
 [[sources.files]]
 path = "tools/headlong-slack-bridge"
-sha256 = "sha256:0ac9adc0a83a73dbb9881f09a152522bce58a1ee9ad59e6b39d7605fb9211464"
+sha256 = "sha256:2c9d47374e37a48c4688cccd2ac0c304158a5248823234a9e50b87b4e8093802"
 executable = true
 
 [[sources.files]]
 path = "tools/headlong-telegram-bridge"
-sha256 = "sha256:6d8974fc9200e5865dfb197f82430028cbc7239518a473ece3428003d0046d30"
+sha256 = "sha256:894ca4c12bdb200462e604a9197c6484edb090d9e818520e8c1c9f5db5cc4ec5"
 executable = true
 
 [[sources.files]]
@@ -1092,7 +1125,7 @@ executable = true
 
 [[sources.files]]
 path = "tools/persona"
-sha256 = "sha256:4adbf73f30a8c988a6f04cae77935f1de29365ee74f2539b81dd737abd8fcf4d"
+sha256 = "sha256:dade2f905b23d7df86247a06b4a63476d6e49b3e4abc0a1217163247e1e6d64b"
 executable = true
 
 [[sources.files]]
@@ -1106,12 +1139,12 @@ sha256 = "sha256:cea2a55e890ec7030bb2ce7994d5f2347844baac7422e1fe635488125a00cef
 
 [[sources.files]]
 path = "tools/shellm-docker-broker"
-sha256 = "sha256:8578094f2ba8d274766b82f17c1bf5eb4689f7a4edadb1e659b21d812567d899"
+sha256 = "sha256:b9dcf62eacc97ca4a4cb19c212c42faa6497ce56dc0d86eadb7af8f163e6926f"
 executable = true
 
 [[sources.files]]
 path = "tools/shellm-explore"
-sha256 = "sha256:4a74e8f29608c6a296ade52f1c323760549d50d0df9da530124972ba2097ad68"
+sha256 = "sha256:349f1b072722b9ecd7325c95f0041816cf59f51225ba5dc3c04eeac9223b9270"
 executable = true
 
 [[sources.files]]
@@ -1181,7 +1214,7 @@ sha256 = "sha256:c03fad9ab635afefc1e8a9436094386278fb314577422c7a40b96a2f3d5a1f3
 
 [[sources.files]]
 path = "web/src/headlong_web/discovery.py"
-sha256 = "sha256:9f99ec22ff3599ecd7692a5cc6e4f4d4c5b11da8766c9454b3e077a271d97fea"
+sha256 = "sha256:4faa6460812ee3e9d05fd4a42315ad8ee1fda01f92fe2c61c4f7f3c711484c18"
 
 [[sources.files]]
 path = "web/src/headlong_web/env.py"
@@ -1205,7 +1238,7 @@ sha256 = "sha256:8ccc631c51775a39bc111f64d597b84aaf6d3be3197734e20556f480006171b
 
 [[sources.files]]
 path = "web/src/headlong_web/logs.py"
-sha256 = "sha256:651b280bb16e6615916334f15924c05c62142e3e70a13947043b8d563ac76163"
+sha256 = "sha256:7f885d9c9f4d4d4f8be219b0c13f9a255513c0dba065dbd22997b6a7c87d021a"
 
 [[sources.files]]
 path = "web/src/headlong_web/memories.py"
@@ -1262,6 +1295,14 @@ sha256 = "sha256:d37c71b40b44d71ca4f999a91fc1cebb50ee56de1f8f58dc8d77b7c27be084d
 [[sources.files]]
 path = "web/tests/test_chat_api.py"
 sha256 = "sha256:4ffad38ee67700460253aa8bf09676b54f2f21e26647ef358abcc0c15f923c6a"
+
+[[sources.files]]
+path = "web/tests/test_discovery_symlinks.py"
+sha256 = "sha256:6d3e1685b3b64a2cc459343a2628c0f03a10dba6c468b7c154400bebaefe3414"
+
+[[sources.files]]
+path = "web/tests/test_dispatch_log.py"
+sha256 = "sha256:44794f46ecdc8b1461f58be39d3eb408b642479506393fa2402d8146120ee7df"
 
 [[sources.files]]
 path = "web/tests/test_health_api.py"
@@ -1577,7 +1618,7 @@ sha256 = "sha256:e740585504c0419638504f4d9a1b3eef3268696392e55cef087ec3fea7bf8af
 
 [[sources.files]]
 path = "web/viewer/bun.lock"
-sha256 = "sha256:16332a3103cde98689f18248968d271f5c55082de24dd57c1aa9a419b1ba59ce"
+sha256 = "sha256:ba26a317c0ac8ea375fc4a8f466f00fcafb72f60071f5f6c38f6f223f15631e6"
 
 [[sources.files]]
 path = "web/viewer/components.json"
@@ -1585,7 +1626,7 @@ sha256 = "sha256:5de3154193e6f4bc3cfafd7a820605829b3a473821c6f6d4e12dd00a8290745
 
 [[sources.files]]
 path = "web/viewer/package.json"
-sha256 = "sha256:4d8a7d241caa8fae043a415b87a84a75966dafc78e157f92a8fb3a84610a8d74"
+sha256 = "sha256:3a9d868c016b7e46645579cae95b45cb3376e99a4b3ece775f4e88ad7e6ba7a3"
 
 [[sources.files]]
 path = "web/viewer/public/favicon.ico"
@@ -1644,8 +1685,8 @@ sha256 = "sha256:cd1204f4c3353f5fbf7805be6d9b360a21eafe492c1ff7e2554d4a02dbad16f
 [packages.harness]
 kind = "headlong"
 selector = "latest"
-commit = "b076bbf89aab696493c27b796e148dd7db3de10d"
-integrity = "sha256:073d18de0df866c0e50656cc0906825d6a6b199c362a0be1ecb84c80c4c8d92a"
+commit = "15f20b4b991ec36ae88039058c765ef526fe14da"
+integrity = "sha256:362b4886057770e9c459e60294e3dac359596149836bfbc15c646c423b8e80ff"
 
 [[packages.runtime]]
 name = "bash"

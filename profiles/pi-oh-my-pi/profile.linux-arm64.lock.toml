@@ -9,10 +9,10 @@ sources = []
 [packages.harness]
 kind = "pi"
 selector = "latest"
-version = "18.0.4"
-integrity = "sha256:f2b7c8a019681ede314ac165100c1c5b5cd4900139075948da809c004bec5ce7"
-url = "https://github.com/can1357/oh-my-pi/releases/download/v18.0.4/omp-linux-arm64"
-size = 145082360
+version = "18.0.6"
+integrity = "sha256:8566b0a8cbc6fb4a01decc937fa37572bded86c3de75f811ef37fb2fab43f912"
+url = "https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-linux-arm64"
+size = 147113976
 
 [[packages.runtime]]
 name = "bash"

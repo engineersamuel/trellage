@@ -418,10 +418,10 @@ executable = true
 [packages.harness]
 kind = "codex"
 selector = "latest"
-version = "0.149.1"
-integrity = "sha256:14df6802e39a956de994e844b90d51d8254bcc8057b6e66f0f3e3b8f7e2da5b0"
-url = "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-aarch64-unknown-linux-musl.tar.gz"
-size = 91899352
+version = "0.150.1"
+integrity = "sha256:5bb1f75e1a1588845b4a31f2c98fb2b394be5c2a8d90a24a8ab0ebbae1169264"
+url = "https://github.com/openai/codex/releases/download/rust-v0.150.1/codex-aarch64-unknown-linux-musl.tar.gz"
+size = 95376924
 
 [[packages.runtime]]
 name = "bash"
@@ -465,10 +465,10 @@ integrity = "sha256:c6ef58b84ecc669776024866821c89d2247307f1fb6b174fcbe281ad58bf
 
 [[packages.artifacts]]
 name = "codex-code-mode-host"
-version = "0.149.1"
-integrity = "sha256:962e029df772b53cb977a0204ec4284d0c693207a25a491106e8294aae8dfa04"
-url = "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
-size = 19857866
+version = "0.150.1"
+integrity = "sha256:cc934a8aa36dea77ad3096e025cbe7f2097f0083df902e7f3ed77dbf91fa6f9c"
+url = "https://github.com/openai/codex/releases/download/rust-v0.150.1/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+size = 19857432
 
 [image]
 base = "node:22.17.0-bookworm-slim"
