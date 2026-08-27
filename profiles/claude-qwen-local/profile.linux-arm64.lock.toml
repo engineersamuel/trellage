@@ -9,10 +9,10 @@ sources = []
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.245"
-integrity = "sha256:ec08af5c412a4456f200c20e586e0268eda62fac7952fe14ff97f0aab485c7b6"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.245/claude-linux-arm64.tar.gz"
-size = 120536454
+version = "2.1.247"
+integrity = "sha256:4ef57315cff1d3cbfb2ef5e28f9e8560bafc76149b6798c227ec431f2e9018ad"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.247/claude-linux-arm64.tar.gz"
+size = 101459149
 
 [[packages.runtime]]
 name = "bash"
