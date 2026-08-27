@@ -92,6 +92,7 @@ export interface GuideModelSession {
  * no live calls.
  */
 export interface GuideModelClient {
+  start(): Promise<void>
   listModels(): Promise<ReadonlyArray<ModelInfo>>
   createSession(config: SessionConfig): Promise<GuideModelSession>
   deleteSession(sessionId: string): Promise<void>
@@ -272,6 +273,7 @@ export class CopilotGuideProvider implements GuideProvider {
     let session: GuideModelSession | undefined
     let outcome: { readonly ok: true; readonly value: Output } | { readonly ok: false; readonly error: unknown }
     try {
+      await client.start()
       const models = await client.listModels()
       const modelInfo = models.find((candidate) => candidate.id === this.model)
       if (modelInfo === undefined) {

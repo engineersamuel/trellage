@@ -785,7 +785,7 @@ export const enrichLiteralCandidate = (
     name: entry.name,
     ...(native
       ? { launcher: (entry as CombinedGuideCatalog["native"][number]).launcher }
-      : { harness: (entry as CombinedGuideCatalog["sandbox"][number]).harness }),
+      : { harness: (entry as CombinedGuideCatalog["sandbox"][number]).harness.kind }),
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,

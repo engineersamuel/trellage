@@ -56,6 +56,7 @@ class FakeSession implements GuideModelSession {
 class FakeClient implements GuideModelClient {
   readonly createSessionCalls: SessionConfig[] = []
   readonly deleteSessionCalls: string[] = []
+  startCalls = 0
   stopCalls = 0
   session: FakeSession | undefined
 
@@ -69,6 +70,10 @@ class FakeClient implements GuideModelClient {
       readonly stopResults?: ReadonlyArray<Error>
     } = {},
   ) {}
+
+  async start(): Promise<void> {
+    this.startCalls += 1
+  }
 
   async listModels(): Promise<ReadonlyArray<ModelInfo>> {
     return this.models
@@ -231,6 +236,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       "sandbox:other",
     ])
     expect(client.createSessionCalls).toHaveLength(1)
+    expect(client.startCalls).toBe(1)
     const config = client.createSessionCalls[0]
     expect(config).toBeDefined()
     expect(config).toMatchObject({

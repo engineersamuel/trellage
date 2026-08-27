@@ -246,6 +246,7 @@ const validateHerdrCompatibility = (value: unknown, path: string): HerdrCompatib
 
 export interface NativeGuideCatalogEntry {
   readonly launcher: string
+  readonly harness: string
   readonly name: string
   readonly description: string
   readonly headless: HeadlessCapabilitiesV1
@@ -259,6 +260,7 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
   const fields = record(value, path)
   exactKeys(fields, path, [
     "launcher",
+    "harness",
     "name",
     "description",
     "headless",
@@ -269,6 +271,7 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
   ])
   return {
     launcher: identifier(fields.launcher, `${path}.launcher`),
+    harness: identifier(fields.harness, `${path}.harness`),
     name: identifier(fields.name, `${path}.name`),
     description: text(fields.description, `${path}.description`, 2000),
     headless: validateHeadlessCapabilitiesV1(fields.headless, `${path}.headless`),
@@ -285,13 +288,17 @@ export interface SandboxGuideCatalogEntry {
   readonly guide: ProfileGuideV1
   readonly path: string
   readonly supportedPlatforms: ReadonlyArray<string>
-  readonly harness: string
+  readonly harness: {
+    readonly kind: string
+    readonly version: string
+    readonly model?: string
+  }
   readonly skillBundles: ReadonlyArray<string>
   readonly skillsMode: "floating" | "locked"
   readonly finalDigestLocked: boolean
-  readonly skills: ReadonlyArray<string>
-  readonly plugins: ReadonlyArray<string>
-  readonly mcps: ReadonlyArray<string>
+  readonly skills: ReadonlyArray<Record<string, unknown>>
+  readonly plugins: ReadonlyArray<Record<string, unknown>>
+  readonly mcps: ReadonlyArray<Record<string, unknown>>
   readonly sandbox: true
   readonly headless: HeadlessCapabilitiesV1
   readonly locked: boolean
@@ -319,6 +326,8 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
     "herdrCompatibility",
   ])
   if (fields.sandbox !== true) fail(`${path}.sandbox`, "must equal true")
+  const harness = record(fields.harness, `${path}.harness`)
+  exactKeys(harness, `${path}.harness`, ["kind", "version"], ["model"])
   return {
     name: identifier(fields.name, `${path}.name`),
     description: text(fields.description, `${path}.description`, 2000),
@@ -329,13 +338,23 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
       maximumItems: 16,
       itemMaximum: 64,
     }),
-    harness: text(fields.harness, `${path}.harness`, 64),
+    harness: {
+      kind: identifier(harness.kind, `${path}.harness.kind`),
+      version: text(harness.version, `${path}.harness.version`, 128),
+      ...(harness.model === undefined ? {} : { model: text(harness.model, `${path}.harness.model`, 128) }),
+    },
     skillBundles: stringArray(fields.skillBundles, `${path}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
     skillsMode: literal(fields.skillsMode, `${path}.skillsMode`, ["floating", "locked"] as const),
     finalDigestLocked: boolean(fields.finalDigestLocked, `${path}.finalDigestLocked`),
-    skills: stringArray(fields.skills, `${path}.skills`, { maximumItems: 256, itemMaximum: 128 }),
-    plugins: stringArray(fields.plugins, `${path}.plugins`, { maximumItems: 64, itemMaximum: 128 }),
-    mcps: stringArray(fields.mcps, `${path}.mcps`, { maximumItems: 64, itemMaximum: 128 }),
+    skills: array(fields.skills, `${path}.skills`, { maximum: 256 }).map((item, index) =>
+      record(item, `${path}.skills[${index}]`),
+    ),
+    plugins: array(fields.plugins, `${path}.plugins`, { maximum: 64 }).map((item, index) =>
+      record(item, `${path}.plugins[${index}]`),
+    ),
+    mcps: array(fields.mcps, `${path}.mcps`, { maximum: 64 }).map((item, index) =>
+      record(item, `${path}.mcps[${index}]`),
+    ),
     sandbox: true,
     headless: validateHeadlessCapabilitiesV1(fields.headless, `${path}.headless`),
     locked: boolean(fields.locked, `${path}.locked`),
@@ -409,6 +428,7 @@ export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArra
       surface: "native",
       name: entry.name,
       launcher: entry.launcher,
+      harness: entry.harness,
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide,
@@ -419,7 +439,7 @@ export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArra
       ref: profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }),
       surface: "sandbox",
       name: entry.name,
-      harness: entry.harness,
+      harness: entry.harness.kind,
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide,
