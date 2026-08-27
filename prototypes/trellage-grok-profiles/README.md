@@ -1,8 +1,8 @@
 # Isolated Grok profiles
 
 `grx` runs Grok with named, clean user-state profiles while keeping the current
-repository and host development environment available. The profiles are
-`hve` and `superpowers`.
+repository and host development environment available. The only profile is
+`superpowers`.
 
 The catalog intentionally excludes `awesome-copilot`. Older direct Grok
 installations could treat its Copilot-wide instruction files as global Grok
@@ -48,18 +48,17 @@ remains secure and still requires a valid host Grok session.
 
 ```sh
 grx list
-grx inventory hve --json
-grx setup hve
+grx inventory superpowers --json
 grx setup superpowers
 grx setup --all
-grx hve
+grx superpowers
 grx superpowers -p "Review this repository"
-grx doctor hve
-grx update --check hve
+grx doctor superpowers
+grx update --check superpowers
 grx update --check --all
-grx update hve
+grx update superpowers
 grx update --all
-grx repair hve
+grx repair superpowers
 ```
 
 Use `grx list --json` for the stable machine-readable catalog, including
@@ -82,12 +81,12 @@ harness/profile picker. Remaining arguments are forwarded to `grx` unchanged
 after selection; `trx` never performs setup, repair, or update.
 
 `setup` creates a profile home and installs its cataloged plugin. Launching with
-`grx hve` or `grx superpowers` never installs or updates anything. Version
+`grx superpowers` never installs or updates anything. Version
 checks and changes are explicit through `grx update --check` and `grx update`.
 
 ### Model routing
 
-`grx hve` and `grx superpowers` route model requests through
+`grx superpowers` routes model requests through
 `copilot-proxy-rs` at `http://127.0.0.1:8080/v1` and default to `grok-4.6`.
 Pass `-m` or `--model` to select another model from the proxy catalog; `grx`
 forwards the option and its value unchanged.
@@ -130,7 +129,7 @@ grx: run 'grok login' once on the host (outside grx), then retry
 or, for a profile whose own copied credential has become unusable:
 
 ```
-grx: profile authentication is unusable: hve; run 'grok login' once on the host (outside grx), then retry
+grx: profile authentication is unusable: superpowers; run 'grok login' once on the host (outside grx), then retry
 ```
 
 In both cases `grx` exits without ever launching Grok, so the real `grok`

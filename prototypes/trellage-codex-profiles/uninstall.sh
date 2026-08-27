@@ -63,12 +63,7 @@ expected_entries="$(printf '%s\n' \
   './bin/cdx' \
   './catalog.json' \
   './lib' \
-  './lib/native-codex' \
-  './marketplaces' \
-  './marketplaces/hve-core' \
-  './marketplaces/hve-core/.agents' \
-  './marketplaces/hve-core/.agents/plugins' \
-  './marketplaces/hve-core/.agents/plugins/marketplace.json')"
+  './lib/native-codex')"
 [ "$actual_entries" = "$expected_entries" ] \
   || refuse "refusing unexpected content in owned runtime: $install_root"
 [ -z "$(find "$install_root" -type l -print -quit)" ] \
@@ -81,8 +76,8 @@ for name in config-before original-mode sha256-before sha256-after removed-line;
   [ -f "$recovery/$name" ] && [ ! -L "$recovery/$name" ] && [ -r "$recovery/$name" ] \
     || refuse "missing or unsafe Fish recovery data: $recovery/$name"
 done
-for path in "$installed_launcher" "$install_root/lib/native-codex" "$install_root/catalog.json" \
-  "$install_root/marketplaces/hve-core/.agents/plugins/marketplace.json"; do
+for path in "$installed_launcher" "$install_root/lib/native-codex" \
+  "$install_root/catalog.json"; do
   [ -f "$path" ] && [ ! -L "$path" ] || refuse "unsafe managed runtime file: $path"
 done
 expected_after="$(sed -n '1p' "$recovery/sha256-after")"

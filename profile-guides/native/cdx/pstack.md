@@ -98,5 +98,5 @@ a Codex-native derivative of `cursor/plugins`'s `pstack`. See
   no wiring to the shared `native-common` floating-skills bundle — do not
   assume `engineersamuel` or `show-me` skills are present alongside pstack.
 - The `$name` skill-invocation syntax is specific to this Codex-native plugin;
-  it does not carry over to `cdx hve`, `cdx superpowers`, or any other native
+  it does not carry over to `cdx superpowers` or any other native
   launcher's skill system.

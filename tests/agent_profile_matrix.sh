@@ -256,7 +256,6 @@ mkdir -p "$fixture_home" "$fixture_codex_home" "$fixture_bin" "$fixture_core_bin
 : >"$command_log"
 : >"$fixture_codex_home/ignored.config.toml"
 mkdir -p \
-  "$fixture_home/.local/share/trellage/profiles/codex/hve/home" \
   "$fixture_home/.local/share/trellage/profiles/codex/superpowers/home" \
   "$fixture_home/.local/share/trellage/profiles/codex/pstack/home"
 
@@ -499,17 +498,13 @@ done
 
 printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/cpx-list"
 printf '%s\n' \
-  $'hve\thve-core-all@hve-core' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
-printf '%s\n' $'hve\thve-plugin' $'awesome\tawesome-plugin' >"$fixture_data/grx-list"
+printf '%s\n' $'superpowers\tsuperpowers-plugin' $'awesome\tawesome-plugin' >"$fixture_data/grx-list"
 printf '%s\n' 'Installed plugins:' '  • pack-alpha (v1)' >"$fixture_data/cpx-alpha-plugins"
 printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/cpx-zeta-plugins"
 
 "$real_jq" -cn --arg text $'prefix\n### Available skills\n- skillb: B (file: /b)\n- skilla: A (file: /a)\n### Skill roots\nsuffix' \
-  '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
-  >"$fixture_data/codex-hve.json"
-"$real_jq" -cn --arg text $'### Available skills\n- zskill: Z (file: /z)\n### End' \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
   >"$fixture_data/codex-superpowers.json"
 "$real_jq" -cn --arg text $'### Available skills\n- poteto: Pstack skill (file: /pstack)\n### End' \
@@ -530,25 +525,23 @@ printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/cpx-ze
   skills:[{name:"projectonly",source:{type:"project",path:"/fixture"}}]
 }' >"$fixture_data/grx-awesome-inspect.json"
 "$real_jq" -cn '{
-  plugins:[{name:"hve-plugin",enabled:true}],
+  plugins:[{name:"superpowers-plugin",enabled:true}],
   skills:[
-    {name:"h6",source:{type:"plugin",plugin_name:"hve-plugin"}},
-    {name:"h5",source:{type:"plugin",plugin_name:"hve-plugin"}},
-    {name:"h4",source:{type:"plugin",plugin_name:"hve-plugin"}},
-    {name:"h3",source:{type:"plugin",plugin_name:"hve-plugin"}},
-    {name:"h2",source:{type:"plugin",plugin_name:"hve-plugin"}},
-    {name:"h1",source:{type:"plugin",plugin_name:"hve-plugin"}},
+    {name:"h6",source:{type:"plugin",plugin_name:"superpowers-plugin"}},
+    {name:"h5",source:{type:"plugin",plugin_name:"superpowers-plugin"}},
+    {name:"h4",source:{type:"plugin",plugin_name:"superpowers-plugin"}},
+    {name:"h3",source:{type:"plugin",plugin_name:"superpowers-plugin"}},
+    {name:"h2",source:{type:"plugin",plugin_name:"superpowers-plugin"}},
+    {name:"h1",source:{type:"plugin",plugin_name:"superpowers-plugin"}},
     {name:"repo",source:{type:"project",path:"/fixture"}}
   ]
-}' >"$fixture_data/grx-hve-inspect.json"
+}' >"$fixture_data/grx-superpowers-inspect.json"
 
-for live_profile in hve superpowers; do
+for live_profile in superpowers; do
   printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-$live_profile-live-events.jsonl"
 done
 printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-pstack-live-events.jsonl"
-"$real_jq" -cn '{launcher:"cdx",profile:"hve",skills:["skilla","skillb"],emptyPackageConfirmed:false}' \
-  >"$fixture_data/codex-hve-live.json"
-"$real_jq" -cn '{launcher:"cdx",profile:"superpowers",skills:["zskill"],emptyPackageConfirmed:false}' \
+"$real_jq" -cn '{launcher:"cdx",profile:"superpowers",skills:["skilla","skillb"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-superpowers-live.json"
 "$real_jq" -cn '{launcher:"cdx",profile:"pstack",skills:["poteto"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-pstack-live.json"
@@ -560,8 +553,8 @@ printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-pstack-live-even
   '{type:"assistant.message",data:{content:$content}}' >"$fixture_data/cpx-zeta-live.jsonl"
 "$real_jq" -cn '{launcher:"grx",profile:"awesome",skills:[],emptyPackageConfirmed:true}' \
   >"$fixture_data/grx-awesome-live.json"
-"$real_jq" -cn '{launcher:"grx",profile:"hve",skills:["h1","h2","h3","h4","h5"],emptyPackageConfirmed:false}' \
-  >"$fixture_data/grx-hve-live.json"
+"$real_jq" -cn '{launcher:"grx",profile:"superpowers",skills:["h1","h2","h3","h4","h5"],emptyPackageConfirmed:false}' \
+  >"$fixture_data/grx-superpowers-live.json"
 
 restricted_path="$fixture_bin:$fixture_core_bin"
 
@@ -570,13 +563,13 @@ FAKE_COMMAND_LOG="$command_log" FAKE_DATA="$fixture_data" \
   "$fixture_bin/cpx" doctor alpha extra >/dev/null 2>&1
 poison_cpx_status=$?
 FAKE_COMMAND_LOG="$command_log" FAKE_DATA="$fixture_data" \
-  "$fixture_bin/grx" doctor hve extra >/dev/null 2>&1
+  "$fixture_bin/grx" doctor superpowers extra >/dev/null 2>&1
 poison_grx_status=$?
 FAKE_COMMAND_LOG="$command_log" FAKE_DATA="$fixture_data" \
   "$fixture_bin/cpx" setup alpha >/dev/null 2>&1
 poison_cpx_lifecycle_status=$?
 FAKE_COMMAND_LOG="$command_log" FAKE_DATA="$fixture_data" \
-  "$fixture_bin/grx" repair hve >/dev/null 2>&1
+  "$fixture_bin/grx" repair superpowers >/dev/null 2>&1
 poison_grx_lifecycle_status=$?
 set -e
 [ "$poison_cpx_status" -ne 0 ] || fail 'fake cpx accepted an extra doctor argument'
@@ -723,7 +716,7 @@ timeout_ready="$fixture_root/live-timeout.ready"
 timeout_pid_file="$fixture_root/live-timeout.pid"
 rm -f "$timeout_ready" "$timeout_pid_file"
 set -m
-FAKE_BLOCK_LIVE='codex-hve' \
+FAKE_BLOCK_LIVE='codex-pstack' \
 FAKE_READY_FILE="$timeout_ready" \
 FAKE_PID_FILE="$timeout_pid_file" \
 HOME="$fixture_home" \
@@ -749,11 +742,11 @@ verifier_under_signal_pid=''
   || fail "timed-out live verifier returned $timeout_verifier_status instead of 1"
 [ -s "$timeout_pid_file" ] || fail 'timed-out live probe never started'
 timeout_child_pid="$(cat "$timeout_pid_file")"
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | pass | fail: timeout |' "$output_file" \
+grep -Fq '| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | fail: timeout |' "$output_file" \
   || fail 'timed-out live probe did not fail its row distinctly'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 1 | zskill | pass | pass |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | pass |' "$output_file" \
   || fail 'timed-out live probe stopped a later profile'
-grep -Fq 'verify-agent-profiles: codex live probe timed out for hve' "$error_file" \
+grep -Fq 'verify-agent-profiles: codex live probe timed out for pstack' "$error_file" \
   || fail 'timed-out live probe omitted its safe diagnostic'
 if process_is_running "$timeout_child_pid"; then
   fail 'timed-out live probe left its launcher running'
@@ -764,9 +757,9 @@ fi
 
 # Successful and failed launchers cannot leave owned descendants behind.
 for survivor_case in \
-  'codex hve 0 cdx cdx superpowers' 'codex hve 65 cdx cdx superpowers' \
+  'codex pstack 0 cdx cdx superpowers' 'codex pstack 65 cdx cdx superpowers' \
   'cpx alpha 0 cpx cpx zeta' 'cpx alpha 65 cpx cpx zeta' \
-  'grx awesome 0 grx grx hve' 'grx awesome 65 grx grx hve'; do
+  'grx awesome 0 grx grx superpowers' 'grx awesome 65 grx grx superpowers'; do
   read -r survivor_adapter survivor_profile survivor_exit \
     survivor_row_adapter survivor_later_adapter survivor_later_profile \
     <<<"$survivor_case"
@@ -820,13 +813,12 @@ expected_table="$fixture_root/expected-table"
 cat >"$expected_table" <<'TABLE'
 | Launcher | Profile | Package | Package skills | Visible skills | Sample | Static | Live |
 |---|---|---|---:|---:|---|---|---|
-| cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | pass | not run |
 | cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | not run |
-| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 1 | zskill | pass | not run |
+| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | not run |
 | cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | not run |
 | cpx | zeta | pack-zeta | 1 | 1 | zplugin | pass | not run |
 | grx | awesome | awesome-plugin | 0 | 1 |  | pass | not run |
-| grx | hve | hve-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | not run |
+| grx | superpowers | superpowers-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | not run |
 TABLE
 cmp -s "$expected_table" "$output_file" || {
   diff -u "$expected_table" "$output_file" >&2 || true
@@ -835,16 +827,16 @@ cmp -s "$expected_table" "$output_file" || {
 
 grep -Fqx $'cdx\tlist' "$command_log" \
   || fail 'managed Codex profiles were not discovered through cdx list'
-grep -Fqx $'cdx\tdoctor\thve' "$command_log" \
-  || fail 'managed Codex hve profile was not checked through cdx doctor'
-grep -Fqx $'cdx\thve\tdebug\tprompt-input\tprofile verification' "$command_log" \
-  || fail 'managed Codex hve profile was not verified through prompt-input'
+grep -Fqx $'cdx\tdoctor\tsuperpowers' "$command_log" \
+  || fail 'managed Codex superpowers profile was not checked through cdx doctor'
+grep -Fqx $'cdx\tsuperpowers\tdebug\tprompt-input\tprofile verification' "$command_log" \
+  || fail 'managed Codex superpowers profile was not verified through prompt-input'
 grep -Fqx $'cdx\tdoctor\tpstack' "$command_log" \
   || fail 'managed pstack profile was not checked through cdx doctor'
 grep -Fqx $'cdx\tpstack\tdebug\tprompt-input\tprofile verification' "$command_log" \
   || fail 'managed pstack profile was not verified through prompt-input'
 grep -Fqx $'cpx\tdoctor\talpha' "$command_log" || fail 'Copilot doctor was not called'
-grep -Fqx $'grx\tdoctor\thve' "$command_log" || fail 'Grok doctor was not called'
+grep -Fqx $'grx\tdoctor\tsuperpowers' "$command_log" || fail 'Grok doctor was not called'
 awk -F '\t' '
   $1 == "cdx" && NF == 2 && $2 == "list" { next }
   $1 == "cdx" && NF == 3 && $2 == "doctor" { next }
@@ -873,9 +865,9 @@ cp "$fixture_data/cpx-list" "$fixture_data/cpx-list.good"
 cp "$fixture_data/cpx-alpha-plugins" "$fixture_data/cpx-alpha-plugins.good"
 cp "$fixture_data/cpx-alpha-skills.json" "$fixture_data/cpx-alpha-skills.good.json"
 cp "$fixture_data/grx-list" "$fixture_data/grx-list.good"
-cp "$fixture_data/grx-hve-inspect.json" "$fixture_data/grx-hve-inspect.good.json"
+cp "$fixture_data/grx-superpowers-inspect.json" "$fixture_data/grx-superpowers-inspect.good.json"
 cp "$fixture_data/cdx-list" "$fixture_data/cdx-list.good"
-cp "$fixture_data/codex-hve.json" "$fixture_data/codex-hve.good.json"
+cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.good.json"
 
 # Every dynamic cell is Markdown-safe.
 printf '%s\n' $'alpha\tpack&copy;~alpha*beta|bundle' $'zeta\tpack-zeta' >"$fixture_data/cpx-list"
@@ -892,21 +884,21 @@ printf '%s\n' $'alpha\tpack-alpha' $'alpha\tpack-alpha' $'zeta\tpack-zeta' >"$fi
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate profile inventory did not return 1'
 grep -Fq '| cpx | alpha |' "$output_file" || fail 'valid Copilot row was lost after a duplicate'
-grep -Fq '| grx | hve |' "$output_file" || fail 'later launcher rows were lost after a duplicate'
+grep -Fq '| grx | superpowers |' "$output_file" || fail 'later launcher rows were lost after a duplicate'
 printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/cpx-list"
 
 # Strict list parsing rejects extra fields and empty inventories.
-printf '%s\n' $'hve\thve-plugin\textra' $'awesome\tawesome-plugin' >"$fixture_data/grx-list"
+printf '%s\n' $'superpowers\tsuperpowers-plugin\textra' $'awesome\tawesome-plugin' >"$fixture_data/grx-list"
 : >"$command_log"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'three-field Grok list row did not return 1'
 grep -Fq 'verify-agent-profiles: grx profile inventory is invalid' "$error_file" \
   || fail 'three-field Grok list row omitted the strict inventory diagnostic'
 grep -Fq '| grx | awesome |' "$output_file" || fail 'valid Grok row was lost after an invalid row'
-if grep -Fq '| grx | hve |' "$output_file"; then
+if grep -Fq '| grx | superpowers |' "$output_file"; then
   fail 'three-field Grok list row emitted an invalid profile row'
 fi
-if grep -Eq $'^grx\t(doctor\thve|hve\tinspect\t--json)$' "$command_log"; then
+if grep -Eq $'^grx\t(doctor\tsuperpowers|superpowers\tinspect\t--json)$' "$command_log"; then
   fail 'three-field Grok list row invoked the invalid profile'
 fi
 : >"$fixture_data/grx-list"
@@ -923,16 +915,16 @@ grep -Fq 'verify-agent-profiles: cpx profile inventory is empty' "$error_file" \
 if grep -Fq '| cpx |' "$output_file"; then
   fail 'empty Copilot inventory emitted a fabricated profile row'
 fi
-grep -Fq '| grx | hve |' "$output_file" || fail 'Grok rows were lost after empty Copilot inventory'
+grep -Fq '| grx | superpowers |' "$output_file" || fail 'Grok rows were lost after empty Copilot inventory'
 cp "$fixture_data/cpx-list.good" "$fixture_data/cpx-list"
 
-printf '%s\n' $'hve\thve-plugin' $'hve\thve-plugin' $'awesome\tawesome-plugin' \
+printf '%s\n' $'superpowers\tsuperpowers-plugin' $'superpowers\tsuperpowers-plugin' $'awesome\tawesome-plugin' \
   >"$fixture_data/grx-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate Grok profile inventory did not return 1'
-grep -Fq 'verify-agent-profiles: duplicate grx profile: hve' "$error_file" \
+grep -Fq 'verify-agent-profiles: duplicate grx profile: superpowers' "$error_file" \
   || fail 'duplicate Grok profile did not emit useful stderr detail'
-grep -Fq '| grx | hve |' "$output_file" || fail 'first unique Grok row was lost after duplicate'
+grep -Fq '| grx | superpowers |' "$output_file" || fail 'first unique Grok row was lost after duplicate'
 grep -Fq '| grx | awesome |' "$output_file" || fail 'other Grok row was lost after duplicate'
 cp "$fixture_data/grx-list.good" "$fixture_data/grx-list"
 
@@ -952,18 +944,18 @@ grep -Fq '| cpx | zeta |' "$output_file" || fail 'later Copilot row was lost aft
 cp "$fixture_data/cpx-alpha-skills.good.json" "$fixture_data/cpx-alpha-skills.json"
 
 printf '%s\n' '{"token":"GROK_SECRET_DO_NOT_LEAK","plugins":"not-an-array","skills":[]}' \
-  >"$fixture_data/grx-hve-inspect.json"
+  >"$fixture_data/grx-superpowers-inspect.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'malformed Grok JSON did not return 1'
-grep -Fq '| grx | hve | hve-plugin | ? | ? |  | fail: invalid inspect JSON | not run |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | ? | ? |  | fail: invalid inspect JSON | not run |' "$output_file" \
   || fail 'malformed Grok JSON diagnostic was not retained in its row'
-grep -Fq 'verify-agent-profiles: grx inspect validation failed for hve: expected one JSON object with plugin and skill arrays' "$error_file" \
+grep -Fq 'verify-agent-profiles: grx inspect validation failed for superpowers: expected one JSON object with plugin and skill arrays' "$error_file" \
   || fail 'malformed Grok JSON did not emit useful safe stderr detail'
 if grep -Fq 'GROK_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'malformed Grok JSON leaked payload content to stderr'
 fi
 grep -Fq '| grx | awesome |' "$output_file" || fail 'other Grok row was lost after malformed JSON'
-cp "$fixture_data/grx-hve-inspect.good.json" "$fixture_data/grx-hve-inspect.json"
+cp "$fixture_data/grx-superpowers-inspect.good.json" "$fixture_data/grx-superpowers-inspect.json"
 
 printf '%s\n' 'Installed plugins:' '  • other-package (v1)' >"$fixture_data/cpx-alpha-plugins"
 run_matrix
@@ -975,54 +967,54 @@ grep -Fq 'verify-agent-profiles: cpx package validation failed for alpha: catalo
 cp "$fixture_data/cpx-alpha-plugins.good" "$fixture_data/cpx-alpha-plugins"
 
 "$real_jq" '(.plugins[0].name) = "other-plugin"' \
-  "$fixture_data/grx-hve-inspect.good.json" >"$fixture_data/grx-hve-inspect.json"
+  "$fixture_data/grx-superpowers-inspect.good.json" >"$fixture_data/grx-superpowers-inspect.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'unexpected Grok package did not return 1'
-grep -Fq '| grx | hve | hve-plugin | ? | ? |  | fail: unexpected package | not run |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | ? | ? |  | fail: unexpected package | not run |' "$output_file" \
   || fail 'unexpected Grok package diagnostic was not retained in its row'
-grep -Fq 'verify-agent-profiles: grx package validation failed for hve: cataloged package is not enabled exactly once' "$error_file" \
+grep -Fq 'verify-agent-profiles: grx package validation failed for superpowers: cataloged package is not enabled exactly once' "$error_file" \
   || fail 'unexpected Grok package did not emit useful safe stderr detail'
 grep -Fq '| grx | awesome |' "$output_file" || fail 'other Grok row was lost after unexpected package'
-cp "$fixture_data/grx-hve-inspect.good.json" "$fixture_data/grx-hve-inspect.json"
+cp "$fixture_data/grx-superpowers-inspect.good.json" "$fixture_data/grx-superpowers-inspect.json"
 
 # Each adapter command failure is a row failure; other profiles still run.
-: >"$fixture_data/fail-cdx-hve"
+: >"$fixture_data/fail-cdx-superpowers"
 : >"$fixture_data/fail-cpx-doctor-alpha"
-: >"$fixture_data/fail-grx-inspect-hve"
+: >"$fixture_data/fail-grx-inspect-superpowers"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'adapter command failures did not aggregate to status 1'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | ? |  | fail: prompt input command | not run |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | ? |  | fail: prompt input command | not run |' "$output_file" \
   || fail 'Codex command failure row is missing'
 grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: doctor command | not run |' "$output_file" \
   || fail 'Copilot command failure row is missing'
-grep -Fq '| grx | hve | hve-plugin | ? | ? |  | fail: inspect command | not run |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | ? | ? |  | fail: inspect command | not run |' "$output_file" \
   || fail 'Grok command failure row is missing'
-grep -Fq 'verify-agent-profiles: Codex prompt-input failed for hve (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: Codex prompt-input failed for superpowers (exit 65)' "$error_file" \
   || fail 'Codex command failure stderr omitted safe exit detail'
 grep -Fq 'verify-agent-profiles: cpx doctor failed for alpha (exit 65)' "$error_file" \
   || fail 'Copilot command failure stderr omitted safe exit detail'
-grep -Fq 'verify-agent-profiles: grx inspect failed for hve (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: grx inspect failed for superpowers (exit 65)' "$error_file" \
   || fail 'Grok command failure stderr omitted safe exit detail'
 if grep -Eq 'CODEX_COMMAND_SECRET_DO_NOT_LEAK|CPX_COMMAND_SECRET_DO_NOT_LEAK|GRX_COMMAND_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'adapter command failure leaked command stderr payload'
 fi
 grep -Fq '| cpx | zeta |' "$output_file" || fail 'Copilot aggregation stopped after command failure'
 grep -Fq '| grx | awesome |' "$output_file" || fail 'Grok aggregation stopped after command failure'
-rm -f "$fixture_data/fail-cdx-hve" "$fixture_data/fail-cpx-doctor-alpha" "$fixture_data/fail-grx-inspect-hve"
+rm -f "$fixture_data/fail-cdx-superpowers" "$fixture_data/fail-cpx-doctor-alpha" "$fixture_data/fail-grx-inspect-superpowers"
 
-: >"$fixture_data/fail-cdx-doctor-hve"
+: >"$fixture_data/fail-cdx-doctor-superpowers"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'managed Codex doctor failure did not return 1'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | fail: doctor command | not run |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | fail: doctor command | not run |' "$output_file" \
   || fail 'managed Codex doctor failure row is missing'
-grep -Fq 'verify-agent-profiles: cdx doctor failed for hve (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: cdx doctor failed for superpowers (exit 65)' "$error_file" \
   || fail 'managed Codex doctor failure omitted safe stderr detail'
 if grep -Fq 'CDX_DOCTOR_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'managed Codex doctor failure leaked command stderr payload'
 fi
 grep -Fq '| cpx | zeta |' "$output_file" \
   || fail 'managed Codex doctor failure stopped later adapters'
-rm -f "$fixture_data/fail-cdx-doctor-hve"
+rm -f "$fixture_data/fail-cdx-doctor-superpowers"
 
 : >"$fixture_data/fail-cpx-plugin-alpha"
 run_matrix
@@ -1064,43 +1056,43 @@ fi
 grep -Fq '| cpx | zeta |' "$output_file" || fail 'Grok list failure lost earlier launcher rows'
 rm -f "$fixture_data/fail-grx-list"
 
-: >"$fixture_data/fail-grx-doctor-hve"
+: >"$fixture_data/fail-grx-doctor-superpowers"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Grok doctor command failure did not return 1'
-grep -Fq '| grx | hve | hve-plugin | 6 | 7 | h1, h2, h3, h4, h5 | fail: doctor command | not run |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | 6 | 7 | h1, h2, h3, h4, h5 | fail: doctor command | not run |' "$output_file" \
   || fail 'Grok doctor failure row is missing'
-grep -Fq 'verify-agent-profiles: grx doctor failed for hve (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: grx doctor failed for superpowers (exit 65)' "$error_file" \
   || fail 'Grok doctor failure omitted safe stderr detail'
 if grep -Fq 'GRX_DOCTOR_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'Grok doctor failure leaked command payload'
 fi
 grep -Fq '| grx | awesome |' "$output_file" || fail 'Grok doctor failure lost other profile rows'
-rm -f "$fixture_data/fail-grx-doctor-hve"
+rm -f "$fixture_data/fail-grx-doctor-superpowers"
 
 # Codex inventory and prompt JSON validation are strict.
 printf '%s\n' '{"token":"CODEX_SECRET_DO_NOT_LEAK","fullPrompt":"DO_NOT_DUMP_PROMPT"}' \
-  >"$fixture_data/codex-hve.json"
+  >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'malformed Codex prompt JSON did not return 1'
 grep -Fq 'fail: invalid prompt JSON' "$output_file" || fail 'malformed Codex JSON row is missing'
-grep -Fq 'verify-agent-profiles: Codex prompt validation failed for hve: expected one JSON message array' "$error_file" \
+grep -Fq 'verify-agent-profiles: Codex prompt validation failed for superpowers: expected one JSON message array' "$error_file" \
   || fail 'malformed Codex JSON did not emit useful safe stderr detail'
 if grep -Eq 'CODEX_SECRET_DO_NOT_LEAK|DO_NOT_DUMP_PROMPT' "$error_file"; then
   fail 'malformed Codex JSON leaked credentials or prompt content to stderr'
 fi
-cp "$fixture_data/codex-hve.good.json" "$fixture_data/codex-hve.json"
+cp "$fixture_data/codex-superpowers.good.json" "$fixture_data/codex-superpowers.json"
 
 "$real_jq" -cn --arg text $'### Available skills\n- skilla: A\n### End\nSECTION_SECRET_DO_NOT_LEAK\n### Available skills\n- skillb: B\n### End' \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
-  >"$fixture_data/codex-hve.json"
+  >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate Codex available-skills sections returned success'
-grep -Fq 'verify-agent-profiles: Codex skill-section validation failed for hve: expected exactly one available-skills section' "$error_file" \
+grep -Fq 'verify-agent-profiles: Codex skill-section validation failed for superpowers: expected exactly one available-skills section' "$error_file" \
   || fail 'Codex skill-section validation omitted useful safe stderr detail'
 if grep -Fq 'SECTION_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'Codex skill-section validation leaked prompt content'
 fi
-cp "$fixture_data/codex-hve.good.json" "$fixture_data/codex-hve.json"
+cp "$fixture_data/codex-superpowers.good.json" "$fixture_data/codex-superpowers.json"
 
 # Managed Codex discovery strictly rejects malformed and duplicate list rows.
 printf '%s\n' $'Bad\tbad-package' \
@@ -1115,15 +1107,15 @@ fi
 grep -Fq '| cpx | alpha |' "$output_file" \
   || fail 'malformed cdx list row stopped later adapters'
 
-printf '%s\n' $'hve\thve-core-all@hve-core' $'hve\thve-core-all@hve-core' \
-  $'pstack\tpstack-for-codex@pstack-for-codex-local' \
+printf '%s\n' $'pstack\tpstack-for-codex@pstack-for-codex-local' \
+  $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate cdx list row did not return 1'
-grep -Fq 'verify-agent-profiles: duplicate cdx profile: hve' "$error_file" \
+grep -Fq 'verify-agent-profiles: duplicate cdx profile: superpowers' "$error_file" \
   || fail 'duplicate cdx list row omitted its exact diagnostic'
-grep -Fq '| cdx | hve |' "$output_file" || fail 'first unique cdx row was lost after duplicate'
-grep -Fq '| grx | hve |' "$output_file" || fail 'duplicate cdx row stopped later adapters'
+grep -Fq '| cdx | superpowers |' "$output_file" || fail 'first unique cdx row was lost after duplicate'
+grep -Fq '| grx | superpowers |' "$output_file" || fail 'duplicate cdx row stopped later adapters'
 
 printf '%s\n' $'superpowers\tsuperpowers@superpowers-marketplace' \
   >"$fixture_data/cdx-list"
@@ -1135,7 +1127,6 @@ grep -Fq '| cpx | alpha |' "$output_file" \
   || fail 'missing managed cdx profile stopped later adapters'
 
 printf '%s\n' \
-  $'hve\thve-core-all@hve-core' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'third\tthird-package' >"$fixture_data/cdx-list"
@@ -1143,13 +1134,12 @@ run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'extra managed cdx profile did not return 1'
 grep -Fq 'verify-agent-profiles: cdx profile inventory does not match managed catalog' "$error_file" \
   || fail 'extra managed cdx profile omitted its exact diagnostic'
-grep -Fq '| grx | hve |' "$output_file" \
+grep -Fq '| grx | superpowers |' "$output_file" \
   || fail 'extra managed cdx profile stopped later adapters'
 
 printf '%s\n' \
-  $'hve\twrong-package' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
-  $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
+  $'superpowers\twrong-package' >"$fixture_data/cdx-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'wrong managed cdx package did not return 1'
 grep -Fq 'verify-agent-profiles: cdx profile inventory does not match managed catalog' "$error_file" \
@@ -1171,7 +1161,7 @@ for missing_command in cdx codex cpx grx jq; do
         || fail "missing $missing_command stopped the later Copilot adapter"
       ;;
     cpx)
-      grep -Fq '| grx | hve |' "$output_file" \
+      grep -Fq '| grx | superpowers |' "$output_file" \
         || fail 'missing cpx stopped the later Grok adapter'
       ;;
     grx)
@@ -1210,45 +1200,45 @@ grep -Fq 'fail: invalid skill JSON' "$output_file" \
   || fail 'invalid Copilot skill source was not diagnosed in its row'
 cp "$fixture_data/cpx-alpha-skills.source-good.json" "$fixture_data/cpx-alpha-skills.json"
 
-cp "$fixture_data/grx-hve-inspect.json" "$fixture_data/grx-hve-inspect.source-good.json"
+cp "$fixture_data/grx-superpowers-inspect.json" "$fixture_data/grx-superpowers-inspect.source-good.json"
 "$real_jq" '.skills += [{name:"badsource",source:{type:"plugin"}}]' \
-  "$fixture_data/grx-hve-inspect.json" >"$fixture_data/grx-hve-inspect.invalid.json"
-mv "$fixture_data/grx-hve-inspect.invalid.json" "$fixture_data/grx-hve-inspect.json"
+  "$fixture_data/grx-superpowers-inspect.json" >"$fixture_data/grx-superpowers-inspect.invalid.json"
+mv "$fixture_data/grx-superpowers-inspect.invalid.json" "$fixture_data/grx-superpowers-inspect.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'invalid Grok plugin skill source returned success'
-grep -Fq '| grx | hve | hve-plugin |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin |' "$output_file" \
   || fail 'invalid Grok source profile row is missing'
 grep -Fq 'fail: invalid inspect JSON' "$output_file" \
   || fail 'invalid Grok plugin skill source was not diagnosed'
-cp "$fixture_data/grx-hve-inspect.source-good.json" "$fixture_data/grx-hve-inspect.json"
+cp "$fixture_data/grx-superpowers-inspect.source-good.json" "$fixture_data/grx-superpowers-inspect.json"
 
 # Codex may expose the same skill name from more than one model-visible root.
-cp "$fixture_data/codex-hve.json" "$fixture_data/codex-hve.duplicate-good.json"
+cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.duplicate-good.json"
 "$real_jq" -cn --arg text $'### Available skills\n- skillb: B (file: /b)\n- skilla: A1 (file: /a1)\n- skilla: A2 (file: /a2)\n### End' \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
-  >"$fixture_data/codex-hve.json"
+  >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'duplicate model-visible Codex skill names returned nonzero'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 3 | skilla, skilla, skillb | pass | not run |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 3 | skilla, skilla, skillb | pass | not run |' "$output_file" \
   || fail 'duplicate model-visible Codex skill entries were not counted'
-cp "$fixture_data/codex-hve.duplicate-good.json" "$fixture_data/codex-hve.json"
+cp "$fixture_data/codex-superpowers.duplicate-good.json" "$fixture_data/codex-superpowers.json"
 
 # Codex samples are sorted and capped at five model-visible entries.
-cp "$fixture_data/codex-hve.json" "$fixture_data/codex-hve.sample-good.json"
+cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.sample-good.json"
 "$real_jq" -cn --arg text $'### Available skills\n- skillf: F (file: /f)\n- skille: E (file: /e)\n- skilld: D (file: /d)\n- skillc: C (file: /c)\n- skillb: B (file: /b)\n- skilla: A (file: /a)\n### End' \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
-  >"$fixture_data/codex-hve.json"
+  >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'six-skill Codex sample fixture returned nonzero'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 6 | skilla, skillb, skillc, skilld, skille | pass | not run |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 6 | skilla, skillb, skillc, skilld, skille | pass | not run |' "$output_file" \
   || fail 'Codex sample was not sorted and capped at five entries'
 if grep -Fq 'skille, skillf' "$output_file"; then
   fail 'Codex sample included a sixth entry'
 fi
-cp "$fixture_data/codex-hve.sample-good.json" "$fixture_data/codex-hve.json"
+cp "$fixture_data/codex-superpowers.sample-good.json" "$fixture_data/codex-superpowers.json"
 
 # Large inventories must not trip pipefail while limiting the sample.
-large_codex_text="$fixture_data/codex-hve-large.txt"
+large_codex_text="$fixture_data/codex-superpowers-large.txt"
 awk 'BEGIN {
   print "### Available skills"
   for (i = 20000; i >= 1; i--)
@@ -1257,27 +1247,27 @@ awk 'BEGIN {
 }' >"$large_codex_text"
 "$real_jq" -cn --rawfile text "$large_codex_text" \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
-  >"$fixture_data/codex-hve.json"
+  >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'large Codex inventory triggered a verifier failure'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 20000 | largeskill00001, largeskill00002, largeskill00003, largeskill00004, largeskill00005 | pass | not run |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 20000 | largeskill00001, largeskill00002, largeskill00003, largeskill00004, largeskill00005 | pass | not run |' "$output_file" \
   || fail 'large Codex inventory did not retain a passing capped sample'
 [ -z "$(find "$fixture_tmp" -mindepth 1 -print -quit)" ] \
   || fail 'temporary artifacts remained after large inventory verification'
-cp "$fixture_data/codex-hve.sample-good.json" "$fixture_data/codex-hve.json"
+cp "$fixture_data/codex-superpowers.sample-good.json" "$fixture_data/codex-superpowers.json"
 
 # Live mode invokes every statically passing row and validates structured evidence.
 : >"$command_log"
 run_live_matrix
 [ "$matrix_status" -eq 0 ] || fail '--live happy path returned nonzero'
-[ "$(grep -Fc '| pass | pass |' "$output_file")" -eq 7 ] \
-  || fail '--live did not report seven passing live rows'
+[ "$(grep -Fc '| pass | pass |' "$output_file")" -eq 6 ] \
+  || fail '--live did not report six passing live rows'
 for live_row in \
   $'codex\texec' \
   $'cpx\talpha\t--prompt' \
   $'cpx\tzeta\t--prompt' \
   $'grx\tawesome\t--single' \
-  $'grx\thve\t--single'; do
+  $'grx\tsuperpowers\t--single'; do
   grep -Fq "$live_row" "$command_log" || fail "missing live invocation: $live_row"
 done
 grep -Fq '| grx | awesome | awesome-plugin | 0 | 1 |  | pass | pass |' "$output_file" \
@@ -1317,7 +1307,7 @@ awk -F '\t' -v temp_prefix="$fixture_tmp/verify-agent-profiles." '
       $15 != "--max-turns" || $16 != "1" || $17 != "--no-memory" ||
       $18 != "--permission-mode" || $19 != "dontAsk") bad = 1
   }
-  END { exit bad || codex_count != 3 }
+  END { exit bad || codex_count != 2 }
 ' "$command_log" || fail 'live verifier changed a safety-critical argument shape'
 if grep -Eq $'^cdx\t.*\t(exec|-p|--prompt|--dangerously-bypass-approvals-and-sandbox)(\t|$)|\t(--model|--resume|--continue|--session-id|--autopilot|--always-approve|--allow-all|--allow-all-tools|--yolo)(\t|$)' "$command_log"; then
   fail 'live verifier used a forbidden launcher, model, lifecycle, or multi-turn variant'
@@ -1326,12 +1316,13 @@ if grep -Eq '/fixture|\.config\.toml|SECRET_DO_NOT_LEAK' "$command_log"; then
   fail 'live prompt exposed a source path, config path, or secret'
 fi
 
-cp "$fixture_data/codex-hve-live.json" "$fixture_data/codex-hve-live.good.json"
-cp "$fixture_data/codex-hve-live-events.jsonl" "$fixture_data/codex-hve-live-events.good.jsonl"
+cp "$fixture_data/codex-superpowers-live.json" "$fixture_data/codex-superpowers-live.good.json"
+cp "$fixture_data/codex-superpowers-live-events.jsonl" "$fixture_data/codex-superpowers-live-events.good.jsonl"
+cp "$fixture_data/codex-pstack-live-events.jsonl" "$fixture_data/codex-pstack-live-events.good.jsonl"
 cp "$fixture_data/cpx-alpha-live.jsonl" "$fixture_data/cpx-alpha-live.good.jsonl"
 cp "$fixture_data/cpx-zeta-live.jsonl" "$fixture_data/cpx-zeta-live.good.jsonl"
 cp "$fixture_data/grx-awesome-live.json" "$fixture_data/grx-awesome-live.good.json"
-cp "$fixture_data/grx-hve-live.json" "$fixture_data/grx-hve-live.good.json"
+cp "$fixture_data/grx-superpowers-live.json" "$fixture_data/grx-superpowers-live.good.json"
 
 # A live command failure is safe, aggregates, and does not stop later profiles.
 : >"$fixture_data/fail-live-cpx-alpha"
@@ -1342,7 +1333,7 @@ grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail:
   || fail 'nonzero live command did not fail its row'
 grep -Fq '| cpx | zeta | pack-zeta | 1 | 1 | zplugin | pass | pass |' "$output_file" \
   || fail 'live command failure stopped a later Copilot profile'
-grep -Fq '| grx | hve | hve-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | pass |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | pass |' "$output_file" \
   || fail 'live command failure stopped a later launcher'
 grep -Fq 'verify-agent-profiles: cpx live probe failed for alpha (exit 65)' "$error_file" \
   || fail 'nonzero live command omitted safe exit detail'
@@ -1365,21 +1356,21 @@ fi
 cp "$fixture_data/cpx-alpha-live.good.jsonl" "$fixture_data/cpx-alpha-live.jsonl"
 
 # Launcher and profile identity must match exactly.
-"$real_jq" '.launcher = "grx"' "$fixture_data/codex-hve-live.good.json" \
-  >"$fixture_data/codex-hve-live.json"
+"$real_jq" '.launcher = "grx"' "$fixture_data/codex-superpowers-live.good.json" \
+  >"$fixture_data/codex-superpowers-live.json"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'wrong live launcher returned success'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | pass | fail: wrong launcher |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | fail: wrong launcher |' "$output_file" \
   || fail 'wrong live launcher did not fail its row'
-cp "$fixture_data/codex-hve-live.good.json" "$fixture_data/codex-hve-live.json"
+cp "$fixture_data/codex-superpowers-live.good.json" "$fixture_data/codex-superpowers-live.json"
 
-"$real_jq" '.profile = "awesome"' "$fixture_data/grx-hve-live.good.json" \
-  >"$fixture_data/grx-hve-live.json"
+"$real_jq" '.profile = "awesome"' "$fixture_data/grx-superpowers-live.good.json" \
+  >"$fixture_data/grx-superpowers-live.json"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'wrong live profile returned success'
-grep -Fq '| grx | hve | hve-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | fail: wrong profile |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | fail: wrong profile |' "$output_file" \
   || fail 'wrong live profile did not fail its row'
-cp "$fixture_data/grx-hve-live.good.json" "$fixture_data/grx-hve-live.json"
+cp "$fixture_data/grx-superpowers-live.good.json" "$fixture_data/grx-superpowers-live.json"
 
 # Missing and duplicate expected skills are distinct failures.
 write_cpx_live alpha '{"launcher":"cpx","profile":"alpha","skills":["p1","p2","p3","p4"],"emptyPackageConfirmed":false}'
@@ -1397,24 +1388,24 @@ cp "$fixture_data/cpx-alpha-live.good.jsonl" "$fixture_data/cpx-alpha-live.jsonl
 
 # Event adapters reject tool use even when final structured evidence is valid.
 printf '%s\n' '{"type":"item.started","item":{"type":"command_execution"}}' \
-  >>"$fixture_data/codex-hve-live-events.jsonl"
+  >>"$fixture_data/codex-superpowers-live-events.jsonl"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Codex tool-use event returned success'
 grep -Fq 'pass | fail: tool use |' "$output_file" \
   || fail 'Codex tool-use event was not diagnosed'
-cp "$fixture_data/codex-hve-live-events.good.jsonl" "$fixture_data/codex-hve-live-events.jsonl"
+cp "$fixture_data/codex-superpowers-live-events.good.jsonl" "$fixture_data/codex-superpowers-live-events.jsonl"
 
 printf '%s\n' '{"type":"item.started","item":{"type":"collab_tool_call"}}' \
-  >>"$fixture_data/codex-hve-live-events.jsonl"
+  >>"$fixture_data/codex-pstack-live-events.jsonl"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Codex collab tool event returned success'
-grep -Fq '| cdx | hve | hve-core-all@hve-core | n/a | 2 | skilla, skillb | pass | fail: tool use |' "$output_file" \
+grep -Fq '| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | fail: tool use |' "$output_file" \
   || fail 'Codex collab tool event was not diagnosed'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 1 | zskill | pass | pass |' "$output_file" \
+grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | pass |' "$output_file" \
   || fail 'Codex collab tool event stopped a later Codex profile'
-grep -Fq '| grx | hve | hve-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | pass |' "$output_file" \
+grep -Fq '| grx | superpowers | superpowers-plugin | 6 | 7 | h1, h2, h3, h4, h5 | pass | pass |' "$output_file" \
   || fail 'Codex collab tool event stopped a later launcher'
-cp "$fixture_data/codex-hve-live-events.good.jsonl" "$fixture_data/codex-hve-live-events.jsonl"
+cp "$fixture_data/codex-pstack-live-events.good.jsonl" "$fixture_data/codex-pstack-live-events.jsonl"
 
 {
   printf '%s\n' '{"type":"tool.execution_start"}'
@@ -1465,7 +1456,7 @@ for verifier_signal in HUP INT TERM; do
   signal_child_pid_file="$fixture_root/signal-$verifier_signal.child-pid"
   rm -f "$signal_ready" "$signal_child_pid_file"
   set -m
-  FAKE_BLOCK_LIVE='codex-hve' \
+  FAKE_BLOCK_LIVE='codex-superpowers' \
   FAKE_READY_FILE="$signal_ready" \
   FAKE_PID_FILE="$signal_child_pid_file" \
   HOME="$fixture_home" \
@@ -1518,7 +1509,7 @@ for launch_case in 'INT hold-before-spawn pre-spawn' \
   rm -f "$static_ready" "$static_release"
   : >"$command_log"
   set -m
-  FAKE_BLOCK_STATIC='cdx-hve' \
+  FAKE_BLOCK_STATIC='cdx-pstack' \
   FAKE_STATIC_READY_FILE="$static_ready" \
   FAKE_STATIC_RELEASE_FILE="$static_release" \
   HOME="$fixture_home" \

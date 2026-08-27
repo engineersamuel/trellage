@@ -99,9 +99,9 @@ class FakeClient implements GuideModelClient {
 
 const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
   {
-    ref: "native:cdx/hve",
+    ref: "native:cdx/pstack",
     surface: "native",
-    name: "hve",
+    name: "pstack",
     launcher: "cdx",
     description: "Codex host-native launcher.",
     sandbox: false,
@@ -153,7 +153,7 @@ const matchInput: GuideMatchInput = { intent: "Review my pull request", entries:
 const validMatchResponse = JSON.stringify({
   candidates: [
     {
-      profileRef: "native:cdx/hve",
+      profileRef: "native:cdx/pstack",
       workflowId: "review",
       confidence: 0.9,
       reason: "Best fit.",
@@ -178,7 +178,7 @@ const validMatchResponse = JSON.stringify({
 
 const generateInput: GuideGenerateInput = {
   intent: "Review my pull request",
-  profileRef: "native:cdx/hve",
+  profileRef: "native:cdx/pstack",
   workflowId: "review",
   guide: {
     schemaVersion: 1,
@@ -190,7 +190,7 @@ const generateInput: GuideGenerateInput = {
       { id: "review", description: "Review a diff.", examples: ["Review my PR"], promptTemplate: "Review {{ref}}." },
     ],
   },
-  guideBody: "# hve\n\nThis guide describes how to review a pull request using the hve profile.",
+  guideBody: "# pstack\n\nThis guide describes how to review a pull request using the pstack profile.",
 }
 
 const validGenerateResponse = JSON.stringify({
@@ -232,7 +232,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:cdx/hve",
+      "native:cdx/pstack",
       "sandbox:prime-agent",
       "sandbox:other",
     ])

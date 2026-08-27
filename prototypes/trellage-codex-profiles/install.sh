@@ -390,16 +390,11 @@ for path in "$local_dir" "$share_dir" "$runtime_parent" "$command_dir" "$config_
   validate_directory "$path"
 done
 
-for path in \
-  "$source_dir" "$source_dir/bin" "$source_dir/marketplaces" \
-  "$source_dir/marketplaces/hve-core" \
-  "$source_dir/marketplaces/hve-core/.agents" \
-  "$source_dir/marketplaces/hve-core/.agents/plugins"; do
+for path in "$source_dir" "$source_dir/bin"; do
   [ -d "$path" ] && [ ! -L "$path" ] || refuse "unsafe source adapter directory: $path"
 done
 for path in \
-  "$source_dir/bin/cdx" "$common_launcher" "$source_dir/catalog.json" \
-  "$source_dir/marketplaces/hve-core/.agents/plugins/marketplace.json"; do
+  "$source_dir/bin/cdx" "$common_launcher" "$source_dir/catalog.json"; do
   [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] \
     || refuse "unsafe source runtime file: $path"
 done
@@ -423,7 +418,7 @@ if [ -d "$install_root" ]; then
   cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value") \
     || refuse "refusing unowned runtime root: $install_root"
   actual_entries="$(CDPATH= cd -- "$install_root" && find . -print | LC_ALL=C sort)"
-  expected_entries="$(printf '%s\n' \
+  recovery_entries="$(printf '%s\n' \
     '.' \
     './.fish-recovery' \
     './.fish-recovery/config-before' \
@@ -434,39 +429,27 @@ if [ -d "$install_root" ]; then
     './.managed-by-trellage-codex-profiles' \
     './bin' \
     './bin/cdx' \
-    './catalog.json' \
-    './lib' \
-    './lib/native-codex' \
+    './catalog.json')"
+  marketplace_entries="$(printf '%s\n' \
     './marketplaces' \
     './marketplaces/hve-core' \
     './marketplaces/hve-core/.agents' \
     './marketplaces/hve-core/.agents/plugins' \
     './marketplaces/hve-core/.agents/plugins/marketplace.json')"
-  legacy_expected_entries="$(printf '%s\n' \
-    '.' \
-    './.fish-recovery' \
-    './.fish-recovery/config-before' \
-    './.fish-recovery/original-mode' \
-    './.fish-recovery/removed-line' \
-    './.fish-recovery/sha256-after' \
-    './.fish-recovery/sha256-before' \
-    './.managed-by-trellage-codex-profiles' \
-    './bin' \
-    './bin/cdx' \
-    './catalog.json' \
-    './marketplaces' \
-    './marketplaces/hve-core' \
-    './marketplaces/hve-core/.agents' \
-    './marketplaces/hve-core/.agents/plugins' \
-    './marketplaces/hve-core/.agents/plugins/marketplace.json')"
+  lib_entries="$(printf '%s\n' './lib' './lib/native-codex')"
+  expected_entries="$(printf '%s\n%s' "$recovery_entries" "$lib_entries")"
+  legacy_lib_marketplace_entries="$(printf '%s\n%s\n%s' \
+    "$recovery_entries" "$lib_entries" "$marketplace_entries")"
+  legacy_marketplace_entries="$(printf '%s\n%s' \
+    "$recovery_entries" "$marketplace_entries")"
   [ "$actual_entries" = "$expected_entries" ] \
-    || [ "$actual_entries" = "$legacy_expected_entries" ] \
+    || [ "$actual_entries" = "$legacy_lib_marketplace_entries" ] \
+    || [ "$actual_entries" = "$legacy_marketplace_entries" ] \
     || refuse "refusing unexpected content in owned runtime: $install_root"
   [ -z "$(find "$install_root" -type l -print -quit)" ] \
     || refuse "refusing symlinked content in owned runtime: $install_root"
   for path in \
     "$install_root/bin/cdx" "$install_root/catalog.json" \
-    "$install_root/marketplaces/hve-core/.agents/plugins/marketplace.json" \
     "$install_root/.fish-recovery/config-before" \
     "$install_root/.fish-recovery/original-mode" \
     "$install_root/.fish-recovery/removed-line" \
@@ -474,7 +457,7 @@ if [ -d "$install_root" ]; then
     "$install_root/.fish-recovery/sha256-before"; do
     [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
   done
-  if [ "$actual_entries" = "$expected_entries" ]; then
+  if [ "$actual_entries" != "$legacy_marketplace_entries" ]; then
     [ -f "$install_root/lib/native-codex" ] \
       && [ ! -L "$install_root/lib/native-codex" ] \
       || refuse "refusing unsafe managed runtime file: $install_root/lib/native-codex"
@@ -680,22 +663,15 @@ staging_root="$(mktemp -d "$runtime_parent/.cdx-install.XXXXXX")" \
 chmod 0700 "$staging_root"
 mkdir -p "$staging_root/new-runtime/bin" \
   "$staging_root/new-runtime/lib" \
-  "$staging_root/new-runtime/marketplaces/hve-core/.agents/plugins" \
   "$staging_root/new-runtime/.fish-recovery"
 chmod 0755 \
   "$staging_root/new-runtime" \
   "$staging_root/new-runtime/bin" \
-  "$staging_root/new-runtime/lib" \
-  "$staging_root/new-runtime/marketplaces" \
-  "$staging_root/new-runtime/marketplaces/hve-core" \
-  "$staging_root/new-runtime/marketplaces/hve-core/.agents" \
-  "$staging_root/new-runtime/marketplaces/hve-core/.agents/plugins"
+  "$staging_root/new-runtime/lib"
 chmod 0700 "$staging_root/new-runtime/.fish-recovery"
 install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
 install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json"
-install -m 0644 "$source_dir/marketplaces/hve-core/.agents/plugins/marketplace.json" \
-  "$staging_root/new-runtime/marketplaces/hve-core/.agents/plugins/marketplace.json"
 printf '%s\n' "$ownership_value" >"$staging_root/new-runtime/.managed-by-trellage-codex-profiles"
 chmod 0644 "$staging_root/new-runtime/.managed-by-trellage-codex-profiles"
 [ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-runtime-staging ] \

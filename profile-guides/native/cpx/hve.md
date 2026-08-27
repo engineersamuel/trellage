@@ -49,7 +49,7 @@ workflows:
 
 `cpx hve` runs the host GitHub Copilot CLI with the `hve-core` plugin from
 `microsoft/hve-core`, giving Copilot CLI the same RPI (Research → Plan →
-Implement) skill set used by `cdx hve` and `grx hve`. See
+Implement) skill set. See
 `prototypes/trellage-copilot-profiles/README.md`.
 
 ## Use This Profile When

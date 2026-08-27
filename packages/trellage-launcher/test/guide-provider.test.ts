@@ -12,13 +12,13 @@ import {
 import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
 
 const workflowIndex = new Map<string, ReadonlySet<string>>([
-  ["native:cdx/hve", new Set(["review", "plan"])],
+  ["native:cdx/pstack", new Set(["review", "plan"])],
   ["sandbox:prime-agent", new Set(["review"])],
   ["sandbox:other", new Set(["build"])],
 ])
 
 const validMatchCandidate = (overrides: Partial<Record<string, unknown>> = {}) => ({
-  profileRef: "native:cdx/hve",
+  profileRef: "native:cdx/pstack",
   workflowId: "review",
   confidence: 0.9,
   reason: "Strong fit for reviewing diffs.",
@@ -39,7 +39,7 @@ describe("validateGuideMatchResult", () => {
     const result = validateGuideMatchResult(validMatchResult(), workflowIndex)
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:cdx/hve",
+      "native:cdx/pstack",
       "sandbox:prime-agent",
       "sandbox:other",
     ])
@@ -244,9 +244,9 @@ const compactGuide = (): GuideMatchCatalogEntry["guide"] => ({
 
 const matchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): GuideMatchCatalogEntry => {
   const base: GuideMatchCatalogEntry = {
-    ref: "native:cdx/hve",
+    ref: "native:cdx/pstack",
     surface: "native",
-    name: "hve",
+    name: "pstack",
     launcher: "cdx",
     description: "Code review harness.",
     sandbox: false,
@@ -304,10 +304,10 @@ describe("assertGuideGenerateInput", () => {
 
   const validInput = (): GuideGenerateInput => ({
     intent: "Review my open PR",
-    profileRef: "native:cdx/hve",
+    profileRef: "native:cdx/pstack",
     workflowId: "review",
     guide,
-    guideBody: "# hve\n\nThis guide describes the review workflow.",
+    guideBody: "# pstack\n\nThis guide describes the review workflow.",
   })
 
   it("accepts an input whose workflowId exists on the guide and a bounded guideBody", () => {

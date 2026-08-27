@@ -13,7 +13,6 @@ bestFor:
 avoidFor:
   - Sessions where no genuine grok login has ever been performed on the host; grx fails closed rather than prompting for login itself
   - Work needing MCP servers imported from ~/.grok/config.toml; MCPs are profile-local and must be configured explicitly per profile
-  - Tasks that need HVE Core's RPI workflow instead of superpowers — use grx hve; each profile installs exactly one cataloged plugin
 prerequisites:
   - id: grok-build-cli
     description: Grok Build CLI 0.2.112 or later, tested with 0.2.112.
@@ -84,8 +83,8 @@ Caveman plugin. See `prototypes/trellage-grok-profiles/README.md`.
   launcher exits with a diagnostic rather than prompting for login.
 - You need MCP servers from your personal `~/.grok/config.toml`; configure
   each profile's MCPs explicitly instead (`grx superpowers mcp add ...`).
-- You want HVE Core's RPI workflow instead — use `grx hve`; each profile
-  installs exactly one cataloged plugin.
+- You want HVE Core's RPI workflow instead — use `cpx hve`; `grx` no longer
+  carries an HVE Core profile.
 
 ## Workflow Notes
 

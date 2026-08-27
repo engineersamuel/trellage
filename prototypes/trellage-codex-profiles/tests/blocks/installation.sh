@@ -51,21 +51,18 @@ assert_install_text '~/.local/share/trellage/profiles/codex/<profile>/home/' "$r
 assert_install_text '~/.local/share/trellage/profiles/copilot/<profile>/home/' "$readme"
 assert_install_text '~/.local/share/trellage/profiles/grok/<profile>/home/' "$readme"
 assert_install_text 'cdx setup --all' "$readme"
-assert_install_text 'cdx --native-auth hve exec "Review this repository"' "$readme"
+assert_install_text 'cdx --native-auth superpowers exec "Review this repository"' "$readme"
 assert_install_text '`--sandbox workspace-write -c' "$readme"
 assert_install_text 'MCP servers are profile-local.' "$readme"
 assert_install_text 'do not require or copy `~/.codex/auth.json`.' "$readme"
 assert_install_text 'only the selected profile' "$readme"
 assert_install_text 'Missing or invalid native auth fails without proxy fallback.' "$readme"
-assert_install_text 'official whole-repository Git source `https://github.com/microsoft/hve-core.git`' "$readme"
-assert_install_text 'with `.github/skills` fallback metadata.' "$readme"
-assert_install_text 'HVE update deliberately removes and reinstalls' "$readme"
+assert_install_text 'Superpowers update uses' "$readme"
 assert_install_line 'Doctor performs no native marketplace/plugin mutation, but may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.' "$readme"
 assert_install_text 'Reload Fish after install' "$readme"
 assert_install_text 'It preserves every Codex profile home' "$readme"
 assert_install_text 'existing readable, writable, regular' "$readme"
 assert_install_text 'non-symlink `~/.config/fish/config.fish`' "$readme"
-assert_install_text 'sequential atomic renames with guarded' "$readme"
 assert_install_text 'Fish with' "$readme"
 assert_install_text '`fish_indent`' "$readme"
 assert_install_text 'explicit literal `cdx` alias or function' "$readme"
@@ -147,8 +144,6 @@ assert_install_published() {
     <(printf 'trellage-codex-profiles-v1\n') || fail 'ownership marker differs'
   cmp -s "$installed/bin/cdx" "$launcher" || fail 'installed launcher bytes differ'
   cmp -s "$installed/catalog.json" "$catalog" || fail 'installed catalog bytes differ'
-  cmp -s "$installed/marketplaces/hve-core/.agents/plugins/marketplace.json" \
-    "$adapter" || fail 'installed HVE adapter bytes differ'
   [ -L "$command" ] || fail 'managed command is not a symlink'
   [ "$(readlink "$command")" = "$logical_home/.local/share/trellage/cdx/bin/cdx" ] \
     || fail 'managed command target differs'
@@ -202,7 +197,6 @@ HOME="$install_home" "$install_home/.local/bin/cdx" list \
   >"$fixture_root/installed-list.out" 2>"$fixture_root/installed-list.err" \
   || fail "installed cdx list failed: $(cat "$fixture_root/installed-list.err")"
 cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
-  $'hve\thve-core-all@hve-core' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace') \
   || fail 'installed cdx list output differs'
@@ -234,13 +228,17 @@ assert_no_install_staging "$install_home"
 
 rm "$install_home/.local/share/trellage/cdx/lib/native-codex"
 rmdir "$install_home/.local/share/trellage/cdx/lib"
+legacy_marketplace_dir="$install_home/.local/share/trellage/cdx/marketplaces/hve-core/.agents/plugins"
+mkdir -p "$legacy_marketplace_dir"
+printf '%s\n' '{"legacy":"marketplace"}' >"$legacy_marketplace_dir/marketplace.json"
+chmod 0644 "$legacy_marketplace_dir/marketplace.json"
 HOME="$install_home" /bin/bash "$install_script" >"$fixture_root/install-legacy-runtime.out" \
   || fail 'legacy owned runtime upgrade failed'
 assert_install_published "$install_home"
 
-mkdir -p "$install_home/.local/share/trellage/profiles/codex/hve/home"
+mkdir -p "$install_home/.local/share/trellage/profiles/codex/pstack/home"
 printf 'preserved profile\n' \
-  >"$install_home/.local/share/trellage/profiles/codex/hve/home/sentinel"
+  >"$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
 HOME="$install_home" /bin/bash "$uninstall_script" >"$fixture_root/uninstall.out" \
   || fail 'fixture uninstall failed'
 cmp -s "$fish_config" "$fixture_root/fish-before" || fail 'uninstall did not restore exact Fish bytes'
@@ -249,7 +247,7 @@ cmp -s "$fish_config" "$fixture_root/fish-before" || fail 'uninstall did not res
 [ ! -e "$install_home/.local/bin/cdx" ] && [ ! -L "$install_home/.local/bin/cdx" ] \
   || fail 'uninstall left managed command'
 assert_install_line 'preserved profile' \
-  "$install_home/.local/share/trellage/profiles/codex/hve/home/sentinel"
+  "$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
 assert_no_install_staging "$install_home"
 
 absent_definition_home="$fixture_root/absent-definition-home"

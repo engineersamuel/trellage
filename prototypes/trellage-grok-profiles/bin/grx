@@ -309,10 +309,8 @@ projected_headless() {
 
 projected_headless_map_json() {
   jq -cn \
-    --argjson hve "$(projected_headless hve)" \
     --argjson superpowers "$(projected_headless superpowers)" '
     {
-      hve: $hve,
       superpowers: $superpowers
     }
   '
@@ -330,30 +328,6 @@ validate_catalog() {
     and (.[0]
       | (.schemaVersion == 1)
       and (.profiles == {
-        "hve": {
-          "description": "Grok Build with HVE Core skills for RPI evidence and broad engineering workflows, Grok-native sessions and subagents, and a separate Caveman plugin.",
-          "headless": {
-            "schemaVersion": 1,
-            "prompt": false,
-            "outputFormats": ["text"],
-            "eventContract": null,
-            "trellageEventContract": null,
-            "sessionId": "none",
-            "resume": false,
-            "resumeWithPrompt": false,
-            "questionToolControl": "none",
-            "changedFiles": "none",
-            "usage": false,
-            "cost": false,
-            "modelOverride": false,
-            "effortOverride": false,
-            "testedHarnessVersion": null
-          },
-          "source": "microsoft/hve-core@plugins-v3.3.106#plugins/hve-core-all",
-          "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/plugins-v3.3.106/marketplace.json",
-          "plugin": "hve-core-all",
-          "standaloneMcps": []
-        },
         "superpowers": {
           "description": "Grok Build with Superpowers’ design, TDD, debugging, review, verification, and branch-finishing skills, plus a separate Caveman plugin.",
           "headless": {
