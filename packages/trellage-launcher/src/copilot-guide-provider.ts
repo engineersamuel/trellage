@@ -50,7 +50,13 @@
  */
 import os from "node:os"
 import path from "node:path"
-import { CopilotClient, type CopilotClientOptions, type ModelInfo, type SessionConfig } from "@github/copilot-sdk"
+import {
+  CopilotClient,
+  RuntimeConnection,
+  type CopilotClientOptions,
+  type ModelInfo,
+  type SessionConfig,
+} from "@github/copilot-sdk"
 import type { GuideModelPrompts } from "./guide-prompts.js"
 import {
   assertGuideGenerateInput,
@@ -267,6 +273,7 @@ export class CopilotGuideProvider implements GuideProvider {
   ): Promise<Output> {
     const client = this.clientFactory({
       mode: "empty",
+      connection: RuntimeConnection.forStdio({ path: "copilot" }),
       baseDirectory: this.baseDirectory,
       workingDirectory: this.workingDirectory,
     })
