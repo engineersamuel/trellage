@@ -28,6 +28,7 @@ import {
   type HerdrEnvironment,
 } from "./guide-launch.js"
 import { loadDefaultGuidePrompts } from "./guide-prompts.js"
+import { CachedGuideProvider, defaultGuideMatchCachePath } from "./guide-match-cache.js"
 import { GuideApp, type GuideUiResult } from "./guide-ui.js"
 
 interface LaunchIntent {
@@ -529,11 +530,19 @@ const runInteractiveGuideMode = async (argv: ReadonlyArray<string>, guideRoot: s
     process.env,
   )
   const prompts = await loadDefaultGuidePrompts()
-  const provider = new CopilotGuideProvider({
-    model: config.model,
-    effort: config.effort,
-    prompts,
-  })
+  const provider = new CachedGuideProvider(
+    new CopilotGuideProvider({
+      model: config.model,
+      effort: config.effort,
+      prompts,
+    }),
+    {
+      cachePath: defaultGuideMatchCachePath(process.env),
+      model: config.model,
+      effort: config.effort,
+      matchPrompt: prompts.match,
+    },
+  )
   const runner = createNodeCommandRunner()
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner)
   let outputFd: number | undefined

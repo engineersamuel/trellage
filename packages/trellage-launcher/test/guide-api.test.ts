@@ -14,6 +14,7 @@ import type {
 } from "../src/guide-provider.js"
 import { GuideValidationError } from "../src/guide-text.js"
 import {
+  applyWorkflowPromptTemplate,
   GuideArgsError,
   GuideEffort,
   GuidePhase,
@@ -104,10 +105,12 @@ workflows:
       Review the diff for: {{intent}}
   - id: plan
     description: Draft an implementation plan.
+    skill: writing-plans
     examples:
       - Plan this feature
     promptTemplate: |
-      Plan: {{intent}}
+      Use the writing-plans skill:
+      {{intent}}
 ---
 # Prime Agent
 
@@ -130,11 +133,102 @@ const guidePrimeAgent: ProfileGuideV1 = {
     {
       id: "plan",
       description: "Draft an implementation plan.",
+      skill: "writing-plans",
       examples: ["Plan this feature"],
-      promptTemplate: "Plan: {{intent}}",
+      promptTemplate: "Use the writing-plans skill:\n{{intent}}",
     },
   ],
 }
+
+describe("applyWorkflowPromptTemplate", () => {
+  const candidate = {
+    title: "LinkedIn draft",
+    prompt: "Write a LinkedIn post about AI agents.",
+    notes: "Uses a direct opening.",
+  }
+  const guide: ProfileGuideV1 = {
+    schemaVersion: 1,
+    capabilities: ["social-media-writing"],
+    bestFor: ["LinkedIn posts"],
+    avoidFor: ["Long-form articles"],
+    prerequisites: [],
+    workflows: [
+      {
+        id: "post-writer",
+        description: "Draft a social post.",
+        skill: "social-media-skills:post-writer",
+        examples: ["Write a post about AI agents"],
+        promptTemplate: "/social-media-skills:post-writer {{intent}}",
+      },
+      {
+        id: "plain",
+        description: "Use a plain prompt.",
+        examples: ["Write plain text"],
+        promptTemplate: "Plain: {{intent}}",
+      },
+      {
+        id: "review-stack",
+        description: "Run a review skill followed by cleanup skills.",
+        skill: "interrogate",
+        examples: ["Review this change"],
+        promptTemplate: "$interrogate {{intent}}\n$no-comments\n$unslop",
+      },
+    ],
+  }
+
+  it("wraps a generated prompt with the authored skill invocation", () => {
+    expect(applyWorkflowPromptTemplate(guide, "post-writer", candidate).prompt).toBe(
+      "/social-media-skills:post-writer Write a LinkedIn post about AI agents.",
+    )
+  })
+
+  it("does not duplicate an existing authored skill invocation", () => {
+    const wrapped = applyWorkflowPromptTemplate(guide, "post-writer", candidate)
+
+    expect(applyWorkflowPromptTemplate(guide, "post-writer", wrapped)).toEqual(wrapped)
+  })
+
+  it("restores authored suffix commands without duplicating a partial prefix", () => {
+    const partial = {
+      ...candidate,
+      prompt: "$interrogate Review this change.",
+    }
+
+    expect(applyWorkflowPromptTemplate(guide, "review-stack", partial).prompt).toBe(
+      "$interrogate Review this change.\n$no-comments\n$unslop",
+    )
+  })
+
+  it("accepts flexible whitespace around a partial template boundary", () => {
+    const partial = {
+      ...candidate,
+      prompt: "$interrogate\nReview this change.",
+    }
+
+    expect(applyWorkflowPromptTemplate(guide, "review-stack", partial).prompt).toBe(
+      "$interrogate Review this change.\n$no-comments\n$unslop",
+    )
+  })
+
+  it("does not duplicate a complete template with authored suffix commands", () => {
+    const wrapped = applyWorkflowPromptTemplate(guide, "review-stack", candidate)
+
+    expect(applyWorkflowPromptTemplate(guide, "review-stack", wrapped)).toEqual(wrapped)
+  })
+
+  it("accepts flexible whitespace in a complete authored template", () => {
+    const wrapped = {
+      ...candidate,
+      prompt: "$interrogate\nReview this change.\n$no-comments\n$unslop",
+    }
+
+    expect(applyWorkflowPromptTemplate(guide, "review-stack", wrapped)).toEqual(wrapped)
+  })
+
+  it("leaves workflows without a declared skill unchanged", () => {
+    expect(applyWorkflowPromptTemplate(guide, "plain", candidate)).toEqual(candidate)
+  })
+})
 
 const fooGuideMarkdown = `---
 schemaVersion: 1
@@ -643,6 +737,9 @@ describe("runGuideGenerate", () => {
       expect(response.profile.workflowId).toBe("plan")
       expect(response.profile.profileRef).toBe("sandbox:prime-agent")
       expect(response.candidates).toHaveLength(3)
+      expect(response.candidates[0]?.prompt).toBe(
+        "Use the writing-plans skill:\nDo the focused thing.",
+      )
 
       // The provider must receive the full authored guide body, loaded from disk.
       expect(provider.generateCalls).toHaveLength(1)

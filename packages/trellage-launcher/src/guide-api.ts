@@ -595,6 +595,55 @@ export interface GuideGenerateRequest extends GuideMatchRequest {
   readonly profileRef: string
 }
 
+const escapeRegularExpression = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+
+const flexibleWhitespacePattern = (value: string): string =>
+  value
+    .split(/(\s+)/u)
+    .map((part) => (/\s+/u.test(part) ? "\\s+" : escapeRegularExpression(part)))
+    .join("")
+
+const isCompleteWorkflowPrompt = (template: string, prompt: string): boolean => {
+  const pattern = template
+    .trim()
+    .split("{{intent}}")
+    .map(flexibleWhitespacePattern)
+    .join("[\\s\\S]+")
+  return new RegExp(`^${pattern}$`, "u").test(prompt.trim())
+}
+
+const removePartialTemplateBoundary = (template: string, prompt: string): string => {
+  const [prefix = "", ...remainingSegments] = template.trim().split("{{intent}}")
+  const suffix = remainingSegments.at(-1) ?? ""
+  let body = prompt.trim()
+  if (prefix.length > 0) body = body.replace(new RegExp(`^${flexibleWhitespacePattern(prefix)}`, "u"), "").trimStart()
+  if (suffix.length > 0) body = body.replace(new RegExp(`${flexibleWhitespacePattern(suffix)}$`, "u"), "").trimEnd()
+  return body
+}
+
+/**
+ * Applies the selected workflow's authored skill command or skill-use
+ * instruction to a model-generated prompt. Workflows without a declared skill
+ * preserve the generated prompt.
+ */
+export const applyWorkflowPromptTemplate = (
+  guide: ProfileGuideV1,
+  workflowId: string,
+  candidate: GuideGenerateCandidate,
+): GuideGenerateCandidate => {
+  const workflow = guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
+  if (workflow.skill === undefined) return candidate
+
+  if (isCompleteWorkflowPrompt(workflow.promptTemplate, candidate.prompt)) return candidate
+  const promptBody = removePartialTemplateBoundary(workflow.promptTemplate, candidate.prompt)
+
+  return {
+    ...candidate,
+    prompt: workflow.promptTemplate.replaceAll("{{intent}}", promptBody),
+  }
+}
+
 /**
  * Generates prompts for one exact profile reference. Deterministically
  * selects that profile's best workflow by token overlap with `intent`, using
@@ -643,14 +692,15 @@ export const runGuideGenerate = async (
   }
 
   const candidates = assertTriple(
-    generated.candidates.map(
-      (candidate): GuidePromptCandidate => ({
-        title: candidate.title,
-        prompt: candidate.prompt,
-        notes: candidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt),
-      }),
-    ),
+    generated.candidates.map((candidate): GuidePromptCandidate => {
+      const invokedCandidate = applyWorkflowPromptTemplate(loaded.guide, workflowId, candidate)
+      return {
+        title: invokedCandidate.title,
+        prompt: invokedCandidate.prompt,
+        notes: invokedCandidate.notes,
+        command: publicGuideLaunchCommand(catalog, request.profileRef, invokedCandidate.prompt),
+      }
+    }),
     "generation prompt candidates",
   )
 

@@ -10,6 +10,7 @@ import {
 } from "./guide-api.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
+import { CachedGuideProvider, defaultGuideMatchCachePath } from "./guide-match-cache.js"
 import { loadDefaultGuidePrompts } from "./guide-prompts.js"
 
 const maximumCatalogBytes = 8 * 1024 * 1024
@@ -73,11 +74,19 @@ export const runGuideJsonCommand = async (options: {
   if (!args.json) throw new Error("guide JSON command requires --json")
   const resolved = resolveGuideRequest(args, options.stdinRequest, options.env)
   const prompts = await loadDefaultGuidePrompts()
-  const provider = new CopilotGuideProvider({
-    model: resolved.model,
-    effort: resolved.effort,
-    prompts,
-  })
+  const provider = new CachedGuideProvider(
+    new CopilotGuideProvider({
+      model: resolved.model,
+      effort: resolved.effort,
+      prompts,
+    }),
+    {
+      cachePath: defaultGuideMatchCachePath(options.env),
+      model: resolved.model,
+      effort: resolved.effort,
+      matchPrompt: prompts.match,
+    },
+  )
   const common = {
     intent: resolved.request.intent,
     model: resolved.model,

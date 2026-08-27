@@ -714,6 +714,20 @@ trx guide --intent "Turn a technical outline into a LinkedIn post"
 trx guide --intent "Review this architecture" --model mai-code-1.1-flash --effort medium
 ```
 
+The last successful profile match is cached under
+`${XDG_CACHE_HOME:-~/.cache}/trellage/trx-guide/last-match.json`. Repeating the
+same intent with the same model, effort, profile catalog, and authored match
+prompt reuses that result without a model call. Changing any key input replaces
+the one-entry cache. The cache file uses mode `0600`; recommendation reasons
+can contain model-written wording derived from the intent. Prompt generation
+and refinement are not cached.
+
+When the selected workflow declares a skill, the guide applies that workflow's
+authored Markdown prompt template to generated and refined content. The final
+handoff therefore invokes the exact curated skill, such as
+`/social-media-skills:post-writer <generated prompt>`. Workflows without a
+declared skill keep the generated prompt unchanged.
+
 The guide shows the exact command and asks for confirmation before it starts a
 profile, creates a Herdr pane, or creates a Herdr worktree. A profile receives
 `-p` only when its published headless contract supports prompt input.

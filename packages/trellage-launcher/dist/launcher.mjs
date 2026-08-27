@@ -10427,10 +10427,10 @@ var require_react_reconciler_development = __commonJS({
           fiber = fiber.next, id--;
         return fiber;
       }
-      function copyWithSetImpl(obj, path5, index, value) {
-        if (index >= path5.length) return value;
-        var key = path5[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        updated[key] = copyWithSetImpl(obj[key], path5, index + 1, value);
+      function copyWithSetImpl(obj, path6, index, value) {
+        if (index >= path6.length) return value;
+        var key = path6[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        updated[key] = copyWithSetImpl(obj[key], path6, index + 1, value);
         return updated;
       }
       function copyWithRename(obj, oldPath, newPath) {
@@ -10457,11 +10457,11 @@ var require_react_reconciler_development = __commonJS({
         );
         return updated;
       }
-      function copyWithDeleteImpl(obj, path5, index) {
-        var key = path5[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        if (index + 1 === path5.length)
+      function copyWithDeleteImpl(obj, path6, index) {
+        var key = path6[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        if (index + 1 === path6.length)
           return isArrayImpl(updated) ? updated.splice(key, 1) : delete updated[key], updated;
-        updated[key] = copyWithDeleteImpl(obj[key], path5, index + 1);
+        updated[key] = copyWithDeleteImpl(obj[key], path6, index + 1);
         return updated;
       }
       function shouldSuspendImpl() {
@@ -23738,29 +23738,29 @@ var require_react_reconciler_development = __commonJS({
       var didWarnAboutNestedUpdates = false;
       var didWarnAboutFindNodeInStrictMode = {};
       var overrideHookState = null, overrideHookStateDeletePath = null, overrideHookStateRenamePath = null, overrideProps = null, overridePropsDeletePath = null, overridePropsRenamePath = null, scheduleUpdate = null, scheduleRetry = null, setErrorHandler = null, setSuspenseHandler = null;
-      overrideHookState = function(fiber, id, path5, value) {
+      overrideHookState = function(fiber, id, path6, value) {
         id = findHook(fiber, id);
-        null !== id && (path5 = copyWithSetImpl(id.memoizedState, path5, 0, value), id.memoizedState = path5, id.baseState = path5, fiber.memoizedProps = assign({}, fiber.memoizedProps), path5 = enqueueConcurrentRenderForLane(fiber, 2), null !== path5 && scheduleUpdateOnFiber(path5, fiber, 2));
+        null !== id && (path6 = copyWithSetImpl(id.memoizedState, path6, 0, value), id.memoizedState = path6, id.baseState = path6, fiber.memoizedProps = assign({}, fiber.memoizedProps), path6 = enqueueConcurrentRenderForLane(fiber, 2), null !== path6 && scheduleUpdateOnFiber(path6, fiber, 2));
       };
-      overrideHookStateDeletePath = function(fiber, id, path5) {
+      overrideHookStateDeletePath = function(fiber, id, path6) {
         id = findHook(fiber, id);
-        null !== id && (path5 = copyWithDeleteImpl(id.memoizedState, path5, 0), id.memoizedState = path5, id.baseState = path5, fiber.memoizedProps = assign({}, fiber.memoizedProps), path5 = enqueueConcurrentRenderForLane(fiber, 2), null !== path5 && scheduleUpdateOnFiber(path5, fiber, 2));
+        null !== id && (path6 = copyWithDeleteImpl(id.memoizedState, path6, 0), id.memoizedState = path6, id.baseState = path6, fiber.memoizedProps = assign({}, fiber.memoizedProps), path6 = enqueueConcurrentRenderForLane(fiber, 2), null !== path6 && scheduleUpdateOnFiber(path6, fiber, 2));
       };
       overrideHookStateRenamePath = function(fiber, id, oldPath, newPath) {
         id = findHook(fiber, id);
         null !== id && (oldPath = copyWithRename(id.memoizedState, oldPath, newPath), id.memoizedState = oldPath, id.baseState = oldPath, fiber.memoizedProps = assign({}, fiber.memoizedProps), oldPath = enqueueConcurrentRenderForLane(fiber, 2), null !== oldPath && scheduleUpdateOnFiber(oldPath, fiber, 2));
       };
-      overrideProps = function(fiber, path5, value) {
-        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path5, 0, value);
+      overrideProps = function(fiber, path6, value) {
+        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path6, 0, value);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path5 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path5 && scheduleUpdateOnFiber(path5, fiber, 2);
+        path6 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path6 && scheduleUpdateOnFiber(path6, fiber, 2);
       };
-      overridePropsDeletePath = function(fiber, path5) {
-        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path5, 0);
+      overridePropsDeletePath = function(fiber, path6) {
+        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path6, 0);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path5 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path5 && scheduleUpdateOnFiber(path5, fiber, 2);
+        path6 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path6 && scheduleUpdateOnFiber(path6, fiber, 2);
       };
       overridePropsRenamePath = function(fiber, oldPath, newPath) {
         fiber.pendingProps = copyWithRename(
@@ -26441,7 +26441,7 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -27109,7 +27109,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -27478,7 +27478,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter3 = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
+    var { createHash: createHash2 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -27785,7 +27785,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -31575,8 +31575,8 @@ var require_backend = __commonJS({
               }
               return false;
             }
-            function utils_getInObject(object, path5) {
-              return path5.reduce(function(reduced, attr) {
+            function utils_getInObject(object, path6) {
+              return path6.reduce(function(reduced, attr) {
                 if (reduced) {
                   if (utils_hasOwnProperty.call(reduced, attr)) {
                     return reduced[attr];
@@ -31588,11 +31588,11 @@ var require_backend = __commonJS({
                 return null;
               }, object);
             }
-            function deletePathInObject(object, path5) {
-              var length = path5.length;
-              var last = path5[length - 1];
+            function deletePathInObject(object, path6) {
+              var length = path6.length;
+              var last = path6[length - 1];
               if (object != null) {
-                var parent = utils_getInObject(object, path5.slice(0, length - 1));
+                var parent = utils_getInObject(object, path6.slice(0, length - 1));
                 if (parent) {
                   if (src_isArray(parent)) {
                     parent.splice(last, 1);
@@ -31618,11 +31618,11 @@ var require_backend = __commonJS({
                 }
               }
             }
-            function utils_setInObject(object, path5, value) {
-              var length = path5.length;
-              var last = path5[length - 1];
+            function utils_setInObject(object, path6, value) {
+              var length = path6.length;
+              var last = path6[length - 1];
               if (object != null) {
-                var parent = utils_getInObject(object, path5.slice(0, length - 1));
+                var parent = utils_getInObject(object, path6.slice(0, length - 1));
                 if (parent) {
                   parent[last] = value;
                 }
@@ -32155,8 +32155,8 @@ var require_backend = __commonJS({
               unserializable: Symbol("unserializable")
             };
             var LEVEL_THRESHOLD = 2;
-            function createDehydrated(type, inspectable, data, cleaned, path5) {
-              cleaned.push(path5);
+            function createDehydrated(type, inspectable, data, cleaned, path6) {
+              cleaned.push(path6);
               var dehydrated = {
                 inspectable,
                 type,
@@ -32174,13 +32174,13 @@ var require_backend = __commonJS({
               }
               return dehydrated;
             }
-            function dehydrate(data, cleaned, unserializable, path5, isPathAllowed) {
+            function dehydrate(data, cleaned, unserializable, path6, isPathAllowed) {
               var level = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : 0;
               var type = getDataType(data);
               var isPathAllowedCheck;
               switch (type) {
                 case "html_element":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32189,7 +32189,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "function":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32198,14 +32198,14 @@ var require_backend = __commonJS({
                     type
                   };
                 case "string":
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (isPathAllowedCheck) {
                     return data;
                   } else {
                     return data.length <= 500 ? data : data.slice(0, 500) + "...";
                   }
                 case "bigint":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32214,7 +32214,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "symbol":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32223,9 +32223,9 @@ var require_backend = __commonJS({
                     type
                   };
                 case "react_element": {
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path5);
+                    cleaned.push(path6);
                     return {
                       inspectable: true,
                       preview_short: formatDataForPreview(data, false),
@@ -32242,19 +32242,19 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: getDisplayNameForReactElement(data) || "Unknown"
                   };
-                  unserializableValue.key = dehydrate(data.key, cleaned, unserializable, path5.concat(["key"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializableValue.key = dehydrate(data.key, cleaned, unserializable, path6.concat(["key"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   if (data.$$typeof === REACT_LEGACY_ELEMENT_TYPE) {
-                    unserializableValue.ref = dehydrate(data.ref, cleaned, unserializable, path5.concat(["ref"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    unserializableValue.ref = dehydrate(data.ref, cleaned, unserializable, path6.concat(["ref"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
-                  unserializableValue.props = dehydrate(data.props, cleaned, unserializable, path5.concat(["props"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  unserializable.push(path5);
+                  unserializableValue.props = dehydrate(data.props, cleaned, unserializable, path6.concat(["props"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializable.push(path6);
                   return unserializableValue;
                 }
                 case "react_lazy": {
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   var payload = data._payload;
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path5);
+                    cleaned.push(path6);
                     var inspectable = payload !== null && hydration_typeof(payload) === "object" && (payload._status === 1 || payload._status === 2 || payload.status === "fulfilled" || payload.status === "rejected");
                     return {
                       inspectable,
@@ -32271,13 +32271,13 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: "lazy()"
                   };
-                  _unserializableValue._payload = dehydrate(payload, cleaned, unserializable, path5.concat(["_payload"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  unserializable.push(path5);
+                  _unserializableValue._payload = dehydrate(payload, cleaned, unserializable, path6.concat(["_payload"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializable.push(path6);
                   return _unserializableValue;
                 }
                 case "array_buffer":
                 case "data_view":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32287,21 +32287,21 @@ var require_backend = __commonJS({
                     type
                   };
                 case "array":
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path5);
+                    return createDehydrated(type, true, data, cleaned, path6);
                   }
                   var arr = [];
                   for (var i = 0; i < data.length; i++) {
-                    arr[i] = dehydrateKey(data, i, cleaned, unserializable, path5.concat([i]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    arr[i] = dehydrateKey(data, i, cleaned, unserializable, path6.concat([i]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
                   return arr;
                 case "html_all_collection":
                 case "typed_array":
                 case "iterator":
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path5);
+                    return createDehydrated(type, true, data, cleaned, path6);
                   } else {
                     var _unserializableValue2 = {
                       unserializable: true,
@@ -32313,13 +32313,13 @@ var require_backend = __commonJS({
                       name: typeof data.constructor !== "function" || typeof data.constructor.name !== "string" || data.constructor.name === "Object" ? "" : data.constructor.name
                     };
                     Array.from(data).forEach(function(item, i2) {
-                      return _unserializableValue2[i2] = dehydrate(item, cleaned, unserializable, path5.concat([i2]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      return _unserializableValue2[i2] = dehydrate(item, cleaned, unserializable, path6.concat([i2]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                     });
-                    unserializable.push(path5);
+                    unserializable.push(path6);
                     return _unserializableValue2;
                   }
                 case "opaque_iterator":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32328,7 +32328,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "date":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32337,7 +32337,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "regexp":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32346,9 +32346,9 @@ var require_backend = __commonJS({
                     type
                   };
                 case "thenable":
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path5);
+                    cleaned.push(path6);
                     return {
                       inspectable: data.status === "fulfilled" || data.status === "rejected",
                       preview_short: formatDataForPreview(data, false),
@@ -32369,8 +32369,8 @@ var require_backend = __commonJS({
                         preview_long: formatDataForPreview(data, true),
                         name: "fulfilled Thenable"
                       };
-                      _unserializableValue3.value = dehydrate(data.value, cleaned, unserializable, path5.concat(["value"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                      unserializable.push(path5);
+                      _unserializableValue3.value = dehydrate(data.value, cleaned, unserializable, path6.concat(["value"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      unserializable.push(path6);
                       return _unserializableValue3;
                     }
                     case "rejected": {
@@ -32381,12 +32381,12 @@ var require_backend = __commonJS({
                         preview_long: formatDataForPreview(data, true),
                         name: "rejected Thenable"
                       };
-                      _unserializableValue4.reason = dehydrate(data.reason, cleaned, unserializable, path5.concat(["reason"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                      unserializable.push(path5);
+                      _unserializableValue4.reason = dehydrate(data.reason, cleaned, unserializable, path6.concat(["reason"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      unserializable.push(path6);
                       return _unserializableValue4;
                     }
                     default:
-                      cleaned.push(path5);
+                      cleaned.push(path6);
                       return {
                         inspectable: false,
                         preview_short: formatDataForPreview(data, false),
@@ -32396,21 +32396,21 @@ var require_backend = __commonJS({
                       };
                   }
                 case "object":
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path5);
+                    return createDehydrated(type, true, data, cleaned, path6);
                   } else {
                     var object = {};
                     getAllEnumerableKeys(data).forEach(function(key) {
                       var name = key.toString();
-                      object[name] = dehydrateKey(data, key, cleaned, unserializable, path5.concat([name]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      object[name] = dehydrateKey(data, key, cleaned, unserializable, path6.concat([name]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                     });
                     return object;
                   }
                 case "class_instance": {
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path5);
+                    return createDehydrated(type, true, data, cleaned, path6);
                   }
                   var value = {
                     unserializable: true,
@@ -32422,15 +32422,15 @@ var require_backend = __commonJS({
                   };
                   getAllEnumerableKeys(data).forEach(function(key) {
                     var keyAsString = key.toString();
-                    value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path5.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path6.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   });
-                  unserializable.push(path5);
+                  unserializable.push(path6);
                   return value;
                 }
                 case "error": {
-                  isPathAllowedCheck = isPathAllowed(path5);
+                  isPathAllowedCheck = isPathAllowed(path6);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path5);
+                    return createDehydrated(type, true, data, cleaned, path6);
                   }
                   var _value = {
                     unserializable: true,
@@ -32440,22 +32440,22 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: data.name
                   };
-                  _value.message = dehydrate(data.message, cleaned, unserializable, path5.concat(["message"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  _value.stack = dehydrate(data.stack, cleaned, unserializable, path5.concat(["stack"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  _value.message = dehydrate(data.message, cleaned, unserializable, path6.concat(["message"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  _value.stack = dehydrate(data.stack, cleaned, unserializable, path6.concat(["stack"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   if ("cause" in data) {
-                    _value.cause = dehydrate(data.cause, cleaned, unserializable, path5.concat(["cause"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    _value.cause = dehydrate(data.cause, cleaned, unserializable, path6.concat(["cause"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
                   getAllEnumerableKeys(data).forEach(function(key) {
                     var keyAsString = key.toString();
-                    _value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path5.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    _value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path6.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   });
-                  unserializable.push(path5);
+                  unserializable.push(path6);
                   return _value;
                 }
                 case "infinity":
                 case "nan":
                 case "undefined":
-                  cleaned.push(path5);
+                  cleaned.push(path6);
                   return {
                     type
                   };
@@ -32463,10 +32463,10 @@ var require_backend = __commonJS({
                   return data;
               }
             }
-            function dehydrateKey(parent, key, cleaned, unserializable, path5, isPathAllowed) {
+            function dehydrateKey(parent, key, cleaned, unserializable, path6, isPathAllowed) {
               var level = arguments.length > 6 && arguments[6] !== void 0 ? arguments[6] : 0;
               try {
-                return dehydrate(parent[key], cleaned, unserializable, path5, isPathAllowed, level);
+                return dehydrate(parent[key], cleaned, unserializable, path6, isPathAllowed, level);
               } catch (error) {
                 var preview = "";
                 if (hydration_typeof(error) === "object" && error !== null && typeof error.stack === "string") {
@@ -32474,7 +32474,7 @@ var require_backend = __commonJS({
                 } else if (typeof error === "string") {
                   preview = error;
                 }
-                cleaned.push(path5);
+                cleaned.push(path6);
                 return {
                   inspectable: false,
                   preview_short: "[Exception]",
@@ -32484,8 +32484,8 @@ var require_backend = __commonJS({
                 };
               }
             }
-            function fillInPath(object, data, path5, value) {
-              var target = getInObject(object, path5);
+            function fillInPath(object, data, path6, value) {
+              var target = getInObject(object, path6);
               if (target != null) {
                 if (!target[meta.unserializable]) {
                   delete target[meta.inspectable];
@@ -32500,9 +32500,9 @@ var require_backend = __commonJS({
               }
               if (value !== null && data.unserializable.length > 0) {
                 var unserializablePath = data.unserializable[0];
-                var isMatch = unserializablePath.length === path5.length;
-                for (var i = 0; i < path5.length; i++) {
-                  if (path5[i] !== unserializablePath[i]) {
+                var isMatch = unserializablePath.length === path6.length;
+                for (var i = 0; i < path6.length; i++) {
+                  if (path6[i] !== unserializablePath[i]) {
                     isMatch = false;
                     break;
                   }
@@ -32511,13 +32511,13 @@ var require_backend = __commonJS({
                   upgradeUnserializable(value, value);
                 }
               }
-              setInObject(object, path5, value);
+              setInObject(object, path6, value);
             }
             function hydrate(object, cleaned, unserializable) {
-              cleaned.forEach(function(path5) {
-                var length = path5.length;
-                var last = path5[length - 1];
-                var parent = getInObject(object, path5.slice(0, length - 1));
+              cleaned.forEach(function(path6) {
+                var length = path6.length;
+                var last = path6[length - 1];
+                var parent = getInObject(object, path6.slice(0, length - 1));
                 if (!parent || !parent.hasOwnProperty(last)) {
                   return;
                 }
@@ -32543,10 +32543,10 @@ var require_backend = __commonJS({
                   parent[last] = replaced;
                 }
               });
-              unserializable.forEach(function(path5) {
-                var length = path5.length;
-                var last = path5[length - 1];
-                var parent = getInObject(object, path5.slice(0, length - 1));
+              unserializable.forEach(function(path6) {
+                var length = path6.length;
+                var last = path6[length - 1];
+                var parent = getInObject(object, path6.slice(0, length - 1));
                 if (!parent || !parent.hasOwnProperty(last)) {
                   return;
                 }
@@ -32667,11 +32667,11 @@ var require_backend = __commonJS({
               return gte(version2, FIRST_DEVTOOLS_BACKEND_LOCKSTEP_VER);
             }
             function cleanForBridge(data, isPathAllowed) {
-              var path5 = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
+              var path6 = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
               if (data !== null) {
                 var cleanedPaths = [];
                 var unserializablePaths = [];
-                var cleanedData = dehydrate(data, cleanedPaths, unserializablePaths, path5, isPathAllowed);
+                var cleanedData = dehydrate(data, cleanedPaths, unserializablePaths, path6, isPathAllowed);
                 return {
                   data: cleanedData,
                   cleaned: cleanedPaths,
@@ -32681,18 +32681,18 @@ var require_backend = __commonJS({
                 return null;
               }
             }
-            function copyWithDelete(obj, path5) {
+            function copyWithDelete(obj, path6) {
               var index = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 0;
-              var key = path5[index];
+              var key = path6[index];
               var updated = shared_isArray(obj) ? obj.slice() : utils_objectSpread({}, obj);
-              if (index + 1 === path5.length) {
+              if (index + 1 === path6.length) {
                 if (shared_isArray(updated)) {
                   updated.splice(key, 1);
                 } else {
                   delete updated[key];
                 }
               } else {
-                updated[key] = copyWithDelete(obj[key], path5, index + 1);
+                updated[key] = copyWithDelete(obj[key], path6, index + 1);
               }
               return updated;
             }
@@ -32713,14 +32713,14 @@ var require_backend = __commonJS({
               }
               return updated;
             }
-            function copyWithSet(obj, path5, value) {
+            function copyWithSet(obj, path6, value) {
               var index = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : 0;
-              if (index >= path5.length) {
+              if (index >= path6.length) {
                 return value;
               }
-              var key = path5[index];
+              var key = path6[index];
               var updated = shared_isArray(obj) ? obj.slice() : utils_objectSpread({}, obj);
-              updated[key] = copyWithSet(obj[key], path5, value, index + 1);
+              updated[key] = copyWithSet(obj[key], path6, value, index + 1);
               return updated;
             }
             function getEffectDurations(root) {
@@ -33996,12 +33996,12 @@ var require_backend = __commonJS({
                   }
                 });
                 bridge_defineProperty(_this, "overrideValueAtPath", function(_ref) {
-                  var id = _ref.id, path5 = _ref.path, rendererID = _ref.rendererID, type = _ref.type, value = _ref.value;
+                  var id = _ref.id, path6 = _ref.path, rendererID = _ref.rendererID, type = _ref.type, value = _ref.value;
                   switch (type) {
                     case "context":
                       _this.send("overrideContext", {
                         id,
-                        path: path5,
+                        path: path6,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34010,7 +34010,7 @@ var require_backend = __commonJS({
                     case "hooks":
                       _this.send("overrideHookState", {
                         id,
-                        path: path5,
+                        path: path6,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34019,7 +34019,7 @@ var require_backend = __commonJS({
                     case "props":
                       _this.send("overrideProps", {
                         id,
-                        path: path5,
+                        path: path6,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34028,7 +34028,7 @@ var require_backend = __commonJS({
                     case "state":
                       _this.send("overrideState", {
                         id,
-                        path: path5,
+                        path: path6,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34366,12 +34366,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "copyElementPath", function(_ref5) {
-                  var id = _ref5.id, path5 = _ref5.path, rendererID = _ref5.rendererID;
+                  var id = _ref5.id, path6 = _ref5.path, rendererID = _ref5.rendererID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    var value = renderer2.getSerializedElementValueByPath(id, path5);
+                    var value = renderer2.getSerializedElementValueByPath(id, path6);
                     if (value != null) {
                       _this._bridge.send("saveToClipboard", value);
                     } else {
@@ -34380,12 +34380,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "deletePath", function(_ref6) {
-                  var hookID = _ref6.hookID, id = _ref6.id, path5 = _ref6.path, rendererID = _ref6.rendererID, type = _ref6.type;
+                  var hookID = _ref6.hookID, id = _ref6.id, path6 = _ref6.path, rendererID = _ref6.rendererID, type = _ref6.type;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.deletePath(type, id, hookID, path5);
+                    renderer2.deletePath(type, id, hookID, path6);
                   }
                 });
                 agent_defineProperty(_this, "getBackendVersion", function() {
@@ -34422,12 +34422,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "inspectElement", function(_ref9) {
-                  var forceFullData = _ref9.forceFullData, id = _ref9.id, path5 = _ref9.path, rendererID = _ref9.rendererID, requestID = _ref9.requestID;
+                  var forceFullData = _ref9.forceFullData, id = _ref9.id, path6 = _ref9.path, rendererID = _ref9.rendererID, requestID = _ref9.requestID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    _this._bridge.send("inspectedElement", renderer2.inspectElement(requestID, id, path5, forceFullData));
+                    _this._bridge.send("inspectedElement", renderer2.inspectElement(requestID, id, path6, forceFullData));
                     if (_this._persistedSelectionMatch === null || _this._persistedSelectionMatch.id !== id) {
                       _this._persistedSelection = null;
                       _this._persistedSelectionMatch = null;
@@ -34461,15 +34461,15 @@ var require_backend = __commonJS({
                   }
                   for (var rendererID in _this._rendererInterfaces) {
                     var renderer2 = _this._rendererInterfaces[rendererID];
-                    var path5 = null;
+                    var path6 = null;
                     if (suspendedByPathIndex !== null && rendererPath !== null) {
                       var suspendedByPathRendererIndex = suspendedByPathIndex - suspendedByOffset;
                       var rendererHasRequestedSuspendedByPath = renderer2.getElementAttributeByPath(id, ["suspendedBy", suspendedByPathRendererIndex]) !== void 0;
                       if (rendererHasRequestedSuspendedByPath) {
-                        path5 = ["suspendedBy", suspendedByPathRendererIndex].concat(rendererPath);
+                        path6 = ["suspendedBy", suspendedByPathRendererIndex].concat(rendererPath);
                       }
                     }
-                    var inspectedRootsPayload = renderer2.inspectElement(requestID, id, path5, forceFullData);
+                    var inspectedRootsPayload = renderer2.inspectElement(requestID, id, path6, forceFullData);
                     switch (inspectedRootsPayload.type) {
                       case "hydrated-path":
                         inspectedRootsPayload.path[1] += suspendedByOffset;
@@ -34563,20 +34563,20 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideValueAtPath", function(_ref15) {
-                  var hookID = _ref15.hookID, id = _ref15.id, path5 = _ref15.path, rendererID = _ref15.rendererID, type = _ref15.type, value = _ref15.value;
+                  var hookID = _ref15.hookID, id = _ref15.id, path6 = _ref15.path, rendererID = _ref15.rendererID, type = _ref15.type, value = _ref15.value;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.overrideValueAtPath(type, id, hookID, path5, value);
+                    renderer2.overrideValueAtPath(type, id, hookID, path6, value);
                   }
                 });
                 agent_defineProperty(_this, "overrideContext", function(_ref16) {
-                  var id = _ref16.id, path5 = _ref16.path, rendererID = _ref16.rendererID, wasForwarded = _ref16.wasForwarded, value = _ref16.value;
+                  var id = _ref16.id, path6 = _ref16.path, rendererID = _ref16.rendererID, wasForwarded = _ref16.wasForwarded, value = _ref16.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path5,
+                      path: path6,
                       rendererID,
                       type: "context",
                       value
@@ -34584,11 +34584,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideHookState", function(_ref17) {
-                  var id = _ref17.id, hookID = _ref17.hookID, path5 = _ref17.path, rendererID = _ref17.rendererID, wasForwarded = _ref17.wasForwarded, value = _ref17.value;
+                  var id = _ref17.id, hookID = _ref17.hookID, path6 = _ref17.path, rendererID = _ref17.rendererID, wasForwarded = _ref17.wasForwarded, value = _ref17.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path5,
+                      path: path6,
                       rendererID,
                       type: "hooks",
                       value
@@ -34596,11 +34596,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideProps", function(_ref18) {
-                  var id = _ref18.id, path5 = _ref18.path, rendererID = _ref18.rendererID, wasForwarded = _ref18.wasForwarded, value = _ref18.value;
+                  var id = _ref18.id, path6 = _ref18.path, rendererID = _ref18.rendererID, wasForwarded = _ref18.wasForwarded, value = _ref18.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path5,
+                      path: path6,
                       rendererID,
                       type: "props",
                       value
@@ -34608,11 +34608,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideState", function(_ref19) {
-                  var id = _ref19.id, path5 = _ref19.path, rendererID = _ref19.rendererID, wasForwarded = _ref19.wasForwarded, value = _ref19.value;
+                  var id = _ref19.id, path6 = _ref19.path, rendererID = _ref19.rendererID, wasForwarded = _ref19.wasForwarded, value = _ref19.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path5,
+                      path: path6,
                       rendererID,
                       type: "state",
                       value
@@ -34679,12 +34679,12 @@ var require_backend = __commonJS({
                   _this._bridge.send("stopInspectingHost", selected);
                 });
                 agent_defineProperty(_this, "storeAsGlobal", function(_ref23) {
-                  var count = _ref23.count, id = _ref23.id, path5 = _ref23.path, rendererID = _ref23.rendererID;
+                  var count = _ref23.count, id = _ref23.id, path6 = _ref23.path, rendererID = _ref23.rendererID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.storeAsGlobal(id, path5, count);
+                    renderer2.storeAsGlobal(id, path6, count);
                   }
                 });
                 agent_defineProperty(_this, "updateHookSettings", function(settings) {
@@ -34701,12 +34701,12 @@ var require_backend = __commonJS({
                     var rendererID = +rendererIDString;
                     var renderer2 = _this._rendererInterfaces[rendererID];
                     if (_this._lastSelectedRendererID === rendererID) {
-                      var path5 = renderer2.getPathForElement(_this._lastSelectedElementID);
-                      if (path5 !== null) {
-                        renderer2.setTrackedPath(path5);
+                      var path6 = renderer2.getPathForElement(_this._lastSelectedElementID);
+                      if (path6 !== null) {
+                        renderer2.setTrackedPath(path6);
                         _this._persistedSelection = {
                           rendererID,
-                          path: path5
+                          path: path6
                         };
                       }
                     }
@@ -34781,11 +34781,11 @@ var require_backend = __commonJS({
                   var rendererID = _this._lastSelectedRendererID;
                   var id = _this._lastSelectedElementID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
-                  var path5 = renderer2 != null ? renderer2.getPathForElement(id) : null;
-                  if (path5 !== null) {
+                  var path6 = renderer2 != null ? renderer2.getPathForElement(id) : null;
+                  if (path6 !== null) {
                     storage_sessionStorageSetItem(SESSION_STORAGE_LAST_SELECTION_KEY, JSON.stringify({
                       rendererID,
-                      path: path5
+                      path: path6
                     }));
                   } else {
                     storage_sessionStorageRemoveItem(SESSION_STORAGE_LAST_SELECTION_KEY);
@@ -35494,7 +35494,7 @@ var require_backend = __commonJS({
                 hasElementWithId: function hasElementWithId() {
                   return false;
                 },
-                inspectElement: function inspectElement(requestID, id, path5) {
+                inspectElement: function inspectElement(requestID, id, path6) {
                   return {
                     id,
                     responseID: requestID,
@@ -40745,9 +40745,9 @@ var require_backend = __commonJS({
                 }
                 return null;
               }
-              function getElementAttributeByPath(id, path5) {
+              function getElementAttributeByPath(id, path6) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  return utils_getInObject(mostRecentlyInspectedElement, path5);
+                  return utils_getInObject(mostRecentlyInspectedElement, path6);
                 }
                 return void 0;
               }
@@ -41454,9 +41454,9 @@ var require_backend = __commonJS({
               function isMostRecentlyInspectedElementCurrent(id) {
                 return isMostRecentlyInspectedElement(id) && !hasElementUpdatedSinceLastInspected;
               }
-              function mergeInspectedPaths(path5) {
+              function mergeInspectedPaths(path6) {
                 var current = currentlyInspectedPaths;
-                path5.forEach(function(key) {
+                path6.forEach(function(key) {
                   if (!current[key]) {
                     current[key] = {};
                   }
@@ -41464,21 +41464,21 @@ var require_backend = __commonJS({
                 });
               }
               function createIsPathAllowed(key, secondaryCategory) {
-                return function isPathAllowed(path5) {
+                return function isPathAllowed(path6) {
                   switch (secondaryCategory) {
                     case "hooks":
-                      if (path5.length === 1) {
+                      if (path6.length === 1) {
                         return true;
                       }
-                      if (path5[path5.length - 2] === "hookSource" && path5[path5.length - 1] === "fileName") {
+                      if (path6[path6.length - 2] === "hookSource" && path6[path6.length - 1] === "fileName") {
                         return true;
                       }
-                      if (path5[path5.length - 1] === "subHooks" || path5[path5.length - 2] === "subHooks") {
+                      if (path6[path6.length - 1] === "subHooks" || path6[path6.length - 2] === "subHooks") {
                         return true;
                       }
                       break;
                     case "suspendedBy":
-                      if (path5.length < 5) {
+                      if (path6.length < 5) {
                         return true;
                       }
                       break;
@@ -41489,8 +41489,8 @@ var require_backend = __commonJS({
                   if (!current) {
                     return false;
                   }
-                  for (var i = 0; i < path5.length; i++) {
-                    current = current[path5[i]];
+                  for (var i = 0; i < path6.length; i++) {
+                    current = current[path6[i]];
                     if (!current) {
                       return false;
                     }
@@ -41544,38 +41544,38 @@ var require_backend = __commonJS({
                     break;
                 }
               }
-              function storeAsGlobal(id, path5, count) {
+              function storeAsGlobal(id, path6, count) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  var value = utils_getInObject(mostRecentlyInspectedElement, path5);
+                  var value = utils_getInObject(mostRecentlyInspectedElement, path6);
                   var key = "$reactTemp".concat(count);
                   window[key] = value;
                   console.log(key);
                   console.log(value);
                 }
               }
-              function getSerializedElementValueByPath(id, path5) {
+              function getSerializedElementValueByPath(id, path6) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  var valueToCopy = utils_getInObject(mostRecentlyInspectedElement, path5);
+                  var valueToCopy = utils_getInObject(mostRecentlyInspectedElement, path6);
                   return serializeToString(valueToCopy);
                 }
               }
-              function inspectElement(requestID, id, path5, forceFullData) {
-                if (path5 !== null) {
-                  mergeInspectedPaths(path5);
+              function inspectElement(requestID, id, path6, forceFullData) {
+                if (path6 !== null) {
+                  mergeInspectedPaths(path6);
                 }
                 if (isMostRecentlyInspectedElement(id) && !forceFullData) {
                   if (!hasElementUpdatedSinceLastInspected) {
-                    if (path5 !== null) {
+                    if (path6 !== null) {
                       var secondaryCategory = null;
-                      if (path5[0] === "hooks" || path5[0] === "suspendedBy") {
-                        secondaryCategory = path5[0];
+                      if (path6[0] === "hooks" || path6[0] === "suspendedBy") {
+                        secondaryCategory = path6[0];
                       }
                       return {
                         id,
                         responseID: requestID,
                         type: "hydrated-path",
-                        path: path5,
-                        value: cleanForBridge(utils_getInObject(mostRecentlyInspectedElement, path5), createIsPathAllowed(null, secondaryCategory), path5)
+                        path: path6,
+                        value: cleanForBridge(utils_getInObject(mostRecentlyInspectedElement, path6), createIsPathAllowed(null, secondaryCategory), path6)
                       };
                     } else {
                       return {
@@ -41764,7 +41764,7 @@ var require_backend = __commonJS({
                   console.groupEnd();
                 }
               }
-              function deletePath(type, id, hookID, path5) {
+              function deletePath(type, id, hookID, path6) {
                 var devtoolsInstance = idToDevToolsInstanceMap.get(id);
                 if (devtoolsInstance === void 0) {
                   console.warn('Could not find DevToolsInstance with id "'.concat(id, '"'));
@@ -41778,12 +41778,12 @@ var require_backend = __commonJS({
                   var instance = fiber.stateNode;
                   switch (type) {
                     case "context":
-                      path5 = path5.slice(1);
+                      path6 = path6.slice(1);
                       switch (fiber.tag) {
                         case ClassComponent:
-                          if (path5.length === 0) {
+                          if (path6.length === 0) {
                           } else {
-                            deletePathInObject(instance.context, path5);
+                            deletePathInObject(instance.context, path6);
                           }
                           instance.forceUpdate();
                           break;
@@ -41793,21 +41793,21 @@ var require_backend = __commonJS({
                       break;
                     case "hooks":
                       if (typeof overrideHookStateDeletePath === "function") {
-                        overrideHookStateDeletePath(fiber, hookID, path5);
+                        overrideHookStateDeletePath(fiber, hookID, path6);
                       }
                       break;
                     case "props":
                       if (instance === null) {
                         if (typeof overridePropsDeletePath === "function") {
-                          overridePropsDeletePath(fiber, path5);
+                          overridePropsDeletePath(fiber, path6);
                         }
                       } else {
-                        fiber.pendingProps = copyWithDelete(instance.props, path5);
+                        fiber.pendingProps = copyWithDelete(instance.props, path6);
                         instance.forceUpdate();
                       }
                       break;
                     case "state":
-                      deletePathInObject(instance.state, path5);
+                      deletePathInObject(instance.state, path6);
                       instance.forceUpdate();
                       break;
                   }
@@ -41863,7 +41863,7 @@ var require_backend = __commonJS({
                   }
                 }
               }
-              function overrideValueAtPath(type, id, hookID, path5, value) {
+              function overrideValueAtPath(type, id, hookID, path6, value) {
                 var devtoolsInstance = idToDevToolsInstanceMap.get(id);
                 if (devtoolsInstance === void 0) {
                   console.warn('Could not find DevToolsInstance with id "'.concat(id, '"'));
@@ -41877,13 +41877,13 @@ var require_backend = __commonJS({
                   var instance = fiber.stateNode;
                   switch (type) {
                     case "context":
-                      path5 = path5.slice(1);
+                      path6 = path6.slice(1);
                       switch (fiber.tag) {
                         case ClassComponent:
-                          if (path5.length === 0) {
+                          if (path6.length === 0) {
                             instance.context = value;
                           } else {
-                            utils_setInObject(instance.context, path5, value);
+                            utils_setInObject(instance.context, path6, value);
                           }
                           instance.forceUpdate();
                           break;
@@ -41893,18 +41893,18 @@ var require_backend = __commonJS({
                       break;
                     case "hooks":
                       if (typeof overrideHookState === "function") {
-                        overrideHookState(fiber, hookID, path5, value);
+                        overrideHookState(fiber, hookID, path6, value);
                       }
                       break;
                     case "props":
                       switch (fiber.tag) {
                         case ClassComponent:
-                          fiber.pendingProps = copyWithSet(instance.props, path5, value);
+                          fiber.pendingProps = copyWithSet(instance.props, path6, value);
                           instance.forceUpdate();
                           break;
                         default:
                           if (typeof overrideProps === "function") {
-                            overrideProps(fiber, path5, value);
+                            overrideProps(fiber, path6, value);
                           }
                           break;
                       }
@@ -41912,7 +41912,7 @@ var require_backend = __commonJS({
                     case "state":
                       switch (fiber.tag) {
                         case ClassComponent:
-                          utils_setInObject(instance.state, path5, value);
+                          utils_setInObject(instance.state, path6, value);
                           instance.forceUpdate();
                           break;
                       }
@@ -42198,14 +42198,14 @@ var require_backend = __commonJS({
               var trackedPathMatchInstance = null;
               var trackedPathMatchDepth = -1;
               var mightBeOnTrackedPath = false;
-              function setTrackedPath(path5) {
-                if (path5 === null) {
+              function setTrackedPath(path6) {
+                if (path6 === null) {
                   trackedPathMatchFiber = null;
                   trackedPathMatchInstance = null;
                   trackedPathMatchDepth = -1;
                   mightBeOnTrackedPath = false;
                 }
-                trackedPath = path5;
+                trackedPath = path6;
               }
               function updateTrackedPathStateBeforeMount(fiber, fiberInstance) {
                 if (trackedPath === null || !mightBeOnTrackedPath) {
@@ -42973,9 +42973,9 @@ var require_backend = __commonJS({
               }
               var currentlyInspectedElementID = null;
               var currentlyInspectedPaths = {};
-              function mergeInspectedPaths(path5) {
+              function mergeInspectedPaths(path6) {
                 var current = currentlyInspectedPaths;
-                path5.forEach(function(key) {
+                path6.forEach(function(key) {
                   if (!current[key]) {
                     current[key] = {};
                   }
@@ -42983,13 +42983,13 @@ var require_backend = __commonJS({
                 });
               }
               function createIsPathAllowed(key) {
-                return function isPathAllowed(path5) {
+                return function isPathAllowed(path6) {
                   var current = currentlyInspectedPaths[key];
                   if (!current) {
                     return false;
                   }
-                  for (var i = 0; i < path5.length; i++) {
-                    current = current[path5[i]];
+                  for (var i = 0; i < path6.length; i++) {
+                    current = current[path6[i]];
                     if (!current) {
                       return false;
                     }
@@ -43039,24 +43039,24 @@ var require_backend = __commonJS({
                     break;
                 }
               }
-              function storeAsGlobal(id, path5, count) {
+              function storeAsGlobal(id, path6, count) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  var value = utils_getInObject(inspectedElement, path5);
+                  var value = utils_getInObject(inspectedElement, path6);
                   var key = "$reactTemp".concat(count);
                   window[key] = value;
                   console.log(key);
                   console.log(value);
                 }
               }
-              function getSerializedElementValueByPath(id, path5) {
+              function getSerializedElementValueByPath(id, path6) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  var valueToCopy = utils_getInObject(inspectedElement, path5);
+                  var valueToCopy = utils_getInObject(inspectedElement, path6);
                   return serializeToString(valueToCopy);
                 }
               }
-              function inspectElement(requestID, id, path5, forceFullData) {
+              function inspectElement(requestID, id, path6, forceFullData) {
                 if (forceFullData || currentlyInspectedElementID !== id) {
                   currentlyInspectedElementID = id;
                   currentlyInspectedPaths = {};
@@ -43069,8 +43069,8 @@ var require_backend = __commonJS({
                     type: "not-found"
                   };
                 }
-                if (path5 !== null) {
-                  mergeInspectedPaths(path5);
+                if (path6 !== null) {
+                  mergeInspectedPaths(path6);
                 }
                 updateSelectedElement(id);
                 inspectedElement.context = cleanForBridge(inspectedElement.context, createIsPathAllowed("context"));
@@ -43273,10 +43273,10 @@ var require_backend = __commonJS({
                   console.groupEnd();
                 }
               }
-              function getElementAttributeByPath(id, path5) {
+              function getElementAttributeByPath(id, path6) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  return utils_getInObject(inspectedElement, path5);
+                  return utils_getInObject(inspectedElement, path6);
                 }
                 return void 0;
               }
@@ -43293,14 +43293,14 @@ var require_backend = __commonJS({
                 }
                 return element.type;
               }
-              function deletePath(type, id, hookID, path5) {
+              function deletePath(type, id, hookID, path6) {
                 var internalInstance = idToInternalInstanceMap.get(id);
                 if (internalInstance != null) {
                   var publicInstance = internalInstance._instance;
                   if (publicInstance != null) {
                     switch (type) {
                       case "context":
-                        deletePathInObject(publicInstance.context, path5);
+                        deletePathInObject(publicInstance.context, path6);
                         forceUpdate(publicInstance);
                         break;
                       case "hooks":
@@ -43308,12 +43308,12 @@ var require_backend = __commonJS({
                       case "props":
                         var element = internalInstance._currentElement;
                         internalInstance._currentElement = legacy_renderer_objectSpread(legacy_renderer_objectSpread({}, element), {}, {
-                          props: copyWithDelete(element.props, path5)
+                          props: copyWithDelete(element.props, path6)
                         });
                         forceUpdate(publicInstance);
                         break;
                       case "state":
-                        deletePathInObject(publicInstance.state, path5);
+                        deletePathInObject(publicInstance.state, path6);
                         forceUpdate(publicInstance);
                         break;
                     }
@@ -43347,14 +43347,14 @@ var require_backend = __commonJS({
                   }
                 }
               }
-              function overrideValueAtPath(type, id, hookID, path5, value) {
+              function overrideValueAtPath(type, id, hookID, path6, value) {
                 var internalInstance = idToInternalInstanceMap.get(id);
                 if (internalInstance != null) {
                   var publicInstance = internalInstance._instance;
                   if (publicInstance != null) {
                     switch (type) {
                       case "context":
-                        utils_setInObject(publicInstance.context, path5, value);
+                        utils_setInObject(publicInstance.context, path6, value);
                         forceUpdate(publicInstance);
                         break;
                       case "hooks":
@@ -43362,12 +43362,12 @@ var require_backend = __commonJS({
                       case "props":
                         var element = internalInstance._currentElement;
                         internalInstance._currentElement = legacy_renderer_objectSpread(legacy_renderer_objectSpread({}, element), {}, {
-                          props: copyWithSet(element.props, path5, value)
+                          props: copyWithSet(element.props, path6, value)
                         });
                         forceUpdate(publicInstance);
                         break;
                       case "state":
-                        utils_setInObject(publicInstance.state, path5, value);
+                        utils_setInObject(publicInstance.state, path6, value);
                         forceUpdate(publicInstance);
                         break;
                     }
@@ -43412,7 +43412,7 @@ var require_backend = __commonJS({
               }
               function setTraceUpdatesEnabled(enabled) {
               }
-              function setTrackedPath(path5) {
+              function setTrackedPath(path6) {
               }
               function getOwnersList(id) {
                 return null;
@@ -45085,17 +45085,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path5) {
-      const ctrl = callVisitor(key, node, visitor, path5);
+    function visit_(key, node, visitor, path6) {
+      const ctrl = callVisitor(key, node, visitor, path6);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visit_(key, ctrl, visitor, path5);
+        replaceNode(key, path6, ctrl);
+        return visit_(key, ctrl, visitor, path6);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path5 = Object.freeze(path5.concat(node));
+          path6 = Object.freeze(path6.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path5);
+            const ci = visit_(i, node.items[i], visitor, path6);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -45106,13 +45106,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path5 = Object.freeze(path5.concat(node));
-          const ck = visit_("key", node.key, visitor, path5);
+          path6 = Object.freeze(path6.concat(node));
+          const ck = visit_("key", node.key, visitor, path6);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path5);
+          const cv = visit_("value", node.value, visitor, path6);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -45133,17 +45133,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path5) {
-      const ctrl = await callVisitor(key, node, visitor, path5);
+    async function visitAsync_(key, node, visitor, path6) {
+      const ctrl = await callVisitor(key, node, visitor, path6);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path5, ctrl);
-        return visitAsync_(key, ctrl, visitor, path5);
+        replaceNode(key, path6, ctrl);
+        return visitAsync_(key, ctrl, visitor, path6);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path5 = Object.freeze(path5.concat(node));
+          path6 = Object.freeze(path6.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path5);
+            const ci = await visitAsync_(i, node.items[i], visitor, path6);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -45154,13 +45154,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path5 = Object.freeze(path5.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path5);
+          path6 = Object.freeze(path6.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path6);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path5);
+          const cv = await visitAsync_("value", node.value, visitor, path6);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -45187,23 +45187,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path5) {
+    function callVisitor(key, node, visitor, path6) {
       if (typeof visitor === "function")
-        return visitor(key, node, path5);
+        return visitor(key, node, path6);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path5);
+        return visitor.Map?.(key, node, path6);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path5);
+        return visitor.Seq?.(key, node, path6);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path5);
+        return visitor.Pair?.(key, node, path6);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path5);
+        return visitor.Scalar?.(key, node, path6);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path5);
+        return visitor.Alias?.(key, node, path6);
       return void 0;
     }
-    function replaceNode(key, path5, node) {
-      const parent = path5[path5.length - 1];
+    function replaceNode(key, path6, node) {
+      const parent = path6[path6.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -45813,10 +45813,10 @@ var require_Collection = __commonJS({
     var createNode2 = require_createNode();
     var identity = require_identity();
     var Node2 = require_Node();
-    function collectionFromPath(schema, path5, value) {
+    function collectionFromPath(schema, path6, value) {
       let v = value;
-      for (let i = path5.length - 1; i >= 0; --i) {
-        const k = path5[i];
+      for (let i = path6.length - 1; i >= 0; --i) {
+        const k = path6[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -45835,7 +45835,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path5) => path5 == null || typeof path5 === "object" && !!path5[Symbol.iterator]().next().done;
+    var isEmptyPath = (path6) => path6 == null || typeof path6 === "object" && !!path6[Symbol.iterator]().next().done;
     var Collection = class extends Node2.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -45865,11 +45865,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path5, value) {
-        if (isEmptyPath(path5))
+      addIn(path6, value) {
+        if (isEmptyPath(path6))
           this.add(value);
         else {
-          const [key, ...rest] = path5;
+          const [key, ...rest] = path6;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -45883,8 +45883,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        const [key, ...rest] = path5;
+      deleteIn(path6) {
+        const [key, ...rest] = path6;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -45898,8 +45898,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        const [key, ...rest] = path5;
+      getIn(path6, keepScalar) {
+        const [key, ...rest] = path6;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -45917,8 +45917,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path5) {
-        const [key, ...rest] = path5;
+      hasIn(path6) {
+        const [key, ...rest] = path6;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -45928,8 +45928,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        const [key, ...rest] = path5;
+      setIn(path6, value) {
+        const [key, ...rest] = path6;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -48444,9 +48444,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path5, value) {
+      addIn(path6, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path5, value);
+          this.contents.addIn(path6, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -48521,14 +48521,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path5) {
-        if (Collection.isEmptyPath(path5)) {
+      deleteIn(path6) {
+        if (Collection.isEmptyPath(path6)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path5) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path6) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -48543,10 +48543,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path5, keepScalar) {
-        if (Collection.isEmptyPath(path5))
+      getIn(path6, keepScalar) {
+        if (Collection.isEmptyPath(path6))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path5, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path6, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -48557,10 +48557,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path5) {
-        if (Collection.isEmptyPath(path5))
+      hasIn(path6) {
+        if (Collection.isEmptyPath(path6))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path5) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path6) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -48577,13 +48577,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path5, value) {
-        if (Collection.isEmptyPath(path5)) {
+      setIn(path6, value) {
+        if (Collection.isEmptyPath(path6)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path5), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path6), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path5, value);
+          this.contents.setIn(path6, value);
         }
       }
       /**
@@ -50543,9 +50543,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path5) => {
+    visit.itemAtPath = (cst, path6) => {
       let item = cst;
-      for (const [field, index] of path5) {
+      for (const [field, index] of path6) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -50554,23 +50554,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path5) => {
-      const parent = visit.itemAtPath(cst, path5.slice(0, -1));
-      const field = path5[path5.length - 1][0];
+    visit.parentCollection = (cst, path6) => {
+      const parent = visit.itemAtPath(cst, path6.slice(0, -1));
+      const field = path6[path6.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path5, item, visitor) {
-      let ctrl = visitor(item, path5);
+    function _visit(path6, item, visitor) {
+      let ctrl = visitor(item, path6);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path5.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path6.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -50581,10 +50581,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path5);
+            ctrl = ctrl(item, path6);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path5) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path6) : ctrl;
     }
     exports.visit = visit;
   }
@@ -55347,8 +55347,8 @@ var require_main = __commonJS({
     exports.createMessageConnection = exports.createServerSocketTransport = exports.createClientSocketTransport = exports.createServerPipeTransport = exports.createClientPipeTransport = exports.generateRandomPipeName = exports.StreamMessageWriter = exports.StreamMessageReader = exports.SocketMessageWriter = exports.SocketMessageReader = exports.PortMessageWriter = exports.PortMessageReader = exports.IPCMessageWriter = exports.IPCMessageReader = void 0;
     var ril_1 = require_ril();
     ril_1.default.install();
-    var path5 = __require("path");
-    var os4 = __require("os");
+    var path6 = __require("path");
+    var os5 = __require("os");
     var crypto_1 = __require("crypto");
     var net_1 = __require("net");
     var api_1 = require_api();
@@ -55483,9 +55483,9 @@ var require_main = __commonJS({
       }
       let result;
       if (XDG_RUNTIME_DIR) {
-        result = path5.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
+        result = path6.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
       } else {
-        result = path5.join(os4.tmpdir(), `vscode-${randomSuffix}.sock`);
+        result = path6.join(os5.tmpdir(), `vscode-${randomSuffix}.sock`);
       }
       const limit = safeIpcPathLengths.get(process.platform);
       if (limit !== void 0 && result.length > limit) {
@@ -56591,7 +56591,7 @@ var require_jsx_runtime = __commonJS({
 // src/cli.tsx
 var import_react35 = __toESM(require_react(), 1);
 import { constants as constants3, openSync } from "node:fs";
-import { readFile as readFile2, writeFile } from "node:fs/promises";
+import { readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
 import tty3 from "node:tty";
 
 // node_modules/ink/build/render.js
@@ -60441,8 +60441,8 @@ function cliTruncate(text4, columns, options = {}) {
 // node_modules/ink/build/wrap-text.js
 var cache2 = {};
 var wrapText = (text4, maxWidth, wrapType) => {
-  const cacheKey = text4 + String(maxWidth) + String(wrapType);
-  const cachedText = cache2[cacheKey];
+  const cacheKey2 = text4 + String(maxWidth) + String(wrapType);
+  const cachedText = cache2[cacheKey2];
   if (cachedText) {
     return cachedText;
   }
@@ -60470,7 +60470,7 @@ var wrapText = (text4, maxWidth, wrapType) => {
     }
     wrappedText = cliTruncate(text4, maxWidth, { position });
   }
-  cache2[cacheKey] = wrappedText;
+  cache2[cacheKey2] = wrappedText;
   return wrappedText;
 };
 var wrap_text_default = wrapText;
@@ -63680,8 +63680,8 @@ function Text({ color, backgroundColor, dimColor = false, bold = false, italic =
 }
 
 // node_modules/ink/build/components/ErrorOverview.js
-var cleanupPath = (path5) => {
-  return path5?.replace(`file://${cwd()}/`, "");
+var cleanupPath = (path6) => {
+  return path6?.replace(`file://${cwd()}/`, "");
 };
 var stackUtils = new import_stack_utils.default({
   cwd: cwd(),
@@ -66139,74 +66139,74 @@ import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 var ProfileGuideValidationError = class extends Error {
   path;
-  constructor(path5, message) {
-    super(`${path5}: ${message}`);
+  constructor(path6, message) {
+    super(`${path6}: ${message}`);
     this.name = "ProfileGuideValidationError";
-    this.path = path5;
+    this.path = path6;
   }
 };
 var identityPart = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 var skillIdentifier = /^[a-z0-9][a-z0-9._:/-]*$/u;
 var controls2 = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 var singleLineControls = /[\u0000-\u001f\u007f-\u009f]/u;
-var fail = (path5, message) => {
-  throw new ProfileGuideValidationError(path5, message);
+var fail = (path6, message) => {
+  throw new ProfileGuideValidationError(path6, message);
 };
-var record2 = (value, path5) => {
+var record2 = (value, path6) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail(path5, "must be an object");
+    return fail(path6, "must be an object");
   }
   return value;
 };
-var exactKeys = (value, path5, required, optional = []) => {
+var exactKeys = (value, path6, required, optional = []) => {
   const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
   const missing = required.filter((key) => !(key in value));
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
   if (missing.length > 0)
-    fail(path5, `missing required keys: ${missing.join(", ")}`);
+    fail(path6, `missing required keys: ${missing.join(", ")}`);
   if (unexpected.length > 0)
-    fail(path5, `contains unsupported keys: ${unexpected.join(", ")}`);
+    fail(path6, `contains unsupported keys: ${unexpected.join(", ")}`);
 };
-var text2 = (value, path5, maximum, options = {}) => {
+var text2 = (value, path6, maximum, options = {}) => {
   if (typeof value !== "string")
-    return fail(path5, "must be a string");
+    return fail(path6, "must be a string");
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ");
   if (normalized.length === 0)
-    return fail(path5, "must not be empty");
+    return fail(path6, "must not be empty");
   if (normalized.length > maximum)
-    return fail(path5, `must contain at most ${maximum} characters`);
+    return fail(path6, `must contain at most ${maximum} characters`);
   if ((options.multiline ? controls2 : singleLineControls).test(normalized)) {
-    return fail(path5, "must not contain control characters");
+    return fail(path6, "must not contain control characters");
   }
   return normalized;
 };
-var identifier = (value, path5) => {
-  const result = text2(value, path5, 128);
+var identifier = (value, path6) => {
+  const result = text2(value, path6, 128);
   if (!identityPart.test(result))
-    return fail(path5, "must be a lowercase kebab-case identifier");
+    return fail(path6, "must be a lowercase kebab-case identifier");
   return result;
 };
-var stringArray2 = (value, path5, options = {}) => {
+var stringArray2 = (value, path6, options = {}) => {
   if (!Array.isArray(value))
-    return fail(path5, "must be an array");
+    return fail(path6, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximumItems = options.maximumItems ?? 64;
   if (value.length < minimum)
-    return fail(path5, `must contain at least ${minimum} entries`);
+    return fail(path6, `must contain at least ${minimum} entries`);
   if (value.length > maximumItems)
-    return fail(path5, `must contain at most ${maximumItems} entries`);
-  const result = value.map((item, index) => options.identifiers ? identifier(item, `${path5}[${index}]`) : text2(item, `${path5}[${index}]`, options.itemMaximum ?? 1e3));
+    return fail(path6, `must contain at most ${maximumItems} entries`);
+  const result = value.map((item, index) => options.identifiers ? identifier(item, `${path6}[${index}]`) : text2(item, `${path6}[${index}]`, options.itemMaximum ?? 1e3));
   if (new Set(result).size !== result.length)
-    return fail(path5, "must contain unique entries");
+    return fail(path6, "must contain unique entries");
   return result;
 };
-var prerequisites = (value, path5) => {
+var prerequisites = (value, path6) => {
   if (!Array.isArray(value))
-    return fail(path5, "must be an array");
+    return fail(path6, "must be an array");
   if (value.length > 32)
-    return fail(path5, "must contain at most 32 entries");
+    return fail(path6, "must contain at most 32 entries");
   const result = value.map((item, index) => {
-    const itemPath = `${path5}[${index}]`;
+    const itemPath = `${path6}[${index}]`;
     const fields = record2(item, itemPath);
     exactKeys(fields, itemPath, ["id", "description"]);
     return {
@@ -66215,19 +66215,19 @@ var prerequisites = (value, path5) => {
     };
   });
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
-    return fail(path5, "must contain unique prerequisite IDs");
+    return fail(path6, "must contain unique prerequisite IDs");
   }
   return result;
 };
-var workflows = (value, path5) => {
+var workflows = (value, path6) => {
   if (!Array.isArray(value))
-    return fail(path5, "must be an array");
+    return fail(path6, "must be an array");
   if (value.length === 0)
-    return fail(path5, "must contain at least one workflow");
+    return fail(path6, "must contain at least one workflow");
   if (value.length > 32)
-    return fail(path5, "must contain at most 32 workflows");
+    return fail(path6, "must contain at most 32 workflows");
   const result = value.map((item, index) => {
-    const itemPath = `${path5}[${index}]`;
+    const itemPath = `${path6}[${index}]`;
     const fields = record2(item, itemPath);
     exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill"]);
     const skill = fields.skill === void 0 ? void 0 : text2(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en");
@@ -66258,26 +66258,26 @@ var workflows = (value, path5) => {
     };
   });
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
-    return fail(path5, "must contain unique workflow IDs");
+    return fail(path6, "must contain unique workflow IDs");
   }
   const exampleCount = result.reduce((count, workflow) => count + workflow.examples.length, 0);
   if (exampleCount < 3)
-    return fail(path5, "must contain at least three example intents in total");
+    return fail(path6, "must contain at least three example intents in total");
   return result;
 };
-var parseFrontmatter = (path5, source) => {
+var parseFrontmatter = (path6, source) => {
   if (source.length > 128e3)
-    fail(path5, "must contain at most 128000 characters");
+    fail(path6, "must contain at most 128000 characters");
   const normalized = source.replace(/\r\n?/gu, "\n");
   if (!normalized.startsWith("---\n"))
-    fail(path5, "must start with YAML frontmatter");
+    fail(path6, "must start with YAML frontmatter");
   const closing = normalized.indexOf("\n---\n", 4);
   if (closing === -1)
-    fail(path5, "must close YAML frontmatter with ---");
+    fail(path6, "must close YAML frontmatter with ---");
   const frontmatter = normalized.slice(4, closing);
   const body = normalized.slice(closing + 5).trim();
   if (body.length === 0)
-    fail(path5, "must contain a Markdown body");
+    fail(path6, "must contain a Markdown body");
   try {
     return {
       value: (0, import_yaml.parse)(frontmatter, { merge: false, uniqueKeys: true }),
@@ -66285,13 +66285,13 @@ var parseFrontmatter = (path5, source) => {
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return fail(path5, `contains invalid YAML: ${message}`);
+    return fail(path6, `contains invalid YAML: ${message}`);
   }
 };
-var parseProfileGuide = (path5, source) => {
-  const parsed = parseFrontmatter(path5, source);
-  const fields = record2(parsed.value, `${path5} frontmatter`);
-  exactKeys(fields, `${path5} frontmatter`, [
+var parseProfileGuide = (path6, source) => {
+  const parsed = parseFrontmatter(path6, source);
+  const fields = record2(parsed.value, `${path6} frontmatter`);
+  exactKeys(fields, `${path6} frontmatter`, [
     "schemaVersion",
     "capabilities",
     "bestFor",
@@ -66300,27 +66300,27 @@ var parseProfileGuide = (path5, source) => {
     "workflows"
   ]);
   if (fields.schemaVersion !== 1)
-    fail(`${path5} frontmatter.schemaVersion`, "must equal 1");
+    fail(`${path6} frontmatter.schemaVersion`, "must equal 1");
   return {
     guide: {
       schemaVersion: 1,
-      capabilities: stringArray2(fields.capabilities, `${path5} frontmatter.capabilities`, {
+      capabilities: stringArray2(fields.capabilities, `${path6} frontmatter.capabilities`, {
         minimum: 1,
         maximumItems: 64,
         identifiers: true
       }),
-      bestFor: stringArray2(fields.bestFor, `${path5} frontmatter.bestFor`, {
+      bestFor: stringArray2(fields.bestFor, `${path6} frontmatter.bestFor`, {
         minimum: 1,
         maximumItems: 32,
         itemMaximum: 2e3
       }),
-      avoidFor: stringArray2(fields.avoidFor, `${path5} frontmatter.avoidFor`, {
+      avoidFor: stringArray2(fields.avoidFor, `${path6} frontmatter.avoidFor`, {
         minimum: 1,
         maximumItems: 32,
         itemMaximum: 2e3
       }),
-      prerequisites: prerequisites(fields.prerequisites, `${path5} frontmatter.prerequisites`),
-      workflows: workflows(fields.workflows, `${path5} frontmatter.workflows`)
+      prerequisites: prerequisites(fields.prerequisites, `${path6} frontmatter.prerequisites`),
+      workflows: workflows(fields.workflows, `${path6} frontmatter.workflows`)
     },
     body: parsed.body
   };
@@ -66459,155 +66459,155 @@ var singleLineControls2 = /[\u0000-\u001f\u007f-\u009f]/u;
 var portableIdentifierPattern = /^[a-z0-9][a-z0-9._:/-]*$/u;
 var GuideValidationError = class extends Error {
   path;
-  constructor(path5, message) {
-    super(`${path5}: ${message}`);
+  constructor(path6, message) {
+    super(`${path6}: ${message}`);
     this.name = "GuideValidationError";
-    this.path = path5;
+    this.path = path6;
   }
 };
-var fail2 = (path5, message) => {
-  throw new GuideValidationError(path5, message);
+var fail2 = (path6, message) => {
+  throw new GuideValidationError(path6, message);
 };
-var record4 = (value, path5) => {
+var record4 = (value, path6) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail2(path5, "must be an object");
+    return fail2(path6, "must be an object");
   }
   return value;
 };
-var exactKeys2 = (value, path5, required, optional = []) => {
+var exactKeys2 = (value, path6, required, optional = []) => {
   const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
   const missing = required.filter((key) => !(key in value));
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
-  if (missing.length > 0) fail2(path5, `missing required keys: ${missing.join(", ")}`);
-  if (unexpected.length > 0) fail2(path5, `contains unsupported keys: ${unexpected.join(", ")}`);
+  if (missing.length > 0) fail2(path6, `missing required keys: ${missing.join(", ")}`);
+  if (unexpected.length > 0) fail2(path6, `contains unsupported keys: ${unexpected.join(", ")}`);
 };
-var text3 = (value, path5, maximum, options = {}) => {
-  if (typeof value !== "string") return fail2(path5, "must be a string");
+var text3 = (value, path6, maximum, options = {}) => {
+  if (typeof value !== "string") return fail2(path6, "must be a string");
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ");
-  if (normalized.length === 0) return fail2(path5, "must not be empty");
-  if (normalized.length > maximum) return fail2(path5, `must contain at most ${maximum} characters`);
+  if (normalized.length === 0) return fail2(path6, "must not be empty");
+  if (normalized.length > maximum) return fail2(path6, `must contain at most ${maximum} characters`);
   if ((options.multiline ? multilineControls : singleLineControls2).test(normalized)) {
-    return fail2(path5, "must not contain control characters");
+    return fail2(path6, "must not contain control characters");
   }
   return normalized;
 };
-var boolean = (value, path5) => {
-  if (typeof value !== "boolean") return fail2(path5, "must be a boolean");
+var boolean = (value, path6) => {
+  if (typeof value !== "boolean") return fail2(path6, "must be a boolean");
   return value;
 };
-var literal = (value, path5, allowed) => {
+var literal = (value, path6, allowed) => {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    return fail2(path5, `must be one of: ${allowed.join(", ")}`);
+    return fail2(path6, `must be one of: ${allowed.join(", ")}`);
   }
   return value;
 };
-var boundedNumber = (value, path5, minimum, maximum) => {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fail2(path5, "must be a finite number");
-  if (value < minimum || value > maximum) return fail2(path5, `must be between ${minimum} and ${maximum}`);
+var boundedNumber = (value, path6, minimum, maximum) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fail2(path6, "must be a finite number");
+  if (value < minimum || value > maximum) return fail2(path6, `must be between ${minimum} and ${maximum}`);
   return value;
 };
-var stringArray3 = (value, path5, options = {}) => {
-  if (!Array.isArray(value)) return fail2(path5, "must be an array");
+var stringArray3 = (value, path6, options = {}) => {
+  if (!Array.isArray(value)) return fail2(path6, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximumItems = options.maximumItems ?? 256;
-  if (value.length < minimum) return fail2(path5, `must contain at least ${minimum} entries`);
-  if (value.length > maximumItems) return fail2(path5, `must contain at most ${maximumItems} entries`);
-  return value.map((item, index) => text3(item, `${path5}[${index}]`, options.itemMaximum ?? 2e3));
+  if (value.length < minimum) return fail2(path6, `must contain at least ${minimum} entries`);
+  if (value.length > maximumItems) return fail2(path6, `must contain at most ${maximumItems} entries`);
+  return value.map((item, index) => text3(item, `${path6}[${index}]`, options.itemMaximum ?? 2e3));
 };
-var uniqueArray = (values, path5, label) => {
-  if (new Set(values).size !== values.length) fail2(path5, `must contain unique ${label}`);
+var uniqueArray = (values, path6, label) => {
+  if (new Set(values).size !== values.length) fail2(path6, `must contain unique ${label}`);
   return values;
 };
-var array = (value, path5, options = {}) => {
-  if (!Array.isArray(value)) return fail2(path5, "must be an array");
+var array = (value, path6, options = {}) => {
+  if (!Array.isArray(value)) return fail2(path6, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximum = options.maximum ?? 256;
-  if (value.length < minimum) return fail2(path5, `must contain at least ${minimum} entries`);
-  if (value.length > maximum) return fail2(path5, `must contain at most ${maximum} entries`);
+  if (value.length < minimum) return fail2(path6, `must contain at least ${minimum} entries`);
+  if (value.length > maximum) return fail2(path6, `must contain at most ${maximum} entries`);
   return value;
 };
 
 // src/guide-catalog.ts
 var identifierPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-var identifier3 = (value, path5) => {
-  const result = text3(value, path5, 128);
-  if (!identifierPattern.test(result)) fail2(path5, "must be a lowercase kebab-case identifier");
+var identifier3 = (value, path6) => {
+  const result = text3(value, path6, 128);
+  if (!identifierPattern.test(result)) fail2(path6, "must be a lowercase kebab-case identifier");
   return result;
 };
-var identifierArray = (value, path5, options) => {
-  const items = array(value, path5, {
+var identifierArray = (value, path6, options) => {
+  const items = array(value, path6, {
     ...options.minimum === void 0 ? {} : { minimum: options.minimum },
     maximum: options.maximumItems ?? 64
-  }).map((item, index) => identifier3(item, `${path5}[${index}]`));
-  return uniqueArray(items, path5, "entries");
+  }).map((item, index) => identifier3(item, `${path6}[${index}]`));
+  return uniqueArray(items, path6, "entries");
 };
-var nullableText = (value, path5, maximum) => {
+var nullableText = (value, path6, maximum) => {
   if (value === null) return null;
-  return text3(value, path5, maximum);
+  return text3(value, path6, maximum);
 };
 var absolutePath = (value, fieldPath, maximum) => {
   const result = text3(value, fieldPath, maximum);
   if (!nodePath.isAbsolute(result)) fail2(fieldPath, "must be an absolute path");
   return result;
 };
-var validatePrerequisite = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, ["id", "description"]);
+var validatePrerequisite = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, ["id", "description"]);
   return {
-    id: identifier3(fields.id, `${path5}.id`),
-    description: text3(fields.description, `${path5}.description`, 1e3)
+    id: identifier3(fields.id, `${path6}.id`),
+    description: text3(fields.description, `${path6}.description`, 1e3)
   };
 };
 var placeholderPattern = /\{\{([^{}]+)\}\}/gu;
-var validateWorkflow = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, ["id", "description", "examples", "promptTemplate"], ["skill"]);
-  const skill = fields.skill === void 0 ? void 0 : text3(fields.skill, `${path5}.skill`, 256).toLocaleLowerCase("en");
+var validateWorkflow = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, ["id", "description", "examples", "promptTemplate"], ["skill"]);
+  const skill = fields.skill === void 0 ? void 0 : text3(fields.skill, `${path6}.skill`, 256).toLocaleLowerCase("en");
   if (skill !== void 0 && !portableIdentifierPattern.test(skill)) {
-    fail2(`${path5}.skill`, "must be a portable skill or command identifier");
+    fail2(`${path6}.skill`, "must be a portable skill or command identifier");
   }
-  const promptTemplate = text3(fields.promptTemplate, `${path5}.promptTemplate`, 16e3, { multiline: true });
+  const promptTemplate = text3(fields.promptTemplate, `${path6}.promptTemplate`, 16e3, { multiline: true });
   if (!promptTemplate.includes("{{intent}}")) {
-    fail2(`${path5}.promptTemplate`, "must contain the {{intent}} placeholder");
+    fail2(`${path6}.promptTemplate`, "must contain the {{intent}} placeholder");
   }
   for (const match of promptTemplate.matchAll(placeholderPattern)) {
     if (match[1] !== "intent") {
-      fail2(`${path5}.promptTemplate`, `contains unsupported placeholder: {{${match[1]}}}`);
+      fail2(`${path6}.promptTemplate`, `contains unsupported placeholder: {{${match[1]}}}`);
     }
   }
   return {
-    id: identifier3(fields.id, `${path5}.id`),
-    description: text3(fields.description, `${path5}.description`, 2e3),
+    id: identifier3(fields.id, `${path6}.id`),
+    description: text3(fields.description, `${path6}.description`, 2e3),
     ...skill === void 0 ? {} : { skill },
-    examples: stringArray3(fields.examples, `${path5}.examples`, { minimum: 1, maximumItems: 32, itemMaximum: 2e3 }),
+    examples: stringArray3(fields.examples, `${path6}.examples`, { minimum: 1, maximumItems: 32, itemMaximum: 2e3 }),
     promptTemplate
   };
 };
-var validateProfileGuideV1 = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"]);
-  if (fields.schemaVersion !== 1) fail2(`${path5}.schemaVersion`, "must equal 1");
-  const prerequisites2 = array(fields.prerequisites, `${path5}.prerequisites`, { maximum: 32 }).map(
-    (item, index) => validatePrerequisite(item, `${path5}.prerequisites[${index}]`)
+var validateProfileGuideV1 = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"]);
+  if (fields.schemaVersion !== 1) fail2(`${path6}.schemaVersion`, "must equal 1");
+  const prerequisites2 = array(fields.prerequisites, `${path6}.prerequisites`, { maximum: 32 }).map(
+    (item, index) => validatePrerequisite(item, `${path6}.prerequisites[${index}]`)
   );
   uniqueArray(
     prerequisites2.map(({ id }) => id),
-    `${path5}.prerequisites`,
+    `${path6}.prerequisites`,
     "prerequisite IDs"
   );
-  const workflows2 = array(fields.workflows, `${path5}.workflows`, { minimum: 1, maximum: 32 }).map(
-    (item, index) => validateWorkflow(item, `${path5}.workflows[${index}]`)
+  const workflows2 = array(fields.workflows, `${path6}.workflows`, { minimum: 1, maximum: 32 }).map(
+    (item, index) => validateWorkflow(item, `${path6}.workflows[${index}]`)
   );
   uniqueArray(
     workflows2.map(({ id }) => id),
-    `${path5}.workflows`,
+    `${path6}.workflows`,
     "workflow IDs"
   );
   return {
     schemaVersion: 1,
-    capabilities: identifierArray(fields.capabilities, `${path5}.capabilities`, { minimum: 1, maximumItems: 64 }),
-    bestFor: stringArray3(fields.bestFor, `${path5}.bestFor`, { minimum: 1, maximumItems: 32, itemMaximum: 2e3 }),
-    avoidFor: stringArray3(fields.avoidFor, `${path5}.avoidFor`, { minimum: 1, maximumItems: 32, itemMaximum: 2e3 }),
+    capabilities: identifierArray(fields.capabilities, `${path6}.capabilities`, { minimum: 1, maximumItems: 64 }),
+    bestFor: stringArray3(fields.bestFor, `${path6}.bestFor`, { minimum: 1, maximumItems: 32, itemMaximum: 2e3 }),
+    avoidFor: stringArray3(fields.avoidFor, `${path6}.avoidFor`, { minimum: 1, maximumItems: 32, itemMaximum: 2e3 }),
     prerequisites: prerequisites2,
     workflows: workflows2
   };
@@ -66629,47 +66629,47 @@ var headlessKeys = [
   "trellageEventContract",
   "usage"
 ];
-var validateHeadlessCapabilitiesV1 = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, headlessKeys);
-  if (fields.schemaVersion !== 1) fail2(`${path5}.schemaVersion`, "must equal 1");
+var validateHeadlessCapabilitiesV1 = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, headlessKeys);
+  if (fields.schemaVersion !== 1) fail2(`${path6}.schemaVersion`, "must equal 1");
   const outputFormats = uniqueArray(
-    array(fields.outputFormats, `${path5}.outputFormats`, { maximum: 3 }).map(
-      (item, index) => literal(item, `${path5}.outputFormats[${index}]`, ["text", "json", "jsonl"])
+    array(fields.outputFormats, `${path6}.outputFormats`, { maximum: 3 }).map(
+      (item, index) => literal(item, `${path6}.outputFormats[${index}]`, ["text", "json", "jsonl"])
     ),
-    `${path5}.outputFormats`,
+    `${path6}.outputFormats`,
     "output formats"
   );
   return {
     schemaVersion: 1,
-    prompt: boolean(fields.prompt, `${path5}.prompt`),
+    prompt: boolean(fields.prompt, `${path6}.prompt`),
     outputFormats,
-    eventContract: nullableText(fields.eventContract, `${path5}.eventContract`, 256),
-    trellageEventContract: fields.trellageEventContract === null ? null : literal(fields.trellageEventContract, `${path5}.trellageEventContract`, ["trellage-headless-v1"]),
-    sessionId: literal(fields.sessionId, `${path5}.sessionId`, ["native", "trellage", "none"]),
-    resume: boolean(fields.resume, `${path5}.resume`),
-    resumeWithPrompt: boolean(fields.resumeWithPrompt, `${path5}.resumeWithPrompt`),
-    questionToolControl: literal(fields.questionToolControl, `${path5}.questionToolControl`, [
+    eventContract: nullableText(fields.eventContract, `${path6}.eventContract`, 256),
+    trellageEventContract: fields.trellageEventContract === null ? null : literal(fields.trellageEventContract, `${path6}.trellageEventContract`, ["trellage-headless-v1"]),
+    sessionId: literal(fields.sessionId, `${path6}.sessionId`, ["native", "trellage", "none"]),
+    resume: boolean(fields.resume, `${path6}.resume`),
+    resumeWithPrompt: boolean(fields.resumeWithPrompt, `${path6}.resumeWithPrompt`),
+    questionToolControl: literal(fields.questionToolControl, `${path6}.questionToolControl`, [
       "hard-deny",
       "prompt-only",
       "none"
     ]),
-    changedFiles: literal(fields.changedFiles, `${path5}.changedFiles`, ["native", "git-diff", "none"]),
-    usage: boolean(fields.usage, `${path5}.usage`),
-    cost: boolean(fields.cost, `${path5}.cost`),
-    modelOverride: boolean(fields.modelOverride, `${path5}.modelOverride`),
-    effortOverride: boolean(fields.effortOverride, `${path5}.effortOverride`),
-    testedHarnessVersion: nullableText(fields.testedHarnessVersion, `${path5}.testedHarnessVersion`, 128)
+    changedFiles: literal(fields.changedFiles, `${path6}.changedFiles`, ["native", "git-diff", "none"]),
+    usage: boolean(fields.usage, `${path6}.usage`),
+    cost: boolean(fields.cost, `${path6}.cost`),
+    modelOverride: boolean(fields.modelOverride, `${path6}.modelOverride`),
+    effortOverride: boolean(fields.effortOverride, `${path6}.effortOverride`),
+    testedHarnessVersion: nullableText(fields.testedHarnessVersion, `${path6}.testedHarnessVersion`, 128)
   };
 };
-var validateHerdrCompatibility = (value, path5) => {
-  const fields = record4(value, path5);
-  text3(fields.status, `${path5}.status`, 64);
+var validateHerdrCompatibility = (value, path6) => {
+  const fields = record4(value, path6);
+  text3(fields.status, `${path6}.status`, 64);
   return fields;
 };
-var validateNativeEntry = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, [
+var validateNativeEntry = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, [
     "launcher",
     "harness",
     "name",
@@ -66681,20 +66681,20 @@ var validateNativeEntry = (value, path5) => {
     "commandPath"
   ]);
   return {
-    launcher: identifier3(fields.launcher, `${path5}.launcher`),
-    harness: identifier3(fields.harness, `${path5}.harness`),
-    name: identifier3(fields.name, `${path5}.name`),
-    description: text3(fields.description, `${path5}.description`, 2e3),
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path5}.headless`),
-    sandbox: boolean(fields.sandbox, `${path5}.sandbox`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path5}.herdrCompatibility`),
-    guide: validateProfileGuideV1(fields.guide, `${path5}.guide`),
-    commandPath: absolutePath(fields.commandPath, `${path5}.commandPath`, 4096)
+    launcher: identifier3(fields.launcher, `${path6}.launcher`),
+    harness: identifier3(fields.harness, `${path6}.harness`),
+    name: identifier3(fields.name, `${path6}.name`),
+    description: text3(fields.description, `${path6}.description`, 2e3),
+    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path6}.headless`),
+    sandbox: boolean(fields.sandbox, `${path6}.sandbox`),
+    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path6}.herdrCompatibility`),
+    guide: validateProfileGuideV1(fields.guide, `${path6}.guide`),
+    commandPath: absolutePath(fields.commandPath, `${path6}.commandPath`, 4096)
   };
 };
-var validateSandboxEntry = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, [
+var validateSandboxEntry = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, [
     "name",
     "description",
     "guide",
@@ -66712,40 +66712,40 @@ var validateSandboxEntry = (value, path5) => {
     "locked",
     "herdrCompatibility"
   ]);
-  if (fields.sandbox !== true) fail2(`${path5}.sandbox`, "must equal true");
-  const harness = record4(fields.harness, `${path5}.harness`);
-  exactKeys2(harness, `${path5}.harness`, ["kind", "version"], ["model"]);
+  if (fields.sandbox !== true) fail2(`${path6}.sandbox`, "must equal true");
+  const harness = record4(fields.harness, `${path6}.harness`);
+  exactKeys2(harness, `${path6}.harness`, ["kind", "version"], ["model"]);
   return {
-    name: identifier3(fields.name, `${path5}.name`),
-    description: text3(fields.description, `${path5}.description`, 2e3),
-    guide: validateProfileGuideV1(fields.guide, `${path5}.guide`),
-    path: absolutePath(fields.path, `${path5}.path`, 4096),
-    supportedPlatforms: stringArray3(fields.supportedPlatforms, `${path5}.supportedPlatforms`, {
+    name: identifier3(fields.name, `${path6}.name`),
+    description: text3(fields.description, `${path6}.description`, 2e3),
+    guide: validateProfileGuideV1(fields.guide, `${path6}.guide`),
+    path: absolutePath(fields.path, `${path6}.path`, 4096),
+    supportedPlatforms: stringArray3(fields.supportedPlatforms, `${path6}.supportedPlatforms`, {
       minimum: 1,
       maximumItems: 16,
       itemMaximum: 64
     }),
     harness: {
-      kind: identifier3(harness.kind, `${path5}.harness.kind`),
-      version: text3(harness.version, `${path5}.harness.version`, 128),
-      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path5}.harness.model`, 128) }
+      kind: identifier3(harness.kind, `${path6}.harness.kind`),
+      version: text3(harness.version, `${path6}.harness.version`, 128),
+      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path6}.harness.model`, 128) }
     },
-    skillBundles: stringArray3(fields.skillBundles, `${path5}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
-    skillsMode: literal(fields.skillsMode, `${path5}.skillsMode`, ["floating", "locked"]),
-    finalDigestLocked: boolean(fields.finalDigestLocked, `${path5}.finalDigestLocked`),
-    skills: array(fields.skills, `${path5}.skills`, { maximum: 256 }).map(
-      (item, index) => record4(item, `${path5}.skills[${index}]`)
+    skillBundles: stringArray3(fields.skillBundles, `${path6}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
+    skillsMode: literal(fields.skillsMode, `${path6}.skillsMode`, ["floating", "locked"]),
+    finalDigestLocked: boolean(fields.finalDigestLocked, `${path6}.finalDigestLocked`),
+    skills: array(fields.skills, `${path6}.skills`, { maximum: 256 }).map(
+      (item, index) => record4(item, `${path6}.skills[${index}]`)
     ),
-    plugins: array(fields.plugins, `${path5}.plugins`, { maximum: 64 }).map(
-      (item, index) => record4(item, `${path5}.plugins[${index}]`)
+    plugins: array(fields.plugins, `${path6}.plugins`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path6}.plugins[${index}]`)
     ),
-    mcps: array(fields.mcps, `${path5}.mcps`, { maximum: 64 }).map(
-      (item, index) => record4(item, `${path5}.mcps[${index}]`)
+    mcps: array(fields.mcps, `${path6}.mcps`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path6}.mcps[${index}]`)
     ),
     sandbox: true,
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path5}.headless`),
-    locked: boolean(fields.locked, `${path5}.locked`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path5}.herdrCompatibility`)
+    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path6}.headless`),
+    locked: boolean(fields.locked, `${path6}.locked`),
+    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path6}.herdrCompatibility`)
   };
 };
 var parseGuideCatalog = (source) => {
@@ -67730,16 +67730,16 @@ var guideEffortFromLiteral = (raw) => {
       return "max" /* Max */;
   }
 };
-var parseGuideEffort = (value, path5) => guideEffortFromLiteral(literal(value, path5, guideEffortLiterals));
+var parseGuideEffort = (value, path6) => guideEffortFromLiteral(literal(value, path6, guideEffortLiterals));
 var intentMaximumLength = 4e3;
 var profileRefMaximumLength = 256;
 var modelIdentifierMaximumLength = 128;
 var modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u;
-var validateIntent = (value, path5) => text3(value, path5, intentMaximumLength);
-var validateProfileRef = (value, path5) => text3(value, path5, profileRefMaximumLength);
-var validateModelId = (value, path5) => {
-  const trimmed = text3(value, path5, modelIdentifierMaximumLength);
-  if (!modelIdentifierPattern.test(trimmed)) fail2(path5, "must be a safe lowercase model identifier");
+var validateIntent = (value, path6) => text3(value, path6, intentMaximumLength);
+var validateProfileRef = (value, path6) => text3(value, path6, profileRefMaximumLength);
+var validateModelId = (value, path6) => {
+  const trimmed = text3(value, path6, modelIdentifierMaximumLength);
+  if (!modelIdentifierPattern.test(trimmed)) fail2(path6, "must be a safe lowercase model identifier");
   return trimmed;
 };
 var tokenize2 = (value) => new Set(
@@ -67977,6 +67977,31 @@ var selectedProfileFromCatalogRef = (catalog, ref) => {
     headlessPrompt: entry.headless.prompt
   });
 };
+var escapeRegularExpression = (value) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+var flexibleWhitespacePattern = (value) => value.split(/(\s+)/u).map((part) => /\s+/u.test(part) ? "\\s+" : escapeRegularExpression(part)).join("");
+var isCompleteWorkflowPrompt = (template, prompt) => {
+  const pattern = template.trim().split("{{intent}}").map(flexibleWhitespacePattern).join("[\\s\\S]+");
+  return new RegExp(`^${pattern}$`, "u").test(prompt.trim());
+};
+var removePartialTemplateBoundary = (template, prompt) => {
+  const [prefix = "", ...remainingSegments] = template.trim().split("{{intent}}");
+  const suffix = remainingSegments.at(-1) ?? "";
+  let body = prompt.trim();
+  if (prefix.length > 0) body = body.replace(new RegExp(`^${flexibleWhitespacePattern(prefix)}`, "u"), "").trimStart();
+  if (suffix.length > 0) body = body.replace(new RegExp(`${flexibleWhitespacePattern(suffix)}$`, "u"), "").trimEnd();
+  return body;
+};
+var applyWorkflowPromptTemplate = (guide, workflowId, candidate) => {
+  const workflow = guide.workflows.find(({ id }) => id === workflowId);
+  if (workflow === void 0) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`);
+  if (workflow.skill === void 0) return candidate;
+  if (isCompleteWorkflowPrompt(workflow.promptTemplate, candidate.prompt)) return candidate;
+  const promptBody = removePartialTemplateBoundary(workflow.promptTemplate, candidate.prompt);
+  return {
+    ...candidate,
+    prompt: workflow.promptTemplate.replaceAll("{{intent}}", promptBody)
+  };
+};
 var runGuideGenerate = async (provider, catalog, guideRoot, request) => {
   const entry = findFullCatalogEntry(catalog, request.profileRef);
   if (entry === void 0) throw new GuideServiceError(`Unknown profile reference: ${request.profileRef}`);
@@ -68008,14 +68033,15 @@ var runGuideGenerate = async (provider, catalog, guideRoot, request) => {
     herdrCompatibility: entry.herdrCompatibility
   };
   const candidates = assertTriple(
-    generated.candidates.map(
-      (candidate) => ({
-        title: candidate.title,
-        prompt: candidate.prompt,
-        notes: candidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt)
-      })
-    ),
+    generated.candidates.map((candidate) => {
+      const invokedCandidate = applyWorkflowPromptTemplate(loaded.guide, workflowId, candidate);
+      return {
+        title: invokedCandidate.title,
+        prompt: invokedCandidate.prompt,
+        notes: invokedCandidate.notes,
+        command: publicGuideLaunchCommand(catalog, request.profileRef, invokedCandidate.prompt)
+      };
+    }),
     "generation prompt candidates"
   );
   return {
@@ -70648,40 +70674,40 @@ function normalizeSqliteParams(params) {
 }
 function createSessionFsAdapter(provider) {
   return {
-    readFile: async ({ path: path5 }) => {
+    readFile: async ({ path: path6 }) => {
       try {
-        const content = await provider.readFile(path5);
+        const content = await provider.readFile(path6);
         return { content };
       } catch (err) {
         return { content: "", error: toSessionFsError(err) };
       }
     },
-    writeFile: async ({ path: path5, content, mode }) => {
+    writeFile: async ({ path: path6, content, mode }) => {
       try {
-        await provider.writeFile(path5, content, mode);
+        await provider.writeFile(path6, content, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    appendFile: async ({ path: path5, content, mode }) => {
+    appendFile: async ({ path: path6, content, mode }) => {
       try {
-        await provider.appendFile(path5, content, mode);
+        await provider.appendFile(path6, content, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    exists: async ({ path: path5 }) => {
+    exists: async ({ path: path6 }) => {
       try {
-        return { exists: await provider.exists(path5) };
+        return { exists: await provider.exists(path6) };
       } catch {
         return { exists: false };
       }
     },
-    stat: async ({ path: path5 }) => {
+    stat: async ({ path: path6 }) => {
       try {
-        return await provider.stat(path5);
+        return await provider.stat(path6);
       } catch (err) {
         return {
           isFile: false,
@@ -70693,33 +70719,33 @@ function createSessionFsAdapter(provider) {
         };
       }
     },
-    mkdir: async ({ path: path5, recursive, mode }) => {
+    mkdir: async ({ path: path6, recursive, mode }) => {
       try {
-        await provider.mkdir(path5, recursive ?? false, mode);
+        await provider.mkdir(path6, recursive ?? false, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    readdir: async ({ path: path5 }) => {
+    readdir: async ({ path: path6 }) => {
       try {
-        const entries = await provider.readdir(path5);
+        const entries = await provider.readdir(path6);
         return { entries };
       } catch (err) {
         return { entries: [], error: toSessionFsError(err) };
       }
     },
-    readdirWithTypes: async ({ path: path5 }) => {
+    readdirWithTypes: async ({ path: path6 }) => {
       try {
-        const entries = await provider.readdirWithTypes(path5);
+        const entries = await provider.readdirWithTypes(path6);
         return { entries };
       } catch (err) {
         return { entries: [], error: toSessionFsError(err) };
       }
     },
-    rm: async ({ path: path5, recursive, force }) => {
+    rm: async ({ path: path6, recursive, force }) => {
       try {
-        await provider.rm(path5, recursive ?? false, force ?? false);
+        await provider.rm(path6, recursive ?? false, force ?? false);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
@@ -73032,16 +73058,16 @@ function toCanvasRpcError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return new import_node.ResponseError(import_node.ErrorCodes.InternalError, message, { code, message });
 }
-function strictJsonValidationError(context, category, message, path5) {
+function strictJsonValidationError(context, category, message, path6) {
   return new import_node.ResponseError(import_node.ErrorCodes.InternalError, message, {
     code: context.code,
     category,
-    path: path5
+    path: path6
   });
 }
 function assertStrictJson(value, context) {
   const ancestors = /* @__PURE__ */ new Set();
-  const visit = (current, path5, allowUndefined) => {
+  const visit = (current, path6, allowUndefined) => {
     if (current === void 0) {
       if (allowUndefined) {
         return;
@@ -73049,8 +73075,8 @@ function assertStrictJson(value, context) {
       throw strictJsonValidationError(
         context,
         "nested_undefined",
-        `${context.label} contains nested undefined at ${path5}`,
-        path5
+        `${context.label} contains nested undefined at ${path6}`,
+        path6
       );
     }
     if (current === null || typeof current === "boolean" || typeof current === "string") {
@@ -73061,16 +73087,16 @@ function assertStrictJson(value, context) {
         throw strictJsonValidationError(
           context,
           "non_finite_number",
-          `${context.label} contains a non-finite number at ${path5}`,
-          path5
+          `${context.label} contains a non-finite number at ${path6}`,
+          path6
         );
       }
       if (Object.is(current, -0)) {
         throw strictJsonValidationError(
           context,
           "negative_zero",
-          `${context.label} contains negative zero at ${path5}; normalize it to 0`,
-          path5
+          `${context.label} contains negative zero at ${path6}; normalize it to 0`,
+          path6
         );
       }
       return;
@@ -73079,24 +73105,24 @@ function assertStrictJson(value, context) {
       throw strictJsonValidationError(
         context,
         "unsupported_type",
-        `${context.label} contains a function, symbol, or BigInt at ${path5}`,
-        path5
+        `${context.label} contains a function, symbol, or BigInt at ${path6}`,
+        path6
       );
     }
     if (typeof current !== "object") {
       throw strictJsonValidationError(
         context,
         "unsupported_type",
-        `${context.label} contains a function, symbol, or BigInt at ${path5}`,
-        path5
+        `${context.label} contains a function, symbol, or BigInt at ${path6}`,
+        path6
       );
     }
     if (ancestors.has(current)) {
       throw strictJsonValidationError(
         context,
         "cyclic_value",
-        `${context.label} contains a cyclic reference at ${path5}`,
-        path5
+        `${context.label} contains a cyclic reference at ${path6}`,
+        path6
       );
     }
     ancestors.add(current);
@@ -73109,8 +73135,8 @@ function assertStrictJson(value, context) {
           throw strictJsonValidationError(
             context,
             "unsupported_object",
-            `${context.label} contains a non-JSON array property at ${path5}`,
-            path5
+            `${context.label} contains a non-JSON array property at ${path6}`,
+            path6
           );
         }
         for (let index = 0; index < current.length; index++) {
@@ -73119,11 +73145,11 @@ function assertStrictJson(value, context) {
             throw strictJsonValidationError(
               context,
               "unsupported_object",
-              `${context.label} contains a non-JSON array property at ${path5}[${index}]`,
-              `${path5}[${index}]`
+              `${context.label} contains a non-JSON array property at ${path6}[${index}]`,
+              `${path6}[${index}]`
             );
           }
-          visit(descriptor.value, `${path5}[${index}]`, false);
+          visit(descriptor.value, `${path6}[${index}]`, false);
         }
         return;
       }
@@ -73132,8 +73158,8 @@ function assertStrictJson(value, context) {
         throw strictJsonValidationError(
           context,
           "unsupported_object",
-          `${context.label} contains a non-JSON object at ${path5}`,
-          path5
+          `${context.label} contains a non-JSON object at ${path6}`,
+          path6
         );
       }
       for (const key of Reflect.ownKeys(current)) {
@@ -73141,11 +73167,11 @@ function assertStrictJson(value, context) {
           throw strictJsonValidationError(
             context,
             "unsupported_type",
-            `${context.label} contains a function, symbol, or BigInt at ${path5}`,
-            path5
+            `${context.label} contains a function, symbol, or BigInt at ${path6}`,
+            path6
           );
         }
-        const propertyPath = /^[A-Za-z_$][\w$]*$/.test(key) ? `${path5}.${key}` : `${path5}[${JSON.stringify(key)}]`;
+        const propertyPath = /^[A-Za-z_$][\w$]*$/.test(key) ? `${path6}.${key}` : `${path6}[${JSON.stringify(key)}]`;
         const descriptor = Object.getOwnPropertyDescriptor(current, key);
         if (descriptor === void 0 || !descriptor.enumerable || !("value" in descriptor)) {
           throw strictJsonValidationError(
@@ -73607,10 +73633,10 @@ var CopilotClient = class _CopilotClient {
       this.validateSessionFsConfig(options.sessionFs);
     }
     if (options.builtinPluginDirectories) {
-      for (const path5 of options.builtinPluginDirectories) {
-        if (!isAbsolute(path5)) {
+      for (const path6 of options.builtinPluginDirectories) {
+        if (!isAbsolute(path6)) {
           throw new Error(
-            `builtinPluginDirectories must contain only absolute paths: ${path5}`
+            `builtinPluginDirectories must contain only absolute paths: ${path6}`
           );
         }
       }
@@ -75463,30 +75489,30 @@ var assertGuideGenerateInput = (input) => {
   text3(input.guideBody, "generate input.guideBody", guideBodyMaximumLength, { multiline: true });
   return input;
 };
-var validateMatchCandidate = (value, path5, workflowIndex) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
-  const profileRef = text3(fields.profileRef, `${path5}.profileRef`, 256);
-  const workflowIds = workflowIndex.get(profileRef);
-  if (workflowIds === void 0) return fail2(`${path5}.profileRef`, `must reference a known profile: ${profileRef}`);
-  const workflowId = text3(fields.workflowId, `${path5}.workflowId`, 128);
+var validateMatchCandidate = (value, path6, workflowIndex2) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
+  const profileRef = text3(fields.profileRef, `${path6}.profileRef`, 256);
+  const workflowIds = workflowIndex2.get(profileRef);
+  if (workflowIds === void 0) return fail2(`${path6}.profileRef`, `must reference a known profile: ${profileRef}`);
+  const workflowId = text3(fields.workflowId, `${path6}.workflowId`, 128);
   if (!workflowIds.has(workflowId)) {
-    fail2(`${path5}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`);
+    fail2(`${path6}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`);
   }
   return {
     profileRef,
     workflowId,
-    confidence: boundedNumber(fields.confidence, `${path5}.confidence`, 0, 1),
-    reason: text3(fields.reason, `${path5}.reason`, 500),
-    tradeoff: text3(fields.tradeoff, `${path5}.tradeoff`, 500)
+    confidence: boundedNumber(fields.confidence, `${path6}.confidence`, 0, 1),
+    reason: text3(fields.reason, `${path6}.reason`, 500),
+    tradeoff: text3(fields.tradeoff, `${path6}.tradeoff`, 500)
   };
 };
-var validateGuideMatchResult = (value, workflowIndex) => {
+var validateGuideMatchResult = (value, workflowIndex2) => {
   const fields = record4(value, "match result");
   exactKeys2(fields, "match result", ["candidates"]);
   const rawCandidates = array(fields.candidates, "match result.candidates", { minimum: 3, maximum: 3 });
   const candidates = rawCandidates.map(
-    (item, index) => validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex)
+    (item, index) => validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex2)
   );
   uniqueArray(
     candidates.map(({ profileRef }) => profileRef),
@@ -75502,13 +75528,13 @@ var validateGuideMatchResult = (value, workflowIndex) => {
   }
   return { candidates };
 };
-var validateGenerateCandidate = (value, path5) => {
-  const fields = record4(value, path5);
-  exactKeys2(fields, path5, ["title", "prompt", "notes"]);
+var validateGenerateCandidate = (value, path6) => {
+  const fields = record4(value, path6);
+  exactKeys2(fields, path6, ["title", "prompt", "notes"]);
   return {
-    title: text3(fields.title, `${path5}.title`, 200),
-    prompt: text3(fields.prompt, `${path5}.prompt`, 8e3, { multiline: true }),
-    notes: text3(fields.notes, `${path5}.notes`, 1e3, { multiline: true })
+    title: text3(fields.title, `${path6}.title`, 200),
+    prompt: text3(fields.prompt, `${path6}.prompt`, 8e3, { multiline: true }),
+    notes: text3(fields.notes, `${path6}.notes`, 1e3, { multiline: true })
   };
 };
 var validateGuideGenerateResult = (value) => {
@@ -75638,14 +75664,14 @@ var CopilotGuideProvider = class {
   }
   async match(input) {
     assertGuideMatchInput(input);
-    const workflowIndex = new Map(
+    const workflowIndex2 = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))])
     );
     return this.run(
       this.prompts.match,
       input,
       this.matchTimeoutMs,
-      (value) => validateGuideMatchResult(value, workflowIndex)
+      (value) => validateGuideMatchResult(value, workflowIndex2)
     );
   }
   async generate(input) {
@@ -75743,6 +75769,123 @@ var CopilotGuideProvider = class {
   }
 };
 
+// src/guide-match-cache.ts
+import { createHash, randomUUID as randomUUID2 } from "node:crypto";
+import { mkdir, readFile as readFile2, rename, unlink, writeFile } from "node:fs/promises";
+import os4 from "node:os";
+import path5 from "node:path";
+var maximumCacheBytes = 256 * 1024;
+var sha256 = (value) => createHash("sha256").update(value, "utf8").digest("hex");
+var cacheKey = (input, options) => sha256(
+  JSON.stringify({
+    schemaVersion: 1,
+    intentDigest: sha256(input.intent),
+    model: options.model,
+    effort: options.effort,
+    matchPromptDigest: sha256(options.matchPrompt),
+    catalogDigest: sha256(JSON.stringify(input.entries))
+  })
+);
+var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
+var workflowIndex = (input) => new Map(input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]));
+var parseCacheRecord = (source) => {
+  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
+    throw new Error(`guide match cache exceeds ${maximumCacheBytes} bytes`);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(source);
+  } catch (cause) {
+    throw new Error("guide match cache contains invalid JSON", { cause });
+  }
+  const fields = record4(payload, "guide match cache");
+  exactKeys2(fields, "guide match cache", ["schemaVersion", "key", "result"]);
+  if (fields.schemaVersion !== 1) throw new Error("guide match cache schemaVersion must equal 1");
+  return {
+    schemaVersion: 1,
+    key: text3(fields.key, "guide match cache.key", 64),
+    result: fields.result
+  };
+};
+var readCacheRecord = async (cachePath) => {
+  let source;
+  try {
+    source = await readFile2(cachePath, "utf8");
+  } catch (error) {
+    if (isMissingFile(error)) return void 0;
+    throw new Error(`could not read guide match cache: ${cachePath}`, { cause: error });
+  }
+  return parseCacheRecord(source);
+};
+var removeTemporaryCache = async (temporaryPath) => {
+  try {
+    await unlink(temporaryPath);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+};
+var writeCacheRecord = async (cachePath, value) => {
+  await mkdir(path5.dirname(cachePath), { recursive: true, mode: 448 });
+  const temporaryPath = `${cachePath}.${process.pid}.${randomUUID2()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value)}
+`, { encoding: "utf8", flag: "wx", mode: 384 });
+    await rename(temporaryPath, cachePath);
+  } catch (error) {
+    await removeTemporaryCache(temporaryPath);
+    throw new Error(`could not write guide match cache: ${cachePath}`, { cause: error });
+  }
+};
+var defaultGuideMatchCachePath = (env3 = process.env) => {
+  const cacheRoot = env3.XDG_CACHE_HOME ?? path5.join(os4.homedir(), ".cache");
+  return path5.join(cacheRoot, "trellage", "trx-guide", "last-match.json");
+};
+var CachedGuideProvider = class {
+  constructor(provider, options) {
+    this.provider = provider;
+    this.options = options;
+  }
+  warn(message) {
+    if (this.options.onWarning !== void 0) {
+      this.options.onWarning(message);
+      return;
+    }
+    process.stderr.write(`trellage-launcher: warning: ${message}
+`);
+  }
+  async cachedResult(input, key) {
+    try {
+      const cached = await readCacheRecord(this.options.cachePath);
+      if (cached?.key !== key) return void 0;
+      return validateGuideMatchResult(cached.result, workflowIndex(input));
+    } catch (error) {
+      this.warn(`ignoring unreadable guide match cache: ${error instanceof Error ? error.message : String(error)}`);
+      return void 0;
+    }
+  }
+  async cacheResult(key, result) {
+    try {
+      await writeCacheRecord(this.options.cachePath, { schemaVersion: 1, key, result });
+    } catch (error) {
+      this.warn(`could not update guide match cache: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async match(input) {
+    const key = cacheKey(input, this.options);
+    const cached = await this.cachedResult(input, key);
+    if (cached !== void 0) return cached;
+    const result = await this.provider.match(input);
+    await this.cacheResult(key, result);
+    return result;
+  }
+  generate(input) {
+    return this.provider.generate(input);
+  }
+  refine(input) {
+    return this.provider.refine(input);
+  }
+};
+
 // src/guide-prompts.ts
 var loadDefaultGuidePrompts = async () => {
   const [match, generate, refine] = await Promise.all([
@@ -75793,11 +75936,19 @@ var runGuideJsonCommand = async (options) => {
   if (!args.json) throw new Error("guide JSON command requires --json");
   const resolved = resolveGuideRequest(args, options.stdinRequest, options.env);
   const prompts = await loadDefaultGuidePrompts();
-  const provider = new CopilotGuideProvider({
-    model: resolved.model,
-    effort: resolved.effort,
-    prompts
-  });
+  const provider = new CachedGuideProvider(
+    new CopilotGuideProvider({
+      model: resolved.model,
+      effort: resolved.effort,
+      prompts
+    }),
+    {
+      cachePath: defaultGuideMatchCachePath(options.env),
+      model: resolved.model,
+      effort: resolved.effort,
+      matchPrompt: prompts.match
+    }
+  );
   const common = {
     intent: resolved.request.intent,
     model: resolved.model,
@@ -76050,7 +76201,7 @@ var requiredWorktreeConfirmations = (dirty) => dirty ? 2 : 1;
 var isWorktreeConfirmed = (confirmations, dirty) => confirmations >= requiredWorktreeConfirmations(dirty);
 var worktreeDirtyWarningMessage = "Uncommitted changes in the current working tree will not be included in the new worktree.";
 var worktreeDirtyWarning = (dirty) => dirty ? worktreeDirtyWarningMessage : void 0;
-var reduceIntentAndMatch = (state, action) => {
+var reduceIntent = (state, action) => {
   switch (action.type) {
     case "intent/change" /* IntentChange */:
       return state.stage === "intent" /* Intent */ ? { ...state, textDraft: action.text } : state;
@@ -76062,35 +76213,35 @@ var reduceIntentAndMatch = (state, action) => {
       if (trimmed.length === 0) return state;
       return { ...emptyState, stage: "matching" /* Matching */, intent: trimmed };
     }
+    default:
+      return state;
+  }
+};
+var recommendationsState = (state, recommendations, usedLiteralFallback) => ({
+  ...state,
+  stage: "recommendations" /* Recommendations */,
+  recommendations,
+  recommendationIndex: 0,
+  usedLiteralFallback,
+  errorMessage: void 0
+});
+var reduceMatch = (state, action) => {
+  switch (action.type) {
     case "match/retry" /* MatchRetry */:
       return state.stage === "match-failed" /* MatchFailed */ ? { ...state, stage: "matching" /* Matching */, errorMessage: void 0 } : state;
     case "match/succeeded" /* MatchSucceeded */:
-      return state.stage === "matching" /* Matching */ ? {
-        ...state,
-        stage: "recommendations" /* Recommendations */,
-        recommendations: action.recommendations,
-        recommendationIndex: 0,
-        usedLiteralFallback: false,
-        errorMessage: void 0
-      } : state;
+      return state.stage === "matching" /* Matching */ ? recommendationsState(state, action.recommendations, false) : state;
     case "match/failed" /* MatchFailed */:
       return state.stage === "matching" /* Matching */ ? { ...state, stage: "match-failed" /* MatchFailed */, errorMessage: action.message } : state;
     case "match/literal" /* MatchLiteral */:
-      return state.stage === "match-failed" /* MatchFailed */ ? {
-        ...state,
-        stage: "recommendations" /* Recommendations */,
-        recommendations: action.recommendations,
-        recommendationIndex: 0,
-        usedLiteralFallback: true,
-        errorMessage: void 0
-      } : state;
+      return state.stage === "match-failed" /* MatchFailed */ ? recommendationsState(state, action.recommendations, true) : state;
     case "match/literal-failed" /* MatchLiteralFailed */:
       return state.stage === "match-failed" /* MatchFailed */ ? { ...state, errorMessage: action.message } : state;
     default:
       return state;
   }
 };
-var reduceRecommendationsAndGenerate = (state, action) => {
+var reduceRecommendations = (state, action) => {
   switch (action.type) {
     case "recommendations/move" /* RecommendationsMove */:
       return state.stage === "recommendations" /* Recommendations */ ? { ...state, recommendationIndex: (state.recommendationIndex + action.delta + 3) % 3 } : state;
@@ -76107,30 +76258,30 @@ var reduceRecommendationsAndGenerate = (state, action) => {
         errorMessage: void 0
       };
     }
+    default:
+      return state;
+  }
+};
+var candidatesState = (state, candidates, usedTemplateFallback) => ({
+  ...state,
+  stage: "candidates" /* Candidates */,
+  candidates,
+  candidateIndex: 0,
+  usedTemplateFallback,
+  errorMessage: void 0
+});
+var reduceGenerate = (state, action) => {
+  switch (action.type) {
     case "generate/guide-loaded" /* GenerateGuideLoaded */:
       return state.stage === "generating" /* Generating */ ? { ...state, guideDocument: action.guideDocument } : state;
     case "generate/retry" /* GenerateRetry */:
       return state.stage === "generate-failed" /* GenerateFailed */ ? { ...state, stage: "generating" /* Generating */, errorMessage: void 0 } : state;
     case "generate/succeeded" /* GenerateSucceeded */:
-      return state.stage === "generating" /* Generating */ ? {
-        ...state,
-        stage: "candidates" /* Candidates */,
-        candidates: action.candidates,
-        candidateIndex: 0,
-        usedTemplateFallback: false,
-        errorMessage: void 0
-      } : state;
+      return state.stage === "generating" /* Generating */ ? candidatesState(state, action.candidates, false) : state;
     case "generate/failed" /* GenerateFailed */:
       return state.stage === "generating" /* Generating */ ? { ...state, stage: "generate-failed" /* GenerateFailed */, errorMessage: action.message } : state;
     case "generate/template-fallback" /* GenerateTemplateFallback */:
-      return state.stage === "generate-failed" /* GenerateFailed */ ? {
-        ...state,
-        stage: "candidates" /* Candidates */,
-        candidates: action.candidates,
-        candidateIndex: 0,
-        usedTemplateFallback: true,
-        errorMessage: void 0
-      } : state;
+      return state.stage === "generate-failed" /* GenerateFailed */ ? candidatesState(state, action.candidates, true) : state;
     case "generate/template-fallback-failed" /* GenerateTemplateFallbackFailed */:
       return state.stage === "generate-failed" /* GenerateFailed */ ? { ...state, errorMessage: action.message } : state;
     case "generate/back" /* GenerateBack */:
@@ -76139,7 +76290,7 @@ var reduceRecommendationsAndGenerate = (state, action) => {
       return state;
   }
 };
-var reduceCandidates = (state, action) => {
+var reduceCandidateSelection = (state, action) => {
   switch (action.type) {
     case "candidates/move" /* CandidatesMove */:
       return state.stage === "candidates" /* Candidates */ ? { ...state, candidateIndex: (state.candidateIndex + action.delta + 3) % 3 } : state;
@@ -76159,6 +76310,12 @@ var reduceCandidates = (state, action) => {
         textDraft: tripleAt(state.candidates, state.candidateIndex).prompt,
         errorMessage: void 0
       } : state;
+    default:
+      return state;
+  }
+};
+var reduceDirectEdit = (state, action) => {
+  switch (action.type) {
     case "direct-edit/submit" /* DirectEditSubmit */:
       return state.stage === "direct-editor" /* DirectEditor */ && state.candidates !== void 0 && state.textDraft.trim().length > 0 ? {
         ...state,
@@ -76205,7 +76362,7 @@ var reduceRefine = (state, action) => {
       return state;
   }
 };
-var reduceReadinessAndDestination = (state, action) => {
+var reduceReadiness = (state, action) => {
   switch (action.type) {
     case "readiness/ready" /* ReadinessReady */:
       return state.stage === "checking-readiness" /* CheckingReadiness */ ? { ...state, stage: "destination" /* Destination */, readiness: action.result, destinationIndex: 0 } : state;
@@ -76215,6 +76372,12 @@ var reduceReadinessAndDestination = (state, action) => {
       return state.stage === "readiness-blocked" /* ReadinessBlocked */ ? { ...state, stage: "checking-readiness" /* CheckingReadiness */, readiness: void 0 } : state;
     case "readiness/back" /* ReadinessBack */:
       return state.stage === "readiness-blocked" /* ReadinessBlocked */ ? { ...state, stage: "candidates" /* Candidates */, readiness: void 0 } : state;
+    default:
+      return state;
+  }
+};
+var reduceDestination = (state, action) => {
+  switch (action.type) {
     case "destination/move" /* DestinationMove */:
       return state.stage === "destination" /* Destination */ && action.optionCount > 0 ? {
         ...state,
@@ -76234,7 +76397,7 @@ var reduceReadinessAndDestination = (state, action) => {
       return state;
   }
 };
-var reduceWorktree = (state, action) => {
+var reduceWorktreeBranch = (state, action) => {
   switch (action.type) {
     case "worktree/submit-branch" /* WorktreeSubmitBranch */:
       return state.stage === "worktree-branch-editor" /* WorktreeBranchEditor */ && state.textDraft.trim().length > 0 ? {
@@ -76257,6 +76420,12 @@ var reduceWorktree = (state, action) => {
         textDraft: state.worktreeBranch ?? state.textDraft,
         errorMessage: action.message
       } : state;
+    default:
+      return state;
+  }
+};
+var reduceWorktreeInspection = (state, action) => {
+  switch (action.type) {
     case "worktree/collision" /* WorktreeCollision */:
       return state.stage === "inspecting-worktree" /* InspectingWorktree */ ? { ...state, stage: "worktree-collision" /* WorktreeCollision */, worktreeInspection: action.inspection } : state;
     case "worktree/ready" /* WorktreeReady */:
@@ -76266,6 +76435,12 @@ var reduceWorktree = (state, action) => {
         worktreeInspection: action.inspection,
         worktreeConfirmations: 0
       } : state;
+    default:
+      return state;
+  }
+};
+var reduceWorktreeResolution = (state, action) => {
+  switch (action.type) {
     case "worktree/confirm" /* WorktreeConfirm */:
       return state.stage === "worktree-ready" /* WorktreeReady */ ? { ...state, worktreeConfirmations: state.worktreeConfirmations + 1 } : state;
     case "worktree/edit-branch" /* WorktreeEditBranch */:
@@ -76282,29 +76457,29 @@ var reduceWorktree = (state, action) => {
   }
 };
 var domainReducerByActionType = {
-  ["intent/change" /* IntentChange */]: reduceIntentAndMatch,
-  ["intent/backspace" /* IntentBackspace */]: reduceIntentAndMatch,
-  ["intent/submit" /* IntentSubmit */]: reduceIntentAndMatch,
-  ["match/retry" /* MatchRetry */]: reduceIntentAndMatch,
-  ["match/succeeded" /* MatchSucceeded */]: reduceIntentAndMatch,
-  ["match/failed" /* MatchFailed */]: reduceIntentAndMatch,
-  ["match/literal" /* MatchLiteral */]: reduceIntentAndMatch,
-  ["match/literal-failed" /* MatchLiteralFailed */]: reduceIntentAndMatch,
-  ["recommendations/move" /* RecommendationsMove */]: reduceRecommendationsAndGenerate,
-  ["recommendations/confirm" /* RecommendationsConfirm */]: reduceRecommendationsAndGenerate,
-  ["generate/guide-loaded" /* GenerateGuideLoaded */]: reduceRecommendationsAndGenerate,
-  ["generate/retry" /* GenerateRetry */]: reduceRecommendationsAndGenerate,
-  ["generate/succeeded" /* GenerateSucceeded */]: reduceRecommendationsAndGenerate,
-  ["generate/failed" /* GenerateFailed */]: reduceRecommendationsAndGenerate,
-  ["generate/template-fallback" /* GenerateTemplateFallback */]: reduceRecommendationsAndGenerate,
-  ["generate/template-fallback-failed" /* GenerateTemplateFallbackFailed */]: reduceRecommendationsAndGenerate,
-  ["generate/back" /* GenerateBack */]: reduceRecommendationsAndGenerate,
-  ["candidates/move" /* CandidatesMove */]: reduceCandidates,
-  ["candidates/confirm" /* CandidatesConfirm */]: reduceCandidates,
-  ["candidates/refine-start" /* CandidatesRefineStart */]: reduceCandidates,
-  ["candidates/direct-edit-start" /* CandidatesDirectEditStart */]: reduceCandidates,
-  ["direct-edit/submit" /* DirectEditSubmit */]: reduceCandidates,
-  ["direct-edit/back" /* DirectEditBack */]: reduceCandidates,
+  ["intent/change" /* IntentChange */]: reduceIntent,
+  ["intent/backspace" /* IntentBackspace */]: reduceIntent,
+  ["intent/submit" /* IntentSubmit */]: reduceIntent,
+  ["match/retry" /* MatchRetry */]: reduceMatch,
+  ["match/succeeded" /* MatchSucceeded */]: reduceMatch,
+  ["match/failed" /* MatchFailed */]: reduceMatch,
+  ["match/literal" /* MatchLiteral */]: reduceMatch,
+  ["match/literal-failed" /* MatchLiteralFailed */]: reduceMatch,
+  ["recommendations/move" /* RecommendationsMove */]: reduceRecommendations,
+  ["recommendations/confirm" /* RecommendationsConfirm */]: reduceRecommendations,
+  ["generate/guide-loaded" /* GenerateGuideLoaded */]: reduceGenerate,
+  ["generate/retry" /* GenerateRetry */]: reduceGenerate,
+  ["generate/succeeded" /* GenerateSucceeded */]: reduceGenerate,
+  ["generate/failed" /* GenerateFailed */]: reduceGenerate,
+  ["generate/template-fallback" /* GenerateTemplateFallback */]: reduceGenerate,
+  ["generate/template-fallback-failed" /* GenerateTemplateFallbackFailed */]: reduceGenerate,
+  ["generate/back" /* GenerateBack */]: reduceGenerate,
+  ["candidates/move" /* CandidatesMove */]: reduceCandidateSelection,
+  ["candidates/confirm" /* CandidatesConfirm */]: reduceCandidateSelection,
+  ["candidates/refine-start" /* CandidatesRefineStart */]: reduceCandidateSelection,
+  ["candidates/direct-edit-start" /* CandidatesDirectEditStart */]: reduceCandidateSelection,
+  ["direct-edit/submit" /* DirectEditSubmit */]: reduceDirectEdit,
+  ["direct-edit/back" /* DirectEditBack */]: reduceDirectEdit,
   ["editor/change" /* EditorChange */]: reduceEditor,
   ["editor/backspace" /* EditorBackspace */]: reduceEditor,
   ["refine/submit" /* RefineSubmit */]: reduceRefine,
@@ -76312,21 +76487,21 @@ var domainReducerByActionType = {
   ["refine/failed" /* RefineFailed */]: reduceRefine,
   ["refine/retry" /* RefineRetry */]: reduceRefine,
   ["refine/back" /* RefineBack */]: reduceRefine,
-  ["readiness/ready" /* ReadinessReady */]: reduceReadinessAndDestination,
-  ["readiness/blocked" /* ReadinessBlocked */]: reduceReadinessAndDestination,
-  ["readiness/retry" /* ReadinessRetry */]: reduceReadinessAndDestination,
-  ["readiness/back" /* ReadinessBack */]: reduceReadinessAndDestination,
-  ["destination/move" /* DestinationMove */]: reduceReadinessAndDestination,
-  ["destination/back" /* DestinationBack */]: reduceReadinessAndDestination,
-  ["destination/start-worktree" /* DestinationStartWorktree */]: reduceReadinessAndDestination,
-  ["worktree/submit-branch" /* WorktreeSubmitBranch */]: reduceWorktree,
-  ["worktree/invalid-branch" /* WorktreeInvalidBranch */]: reduceWorktree,
-  ["worktree/inspect-failed" /* WorktreeInspectFailed */]: reduceWorktree,
-  ["worktree/collision" /* WorktreeCollision */]: reduceWorktree,
-  ["worktree/ready" /* WorktreeReady */]: reduceWorktree,
-  ["worktree/confirm" /* WorktreeConfirm */]: reduceWorktree,
-  ["worktree/edit-branch" /* WorktreeEditBranch */]: reduceWorktree,
-  ["worktree/back" /* WorktreeBack */]: reduceWorktree
+  ["readiness/ready" /* ReadinessReady */]: reduceReadiness,
+  ["readiness/blocked" /* ReadinessBlocked */]: reduceReadiness,
+  ["readiness/retry" /* ReadinessRetry */]: reduceReadiness,
+  ["readiness/back" /* ReadinessBack */]: reduceReadiness,
+  ["destination/move" /* DestinationMove */]: reduceDestination,
+  ["destination/back" /* DestinationBack */]: reduceDestination,
+  ["destination/start-worktree" /* DestinationStartWorktree */]: reduceDestination,
+  ["worktree/submit-branch" /* WorktreeSubmitBranch */]: reduceWorktreeBranch,
+  ["worktree/invalid-branch" /* WorktreeInvalidBranch */]: reduceWorktreeBranch,
+  ["worktree/inspect-failed" /* WorktreeInspectFailed */]: reduceWorktreeBranch,
+  ["worktree/collision" /* WorktreeCollision */]: reduceWorktreeInspection,
+  ["worktree/ready" /* WorktreeReady */]: reduceWorktreeInspection,
+  ["worktree/confirm" /* WorktreeConfirm */]: reduceWorktreeResolution,
+  ["worktree/edit-branch" /* WorktreeEditBranch */]: reduceWorktreeResolution,
+  ["worktree/back" /* WorktreeBack */]: reduceWorktreeResolution
 };
 var guideUiReducer = (state, action) => {
   const domainReducer = domainReducerByActionType[action.type];
@@ -76391,7 +76566,14 @@ var runGuideGenerationStep = async (catalog, guideRoot, provider, intent, recomm
   if (first === void 0 || second === void 0 || third === void 0) {
     throw new Error("Generation must return exactly three prompt candidates");
   }
-  return { guideDocument, candidates: [first, second, third] };
+  return {
+    guideDocument,
+    candidates: [
+      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, first),
+      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, second),
+      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, third)
+    ]
+  };
 };
 var runGuideRefinementStep = async (provider, intent, recommendation, guideDocument, candidate, feedback) => {
   const refined = await provider.refine({
@@ -76403,7 +76585,7 @@ var runGuideRefinementStep = async (provider, intent, recommendation, guideDocum
     candidate,
     feedback
   });
-  return refined.candidate;
+  return applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, refined.candidate);
 };
 var buildCancelResult = () => ({ action: "cancel", exitCode: 130 });
 var buildPrintResult = (prompt) => ({ action: "print", prompt });
@@ -76442,9 +76624,9 @@ var buildNewHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, branch,
     baseRef
   };
 };
-var buildExistingHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, path5) => {
+var buildExistingHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, path6) => {
   const built = buildGuideLaunchCommand(profile);
-  return { action: "herdr-worktree-open", profile, command: built.command, prompt, primaryCheckoutPath, path: path5 };
+  return { action: "herdr-worktree-open", profile, command: built.command, prompt, primaryCheckoutPath, path: path6 };
 };
 var Spinner = ({ label, detail }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
   /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: "cyan", children: [
@@ -76650,12 +76832,7 @@ var WorktreeCollisionView = ({ inspection }) => /* @__PURE__ */ (0, import_jsx_r
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u21B5 open existing worktree \xB7 e edit branch \xB7 q cancel" })
   ] })
 ] });
-var GuideApp = (props) => {
-  const { exit } = use_app_default();
-  const [state, dispatch] = (0, import_react34.useReducer)(guideUiReducer, props.initialIntent, createInitialGuideUiState);
-  const herdrContext = getHerdrContext(props.herdrEnv);
-  const herdrEnabled = herdrContext !== null && props.herdrAvailabilityProbe;
-  const cancel = () => exit(buildCancelResult());
+var useGuideMatchEffect = (props, state, dispatch) => {
   (0, import_react34.useEffect)(() => {
     if (state.stage !== "matching" /* Matching */) return void 0;
     let cancelled = false;
@@ -76675,6 +76852,8 @@ var GuideApp = (props) => {
       cancelled = true;
     };
   }, [state.stage, state.intent]);
+};
+var useGuideGenerationEffect = (props, state, dispatch) => {
   (0, import_react34.useEffect)(() => {
     if (state.stage !== "generating" /* Generating */ || state.selectedRecommendation === void 0 || state.intent === void 0) {
       return void 0;
@@ -76703,16 +76882,18 @@ var GuideApp = (props) => {
       cancelled = true;
     };
   }, [state.stage, state.selectedRecommendation, state.intent]);
+};
+var useGuideRefinementEffect = (props, state, dispatch) => {
   (0, import_react34.useEffect)(() => {
     if (state.stage !== "refining" /* Refining */ || state.selectedRecommendation === void 0 || state.guideDocument === void 0 || state.candidates === void 0 || state.intent === void 0) {
       return void 0;
     }
     let cancelled = false;
+    const intent = state.intent;
     const recommendation = state.selectedRecommendation;
     const guideDocument = state.guideDocument;
     const candidate = tripleAt(state.candidates, state.candidateIndex);
     const feedback = state.textDraft;
-    const intent = state.intent;
     void (async () => {
       try {
         const refinedCandidate = await runGuideRefinementStep(
@@ -76732,6 +76913,8 @@ var GuideApp = (props) => {
       cancelled = true;
     };
   }, [state.stage]);
+};
+var useGuideReadinessEffect = (props, state, dispatch) => {
   (0, import_react34.useEffect)(() => {
     if (state.stage !== "checking-readiness" /* CheckingReadiness */ || state.selectedProfile === void 0) return void 0;
     let cancelled = false;
@@ -76760,6 +76943,13 @@ var GuideApp = (props) => {
       cancelled = true;
     };
   }, [state.stage]);
+};
+var worktreeInspectionAction = (inspection) => {
+  if (inspection.kind === "invalid-branch") return { type: "worktree/invalid-branch" /* WorktreeInvalidBranch */ };
+  if (inspection.kind === "collision") return { type: "worktree/collision" /* WorktreeCollision */, inspection };
+  return { type: "worktree/ready" /* WorktreeReady */, inspection };
+};
+var useGuideWorktreeEffect = (props, state, dispatch) => {
   (0, import_react34.useEffect)(() => {
     if (state.stage !== "inspecting-worktree" /* InspectingWorktree */ || state.worktreeBranch === void 0) return void 0;
     let cancelled = false;
@@ -76767,10 +76957,7 @@ var GuideApp = (props) => {
     void (async () => {
       try {
         const inspection = await inspectGitWorktreeIntent(props.runner, { cwd: props.cwd, branch });
-        if (cancelled) return;
-        if (inspection.kind === "invalid-branch") dispatch({ type: "worktree/invalid-branch" /* WorktreeInvalidBranch */ });
-        else if (inspection.kind === "collision") dispatch({ type: "worktree/collision" /* WorktreeCollision */, inspection });
-        else dispatch({ type: "worktree/ready" /* WorktreeReady */, inspection });
+        if (!cancelled) dispatch(worktreeInspectionAction(inspection));
       } catch (error) {
         if (!cancelled)
           dispatch({ type: "worktree/inspect-failed" /* WorktreeInspectFailed */, message: describeGuideUiError(error) });
@@ -76780,286 +76967,341 @@ var GuideApp = (props) => {
       cancelled = true;
     };
   }, [state.stage, state.worktreeBranch]);
-  use_input_default((input, key) => {
-    if (key.ctrl && input === "c") {
-      cancel();
-      return;
-    }
-    switch (state.stage) {
-      case "intent" /* Intent */: {
-        if (key.return) dispatch({ type: "intent/submit" /* IntentSubmit */ });
-        else if (key.backspace || key.delete) dispatch({ type: "intent/backspace" /* IntentBackspace */ });
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, intentMaxLength)) {
-          dispatch({ type: "intent/change" /* IntentChange */, text: state.textDraft + input });
-        }
-        return;
-      }
-      case "match-failed" /* MatchFailed */: {
-        if (input === "r") dispatch({ type: "match/retry" /* MatchRetry */ });
-        else if (input === "l" && state.intent !== void 0) {
-          try {
-            dispatch({
-              type: "match/literal" /* MatchLiteral */,
-              recommendations: literalGuideRecommendations(props.catalog, state.intent)
-            });
-          } catch (error) {
-            dispatch({ type: "match/literal-failed" /* MatchLiteralFailed */, message: describeGuideUiError(error) });
-          }
-        } else if (input === "q") cancel();
-        return;
-      }
-      case "recommendations" /* Recommendations */: {
-        if (key.upArrow || input === "k") dispatch({ type: "recommendations/move" /* RecommendationsMove */, delta: -1 });
-        else if (key.downArrow || input === "j") dispatch({ type: "recommendations/move" /* RecommendationsMove */, delta: 1 });
-        else if (key.return && state.recommendations !== void 0) {
-          const recommendation = tripleAt(state.recommendations, state.recommendationIndex);
-          dispatch({
-            type: "recommendations/confirm" /* RecommendationsConfirm */,
-            selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef)
-          });
-        } else if (input === "q") cancel();
-        return;
-      }
-      case "generate-failed" /* GenerateFailed */: {
-        if (input === "r") dispatch({ type: "generate/retry" /* GenerateRetry */ });
-        else if (input === "t" && state.guideDocument !== void 0 && state.selectedRecommendation !== void 0 && state.intent !== void 0) {
-          try {
-            dispatch({
-              type: "generate/template-fallback" /* GenerateTemplateFallback */,
-              candidates: templateGuideCandidates(
-                state.guideDocument.guide,
-                state.selectedRecommendation.workflowId,
-                state.intent
-              )
-            });
-          } catch (error) {
-            dispatch({ type: "generate/template-fallback-failed" /* GenerateTemplateFallbackFailed */, message: describeGuideUiError(error) });
-          }
-        } else if (input === "b") dispatch({ type: "generate/back" /* GenerateBack */ });
-        else if (input === "q") cancel();
-        return;
-      }
-      case "candidates" /* Candidates */: {
-        if (key.upArrow || input === "k") dispatch({ type: "candidates/move" /* CandidatesMove */, delta: -1 });
-        else if (key.downArrow || input === "j") dispatch({ type: "candidates/move" /* CandidatesMove */, delta: 1 });
-        else if (key.return) dispatch({ type: "candidates/confirm" /* CandidatesConfirm */ });
-        else if (input === "r") dispatch({ type: "candidates/refine-start" /* CandidatesRefineStart */ });
-        else if (input === "e") dispatch({ type: "candidates/direct-edit-start" /* CandidatesDirectEditStart */ });
-        else if (input === "c" && state.candidates !== void 0) {
-          exit(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt));
-        } else if (input === "q") cancel();
-        return;
-      }
-      case "refine-editor" /* RefineEditor */: {
-        if (key.escape) dispatch({ type: "refine/back" /* RefineBack */ });
-        else if (key.return) dispatch({ type: "refine/submit" /* RefineSubmit */ });
-        else if (key.backspace || key.delete) dispatch({ type: "editor/backspace" /* EditorBackspace */ });
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, feedbackMaxLength)) {
-          dispatch({ type: "editor/change" /* EditorChange */, text: state.textDraft + input });
-        }
-        return;
-      }
-      case "refine-failed" /* RefineFailed */: {
-        if (input === "r") dispatch({ type: "refine/retry" /* RefineRetry */ });
-        else if (input === "b") dispatch({ type: "refine/back" /* RefineBack */ });
-        return;
-      }
-      case "direct-editor" /* DirectEditor */: {
-        if (key.escape) dispatch({ type: "direct-edit/back" /* DirectEditBack */ });
-        else if (key.return) dispatch({ type: "direct-edit/submit" /* DirectEditSubmit */ });
-        else if (key.backspace || key.delete) dispatch({ type: "editor/backspace" /* EditorBackspace */ });
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
-          dispatch({ type: "editor/change" /* EditorChange */, text: state.textDraft + input });
-        }
-        return;
-      }
-      case "readiness-blocked" /* ReadinessBlocked */: {
-        if (input === "r") dispatch({ type: "readiness/retry" /* ReadinessRetry */ });
-        else if (input === "b") dispatch({ type: "readiness/back" /* ReadinessBack */ });
-        else if (input === "q") cancel();
-        return;
-      }
-      case "destination" /* Destination */: {
-        const options = destinationOptions(herdrEnabled);
-        if (key.upArrow || input === "k")
-          dispatch({ type: "destination/move" /* DestinationMove */, delta: -1, optionCount: options.length });
-        else if (key.downArrow || input === "j")
-          dispatch({ type: "destination/move" /* DestinationMove */, delta: 1, optionCount: options.length });
-        else if (input === "c" && state.selectedCandidate !== void 0) {
-          exit(buildPrintResult(state.selectedCandidate.prompt));
-        } else if (key.return && state.selectedProfile !== void 0 && state.selectedCandidate !== void 0) {
-          const option = options[state.destinationIndex];
-          const prompt = state.selectedCandidate.prompt;
-          if (option === "current-terminal" /* CurrentTerminal */) {
-            exit(buildCurrentTerminalResult(state.selectedProfile, prompt, props.cwd));
-          } else if (option === "current-herdr-workspace" /* CurrentHerdrWorkspace */ && herdrContext !== null) {
-            exit(buildCurrentHerdrWorkspaceResult(state.selectedProfile, prompt, props.cwd, herdrContext));
-          } else if (option === "new-herdr-worktree" /* NewHerdrWorktree */) {
-            dispatch({ type: "destination/start-worktree" /* DestinationStartWorktree */ });
-          }
-        } else if (input === "b") dispatch({ type: "destination/back" /* DestinationBack */ });
-        else if (input === "q") cancel();
-        return;
-      }
-      case "worktree-branch-editor" /* WorktreeBranchEditor */: {
-        if (key.escape) dispatch({ type: "worktree/back" /* WorktreeBack */ });
-        else if (key.return) dispatch({ type: "worktree/submit-branch" /* WorktreeSubmitBranch */ });
-        else if (key.backspace || key.delete) dispatch({ type: "editor/backspace" /* EditorBackspace */ });
-        else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, branchMaxLength)) {
-          dispatch({ type: "editor/change" /* EditorChange */, text: state.textDraft + input });
-        }
-        return;
-      }
-      case "worktree-collision" /* WorktreeCollision */: {
-        if (input === "e") dispatch({ type: "worktree/edit-branch" /* WorktreeEditBranch */ });
-        else if (input === "q") cancel();
-        else if (key.return && state.worktreeInspection !== void 0 && "collision" in state.worktreeInspection && state.worktreeInspection.collision.path !== void 0 && state.selectedProfile !== void 0 && state.selectedCandidate !== void 0) {
-          exit(
-            buildExistingHerdrWorktreeResult(
-              state.selectedProfile,
-              state.selectedCandidate.prompt,
-              state.worktreeInspection.primaryCheckoutPath,
-              state.worktreeInspection.collision.path
-            )
-          );
-        }
-        return;
-      }
-      case "worktree-ready" /* WorktreeReady */: {
-        if (key.escape) dispatch({ type: "worktree/back" /* WorktreeBack */ });
-        else if (key.return || input === "y") {
-          if (state.worktreeInspection !== void 0 && !("collision" in state.worktreeInspection) && isWorktreeConfirmed(state.worktreeConfirmations + 1, state.worktreeInspection.dirty) && state.selectedProfile !== void 0 && state.selectedCandidate !== void 0) {
-            exit(
-              buildNewHerdrWorktreeResult(
-                state.selectedProfile,
-                state.selectedCandidate.prompt,
-                state.worktreeInspection.primaryCheckoutPath,
-                state.worktreeInspection.branch,
-                state.worktreeInspection.baseRef
-              )
-            );
-          } else {
-            dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
-          }
-        }
-        return;
-      }
-      default:
-        return;
-    }
-  });
-  switch (state.stage) {
-    case "intent" /* Intent */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IntentEditor, { textDraft: state.textDraft });
-    case "matching" /* Matching */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Matching profiles", detail: `Model: ${props.model} \xB7 Effort: ${props.effort}` });
-    case "match-failed" /* MatchFailed */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorPanel, { title: "Match failed", message: state.errorMessage, keys: "r retry \xB7 l literal match \xB7 q cancel" });
-    case "recommendations" /* Recommendations */:
-      return state.recommendations === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Matching profiles", detail: `Model: ${props.model} \xB7 Effort: ${props.effort}` }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        RecommendationsView,
-        {
-          intent: state.intent ?? "",
-          model: props.model,
-          effort: props.effort,
-          recommendations: state.recommendations,
-          index: state.recommendationIndex,
-          usedLiteralFallback: state.usedLiteralFallback
-        }
-      );
-    case "generating" /* Generating */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Generating prompts" });
-    case "generate-failed" /* GenerateFailed */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        ErrorPanel,
-        {
-          title: "Generation failed",
-          message: state.errorMessage,
-          keys: `r retry${state.guideDocument === void 0 ? "" : " \xB7 t template fallback"} \xB7 b back \xB7 q cancel`
-        }
-      );
-    case "candidates" /* Candidates */:
-    case "refine-editor" /* RefineEditor */:
-    case "refining" /* Refining */:
-    case "refine-failed" /* RefineFailed */:
-    case "direct-editor" /* DirectEditor */: {
-      if (state.candidates === void 0 || state.selectedRecommendation === void 0)
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Loading" });
-      if (state.stage === "refine-editor" /* RefineEditor */) {
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Refinement feedback", textDraft: state.textDraft, keys: "\u21B5 submit \xB7 Esc back" });
-      }
-      if (state.stage === "refining" /* Refining */) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Refining prompt" });
-      if (state.stage === "refine-failed" /* RefineFailed */) {
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorPanel, { title: "Refinement failed", message: state.errorMessage, keys: "r retry \xB7 b back" });
-      }
-      if (state.stage === "direct-editor" /* DirectEditor */) {
-        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Edit prompt", textDraft: state.textDraft, keys: "\u21B5 submit \xB7 Esc back" });
-      }
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        CandidatesView,
-        {
-          candidates: state.candidates,
-          index: state.candidateIndex,
-          usedTemplateFallback: state.usedTemplateFallback,
-          command: publicGuideLaunchCommand(
-            props.catalog,
-            state.selectedRecommendation.profileRef,
-            tripleAt(state.candidates, state.candidateIndex).prompt
-          )
-        }
-      );
-    }
-    case "checking-readiness" /* CheckingReadiness */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Checking profile readiness" });
-    case "readiness-blocked" /* ReadinessBlocked */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        ErrorPanel,
-        {
-          title: state.readiness?.summary ?? "Profile is not ready",
-          message: state.readiness?.kind === "blocked" /* Blocked */ ? state.readiness.diagnostic : void 0,
-          keys: "r retry \xB7 b back \xB7 q cancel"
-        }
-      );
-    case "destination" /* Destination */: {
-      const options = destinationOptions(herdrEnabled);
-      const option = options[state.destinationIndex];
-      const previewCommand = state.selectedProfile === void 0 ? void 0 : option === "current-terminal" /* CurrentTerminal */ ? buildGuideLaunchCommand(state.selectedProfile, {
-        mode: "argv",
-        prompt: state.selectedCandidate?.prompt ?? ""
-      }).command : buildGuideLaunchCommand(state.selectedProfile).command;
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        DestinationView,
-        {
-          options,
-          index: state.destinationIndex,
-          commandPreview: previewCommand === void 0 ? "" : renderCommandPreview(previewCommand)
-        }
-      );
-    }
-    case "worktree-branch-editor" /* WorktreeBranchEditor */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        TextEditor,
-        {
-          title: "Worktree branch",
-          textDraft: state.textDraft,
-          keys: `${state.errorMessage ?? ""}${state.errorMessage === void 0 ? "" : " \xB7 "}\u21B5 submit \xB7 Esc back`
-        }
-      );
-    case "inspecting-worktree" /* InspectingWorktree */:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Inspecting git worktree" });
-    case "worktree-collision" /* WorktreeCollision */:
-      return state.worktreeInspection === void 0 || !("collision" in state.worktreeInspection) ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Inspecting git worktree" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeCollisionView, { inspection: state.worktreeInspection });
-    case "worktree-ready" /* WorktreeReady */:
-      return state.worktreeInspection === void 0 || "collision" in state.worktreeInspection ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Inspecting git worktree" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeReadyView, { inspection: state.worktreeInspection, confirmations: state.worktreeConfirmations });
-    default:
-      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: "Unexpected state." });
+};
+var handleNoInput = () => void 0;
+var handleIntentInput = ({ state, dispatch }, input, key) => {
+  if (key.return) dispatch({ type: "intent/submit" /* IntentSubmit */ });
+  else if (key.backspace || key.delete) dispatch({ type: "intent/backspace" /* IntentBackspace */ });
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, intentMaxLength)) {
+    dispatch({ type: "intent/change" /* IntentChange */, text: state.textDraft + input });
   }
+};
+var handleMatchFailedInput = ({ props, state, dispatch, cancel }, input) => {
+  if (input === "r") {
+    dispatch({ type: "match/retry" /* MatchRetry */ });
+    return;
+  }
+  if (input === "q") {
+    cancel();
+    return;
+  }
+  if (input !== "l" || state.intent === void 0) return;
+  try {
+    dispatch({
+      type: "match/literal" /* MatchLiteral */,
+      recommendations: literalGuideRecommendations(props.catalog, state.intent)
+    });
+  } catch (error) {
+    dispatch({ type: "match/literal-failed" /* MatchLiteralFailed */, message: describeGuideUiError(error) });
+  }
+};
+var handleRecommendationsInput = ({ props, state, dispatch, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: "recommendations/move" /* RecommendationsMove */, delta: -1 });
+  else if (key.downArrow || input === "j") dispatch({ type: "recommendations/move" /* RecommendationsMove */, delta: 1 });
+  else if (key.return && state.recommendations !== void 0) {
+    const recommendation = tripleAt(state.recommendations, state.recommendationIndex);
+    dispatch({
+      type: "recommendations/confirm" /* RecommendationsConfirm */,
+      selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef)
+    });
+  } else if (input === "q") cancel();
+};
+var handleGenerateFailedInput = ({ state, dispatch, cancel }, input) => {
+  if (input === "r") dispatch({ type: "generate/retry" /* GenerateRetry */ });
+  else if (input === "b") dispatch({ type: "generate/back" /* GenerateBack */ });
+  else if (input === "q") cancel();
+  else if (input === "t" && state.guideDocument !== void 0 && state.selectedRecommendation !== void 0 && state.intent !== void 0) {
+    try {
+      dispatch({
+        type: "generate/template-fallback" /* GenerateTemplateFallback */,
+        candidates: templateGuideCandidates(
+          state.guideDocument.guide,
+          state.selectedRecommendation.workflowId,
+          state.intent
+        )
+      });
+    } catch (error) {
+      dispatch({ type: "generate/template-fallback-failed" /* GenerateTemplateFallbackFailed */, message: describeGuideUiError(error) });
+    }
+  }
+};
+var handleCandidatesInput = ({ state, dispatch, complete, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: "candidates/move" /* CandidatesMove */, delta: -1 });
+  else if (key.downArrow || input === "j") dispatch({ type: "candidates/move" /* CandidatesMove */, delta: 1 });
+  else if (key.return) dispatch({ type: "candidates/confirm" /* CandidatesConfirm */ });
+  else if (input === "r") dispatch({ type: "candidates/refine-start" /* CandidatesRefineStart */ });
+  else if (input === "e") dispatch({ type: "candidates/direct-edit-start" /* CandidatesDirectEditStart */ });
+  else if (input === "c" && state.candidates !== void 0) {
+    complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt));
+  } else if (input === "q") cancel();
+};
+var handleTextEditorInput = (context, input, key, maximum, submit, back) => {
+  if (key.escape) context.dispatch(back);
+  else if (key.return) context.dispatch(submit);
+  else if (key.backspace || key.delete) context.dispatch({ type: "editor/backspace" /* EditorBackspace */ });
+  else if (isPrintableInput(input, key) && isWithinTextBound(context.state.textDraft, input, maximum)) {
+    context.dispatch({ type: "editor/change" /* EditorChange */, text: context.state.textDraft + input });
+  }
+};
+var handleRefineEditorInput = (context, input, key) => handleTextEditorInput(
+  context,
+  input,
+  key,
+  feedbackMaxLength,
+  { type: "refine/submit" /* RefineSubmit */ },
+  { type: "refine/back" /* RefineBack */ }
+);
+var handleDirectEditorInput = (context, input, key) => handleTextEditorInput(
+  context,
+  input,
+  key,
+  promptMaxLength,
+  { type: "direct-edit/submit" /* DirectEditSubmit */ },
+  { type: "direct-edit/back" /* DirectEditBack */ }
+);
+var handleBranchEditorInput = (context, input, key) => handleTextEditorInput(
+  context,
+  input,
+  key,
+  branchMaxLength,
+  { type: "worktree/submit-branch" /* WorktreeSubmitBranch */ },
+  { type: "worktree/back" /* WorktreeBack */ }
+);
+var handleRefineFailedInput = ({ dispatch }, input) => {
+  if (input === "r") dispatch({ type: "refine/retry" /* RefineRetry */ });
+  else if (input === "b") dispatch({ type: "refine/back" /* RefineBack */ });
+};
+var handleReadinessBlockedInput = ({ dispatch, cancel }, input) => {
+  if (input === "r") dispatch({ type: "readiness/retry" /* ReadinessRetry */ });
+  else if (input === "b") dispatch({ type: "readiness/back" /* ReadinessBack */ });
+  else if (input === "q") cancel();
+};
+var completeDestination = (context, option) => {
+  const { state, props, herdrContext, dispatch, complete } = context;
+  if (state.selectedProfile === void 0 || state.selectedCandidate === void 0) return;
+  const prompt = state.selectedCandidate.prompt;
+  if (option === "current-terminal" /* CurrentTerminal */) {
+    complete(buildCurrentTerminalResult(state.selectedProfile, prompt, props.cwd));
+    return;
+  }
+  if (option === "current-herdr-workspace" /* CurrentHerdrWorkspace */ && herdrContext !== null) {
+    complete(buildCurrentHerdrWorkspaceResult(state.selectedProfile, prompt, props.cwd, herdrContext));
+    return;
+  }
+  if (option === "new-herdr-worktree" /* NewHerdrWorktree */) {
+    dispatch({ type: "destination/start-worktree" /* DestinationStartWorktree */ });
+  }
+};
+var handleDestinationInput = (context, input, key) => {
+  const { state, dispatch, complete, cancel, herdrEnabled } = context;
+  const options = destinationOptions(herdrEnabled);
+  if (key.upArrow || input === "k")
+    dispatch({ type: "destination/move" /* DestinationMove */, delta: -1, optionCount: options.length });
+  else if (key.downArrow || input === "j")
+    dispatch({ type: "destination/move" /* DestinationMove */, delta: 1, optionCount: options.length });
+  else if (input === "c" && state.selectedCandidate !== void 0)
+    complete(buildPrintResult(state.selectedCandidate.prompt));
+  else if (key.return) {
+    const option = options[state.destinationIndex];
+    if (option !== void 0) completeDestination(context, option);
+  } else if (input === "b") dispatch({ type: "destination/back" /* DestinationBack */ });
+  else if (input === "q") cancel();
+};
+var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input, key) => {
+  if (input === "e") {
+    dispatch({ type: "worktree/edit-branch" /* WorktreeEditBranch */ });
+    return;
+  }
+  if (input === "q") {
+    cancel();
+    return;
+  }
+  const inspection = state.worktreeInspection;
+  if (!key.return || inspection === void 0 || !("collision" in inspection) || inspection.collision.path === void 0 || state.selectedProfile === void 0 || state.selectedCandidate === void 0) {
+    return;
+  }
+  complete(
+    buildExistingHerdrWorktreeResult(
+      state.selectedProfile,
+      state.selectedCandidate.prompt,
+      inspection.primaryCheckoutPath,
+      inspection.collision.path
+    )
+  );
+};
+var confirmedWorktreeResult = (state) => {
+  const inspection = state.worktreeInspection;
+  if (inspection === void 0 || "collision" in inspection || !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty) || state.selectedProfile === void 0 || state.selectedCandidate === void 0) {
+    return void 0;
+  }
+  return buildNewHerdrWorktreeResult(
+    state.selectedProfile,
+    state.selectedCandidate.prompt,
+    inspection.primaryCheckoutPath,
+    inspection.branch,
+    inspection.baseRef
+  );
+};
+var handleWorktreeReadyInput = ({ state, dispatch, complete }, input, key) => {
+  if (key.escape) {
+    dispatch({ type: "worktree/back" /* WorktreeBack */ });
+    return;
+  }
+  if (!key.return && input !== "y") return;
+  const result = confirmedWorktreeResult(state);
+  if (result === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
+  else complete(result);
+};
+var inputHandlerByStage = {
+  ["intent" /* Intent */]: handleIntentInput,
+  ["matching" /* Matching */]: handleNoInput,
+  ["match-failed" /* MatchFailed */]: handleMatchFailedInput,
+  ["recommendations" /* Recommendations */]: handleRecommendationsInput,
+  ["generating" /* Generating */]: handleNoInput,
+  ["generate-failed" /* GenerateFailed */]: handleGenerateFailedInput,
+  ["candidates" /* Candidates */]: handleCandidatesInput,
+  ["refine-editor" /* RefineEditor */]: handleRefineEditorInput,
+  ["refining" /* Refining */]: handleNoInput,
+  ["refine-failed" /* RefineFailed */]: handleRefineFailedInput,
+  ["direct-editor" /* DirectEditor */]: handleDirectEditorInput,
+  ["checking-readiness" /* CheckingReadiness */]: handleNoInput,
+  ["readiness-blocked" /* ReadinessBlocked */]: handleReadinessBlockedInput,
+  ["destination" /* Destination */]: handleDestinationInput,
+  ["worktree-branch-editor" /* WorktreeBranchEditor */]: handleBranchEditorInput,
+  ["inspecting-worktree" /* InspectingWorktree */]: handleNoInput,
+  ["worktree-collision" /* WorktreeCollision */]: handleWorktreeCollisionInput,
+  ["worktree-ready" /* WorktreeReady */]: handleWorktreeReadyInput
+};
+var handleGuideInput = (context, input, key) => {
+  if (key.ctrl && input === "c") {
+    context.cancel();
+    return;
+  }
+  inputHandlerByStage[context.state.stage](context, input, key);
+};
+var matchingSpinner = ({ props }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Matching profiles", detail: `Model: ${props.model} \xB7 Effort: ${props.effort}` });
+var renderRecommendations = ({ props, state }) => state.recommendations === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Matching profiles", detail: `Model: ${props.model} \xB7 Effort: ${props.effort}` }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+  RecommendationsView,
+  {
+    intent: state.intent ?? "",
+    model: props.model,
+    effort: props.effort,
+    recommendations: state.recommendations,
+    index: state.recommendationIndex,
+    usedLiteralFallback: state.usedLiteralFallback
+  }
+);
+var renderCandidateStage = ({ props, state }) => {
+  if (state.candidates === void 0 || state.selectedRecommendation === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Loading" });
+  if (state.stage === "refine-editor" /* RefineEditor */)
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Refinement feedback", textDraft: state.textDraft, keys: "\u21B5 submit \xB7 Esc back" });
+  if (state.stage === "refining" /* Refining */) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Refining prompt" });
+  if (state.stage === "refine-failed" /* RefineFailed */)
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorPanel, { title: "Refinement failed", message: state.errorMessage, keys: "r retry \xB7 b back" });
+  if (state.stage === "direct-editor" /* DirectEditor */)
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Edit prompt", textDraft: state.textDraft, keys: "\u21B5 submit \xB7 Esc back" });
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    CandidatesView,
+    {
+      candidates: state.candidates,
+      index: state.candidateIndex,
+      usedTemplateFallback: state.usedTemplateFallback,
+      command: publicGuideLaunchCommand(
+        props.catalog,
+        state.selectedRecommendation.profileRef,
+        tripleAt(state.candidates, state.candidateIndex).prompt
+      )
+    }
+  );
+};
+var renderDestination = ({ state, herdrEnabled }) => {
+  const options = destinationOptions(herdrEnabled);
+  const option = options[state.destinationIndex];
+  const command = state.selectedProfile === void 0 ? void 0 : option === "current-terminal" /* CurrentTerminal */ ? buildGuideLaunchCommand(state.selectedProfile, {
+    mode: "argv",
+    prompt: state.selectedCandidate?.prompt ?? ""
+  }).command : buildGuideLaunchCommand(state.selectedProfile).command;
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    DestinationView,
+    {
+      options,
+      index: state.destinationIndex,
+      commandPreview: command === void 0 ? "" : renderCommandPreview(command)
+    }
+  );
+};
+var renderWorktreeCollision = ({ state }) => state.worktreeInspection === void 0 || !("collision" in state.worktreeInspection) ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Inspecting git worktree" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeCollisionView, { inspection: state.worktreeInspection });
+var renderWorktreeReady = ({ state }) => state.worktreeInspection === void 0 || "collision" in state.worktreeInspection ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Inspecting git worktree" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeReadyView, { inspection: state.worktreeInspection, confirmations: state.worktreeConfirmations });
+var stageRenderer = {
+  ["intent" /* Intent */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IntentEditor, { textDraft: state.textDraft }),
+  ["matching" /* Matching */]: matchingSpinner,
+  ["match-failed" /* MatchFailed */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorPanel, { title: "Match failed", message: state.errorMessage, keys: "r retry \xB7 l literal match \xB7 q cancel" }),
+  ["recommendations" /* Recommendations */]: renderRecommendations,
+  ["generating" /* Generating */]: () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Generating prompts" }),
+  ["generate-failed" /* GenerateFailed */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    ErrorPanel,
+    {
+      title: "Generation failed",
+      message: state.errorMessage,
+      keys: `r retry${state.guideDocument === void 0 ? "" : " \xB7 t template fallback"} \xB7 b back \xB7 q cancel`
+    }
+  ),
+  ["candidates" /* Candidates */]: renderCandidateStage,
+  ["refine-editor" /* RefineEditor */]: renderCandidateStage,
+  ["refining" /* Refining */]: renderCandidateStage,
+  ["refine-failed" /* RefineFailed */]: renderCandidateStage,
+  ["direct-editor" /* DirectEditor */]: renderCandidateStage,
+  ["checking-readiness" /* CheckingReadiness */]: () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Checking profile readiness" }),
+  ["readiness-blocked" /* ReadinessBlocked */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    ErrorPanel,
+    {
+      title: state.readiness?.summary ?? "Profile is not ready",
+      message: state.readiness?.kind === "blocked" /* Blocked */ ? state.readiness.diagnostic : void 0,
+      keys: "r retry \xB7 b back \xB7 q cancel"
+    }
+  ),
+  ["destination" /* Destination */]: renderDestination,
+  ["worktree-branch-editor" /* WorktreeBranchEditor */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    TextEditor,
+    {
+      title: "Worktree branch",
+      textDraft: state.textDraft,
+      keys: `${state.errorMessage ?? ""}${state.errorMessage === void 0 ? "" : " \xB7 "}\u21B5 submit \xB7 Esc back`
+    }
+  ),
+  ["inspecting-worktree" /* InspectingWorktree */]: () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Inspecting git worktree" }),
+  ["worktree-collision" /* WorktreeCollision */]: renderWorktreeCollision,
+  ["worktree-ready" /* WorktreeReady */]: renderWorktreeReady
+};
+var GuideApp = (props) => {
+  const { exit } = use_app_default();
+  const [state, dispatch] = (0, import_react34.useReducer)(guideUiReducer, props.initialIntent, createInitialGuideUiState);
+  const herdrContext = getHerdrContext(props.herdrEnv);
+  const herdrEnabled = herdrContext !== null && props.herdrAvailabilityProbe;
+  const complete = (result) => exit(result);
+  const cancel = () => complete(buildCancelResult());
+  useGuideMatchEffect(props, state, dispatch);
+  useGuideGenerationEffect(props, state, dispatch);
+  useGuideRefinementEffect(props, state, dispatch);
+  useGuideReadinessEffect(props, state, dispatch);
+  useGuideWorktreeEffect(props, state, dispatch);
+  const inputContext = {
+    props,
+    state,
+    dispatch,
+    complete,
+    cancel,
+    herdrContext,
+    herdrEnabled
+  };
+  use_input_default((input, key) => handleGuideInput(inputContext, input, key));
+  return stageRenderer[state.stage]({ props, state, herdrEnabled });
 };
 
 // src/cli.tsx
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
-  if (filename !== void 0) return readFile2(filename, "utf8");
+  if (filename !== void 0) return readFile3(filename, "utf8");
   const chunks = [];
   let length = 0;
   for await (const chunk of process.stdin) {
@@ -77416,11 +77658,19 @@ var runInteractiveGuideMode = async (argv, guideRoot) => {
     process.env
   );
   const prompts = await loadDefaultGuidePrompts();
-  const provider = new CopilotGuideProvider({
-    model: config.model,
-    effort: config.effort,
-    prompts
-  });
+  const provider = new CachedGuideProvider(
+    new CopilotGuideProvider({
+      model: config.model,
+      effort: config.effort,
+      prompts
+    }),
+    {
+      cachePath: defaultGuideMatchCachePath(process.env),
+      model: config.model,
+      effort: config.effort,
+      matchPrompt: prompts.match
+    }
+  );
   const runner = createNodeCommandRunner();
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner);
   let outputFd;
@@ -77538,7 +77788,7 @@ var main = async () => {
 `;
     const resultPath = process.argv[3];
     if (resultPath === void 0) process.stdout.write(serialized);
-    else await writeFile(resultPath, serialized, { mode: 384 });
+    else await writeFile2(resultPath, serialized, { mode: 384 });
   } finally {
     if (input !== process.stdin) input.destroy();
     if (output !== process.stderr) output.destroy();
