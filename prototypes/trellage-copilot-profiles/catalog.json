@@ -60,6 +60,44 @@
       ],
       "standaloneMcps": []
     },
+    "plannotator": {
+      "description": "GitHub Copilot CLI with Effective HTML’s six focused skills for visual artifacts, wireframes, interactive prototypes, plans, and diagrams.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text",
+          "json"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "hard-deny",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": true,
+        "effortOverride": false,
+        "testedHarnessVersion": "1.0.80"
+      },
+      "marketplace": "plannotator/effective-html",
+      "marketplaceName": "effective-html",
+      "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json",
+      "versionManifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.codex-plugin/plugin.json",
+      "installedVersionManifest": ".codex-plugin/plugin.json",
+      "plugin": "plannotator-effective-html@effective-html",
+      "requiredPackageSkills": [
+        "design-artifact",
+        "html",
+        "html-diagram",
+        "html-plan",
+        "html-prototype",
+        "html-wireframe"
+      ],
+      "standaloneMcps": []
+    },
     "superpowers": {
       "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
       "headless": {

@@ -32,7 +32,8 @@ Profile homes use this layout:
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
 ```
 
-The checked-in profiles are `awesome`, `hve`, and `superpowers`.
+The checked-in profiles are `awesome`, `hve`, `plannotator`, and
+`superpowers`.
 
 ## Commands
 
@@ -41,14 +42,19 @@ cpx list
 cpx inventory hve --json
 cpx setup awesome
 cpx setup hve
+cpx setup plannotator
 cpx setup --all
 cpx awesome --prompt "Suggest useful repository skills"
 cpx hve
+cpx plannotator --prompt "Create an implementation plan as a self-contained HTML artifact"
 cpx superpowers --prompt "Review this repository"
 cpx doctor awesome
 cpx doctor hve
+cpx doctor plannotator
+cpx inventory plannotator --json
 cpx update --check awesome
 cpx update --check hve
+cpx update --check plannotator
 cpx update --check --all
 cpx update hve
 cpx update --all
@@ -84,6 +90,15 @@ and removes forbidden Superpowers variants without updating healthy plugins.
 Cataloged retired plugin identities are removed during setup, launch, update,
 and repair. Updates remain explicit and use native Copilot
 marketplace/plugin commands.
+
+The `plannotator` profile installs
+`plannotator-effective-html@effective-html` from
+[`plannotator/effective-html`](https://github.com/plannotator/effective-html).
+Its health check requires the six Effective HTML package skills:
+`design-artifact`, `html`, `html-diagram`, `html-plan`, `html-prototype`, and
+`html-wireframe`. The plugin does not print a version in `copilot plugin list`,
+so `cpx` reads its validated installed `.codex-plugin/plugin.json` for local
+version state and uses the matching upstream manifest for update checks.
 
 The checked-in [`catalog.json`](catalog.json) declares marketplaces, official
 manifest URLs, plugins, and the empty standalone MCP lists. Installed Copilot

@@ -136,10 +136,12 @@ projected_headless_map_json() {
   jq -cn \
     --argjson awesome "$(projected_headless awesome)" \
     --argjson hve "$(projected_headless hve)" \
+    --argjson plannotator "$(projected_headless plannotator)" \
     --argjson superpowers "$(projected_headless superpowers)" '
     {
       awesome: $awesome,
       hve: $hve,
+      plannotator: $plannotator,
       superpowers: $superpowers
     }
   '
@@ -203,6 +205,41 @@ validate_catalog() {
           "retiredPlugins": ["hve-core-all@hve-core"],
           "standaloneMcps": []
         },
+        "plannotator": {
+          "description": "GitHub Copilot CLI with Effective HTML’s six focused skills for visual artifacts, wireframes, interactive prototypes, plans, and diagrams.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": true,
+            "outputFormats": ["text", "json"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "hard-deny",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": true,
+            "effortOverride": false,
+            "testedHarnessVersion": "1.0.80"
+          },
+          "marketplace": "plannotator/effective-html",
+          "marketplaceName": "effective-html",
+          "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json",
+          "versionManifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.codex-plugin/plugin.json",
+          "installedVersionManifest": ".codex-plugin/plugin.json",
+          "plugin": "plannotator-effective-html@effective-html",
+          "requiredPackageSkills": [
+            "design-artifact",
+            "html",
+            "html-diagram",
+            "html-plan",
+            "html-prototype",
+            "html-wireframe"
+          ],
+          "standaloneMcps": []
+        },
         "superpowers": {
           "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
           "headless": {
@@ -248,6 +285,11 @@ require_profile() {
 
 profile_value() {
   jq -r --arg profile "$1" --arg field "$2" '.profiles[$profile][$field]' "$catalog"
+}
+
+profile_optional_value() {
+  jq -r --arg profile "$1" --arg field "$2" \
+    '.profiles[$profile][$field] // empty' "$catalog"
 }
 
 profile_home() {
@@ -393,32 +435,41 @@ launch_profile() {
     copilot --autopilot --allow-all --no-ask-user "$@"
 }
 
-installed_version() {
-  local profile="$1"
-  local plugin="$2"
-  run_copilot "$profile" plugin list \
-    | sed -n "s/^[[:space:]]*• ${plugin} (v\\([^)]*\\)).*/\\1/p" \
-    | head -n 1
-}
-
 plugin_inventory_snapshot() {
   local profile="$1" inventory
 
   inventory="$(run_copilot "$profile" plugin list)" || return 2
-  printf '%s\n' "$inventory" | awk '
-    /^No plugins installed\.?$/ { empty += 1; next }
-    /^Use .copilot plugin install <source>. to install a plugin\.$/ { next }
-    /^Installed plugins:$/ { header += 1; next }
-    /^[[:space:]]*• [A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)? \(v[^()[:cntrl:]]+\)( \((enabled|disabled)\))?$/ { plugins += 1; next }
-    /^[[:space:]]*$/ { next }
-    { invalid = 1 }
-    END {
-      if (invalid) exit 1
-      if (empty) exit(empty != 1 || header != 0 || plugins != 0)
-      exit(header != 1)
-    }
-  ' || return 2
-  printf '%s\n' "$inventory"
+  printf '%s\n' "$inventory" | jq -Rsce '
+    def selector:
+      "[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?";
+    split("\n")
+    | map(select(length > 0))
+    | if .[0] == "No plugins installed." or .[0] == "No plugins installed" then
+        if length == 1
+          or (length == 2 and .[1] == "Use '\''copilot plugin install <source>'\'' to install a plugin.")
+        then []
+        else error("invalid empty plugin inventory")
+        end
+      elif .[0] == "Installed plugins:" then
+        .[1:]
+        | map(
+            if test("^[[:space:]]*• " + selector + " \\(v[^()[:cntrl:]]+\\)( \\((enabled|disabled)\\))?$") then
+              capture("^[[:space:]]*• (?<name>" + selector + ") \\(v(?<version>[^()[:cntrl:]]+)\\)( \\((enabled|disabled)\\))?$")
+              | {name, version}
+            elif test("^[[:space:]]*• " + selector + "( \\((enabled|disabled)\\))?$") then
+              capture("^[[:space:]]*• (?<name>" + selector + ")( \\((enabled|disabled)\\))?$")
+              | {name, version: null}
+            else
+              error("invalid plugin row")
+            end
+          )
+        | if ([.[].name] | length) == ([.[].name] | unique | length) then .
+          else error("duplicate plugin row")
+          end
+      else
+        error("invalid plugin inventory")
+      end
+  ' 2>/dev/null || return 2
 }
 
 normalize_github_source() {
@@ -455,6 +506,88 @@ active_plugin_root() {
   canonical_root="$(cd "$root" 2>/dev/null && pwd -P)" || return 2
   [[ "$canonical_root" == "$canonical_home"/* ]] || return 2
   printf '%s\n' "$root"
+}
+
+installed_manifest_version() {
+  local profile="$1" plugin="$2"
+  local manifest_path root current remaining segment canonical_root canonical_manifest
+
+  manifest_path="$(profile_optional_value "$profile" installedVersionManifest)" || return 2
+  [[ -n "$manifest_path" ]] || return 1
+  case "$manifest_path" in
+    /*|''|*/|*//*|../*|*/../*|*/..|..|./*|*/./*|*/.) return 2 ;;
+  esac
+
+  root="$(active_plugin_root "$profile" "$plugin")" || return 2
+  current="$root"
+  remaining="$manifest_path"
+  while [[ "$remaining" == */* ]]; do
+    segment="${remaining%%/*}"
+    [[ -n "$segment" && "$segment" != '.' && "$segment" != '..' ]] || return 2
+    current="$current/$segment"
+    [[ -d "$current" && ! -L "$current" ]] || return 2
+    remaining="${remaining#*/}"
+  done
+  [[ -n "$remaining" && "$remaining" != '.' && "$remaining" != '..' ]] || return 2
+  current="$current/$remaining"
+  [[ -f "$current" && ! -L "$current" ]] || return 2
+
+  canonical_root="$(cd -P "$root" >/dev/null 2>&1 && pwd)" || return 2
+  canonical_manifest="$(cd -P "$(dirname "$current")" >/dev/null 2>&1 && pwd)/$(basename "$current")" \
+    || return 2
+  case "$canonical_manifest" in
+    "$canonical_root"/*) ;;
+    *) return 2 ;;
+  esac
+
+  jq -er --arg plugin "${plugin%%@*}" '
+    if .name == $plugin
+      and (.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$"))
+    then .version
+    else empty
+    end
+  ' "$current" 2>/dev/null || return 2
+}
+
+plugin_present_in_snapshot() {
+  local plugin="$1" inventory="$2"
+  jq -e --arg plugin "$plugin" 'any(.[]; .name == $plugin)' \
+    <<<"$inventory" >/dev/null 2>&1
+}
+
+resolved_version_from_snapshot() {
+  local profile="$1" plugin="$2" inventory="$3"
+  local version status=0
+
+  plugin_present_in_snapshot "$plugin" "$inventory" || return 1
+  version="$(jq -r --arg plugin "$plugin" \
+    '.[] | select(.name == $plugin) | .version // empty' <<<"$inventory")" || return 2
+  if [[ -n "$version" ]]; then
+    printf '%s\n' "$version"
+    return
+  fi
+  version="$(installed_manifest_version "$profile" "$plugin")" || status=$?
+  [[ "$status" == 0 && -n "$version" ]] || return 2
+  printf '%s\n' "$version"
+}
+
+installed_version() {
+  local profile="$1" plugin="$2" inventory version status=0
+
+  inventory="$(plugin_inventory_snapshot "$profile")" || return 2
+  version="$(resolved_version_from_snapshot "$profile" "$plugin" "$inventory")" || status=$?
+  case "$status" in
+    0) printf '%s\n' "$version" ;;
+    1) ;;
+    *) return 2 ;;
+  esac
+}
+
+plugin_is_installed() {
+  local profile="$1" plugin="$2" inventory
+
+  inventory="$(plugin_inventory_snapshot "$profile")" || return 2
+  plugin_present_in_snapshot "$plugin" "$inventory"
 }
 
 plugin_manifest_is_superpowers() {
@@ -530,8 +663,7 @@ forbidden_superpowers_plugins_from_snapshot() {
       *) return 2 ;;
     esac
     status=0
-  done < <(printf '%s\n' "$inventory" | sed -n -E \
-    's/^[[:space:]]*• ([A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?) \(v[^)]*\)( \((enabled|disabled)\))?$/\1/p')
+  done < <(jq -r '.[].name' <<<"$inventory")
   [[ -n "$matches" ]] || return 1
   printf '%s' "$matches" | LC_ALL=C sort -u
 }
@@ -581,9 +713,8 @@ retired_plugins_from_snapshot() {
 
   while IFS= read -r selector; do
     [[ -n "$selector" ]] || continue
-    if printf '%s\n' "$inventory" | sed -n -E \
-      's/^[[:space:]]*• ([A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?) \(v[^)]*\)( \((enabled|disabled)\))?$/\1/p' \
-      | grep -Fxq -- "$selector"; then
+    if jq -e --arg selector "$selector" \
+      'any(.[]; .name == $selector)' <<<"$inventory" >/dev/null; then
       matches+="$selector"$'\n'
     fi
   done < <(jq -r --arg profile "$profile" \
@@ -657,14 +788,12 @@ ensure_profile_for_launch() {
   esac
 
   plugin="$(profile_value "$profile" plugin)"
-  version="$(printf '%s\n' "$inventory" \
-    | sed -n "s/^[[:space:]]*• ${plugin} (v\\([^)]*\\)).*/\\1/p" \
-    | head -n 1)"
-  if [[ -z "$version" ]]; then
+  if ! plugin_present_in_snapshot "$plugin" "$inventory"; then
     ensure_marketplace "$profile"
     run_copilot "$profile" plugin install "$plugin"
   fi
   remove_retired_plugins "$profile"
+  verify_required_package_skills "$profile"
 }
 
 marketplace_available() {
@@ -696,17 +825,19 @@ ensure_marketplace() {
 setup_profile() {
   local profile="$1"
   local plugin
-  local current_version
+  local installed_status=0
   require_profile "$profile"
   prepare_profile_home "$profile"
   ensure_floating_skills "$profile"
   remove_forbidden_superpowers "$profile"
   ensure_marketplace "$profile"
   plugin="$(profile_value "$profile" plugin)"
-  current_version="$(installed_version "$profile" "$plugin")"
-  if [[ -z "$current_version" ]]; then
-    run_copilot "$profile" plugin install "$plugin"
-  fi
+  plugin_is_installed "$profile" "$plugin" || installed_status=$?
+  case "$installed_status" in
+    0) ;;
+    1) run_copilot "$profile" plugin install "$plugin" ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
   remove_retired_plugins "$profile"
   printf '%s: ready\n' "$profile"
 }
@@ -863,36 +994,21 @@ inventory_profile() {
   marketplace_name="$(profile_value "$profile" marketplaceName)"
   plugin_root="$home/installed-plugins/$marketplace_name/$plugin_name"
 
-  plugin_output="$(run_copilot "$profile" plugin list)" \
+  plugin_output="$(plugin_inventory_snapshot "$profile")" \
     || die "failed to read plugin inventory: $profile"
-  plugins="$(printf '%s\n' "$plugin_output" | jq -Rse '
-    split("\n")
-    | map(select(length > 0))
-    | if .[0] != "Installed plugins:" then error("invalid plugin heading") else .[1:] end
-    | map(
-        capture("^  • (?<name>[^[:cntrl:]]+) \\(v(?<version>[^()[:cntrl:]]+)\\)$")
-        | select(.name | length > 0)
-        | select(.version | length > 0)
-      )
-    | if length == 0 then error("empty plugin inventory") else . end
-  ' 2>/dev/null)" || die "invalid plugin inventory for $profile"
-
-  skills="$(run_copilot "$profile" skill list --json)" \
-    || die "failed to read skill inventory: $profile"
-  skills="$(printf '%s\n' "$skills" | jq -ce '
-    if type == "array"
-      and all(.[];
-        type == "object"
-        and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
-        and (.source | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
-        and (.path | type == "string" and length > 0 and startswith("/"))
-        and (.enabled | type == "boolean"))
-    then {
-      visibleCount: ([.[] | select(.enabled)] | length)
-    }
-    else error("invalid skill inventory")
+  version="$(resolved_version_from_snapshot "$profile" "$plugin" "$plugin_output")" \
+    || die "failed to resolve installed plugin version: $profile"
+  plugins="$(jq -ce --arg plugin "$plugin" --arg version "$version" '
+    if length == 0 then error("empty plugin inventory")
+    else map(if .name == $plugin then .version = $version else . end)
     end
-  ' 2>/dev/null)" || die "invalid skill inventory for $profile"
+  ' <<<"$plugin_output" 2>/dev/null)" || die "invalid plugin inventory for $profile"
+
+  skills="$(skill_inventory_snapshot "$profile")" \
+    || die "failed to read skill inventory: $profile"
+  skills="$(jq -ce '{
+    visibleCount: ([.[] | select(.enabled)] | length)
+  }' <<<"$skills" 2>/dev/null)" || die "invalid skill inventory for $profile"
   package_count="$(count_package_skills "$profile" "$plugin_root")" \
     || die "invalid installed plugin root for $profile"
   [[ "$package_count" =~ ^[0-9]+$ ]] \
@@ -938,6 +1054,64 @@ check_empty_mcp_file() {
     || die "standalone MCP configuration is not empty: $config_file"
 }
 
+skill_inventory_snapshot() {
+  local profile="$1" inventory
+
+  inventory="$(run_copilot "$profile" skill list --json)" || return 2
+  jq -ce '
+    if type == "array"
+      and all(.[];
+        type == "object"
+        and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+        and (.source | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
+        and (.path | type == "string" and length > 0 and startswith("/"))
+        and (.enabled | type == "boolean"))
+    then .
+    else error("invalid skill inventory")
+    end
+  ' <<<"$inventory" 2>/dev/null || return 2
+}
+
+verify_required_package_skills() {
+  local profile="$1"
+  local plugin plugin_root skills_root skill skill_root skill_file inventory
+
+  if ! jq -e --arg profile "$profile" \
+    '(.profiles[$profile].requiredPackageSkills // []) | length > 0' \
+    "$catalog" >/dev/null; then
+    return
+  fi
+
+  plugin="$(profile_value "$profile" plugin)"
+  plugin_root="$(active_plugin_root "$profile" "$plugin")" \
+    || die "invalid installed plugin root for $profile"
+  skills_root="$plugin_root/skills"
+  [[ -d "$skills_root" && ! -L "$skills_root" ]] \
+    || die "required package skill root is unsafe: $profile"
+  inventory="$(skill_inventory_snapshot "$profile")" \
+    || die "failed to read skill inventory: $profile"
+
+  while IFS= read -r skill; do
+    [[ "$skill" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+      || die "invalid required package skill name: $profile"
+    skill_root="$skills_root/$skill"
+    skill_file="$skill_root/SKILL.md"
+    [[ -d "$skill_root" && ! -L "$skill_root" \
+      && -f "$skill_file" && ! -L "$skill_file" ]] \
+      || die "required package skill is missing or unsafe: $profile/$skill"
+    jq -e --arg skill "$skill" --arg path "$skill_root" '
+      [.[] | select(
+        .name == $skill
+        and .source == "plugin"
+        and .path == $path
+        and .enabled == true
+      )] | length == 1
+    ' <<<"$inventory" >/dev/null \
+      || die "required package skill is not enabled by Copilot: $profile/$skill"
+  done < <(jq -r --arg profile "$profile" \
+    '.profiles[$profile].requiredPackageSkills[]? // empty' "$catalog")
+}
+
 doctor_profile() {
   local profile="$1"
   local home
@@ -951,12 +1125,14 @@ doctor_profile() {
   require_no_retired_plugins "$profile"
   require_no_forbidden_superpowers "$profile"
   plugin="$(profile_value "$profile" plugin)"
-  version="$(installed_version "$profile" "$plugin")"
+  version="$(installed_version "$profile" "$plugin")" \
+    || die "failed to resolve installed plugin version: $plugin"
   [[ -n "$version" ]] || die "expected plugin is not installed: $plugin"
   [[ "$(profile_value "$profile" standaloneMcps)" == '[]' ]] \
     || die "catalog requests unsupported standalone MCPs: $profile"
 
   verify_floating_skills "$profile"
+  verify_required_package_skills "$profile"
   check_empty_mcp_file "$home/mcp-config.json"
   check_empty_mcp_file "$home/config/mcp-config.json"
 
@@ -968,11 +1144,28 @@ manifest_version() {
   local manifest_url
   local plugin
   local plugin_name
-  manifest_url="$(profile_value "$profile" manifestUrl)"
+  manifest_url="$(profile_optional_value "$profile" versionManifestUrl)"
+  if [[ -z "$manifest_url" ]]; then
+    manifest_url="$(profile_value "$profile" manifestUrl)"
+  fi
   plugin="$(profile_value "$profile" plugin)"
   plugin_name="${plugin%%@*}"
   curl -fsSL "$manifest_url" \
-    | jq -er --arg plugin "$plugin_name" '.plugins[] | select(.name == $plugin) | .version' \
+    | jq -er --arg plugin "$plugin_name" '
+        (
+          if (.plugins | type) == "array" then
+            .plugins[] | select(.name == $plugin) | .version
+          elif .name == $plugin then
+            .version
+          else
+            empty
+          end
+        )
+        | select(
+            type == "string"
+            and test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")
+          )
+      ' \
     | head -n 1
 }
 
@@ -1032,7 +1225,7 @@ update_profile() {
   local profile="$1"
   local marketplace_name
   local plugin
-  local version
+  local installed_status=0
   require_profile "$profile"
   ensure_floating_skills "$profile"
   [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
@@ -1040,12 +1233,12 @@ update_profile() {
   marketplace_name="$(profile_value "$profile" marketplaceName)"
   plugin="$(profile_value "$profile" plugin)"
   run_copilot "$profile" plugin marketplace update "$marketplace_name"
-  version="$(installed_version "$profile" "$plugin")"
-  if [[ -n "$version" ]]; then
-    run_copilot "$profile" plugin update "$plugin"
-  else
-    run_copilot "$profile" plugin install "$plugin"
-  fi
+  plugin_is_installed "$profile" "$plugin" || installed_status=$?
+  case "$installed_status" in
+    0) run_copilot "$profile" plugin update "$plugin" ;;
+    1) run_copilot "$profile" plugin install "$plugin" ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
   remove_retired_plugins "$profile"
   printf '%s: updated\n' "$profile"
 }
@@ -1053,17 +1246,19 @@ update_profile() {
 repair_profile() {
   local profile="$1"
   local plugin
-  local version
+  local installed_status=0
   require_profile "$profile"
   prepare_profile_home "$profile"
   ensure_floating_skills "$profile"
   remove_forbidden_superpowers "$profile"
   ensure_marketplace "$profile"
   plugin="$(profile_value "$profile" plugin)"
-  version="$(installed_version "$profile" "$plugin")"
-  if [[ -z "$version" ]]; then
-    run_copilot "$profile" plugin install "$plugin"
-  fi
+  plugin_is_installed "$profile" "$plugin" || installed_status=$?
+  case "$installed_status" in
+    0) ;;
+    1) run_copilot "$profile" plugin install "$plugin" ;;
+    *) die "failed to read installed plugins: $profile" ;;
+  esac
   remove_retired_plugins "$profile"
   doctor_profile "$profile"
   printf '%s: repaired\n' "$profile"
