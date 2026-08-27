@@ -71400,6 +71400,47 @@ var CopilotWebSocketResponseBridge = class {
 };
 
 // node_modules/@github/copilot-sdk/dist/types.js
+var RuntimeConnection = {
+  /**
+   * Spawn a runtime child process and communicate over its stdin/stdout.
+   * This is the default if no {@link CopilotClientOptions.connection} is set.
+   */
+  forStdio(opts = {}) {
+    return { kind: "stdio", path: opts.path, args: opts.args, env: opts.env };
+  },
+  /**
+   * Spawn a runtime child process that listens on a TCP socket and connect to it.
+   */
+  forTcp(opts = {}) {
+    return {
+      kind: "tcp",
+      port: opts.port,
+      connectionToken: opts.connectionToken,
+      path: opts.path,
+      args: opts.args,
+      env: opts.env
+    };
+  },
+  /**
+   * Connect to an already-running runtime at the given URL. The SDK does not
+   * spawn a process in this mode.
+   */
+  forUri(url, opts = {}) {
+    return { kind: "uri", url, connectionToken: opts.connectionToken };
+  },
+  /**
+   * Host the runtime in-process over the native runtime library's C ABI (FFI).
+   *
+   * @experimental Per-client options lowered to environment variables (`env`,
+   * `telemetry`, `gitHubToken`, `baseDirectory`) are **not** honored in-process;
+   * the worker inherits the host process's ambient environment. Set the
+   * corresponding environment variables on the host process instead. See
+   * https://github.com/github/copilot-sdk/issues/1934.
+   */
+  forInProcess() {
+    return { kind: "inprocess" };
+  }
+};
 function isAttributedPermissionResult(result) {
   return result.kind === "attributed";
 }
@@ -75602,6 +75643,7 @@ var CopilotGuideProvider = class {
   async run(systemPrompt, input, timeoutMs, validate2) {
     const client = this.clientFactory({
       mode: "empty",
+      connection: RuntimeConnection.forStdio({ path: "copilot" }),
       baseDirectory: this.baseDirectory,
       workingDirectory: this.workingDirectory
     });
