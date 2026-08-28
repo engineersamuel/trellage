@@ -1,3 +1,6 @@
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
 import { Effect } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -21,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     readonly selections: ReadonlyArray<string>
     readonly versionFallback?: string
   }>,
+  sourceDirectory: "/cache/source",
 }))
 
 vi.mock("../src/github-cache.js", async () => {
@@ -31,7 +35,7 @@ vi.mock("../src/github-cache.js", async () => {
       return Effect.succeed({
         ...request,
         commit: "a".repeat(40),
-        directory: "/cache/source",
+        directory: mocks.sourceDirectory,
         integrity: `sha256:${"b".repeat(64)}`,
         files: [],
       })
@@ -173,6 +177,8 @@ vi.mock("../src/claude-plugin.js", async () => {
 
 import { productionResolvers } from "../src/resolvers.js"
 
+const hyperresearchFixtures = fileURLToPath(new URL("./fixtures/hyperresearch", import.meta.url))
+
 describe("production package resolutions", () => {
   beforeEach(() => {
     mocks.requests.length = 0
@@ -183,6 +189,7 @@ describe("production package resolutions", () => {
     mocks.codexReleaseRequests.length = 0
     mocks.marketplaceRequests.length = 0
     mocks.claudeMarketplaceRequests.length = 0
+    mocks.sourceDirectory = "/cache/source"
   })
 
   it("locks Debian package archive SHA-256 values rather than synthetic name hashes", async () => {
@@ -500,6 +507,46 @@ describe("production package resolutions", () => {
       ...mocks.claudeReleaseRequests,
       ...mocks.codexReleaseRequests,
     ]).toEqual([])
+  })
+
+  it("locks the exact Hyperresearch package version from the resolved commit", async () => {
+    mocks.sourceDirectory = path.join(hyperresearchFixtures, "valid")
+
+    const result = await Effect.runPromise(
+      productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
+        kind: "plugin",
+        adapter: "hyperresearch",
+        repository: "https://github.com/jordan-gibbs/hyperresearch.git",
+        ref: "main",
+        select: ["light"],
+        update: false,
+      }),
+    )
+
+    expect(result).toMatchObject({
+      commit: "a".repeat(40),
+      package_version: "0.9.1",
+    })
+  })
+
+  it.each([
+    ["missing", /package version is missing/],
+    ["invalid", /package version is not exact/],
+  ])("rejects a Hyperresearch pyproject with a %s package version", async (fixture, message) => {
+    mocks.sourceDirectory = path.join(hyperresearchFixtures, fixture)
+
+    await expect(
+      Effect.runPromise(
+        productionResolvers("/tmp/cache", "linux/arm64").resolveSource({
+          kind: "plugin",
+          adapter: "hyperresearch",
+          repository: "https://github.com/jordan-gibbs/hyperresearch.git",
+          ref: "main",
+          select: ["light"],
+          update: false,
+        }),
+      ),
+    ).rejects.toThrow(message)
   })
 
   it("resolves Copilot source through the full cache before reading marketplace metadata", async () => {

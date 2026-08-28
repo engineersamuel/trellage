@@ -63,6 +63,7 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('adapter = "hyperresearch"')
     expect(source).toContain('repository = "https://github.com/jordan-gibbs/hyperresearch.git"')
     expect(source).toContain('select = ["light"]')
+    expect(source).toContain('gear = "full"')
   })
 
   it("uses floating common and research skills alongside locked Hyperresearch", async () => {

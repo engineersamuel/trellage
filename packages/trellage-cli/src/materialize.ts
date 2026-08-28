@@ -55,6 +55,8 @@ export interface ClaudeMaterializeRequest {
   readonly sourceDirectories: ReadonlyArray<string>
   readonly context: string
   readonly lock: ProfileLock
+  readonly hyperresearchGear?: "full" | "premier"
+  readonly hyperresearchDefaultTier?: "light"
   readonly requirementsPath?: string
   readonly browserAgentPath?: string
 }
@@ -365,11 +367,18 @@ const materializeClaudePlugins = (
   const requirements =
     adapter === "hyperresearch" ? runtimeSupportFile(support, "hyperresearch-requirements") : undefined
   const browserAgent = adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
+  const hyperresearchPlugin = adapter === "hyperresearch" ? profile.plugins[0] : undefined
   return materializeClaude({
     adapter,
     sourceDirectories,
     context,
     lock,
+    ...(hyperresearchPlugin?.adapter === "hyperresearch"
+      ? {
+          hyperresearchGear: hyperresearchPlugin.gear,
+          hyperresearchDefaultTier: hyperresearchPlugin.select[0],
+        }
+      : {}),
     ...(requirements === undefined ? {} : { requirementsPath: path.join(context, requirements.buildContextPath) }),
     ...(browserAgent === undefined ? {} : { browserAgentPath: path.join(context, browserAgent.buildContextPath) }),
   }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))

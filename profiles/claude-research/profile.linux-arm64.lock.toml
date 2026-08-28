@@ -1,11 +1,12 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:b174d7b8e5dc993335c4d1ce994f808111d7537b8096d852f7ee227d5d1765db"
+profile_hash = "sha256:fbdae376d8322598ee2ecc7fb5cdb355eb1ea5aafd0a0e6cb8e329adf2817e0c"
 
 [[sources]]
 kind = "plugin"
 adapter = "hyperresearch"
+package_version = "0.10.0"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
