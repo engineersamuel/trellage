@@ -5,6 +5,7 @@
       "repository": "https://github.com/engineersamuel/skills.git",
       "select": ["*"],
       "exclude": ["deja-history"],
+      "required": ["ui-guidelines"],
       "allowWildcard": true,
       "allowExecutables": true
     },

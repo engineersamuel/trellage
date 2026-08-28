@@ -165,14 +165,17 @@ default = true
 - Every new Trellage Sandbox profile under `profiles/` MUST include
   `sandbox-common` in `skill_bundles`. This bundle supplies Caveman as an
   always-on skill, the selected mattpocock skills, `show-me`, and every skill
-  from `engineersamuel/skills` except cataloged exclusions.
+  from `engineersamuel/skills` except cataloged exclusions. The
+  `engineersamuel` source MUST require `ui-guidelines`.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
 - `skills.json` is the only skill-source allowlist. Skill entries MUST NOT
   contain a ref, commit, digest, or fetched timestamp. Third-party selections
   MUST be explicit. Wildcards require `allowWildcard = true`.
 - Every native launcher MUST use the shared floating-skills manager with
   `native-common`. Every comparison image MUST use the single
-  `comparison-common` snapshot staged for that build operation.
+  `comparison-common` snapshot staged for that build operation. These common
+  bundles MUST retain the `engineersamuel` source so `ui-guidelines` is
+  available on every native and container surface.
 - Native first use and `trx skills update` fetch current default-branch
   content. Later native launches reuse the shared cache without network
   access. Sandbox and comparison builds fetch current skill content at build
