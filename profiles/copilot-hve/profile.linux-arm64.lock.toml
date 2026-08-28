@@ -13070,10 +13070,10 @@ sha256 = "sha256:be565ec0c1edbae2f2cdc78e5da6bd896e13772b4a3ba1c8d36810904812837
 [packages.harness]
 kind = "copilot"
 selector = "latest"
-version = "1.0.80"
-integrity = "sha256:3ed85e711955e13be523bf492bc6c93b40b69925bcb7f817c9d08abf4839cf89"
-url = "https://github.com/github/copilot-cli/releases/download/v1.0.80/copilot-linux-arm64.tar.gz"
-size = 111169100
+version = "1.0.81"
+integrity = "sha256:f0e621e6793b14e04c0f651cd46d818a5bf0bf54d74c9566c9424744b41a279c"
+url = "https://github.com/github/copilot-cli/releases/download/v1.0.81/copilot-linux-arm64.tar.gz"
+size = 94608043
 
 [[packages.runtime]]
 name = "bash"

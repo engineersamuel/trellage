@@ -566,7 +566,7 @@ const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool
     "plugin_list_status=0",
     `plugin_list="$(${nativeEnvironment} "$copilot_bin" plugin list)" || plugin_list_status=$?`,
     '[ "$plugin_list_status" -eq 0 ]',
-    `printf '%s\\n' "$plugin_list" | awk -v expected='${expectedRow}' '$0 == expected { count++ } END { exit count == 1 ? 0 : 1 }'`,
+    `printf '%s\\n' "$plugin_list" | awk -v expected='${expectedRow}' '$0 == expected || $0 == expected " (enabled)" { count++ } END { exit count == 1 ? 0 : 1 }'`,
     "[ -x /mise/installs/node/24.18.0/bin/node ]",
     `/mise/installs/node/24.18.0/bin/node /src/finalize-copilot-seed.mjs /src/copilot-seed ${marketplace} ${selected} ${version}`,
     build,
