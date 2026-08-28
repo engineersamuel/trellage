@@ -92,6 +92,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 ${extra}
 `
 
@@ -473,11 +474,12 @@ select = ["humanizer"]
 
   it.each([
     ["wrong adapter", claudeProfile().replace('adapter = "hyperresearch"', 'adapter = "codex-native"')],
-    ["wrong gear", claudeProfile().replace('select = ["light"]', 'select = ["full"]')],
+    ["wrong default tier", claudeProfile().replace('select = ["light"]', 'select = ["full"]')],
+    ["wrong gear", claudeProfile().replace('gear = "full"', 'gear = "light"')],
     [
       "two plugins",
       claudeProfile(
-        `[[plugins]]\nadapter = "hyperresearch"\nrepository = "https://github.com/jordan-gibbs/hyperresearch.git"\nref = "main"\nselect = ["light"]`,
+        `[[plugins]]\nadapter = "hyperresearch"\nrepository = "https://github.com/jordan-gibbs/hyperresearch.git"\nref = "main"\nselect = ["light"]\ngear = "full"`,
       ),
     ],
     ["wrong repository", claudeProfile().replace("jordan-gibbs/hyperresearch", "example/hyperresearch")],

@@ -28,6 +28,7 @@ export interface SourceLock {
     | "wshobson-agents"
   readonly marketplace?: string
   readonly plugin_versions?: Readonly<Record<string, string>>
+  readonly package_version?: string
   readonly repository: string
   readonly ref: string
   readonly select: ReadonlyArray<string>
@@ -169,6 +170,7 @@ export interface SourceResolution {
   readonly integrity: string
   readonly files: ReadonlyArray<InventoryEntry>
   readonly plugin_versions?: Readonly<Record<string, string>>
+  readonly package_version?: string
 }
 
 export interface LockResolvers {
@@ -262,6 +264,8 @@ const exactRuntimeVersionPattern = /^(?:[0-9]+:)?[0-9][0-9A-Za-z.+~]*(?:-[0-9A-Z
 const runtimeWildcardPattern = /(?:^|[.+:~-])[xX*](?=$|[.+:~-])/
 const safePluginKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const dangerousPluginKeys = new Set(["__proto__", "prototype", "constructor"])
+
+export const isExactSemver = (version: string): boolean => exactSemverPattern.test(version)
 
 const isExactRuntimeVersion = (version: string): boolean =>
   exactRuntimeVersionPattern.test(version) && !runtimeWildcardPattern.test(version)
@@ -565,7 +569,7 @@ const validatePluginVersions = (
     return `${label} plugin version keys do not match selections: ${source.repository}`
   }
   for (const key of keys) {
-    if (!exactSemverPattern.test(versions[key] ?? "")) return `${label} plugin version is not exact: ${key}`
+    if (!isExactSemver(versions[key] ?? "")) return `${label} plugin version is not exact: ${key}`
   }
   return undefined
 }
@@ -589,6 +593,20 @@ const validateMarketplaceSource = (source: SourceLock, requested?: SourceRequest
   }
   if (source.plugin_versions === undefined) return `${label} plugin versions are missing: ${source.repository}`
   return validatePluginVersions(label, source, source.plugin_versions)
+}
+
+const validateSourcePackageVersion = (source: SourceLock): string | undefined => {
+  if (source.adapter === "hyperresearch") {
+    if (source.package_version === undefined) {
+      return `Hyperresearch package version is missing: ${source.repository}`
+    }
+    return isExactSemver(source.package_version)
+      ? undefined
+      : `Hyperresearch package version is not exact: ${source.repository}`
+  }
+  return source.package_version === undefined
+    ? undefined
+    : `package version requires the Hyperresearch adapter: ${source.repository}`
 }
 
 const unsafeInventoryPath = (filePath: string): boolean =>
@@ -662,6 +680,8 @@ const validateSources = (document: ProfileDocument, current: ProfileLock): strin
   for (const [sourceIndex, source] of current.sources.entries()) {
     const identityError = validateSourceIdentity(source)
     if (identityError !== undefined) return identityError
+    const packageVersionError = validateSourcePackageVersion(source)
+    if (packageVersionError !== undefined) return packageVersionError
     const marketplaceError = validateMarketplaceSource(source, requestedSources[sourceIndex])
     if (marketplaceError !== undefined) return marketplaceError
     const inventoryError = validateSourceInventory(source)

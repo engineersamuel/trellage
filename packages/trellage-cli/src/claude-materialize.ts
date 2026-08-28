@@ -372,9 +372,12 @@ export const managedClaudeFiles = async (root: string): Promise<ReadonlyArray<st
   return found.sort()
 }
 
-export const hyperresearchSeedInstallArguments = (installHome: string): ReadonlyArray<ReadonlyArray<string>> => [
-  ["-m", "hyperresearch", "install", "--global", "--profile", "light"],
-  ["-m", "hyperresearch", "install", "--steps-only", installHome, "--profile", "light"],
+export const hyperresearchSeedInstallArguments = (
+  installHome: string,
+  gear: "full" | "premier",
+): ReadonlyArray<ReadonlyArray<string>> => [
+  ["-m", "hyperresearch", "install", "--global", "--profile", gear],
+  ["-m", "hyperresearch", "install", "--steps-only", installHome, "--profile", gear],
 ]
 
 export const normalizeHyperresearchSeed = (
@@ -394,6 +397,120 @@ export const normalizeHyperresearchSeed = (
       if (normalized !== source) await writeFile(candidate, normalized)
     }
   })
+
+const hyperresearchTierUpstream =
+  '**Default is `"full"`.** When uncertain, tier up. Running the full pipeline on a simple query wastes money; running the light pipeline on a complex query produces a bad report.'
+
+const hyperresearchTierTrellage =
+  '**Default is `"light"` in Trellage.** When uncertain, stay light. Select `"full"` only when the user explicitly requests deep or full research, or when the query clearly requires deep analysis, conflicting-evidence synthesis, a defended thesis, a literature review, or an evidence-chain forecast. Do not ask the user to choose a tier; resolve tier ambiguity to `"light"`.'
+
+const hyperresearchRoutingUpstream = "If you're uncertain, tier up — but never silently upgrade every query to `full`."
+
+const hyperresearchRoutingTrellage =
+  "If you're uncertain, stay `light`. Upgrade to `full` only for clear full-tier signals or an explicit user request. Never ask the user to choose a tier."
+
+const hyperresearchRunProfileUpstream = (gear: string): string =>
+  `For a standard run, pass the installed gear (\`${gear}\`) unless the user asked for something else.`
+
+const hyperresearchRunProfileTrellage =
+  "For a standard Trellage run, pass `light` unless the user explicitly requested deep, full, premier, or dissertation research. Never ask the user to choose a tier; resolve ambiguity to `light`. The manifest profile is informational if step 1 later classifies the query differently."
+
+const hyperresearchFullTierRowUpstream =
+  '| `"full"` | Deep analysis, synthesis of conflicting evidence, defended thesis, literature review, forecast with evidence chains. | "Analyze the impact of...", "Evaluate whether...", multi-paragraph prompts, explicit request for depth/rigor, research-grade questions, contested topics |'
+
+const hyperresearchFullTierRowTrellage =
+  '| `"full"` | The user explicitly requests deep, full, rigorous, adversarial, literature-review, thesis, or evidence-chain forecast research. | "deep research", "full pipeline", "adversarial review", "literature review", "defended thesis", or another explicit depth requirement. Do not select full only because a prompt is multi-paragraph, uses "analyze" or "evaluate", or covers a contested topic. |'
+
+const hyperresearchStepSkillsUpstream =
+  '- **Step-skills check.** If `.claude/skills/hyperresearch-1-decompose/SKILL.md` doesn\'t exist relative to the working directory, run `hyperresearch install --steps-only . --json`. Installs the 16 step skill files needed by `Skill(skill: "hyperresearch-N-...")` calls in later steps.'
+
+const hyperresearchStepSkillsTrellage = (gear: string): string =>
+  `- **Step-skills refresh.** Run \`hyperresearch install --steps-only . --profile ${gear} --json\` before every run. This refreshes changed Trellage prompt contracts and is a cheap no-op when the installed files already match.`
+
+const hyperresearchVaultBootstrapUpstream =
+  "- **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `hyperresearch init . --json`. Creates the SQLite vault and `research/` directory."
+
+const hyperresearchVaultBootstrapTrellage =
+  "- **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `hyperresearch init . --json`, then run `hyperresearch config set web.provider crawl4ai --json`. This creates the SQLite vault and `research/` directory and selects the bundled Crawl4AI provider. Do not change the provider when the vault already exists."
+
+const replacePromptContract = (source: string, upstream: string, adapted: string): string => {
+  const upstreamIndex = source.indexOf(upstream)
+  const adaptedIndex = source.indexOf(adapted)
+  const hasOneUpstream = upstreamIndex >= 0 && source.indexOf(upstream, upstreamIndex + upstream.length) < 0
+  const hasOneAdapted = adaptedIndex >= 0 && source.indexOf(adapted, adaptedIndex + adapted.length) < 0
+  if (hasOneUpstream && !hasOneAdapted) {
+    return `${source.slice(0, upstreamIndex)}${adapted}${source.slice(upstreamIndex + upstream.length)}`
+  }
+  if (!hasOneUpstream && hasOneAdapted) return source
+  throw new Error("unsupported Hyperresearch prompt contract")
+}
+
+const normalizeHyperresearchPromptFiles = (
+  entryPath: string,
+  stepOnePath: string,
+  defaultTier: "light",
+  gearMarker: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.tryPromise({
+    try: async () => {
+      if (defaultTier !== "light") throw new Error(`unsupported Hyperresearch default tier: ${defaultTier}`)
+      const [entrySource, stepOneSource] = await Promise.all([
+        readFile(entryPath, "utf8"),
+        readFile(stepOnePath, "utf8"),
+      ])
+      const normalizedEntry = replacePromptContract(
+        replacePromptContract(
+          replacePromptContract(entrySource, hyperresearchRoutingUpstream, hyperresearchRoutingTrellage),
+          hyperresearchVaultBootstrapUpstream,
+          hyperresearchVaultBootstrapTrellage,
+        ),
+        hyperresearchStepSkillsUpstream,
+        hyperresearchStepSkillsTrellage(gearMarker),
+      )
+      const normalizedEntryProfile = replacePromptContract(
+        normalizedEntry,
+        hyperresearchRunProfileUpstream(gearMarker),
+        hyperresearchRunProfileTrellage,
+      )
+      const normalizedStepOne = replacePromptContract(
+        replacePromptContract(stepOneSource, hyperresearchFullTierRowUpstream, hyperresearchFullTierRowTrellage),
+        hyperresearchTierUpstream,
+        hyperresearchTierTrellage,
+      )
+      await Promise.all([
+        normalizedEntryProfile === entrySource ? Promise.resolve() : writeFile(entryPath, normalizedEntryProfile),
+        normalizedStepOne === stepOneSource ? Promise.resolve() : writeFile(stepOnePath, normalizedStepOne),
+      ])
+    },
+    catch: (cause) =>
+      new ClaudeMaterializeError({
+        message: `cannot normalize Hyperresearch prompt contracts${cause instanceof Error ? `: ${cause.message}` : ""}`,
+        cause,
+      }),
+  })
+
+export const normalizeHyperresearchPromptContracts = (
+  seed: string,
+  defaultTier: "light",
+  gear: "full" | "premier",
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  normalizeHyperresearchPromptFiles(
+    path.join(seed, "skills", "hyperresearch", "SKILL.md"),
+    path.join(seed, "skills", "hyperresearch-1-decompose", "SKILL.md"),
+    defaultTier,
+    gear,
+  )
+
+export const normalizeHyperresearchPackagePromptContracts = (
+  sitePackages: string,
+  defaultTier: "light",
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  normalizeHyperresearchPromptFiles(
+    path.join(sitePackages, "hyperresearch", "skills", "hyperresearch.md"),
+    path.join(sitePackages, "hyperresearch", "skills", "hyperresearch-1-decompose.md"),
+    defaultTier,
+    "<< p.name >>",
+  )
 
 const vulnerableHyperresearchHookLoop = `\
     for entry in pre_tool:
@@ -601,7 +718,12 @@ const materializeHyperresearchAssets = (
           return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
         }
         const harnessVersion = request.lock.packages.harness.version
-        if (request.requirementsPath === undefined || request.browserAgentPath === undefined) {
+        if (
+          request.requirementsPath === undefined ||
+          request.browserAgentPath === undefined ||
+          request.hyperresearchGear === undefined ||
+          request.hyperresearchDefaultTier === undefined
+        ) {
           return yield* Effect.fail(new ClaudeMaterializeError({ message: "Hyperresearch runtime support is missing" }))
         }
         const requirementsPath = request.requirementsPath
@@ -620,6 +742,7 @@ const materializeHyperresearchAssets = (
         const pythonPackage = path.join(request.context, "hyperresearch-package")
         yield* attempt("cannot create Hyperresearch package target", () => mkdir(pythonPackage, { recursive: true }))
         yield* materializeHyperresearchPackage(request.sourceDirectories[0]!, pythonPackage)
+        yield* normalizeHyperresearchPackagePromptContracts(pythonPackage, request.hyperresearchDefaultTier)
         yield* normalizeHyperresearchSitePermissions(pythonPackage)
 
         const hostVenv = path.join(staging, "host-venv")
@@ -657,9 +780,10 @@ const materializeHyperresearchAssets = (
           resolvedHostSitePackages,
           path.join(hostVenv, "bin", "hyperresearch"),
         )
+        yield* normalizeHyperresearchPackagePromptContracts(resolvedHostSitePackages, request.hyperresearchDefaultTier)
         const installHome = path.join(staging, "seed-home")
         yield* attempt("cannot create Claude seed home", () => mkdir(installHome, { recursive: true }))
-        for (const args of hyperresearchSeedInstallArguments(installHome)) {
+        for (const args of hyperresearchSeedInstallArguments(installHome, request.hyperresearchGear)) {
           yield* run(hostPython, args, {
             env: { ...process.env, HOME: installHome, PYTHONDONTWRITEBYTECODE: "1" },
           })
@@ -695,6 +819,7 @@ const materializeHyperresearchAssets = (
           )
         })
         yield* normalizeHyperresearchSeed(seed, path.join(hostVenv, "bin", "hyperresearch"))
+        yield* normalizeHyperresearchPromptContracts(seed, request.hyperresearchDefaultTier, request.hyperresearchGear)
         yield* attempt("cannot write managed Claude seed manifest", async () => {
           const manifest = await managedClaudeFiles(seed)
           await writeFile(path.join(seed, "managed-paths.txt"), `${manifest.join("\n")}\n`, { mode: 0o644 })

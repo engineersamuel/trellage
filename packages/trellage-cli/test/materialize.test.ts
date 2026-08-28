@@ -28,6 +28,8 @@ import {
   materializeChromiumArchives,
   materializeHyperresearchPackage,
   normalizeHyperresearchHookInstaller,
+  normalizeHyperresearchPackagePromptContracts,
+  normalizeHyperresearchPromptContracts,
   normalizeHyperresearchSeed,
   normalizeHyperresearchSitePermissions,
   stampClaudeMarketplaceVersions,
@@ -36,6 +38,7 @@ import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
 import { parseLock, renderLock } from "../src/lock-file.js"
 import {
   createBuildContext,
+  type ClaudeMaterializeRequest,
   type ClaudeMaterializer,
   type PluginGenerator,
   type RuntimeSupport,
@@ -130,9 +133,9 @@ describe("Hyperresearch seed normalization", () => {
     })
   })
   it("installs every chained skill before Claude scans the global registry", () => {
-    expect(hyperresearchSeedInstallArguments("/tmp/seed-home")).toEqual([
-      ["-m", "hyperresearch", "install", "--global", "--profile", "light"],
-      ["-m", "hyperresearch", "install", "--steps-only", "/tmp/seed-home", "--profile", "light"],
+    expect(hyperresearchSeedInstallArguments("/tmp/seed-home", "full")).toEqual([
+      ["-m", "hyperresearch", "install", "--global", "--profile", "full"],
+      ["-m", "hyperresearch", "install", "--steps-only", "/tmp/seed-home", "--profile", "full"],
     ])
   })
 
@@ -173,6 +176,99 @@ describe("Hyperresearch seed normalization", () => {
       "run /usr/local/bin/hyperresearch note show; keep /private/tmp/unrelated\n",
     )
     await expect(readFile(skill, "utf8")).resolves.toBe("invoke /usr/local/bin/hyperresearch\n")
+  })
+
+  it("makes light the default tier and enables Crawl4AI only during first-run bootstrap", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-prompts-")
+    const entry = path.join(root, "skills", "hyperresearch", "SKILL.md")
+    const stepOne = path.join(root, "skills", "hyperresearch-1-decompose", "SKILL.md")
+    await mkdir(path.dirname(entry), { recursive: true })
+    await mkdir(path.dirname(stepOne), { recursive: true })
+    await writeFile(
+      entry,
+      `\
+If you're uncertain, tier up — but never silently upgrade every query to \`full\`.
+- **Vault check.** If \`.hyperresearch/\` doesn't exist in the working directory, run \`hyperresearch init . --json\`. Creates the SQLite vault and \`research/\` directory.
+- **Step-skills check.** If \`.claude/skills/hyperresearch-1-decompose/SKILL.md\` doesn't exist relative to the working directory, run \`hyperresearch install --steps-only . --json\`. Installs the 16 step skill files needed by \`Skill(skill: "hyperresearch-N-...")\` calls in later steps.
+For a standard run, pass the installed gear (\`full\`) unless the user asked for something else.
+`,
+    )
+    await writeFile(
+      stepOne,
+      `\
+| \`"full"\` | Deep analysis, synthesis of conflicting evidence, defended thesis, literature review, forecast with evidence chains. | "Analyze the impact of...", "Evaluate whether...", multi-paragraph prompts, explicit request for depth/rigor, research-grade questions, contested topics |
+**Default is \`"full"\`.** When uncertain, tier up. Running the full pipeline on a simple query wastes money; running the light pipeline on a complex query produces a bad report.
+`,
+    )
+
+    await Effect.runPromise(normalizeHyperresearchPromptContracts(root, "light", "full"))
+    const once = await Promise.all([readFile(entry, "utf8"), readFile(stepOne, "utf8")])
+    await Effect.runPromise(normalizeHyperresearchPromptContracts(root, "light", "full"))
+    const twice = await Promise.all([readFile(entry, "utf8"), readFile(stepOne, "utf8")])
+
+    expect(twice).toEqual(once)
+    expect(once[0]).toContain("If you're uncertain, stay `light`.")
+    expect(once[0]).toContain("hyperresearch config set web.provider crawl4ai --json")
+    expect(once[0]).toContain("Do not change the provider when the vault already exists.")
+    expect(once[0]).toContain("Never ask the user to choose a tier")
+    expect(once[0]).toContain("resolve ambiguity to `light`")
+    expect(once[0]).toContain("hyperresearch install --steps-only . --profile full --json")
+    expect(once[0]).toContain("before every run")
+    expect(once[1]).toContain('**Default is `"light"` in Trellage.**')
+    expect(once[1]).toContain("only when the user explicitly requests deep or full research")
+    expect(once[1]).toContain("Do not ask the user to choose a tier")
+    expect(once[1]).toContain("Do not select full only because a prompt is multi-paragraph")
+    expect(once[1]).not.toContain('"Analyze the impact of..."')
+  })
+
+  it("fails closed when upstream Hyperresearch prompt contracts drift", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-prompt-drift-")
+    const entry = path.join(root, "skills", "hyperresearch", "SKILL.md")
+    const stepOne = path.join(root, "skills", "hyperresearch-1-decompose", "SKILL.md")
+    await mkdir(path.dirname(entry), { recursive: true })
+    await mkdir(path.dirname(stepOne), { recursive: true })
+    await writeFile(entry, "upstream changed\n")
+    await writeFile(stepOne, "upstream changed\n")
+
+    await expect(Effect.runPromise(normalizeHyperresearchPromptContracts(root, "light", "full"))).rejects.toThrow(
+      /unsupported Hyperresearch prompt contract/,
+    )
+  })
+
+  it("adapts packaged prompt templates used by later project-local step installs", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-package-prompts-")
+    const entry = path.join(root, "hyperresearch", "skills", "hyperresearch.md")
+    const stepOne = path.join(root, "hyperresearch", "skills", "hyperresearch-1-decompose.md")
+    await mkdir(path.dirname(entry), { recursive: true })
+    await writeFile(
+      entry,
+      `\
+If you're uncertain, tier up — but never silently upgrade every query to \`full\`.
+- **Vault check.** If \`.hyperresearch/\` doesn't exist in the working directory, run \`hyperresearch init . --json\`. Creates the SQLite vault and \`research/\` directory.
+- **Step-skills check.** If \`.claude/skills/hyperresearch-1-decompose/SKILL.md\` doesn't exist relative to the working directory, run \`hyperresearch install --steps-only . --json\`. Installs the 16 step skill files needed by \`Skill(skill: "hyperresearch-N-...")\` calls in later steps.
+For a standard run, pass the installed gear (\`<< p.name >>\`) unless the user asked for something else.
+`,
+    )
+    await writeFile(
+      stepOne,
+      `\
+| \`"full"\` | Deep analysis, synthesis of conflicting evidence, defended thesis, literature review, forecast with evidence chains. | "Analyze the impact of...", "Evaluate whether...", multi-paragraph prompts, explicit request for depth/rigor, research-grade questions, contested topics |
+**Default is \`"full"\`.** When uncertain, tier up. Running the full pipeline on a simple query wastes money; running the light pipeline on a complex query produces a bad report.
+`,
+    )
+
+    await Effect.runPromise(normalizeHyperresearchPackagePromptContracts(root, "light"))
+
+    await expect(readFile(entry, "utf8")).resolves.toContain("If you're uncertain, stay `light`.")
+    await expect(readFile(entry, "utf8")).resolves.toContain("config set web.provider crawl4ai")
+    await expect(readFile(entry, "utf8")).resolves.toContain("Never ask the user to choose a tier")
+    await expect(readFile(entry, "utf8")).resolves.toContain(
+      "hyperresearch install --steps-only . --profile << p.name >> --json",
+    )
+    await expect(readFile(stepOne, "utf8")).resolves.toContain('**Default is `"light"` in Trellage.**')
+    await expect(readFile(stepOne, "utf8")).resolves.toContain(
+      "Do not select full only because a prompt is multi-paragraph",
+    )
   })
 
   it("makes project hooks portable and migrates existing absolute commands", async () => {
@@ -984,6 +1080,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `,
         path.join(root, "profile.toml"),
       ),
@@ -1001,6 +1098,7 @@ select = ["light"]
         {
           kind: "plugin",
           adapter: "hyperresearch",
+          package_version: "0.9.1",
           repository: "https://github.com/jordan-gibbs/hyperresearch.git",
           ref: "main",
           select: ["light"],
@@ -1032,11 +1130,19 @@ select = ["light"]
     await writeFile(claudeFinalizer, "// finalizer\n")
     const outputStyle = path.join(root, "output-style-rundown.md")
     await writeFile(outputStyle, "---\nname: Rundown\n---\n")
-    const calls: Array<string> = []
+    const calls: Array<{
+      readonly sourceDirectories: ReadonlyArray<string>
+      readonly hyperresearchGear: ClaudeMaterializeRequest["hyperresearchGear"]
+      readonly hyperresearchDefaultTier: ClaudeMaterializeRequest["hyperresearchDefaultTier"]
+    }> = []
     const materializeClaude: ClaudeMaterializer = (request) =>
       Effect.tryPromise({
         try: async () => {
-          calls.push(...request.sourceDirectories)
+          calls.push({
+            sourceDirectories: request.sourceDirectories,
+            hyperresearchGear: request.hyperresearchGear,
+            hyperresearchDefaultTier: request.hyperresearchDefaultTier,
+          })
           await mkdir(path.join(request.context, "hyperresearch-site"), { recursive: true })
           await mkdir(path.join(request.context, "claude-seed"), { recursive: true })
           await mkdir(path.join(request.context, "chromium-1228"), { recursive: true })
@@ -1069,7 +1175,13 @@ select = ["light"]
       ),
     )
 
-    expect(calls).toEqual([checkout])
+    expect(calls).toEqual([
+      {
+        sourceDirectories: [checkout],
+        hyperresearchGear: "full",
+        hyperresearchDefaultTier: "light",
+      },
+    ])
     await expect(readFile(path.join(context, "runtime-claude-entry.sh"), "utf8")).resolves.toBe("#!/bin/sh\n")
     await expect(readFile(path.join(context, "hyperresearch-wrapper.sh"), "utf8")).resolves.toBe("#!/bin/sh\n")
     const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")

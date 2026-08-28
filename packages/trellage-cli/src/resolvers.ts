@@ -1,4 +1,8 @@
-import { Effect } from "effect"
+import { readFile } from "node:fs/promises"
+import path from "node:path"
+
+import { parse } from "smol-toml"
+import { Data, Effect } from "effect"
 
 import { arm64ArtifactCatalog } from "./artifact-catalog.js"
 import { resolveClaudeRelease } from "./claude-release.js"
@@ -7,13 +11,44 @@ import { resolveCodexRelease } from "./codex-release.js"
 import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
 import { resolveCopilotRelease } from "./copilot-release.js"
 import { resolveGitHubSource } from "./github-cache.js"
-import type { ArtifactLock, LockResolvers } from "./lock.js"
+import { isExactSemver, type ArtifactLock, type LockResolvers } from "./lock.js"
 import { resolvePiRelease } from "./pi-release.js"
 import { resolvePrimeRelease } from "./prime-release.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
 
 const versions: Readonly<Record<string, string>> = arm64ArtifactCatalog.runtimeVersions
 const integrities: Readonly<Record<string, string>> = arm64ArtifactCatalog.runtimeIntegrities
+
+class HyperresearchSourceError extends Data.TaggedError("HyperresearchSourceError")<{
+  readonly message: string
+}> {}
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const readHyperresearchPackageVersion = (directory: string): Effect.Effect<string, HyperresearchSourceError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const source = await readFile(path.join(directory, "pyproject.toml"), "utf8")
+      const pyproject = parse(source) as unknown
+      const project = isRecord(pyproject) && isRecord(pyproject.project) ? pyproject.project : undefined
+      if (project === undefined || typeof project.version !== "string") {
+        throw new HyperresearchSourceError({ message: "Hyperresearch package version is missing" })
+      }
+      if (!isExactSemver(project.version)) {
+        throw new HyperresearchSourceError({
+          message: `Hyperresearch package version is not exact: ${project.version}`,
+        })
+      }
+      return project.version
+    },
+    catch: (cause) =>
+      cause instanceof HyperresearchSourceError
+        ? cause
+        : new HyperresearchSourceError({
+            message: `cannot read Hyperresearch package metadata: ${cause instanceof Error ? cause.message : String(cause)}`,
+          }),
+  })
 
 const resolveRuntimePackages = (packages: ReadonlyArray<string>) =>
   Effect.forEach(packages, (name) => {
@@ -85,6 +120,10 @@ export const productionResolvers = (xdgCacheHome: string, platform: "linux/arm64
         commit: cached.commit,
         integrity: cached.integrity,
         files: cached.files,
+      }
+      if (request.adapter === "hyperresearch") {
+        const package_version = yield* readHyperresearchPackageVersion(cached.directory)
+        return { ...resolution, package_version }
       }
       if (request.adapter !== "copilot-marketplace" && request.adapter !== "claude-marketplace") return resolution
       if (request.marketplace === undefined) {

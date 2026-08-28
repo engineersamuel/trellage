@@ -95,6 +95,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `
 
 const claudeMarketplaceSource = `
@@ -284,6 +285,23 @@ const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
   },
 })
 
+const hyperresearchLock: ProfileLock = {
+  ...lock("claude"),
+  sources: [
+    {
+      kind: "plugin",
+      adapter: "hyperresearch",
+      package_version: "0.9.2",
+      repository: "https://github.com/jordan-gibbs/hyperresearch.git",
+      ref: "main",
+      select: ["light"],
+      commit: "a".repeat(40),
+      integrity: `sha256:${"b".repeat(64)}`,
+      files: [],
+    },
+  ],
+}
+
 const primeLock: ProfileLock = {
   schema: 1,
   platform: "linux/arm64",
@@ -447,7 +465,7 @@ rename_exe = "copilot"`)
   })
 
   it("renders the locked Claude toolchain and managed seed without credentials", () => {
-    const rendered = renderMiseConfig(claudeProfile, lock("claude"), {
+    const rendered = renderMiseConfig(claudeProfile, hyperresearchLock, {
       baseReference: "docker.io/library/node@sha256:base",
       imageTag: "trellage-profile-claude-research:locked",
       runtimeSupport: claudeRuntime,
@@ -466,6 +484,8 @@ rename_exe = "copilot"`)
       '"/usr/local/bin/trellage-claude-entry" = { source = "runtime-claude-entry.sh", mode = "copy" }',
     )
     expect(rendered).toContain('"dev.trellage.harness.kind" = "claude"')
+    expect(rendered).toContain('"dev.trellage.hyperresearch.version" = "0.9.2"')
+    expect(rendered).not.toContain('"dev.trellage.hyperresearch.version" = "0.9.1"')
     expect(rendered).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|PLAYWRIGHT_MCP_EXTENSION_TOKEN/)
     // Claude mise locks have no uv entry; a uv tool declaration here would make
     // `mise install --locked` fail against the Claude lock.

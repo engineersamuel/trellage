@@ -309,11 +309,13 @@ const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> =>
   ]
 }
 
-const claudeMiseLabels = (profile: ClaudeProfile, version: string): ReadonlyArray<string> => [
-  '"dev.trellage.harness.kind" = "claude"',
-  `"dev.trellage.claude.version" = ${quote(version)}`,
-  ...(profile.plugins[0]?.adapter === "hyperresearch" ? ['"dev.trellage.hyperresearch.version" = "0.9.1"'] : []),
-]
+const claudeMiseLabels = (profile: ClaudeProfile, lock: ProfileLock, version: string): ReadonlyArray<string> => {
+  const labels = ['"dev.trellage.harness.kind" = "claude"', `"dev.trellage.claude.version" = ${quote(version)}`]
+  if (profile.plugins[0]?.adapter !== "hyperresearch") return labels
+  const packageVersion = lock.sources.find((source) => source.adapter === "hyperresearch")?.package_version
+  if (packageVersion === undefined) throw new Error("Hyperresearch source package version is missing")
+  return [...labels, `"dev.trellage.hyperresearch.version" = ${quote(packageVersion)}`]
+}
 
 const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
   const harness = lock.packages.harness
@@ -342,7 +344,14 @@ ${optionalMiseLines(claudeDotfilesAfterSeed(profile))}${renderRuntimeDotfile(opt
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
-${renderOci(profile, lock, options, claudeMiseEnvironment(profile), claudeMiseLabels(profile, harness.version), "/home/agent/.cache")}
+${renderOci(
+  profile,
+  lock,
+  options,
+  claudeMiseEnvironment(profile),
+  claudeMiseLabels(profile, lock, harness.version),
+  "/home/agent/.cache",
+)}
 `
 }
 

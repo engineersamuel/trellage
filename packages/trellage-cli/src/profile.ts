@@ -68,6 +68,7 @@ const HyperresearchPlugin = Schema.Struct({
   repository: Schema.Literal("https://github.com/jordan-gibbs/hyperresearch.git"),
   ref: NonEmpty,
   select: Schema.Tuple(Schema.Literal("light")),
+  gear: Schema.Literal("full", "premier"),
 })
 
 const PrimeExtensionPlugin = Schema.Struct({

@@ -116,6 +116,29 @@ shell = "bash"
 packages = ["bash"]
 `
 
+const hyperresearchSource = `
+schema = 1
+name = "claude-research"
+description = "Claude lock profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[plugins]]
+adapter = "hyperresearch"
+repository = "https://github.com/jordan-gibbs/hyperresearch.git"
+ref = "main"
+select = ["light"]
+gear = "full"
+`
+
 const document = (model?: string) => Effect.runSync(parseProfile(source(model), "/profiles/test/profile.toml"))
 
 const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
@@ -124,6 +147,7 @@ const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64
 const piDocument = () => Effect.runSync(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
 
 const primeDocument = () => Effect.runSync(parseProfile(primeSource, "/profiles/prime-agent/profile.toml"))
+const hyperresearchDocument = () => Effect.runSync(parseProfile(hyperresearchSource, "/profiles/claude/profile.toml"))
 
 const headlongDocument = () => Effect.runSync(parseProfile(headlongSource, "/profiles/headlong/profile.toml"))
 
@@ -197,7 +221,9 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
         files,
         ...(request.adapter === "copilot-marketplace"
           ? { plugin_versions: { "hve-core": options.pluginVersion ?? "3.3.101" } }
-          : {}),
+          : request.adapter === "hyperresearch"
+            ? { package_version: "0.9.1" }
+            : {}),
       }
     }),
   resolvePackages: (request) =>
@@ -360,6 +386,40 @@ const completePrimeLock = (): ProfileLock => {
   }
 }
 
+const completeHyperresearchLock = async (packageVersion: string | undefined): Promise<ProfileLock> => {
+  const profile = hyperresearchDocument()
+  const resolved = await Effect.runPromise(compileLock(profile, undefined, false, fakeResolvers(commit("a"), [])))
+  return {
+    ...resolved,
+    sources: resolved.sources.map((source) =>
+      packageVersion === undefined
+        ? {
+            kind: source.kind,
+            adapter: source.adapter,
+            ...(source.marketplace === undefined ? {} : { marketplace: source.marketplace }),
+            ...(source.plugin_versions === undefined ? {} : { plugin_versions: source.plugin_versions }),
+            repository: source.repository,
+            ref: source.ref,
+            select: source.select,
+            commit: source.commit,
+            integrity: source.integrity,
+            files: source.files,
+          }
+        : { ...source, package_version: packageVersion },
+    ),
+    packages: {
+      ...resolved.packages,
+      artifacts: [...arm64ArtifactCatalog.fixedArtifacts, ...arm64ArtifactCatalog.hyperresearchArtifacts],
+      python_lock_integrity: arm64ArtifactCatalog.hyperresearchPythonLockIntegrity,
+    },
+    image: {
+      base: arm64ArtifactCatalog.base.reference,
+      base_digest: arm64ArtifactCatalog.base.digest,
+      final_digest: digest("e"),
+    },
+  }
+}
+
 describe("lock inventory compatibility", () => {
   it("rejects a persisted lock without platform identity", async () => {
     const rendered = renderLock(completeCopilotLock()).replace('platform = "linux/arm64"\n', "")
@@ -479,6 +539,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `,
         "/profiles/claude/profile.toml",
       ),
@@ -504,6 +565,69 @@ select = ["light"]
     expect(parsed.packages.python_lock_integrity).toBe(digest("b"))
   })
 
+  it("round-trips exact Hyperresearch package version provenance", async () => {
+    const lock = await completeHyperresearchLock("0.9.1")
+    const rendered = renderLock(lock)
+    const parsed = await Effect.runPromise(parseLock(rendered))
+
+    expect(rendered).toContain('package_version = "0.9.1"')
+    expect(parsed.sources[0]?.package_version).toBe("0.9.1")
+    expect(renderLock(parsed)).toBe(rendered)
+    await expect(Effect.runPromise(requireLocked(hyperresearchDocument(), parsed))).resolves.toBe(parsed)
+  })
+
+  it("parses a legacy Hyperresearch lock without package provenance but rejects it as incomplete", async () => {
+    const legacy = await completeHyperresearchLock(undefined)
+    const rendered = renderLock(legacy)
+    const parsed = await Effect.runPromise(parseLock(rendered))
+
+    expect(rendered).not.toContain("package_version")
+    expect(parsed.sources[0]?.package_version).toBeUndefined()
+    await expect(Effect.runPromise(requireLocked(hyperresearchDocument(), parsed))).rejects.toThrow(
+      /Hyperresearch package version is missing/,
+    )
+  })
+
+  it("re-resolves a legacy Hyperresearch source to add package provenance", async () => {
+    const legacy = await completeHyperresearchLock(undefined)
+    const parsed = await Effect.runPromise(parseLock(renderLock(legacy)))
+    const calls: Array<string> = []
+
+    const updated = await Effect.runPromise(
+      compileLock(hyperresearchDocument(), parsed, false, fakeResolvers(commit("b"), calls)),
+    )
+
+    expect(updated.sources[0]).toMatchObject({
+      commit: commit("b"),
+      package_version: "0.9.1",
+    })
+    expect(calls).toEqual(["source:main", "packages", "base"])
+  })
+
+  it.each(["latest", "v0.9.1", "0.9"])(
+    "rejects non-exact Hyperresearch package version provenance %j",
+    async (packageVersion) => {
+      const lock = await completeHyperresearchLock(packageVersion)
+
+      await expect(Effect.runPromise(requireLocked(hyperresearchDocument(), lock))).rejects.toThrow(
+        /Hyperresearch package version is not exact/,
+      )
+    },
+  )
+
+  it("rejects Hyperresearch package provenance on other source adapters", async () => {
+    const profile = copilotDocument()
+    const complete = completeCopilotLock()
+    const lock: ProfileLock = {
+      ...complete,
+      sources: [{ ...complete.sources[0]!, package_version: "0.9.1" }],
+    }
+
+    await expect(Effect.runPromise(requireLocked(profile, lock))).rejects.toThrow(
+      /package version requires the Hyperresearch adapter/,
+    )
+  })
+
   it("rejects a ready Claude lock when an auxiliary artifact is tampered", async () => {
     const claudeDocument = await Effect.runPromise(
       parseProfile(
@@ -527,6 +651,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `,
         "/profiles/claude/profile.toml",
       ),
@@ -570,6 +695,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `,
         "/profiles/claude/profile.toml",
       ),
@@ -638,6 +764,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `,
         "/profiles/claude/profile.toml",
       ),
