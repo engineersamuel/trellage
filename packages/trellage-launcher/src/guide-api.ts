@@ -44,6 +44,11 @@ import {
   type PromptHandlingMode,
   type SelectedProfile,
 } from "./guide-launch.js"
+import {
+  defaultGuideModelRouting as baseDefaultGuideModelRouting,
+  type GuideModelConfig as BaseGuideModelConfig,
+  type GuideModelRouting,
+} from "./guide-model-routing.js"
 import type { GuideGenerateCandidate, GuideMatchCandidate, GuideProvider } from "./guide-provider.js"
 import { loadSelectedGuide } from "./guide-selected.js"
 import { exactKeys, fail, literal, record, text } from "./guide-text.js"
@@ -304,7 +309,11 @@ export const parseGuideServiceRequestJson = (source: string): GuideServiceReques
 // Model/effort configuration resolution.
 // ---------------------------------------------------------------------------
 
-export const defaultGuideModelId = "mai-code-1.1-flash"
+export const defaultGuideMatchModelId = baseDefaultGuideModelRouting.match.model
+export const defaultGuideGenerateModelId = baseDefaultGuideModelRouting.generate.model
+export const defaultGuideOptimizeModelId = baseDefaultGuideModelRouting.optimize.model
+export const defaultGuideRefineModelId = baseDefaultGuideModelRouting.refine.model
+export const defaultGuideModelId = defaultGuideMatchModelId
 export const defaultGuideEffort = GuideEffort.Medium
 
 export interface GuideModelOverrides {
@@ -312,28 +321,65 @@ export interface GuideModelOverrides {
   readonly effort?: GuideEffort
 }
 
-export interface GuideModelConfig {
-  readonly model: string
-  readonly effort: GuideEffort
+export type GuideModelConfig = BaseGuideModelConfig<GuideEffort>
+export type GuideResolvedModelRouting = GuideModelRouting<GuideEffort>
+
+export const defaultGuideModelRouting: GuideResolvedModelRouting = {
+  match: { model: defaultGuideMatchModelId, effort: defaultGuideEffort },
+  generate: { model: defaultGuideGenerateModelId, effort: defaultGuideEffort },
+  optimize: { model: defaultGuideOptimizeModelId, effort: defaultGuideEffort },
+  refine: { model: defaultGuideRefineModelId, effort: defaultGuideEffort },
 }
 
-/** Resolves model/effort with precedence: explicit overrides (CLI/request) > environment > defaults. */
+const applyResolvedOverrides = (
+  config: GuideModelConfig,
+  model: string | undefined,
+  effort: GuideEffort | undefined,
+): GuideModelConfig => ({
+  model: model ?? config.model,
+  effort: effort ?? config.effort,
+})
+
+const resolveModelOverride = (
+  overrides: GuideModelOverrides,
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined => {
+  if (overrides.model !== undefined) return overrides.model
+  return env.TRELLAGE_GUIDE_MODEL === undefined
+    ? undefined
+    : validateModelId(env.TRELLAGE_GUIDE_MODEL, "TRELLAGE_GUIDE_MODEL")
+}
+
+const resolveEffortOverride = (
+  overrides: GuideModelOverrides,
+  env: Readonly<Record<string, string | undefined>>,
+): GuideEffort | undefined => {
+  if (overrides.effort !== undefined) return overrides.effort
+  return env.TRELLAGE_GUIDE_EFFORT === undefined
+    ? undefined
+    : parseGuideEffort(env.TRELLAGE_GUIDE_EFFORT, "TRELLAGE_GUIDE_EFFORT")
+}
+
+/** Resolves phase routing with precedence: explicit overrides > environment > phase defaults. */
+export const resolveGuideModelRouting = (
+  overrides: GuideModelOverrides,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): GuideResolvedModelRouting => {
+  const model = resolveModelOverride(overrides, env)
+  const effort = resolveEffortOverride(overrides, env)
+  return {
+    match: applyResolvedOverrides(defaultGuideModelRouting.match, model, effort),
+    generate: applyResolvedOverrides(defaultGuideModelRouting.generate, model, effort),
+    optimize: applyResolvedOverrides(defaultGuideModelRouting.optimize, model, effort),
+    refine: applyResolvedOverrides(defaultGuideModelRouting.refine, model, effort),
+  }
+}
+
+/** Resolves the Match model for callers that still need one global model/effort pair. */
 export const resolveGuideModelConfig = (
   overrides: GuideModelOverrides,
   env: Readonly<Record<string, string | undefined>> = process.env,
-): GuideModelConfig => {
-  const model =
-    overrides.model ??
-    (env.TRELLAGE_GUIDE_MODEL === undefined
-      ? defaultGuideModelId
-      : validateModelId(env.TRELLAGE_GUIDE_MODEL, "TRELLAGE_GUIDE_MODEL"))
-  const effort =
-    overrides.effort ??
-    (env.TRELLAGE_GUIDE_EFFORT === undefined
-      ? defaultGuideEffort
-      : parseGuideEffort(env.TRELLAGE_GUIDE_EFFORT, "TRELLAGE_GUIDE_EFFORT"))
-  return { model, effort }
-}
+): GuideModelConfig => resolveGuideModelRouting(overrides, env).match
 
 // ---------------------------------------------------------------------------
 // Catalog lookup helpers shared by the match/generate services.

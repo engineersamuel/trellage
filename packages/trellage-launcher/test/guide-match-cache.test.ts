@@ -101,10 +101,16 @@ const fakeProvider = (): {
   }
 }
 
+const routingFor = (model: string) => ({
+  match: { model, effort: "medium" as const },
+  generate: { model, effort: "medium" as const },
+  optimize: { model, effort: "medium" as const },
+  refine: { model, effort: "medium" as const },
+})
+
 const cacheOptions = (cachePath: string, overrides: Partial<CachedGuideProviderOptions> = {}) => ({
   cachePath,
-  model: "mai-code-1.1-flash",
-  effort: "medium",
+  routing: routingFor("mai-code-1.1-flash"),
   matchPrompt: "Match profiles.",
   generatePrompt: "Generate candidates.",
   optimizePrompt: "Optimize candidates.",
@@ -134,11 +140,20 @@ describe("CachedGuideProvider", () => {
     const cachePath = await temporaryCachePath()
     const fake = fakeProvider()
     const input: GuideMatchInput = { intent: "Write a post", entries }
-    const first = new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" }))
-    const second = new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-b" }))
+    const first = new CachedGuideProvider(
+      fake.provider,
+      cacheOptions(cachePath, { routing: routingFor("model-a") }),
+    )
+    const second = new CachedGuideProvider(
+      fake.provider,
+      cacheOptions(cachePath, { routing: routingFor("model-b") }),
+    )
     const changedPrompt = new CachedGuideProvider(
       fake.provider,
-      cacheOptions(cachePath, { model: "model-b", matchPrompt: "Match profiles with revised instructions." }),
+      cacheOptions(cachePath, {
+        routing: routingFor("model-b"),
+        matchPrompt: "Match profiles with revised instructions.",
+      }),
     )
 
     await first.match(input)
@@ -155,7 +170,10 @@ describe("CachedGuideProvider", () => {
   it("reuses generated and optimized prompt candidates while refinement remains uncached", async () => {
     const fake = fakeProvider()
     const cachePath = await temporaryCachePath()
-    const provider = new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" }))
+    const provider = new CachedGuideProvider(
+      fake.provider,
+      cacheOptions(cachePath, { routing: routingFor("model-a") }),
+    )
     const generationInput = {
       intent: "Write a post",
       profileRef: "sandbox:one",
@@ -179,19 +197,49 @@ describe("CachedGuideProvider", () => {
     }
 
     await expect(provider.generate(generationInput)).resolves.toEqual(generated)
-    await expect(new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" })).generate(
-      generationInput,
-    )).resolves.toEqual(generated)
-    await expect(provider.optimize({
-      targetTool: "copilot",
-      profileRef: generationInput.profileRef,
-      candidates: generated.candidates,
-    })).resolves.toEqual({ candidates: generated.candidates })
-    await expect(new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" })).optimize({
-      targetTool: "copilot",
-      profileRef: generationInput.profileRef,
-      candidates: generated.candidates,
-    })).resolves.toEqual({ candidates: generated.candidates })
+    await expect(
+      new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { routing: routingFor("model-a") })).generate(
+        generationInput,
+      ),
+    ).resolves.toEqual(generated)
+    await expect(
+      provider.optimize({
+        targetTool: "copilot",
+        profileRef: generationInput.profileRef,
+        candidates: generated.candidates,
+      }),
+    ).resolves.toEqual({ candidates: generated.candidates })
+    await expect(
+      new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { routing: routingFor("model-a") })).optimize({
+        targetTool: "copilot",
+        profileRef: generationInput.profileRef,
+        candidates: generated.candidates,
+      }),
+    ).resolves.toEqual({ candidates: generated.candidates })
+    const generateChangedRouting = {
+      ...routingFor("model-a"),
+      generate: { model: "model-b", effort: "medium" as const },
+    }
+    await expect(
+      new CachedGuideProvider(
+        fake.provider,
+        cacheOptions(cachePath, { routing: generateChangedRouting }),
+      ).generate(generationInput),
+    ).resolves.toEqual(generated)
+    const optimizeChangedRouting = {
+      ...routingFor("model-a"),
+      optimize: { model: "model-b", effort: "medium" as const },
+    }
+    await expect(
+      new CachedGuideProvider(
+        fake.provider,
+        cacheOptions(cachePath, { routing: optimizeChangedRouting }),
+      ).optimize({
+        targetTool: "copilot",
+        profileRef: generationInput.profileRef,
+        candidates: generated.candidates,
+      }),
+    ).resolves.toEqual({ candidates: generated.candidates })
     await expect(
       provider.refine({
         ...generationInput,
@@ -199,8 +247,8 @@ describe("CachedGuideProvider", () => {
         feedback: "Make it shorter",
       }),
     ).resolves.toEqual(refined)
-    expect(fake.generateCalls()).toBe(1)
-    expect(fake.optimizeCalls()).toBe(1)
+    expect(fake.generateCalls()).toBe(2)
+    expect(fake.optimizeCalls()).toBe(2)
     expect(await readFile(cachePath, "utf8")).not.toContain("Write a post")
   })
 
@@ -217,7 +265,10 @@ describe("CachedGuideProvider", () => {
     const warnings: string[] = []
     const provider = new CachedGuideProvider(
       fake.provider,
-      cacheOptions(cachePath, { model: "model-a", onWarning: (message) => warnings.push(message) }),
+      cacheOptions(cachePath, {
+        routing: routingFor("model-a"),
+        onWarning: (message) => warnings.push(message),
+      }),
     )
 
     await expect(provider.match({ intent: "Write a post", entries })).resolves.toEqual(matchResult)

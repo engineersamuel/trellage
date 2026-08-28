@@ -19,6 +19,7 @@ import {
   validateGuideMatchResult,
   validateGuideOptimizeResult,
 } from "./guide-provider.js"
+import type { GuideModelRouting } from "./guide-model-routing.js"
 import { array, exactKeys, record, text } from "./guide-text.js"
 
 const maximumCacheBytes = 256 * 1024
@@ -39,8 +40,7 @@ interface GuideCacheRecord {
 
 export interface CachedGuideProviderOptions {
   readonly cachePath: string
-  readonly model: string
-  readonly effort: string
+  readonly routing: GuideModelRouting
   readonly matchPrompt: string
   readonly generatePrompt: string
   readonly optimizePrompt: string
@@ -54,8 +54,8 @@ const matchCacheKey = (input: GuideMatchInput, options: CachedGuideProviderOptio
     JSON.stringify({
       schemaVersion: 1,
       intentDigest: sha256(input.intent),
-      model: options.model,
-      effort: options.effort,
+      model: options.routing.match.model,
+      effort: options.routing.match.effort,
       matchPromptDigest: sha256(options.matchPrompt),
       catalogDigest: sha256(JSON.stringify(input.entries)),
     }),
@@ -70,8 +70,8 @@ const generateCacheKey = (input: GuideGenerateInput, options: CachedGuideProvide
       workflowId: input.workflowId,
       guideDigest: sha256(JSON.stringify(input.guide)),
       guideBodyDigest: sha256(input.guideBody),
-      model: options.model,
-      effort: options.effort,
+      model: options.routing.generate.model,
+      effort: options.routing.generate.effort,
       generatePromptDigest: sha256(options.generatePrompt),
     }),
   )
@@ -83,8 +83,8 @@ const optimizeCacheKey = (input: GuideOptimizeInput, options: CachedGuideProvide
       targetTool: input.targetTool,
       profileRef: input.profileRef,
       candidatesDigest: sha256(JSON.stringify(input.candidates)),
-      model: options.model,
-      effort: options.effort,
+      model: options.routing.optimize.model,
+      effort: options.routing.optimize.effort,
       optimizePromptDigest: sha256(options.optimizePrompt),
     }),
   )

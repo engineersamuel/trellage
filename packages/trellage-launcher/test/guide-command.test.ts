@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { GuideEffort, parseGuideHeadlessArgv } from "../src/guide-api.js"
+import { defaultGuideModelRouting, GuideEffort, parseGuideHeadlessArgv } from "../src/guide-api.js"
 import { resolveGuideRequest } from "../src/guide-command.js"
 
 describe("guide command request resolution", () => {
@@ -17,8 +17,7 @@ describe("guide command request resolution", () => {
         intent: "Write a post",
         profile: "sandbox:claude-social-media",
       },
-      model: "mai-code-1.1-flash",
-      effort: GuideEffort.Medium,
+      routing: defaultGuideModelRouting,
     })
   })
 
@@ -45,8 +44,12 @@ describe("guide command request resolution", () => {
         model: "mai-code-1.1-flash",
         effort: GuideEffort.High,
       },
-      model: "mai-code-1.1-flash",
-      effort: GuideEffort.High,
+      routing: {
+        match: { model: "mai-code-1.1-flash", effort: GuideEffort.High },
+        generate: { model: "mai-code-1.1-flash", effort: GuideEffort.High },
+        optimize: { model: "mai-code-1.1-flash", effort: GuideEffort.High },
+        refine: { model: "mai-code-1.1-flash", effort: GuideEffort.High },
+      },
     })
   })
 
@@ -58,8 +61,12 @@ describe("guide command request resolution", () => {
         TRELLAGE_GUIDE_EFFORT: "xhigh",
       }),
     ).toMatchObject({
-      model: "claude-sonnet-5",
-      effort: GuideEffort.XHigh,
+      routing: {
+        match: { model: "claude-sonnet-5", effort: GuideEffort.XHigh },
+        generate: { model: "claude-sonnet-5", effort: GuideEffort.XHigh },
+        optimize: { model: "claude-sonnet-5", effort: GuideEffort.XHigh },
+        refine: { model: "claude-sonnet-5", effort: GuideEffort.XHigh },
+      },
     })
   })
 })

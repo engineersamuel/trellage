@@ -17,7 +17,7 @@ import {
 import { tableColumns } from "./table-layout.js"
 import { enrichNativeProfileList } from "./native-guide-list.js"
 import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.js"
-import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelConfig } from "./guide-api.js"
+import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.js"
 import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
 import { executeGuideUiResult } from "./guide-interactive-execution.js"
@@ -29,6 +29,7 @@ import {
 } from "./guide-launch.js"
 import { loadDefaultGuidePrompts } from "./guide-prompts.js"
 import { CachedGuideProvider, defaultGuideMatchCachePath } from "./guide-match-cache.js"
+import { createInitialGuideRenderHandler } from "./guide-terminal.js"
 import { GuideApp, type GuideUiResult } from "./guide-ui.js"
 
 interface LaunchIntent {
@@ -540,7 +541,7 @@ const runInteractiveGuideMode = async (
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
   const catalog = readGuideCatalog()
-  const config = resolveGuideModelConfig(
+  const routing = resolveGuideModelRouting(
     {
       ...(args.model === undefined ? {} : { model: args.model }),
       ...(args.effort === undefined ? {} : { effort: args.effort }),
@@ -550,15 +551,13 @@ const runInteractiveGuideMode = async (
   const prompts = await loadDefaultGuidePrompts()
   const provider = new CachedGuideProvider(
     new CopilotGuideProvider({
-      model: config.model,
-      effort: config.effort,
+      routing,
       prompts,
       promptMasterSkillDirectory,
     }),
     {
       cachePath: defaultGuideMatchCachePath(process.env),
-      model: config.model,
-      effort: config.effort,
+      routing,
       matchPrompt: prompts.match,
       generatePrompt: prompts.generate,
       optimizePrompt: prompts.optimize,
@@ -577,6 +576,12 @@ const runInteractiveGuideMode = async (
   } catch {
     throw new Error("an interactive controlling terminal is required")
   }
+  const redrawInitialFrame = createInitialGuideRenderHandler(
+    (text) => {
+      output.write(text)
+    },
+    process.env.INK_SCREEN_READER !== "true",
+  )
   let result: GuideUiResult
   try {
     const instance = render(
@@ -584,8 +589,7 @@ const runInteractiveGuideMode = async (
         catalog={catalog}
         guideRoot={guideRoot}
         provider={provider}
-        model={config.model}
-        effort={config.effort}
+        routing={routing}
         runner={runner}
         cwd={process.cwd()}
         herdrEnv={herdrEnvironment()}
@@ -599,6 +603,7 @@ const runInteractiveGuideMode = async (
         exitOnCtrlC: false,
         kittyKeyboard: { mode: "disabled" },
         alternateScreen: true,
+        onRender: redrawInitialFrame,
         maxFps: 30,
       },
     )

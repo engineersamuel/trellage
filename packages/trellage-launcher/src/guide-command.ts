@@ -2,10 +2,11 @@ import { fstatSync, readFileSync } from "node:fs"
 import {
   parseGuideHeadlessArgv,
   parseGuideServiceRequestJson,
-  resolveGuideModelConfig,
+  resolveGuideModelRouting,
   runGuideGenerate,
   runGuideMatch,
   type GuideHeadlessArgs,
+  type GuideResolvedModelRouting,
   type GuideServiceRequest,
 } from "./guide-api.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.js"
@@ -17,8 +18,7 @@ const maximumCatalogBytes = 8 * 1024 * 1024
 
 export interface ResolvedGuideRequest {
   readonly request: GuideServiceRequest
-  readonly model: string
-  readonly effort: ReturnType<typeof resolveGuideModelConfig>["effort"]
+  readonly routing: GuideResolvedModelRouting
 }
 
 export const readGuideCatalog = (descriptor = 3): CombinedGuideCatalog => {
@@ -49,7 +49,7 @@ export const resolveGuideRequest = (
     ...((args.model ?? fromStdin.model) === undefined ? {} : { model: args.model ?? fromStdin.model }),
     ...((args.effort ?? fromStdin.effort) === undefined ? {} : { effort: args.effort ?? fromStdin.effort }),
   }
-  const config = resolveGuideModelConfig(
+  const routing = resolveGuideModelRouting(
     {
       ...(request.model === undefined ? {} : { model: request.model }),
       ...(request.effort === undefined ? {} : { effort: request.effort }),
@@ -58,8 +58,7 @@ export const resolveGuideRequest = (
   )
   return {
     request,
-    model: config.model,
-    effort: config.effort,
+    routing,
   }
 }
 
@@ -77,29 +76,26 @@ export const runGuideJsonCommand = async (options: {
   const prompts = await loadDefaultGuidePrompts()
   const provider = new CachedGuideProvider(
     new CopilotGuideProvider({
-      model: resolved.model,
-      effort: resolved.effort,
+      routing: resolved.routing,
       prompts,
       promptMasterSkillDirectory: options.promptMasterSkillDirectory,
     }),
     {
       cachePath: defaultGuideMatchCachePath(options.env),
-      model: resolved.model,
-      effort: resolved.effort,
+      routing: resolved.routing,
       matchPrompt: prompts.match,
       generatePrompt: prompts.generate,
       optimizePrompt: prompts.optimize,
     },
   )
-  const common = {
-    intent: resolved.request.intent,
-    model: resolved.model,
-    effort: resolved.effort,
-  }
   return resolved.request.profile === undefined
-    ? runGuideMatch(provider, options.catalog, common)
+    ? runGuideMatch(provider, options.catalog, {
+        intent: resolved.request.intent,
+        ...resolved.routing.match,
+      })
     : runGuideGenerate(provider, options.catalog, options.guideRoot, {
-        ...common,
+        intent: resolved.request.intent,
+        ...resolved.routing.generate,
         profileRef: resolved.request.profile,
       })
 }

@@ -707,13 +707,16 @@ manage it from `prototypes/trellage-jcode-profiles`.
 
 Bare `trx` remains the fast, model-free profile search. `trx guide` is a
 separate Ink flow that matches an intent across both Trellage Native and
-Trellage Sandbox profiles, compares three recommendations, and creates three
-editable prompt candidates. It uses `mai-code-1.1-flash` with medium reasoning
-by default. Override the model or effort only when needed:
+Trellage Sandbox profiles, compares five recommendations, and creates three
+editable prompt candidates. By default, matching, Prompt Master optimization,
+and refinement use `gpt-5.6-sol` with medium reasoning; candidate drafting uses
+`gpt-5.6-luna` with medium reasoning. `--model` forces one model across every
+model-backed phase, while `--effort` applies one effort level across the phase
+route:
 
 ```bash
 trx guide --intent "Turn a technical outline into a LinkedIn post"
-trx guide --intent "Review this architecture" --model mai-code-1.1-flash --effort medium
+trx guide --intent "Review this architecture" --model claude-opus-5 --effort medium
 ```
 
 The last successful profile match is cached under

@@ -23,11 +23,13 @@ import {
   GuideServiceError,
   defaultGuideEffort,
   defaultGuideModelId,
+  defaultGuideModelRouting,
   literalGuideMatch,
   parseGuideHeadlessArgv,
   parseGuideServiceRequestJson,
   publicGuideLaunchCommand,
   resolveGuideModelConfig,
+  resolveGuideModelRouting,
   runGuideGenerate,
   runGuideMatch,
   selectedProfileFromCatalogRef,
@@ -562,30 +564,65 @@ describe("parseGuideServiceRequestJson", () => {
 describe("resolveGuideModelConfig", () => {
   it("falls back to defaults when nothing is set", () => {
     expect(resolveGuideModelConfig({}, {})).toEqual({ model: defaultGuideModelId, effort: defaultGuideEffort })
+    expect(resolveGuideModelRouting({}, {})).toEqual(defaultGuideModelRouting)
   })
 
-  it("prefers the environment over defaults", () => {
-    expect(resolveGuideModelConfig({}, { TRELLAGE_GUIDE_MODEL: "gpt-5.4", TRELLAGE_GUIDE_EFFORT: "high" })).toEqual({
-      model: "gpt-5.4",
-      effort: GuideEffort.High,
+  it("applies environment overrides across every phase", () => {
+    expect(
+      resolveGuideModelRouting({}, { TRELLAGE_GUIDE_MODEL: "gpt-5.4", TRELLAGE_GUIDE_EFFORT: "high" }),
+    ).toEqual({
+      match: { model: "gpt-5.4", effort: GuideEffort.High },
+      generate: { model: "gpt-5.4", effort: GuideEffort.High },
+      optimize: { model: "gpt-5.4", effort: GuideEffort.High },
+      refine: { model: "gpt-5.4", effort: GuideEffort.High },
     })
   })
 
-  it("prefers explicit overrides over the environment", () => {
+  it("applies explicit overrides across every phase ahead of the environment", () => {
     expect(
-      resolveGuideModelConfig(
+      resolveGuideModelRouting(
         { model: "claude-opus-5", effort: GuideEffort.Max },
         { TRELLAGE_GUIDE_MODEL: "gpt-5.4", TRELLAGE_GUIDE_EFFORT: "high" },
       ),
-    ).toEqual({ model: "claude-opus-5", effort: GuideEffort.Max })
+    ).toEqual({
+      match: { model: "claude-opus-5", effort: GuideEffort.Max },
+      generate: { model: "claude-opus-5", effort: GuideEffort.Max },
+      optimize: { model: "claude-opus-5", effort: GuideEffort.Max },
+      refine: { model: "claude-opus-5", effort: GuideEffort.Max },
+    })
+  })
+
+  it("does not validate shadowed environment values", () => {
+    expect(
+      resolveGuideModelRouting(
+        { model: "claude-opus-5", effort: GuideEffort.Max },
+        { TRELLAGE_GUIDE_MODEL: "Not A Model!", TRELLAGE_GUIDE_EFFORT: "extreme" },
+      ),
+    ).toEqual({
+      match: { model: "claude-opus-5", effort: GuideEffort.Max },
+      generate: { model: "claude-opus-5", effort: GuideEffort.Max },
+      optimize: { model: "claude-opus-5", effort: GuideEffort.Max },
+      refine: { model: "claude-opus-5", effort: GuideEffort.Max },
+    })
+  })
+
+  it("applies an effort-only override without collapsing the phase models", () => {
+    expect(resolveGuideModelRouting({ effort: GuideEffort.High }, {})).toEqual({
+      match: { model: "gpt-5.6-sol", effort: GuideEffort.High },
+      generate: { model: "gpt-5.6-luna", effort: GuideEffort.High },
+      optimize: { model: "gpt-5.6-sol", effort: GuideEffort.High },
+      refine: { model: "gpt-5.6-sol", effort: GuideEffort.High },
+    })
   })
 
   it("rejects an invalid model from the environment", () => {
-    expect(() => resolveGuideModelConfig({}, { TRELLAGE_GUIDE_MODEL: "Not A Model!" })).toThrow(GuideValidationError)
+    expect(() => resolveGuideModelRouting({}, { TRELLAGE_GUIDE_MODEL: "Not A Model!" })).toThrow(
+      GuideValidationError,
+    )
   })
 
   it("rejects an invalid effort from the environment", () => {
-    expect(() => resolveGuideModelConfig({}, { TRELLAGE_GUIDE_EFFORT: "extreme" })).toThrow(GuideValidationError)
+    expect(() => resolveGuideModelRouting({}, { TRELLAGE_GUIDE_EFFORT: "extreme" })).toThrow(GuideValidationError)
   })
 })
 
