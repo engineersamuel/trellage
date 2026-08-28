@@ -85,8 +85,11 @@ Three build-shaped commands, three different jobs:
 Skill sources and bundles are approved in [`skills.json`](skills.json).
 Profiles select bundle names with `skill_bundles`; they do not store skill
 refs or digests. Wildcard sources may declare an `exclude` list for skills
-that must never enter any consuming bundle. A skill-bearing rebuild is
-therefore not byte-reproducible.
+that must never enter any consuming bundle and a `required` list that makes
+materialization fail if an expected skill is absent. The `engineersamuel`
+source requires `ui-guidelines`, and that source is part of `sandbox-common`,
+`native-common`, and `comparison-common`. A skill-bearing rebuild is therefore
+not byte-reproducible.
 
 Launching handles the common case on its own: `trellage --profile <profile>` refreshes
 a stale lock and rebuilds before starting, reporting the command it ran. Harness
@@ -799,6 +802,10 @@ Each comparison build resolves `comparison-common` once and gives the same
 staged skill snapshot to every contestant image. A build fails if the snapshot
 cannot be fetched or validated. Compose does not fall back to the repository
 directory as a skill context.
+
+The three common bundles require the upstream `ui-guidelines` skill. Existing
+native caches receive catalog updates only after `trx skills update`; existing
+Sandbox and comparison images must be rebuilt.
 
 ## Quick Start
 

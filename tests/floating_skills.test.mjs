@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { chmod, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -19,6 +19,7 @@ import {
 } from "../scripts/floating-skills.mjs"
 
 const execFilePromise = promisify(execFile)
+const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
 const temporaryRoots = []
 
 afterEach(async () => {
@@ -29,6 +30,16 @@ const temporaryRoot = async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "trellage-floating-skills-test."))
   temporaryRoots.push(root)
   return root
+}
+
+const readRegularTextFiles = async (directory) => {
+  const contents = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const candidate = path.join(directory, entry.name)
+    if (entry.isDirectory()) contents.push(...(await readRegularTextFiles(candidate)))
+    else if (entry.isFile()) contents.push(await readFile(candidate, "utf8"))
+  }
+  return contents
 }
 
 const commit = async (repository, message) => {
@@ -104,6 +115,10 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.ok(catalog.sources["dsebban-omp"].select.includes("poteto-mode"))
   assert.ok(!catalog.sources["cursor-pstack"].select.includes("poteto-mode"))
   assert.deepEqual(catalog.sources.engineersamuel.exclude, ["deja-history"])
+  assert.deepEqual(catalog.sources.engineersamuel.required, ["ui-guidelines"])
+  for (const bundle of ["native-common", "sandbox-common", "comparison-common"]) {
+    assert.ok(catalog.bundles[bundle].includes("engineersamuel"))
+  }
   assert.doesNotMatch(source, /"(?:ref|commit|integrity|digest|fetchedAt)"\s*:/)
   assert.throws(
     () =>
@@ -122,13 +137,49 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
       ),
     /unknown skill source policy ref/,
   )
+  assert.throws(
+    () =>
+      parseCatalog(
+        JSON.stringify({
+          schema: 1,
+          sources: {
+            unsafe: {
+              repository: "https://github.com/example/skills.git",
+              select: ["fixture"],
+              required: ["fixture"],
+            },
+          },
+          bundles: { test: ["unsafe"] },
+        }),
+      ),
+    /required skills require wildcard selection/,
+  )
+  assert.throws(
+    () =>
+      parseCatalog(
+        JSON.stringify({
+          schema: 1,
+          sources: {
+            unsafe: {
+              repository: "https://github.com/example/skills.git",
+              select: ["*"],
+              exclude: ["fixture"],
+              required: ["fixture"],
+              allowWildcard: true,
+            },
+          },
+          bundles: { test: ["unsafe"] },
+        }),
+      ),
+    /required skill is excluded/,
+  )
 })
 
 test("wildcard exclusions do not enter a generated snapshot", async () => {
   const root = await temporaryRoot()
   const repository = path.join(root, "repository")
   await initRepository(repository)
-  for (const name of ["deja-history", "keep-me"]) {
+  for (const name of ["deja-history", "keep-me", "ui-guidelines"]) {
     const directory = path.join(repository, ".omp", "skills", name)
     await mkdir(directory, { recursive: true })
     await writeFile(path.join(directory, "SKILL.md"), `---\nname: ${name}\n---\n\nfixture\n`)
@@ -145,6 +196,7 @@ test("wildcard exclusions do not enter a generated snapshot", async () => {
           repository,
           select: ["*"],
           exclude: ["deja-history"],
+          required: ["ui-guidelines"],
           adapter: "omp-native",
           alwaysOn: false,
           allowExecutables: false,
@@ -156,8 +208,112 @@ test("wildcard exclusions do not enter a generated snapshot", async () => {
     destination: output,
   })
 
-  assert.deepEqual((await readFile(path.join(output, "managed-skills.txt"), "utf8")).trim().split("\n"), ["keep-me"])
+  assert.deepEqual((await readFile(path.join(output, "managed-skills.txt"), "utf8")).trim().split("\n"), [
+    "keep-me",
+    "ui-guidelines",
+  ])
   assert.equal(await lstat(path.join(output, "skills", "deja-history")).catch(() => undefined), undefined)
+})
+
+test("a missing required wildcard skill fails before publishing", async () => {
+  const root = await temporaryRoot()
+  const repository = path.join(root, "repository")
+  await initRepository(repository)
+  await writeSkill(repository, "available")
+  await commit(repository, "add available skill")
+
+  const output = path.join(root, "snapshot")
+  await assert.rejects(
+    stageLatest({
+      catalog: {
+        schema: 1,
+        sources: {
+          fixture: {
+            id: "fixture",
+            repository,
+            select: ["*"],
+            exclude: [],
+            required: ["ui-guidelines"],
+            adapter: "omp-native",
+            alwaysOn: false,
+            allowExecutables: false,
+          },
+        },
+        bundles: { test: ["fixture"] },
+      },
+      bundleIds: ["test"],
+      destination: output,
+    }),
+    /required skill is missing from fixture: ui-guidelines/,
+  )
+  assert.equal(await lstat(output).catch(() => undefined), undefined)
+})
+
+test("all launcher and container surfaces consume their common skill bundle", async () => {
+  const prototypesRoot = path.join(repositoryRoot, "prototypes")
+  const nativeFamilies = (await readdir(prototypesRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
+    .map((entry) => entry.name)
+    .sort()
+  assert.ok(nativeFamilies.length > 0)
+
+  for (const family of nativeFamilies) {
+    const familyRoot = path.join(prototypesRoot, family)
+    const launchers = (await readdir(path.join(familyRoot, "bin"), { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+    assert.equal(launchers.length, 1, `${family} must contain one launcher`)
+    const launcher = await readFile(path.join(familyRoot, "bin", launchers[0]), "utf8")
+    const installer = await readFile(path.join(familyRoot, "install.sh"), "utf8")
+    const commonRoot = path.join(prototypesRoot, family.replace(/-profiles$/u, "-common"))
+    const commonStatus = await lstat(commonRoot).catch(() => undefined)
+    const commonSources = commonStatus?.isDirectory() ? await readRegularTextFiles(commonRoot) : []
+    assert.match(
+      [launcher, installer, ...commonSources].join("\n"),
+      /--bundle native-common/u,
+      `${family} launcher runtime must select native-common`,
+    )
+    assert.match(
+      installer,
+      /install-floating-skills-runtime\.sh/u,
+      `${family} installer must publish the floating-skills runtime`,
+    )
+  }
+
+  const profilesRoot = path.join(repositoryRoot, "profiles")
+  const sandboxProfiles = (await readdir(profilesRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  assert.ok(sandboxProfiles.length > 0)
+  for (const profile of sandboxProfiles) {
+    const source = await readFile(path.join(profilesRoot, profile, "profile.toml"), "utf8")
+    assert.match(
+      source,
+      /^skill_bundles = \[[^\n]*"sandbox-common"/mu,
+      `${profile} must select sandbox-common`,
+    )
+  }
+
+  for (const entrypoint of ["scripts/agent-entrypoint.sh", "scripts/copilot-agent-entrypoint.sh"]) {
+    assert.match(
+      await readFile(path.join(repositoryRoot, entrypoint), "utf8"),
+      /--bundle comparison-common/u,
+      `${entrypoint} must select comparison-common`,
+    )
+  }
+  for (const dockerfile of ["Dockerfile.agent", "Dockerfile.copilot-agent"]) {
+    assert.match(
+      await readFile(path.join(repositoryRoot, dockerfile), "utf8"),
+      /COPY --chmod=0444 skills\.json \/opt\/floating-skills-catalog\.json/u,
+      `${dockerfile} must install the floating-skills catalog`,
+    )
+  }
+  assert.match(
+    await readFile(path.join(repositoryRoot, "scripts/harness"), "utf8"),
+    /--bundle comparison-common/u,
+    "comparison harness builds must stage comparison-common",
+  )
 })
 
 test("first use installs, later use is offline, and update observes the latest commit", async () => {
