@@ -2,8 +2,9 @@
  * Copilot SDK-backed implementation of `GuideProvider` for `trx guide`.
  *
  * Model session policy (per the approved `trx guide` design):
- * - Model defaults to `mai-code-1.1-flash` at `medium` reasoning effort;
- *   both are constructor-configurable.
+ * - Match, optimize, and refine default to `gpt-5.6-sol` at `medium`;
+ *   generate defaults to `gpt-5.6-luna` at `medium`. Callers can supply a
+ *   phase routing table or force one model/effort across every phase.
  * - `client.listModels()` is checked before every phase call: the model must
  *   exist, support reasoning effort, and support the configured effort
  *   level. Otherwise the call is rejected before any session is created,
@@ -59,6 +60,12 @@ import {
   type ModelInfo,
   type SessionConfig,
 } from "@github/copilot-sdk"
+import {
+  defaultGuideModelRouting,
+  type GuideModelPhase,
+  type GuideModelRouting,
+  type GuideReasoningEffort,
+} from "./guide-model-routing.js"
 import type { GuideModelPrompts } from "./guide-prompts.js"
 import {
   assertGuideGenerateInput,
@@ -78,9 +85,6 @@ import {
   type GuideRefineInput,
   type GuideRefineResult,
 } from "./guide-provider.js"
-
-/** `ReasoningEffort` is not re-exported from `@github/copilot-sdk`'s public entry point; mirrored here structurally. */
-export type GuideReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max"
 
 /** A response message shape narrow enough to be satisfied by both `AssistantMessageEvent` and test fakes. */
 export interface GuideModelMessage {
@@ -148,10 +152,12 @@ export class GuideModelCleanupError extends Error {
 }
 
 export interface CopilotGuideProviderOptions {
-  /** @default "mai-code-1.1-flash" */
+  /** Forces one model across every phase when set. */
   readonly model?: string
-  /** @default "medium" */
+  /** Forces one reasoning effort across every phase when set. */
   readonly effort?: GuideReasoningEffort
+  /** Phase-specific routing used when no global model or effort override is set. */
+  readonly routing?: GuideModelRouting
   /** Authored match/generate/refine system instructions. See `guide-prompts.ts`. */
   readonly prompts: GuideModelPrompts
   /** Copilot runtime data directory (required by client `mode: "empty"`). @default "<home>/.copilot/trx-guide" */
@@ -179,6 +185,24 @@ export interface CopilotGuideProviderOptions {
 }
 
 const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => new CopilotClient(options)
+
+const applyGlobalModelOverrides = (
+  config: GuideModelRouting[GuideModelPhase],
+  options: Pick<CopilotGuideProviderOptions, "model" | "effort">,
+): GuideModelRouting[GuideModelPhase] => ({
+  model: options.model ?? config.model,
+  effort: options.effort ?? config.effort,
+})
+
+const resolveProviderRouting = (options: CopilotGuideProviderOptions): GuideModelRouting => {
+  const routing = options.routing ?? defaultGuideModelRouting
+  return {
+    match: applyGlobalModelOverrides(routing.match, options),
+    generate: applyGlobalModelOverrides(routing.generate, options),
+    optimize: applyGlobalModelOverrides(routing.optimize, options),
+    refine: applyGlobalModelOverrides(routing.refine, options),
+  }
+}
 
 const findExecutableOnPath = (name: string, searchPath = process.env.PATH): string | undefined => {
   if (searchPath === undefined) return undefined
@@ -268,8 +292,7 @@ const collectClientStopErrors = async (client: GuideModelClient, cleanupErrors: 
 }
 
 export class CopilotGuideProvider implements GuideProvider {
-  private readonly model: string
-  private readonly effort: GuideReasoningEffort
+  private readonly routing: GuideModelRouting
   private readonly prompts: GuideModelPrompts
   private readonly baseDirectory: string
   private readonly workingDirectory: string
@@ -284,8 +307,7 @@ export class CopilotGuideProvider implements GuideProvider {
   private readonly clientFactory: (options: CopilotClientOptions) => GuideModelClient
 
   constructor(options: CopilotGuideProviderOptions) {
-    this.model = options.model ?? "mai-code-1.1-flash"
-    this.effort = options.effort ?? "medium"
+    this.routing = resolveProviderRouting(options)
     this.prompts = options.prompts
     this.baseDirectory = options.baseDirectory ?? path.join(os.homedir(), ".copilot", "trx-guide")
     this.workingDirectory = options.workingDirectory ?? os.tmpdir()
@@ -305,19 +327,19 @@ export class CopilotGuideProvider implements GuideProvider {
     const workflowIndex = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]),
     )
-    return this.run(this.prompts.match, input, this.matchTimeoutMs, (value) =>
+    return this.run("match", this.prompts.match, input, this.matchTimeoutMs, (value) =>
       validateGuideMatchResult(value, workflowIndex),
     )
   }
 
   async generate(input: GuideGenerateInput): Promise<GuideGenerateResult> {
     assertGuideGenerateInput(input)
-    return this.run(this.prompts.generate, input, this.generateTimeoutMs, validateGuideGenerateResult)
+    return this.run("generate", this.prompts.generate, input, this.generateTimeoutMs, validateGuideGenerateResult)
   }
 
   async refine(input: GuideRefineInput): Promise<GuideRefineResult> {
     assertGuideGenerateInput(input)
-    return this.run(this.prompts.refine, input, this.refineTimeoutMs, validateGuideRefineResult)
+    return this.run("refine", this.prompts.refine, input, this.refineTimeoutMs, validateGuideRefineResult)
   }
 
   async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
@@ -336,6 +358,7 @@ export class CopilotGuideProvider implements GuideProvider {
       throw new GuideModelCapabilityError(`Prompt Master SKILL.md is not a regular file: ${skillDirectory}`)
     }
     return this.run(
+      "optimize",
       this.prompts.optimize,
       input,
       this.optimizeTimeoutMs,
@@ -345,6 +368,7 @@ export class CopilotGuideProvider implements GuideProvider {
   }
 
   private async run<Input, Output>(
+    phase: GuideModelPhase,
     systemPrompt: string,
     input: Input,
     timeoutMs: number,
@@ -354,6 +378,7 @@ export class CopilotGuideProvider implements GuideProvider {
       readonly skillDirectory?: string
     } = {},
   ): Promise<Output> {
+    const config = this.routing[phase]
     const client = this.clientFactory({
       mode: "empty",
       ...(this.copilotCliPath === undefined
@@ -367,24 +392,24 @@ export class CopilotGuideProvider implements GuideProvider {
     try {
       await client.start()
       const models = await client.listModels()
-      const modelInfo = models.find((candidate) => candidate.id === this.model)
+      const modelInfo = models.find((candidate) => candidate.id === config.model)
       if (modelInfo === undefined) {
-        throw new GuideModelCapabilityError(`model is not available: ${this.model}`)
+        throw new GuideModelCapabilityError(`model is not available: ${config.model}`)
       }
       if (!modelInfo.capabilities.supports.reasoningEffort) {
-        throw new GuideModelCapabilityError(`model does not support reasoning effort: ${this.model}`)
+        throw new GuideModelCapabilityError(`model does not support reasoning effort: ${config.model}`)
       }
       const supportedEfforts = modelInfo.supportedReasoningEfforts ?? []
-      if (!supportedEfforts.includes(this.effort)) {
+      if (!supportedEfforts.includes(config.effort)) {
         throw new GuideModelCapabilityError(
-          `model does not support effort "${this.effort}": ${this.model} supports: ${supportedEfforts.join(", ") || "(none)"}`,
+          `model does not support effort "${config.effort}": ${config.model} supports: ${supportedEfforts.join(", ") || "(none)"}`,
         )
       }
 
       const sessionConfig: SessionConfig = {
         clientName: this.clientName,
-        model: this.model,
-        reasoningEffort: this.effort,
+        model: config.model,
+        reasoningEffort: config.effort,
         workingDirectory: this.workingDirectory,
         enableConfigDiscovery: false,
         tools: [],

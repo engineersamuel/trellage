@@ -67660,6 +67660,14 @@ var openHerdrWorktreeAndHandoff = async (runner, options) => {
   };
 };
 
+// src/guide-model-routing.ts
+var defaultGuideModelRouting = {
+  match: { model: "gpt-5.6-sol", effort: "medium" },
+  generate: { model: "gpt-5.6-luna", effort: "medium" },
+  optimize: { model: "gpt-5.6-sol", effort: "medium" },
+  refine: { model: "gpt-5.6-sol", effort: "medium" }
+};
+
 // src/guide-selected.ts
 import path3 from "node:path";
 var controls3 = /[\u0000-\u001f\u007f-\u009f]/u;
@@ -67892,12 +67900,38 @@ var parseGuideServiceRequestJson = (source) => {
     ...effort === void 0 ? {} : { effort }
   };
 };
-var defaultGuideModelId = "mai-code-1.1-flash";
+var defaultGuideMatchModelId = defaultGuideModelRouting.match.model;
+var defaultGuideGenerateModelId = defaultGuideModelRouting.generate.model;
+var defaultGuideOptimizeModelId = defaultGuideModelRouting.optimize.model;
+var defaultGuideRefineModelId = defaultGuideModelRouting.refine.model;
 var defaultGuideEffort = "medium" /* Medium */;
-var resolveGuideModelConfig = (overrides, env3 = process.env) => {
-  const model = overrides.model ?? (env3.TRELLAGE_GUIDE_MODEL === void 0 ? defaultGuideModelId : validateModelId(env3.TRELLAGE_GUIDE_MODEL, "TRELLAGE_GUIDE_MODEL"));
-  const effort = overrides.effort ?? (env3.TRELLAGE_GUIDE_EFFORT === void 0 ? defaultGuideEffort : parseGuideEffort(env3.TRELLAGE_GUIDE_EFFORT, "TRELLAGE_GUIDE_EFFORT"));
-  return { model, effort };
+var defaultGuideModelRouting2 = {
+  match: { model: defaultGuideMatchModelId, effort: defaultGuideEffort },
+  generate: { model: defaultGuideGenerateModelId, effort: defaultGuideEffort },
+  optimize: { model: defaultGuideOptimizeModelId, effort: defaultGuideEffort },
+  refine: { model: defaultGuideRefineModelId, effort: defaultGuideEffort }
+};
+var applyResolvedOverrides = (config, model, effort) => ({
+  model: model ?? config.model,
+  effort: effort ?? config.effort
+});
+var resolveModelOverride = (overrides, env3) => {
+  if (overrides.model !== void 0) return overrides.model;
+  return env3.TRELLAGE_GUIDE_MODEL === void 0 ? void 0 : validateModelId(env3.TRELLAGE_GUIDE_MODEL, "TRELLAGE_GUIDE_MODEL");
+};
+var resolveEffortOverride = (overrides, env3) => {
+  if (overrides.effort !== void 0) return overrides.effort;
+  return env3.TRELLAGE_GUIDE_EFFORT === void 0 ? void 0 : parseGuideEffort(env3.TRELLAGE_GUIDE_EFFORT, "TRELLAGE_GUIDE_EFFORT");
+};
+var resolveGuideModelRouting = (overrides, env3 = process.env) => {
+  const model = resolveModelOverride(overrides, env3);
+  const effort = resolveEffortOverride(overrides, env3);
+  return {
+    match: applyResolvedOverrides(defaultGuideModelRouting2.match, model, effort),
+    generate: applyResolvedOverrides(defaultGuideModelRouting2.generate, model, effort),
+    optimize: applyResolvedOverrides(defaultGuideModelRouting2.optimize, model, effort),
+    refine: applyResolvedOverrides(defaultGuideModelRouting2.refine, model, effort)
+  };
 };
 var findFullCatalogEntry = (catalog, ref) => {
   const native2 = catalog.native.find(
@@ -75664,6 +75698,19 @@ var GuideModelCleanupError = class extends Error {
   }
 };
 var defaultClientFactory = (options) => new CopilotClient(options);
+var applyGlobalModelOverrides = (config, options) => ({
+  model: options.model ?? config.model,
+  effort: options.effort ?? config.effort
+});
+var resolveProviderRouting = (options) => {
+  const routing = options.routing ?? defaultGuideModelRouting;
+  return {
+    match: applyGlobalModelOverrides(routing.match, options),
+    generate: applyGlobalModelOverrides(routing.generate, options),
+    optimize: applyGlobalModelOverrides(routing.optimize, options),
+    refine: applyGlobalModelOverrides(routing.refine, options)
+  };
+};
 var findExecutableOnPath = (name, searchPath = process.env.PATH) => {
   if (searchPath === void 0) return void 0;
   for (const directory of searchPath.split(path4.delimiter)) {
@@ -75729,8 +75776,7 @@ var collectClientStopErrors = async (client, cleanupErrors) => {
   }
 };
 var CopilotGuideProvider = class {
-  model;
-  effort;
+  routing;
   prompts;
   baseDirectory;
   workingDirectory;
@@ -75744,8 +75790,7 @@ var CopilotGuideProvider = class {
   optimizeTimeoutMs;
   clientFactory;
   constructor(options) {
-    this.model = options.model ?? "mai-code-1.1-flash";
-    this.effort = options.effort ?? "medium";
+    this.routing = resolveProviderRouting(options);
     this.prompts = options.prompts;
     this.baseDirectory = options.baseDirectory ?? path4.join(os3.homedir(), ".copilot", "trx-guide");
     this.workingDirectory = options.workingDirectory ?? os3.tmpdir();
@@ -75765,6 +75810,7 @@ var CopilotGuideProvider = class {
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))])
     );
     return this.run(
+      "match",
       this.prompts.match,
       input,
       this.matchTimeoutMs,
@@ -75773,11 +75819,11 @@ var CopilotGuideProvider = class {
   }
   async generate(input) {
     assertGuideGenerateInput(input);
-    return this.run(this.prompts.generate, input, this.generateTimeoutMs, validateGuideGenerateResult);
+    return this.run("generate", this.prompts.generate, input, this.generateTimeoutMs, validateGuideGenerateResult);
   }
   async refine(input) {
     assertGuideGenerateInput(input);
-    return this.run(this.prompts.refine, input, this.refineTimeoutMs, validateGuideRefineResult);
+    return this.run("refine", this.prompts.refine, input, this.refineTimeoutMs, validateGuideRefineResult);
   }
   async optimize(input) {
     assertGuideOptimizeInput(input);
@@ -75795,6 +75841,7 @@ var CopilotGuideProvider = class {
       throw new GuideModelCapabilityError(`Prompt Master SKILL.md is not a regular file: ${skillDirectory}`);
     }
     return this.run(
+      "optimize",
       this.prompts.optimize,
       input,
       this.optimizeTimeoutMs,
@@ -75802,7 +75849,8 @@ var CopilotGuideProvider = class {
       { message: promptMasterMessage, skillDirectory }
     );
   }
-  async run(systemPrompt, input, timeoutMs, validate2, options = {}) {
+  async run(phase, systemPrompt, input, timeoutMs, validate2, options = {}) {
+    const config = this.routing[phase];
     const client = this.clientFactory({
       mode: "empty",
       ...this.copilotCliPath === void 0 ? {} : { connection: RuntimeConnection.forStdio({ path: this.copilotCliPath }) },
@@ -75814,23 +75862,23 @@ var CopilotGuideProvider = class {
     try {
       await client.start();
       const models = await client.listModels();
-      const modelInfo = models.find((candidate) => candidate.id === this.model);
+      const modelInfo = models.find((candidate) => candidate.id === config.model);
       if (modelInfo === void 0) {
-        throw new GuideModelCapabilityError(`model is not available: ${this.model}`);
+        throw new GuideModelCapabilityError(`model is not available: ${config.model}`);
       }
       if (!modelInfo.capabilities.supports.reasoningEffort) {
-        throw new GuideModelCapabilityError(`model does not support reasoning effort: ${this.model}`);
+        throw new GuideModelCapabilityError(`model does not support reasoning effort: ${config.model}`);
       }
       const supportedEfforts = modelInfo.supportedReasoningEfforts ?? [];
-      if (!supportedEfforts.includes(this.effort)) {
+      if (!supportedEfforts.includes(config.effort)) {
         throw new GuideModelCapabilityError(
-          `model does not support effort "${this.effort}": ${this.model} supports: ${supportedEfforts.join(", ") || "(none)"}`
+          `model does not support effort "${config.effort}": ${config.model} supports: ${supportedEfforts.join(", ") || "(none)"}`
         );
       }
       const sessionConfig = {
         clientName: this.clientName,
-        model: this.model,
-        reasoningEffort: this.effort,
+        model: config.model,
+        reasoningEffort: config.effort,
         workingDirectory: this.workingDirectory,
         enableConfigDiscovery: false,
         tools: [],
@@ -75900,8 +75948,8 @@ var matchCacheKey = (input, options) => sha256(
   JSON.stringify({
     schemaVersion: 1,
     intentDigest: sha256(input.intent),
-    model: options.model,
-    effort: options.effort,
+    model: options.routing.match.model,
+    effort: options.routing.match.effort,
     matchPromptDigest: sha256(options.matchPrompt),
     catalogDigest: sha256(JSON.stringify(input.entries))
   })
@@ -75914,8 +75962,8 @@ var generateCacheKey = (input, options) => sha256(
     workflowId: input.workflowId,
     guideDigest: sha256(JSON.stringify(input.guide)),
     guideBodyDigest: sha256(input.guideBody),
-    model: options.model,
-    effort: options.effort,
+    model: options.routing.generate.model,
+    effort: options.routing.generate.effort,
     generatePromptDigest: sha256(options.generatePrompt)
   })
 );
@@ -75925,8 +75973,8 @@ var optimizeCacheKey = (input, options) => sha256(
     targetTool: input.targetTool,
     profileRef: input.profileRef,
     candidatesDigest: sha256(JSON.stringify(input.candidates)),
-    model: options.model,
-    effort: options.effort,
+    model: options.routing.optimize.model,
+    effort: options.routing.optimize.effort,
     optimizePromptDigest: sha256(options.optimizePrompt)
   })
 );
@@ -76134,7 +76182,7 @@ var resolveGuideRequest = (args, stdinRequest, env3) => {
     ...(args.model ?? fromStdin.model) === void 0 ? {} : { model: args.model ?? fromStdin.model },
     ...(args.effort ?? fromStdin.effort) === void 0 ? {} : { effort: args.effort ?? fromStdin.effort }
   };
-  const config = resolveGuideModelConfig(
+  const routing = resolveGuideModelRouting(
     {
       ...request.model === void 0 ? {} : { model: request.model },
       ...request.effort === void 0 ? {} : { effort: request.effort }
@@ -76143,8 +76191,7 @@ var resolveGuideRequest = (args, stdinRequest, env3) => {
   );
   return {
     request,
-    model: config.model,
-    effort: config.effort
+    routing
   };
 };
 var runGuideJsonCommand = async (options) => {
@@ -76154,27 +76201,24 @@ var runGuideJsonCommand = async (options) => {
   const prompts = await loadDefaultGuidePrompts();
   const provider = new CachedGuideProvider(
     new CopilotGuideProvider({
-      model: resolved.model,
-      effort: resolved.effort,
+      routing: resolved.routing,
       prompts,
       promptMasterSkillDirectory: options.promptMasterSkillDirectory
     }),
     {
       cachePath: defaultGuideMatchCachePath(options.env),
-      model: resolved.model,
-      effort: resolved.effort,
+      routing: resolved.routing,
       matchPrompt: prompts.match,
       generatePrompt: prompts.generate,
       optimizePrompt: prompts.optimize
     }
   );
-  const common = {
+  return resolved.request.profile === void 0 ? runGuideMatch(provider, options.catalog, {
     intent: resolved.request.intent,
-    model: resolved.model,
-    effort: resolved.effort
-  };
-  return resolved.request.profile === void 0 ? runGuideMatch(provider, options.catalog, common) : runGuideGenerate(provider, options.catalog, options.guideRoot, {
-    ...common,
+    ...resolved.routing.match
+  }) : runGuideGenerate(provider, options.catalog, options.guideRoot, {
+    intent: resolved.request.intent,
+    ...resolved.routing.generate,
     profileRef: resolved.request.profile
   });
 };
@@ -76271,6 +76315,17 @@ var executeGuideUiResult = async (result, services) => {
     default:
       return unexpectedGuideResult(result);
   }
+};
+
+// src/guide-terminal.ts
+var clearAndHome = "\x1B[2J\x1B[H";
+var createInitialGuideRenderHandler = (write, enabled) => {
+  let pending = enabled;
+  return () => {
+    if (!pending) return;
+    pending = false;
+    write(clearAndHome);
+  };
 };
 
 // src/guide-ui.tsx
@@ -77136,7 +77191,8 @@ var GenerationProgress = ({
   recommendation,
   phase,
   intent,
-  model
+  generateConfig,
+  optimizeConfig
 }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
   ProgressPipeline,
   {
@@ -77144,7 +77200,7 @@ var GenerationProgress = ({
     intent,
     items: generationProgressItems(recommendation),
     activePhase: phase,
-    detail: `Copilot model: ${model} \xB7 Selected profile: ${recommendation.profileRef}`
+    detail: `Draft: ${generateConfig.model} (${generateConfig.effort}) \xB7 Optimize: ${optimizeConfig.model} (${optimizeConfig.effort}) \xB7 Selected profile: ${recommendation.profileRef}`
   }
 );
 var wizardSteps = [
@@ -77485,8 +77541,8 @@ var useGuideMatchEffect = (props, state, dispatch) => {
           props.catalog,
           {
             intent: state.intent ?? "",
-            model: props.model,
-            effort: props.effort
+            model: props.routing.match.model,
+            effort: props.routing.match.effort
           },
           (phase) => {
             if (!cancelled) dispatch({ type: "match/progress" /* MatchProgress */, phase });
@@ -77848,8 +77904,8 @@ var matchingProgress = ({ props, state }) => /* @__PURE__ */ (0, import_jsx_runt
     catalog: props.catalog,
     phase: state.matchPhase ?? "loading-profiles" /* LoadingProfiles */,
     intent: state.intent ?? "",
-    model: props.model,
-    effort: props.effort
+    model: props.routing.match.model,
+    effort: props.routing.match.effort
   }
 );
 var renderRecommendations = (context) => context.state.recommendations === void 0 ? matchingProgress(context) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -77857,8 +77913,8 @@ var renderRecommendations = (context) => context.state.recommendations === void 
   {
     pinnedLenses: pinnedGuideLenses(context.props.catalog),
     intent: context.state.intent ?? "",
-    model: context.props.model,
-    effort: context.props.effort,
+    model: context.props.routing.match.model,
+    effort: context.props.routing.match.effort,
     recommendations: context.state.recommendations,
     index: context.state.recommendationIndex,
     usedLiteralFallback: context.state.usedLiteralFallback
@@ -77875,7 +77931,8 @@ var renderCandidateStage = ({ props, state }) => {
       Spinner,
       {
         label: "Refining prompt",
-        messages: ["Applying your feedback", "Preserving profile-specific requirements"]
+        messages: ["Applying your feedback", "Preserving profile-specific requirements"],
+        detail: `Refine: ${props.routing.refine.model} (${props.routing.refine.effort}) \xB7 Optimize: ${props.routing.optimize.model} (${props.routing.optimize.effort})`
       }
     );
   if (state.stage === "refine-failed" /* RefineFailed */)
@@ -77937,7 +77994,8 @@ var stageRenderer = {
       recommendation: state.selectedRecommendation,
       phase: state.generationPhase ?? "loading-profile" /* LoadingProfile */,
       intent: state.intent,
-      model: props.model
+      generateConfig: props.routing.generate,
+      optimizeConfig: props.routing.optimize
     }
   ),
   ["generate-failed" /* GenerateFailed */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -78380,7 +78438,7 @@ var probeInteractiveHerdr = async (runner) => {
 var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory) => {
   const args = parseGuideHeadlessArgv(argv);
   const catalog = readGuideCatalog();
-  const config = resolveGuideModelConfig(
+  const routing = resolveGuideModelRouting(
     {
       ...args.model === void 0 ? {} : { model: args.model },
       ...args.effort === void 0 ? {} : { effort: args.effort }
@@ -78390,15 +78448,13 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
   const prompts = await loadDefaultGuidePrompts();
   const provider = new CachedGuideProvider(
     new CopilotGuideProvider({
-      model: config.model,
-      effort: config.effort,
+      routing,
       prompts,
       promptMasterSkillDirectory
     }),
     {
       cachePath: defaultGuideMatchCachePath(process.env),
-      model: config.model,
-      effort: config.effort,
+      routing,
       matchPrompt: prompts.match,
       generatePrompt: prompts.generate,
       optimizePrompt: prompts.optimize
@@ -78415,6 +78471,12 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
   } catch {
     throw new Error("an interactive controlling terminal is required");
   }
+  const redrawInitialFrame = createInitialGuideRenderHandler(
+    (text4) => {
+      output.write(text4);
+    },
+    process.env.INK_SCREEN_READER !== "true"
+  );
   let result;
   try {
     const instance = render_default(
@@ -78424,8 +78486,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
           catalog,
           guideRoot,
           provider,
-          model: config.model,
-          effort: config.effort,
+          routing,
           runner,
           cwd: process.cwd(),
           herdrEnv: herdrEnvironment(),
@@ -78440,6 +78501,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
         exitOnCtrlC: false,
         kittyKeyboard: { mode: "disabled" },
         alternateScreen: true,
+        onRender: redrawInitialFrame,
         maxFps: 30
       }
     );

@@ -75,11 +75,12 @@ and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
 
 `trx guide` is separate from the search-first bare launcher. It loads the
-native and Sandbox JSON catalogs, uses `mai-code-1.1-flash` with medium
-reasoning to rank three profiles, and generates three prompt candidates from
-the selected Markdown guide. The model session has no tools, repository
-attachments, or persistent history. Use `--model` and `--effort` for an
-explicit override.
+native and Sandbox JSON catalogs, uses `gpt-5.6-sol` with medium reasoning to
+rank five profiles, drafts three prompt candidates with `gpt-5.6-luna` at
+medium, then uses `gpt-5.6-sol` at medium for Prompt Master optimization and
+refinement. The model session has no tools, repository attachments, or
+persistent history. `--model` forces one model across all model-backed phases;
+`--effort` applies one effort level across the phase route.
 
 The non-interactive API is side-effect-free:
 

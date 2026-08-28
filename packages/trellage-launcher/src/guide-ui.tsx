@@ -27,7 +27,9 @@ import {
   templatePromptCandidates,
   type GuideEffort,
   type GuideMatchResponse,
+  type GuideModelConfig,
   type GuideRecommendation,
+  type GuideResolvedModelRouting,
   type PublicGuideCommand,
 } from "./guide-api.js"
 import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.js"
@@ -1327,8 +1329,7 @@ export interface GuideUiProps {
   readonly catalog: CombinedGuideCatalog
   readonly guideRoot: string
   readonly provider: GuideProvider
-  readonly model: string
-  readonly effort: GuideEffort
+  readonly routing: GuideResolvedModelRouting
   readonly runner: CommandRunner
   readonly cwd: string
   /** Raw Herdr environment used to derive `HerdrContext` via `getHerdrContext`. */
@@ -1492,19 +1493,21 @@ const GenerationProgress = ({
   recommendation,
   phase,
   intent,
-  model,
+  generateConfig,
+  optimizeConfig,
 }: {
   readonly recommendation: GuideRecommendation
   readonly phase: GuideGenerationPhase
   readonly intent: string
-  readonly model: string
+  readonly generateConfig: GuideModelConfig
+  readonly optimizeConfig: GuideModelConfig
 }) => (
   <ProgressPipeline
     title="Preparing prompt candidates"
     intent={intent}
     items={generationProgressItems(recommendation)}
     activePhase={phase}
-    detail={`Copilot model: ${model} · Selected profile: ${recommendation.profileRef}`}
+    detail={`Draft: ${generateConfig.model} (${generateConfig.effort}) · Optimize: ${optimizeConfig.model} (${optimizeConfig.effort}) · Selected profile: ${recommendation.profileRef}`}
   />
 )
 
@@ -1942,8 +1945,8 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
           props.catalog,
           {
             intent: state.intent ?? "",
-            model: props.model,
-            effort: props.effort,
+            model: props.routing.match.model,
+            effort: props.routing.match.effort,
           },
           (phase) => {
             if (!cancelled) dispatch({ type: GuideUiActionType.MatchProgress, phase })
@@ -2389,8 +2392,8 @@ const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElem
     catalog={props.catalog}
     phase={state.matchPhase ?? GuideMatchPhase.LoadingProfiles}
     intent={state.intent ?? ""}
-    model={props.model}
-    effort={props.effort}
+    model={props.routing.match.model}
+    effort={props.routing.match.effort}
   />
 )
 
@@ -2401,8 +2404,8 @@ const renderRecommendations: GuideStageRenderer = (context) =>
     <RecommendationsView
       pinnedLenses={pinnedGuideLenses(context.props.catalog)}
       intent={context.state.intent ?? ""}
-      model={context.props.model}
-      effort={context.props.effort}
+      model={context.props.routing.match.model}
+      effort={context.props.routing.match.effort}
       recommendations={context.state.recommendations}
       index={context.state.recommendationIndex}
       usedLiteralFallback={context.state.usedLiteralFallback}
@@ -2420,6 +2423,7 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
       <Spinner
         label="Refining prompt"
         messages={["Applying your feedback", "Preserving profile-specific requirements"]}
+        detail={`Refine: ${props.routing.refine.model} (${props.routing.refine.effort}) · Optimize: ${props.routing.optimize.model} (${props.routing.optimize.effort})`}
       />
     )
   if (state.stage === GuideUiStage.RefineFailed)
@@ -2496,7 +2500,8 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
         recommendation={state.selectedRecommendation}
         phase={state.generationPhase ?? GuideGenerationPhase.LoadingProfile}
         intent={state.intent}
-        model={props.model}
+        generateConfig={props.routing.generate}
+        optimizeConfig={props.routing.optimize}
       />
     ),
   [GuideUiStage.GenerateFailed]: ({ state }) => (

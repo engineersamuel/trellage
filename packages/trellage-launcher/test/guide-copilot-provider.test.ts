@@ -28,10 +28,16 @@ const prompts = {
 }
 
 const workingModel: ModelInfo = {
-  id: "mai-code-1.1-flash",
-  name: "MAI Code 1.1 Flash",
-  capabilities: { supports: { vision: false, reasoningEffort: true }, limits: { max_context_window_tokens: 128000 } },
+  id: "gpt-5.6-sol",
+  name: "GPT-5.6 Sol",
+  capabilities: { supports: { vision: true, reasoningEffort: true }, limits: { max_context_window_tokens: 1_050_000 } },
   supportedReasoningEfforts: ["low", "medium", "high"],
+}
+
+const lunaModel: ModelInfo = {
+  ...workingModel,
+  id: "gpt-5.6-luna",
+  name: "GPT-5.6 Luna",
 }
 
 const message = (content: string): GuideModelMessage => ({ data: { content } })
@@ -258,7 +264,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     const config = client.createSessionCalls[0]
     expect(config).toBeDefined()
     expect(config).toMatchObject({
-      model: "mai-code-1.1-flash",
+      model: "gpt-5.6-sol",
       reasoningEffort: "medium",
       enableConfigDiscovery: false,
       tools: [],
@@ -304,13 +310,15 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
   })
 
   it("generates exactly three candidates using the generate prompt", async () => {
-    const client = new FakeClient([workingModel], [message(validGenerateResponse)])
+    const client = new FakeClient([workingModel, lunaModel], [message(validGenerateResponse)])
     const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
 
     const result = await provider.generate(generateInput)
 
     expect(result.candidates).toHaveLength(3)
     expect(client.createSessionCalls[0]).toMatchObject({
+      model: "gpt-5.6-luna",
+      reasoningEffort: "medium",
       systemMessage: { mode: "append", content: "GENERATE SYSTEM PROMPT" },
     })
     expect(client.session?.disconnectCalls).toBe(1)
@@ -325,6 +333,8 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
     expect(result.candidate.title).toBe("Quick pass, with tests")
     expect(client.createSessionCalls[0]).toMatchObject({
+      model: "gpt-5.6-sol",
+      reasoningEffort: "medium",
       systemMessage: { mode: "append", content: "REFINE SYSTEM PROMPT" },
     })
     expect(client.session?.disconnectCalls).toBe(1)
@@ -348,6 +358,8 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
       expect(result.candidates).toHaveLength(3)
       expect(client.createSessionCalls[0]).toMatchObject({
+        model: "gpt-5.6-sol",
+        reasoningEffort: "medium",
         tools: [],
         availableTools: [],
         skillDirectories: [skillDirectory],
@@ -372,9 +384,9 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     })
   })
 
-  it("honors configured model and effort options", async () => {
+  it("honors global model and effort options for a non-Match phase", async () => {
     const customModel: ModelInfo = { ...workingModel, id: "custom-model", supportedReasoningEfforts: ["high"] }
-    const client = new FakeClient([customModel], [message(validMatchResponse)])
+    const client = new FakeClient([customModel], [message(validGenerateResponse)])
     const provider = new CopilotGuideProvider({
       prompts,
       model: "custom-model",
@@ -382,7 +394,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       clientFactory: () => client,
     })
 
-    await provider.match(matchInput)
+    await provider.generate(generateInput)
 
     expect(client.createSessionCalls[0]).toMatchObject({ model: "custom-model", reasoningEffort: "high" })
   })
