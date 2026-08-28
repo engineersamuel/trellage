@@ -688,8 +688,8 @@ for qualification in \
 done
 
 for qualification in \
-  'automatically stops the shared container after the last harness exits' \
-  'Concurrent harnesses and recovery shells keep the container running' \
+  'automatically stops an ephemeral shared container after the last harness exits' \
+  'Concurrent harnesses and recovery shells keep ephemeral containers running' \
   'The container and state volume remain retained' \
   '`trellage shell` exit alone does not request shutdown' \
   '`trellage stop` remains the force/recovery operation'; do
@@ -739,7 +739,7 @@ done
 for qualification in \
   'Multiple Codex sessions can run concurrently for the same worktree' \
   '`trellage resume` selects the newest recorded native session' \
-  'session ID to select an exact conversation' \
+  'can also accept an exact' \
   'prints a copyable exact resume command' \
   '`trellage stop` remains the force/recovery operation'; do
   require_section_text '## Use' "$qualification"
@@ -810,7 +810,7 @@ for qualification in \
   'destroy removes only the named container and state volume after confirmation' \
   'type `destroy <container> <state-volume>` to confirm' \
   'Explicit stop preserves the same resources' \
-  'Automatic shutdown preserves the container and state volume' \
+  'Automatic shutdown preserves an ephemeral container and state volume' \
   '`trellage stop` may terminate active attachments' \
   'retains the image, network, proxy, Herdr, and unrelated resources'; do
   require_section_text '## Cleanup' "$qualification"

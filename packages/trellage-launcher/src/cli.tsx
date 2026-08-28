@@ -265,14 +265,16 @@ const ModelChooser = ({
 const ShortcutHelp = ({
   searching,
   herdrAvailable,
+  remoteAvailable,
 }: {
   readonly searching: boolean
   readonly herdrAvailable: boolean
+  readonly remoteAvailable: boolean
 }) => (
   <Text dimColor>
     {searching
       ? "Type to filter · ↑↓ move · ↵ launch · Esc commands · Ctrl-C cancel"
-      : `↑↓ move · / search · S sort · M model · D details · ↵ launch${herdrAvailable ? " · H Herdr" : ""} · Esc`}
+      : `↑↓ move · / search · S sort · M model · D details · ↵ launch${herdrAvailable ? " · H Herdr" : ""}${remoteAvailable ? " · R Remote" : ""} · Esc`}
   </Text>
 )
 
@@ -281,6 +283,7 @@ const SelectionView = ({
   state,
   searching,
   herdrAvailable,
+  remoteAvailable,
   shown,
   widths,
   selected,
@@ -295,6 +298,7 @@ const SelectionView = ({
   readonly state: LauncherState
   readonly searching: boolean
   readonly herdrAvailable: boolean
+  readonly remoteAvailable: boolean
   readonly shown: ReadonlyArray<LaunchEntry>
   readonly widths: TableWidths
   readonly selected: LaunchEntry | undefined
@@ -311,7 +315,8 @@ const SelectionView = ({
         {catalog.prompt}
       </Text>
       <Text dimColor>
-        Sort: {state.sort} · Herdr: {herdrAvailable ? "available" : "unavailable"}
+        Sort: {state.sort} · Herdr: {herdrAvailable ? "available" : "unavailable"} · Remote:{" "}
+        {remoteAvailable ? "available" : "unavailable"}
       </Text>
     </Box>
     {catalog.description === undefined ? null : (
@@ -336,16 +341,18 @@ const SelectionView = ({
         customModel={customModel}
       />
     ) : null}
-    <ShortcutHelp searching={searching} herdrAvailable={herdrAvailable} />
+    <ShortcutHelp searching={searching} herdrAvailable={herdrAvailable} remoteAvailable={remoteAvailable} />
   </Box>
 )
 
 const Launcher = ({
   catalog,
   herdrAvailable,
+  remoteAvailable,
 }: {
   readonly catalog: LaunchCatalog
   readonly herdrAvailable: boolean
+  readonly remoteAvailable: boolean
 }) => {
   const { exit } = useApp()
   const { columns, rows } = useWindowSize()
@@ -424,6 +431,7 @@ const Launcher = ({
       state,
       selected,
       herdrAvailable,
+      remoteAvailable,
       updateState,
       setSearching,
       setModelIndex,
@@ -471,6 +479,7 @@ const Launcher = ({
       state={state}
       searching={searching}
       herdrAvailable={herdrAvailable}
+      remoteAvailable={remoteAvailable}
       shown={shown}
       widths={widths}
       selected={selected}
@@ -653,6 +662,7 @@ const main = async () => {
       <Launcher
         catalog={catalog}
         herdrAvailable={process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID)}
+        remoteAvailable={process.env.TRELLAGE_REMOTE_AVAILABLE === "true"}
       />,
       {
         stdin: input,

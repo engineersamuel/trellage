@@ -92,18 +92,7 @@ The deterministic smoke verification requires Bash, Docker, Git, `gh`, jq, and m
 mise run smoke
 ```
 
-The smoke performs a fresh core-locked image build with one staged skill
-snapshot, static and live contracts, a restricted container probe, proxy
-checks, persistence recreation, recovery Fish, and an installer dry-run. It
-usually takes 5-10 minutes, depending on Docker build speed. It creates
-uniquely named `trellage-codex-smoke-*`,
-`trellage-codex-runtime-test-*`, and
-`trellage-codex-persistence-test-*` temporary resources. Each test tracks
-immutable container IDs and successful volume creation, then revalidates
-ownership labels before removing only tracked resources. The smoke removes
-its temporary containers, volumes, bind directories, and installer directory
-on exit. It retains the built image, proxy, network, Herdr, repository
-worktrees, and unrelated resources.
+The smoke performs a fresh locked image build with one staged skill snapshot, static and live contracts, a restricted container probe, proxy checks, persistence recreation, recovery Fish, and an installer dry-run. It usually takes 5-10 minutes, depending on Docker build speed. It creates uniquely named `trellage-codex-smoke-*`, `trellage-codex-runtime-test-*`, and `trellage-codex-persistence-test-*` temporary resources. Each test tracks immutable container IDs and successful volume creation, then revalidates ownership labels before removing only tracked resources. The smoke removes its temporary containers, volumes, bind directories, and installer directory on exit. It retains the built image, proxy, network, Herdr, repository worktrees, and unrelated resources.
 
 ## Install
 
@@ -196,7 +185,7 @@ Set `TRELLAGE_CONFIG` to an alternate config file. Set `TRELLAGE_ENVIRONMENT=off
 Run these commands inside the Git worktree that should be mounted:
 
 ```bash
-trellage [--profile PROFILE]
+trellage [--profile PROFILE] [-l|--local|-r|--remote]
 trellage [--profile PROFILE] -p|--prompt PROMPT
 trellage [--profile CLAUDE_PROFILE] [--model MODEL] [-p|--prompt PROMPT]
 trellage [--profile PROFILE] --output-format jsonl [--trellage-events] -p PROMPT
@@ -211,6 +200,7 @@ trellage                    # select a profile, then start its interactive harne
 trellage --profile NAME     # directly launch one profile
 trellage "<prompt>"         # new conversation with an explicit prompt
 trellage -p "<prompt>"      # one non-interactive prompt when advertised
+trellage --remote --profile NAME  # provision/reuse an Azure VM and launch there
 trellage resume             # resume the latest conversation when advertised
 trellage resume SESSION_ID  # resume an exact session when advertised
 trellage shell              # recovery Fish without secrets
@@ -230,6 +220,31 @@ upstream access blocks one profile, its existing lock and image remain intact,
 the remaining profiles still run, and the command exits nonzero with a failure
 summary. Every image build resolves selected skill bundles from current
 default-branch content independently of the core upgrade policy.
+
+### Remote Execution (Azure)
+
+`trellage` always launches locally unless `-r`/`--remote` is given; `-l`/`--local`
+is the explicit (and default) opposite, useful for scripting clarity. `--remote`
+is supported only for agent launches (`new`, `prompt`, `resume`) and requires an
+explicit `--profile`:
+
+```bash
+trellage --profile copilot-hve --remote -p "hello"   # or: --remote -p "hello"
+trellage -r --profile copilot-hve                    # interactive, on Azure
+```
+
+`--remote` requires the Azure CLI (`az`) installed and an authenticated session
+(`az login`); it fails fast with a clear message otherwise, and never falls
+back to local automatically. When available, it builds the locked profile
+image locally (production builds are ARM64-only), then provisions (or reuses)
+a single shared ARM64 Azure VM (`Standard_D2ps_v5`, `westus2`), mirrors the
+current worktree, Git common directory, and `~/.copilot/models.json` onto the
+VM at identical paths, transfers the built image, and re-execs the unmodified
+`trellage` launcher on the VM's own Docker daemon over an interactive SSH PTY
+(`--local` is forced on the remote side to avoid recursive delegation). This
+is a prototype convenience path with no cost controls beyond VM reuse; destroy
+the `trellage-remote-rg` resource group (`az group delete --name
+trellage-remote-rg --yes`) when a remote session is no longer needed.
 
 For a profile bundled in this repository, use its directory name instead of an absolute path:
 
@@ -284,15 +299,13 @@ Qwen profile is the sole pinned model.
 
 Multiple Codex sessions can run concurrently for the same worktree. Each bare
 `trellage` invocation starts a new native session. When the selected profile
-publishes resume support, `trellage resume` selects the newest recorded native
-session. A profile with `sessionId` other than `none` can also accept an exact
-session ID. After a supported interactive session exits, Trellage prints a
-copyable exact resume command. All sessions share one container and durable
-profile volume.
-Trellage automatically stops an ephemeral shared container after the last
-harness exits. Headlong is persistent: its service remains running after the
-attachment exits. Concurrent harnesses and recovery shells keep ephemeral
-containers running.
+publishes resume support, `trellage resume` selects the newest recorded native session.
+A profile with `sessionId` other than `none` can also accept an exact session ID.
+After a supported interactive session exits, Trellage prints a copyable exact resume command.
+All sessions share one container and durable profile volume.
+Trellage automatically stops an ephemeral shared container after the last harness exits.
+Headlong is persistent: its service remains running after the attachment exits.
+Concurrent harnesses and recovery shells keep ephemeral containers running.
 The container and state volume remain retained, so the next launch restarts the
 same container with durable agent state.
 A `trellage shell` exit alone does not request shutdown.
@@ -345,26 +358,17 @@ Use absolute profile paths when invoking the installed command from any worktree
 trellage validate /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage build --locked /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage --profile /absolute/path/to/profiles/copilot-hve/profile.toml
+trellage resume --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml
 ```
 
-For a launch, and for a resume when the inventory publishes resume support,
-host authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
-`GITHUB_TOKEN`, then `gh auth token`, then device login. Host authentication
-is ephemeral: the resolved host token is supplied only to the Copilot process
-and is not saved in the profile state volume. If no host token is available,
-Copilot falls back to device login. Device login persists in the profile state
-volume.
+For a launch, and for a resume when the inventory publishes resume support, host authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`, then device login. Host authentication is ephemeral: the resolved host token is supplied only to the Copilot process and is not saved in the profile state volume. If no host token is available, Copilot falls back to device login. Device login persists in the profile state volume.
 
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
-Locked builds never refresh mutable core selectors. They still fetch current
-skill content. Core upgrades never happen automatically. Run the explicit
-one-command `trellage upgrade
-/absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to
-resolve, build, and adopt a core upgrade.
+Locked builds never refresh mutable core selectors. They still fetch current skill content. Upgrades never happen automatically. Run the explicit one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to resolve, build, and adopt a core upgrade.
 
 ## Prime Agent
 
@@ -503,15 +507,13 @@ it fetches the current default-branch versions of three native skills:
 trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"
+trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 ```
 
-When the exact resolved version publishes prompt support, prompt mode
-translates to OMP `--print`. Interactive launch uses a new native OMP session.
-When resume support is published, resume uses OMP `--continue` for the current
-worktree. All modes force `github-copilot/gpt-5.6-terra` and preserve OMP's
-exit status.
+Prompt mode translates to OMP `--print` when the exact resolved version publishes prompt support. Interactive launch uses a new native OMP session. When resume support is published, resume uses OMP `--continue` for the current worktree. All modes force `github-copilot/gpt-5.6-terra` and preserve OMP's exit status.
 
 Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
 `GITHUB_TOKEN`, then `gh auth token`, then OMP's native interactive login. A
@@ -546,8 +548,8 @@ into the persistent state volume on every launch.
 ## Cleanup
 
 Automatic shutdown preserves an ephemeral container and state volume after the
-last harness exits. Persistent Headlong containers keep running. Explicit stop
-preserves the same resources:
+last harness exits. Persistent Headlong containers keep running.
+Explicit stop preserves the same resources:
 
 ```bash
 trellage stop

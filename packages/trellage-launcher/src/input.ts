@@ -11,7 +11,7 @@ import type { Dispatch, SetStateAction } from "react"
 
 export type StateSetter<T> = Dispatch<SetStateAction<T>>
 
-export type LaunchTarget = "current" | "herdr"
+export type LaunchTarget = "current" | "herdr" | "remote"
 
 export const isSubmitInput = (input: string, key: Key): boolean =>
   key.return || input === "\r" || input === "\n"
@@ -142,6 +142,7 @@ export const handleCommandInput = (
   state: LauncherState,
   selected: LaunchEntry | undefined,
   herdrAvailable: boolean,
+  remoteAvailable: boolean,
   updateState: StateSetter<LauncherState>,
   setSearching: StateSetter<boolean>,
   setModelIndex: StateSetter<number>,
@@ -165,6 +166,8 @@ export const handleCommandInput = (
     setShowingDetails(true)
   } else if (input === "H" && herdrAvailable) {
     finish("herdr")
+  } else if (input === "R" && remoteAvailable) {
+    finish("remote")
   } else if (input.toLocaleLowerCase("en") === "l" || isSubmitInput(input, key)) {
     finish("current")
   }
