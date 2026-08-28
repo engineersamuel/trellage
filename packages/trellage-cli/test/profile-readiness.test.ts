@@ -47,7 +47,7 @@ const councilChoice: ProfileChoice = {
 describe("resolveProfileLocked", () => {
   it("reports locked and the resolved harness version when a committed profile has a current production lock", async () => {
     const readiness = await Effect.runPromise(resolveProfileReadiness(baseChoice))
-    expect(readiness).toEqual({ locked: true, resolvedVersion: "1.0.80" })
+    expect(readiness).toEqual({ locked: true, resolvedVersion: "1.0.81" })
 
     const locked = await Effect.runPromise(resolveProfileLocked(baseChoice))
     expect(locked).toBe(true)
@@ -79,7 +79,7 @@ describe("resolveProfileLocked", () => {
     const unreadable = { ...baseChoice, value: path.join(repositoryRoot, "profiles", "does-not-exist", "profile.toml") }
     const readiness = await Effect.runPromise(resolveProfilesReadiness([baseChoice, unreadable]))
     expect(readiness).toEqual([
-      { locked: true, resolvedVersion: "1.0.80" },
+      { locked: true, resolvedVersion: "1.0.81" },
       { locked: false, resolvedVersion: null },
     ])
 

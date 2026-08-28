@@ -1553,7 +1553,9 @@ select = ["humanizer"]
     for (let index = 1; index < commands.length; index += 1) {
       expect(script.indexOf(commands[index]!)).toBeGreaterThan(script.indexOf(commands[index - 1]!))
     }
-    expect(script).toContain("$0 == expected { count++ } END { exit count == 1 ? 0 : 1 }")
+    expect(script).toContain(
+      '$0 == expected || $0 == expected " (enabled)" { count++ } END { exit count == 1 ? 0 : 1 }',
+    )
     expect(script).toContain("plugin_list_status=0")
     expect(script).toContain("|| plugin_list_status=$?")
     expect(script).toContain('[ "$plugin_list_status" -eq 0 ]')
@@ -1802,10 +1804,19 @@ exit "$FINALIZER_STATUS"
         ].join("\n"),
       }),
     )
+    await expect(execute({ pluginListOutput: `Live plugins:\n${exact} (enabled)` })).resolves.toEqual(
+      expect.objectContaining({
+        trace: expect.stringContaining(
+          "node:argv=/src/finalize-copilot-seed.mjs /src/copilot-seed hve-core hve-core 3.3.101",
+        ),
+      }),
+    )
     await expect(execute({ pluginListOutput: "  • hve-core@hve-core (v3.3.1010)" })).rejects.toThrow()
     await expect(execute({ pluginListOutput: "  • hve-core-extra@hve-core (v3.3.101)" })).rejects.toThrow()
+    await expect(execute({ pluginListOutput: `${exact} (disabled)` })).rejects.toThrow()
     await expect(execute({ pluginListOutput: `\u001b[32m${exact}\u001b[0m` })).rejects.toThrow()
     await expect(execute({ pluginListOutput: `${exact}\n${exact}` })).rejects.toThrow()
+    await expect(execute({ pluginListOutput: `${exact}\n${exact} (enabled)` })).rejects.toThrow()
 
     const failures = [
       {
