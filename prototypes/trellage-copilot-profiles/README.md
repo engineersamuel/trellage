@@ -65,7 +65,7 @@ Use `cpx list --json` for the stable machine-readable catalog, including
 launcher, harness, plugin, source, marketplace, standalone MCP metadata, and a
 version-gated `headless` object. Exact prompt/text-json, `--no-ask-user`
 hard-deny classification, and model-override publication are advertised only
-for GitHub Copilot CLI `1.0.80`. Other versions stay discoverable, but they
+for GitHub Copilot CLI `1.0.81`. Other versions stay discoverable, but they
 fall back to conservative `headless` values instead of inferred support.
 These are catalog declarations, not proof that profile setup or installed
 plugin state is healthy. Use `cpx doctor PROFILE` for that validation.

@@ -488,6 +488,11 @@ if [[ "$mode" == skills ]]; then
       --bundle omp-community \
       --cache "$canonical_home/.local/share/trellage/common/omp-community-skills" \
       || die 'failed to update OMP community skills'
+    node "$floating_skills_manager" update \
+      --catalog "$floating_skills_catalog" \
+      --bundle guide-prompt-master \
+      --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
+      || die 'failed to update guide Prompt Master skill'
     exit 0
   fi
   exec node "$floating_skills_manager" "$skills_action" \
@@ -628,6 +633,20 @@ if [[ "$mode" == guide ]]; then
   }
   trap cleanup_guide_catalog_tmp EXIT HUP INT TERM
 
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle guide-prompt-master \
+    --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
+    --target "$guide_catalog_tmp/skills" \
+    || die 'failed to prepare the guide Prompt Master skill'
+  [[ -f "$guide_catalog_tmp/skills/prompt-master/SKILL.md" \
+      && ! -L "$guide_catalog_tmp/skills/prompt-master/SKILL.md" ]] \
+    || die 'guide Prompt Master skill is missing or unsafe'
+
   printf '%s\n' "$profile_list" \
     | node "$picker_path" enrich-native-list "$guide_root" \
       >"$guide_catalog_tmp/native-public.json" \
@@ -673,7 +692,7 @@ if [[ "$mode" == guide ]]; then
     || die 'could not combine profile guide catalogs'
 
   guide_status=0
-  node "$picker_path" guide "$guide_root" "${guide_args[@]}" \
+  node "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master" "${guide_args[@]}" \
     3<"$guide_catalog_tmp/combined.json" || guide_status=$?
   cleanup_guide_catalog_tmp
   trap - EXIT HUP INT TERM

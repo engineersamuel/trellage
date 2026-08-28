@@ -3759,8 +3759,13 @@ case "$*" in
     ;;
   'run build')
     mkdir -p dist
-    printf '%s\n' 'process.exit(0);' >dist/cli.js
+    cat >dist/cli.js <<'NODE'
+if (process.argv[2] === "list") {
+  process.stdout.write('{"schemaVersion":1,"profiles":[]}\n')
+}
+NODE
     printf '%s\n' 'fresh-fingerprint' >dist/.source-hash
+    printf '%s\n' 'npm build output'
     ;;
   *)
     exit 64
@@ -3795,6 +3800,18 @@ EOF
     || fail 'stale profile compiler did not rebuild without reinstalling dependencies'
   grep -Fqx 'trellage: building profile compiler' <<<"$output" \
     || fail 'stale profile compiler rebuild was not reported'
+
+  printf '%s\n' 'stale-fingerprint' \
+    >"$fixture_root/packages/trellage-cli/dist/.source-hash"
+  FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
+    "$fixture_launcher" list --json-full \
+    >"$fixture_root/list.json" 2>"$fixture_root/list.stderr"
+  jq -e \
+    '.schemaVersion == 1 and .profiles == []' \
+    "$fixture_root/list.json" >/dev/null \
+    || fail 'compiler bootstrap polluted list JSON stdout'
+  grep -Fqx 'npm build output' "$fixture_root/list.stderr" \
+    || fail 'list compiler bootstrap did not preserve build output on stderr'
   printf 'Trellage host test: PASS: profile compiler bootstraps when missing or stale\n'
 }
 

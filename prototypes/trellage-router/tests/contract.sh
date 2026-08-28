@@ -379,8 +379,13 @@ grep -Fxq omp-community "$fixture_root/skills-update.argv" \
 grep -Fxq "$fixture_home/.local/share/trellage/common/omp-community-skills" \
   "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the OMP community cache'
-[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 2 ]] \
-  || fail 'skills update did not invoke both bundle updates'
+grep -Fxq guide-prompt-master "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the guide Prompt Master bundle'
+grep -Fxq "$fixture_home/.local/share/trellage/common/guide-prompt-master-skills" \
+  "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the guide Prompt Master cache'
+[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 3 ]] \
+  || fail 'skills update did not invoke all bundle updates'
 rm "$fixture_bin/node"
 ln -s "$real_node" "$fixture_bin/node"
 
@@ -498,7 +503,8 @@ if (process.argv[2] === "enrich-native-list") {
 } else if (process.argv[2] === "guide") {
   process.stdout.write(`${JSON.stringify({
     guideRoot: process.argv[3],
-    args: process.argv.slice(4),
+    promptMasterSkillDirectory: process.argv[4],
+    args: process.argv.slice(5),
     catalog: JSON.parse(readFileSync(3, "utf8")),
   })}\n`)
 } else {
@@ -523,6 +529,7 @@ jq -e \
   --arg sandboxCommandPath "$fixture_bin/trellage" \
   --arg runtimeParent "$runtime_parent" '
     .guideRoot == $guideRoot
+    and (.promptMasterSkillDirectory | endswith("/skills/prompt-master"))
     and .args == ["--intent", "fixture intent", "--json"]
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath

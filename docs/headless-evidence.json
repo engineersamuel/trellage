@@ -287,7 +287,7 @@
       }
     },
     {
-      "id": "native-copilot-1.0.80",
+      "id": "native-copilot-1.0.81",
       "publication": {
         "surface": "native",
         "catalog": "prototypes/trellage-copilot-profiles/catalog.json",
@@ -316,7 +316,7 @@
         "cost": false,
         "modelOverride": true,
         "effortOverride": false,
-        "testedHarnessVersion": "1.0.80"
+        "testedHarnessVersion": "1.0.81"
       },
       "deterministicEvidence": [
         {
@@ -340,7 +340,7 @@
       ],
       "liveEvidence": {
         "recorded": true,
-        "source": "Trellage Native Copilot 1.0.80 validation recorded before this publication gate",
+        "source": "Trellage Native Copilot 1.0.81 validation recorded before this publication gate",
         "cases": [
           "nonTtyCompletion",
           "machineOnlyStdout",

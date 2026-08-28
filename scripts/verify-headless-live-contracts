@@ -151,13 +151,13 @@ if [[ "$live_scope" == all ]]; then
   jq -e '
     any(.profiles[];
       .name == "hve"
-      and .headless.testedHarnessVersion == "1.0.80"
+      and .headless.testedHarnessVersion == "1.0.81"
       and .headless.prompt == true
       and (.headless.outputFormats | index("json") != null)
       and .headless.questionToolControl == "hard-deny"
     )
   ' "$temp_root/cpx-inventory.json" >/dev/null \
-    || fail 'cpx hve is not publishing the recorded Copilot 1.0.80 contract'
+    || fail 'cpx hve is not publishing the recorded Copilot 1.0.81 contract'
   jq -e '
     any(.profiles[];
       .name == "default"

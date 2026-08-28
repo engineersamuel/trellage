@@ -171,7 +171,7 @@ validate_catalog() {
             "cost": false,
             "modelOverride": true,
             "effortOverride": false,
-            "testedHarnessVersion": "1.0.80"
+            "testedHarnessVersion": "1.0.81"
           },
           "marketplace": "github/awesome-copilot",
           "marketplaceName": "awesome-copilot",
@@ -196,7 +196,7 @@ validate_catalog() {
             "cost": false,
             "modelOverride": true,
             "effortOverride": false,
-            "testedHarnessVersion": "1.0.80"
+            "testedHarnessVersion": "1.0.81"
           },
           "marketplace": "microsoft/hve-core",
           "marketplaceName": "hve-core",
@@ -222,7 +222,7 @@ validate_catalog() {
             "cost": false,
             "modelOverride": true,
             "effortOverride": false,
-            "testedHarnessVersion": "1.0.80"
+            "testedHarnessVersion": "1.0.81"
           },
           "marketplace": "plannotator/effective-html",
           "marketplaceName": "effective-html",
@@ -257,7 +257,7 @@ validate_catalog() {
             "cost": false,
             "modelOverride": true,
             "effortOverride": false,
-            "testedHarnessVersion": "1.0.80"
+            "testedHarnessVersion": "1.0.81"
           },
           "marketplace": "obra/superpowers-marketplace",
           "marketplaceName": "superpowers-marketplace",

@@ -92,4 +92,53 @@ for (const example of [
 if (!socialGuide.guide.prerequisites.some(({ id }) => id === "voice-builder")) {
   throw new Error("claude-social-media guide must declare the voice-builder prerequisite")
 }
+
+const headlongGuide = registry.get("sandbox:headlong")
+if (headlongGuide === undefined) throw new Error("headlong guide is missing")
+const persistentInvestigation = headlongGuide.guide.workflows.find(
+  ({ id }) => id === "persistent-investigation",
+)
+if (persistentInvestigation === undefined) {
+  throw new Error("headlong guide is missing persistent-investigation")
+}
+if (!persistentInvestigation.examples.includes("Investigate intermittent test failures")) {
+  throw new Error("headlong persistent-investigation is missing the concise investigation example")
+}
+for (const phrase of [
+  "Keep working between my interactions.",
+  "Maintain a durable record of hypotheses and evidence",
+  "identify root causes",
+  "test potential fixes",
+  "local dashboard",
+]) {
+  if (!persistentInvestigation.promptTemplate.includes(phrase)) {
+    throw new Error(`headlong persistent-investigation prompt is missing: ${phrase}`)
+  }
+}
+
+const councilGuide = registry.get("sandbox:claude-council")
+if (councilGuide === undefined) throw new Error("claude-council guide is missing")
+const councilWorkflow = councilGuide.guide.workflows.find(({ id }) => id === "run-council-deliberation")
+if (councilWorkflow === undefined) throw new Error("claude-council deliberation workflow is missing")
+for (const phrase of [
+  "Pressure-test this idea and its implementation",
+  "Challenge the assumptions",
+  "implementation tradeoffs",
+  "concrete next steps",
+]) {
+  if (!councilWorkflow.promptTemplate.includes(phrase)) {
+    throw new Error(`claude-council prompt is missing: ${phrase}`)
+  }
+}
+
+const researchGuide = registry.get("sandbox:claude-research")
+if (researchGuide === undefined) throw new Error("claude-research guide is missing")
+const researchWorkflow = researchGuide.guide.workflows.find(({ id }) => id === "vault-backed-research")
+if (researchWorkflow === undefined) throw new Error("claude-research vault-backed workflow is missing")
+for (const phrase of ["before implementation", "source-backed evidence", "unresolved questions", "implementation options"]) {
+  if (!researchWorkflow.promptTemplate.includes(phrase)) {
+    throw new Error(`claude-research prompt is missing: ${phrase}`)
+  }
+}
+
 process.stdout.write(`profile guides: PASS (${expected.length} profiles)\n`)

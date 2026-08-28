@@ -139,18 +139,40 @@ describe("guide launch command building", () => {
     })
   })
 
-  it("gates headless prompt delivery and preserves prompt text exactly", () => {
+  it("uses native headless delivery and Sandbox interactive prompt delivery", () => {
     const prompt = "say '$HOME'\nnext line"
     const nativeResult = buildGuideLaunchCommand(nativeProfile, { mode: "argv", prompt })
     const sandboxResult = buildGuideLaunchCommand(sandboxProfile, { mode: "argv", prompt })
 
     expect(nativeResult.promptHandling).toBe("argv")
     expect(nativeResult.command.executable).toBe("/opt/trellage/bin/cpx")
-    expect(nativeResult.command.args).toEqual(["hve-core", "-p", prompt])
+    expect(nativeResult.command.args).toEqual(["hve-core", "-i", prompt])
     expect(nativeResult.command.args[2]).toBe(prompt)
-    expect(sandboxResult.promptHandling).toBe("manual-paste")
+    expect(sandboxResult.promptHandling).toBe("argv")
     expect(sandboxResult.command.executable).toBe("/opt/trellage/bin/trellage")
-    expect(sandboxResult.command.args).toEqual(["--profile", "prime-agent"])
+    expect(sandboxResult.command.args).toEqual(["--profile", "prime-agent", prompt])
+    expect(sandboxResult.command.args[2]).toBe(prompt)
+  })
+
+  it("places a validated Copilot agent override before the interactive prompt", () => {
+    const profile = parseSelectedProfile({
+      surface: "native",
+      launcher: "cpx",
+      commandPath: "/opt/trellage/bin/cpx",
+      profile: "hve",
+      headlessPrompt: true,
+      agent: "hve-core:rpi-agent",
+    })
+    const result = buildGuideLaunchCommand(profile, { mode: "argv", prompt: "Run the complete RPI cycle." })
+
+    expect(result.promptHandling).toBe("argv")
+    expect(result.command.args).toEqual([
+      "hve",
+      "--agent",
+      "hve-core:rpi-agent",
+      "-i",
+      "Run the complete RPI cycle.",
+    ])
   })
 
   it("keeps launcher identity and validates absolute command paths", () => {
@@ -180,6 +202,26 @@ describe("guide launch command building", () => {
         headlessPrompt: false,
       }),
     ).toThrow(/absolute path/)
+    expect(() =>
+      parseSelectedProfile({
+        surface: "native",
+        launcher: "cdx",
+        commandPath: "/opt/trellage/bin/cdx",
+        profile: "hve",
+        headlessPrompt: true,
+        agent: "hve-core:rpi-agent",
+      }),
+    ).toThrow(/only by the cpx launcher/)
+    expect(() =>
+      parseSelectedProfile({
+        surface: "native",
+        launcher: "cpx",
+        commandPath: "/opt/trellage/bin/cpx",
+        profile: "hve",
+        headlessPrompt: true,
+        agent: "--unsafe",
+      }),
+    ).toThrow(/simple agent identifier/)
   })
 })
 

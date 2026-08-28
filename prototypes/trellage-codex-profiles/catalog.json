@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "pstack": {
-      "description": "Codex CLI with Aqua-123’s pstack skill and Poteto Mode playbook collection.",
+      "description": "Codex CLI with Aqua-123’s explicit-invocation pstack engineering skills, led by Poteto Mode for structured playbook selection, controlled delegation, and verified multi-step work.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,

@@ -23,7 +23,10 @@ workflows:
   - Should we adopt event sourcing for the billing service?
   - /council pick a database migration strategy for our multi-tenant SaaS
   promptTemplate: |
-    /council {{intent}}
+    /council Pressure-test this idea and its implementation: {{intent}}
+
+    Challenge the assumptions, identify risks and failure modes, compare credible alternatives,
+    assess feasibility and implementation tradeoffs, and recommend concrete next steps.
 - id: compressed-handoff-notes
   description: Use caveman compressed-communication mode to turn a council verdict into terse status or
     handoff notes.

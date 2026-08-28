@@ -358,6 +358,13 @@ const findFullCatalogEntry = (
 const isNativeEntry = (entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry): entry is NativeGuideCatalogEntry =>
   "launcher" in entry
 
+/** Returns the underlying harness name Prompt Master should optimize for. */
+export const guideTargetTool = (catalog: CombinedGuideCatalog, profileRef: string): string => {
+  const entry = findFullCatalogEntry(catalog, profileRef)
+  if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${profileRef}`)
+  return isNativeEntry(entry) ? entry.harness : entry.harness.kind
+}
+
 const assertTriple = <T>(items: ReadonlyArray<T>, label: string): readonly [T, T, T] => {
   if (items.length !== 3) throw new GuideServiceError(`${label} must contain exactly 3 items: got ${items.length}`)
   const [first, second, third] = items
@@ -365,6 +372,13 @@ const assertTriple = <T>(items: ReadonlyArray<T>, label: string): readonly [T, T
     throw new GuideServiceError(`${label} must contain exactly 3 items`)
   }
   return [first, second, third]
+}
+
+const assertRecommendationSet = <T>(items: ReadonlyArray<T>, label: string): ReadonlyArray<T> => {
+  if (items.length < 3 || items.length > 5) {
+    throw new GuideServiceError(`${label} must contain 3 to 5 items: got ${items.length}`)
+  }
+  return items
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +409,7 @@ export interface GuideMatchResponse {
   readonly intent: string
   readonly model: string
   readonly effort: GuideEffort
-  readonly recommendations: readonly [GuideRecommendation, GuideRecommendation, GuideRecommendation]
+  readonly recommendations: ReadonlyArray<GuideRecommendation>
 }
 
 export interface GuideMatchRequest {
@@ -436,7 +450,7 @@ const enrichRecommendation = (catalog: CombinedGuideCatalog, candidate: GuideMat
 
 /**
  * Calls `provider.match` with the compact, path-free catalog projection and
- * returns a stable DTO of exactly three enriched recommendations. Never
+ * returns a stable DTO of three to five enriched recommendations. Never
  * exposes `commandPath`, Sandbox `path`, prompt templates, absolute paths,
  * or the full authored guide.
  */
@@ -447,7 +461,7 @@ export const runGuideMatch = async (
 ): Promise<GuideMatchResponse> => {
   const entries = guideMatchCatalogEntries(catalog)
   const result = await provider.match({ intent: request.intent, entries })
-  const recommendations = assertTriple(
+  const recommendations = assertRecommendationSet(
     result.candidates.map((candidate) => enrichRecommendation(catalog, candidate)),
     "match recommendations",
   )
@@ -604,11 +618,7 @@ const flexibleWhitespacePattern = (value: string): string =>
     .join("")
 
 const isCompleteWorkflowPrompt = (template: string, prompt: string): boolean => {
-  const pattern = template
-    .trim()
-    .split("{{intent}}")
-    .map(flexibleWhitespacePattern)
-    .join("[\\s\\S]+")
+  const pattern = template.trim().split("{{intent}}").map(flexibleWhitespacePattern).join("[\\s\\S]+")
   return new RegExp(`^${pattern}$`, "u").test(prompt.trim())
 }
 
@@ -691,14 +701,21 @@ export const runGuideGenerate = async (
     herdrCompatibility: entry.herdrCompatibility,
   }
 
+  const workflowCandidates = generated.candidates.map((candidate) =>
+    applyWorkflowPromptTemplate(loaded.guide, workflowId, candidate),
+  )
+  const optimized = await provider.optimize({
+    targetTool: isNativeEntry(entry) ? entry.harness : entry.harness.kind,
+    profileRef: request.profileRef,
+    candidates: workflowCandidates,
+  })
   const candidates = assertTriple(
-    generated.candidates.map((candidate): GuidePromptCandidate => {
-      const invokedCandidate = applyWorkflowPromptTemplate(loaded.guide, workflowId, candidate)
+    optimized.candidates.map((candidate): GuidePromptCandidate => {
       return {
-        title: invokedCandidate.title,
-        prompt: invokedCandidate.prompt,
-        notes: invokedCandidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, invokedCandidate.prompt),
+        title: candidate.title,
+        prompt: candidate.prompt,
+        notes: candidate.notes,
+        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt),
       }
     }),
     "generation prompt candidates",
@@ -747,8 +764,14 @@ const bestWorkflowForEntry = (
   return best
 }
 
+const pinnedGuideProfileRefs: ReadonlySet<string> = new Set([
+  "native:cpx/hve",
+  "sandbox:claude-council",
+  "sandbox:claude-research",
+])
+
 /**
- * Deterministic, model-free ranking of exactly three known catalog profiles
+ * Deterministic, model-free ranking of up to five known catalog profiles
  * by normalized token overlap between `intent` and each profile's
  * description/capabilities/bestFor and its best-matching workflow's
  * id/description/examples. Stable source-order tie-break; distinct refs;
@@ -757,8 +780,8 @@ const bestWorkflowForEntry = (
 export const literalGuideMatch = (
   catalog: CombinedGuideCatalog,
   intent: string,
-): readonly [LiteralGuideCandidate, LiteralGuideCandidate, LiteralGuideCandidate] => {
-  const entries = guideCatalogEntries(catalog)
+): ReadonlyArray<LiteralGuideCandidate> => {
+  const entries = guideCatalogEntries(catalog).filter(({ ref }) => !pinnedGuideProfileRefs.has(ref))
   if (entries.length < 3) {
     throw new GuideServiceError(`Catalog must contain at least 3 profiles to rank literally: got ${entries.length}`)
   }
@@ -769,7 +792,7 @@ export const literalGuideMatch = (
     return { entry, workflowId: bestWorkflow.id, score, index }
   })
   const ranked = [...scored].sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
-  const top = ranked.slice(0, 3)
+  const top = ranked.slice(0, 5)
   const maxScore = Math.max(1, ...top.map((item) => item.score))
   const candidates = top.map(
     (item): LiteralGuideCandidate => ({
@@ -783,7 +806,7 @@ export const literalGuideMatch = (
       tradeoff: item.entry.guide.avoidFor[0] ?? "No specific tradeoffs recorded for this profile.",
     }),
   )
-  return assertTriple(candidates, "literal match candidates")
+  return assertRecommendationSet(candidates, "literal match candidates")
 }
 
 /**

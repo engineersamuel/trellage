@@ -1,6 +1,6 @@
 schema = 1
 name = "headlong"
-description = "Headlong: a persistent, self-modifying agent world with identity, memory, background thinkers, and a loopback-only web dashboard. Use for long-running autonomous exploration; stop or destroy it explicitly when finished."
+description = "Headlong persistent agent microharness with continuous background thinking, durable identity and trajectory, shell-based agency, and a loopback dashboard. After launch, type ada to enter the TUI."
 skill_bundles = ["sandbox-common"]
 
 [harness]

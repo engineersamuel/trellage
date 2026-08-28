@@ -12,19 +12,21 @@
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are pure and exported so they can be unit tested without rendering Ink.
  */
-import React, { useEffect, useReducer } from "react"
-import { Box, Text, useApp, useInput, type Key } from "ink"
+import React, { useEffect, useReducer, useState } from "react"
+import { Box, Text, useApp, useInput, useStdout, type Key } from "ink"
 
 import { profileGuideIdentityKey, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
   applyWorkflowPromptTemplate,
+  guideTargetTool,
   literalGuideMatch,
   publicGuideLaunchCommand,
   runGuideMatch,
   selectedProfileFromCatalogRef,
   templatePromptCandidates,
   type GuideEffort,
+  type GuideMatchResponse,
   type GuideRecommendation,
   type PublicGuideCommand,
 } from "./guide-api.js"
@@ -35,6 +37,7 @@ import {
   defaultWorktreeBranch,
   getHerdrContext,
   inspectGitWorktreeIntent,
+  parseSelectedProfile,
   renderCommandPreview,
   type CommandRunner,
   type CommandSpec,
@@ -78,6 +81,12 @@ const tripleAt = <T,>(items: Triple<T>, index: number): T => {
   if (index === 1) return second
   if (index === 2) return third
   return first
+}
+
+const recommendationAt = <T,>(items: ReadonlyArray<T>, index: number): T => {
+  const item = items[index] ?? items[0]
+  if (item === undefined) throw new Error("Recommendation set must not be empty")
+  return item
 }
 
 const replaceCandidateAt = <T,>(items: Triple<T>, index: number, value: T): Triple<T> => {
@@ -124,6 +133,48 @@ export enum GuideUiDestination {
   NewHerdrWorktree = "new-herdr-worktree",
 }
 
+export enum GuideWizardStep {
+  Profile = "profile",
+  PromptCandidates = "prompt-candidates",
+  Destination = "destination",
+}
+
+export enum GuideGenerationPhase {
+  LoadingProfile = "loading-profile",
+  GeneratingCandidates = "generating-candidates",
+  ApplyingWorkflow = "applying-workflow",
+  OptimizingCandidates = "optimizing-candidates",
+}
+
+export enum GuideMatchPhase {
+  LoadingProfiles = "loading-profiles",
+  ComparingProfiles = "comparing-profiles",
+  PreparingRecommendations = "preparing-recommendations",
+}
+
+const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefined>> = {
+  [GuideUiStage.Intent]: undefined,
+  [GuideUiStage.Matching]: GuideWizardStep.Profile,
+  [GuideUiStage.MatchFailed]: GuideWizardStep.Profile,
+  [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
+  [GuideUiStage.Generating]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.GenerateFailed]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.Candidates]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.RefineEditor]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.Refining]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.RefineFailed]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.DirectEditor]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.CheckingReadiness]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.ReadinessBlocked]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.Destination]: GuideWizardStep.Destination,
+  [GuideUiStage.WorktreeBranchEditor]: GuideWizardStep.Destination,
+  [GuideUiStage.InspectingWorktree]: GuideWizardStep.Destination,
+  [GuideUiStage.WorktreeCollision]: GuideWizardStep.Destination,
+  [GuideUiStage.WorktreeReady]: GuideWizardStep.Destination,
+}
+
+export const wizardStepForStage = (stage: GuideUiStage): GuideWizardStep | undefined => wizardStepByStage[stage]
+
 /** The destination choices offered, in display order. Herdr choices only appear when `herdrEnabled`. */
 export const destinationOptions = (herdrEnabled: boolean): ReadonlyArray<GuideUiDestination> =>
   herdrEnabled
@@ -145,12 +196,14 @@ export interface GuideUiState {
   /** Shared free-text editing buffer for the intent editor, refine feedback, direct edit, and worktree branch editors. */
   readonly textDraft: string
   readonly errorMessage: string | undefined
-  readonly recommendations: Triple<GuideRecommendation> | undefined
+  readonly matchPhase: GuideMatchPhase | undefined
+  readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
   readonly recommendationIndex: number
   readonly usedLiteralFallback: boolean
   readonly selectedRecommendation: GuideRecommendation | undefined
   readonly selectedProfile: SelectedProfile | undefined
   readonly guideDocument: SelectedGuideDocument | undefined
+  readonly generationPhase: GuideGenerationPhase | undefined
   readonly candidates: Triple<GuideGenerateCandidate> | undefined
   readonly candidateIndex: number
   readonly usedTemplateFallback: boolean
@@ -167,12 +220,14 @@ const emptyState: GuideUiState = {
   intent: undefined,
   textDraft: "",
   errorMessage: undefined,
+  matchPhase: undefined,
   recommendations: undefined,
   recommendationIndex: 0,
   usedLiteralFallback: false,
   selectedRecommendation: undefined,
   selectedProfile: undefined,
   guideDocument: undefined,
+  generationPhase: undefined,
   candidates: undefined,
   candidateIndex: 0,
   usedTemplateFallback: false,
@@ -188,7 +243,12 @@ const emptyState: GuideUiState = {
 export const createInitialGuideUiState = (initialIntent?: string): GuideUiState => {
   const trimmed = initialIntent?.trim()
   if (trimmed !== undefined && trimmed.length > 0) {
-    return { ...emptyState, stage: GuideUiStage.Matching, intent: trimmed }
+    return {
+      ...emptyState,
+      stage: GuideUiStage.Matching,
+      intent: trimmed,
+      matchPhase: GuideMatchPhase.LoadingProfiles,
+    }
   }
   return { ...emptyState }
 }
@@ -216,6 +276,7 @@ export enum GuideUiActionType {
   IntentBackspace = "intent/backspace",
   IntentSubmit = "intent/submit",
   MatchRetry = "match/retry",
+  MatchProgress = "match/progress",
   MatchSucceeded = "match/succeeded",
   MatchFailed = "match/failed",
   MatchLiteral = "match/literal",
@@ -223,6 +284,7 @@ export enum GuideUiActionType {
   RecommendationsMove = "recommendations/move",
   RecommendationsConfirm = "recommendations/confirm",
   GenerateGuideLoaded = "generate/guide-loaded",
+  GenerateProgress = "generate/progress",
   GenerateRetry = "generate/retry",
   GenerateSucceeded = "generate/succeeded",
   GenerateFailed = "generate/failed",
@@ -230,6 +292,7 @@ export enum GuideUiActionType {
   GenerateTemplateFallbackFailed = "generate/template-fallback-failed",
   GenerateBack = "generate/back",
   CandidatesMove = "candidates/move",
+  CandidatesBack = "candidates/back",
   CandidatesConfirm = "candidates/confirm",
   CandidatesRefineStart = "candidates/refine-start",
   CandidatesDirectEditStart = "candidates/direct-edit-start",
@@ -264,13 +327,19 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.IntentBackspace }
   | { readonly type: GuideUiActionType.IntentSubmit }
   | { readonly type: GuideUiActionType.MatchRetry }
-  | { readonly type: GuideUiActionType.MatchSucceeded; readonly recommendations: Triple<GuideRecommendation> }
+  | { readonly type: GuideUiActionType.MatchProgress; readonly phase: GuideMatchPhase }
+  | { readonly type: GuideUiActionType.MatchSucceeded; readonly recommendations: ReadonlyArray<GuideRecommendation> }
   | { readonly type: GuideUiActionType.MatchFailed; readonly message: string }
-  | { readonly type: GuideUiActionType.MatchLiteral; readonly recommendations: Triple<GuideRecommendation> }
+  | { readonly type: GuideUiActionType.MatchLiteral; readonly recommendations: ReadonlyArray<GuideRecommendation> }
   | { readonly type: GuideUiActionType.MatchLiteralFailed; readonly message: string }
   | { readonly type: GuideUiActionType.RecommendationsMove; readonly delta: 1 | -1 }
-  | { readonly type: GuideUiActionType.RecommendationsConfirm; readonly selectedProfile: SelectedProfile }
+  | {
+      readonly type: GuideUiActionType.RecommendationsConfirm
+      readonly selectedProfile: SelectedProfile
+      readonly recommendation?: GuideRecommendation
+    }
   | { readonly type: GuideUiActionType.GenerateGuideLoaded; readonly guideDocument: SelectedGuideDocument }
+  | { readonly type: GuideUiActionType.GenerateProgress; readonly phase: GuideGenerationPhase }
   | { readonly type: GuideUiActionType.GenerateRetry }
   | { readonly type: GuideUiActionType.GenerateSucceeded; readonly candidates: Triple<GuideGenerateCandidate> }
   | { readonly type: GuideUiActionType.GenerateFailed; readonly message: string }
@@ -278,6 +347,7 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.GenerateTemplateFallbackFailed; readonly message: string }
   | { readonly type: GuideUiActionType.GenerateBack }
   | { readonly type: GuideUiActionType.CandidatesMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.CandidatesBack }
   | { readonly type: GuideUiActionType.CandidatesConfirm }
   | { readonly type: GuideUiActionType.CandidatesRefineStart }
   | { readonly type: GuideUiActionType.CandidatesDirectEditStart }
@@ -331,7 +401,12 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       if (state.stage !== GuideUiStage.Intent) return state
       const trimmed = state.textDraft.trim()
       if (trimmed.length === 0) return state
-      return { ...emptyState, stage: GuideUiStage.Matching, intent: trimmed }
+      return {
+        ...emptyState,
+        stage: GuideUiStage.Matching,
+        intent: trimmed,
+        matchPhase: GuideMatchPhase.LoadingProfiles,
+      }
     }
 
     default:
@@ -341,28 +416,42 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
 
 const recommendationsState = (
   state: GuideUiState,
-  recommendations: Triple<GuideRecommendation>,
+  recommendations: ReadonlyArray<GuideRecommendation>,
   usedLiteralFallback: boolean,
 ): GuideUiState => ({
   ...state,
   stage: GuideUiStage.Recommendations,
+  matchPhase: undefined,
   recommendations,
   recommendationIndex: 0,
   usedLiteralFallback,
   errorMessage: undefined,
 })
 
+const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.MatchProgress:
+      return state.stage === GuideUiStage.Matching ? { ...state, matchPhase: action.phase } : state
+
+    default:
+      return state
+  }
+}
+
 const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.MatchRetry:
       return state.stage === GuideUiStage.MatchFailed
-        ? { ...state, stage: GuideUiStage.Matching, errorMessage: undefined }
+        ? {
+            ...state,
+            stage: GuideUiStage.Matching,
+            matchPhase: GuideMatchPhase.LoadingProfiles,
+            errorMessage: undefined,
+          }
         : state
 
     case GuideUiActionType.MatchSucceeded:
-      return state.stage === GuideUiStage.Matching
-        ? recommendationsState(state, action.recommendations, false)
-        : state
+      return state.stage === GuideUiStage.Matching ? recommendationsState(state, action.recommendations, false) : state
 
     case GuideUiActionType.MatchFailed:
       return state.stage === GuideUiStage.Matching
@@ -386,7 +475,14 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
   switch (action.type) {
     case GuideUiActionType.RecommendationsMove:
       return state.stage === GuideUiStage.Recommendations
-        ? { ...state, recommendationIndex: (state.recommendationIndex + action.delta + 3) % 3 }
+        ? {
+            ...state,
+            recommendationIndex:
+              state.recommendations === undefined
+                ? state.recommendationIndex
+                : (state.recommendationIndex + action.delta + state.recommendations.length) %
+                  state.recommendations.length,
+          }
         : state
 
     case GuideUiActionType.RecommendationsConfirm: {
@@ -394,9 +490,10 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
       return {
         ...state,
         stage: GuideUiStage.Generating,
-        selectedRecommendation: tripleAt(state.recommendations, state.recommendationIndex),
+        selectedRecommendation: action.recommendation ?? recommendationAt(state.recommendations, state.recommendationIndex),
         selectedProfile: action.selectedProfile,
         guideDocument: undefined,
+        generationPhase: GuideGenerationPhase.LoadingProfile,
         candidates: undefined,
         usedTemplateFallback: false,
         errorMessage: undefined,
@@ -415,11 +512,41 @@ const candidatesState = (
 ): GuideUiState => ({
   ...state,
   stage: GuideUiStage.Candidates,
+  generationPhase: undefined,
   candidates,
   candidateIndex: 0,
   usedTemplateFallback,
   errorMessage: undefined,
 })
+
+const profileSelectionState = (state: GuideUiState): GuideUiState => ({
+  ...state,
+  stage: GuideUiStage.Recommendations,
+  selectedRecommendation: undefined,
+  selectedProfile: undefined,
+  guideDocument: undefined,
+  generationPhase: undefined,
+  candidates: undefined,
+  candidateIndex: 0,
+  usedTemplateFallback: false,
+  selectedCandidate: undefined,
+  readiness: undefined,
+  destinationIndex: 0,
+  worktreeBranch: undefined,
+  worktreeInspection: undefined,
+  worktreeConfirmations: 0,
+  errorMessage: undefined,
+})
+
+const reduceGenerateProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.GenerateProgress:
+      return state.stage === GuideUiStage.Generating ? { ...state, generationPhase: action.phase } : state
+
+    default:
+      return state
+  }
+}
 
 const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
@@ -428,13 +555,16 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
 
     case GuideUiActionType.GenerateRetry:
       return state.stage === GuideUiStage.GenerateFailed
-        ? { ...state, stage: GuideUiStage.Generating, errorMessage: undefined }
+        ? {
+            ...state,
+            stage: GuideUiStage.Generating,
+            generationPhase: GuideGenerationPhase.LoadingProfile,
+            errorMessage: undefined,
+          }
         : state
 
     case GuideUiActionType.GenerateSucceeded:
-      return state.stage === GuideUiStage.Generating
-        ? candidatesState(state, action.candidates, false)
-        : state
+      return state.stage === GuideUiStage.Generating ? candidatesState(state, action.candidates, false) : state
 
     case GuideUiActionType.GenerateFailed:
       return state.stage === GuideUiStage.Generating
@@ -442,17 +572,13 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
         : state
 
     case GuideUiActionType.GenerateTemplateFallback:
-      return state.stage === GuideUiStage.GenerateFailed
-        ? candidatesState(state, action.candidates, true)
-        : state
+      return state.stage === GuideUiStage.GenerateFailed ? candidatesState(state, action.candidates, true) : state
 
     case GuideUiActionType.GenerateTemplateFallbackFailed:
       return state.stage === GuideUiStage.GenerateFailed ? { ...state, errorMessage: action.message } : state
 
     case GuideUiActionType.GenerateBack:
-      return state.stage === GuideUiStage.GenerateFailed
-        ? { ...state, stage: GuideUiStage.Recommendations, errorMessage: undefined }
-        : state
+      return state.stage === GuideUiStage.GenerateFailed ? profileSelectionState(state) : state
 
     default:
       return state
@@ -465,6 +591,9 @@ const reduceCandidateSelection = (state: GuideUiState, action: GuideUiAction): G
       return state.stage === GuideUiStage.Candidates
         ? { ...state, candidateIndex: (state.candidateIndex + action.delta + 3) % 3 }
         : state
+
+    case GuideUiActionType.CandidatesBack:
+      return state.stage === GuideUiStage.Candidates ? profileSelectionState(state) : state
 
     case GuideUiActionType.CandidatesConfirm:
       return state.stage === GuideUiStage.Candidates && state.candidates !== undefined
@@ -722,6 +851,7 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.IntentBackspace]: reduceIntent,
   [GuideUiActionType.IntentSubmit]: reduceIntent,
   [GuideUiActionType.MatchRetry]: reduceMatch,
+  [GuideUiActionType.MatchProgress]: reduceMatchProgress,
   [GuideUiActionType.MatchSucceeded]: reduceMatch,
   [GuideUiActionType.MatchFailed]: reduceMatch,
   [GuideUiActionType.MatchLiteral]: reduceMatch,
@@ -729,6 +859,7 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.RecommendationsMove]: reduceRecommendations,
   [GuideUiActionType.RecommendationsConfirm]: reduceRecommendations,
   [GuideUiActionType.GenerateGuideLoaded]: reduceGenerate,
+  [GuideUiActionType.GenerateProgress]: reduceGenerateProgress,
   [GuideUiActionType.GenerateRetry]: reduceGenerate,
   [GuideUiActionType.GenerateSucceeded]: reduceGenerate,
   [GuideUiActionType.GenerateFailed]: reduceGenerate,
@@ -736,6 +867,7 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.GenerateTemplateFallbackFailed]: reduceGenerate,
   [GuideUiActionType.GenerateBack]: reduceGenerate,
   [GuideUiActionType.CandidatesMove]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesBack]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesConfirm]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesRefineStart]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesDirectEditStart]: reduceCandidateSelection,
@@ -836,18 +968,100 @@ export const enrichLiteralCandidate = (
   }
 }
 
+export enum GuidePinnedLensKind {
+  Council = "council",
+  Research = "research",
+  HveRpi = "hve-rpi",
+}
+
+export interface GuidePinnedLens {
+  readonly kind: GuidePinnedLensKind
+  readonly key: string
+  readonly emoji: string
+  readonly label: string
+  readonly description: string
+  readonly agent?: string
+  readonly recommendation: GuideRecommendation
+}
+
+const pinnedLensDefinitions: ReadonlyArray<Omit<GuidePinnedLens, "recommendation"> & {
+  readonly profileRef: string
+  readonly workflowId: string
+  readonly reason: string
+  readonly tradeoff: string
+}> = [
+  {
+    kind: GuidePinnedLensKind.Council,
+    key: "c",
+    emoji: "🧠",
+    label: "Council",
+    description: "Pressure-test the idea and its implementation.",
+    profileRef: "sandbox:claude-council",
+    workflowId: "run-council-deliberation",
+    reason: "Use a structured council to challenge the idea, its assumptions, and its implementation.",
+    tradeoff: "Adds deliberation time before implementation begins.",
+  },
+  {
+    kind: GuidePinnedLensKind.Research,
+    key: "r",
+    emoji: "🔎",
+    label: "Research",
+    description: "Gather evidence before implementation.",
+    profileRef: "sandbox:claude-research",
+    workflowId: "vault-backed-research",
+    reason: "Collect source-backed evidence, prior art, risks, and implementation options before acting.",
+    tradeoff: "Adds research time before implementation begins.",
+  },
+  {
+    kind: GuidePinnedLensKind.HveRpi,
+    key: "h",
+    emoji: "🔄",
+    label: "HVE RPI",
+    description: "Run the dedicated HVE Core RPI agent.",
+    profileRef: "native:cpx/hve",
+    workflowId: "rpi-agent-cycle",
+    agent: "hve-core:rpi-agent",
+    reason: "Use HVE Core's dedicated agent to carry the request through research, planning, implementation, and review.",
+    tradeoff: "Adds a structured multi-stage process that is unnecessary for small changes.",
+  },
+]
+
+export const pinnedGuideLenses = (catalog: CombinedGuideCatalog): ReadonlyArray<GuidePinnedLens> =>
+  pinnedLensDefinitions.flatMap((definition) => {
+    if (findCombinedCatalogEntry(catalog, definition.profileRef) === undefined) return []
+    const { profileRef, workflowId, reason, tradeoff, ...lens } = definition
+    return [
+      {
+        ...lens,
+        recommendation: enrichLiteralCandidate(catalog, {
+          profileRef,
+          workflowId,
+          confidence: 1,
+          reason,
+          tradeoff,
+        }),
+      },
+    ]
+  })
+
+export const selectedProfileForPinnedLens = (
+  catalog: CombinedGuideCatalog,
+  lens: GuidePinnedLens,
+): SelectedProfile => {
+  const selectedProfile = selectedProfileFromCatalogRef(catalog, lens.recommendation.profileRef)
+  if (lens.agent === undefined) return selectedProfile
+  if (selectedProfile.surface !== "native") {
+    throw new Error(`Pinned lens agent requires a native profile: ${lens.recommendation.profileRef}`)
+  }
+  return parseSelectedProfile({ ...selectedProfile, agent: lens.agent })
+}
+
 /** Computes the three deterministic, model-free literal-match recommendations, fully enriched for display. */
 export const literalGuideRecommendations = (
   catalog: CombinedGuideCatalog,
   intent: string,
-): Triple<GuideRecommendation> => {
-  const [first, second, third] = literalGuideMatch(catalog, intent)
-  return [
-    enrichLiteralCandidate(catalog, first),
-    enrichLiteralCandidate(catalog, second),
-    enrichLiteralCandidate(catalog, third),
-  ]
-}
+): ReadonlyArray<GuideRecommendation> =>
+  literalGuideMatch(catalog, intent).map((candidate) => enrichLiteralCandidate(catalog, candidate))
 
 /** Computes deterministic template-based prompt candidates for the generate-failure fallback. */
 export const templateGuideCandidates = (
@@ -866,6 +1080,18 @@ export const templateGuideCandidates = (
 export interface GuideGenerationStepResult {
   readonly guideDocument: SelectedGuideDocument
   readonly candidates: Triple<GuideGenerateCandidate>
+}
+
+export const runGuideMatchingStep = async (
+  provider: GuideProvider,
+  catalog: CombinedGuideCatalog,
+  request: { readonly intent: string; readonly model: string; readonly effort: GuideEffort },
+  onProgress?: (phase: GuideMatchPhase) => void,
+): Promise<GuideMatchResponse> => {
+  onProgress?.(GuideMatchPhase.ComparingProfiles)
+  const response = await runGuideMatch(provider, catalog, request)
+  onProgress?.(GuideMatchPhase.PreparingRecommendations)
+  return response
 }
 
 /**
@@ -887,9 +1113,11 @@ export const runGuideGenerationStep = async (
    * available in that scenario.
    */
   onGuideLoaded?: (guideDocument: SelectedGuideDocument) => void,
+  onProgress?: (phase: GuideGenerationPhase) => void,
 ): Promise<GuideGenerationStepResult> => {
   const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.profileRef)
   onGuideLoaded?.(guideDocument)
+  onProgress?.(GuideGenerationPhase.GeneratingCandidates)
   const generated = await provider.generate({
     intent,
     profileRef: recommendation.profileRef,
@@ -901,13 +1129,25 @@ export const runGuideGenerationStep = async (
   if (first === undefined || second === undefined || third === undefined) {
     throw new Error("Generation must return exactly three prompt candidates")
   }
+  onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
+  const workflowCandidates = [
+    applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, first),
+    applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, second),
+    applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, third),
+  ] as const
+  onProgress?.(GuideGenerationPhase.OptimizingCandidates)
+  const optimized = await provider.optimize({
+    targetTool: guideTargetTool(catalog, recommendation.profileRef),
+    profileRef: recommendation.profileRef,
+    candidates: workflowCandidates,
+  })
+  const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates
+  if (optimizedFirst === undefined || optimizedSecond === undefined || optimizedThird === undefined) {
+    throw new Error("Prompt Master must return exactly three prompt candidates")
+  }
   return {
     guideDocument,
-    candidates: [
-      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, first),
-      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, second),
-      applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, third),
-    ],
+    candidates: [optimizedFirst, optimizedSecond, optimizedThird],
   }
 }
 
@@ -917,6 +1157,7 @@ export const runGuideGenerationStep = async (
  * candidate being refined and the user's feedback.
  */
 export const runGuideRefinementStep = async (
+  catalog: CombinedGuideCatalog,
   provider: GuideProvider,
   intent: string,
   recommendation: GuideRecommendation,
@@ -933,7 +1174,19 @@ export const runGuideRefinementStep = async (
     candidate,
     feedback,
   })
-  return applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, refined.candidate)
+  const workflowCandidate = applyWorkflowPromptTemplate(
+    guideDocument.guide,
+    recommendation.workflowId,
+    refined.candidate,
+  )
+  const optimized = await provider.optimize({
+    targetTool: guideTargetTool(catalog, recommendation.profileRef),
+    profileRef: recommendation.profileRef,
+    candidates: [workflowCandidate],
+  })
+  const optimizedCandidate = optimized.candidates[0]
+  if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
+  return optimizedCandidate
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,12 +1338,204 @@ export interface GuideUiProps {
   readonly initialIntent?: string
 }
 
-const Spinner = ({ label, detail }: { readonly label: string; readonly detail?: string }) => (
-  <Box flexDirection="column" paddingX={1}>
-    <Text color="cyan">{label}…</Text>
-    {detail === undefined ? null : <Text dimColor>{detail}</Text>}
-  </Box>
+const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
+
+const cyclicItemAt = <T,>(items: ReadonlyArray<T>, index: number): T | undefined =>
+  items.length === 0 ? undefined : items[index % items.length]
+
+export const spinnerFrameAt = (tick: number): string => cyclicItemAt(spinnerFrames, tick) ?? "•"
+
+export const spinnerMessageAt = (messages: ReadonlyArray<string>, tick: number): string | undefined =>
+  cyclicItemAt(messages, Math.floor(tick / 15))
+
+const Spinner = ({
+  label,
+  detail,
+  messages = [],
+}: {
+  readonly label: string
+  readonly detail?: string
+  readonly messages?: ReadonlyArray<string>
+}) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80)
+    return () => clearInterval(timer)
+  }, [])
+  const message = spinnerMessageAt(messages, tick)
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold>
+        <Text color="cyan">{spinnerFrameAt(tick)}</Text> {label}
+      </Text>
+      {message === undefined ? null : <Text color="magenta">{message}</Text>}
+      {detail === undefined ? null : <Text dimColor>{detail}</Text>}
+    </Box>
+  )
+}
+
+export interface GuideGenerationProgressItem {
+  readonly phase: GuideGenerationPhase
+  readonly label: string
+}
+
+export interface GuideMatchProgressItem {
+  readonly phase: GuideMatchPhase
+  readonly label: string
+}
+
+export const matchProgressItems = (profileCount: number): ReadonlyArray<GuideMatchProgressItem> => [
+  {
+    phase: GuideMatchPhase.LoadingProfiles,
+    label: `Read ${profileCount} available profiles and their workflows`,
+  },
+  {
+    phase: GuideMatchPhase.ComparingProfiles,
+    label: "Compare the request with capabilities and trade-offs",
+  },
+  {
+    phase: GuideMatchPhase.PreparingRecommendations,
+    label: "Prepare the ranked profile choices",
+  },
+]
+
+export const generationProgressItems = (
+  recommendation: GuideRecommendation,
+): ReadonlyArray<GuideGenerationProgressItem> => [
+  {
+    phase: GuideGenerationPhase.LoadingProfile,
+    label: `Read ${recommendationLabel(recommendation)} guidance`,
+  },
+  {
+    phase: GuideGenerationPhase.GeneratingCandidates,
+    label: "Draft three profile-specific approaches",
+  },
+  {
+    phase: GuideGenerationPhase.ApplyingWorkflow,
+    label: `Apply the ${recommendation.workflow.id} workflow`,
+  },
+  {
+    phase: GuideGenerationPhase.OptimizingCandidates,
+    label: "Improve clarity and completeness with Prompt Master",
+  },
+]
+
+export const summarizeGenerationIntent = (intent: string, maximumLength = 100): string => {
+  const normalized = intent.replace(/\s+/gu, " ").trim()
+  return normalized.length <= maximumLength ? normalized : `${normalized.slice(0, maximumLength - 1)}…`
+}
+
+const ProgressPipeline = ({
+  title,
+  intent,
+  items,
+  activePhase,
+  detail,
+}: {
+  readonly title: string
+  readonly intent: string
+  readonly items: ReadonlyArray<{ readonly phase: string; readonly label: string }>
+  readonly activePhase: string
+  readonly detail: string
+}) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80)
+    return () => clearInterval(timer)
+  }, [])
+  const activeIndex = items.findIndex((item) => item.phase === activePhase)
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold>{title}</Text>
+      <Text dimColor wrap="truncate-end">
+        Request: {summarizeGenerationIntent(intent)}
+      </Text>
+      <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
+        {items.map((item, index) => {
+          const complete = index < activeIndex
+          const active = index === activeIndex
+          return (
+            <Text key={item.phase} color={complete ? "green" : active ? "cyan" : "gray"}>
+              {complete ? "✓" : active ? spinnerFrameAt(tick) : "○"} {item.label}
+            </Text>
+          )
+        })}
+      </Box>
+      <Text dimColor>{detail}</Text>
+    </Box>
+  )
+}
+
+const MatchProgress = ({
+  catalog,
+  phase,
+  intent,
+  model,
+  effort,
+}: {
+  readonly catalog: CombinedGuideCatalog
+  readonly phase: GuideMatchPhase
+  readonly intent: string
+  readonly model: string
+  readonly effort: GuideEffort
+}) => (
+  <ProgressPipeline
+    title="Finding the best profiles"
+    intent={intent}
+    items={matchProgressItems(catalog.native.length + catalog.sandbox.length)}
+    activePhase={phase}
+    detail={`Copilot model: ${model} · Effort: ${effort}`}
+  />
 )
+
+const GenerationProgress = ({
+  recommendation,
+  phase,
+  intent,
+  model,
+}: {
+  readonly recommendation: GuideRecommendation
+  readonly phase: GuideGenerationPhase
+  readonly intent: string
+  readonly model: string
+}) => (
+  <ProgressPipeline
+    title="Preparing prompt candidates"
+    intent={intent}
+    items={generationProgressItems(recommendation)}
+    activePhase={phase}
+    detail={`Copilot model: ${model} · Selected profile: ${recommendation.profileRef}`}
+  />
+)
+
+const wizardSteps: ReadonlyArray<{ readonly step: GuideWizardStep; readonly label: string }> = [
+  { step: GuideWizardStep.Profile, label: "Profile" },
+  { step: GuideWizardStep.PromptCandidates, label: "Prompt candidates" },
+  { step: GuideWizardStep.Destination, label: "Destination" },
+]
+
+export const wizardBreadcrumbLabel = (index: number, label: string, complete: boolean): string =>
+  `${complete ? "✓ " : ""}Step ${index + 1}: ${label}`
+
+const WizardBreadcrumbs = ({ activeStep }: { readonly activeStep: GuideWizardStep }) => {
+  const activeIndex = wizardSteps.findIndex(({ step }) => step === activeStep)
+  return (
+    <Box paddingX={1} marginBottom={1}>
+      {wizardSteps.map(({ step, label }, index) => {
+        const active = step === activeStep
+        const complete = index < activeIndex
+        return (
+          <React.Fragment key={step}>
+            {index === 0 ? null : <Text dimColor> › </Text>}
+            <Text bold={active} color={active ? "cyan" : complete ? "green" : "gray"}>
+              {wizardBreadcrumbLabel(index, label, complete)}
+            </Text>
+          </React.Fragment>
+        )
+      })}
+    </Box>
+  )
+}
 
 const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => (
   <Box flexDirection="column" paddingX={1}>
@@ -1123,7 +1568,128 @@ const ErrorPanel = ({
   </Box>
 )
 
+const launcherHarnessLabels: Readonly<Record<string, string>> = {
+  cdx: "Codex",
+  cpx: "Copilot",
+  cldx: "Claude",
+  grx: "Grok",
+  jcx: "Junie",
+  omp: "OpenCode",
+  picx: "Pi",
+  prx: "Prime",
+}
+
+const titleCaseIdentifier = (value: string): string =>
+  value
+    .split(/[-_]+/u)
+    .map((part) => (part.length === 0 ? part : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`))
+    .join(" ")
+
+const recommendationHarness = (recommendation: GuideRecommendation): string => {
+  if (recommendation.launcher !== undefined) {
+    return launcherHarnessLabels[recommendation.launcher] ?? recommendation.launcher
+  }
+  return titleCaseIdentifier(recommendation.harness ?? recommendation.name)
+}
+
+const recommendationLabel = (recommendation: GuideRecommendation): string => {
+  if (recommendation.name === "pstack") return "Poteto Mode"
+  if (recommendation.name === "hve") {
+    return recommendation.launcher === "cdx" ? "HVE Core" : `${recommendationHarness(recommendation)} HVE`
+  }
+  return titleCaseIdentifier(recommendation.name)
+}
+
+const recommendationConfidence = (recommendation: GuideRecommendation): string =>
+  `${(recommendation.confidence * 100).toFixed(0)}%`
+
+const RecommendationRail = ({
+  recommendations,
+  index,
+}: {
+  readonly recommendations: ReadonlyArray<GuideRecommendation>
+  readonly index: number
+}) => (
+  <Box flexDirection="column" width={30} borderStyle="single" borderColor="gray" paddingX={1}>
+    <Text bold>RECOMMENDATIONS</Text>
+    {recommendations.map((recommendation, itemIndex) => {
+      const active = itemIndex === index
+      return (
+        <Box key={recommendation.profileRef} flexDirection="column" marginTop={1}>
+          <Text bold={active} {...(active ? { color: "green" as const } : {})}>
+            {active ? "❯ " : "  "}
+            {recommendationLabel(recommendation)}
+          </Text>
+          <Text dimColor>
+            {recommendationHarness(recommendation)} | {recommendationConfidence(recommendation)}
+          </Text>
+          <Text dimColor wrap="truncate-end">
+            {recommendation.workflow.id}
+          </Text>
+        </Box>
+      )
+    })}
+  </Box>
+)
+
+const RecommendationDetail = ({ recommendation }: { readonly recommendation: GuideRecommendation }) => {
+  const harness = recommendationHarness(recommendation)
+  return (
+    <Box flexDirection="column" flexGrow={1} paddingLeft={2}>
+      <Text bold color="cyan">
+        {recommendationLabel(recommendation)}
+      </Text>
+      <Text dimColor>
+        {recommendation.profileRef} | {harness} | {recommendationConfidence(recommendation)}
+      </Text>
+      <Text wrap="wrap">{recommendation.reason}</Text>
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold color="green">
+          WHY THIS PROFILE OVER PLAIN {harness.toUpperCase()}
+        </Text>
+        <Text wrap="wrap">• {recommendation.workflow.description}</Text>
+        <Text wrap="wrap">
+          • Adds the {recommendation.workflow.id} workflow, profile guidance, constraints, and prerequisites.
+        </Text>
+      </Box>
+      <Box flexDirection="column" marginTop={1}>
+        <Text color="yellow">COST OF THIS CHOICE</Text>
+        <Text wrap="wrap">{recommendation.tradeoff}</Text>
+      </Box>
+      <Text dimColor>
+        Skill: {recommendation.workflow.skill ?? "none"} | Sandbox: {recommendation.sandbox ? "Docker" : "host"} |
+        Headless prompt: {recommendation.headless.prompt ? "yes" : "no"} | Herdr:{" "}
+        {recommendation.herdrCompatibility.status}
+      </Text>
+      <Text dimColor wrap="wrap">
+        Prerequisites:{" "}
+        {recommendation.prerequisites.length === 0
+          ? "none"
+          : recommendation.prerequisites.map((prerequisite) => prerequisite.id).join(", ")}
+      </Text>
+    </Box>
+  )
+}
+
+const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLens> }) =>
+  lenses.length === 0 ? null : (
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold>PINNED LENSES</Text>
+      <Box gap={3}>
+        {lenses.map((lens) => (
+          <Text key={lens.kind}>
+            <Text bold color="magenta">
+              {lens.emoji} {lens.key} {lens.label}
+            </Text>
+            <Text dimColor> — {lens.description}</Text>
+          </Text>
+        ))}
+      </Box>
+    </Box>
+  )
+
 const RecommendationsView = ({
+  pinnedLenses,
   intent,
   model,
   effort,
@@ -1131,52 +1697,99 @@ const RecommendationsView = ({
   index,
   usedLiteralFallback,
 }: {
+  readonly pinnedLenses: ReadonlyArray<GuidePinnedLens>
   readonly intent: string
   readonly model: string
   readonly effort: GuideEffort
-  readonly recommendations: Triple<GuideRecommendation>
+  readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly index: number
   readonly usedLiteralFallback: boolean
+}) => {
+  const recommendation = recommendationAt(recommendations, index)
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold color="cyan">
+        Recommendations for: {intent}
+      </Text>
+      <Text dimColor>
+        Model: {model} · Effort: {effort}
+      </Text>
+      {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : null}
+      <PinnedLenses lenses={pinnedLenses} />
+      <Box marginTop={1}>
+        <RecommendationRail recommendations={recommendations} index={index} />
+        <RecommendationDetail recommendation={recommendation} />
+      </Box>
+      <Text dimColor>↑/↓ or j/k select · ↵ generate · c council · r research · h HVE RPI · q cancel</Text>
+    </Box>
+  )
+}
+
+export const candidatePaneHeight = (terminalRows: number): number => Math.max(6, terminalRows - 8)
+
+export const candidateRailWidth = (terminalColumns: number): number =>
+  Math.min(30, Math.max(20, Math.floor(terminalColumns * 0.3)))
+
+export const compactCommandPreview = (preview: string): string => preview.replace(/\s+/gu, " ").trim()
+
+const CandidateRail = ({
+  candidates,
+  index,
+  width,
+  height,
+}: {
+  readonly candidates: Triple<GuideGenerateCandidate>
+  readonly index: number
+  readonly width: number
+  readonly height: number
 }) => (
-  <Box flexDirection="column" paddingX={1}>
-    <Text bold color="cyan">
-      Recommendations for: {intent}
-    </Text>
-    <Text dimColor>
-      Model: {model} · Effort: {effort}
-    </Text>
-    {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : null}
-    {recommendations.map((recommendation, itemIndex) => {
+  <Box
+    flexDirection="column"
+    width={width}
+    height={height}
+    overflowY="hidden"
+    borderStyle="single"
+    borderColor="gray"
+    paddingX={1}
+  >
+    <Text bold>CANDIDATES</Text>
+    {candidates.map((candidate, itemIndex) => {
       const active = itemIndex === index
       return (
-        <Box key={recommendation.profileRef} flexDirection="column" marginTop={1}>
-          <Text bold={active} {...(active ? { color: "green" as const } : {})}>
+        <Box key={`${itemIndex}:${candidate.title}`} flexDirection="column" marginTop={1}>
+          <Text bold={active} {...(active ? { color: "green" as const } : {})} wrap="truncate-end">
             {active ? "❯ " : "  "}
-            {recommendation.profileRef} · confidence {(recommendation.confidence * 100).toFixed(0)}%
+            {candidate.title}
           </Text>
-          <Text dimColor> {recommendation.description}</Text>
-          <Text dimColor>
-            {" "}
-            workflow: {recommendation.workflow.id} · skill: {recommendation.workflow.skill ?? "—"}
-          </Text>
-          <Text wrap="wrap"> {recommendation.reason}</Text>
-          <Text color="yellow" wrap="wrap">
-            {"  "}
-            Tradeoff: {recommendation.tradeoff}
-          </Text>
-          <Text dimColor>
-            {"  "}
-            Prerequisites:{" "}
-            {recommendation.prerequisites.length === 0
-              ? "none"
-              : recommendation.prerequisites.map((p) => p.id).join(", ")}{" "}
-            · headless prompt: {recommendation.headless.prompt ? "yes" : "no"} · Herdr:{" "}
-            {recommendation.herdrCompatibility.status}
+          <Text dimColor wrap="truncate-end">
+            {candidate.notes}
           </Text>
         </Box>
       )
     })}
-    <Text dimColor>↑/↓ or j/k select · ↵ generate · q cancel</Text>
+  </Box>
+)
+
+const CandidateDetail = ({
+  candidate,
+  height,
+}: {
+  readonly candidate: GuideGenerateCandidate
+  readonly height: number
+}) => (
+  <Box flexDirection="column" flexGrow={1} height={height} overflowY="hidden" paddingLeft={2}>
+    <Text bold color="cyan" wrap="truncate-end">
+      {candidate.title}
+    </Text>
+    <Text dimColor wrap="wrap">
+      {candidate.notes}
+    </Text>
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold color="green">
+        PROMPT PREVIEW
+      </Text>
+      <Text wrap="wrap">{candidate.prompt}</Text>
+    </Box>
   </Box>
 )
 
@@ -1190,35 +1803,31 @@ const CandidatesView = ({
   readonly index: number
   readonly usedTemplateFallback: boolean
   readonly command: PublicGuideCommand
-}) => (
-  <Box flexDirection="column" paddingX={1}>
-    <Text bold color="cyan">
-      Prompt candidates
-    </Text>
-    {usedTemplateFallback ? <Text color="yellow">Deterministic template fallback (no model call).</Text> : null}
-    {candidates.map((candidate, itemIndex) => {
-      const active = itemIndex === index
-      return (
-        <Box key={`${itemIndex}:${candidate.title}`} flexDirection="column" marginTop={1}>
-          <Text bold={active} {...(active ? { color: "green" as const } : {})}>
-            {active ? "❯ " : "  "}
-            {candidate.title}
-          </Text>
-          <Text wrap="wrap"> {candidate.prompt}</Text>
-          <Text dimColor wrap="wrap">
-            {"  "}
-            {candidate.notes}
-          </Text>
-        </Box>
-      )
-    })}
-    <Text dimColor wrap="wrap">
-      Command: {command.preview}
-      {command.promptHandling === "manual-paste" ? " (manual paste required)" : ""}
-    </Text>
-    <Text dimColor>↑/↓ or j/k select · ↵ continue · r refine · e edit · c print · q cancel</Text>
-  </Box>
-)
+}) => {
+  const { stdout } = useStdout()
+  const paneHeight = candidatePaneHeight(stdout.rows ?? 24)
+  const railWidth = candidateRailWidth(stdout.columns ?? 100)
+  const candidate = tripleAt(candidates, index)
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold color="cyan">
+        Prompt candidates
+      </Text>
+      {usedTemplateFallback ? <Text color="yellow">Deterministic template fallback (no model call).</Text> : null}
+      <Box marginTop={1}>
+        <CandidateRail candidates={candidates} index={index} width={railWidth} height={paneHeight} />
+        <CandidateDetail candidate={candidate} height={paneHeight} />
+      </Box>
+      <Text dimColor wrap="truncate-end">
+        Command: {compactCommandPreview(command.preview)}
+        {command.promptHandling === "manual-paste" ? " (manual paste required)" : ""}
+      </Text>
+      <Text dimColor>
+        ↑/↓ or j/k select · ↵ continue · b/Esc back · r refine · e edit · c print full prompt · q cancel
+      </Text>
+    </Box>
+  )
+}
 
 const TextEditor = ({
   title,
@@ -1328,11 +1937,18 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
     let cancelled = false
     void (async () => {
       try {
-        const response = await runGuideMatch(props.provider, props.catalog, {
-          intent: state.intent ?? "",
-          model: props.model,
-          effort: props.effort,
-        })
+        const response = await runGuideMatchingStep(
+          props.provider,
+          props.catalog,
+          {
+            intent: state.intent ?? "",
+            model: props.model,
+            effort: props.effort,
+          },
+          (phase) => {
+            if (!cancelled) dispatch({ type: GuideUiActionType.MatchProgress, phase })
+          },
+        )
         if (!cancelled) dispatch({ type: GuideUiActionType.MatchSucceeded, recommendations: response.recommendations })
       } catch (error) {
         if (!cancelled) dispatch({ type: GuideUiActionType.MatchFailed, message: describeGuideUiError(error) })
@@ -1367,6 +1983,9 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
           (guideDocument) => {
             if (!cancelled) dispatch({ type: GuideUiActionType.GenerateGuideLoaded, guideDocument })
           },
+          (phase) => {
+            if (!cancelled) dispatch({ type: GuideUiActionType.GenerateProgress, phase })
+          },
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.GenerateSucceeded, candidates })
       } catch (error) {
@@ -1399,6 +2018,7 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
     void (async () => {
       try {
         const refinedCandidate = await runGuideRefinementStep(
+          props.catalog,
           props.provider,
           intent,
           recommendation,
@@ -1450,9 +2070,7 @@ const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispa
   }, [state.stage])
 }
 
-const worktreeInspectionAction = (
-  inspection: Awaited<ReturnType<typeof inspectGitWorktreeIntent>>,
-): GuideUiAction => {
+const worktreeInspectionAction = (inspection: Awaited<ReturnType<typeof inspectGitWorktreeIntent>>): GuideUiAction => {
   if (inspection.kind === "invalid-branch") return { type: GuideUiActionType.WorktreeInvalidBranch }
   if (inspection.kind === "collision") return { type: GuideUiActionType.WorktreeCollision, inspection }
   return { type: GuideUiActionType.WorktreeReady, inspection }
@@ -1521,10 +2139,19 @@ const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, can
 }
 
 const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input, key) => {
+  const pinnedLens = pinnedGuideLenses(props.catalog).find(({ key: lensKey }) => lensKey === input)
+  if (pinnedLens !== undefined) {
+    dispatch({
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: selectedProfileForPinnedLens(props.catalog, pinnedLens),
+      recommendation: pinnedLens.recommendation,
+    })
+    return
+  }
   if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
   else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
   else if (key.return && state.recommendations !== undefined) {
-    const recommendation = tripleAt(state.recommendations, state.recommendationIndex)
+    const recommendation = recommendationAt(state.recommendations, state.recommendationIndex)
     dispatch({
       type: GuideUiActionType.RecommendationsConfirm,
       selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef),
@@ -1560,6 +2187,7 @@ const handleGenerateFailedInput: GuideInputHandler = ({ state, dispatch, cancel 
 const handleCandidatesInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
   if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.CandidatesMove, delta: -1 })
   else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.CandidatesMove, delta: 1 })
+  else if (key.escape || input === "b") dispatch({ type: GuideUiActionType.CandidatesBack })
   else if (key.return) dispatch({ type: GuideUiActionType.CandidatesConfirm })
   else if (input === "r") dispatch({ type: GuideUiActionType.CandidatesRefineStart })
   else if (input === "e") dispatch({ type: GuideUiActionType.CandidatesDirectEditStart })
@@ -1654,8 +2282,7 @@ const handleDestinationInput: GuideInputHandler = (context, input, key) => {
   else if (key.return) {
     const option = options[state.destinationIndex]
     if (option !== undefined) completeDestination(context, option)
-  }
-  else if (input === "b") dispatch({ type: GuideUiActionType.DestinationBack })
+  } else if (input === "b") dispatch({ type: GuideUiActionType.DestinationBack })
   else if (input === "q") cancel()
 }
 
@@ -1757,29 +2384,44 @@ interface GuideRenderContext {
 
 type GuideStageRenderer = (context: GuideRenderContext) => React.ReactElement
 
-const matchingSpinner = ({ props }: GuideRenderContext): React.ReactElement => (
-  <Spinner label="Matching profiles" detail={`Model: ${props.model} · Effort: ${props.effort}`} />
+const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElement => (
+  <MatchProgress
+    catalog={props.catalog}
+    phase={state.matchPhase ?? GuideMatchPhase.LoadingProfiles}
+    intent={state.intent ?? ""}
+    model={props.model}
+    effort={props.effort}
+  />
 )
 
-const renderRecommendations: GuideStageRenderer = ({ props, state }) =>
-  state.recommendations === undefined ? (
-    <Spinner label="Matching profiles" detail={`Model: ${props.model} · Effort: ${props.effort}`} />
+const renderRecommendations: GuideStageRenderer = (context) =>
+  context.state.recommendations === undefined ? (
+    matchingProgress(context)
   ) : (
     <RecommendationsView
-      intent={state.intent ?? ""}
-      model={props.model}
-      effort={props.effort}
-      recommendations={state.recommendations}
-      index={state.recommendationIndex}
-      usedLiteralFallback={state.usedLiteralFallback}
+      pinnedLenses={pinnedGuideLenses(context.props.catalog)}
+      intent={context.state.intent ?? ""}
+      model={context.props.model}
+      effort={context.props.effort}
+      recommendations={context.state.recommendations}
+      index={context.state.recommendationIndex}
+      usedLiteralFallback={context.state.usedLiteralFallback}
     />
   )
 
 const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
-  if (state.candidates === undefined || state.selectedRecommendation === undefined) return <Spinner label="Loading" />
+  if (state.candidates === undefined || state.selectedRecommendation === undefined) {
+    return <Spinner label="Preparing prompt candidates" messages={["Loading the selected profile workflow"]} />
+  }
   if (state.stage === GuideUiStage.RefineEditor)
     return <TextEditor title="Refinement feedback" textDraft={state.textDraft} keys="↵ submit · Esc back" />
-  if (state.stage === GuideUiStage.Refining) return <Spinner label="Refining prompt" />
+  if (state.stage === GuideUiStage.Refining)
+    return (
+      <Spinner
+        label="Refining prompt"
+        messages={["Applying your feedback", "Preserving profile-specific requirements"]}
+      />
+    )
   if (state.stage === GuideUiStage.RefineFailed)
     return <ErrorPanel title="Refinement failed" message={state.errorMessage} keys="r retry · b back" />
   if (state.stage === GuideUiStage.DirectEditor)
@@ -1821,26 +2463,42 @@ const renderDestination: GuideStageRenderer = ({ state, herdrEnabled }) => {
 
 const renderWorktreeCollision: GuideStageRenderer = ({ state }) =>
   state.worktreeInspection === undefined || !("collision" in state.worktreeInspection) ? (
-    <Spinner label="Inspecting git worktree" />
+    <Spinner
+      label="Inspecting git worktree"
+      messages={["Checking branch and path collisions", "Resolving the existing worktree location"]}
+    />
   ) : (
     <WorktreeCollisionView inspection={state.worktreeInspection} />
   )
 
 const renderWorktreeReady: GuideStageRenderer = ({ state }) =>
   state.worktreeInspection === undefined || "collision" in state.worktreeInspection ? (
-    <Spinner label="Inspecting git worktree" />
+    <Spinner
+      label="Inspecting git worktree"
+      messages={["Checking branch and path collisions", "Preparing worktree confirmation"]}
+    />
   ) : (
     <WorktreeReadyView inspection={state.worktreeInspection} confirmations={state.worktreeConfirmations} />
   )
 
 const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
-  [GuideUiStage.Matching]: matchingSpinner,
+  [GuideUiStage.Matching]: matchingProgress,
   [GuideUiStage.MatchFailed]: ({ state }) => (
     <ErrorPanel title="Match failed" message={state.errorMessage} keys="r retry · l literal match · q cancel" />
   ),
   [GuideUiStage.Recommendations]: renderRecommendations,
-  [GuideUiStage.Generating]: () => <Spinner label="Generating prompts" />,
+  [GuideUiStage.Generating]: ({ props, state }) =>
+    state.selectedRecommendation === undefined || state.intent === undefined ? (
+      <Spinner label="Preparing prompt candidates" />
+    ) : (
+      <GenerationProgress
+        recommendation={state.selectedRecommendation}
+        phase={state.generationPhase ?? GuideGenerationPhase.LoadingProfile}
+        intent={state.intent}
+        model={props.model}
+      />
+    ),
   [GuideUiStage.GenerateFailed]: ({ state }) => (
     <ErrorPanel
       title="Generation failed"
@@ -1853,7 +2511,17 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Refining]: renderCandidateStage,
   [GuideUiStage.RefineFailed]: renderCandidateStage,
   [GuideUiStage.DirectEditor]: renderCandidateStage,
-  [GuideUiStage.CheckingReadiness]: () => <Spinner label="Checking profile readiness" />,
+  [GuideUiStage.CheckingReadiness]: ({ state }) => (
+    <Spinner
+      label="Checking profile readiness"
+      messages={[
+        state.selectedRecommendation === undefined
+          ? "Checking runtime requirements"
+          : `Checking ${recommendationLabel(state.selectedRecommendation)} requirements`,
+        "Confirming the selected profile can launch",
+      ]}
+    />
+  ),
   [GuideUiStage.ReadinessBlocked]: ({ state }) => (
     <ErrorPanel
       title={state.readiness?.summary ?? "Profile is not ready"}
@@ -1869,7 +2537,12 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
       keys={`${state.errorMessage ?? ""}${state.errorMessage === undefined ? "" : " · "}↵ submit · Esc back`}
     />
   ),
-  [GuideUiStage.InspectingWorktree]: () => <Spinner label="Inspecting git worktree" />,
+  [GuideUiStage.InspectingWorktree]: () => (
+    <Spinner
+      label="Inspecting git worktree"
+      messages={["Checking branch and path collisions", "Reviewing the source checkout state"]}
+    />
+  ),
   [GuideUiStage.WorktreeCollision]: renderWorktreeCollision,
   [GuideUiStage.WorktreeReady]: renderWorktreeReady,
 }
@@ -1903,5 +2576,11 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   }
   useInput((input, key) => handleGuideInput(inputContext, input, key))
 
-  return stageRenderer[state.stage]({ props, state, herdrEnabled })
+  const activeWizardStep = wizardStepForStage(state.stage)
+  return (
+    <Box flexDirection="column">
+      {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
+      {stageRenderer[state.stage]({ props, state, herdrEnabled })}
+    </Box>
+  )
 }

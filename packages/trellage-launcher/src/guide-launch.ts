@@ -4,6 +4,7 @@ import { spawn } from "node:child_process"
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u
 const safeLauncherAlias = /^[a-z][a-z0-9-]{0,63}$/u
 const safeProfileName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+const safeAgentName = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 const safeShellText = /^[A-Za-z0-9_./:-]+$/u
 const gitBranchPrefix = "refs/heads/"
 const commandOutputLimitBytes = 1024 * 1024
@@ -24,6 +25,7 @@ export interface NativeSelectedProfile {
   readonly commandPath: string
   readonly profile: string
   readonly headlessPrompt: boolean
+  readonly agent?: string
 }
 
 export interface SandboxSelectedProfile {
@@ -271,6 +273,14 @@ const validateHeadlessPrompt = (value: unknown): boolean => {
   return value
 }
 
+const validateAgent = (value: unknown, launcher: string): string | undefined => {
+  if (value === undefined) return undefined
+  const agent = getString(value, "selected profile agent")
+  if (launcher !== "cpx") throw new Error("selected profile agent is supported only by the cpx launcher")
+  if (!safeAgentName.test(agent)) throw new Error("selected profile agent must be a simple agent identifier")
+  return agent
+}
+
 const normalizePromptDelivery = (delivery?: PromptDelivery): PromptDelivery => delivery ?? { mode: "none" }
 
 const hasNonEmptyText = (value: string | undefined): value is string => typeof value === "string" && value.length > 0
@@ -443,12 +453,15 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   if (!isRecord(value)) throw new Error("selected profile must be an object")
   const surface = getString(value.surface, "selected profile surface")
   if (surface === "native") {
+    const launcher = validateLauncher(value.launcher)
+    const agent = validateAgent(value.agent, launcher)
     return {
       surface,
-      launcher: validateLauncher(value.launcher),
+      launcher,
       commandPath: validateCommandPath(value.commandPath),
       profile: validateProfileName(value.profile),
       headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
+      ...(agent === undefined ? {} : { agent }),
     }
   }
   if (surface === "sandbox") {
@@ -468,22 +481,37 @@ export const buildGuideLaunchCommand = (
 ): BuiltCommandSpec => {
   const normalizedDelivery = normalizePromptDelivery(delivery)
   const baseArgs =
-    selectedProfile.surface === "native" ? [selectedProfile.profile] : ["--profile", selectedProfile.profile]
-  const command: CommandSpec = {
-    executable: selectedProfile.commandPath,
-    args:
-      normalizedDelivery.mode === "argv" && selectedProfile.headlessPrompt
-        ? [...baseArgs, "-p", normalizedDelivery.prompt]
-        : baseArgs,
-  }
+    selectedProfile.surface === "native"
+      ? [
+          selectedProfile.profile,
+          ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
+        ]
+      : ["--profile", selectedProfile.profile]
   if (normalizedDelivery.mode === "argv") {
+    if (selectedProfile.surface === "sandbox") {
+      return {
+        command: {
+          executable: selectedProfile.commandPath,
+          args: [...baseArgs, normalizedDelivery.prompt],
+        },
+        promptHandling: "argv",
+      }
+    }
     return {
-      command,
+      command: {
+        executable: selectedProfile.commandPath,
+        args: selectedProfile.headlessPrompt
+          ? [...baseArgs, selectedProfile.launcher === "cpx" ? "-i" : "-p", normalizedDelivery.prompt]
+          : baseArgs,
+      },
       promptHandling: selectedProfile.headlessPrompt ? "argv" : "manual-paste",
     }
   }
   return {
-    command,
+    command: {
+      executable: selectedProfile.commandPath,
+      args: baseArgs,
+    },
     promptHandling: "none",
   }
 }

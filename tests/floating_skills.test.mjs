@@ -93,6 +93,9 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.equal(catalog.schema, 1)
   assert.ok(Object.hasOwn(catalog.bundles, "sandbox-common"))
   assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "cursor-pstack"])
+  assert.deepEqual(catalog.bundles["guide-prompt-master"], ["prompt-master"])
+  assert.deepEqual(catalog.sources["prompt-master"].select, ["prompt-master"])
+  assert.equal(catalog.sources["prompt-master"].repository, "https://github.com/nidhinjs/prompt-master.git")
   const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
     (sourceId) => catalog.sources[sourceId].select,
   )
