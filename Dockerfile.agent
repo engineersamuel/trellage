@@ -67,6 +67,7 @@ ENV HOME=/home/agent \
     CODEX_HOME=/workspace/.codex-home \
     XDG_CACHE_HOME=/workspace/.cache \
     XDG_CONFIG_HOME=/workspace/.config \
+    NODE_COMPILE_CACHE=/workspace/.cache/trellage/node-compile-cache \
     npm_config_cache=/workspace/.npm \
     npm_config_update_notifier=false
 

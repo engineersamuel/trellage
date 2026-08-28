@@ -14,6 +14,7 @@ RUN chmod 0555 /usr/local/bin/app-entrypoint.sh
 ENV HOME=/tmp \
     npm_config_cache=/tmp/.npm \
     npm_config_update_notifier=false \
+    NODE_COMPILE_CACHE=/tmp/.cache/trellage/node-compile-cache \
     NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/data
