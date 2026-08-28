@@ -67,6 +67,7 @@ export const runGuideJsonCommand = async (options: {
   readonly argv: ReadonlyArray<string>
   readonly catalog: CombinedGuideCatalog
   readonly guideRoot: string
+  readonly promptMasterSkillDirectory: string
   readonly stdinRequest?: string
   readonly env: Readonly<Record<string, string | undefined>>
 }): Promise<unknown> => {
@@ -79,12 +80,15 @@ export const runGuideJsonCommand = async (options: {
       model: resolved.model,
       effort: resolved.effort,
       prompts,
+      promptMasterSkillDirectory: options.promptMasterSkillDirectory,
     }),
     {
       cachePath: defaultGuideMatchCachePath(options.env),
       model: resolved.model,
       effort: resolved.effort,
       matchPrompt: prompts.match,
+      generatePrompt: prompts.generate,
+      optimizePrompt: prompts.optimize,
     },
   )
   const common = {

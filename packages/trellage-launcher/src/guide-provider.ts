@@ -40,6 +40,16 @@ export interface GuideRefineResult {
   readonly candidate: GuideGenerateCandidate
 }
 
+export interface GuideOptimizeInput {
+  readonly targetTool: string
+  readonly profileRef: string
+  readonly candidates: ReadonlyArray<GuideGenerateCandidate>
+}
+
+export interface GuideOptimizeResult {
+  readonly candidates: ReadonlyArray<GuideGenerateCandidate>
+}
+
 export interface GuideMatchInput {
   readonly intent: string
   readonly entries: ReadonlyArray<GuideMatchCatalogEntry>
@@ -64,6 +74,7 @@ export interface GuideProvider {
   match(input: GuideMatchInput): Promise<GuideMatchResult>
   generate(input: GuideGenerateInput): Promise<GuideGenerateResult>
   refine(input: GuideRefineInput): Promise<GuideRefineResult>
+  optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult>
 }
 
 /** Maximum length for the authored Markdown guide body carried in generate/refine input, mirroring `trellage-guide-core`'s source-document bound. */
@@ -92,6 +103,17 @@ export const assertGuideGenerateInput = <Input extends GuideGenerateInput>(input
   return input
 }
 
+/** Fails closed unless Prompt Master receives one to three complete candidates and a known target label. */
+export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimizeInput => {
+  text(input.targetTool, "optimize input.targetTool", 128)
+  text(input.profileRef, "optimize input.profileRef", 256)
+  if (input.candidates.length < 1 || input.candidates.length > 3) {
+    fail("optimize input.candidates", `must contain 1 to 3 entries: got ${input.candidates.length}`)
+  }
+  input.candidates.forEach((candidate, index) => validateGenerateCandidate(candidate, `optimize input.candidates[${index}]`))
+  return input
+}
+
 const validateMatchCandidate = (
   value: unknown,
   path: string,
@@ -117,8 +139,9 @@ const validateMatchCandidate = (
 
 /**
  * Validates a raw model match response against the catalog's known refs and
- * workflow IDs. Requires exactly three candidates with unique profile refs,
- * ordered by non-increasing confidence.
+ * workflow IDs. Requires three to five candidates with unique profile refs,
+ * ordered by non-increasing confidence. Three remains accepted for cached
+ * responses created before the five-recommendation UI.
  */
 export const validateGuideMatchResult = (
   value: unknown,
@@ -126,7 +149,7 @@ export const validateGuideMatchResult = (
 ): GuideMatchResult => {
   const fields = record(value, "match result")
   exactKeys(fields, "match result", ["candidates"])
-  const rawCandidates = array(fields.candidates, "match result.candidates", { minimum: 3, maximum: 3 })
+  const rawCandidates = array(fields.candidates, "match result.candidates", { minimum: 3, maximum: 5 })
   const candidates = rawCandidates.map((item, index) =>
     validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex),
   )
@@ -176,4 +199,23 @@ export const validateGuideRefineResult = (value: unknown): GuideRefineResult => 
   const fields = record(value, "refine result")
   exactKeys(fields, "refine result", ["candidate"])
   return { candidate: validateGenerateCandidate(fields.candidate, "refine result.candidate") }
+}
+
+/** Validates a Prompt Master rewrite response and preserves the requested candidate count. */
+export const validateGuideOptimizeResult = (value: unknown, expectedCount: number): GuideOptimizeResult => {
+  const fields = record(value, "optimize result")
+  exactKeys(fields, "optimize result", ["candidates"])
+  const rawCandidates = array(fields.candidates, "optimize result.candidates", {
+    minimum: expectedCount,
+    maximum: expectedCount,
+  })
+  const candidates = rawCandidates.map((item, index) =>
+    validateGenerateCandidate(item, `optimize result.candidates[${index}]`),
+  )
+  uniqueArray(
+    candidates.map(({ prompt }) => prompt),
+    "optimize result.candidates",
+    "prompts",
+  )
+  return { candidates }
 }

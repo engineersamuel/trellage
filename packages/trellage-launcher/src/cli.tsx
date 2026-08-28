@@ -490,7 +490,11 @@ const runEnrichNativeList = async (): Promise<void> => {
   process.stdout.write(`${await enrichNativeProfileList(await readInput(undefined), guideRoot)}\n`)
 }
 
-const runGuideJsonMode = async (argv: ReadonlyArray<string>, guideRoot: string): Promise<void> => {
+const runGuideJsonMode = async (
+  argv: ReadonlyArray<string>,
+  guideRoot: string,
+  promptMasterSkillDirectory: string,
+): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
   const catalog = readGuideCatalog()
   const stdinRequest = args.intent === undefined ? await readInput(undefined) : undefined
@@ -498,6 +502,7 @@ const runGuideJsonMode = async (argv: ReadonlyArray<string>, guideRoot: string):
     argv,
     catalog,
     guideRoot,
+    promptMasterSkillDirectory,
     ...(stdinRequest === undefined ? {} : { stdinRequest }),
     env: process.env,
   })
@@ -519,7 +524,11 @@ const probeInteractiveHerdr = async (runner: ReturnType<typeof createNodeCommand
   }
 }
 
-const runInteractiveGuideMode = async (argv: ReadonlyArray<string>, guideRoot: string): Promise<void> => {
+const runInteractiveGuideMode = async (
+  argv: ReadonlyArray<string>,
+  guideRoot: string,
+  promptMasterSkillDirectory: string,
+): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
   const catalog = readGuideCatalog()
   const config = resolveGuideModelConfig(
@@ -535,12 +544,15 @@ const runInteractiveGuideMode = async (argv: ReadonlyArray<string>, guideRoot: s
       model: config.model,
       effort: config.effort,
       prompts,
+      promptMasterSkillDirectory,
     }),
     {
       cachePath: defaultGuideMatchCachePath(process.env),
       model: config.model,
       effort: config.effort,
       matchPrompt: prompts.match,
+      generatePrompt: prompts.generate,
+      optimizePrompt: prompts.optimize,
     },
   )
   const runner = createNodeCommandRunner()
@@ -600,17 +612,19 @@ const runInteractiveGuideMode = async (argv: ReadonlyArray<string>, guideRoot: s
 const runGuideMode = async (): Promise<void> => {
   const guideRoot = process.argv[3]
   if (guideRoot === undefined) throw new Error("guide requires GUIDE_ROOT")
-  const argv = process.argv.slice(4)
+  const promptMasterSkillDirectory = process.argv[4]
+  if (promptMasterSkillDirectory === undefined) throw new Error("guide requires PROMPT_MASTER_SKILL_DIRECTORY")
+  const argv = process.argv.slice(5)
   const args = parseGuideHeadlessArgv(argv)
   if (args.help) {
     process.stdout.write(`${guideHeadlessHelpText}\n`)
     return
   }
   if (args.json) {
-    await runGuideJsonMode(argv, guideRoot)
+    await runGuideJsonMode(argv, guideRoot, promptMasterSkillDirectory)
     return
   }
-  await runInteractiveGuideMode(argv, guideRoot)
+  await runInteractiveGuideMode(argv, guideRoot, promptMasterSkillDirectory)
 }
 
 const main = async () => {

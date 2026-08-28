@@ -40,6 +40,24 @@ this workflow, each pursuing the stated `intent`. Vary them meaningfully
 (for example: scope, level of detail, or which constraints are made
 explicit) rather than producing near-duplicates.
 
+If the selected workflow's `promptTemplate` adds substantive requirements
+before or after `{{intent}}`, preserve those requirements naturally in every
+candidate. Integrate them into one coherent prompt; do not repeat the same
+requirement in both model-authored text and a copied template suffix.
+
+For `sandbox:claude-council` with the `run-council-deliberation` workflow,
+preserve the user's intent as the idea under review. Every candidate must ask
+the council to pressure-test that idea and its implementation: challenge
+assumptions, identify risks and failure modes, compare credible alternatives,
+assess feasibility and implementation tradeoffs, and recommend concrete next
+steps.
+
+For `sandbox:claude-research` with the `vault-backed-research` workflow,
+preserve the user's intent as the subject of additional research. Every
+candidate must ask for source-backed evidence, relevant prior art, unresolved
+questions, risks, and implementation options that should inform the work
+before execution.
+
 ## Output contract
 
 Respond with raw JSON only: no Markdown code fences, no prose before or

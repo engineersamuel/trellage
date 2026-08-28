@@ -10,6 +10,8 @@ import type {
   GuideGenerateResult,
   GuideMatchInput,
   GuideMatchResult,
+  GuideOptimizeInput,
+  GuideOptimizeResult,
   GuideProvider,
 } from "../src/guide-provider.js"
 import { GuideValidationError } from "../src/guide-text.js"
@@ -367,6 +369,7 @@ const writeGuideFixtures = async (root: string): Promise<void> => {
 class FakeGuideProvider implements GuideProvider {
   matchCalls: Array<GuideMatchInput> = []
   generateCalls: Array<GuideGenerateInput> = []
+  optimizeCalls: Array<GuideOptimizeInput> = []
 
   constructor(
     private readonly matchResult: GuideMatchResult,
@@ -385,6 +388,16 @@ class FakeGuideProvider implements GuideProvider {
 
   async refine(): Promise<never> {
     throw new Error("refine must not be called by these tests")
+  }
+
+  async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
+    this.optimizeCalls.push(input)
+    return {
+      candidates: input.candidates.map((candidate) => ({
+        ...candidate,
+        prompt: `Prompt Master: ${candidate.prompt}`,
+      })),
+    }
   }
 }
 
@@ -738,8 +751,15 @@ describe("runGuideGenerate", () => {
       expect(response.profile.profileRef).toBe("sandbox:prime-agent")
       expect(response.candidates).toHaveLength(3)
       expect(response.candidates[0]?.prompt).toBe(
-        "Use the writing-plans skill:\nDo the focused thing.",
+        "Prompt Master: Use the writing-plans skill:\nDo the focused thing.",
       )
+      expect(provider.optimizeCalls).toEqual([
+        {
+          targetTool: "copilot",
+          profileRef: "sandbox:prime-agent",
+          candidates: expect.any(Array),
+        },
+      ])
 
       // The provider must receive the full authored guide body, loaded from disk.
       expect(provider.generateCalls).toHaveLength(1)
@@ -897,9 +917,9 @@ describe("literalGuideMatch", () => {
     const catalog = buildCatalog("/tmp-unused")
     const candidates = literalGuideMatch(catalog, "Refactor the payment pipeline carefully")
 
-    expect(candidates).toHaveLength(3)
+    expect(candidates).toHaveLength(4)
     const refs = candidates.map((c) => c.profileRef)
-    expect(new Set(refs).size).toBe(3)
+    expect(new Set(refs).size).toBe(candidates.length)
     // native:jcx/foo's deep-refactor workflow shares the most terms with the intent.
     expect(candidates[0]?.profileRef).toBe("native:jcx/foo")
     expect(candidates[0]?.workflowId).toBe("deep-refactor")

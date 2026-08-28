@@ -5,11 +5,16 @@ import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 
 import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
-import { CachedGuideProvider, defaultGuideMatchCachePath } from "../src/guide-match-cache.js"
+import {
+  CachedGuideProvider,
+  defaultGuideMatchCachePath,
+  type CachedGuideProviderOptions,
+} from "../src/guide-match-cache.js"
 import type {
   GuideGenerateResult,
   GuideMatchInput,
   GuideMatchResult,
+  GuideOptimizeResult,
   GuideProvider,
   GuideRefineResult,
 } from "../src/guide-provider.js"
@@ -65,31 +70,52 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-const fakeProvider = (): { readonly provider: GuideProvider; readonly matchCalls: () => number } => {
-  let calls = 0
+const fakeProvider = (): {
+  readonly provider: GuideProvider
+  readonly matchCalls: () => number
+  readonly generateCalls: () => number
+  readonly optimizeCalls: () => number
+} => {
+  let matchCalls = 0
+  let generateCalls = 0
+  let optimizeCalls = 0
   return {
     provider: {
       match: async (): Promise<GuideMatchResult> => {
-        calls += 1
+        matchCalls += 1
         return matchResult
       },
-      generate: async (): Promise<GuideGenerateResult> => generated,
+      generate: async (): Promise<GuideGenerateResult> => {
+        generateCalls += 1
+        return generated
+      },
       refine: async (): Promise<GuideRefineResult> => refined,
+      optimize: async (input): Promise<GuideOptimizeResult> => {
+        optimizeCalls += 1
+        return { candidates: input.candidates }
+      },
     },
-    matchCalls: () => calls,
+    matchCalls: () => matchCalls,
+    generateCalls: () => generateCalls,
+    optimizeCalls: () => optimizeCalls,
   }
 }
 
+const cacheOptions = (cachePath: string, overrides: Partial<CachedGuideProviderOptions> = {}) => ({
+  cachePath,
+  model: "mai-code-1.1-flash",
+  effort: "medium",
+  matchPrompt: "Match profiles.",
+  generatePrompt: "Generate candidates.",
+  optimizePrompt: "Optimize candidates.",
+  ...overrides,
+})
+
 describe("CachedGuideProvider", () => {
-  it("reuses the last identical match without storing the raw intent", async () => {
+  it("reuses recent identical matches without storing the raw intent", async () => {
     const cachePath = await temporaryCachePath()
     const fake = fakeProvider()
-    const options = {
-      cachePath,
-      model: "mai-code-1.1-flash",
-      effort: "medium",
-      matchPrompt: "Match profiles.",
-    }
+    const options = cacheOptions(cachePath)
     const provider = new CachedGuideProvider(fake.provider, options)
     const input: GuideMatchInput = { intent: "Write a LinkedIn post about AI agents", entries }
 
@@ -101,31 +127,19 @@ describe("CachedGuideProvider", () => {
     await provider.match({ ...input, intent: "Write a technical blog post" })
     expect(fake.matchCalls()).toBe(2)
     await provider.match(input)
-    expect(fake.matchCalls()).toBe(3)
+    expect(fake.matchCalls()).toBe(2)
   })
 
   it("invalidates the cache when model or catalog metadata changes", async () => {
     const cachePath = await temporaryCachePath()
     const fake = fakeProvider()
     const input: GuideMatchInput = { intent: "Write a post", entries }
-    const first = new CachedGuideProvider(fake.provider, {
-      cachePath,
-      model: "model-a",
-      effort: "medium",
-      matchPrompt: "Match profiles.",
-    })
-    const second = new CachedGuideProvider(fake.provider, {
-      cachePath,
-      model: "model-b",
-      effort: "medium",
-      matchPrompt: "Match profiles.",
-    })
-    const changedPrompt = new CachedGuideProvider(fake.provider, {
-      cachePath,
-      model: "model-b",
-      effort: "medium",
-      matchPrompt: "Match profiles with revised instructions.",
-    })
+    const first = new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" }))
+    const second = new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-b" }))
+    const changedPrompt = new CachedGuideProvider(
+      fake.provider,
+      cacheOptions(cachePath, { model: "model-b", matchPrompt: "Match profiles with revised instructions." }),
+    )
 
     await first.match(input)
     await second.match(input)
@@ -138,14 +152,10 @@ describe("CachedGuideProvider", () => {
     expect(fake.matchCalls()).toBe(4)
   })
 
-  it("delegates generation and refinement without caching them", async () => {
+  it("reuses generated and optimized prompt candidates while refinement remains uncached", async () => {
     const fake = fakeProvider()
-    const provider = new CachedGuideProvider(fake.provider, {
-      cachePath: await temporaryCachePath(),
-      model: "model-a",
-      effort: "medium",
-      matchPrompt: "Match profiles.",
-    })
+    const cachePath = await temporaryCachePath()
+    const provider = new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" }))
     const generationInput = {
       intent: "Write a post",
       profileRef: "sandbox:one",
@@ -169,6 +179,19 @@ describe("CachedGuideProvider", () => {
     }
 
     await expect(provider.generate(generationInput)).resolves.toEqual(generated)
+    await expect(new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" })).generate(
+      generationInput,
+    )).resolves.toEqual(generated)
+    await expect(provider.optimize({
+      targetTool: "copilot",
+      profileRef: generationInput.profileRef,
+      candidates: generated.candidates,
+    })).resolves.toEqual({ candidates: generated.candidates })
+    await expect(new CachedGuideProvider(fake.provider, cacheOptions(cachePath, { model: "model-a" })).optimize({
+      targetTool: "copilot",
+      profileRef: generationInput.profileRef,
+      candidates: generated.candidates,
+    })).resolves.toEqual({ candidates: generated.candidates })
     await expect(
       provider.refine({
         ...generationInput,
@@ -176,6 +199,9 @@ describe("CachedGuideProvider", () => {
         feedback: "Make it shorter",
       }),
     ).resolves.toEqual(refined)
+    expect(fake.generateCalls()).toBe(1)
+    expect(fake.optimizeCalls()).toBe(1)
+    expect(await readFile(cachePath, "utf8")).not.toContain("Write a post")
   })
 
   it("uses XDG_CACHE_HOME for the default cache location", () => {
@@ -189,13 +215,10 @@ describe("CachedGuideProvider", () => {
     await writeFile(cachePath, "{invalid", "utf8")
     const fake = fakeProvider()
     const warnings: string[] = []
-    const provider = new CachedGuideProvider(fake.provider, {
-      cachePath,
-      model: "model-a",
-      effort: "medium",
-      matchPrompt: "Match profiles.",
-      onWarning: (message) => warnings.push(message),
-    })
+    const provider = new CachedGuideProvider(
+      fake.provider,
+      cacheOptions(cachePath, { model: "model-a", onWarning: (message) => warnings.push(message) }),
+    )
 
     await expect(provider.match({ intent: "Write a post", entries })).resolves.toEqual(matchResult)
     expect(fake.matchCalls()).toBe(1)

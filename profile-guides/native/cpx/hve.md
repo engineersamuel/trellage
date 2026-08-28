@@ -20,6 +20,16 @@ prerequisites:
   - id: cli-tools
     description: jq and curl available on the host for setup, doctor, and update checks.
 workflows:
+  - id: rpi-agent-cycle
+    description: Run HVE Core's dedicated RPI Agent through a complete Research, Plan, Implement, and Review cycle.
+    examples:
+      - Build this feature through research, planning, implementation, and review
+      - Investigate and fix this issue with durable evidence at every stage
+      - Take this repository change through the full RPI workflow
+    promptTemplate: |
+      Take this request through a complete Research, Plan, Implement, and
+      Review cycle. Keep durable evidence for each stage, challenge the plan
+      before implementation, and verify the final result: {{intent}}
   - id: rpi-research
     description: Open a durable research phase before planning or implementing, producing a research note that a later plan phase can cite.
     examples:
@@ -57,6 +67,8 @@ Implement) skill set. See
 - You want a full RPI-centered SDLC suite — `rpi-research`, `rpi-plan`,
   `rpi-plan-critique`, `rpi-challenger`, `rpi-implement`, `rpi-quick`, and
   `rpi-review` under upstream `.github/skills/rpi/` — applied to Copilot CLI.
+- You want the dedicated `hve-core:rpi-agent` to own the complete Research →
+  Plan → Implement → Review cycle.
 - You want durable, evidence-backed research and plan artifacts before any
   implementation begins, rather than jumping straight to code.
 - You want the built-in Rundown output style (TL;DR, checklist, "Your move:")
@@ -73,6 +85,9 @@ Implement) skill set. See
 
 ## Workflow Notes
 
+- The guide's pinned HVE RPI lens launches
+  `cpx hve --agent hve-core:rpi-agent` and supplies the selected prompt to the
+  interactive Copilot session.
 - The RPI skill identifiers above are verified directory names under
   `microsoft/hve-core`'s `.github/skills/rpi/`; treat them as the skill
   vocabulary to reference in prompts. This repository has no documented
@@ -92,5 +107,5 @@ Implement) skill set. See
   repaired locally via `cpx repair hve`, but a fresh end-to-end Herdr
   verification run has not yet confirmed the full round trip.
 - `cpx list --json` only advertises the exact prompt/`--no-ask-user`
-  hard-deny/model-override contract for Copilot CLI `1.0.80`; other versions
+  hard-deny/model-override contract for Copilot CLI `1.0.81`; other versions
   report conservative `headless` values.

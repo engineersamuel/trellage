@@ -15,8 +15,8 @@
  *   file operation the session might otherwise attempt can resolve into
  *   this checkout.
  * - Sessions request `tools: []` and `availableTools: []` (no tools at
- *   all), and explicitly disable every discovery/extension/persistence
- *   surface the SDK exposes: `enableConfigDiscovery`, `mcpServers`,
+ *   all), and explicitly disable every unrelated discovery, extension, and
+ *   persistence surface the SDK exposes: `enableConfigDiscovery`, `mcpServers`,
  *   `customAgents`, `skillDirectories`, `pluginDirectories`,
  *   `instructionDirectories`, `requestExtensions`,
  *   `requestCanvasRenderer`, `manageScheduleEnabled`,
@@ -24,7 +24,8 @@
  *   `enableFileHooks`, `enableHostGitOperations`, `enableSessionStore`,
  *   `enableSkills`, `infiniteSessions`, `memory`, `skipEmbeddingRetrieval`,
  *   `embeddingCacheStorage`, `enableFileChangeTracking`,
- *   `enableSessionTelemetry`, and `remoteSession`. The session is also
+ *   `enableSessionTelemetry`, and `remoteSession`. Only the optimize phase
+ *   enables skills, with one exact `prompt-master` directory. The session is also
  *   deleted from the client after use, so no on-disk session store
  *   persists.
  * - The permission handler always rejects — this provider never grants any
@@ -48,7 +49,7 @@
  *   masked by a cleanup failure; if cleanup fails and there was no primary
  *   error, the cleanup failure is surfaced instead.
  */
-import { accessSync, constants } from "node:fs"
+import { accessSync, constants, lstatSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import {
@@ -62,13 +63,17 @@ import type { GuideModelPrompts } from "./guide-prompts.js"
 import {
   assertGuideGenerateInput,
   assertGuideMatchInput,
+  assertGuideOptimizeInput,
   validateGuideGenerateResult,
   validateGuideMatchResult,
+  validateGuideOptimizeResult,
   validateGuideRefineResult,
   type GuideGenerateInput,
   type GuideGenerateResult,
   type GuideMatchInput,
   type GuideMatchResult,
+  type GuideOptimizeInput,
+  type GuideOptimizeResult,
   type GuideProvider,
   type GuideRefineInput,
   type GuideRefineResult,
@@ -108,8 +113,8 @@ export interface GuideModelClient {
 
 /** Thrown when the configured model is missing or does not support the configured reasoning effort. */
 export class GuideModelCapabilityError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
     this.name = "GuideModelCapabilityError"
   }
 }
@@ -165,6 +170,10 @@ export interface CopilotGuideProviderOptions {
   readonly generateTimeoutMs?: number
   /** Milliseconds allowed for the refine phase's `sendAndWait`. @default 60000 */
   readonly refineTimeoutMs?: number
+  /** Exact `prompt-master` skill directory used only by the optimize phase. */
+  readonly promptMasterSkillDirectory?: string
+  /** Milliseconds allowed for the Prompt Master phase's `sendAndWait`. @default 60000 */
+  readonly optimizeTimeoutMs?: number
   /** Injectable client constructor, so unit tests never spawn a real Copilot runtime. */
   readonly clientFactory?: (options: CopilotClientOptions) => GuideModelClient
 }
@@ -203,6 +212,28 @@ const repairMessage = (cause: unknown): string => {
     "No Markdown code fences, no prose before or after the JSON.",
   ].join("\n")
 }
+
+const promptMasterMessage = (input: GuideOptimizeInput): string =>
+  [
+    `/prompt-master Optimize these prompts for ${input.targetTool} in Trellage profile ${input.profileRef}.`,
+    "Return only the JSON required by the system message.",
+    "",
+    "<untrusted-data>",
+    JSON.stringify(input),
+    "</untrusted-data>",
+  ].join("\n")
+
+const skillSessionPolicy = (
+  skillDirectory: string | undefined,
+): Pick<SessionConfig, "enableSkills" | "skillDirectories"> =>
+  skillDirectory === undefined
+    ? { enableSkills: false, skillDirectories: [] }
+    : { enableSkills: true, skillDirectories: [skillDirectory] }
+
+const requestMessage = <Input>(
+  input: Input,
+  message: ((input: Input) => string) | undefined,
+): string => (message === undefined ? untrustedMessage(JSON.stringify(input)) : message(input))
 
 const parseJson = (content: string): unknown => {
   const byteLength = Buffer.byteLength(content, "utf8")
@@ -248,6 +279,8 @@ export class CopilotGuideProvider implements GuideProvider {
   private readonly matchTimeoutMs: number
   private readonly generateTimeoutMs: number
   private readonly refineTimeoutMs: number
+  private readonly promptMasterSkillDirectory: string | undefined
+  private readonly optimizeTimeoutMs: number
   private readonly clientFactory: (options: CopilotClientOptions) => GuideModelClient
 
   constructor(options: CopilotGuideProviderOptions) {
@@ -262,6 +295,8 @@ export class CopilotGuideProvider implements GuideProvider {
     this.matchTimeoutMs = options.matchTimeoutMs ?? 30_000
     this.generateTimeoutMs = options.generateTimeoutMs ?? 60_000
     this.refineTimeoutMs = options.refineTimeoutMs ?? 60_000
+    this.promptMasterSkillDirectory = options.promptMasterSkillDirectory
+    this.optimizeTimeoutMs = options.optimizeTimeoutMs ?? 60_000
     this.clientFactory = options.clientFactory ?? defaultClientFactory
   }
 
@@ -285,11 +320,39 @@ export class CopilotGuideProvider implements GuideProvider {
     return this.run(this.prompts.refine, input, this.refineTimeoutMs, validateGuideRefineResult)
   }
 
+  async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
+    assertGuideOptimizeInput(input)
+    const skillDirectory = this.promptMasterSkillDirectory
+    if (skillDirectory === undefined) {
+      throw new GuideModelCapabilityError("Prompt Master skill directory is not configured")
+    }
+    let status
+    try {
+      status = lstatSync(path.join(skillDirectory, "SKILL.md"))
+    } catch (cause) {
+      throw new GuideModelCapabilityError(`Prompt Master skill is unavailable: ${skillDirectory}`, { cause })
+    }
+    if (!status.isFile() || status.isSymbolicLink()) {
+      throw new GuideModelCapabilityError(`Prompt Master SKILL.md is not a regular file: ${skillDirectory}`)
+    }
+    return this.run(
+      this.prompts.optimize,
+      input,
+      this.optimizeTimeoutMs,
+      (value) => validateGuideOptimizeResult(value, input.candidates.length),
+      { message: promptMasterMessage, skillDirectory },
+    )
+  }
+
   private async run<Input, Output>(
     systemPrompt: string,
     input: Input,
     timeoutMs: number,
     validate: (value: unknown) => Output,
+    options: {
+      readonly message?: (input: Input) => string
+      readonly skillDirectory?: string
+    } = {},
   ): Promise<Output> {
     const client = this.clientFactory({
       mode: "empty",
@@ -328,7 +391,7 @@ export class CopilotGuideProvider implements GuideProvider {
         availableTools: [],
         mcpServers: {},
         customAgents: [],
-        skillDirectories: [],
+        ...skillSessionPolicy(options.skillDirectory),
         pluginDirectories: [],
         instructionDirectories: [],
         requestExtensions: false,
@@ -339,7 +402,6 @@ export class CopilotGuideProvider implements GuideProvider {
         enableFileHooks: false,
         enableHostGitOperations: false,
         enableSessionStore: false,
-        enableSkills: false,
         infiniteSessions: { enabled: false },
         memory: { enabled: false },
         skipEmbeddingRetrieval: true,
@@ -354,7 +416,7 @@ export class CopilotGuideProvider implements GuideProvider {
             : { mode: "append", content: systemPrompt },
       }
       session = await client.createSession(sessionConfig)
-      const first = await session.sendAndWait({ prompt: untrustedMessage(JSON.stringify(input)) }, timeoutMs)
+      const first = await session.sendAndWait({ prompt: requestMessage(input, options.message) }, timeoutMs)
       if (first === undefined) {
         throw new GuideModelResponseError("model did not return an assistant message")
       }

@@ -95,6 +95,39 @@ describe("interactive guide result execution", () => {
 
     await expect(executeGuideUiResult(result, services(runner, writes, runInteractive))).resolves.toBe(0)
     expect(writes).toHaveLength(0)
+    expect(runInteractive).toHaveBeenCalledWith(
+      {
+        executable: "/opt/trellage/bin/cpx",
+        args: ["hve-core", "-i", "Draft the post."],
+      },
+      { cwd: "/repo" },
+    )
+  })
+
+  it("launches a Sandbox profile with its initial prompt and no paste instruction", async () => {
+    const runner = new RecordingRunner()
+    const writes: string[] = []
+    const runInteractive = vi.fn(async () => undefined)
+    const result = buildCurrentTerminalResult(
+      {
+        surface: "sandbox",
+        commandPath: "/opt/trellage/bin/trellage",
+        profile: "claude-research",
+        headlessPrompt: false,
+      },
+      "Research the repository.",
+      "/repo",
+    )
+
+    await expect(executeGuideUiResult(result, services(runner, writes, runInteractive))).resolves.toBe(0)
+    expect(writes).toHaveLength(0)
+    expect(runInteractive).toHaveBeenCalledWith(
+      {
+        executable: "/opt/trellage/bin/trellage",
+        args: ["--profile", "claude-research", "Research the repository."],
+      },
+      { cwd: "/repo" },
+    )
   })
 
   it("preserves a non-zero interactive child exit code", async () => {

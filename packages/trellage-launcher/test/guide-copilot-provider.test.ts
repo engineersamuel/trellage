@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import type { ModelInfo, SessionConfig, CopilotClientOptions } from "@github/copilot-sdk"
@@ -12,9 +13,19 @@ import {
   type GuideModelSession,
 } from "../src/copilot-guide-provider.js"
 import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
-import type { GuideGenerateInput, GuideMatchInput, GuideRefineInput } from "../src/guide-provider.js"
+import type {
+  GuideGenerateInput,
+  GuideMatchInput,
+  GuideOptimizeInput,
+  GuideRefineInput,
+} from "../src/guide-provider.js"
 
-const prompts = { match: "MATCH SYSTEM PROMPT", generate: "GENERATE SYSTEM PROMPT", refine: "REFINE SYSTEM PROMPT" }
+const prompts = {
+  match: "MATCH SYSTEM PROMPT",
+  generate: "GENERATE SYSTEM PROMPT",
+  refine: "REFINE SYSTEM PROMPT",
+  optimize: "OPTIMIZE SYSTEM PROMPT",
+}
 
 const workingModel: ModelInfo = {
   id: "mai-code-1.1-flash",
@@ -215,6 +226,12 @@ const validRefineResponse = JSON.stringify({
   },
 })
 
+const optimizeInput: GuideOptimizeInput = {
+  targetTool: "codex",
+  profileRef: "native:cdx/hve",
+  candidates: JSON.parse(validGenerateResponse).candidates,
+}
+
 describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
   it("matches, validates against the entries' workflow index, and cleans up", async () => {
     let capturedClientOptions: CopilotClientOptions | undefined
@@ -312,6 +329,36 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     })
     expect(client.session?.disconnectCalls).toBe(1)
     expect(client.stopCalls).toBe(1)
+  })
+
+  it("invokes Prompt Master with only the approved skill enabled", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-prompt-master-test-"))
+    const skillDirectory = path.join(root, "prompt-master")
+    try {
+      await mkdir(skillDirectory)
+      await writeFile(path.join(skillDirectory, "SKILL.md"), "---\nname: prompt-master\n---\n")
+      const client = new FakeClient([workingModel], [message(validGenerateResponse)])
+      const provider = new CopilotGuideProvider({
+        prompts,
+        promptMasterSkillDirectory: skillDirectory,
+        clientFactory: () => client,
+      })
+
+      const result = await provider.optimize(optimizeInput)
+
+      expect(result.candidates).toHaveLength(3)
+      expect(client.createSessionCalls[0]).toMatchObject({
+        tools: [],
+        availableTools: [],
+        skillDirectories: [skillDirectory],
+        enableSkills: true,
+        systemMessage: { mode: "append", content: "OPTIMIZE SYSTEM PROMPT" },
+      })
+      expect(client.session?.prompts[0]).toMatch(/^\/prompt-master Optimize these prompts/u)
+      expect(client.session?.prompts[0]).toContain('"targetTool":"codex"')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it("honors a configured replace system message mode", async () => {

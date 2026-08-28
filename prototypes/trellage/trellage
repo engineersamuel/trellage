@@ -334,12 +334,10 @@ profile_compiler_is_fresh() {
 }
 
 # Host-side lifecycle commands (compiler bootstrap, profile lock refresh,
-# image builds) can run before the harness owns stdout. In `--output-format
-# jsonl` launches, stdout must contain only the harness's JSON stream, so
-# redirect such commands' stdout to stderr in that mode only; leave every
-# other output format untouched.
+# image builds) can run before the requested command owns stdout. Keep
+# machine-readable output streams free of npm and build status output.
 run_lifecycle_command() {
-  if [[ "$output_format" == jsonl ]]; then
+  if [[ "$output_format" == jsonl || "$mode" == compiler && "${trellage_arguments[0]}" == list ]]; then
     "$@" 1>&2
   else
     "$@"

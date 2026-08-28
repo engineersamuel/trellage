@@ -86,6 +86,20 @@ shell = "fish"
 packages = ["bash", "gh", "git"]
 `
 
+const headlongProfile = `
+schema = 1
+name = "headlong"
+description = "Headlong profile"
+skill_bundles = ["sandbox-common"]
+[harness]
+kind = "headlong"
+version = "latest"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "bash"
+packages = ["bash", "gh", "git"]
+`
+
 const writeProfile = async (root: string, directory: string, source: string): Promise<string> => {
   const profileDirectory = path.join(root, directory)
   await mkdir(profileDirectory, { recursive: true })
@@ -157,6 +171,7 @@ tools = { allow = ["search"], deny = ["delete"] }
   it.each([
     ["Copilot", copilotProfile, "/profiles/copilot-hve/profile.toml", "copilot", "gpt-5.6-sol"],
     ["Pi", piProfile, "/profiles/pi-oh-my-pi/profile.toml", "pi", "gpt-5.6-terra"],
+    ["Headlong", headlongProfile, "/profiles/headlong/profile.toml", "headlong", "claude-sonnet-5"],
   ])("projects the %s model", async (_label, source, profilePath, kind, expectedModel) => {
     const document = await Effect.runPromise(parseProfile(source, profilePath))
 

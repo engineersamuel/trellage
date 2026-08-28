@@ -65,7 +65,7 @@ cat >"$fake_bin/copilot" <<'EOF'
 set -euo pipefail
 
 if [[ "${1-}" == --version ]]; then
-  printf 'copilot %s\n' "${FAKE_COPILOT_VERSION:-1.0.80}"
+  printf 'copilot %s\n' "${FAKE_COPILOT_VERSION:-1.0.81}"
   exit 0
 fi
 
@@ -196,7 +196,7 @@ case "${1-} ${2-}" in
         fi
       done <"$installed"
     else
-      # Matches installed GitHub Copilot CLI 1.0.80 output: trailing period
+      # Matches installed GitHub Copilot CLI 1.0.81 output: trailing period
       # plus an install hint line, not the bare legacy string.
       printf 'No plugins installed.\n\n'
       printf "Use 'copilot plugin install <source>' to install a plugin.\n"
@@ -407,7 +407,7 @@ jq -e '
     "cost": false,
     "modelOverride": true,
     "effortOverride": false,
-    "testedHarnessVersion": "1.0.80"
+    "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.awesome | del(.headless)) == {
     "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
@@ -432,7 +432,7 @@ jq -e '
     "cost": false,
     "modelOverride": true,
     "effortOverride": false,
-    "testedHarnessVersion": "1.0.80"
+    "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.hve | del(.headless)) == {
     "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
@@ -458,7 +458,7 @@ jq -e '
     "cost": false,
     "modelOverride": true,
     "effortOverride": false,
-    "testedHarnessVersion": "1.0.80"
+    "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.plannotator | del(.headless)) == {
     "description": "GitHub Copilot CLI with Effective HTML’s six focused skills for visual artifacts, wireframes, interactive prototypes, plans, and diagrams.",
@@ -493,7 +493,7 @@ jq -e '
     "cost": false,
     "modelOverride": true,
     "effortOverride": false,
-    "testedHarnessVersion": "1.0.80"
+    "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.superpowers | del(.headless)) == {
     "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
@@ -886,7 +886,7 @@ jq -e '
     "cost": false,
     "modelOverride": true,
     "effortOverride": false,
-    "testedHarnessVersion": "1.0.80"
+    "testedHarnessVersion": "1.0.81"
   }
   and .profiles[1].headless == .profiles[0].headless
   and .profiles[2].headless == .profiles[0].headless
@@ -913,24 +913,8 @@ jq -e '
 
 FAKE_COPILOT_VERSION=1.0.81 "$launcher" list --json >"$fixture_root/list-drift.json"
 jq -e '
-  all(.profiles[]; .headless == {
-    "schemaVersion": 1,
-    "prompt": false,
-    "outputFormats": ["text"],
-    "eventContract": null,
-    "trellageEventContract": null,
-    "sessionId": "none",
-    "resume": false,
-    "resumeWithPrompt": false,
-    "questionToolControl": "none",
-    "changedFiles": "none",
-    "usage": false,
-    "cost": false,
-    "modelOverride": false,
-    "effortOverride": false,
-    "testedHarnessVersion": null
-  })
-' "$fixture_root/list-drift.json" >/dev/null || fail 'drifted JSON list output differs'
+  all(.profiles[]; .headless.prompt == true and .headless.testedHarnessVersion == "1.0.81")
+' "$fixture_root/list-drift.json" >/dev/null || fail 'Copilot 1.0.81 prompt capability was not published'
 [[ "$(wc -l <"$fake_copilot_log" | tr -d ' ')" == "$before_list_calls" ]] \
   || fail 'list invoked Copilot'
 

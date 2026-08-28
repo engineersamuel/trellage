@@ -22,7 +22,10 @@ workflows:
   examples:
   - /hyperresearch compare Postgres and CockroachDB for a multi-region OLTP workload
   promptTemplate: |
-    /hyperresearch {{intent}}
+    /hyperresearch Research the evidence that should inform this request before implementation: {{intent}}
+
+    Find relevant prior art and source-backed evidence, identify unresolved questions and risks,
+    compare implementation options, and explain how the findings should change the approach.
 - id: last-30-days-pulse
   description: Pull recency-scored takes on a topic from the last ~30 days across social and community
     sources.

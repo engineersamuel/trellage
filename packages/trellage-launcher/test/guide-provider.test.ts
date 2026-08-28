@@ -12,14 +12,17 @@ import {
 import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
 
 const workflowIndex = new Map<string, ReadonlySet<string>>([
-  ["native:cdx/pstack", new Set(["review", "plan"])],
+  ["native:cpx/plannotator", new Set(["visual-artifact"])],
   ["sandbox:prime-agent", new Set(["review"])],
   ["sandbox:other", new Set(["build"])],
+  ["native:cdx/pstack", new Set(["poteto-mode-entry-point"])],
+  ["sandbox:headlong", new Set(["persistent-investigation"])],
+  ["native:cdx/superpowers", new Set(["systematic-debugging"])],
 ])
 
 const validMatchCandidate = (overrides: Partial<Record<string, unknown>> = {}) => ({
-  profileRef: "native:cdx/pstack",
-  workflowId: "review",
+  profileRef: "native:cpx/plannotator",
+  workflowId: "visual-artifact",
   confidence: 0.9,
   reason: "Strong fit for reviewing diffs.",
   tradeoff: "Requires a local git checkout.",
@@ -34,15 +37,38 @@ const validMatchResult = () => ({
   ],
 })
 
+const validFiveMatchResult = () => ({
+  candidates: [
+    validMatchCandidate({ confidence: 0.95 }),
+    validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review", confidence: 0.85 }),
+    validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build", confidence: 0.75 }),
+    validMatchCandidate({
+      profileRef: "native:cdx/pstack",
+      workflowId: "poteto-mode-entry-point",
+      confidence: 0.65,
+    }),
+    validMatchCandidate({
+      profileRef: "sandbox:headlong",
+      workflowId: "persistent-investigation",
+      confidence: 0.55,
+    }),
+  ],
+})
+
 describe("validateGuideMatchResult", () => {
-  it("accepts exactly three unique, known-reference candidates", () => {
+  it("accepts three unique, known-reference candidates from an older cached response", () => {
     const result = validateGuideMatchResult(validMatchResult(), workflowIndex)
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:cdx/pstack",
+      "native:cpx/plannotator",
       "sandbox:prime-agent",
       "sandbox:other",
     ])
+  })
+
+  it("accepts five unique, known-reference candidates", () => {
+    const result = validateGuideMatchResult(validFiveMatchResult(), workflowIndex)
+    expect(result.candidates).toHaveLength(5)
   })
 
   it("rejects fewer than three candidates", () => {
@@ -50,11 +76,15 @@ describe("validateGuideMatchResult", () => {
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
   })
 
-  it("rejects more than three candidates", () => {
+  it("rejects more than five candidates", () => {
     const result = {
       candidates: [
-        ...validMatchResult().candidates,
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build" }),
+        ...validFiveMatchResult().candidates,
+        validMatchCandidate({
+          profileRef: "native:cdx/superpowers",
+          workflowId: "systematic-debugging",
+          confidence: 0.45,
+        }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)

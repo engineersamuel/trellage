@@ -9,6 +9,7 @@ import {
   isClaudeProfile,
   isCodexProfile,
   isCopilotProfile,
+  isHeadlongProfile,
   isPiProfile,
   isPrimeProfile,
   parseProfile,
@@ -89,7 +90,7 @@ interface DiscoveredProfile {
 
 // Each projector reports whether its harness matched (Some) with the model
 // resolved from that harness (including Copilot's default), or that it did
-// not match (None). Headlong has no projector, so it falls through to None.
+// not match (None).
 const codexModel = (profile: Profile): Option.Option<string> =>
   isCodexProfile(profile) ? Option.some(profile.harness.codex.model) : Option.none()
 
@@ -105,12 +106,16 @@ const piModel = (profile: Profile): Option.Option<string> =>
 const primeModel = (profile: Profile): Option.Option<string> =>
   isPrimeProfile(profile) ? Option.some(profile.harness.prime.model) : Option.none()
 
+const headlongModel = (profile: Profile): Option.Option<string> =>
+  isHeadlongProfile(profile) ? Option.some("claude-sonnet-5") : Option.none()
+
 const modelProjectors: ReadonlyArray<(profile: Profile) => Option.Option<string>> = [
   codexModel,
   copilotModel,
   claudeModel,
   piModel,
   primeModel,
+  headlongModel,
 ]
 
 const model = (profile: Profile): string | undefined =>

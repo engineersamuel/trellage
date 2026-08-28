@@ -104,7 +104,7 @@ jq -e '
   and .capabilitySchemaVersion == 1
   and ([.contracts[].id] | sort) == [
     "native-claude-2.1.233",
-    "native-copilot-1.0.80",
+    "native-copilot-1.0.81",
     "native-omp-copilot-17.2.12",
     "sandbox-claude-core-2.1.229",
     "sandbox-claude-hyperresearch-2.1.229",

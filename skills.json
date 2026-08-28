@@ -157,6 +157,10 @@
       "adapter": "omp-native",
       "select": ["semantic-compression", "system-prompts", "tool-prompt-optimization"],
       "allowExecutables": true
+    },
+    "prompt-master": {
+      "repository": "https://github.com/nidhinjs/prompt-master.git",
+      "select": ["prompt-master"]
     }
   },
   "bundles": {
@@ -167,6 +171,7 @@
     "claude-frontend-design": ["impeccable", "emil-design", "hyperframes"],
     "claude-research": ["last30days"],
     "omp-community": ["dsebban-omp", "cursor-pstack"],
-    "pi-oh-my-pi": ["omp-native"]
+    "pi-oh-my-pi": ["omp-native"],
+    "guide-prompt-master": ["prompt-master"]
   }
 }

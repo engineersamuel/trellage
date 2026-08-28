@@ -5,13 +5,20 @@ import { describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
-import { literalGuideMatch, templatePromptCandidates, type GuideRecommendation } from "../src/guide-api.js"
+import {
+  GuideEffort,
+  literalGuideMatch,
+  templatePromptCandidates,
+  type GuideRecommendation,
+} from "../src/guide-api.js"
 import type {
   GuideGenerateCandidate,
   GuideGenerateInput,
   GuideGenerateResult,
   GuideMatchInput,
   GuideMatchResult,
+  GuideOptimizeInput,
+  GuideOptimizeResult,
   GuideProvider,
   GuideRefineInput,
   GuideRefineResult,
@@ -20,27 +27,44 @@ import type { SelectedGuideDocument } from "../src/guide-selected.js"
 import type { GitInspectionReady, HerdrContext, SelectedProfile, WorktreeCollisionResult } from "../src/guide-launch.js"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "../src/guide-preflight.js"
 import {
+  GuideGenerationPhase,
+  GuideMatchPhase,
+  GuidePinnedLensKind,
   GuideUiActionType,
   GuideUiDestination,
   GuideUiStage,
+  GuideWizardStep,
   buildCancelResult,
   buildCurrentHerdrWorkspaceResult,
   buildCurrentTerminalResult,
   buildExistingHerdrWorktreeResult,
   buildNewHerdrWorktreeResult,
   buildPrintResult,
+  candidatePaneHeight,
+  candidateRailWidth,
+  compactCommandPreview,
   createInitialGuideUiState,
   describeGuideUiError,
   destinationOptions,
   enrichLiteralCandidate,
+  generationProgressItems,
   guideUiReducer,
   isWithinTextBound,
   isWorktreeConfirmed,
   literalGuideRecommendations,
+  matchProgressItems,
+  pinnedGuideLenses,
   requiredWorktreeConfirmations,
   runGuideGenerationStep,
+  runGuideMatchingStep,
   runGuideRefinementStep,
+  selectedProfileForPinnedLens,
+  spinnerFrameAt,
+  spinnerMessageAt,
+  summarizeGenerationIntent,
   templateGuideCandidates,
+  wizardStepForStage,
+  wizardBreadcrumbLabel,
   worktreeDirtyWarning,
   type GuideUiAction,
   type GuideUiState,
@@ -143,6 +167,56 @@ const guidePlanner: ProfileGuideV1 = {
   ],
 }
 
+const guideCouncil: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["multi-perspective-deliberation"],
+  bestFor: ["Pressure-testing ideas"],
+  avoidFor: ["Quick factual lookups"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "run-council-deliberation",
+      description: "Pressure-test an idea and its implementation.",
+      skill: "council",
+      examples: ["Pressure-test this architecture"],
+      promptTemplate: "/council Pressure-test this idea and its implementation: {{intent}}",
+    },
+  ],
+}
+
+const guideResearch: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["bounded-factual-research"],
+  bestFor: ["Source-backed research"],
+  avoidFor: ["Pure implementation"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "vault-backed-research",
+      description: "Research evidence before implementation.",
+      skill: "hyperresearch",
+      examples: ["Research this implementation approach"],
+      promptTemplate: "/hyperresearch Research this request before implementation: {{intent}}",
+    },
+  ],
+}
+
+const guideHve: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["research-plan-implement-review-workflow"],
+  bestFor: ["Durable RPI delivery"],
+  avoidFor: ["One-line edits"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "rpi-agent-cycle",
+      description: "Run the dedicated HVE Core RPI agent.",
+      examples: ["Take this feature through the full RPI cycle"],
+      promptTemplate: "Research, plan, implement, and review: {{intent}}",
+    },
+  ],
+}
+
 /** Builds a 3-entry catalog (2 native, 1 sandbox), rooted at `tmpRoot` for the sandbox profile path. */
 const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
   parseGuideCatalog(
@@ -195,6 +269,70 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
       ],
     }),
   )
+
+const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => {
+  const catalog = buildCatalog(tmpRoot)
+  const sandboxEntry = (
+    name: string,
+    description: string,
+    guide: ProfileGuideV1,
+  ): CombinedGuideCatalog["sandbox"][number] => ({
+    name,
+    description,
+    guide,
+    path: path.join(tmpRoot, "profiles", name, "profile.toml"),
+    supportedPlatforms: ["linux/amd64"],
+    harness: { kind: "claude", version: "1.0.0" },
+    skillBundles: ["sandbox-common"],
+    skillsMode: "floating",
+    finalDigestLocked: false,
+    skills: [],
+    plugins: [],
+    mcps: [],
+    sandbox: true,
+    headless: {
+      schemaVersion: 1,
+      prompt: true,
+      outputFormats: ["json"],
+      eventContract: null,
+      trellageEventContract: null,
+      sessionId: "trellage",
+      resume: true,
+      resumeWithPrompt: true,
+      questionToolControl: "hard-deny",
+      changedFiles: "git-diff",
+      usage: true,
+      cost: true,
+      modelOverride: false,
+      effortOverride: false,
+      testedHarnessVersion: null,
+    },
+    locked: false,
+    herdrCompatibility: { status: "supported" },
+  })
+  return {
+    ...catalog,
+    native: [
+      ...catalog.native,
+      {
+        launcher: "cpx",
+        harness: "copilot",
+        name: "hve",
+        description: "Copilot with HVE Core.",
+        headless: catalog.native[0]!.headless,
+        sandbox: false,
+        herdrCompatibility: { status: "supported" },
+        guide: guideHve,
+        commandPath: "/opt/trellage/cpx/bin/cpx",
+      },
+    ],
+    sandbox: [
+      ...catalog.sandbox,
+      sandboxEntry("claude-council", "Council profile.", guideCouncil),
+      sandboxEntry("claude-research", "Research profile.", guideResearch),
+    ],
+  }
+}
 
 /** Writes the native "cdx/reviewer" guide Markdown fixture under `root`, matching `guideReviewer`. */
 const writeGuideFixtures = async (root: string): Promise<void> => {
@@ -298,6 +436,7 @@ class FakeGuideProvider implements GuideProvider {
   readonly matchCalls: Array<GuideMatchInput> = []
   readonly generateCalls: Array<GuideGenerateInput> = []
   readonly refineCalls: Array<GuideRefineInput> = []
+  readonly optimizeCalls: Array<GuideOptimizeInput> = []
 
   constructor(
     private readonly generateResult: GuideGenerateResult = { candidates: candidateTriple() },
@@ -318,6 +457,11 @@ class FakeGuideProvider implements GuideProvider {
     this.refineCalls.push(input)
     return this.refineResult
   }
+
+  async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
+    this.optimizeCalls.push(input)
+    return { candidates: input.candidates }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +479,7 @@ describe("createInitialGuideUiState", () => {
     const state = createInitialGuideUiState("Review my last commit")
     expect(state.stage).toBe(GuideUiStage.Matching)
     expect(state.intent).toBe("Review my last commit")
+    expect(state.matchPhase).toBe(GuideMatchPhase.LoadingProfiles)
   })
 
   it("ignores a blank/whitespace-only initial intent", () => {
@@ -402,6 +547,22 @@ describe("guideUiReducer: intent and match", () => {
     expect(state.stage).toBe(GuideUiStage.Recommendations)
     expect(state.usedLiteralFallback).toBe(false)
     expect(state.recommendationIndex).toBe(0)
+    expect(state.matchPhase).toBeUndefined()
+  })
+
+  it("tracks high-level profile matching progress", () => {
+    let state = createInitialGuideUiState("Review my PR")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchProgress,
+      phase: GuideMatchPhase.ComparingProfiles,
+    })
+    expect(state.matchPhase).toBe(GuideMatchPhase.ComparingProfiles)
+
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchProgress,
+      phase: GuideMatchPhase.PreparingRecommendations,
+    })
+    expect(state.matchPhase).toBe(GuideMatchPhase.PreparingRecommendations)
   })
 
   it("match/retry moves MatchFailed -> Matching and clears the error", () => {
@@ -462,7 +623,50 @@ describe("guideUiReducer: recommendations and generation", () => {
     expect(state.stage).toBe(GuideUiStage.Generating)
     expect(state.selectedRecommendation).toEqual(recommendations[1])
     expect(state.selectedProfile).toBe(selectedProfile)
+    expect(state.generationPhase).toBe(GuideGenerationPhase.LoadingProfile)
     expect(state.candidates).toBeUndefined()
+  })
+
+  it("tracks high-level generation progress without exposing model output", () => {
+    let state = recommendationsState()
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateProgress,
+      phase: GuideGenerationPhase.GeneratingCandidates,
+    })
+    expect(state.generationPhase).toBe(GuideGenerationPhase.GeneratingCandidates)
+
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateProgress,
+      phase: GuideGenerationPhase.OptimizingCandidates,
+    })
+    expect(state.generationPhase).toBe(GuideGenerationPhase.OptimizingCandidates)
+  })
+
+  it("recommendations/confirm can select a pinned lens outside the ranked recommendation list", () => {
+    const pinned = pinnedGuideLenses(buildCatalogWithPinnedLenses("/tmp-unused"))[0]
+    expect(pinned).toBeDefined()
+    if (pinned === undefined) throw new Error("Missing pinned council lens")
+
+    let state = recommendationsState()
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: {
+        surface: "sandbox",
+        commandPath: "/opt/trellage/bin/trellage",
+        profile: "claude-council",
+        headlessPrompt: true,
+      },
+      recommendation: pinned.recommendation,
+    })
+
+    expect(state.stage).toBe(GuideUiStage.Generating)
+    expect(state.selectedRecommendation?.profileRef).toBe("sandbox:claude-council")
+    expect(state.selectedRecommendation?.workflowId).toBe("run-council-deliberation")
   })
 
   it("generate/failed moves Generating -> GenerateFailed with the safe message", () => {
@@ -499,6 +703,9 @@ describe("guideUiReducer: recommendations and generation", () => {
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateFailed, message: "boom" })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateBack })
     expect(state.stage).toBe(GuideUiStage.Recommendations)
+    expect(state.selectedRecommendation).toBeUndefined()
+    expect(state.selectedProfile).toBeUndefined()
+    expect(state.guideDocument).toBeUndefined()
   })
 
   it("generate/succeeded moves Generating -> Candidates with usedTemplateFallback false", () => {
@@ -589,6 +796,25 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     let state = candidatesState()
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesMove, delta: -1 })
     expect(state.candidateIndex).toBe(2)
+  })
+
+  it("candidates/back returns to profile selection and clears generated state so confirmation regenerates prompts", () => {
+    let state = candidatesState()
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesBack })
+    expect(state.stage).toBe(GuideUiStage.Recommendations)
+    expect(state.selectedRecommendation).toBeUndefined()
+    expect(state.selectedProfile).toBeUndefined()
+    expect(state.guideDocument).toBeUndefined()
+    expect(state.candidates).toBeUndefined()
+    expect(state.candidateIndex).toBe(0)
+    expect(state.selectedCandidate).toBeUndefined()
+
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    expect(state.stage).toBe(GuideUiStage.Generating)
+    expect(state.candidates).toBeUndefined()
   })
 
   it("candidates/confirm selects the candidate at the current index and moves to CheckingReadiness", () => {
@@ -712,6 +938,37 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
 // against a real fake provider (and real loadSelectedGuide via a fixture).
 // ---------------------------------------------------------------------------
 
+describe("runGuideMatchingStep", () => {
+  it("reports concise matching phases around the model-backed profile comparison", async () => {
+    const catalog = buildCatalog("/tmp-unused")
+    const phases: GuideMatchPhase[] = []
+    const provider: GuideProvider = {
+      match: async () => ({
+        candidates: recommendationTriple().map(({ profileRef, workflowId, confidence, reason, tradeoff }) => ({
+          profileRef,
+          workflowId,
+          confidence,
+          reason,
+          tradeoff,
+        })),
+      }),
+      generate: () => Promise.reject(new Error("generate must not be called during matching")),
+      refine: () => Promise.reject(new Error("refine must not be called during matching")),
+      optimize: () => Promise.reject(new Error("optimize must not be called during matching")),
+    }
+
+    const response = await runGuideMatchingStep(
+      provider,
+      catalog,
+      { intent: "Review my PR", model: "test-model", effort: GuideEffort.Medium },
+      (phase) => phases.push(phase),
+    )
+
+    expect(response.recommendations).toHaveLength(3)
+    expect(phases).toEqual([GuideMatchPhase.ComparingProfiles, GuideMatchPhase.PreparingRecommendations])
+  })
+})
+
 describe("runGuideGenerationStep", () => {
   it("loads only the selected guide and calls provider.generate with the recommendation's own workflow and body, never match", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-"))
@@ -721,10 +978,26 @@ describe("runGuideGenerationStep", () => {
       const provider = new FakeGuideProvider()
       const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
 
-      const result = await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)
+      const phases: GuideGenerationPhase[] = []
+      const result = await runGuideGenerationStep(
+        catalog,
+        tmpRoot,
+        provider,
+        "Review my PR",
+        chosen,
+        undefined,
+        (phase) => phases.push(phase),
+      )
 
       expect(provider.matchCalls).toHaveLength(0)
       expect(provider.generateCalls).toHaveLength(1)
+      expect(provider.optimizeCalls).toEqual([
+        {
+          targetTool: "codex",
+          profileRef: "native:cdx/reviewer",
+          candidates: candidateTriple(),
+        },
+      ])
       expect(provider.generateCalls[0]).toEqual({
         intent: "Review my PR",
         profileRef: "native:cdx/reviewer",
@@ -734,6 +1007,11 @@ describe("runGuideGenerationStep", () => {
       })
       expect(result.candidates).toEqual(candidateTriple())
       expect(result.guideDocument.guide).toEqual(guideReviewer)
+      expect(phases).toEqual([
+        GuideGenerationPhase.GeneratingCandidates,
+        GuideGenerationPhase.ApplyingWorkflow,
+        GuideGenerationPhase.OptimizingCandidates,
+      ])
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }
@@ -765,6 +1043,7 @@ describe("runGuideGenerationStep", () => {
         match: () => Promise.reject(new Error("match must not be called during generation")),
         generate: () => Promise.reject(new Error("model unavailable")),
         refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: () => Promise.reject(new Error("optimize must not be called after failed generation")),
       }
       let loaded: SelectedGuideDocument | undefined
       const onGuideLoaded = (guideDocument: SelectedGuideDocument) => {
@@ -797,6 +1076,7 @@ describe("runGuideRefinementStep", () => {
     const prior = candidate({ title: "Focused", prompt: "Do the focused thing.", notes: "Quick pass." })
 
     const refined = await runGuideRefinementStep(
+      buildCatalog("/tmp-unused"),
       provider,
       "Review my PR",
       chosen,
@@ -808,6 +1088,13 @@ describe("runGuideRefinementStep", () => {
     expect(provider.matchCalls).toHaveLength(0)
     expect(provider.generateCalls).toHaveLength(0)
     expect(provider.refineCalls).toHaveLength(1)
+    expect(provider.optimizeCalls).toEqual([
+      {
+        targetTool: "codex",
+        profileRef: "native:cdx/reviewer",
+        candidates: [{ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." }],
+      },
+    ])
     expect(provider.refineCalls[0]).toEqual({
       intent: "Review my PR",
       profileRef: "native:cdx/reviewer",
@@ -842,6 +1129,7 @@ describe("runGuideRefinementStep", () => {
     }
 
     const refined = await runGuideRefinementStep(
+      buildCatalog("/tmp-unused"),
       provider,
       "Write about AI agents",
       chosen,
@@ -866,13 +1154,10 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
     const literalCandidates = literalGuideMatch(catalog, "Review my last commit")
 
     expect(recommendations).toHaveLength(3)
-    const [firstRec, secondRec, thirdRec] = recommendations
-    const [firstLiteral, secondLiteral, thirdLiteral] = literalCandidates
-    for (const [rec, literal] of [
-      [firstRec, firstLiteral],
-      [secondRec, secondLiteral],
-      [thirdRec, thirdLiteral],
-    ] as const) {
+    for (const [index, rec] of recommendations.entries()) {
+      const literal = literalCandidates[index]
+      expect(literal).toBeDefined()
+      if (literal === undefined) throw new Error(`Missing literal candidate at index ${index}`)
       expect(rec.profileRef).toBe(literal.profileRef)
       expect(rec.workflowId).toBe(literal.workflowId)
       expect(rec.confidence).toBe(literal.confidence)
@@ -894,6 +1179,58 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
         expect(rec.harness).toBe(entry?.harness.kind)
       }
     }
+  })
+
+  describe("pinnedGuideLenses", () => {
+    it("pins council, research, and the HVE RPI agent with visible lens metadata", () => {
+      const lenses = pinnedGuideLenses(buildCatalogWithPinnedLenses("/tmp-unused"))
+
+      expect(lenses.map(({ kind, key, emoji, recommendation }) => ({
+        kind,
+        key,
+        emoji,
+        profileRef: recommendation.profileRef,
+        workflowId: recommendation.workflowId,
+      }))).toEqual([
+        {
+          kind: "council",
+          key: "c",
+          emoji: "🧠",
+          profileRef: "sandbox:claude-council",
+          workflowId: "run-council-deliberation",
+        },
+        {
+          kind: "research",
+          key: "r",
+          emoji: "🔎",
+          profileRef: "sandbox:claude-research",
+          workflowId: "vault-backed-research",
+        },
+        {
+          kind: "hve-rpi",
+          key: "h",
+          emoji: "🔄",
+          profileRef: "native:cpx/hve",
+          workflowId: "rpi-agent-cycle",
+        },
+      ])
+    })
+
+    it("selects the pinned HVE lens with its validated Copilot agent override", () => {
+      const catalog = buildCatalogWithPinnedLenses("/tmp-unused")
+      const lens = pinnedGuideLenses(catalog).find(({ kind }) => kind === GuidePinnedLensKind.HveRpi)
+      expect(lens).toBeDefined()
+      if (lens === undefined) throw new Error("Missing pinned HVE RPI lens")
+
+      expect(selectedProfileForPinnedLens(catalog, lens)).toEqual({
+        surface: "native",
+        launcher: "cpx",
+        commandPath: "/opt/trellage/cpx/bin/cpx",
+        profile: "hve",
+        headlessPrompt: true,
+        agent: "hve-core:rpi-agent",
+      })
+    })
   })
 
   it("enrichLiteralCandidate throws a safe error for an unknown profile reference", () => {
@@ -971,6 +1308,79 @@ describe("destinationOptions", () => {
     expect(destinationOptions(false)).toEqual([GuideUiDestination.CurrentTerminal])
   })
 
+  describe("wizardStepForStage", () => {
+    it("maps the interactive flow to profile, prompt candidate, and destination steps", () => {
+      expect(wizardStepForStage(GuideUiStage.Intent)).toBeUndefined()
+      expect(wizardStepForStage(GuideUiStage.Recommendations)).toBe(GuideWizardStep.Profile)
+      expect(wizardStepForStage(GuideUiStage.Generating)).toBe(GuideWizardStep.PromptCandidates)
+      expect(wizardStepForStage(GuideUiStage.Candidates)).toBe(GuideWizardStep.PromptCandidates)
+      expect(wizardStepForStage(GuideUiStage.Destination)).toBe(GuideWizardStep.Destination)
+      expect(wizardStepForStage(GuideUiStage.WorktreeReady)).toBe(GuideWizardStep.Destination)
+    })
+
+    describe("spinner helpers", () => {
+      it("cycles animated frames and contextual messages deterministically", () => {
+        expect(spinnerFrameAt(0)).toBe("⠋")
+        expect(spinnerFrameAt(10)).toBe("⠋")
+        expect(spinnerMessageAt(["first", "second"], 0)).toBe("first")
+        expect(spinnerMessageAt(["first", "second"], 15)).toBe("second")
+        expect(spinnerMessageAt(["first", "second"], 30)).toBe("first")
+        expect(spinnerMessageAt([], 0)).toBeUndefined()
+      })
+
+      it("labels breadcrumb numbers explicitly as steps", () => {
+        expect(wizardBreadcrumbLabel(0, "Profile", true)).toBe("✓ Step 1: Profile")
+        expect(wizardBreadcrumbLabel(1, "Prompt candidates", false)).toBe("Step 2: Prompt candidates")
+        expect(wizardBreadcrumbLabel(2, "Destination", false)).toBe("Step 3: Destination")
+      })
+
+      it("describes generation as concise user-facing processing steps", () => {
+        const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+        expect(generationProgressItems(chosen)).toEqual([
+          { phase: GuideGenerationPhase.LoadingProfile, label: "Read Reviewer guidance" },
+          {
+            phase: GuideGenerationPhase.GeneratingCandidates,
+            label: "Draft three profile-specific approaches",
+          },
+          { phase: GuideGenerationPhase.ApplyingWorkflow, label: "Apply the review workflow" },
+          {
+            phase: GuideGenerationPhase.OptimizingCandidates,
+            label: "Improve clarity and completeness with Prompt Master",
+          },
+        ])
+        expect(summarizeGenerationIntent("  Review\nmy   pull request  ", 40)).toBe("Review my pull request")
+        expect(summarizeGenerationIntent("A request that is too long", 12)).toBe("A request t…")
+      })
+
+      it("describes matching as concise user-facing processing steps", () => {
+        expect(matchProgressItems(12)).toEqual([
+          {
+            phase: GuideMatchPhase.LoadingProfiles,
+            label: "Read 12 available profiles and their workflows",
+          },
+          {
+            phase: GuideMatchPhase.ComparingProfiles,
+            label: "Compare the request with capabilities and trade-offs",
+          },
+          {
+            phase: GuideMatchPhase.PreparingRecommendations,
+            label: "Prepare the ranked profile choices",
+          },
+        ])
+      })
+
+      it("bounds the split candidate layout to the terminal viewport", () => {
+        expect(candidatePaneHeight(24)).toBe(16)
+        expect(candidatePaneHeight(10)).toBe(6)
+        expect(candidateRailWidth(100)).toBe(30)
+        expect(candidateRailWidth(60)).toBe(20)
+        expect(compactCommandPreview("cpx hve -i 'line one\nline two'")).toBe(
+          "cpx hve -i 'line one line two'",
+        )
+      })
+    })
+  })
+
   it("offers all three destinations, in order, when Herdr is enabled", () => {
     expect(destinationOptions(true)).toEqual([
       GuideUiDestination.CurrentTerminal,
@@ -981,10 +1391,43 @@ describe("destinationOptions", () => {
 })
 
 describe("buildCurrentTerminalResult: headless gating", () => {
-  it("uses -p with the prompt when the selected profile's headless.prompt is true", () => {
-    const result = buildCurrentTerminalResult(nativeSelectedProfile(true), "Do the thing.", "/repo")
+  it("uses Copilot interactive prompt delivery when the selected cpx profile supports prompts", () => {
+    const result = buildCurrentTerminalResult(
+      {
+        surface: "native",
+        launcher: "cpx",
+        commandPath: "/opt/trellage/cpx/bin/cpx",
+        profile: "plannotator",
+        headlessPrompt: true,
+      },
+      "Do the thing.",
+      "/repo",
+    )
     expect(result.action).toBe("current-terminal")
-    expect(result.command.args).toEqual(["reviewer", "-p", "Do the thing."])
+    expect(result.command.args).toEqual(["plannotator", "-i", "Do the thing."])
+    expect(result.promptHandling).toBe("argv")
+  })
+
+  it("passes a pinned Copilot agent before the interactive prompt", () => {
+    const result = buildCurrentTerminalResult(
+      {
+        surface: "native",
+        launcher: "cpx",
+        commandPath: "/opt/trellage/cpx/bin/cpx",
+        profile: "hve",
+        headlessPrompt: true,
+        agent: "hve-core:rpi-agent",
+      },
+      "Build the feature through the full RPI cycle.",
+      "/repo",
+    )
+    expect(result.command.args).toEqual([
+      "hve",
+      "--agent",
+      "hve-core:rpi-agent",
+      "-i",
+      "Build the feature through the full RPI cycle.",
+    ])
     expect(result.promptHandling).toBe("argv")
   })
 
@@ -992,6 +1435,21 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(nativeSelectedProfile(false), "Do the thing.", "/repo")
     expect(result.command.args).toEqual(["reviewer"])
     expect(result.promptHandling).toBe("manual-paste")
+  })
+
+  it("passes the prompt to an interactive Sandbox launch without requiring headless support", () => {
+    const result = buildCurrentTerminalResult(
+      {
+        surface: "sandbox",
+        commandPath: "/opt/trellage/bin/trellage",
+        profile: "claude-research",
+        headlessPrompt: false,
+      },
+      "Research the repository.",
+      "/repo",
+    )
+    expect(result.command.args).toEqual(["--profile", "claude-research", "Research the repository."])
+    expect(result.promptHandling).toBe("argv")
   })
 })
 
