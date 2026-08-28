@@ -3618,10 +3618,10 @@ sha256 = "sha256:c1a8044460ce5de92f155a631cf5eb6d683ee5d950816e741f2f9b068255c99
 [packages.harness]
 kind = "claude"
 selector = "latest"
-version = "2.1.247"
-integrity = "sha256:4ef57315cff1d3cbfb2ef5e28f9e8560bafc76149b6798c227ec431f2e9018ad"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.247/claude-linux-arm64.tar.gz"
-size = 101459149
+version = "2.1.250"
+integrity = "sha256:3707880f19eeb575d0a4002b6f136c2e4c827d5a8867c468a3da28977b02591e"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.250/claude-linux-arm64.tar.gz"
+size = 94149653
 
 [[packages.runtime]]
 name = "bash"

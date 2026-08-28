@@ -9,12 +9,12 @@ adapter = "headlong"
 repository = "https://github.com/laude-institute/headlong.git"
 ref = "main"
 select = []
-commit = "15f20b4b991ec36ae88039058c765ef526fe14da"
-integrity = "sha256:362b4886057770e9c459e60294e3dac359596149836bfbc15c646c423b8e80ff"
+commit = "f8e1f228ef842df51caa499cd3727e8a0cb2aec3"
+integrity = "sha256:28fd19c68117bbe464e08f85ecba9058121431dbdc3ddd42896216c81ad2d767"
 
 [[sources.files]]
 path = ".github/workflows/ci.yml"
-sha256 = "sha256:e2d6b601e5d5f7ff4d9aae0ca3e903cb0ce5833b75926d95522d4bbdc53cac00"
+sha256 = "sha256:3d9091a09fc0ab923e662dad3cdd2fbee190e1ff782ecb5c1fbedac08099b203"
 
 [[sources.files]]
 path = ".gitignore"
@@ -50,7 +50,7 @@ executable = true
 
 [[sources.files]]
 path = "bin/llm"
-sha256 = "sha256:e03bcae8e8bf0868e647286bf731555247a5cdee30ba1558aab13c6d01384574"
+sha256 = "sha256:71c275ffcd8ca904d38db1bb5804880b18530cfc83aa324899561ab0d2b75032"
 executable = true
 
 [[sources.files]]
@@ -74,7 +74,7 @@ executable = true
 
 [[sources.files]]
 path = "bin/shellm"
-sha256 = "sha256:0bb150a399a8bbcc22ce803997422c90da28d097d36bf724fd24b0d7b4ce4b99"
+sha256 = "sha256:0b9a4e141a897d01e6ff0b23e8fcbceef2a78bdd30c112cdaa1146340a4fd297"
 executable = true
 
 [[sources.files]]
@@ -425,6 +425,10 @@ path = "design/porting-shelly-to-be-headlong-like.md"
 sha256 = "sha256:14c273e259469b58f18048d435fd4e5115af5d8eb67a78ef89c161b9fba2b4f2"
 
 [[sources.files]]
+path = "design/providers.md"
+sha256 = "sha256:3c5942fa0f23722b835a88d350fd7ff778e61a89238f9ef1c183b8216b363d41"
+
+[[sources.files]]
 path = "design/README.md"
 sha256 = "sha256:01ba87c8fc318da3bbe97809c112751c4ffdd369050404e75b8ca47bf039016a"
 
@@ -470,7 +474,7 @@ sha256 = "sha256:e79784c431ffb248e429cf4838f126d7dccb2ac3c8a1aa0cf09dc64f27a8052
 
 [[sources.files]]
 path = "docs/shellm.md"
-sha256 = "sha256:eeb6923753531aab9e8608a5428274b7a58ee9bd0a8f0822499e514e99159c3d"
+sha256 = "sha256:fc4d474a51299ba953a6fbe1ea7fe1954881e1bc6883c5aa9a92c09f7796ddb1"
 
 [[sources.files]]
 path = "identities/README.md"
@@ -507,11 +511,11 @@ sha256 = "sha256:bc66300433bbb1cc5ae8b0b8d4e13880f61ca255d8080ba5da68f77ed04fd40
 
 [[sources.files]]
 path = "philosophy.md"
-sha256 = "sha256:d2e466bc23927784cb29e79b056aedc2fe41b9b09d84fd5d386aeab50f215372"
+sha256 = "sha256:bb74e62fedfbf1616f8879b88696bb960fce097c040b5137711901632de1ab08"
 
 [[sources.files]]
 path = "README.md"
-sha256 = "sha256:359ba645c7f366d4c3f70f55b76c15209fd5b74e92b9a6d3a1849460a99e519a"
+sha256 = "sha256:718e1900f812db31653733dccf3da5995a0dddaba3f5e6b271236e9fac2ffd53"
 
 [[sources.files]]
 path = "skills/chat/SKILL.md"
@@ -928,6 +932,16 @@ sha256 = "sha256:23762e58596d6415eedae5dc491a91c9f770468f2cecb8269add542c456c484
 executable = true
 
 [[sources.files]]
+path = "tests/test_llm_adapter.sh"
+sha256 = "sha256:53420ab505f03dc101579bd3aec99e41ddb7c6aca837608bff65ad0d3757bb0a"
+executable = true
+
+[[sources.files]]
+path = "tests/test_llm_openai_compatible.sh"
+sha256 = "sha256:d2031c6e59db9aee3583d473692798b845a3db107c9bb50cdc7a13f86bba2484"
+executable = true
+
+[[sources.files]]
 path = "tests/test_llm_provider_env.sh"
 sha256 = "sha256:25941b72212c66b524f8e29daa351f2832652ed79f6aa2d4d877f0516b35d11c"
 executable = true
@@ -1038,7 +1052,7 @@ executable = true
 
 [[sources.files]]
 path = "thinkers/_lib/common.sh"
-sha256 = "sha256:332617d0dc154695bdf0dd13a9a8b86ea666b9a09d1c5ad9767465a7c6b20a18"
+sha256 = "sha256:e24a8291f17e2a4b6373309858a15152ce7cf426b6c0d72cd9b0a81f4695cd87"
 executable = true
 
 [[sources.files]]
@@ -1685,8 +1699,8 @@ sha256 = "sha256:cd1204f4c3353f5fbf7805be6d9b360a21eafe492c1ff7e2554d4a02dbad16f
 [packages.harness]
 kind = "headlong"
 selector = "latest"
-commit = "15f20b4b991ec36ae88039058c765ef526fe14da"
-integrity = "sha256:362b4886057770e9c459e60294e3dac359596149836bfbc15c646c423b8e80ff"
+commit = "f8e1f228ef842df51caa499cd3727e8a0cb2aec3"
+integrity = "sha256:28fd19c68117bbe464e08f85ecba9058121431dbdc3ddd42896216c81ad2d767"
 
 [[packages.runtime]]
 name = "bash"
