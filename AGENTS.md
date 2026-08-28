@@ -63,6 +63,7 @@ and `prx`.
 - `harnesses` contains comparison manifests consumed by `scripts/harness`.
 - `.agents` contains canonical cross-harness rules, hooks, and MCP configuration.
 - `.github` contains the GitHub Copilot instruction adapter and GitHub Actions workflow.
+- `pocs` contains standalone, self-contained proof-of-concept examples that are deliberately independent of the Trellage profile compiler and its contracts (each subfolder has its own README/Dockerfile/scripts and is not exercised by `make test`).
 
 ## GitHub delivery
 
