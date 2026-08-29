@@ -39,6 +39,7 @@ case "${1-}" in
     spec="${2-}"
     version="${spec#"$tool"@}"
     [[ "$spec" == "$tool@$version" && "$version" != "$spec" ]] || exit 91
+    [[ "${FAKE_MISE_INSTALL_FAIL_VERSION-}" != "$version" ]] || exit 93
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
     mkdir -p "$destination"
     # Current mise github backends rename the single extracted asset to the
@@ -190,13 +191,15 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
   || fail 'launch before explicit setup did not self-heal'
 [[ -f "$profile_root/.managed-by-trellage-jcode-profiles" ]] \
   || fail 'self-healed launch did not mark profile ownership'
-[[ "$(<"$runtime_root/version")" == 0.67.1 ]] \
-  || fail 'self-healed launch did not pin version'
-rm -rf "$profile_root" "$runtime_root/version"
+[[ "$(<"$runtime_root/installed-version")" == 0.67.1 ]] \
+  || fail 'self-healed launch did not record installed version'
+rm -rf "$profile_root" "$runtime_root/installed-version"
 : >"$FAKE_JCODE_LOG"
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
-[[ "$(<"$runtime_root/version")" == 0.67.1 ]] || fail 'setup did not pin version'
+[[ "$(<"$runtime_root/installed-version")" == 0.67.1 ]] \
+  || fail 'setup did not record installed version'
+[[ ! -e "$runtime_root/version" ]] || fail 'setup retained legacy version state'
 [[ -f "$profile_root/.managed-by-trellage-jcode-profiles" ]] \
   || fail 'setup did not mark profile ownership'
 [[ -d "$profile_home" && ! -L "$profile_home" ]] || fail 'profile home is unsafe'
@@ -219,6 +222,12 @@ grep -Fqx 'supports_reasoning_effort = true' "$profile_home/config.toml" \
   || fail 'managed config contains credential-shaped data'
 jq -e '.launch_count == 6' "$profile_home/setup_hints.json" >/dev/null \
   || fail 'setup did not skip first-run onboarding'
+
+mv "$runtime_root/installed-version" "$runtime_root/version"
+"$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
+  || fail 'doctor did not migrate the legacy version receipt'
+[[ "$(<"$runtime_root/installed-version")" == 0.67.1 && ! -e "$runtime_root/version" ]] \
+  || fail 'legacy version receipt migration differs'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
 jq -e '
@@ -245,8 +254,11 @@ jq -e '
 grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
+latest_calls_before="$(grep -c '^latest ' "$FAKE_MISE_LOG" || :)"
 "$command_path" default run 'two words' '' '--literal=*' \
   || fail 'explicit launch failed'
+[[ "$(grep -c '^latest ' "$FAKE_MISE_LOG" || :)" == "$latest_calls_before" ]] \
+  || fail 'ordinary launch resolved latest instead of reusing the receipt'
 jq -e --arg home "$profile_home" '
   .home == $home
   and .noTelemetry == "1"
@@ -312,9 +324,16 @@ FAKE_MISE_LATEST=0.68.0 "$command_path" update --check \
   >"$fixture_root/update-check.out" || fail 'update check failed'
 grep -Fq '0.67.1 -> 0.68.0 available' "$fixture_root/update-check.out" \
   || fail 'update check output differs'
+if FAKE_MISE_LATEST=0.68.0 FAKE_MISE_INSTALL_FAIL_VERSION=0.68.0 \
+  "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when mise failed'
+fi
+[[ "$(<"$runtime_root/installed-version")" == 0.67.1 ]] \
+  || fail 'failed update replaced installed version receipt'
 FAKE_MISE_LATEST=0.68.0 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
-[[ "$(<"$runtime_root/version")" == 0.68.0 ]] || fail 'update did not change pin'
+[[ "$(<"$runtime_root/installed-version")" == 0.68.0 ]] \
+  || fail 'update did not change installed version receipt'
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 
 mkdir -p "$fixture_root/unrelated-home/.local/share/trellage/profiles/jcode/default"

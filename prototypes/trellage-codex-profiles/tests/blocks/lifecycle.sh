@@ -1071,13 +1071,15 @@ for native_tree_case in HUP:129 INT:130 TERM:143; do
   track_async_pid "$native_tree_launcher_pid"
   set +m
   native_tree_wait=0
-  while [ ! -f "$native_tree_dir/ready" ] \
+  while { [ ! -f "$native_tree_dir/ready" ] \
+    || [ ! -f "$native_tree_dir/grandchild-ready" ]; } \
     && kill -0 "$native_tree_launcher_pid" 2>/dev/null \
     && [ "$native_tree_wait" -lt 400 ]; do
     sleep 0.05
     native_tree_wait=$((native_tree_wait + 1))
   done
   [ -f "$native_tree_dir/ready" ] \
+    && [ -f "$native_tree_dir/grandchild-ready" ] \
     || {
       cat "$native_tree_output" >&2 || :
       fail "$native_tree_signal native process tree did not start"

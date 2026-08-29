@@ -6,7 +6,6 @@ readonly provider='copilot-proxy-rs'
 readonly model_id='gpt-5.6-sol'
 readonly model_selector="$provider/$model_id:medium"
 readonly mise_tool='npm:@earendil-works/pi-coding-agent'
-readonly pinned_pi_version='0.84.2'
 readonly profile_marker_value='trellage-picx-profile-v2'
 
 die() {
@@ -50,7 +49,8 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
-readonly version_file="$runtime_root/version"
+readonly receipt_file="$runtime_root/installed-version"
+readonly legacy_version_file="$runtime_root/version"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
@@ -291,10 +291,12 @@ prepare_profile_directories() {
 }
 
 managed_settings() {
+  local version="$1"
+
   jq -S \
     --arg provider "$provider" \
     --arg model "$model_id" \
-    --arg version "$pinned_pi_version" '
+    --arg version "$version" '
     {
       defaultProvider: $provider,
       defaultModel: $model,
@@ -390,6 +392,7 @@ cleanup_profile_transaction() {
 }
 
 publish_managed_profile() {
+  local version="$1"
   local settings_stage models_stage mcp_stage marker_stage target
 
   prepare_profile_directories
@@ -402,7 +405,7 @@ publish_managed_profile() {
   models_stage="$(mktemp "$agent_root/.models.json.XXXXXX")"
   mcp_stage="$(mktemp "$agent_root/.mcp.json.XXXXXX")"
   marker_stage="$(mktemp "$profile_root/.profile-marker.XXXXXX")"
-  managed_settings >"$settings_stage"
+  managed_settings "$version" >"$settings_stage"
   managed_models >"$models_stage"
   managed_mcp >"$mcp_stage"
   printf '%s\n' "$profile_marker_value" >"$marker_stage"
@@ -457,8 +460,13 @@ require_exact_version() {
 pi_version_if_available() {
   local version binary actual
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] || return 0
-  version="$(<"$version_file")"
+  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
+    version="$(<"$receipt_file")"
+  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
+    version="$(<"$legacy_version_file")"
+  else
+    return 0
+  fi
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   binary="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version/bin/pi"
   [[ -x "$binary" ]] || return 0
@@ -519,6 +527,15 @@ projected_headless_map_json() {
   '
 }
 
+tested_headless_version() {
+  local profile="$1"
+
+  jq -er --arg profile "$profile" '
+    .profiles[$profile].headless.testedHarnessVersion
+    | select(type == "string" and length > 0)
+  ' "$catalog"
+}
+
 mise_env() {
   local ignored_paths="$HOME"
   if [[ -n "${MISE_IGNORED_CONFIG_PATHS-}" ]]; then
@@ -533,19 +550,41 @@ mise_env() {
 }
 
 resolve_latest_version() {
-  printf '%s\n' "$pinned_pi_version"
-}
-
-read_pinned_version() {
   local version
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] \
-    || die "Pi version is not pinned: $version_file"
-  version="$(<"$version_file")"
+  version="$(mise_env latest "$mise_tool")" \
+    || die 'could not resolve latest eligible Pi release'
   require_exact_version "$version"
-  [[ "$version" == "$pinned_pi_version" ]] \
-    || die "Pi version pin differs: expected $pinned_pi_version, got $version"
   printf '%s\n' "$version"
+}
+
+read_installed_version() {
+  local version
+
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
+    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
+    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
+      || die "unsafe legacy installed version receipt: $legacy_version_file"
+    version="$(<"$legacy_version_file")"
+    require_exact_version "$version"
+    publish_installed_version "$version"
+  fi
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+    || die "Pi installed version receipt is missing; run picx setup $profile_key"
+  version="$(<"$receipt_file")"
+  require_exact_version "$version"
+  printf '%s\n' "$version"
+}
+
+publish_installed_version() {
+  local version="$1" staged
+
+  staged="$(mktemp "$runtime_root/.installed-version.XXXXXX")" \
+    || die 'could not stage Pi installed version receipt'
+  printf '%s\n' "$version" >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$receipt_file"
+  rm -f -- "$legacy_version_file"
 }
 
 installed_binary() {
@@ -585,6 +624,8 @@ install_exact_version() {
 }
 
 verify_managed_profile() {
+  local version="$1"
+
   require_owned_profile
   [[ -f "$agent_root/settings.json" && ! -L "$agent_root/settings.json" ]] \
     || die "managed settings are missing: $agent_root/settings.json"
@@ -592,7 +633,7 @@ verify_managed_profile() {
     || die "managed models config is missing: $agent_root/models.json"
   [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] \
     || die "managed MCP config is missing: $agent_root/mcp.json"
-  cmp -s "$agent_root/settings.json" <(managed_settings) \
+  cmp -s "$agent_root/settings.json" <(managed_settings "$version") \
     || die "managed settings differ; run picx repair $profile_key"
   cmp -s "$agent_root/models.json" <(managed_models) \
     || die "managed models config differs; run picx repair $profile_key"
@@ -601,18 +642,22 @@ verify_managed_profile() {
 }
 
 managed_profile_is_current() {
+  local version="$1"
+
   [[ -f "$agent_root/settings.json" && ! -L "$agent_root/settings.json" ]] || return 1
   [[ -f "$agent_root/models.json" && ! -L "$agent_root/models.json" ]] || return 1
   [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] || return 1
-  cmp -s "$agent_root/settings.json" <(managed_settings) || return 1
+  cmp -s "$agent_root/settings.json" <(managed_settings "$version") || return 1
   cmp -s "$agent_root/models.json" <(managed_models) || return 1
   cmp -s "$agent_root/mcp.json" <(managed_mcp)
 }
 
 ensure_managed_profile() {
+  local version="$1"
+
   require_owned_profile
-  managed_profile_is_current && return 0
-  publish_managed_profile
+  managed_profile_is_current "$version" && return 0
+  publish_managed_profile "$version"
   printf 'picx: managed Pi configuration restored\n' >&2
 }
 
@@ -656,7 +701,7 @@ publish_extension_manifest() {
 }
 
 install_extensions() {
-  local binary="$1" spec
+  local binary="$1" version="$2" spec
   local extension_specs=()
 
   while IFS= read -r spec; do
@@ -673,7 +718,7 @@ install_extensions() {
       "$binary" install "$spec" \
       || die "could not install managed extension: $spec"
   done
-  publish_managed_profile
+  publish_managed_profile "$version"
   publish_extension_manifest
 }
 
@@ -730,35 +775,138 @@ verify_profile_assets() {
     || die 'managed skill manifest is missing; run picx repair default'
 }
 
-setup_profile() {
+backup_profile_state() {
+  local backup
+
+  backup="$(mktemp -d "$runtime_root/.profile-backup.XXXXXX")" \
+    || die 'could not stage Pi profile backup'
+  if [[ -d "$agent_root" && ! -L "$agent_root" ]]; then
+    cp -R -p "$agent_root" "$backup/agent" \
+      || {
+        rm -rf -- "$backup"
+        die 'could not back up Pi agent state'
+      }
+  fi
+  if [[ -f "$profile_marker" && ! -L "$profile_marker" ]]; then
+    cp -p "$profile_marker" "$backup/profile-marker"
+  fi
+  if [[ -f "$profile_extensions" && ! -L "$profile_extensions" ]]; then
+    cp -p "$profile_extensions" "$backup/extensions.json"
+  fi
+  if [[ -f "$profile_models_catalog" && ! -L "$profile_models_catalog" ]]; then
+    cp -p "$profile_models_catalog" "$backup/copilot-models.json"
+  fi
+  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
+    cp -p "$receipt_file" "$backup/installed-version"
+  fi
+  if [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
+    cp -p "$legacy_version_file" "$backup/legacy-version"
+  fi
+  printf '%s\n' "$backup"
+}
+
+restore_profile_state() {
+  local backup="$1"
+
+  rm -rf -- "$agent_root"
+  [[ ! -d "$backup/agent" ]] || mv "$backup/agent" "$agent_root"
+  rm -f -- "$profile_marker" "$profile_extensions" "$profile_models_catalog"
+  [[ ! -f "$backup/profile-marker" ]] \
+    || mv "$backup/profile-marker" "$profile_marker"
+  [[ ! -f "$backup/extensions.json" ]] \
+    || mv "$backup/extensions.json" "$profile_extensions"
+  [[ ! -f "$backup/copilot-models.json" ]] \
+    || mv "$backup/copilot-models.json" "$profile_models_catalog"
+  rm -f -- "$receipt_file" "$legacy_version_file"
+  [[ ! -f "$backup/installed-version" ]] \
+    || mv "$backup/installed-version" "$receipt_file"
+  [[ ! -f "$backup/legacy-version" ]] \
+    || mv "$backup/legacy-version" "$legacy_version_file"
+  rm -rf -- "$backup"
+}
+
+install_profile_version() {
   local version binary
 
-  version="$(read_pinned_version)"
+  version="$1"
   install_exact_version "$version"
-  publish_managed_profile
+  publish_managed_profile "$version"
   binary="$(installed_binary "$version")"
-  install_extensions "$binary"
+  install_extensions "$binary" "$version"
   ensure_floating_skills
   publish_models_catalog
-  verify_managed_profile
+  verify_managed_profile "$version"
   verify_profile_assets
+}
+
+publish_profile_version_atomically() {
+  local version="$1" backup status
+
+  backup="$(backup_profile_state)"
+  set +e
+  (
+    set -e
+    install_profile_version "$version"
+    publish_installed_version "$version"
+  )
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    rm -rf -- "$backup"
+    return
+  else
+    restore_profile_state "$backup"
+    return "$status"
+  fi
+}
+
+setup_profile() {
+  local version
+
+  if [[ -e "$receipt_file" || -L "$receipt_file" \
+    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
+    version="$(read_installed_version)"
+  else
+    version="$(resolve_latest_version)"
+  fi
+  publish_profile_version_atomically "$version"
   printf 'picx setup %s: ready (Pi %s, %s, 10 extensions)\n' \
     "$profile_key" "$version" "$(profile_ready_label)"
 }
 
 repair_profile() {
-  setup_profile >/dev/null
+  local version
+
+  version="$(read_installed_version)"
+  install_profile_version "$version"
   printf 'picx repair %s: restored (Pi %s, %s, 10 extensions)\n' \
-    "$profile_key" "$(read_pinned_version)" "$(profile_ready_label)"
+    "$profile_key" "$version" "$(profile_ready_label)"
 }
 
 check_for_update() {
-  printf 'picx update: %s is current\n' "$(read_pinned_version)"
+  local current latest
+
+  current="$(read_installed_version)"
+  latest="$(resolve_latest_version)"
+  if [[ "$current" == "$latest" ]]; then
+    printf 'picx update: %s is current\n' "$current"
+  else
+    printf 'picx update: %s -> %s available\n' "$current" "$latest"
+  fi
 }
 
 update_profile() {
-  setup_profile >/dev/null
-  printf 'picx update: %s installed\n' "$(read_pinned_version)"
+  local current latest
+
+  current="$(read_installed_version)"
+  latest="$(resolve_latest_version)"
+  if [[ "$current" == "$latest" ]]; then
+    publish_profile_version_atomically "$current"
+    printf 'picx update: %s is current\n' "$current"
+    return
+  fi
+  publish_profile_version_atomically "$latest"
+  printf 'picx update: %s -> %s installed\n' "$current" "$latest"
 }
 
 doctor_local() {
@@ -778,8 +926,8 @@ doctor_local() {
 doctor_profile() {
   local version binary
 
-  version="$(read_pinned_version)"
-  verify_managed_profile
+  version="$(read_installed_version)"
+  verify_managed_profile "$version"
   verify_profile_assets
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
@@ -811,7 +959,8 @@ inventory_profile() {
   local requested="$1" version
 
   select_profile "$requested"
-  if [[ ! -f "$profile_marker" || ! -f "$version_file" ]]; then
+  if [[ ! -f "$profile_marker" \
+    || ( ! -f "$receipt_file" && ! -f "$legacy_version_file" ) ]]; then
     not_ready_inventory "$requested" "not-setup"
     return
   fi
@@ -819,7 +968,7 @@ inventory_profile() {
     not_ready_inventory "$requested" "unhealthy"
     return
   fi
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   jq -S \
     --arg profile "$requested" \
     --arg version "$version" \
@@ -900,7 +1049,7 @@ wait_for_launch_child() {
 }
 
 launch_pi() {
-  local version binary status extension_context
+  local version binary status extension_context verified_headless_version
   local launch_args=()
 
   launch_child_pid=''
@@ -910,14 +1059,15 @@ launch_pi() {
   trap 'forward_launch_signal INT' INT
   trap 'forward_launch_signal TERM' TERM
 
-  version="$(read_pinned_version)"
-  if [[ ! -f "$profile_marker" ]]; then
+  if [[ ! -f "$profile_marker" \
+    || ( ! -f "$receipt_file" && ! -f "$legacy_version_file" ) ]]; then
     setup_profile >/dev/null
     if cancel_pending_launch; then
       return "$launch_cancel_status"
     fi
   fi
-  ensure_managed_profile
+  version="$(read_installed_version)"
+  ensure_managed_profile "$version"
   ensure_floating_skills
   verify_profile_assets
   if cancel_pending_launch; then
@@ -927,6 +1077,12 @@ launch_pi() {
   verify_binary_version "$binary" "$version"
   doctor_local
   parse_launch_arguments "$@"
+  if [[ "$launch_headless_policy" == no-user-input ]]; then
+    verified_headless_version="$(tested_headless_version "$profile_key")" \
+      || die "--headless-policy no-user-input has no verified Pi version for profile $profile_key"
+    [[ "$version" == "$verified_headless_version" ]] \
+      || die "--headless-policy no-user-input is verified only for Pi $verified_headless_version; installed version is $version"
+  fi
   extension_context="$(
     jq -r '
       "This picx profile has exactly these Pi extensions installed, in order:",

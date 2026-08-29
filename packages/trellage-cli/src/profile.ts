@@ -203,6 +203,7 @@ const CommonProfile = {
   schema: Schema.Literal(1),
   name: NonEmpty,
   description: NonEmpty,
+  resolution: Schema.optional(Schema.Literal("floating")),
   image: Image,
   runtime: Schema.optional(Runtime),
   skill_bundles: Schema.optional(Schema.Array(NonEmpty)),
@@ -265,8 +266,9 @@ type DecodedHeadlongProfile = Schema.Schema.Type<typeof HeadlongProfileSchema>
 
 type NormalizedProfile<T extends DecodedProfile> = Omit<
   T,
-  "runtime" | "skill_bundles" | "plugins" | "mcps" | "secrets"
+  "resolution" | "runtime" | "skill_bundles" | "plugins" | "mcps" | "secrets"
 > & {
+  readonly resolution: "floating"
   readonly runtime: { readonly tmpfs_size: string }
   readonly skill_bundles: NonNullable<T["skill_bundles"]>
   readonly plugins: NonNullable<T["plugins"]>
@@ -424,6 +426,7 @@ const resolveContained = (directory: string, candidate: string, label: string): 
 const normalizeCommon = <T extends DecodedProfile>(profile: T): NormalizedProfile<T> =>
   ({
     ...profile,
+    resolution: profile.resolution ?? "floating",
     runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
     skill_bundles: profile.skill_bundles ?? [],
     plugins: profile.plugins ?? [],
@@ -483,6 +486,30 @@ const validateCopilotProfile = (profile: CopilotProfile): Effect.Effect<void, Pr
     )
   })
 
+const claudeGithubTools: Readonly<Record<string, string>> = {
+  bd: "gastownhall/beads",
+  bv: "Dicklesworthstone/beads_viewer",
+  raindrop: "raindrop-ai/workshop",
+  codex: "openai/codex",
+  "lefthook-linux-arm64": "evilmartians/lefthook",
+}
+const claudePypiTools = new Set(["bernstein", "serena-agent", "waku-agent"])
+
+const validateClaudeImageTools = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    for (const tool of profile.image.tools ?? []) {
+      if (tool.kind === "github-release" && claudeGithubTools[tool.name] !== tool.repository) {
+        return yield* fail(`unsupported GitHub image tool: ${tool.name}`)
+      }
+      if (tool.kind === "pypi" && !claudePypiTools.has(tool.name)) {
+        return yield* fail(`unsupported PyPI image tool: ${tool.name}`)
+      }
+      if (tool.kind === "worktree-cli" && tool.name !== "wt") {
+        return yield* fail(`unsupported worktree image tool: ${tool.name}`)
+      }
+    }
+  })
+
 const validateClaudeExtras = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
   Effect.gen(function* () {
     const hyperresearch = profile.plugins.filter((plugin) => plugin.adapter === "hyperresearch")
@@ -500,6 +527,7 @@ const validateClaudeExtras = (profile: ClaudeProfile): Effect.Effect<void, Profi
     for (const mcp of profile.mcps) {
       if (mcp.transport !== "stdio") return yield* fail(`Claude extra MCP ${mcp.name} must use stdio`)
     }
+    yield* validateClaudeImageTools(profile)
     yield* unique(
       (profile.image.tools ?? []).map((tool) => tool.name),
       "image tool",

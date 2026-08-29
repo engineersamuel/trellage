@@ -227,7 +227,7 @@ const generateGenericSkills = async (source, checkout, destination, skillsCli) =
   ]
   const local = skillsCli ?? (await localSkillsCli())
   if (local === undefined) {
-    await runInteractive("npx", ["--yes", "skills@1.5.19", ...args], destination)
+    await runInteractive("npx", ["--yes", "skills@latest", ...args], destination)
   } else {
     await runInteractive(process.execPath, [local, ...args], destination)
   }

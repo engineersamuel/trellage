@@ -23,6 +23,9 @@ export interface FullProfileListEntry {
   readonly path: string
   readonly supportedPlatforms: ReadonlyArray<string>
   readonly harness: ProfileChoice["harness"]
+  readonly resolutionPolicy: "floating"
+  readonly locallyResolved: boolean
+  readonly releaseLockAvailable: boolean
   readonly skillBundles: ReadonlyArray<string>
   readonly skillsMode: "floating" | "locked"
   readonly finalDigestLocked: boolean
@@ -35,11 +38,7 @@ export interface FullProfileListEntry {
   // Version-gated headless capability contract for the resolved container
   // runtime. Unknown or unverified harness versions fail closed.
   readonly headless: HeadlessCapabilitiesV1
-  // Whether this profile currently has a valid, up-to-date lock for a
-  // production platform (i.e. `trellage build --locked` can reuse an image
-  // instead of re-resolving sources). Computed from the profile document and
-  // its adjacent lock file only; it does not check whether the image has
-  // actually been built/pushed anywhere.
+  // Compatibility alias for locallyResolved.
   readonly locked: boolean
   // Hand-maintained signal from docs/herdr-compatibility.json recording
   // whether this profile has been observed to work end-to-end when driven
@@ -49,7 +48,7 @@ export interface FullProfileListEntry {
 }
 
 export interface FullProfileList {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly profiles: ReadonlyArray<FullProfileListEntry>
 }
 
@@ -86,9 +85,15 @@ export const toFullList = (
   readiness: ReadonlyArray<ProfileReadiness> = [],
   herdrCompatibility: ReadonlyArray<HerdrCompatibilityEntry> = [],
 ): FullProfileList => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   profiles: choices.map((choice, index) => {
-    const entryReadiness = readiness[index] ?? { locked: false, resolvedVersion: null }
+    const entryReadiness = readiness[index] ?? {
+      resolutionPolicy: "floating" as const,
+      locallyResolved: false,
+      releaseLockAvailable: false,
+      locked: false,
+      resolvedVersion: null,
+    }
     return {
       name: choice.name,
       description: choice.description,
@@ -96,6 +101,9 @@ export const toFullList = (
       path: choice.value,
       supportedPlatforms: choice.supported_platforms,
       harness: choice.harness,
+      resolutionPolicy: choice.resolutionPolicy ?? "floating",
+      locallyResolved: entryReadiness.locallyResolved,
+      releaseLockAvailable: entryReadiness.releaseLockAvailable,
       skillBundles: choice.skillBundles ?? [],
       skillsMode: choice.skillsMode ?? ((choice.skillBundles?.length ?? 0) > 0 ? "floating" : "locked"),
       finalDigestLocked:
@@ -105,7 +113,7 @@ export const toFullList = (
       mcps: choice.mcps,
       sandbox: true,
       headless: resolveSandboxHeadlessCapabilities(choice.headlessRuntime, entryReadiness.resolvedVersion),
-      locked: entryReadiness.locked,
+      locked: entryReadiness.locallyResolved,
       herdrCompatibility: herdrCompatibility[index] ?? untestedCompatibility,
     }
   }),

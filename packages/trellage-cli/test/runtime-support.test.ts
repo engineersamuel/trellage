@@ -35,7 +35,6 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
     finalizeClaudeSeed: path.join(root, "finalize-claude-seed.mjs"),
     claudeEntry: path.join(root, "runtime-claude-entry.sh"),
-    hyperresearchRequirements: path.join(root, "hyperresearch-requirements.lock"),
     claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
     claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
     copilotInstructionRundown: path.join(root, "instruction-rundown.md"),
@@ -48,7 +47,6 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     writeFile(paths.finalizeCopilotSeed, "copilot-finalizer\n"),
     writeFile(paths.finalizeClaudeSeed, "claude-finalizer\n"),
     writeFile(paths.claudeEntry, "claude-entry\n"),
-    writeFile(paths.hyperresearchRequirements, "requirements\n"),
     writeFile(paths.claudeBrowserAgent, "browser-agent\n"),
     writeFile(paths.claudeOutputStyleRundown, "output-style\n"),
     writeFile(paths.copilotInstructionRundown, "instruction\n"),
@@ -76,10 +74,11 @@ describe("runtime support snapshots", () => {
       "runtime-claude-entry",
       "claude-output-style-rundown",
       "finalize-claude-seed",
-      "hyperresearch-requirements",
       "claude-browser-agent",
     ])
-    expect(claude.files[3]?.destination).toBe("/src/.runtime-support/hyperresearch-requirements.lock")
+    expect(claude.files[3]?.destination).toBe(
+      "/usr/local/share/trellage/claude-seed/agents/hyperresearch-browser-fetcher.md",
+    )
     expect(pi.files.map((file) => file.role)).toEqual(["runtime-pi-entry"])
     expect(prime.files.map((file) => file.role)).toEqual(["runtime-prime-entry"])
     expect(codex.hash).toBe("sha256:ef6c9fce95dcc3ccd9eaeb94b9611f332d30e539e8570cc99b4d0dd07c652b64")
@@ -99,12 +98,6 @@ describe("runtime support snapshots", () => {
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).toBe(original)
     await writeFile(paths.codexEntry, "changed and relevant\n")
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).not.toBe(original)
-
-    const marketplaceHash = claudeMarketplace.hash
-    await writeFile(paths.hyperresearchRequirements!, "changed but marketplace-irrelevant\n")
-    expect((await Effect.runPromise(createRuntimeSupportSnapshot("claude", paths, "claude-marketplace"))).hash).toBe(
-      marketplaceHash,
-    )
   })
 
   it("captures only the Claude runtime entry in core mode", async () => {
@@ -183,16 +176,7 @@ describe("runtime support snapshots", () => {
     const cases = [
       ["codex", ["codexEntry"]],
       ["copilot", ["copilotEntry", "finalizeCopilotSeed", "copilotInstructionRundown"]],
-      [
-        "claude",
-        [
-          "claudeEntry",
-          "finalizeClaudeSeed",
-          "hyperresearchRequirements",
-          "claudeBrowserAgent",
-          "claudeOutputStyleRundown",
-        ],
-      ],
+      ["claude", ["claudeEntry", "finalizeClaudeSeed", "claudeBrowserAgent", "claudeOutputStyleRundown"]],
       ["prime", ["primeEntry"]],
     ] as const
     for (const [kind, properties] of cases) {

@@ -73,9 +73,22 @@ describe("profile list DTOs", () => {
       ],
     })
     expect(
-      toFullList([choice], [guide], [{ locked: true, resolvedVersion: "0.147.0" }], [{ status: "verified" }]),
+      toFullList(
+        [choice],
+        [guide],
+        [
+          {
+            resolutionPolicy: "floating",
+            locallyResolved: true,
+            releaseLockAvailable: true,
+            locked: true,
+            resolvedVersion: "0.147.0",
+          },
+        ],
+        [{ status: "verified" }],
+      ),
     ).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       profiles: [
         {
           name: "detailed",
@@ -84,6 +97,9 @@ describe("profile list DTOs", () => {
           path: "/profiles/detailed/profile.toml",
           supportedPlatforms: ["linux/arm64", "linux/amd64"],
           harness: { kind: "codex", version: "latest", model: "gpt-5.6-sol" },
+          resolutionPolicy: "floating",
+          locallyResolved: true,
+          releaseLockAvailable: true,
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -103,18 +119,50 @@ describe("profile list DTOs", () => {
     const [entry] = toFullList(
       [sample({ name: "codex-superpowers", description: "Codex profile", value: "/profiles/codex/profile.toml" })],
       [guide],
-      [{ locked: true, resolvedVersion: "0.147.0" }],
+      [
+        {
+          resolutionPolicy: "floating",
+          locallyResolved: true,
+          releaseLockAvailable: false,
+          locked: false,
+          resolvedVersion: "0.147.0",
+        },
+      ],
     ).profiles
 
     expect(entry?.headless).toEqual(resolveSandboxHeadlessCapabilities("codex", "0.147.0"))
+    expect(entry?.locked).toBe(true)
+    expect(entry?.releaseLockAvailable).toBe(false)
   })
 
   it("defaults locked to false and herdrCompatibility to untested when not supplied", () => {
     const choice = sample({ name: "bare", description: "Bare blurb", value: "/p/bare/profile.toml" })
     const [entry] = toFullList([choice], [guide]).profiles
     expect(entry?.locked).toBe(false)
+    expect(entry?.locallyResolved).toBe(false)
+    expect(entry?.releaseLockAvailable).toBe(false)
     expect(entry?.headless).toEqual(resolveSandboxHeadlessCapabilities("codex", null))
     expect(entry?.herdrCompatibility).toEqual({ status: "untested" })
+  })
+
+  it("keeps the locked compatibility alias tied to local resolution", () => {
+    const choice = sample({ name: "release-only", description: "Release only", value: "/p/release/profile.toml" })
+    const [entry] = toFullList(
+      [choice],
+      [guide],
+      [
+        {
+          resolutionPolicy: "floating",
+          locallyResolved: false,
+          releaseLockAvailable: true,
+          locked: false,
+          resolvedVersion: null,
+        },
+      ],
+    ).profiles
+
+    expect(entry?.locked).toBe(false)
+    expect(entry?.releaseLockAvailable).toBe(true)
   })
 
   it("publishes the current Claude marketplace contract and fails closed on later drift", () => {
@@ -135,7 +183,19 @@ describe("profile list DTOs", () => {
       ],
     })
 
-    const [entry] = toFullList([choice], [guide], [{ locked: true, resolvedVersion: "2.1.233" }]).profiles
+    const [entry] = toFullList(
+      [choice],
+      [guide],
+      [
+        {
+          resolutionPolicy: "floating",
+          locallyResolved: true,
+          releaseLockAvailable: false,
+          locked: false,
+          resolvedVersion: "2.1.233",
+        },
+      ],
+    ).profiles
 
     expect(entry?.headless).toMatchObject({
       prompt: true,
@@ -146,7 +206,19 @@ describe("profile list DTOs", () => {
       testedHarnessVersion: "2.1.233",
     })
 
-    const [drifted] = toFullList([choice], [guide], [{ locked: true, resolvedVersion: "2.1.234" }]).profiles
+    const [drifted] = toFullList(
+      [choice],
+      [guide],
+      [
+        {
+          resolutionPolicy: "floating",
+          locallyResolved: true,
+          releaseLockAvailable: false,
+          locked: false,
+          resolvedVersion: "2.1.234",
+        },
+      ],
+    ).profiles
 
     expect(drifted?.headless).toMatchObject({
       prompt: false,

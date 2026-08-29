@@ -9,16 +9,16 @@ description = "Validate the bundled Trellage profile"
 run = "./trellage validate ../../profiles/codex-superpowers/profile.toml"
 
 [tasks.lock]
-description = "Resolve the bundled Trellage profile lock"
+description = "Create the bundled Trellage release lock"
 run = "./trellage lock ../../profiles/codex-superpowers/profile.toml"
 
 [tasks.build]
-description = "Build the bundled locked OCI image"
-run = "./trellage build --locked ../../profiles/codex-superpowers/profile.toml"
+description = "Build the bundled development OCI image"
+run = "./trellage build ../../profiles/codex-superpowers/profile.toml"
 
 [tasks.copilot-build]
-description = "Build the locked Copilot HVE OCI image"
-run = "./trellage build --locked ../../profiles/copilot-hve/profile.toml"
+description = "Build the Copilot HVE development OCI image"
+run = "./trellage build ../../profiles/copilot-hve/profile.toml"
 
 [tasks.install-trellage]
 description = "Install the user-local Trellage command"
@@ -41,5 +41,5 @@ description = "Build and run the bundled profile smoke verification"
 run = "./tests/smoke.sh"
 
 [tasks.copilot-smoke]
-description = "Run the locked Copilot HVE live smoke verification"
+description = "Run the Copilot HVE live smoke verification"
 run = "./tests/smoke.sh --copilot ../../profiles/copilot-hve/profile.toml"

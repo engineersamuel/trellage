@@ -76375,7 +76375,7 @@ var parseNativeInventory = (source, selected) => {
   if (inventory.schemaVersion !== 1 || inventory.launcher !== selected.launcher || inventory.profile !== selected.profile) {
     throw new ProfilePreflightError("Native inventory identity does not match the selected profile");
   }
-  if (inventory.readiness !== "healthy" && inventory.readiness !== "unhealthy" && inventory.readiness !== "not-setup") {
+  if (inventory.readiness !== "healthy" && inventory.readiness !== "unhealthy" && inventory.readiness !== "not-setup" && inventory.readiness !== "busy") {
     throw new ProfilePreflightError("Native inventory returned an unsupported readiness value");
   }
   return { readiness: inventory.readiness };
@@ -76404,7 +76404,7 @@ var checkNativeReadiness = async (runner, selected, cwd2) => {
   } : {
     kind: "blocked" /* Blocked */,
     summary: `${selected.launcher}/${selected.profile} is ${inventory.readiness}`,
-    diagnostic: inventory.readiness === "not-setup" ? `Run ${selected.launcher} setup ${selected.profile}, then retry.` : `Run ${selected.launcher} doctor ${selected.profile} for details.`
+    diagnostic: inventory.readiness === "not-setup" ? `Run ${selected.launcher} setup ${selected.profile}, then retry.` : inventory.readiness === "busy" ? `Wait for the current ${selected.launcher} operation to finish, then retry.` : `Run ${selected.launcher} doctor ${selected.profile} for details.`
   };
 };
 var checkSandboxReadiness = async (runner, selected, cwd2) => {

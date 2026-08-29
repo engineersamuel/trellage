@@ -1,14 +1,14 @@
 # Verification
 
-Run deterministic repository contracts without launching paid agents:
+Run repository contracts without launching paid agents:
 
 ```bash
 make test
 git diff --check
 ```
 
-Install the locked profile compiler dependencies once to install the repository
-Git hooks:
+Install the repository profile compiler dependencies once to install the Git
+hooks:
 
 ```bash
 npm ci --prefix packages/trellage-cli
@@ -22,7 +22,7 @@ shell syntax. These jobs run concurrently and should complete in seconds;
 GitHub Actions remains authoritative for broad deterministic and lifecycle
 contracts.
 
-Run exact GitHub Actions parity explicitly before high-risk pushes:
+Run full GitHub Actions contract parity explicitly before high-risk pushes:
 
 ```bash
 make test

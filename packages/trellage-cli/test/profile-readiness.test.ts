@@ -1,89 +1,116 @@
+import { mkdtemp } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
+import { loadProfile, loadReleaseLock } from "../src/application.js"
+import type { ProfileChoice } from "../src/profile-discovery.js"
 import {
   resolveProfileLocked,
   resolveProfileReadiness,
   resolveProfilesLocked,
   resolveProfilesReadiness,
 } from "../src/profile-readiness.js"
-import type { ProfileChoice } from "../src/profile-discovery.js"
+import { writeResolutionReceipt } from "../src/resolution-receipt.js"
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)))
+const fixtureProfile = path.join(repositoryRoot, "tests", "fixtures", "headless-live-claude", "profile.toml")
 
 const baseChoice: ProfileChoice = {
-  value: path.join(repositoryRoot, "profiles", "copilot-hve", "profile.toml"),
-  name: "copilot-hve",
-  description: "GitHub Copilot with Microsoft HVE Core",
+  value: fixtureProfile,
+  name: "headless-live-claude",
+  description: "Exact Claude Code live fixture",
   supported_platforms: ["linux/arm64"],
-  harness: { kind: "copilot", version: "latest" },
-  headlessRuntime: "copilot",
+  harness: { kind: "claude", version: "2.1.229", model: "claude-opus-5" },
+  headlessRuntime: "claude-core",
+  resolutionPolicy: "floating",
   skills: [],
   plugins: [],
   mcps: [],
 }
 
-const councilChoice: ProfileChoice = {
-  ...baseChoice,
-  value: path.join(repositoryRoot, "profiles", "claude-council", "profile.toml"),
-  name: "claude-council",
-  description: "Claude Council",
-  harness: { kind: "claude", version: "latest", model: "claude-opus-5" },
-  headlessRuntime: "claude-marketplace",
-  plugins: [
-    {
-      adapter: "claude-marketplace",
-      repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
-      ref: "v1.2.0",
-      marketplace: "council-of-high-intelligence",
-      select: ["council"],
-    },
-  ],
+const cacheWithReceipt = async (): Promise<string> => {
+  const cache = await mkdtemp(path.join(os.tmpdir(), "trellage-profile-readiness-"))
+  const document = await Effect.runPromise(loadProfile(fixtureProfile))
+  const release = await Effect.runPromise(loadReleaseLock(fixtureProfile, "linux/arm64"))
+  if (release === undefined) throw new Error("fixture release lock is missing")
+  await Effect.runPromise(writeResolutionReceipt(document, cache, release))
+  return cache
 }
 
-describe("resolveProfileLocked", () => {
-  it("reports locked and the resolved harness version when a committed profile has a current production lock", async () => {
-    const readiness = await Effect.runPromise(resolveProfileReadiness(baseChoice))
-    expect(readiness).toEqual({ locked: true, resolvedVersion: "1.0.81" })
-
-    const locked = await Effect.runPromise(resolveProfileLocked(baseChoice))
-    expect(locked).toBe(true)
+describe("profile readiness", () => {
+  it("distinguishes a release snapshot from local development resolution", async () => {
+    const cache = await mkdtemp(path.join(os.tmpdir(), "trellage-profile-readiness-empty-"))
+    await expect(Effect.runPromise(resolveProfileReadiness(baseChoice, cache))).resolves.toEqual({
+      resolutionPolicy: "floating",
+      locallyResolved: false,
+      releaseLockAvailable: true,
+      locked: false,
+      resolvedVersion: null,
+    })
+    await expect(Effect.runPromise(resolveProfileLocked(baseChoice, cache))).resolves.toBe(false)
   })
 
-  it("reports the exact current Council marketplace version", async () => {
-    await expect(Effect.runPromise(resolveProfileReadiness(councilChoice))).resolves.toEqual({
+  it("reports the locally resolved harness version from the development receipt", async () => {
+    const cache = await cacheWithReceipt()
+    await expect(Effect.runPromise(resolveProfileReadiness(baseChoice, cache))).resolves.toEqual({
+      resolutionPolicy: "floating",
+      locallyResolved: true,
+      releaseLockAvailable: true,
       locked: true,
-      resolvedVersion: "2.1.233",
+      resolvedVersion: "2.1.229",
     })
   })
 
-  it("reports not locked when no production platform is supported", async () => {
+  it("reports unavailable when no production platform is supported", async () => {
     const choice = { ...baseChoice, supported_platforms: ["linux/amd64"] as const }
-    const locked = await Effect.runPromise(resolveProfileLocked(choice))
-    expect(locked).toBe(false)
+    await expect(Effect.runPromise(resolveProfileReadiness(choice))).resolves.toEqual({
+      resolutionPolicy: "floating",
+      locallyResolved: false,
+      releaseLockAvailable: false,
+      locked: false,
+      resolvedVersion: null,
+    })
   })
 
-  it("degrades to not locked instead of failing when the profile cannot be read", async () => {
+  it("degrades to unavailable instead of failing when the profile cannot be read", async () => {
     const choice = { ...baseChoice, value: path.join(repositoryRoot, "profiles", "does-not-exist", "profile.toml") }
-    const readiness = await Effect.runPromise(resolveProfileReadiness(choice))
-    expect(readiness).toEqual({ locked: false, resolvedVersion: null })
-
-    const locked = await Effect.runPromise(resolveProfileLocked(choice))
-    expect(locked).toBe(false)
+    await expect(Effect.runPromise(resolveProfileReadiness(choice))).resolves.toEqual({
+      resolutionPolicy: "floating",
+      locallyResolved: false,
+      releaseLockAvailable: false,
+      locked: false,
+      resolvedVersion: null,
+    })
   })
 
-  it("resolves readiness for every choice in order", async () => {
+  it("resolves local and release readiness for every choice in order", async () => {
+    const cache = await cacheWithReceipt()
     const unreadable = { ...baseChoice, value: path.join(repositoryRoot, "profiles", "does-not-exist", "profile.toml") }
-    const readiness = await Effect.runPromise(resolveProfilesReadiness([baseChoice, unreadable]))
+    const readiness = await Effect.runPromise(resolveProfilesReadiness([baseChoice, unreadable], cache))
     expect(readiness).toEqual([
-      { locked: true, resolvedVersion: "1.0.81" },
-      { locked: false, resolvedVersion: null },
+      {
+        resolutionPolicy: "floating",
+        locallyResolved: true,
+        releaseLockAvailable: true,
+        locked: true,
+        resolvedVersion: "2.1.229",
+      },
+      {
+        resolutionPolicy: "floating",
+        locallyResolved: false,
+        releaseLockAvailable: false,
+        locked: false,
+        resolvedVersion: null,
+      },
     ])
 
-    const locked = await Effect.runPromise(resolveProfilesLocked([baseChoice, unreadable]))
-    expect(locked).toEqual([true, false])
+    await expect(Effect.runPromise(resolveProfilesLocked([baseChoice, unreadable], cache))).resolves.toEqual([
+      true,
+      false,
+    ])
   })
 })

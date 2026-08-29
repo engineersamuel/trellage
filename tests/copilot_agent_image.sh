@@ -15,18 +15,24 @@ for required_file in \
   [[ -f "$required_file" ]] || fail "missing required file: $required_file"
 done
 
-grep -Fq 'ARG COPILOT_VERSION=1.0.71-0' Dockerfile.copilot-agent \
-  || fail 'Copilot CLI version is not pinned'
-grep -Fq 'ARG AWESOME_COPILOT_REF=ecf0f5a9f4b014d2e0f5e3c1cec55b4e7792ed8a' Dockerfile.copilot-agent \
-  || fail 'Awesome Copilot revision is not pinned'
+grep -Fq 'ARG COPILOT_VERSION=latest' Dockerfile.copilot-agent \
+  || fail 'Copilot CLI does not use the latest stable release'
+grep -Fq 'ARG AWESOME_COPILOT_REF=main' Dockerfile.copilot-agent \
+  || fail 'Awesome Copilot does not follow its development branch'
 grep -Fq 'ARG AWESOME_COPILOT_PLUGINS="frontend-web-dev testing-automation"' Dockerfile.copilot-agent \
-  || fail 'Awesome Copilot plugin set is not pinned'
+  || fail 'Awesome Copilot plugin selection changed'
 grep -Fq 'npm install --global "@github/copilot@${COPILOT_VERSION}"' Dockerfile.copilot-agent \
-  || fail 'pinned Copilot CLI is not installed'
+  || fail 'selected Copilot CLI is not installed'
+grep -Fq 'ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' Dockerfile.copilot-agent \
+  || fail 'Copilot image does not accept the selected npm registry'
 grep -Fq '/usr/local/bin/materialize-awesome-plugin.sh' Dockerfile.copilot-agent \
   || fail 'Awesome Copilot materializer is not used'
 grep -Fq 'USER 10001:10001' Dockerfile.copilot-agent \
   || fail 'Copilot agent user is not pinned non-root'
+grep -Fq '/opt/trellage/source-provenance.json' Dockerfile.copilot-agent \
+  || fail 'Copilot image does not install source provenance'
+grep -Fq -- "--arg source 'https://github.com/github/awesome-copilot.git'" Dockerfile.copilot-agent \
+  || fail 'Copilot source provenance does not identify Awesome Copilot'
 
 if grep -Eiq 'ARG[[:space:]]+.*(TOKEN|SECRET|PASSWORD|API_KEY)' Dockerfile.copilot-agent; then
   fail 'credential build argument found'
@@ -61,6 +67,12 @@ if [[ "${BUILD_IMAGE_SMOKE:-0}" == '1' ]]; then
     test -f /opt/awesome-plugins/frontend-web-dev/agents/expert-react-frontend-engineer.md
     test -f /opt/awesome-plugins/testing-automation/.github/plugin/plugin.json
     test -f /opt/awesome-plugins/testing-automation/agents/tdd-red.md
+    jq -e '\''
+      .schemaVersion == 1
+      and .source == "https://github.com/github/awesome-copilot.git"
+      and .requestedRef == "main"
+      and (.resolvedCommit | test("^[0-9a-f]{40}$"))
+    '\'' /opt/trellage/source-provenance.json >/dev/null
   '
 fi
 

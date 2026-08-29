@@ -32,6 +32,74 @@ NODE
   )
 }
 
+write_codex_resolution_fixture() {
+  local profile="$1"
+  local lock="$2"
+  (
+    cd "$prototype_dir/../../packages/trellage-cli"
+    "$real_node" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
+import { writeFile } from "node:fs/promises"
+import { Effect } from "effect"
+import { loadProfile } from "./dist/application.js"
+import { profileHash, requireResolvedLock, sha256Text } from "./dist/lock.js"
+import { parseLock, renderLock } from "./dist/lock-file.js"
+import { writeResolutionReceipt } from "./dist/resolution-receipt.js"
+
+const document = await Effect.runPromise(loadProfile(process.argv[2]))
+const version = "9.9.9"
+const digest = sha256Text("host-command-contract")
+const lock = {
+  schema: 1,
+  platform: "linux/arm64",
+  source_date_epoch: 1,
+  profile_hash: profileHash(document),
+  sources: document.profile.plugins.map((plugin) => ({
+    kind: "plugin",
+    adapter: plugin.adapter,
+    ...("marketplace" in plugin ? { marketplace: plugin.marketplace } : {}),
+    repository: plugin.repository,
+    ref: plugin.ref,
+    select: plugin.select,
+    commit: /^[0-9a-f]{40}$/.test(plugin.ref) ? plugin.ref : "a".repeat(40),
+    integrity: sha256Text(JSON.stringify([])),
+    files: [],
+  })),
+  packages: {
+    harness: {
+      kind: "codex",
+      selector: document.profile.harness.version,
+      version,
+      integrity: digest,
+      url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
+      size: 1,
+    },
+    runtime: document.profile.image.packages.map((name) => ({
+      name,
+      version: "1.0.0",
+      integrity: digest,
+    })),
+    artifacts: [{
+      name: "codex-code-mode-host",
+      version,
+      integrity: digest,
+      url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz`,
+      size: 1,
+    }],
+  },
+  image: {
+    base: document.profile.image.base,
+    base_digest: digest,
+  },
+}
+const rendered = renderLock(lock)
+const parsed = await Effect.runPromise(parseLock(rendered))
+await Effect.runPromise(requireResolvedLock(document, parsed, "linux/arm64"))
+await writeFile(process.argv[3], rendered)
+await Effect.runPromise(writeResolutionReceipt(document, process.argv[4], parsed))
+NODE
+  )
+}
+
 fake_bin="$test_root/fake-bin"
 runtime_dir="$test_root/runtime"
 mkdir -p "$fake_bin" "$runtime_dir"
@@ -77,13 +145,14 @@ chmod +x "$headlong_fake_bin/docker"
 
 metadata_docker_log="$test_root/metadata-docker.log"
 : >"$metadata_docker_log"
-default_metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
-  $real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
-  "$prototype_dir/../../profiles/codex-superpowers/profile.toml")"
-default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
-runtime_hash="$(jq -er '.runtime_hash' <<<"$default_metadata")"
 default_profile_path_raw="$prototype_dir/../../profiles/codex-superpowers/profile.toml"
 default_profile_path="$(cd "$prototype_dir/../../profiles/codex-superpowers" && pwd -P)/profile.toml"
+write_codex_resolution_fixture "$default_profile_path" "$test_root/default-profile-release.lock.toml"
+default_metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
+  $real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
+  "$default_profile_path")"
+default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
+runtime_hash="$(jq -er '.runtime_hash' <<<"$default_metadata")"
 default_test_metadata="$test_root/default-test-metadata.json"
 default_headless="$(jq -cn '{
   schemaVersion: 1,
@@ -120,6 +189,11 @@ printf '%s\n' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tGH_TOKEN=%s\n'\'' "${GH_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tGITHUB_TOKEN=%s\n'\'' "${GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
+  'for feed_name in npm_config_registry NPM_CONFIG_REGISTRY UV_DEFAULT_INDEX PIP_INDEX_URL; do' \
+  '  feed_value="$(printenv "$feed_name" 2>/dev/null || true)"' \
+  '  printf '\''ENV\t%s=%s\n'\'' "$feed_name" "${feed_value:+present}" >>"$FAKE_NODE_LOG"' \
+  '  case "$feed_value" in https://packagefeedproxy.microsoft.io/*) printf '\''FEED\t%s=%s\n'\'' "$feed_name" "$feed_value" >>"$FAKE_NODE_LOG" ;; esac' \
+  'done' \
   'for internal_name in ambient_copilot_github_token ambient_gh_token ambient_github_token copilot_token secret_value secret_source_values; do' \
   '  [[ -z "${!internal_name:-}" ]] || internal_state=present' \
   '  printf '\''ENV\t%s=%s\n'\'' "$internal_name" "${internal_state:-}" >>"$FAKE_NODE_LOG"' \
@@ -2413,6 +2487,10 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   grep -Fqx 'dependency docker: available' <<<"$output" || fail 'doctor omitted Docker status'
   grep -Eq '^dependency mise: (available|missing)$' <<<"$output" || fail 'doctor omitted mise status'
   grep -Fqx 'environment: disabled' <<<"$output" || fail 'doctor omitted disabled environment status'
+  grep -Fqx 'development resolution: true' <<<"$output" \
+    || fail 'doctor omitted the available development resolution'
+  grep -Fqx 'release lock: false' <<<"$output" \
+    || fail 'doctor treated an explicit false release-lock state as missing'
   grep -Fqx "environment path: $expected_environment_path" <<<"$output" \
     || fail 'doctor omitted the default environment path'
   grep -Fqx "worktree: $worktree" <<<"$output" || fail 'doctor omitted canonical worktree'
@@ -2807,9 +2885,7 @@ test_resource_identity_isolates_codex_and_copilot_profiles() {
     "$real_node" \
     "$prototype_dir/../../packages/trellage-cli/dist/cli.js" \
     metadata "$profile_one" | jq -r '.profile_hash')"
-  cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$profile_one_lock"
-  sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_one_hash\"/" "$profile_one_lock"
-  rm -f "$profile_one_lock.bak"
+  write_codex_resolution_fixture "$profile_one" "$profile_one_lock"
 
   : >"$docker_log"
   if output="$(FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_one_hash" \
@@ -2982,10 +3058,8 @@ command = "local-mcp"\
 env_from_secret = { TOKEN = "DOCS_TOKEN" }\
 ' \
     "$prototype_dir/../../profiles/codex-superpowers/profile.toml" >"$profile"
-  cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$lock"
+  write_codex_resolution_fixture "$profile" "$lock"
   profile_hash="$(profile_hash_for "$profile")"
-  sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" "$lock"
-  rm -f "$lock.bak"
   state_volume="$(resource_names "$worktree" secret-test | tail -n 1)"
   : >"$docker_log"
 
@@ -3065,10 +3139,8 @@ command = "local-mcp"\
 env_from_secret = { DOCS_TOKEN = "DOCS_TOKEN" }\
 ' \
     "$prototype_dir/../../profiles/codex-superpowers/profile.toml" >"$profile"
-  cp "$prototype_dir/../../profiles/codex-superpowers/profile.linux-arm64.lock.toml" "$lock"
+  write_codex_resolution_fixture "$profile" "$lock"
   profile_hash="$(profile_hash_for "$profile")"
-  sed -i.bak "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" "$lock"
-  rm -f "$lock.bak"
   state_volume="$(resource_names "$worktree" varlock-test | tail -n 1)"
   : >"$docker_log"
   printf 'DOCS_TOKEN=varlock-file-secret\n' >"$test_root/.env"
@@ -3164,7 +3236,8 @@ test_stale_image_label_triggers_automatic_build() {
     FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=absent \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+      env npm_config_registry=https://packagefeedproxy.microsoft.io/npm/registry/ \
+      TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
   grep -Fqx $'ARG\tbuild' "$host_node_log" \
     || fail 'stale image did not trigger an automatic build'
   grep -Fqx $'ARG\tcreate' "$docker_log" \
@@ -3172,7 +3245,7 @@ test_stale_image_label_triggers_automatic_build() {
   printf 'Trellage host test: PASS: stale image label triggers automatic build\n'
 }
 
-test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build() {
+test_stale_image_reuses_development_receipt() {
   local worktree="$test_root/locked-digest-mismatch-worktree"
   local docker_log="$test_root/locked-digest-mismatch.docker.log"
   local state_volume
@@ -3182,19 +3255,25 @@ test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build() {
   : >"$host_node_log"
 
   FAKE_PROFILE_BUILD_SUCCEEDS=1 \
-    FAKE_PROFILE_LOCKED_BUILD_FAILS=1 \
     FAKE_DOCKER_IMAGE_PROFILE_HASH="sha256:$(printf '0%.0s' {1..64})" \
     FAKE_DOCKER_VOLUME_STATE=absent FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=absent \
     run_tty "$worktree" "$docker_log" "$worktree" \
-      env TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
-  grep -Fqx $'ARG\t--locked' "$host_node_log" \
-    || fail 'locked build was not attempted first'
-  [[ "$(grep -Fcx $'ARG\tbuild' "$host_node_log")" -ge 2 ]] \
-    || fail 'non-locked fallback build was not attempted after locked build failure'
+      env npm_config_registry=https://packagefeedproxy.microsoft.io/npm/registry/ \
+      TRELLAGE_NETWORK='test_proxy_net' "$prototype_dir/trellage"
+  ! grep -Fqx $'ARG\t--locked' "$host_node_log" \
+    || fail 'development image recovery used the release-only locked build'
+  [[ "$(grep -Fcx $'ARG\tbuild' "$host_node_log")" -eq 1 ]] \
+    || fail 'development image recovery did not use one receipt-backed build'
+  for feed_name in npm_config_registry UV_DEFAULT_INDEX PIP_INDEX_URL; do
+    grep -Fqx $'ENV\t'"$feed_name=present" "$host_node_log" \
+      || fail "automatic build omitted derived CFS feed: $feed_name"
+  done
+  grep -Fqx $'FEED\tnpm_config_registry=https://packagefeedproxy.microsoft.io/npm/' "$host_node_log" \
+    || fail 'automatic build did not canonicalize the legacy CFS npm registry alias'
   grep -Fqx $'ARG\tcreate' "$docker_log" \
-    || fail 'launch did not continue after the non-locked fallback build'
-  printf 'Trellage host test: PASS: locked digest mismatch falls back to non-locked build\n'
+    || fail 'launch did not continue after the receipt-backed build'
+  printf 'Trellage host test: PASS: stale image recovery reuses the development receipt\n'
 }
 
 test_jsonl_cold_launch_isolates_automatic_build_output() {
@@ -4012,9 +4091,29 @@ test_copilot_metadata_contract() {
     'base = "node:22.17.0-bookworm-slim"' \
     'base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"' \
     'final_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' >"$lock"
+  (
+    cd "$prototype_dir/../../packages/trellage-cli"
+    "$real_node" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
+import { readFile } from "node:fs/promises"
+import { Effect } from "effect"
+import { loadProfile } from "./dist/application.js"
+import { parseLock } from "./dist/lock-file.js"
+import { writeResolutionReceipt } from "./dist/resolution-receipt.js"
+
+const document = await Effect.runPromise(loadProfile(process.argv[2]))
+const lock = await Effect.runPromise(parseLock(await readFile(process.argv[3], "utf8")))
+await Effect.runPromise(writeResolutionReceipt(document, process.argv[4], lock))
+NODE
+  )
   metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
     "$real_node" "$compiler" metadata "$profile")"
 
+  [[ "$(jq -r '.schema_version' <<<"$metadata")" == 2 ]] \
+    || fail 'Copilot metadata lacks schema v2'
+  [[ "$(jq -r '.locally_resolved' <<<"$metadata")" == true ]] \
+    || fail 'Copilot metadata lacks local resolution readiness'
+  [[ "$(jq -r '.release_lock_available' <<<"$metadata")" == true ]] \
+    || fail 'Copilot metadata lacks release lock readiness'
   [[ "$(jq -r '.harness_kind' <<<"$metadata")" == copilot ]] \
     || fail 'Copilot metadata lacks harness kind'
   [[ "$(jq -r '.harness_executable' <<<"$metadata")" == copilot ]] \
@@ -5157,7 +5256,7 @@ if [[ "${TRELLAGE_HOST_TAIL_ONLY:-}" == 1 ]]; then
   test_varlock_secrets_reach_only_final_codex_exec
   test_global_varlock_bootstrap_supplies_claude_browser_token
   test_stale_image_label_triggers_automatic_build
-  test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build
+  test_stale_image_reuses_development_receipt
   test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
   test_rebuild_replaces_container_and_preserves_profile_state
   exit 0
@@ -5295,7 +5394,7 @@ test_env_secrets_reach_only_final_codex_exec
 test_varlock_secrets_reach_only_final_codex_exec
 test_global_varlock_bootstrap_supplies_claude_browser_token
 test_stale_image_label_triggers_automatic_build
-test_stale_image_locked_digest_mismatch_falls_back_to_non_locked_build
+test_stale_image_reuses_development_receipt
 test_jsonl_cold_launch_isolates_automatic_build_output
 test_jsonl_cold_launch_isolates_compiler_bootstrap_output
 test_jsonl_launch_isolates_github_cli_auth_output

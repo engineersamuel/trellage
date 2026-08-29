@@ -10,7 +10,8 @@ import { Cause, Effect, Exit } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { GitHubSourceRequest } from "../src/github-cache.js"
-import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
+import { runtimeIntegrities, runtimeVersions } from "./fixtures/runtime-packages.js"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
 
 const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   failPackageResolutions: 0,
   failLockRenames: 0,
   lockRenameEvents: undefined as Array<string> | undefined,
+  resolvedSourceCommit: "a".repeat(40),
 }))
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -50,7 +52,7 @@ vi.mock("../src/github-cache.js", async () => {
       }
       return Effect.succeed({
         ...request,
-        commit: request.lockedCommit ?? "a".repeat(40),
+        commit: request.lockedCommit ?? mocks.resolvedSourceCommit,
         directory: mocks.sourceDirectory,
         integrity: treeIntegrity(mocks.sourceFiles),
         files: mocks.sourceFiles,
@@ -128,6 +130,200 @@ vi.mock("../src/resolvers.js", async (importOriginal) => {
   }
 })
 
+vi.mock("../src/oci-image.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveOciImage: (reference: string) =>
+      EffectModule.succeed({
+        reference,
+        digest:
+          reference === "node:bookworm-slim" || reference === "node:22.17.0-bookworm-slim"
+            ? "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            : reference.startsWith("docker.io/")
+              ? "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      }),
+  }
+})
+
+vi.mock("../src/node-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveNodeRelease: () =>
+      EffectModule.succeed({
+        name: "node",
+        version: "24.8.0",
+        integrity: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-arm64.tar.gz",
+      }),
+  }
+})
+
+vi.mock("../src/uv-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveUvRelease: () =>
+      EffectModule.succeed({
+        name: "uv",
+        version: "0.11.22",
+        integrity: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        url: "https://github.com/astral-sh/uv/releases/download/0.11.22/uv-aarch64-unknown-linux-musl.tar.gz",
+        size: 1,
+      }),
+  }
+})
+
+vi.mock("../src/python-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolvePythonRelease: () =>
+      EffectModule.succeed({
+        name: "python",
+        version: "3.13.14",
+        integrity: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14%2B20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        size: 1,
+      }),
+  }
+})
+
+vi.mock("../src/python-constraints.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    compilePythonConstraints: () => EffectModule.succeed(`example==1.0.0 \\\n    --hash=sha256:${"f".repeat(64)}\n`),
+  }
+})
+
+vi.mock("../src/debian-packages.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveDebianPackages: (packages: ReadonlyArray<string>) =>
+      EffectModule.succeed({
+        direct: packages,
+        runtime: packages.map((name) => ({
+          name,
+          version: "1.0",
+          integrity: `sha256:${"9".repeat(64)}`,
+          size: 1,
+          url: `https://deb.debian.org/debian/pool/${name}.deb`,
+          direct: true,
+        })),
+      }),
+  }
+})
+
+vi.mock("../src/tool-artifacts.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveToolArtifacts: (_cacheHome: string, _platform: string, names: ReadonlyArray<string>) =>
+      EffectModule.succeed(
+        names.map((name) => ({
+          name,
+          version: "1.0.0",
+          integrity: `sha256:${"7".repeat(64)}`,
+          url: `https://github.com/example/${name}/releases/download/v1.0.0/${name}-linux-arm64`,
+          size: 1,
+        })),
+      ),
+  }
+})
+
+vi.mock("../src/rust-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolveRustToolchain: () =>
+      EffectModule.succeed([
+        {
+          name: "rust",
+          version: "1.96.0",
+          integrity: "sha256:20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b",
+          url: "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz",
+          size: 325287063,
+        },
+        {
+          name: "rust-std-musl",
+          version: "1.96.0",
+          integrity: "sha256:1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea",
+          url: "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
+          size: 42333691,
+        },
+      ]),
+  }
+})
+
+vi.mock("../src/playwright-release.js", async () => {
+  const { Effect: EffectModule } = await import("effect")
+  return {
+    resolvePlaywrightRelease: () =>
+      EffectModule.succeed([
+        {
+          name: "playwright-mcp",
+          version: "1.0.0",
+          integrity: `sha256:${"a".repeat(64)}`,
+          url: "https://registry.test/@playwright/mcp/-/mcp-1.0.0.tgz",
+          size: 1,
+        },
+        {
+          name: "playwright",
+          version: "1.2.3",
+          integrity: `sha256:${"b".repeat(64)}`,
+          url: "https://registry.test/playwright/-/playwright-1.2.3.tgz",
+          size: 1,
+        },
+        {
+          name: "playwright-core",
+          version: "1.2.3",
+          integrity: `sha256:${"c".repeat(64)}`,
+          url: "https://registry.test/playwright-core/-/playwright-core-1.2.3.tgz",
+          size: 1,
+        },
+        {
+          name: "chromium",
+          version: "1234",
+          integrity: `sha256:${"d".repeat(64)}`,
+          url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1234/chromium-linux-arm64.zip",
+          size: 1,
+        },
+        {
+          name: "chromium-headless-shell",
+          version: "1234",
+          integrity: `sha256:${"e".repeat(64)}`,
+          url: "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1234/chromium-headless-shell-linux-arm64.zip",
+          size: 1,
+        },
+      ]),
+  }
+})
+
+vi.mock("../src/artifact-cache.js", async () => {
+  const { mkdir, writeFile } = await import("node:fs/promises")
+  const path = await import("node:path")
+  const { Effect: EffectModule } = await import("effect")
+  let sequence = 0
+  return {
+    cacheArtifact: (request: {
+      readonly cacheHome: string
+      readonly expectedIntegrity?: string
+      readonly expectedSize?: number
+    }) =>
+      EffectModule.tryPromise({
+        try: async () => {
+          const destination = path.join(request.cacheHome, "fake-artifacts", String(sequence++))
+          await mkdir(path.dirname(destination), { recursive: true })
+          await writeFile(destination, Buffer.alloc(request.expectedSize ?? 1))
+          return {
+            integrity: request.expectedIntegrity ?? `sha256:${"a".repeat(64)}`,
+            size: request.expectedSize ?? 1,
+            path: destination,
+          }
+        },
+        catch: (cause) => cause,
+      }),
+    cachedArtifactPath: (cacheHome: string, integrity: string) =>
+      path.join(cacheHome, "trellage", "artifacts", "sha256", integrity.slice("sha256:".length)),
+  }
+})
+
 import {
   ApplicationError,
   builderNetworkEnv,
@@ -135,39 +331,115 @@ import {
   buildProfile,
   compatibilityPluginArguments,
   discoverPypiIndex,
-  loadLock,
+  loadProfile,
   microsoftProtectedPypiIndex,
   profileMetadata,
   pypiIndexFromNpmRegistry,
   sanitizeNpmRegistry,
   sanitizePypiIndex,
+  snapshotProfileReleaseLock,
   upgradeProfile,
+  verifyProfile,
   type CommandRunner,
   type DockerServices,
   type UpgradeServices,
 } from "../src/application.js"
 import { renderLock } from "../src/lock-file.js"
-import { profileHash, requireLocked, type ProfileLock } from "../src/lock.js"
+import { profileHash, withAttachedSidecar, type ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
+import { loadResolutionReceipt, resolutionReceiptPath, writeResolutionReceipt } from "../src/resolution-receipt.js"
+import { createPythonConstraintsSidecar, resolutionSidecarReference } from "../src/resolution-sidecar.js"
+import { resolutionSidecarPath } from "../src/resolution-sidecar-storage.js"
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
+const fixtureBaseDigest = digest("1")
 const arm64Target = {
   endpoint: "unix:///tmp/trellage-test-docker.sock",
   serverId: "trellage-test-server",
   platform: "linux/arm64",
 } as const
+const testManagedArtifacts: NonNullable<ProfileLock["packages"]["artifacts"]> = [
+  {
+    name: "node",
+    version: "24.8.0",
+    integrity: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-arm64.tar.gz",
+  },
+  {
+    name: "uv",
+    version: "0.11.22",
+    integrity: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    url: "https://github.com/astral-sh/uv/releases/download/0.11.22/uv-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+]
+const testRustArtifacts: NonNullable<ProfileLock["packages"]["artifacts"]> = [
+  {
+    name: "rust",
+    version: "1.96.0",
+    integrity: "sha256:20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b",
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz",
+    size: 325287063,
+  },
+  {
+    name: "rust-std-musl",
+    version: "1.96.0",
+    integrity: "sha256:1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea",
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
+    size: 42333691,
+  },
+]
+const testRuntimePackage = (name: keyof typeof runtimeVersions) => ({
+  name,
+  version: runtimeVersions[name],
+  integrity: runtimeIntegrities[name],
+  size: 1,
+  url: `https://deb.debian.org/debian/pool/${name}.deb`,
+})
+const runtimeClosureIntegrity = (runtime: ReadonlyArray<ProfileLock["packages"]["runtime"][number]>) =>
+  `sha256:${createHash("sha256")
+    .update(
+      JSON.stringify(
+        [...runtime]
+          .sort((left, right) => left.name.localeCompare(right.name, "en"))
+          .map(({ name, version, integrity, size, url, direct }) => ({
+            name,
+            version,
+            integrity,
+            size,
+            url,
+            direct,
+          })),
+      ),
+    )
+    .digest("hex")}`
 const dockerServices = (run: CommandRunner): DockerServices => ({ run, verify: () => Effect.void })
 const execFilePromise = promisify(execFile)
 const treeIntegrity = (files: ReadonlyArray<unknown>) =>
   `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`
 const contentIntegrity = (content: string) => `sha256:${createHash("sha256").update(content).digest("hex")}`
+const testBuildLock = {
+  builder: {
+    reference: "docker.io/jdxcode/mise:latest",
+    digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  },
+  importer: {
+    reference: "quay.io/skopeo/stable:latest",
+    digest: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  },
+} as const
 
 const runtimeSupport = (root: string) => ({
   codexEntry: path.join(root, "runtime-entry.sh"),
   copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
+  headlongEntry: path.join(root, "runtime-headlong-entry.sh"),
   piEntry: path.join(root, "runtime-pi-entry.sh"),
   primeEntry: path.join(root, "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
+  finalizeClaudeSeed: path.join(root, "finalize-claude-seed.mjs"),
+  claudeEntry: path.join(root, "runtime-claude-entry.sh"),
+  claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
+  claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
   copilotInstructionRundown: path.join(root, "instruction-rundown.md"),
 })
 
@@ -182,9 +454,10 @@ const pathExists = async (candidate: string) => {
 
 describe("compatibility plugin generation", () => {
   it("runs the source generator without installing its unrelated eval project", () => {
-    expect(compatibilityPluginArguments("/source", "full-stack-orchestration", "/output")).toEqual([
+    expect(compatibilityPluginArguments("/source", "full-stack-orchestration", "/output", "0.12.7")).toEqual([
+      "--no-config",
       "x",
-      "uv@0.11.21",
+      "uv@0.12.7",
       "--",
       "uv",
       "run",
@@ -206,6 +479,9 @@ describe("compatibility plugin generation", () => {
 describe("npm registry forwarding", () => {
   it("accepts a credential-free HTTPS registry", () => {
     expect(sanitizeNpmRegistry("https://packagefeedproxy.microsoft.io/npm/\n")).toBe(
+      "https://packagefeedproxy.microsoft.io/npm/",
+    )
+    expect(sanitizeNpmRegistry("https://packagefeedproxy.microsoft.io/npm/registry/")).toBe(
       "https://packagefeedproxy.microsoft.io/npm/",
     )
   })
@@ -319,14 +595,18 @@ const waitUntil = async (predicate: () => Promise<boolean>, message: string) => 
   }
 }
 
-const writeReadyProfile = async (root: string, source: string, lock: Omit<ProfileLock, "profile_hash">) => {
+const writeReadyProfile = async (
+  root: string,
+  source: string,
+  lock: Omit<ProfileLock, "profile_hash">,
+  developmentReceipt = false,
+) => {
   const profilePath = path.join(root, "profile.toml")
   await writeFile(profilePath, source)
   const document = await Effect.runPromise(parseProfile(source, profilePath))
-  await writeFile(
-    path.join(root, "profile.linux-arm64.lock.toml"),
-    renderLock({ ...lock, platform: "linux/arm64", profile_hash: profileHash(document) }),
-  )
+  const readyLock = { ...lock, platform: "linux/arm64" as const, profile_hash: profileHash(document) }
+  await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(readyLock))
+  if (developmentReceipt) await Effect.runPromise(writeResolutionReceipt(document, root, readyLock))
   return profilePath
 }
 
@@ -380,17 +660,13 @@ const copilotLock = (profile_hash: string): ProfileLock => ({
       url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
       size: 1024,
     },
-    runtime: [
-      {
-        name: "bash",
-        version: arm64ArtifactCatalog.runtimeVersions.bash,
-        integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
-      },
-    ],
+    runtime: [testRuntimePackage("bash")],
+    artifacts: [testManagedArtifacts[0]!],
   },
+  build: testBuildLock,
   image: {
     base: "node:22.17.0-bookworm-slim",
-    base_digest: arm64ArtifactCatalog.base.digest,
+    base_digest: fixtureBaseDigest,
     final_digest: digest("e"),
   },
 })
@@ -429,17 +705,12 @@ const piLock = (profile_hash: string): ProfileLock => ({
       url: "https://github.com/can1357/oh-my-pi/releases/download/v17.2.6/omp-linux-arm64",
       size: 157526160,
     },
-    runtime: [
-      {
-        name: "bash",
-        version: arm64ArtifactCatalog.runtimeVersions.bash,
-        integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
-      },
-    ],
+    runtime: [testRuntimePackage("bash")],
   },
+  build: testBuildLock,
   image: {
     base: "node:22.17.0-bookworm-slim",
-    base_digest: arm64ArtifactCatalog.base.digest,
+    base_digest: fixtureBaseDigest,
     final_digest: digest("e"),
   },
 })
@@ -477,15 +748,13 @@ const primeLock = (profile_hash: string): ProfileLock => ({
       url: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
       size: 9323789,
     },
-    runtime: ["bash", "gh", "git"].map((name) => ({
-      name,
-      version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
-      integrity: arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
-    })),
+    runtime: ["bash", "gh", "git"].map((name) => testRuntimePackage(name as keyof typeof runtimeVersions)),
+    artifacts: testManagedArtifacts,
   },
+  build: testBuildLock,
   image: {
     base: "node:22.17.0-bookworm-slim",
-    base_digest: arm64ArtifactCatalog.base.digest,
+    base_digest: fixtureBaseDigest,
     final_digest: digest("e"),
   },
 })
@@ -529,16 +798,13 @@ const headlongLock = (profile_hash: string): ProfileLock => ({
       commit: headlongCommit,
       integrity: treeIntegrity(headlongFiles),
     },
-    artifacts: [...arm64ArtifactCatalog.headlongArtifacts],
-    runtime: ["bash", "gh", "git"].map((name) => ({
-      name,
-      version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
-      integrity: arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
-    })),
+    artifacts: [...testManagedArtifacts, ...testRustArtifacts],
+    runtime: ["bash", "gh", "git"].map((name) => testRuntimePackage(name as keyof typeof runtimeVersions)),
   },
+  build: testBuildLock,
   image: {
     base: "node:22.17.0-bookworm-slim",
-    base_digest: arm64ArtifactCatalog.base.digest,
+    base_digest: fixtureBaseDigest,
     final_digest: digest("e"),
   },
 })
@@ -604,15 +870,11 @@ const codexLock = (profile_hash: string, finalDigest = digest("e")): ProfileLock
         url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
         size: 17260137,
       },
+      testManagedArtifacts[1]!,
     ],
-    runtime: [
-      {
-        name: "bash",
-        version: "5.2.15-2+b13",
-        integrity: "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385",
-      },
-    ],
+    runtime: [testRuntimePackage("bash")],
   },
+  build: testBuildLock,
   image: {
     base: "node:22.17.0-bookworm-slim",
     base_digest: "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0",
@@ -645,15 +907,22 @@ describe("profile metadata", () => {
     } satisfies ProfileLock
     await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(staleLock))
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", root))
     expect(metadata).toMatchObject({
       harness_kind: "copilot",
+      schema_version: 2,
+      resolution_policy: "floating",
+      resolution_channel: "stable",
+      locally_resolved: false,
+      release_lock_available: false,
       locked: false,
       resolved_version: null,
     })
     expect.soft(metadata.image).toBe("trellage-profile-copilot-hve-linux-arm64:locked")
     expect.soft(metadata.runtime_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
-    expect.soft(metadata.build_command).toContain("trellage build --locked")
+    expect.soft(metadata.build_command).toContain("trellage build ")
+    expect.soft(metadata.release_build_command).toContain("trellage build --locked")
+    expect.soft(metadata.refresh_command).toContain("trellage upgrade ")
     expect.soft(metadata.runtime_entry).toBe("trellage-copilot-entry")
     expect.soft(metadata.tmpfs_size).toBe("256m")
     const applicationSource = await readFile(fileURLToPath(new URL("../src/application.ts", import.meta.url)), "utf8")
@@ -683,21 +952,35 @@ describe("profile metadata", () => {
     } satisfies ProfileLock
     await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(lock))
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", root))
     expect(metadata.tmpfs_size).toBe("2g")
   })
 
   it("reports Pi runtime identity and bridge networking from a ready lock", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-pi-"))
-    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"))
+    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"), true)
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", root))
 
     expect(metadata).toMatchObject({
       harness_kind: "pi",
       harness_executable: "omp",
       image: "trellage-profile-pi-oh-my-pi-linux-arm64:locked",
+      locally_resolved: true,
+      release_lock_available: true,
       locked: true,
+      development_resolution_bundle: {
+        schema_version: 1,
+        cache_relative_directory: expect.stringMatching(
+          /^trellage\/resolutions\/v1\/pi-oh-my-pi\/linux-arm64\/[0-9a-f]{64}$/,
+        ),
+        files: [
+          {
+            source: expect.stringMatching(/profile\.linux-arm64\.lock\.toml$/),
+            relative: "profile.linux-arm64.lock.toml",
+          },
+        ],
+      },
       headless: {
         schemaVersion: 1,
         prompt: false,
@@ -725,14 +1008,16 @@ describe("profile metadata", () => {
 
   it("reports Prime proxy identity without model credentials", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-prime-"))
-    const profilePath = await writeReadyProfile(root, primeSource, primeLock("replaced-by-writeReadyProfile"))
+    const profilePath = await writeReadyProfile(root, primeSource, primeLock("replaced-by-writeReadyProfile"), true)
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", root))
 
     expect(metadata).toMatchObject({
       harness_kind: "prime",
       harness_executable: "prime-agent",
       image: "trellage-profile-prime-agent-linux-arm64:locked",
+      locally_resolved: true,
+      release_lock_available: false,
       locked: true,
       headless: {
         schemaVersion: 1,
@@ -767,14 +1052,21 @@ describe("profile metadata", () => {
 
   it("reports the persistent Headlong lifecycle without provider values", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-metadata-headlong-"))
-    const profilePath = await writeReadyProfile(root, headlongSource, headlongLock("replaced-by-writeReadyProfile"))
+    const profilePath = await writeReadyProfile(
+      root,
+      headlongSource,
+      headlongLock("replaced-by-writeReadyProfile"),
+      true,
+    )
 
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", root))
 
     expect(metadata).toMatchObject({
       harness_kind: "headlong",
       harness_executable: "headlong-init",
       image: "trellage-profile-headlong-linux-arm64:locked",
+      locally_resolved: true,
+      release_lock_available: true,
       locked: true,
       resolved_version: headlongCommit,
       runtime_entry: "runtime-headlong-entry",
@@ -813,6 +1105,8 @@ describe("transactional profile upgrade", () => {
     mocks.failPackageResolutions = 0
     mocks.failLockRenames = 0
     mocks.lockRenameEvents = undefined
+    mocks.resolvedSourceCommit = "a".repeat(40)
+    mocks.sourceDirectory = "/definitely-missing-harness-source"
   })
 
   it("keeps lock file services private to the application transaction", async () => {
@@ -820,12 +1114,16 @@ describe("transactional profile upgrade", () => {
     expect(application).not.toHaveProperty("LiveUpgradeFileServices")
   })
 
-  it("commits the candidate image and matching lock before cleaning temporary tags", async () => {
+  it("commits the candidate image and matching receipt before cleaning temporary tags", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-upgrade-success-"))
     const profilePath = path.join(root, "profile.toml")
     await writeFile(profilePath, codexSource)
     const document = await Effect.runPromise(parseProfile(codexSource, profilePath))
-    await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(codexLock(profileHash(document))))
+    const initialLock = codexLock(profileHash(document))
+    const releaseLockPath = path.join(root, "profile.linux-arm64.lock.toml")
+    const originalRelease = renderLock(initialLock)
+    await writeFile(releaseLockPath, originalRelease)
+    await Effect.runPromise(writeResolutionReceipt(document, root, initialLock))
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
 
@@ -868,6 +1166,7 @@ describe("transactional profile upgrade", () => {
     mocks.sourceFiles = []
     expect(events).toEqual([
       `build:${candidate}:undefined`,
+      expect.stringMatching(/^exists:trellage-profile-codex-upgrade-linux-arm64:h-[0-9a-f]{12}-[0-9a-f]{12}$/),
       `exists:${canonical}`,
       `tag:${canonical}->${backup}`,
       `tag:${candidate}->${canonical}`,
@@ -878,8 +1177,39 @@ describe("transactional profile upgrade", () => {
       `remove:${candidate}`,
       `remove:${backup}`,
     ])
-    const finalLock = codexLock(profileHash(document), builtDigest)
-    expect(await readFile(path.join(root, "profile.linux-arm64.lock.toml"), "utf8")).toBe(renderLock(finalLock))
+    const finalLock = {
+      ...codexLock(profileHash(document), builtDigest),
+      packages: {
+        ...codexLock(profileHash(document), builtDigest).packages,
+        runtime: [
+          {
+            name: "bash",
+            version: "1.0",
+            integrity: `sha256:${"9".repeat(64)}`,
+            size: 1,
+            url: "https://deb.debian.org/debian/pool/bash.deb",
+            direct: true,
+          },
+        ],
+        runtime_direct: ["bash"],
+        runtime_closure_integrity: runtimeClosureIntegrity([
+          {
+            name: "bash",
+            version: "1.0",
+            integrity: `sha256:${"9".repeat(64)}`,
+            size: 1,
+            url: "https://deb.debian.org/debian/pool/bash.deb",
+            direct: true,
+          },
+        ]),
+      },
+      image: {
+        ...codexLock(profileHash(document), builtDigest).image,
+        base_digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      },
+    }
+    expect(await readFile(resolutionReceiptPath(document, "linux/arm64", root), "utf8")).toBe(renderLock(finalLock))
+    expect(await readFile(releaseLockPath, "utf8")).toBe(originalRelease)
     expect(events.join(" ")).not.toMatch(/container|volume|state/i)
   })
 
@@ -888,8 +1218,11 @@ describe("transactional profile upgrade", () => {
     const profilePath = path.join(root, "profile.toml")
     await writeFile(profilePath, source)
     const document = await Effect.runPromise(parseProfile(source, profilePath))
-    const original = renderLock(codexLock(profileHash(document)))
-    await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), original)
+    const originalLock = codexLock(profileHash(document))
+    const original = renderLock(originalLock)
+    const releaseLockPath = path.join(root, "profile.linux-arm64.lock.toml")
+    await writeFile(releaseLockPath, original)
+    await Effect.runPromise(writeResolutionReceipt(document, root, originalLock))
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
     mocks.sourceFiles = [{ kind: "file", path: "plugins/example/.codex/agents/example.toml", sha256: digest("f") }]
@@ -898,7 +1231,8 @@ describe("transactional profile upgrade", () => {
       profilePath,
       support,
       original,
-      lockPath: path.join(root, "profile.linux-arm64.lock.toml"),
+      lockPath: resolutionReceiptPath(document, "linux/arm64", root),
+      releaseLockPath,
       canonical: "trellage-profile-codex-upgrade-linux-arm64:locked",
       candidate: `trellage-profile-codex-upgrade-linux-arm64:candidate-${process.pid}`,
       backup: `trellage-profile-codex-upgrade-linux-arm64:backup-${process.pid}`,
@@ -979,7 +1313,7 @@ describe("transactional profile upgrade", () => {
 
   it("falls back to the verified harness when latest package resolution remains inaccessible", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-upgrade-package-fallback-"))
-    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"))
+    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"), true)
     const support = runtimeSupport(root)
     await writeFile(support.piEntry, "#!/bin/sh\n")
     mocks.failPackageResolutions = 3
@@ -997,6 +1331,181 @@ describe("transactional profile upgrade", () => {
         fallbacks: ["harness pi@latest -> 17.2.6"],
       },
     )
+  })
+
+  it("does not reuse Headlong packages after the harness source advances", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-headlong-coupled-fallback-"))
+    const profilePath = await writeReadyProfile(
+      root,
+      headlongSource,
+      headlongLock("replaced-by-writeReadyProfile"),
+      true,
+    )
+    const document = await Effect.runPromise(loadProfile(profilePath))
+    const receiptPath = resolutionReceiptPath(document, "linux/arm64", root)
+    const originalReceipt = await readFile(receiptPath, "utf8")
+    const support = runtimeSupport(root)
+    await writeFile(support.headlongEntry, "#!/bin/sh\n")
+    mocks.resolvedSourceCommit = "b".repeat(40)
+    mocks.sourceFiles = headlongFiles
+    mocks.failPackageResolutions = 3
+    const events: Array<string> = []
+    const services: UpgradeServices = {
+      buildCandidate: () =>
+        Effect.sync(() => {
+          events.push("build")
+          return digest("9")
+        }),
+      imageExists: () => Effect.succeed(false),
+      tagImage: () =>
+        Effect.sync(() => {
+          events.push("tag")
+        }),
+      removeImage: () =>
+        Effect.sync(() => {
+          events.push("remove")
+        }),
+    }
+
+    await expect(Effect.runPromise(upgradeProfile(profilePath, root, support, arm64Target, services))).rejects.toThrow(
+      /package resolution failed/,
+    )
+    expect(events).toEqual([])
+    expect(await readFile(receiptPath, "utf8")).toBe(originalReceipt)
+  })
+
+  it("does not reuse Hyperresearch constraints after the Python project source advances", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-hyperresearch-coupled-fallback-"))
+    const profilePath = path.join(root, "profile.toml")
+    const source = `
+schema = 1
+name = "hyperresearch-coupled"
+description = "Hyperresearch package coupling"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[plugins]]
+adapter = "hyperresearch"
+repository = "https://github.com/jordan-gibbs/hyperresearch.git"
+ref = "main"
+select = ["light"]
+gear = "full"
+`
+    await writeFile(profilePath, source)
+    const document = await Effect.runPromise(parseProfile(source, profilePath))
+    const constraints = `example==1.0.0 \\\n    --hash=sha256:${"f".repeat(64)}\n`
+    const sidecar = createPythonConstraintsSidecar(profileHash(document), "linux/arm64", constraints)
+    const sourceFiles: ProfileLock["sources"][number]["files"] = []
+    const lock = withAttachedSidecar(
+      {
+        schema: 1,
+        platform: "linux/arm64",
+        source_date_epoch: 1784379906,
+        profile_hash: profileHash(document),
+        sources: [
+          {
+            kind: "plugin",
+            adapter: "hyperresearch",
+            package_version: "0.9.1",
+            repository: "https://github.com/jordan-gibbs/hyperresearch.git",
+            ref: "main",
+            select: ["light"],
+            commit: "a".repeat(40),
+            integrity: treeIntegrity(sourceFiles),
+            files: sourceFiles,
+          },
+        ],
+        packages: {
+          harness: {
+            kind: "claude",
+            selector: "2.1.218",
+            version: "2.1.218",
+            integrity: digest("c"),
+            url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+            size: 1,
+          },
+          runtime: [testRuntimePackage("bash")],
+          artifacts: [
+            ...testManagedArtifacts,
+            {
+              name: "python",
+              version: "3.13.14",
+              integrity: digest("e"),
+              url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14%2B20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+              size: 1,
+            },
+            ...playwrightArtifacts,
+            {
+              name: "obscura",
+              version: "0.1.11",
+              integrity: digest("6"),
+              url: "https://github.com/h4ckf0r0day/obscura/releases/download/v0.1.11/obscura-aarch64-linux-stealth.tar.gz",
+              size: 1,
+            },
+          ],
+          python_lock_integrity: sidecar.files[0]!.integrity,
+        },
+        sidecar: resolutionSidecarReference(sidecar),
+        build: testBuildLock,
+        image: {
+          base: "node:22.17.0-bookworm-slim",
+          base_digest: fixtureBaseDigest,
+          final_digest: digest("9"),
+        },
+      },
+      sidecar,
+    )
+    await Effect.runPromise(writeResolutionReceipt(document, root, lock))
+    const receiptPath = resolutionReceiptPath(document, "linux/arm64", root)
+    const originalReceipt = await readFile(receiptPath, "utf8")
+    const support = runtimeSupport(root)
+    await Promise.all([
+      writeFile(support.claudeEntry, "#!/bin/sh\n"),
+      writeFile(support.finalizeClaudeSeed, "export {}\n"),
+      writeFile(support.claudeBrowserAgent, "browser\n"),
+      writeFile(support.claudeOutputStyleRundown, "style\n"),
+    ])
+    const sourceDirectory = path.join(root, "hyperresearch-source")
+    await mkdir(sourceDirectory, { recursive: true })
+    await writeFile(
+      path.join(sourceDirectory, "pyproject.toml"),
+      '[project]\nname = "hyperresearch"\nversion = "0.9.1"\n',
+    )
+    mocks.sourceDirectory = sourceDirectory
+    mocks.resolvedSourceCommit = "b".repeat(40)
+    mocks.sourceFiles = []
+    mocks.failPackageResolutions = 3
+    const events: Array<string> = []
+    const services: UpgradeServices = {
+      buildCandidate: () =>
+        Effect.sync(() => {
+          events.push("build")
+          return digest("9")
+        }),
+      imageExists: () => Effect.succeed(false),
+      tagImage: () =>
+        Effect.sync(() => {
+          events.push("tag")
+        }),
+      removeImage: () =>
+        Effect.sync(() => {
+          events.push("remove")
+        }),
+    }
+
+    await expect(Effect.runPromise(upgradeProfile(profilePath, root, support, arm64Target, services))).rejects.toThrow(
+      /package resolution failed/,
+    )
+    expect(events).toEqual([])
+    expect(await readFile(receiptPath, "utf8")).toBe(originalReceipt)
   })
 
   it("preflights runtime support before resolution or image mutation", async () => {
@@ -1040,7 +1549,7 @@ describe("transactional profile upgrade", () => {
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
   })
 
-  it("does not mutate images or lock bytes when resolution fails", async () => {
+  it("does not mutate images or receipt bytes when resolution fails", async () => {
     const fixture = await prepare(
       codexSource.replace('base = "node:22.17.0-bookworm-slim"', 'base = "unsupported.invalid:1"'),
     )
@@ -1073,7 +1582,7 @@ describe("transactional profile upgrade", () => {
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
   })
 
-  it("cleans a partial candidate while preserving the old lock and canonical image", async () => {
+  it("cleans a partial candidate while preserving the old receipt and canonical image", async () => {
     const fixture = await prepare()
     const events: Array<string> = []
     const services: UpgradeServices = {
@@ -1096,12 +1605,12 @@ describe("transactional profile upgrade", () => {
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
   })
 
-  it("preserves the old canonical image and lock when backup tagging fails", async () => {
+  it("preserves the old canonical image and receipt when backup tagging fails", async () => {
     const fixture = await prepare()
     const events: Array<string> = []
     const services: UpgradeServices = {
       buildCandidate: () => Effect.succeed(digest("9")),
-      imageExists: () => Effect.succeed(true),
+      imageExists: (image) => Effect.succeed(image === fixture.canonical),
       tagImage: (source, destination) =>
         Effect.sync(() => {
           events.push(`tag:${source}->${destination}`)
@@ -1156,19 +1665,29 @@ describe("transactional profile upgrade", () => {
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
   })
 
-  it("restores exact lock bytes and canonical image when atomic lock replacement fails", async () => {
+  it("restores exact receipt bytes and canonical image when atomic receipt replacement fails", async () => {
     const fixture = await prepare()
     const oldImage = "sha256:old-image"
     const images = new Map([
       [fixture.canonical, oldImage],
       [fixture.candidate, "sha256:candidate-image"],
     ])
+    let alias: string | undefined
+    const oldAliasImage = "sha256:old-alias-image"
     const writes: Array<string> = []
     mocks.lockRenameEvents = writes
     mocks.failLockRenames = 1
     const services: UpgradeServices = {
       buildCandidate: () => Effect.succeed(digest("9")),
-      imageExists: (image) => Effect.succeed(images.has(image)),
+      imageExists: (image) =>
+        Effect.sync(() => {
+          if (image !== fixture.canonical) {
+            alias = image
+            images.set(image, oldAliasImage)
+            return true
+          }
+          return images.has(image)
+        }),
       tagImage: (source, destination) =>
         Effect.sync(() => {
           images.set(destination, images.get(source)!)
@@ -1181,9 +1700,12 @@ describe("transactional profile upgrade", () => {
 
     await expect(
       Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
-    ).rejects.toThrow(/cannot write lock/)
+    ).rejects.toThrow(/cannot write development resolution receipt/)
     expect(writes).toHaveLength(2)
     expect(images.get(fixture.canonical)).toBe(oldImage)
+    expect(alias).toBeDefined()
+    expect(images.get(alias!)).toBe(oldAliasImage)
+    expect([...images.keys()].some((image) => image.includes("-backup-"))).toBe(false)
     expect(await readFile(fixture.lockPath, "utf8")).toBe(fixture.original)
   })
 
@@ -1231,7 +1753,7 @@ describe("transactional profile upgrade", () => {
 
     await expect(
       Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
-    ).rejects.toThrow(/cannot write lock/)
+    ).rejects.toThrow(/cannot write development resolution receipt/)
     expect(images.has(fixture.canonical)).toBe(false)
     await expect(readFile(fixture.lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
   })
@@ -1265,7 +1787,7 @@ describe("transactional profile upgrade", () => {
     expect(await readFile(fixture.lockPath, "utf8")).toContain(`final_digest = "${builtDigest}"`)
   })
 
-  it("restores the old image and lock when the fiber is interrupted after canonical mutation", async () => {
+  it("restores the old image and receipt when the fiber is interrupted after canonical mutation", async () => {
     const fixture = await prepare()
     const oldImage = "sha256:old-image"
     const images = new Map([
@@ -1509,13 +2031,14 @@ select = ["humanizer"]
           size: 88123930,
         },
         runtime: [],
+        artifacts: testManagedArtifacts,
       },
       image: { base: "node:22.17.0-bookworm-slim", base_digest: digest("d") },
     }
 
     const script = builderScript(document, lock)
 
-    expect(script).toContain("mise install --locked node@22.17.0 http:claude@2.1.218")
+    expect(script).toContain("mise install --locked node@24.8.0 http:claude@2.1.218")
     expect(script).toContain('claude_metadata="$claude_dir/metadata.json"')
     expect(script).toContain(
       'sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"',
@@ -1532,11 +2055,86 @@ select = ["humanizer"]
     expect(script).not.toMatch(/hyperresearch|playwright|obscura|APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
   })
 
+  it("uses the locked uv entry for generated graph Python packages", async () => {
+    const source = `
+schema = 1
+name = "claude-graph"
+description = "Claude graph Python test"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+base = "node:bookworm-slim"
+shell = "fish"
+packages = ["bash"]
+[[image.tools]]
+kind = "pypi"
+name = "serena-agent"
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/example/plugin.git"
+ref = "main"
+marketplace = "example"
+select = ["example"]
+`
+    const document = await Effect.runPromise(parseProfile(source, "/profiles/claude-graph/profile.toml"))
+    const lock: ProfileLock = {
+      schema: 1,
+      platform: "linux/arm64",
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [
+        {
+          kind: "plugin",
+          adapter: "claude-marketplace",
+          marketplace: "example",
+          plugin_versions: { example: "1.0.0" },
+          repository: "https://github.com/example/plugin.git",
+          ref: "main",
+          select: ["example"],
+          commit: "a".repeat(40),
+          integrity: treeIntegrity([]),
+          files: [],
+        },
+      ],
+      packages: {
+        harness: {
+          kind: "claude",
+          selector: "2.1.218",
+          version: "2.1.218",
+          integrity: digest("c"),
+          url: "https://github.com/anthropics/claude-code/releases/download/v2.1.218/claude-linux-arm64.tar.gz",
+          size: 1,
+        },
+        runtime: [],
+        artifacts: [
+          ...testManagedArtifacts,
+          {
+            name: "python",
+            version: "3.13.14",
+            integrity: digest("e"),
+            url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14%2B20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+            size: 1,
+          },
+        ],
+      },
+      image: { base: "node:bookworm-slim", base_digest: digest("b") },
+    }
+
+    const script = builderScript(document, lock)
+    expect(script).toContain("mise x --locked uv@0.11.22 -- uv pip install")
+    expect(script).not.toContain("mise x uv@")
+  })
+
   it("installs and verifies the exact locked Copilot plugin before finalizing the seed", async () => {
     const document = await Effect.runPromise(parseProfile(copilotSource, "/tmp/copilot/profile.toml"))
     const script = builderScript(document, copilotLock(profileHash(document)))
     const commands = [
-      "mise install --locked http:copilot@1.0.75",
+      "mise install --locked node@24.8.0 http:copilot@1.0.75",
       'copilot_dir="$(mise where http:copilot@1.0.75)"',
       'copilot_bin="$copilot_dir/copilot"',
       '[ -x "$copilot_bin" ]',
@@ -1544,8 +2142,9 @@ select = ["humanizer"]
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin marketplace add /src/hve-core',
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin install hve-core@hve-core',
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin list',
-      "[ -x /mise/installs/node/24.18.0/bin/node ]",
-      "/mise/installs/node/24.18.0/bin/node /src/finalize-copilot-seed.mjs /src/copilot-seed hve-core hve-core 3.3.101",
+      'node_bin="$(mise where node@24.8.0)/bin/node"',
+      '[ -x "$node_bin" ]',
+      '"$node_bin" /src/finalize-copilot-seed.mjs /src/copilot-seed hve-core hve-core 3.3.101',
       'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     ]
 
@@ -1636,15 +2235,22 @@ select = ["humanizer"]
 
   it("verifies and installs only the exact locked Prime tarball before the OCI build", async () => {
     const document = await Effect.runPromise(parseProfile(primeSource, "/profiles/prime-agent/profile.toml"))
-    const lock = primeLock(profileHash(document))
+    const lock: ProfileLock = {
+      ...primeLock(profileHash(document)),
+      packages: {
+        ...primeLock(profileHash(document)).packages,
+        python_lock_integrity: digest("f"),
+      },
+      sidecar: { schema: 1, integrity: digest("a"), size: 1 },
+    }
     const script = builderScript(document, lock)
     const commands = [
       "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v0.7.0/prime-agent-0.7.0.tgz",
       'wc -c < "$prime_artifact"',
       "sha256sum --check --strict",
       "rm -f /mise/config.toml",
-      "mise install --locked node@22.17.0",
-      'prime_node_dir="$(mise where node@22.17.0)"',
+      "mise install --locked node@24.8.0",
+      'prime_node_dir="$(mise where node@24.8.0)"',
       '[ -x "$prime_node_dir/bin/node" ]',
       '[ -x "$prime_node_dir/bin/npm" ]',
       "PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0",
@@ -1660,10 +2266,7 @@ select = ["humanizer"]
       "prime_kernel_status=$?",
       "trellage: Prime Python kernel bootstrap failed",
       "UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/",
-      "prime_kernel_requirements='/tmp/trellage-prime-kernel-requirements.txt'",
-      "platformdirs==4.11.0 --hash=sha256:360ccded2b7fce0af0ff80cc8f5942a1c5d99b0e856033acb030bfc634709e74",
-      'mise x uv@0.11.21 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall',
-      'rm -f "$prime_kernel_requirements"',
+      'mise x --locked uv@0.11.22 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall -r /src/python-constraints.lock',
       'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
       'find "$prime_kernel_home" -type d -name __pycache__',
       "prime_agent_runtime-*.dist-info/RECORD",
@@ -1769,7 +2372,7 @@ exit "$FINALIZER_STATUS"
           : options.nodeMode === "non-executable"
             ? nonExecutableNode
             : fakeNode
-      const executableScript = script.replaceAll("/mise/installs/node/24.18.0/bin/node", node)
+      const executableScript = script.replace('node_bin="$(mise where node@24.8.0)/bin/node"', `node_bin='${node}'`)
       const result = await execFilePromise("/bin/sh", ["-ceu", executableScript], {
         env: {
           PATH: `${bin}:/usr/bin:/bin`,
@@ -1793,7 +2396,7 @@ exit "$FINALIZER_STATUS"
     await expect(execute({ pluginListOutput: `Installed plugins:\n${exact}` })).resolves.toEqual(
       expect.objectContaining({
         trace: [
-          "mise:install --locked http:copilot@1.0.75",
+          "mise:install --locked node@24.8.0 http:copilot@1.0.75",
           "mise:where http:copilot@1.0.75",
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin marketplace add /src/hve-core",
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin install hve-core@hve-core",
@@ -1872,95 +2475,28 @@ exit "$FINALIZER_STATUS"
   }, 20_000)
 })
 
-describe("non-locked build lock persistence", () => {
+describe("development build receipt persistence", () => {
   const roots: Array<string> = []
 
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
   })
 
-  it("preserves historical Codex lock serialization when persisting only the final digest", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-legacy-build-lock-"))
+  it("resolves on first build and reuses the cached receipt on the next build", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-development-build-reuse-"))
     roots.push(root)
     const profilePath = path.join(root, "profile.toml")
-    const source = `
-schema = 1
-name = "legacy-codex"
-description = "Legacy Codex profile"
-[harness]
-kind = "codex"
-version = "0.144.6"
-[harness.codex]
-model = "gpt-5.5"
-reasoning_effort = "medium"
-model_provider = "proxy"
-[harness.codex.providers.proxy]
-base_url = "http://proxy:8080/v1"
-wire_api = "responses"
-[image]
-base = "node:22.17.0-bookworm-slim"
-shell = "fish"
-packages = ["bash"]
-[[plugins]]
-adapter = "codex-native"
-repository = "https://github.com/example/legacy-plugin.git"
-ref = "${"a".repeat(40)}"
-select = []
-`
-    await writeFile(profilePath, source)
-    const document = await Effect.runPromise(parseProfile(source, profilePath))
-    const oldDigest = digest("e")
-    const builtDigest = digest("9")
-    const sourceContent = "legacy plugin fixture\n"
-    const sourcePath = "plugins/legacy/README.md"
-    const sourceHash = contentIntegrity(sourceContent)
-    const legacyIntegrity = treeIntegrity([{ path: sourcePath, sha256: sourceHash }])
-    const historical = `schema = 1
-platform = "linux/arm64"
-source_date_epoch = 1784379906
-profile_hash = "${profileHash(document)}"
-
-[[sources]]
-kind = "plugin"
-adapter = "codex-native"
-repository = "https://github.com/example/legacy-plugin.git"
-ref = "${"a".repeat(40)}"
-select = []
-commit = "${"a".repeat(40)}"
-integrity = "${legacyIntegrity}"
-
-[[sources.files]]
-path = "${sourcePath}"
-sha256 = "${sourceHash}"
-
-[packages]
-codex = "0.144.6"
-codex_integrity = "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be"
-codex_url = "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz"
-codex_size = 101269986
-
-[[packages.runtime]]
-name = "bash"
-version = "5.2.15-2+b13"
-integrity = "sha256:fdb470b5ec1773b90014138bfc1deda4505c1c23e7f5731e8b527c636ac03385"
-
-[image]
-base = "node:22.17.0-bookworm-slim"
-base_digest = "sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0"
-final_digest = "${oldDigest}"
-`
-    const lockPath = path.join(root, "profile.linux-arm64.lock.toml")
-    await writeFile(lockPath, historical)
-    const parsedHistorical = await Effect.runPromise(loadLock(profilePath, "linux/arm64"))
-    const original = renderLock(parsedHistorical!)
-    expect(original).toContain('[packages]\ncodex = "0.144.6"')
-    expect(original).not.toContain("[packages.harness]")
+    await writeFile(profilePath, codexSource)
+    const document = await Effect.runPromise(parseProfile(codexSource, profilePath))
     const support = runtimeSupport(root)
     await writeFile(support.codexEntry, "#!/bin/sh\n")
     const sourceDirectory = path.join(root, "source")
-    await mkdir(path.join(sourceDirectory, "plugins", "legacy"), { recursive: true })
+    const sourcePath = "plugins/example/.codex/agents/example.toml"
+    const sourceContent = 'name = "example"\n'
+    await mkdir(path.join(sourceDirectory, path.dirname(sourcePath)), { recursive: true })
     await writeFile(path.join(sourceDirectory, sourcePath), sourceContent)
     mocks.sourceDirectory = sourceDirectory
+    mocks.sourceFiles = [{ kind: "file", path: sourcePath, sha256: contentIntegrity(sourceContent) }]
     const execute = (_command: string, args: ReadonlyArray<string>) =>
       Effect.promise(async () => {
         if (!args.includes("--user")) return
@@ -1970,24 +2506,169 @@ final_digest = "${oldDigest}"
         await mkdir(path.join(context, "oci"))
         await writeFile(
           path.join(context, "oci", "index.json"),
-          JSON.stringify({
-            manifests: [{ digest: builtDigest }],
-          }),
+          JSON.stringify({ manifests: [{ digest: digest("9") }] }),
         )
       })
 
+    mocks.requests.length = 0
+    await Effect.runPromise(buildProfile(profilePath, false, root, support, arm64Target, dockerServices(execute)))
+    expect(mocks.requests.some((request) => request.lockedCommit === undefined)).toBe(true)
+    await expect(access(path.join(root, "profile.linux-arm64.lock.toml"))).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(Effect.runPromise(loadResolutionReceipt(document, "linux/arm64", root))).resolves.toBeDefined()
+
+    mocks.requests.length = 0
+    mocks.failPackageResolutions = 3
+    await Effect.runPromise(buildProfile(profilePath, false, root, support, arm64Target, dockerServices(execute)))
+    expect(mocks.requests.every((request) => request.lockedCommit !== undefined)).toBe(true)
+    expect(mocks.failPackageResolutions).toBe(3)
+    mocks.failPackageResolutions = 0
+  }, 20_000)
+
+  it("keeps release snapshots explicit and strict", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-release-lock-strict-"))
+    roots.push(root)
+    const profilePath = path.join(root, "profile.toml")
+    await writeFile(profilePath, codexSource)
+    const document = await Effect.runPromise(parseProfile(codexSource, profilePath))
+    const developmentLock = codexLock(profileHash(document), digest("9"))
+    await Effect.runPromise(writeResolutionReceipt(document, root, developmentLock))
+    const support = runtimeSupport(root)
+    await writeFile(support.codexEntry, "#!/bin/sh\n")
+
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
+      /missing lock/,
+    )
+
+    await Effect.runPromise(snapshotProfileReleaseLock(profilePath, false, root, "linux/arm64"))
+    await expect(readFile(path.join(root, "profile.linux-arm64.lock.toml"), "utf8")).resolves.toContain(
+      'platform = "linux/arm64"',
+    )
+  })
+
+  it("fails closed for unsupported Prime release snapshots and locked verification", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-prime-release-unsupported-"))
+    roots.push(root)
+    const profilePath = await writeReadyProfile(root, primeSource, primeLock("replaced-by-writeReadyProfile"))
+    const support = runtimeSupport(root)
+    const diagnostic =
+      /Prime release snapshots are unavailable until the complete npm and Python bootstrap closures can be locked and installed offline/
+
     await expect(
-      Effect.runPromise(buildProfile(profilePath, false, root, support, arm64Target, dockerServices(execute))),
-    ).resolves.toEqual({
-      image: "trellage-profile-legacy-codex-linux-arm64:locked",
-      digest: builtDigest,
-    })
-    const expected = original.replace(oldDigest, builtDigest)
-    const persisted = await readFile(lockPath, "utf8")
-    expect(persisted).toBe(expected)
-    const reloaded = await Effect.runPromise(loadLock(profilePath, "linux/arm64"))
-    await expect(Effect.runPromise(requireLocked(document, reloaded))).resolves.toBe(reloaded)
-    expect(renderLock(reloaded!)).toBe(expected)
+      Effect.runPromise(snapshotProfileReleaseLock(profilePath, false, root, "linux/arm64")),
+    ).rejects.toThrow(diagnostic)
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
+      diagnostic,
+    )
+    await expect(Effect.runPromise(verifyProfile(profilePath, "linux/arm64"))).rejects.toThrow(diagnostic)
+  })
+
+  it("copies content-addressed receipt sidecars into a portable release snapshot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-release-sidecar-"))
+    roots.push(root)
+    const profilePath = path.join(root, "profile.toml")
+    await writeFile(profilePath, codexSource)
+    const document = await Effect.runPromise(parseProfile(codexSource, profilePath))
+    const sidecar = createPythonConstraintsSidecar(
+      profileHash(document),
+      "linux/arm64",
+      `example==1.0.0 \\\n    --hash=sha256:${"f".repeat(64)}\n`,
+    )
+    const developmentLock = withAttachedSidecar(
+      {
+        ...codexLock(profileHash(document), digest("9")),
+        sidecar: resolutionSidecarReference(sidecar),
+      },
+      sidecar,
+    )
+    await Effect.runPromise(writeResolutionReceipt(document, root, developmentLock))
+
+    const release = await Effect.runPromise(snapshotProfileReleaseLock(profilePath, false, root, "linux/arm64"))
+    const releasePath = path.join(root, "profile.linux-arm64.lock.toml")
+
+    await expect(readFile(resolutionSidecarPath(releasePath, release.sidecar!), "utf8")).resolves.toContain(
+      "python-constraints",
+    )
+  })
+
+  it.each(["missing", "corrupt"] as const)(
+    "rejects an existing release lock with a %s referenced sidecar",
+    async (mode) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), `trellage-release-sidecar-${mode}-`))
+      roots.push(root)
+      const profilePath = path.join(root, "profile.toml")
+      await writeFile(profilePath, codexSource)
+      const document = await Effect.runPromise(parseProfile(codexSource, profilePath))
+      const release: ProfileLock = {
+        ...codexLock(profileHash(document), digest("9")),
+        sidecar: { schema: 1, integrity: digest("a"), size: 1 },
+      }
+      const releasePath = path.join(root, "profile.linux-arm64.lock.toml")
+      await writeFile(releasePath, renderLock(release))
+      if (mode === "corrupt") {
+        const sidecarPath = resolutionSidecarPath(releasePath, release.sidecar!)
+        await mkdir(path.dirname(sidecarPath), { recursive: true })
+        await writeFile(sidecarPath, "x")
+      }
+
+      await expect(
+        Effect.runPromise(snapshotProfileReleaseLock(profilePath, false, root, "linux/arm64")),
+      ).rejects.toThrow(/resolution sidecar/)
+    },
+  )
+
+  it("does not seed a first development build from an old adjacent release snapshot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-development-ignores-release-"))
+    roots.push(root)
+    const profilePath = path.join(root, "profile.toml")
+    const source = codexSource.replace('version = "0.144.6"', 'version = "latest"')
+    await writeFile(profilePath, source)
+    const document = await Effect.runPromise(parseProfile(source, profilePath))
+    const oldRelease: ProfileLock = {
+      ...codexLock(profileHash(document)),
+      packages: {
+        ...codexLock(profileHash(document)).packages,
+        harness: {
+          kind: "codex",
+          selector: "latest",
+          version: "0.144.6",
+          integrity: "sha256:8eddae5e6c009dff9ba51ae1bfe3bdd9ff4c1ccc93a48cc6860db1cd9fdf11be",
+          url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
+          size: 101269986,
+        },
+      },
+    }
+    const releasePath = path.join(root, "profile.linux-arm64.lock.toml")
+    const releaseBytes = renderLock(oldRelease)
+    await writeFile(releasePath, releaseBytes)
+    const support = runtimeSupport(root)
+    await writeFile(support.codexEntry, "#!/bin/sh\n")
+    const sourceDirectory = path.join(root, "source")
+    const sourcePath = "plugins/example/.codex/agents/example.toml"
+    const sourceContent = 'name = "example"\n'
+    await mkdir(path.join(sourceDirectory, path.dirname(sourcePath)), { recursive: true })
+    await writeFile(path.join(sourceDirectory, sourcePath), sourceContent)
+    mocks.sourceDirectory = sourceDirectory
+    mocks.sourceFiles = [{ kind: "file", path: sourcePath, sha256: contentIntegrity(sourceContent) }]
+    const execute = (_command: string, args: ReadonlyArray<string>) =>
+      Effect.promise(async () => {
+        if (!args.includes("--user")) return
+        const mount = args.find((argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/src"))
+        if (mount === undefined) throw new Error("missing build context mount")
+        const context = mount.slice("type=bind,src=".length, -",dst=/src".length)
+        await mkdir(path.join(context, "oci"))
+        await writeFile(
+          path.join(context, "oci", "index.json"),
+          JSON.stringify({ manifests: [{ digest: digest("9") }] }),
+        )
+      })
+
+    mocks.requests.length = 0
+    await Effect.runPromise(buildProfile(profilePath, false, root, support, arm64Target, dockerServices(execute)))
+
+    const receipt = await Effect.runPromise(loadResolutionReceipt(document, "linux/arm64", root))
+    expect(receipt?.packages.harness).toMatchObject({ selector: "latest", version: "0.146.1" })
+    expect(mocks.requests.some((request) => request.lockedCommit === undefined)).toBe(true)
+    expect(await readFile(releasePath, "utf8")).toBe(releaseBytes)
   }, 20_000)
 })
 
@@ -2083,17 +2764,13 @@ select = ["hve-core"]
           url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
           size: 1024,
         },
-        runtime: [
-          {
-            name: "bash",
-            version: arm64ArtifactCatalog.runtimeVersions.bash,
-            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
-          },
-        ],
+        runtime: [testRuntimePackage("bash")],
+        artifacts: [testManagedArtifacts[0]!],
       },
+      build: testBuildLock,
       image: {
         base: "node:22.17.0-bookworm-slim",
-        base_digest: arm64ArtifactCatalog.base.digest,
+        base_digest: fixtureBaseDigest,
         final_digest: digest("e"),
       },
     })
@@ -2230,17 +2907,11 @@ select = ["example"]
             size: 17260137,
           },
         ],
-        runtime: [
-          {
-            name: "bash",
-            version: arm64ArtifactCatalog.runtimeVersions.bash,
-            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
-          },
-        ],
+        runtime: [testRuntimePackage("bash")],
       },
       image: {
         base: "node:22.17.0-bookworm-slim",
-        base_digest: arm64ArtifactCatalog.base.digest,
+        base_digest: fixtureBaseDigest,
         final_digest: digest("e"),
       },
     })

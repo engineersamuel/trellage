@@ -52,9 +52,9 @@ Select an installed native harness/profile interactively, or list available
 profiles. Bare trx opens the launcher. `trx guide` recommends a profile and
 builds prompt candidates; its JSON mode is non-interactive and has no launch
 or Herdr side effects. `trx inventory` reports the live
-readiness (healthy/unhealthy/not-setup) of a single profile by delegating to
-that launcher's own `inventory` command; it is not called during `list` or
-interactive selection so those stay fast.
+readiness (`healthy`, `unhealthy`, `not-setup`, or `busy`) of a single profile
+by delegating to that launcher's own `inventory` command. It is not called
+during `list` or interactive selection, so those stay fast.
 EOF
 }
 
@@ -532,7 +532,7 @@ if [[ "$mode" == inventory ]]; then
     || die "$inventory_launcher inventory failed for $inventory_profile_arg"
   jq -e '
     type == "object"
-    and (.readiness | type == "string" and test("^(healthy|unhealthy|not-setup)$"))
+    and (.readiness | type == "string" and test("^(healthy|unhealthy|not-setup|busy)$"))
   ' <<<"$output" >/dev/null || die "invalid inventory output from $inventory_launcher"
   printf '%s\n' "$output"
   exit 0

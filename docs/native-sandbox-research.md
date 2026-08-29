@@ -5,9 +5,9 @@ unsandboxed; clawk evaluated and not adopted.** Recorded so the finding is not
 re-discovered.
 
 Background: Trellage Sandbox profiles (compiled by `packages/trellage-cli`,
-built and run via `trellage build`) always execute inside a locked, built
-Docker container, so they are implicitly sandboxed regardless of harness
-kind. Trellage Native launchers (`cdx`, `cpx`, `cldx`, `grx`, `jcx`,
+built and run via `trellage build`) always execute inside a resolved, built
+Docker container, so they are implicitly sandboxed regardless of harness kind.
+Trellage Native launchers (`cdx`, `cpx`, `cldx`, `grx`, `jcx`,
 `omp`, `prx`) run the underlying harness CLI directly on the host. This repo's own
 guidance previously stated flatly that "Trellage Native profiles isolate
 agent state but are not containers or security boundaries" — this document

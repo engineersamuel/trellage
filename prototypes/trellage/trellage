@@ -377,6 +377,59 @@ ensure_profile_compiler() {
   profile_compiler_is_fresh || fail 'profile compiler remains stale after build'
 }
 
+is_https_package_feed_url() {
+  local value="$1"
+  local authority
+  [[ -n "$value" ]] || return 1
+  [[ "$value" == https://* ]] || return 1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *[[:space:]]* ]] || return 1
+  [[ "$value" != *@* && "$value" != *\?* && "$value" != *\#* ]] || return 1
+  authority="${value#https://}"
+  authority="${authority%%/*}"
+  [[ "$authority" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
+}
+
+prepare_package_feed_environment() {
+  local name value
+  for name in npm_config_registry NPM_CONFIG_REGISTRY UV_DEFAULT_INDEX PIP_INDEX_URL \
+    UV_INDEX UV_INDEX_URL UV_EXTRA_INDEX_URL; do
+    value="$(printenv "$name" 2>/dev/null || true)"
+    [[ -z "$value" ]] || is_https_package_feed_url "$value" || unset "$name"
+  done
+  for name in npm_config_registry NPM_CONFIG_REGISTRY; do
+    value="$(printenv "$name" 2>/dev/null || true)"
+    case "$value" in
+      https://packagefeedproxy.microsoft.io/npm/registry \
+        | https://packagefeedproxy.microsoft.io/npm/registry/)
+        printf -v "$name" '%s' 'https://packagefeedproxy.microsoft.io/npm/'
+        export "$name"
+        ;;
+    esac
+  done
+  if [[ -z "${npm_config_registry:-}" && -n "${NPM_CONFIG_REGISTRY:-}" ]]; then
+    npm_config_registry="$NPM_CONFIG_REGISTRY"
+    export npm_config_registry
+  fi
+  if [[ -z "${UV_DEFAULT_INDEX:-}" && -n "${PIP_INDEX_URL:-}" ]]; then
+    UV_DEFAULT_INDEX="$PIP_INDEX_URL"
+    export UV_DEFAULT_INDEX
+  fi
+  if [[ -z "${PIP_INDEX_URL:-}" && -n "${UV_DEFAULT_INDEX:-}" ]]; then
+    PIP_INDEX_URL="$UV_DEFAULT_INDEX"
+    export PIP_INDEX_URL
+  fi
+  if [[ -z "${UV_DEFAULT_INDEX:-}" ]]; then
+    case "${npm_config_registry:-}" in
+      https://packagefeedproxy.microsoft.io/npm|https://packagefeedproxy.microsoft.io/npm/)
+        UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/
+        PIP_INDEX_URL=$UV_DEFAULT_INDEX
+        export UV_DEFAULT_INDEX PIP_INDEX_URL
+        ;;
+    esac
+  fi
+}
+prepare_package_feed_environment
+
 clean_child_environment=(env -i "PATH=$PATH")
 # Keep proxy/TLS and UV package-index overrides so profile image builds can reach
 # alternate PyPI simple indexes when files.pythonhosted.org is blocked.
@@ -385,7 +438,8 @@ for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE
   TRELLAGE_CONFIG TRELLAGE_ENVIRONMENT TRELLAGE_PROFILE \
   HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy \
   SSL_CERT_FILE SSL_CERT_DIR \
-  UV_DEFAULT_INDEX UV_INDEX UV_INDEX_URL UV_EXTRA_INDEX_URL PIP_INDEX_URL; do
+  UV_DEFAULT_INDEX UV_INDEX UV_INDEX_URL UV_EXTRA_INDEX_URL PIP_INDEX_URL \
+  npm_config_registry NPM_CONFIG_REGISTRY; do
   [[ -z "${!environment_name-}" ]] || clean_child_environment+=("$environment_name=${!environment_name}")
 done
 
@@ -586,7 +640,21 @@ runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile
 [[ "$profile_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid profile hash'
 [[ "$runtime_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid runtime hash'
 profile_path="$(jq -er '.profile_path' <<<"$profile_metadata")" || fail 'profile metadata has no path'
-profile_locked="$(jq -r '.locked' <<<"$profile_metadata")" || fail 'profile metadata has no lock state'
+profile_locked="$(jq -r 'if has("locally_resolved") then .locally_resolved else .locked end' \
+  <<<"$profile_metadata")" \
+  || fail 'profile metadata has no local resolution state'
+profile_resolution_policy="$(jq -r '.resolution_policy // "floating"' <<<"$profile_metadata")" \
+  || fail 'profile metadata has no resolution policy'
+profile_release_lock_available="$(jq -r \
+  'if has("release_lock_available") then .release_lock_available else .locked end' \
+  <<<"$profile_metadata")" \
+  || fail 'profile metadata has no release lock state'
+[[ "$profile_locked" == true || "$profile_locked" == false ]] \
+  || fail 'profile metadata has an invalid local resolution state'
+[[ "$profile_resolution_policy" == floating ]] \
+  || fail 'profile metadata has an unsupported resolution policy'
+[[ "$profile_release_lock_available" == true || "$profile_release_lock_available" == false ]] \
+  || fail 'profile metadata has an invalid release lock state'
 profile_image="$(jq -er '.image' <<<"$profile_metadata")" || fail 'profile metadata has no image'
 # Optional: a launcher may run against an older deployed compiler that predates the
 # content-addressed alias. Absent means "no alias cache", not a broken profile.
@@ -595,8 +663,8 @@ metadata_platform="$(jq -er '.platform' <<<"$profile_metadata")" || fail 'profil
 [[ "$metadata_platform" == "$docker_platform" ]] || fail 'profile metadata selected a different Docker platform'
 build_command="$(jq -er '.build_command' <<<"$profile_metadata")" || fail 'profile metadata has no build command'
 refresh_command="$(jq -r '.refresh_command // empty' <<<"$profile_metadata")"
-# A stale lock cannot be repaired by the locked build, so never point a user at it.
-# Derive the unlocked form when an older compiler does not report one.
+# Older compilers report only the build command. Derive a development build
+# fallback when they do not provide an explicit upgrade command.
 [[ -n "$refresh_command" ]] || refresh_command="${build_command/ --locked / }"
 secrets_provider="$(jq -er '.secrets_provider' <<<"$profile_metadata")" || fail 'profile metadata has no secrets provider'
 resolved_varlock_path="$(jq -r '.resolved_varlock_path // empty' <<<"$profile_metadata")"
@@ -1522,16 +1590,6 @@ prepare_codex_secrets() {
 # Images stay universal; feeds are launch-time host policy, not baked digests.
 package_feed_args=()
 persistent_package_feed_args=()
-is_https_package_feed_url() {
-  local value="$1"
-  [[ -n "$value" ]] || return 1
-  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || return 1
-  case "$value" in
-    https://*/*) return 0 ;;
-    https://*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 is_public_cfs_package_feed_url() {
   case "$1" in
     https://packagefeedproxy.microsoft.io/npm \
@@ -1790,7 +1848,10 @@ if [[ "$mode" == doctor ]]; then
       *) printf 'host auth: local proxy\n' ;;
     esac
   fi
-  printf 'profile lock: %s\n' "$profile_locked"
+  printf 'resolution policy: %s\n' "$profile_resolution_policy"
+  printf 'development resolution: %s\n' "$profile_locked"
+  printf 'release lock: %s\n' "$profile_release_lock_available"
+  printf 'upgrade command: %s\n' "$refresh_command"
   printf 'worktree: %s\n' "$worktree"
   printf 'mount: %s\n' "$mount_path"
   printf 'image: %s (%s)\n' "$image" "$image_state"
@@ -1803,7 +1864,7 @@ if [[ "$mode" == doctor ]]; then
     printf 'state: %s\n' "$resource_state"
   fi
   if [[ "$profile_locked" != true ]]; then
-    printf 'refresh required: %s\n' "$refresh_command"
+    printf 'build required: %s\n' "$build_command"
   elif [[ "$image_state" != available ]]; then
     printf 'build required: %s\n' "$build_command"
   fi
@@ -1922,12 +1983,12 @@ inspect_profile_image() {
 
 if [[ "$profile_locked" != true ]]; then
   [[ -z "${TRELLAGE_IMAGE:-}" ]] \
-    || fail "profile lock is stale; run: $refresh_command"
+    || fail "development resolution is unavailable; run: $build_command"
   verify_docker_server
-  printf 'trellage: profile lock is stale; refreshing lock and image: %s\n' "$refresh_command" >&2
+  printf 'trellage: development resolution is unavailable; resolving and building: %s\n' "$build_command" >&2
   run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
     node "$compiler" build "$profile_path" \
-    || fail "automatic profile refresh failed: $refresh_command"
+    || fail "automatic profile build failed: $build_command"
   profile_locked=true
 fi
 if ! inspect_profile_image; then
@@ -1940,13 +2001,9 @@ if ! inspect_profile_image; then
   fi
   verify_docker_server
   printf 'trellage: profile image is missing or stale; building automatically\n' >&2
-  if ! run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
-    node "$compiler" build --locked "$profile_path"; then
-    printf 'trellage: locked build digest drifted; rebuilding non-locked\n' >&2
-    run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
-      node "$compiler" build "$profile_path" \
-      || fail "automatic profile image build failed: $build_command"
-  fi
+  run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
+    node "$compiler" build "$profile_path" \
+    || fail "automatic profile image build failed: $build_command"
   inspect_profile_image \
     || fail "profile image remains missing or stale after automatic build: $image"
 fi
@@ -2023,7 +2080,9 @@ if [[ "$reuse_container" != true ]]; then
     )
     # Docker persists create-time environment values. Only public CFS URLs
     # may enter persistent service metadata; private feeds remain exec-only.
-    container_create_package_feed_args=("${persistent_package_feed_args[@]}")
+    container_create_package_feed_args=(
+      ${persistent_package_feed_args[@]+"${persistent_package_feed_args[@]}"}
+    )
     container_create_command=(runtime-headlong-entry service)
   fi
   if ! container_id="$(docker container create \

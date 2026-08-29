@@ -8,6 +8,7 @@ import { renderCodexConfig, renderMiseConfig } from "../src/render.js"
 import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
 import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
 
 const source = `
 schema = 1
@@ -220,7 +221,6 @@ const runtimePaths = {
   finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
   finalizeClaudeSeed: path.join(runtimeRoot, "finalize-claude-seed.mjs"),
   claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
-  hyperresearchRequirements: path.join(runtimeRoot, "requirements.lock"),
   claudeBrowserAgent: path.join(runtimeRoot, "browser-agent.md"),
   claudeOutputStyleRundown: path.join(runtimeRoot, "output-style-rundown.md"),
   copilotInstructionRundown: path.join(runtimeRoot, "instruction-rundown.md"),
@@ -278,6 +278,7 @@ const lock = (kind: "claude" | "codex" | "copilot" | "pi"): ProfileLock => ({
                 size: 88123930,
               },
     runtime: [],
+    ...(kind === "claude" ? { artifacts: playwrightArtifacts } : {}),
   },
   image: {
     base: "node:22.17.0-bookworm-slim",
@@ -436,7 +437,8 @@ rename_exe = "copilot"`)
       runtimeSupport: primeRuntime,
     })
 
-    expect(rendered).toContain('node = "22.17.0"')
+    expect(rendered).toContain('node = "lts"')
+    expect(rendered).toContain('uv = "latest"')
     expect(rendered).not.toContain('[tools."http:prime"]')
     expect(rendered).toContain(
       '"/usr/local/lib/node_modules" = { source = "prime-agent-prefix/lib/node_modules", mode = "copy" }',
@@ -471,11 +473,14 @@ rename_exe = "copilot"`)
       runtimeSupport: claudeRuntime,
     })
 
-    expect(rendered).toContain('node = "22.17.0"')
-    expect(rendered).toContain('python = "3.13.14"')
+    expect(rendered).toContain('node = "lts"')
+    expect(rendered).toContain('python = "3.13"')
+    expect(rendered).not.toContain('"npm:@playwright/mcp"')
     expect(rendered).toContain('[tools."http:claude"]')
     expect(rendered).toContain('rename_exe = "claude"')
-    expect(rendered).toContain('"npm:@playwright/mcp" = "0.0.78"')
+    expect(rendered).toContain(
+      '"/opt/trellage/playwright-mcp/lib/node_modules" = { source = "playwright-mcp-prefix/lib/node_modules", mode = "copy" }',
+    )
     expect(rendered).toContain('"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }')
     expect(rendered).toContain(
       '"/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }',
@@ -511,7 +516,7 @@ rename_exe = "copilot"`)
       runtimeSupport: claudeMarketplaceRuntime,
     })
 
-    expect(rendered).toContain('uv = "0.11.21"')
+    expect(rendered).toContain('uv = "latest"')
     expect(rendered).toContain('BD_DISABLE_METRICS = "1"')
     expect(rendered).toContain('BD_DISABLE_EVENT_FLUSH = "1"')
     expect(rendered).toContain('NODE_PATH = "/usr/local/lib/trellage/node_modules"')

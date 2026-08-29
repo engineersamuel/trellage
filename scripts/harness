@@ -5,11 +5,17 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
 cd "$repo_root"
 
 copilot_secret_file=''
+copilot_secret_root=''
 collection_staging=''
 skills_staging=''
+harness_npm_registry=https://registry.npmjs.org/
+harness_pypi_index=https://pypi.org/simple/
 cleanup_secret_file() {
   if [[ -n "$copilot_secret_file" && -f "$copilot_secret_file" ]]; then
     rm -f "$copilot_secret_file"
+  fi
+  if [[ -n "$copilot_secret_root" && -d "$copilot_secret_root" ]]; then
+    rm -rf -- "$copilot_secret_root"
   fi
   if [[ -n "$collection_staging" && -d "$collection_staging" ]]; then
     rm -rf -- "$collection_staging"
@@ -23,6 +29,24 @@ trap cleanup_secret_file EXIT
 fail() {
   printf 'harness: %s\n' "$1" >&2
   exit "${2:-1}"
+}
+
+create_private_directory() {
+  local label="$1"
+  local scratch_root candidate attempt
+  scratch_root="${HARNESS_SCRATCH_ROOT:-$repo_root/results/.harness-scratch}"
+  [[ ! -L "$scratch_root" ]] || fail "scratch root cannot be a symbolic link: $scratch_root" 73
+  (umask 077 && mkdir -p "$scratch_root")
+  chmod 0700 "$scratch_root"
+
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    candidate="$scratch_root/$label.${BASHPID:-$$}.${RANDOM}.$attempt"
+    if (umask 077 && mkdir "$candidate") 2>/dev/null; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  fail "cannot create private scratch directory under: $scratch_root" 73
 }
 
 usage() {
@@ -88,7 +112,7 @@ validate_manifest() {
       and (.packages | type == "array" and length == 1)
       and all(.packages[];
         (.source | type == "string" and test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$"))
-        and (.ref | type == "string" and test("^[0-9a-f]{40}$"))
+        and (.ref | type == "string" and test("^(main|master|[0-9a-f]{40})$"))
         and (.plugins | type == "array" and length > 0)
         and all(.plugins[]; type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
         and (.skills | type == "array")
@@ -145,6 +169,54 @@ resolve_copilot_token() {
     'native Copilot authentication unavailable: set COPILOT_GITHUB_TOKEN or GH_TOKEN, or run gh auth login' 67
 }
 
+known_npm_feed() {
+  case "$1" in
+    https://registry.npmjs.org | https://registry.npmjs.org/ \
+      | https://packagefeedproxy.microsoft.io/npm | https://packagefeedproxy.microsoft.io/npm/ \
+      | https://packagefeedproxy.microsoft.io/npm/registry \
+      | https://packagefeedproxy.microsoft.io/npm/registry/) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+known_python_feed() {
+  case "$1" in
+    https://pypi.org/simple | https://pypi.org/simple/ \
+      | https://packagefeedproxy.microsoft.io/pypi/simple \
+      | https://packagefeedproxy.microsoft.io/pypi/simple/) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+prepare_build_package_feeds() {
+  local npm_registry="${HARNESS_NPM_REGISTRY:-${npm_config_registry:-}}"
+  local python_index="${HARNESS_PYPI_INDEX:-${UV_DEFAULT_INDEX:-${PIP_INDEX_URL:-}}}"
+
+  if [[ -z "$npm_registry" ]] && command -v npm >/dev/null 2>&1; then
+    npm_registry="$(npm config get registry 2>/dev/null | tr -d '\r\n')" || npm_registry=
+  fi
+  known_npm_feed "$npm_registry" || npm_registry=https://registry.npmjs.org/
+  case "$npm_registry" in
+    https://packagefeedproxy.microsoft.io/npm/registry \
+      | https://packagefeedproxy.microsoft.io/npm/registry/)
+      npm_registry=https://packagefeedproxy.microsoft.io/npm/
+      ;;
+  esac
+  if ! known_python_feed "$python_index"; then
+    case "$npm_registry" in
+      https://packagefeedproxy.microsoft.io/npm | https://packagefeedproxy.microsoft.io/npm/)
+        python_index=https://packagefeedproxy.microsoft.io/pypi/simple/
+        ;;
+      *) python_index=https://pypi.org/simple/ ;;
+    esac
+  fi
+
+  harness_npm_registry="$npm_registry"
+  harness_pypi_index="$python_index"
+  npm_config_registry="$npm_registry"
+  export npm_config_registry
+}
+
 compose_for() {
   local contestant="$1"
   local secret_file="$2"
@@ -168,6 +240,8 @@ compose_for() {
     HARNESS_CONTESTANT_ID="$contestant_id"
     HARNESS_PROMPT_SHA256="$prompt_hash"
     HARNESS_SKILLS_CONTEXT="$skills_context"
+    HARNESS_NPM_REGISTRY="$harness_npm_registry"
+    HARNESS_PYPI_INDEX="$harness_pypi_index"
   )
 
   case "$runtime" in
@@ -192,7 +266,8 @@ compose_for() {
 }
 
 build_all() {
-  skills_staging="$(mktemp -d "${TMPDIR:-/tmp}/trellage-harness-skills.XXXXXX")"
+  prepare_build_package_feeds
+  skills_staging="$(create_private_directory harness-skills)"
   node "$repo_root/scripts/floating-skills.mjs" stage \
     --catalog "$repo_root/skills.json" \
     --bundle comparison-common \
@@ -200,7 +275,7 @@ build_all() {
   local contestant service
   for contestant in "${contestants[@]}"; do
     service="$(jq -r '.service' <<<"$contestant")"
-    compose_for "$contestant" '' build "$service" app
+    compose_for "$contestant" '' build --pull --no-cache "$service" app
   done
 }
 
@@ -239,7 +314,9 @@ run_all() {
   done
 
   if [[ -n "${resolved_copilot_token:-}" && -z "$copilot_secret_file" ]]; then
-    copilot_secret_file="$(mktemp "${TMPDIR:-/tmp}/trellage-copilot-token.XXXXXX")"
+    copilot_secret_root="$(create_private_directory copilot-token)"
+    copilot_secret_file="$copilot_secret_root/token"
+    (umask 077 && : >"$copilot_secret_file")
     chmod 0600 "$copilot_secret_file"
     printf '%s' "$resolved_copilot_token" >"$copilot_secret_file"
     unset resolved_copilot_token
@@ -257,6 +334,7 @@ run_all() {
   done
   cleanup_secret_file
   copilot_secret_file=''
+  copilot_secret_root=''
   return "$overall_status"
 }
 
@@ -495,7 +573,7 @@ collect_all() {
   output_root="$results_root/$harness_id/$run_id"
   [[ ! -e "$output_root" ]] || fail "result run already exists: $output_root" 73
 
-  collection_staging="$(mktemp -d "${TMPDIR:-/tmp}/trellage-collect.XXXXXX")"
+  collection_staging="$(create_private_directory evidence-collection)"
   for contestant in "${contestants[@]}"; do
     contestant_id="$(jq -r '.id' <<<"$contestant")"
     experiment="$harness_id-$contestant_id"
@@ -512,7 +590,9 @@ collect_all() {
       --volume "$workspace_volume:/workspace:ro" \
       --entrypoint tar \
       "$image" \
-      -C /workspace -cf - .harness package.json package-lock.json dist \
+      -cf - \
+      -C /workspace .harness package.json package-lock.json dist \
+      -C /opt/trellage source-provenance.json \
       | tar -xf - -C "$source_root"
 
     prepare_collected_app_evidence \

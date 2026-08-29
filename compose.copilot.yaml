@@ -8,8 +8,9 @@ services:
       additional_contexts:
         floating_skills: ${HARNESS_SKILLS_CONTEXT:?set HARNESS_SKILLS_CONTEXT to a staged floating-skill snapshot}
       args:
-        COPILOT_VERSION: ${COPILOT_VERSION:-1.0.71-0}
-        AWESOME_COPILOT_REF: ${AWESOME_COPILOT_REF:-ecf0f5a9f4b014d2e0f5e3c1cec55b4e7792ed8a}
+        NPM_CONFIG_REGISTRY: ${HARNESS_NPM_REGISTRY:-https://registry.npmjs.org/}
+        COPILOT_VERSION: ${COPILOT_VERSION:-latest}
+        AWESOME_COPILOT_REF: ${AWESOME_COPILOT_REF:-main}
         AWESOME_COPILOT_PLUGINS: ${AWESOME_COPILOT_PLUGINS:-frontend-web-dev testing-automation}
     user: "10001:10001"
     read_only: true

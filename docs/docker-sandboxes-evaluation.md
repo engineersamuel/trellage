@@ -7,6 +7,9 @@ revisit trigger on its own. Recorded so the finding is not re-discovered, in the
 forego clawk.
 
 Evaluated 2026-08-26 against `sbx` 0.39.0 (released 2026-08-19) and Trellage at `24ac8d2`.
+Trellage later moved normal development profiles to floating stable inputs.
+The pinning details below describe the evaluated commit and the retained
+release-snapshot mode; the template-provenance decision is unchanged.
 
 ---
 
@@ -55,15 +58,14 @@ by a mutable tag Docker controls, and it ships Docker's own copy of the agent ha
 show only tag references for `sbx run --template`; digest references are not documented as
 supported.
 
-This is irreconcilable with what the profile compiler exists to guarantee. Trellage builds `FROM` a
-digest-pinned base (`image.base_digest`, e.g. `node:22.17.0-bookworm-slim@sha256:b04ce4ae…`), pins
-every apt package by exact version and sha256 (`packages/trellage-cli/src/artifact-catalog.ts:11-70`),
-stamps `SOURCE_DATE_EPOCH`, and compares the resulting OCI digest against `lock.image.final_digest`
-when `--locked`. Handing that image to `sbx` is not a runtime substitution; the `FROM` direction is
-inverted, so Trellage's image would have to become a layer *on top of* Docker's mutable tag. That
-rebases stage one of the compiler and voids both `lock.image.final_digest` and `ci-verify`. It also
-transfers the harness version — which the profile pins, e.g. `version = "2.1.233"` in
-`profiles/claude-council/profile.toml` — to whatever Docker ships in its base image.
+This is irreconcilable with Trellage's explicit release guarantees. Development profiles use
+approved floating stable selectors and keep their exact resolved state in a local receipt. An
+explicit release snapshot records the resolved base-image digest, exact apt package versions and
+checksums, harness release, source commits, and final OCI digest. A locked build stamps
+`SOURCE_DATE_EPOCH` and verifies that snapshot. Handing the image to `sbx` is not a runtime
+substitution; the `FROM` direction is inverted, so Trellage's image would have to become a layer
+*on top of* Docker's mutable tag. That rebases stage one, voids `lock.image.final_digest` and
+`ci-verify`, and transfers harness selection to whatever Docker ships in its base image.
 
 Kits are worse for this purpose, and Docker says so plainly: "the signature covers `spec.yaml` and
 the kit's `files/` content, but not mutable dependencies such as image tags or content downloaded by

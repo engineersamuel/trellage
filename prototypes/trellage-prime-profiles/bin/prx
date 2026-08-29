@@ -11,7 +11,6 @@ readonly mise_tool='github:PrimeIntellect-ai/prime-agent'
 readonly mise_install_name='github-prime-intellect-ai-prime-agent'
 readonly profile_marker_value='trellage-prime-profile-v1'
 readonly managed_extension_name='ask-user'
-readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
 
 die() {
   printf 'prx: %s\n' "$1" >&2
@@ -66,8 +65,10 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
-readonly version_file="$runtime_root/version"
+readonly receipt_file="$runtime_root/installed-version"
+readonly legacy_version_file="$runtime_root/version"
 readonly npm_prefix="$runtime_root/npm-prefix"
+readonly runtime_identity_file="$runtime_root/runtime-identity.json"
 readonly managed_extension_source="$runtime_root/assets/extensions/${managed_extension_name}.ts"
 readonly profile_root="$HOME/.local/share/trellage/profiles/prime/default"
 readonly profile_home="$profile_root/home"
@@ -78,6 +79,9 @@ readonly profile_extension="$profile_extensions/${managed_extension_name}.ts"
 readonly profile_extension_manifest="$profile_home/.trellage-managed-extensions"
 readonly kernel_venv="$profile_home/kernel-venv"
 readonly kernel_python="$kernel_venv/bin/python"
+readonly kernel_identity_stamp="$profile_home/kernel-runtime-identity.json"
+readonly runtime_identity_schema=1
+readonly kernel_spec_version=1
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
@@ -104,6 +108,27 @@ ensure_floating_skills() {
 readonly daemon_dir="$profile_root/daemon"
 readonly daemon_socket="$daemon_dir/daemon.sock"
 readonly daemon_env_stamp="$daemon_dir/kernel-env.stamp"
+readonly mutation_lock="$profile_root/.mutation.lock"
+mutation_lock_owned=''
+transaction_active=''
+transaction_committed=''
+backup_npm_prefix=''
+backup_receipt=''
+backup_legacy_receipt=''
+backup_runtime_identity=''
+backup_kernel_venv=''
+backup_kernel_identity=''
+backup_daemon_stamp=''
+backup_npm_state='unprocessed'
+backup_receipt_state='unprocessed'
+backup_legacy_state='unprocessed'
+backup_runtime_identity_state='unprocessed'
+backup_kernel_state='unprocessed'
+backup_kernel_identity_state='unprocessed'
+backup_daemon_stamp_state='unprocessed'
+staged_npm_prefix=''
+staged_receipt=''
+staged_runtime_identity=''
 # Default RLM extras required when PRIME_AGENT_KERNEL_PYTHON is set (prime bootstrap.js).
 # prime-agent-runtime is installed from the bundled source tree, not PyPI.
 readonly kernel_pypi_packages=(
@@ -262,7 +287,9 @@ profile_is_owned_or_empty() {
     return 0
   fi
   [[ ! -e "$profile_root" ]] && return 0
-  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) \
+    ! -path "$mutation_lock" \
+    ! -path "$profile_root/.mutation.lock-owned.*/*" -print -quit)"
   [[ -z "$existing" ]]
 }
 
@@ -282,6 +309,176 @@ prepare_profile() {
   printf '%s\n' "$profile_marker_value" >"$marker_stage"
   chmod 0600 "$marker_stage"
   mv -f "$marker_stage" "$profile_marker"
+}
+
+prepare_mutation_lock_parent() {
+  local path="$HOME" component
+
+  require_safe_profile_path
+  for component in .local share trellage profiles prime default; do
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+  chmod 0700 "$profile_root"
+}
+
+cleanup_mutation_owner() {
+  [[ -n "$mutation_lock_owned" ]] || return 0
+  rm -f -- "$mutation_lock_owned/observed-lock" \
+    "$mutation_lock_owned/released-lock" "$mutation_lock_owned/token" \
+    "$mutation_lock_owned/pid" 2>/dev/null || true
+  rmdir "$mutation_lock_owned" 2>/dev/null || true
+  mutation_lock_owned=''
+}
+
+release_mutation_lock() {
+  [[ -n "$mutation_lock_owned" ]] || return 0
+  [[ -f "$mutation_lock" && ! -L "$mutation_lock" ]] || return 1
+  [[ "$mutation_lock" -ef "$mutation_lock_owned/token" ]] || return 1
+  mv "$mutation_lock" "$mutation_lock_owned/released-lock" || return 1
+  cleanup_mutation_owner
+}
+
+recover_stale_mutation_lock() {
+  local observed="$1" owner_name="$2" owner_dir
+
+  owner_dir="$profile_root/$owner_name"
+
+  [[ "$mutation_lock" -ef "$observed" ]] || return 1
+  [[ -d "$owner_dir" && ! -L "$owner_dir" ]] || return 1
+  [[ -f "$owner_dir/token" && ! -L "$owner_dir/token" ]] || return 1
+  [[ "$observed" -ef "$owner_dir/token" ]] || return 1
+  if [[ -n "${PRX_TEST_STALE_RECOVERY_FAIL_ONCE:-}" \
+    && ! -e "$PRX_TEST_STALE_RECOVERY_FAIL_ONCE" ]]; then
+    : >"$PRX_TEST_STALE_RECOVERY_FAIL_ONCE"
+    return 1
+  fi
+  mv "$mutation_lock" "$owner_dir/recovered-lock" || return 1
+  rm -f -- "$owner_dir/recovered-lock" "$owner_dir/token" "$owner_dir/pid" \
+    "$owner_dir/observed-lock" || return 1
+  rmdir "$owner_dir" || return 1
+}
+
+acquire_mutation_lock() {
+  local wait_mode="${1:-wait}"
+  local acquisition_failures=0 stale_recovery_failures=0
+  local observed owner_name lock_pid owner_dir link_error
+
+  [[ "$wait_mode" == wait || "$wait_mode" == try ]] \
+    || die "invalid profile mutation lock wait mode: $wait_mode"
+
+  prepare_mutation_lock_parent
+  mutation_lock_owned="$(mktemp -d "$profile_root/.mutation.lock-owned.XXXXXX")" \
+    || die 'could not create profile mutation lock owner'
+  observed="$mutation_lock_owned/observed-lock"
+  printf '%s\n' "${mutation_lock_owned##*/}" >"$mutation_lock_owned/token"
+  printf '%s\n' "$$" >"$mutation_lock_owned/pid"
+  chmod 0600 "$mutation_lock_owned/token" "$mutation_lock_owned/pid"
+
+  while :; do
+    link_error=''
+    if link_error="$(ln "$mutation_lock_owned/token" "$mutation_lock" 2>&1)"; then
+      break
+    fi
+    if [[ ! -e "$mutation_lock" && ! -L "$mutation_lock" ]]; then
+      acquisition_failures=$((acquisition_failures + 1))
+      if ((acquisition_failures >= 20)); then
+        cleanup_mutation_owner
+        die "could not create profile mutation lock: ${link_error:-$mutation_lock}"
+      fi
+      sleep 0.05
+      continue
+    fi
+    acquisition_failures=0
+    if [[ ! -f "$mutation_lock" || -L "$mutation_lock" ]]; then
+      cleanup_mutation_owner
+      die "unsafe profile mutation lock path: $mutation_lock"
+    fi
+    rm -f -- "$observed"
+    if ! ln "$mutation_lock" "$observed" 2>/dev/null; then
+      sleep 0.05
+      continue
+    fi
+    if [[ ! "$mutation_lock" -ef "$observed" ]]; then
+      sleep 0.05
+      continue
+    fi
+    owner_name="$(sed -n '1p' "$observed" 2>/dev/null || :)"
+    if [[ ! "$mutation_lock" -ef "$observed" ]]; then
+      sleep 0.05
+      continue
+    fi
+    case "$owner_name" in
+      .mutation.lock-owned.*/*|'')
+        cleanup_mutation_owner
+        die "invalid profile mutation lock owner: $mutation_lock"
+        ;;
+      .mutation.lock-owned.*) ;;
+      *)
+        cleanup_mutation_owner
+        die "invalid profile mutation lock owner: $mutation_lock"
+        ;;
+    esac
+    owner_dir="$profile_root/$owner_name"
+    if [[ ! -f "$owner_dir/token" || -L "$owner_dir/token" \
+      || ! "$observed" -ef "$owner_dir/token" ]]; then
+      if [[ ! "$mutation_lock" -ef "$observed" ]]; then
+        sleep 0.05
+        continue
+      fi
+      cleanup_mutation_owner
+      die "invalid profile mutation lock owner: $mutation_lock"
+    fi
+    if [[ ! -f "$owner_dir/pid" || -L "$owner_dir/pid" ]]; then
+      if [[ ! "$mutation_lock" -ef "$observed" ]]; then
+        sleep 0.05
+        continue
+      fi
+      cleanup_mutation_owner
+      die "invalid profile mutation lock owner: $mutation_lock"
+    fi
+    lock_pid="$(sed -n '1p' "$owner_dir/pid" 2>/dev/null || :)"
+    if [[ ! "$lock_pid" =~ ^[0-9]+$ ]]; then
+      if [[ ! "$mutation_lock" -ef "$observed" ]]; then
+        sleep 0.05
+        continue
+      fi
+      cleanup_mutation_owner
+      die "invalid profile mutation lock owner: $mutation_lock"
+    fi
+    if ! kill -0 "$lock_pid" 2>/dev/null; then
+      if [[ ! "$mutation_lock" -ef "$observed" ]]; then
+        sleep 0.05
+        continue
+      fi
+      if ! recover_stale_mutation_lock "$observed" "$owner_name"; then
+        stale_recovery_failures=$((stale_recovery_failures + 1))
+        if ((stale_recovery_failures >= 20)); then
+          cleanup_mutation_owner
+          die "could not recover stale profile mutation lock: $mutation_lock"
+        fi
+        rm -f -- "$observed"
+        sleep 0.05
+        continue
+      fi
+      stale_recovery_failures=0
+      rm -f -- "$observed"
+      continue
+    fi
+    if [[ "$wait_mode" == try ]]; then
+      cleanup_mutation_owner
+      return 75
+    fi
+    rm -f -- "$observed"
+    sleep 0.05
+  done
+  if [[ -n "${PRX_TEST_LOCK_HELD_MARKER:-}" ]]; then
+    : >"$PRX_TEST_LOCK_HELD_MARKER"
+    while [[ ! -e "$PRX_TEST_LOCK_HELD_MARKER.continue" ]]; do
+      sleep 0.05
+    done
+  fi
 }
 
 managed_models() {
@@ -304,25 +501,10 @@ managed_models() {
     }'
 }
 
-file_sha256() {
-  local path="$1"
-
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 -- "$path" | awk '{ print $1 }'
-  else
-    sha256sum -- "$path" | awk '{ print $1 }'
-  fi
-}
-
 require_managed_extension_source() {
-  local actual
-
-  [[ -f "$managed_extension_source" && ! -L "$managed_extension_source" ]] \
+  [[ -f "$managed_extension_source" && -r "$managed_extension_source" \
+    && ! -L "$managed_extension_source" ]] \
     || die "managed ask-user extension asset is missing; reinstall prx ($managed_extension_source)"
-  actual="$(file_sha256 "$managed_extension_source")" \
-    || die "cannot hash managed ask-user extension asset: $managed_extension_source"
-  [[ "$actual" == "$managed_extension_sha256" ]] \
-    || die "managed ask-user extension asset integrity differs; reinstall prx"
 }
 
 publish_managed_extensions() {
@@ -449,14 +631,136 @@ resolve_latest_version() {
   printf '%s\n' "$version"
 }
 
-read_pinned_version() {
+read_installed_version() {
   local version
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] \
-    || die 'prime-agent version is not pinned; run prx setup'
-  version="$(<"$version_file")"
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" ]]; then
+    if [[ ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
+      die 'prime-agent installed version receipt is missing; run prx setup'
+    fi
+    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
+      || die "unsafe legacy installed version receipt: $legacy_version_file"
+    version="$(<"$legacy_version_file")"
+    require_exact_version "$version"
+    printf '%s\n' "$version"
+    return
+  fi
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+    || die 'prime-agent installed version receipt is missing; run prx setup'
+  version="$(<"$receipt_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
+}
+
+runtime_tree_hash() {
+  local runtime_source="$1"
+
+  require_node
+  PRX_RUNTIME_SOURCE="$runtime_source" node <<'NODE'
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = process.env.PRX_RUNTIME_SOURCE;
+const hash = crypto.createHash("sha256");
+
+function walk(directory, relative = "") {
+  const entries = fs.readdirSync(directory, { withFileTypes: true })
+    .sort((a, b) => Buffer.from(a.name).compare(Buffer.from(b.name)));
+  for (const entry of entries) {
+    const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+    const child = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`symlink in bundled runtime: ${childRelative}`);
+    }
+    if (entry.isDirectory()) {
+      hash.update(`D\0${Buffer.byteLength(childRelative)}\0${childRelative}\0`);
+      walk(child, childRelative);
+      continue;
+    }
+    if (!entry.isFile()) {
+      throw new Error(`unsupported entry in bundled runtime: ${childRelative}`);
+    }
+    const content = fs.readFileSync(child);
+    hash.update(`F\0${Buffer.byteLength(childRelative)}\0${childRelative}\0${content.length}\0`);
+    hash.update(content);
+    hash.update("\0");
+  }
+}
+
+walk(root);
+process.stdout.write(`${hash.digest("hex")}\n`);
+NODE
+}
+
+validate_runtime_identity_file() {
+  local identity_file="$1"
+
+  [[ -f "$identity_file" && ! -L "$identity_file" ]] || return 1
+  jq -e \
+    --argjson schema "$runtime_identity_schema" \
+    --argjson kernelSpec "$kernel_spec_version" '
+      type == "object"
+      and keys == [
+        "kernelSpecVersion",
+        "primeVersion",
+        "runtimeHash",
+        "runtimeHashAlgorithm",
+        "schemaVersion"
+      ]
+      and .schemaVersion == $schema
+      and (.primeVersion | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+      and .runtimeHashAlgorithm == "sha256"
+      and (.runtimeHash | type == "string" and test("^[0-9a-f]{64}$"))
+      and .kernelSpecVersion == $kernelSpec
+    ' "$identity_file" >/dev/null 2>&1
+}
+
+canonical_identity_from_file() {
+  local identity_file="$1"
+
+  validate_runtime_identity_file "$identity_file" || return 1
+  jq -cS . "$identity_file"
+}
+
+compute_runtime_identity() {
+  local version="$1" prefix="${2:-$npm_prefix}" runtime_source runtime_hash
+
+  runtime_source="$(resolve_runtime_source "$prefix")"
+  runtime_hash="$(runtime_tree_hash "$runtime_source")" \
+    || die "could not hash bundled prime-agent-runtime: $runtime_source"
+  [[ "$runtime_hash" =~ ^[0-9a-f]{64}$ ]] \
+    || die "invalid bundled prime-agent-runtime hash: $runtime_hash"
+  jq -cS -n \
+    --argjson schema "$runtime_identity_schema" \
+    --arg version "$version" \
+    --arg hash "$runtime_hash" \
+    --argjson kernelSpec "$kernel_spec_version" '{
+      schemaVersion: $schema,
+      primeVersion: $version,
+      runtimeHashAlgorithm: "sha256",
+      runtimeHash: $hash,
+      kernelSpecVersion: $kernelSpec
+    }'
+}
+
+runtime_identity_matches() {
+  local expected="$1" identity_file="$2" actual
+
+  actual="$(canonical_identity_from_file "$identity_file")" || return 1
+  [[ "$actual" == "$expected" ]]
+}
+
+published_runtime_identity() {
+  local version="$1" identity
+
+  [[ ! -L "$runtime_identity_file" ]] \
+    || die "unsafe Prime runtime identity: $runtime_identity_file"
+  identity="$(canonical_identity_from_file "$runtime_identity_file")" \
+    || die 'Prime runtime identity is missing or invalid; run prx repair'
+  [[ "$(jq -r '.primeVersion' <<<"$identity")" == "$version" ]] \
+    || die 'Prime runtime identity version differs; run prx repair'
+  printf '%s\n' "$identity"
 }
 
 resolve_package_source() {
@@ -488,9 +792,9 @@ require_node() {
 }
 
 installed_cli() {
-  local version="$1" cli package_root package_json
+  local version="$1" prefix="${2:-$npm_prefix}" cli package_root package_json
 
-  package_root="$npm_prefix/lib/node_modules/prime-agent"
+  package_root="$prefix/lib/node_modules/prime-agent"
   cli="$package_root/dist/bundle/cli.js"
   package_json="$package_root/package.json"
   # npm install of a bare directory path creates a symlink into the mise
@@ -511,12 +815,12 @@ installed_cli() {
 }
 
 verify_cli_version() {
-  local cli="$1" version="$2" actual status=0
+  local cli="$1" version="$2" prefix="${3:-$npm_prefix}" actual status=0
 
   require_node
   # Prime Agent prints --version on stderr; merge it into the capture.
-  if [[ -x "$npm_prefix/bin/prime-agent" ]]; then
-    actual="$("$npm_prefix/bin/prime-agent" --version 2>&1)" || status=$?
+  if [[ -x "$prefix/bin/prime-agent" ]]; then
+    actual="$("$prefix/bin/prime-agent" --version 2>&1)" || status=$?
   else
     actual="$(node "$cli" --version 2>&1)" || status=$?
   fi
@@ -556,7 +860,7 @@ pack_package_tarball() {
   printf '%s\n' "$tarball"
 }
 
-install_exact_version() {
+stage_exact_version() {
   local version="$1" package_source tarball cli npm_log pack_dir
 
   require_command mise
@@ -565,53 +869,244 @@ install_exact_version() {
   mise_env install "$mise_tool@$version" \
     || die "mise could not install prime-agent $version"
   package_source="$(resolve_package_source "$version")"
-  mkdir -p "$npm_prefix"
-  [[ -d "$npm_prefix" && ! -L "$npm_prefix" ]] \
-    || die "unsafe npm prefix: $npm_prefix"
-  # Drop a previous broken symlink install before reinstalling.
-  if [[ -L "$npm_prefix/lib/node_modules/prime-agent" ]]; then
-    rm -f -- "$npm_prefix/lib/node_modules/prime-agent"
+  [[ ! -L "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
+  if [[ -e "$npm_prefix" ]]; then
+    [[ -d "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
   fi
   tarball="$(pack_package_tarball "$package_source" "$version")"
   pack_dir="$(dirname "$tarball")"
-  npm_log="$(mktemp "$runtime_root/.npm-install.XXXXXX")" \
+  staged_npm_prefix="$(mktemp -d "$runtime_root/.npm-prefix-stage.XXXXXX")" \
     || {
       rm -rf -- "$pack_dir"
+      die 'could not stage prime-agent npm prefix'
+    }
+  npm_log="$(mktemp "$runtime_root/.npm-install.XXXXXX")" \
+    || {
+      rm -rf -- "$pack_dir" "$staged_npm_prefix"
       die 'could not stage npm install log'
     }
   if ! PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 \
     PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 \
     PRIME_AGENT_INSTALL_UV=0 \
-    npm install --global --prefix "$npm_prefix" --no-fund --no-audit \
+    npm install --global --prefix "$staged_npm_prefix" --no-fund --no-audit \
       --loglevel=error --progress=false "$tarball" \
     >"$npm_log" 2>&1; then
     cat "$npm_log" >&2 || true
     rm -f -- "$npm_log"
-    rm -rf -- "$pack_dir"
+    rm -rf -- "$pack_dir" "$staged_npm_prefix"
     die "npm could not install prime-agent $version"
   fi
   rm -f -- "$npm_log"
   rm -rf -- "$pack_dir"
-  cli="$(installed_cli "$version")"
-  verify_cli_version "$cli" "$version"
+  cli="$(installed_cli "$version" "$staged_npm_prefix")"
+  verify_cli_version "$cli" "$version" "$staged_npm_prefix"
 }
 
-publish_version() {
+stage_installed_version_receipt() {
   local version="$1" staged
 
-  staged="$(mktemp "$runtime_root/.version.XXXXXX")" \
-    || die 'could not stage prime-agent version'
+  staged="$(mktemp "$runtime_root/.installed-version.XXXXXX")" \
+    || die 'could not stage prime-agent installed version receipt'
   printf '%s\n' "$version" >"$staged"
   chmod 0600 "$staged"
-  mv -f "$staged" "$version_file"
+  printf '%s\n' "$staged"
+}
+
+stage_runtime_identity() {
+  local identity="$1" staged
+
+  staged="$(mktemp "$runtime_root/.runtime-identity.XXXXXX")" \
+    || die 'could not stage Prime runtime identity'
+  printf '%s\n' "$identity" >"$staged"
+  chmod 0600 "$staged"
+  printf '%s\n' "$staged"
+}
+
+make_directory_backup_path() {
+  local pattern="$1" backup
+
+  backup="$(mktemp -d "$pattern")" || return 1
+  rmdir "$backup" || return 1
+  printf '%s\n' "$backup"
+}
+
+make_file_backup_path() {
+  local pattern="$1" backup
+
+  backup="$(mktemp "$pattern")" || return 1
+  rm -f -- "$backup" || return 1
+  printf '%s\n' "$backup"
+}
+
+validate_transaction_paths() {
+  [[ ! -L "$npm_prefix" && ( ! -e "$npm_prefix" || -d "$npm_prefix" ) ]] \
+    || die "unsafe npm prefix: $npm_prefix"
+  [[ ! -L "$receipt_file" && ( ! -e "$receipt_file" || -f "$receipt_file" ) ]] \
+    || die "unsafe installed version receipt: $receipt_file"
+  [[ ! -L "$legacy_version_file" \
+    && ( ! -e "$legacy_version_file" || -f "$legacy_version_file" ) ]] \
+    || die "unsafe legacy installed version receipt: $legacy_version_file"
+  [[ ! -L "$runtime_identity_file" \
+    && ( ! -e "$runtime_identity_file" || -f "$runtime_identity_file" ) ]] \
+    || die "unsafe Prime runtime identity: $runtime_identity_file"
+  [[ ! -L "$kernel_venv" && ( ! -e "$kernel_venv" || -d "$kernel_venv" ) ]] \
+    || die "unsafe kernel venv path: $kernel_venv"
+  [[ ! -L "$kernel_identity_stamp" \
+    && ( ! -e "$kernel_identity_stamp" || -f "$kernel_identity_stamp" ) ]] \
+    || die "unsafe kernel identity stamp: $kernel_identity_stamp"
+  [[ ! -L "$daemon_env_stamp" \
+    && ( ! -e "$daemon_env_stamp" || -f "$daemon_env_stamp" ) ]] \
+    || die "unsafe daemon identity stamp: $daemon_env_stamp"
+}
+
+begin_runtime_transaction() {
+  transaction_active=1
+  transaction_committed=''
+  backup_npm_state='unprocessed'
+  backup_receipt_state='unprocessed'
+  backup_legacy_state='unprocessed'
+  backup_runtime_identity_state='unprocessed'
+  backup_kernel_state='unprocessed'
+  backup_kernel_identity_state='unprocessed'
+  backup_daemon_stamp_state='unprocessed'
+  validate_transaction_paths
+
+  if [[ -d "$npm_prefix" ]]; then
+    backup_npm_prefix="$(make_directory_backup_path "$runtime_root/.npm-prefix-backup.XXXXXX")" \
+      || die 'could not stage npm prefix backup'
+    mv "$npm_prefix" "$backup_npm_prefix" || die 'could not preserve npm prefix'
+    backup_npm_state='present'
+  else
+    backup_npm_state='absent'
+  fi
+  if [[ -f "$receipt_file" ]]; then
+    backup_receipt="$(make_file_backup_path "$runtime_root/.installed-version-backup.XXXXXX")" \
+      || die 'could not stage installed version receipt backup'
+    mv "$receipt_file" "$backup_receipt" || die 'could not preserve installed version receipt'
+    backup_receipt_state='present'
+  else
+    backup_receipt_state='absent'
+  fi
+  if [[ -f "$legacy_version_file" ]]; then
+    backup_legacy_receipt="$(make_file_backup_path "$runtime_root/.version-backup.XXXXXX")" \
+      || die 'could not stage legacy version receipt backup'
+    mv "$legacy_version_file" "$backup_legacy_receipt" \
+      || die 'could not preserve legacy version receipt'
+    backup_legacy_state='present'
+  else
+    backup_legacy_state='absent'
+  fi
+  if [[ -f "$runtime_identity_file" ]]; then
+    backup_runtime_identity="$(make_file_backup_path "$runtime_root/.runtime-identity-backup.XXXXXX")" \
+      || die 'could not stage runtime identity backup'
+    mv "$runtime_identity_file" "$backup_runtime_identity" \
+      || die 'could not preserve runtime identity'
+    backup_runtime_identity_state='present'
+  else
+    backup_runtime_identity_state='absent'
+  fi
+  if [[ -d "$kernel_venv" ]]; then
+    backup_kernel_venv="$(make_directory_backup_path "$profile_home/.kernel-venv-backup.XXXXXX")" \
+      || die 'could not stage kernel venv backup'
+    mv "$kernel_venv" "$backup_kernel_venv" || die 'could not preserve kernel venv'
+    backup_kernel_state='present'
+  else
+    backup_kernel_state='absent'
+  fi
+  if [[ -f "$kernel_identity_stamp" ]]; then
+    backup_kernel_identity="$(make_file_backup_path "$profile_home/.kernel-identity-backup.XXXXXX")" \
+      || die 'could not stage kernel identity backup'
+    mv "$kernel_identity_stamp" "$backup_kernel_identity" \
+      || die 'could not preserve kernel identity stamp'
+    backup_kernel_identity_state='present'
+  else
+    backup_kernel_identity_state='absent'
+  fi
+  if [[ -f "$daemon_env_stamp" ]]; then
+    backup_daemon_stamp="$(make_file_backup_path "$daemon_dir/.daemon-stamp-backup.XXXXXX")" \
+      || die 'could not stage daemon identity stamp backup'
+    mv "$daemon_env_stamp" "$backup_daemon_stamp" \
+      || die 'could not preserve daemon identity stamp'
+    backup_daemon_stamp_state='present'
+  else
+    backup_daemon_stamp_state='absent'
+  fi
+}
+
+restore_transaction_path() {
+  local state="$1" current="$2" backup="$3" kind="$4"
+
+  [[ "$state" != unprocessed ]] || return 0
+  if [[ "$kind" == directory ]]; then
+    rm -rf -- "$current" || return 1
+  else
+    rm -f -- "$current" || return 1
+  fi
+  if [[ "$state" == present ]]; then
+    mv "$backup" "$current" || return 1
+  fi
+}
+
+rollback_runtime_transaction() {
+  local rollback_failed=''
+
+  [[ -n "$transaction_active" && -z "$transaction_committed" ]] || return 0
+  restore_transaction_path "$backup_daemon_stamp_state" "$daemon_env_stamp" \
+    "$backup_daemon_stamp" file || rollback_failed=1
+  restore_transaction_path "$backup_kernel_identity_state" "$kernel_identity_stamp" \
+    "$backup_kernel_identity" file || rollback_failed=1
+  restore_transaction_path "$backup_kernel_state" "$kernel_venv" \
+    "$backup_kernel_venv" directory || rollback_failed=1
+  restore_transaction_path "$backup_runtime_identity_state" "$runtime_identity_file" \
+    "$backup_runtime_identity" file || rollback_failed=1
+  restore_transaction_path "$backup_legacy_state" "$legacy_version_file" \
+    "$backup_legacy_receipt" file || rollback_failed=1
+  restore_transaction_path "$backup_receipt_state" "$receipt_file" \
+    "$backup_receipt" file || rollback_failed=1
+  restore_transaction_path "$backup_npm_state" "$npm_prefix" \
+    "$backup_npm_prefix" directory || rollback_failed=1
+  rm -rf -- "$staged_npm_prefix"
+  rm -f -- "$staged_receipt" "$staged_runtime_identity"
+  staged_npm_prefix=''
+  staged_receipt=''
+  staged_runtime_identity=''
+  transaction_active=''
+  if [[ -n "$rollback_failed" ]]; then
+    printf 'prx: runtime rollback is incomplete; inspect retained *-backup paths under %s and %s\n' \
+      "$runtime_root" "$profile_home" >&2
+    return 1
+  fi
+}
+
+commit_runtime_transaction() {
+  transaction_committed=1
+  rm -rf -- "$backup_npm_prefix" "$backup_kernel_venv"
+  rm -f -- "$backup_receipt" "$backup_legacy_receipt" \
+    "$backup_runtime_identity" "$backup_kernel_identity" "$backup_daemon_stamp"
+  backup_npm_prefix=''
+  backup_receipt=''
+  backup_legacy_receipt=''
+  backup_runtime_identity=''
+  backup_kernel_venv=''
+  backup_kernel_identity=''
+  backup_daemon_stamp=''
+  transaction_active=''
 }
 
 prime_version_if_available() {
-  local version cli actual actual_version status=0
+  local version cli actual actual_version identity status=0
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] || return 0
-  version="$(<"$version_file")"
+  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
+    version="$(<"$receipt_file")"
+  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
+    version="$(<"$legacy_version_file")"
+  else
+    return 0
+  fi
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  identity="$(canonical_identity_from_file "$runtime_identity_file")" || return 0
+  [[ "$(jq -r '.primeVersion' <<<"$identity")" == "$version" ]] || return 0
+  runtime_identity_matches "$identity" "$kernel_identity_stamp" || return 0
   cli="$npm_prefix/lib/node_modules/prime-agent/dist/bundle/cli.js"
   if [[ -x "$npm_prefix/bin/prime-agent" ]]; then
     actual="$("$npm_prefix/bin/prime-agent" --version 2>&1)" || status=$?
@@ -739,10 +1234,10 @@ import bs4, dill, dotenv, httpx, lxml, numpy, pandas, pydantic, requests, scipy,
 }
 
 resolve_runtime_source() {
-  local candidate
+  local prefix="${1:-$npm_prefix}" candidate
 
   # Bundled with the managed npm install of prime-agent (not a PyPI package).
-  candidate="$npm_prefix/lib/node_modules/prime-agent/dist/prime-agent-runtime"
+  candidate="$prefix/lib/node_modules/prime-agent/dist/prime-agent-runtime"
   [[ -d "$candidate" && ! -L "$candidate" ]] \
     || die "bundled prime-agent-runtime is missing; run prx repair ($candidate)"
   [[ -f "$candidate/pyproject.toml" && ! -L "$candidate/pyproject.toml" ]] \
@@ -750,19 +1245,27 @@ resolve_runtime_source() {
   printf '%s\n' "$candidate"
 }
 
-ensure_kernel_runtime() {
-  local log runtime_source
+write_identity_file() {
+  local target="$1" identity="$2" directory staged
+
+  directory="$(dirname "$target")"
+  [[ ! -L "$target" && ( ! -e "$target" || -f "$target" ) ]] \
+    || die "unsafe identity stamp: $target"
+  staged="$(mktemp "$directory/.identity.XXXXXX")" \
+    || die "could not stage identity stamp: $target"
+  printf '%s\n' "$identity" >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$target"
+}
+
+build_kernel_runtime() {
+  local prefix="$1" log runtime_source
 
   require_command uv
   require_command curl
   prepare_profile
   [[ ! -L "$kernel_venv" ]] || die "unsafe kernel venv path: $kernel_venv"
-
-  if kernel_runtime_ready "$kernel_python"; then
-    return 0
-  fi
-
-  runtime_source="$(resolve_runtime_source)"
+  runtime_source="$(resolve_runtime_source "$prefix")"
 
   printf 'prx: bootstrapping Prime IPython kernel (one-time; needs network)…\n' >&2
   if ! pypi_host_reachable; then
@@ -805,33 +1308,66 @@ ensure_kernel_runtime() {
   printf 'prx: kernel ready (%s)\n' "$kernel_python" >&2
 }
 
+ensure_kernel_runtime() {
+  local identity="$1" prefix="${2:-$npm_prefix}"
+
+  [[ ! -L "$kernel_venv" ]] || die "unsafe kernel venv path: $kernel_venv"
+  if runtime_identity_matches "$identity" "$kernel_identity_stamp" \
+    && kernel_runtime_ready "$kernel_python"; then
+    return 0
+  fi
+  [[ ! -L "$kernel_identity_stamp" ]] \
+    || die "unsafe kernel identity stamp: $kernel_identity_stamp"
+  [[ ! -L "$daemon_env_stamp" ]] \
+    || die "unsafe daemon identity stamp: $daemon_env_stamp"
+  stop_profile_daemon_for_mutation
+  rm -f -- "$daemon_env_stamp"
+  build_kernel_runtime "$prefix"
+  write_identity_file "$kernel_identity_stamp" "$identity"
+}
+
 verify_kernel_runtime() {
+  local identity="$1"
+
   [[ -x "$kernel_python" ]] \
     || die "Prime kernel python is missing; run prx setup or prx repair"
   [[ -d "$kernel_venv" && ! -L "$kernel_venv" ]] \
     || die "Prime kernel venv is missing or unsafe; run prx repair"
   kernel_runtime_ready "$kernel_python" \
     || die "Prime kernel runtime is incomplete; run prx repair"
+  [[ ! -L "$kernel_identity_stamp" ]] \
+    || die "unsafe kernel identity stamp: $kernel_identity_stamp"
+  runtime_identity_matches "$identity" "$kernel_identity_stamp" \
+    || die 'Prime kernel identity differs; run prx repair'
+}
+
+daemon_stamp_json() {
+  local identity="$1"
+
+  jq -cS -n \
+    --argjson identity "$identity" \
+    --arg python "$kernel_python" \
+    --arg venv "$kernel_venv" '{
+      schemaVersion: 1,
+      runtimeIdentity: $identity,
+      kernelPython: $python,
+      kernelVenv: $venv
+    }'
 }
 
 write_daemon_env_stamp() {
-  local staged
+  local identity="$1"
 
-  staged="$(mktemp "$daemon_dir/.kernel-env.XXXXXX")" \
-    || die 'could not stage daemon kernel env stamp'
-  printf 'PRIME_AGENT_KERNEL_PYTHON=%s\nPRIME_AGENT_KERNEL_VENV=%s\n' \
-    "$kernel_python" "$kernel_venv" >"$staged"
-  chmod 0600 "$staged"
-  mv -f "$staged" "$daemon_env_stamp"
+  write_identity_file "$daemon_env_stamp" "$(daemon_stamp_json "$identity")"
 }
 
 daemon_env_stamp_matches() {
-  local expected
+  local identity="$1" expected actual
 
   [[ -f "$daemon_env_stamp" && ! -L "$daemon_env_stamp" ]] || return 1
-  expected="$(printf 'PRIME_AGENT_KERNEL_PYTHON=%s\nPRIME_AGENT_KERNEL_VENV=%s\n' \
-    "$kernel_python" "$kernel_venv")"
-  [[ "$(<"$daemon_env_stamp")" == "$expected" ]]
+  expected="$(daemon_stamp_json "$identity")"
+  actual="$(jq -cS . "$daemon_env_stamp" 2>/dev/null)" || return 1
+  [[ "$actual" == "$expected" ]]
 }
 
 prepare_daemon_dir() {
@@ -848,30 +1384,12 @@ prepare_daemon_dir() {
 # Uses Prime's shutdownDaemonAndWait — CLI "shutdown" discovers every socket and
 # requires TTY confirmation, and "… --daemon-socket X shutdown" is treated as a
 # chat prompt rather than the lifecycle command.
-stop_profile_daemon_socket() {
-  local launch_js="$npm_prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
-  local stopped=false
-
-  [[ -f "$launch_js" && ! -L "$launch_js" ]] \
-    || die "prime-agent daemon-launch module missing; run prx repair ($launch_js)"
-
-  if [[ -S "$daemon_socket" ]]; then
-    if PRX_DAEMON_SOCKET="$daemon_socket" PRX_DAEMON_LAUNCH_JS="$launch_js" \
-      node --input-type=module -e '
-import { pathToFileURL } from "node:url";
-const launchJs = process.env.PRX_DAEMON_LAUNCH_JS;
-const socket = process.env.PRX_DAEMON_SOCKET;
-const { shutdownDaemonAndWait } = await import(pathToFileURL(launchJs).href);
-const ok = await shutdownDaemonAndWait(socket, 10000);
-process.exit(ok ? 0 : 2);
-'; then
-      stopped=true
-    fi
+daemon_socket_is_listening() {
+  if [[ -n "${PRX_TEST_DAEMON_MARKER:-}" && -f "$PRX_TEST_DAEMON_MARKER" ]]; then
+    return 0
   fi
-
-  # If the socket file remains with no listener, drop the stale path.
-  if [[ -e "$daemon_socket" || -L "$daemon_socket" ]]; then
-    if ! PRX_DAEMON_SOCKET="$daemon_socket" node --input-type=module -e '
+  [[ -S "$daemon_socket" ]] || return 1
+  PRX_DAEMON_SOCKET="$daemon_socket" node --input-type=module -e '
 import { createConnection } from "node:net";
 const socket = process.env.PRX_DAEMON_SOCKET;
 await new Promise((resolve) => {
@@ -882,42 +1400,91 @@ await new Promise((resolve) => {
   c.once("error", () => done(1));
   c.once("timeout", () => done(1));
 }).then((code) => process.exit(code));
-' 2>/dev/null; then
-      rm -f -- "$daemon_socket"
-    fi
-  fi
-
-  [[ "$stopped" == true ]]
+' 2>/dev/null
 }
 
-# Shut down the profile-local daemon when the kernel paths change (or the stamp
-# is missing). Safe no-op when nothing is listening.
+stop_profile_daemon_socket() {
+  local launch_js="$npm_prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
+
+  if ! daemon_socket_is_listening; then
+    rm -f -- "$daemon_socket"
+    return 1
+  fi
+  [[ -f "$launch_js" && ! -L "$launch_js" ]] \
+    || die "prime-agent daemon-launch module missing; run prx repair ($launch_js)"
+
+  if PRX_DAEMON_SOCKET="$daemon_socket" PRX_DAEMON_LAUNCH_JS="$launch_js" \
+    node --input-type=module -e '
+import { pathToFileURL } from "node:url";
+const launchJs = process.env.PRX_DAEMON_LAUNCH_JS;
+const socket = process.env.PRX_DAEMON_SOCKET;
+const { shutdownDaemonAndWait } = await import(pathToFileURL(launchJs).href);
+const ok = await shutdownDaemonAndWait(socket, 10000);
+process.exit(ok ? 0 : 2);
+'; then
+    :
+  fi
+
+  if daemon_socket_is_listening; then
+    return 2
+  fi
+  rm -f -- "$daemon_socket"
+  return 0
+}
+
 restart_stale_profile_daemon() {
+  local identity="$1"
+
   prepare_daemon_dir
-  if daemon_env_stamp_matches; then
+  if daemon_env_stamp_matches "$identity"; then
     return 0
   fi
 
-  if [[ -S "$daemon_socket" ]]; then
+  if daemon_socket_is_listening; then
     printf 'prx: restarting profile daemon so kernel env reaches workers…\n' >&2
-    stop_profile_daemon_socket >/dev/null 2>&1 || true
+    stop_profile_daemon_socket >/dev/null \
+      || die 'could not stop profile daemon with stale runtime identity'
   fi
 
-  write_daemon_env_stamp
+  rm -f -- "$daemon_socket"
+  write_daemon_env_stamp "$identity"
+}
+
+stop_profile_daemon_for_mutation() {
+  prepare_daemon_dir
+  if daemon_socket_is_listening; then
+    printf 'prx: stopping profile daemon before runtime mutation…\n' >&2
+    stop_profile_daemon_socket >/dev/null \
+      || die 'could not stop profile daemon before runtime mutation'
+  else
+    rm -f -- "$daemon_socket"
+  fi
+  daemon_socket_is_listening \
+    && die 'profile daemon remained running before runtime mutation'
+  return 0
 }
 
 shutdown_profile_daemon() {
+  local stop_status=0
+
   prepare_daemon_dir
-  if [[ ! -S "$daemon_socket" ]]; then
-    printf 'prx shutdown: no profile daemon socket\n'
+  if ! daemon_socket_is_listening; then
+    if [[ -S "$daemon_socket" ]]; then
+      printf 'prx shutdown: profile daemon was not running (cleared stale socket)\n'
+    else
+      printf 'prx shutdown: no profile daemon socket\n'
+    fi
+    rm -f -- "$daemon_socket"
     rm -f -- "$daemon_env_stamp"
     return 0
   fi
-  if stop_profile_daemon_socket; then
-    printf 'prx shutdown: stopped profile daemon\n'
-  else
-    printf 'prx shutdown: profile daemon was not running (cleared stale socket)\n'
-  fi
+  stop_profile_daemon_socket || stop_status=$?
+  case "$stop_status" in
+    0) printf 'prx shutdown: stopped profile daemon\n' ;;
+    1) printf 'prx shutdown: profile daemon was not running (cleared stale socket)\n' ;;
+    2) die 'profile daemon did not stop; identity stamp was preserved' ;;
+    *) die "unexpected profile daemon shutdown status: $stop_status" ;;
+  esac
   rm -f -- "$daemon_env_stamp"
 }
 
@@ -925,16 +1492,15 @@ setup_profile() {
   local version
 
   require_command mise
-  if [[ -e "$version_file" || -L "$version_file" ]]; then
-    version="$(read_pinned_version)"
+  if [[ -e "$receipt_file" || -L "$receipt_file" \
+    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
+    version="$(read_installed_version)"
   else
     version="$(resolve_latest_version)"
   fi
-  install_exact_version "$version"
   publish_managed_profile
   ensure_floating_skills
-  publish_version "$version"
-  ensure_kernel_runtime
+  replace_runtime_state "$version"
   printf 'prx setup: ready (%s, %s)\n' "$version" "$model_id"
 }
 
@@ -942,19 +1508,74 @@ repair_profile() {
   local version
 
   require_command mise
-  version="$(read_pinned_version)"
-  install_exact_version "$version"
+  version="$(read_installed_version)"
   publish_managed_profile
   ensure_floating_skills
-  ensure_kernel_runtime
+  replace_runtime_state "$version"
   printf 'prx repair: restored (%s, %s)\n' "$version" "$model_id"
+}
+
+replace_runtime_state() {
+  local version="$1" identity cli
+
+  stage_exact_version "$version"
+  identity="$(compute_runtime_identity "$version" "$staged_npm_prefix")"
+  staged_receipt="$(stage_installed_version_receipt "$version")"
+  staged_runtime_identity="$(stage_runtime_identity "$identity")"
+
+  stop_profile_daemon_for_mutation
+  [[ "${PRX_TEST_FAIL_AT-}" != after-daemon-stop ]] \
+    || die 'injected failure after daemon stop'
+  begin_runtime_transaction
+  [[ "${PRX_TEST_FAIL_AT-}" != after-state-backup ]] \
+    || die 'injected failure after state backup'
+
+  build_kernel_runtime "$staged_npm_prefix"
+  [[ "${PRX_TEST_FAIL_AT-}" != after-kernel-build ]] \
+    || die 'injected failure after kernel build'
+  [[ "${PRX_TEST_FAIL_AT-}" != before-receipt-publication ]] \
+    || die 'injected failure before installed version receipt publication'
+
+  mv "$staged_npm_prefix" "$npm_prefix"
+  staged_npm_prefix=''
+  [[ "${PRX_TEST_FAIL_AT-}" != after-npm-publication ]] \
+    || die 'injected failure after npm publication'
+  mv "$staged_receipt" "$receipt_file"
+  staged_receipt=''
+  mv "$staged_runtime_identity" "$runtime_identity_file"
+  staged_runtime_identity=''
+  write_identity_file "$kernel_identity_stamp" "$identity"
+  rm -f -- "$legacy_version_file" "$daemon_env_stamp"
+
+  cli="$(installed_cli "$version")"
+  verify_cli_version "$cli" "$version"
+  verify_kernel_runtime "$identity"
+  [[ "$(compute_runtime_identity "$version")" == "$identity" ]] \
+    || die 'published Prime runtime identity verification failed'
+  [[ "${PRX_TEST_FAIL_AT-}" != after-state-publication ]] \
+    || die 'injected failure after state publication'
+  commit_runtime_transaction
+}
+
+runtime_state_is_current() {
+  local version="$1" recorded actual
+
+  [[ -f "$receipt_file" && ! -L "$receipt_file" && ! -e "$legacy_version_file" \
+    && ! -L "$legacy_version_file" ]] || return 1
+  [[ ! -L "$runtime_identity_file" && ! -L "$kernel_identity_stamp" ]] || return 1
+  recorded="$(canonical_identity_from_file "$runtime_identity_file")" || return 1
+  [[ "$(jq -r '.primeVersion' <<<"$recorded")" == "$version" ]] || return 1
+  actual="$(compute_runtime_identity "$version")" || return 1
+  [[ "$actual" == "$recorded" ]] || return 1
+  runtime_identity_matches "$recorded" "$kernel_identity_stamp" || return 1
+  kernel_runtime_ready "$kernel_python"
 }
 
 check_for_update() {
   local current latest
 
   require_command mise
-  current="$(read_pinned_version)"
+  current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
     printf 'prx update: %s is current\n' "$current"
@@ -968,26 +1589,48 @@ update_profile() {
 
   require_command mise
   ensure_floating_skills
-  current="$(read_pinned_version)"
+  current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
-  if [[ "$current" == "$latest" ]]; then
+  if [[ "$current" == "$latest" ]] && runtime_state_is_current "$current"; then
     printf 'prx update: %s is current\n' "$current"
     return
   fi
-  install_exact_version "$latest"
-  publish_version "$latest"
-  printf 'prx update: %s -> %s installed\n' "$current" "$latest"
+  publish_managed_profile
+  replace_runtime_state "$latest"
+  if [[ "$current" == "$latest" ]]; then
+    printf 'prx update: %s runtime state rebuilt\n' "$current"
+  else
+    printf 'prx update: %s -> %s installed\n' "$current" "$latest"
+  fi
 }
 
 doctor_profile() {
-  local version cli
+  local version cli recorded actual repair_legacy="${1:-true}"
 
   require_command mise
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
+    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
+    if [[ "$repair_legacy" == true ]]; then
+      repair_profile >/dev/null
+    else
+      die 'legacy Prime runtime state requires prx doctor or prx repair'
+    fi
+  fi
   verify_managed_profile
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"
-  verify_kernel_runtime
+  recorded="$(published_runtime_identity "$version")"
+  actual="$(compute_runtime_identity "$version")"
+  [[ "$actual" == "$recorded" ]] \
+    || die 'Prime runtime content differs from its identity; run prx repair'
+  verify_kernel_runtime "$recorded"
+  [[ ! -L "$daemon_env_stamp" ]] \
+    || die "unsafe daemon identity stamp: $daemon_env_stamp"
+  if daemon_socket_is_listening || [[ -e "$daemon_env_stamp" ]]; then
+    daemon_env_stamp_matches "$recorded" \
+      || die 'Prime daemon identity stamp differs; run prx shutdown'
+  fi
   check_proxy
   printf 'prx doctor: OK (%s, %s)\n' "$version" "$model_id"
 }
@@ -1009,31 +1652,37 @@ not_ready_inventory() {
 }
 
 inventory_profile() {
-  local profile="$1"
+  local profile="$1" status=0
 
   [[ "$profile" == default ]] || die "unknown profile: $profile"
   if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
     not_ready_inventory "$profile" not-setup
     return
   fi
-  if ! (doctor_profile >/dev/null 2>&1); then
-    not_ready_inventory "$profile" unhealthy
-    return
-  fi
-  jq -cn --arg profile "$profile" '{
-    schemaVersion: 1,
-    launcher: "prx",
-    harness: "prime",
-    profile: $profile,
-    readiness: "healthy",
-    plugins: [],
-    skills: {packageCount: null, visibleCount: null},
-    mcps: []
-  }'
+  (
+    trap cleanup_on_exit EXIT
+    try_run_locked doctor_profile false >/dev/null 2>&1
+  ) || status=$?
+  case "$status" in
+    0)
+      jq -cn --arg profile "$profile" '{
+        schemaVersion: 1,
+        launcher: "prx",
+        harness: "prime",
+        profile: $profile,
+        readiness: "healthy",
+        plugins: [],
+        skills: {packageCount: null, visibleCount: null},
+        mcps: []
+      }'
+      ;;
+    75) not_ready_inventory "$profile" busy ;;
+    *) not_ready_inventory "$profile" unhealthy ;;
+  esac
 }
 
 launch_prime() {
-  local version cli selected_model="$model_id"
+  local version cli identity selected_model="$model_id"
   local -a prime_args=() command_args
 
   while (( $# > 0 )); do
@@ -1057,17 +1706,26 @@ launch_prime() {
 
   require_command mise
   require_node
-  if [[ ! -e "$version_file" && ! -L "$version_file" ]]; then
+  acquire_mutation_lock
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
+    && ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
     setup_profile >/dev/null
   fi
   publish_managed_profile "$selected_model"
   ensure_floating_skills
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
+  if [[ ! -f "$receipt_file" || -L "$receipt_file" \
+    || ! -f "$runtime_identity_file" || -L "$runtime_identity_file" ]]; then
+    repair_profile >/dev/null
+    version="$(read_installed_version)"
+  fi
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"
-  ensure_kernel_runtime
-  restart_stale_profile_daemon
+  identity="$(published_runtime_identity "$version")"
+  ensure_kernel_runtime "$identity"
+  restart_stale_profile_daemon "$identity"
   check_proxy "$selected_model"
+  release_mutation_lock || die 'could not release profile mutation lock'
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
   unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
   command_args=(
@@ -1089,8 +1747,33 @@ launch_prime() {
     node "${command_args[@]}"
 }
 
+cleanup_on_exit() {
+  rollback_runtime_transaction || :
+  rm -rf -- "$staged_npm_prefix" 2>/dev/null || true
+  rm -f -- "$staged_receipt" "$staged_runtime_identity" 2>/dev/null || true
+  if [[ -n "$mutation_lock_owned" ]]; then
+    release_mutation_lock >/dev/null 2>&1 || cleanup_mutation_owner
+  fi
+}
+
+run_locked() {
+  acquire_mutation_lock
+  "$@"
+  release_mutation_lock || die 'could not release profile mutation lock'
+}
+
+try_run_locked() {
+  acquire_mutation_lock try || return $?
+  "$@"
+  release_mutation_lock || die 'could not release profile mutation lock'
+}
+
 require_command jq
 validate_catalog
+trap cleanup_on_exit EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 case "${1-}" in
   help|-h|--help)
@@ -1116,7 +1799,7 @@ case "${1-}" in
     shift
     [[ "$#" -le 1 ]] || die "$command_name accepts only default"
     require_default_profile "${1-default}"
-    "${command_name}_profile"
+    run_locked "${command_name}_profile"
     ;;
   shutdown)
     shift
@@ -1124,7 +1807,7 @@ case "${1-}" in
     require_default_profile "${1-default}"
     require_command mise
     require_node
-    shutdown_profile_daemon
+    run_locked shutdown_profile_daemon
     ;;
   update)
     shift
@@ -1138,7 +1821,7 @@ case "${1-}" in
     if [[ "$check_only" == true ]]; then
       check_for_update
     else
-      update_profile
+      run_locked update_profile
     fi
     ;;
   default)

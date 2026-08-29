@@ -17,6 +17,6 @@ sonnet_model = "qwen3.6-35b-a3b-local"
 haiku_model = "qwen3.6-35b-a3b-local"
 
 [image]
-base = "node:22.17.0-bookworm-slim"
+base = "node:bookworm-slim"
 shell = "bash"
 packages = ["bash", "ca-certificates", "gh", "git", "jq"]

@@ -25,6 +25,8 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
+installed_version_receipt="$install_root/installed-version"
+legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/jcx"
@@ -68,6 +70,12 @@ require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellag
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
+  if [[ -e "$receipt" || -L "$receipt" ]]; then
+    [[ -f "$receipt" && ! -L "$receipt" ]] \
+      || refuse "unsafe installed version receipt: $receipt"
+  fi
+done
 
 launcher_stage="$(mktemp "$install_root/bin/.jcx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"

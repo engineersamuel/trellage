@@ -559,6 +559,8 @@ case "$*" in
         $SIG{"HUP"} = $finish;
         $SIG{"INT"} = $finish;
         $SIG{"TERM"} = $finish;
+        open my $ready, ">", "$dir/grandchild-ready" or exit 1;
+        close $ready;
         sleep 1 while 1;
       ' &
       fake_grandchild_pid=$!

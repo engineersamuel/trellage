@@ -27,12 +27,32 @@ grep -Fqx 'base_url = "http://copilot-proxy-rs:8080/v1"' docker/codex-config.tom
 grep -Fqx 'wire_api = "responses"' docker/codex-config.toml || fail 'Codex is not using Responses'
 
 for agent_dockerfile in Dockerfile.agent Dockerfile.copilot-agent; do
-  grep -Fq 'ARG PLAYWRIGHT_VERSION=1.61.1' "$agent_dockerfile" \
-    || fail "$agent_dockerfile does not pin the browser-runtime dependency version"
+  grep -Fq 'ARG PLAYWRIGHT_VERSION=latest' "$agent_dockerfile" \
+    || fail "$agent_dockerfile does not use the latest stable browser-runtime dependency"
   grep -Fq 'playwright@${PLAYWRIGHT_VERSION}" install-deps chromium' "$agent_dockerfile" \
     || fail "$agent_dockerfile does not install Chromium runtime dependencies"
+  grep -Fq 'ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' "$agent_dockerfile" \
+    || fail "$agent_dockerfile does not accept the selected npm registry"
+  grep -Fq '/opt/trellage/source-provenance.json' "$agent_dockerfile" \
+    || fail "$agent_dockerfile does not install immutable source provenance"
+  grep -Fq '{schemaVersion: 1, source: $source, requestedRef: $requestedRef, resolvedCommit: $resolvedCommit}' \
+    "$agent_dockerfile" \
+    || fail "$agent_dockerfile source provenance schema is incomplete"
+  grep -Fq "grep -Eq '^[0-9a-f]{40}$'" "$agent_dockerfile" \
+    || fail "$agent_dockerfile does not require a lowercase full resolved commit"
 done
 
+if grep -Eq '/opt/(agent-kit|awesome-copilot)-source-commit\.txt' \
+  Dockerfile.agent Dockerfile.copilot-agent; then
+  fail 'legacy unstructured image source commit remains'
+fi
+
+grep -Fq 'ARG WSHOBSON_AGENTS_REF=main' Dockerfile.agent \
+  || fail 'Codex package source does not follow its development branch'
+grep -Fq 'ARG PIP_INDEX_URL=https://pypi.org/simple/' Dockerfile.agent \
+  || fail 'Codex adapter does not accept the selected Python index'
+grep -Fq 'ARG CODEX_VERSION=latest' Dockerfile.agent \
+  || fail 'Codex comparison runtime does not use the latest stable release'
 grep -Fq 'ARG WSHOBSON_AGENTS_PLUGIN=full-stack-orchestration' Dockerfile.agent \
   || fail 'Codex plugin build argument is missing'
 grep -Fq -- '--plugin "${WSHOBSON_AGENTS_PLUGIN}"' Dockerfile.agent \

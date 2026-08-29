@@ -12,7 +12,9 @@ runner='scripts/harness'
 manifest='harnesses/todo-side-by-side/harness.json'
 [[ -x "$runner" ]] || fail "missing executable runner: $runner"
 
-fixture_root="$(mktemp -d)"
+fixture_root="$PWD/tests/.harness-runner.${BASHPID:-$$}"
+[[ ! -e "$fixture_root" && ! -L "$fixture_root" ]] || fail "fixture path already exists: $fixture_root"
+mkdir -p "$fixture_root"
 cleanup() {
   rm -rf "$fixture_root"
 }
@@ -81,10 +83,13 @@ done
 jq -n \
   --arg tokenState "$token_state" \
   --arg promptHash "$prompt_hash" \
+  --arg npmRegistry "${HARNESS_NPM_REGISTRY:-}" \
+  --arg pypiIndex "${HARNESS_PYPI_INDEX:-}" \
   --arg wshobsonPlugin "${WSHOBSON_AGENTS_PLUGIN:-}" \
   --arg skillsContext "${HARNESS_SKILLS_CONTEXT:-}" \
   --arg skillsState "$skills_state" \
   '{tokenState: $tokenState, promptHash: $promptHash,
+    npmRegistry: $npmRegistry, pypiIndex: $pypiIndex,
     wshobsonPlugin: $wshobsonPlugin, skillsContext: $skillsContext,
     skillsState: $skillsState, args: $ARGS.positional}' \
   --args -- "$@" \
@@ -116,7 +121,7 @@ if [[ "$*" == *'--entrypoint tar'* ]]; then
   done
   [[ -n "$contestant_id" ]]
   tar -C "$FAKE_EXPORT_ROOT/$contestant_id" -cf - \
-    .harness package.json package-lock.json dist
+    .harness package.json package-lock.json dist source-provenance.json
 fi
 EOF
 
@@ -158,7 +163,10 @@ runner_env=(
   env
   -u COPILOT_GITHUB_TOKEN
   -u GH_TOKEN
+  -u UV_DEFAULT_INDEX
+  -u PIP_INDEX_URL
   PATH="$fake_bin:$PATH"
+  npm_config_registry='https://packagefeedproxy.microsoft.io/npm/registry/'
   FAKE_DOCKER_LOG_DIR="$docker_log_dir"
   FAKE_GH_LOG_DIR="$gh_log_dir"
   FAKE_PLAYWRIGHT_LOG="$fixture_root/playwright.log"
@@ -168,6 +176,7 @@ runner_env=(
   HARNESS_PLAYWRIGHT_BIN="$fake_bin/playwright"
   HARNESS_STATE_ROOT="$fixture_root/state"
   HARNESS_RESULTS_ROOT="$fixture_root/results"
+  HARNESS_SCRATCH_ROOT="$fixture_root/scratch"
   HARNESS_RUN_ID='fixture-run'
   FAKE_EXPORT_ROOT="$fixture_root/export"
 )
@@ -191,6 +200,8 @@ grep -Fq 'duplicate contestant port' "$fixture_root/invalid.stderr" \
 
 for invalid_mutation in \
   '.acceptance = "unknown-v1"' \
+  '.contestants[0].packages[0].ref = "../main"' \
+  '.contestants[0].packages[0].ref = "feature/unsafe"' \
   '.contestants[0].packages[0].plugins += ["api-security"]' \
   '.contestants[0].packages[0].skills = ["direct-skill"]' \
   '.contestants[1].packages[0].hooks = ["direct-hook"]' \
@@ -216,6 +227,9 @@ jq -s -e '
   and any(.[]; (.args | index("todo-side-by-side-copilot-awesome")) and (.args | index("copilot_agent")) and (.args | index("compose.copilot.yaml")))
   and ([.[].skillsContext] | unique | length) == 1
   and all(.[]; .skillsState == "fixture-skill")
+  and all(.[]; (.args | index("--pull")) and (.args | index("--no-cache")))
+  and all(.[]; .npmRegistry == "https://packagefeedproxy.microsoft.io/npm/")
+  and all(.[]; .pypiIndex == "https://packagefeedproxy.microsoft.io/pypi/simple/")
 ' "${build_calls[@]}" >/dev/null || fail 'build did not isolate both contestant projects and services'
 
 rm -f "$docker_log_dir"/* "$gh_log_dir"/*
@@ -352,6 +366,17 @@ for contestant_id in codex-wshobson copilot-awesome; do
   printf '%s\n' '{"name":"fixture","version":"1.0.0"}' >"$export_root/package.json"
   printf '%s\n' '{"lockfileVersion":3}' >"$export_root/package-lock.json"
   printf '%s\n' 'fixture build' >"$export_root/dist/server.js"
+  source='https://github.com/wshobson/agents.git'
+  resolved_commit='1111111111111111111111111111111111111111'
+  if [[ "$contestant_id" == 'copilot-awesome' ]]; then
+    source='https://github.com/github/awesome-copilot.git'
+    resolved_commit='2222222222222222222222222222222222222222'
+  fi
+  jq -n \
+    --arg source "$source" \
+    --arg resolvedCommit "$resolved_commit" \
+    '{schemaVersion: 1, source: $source, requestedRef: "main", resolvedCommit: $resolvedCommit}' \
+    >"$export_root/source-provenance.json"
 done
 
 rm -f "$docker_log_dir"/*
@@ -365,6 +390,34 @@ jq -e '
 ' "$comparison" >/dev/null || fail 'collect did not assemble judge-ready contestant evidence'
 [[ "$(find "$docker_log_dir" -type f -name '*.json' | wc -l | tr -d ' ')" == '2' ]] \
   || fail 'collect did not use exactly one volume exporter per contestant'
+collection_calls=()
+while IFS= read -r call_file; do
+  collection_calls+=("$call_file")
+done < <(find "$docker_log_dir" -type f -name '*.json' -print | sort)
+jq -s -e '
+  all(.[];
+    (.args | index("--network"))
+    and (.args | index("none"))
+    and (.args | index("--read-only"))
+    and (.args | index("--entrypoint"))
+    and (.args | index("tar"))
+    and (.args | index("/opt/trellage"))
+    and (.args | index("source-provenance.json"))
+    and .tokenState == "absent"
+  )
+' "${collection_calls[@]}" >/dev/null \
+  || fail 'collect did not extract image provenance through the isolated exporter'
+jq -e '
+  .contestants[0].packages[0].ref == "main"
+  and .contestants[0].packages[0].resolvedCommit == "1111111111111111111111111111111111111111"
+  and .contestants[1].packages[0].ref == "main"
+  and .contestants[1].packages[0].resolvedCommit == "2222222222222222222222222222222222222222"
+' "$fixture_root/results/todo-side-by-side/fixture-run/manifest.resolved.json" >/dev/null \
+  || fail 'collect did not resolve package commits from image provenance'
+for contestant_id in codex-wshobson copilot-awesome; do
+  [[ -f "$fixture_root/results/todo-side-by-side/fixture-run/contestants/$contestant_id/source-provenance.json" ]] \
+    || fail "collect did not preserve source provenance for $contestant_id"
+done
 
 rm -f "$docker_log_dir"/*
 "${runner_env[@]}" "$runner" down "$manifest" >/dev/null

@@ -31,7 +31,7 @@ export class ProfilePreflightError extends Error {
 }
 
 interface NativeInventory {
-  readonly readiness: "healthy" | "unhealthy" | "not-setup"
+  readonly readiness: "healthy" | "unhealthy" | "not-setup" | "busy"
 }
 
 const diagnosticFromError = (error: CommandRunnerError): string => {
@@ -57,7 +57,12 @@ const parseNativeInventory = (source: string, selected: NativeSelectedProfile): 
   ) {
     throw new ProfilePreflightError("Native inventory identity does not match the selected profile")
   }
-  if (inventory.readiness !== "healthy" && inventory.readiness !== "unhealthy" && inventory.readiness !== "not-setup") {
+  if (
+    inventory.readiness !== "healthy" &&
+    inventory.readiness !== "unhealthy" &&
+    inventory.readiness !== "not-setup" &&
+    inventory.readiness !== "busy"
+  ) {
     throw new ProfilePreflightError("Native inventory returned an unsupported readiness value")
   }
   return { readiness: inventory.readiness }
@@ -98,6 +103,8 @@ const checkNativeReadiness = async (
         diagnostic:
           inventory.readiness === "not-setup"
             ? `Run ${selected.launcher} setup ${selected.profile}, then retry.`
+            : inventory.readiness === "busy"
+              ? `Wait for the current ${selected.launcher} operation to finish, then retry.`
             : `Run ${selected.launcher} doctor ${selected.profile} for details.`,
       }
 }

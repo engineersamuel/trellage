@@ -34,7 +34,7 @@ jq -e '
     and .provider == "copilot-proxy-rs"
     and .packages == [{
       "source": "https://github.com/wshobson/agents.git",
-      "ref": "c4b82b0ad771190355eb8e204b1329732a18449a",
+      "ref": "main",
       "plugins": ["full-stack-orchestration"],
       "skills": [],
       "hooks": []
@@ -49,13 +49,13 @@ jq -e '
     and .provider == "github-copilot-native"
     and .packages == [{
       "source": "https://github.com/github/awesome-copilot.git",
-      "ref": "ecf0f5a9f4b014d2e0f5e3c1cec55b4e7792ed8a",
+      "ref": "main",
       "plugins": ["frontend-web-dev", "testing-automation"],
       "skills": [],
       "hooks": []
     }]
   )
-' "$manifest" >/dev/null || fail 'manifest fields do not match the pinned comparison contract'
+' "$manifest" >/dev/null || fail 'manifest fields do not match the comparison contract'
 
 prompt_path="$(jq -r '.prompt' "$manifest")"
 [[ "$prompt_path" != /* && "$prompt_path" != *'..'* ]] || fail 'prompt path must be repository-relative'

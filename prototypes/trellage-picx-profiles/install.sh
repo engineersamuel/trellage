@@ -25,7 +25,8 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/picx"
 installed_launcher="$install_root/bin/picx"
 installed_catalog="$install_root/catalog.json"
-installed_version="$install_root/version"
+installed_version_receipt="$install_root/installed-version"
+legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-picx-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/picx"
@@ -69,21 +70,21 @@ require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellag
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
-[[ ! -L "$installed_version" && ( ! -e "$installed_version" || -f "$installed_version" ) ]] \
-  || refuse "unsafe managed version: $installed_version"
-
+for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
+  if [[ -e "$receipt" || -L "$receipt" ]]; then
+    [[ -f "$receipt" && ! -L "$receipt" ]] \
+      || refuse "unsafe installed version receipt: $receipt"
+  fi
+done
 launcher_stage="$(mktemp "$install_root/bin/.picx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
-version_stage="$(mktemp "$install_root/.version.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 install -m 0755 "$source_dir/bin/picx" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
-install -m 0644 "$source_dir/version" "$version_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$catalog_stage" "$installed_catalog"
-mv -f "$version_stage" "$installed_version"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then

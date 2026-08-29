@@ -91,12 +91,11 @@ grep -Fqx 'version = "2.1.229"' "$live_lock" \
 grep -Eq '^final_digest = "sha256:[0-9a-f]{64}"$' "$live_lock" \
   || fail 'Sandbox live lock has no final image digest'
 
-council_lock='profiles/claude-council/profile.linux-arm64.lock.toml'
-grep -Fqx 'version = "2.1.233"' "$council_lock" \
-  || fail 'Council lock does not resolve the recorded marketplace version'
-if grep -Eq '^final_digest[[:space:]]*=' "$council_lock"; then
-  fail 'Council lock unexpectedly pins a final image digest with floating skills'
-fi
+council_profile='profiles/claude-council/profile.toml'
+grep -Fqx 'version = "latest"' "$council_profile" \
+  || fail 'Council development profile does not select the latest stable Claude release'
+[[ ! -e 'profiles/claude-council/profile.linux-arm64.lock.toml' ]] \
+  || fail 'Council development profile unexpectedly commits a release lock'
 
 ledger='docs/headless-evidence.json'
 jq -e '

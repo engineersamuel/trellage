@@ -4,7 +4,6 @@ set -euo pipefail
 
 readonly ownership_value='trellage-prime-profiles-v1'
 readonly managed_extension_name='ask-user'
-readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
 
 refuse() {
   printf 'prx install: %s\n' "$1" >&2
@@ -27,6 +26,8 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/prx"
 installed_launcher="$install_root/bin/prx"
 installed_catalog="$install_root/catalog.json"
+installed_version_receipt="$install_root/installed-version"
+legacy_version_receipt="$install_root/version"
 installed_extensions_dir="$install_root/assets/extensions"
 installed_extension="$installed_extensions_dir/${managed_extension_name}.ts"
 source_extension="$source_dir/assets/extensions/${managed_extension_name}.ts"
@@ -108,19 +109,16 @@ require_safe_directory "$installed_extensions_dir" \
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
+  if [[ -e "$receipt" || -L "$receipt" ]]; then
+    [[ -f "$receipt" && ! -L "$receipt" ]] \
+      || refuse "unsafe installed version receipt: $receipt"
+  fi
+done
 [[ -f "$source_extension" && ! -L "$source_extension" ]] \
   || refuse "missing managed extension asset: $source_extension"
 [[ ! -L "$installed_extension" && ( ! -e "$installed_extension" || -f "$installed_extension" ) ]] \
   || refuse "unsafe managed extension: $installed_extension"
-source_extension_sha256="$(
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 -- "$source_extension" | awk '{ print $1 }'
-  else
-    sha256sum -- "$source_extension" | awk '{ print $1 }'
-  fi
-)" || refuse "cannot hash managed extension asset: $source_extension"
-[[ "$source_extension_sha256" == "$managed_extension_sha256" ]] \
-  || refuse "managed extension asset integrity differs: $source_extension"
 
 launcher_stage="$(mktemp "$install_root/bin/.prx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"

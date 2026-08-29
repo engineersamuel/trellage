@@ -217,13 +217,14 @@ if [[ "${1-}" == inventory && "${3-}" == --json ]]; then
     --arg launcher "$launcher" \
     --arg harness "$(jq -r .harness "$runtime/catalog.json")" \
     --arg profile "$2" \
+    --arg readiness "${TRX_INVENTORY_READINESS:-healthy}" \
     --argjson packageCount "$package_count" \
     '{
       schemaVersion:1,
       launcher:$launcher,
       harness:$harness,
       profile:$profile,
-      readiness:"healthy",
+      readiness:$readiness,
       plugins:[{name:($launcher + "-plug"),version:"1.2.3"}],
       skills:{packageCount:$packageCount,visibleCount:4},
       mcps:["docs","files"]
@@ -707,6 +708,16 @@ jq -e '
   and .readiness == "healthy"
 ' <<<"$inventory_output" >/dev/null \
   || fail 'trx inventory did not return the expected readiness contract'
+
+busy_inventory_output="$(TRX_INVENTORY_READINESS=busy \
+  "$fixture_bin/trx" inventory prx prx-p --json)" \
+  || fail 'trx inventory rejected a busy launcher/profile'
+jq -e '
+  .launcher == "prx"
+  and .profile == "prx-p"
+  and .readiness == "busy"
+' <<<"$busy_inventory_output" >/dev/null \
+  || fail 'trx inventory did not preserve busy readiness'
 
 status=0
 "$fixture_bin/trx" inventory bogus cpx-p --json >"$fixture_root/inventory-bad-launcher.out" \

@@ -70,6 +70,7 @@ const renderSource = (
   `select = ${strings(source.select)}`,
   `commit = ${quote(source.commit)}`,
   `integrity = ${quote(source.integrity)}`,
+  ...(source.files.length === 0 ? ["files = []"] : []),
   ...source.files.flatMap((file) => renderSourceFile(lock, sourceIndex, file)),
 ]
 
@@ -115,6 +116,9 @@ const renderRuntime = (runtime: ProfileLock["packages"]["runtime"][number]): Rea
   `name = ${quote(runtime.name)}`,
   `version = ${quote(runtime.version)}`,
   `integrity = ${quote(runtime.integrity)}`,
+  ...(runtime.size === undefined ? [] : [`size = ${runtime.size}`]),
+  ...(runtime.url === undefined ? [] : [`url = ${quote(runtime.url)}`]),
+  ...(runtime.direct === undefined ? [] : [`direct = ${runtime.direct}`]),
 ]
 
 const renderArtifact = (artifact: NonNullable<ProfileLock["packages"]["artifacts"]>[number]): ReadonlyArray<string> => [
@@ -135,6 +139,31 @@ const renderImage = (lock: ProfileLock): ReadonlyArray<string> => [
   ...(lock.image.final_digest === undefined ? [] : [`final_digest = ${quote(lock.image.final_digest)}`]),
 ]
 
+const renderBuild = (lock: ProfileLock): ReadonlyArray<string> =>
+  lock.build === undefined
+    ? []
+    : [
+        "",
+        "[build.builder]",
+        `reference = ${quote(lock.build.builder.reference)}`,
+        `digest = ${quote(lock.build.builder.digest)}`,
+        "",
+        "[build.importer]",
+        `reference = ${quote(lock.build.importer.reference)}`,
+        `digest = ${quote(lock.build.importer.digest)}`,
+      ]
+
+const renderSidecar = (lock: ProfileLock): ReadonlyArray<string> =>
+  lock.sidecar === undefined
+    ? []
+    : [
+        "",
+        "[sidecar]",
+        `schema = ${lock.sidecar.schema}`,
+        `integrity = ${quote(lock.sidecar.integrity)}`,
+        `size = ${lock.sidecar.size}`,
+      ]
+
 export const renderLock = (lock: ProfileLock): string => {
   const lines = [
     "schema = 1",
@@ -146,18 +175,28 @@ export const renderLock = (lock: ProfileLock): string => {
     "",
     "[packages]",
     ...renderLegacyHarness(lock),
+    ...(lock.packages.runtime.length === 0 ? ["runtime = []"] : []),
     ...(lock.packages.python_lock_integrity === undefined
       ? []
       : [`python_lock_integrity = ${quote(lock.packages.python_lock_integrity)}`]),
+    ...(lock.packages.runtime_direct === undefined
+      ? []
+      : [`runtime_direct = ${strings(lock.packages.runtime_direct)}`]),
+    ...(lock.packages.runtime_closure_integrity === undefined
+      ? []
+      : [`runtime_closure_integrity = ${quote(lock.packages.runtime_closure_integrity)}`]),
     ...renderHarness(lock),
     ...lock.packages.runtime.flatMap(renderRuntime),
     ...(lock.packages.artifacts ?? []).flatMap(renderArtifact),
+    ...renderSidecar(lock),
+    ...renderBuild(lock),
     ...renderImage(lock),
   ]
   return `${lines.join("\n")}\n`
 }
 
 const Text = Schema.String.pipe(Schema.minLength(1))
+const Sha256 = Schema.String.pipe(Schema.pattern(/^sha256:[0-9a-f]{64}$/))
 const LegacyFileSchema = Schema.Struct({
   path: Text,
   sha256: Text,
@@ -195,7 +234,14 @@ const SourceSchema = Schema.Struct({
   integrity: Text,
   files: Schema.Array(InventoryEntrySchema),
 })
-const RuntimeSchema = Schema.Struct({ name: Text, version: Text, integrity: Text })
+const RuntimeSchema = Schema.Struct({
+  name: Text,
+  version: Text,
+  integrity: Text,
+  size: Schema.optional(Schema.Number.pipe(Schema.positive())),
+  url: Schema.optional(Text),
+  direct: Schema.optional(Schema.Boolean),
+})
 const ArtifactSchema = Schema.Struct({
   name: Text,
   version: Text,
@@ -261,6 +307,8 @@ const LegacyPackageSchema = Schema.Struct({
 const PackageSchema = Schema.Struct({
   harness: HarnessPackageSchema,
   python_lock_integrity: Schema.optional(Text),
+  runtime_direct: Schema.optional(Schema.Array(Text)),
+  runtime_closure_integrity: Schema.optional(Text),
   runtime: Schema.Array(RuntimeSchema),
   artifacts: Schema.optional(Schema.Array(ArtifactSchema)),
 })
@@ -271,6 +319,19 @@ const LockSchema = Schema.Struct({
   profile_hash: Text,
   sources: Schema.Array(SourceSchema),
   packages: Schema.Union(LegacyPackageSchema, PackageSchema),
+  sidecar: Schema.optional(
+    Schema.Struct({
+      schema: Schema.Literal(1),
+      integrity: Sha256,
+      size: Schema.Number.pipe(Schema.int(), Schema.positive()),
+    }),
+  ),
+  build: Schema.optional(
+    Schema.Struct({
+      builder: Schema.Struct({ reference: Text, digest: Text }),
+      importer: Schema.Struct({ reference: Text, digest: Text }),
+    }),
+  ),
   image: Schema.Struct({ base: Text, base_digest: Text, final_digest: Schema.optional(Text) }),
 })
 

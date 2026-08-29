@@ -85,11 +85,17 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-grok-profiles native-jcode-profile; do
+for target in native-codex-auth-config-launch native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
+done
+for target in native-codex-lifecycle native-grok-profiles; do
+  grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
+    || fail "Makefile does not declare ${target} phony"
+  grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
+    || fail "Makefile test does not isolate ${target}"
 done
 for block in auth-config-launch lifecycle catalog installation pstack; do
   grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/blocks/'"$block"'.sh' \

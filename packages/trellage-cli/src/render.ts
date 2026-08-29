@@ -185,6 +185,9 @@ const renderCopilotMiseConfig = (profile: Profile, lock: ProfileLock, options: M
   }
   return `min_version = "2026.6.14"
 
+[tools]
+node = "lts"
+
 [tools."http:copilot"]
 version = ${quote(harness.version)}
 url = ${quote(harness.url)}
@@ -215,9 +218,8 @@ const optionalMiseLines = (lines: ReadonlyArray<string>): string => (lines.lengt
 
 const claudeMiseTools = (profile: ClaudeProfile, hyperresearch: boolean, extraPython: boolean): string => {
   const tools: Array<string> = []
-  if (hyperresearch || extraPython) tools.push('python = "3.13.14"')
-  if (hyperresearch) tools.push('"npm:@playwright/mcp" = "0.0.78"')
-  if (claudeHasSerena(profile)) tools.push('uv = "0.11.21"')
+  if (hyperresearch || extraPython) tools.push('python = "3.13"')
+  if (claudeHasSerena(profile)) tools.push('uv = "latest"')
   return tools.join("\n")
 }
 
@@ -273,15 +275,20 @@ const claudeDotfilesBeforeSeed = (profile: ClaudeProfile): ReadonlyArray<string>
   return lines
 }
 
-const claudeDotfilesAfterSeed = (profile: ClaudeProfile): ReadonlyArray<string> =>
-  profile.plugins[0]?.adapter === "hyperresearch"
-    ? [
-        '"/ms-playwright/chromium-1228" = { source = "chromium-1228", mode = "copy" }',
-        '"/ms-playwright/chromium_headless_shell-1228" = { source = "chromium-headless-shell-1228", mode = "copy" }',
-        '"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }',
-        '"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }',
-      ]
-    : []
+const claudeDotfilesAfterSeed = (profile: ClaudeProfile, lock: ProfileLock): ReadonlyArray<string> => {
+  if (profile.plugins[0]?.adapter !== "hyperresearch") return []
+  const chromium = lock.packages.artifacts?.find((artifact) => artifact.name === "chromium")
+  const headless = lock.packages.artifacts?.find((artifact) => artifact.name === "chromium-headless-shell")
+  if (chromium === undefined || headless === undefined) throw new Error("Playwright browser locks are missing")
+  return [
+    `"${`/ms-playwright/chromium-${chromium.version}`}" = { source = ${quote(`chromium-${chromium.version}`)}, mode = "copy" }`,
+    `"${`/ms-playwright/chromium_headless_shell-${headless.version}`}" = { source = ${quote(`chromium-headless-shell-${headless.version}`)}, mode = "copy" }`,
+    '"/opt/trellage/playwright-mcp/lib/node_modules" = { source = "playwright-mcp-prefix/lib/node_modules", mode = "copy" }',
+    '"/usr/local/bin/playwright-mcp" = { source = "playwright-mcp-wrapper.sh", mode = "copy" }',
+    '"/usr/local/bin/obscura" = { source = "obscura/obscura", mode = "copy" }',
+    '"/usr/local/bin/obscura-worker" = { source = "obscura/obscura-worker", mode = "copy" }',
+  ]
+}
 
 const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> => {
   const hyperresearch = profile.plugins[0]?.adapter === "hyperresearch"
@@ -312,9 +319,16 @@ const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> =>
 const claudeMiseLabels = (profile: ClaudeProfile, lock: ProfileLock, version: string): ReadonlyArray<string> => {
   const labels = ['"dev.trellage.harness.kind" = "claude"', `"dev.trellage.claude.version" = ${quote(version)}`]
   if (profile.plugins[0]?.adapter !== "hyperresearch") return labels
-  const packageVersion = lock.sources.find((source) => source.adapter === "hyperresearch")?.package_version
-  if (packageVersion === undefined) throw new Error("Hyperresearch source package version is missing")
-  return [...labels, `"dev.trellage.hyperresearch.version" = ${quote(packageVersion)}`]
+  const source = lock.sources.find((candidate) => candidate.adapter === "hyperresearch")
+  const packageVersion = source?.package_version
+  if (source === undefined || packageVersion === undefined) {
+    throw new Error("Hyperresearch source package version is missing")
+  }
+  return [
+    ...labels,
+    `"dev.trellage.hyperresearch.version" = ${quote(packageVersion)}`,
+    `"dev.trellage.hyperresearch.commit" = ${quote(source.commit)}`,
+  ]
 }
 
 const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, options: MiseRenderOptions): string => {
@@ -325,7 +339,7 @@ const renderClaudeMiseConfig = (profile: ClaudeProfile, lock: ProfileLock, optio
   return `min_version = "2026.6.14"
 
 [tools]
-node = "22.17.0"
+node = "lts"
 ${claudeMiseTools(profile, hyperresearch, extraPython)}
 
 [tools."http:claude"]
@@ -340,7 +354,7 @@ ${renderBootstrap(profile, options)}
 [dotfiles]
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 ${optionalMiseLines(claudeDotfilesBeforeSeed(profile))}"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
-${optionalMiseLines(claudeDotfilesAfterSeed(profile))}${renderRuntimeDotfile(options, "runtime-claude-entry")}
+${optionalMiseLines(claudeDotfilesAfterSeed(profile, lock))}${renderRuntimeDotfile(options, "runtime-claude-entry")}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -399,7 +413,8 @@ const renderPrimeMiseConfig = (profile: PrimeProfile, lock: ProfileLock, options
   return `min_version = "2026.6.14"
 
 [tools]
-node = "22.17.0"
+node = "lts"
+uv = "latest"
 
 ${renderBootstrap(profile, options)}
 
@@ -435,8 +450,8 @@ const renderHeadlongMiseConfig = (profile: HeadlongProfile, lock: ProfileLock, o
   return `min_version = "2026.6.14"
 
 [tools]
-node = "22.17.0"
-uv = "0.11.21"
+node = "lts"
+uv = "latest"
 
 ${renderBootstrap(profile, options)}
 
