@@ -78,7 +78,7 @@ host tool and subagent surface. See `prototypes/trellage-omp-profiles/README.md`
   copilot` instead.
 - The task needs `--headless-policy no-user-input` guarantees; this profile's
   `headless.questionToolControl` stays `none` until it has its own live
-  smoke test, unlike `omp copilot` on exact OMP `17.2.12`.
+  smoke test, unlike `omp copilot` on exact OMP `18.0.10`.
 
 ## Workflow Notes
 

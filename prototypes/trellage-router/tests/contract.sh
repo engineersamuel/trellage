@@ -87,7 +87,7 @@ create_native_launcher() {
         "cost": false,
         "modelOverride": false,
         "effortOverride": false,
-        "testedHarnessVersion": "17.2.12"
+        "testedHarnessVersion": "18.0.9"
       },
       "plugin": null,
       "source": null,
@@ -236,7 +236,9 @@ shift || true
 if [[ -n "${TRX_ARGUMENT_LOG-}" ]]; then
   {
     printf '%s\0' "$(basename "$0")" "$profile"
-    printf '%s\0' "$@"
+    if (( $# > 0 )); then
+      printf '%s\0' "$@"
+    fi
   } >"$TRX_ARGUMENT_LOG"
 fi
 if [[ "${TRX_WAIT-}" == 1 ]]; then
@@ -343,6 +345,7 @@ export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
+assert_contains 'trx run LAUNCHER PROFILE [-- ARGS...]' "$fixture_root/help.out"
 assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
@@ -759,9 +762,8 @@ import pathlib
 import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-# The fake launcher's zero-argument `printf` emits one empty sentinel, followed
-# by the trailing split field. No non-empty passthrough argument is present.
-expected = [b"prx", b"prx-p", b"", b""]
+# The final empty field is the split after the profile's NUL terminator.
+expected = [b"prx", b"prx-p", b""]
 if actual != expected:
     print(f"actual={actual!r} expected={expected!r}", file=sys.stderr)
     raise SystemExit(1)
@@ -810,6 +812,55 @@ expected = [b"omp", b"copilot", b"--native-copilot", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
+: >"$argument_log"
+TRX_ARGUMENT_LOG="$argument_log" \
+  "$fixture_bin/trx" run cpx cpx-p -- --prompt 'Reply exactly OK' --flag ''
+python3 - "$argument_log" <<'PY' || fail 'trx run arguments were not forwarded unchanged'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [
+    b"cpx",
+    b"cpx-p",
+    b"--prompt",
+    b"Reply exactly OK",
+    b"--flag",
+    b"",
+    b"",
+]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+: >"$argument_log"
+TRX_ARGUMENT_LOG="$argument_log" "$fixture_bin/trx" run cpx cpx-p
+python3 - "$argument_log" <<'PY' || fail 'argument-free trx run launch differs'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cpx", b"cpx-p", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+status=0
+"$fixture_bin/trx" run cpx missing >"$fixture_root/run-missing.out" \
+  2>"$fixture_root/run-missing.err" || status=$?
+[[ "$status" == 1 ]] || fail "unknown trx run profile exited $status instead of 1"
+assert_contains 'unknown profile for cpx: missing' "$fixture_root/run-missing.err"
+
+status=0
+"$fixture_bin/trx" run invalid cpx-p >"$fixture_root/run-launcher.out" \
+  2>"$fixture_root/run-launcher.err" || status=$?
+[[ "$status" == 1 ]] || fail "unknown trx run launcher exited $status instead of 1"
+assert_contains 'unknown launcher: invalid' "$fixture_root/run-launcher.err"
+
+status=0
+"$fixture_bin/trx" run cpx cpx-p --prompt OK >"$fixture_root/run-delimiter.out" \
+  2>"$fixture_root/run-delimiter.err" || status=$?
+[[ "$status" == 1 ]] || fail "trx run accepted arguments without --"
+assert_contains 'run arguments must follow --' "$fixture_root/run-delimiter.err"
+
 status=0
 TRX_ARGUMENT_LOG="$argument_log" \
   TRX_CHILD_EXIT=37 \
@@ -821,7 +872,7 @@ import pathlib
 import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cdx", b"pstack", b"", b""]
+expected = [b"cdx", b"pstack", b""]
 if actual != expected:
     print(f"expected {expected!r}, got {actual!r}", file=sys.stderr)
     raise SystemExit(1)

@@ -69,6 +69,54 @@ mise run trellage -- validate copilot-hve
 mise run trellage -- --profile copilot-hve
 ```
 
+## Fresh Azure VM Acceptance
+
+Create an isolated Ubuntu 24.04 ARM64 VM, clone this repository inside the VM,
+install Trellage and
+[`engineersamuel/copilot-proxy-rs`](https://github.com/engineersamuel/copilot-proxy-rs)
+from clean clones, and run the complete Azure acceptance matrix:
+
+```bash
+mise run azure-fresh-install -- plan
+mise run azure-fresh-install -- all
+mise run azure-fresh-install -- ssh
+mise run azure-fresh-install -- down
+```
+
+The default VM is `Standard_D4ps_v5` in `westus2` with a 128 GiB Premium SSD.
+SSH is key-only and the network security group permits port 22 only from the
+detected public IPv4 address. Set `TRELLAGE_AZURE_SSH_SOURCE` to an explicit
+CIDR when automatic address detection is unsuitable.
+
+The acceptance workflow requires an Azure CLI login and a GitHub token with
+Copilot Requests access. It uses `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or
+`gh auth token`, in that order. The token is streamed to the remote process
+and written only to a mode-0600 file under VM `/dev/shm`. The proxy mounts that
+tmpfs path read-only, binds its host port to `127.0.0.1`, and disables failed
+request-body logging. No host credential file is copied.
+
+The workflow verifies one exact `OK` response from each Native pair through
+`trx run`: `cpx/hve`, `cdx/pstack`, `cldx/default`, `grx/superpowers`,
+`jcx/default`, `omp/copilot`, `picx/default`, and `prx/default`. It then builds
+and verifies `trellage --profile claude-council`. `trx run` performs the same
+owned-runtime and catalog validation as the interactive picker before it
+executes the selected launcher.
+
+On Linux, installing a tool with `mise use -g` is not enough for non-login SSH
+commands. The shell must also evaluate `mise activate bash` (or use the
+equivalent activation for its shell) so tools such as `uv` are on `PATH`.
+The Azure workflow activates mise explicitly in every remote phase.
+The Linux Native Grok sandbox also requires `bubblewrap`; the workflow installs
+it during cloud initialization and loads a dedicated AppArmor profile that
+permits user namespaces only for `/usr/bin/bwrap`.
+
+Each remote stage has bounded retries or timeouts. On success, evidence is
+downloaded beneath
+`~/.local/state/trellage-azure-fresh/evidence/<resource-group>/` and the owned
+Azure resource group is deleted. On failure, the group remains available for
+`ssh`, `bootstrap`, or `accept`; delete it explicitly with `down` after
+diagnosis because the VM and disk remain billable.
+
 An advertised headless prompt also builds the image automatically on first use
 (this can take several minutes), runs one non-TTY prompt, and returns the
 harness status. Check `trellage list --json --full` first.

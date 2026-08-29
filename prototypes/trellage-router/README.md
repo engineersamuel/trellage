@@ -44,6 +44,7 @@ or unrelated paths instead of replacing them.
 
 ```sh
 trx
+trx run cpx hve -- --prompt "Reply exactly OK"
 trx --model gpt-5.6-terra
 trx list
 trx list --json
@@ -120,6 +121,13 @@ runtime, or has an invalid catalog. The selected native launcher performs its
 own launch-time readiness checks and handles not-setup or unhealthy profiles.
 Interactive use requires stdin and stderr attached to a TTY; a non-TTY
 invocation exits `1`.
+
+`trx run LAUNCHER PROFILE [-- ARGS...]` is the non-interactive routing
+surface. It performs the same owned-runtime discovery and full catalog
+validation as the picker, rejects unknown launcher/profile pairs, then
+executes the exact owned launcher with the selected profile and unchanged
+arguments. Arguments must follow `--` so router options cannot be confused
+with launcher options.
 
 The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default

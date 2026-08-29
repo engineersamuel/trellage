@@ -36,6 +36,36 @@ and `prx`.
   refresh native launchers automatically when the local `main` worktree
   receives merged commits.
 
+## Fresh Azure integration test
+
+- The reusable execution goal is
+  `docs/goals/azure-fresh-install.md`. Give that file to a goal-loop agent when
+  the complete clean-host installation proof must be repeated.
+- Before a live run, trust the worktree with `mise trust`, authenticate the
+  Azure CLI, and provide both authentication contexts:
+  `COPILOT_GITHUB_TOKEN` (or `GH_TOKEN` / `gh auth token`) for Native Copilot,
+  and `COPILOT_PROXY_GITHUB_TOKEN` (or the safe mode-0600
+  `~/.config/copilot-proxy-rs/github_token`) for `copilot-proxy-rs`.
+- Run the static workflow contract without Azure cost:
+  `make azure-fresh-install-contract`.
+- Preview the effective Azure configuration without mutation:
+  `mise run azure-fresh-install -- plan`.
+- After the changes are merged, run the complete proof with
+  `mise run azure-fresh-install -- all`. To test unmerged launcher candidates
+  from the current worktree, use
+  `TRELLAGE_AZURE_APPLY_LOCAL_CHANGES=1 mise run azure-fresh-install -- all`.
+- A successful run must save evidence under
+  `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
+  `OK` results for all eight Native launchers and Sandbox `claude-council`,
+  and delete its owned Azure resource group.
+- A failed run intentionally retains the resource group. Use
+  `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
+  Always finish an abandoned run with `mise run azure-fresh-install -- down`.
+- This is a live, billable, quota-consuming integration test. Do not add it to
+  `make test` or run it without explicit intent. Before delivery, run
+  `make test`; after merged launcher or compiler changes, also run
+  `mise run rebuild-profiles`.
+
 ## Worktrees and mise trust
 
 - `mise trust` is keyed by absolute config path, so every new worktree starts

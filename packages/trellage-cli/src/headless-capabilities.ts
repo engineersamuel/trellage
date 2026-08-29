@@ -116,7 +116,7 @@ export const sandboxHeadlessCapabilityDeclarations = {
     modelOverride: false,
   }),
   "claude-marketplace": checkedHeadlessCapabilitiesV1({
-    ...verifiedClaudeHeadlessCapabilities("2.1.233"),
+    ...verifiedClaudeHeadlessCapabilities("2.1.251"),
     modelOverride: true,
   }),
   "claude-hyperresearch": checkedHeadlessCapabilitiesV1({

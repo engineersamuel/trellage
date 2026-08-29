@@ -104,14 +104,14 @@ jq -e '
   and ([.contracts[].id] | sort) == [
     "native-claude-2.1.233",
     "native-copilot-1.0.81",
-    "native-omp-copilot-17.2.12",
+    "native-omp-copilot-18.0.10",
     "sandbox-claude-core-2.1.229",
     "sandbox-claude-hyperresearch-2.1.229",
-    "sandbox-claude-marketplace-2.1.233"
+    "sandbox-claude-marketplace-2.1.251"
   ]
   and all(.contracts[]; .liveEvidence.recorded == true)
   and any(.contracts[];
-    .id == "native-omp-copilot-17.2.12"
+    .id == "native-omp-copilot-18.0.10"
     and .capabilities.questionToolControl == "prompt-only"
   )
   and all(.contracts[];

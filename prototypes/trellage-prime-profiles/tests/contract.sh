@@ -621,6 +621,27 @@ jq -e '.runtimeIdentity.primeVersion == "0.7.0"' \
   "$profile_root/daemon/kernel-env.stamp" >/dev/null \
   || fail 'stale kernel repair did not republish the daemon identity stamp'
 
+# Explicit single-turn launches omit only the managed autonomous flag.
+: >"$FAKE_PRIME_LOG"
+"$command_path" default --single-turn -p 'one turn' \
+  || fail 'single-turn launch failed'
+jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
+  .args == [
+    "--provider", "copilot-proxy-rs",
+    "--model", "claude-opus-5",
+    "--offline",
+    "--daemon-socket", $daemonSocket,
+    "-p", "one turn"
+  ]
+' "$FAKE_PRIME_LOG" >/dev/null || fail 'single-turn launch arguments differ'
+if "$command_path" --single-turn --single-turn -p duplicate \
+  >"$fixture_root/single-turn-duplicate.out" 2>"$fixture_root/single-turn-duplicate.err"; then
+  fail 'duplicate single-turn option unexpectedly succeeded'
+fi
+grep -Fqx 'prx: --single-turn may be specified only once' \
+  "$fixture_root/single-turn-duplicate.err" \
+  || fail 'duplicate single-turn diagnostic differs'
+
 # Bare launch is equivalent to default.
 : >"$FAKE_PRIME_LOG"
 "$command_path" -p 'bare' || fail 'bare launch failed'

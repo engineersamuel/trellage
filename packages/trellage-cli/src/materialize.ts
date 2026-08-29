@@ -928,6 +928,7 @@ if [ -f "$manifest" ]; then
     update) exit 0 ;;
     install)
       [ -n "$rootfs" ]
+      install -d "$rootfs/tmp/trellage-debs"
       set --
       found=false
       while IFS="$(printf '\\t')" read -r kind name version sha256 size filename direct; do
@@ -936,16 +937,26 @@ if [ -f "$manifest" ]; then
         package="/src/debian-packages/$filename"
         [ "$(wc -c < "$package")" -eq "$size" ]
         printf '%s  %s\\n' "$sha256" "$package" | sha256sum --check --strict -
-        set -- "$@" "$package"
+        cp "$package" "$rootfs/tmp/trellage-debs/$filename"
+        set -- "$@" "/tmp/trellage-debs/$filename"
       done <"$manifest"
       [ "$found" = true ] || exit 0
-      /usr/bin/apt-get \
-        -o "Dir=$rootfs" \
-        -o Dir::Etc::sourcelist=/dev/null \
-        -o Dir::Etc::sourceparts=- \
-        --no-download \
-        --yes \
-        install "$@"
+      unpacked=false
+      for attempt in 1 2 3 4 5 6 7 8; do
+        if chroot "$rootfs" /usr/bin/dpkg --unpack "$@" \
+          2>"$rootfs/tmp/trellage-dpkg-unpack.stderr"; then
+          unpacked=true
+          break
+        fi
+        chroot "$rootfs" /usr/bin/dpkg --configure -a >/dev/null 2>&1 || true
+      done
+      if [ "$unpacked" != true ]; then
+        cat "$rootfs/tmp/trellage-dpkg-unpack.stderr" >&2
+        exit 1
+      fi
+      rm -f "$rootfs/tmp/trellage-dpkg-unpack.stderr"
+      chroot "$rootfs" /usr/bin/dpkg --configure -a
+      rm -rf "$rootfs/tmp/trellage-debs"
       rm -f "$rootfs/var/cache/ldconfig/aux-cache" "$rootfs/var/log/alternatives.log"
       for package_cache_dir in apt debconf man; do
         if [ -d "$rootfs/var/cache/$package_cache_dir" ]; then

@@ -98,7 +98,7 @@ fi
 case "${1-}" in
   latest)
     [[ "${2-}" == "$tool" ]] || exit 90
-    printf '%s\n' "${FAKE_MISE_LATEST:-18.0.4}"
+    printf '%s\n' "${FAKE_MISE_LATEST:-18.0.11}"
     ;;
   install)
     spec="${2-}"
@@ -376,7 +376,7 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 rm -rf "$profile_root" "$runtime_root/installed-version"
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
-[[ "$(<"$runtime_root/installed-version")" == '18.0.4' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.11' ]] \
   || fail 'setup did not record resolved installed version'
 [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \
   || fail 'setup did not materialize config.yml'
@@ -441,17 +441,21 @@ grep -Fqx "    - \"$copilot_agent_root/community-skills\"" "$copilot_agent_root/
 assert_community_skills "$copilot_agent_root/community-skills" 'Copilot profile'
 
 rm -f -- "$runtime_root/installed-version"
-FAKE_MISE_LATEST=17.2.12 "$command_path" setup >"$fixture_root/setup-legacy.out" \
-  || fail 'legacy setup failed'
-FAKE_MISE_LATEST=17.2.12 "$command_path" setup copilot \
-  >"$fixture_root/setup-copilot-legacy.out" || fail 'legacy Copilot setup failed'
-! grep -Fq 'community-skills' "$agent_root/config.yml" "$copilot_agent_root/config.yml" \
-  || fail 'unsupported OMP version enabled community skill discovery'
+FAKE_MISE_LATEST=18.0.10 "$command_path" setup >"$fixture_root/setup-verified.out" \
+  || fail 'verified setup failed'
+FAKE_MISE_LATEST=18.0.10 "$command_path" setup copilot \
+  >"$fixture_root/setup-copilot-verified.out" || fail 'verified Copilot setup failed'
+grep -Fqx "    - \"$agent_root/community-skills\"" "$agent_root/config.yml" \
+  || fail 'verified local profile lost community skill discovery'
+grep -Fqx "    - \"$copilot_agent_root/community-skills\"" "$copilot_agent_root/config.yml" \
+  || fail 'verified Copilot profile lost community skill discovery'
+assert_community_skills "$agent_root/community-skills" 'verified local profile'
+assert_community_skills "$copilot_agent_root/community-skills" 'verified Copilot profile'
 
 mv "$runtime_root/installed-version" "$runtime_root/version"
 "$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
   || fail 'doctor did not migrate the legacy version receipt'
-[[ "$(<"$runtime_root/installed-version")" == 17.2.12 && ! -e "$runtime_root/version" ]] \
+[[ "$(<"$runtime_root/installed-version")" == 18.0.10 && ! -e "$runtime_root/version" ]] \
   || fail 'legacy version receipt migration differs'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON profile list failed'
@@ -471,7 +475,7 @@ jq -e '
     "cost": false,
     "modelOverride": false,
     "effortOverride": false,
-    "testedHarnessVersion": "17.2.12"
+    "testedHarnessVersion": "18.0.10"
   }
   and (.profiles[] | select(.name == "local") | .headless) == {
     "schemaVersion": 1,
@@ -509,7 +513,7 @@ printf 'profile session canary\n' >"$profile_root/reinstall-canary"
 "$installer" >"$fixture_root/reinstall.out" || fail 'idempotent reinstall failed'
 grep -Fqx 'profile session canary' "$profile_root/reinstall-canary" \
   || fail 'reinstall changed profile state'
-[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.10' ]] \
   || fail 'reinstall changed installed version receipt'
 
 worktree="$fixture_root/worktree with spaces"
@@ -522,7 +526,7 @@ worktree="$(CDPATH= cd -P -- "$worktree" && pwd -P)"
 expected_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"17.2.12",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
+  '{version:"18.0.10",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_launch" ]] \
   || fail 'launch did not preserve profile, cwd, HOME, or exact arguments'
 
@@ -533,7 +537,7 @@ expected_launch="$(jq -cn \
 expected_local_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"17.2.12",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
+  '{version:"18.0.10",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_local_launch" ]] \
   || fail 'explicit local launch did not select the local profile'
 
@@ -544,7 +548,7 @@ expected_local_launch="$(jq -cn \
 expected_copilot_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"17.2.12",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_COPILOT_OK"]}')"
+  '{version:"18.0.10",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_COPILOT_OK"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_copilot_launch" ]] \
   || fail 'Copilot launch did not select the native Copilot profile'
 grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \
@@ -573,7 +577,7 @@ expected_headless_local_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
   --arg path "$local_overlay_path" \
-  '{version:"17.2.12",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","--config",$path,"-p","Reply exactly OMP_HEADLESS_LOCAL"]}')"
+  '{version:"18.0.10",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","--config",$path,"-p","Reply exactly OMP_HEADLESS_LOCAL"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_headless_local_launch" ]] \
   || fail 'local headless-policy launch arguments differ'
 printf '%s\n' "$local_overlay_record" | jq -e '
@@ -594,7 +598,7 @@ expected_headless_copilot_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$PWD" \
   --arg path "$copilot_overlay_path" \
-  '{version:"17.2.12",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","--config",$path,"-p","Reply exactly OMP_HEADLESS_COPILOT"]}')"
+  '{version:"18.0.10",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","--config",$path,"-p","Reply exactly OMP_HEADLESS_COPILOT"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_headless_copilot_launch" ]] \
   || fail 'copilot headless-policy launch arguments differ'
 printf '%s\n' "$copilot_overlay_record" | jq -e '
@@ -720,13 +724,13 @@ find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed for healthy setup'
 find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$state_after"
 cmp -s "$state_before" "$state_after" || fail 'doctor mutated managed state'
-grep -Fqx 'omp doctor: OK (17.2.12, qwen3.6-35b-a3b-local)' "$fixture_root/doctor.out" \
+grep -Fqx 'omp doctor: OK (18.0.10, qwen3.6-35b-a3b-local)' "$fixture_root/doctor.out" \
   || fail 'doctor success output differs'
 
 proxy_calls_before="$(wc -l <"$FAKE_CURL_LOG" | tr -d ' ')"
 "$command_path" doctor copilot >"$fixture_root/doctor-copilot.out" \
   || fail 'Copilot doctor failed for authenticated profile'
-grep -Fqx 'omp doctor copilot: OK (17.2.12, github-copilot)' \
+grep -Fqx 'omp doctor copilot: OK (18.0.10, github-copilot)' \
   "$fixture_root/doctor-copilot.out" || fail 'Copilot doctor success output differs'
 [[ "$(wc -l <"$FAKE_CURL_LOG" | tr -d ' ')" == "$proxy_calls_before" ]] \
   || fail 'Copilot doctor contacted the local proxy'
@@ -750,30 +754,30 @@ fi
 find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$state_after"
 cmp -s "$state_before" "$state_after" || fail 'failed doctor mutated managed state'
 
-FAKE_MISE_LATEST=17.2.13 "$command_path" update --check >"$fixture_root/check.out" \
+FAKE_MISE_LATEST=18.0.11 "$command_path" update --check >"$fixture_root/check.out" \
   || fail 'update check failed'
-grep -Fqx 'omp update: 17.2.12 -> 17.2.13 available' "$fixture_root/check.out" \
+grep -Fqx 'omp update: 18.0.10 -> 18.0.11 available' "$fixture_root/check.out" \
   || fail 'update check output differs'
-[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.10' ]] \
   || fail 'update check changed installed version receipt'
 
-if FAKE_MISE_LATEST=17.2.13 FAKE_MISE_INSTALL_FAIL_VERSION=17.2.13 \
+if FAKE_MISE_LATEST=18.0.11 FAKE_MISE_INSTALL_FAIL_VERSION=18.0.11 \
   "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
   fail 'update unexpectedly succeeded when mise failed'
 fi
-[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.10' ]] \
   || fail 'failed update replaced installed version receipt'
 
 find "$agent_root" "$profile_root/.managed-by-trellage-omp-profiles" \
   -type f -exec shasum -a 256 {} + | sort >"$fixture_root/update-state.before"
-if FAKE_MISE_LATEST=18.0.4 OMP_TEST_FAIL_AT=before-receipt-publication \
+if FAKE_MISE_LATEST=18.0.11 OMP_TEST_FAIL_AT=before-receipt-publication \
   "$command_path" update >"$fixture_root/update-publication-fail.out" 2>&1; then
   fail 'update unexpectedly succeeded when receipt publication failed'
 fi
 grep -Fq 'injected failure before installed version receipt publication' \
   "$fixture_root/update-publication-fail.out" \
   || fail 'receipt publication failure diagnostic differs'
-[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.10' ]] \
   || fail 'receipt publication failure replaced installed version receipt'
 find "$agent_root" "$profile_root/.managed-by-trellage-omp-profiles" \
   -type f -exec shasum -a 256 {} + | sort >"$fixture_root/update-state.after"
@@ -781,9 +785,9 @@ cmp -s "$fixture_root/update-state.before" "$fixture_root/update-state.after" \
   || fail 'receipt publication failure did not restore the prior OMP profile state'
 
 rm -rf -- "$agent_root/community-skills/architect"
-FAKE_MISE_LATEST=18.0.4 "$command_path" update >"$fixture_root/update.out" \
+FAKE_MISE_LATEST=18.0.11 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
-[[ "$(<"$runtime_root/installed-version")" == '18.0.4' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.11' ]] \
   || fail 'update did not publish new installed version receipt'
 [[ -f "$agent_root/community-skills/architect/SKILL.md" ]] \
   || fail 'update did not restore managed community skills'
@@ -797,7 +801,7 @@ grep -Fq 'failed to validate OMP community skills: local' \
 mv "$fixture_root/architect.missing" "$agent_root/community-skills/architect"
 "$command_path" doctor >"$fixture_root/doctor-community-restored.out" \
   || fail 'doctor rejected restored local community skills'
-grep -Fqx 'omp doctor: OK (18.0.4, qwen3.6-35b-a3b-local)' \
+grep -Fqx 'omp doctor: OK (18.0.11, qwen3.6-35b-a3b-local)' \
   "$fixture_root/doctor-community-restored.out" \
   || fail 'restored local community skill doctor output differs'
 
@@ -806,7 +810,7 @@ grep -Fqx 'omp doctor: OK (18.0.4, qwen3.6-35b-a3b-local)' \
 assert_community_skills "$copilot_agent_root/community-skills" 'updated Copilot profile'
 "$command_path" doctor copilot >"$fixture_root/doctor-copilot-community.out" \
   || fail 'doctor rejected restored Copilot community skills'
-grep -Fqx 'omp doctor copilot: OK (18.0.4, github-copilot)' \
+grep -Fqx 'omp doctor copilot: OK (18.0.11, github-copilot)' \
   "$fixture_root/doctor-copilot-community.out" \
   || fail 'restored Copilot community skill doctor output differs'
 
@@ -837,7 +841,7 @@ if "$command_path" --headless-policy no-user-input -p headless-version-mismatch 
   >"$fixture_root/headless-version-mismatch.out" 2>"$fixture_root/headless-version-mismatch.err"; then
   fail 'headless policy unexpectedly succeeded on an unverified OMP version'
 fi
-grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 17.2.12; installed version is 18.0.4' \
+grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 18.0.10; installed version is 18.0.11' \
   "$fixture_root/headless-version-mismatch.err" \
   || fail 'unverified OMP version diagnostic differs'
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$fail_closed_before" ]] \
@@ -854,7 +858,7 @@ fi
   || fail 'failed repair did not roll back config publication'
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" || fail 'repair did not restore config'
-[[ "$(<"$runtime_root/installed-version")" == '18.0.4' ]] \
+[[ "$(<"$runtime_root/installed-version")" == '18.0.11' ]] \
   || fail 'repair changed installed version receipt'
 
 printf 'drifted managed config\n' >"$agent_root/config.yml"
@@ -896,12 +900,12 @@ mv "$fixture_root/marker-away" "$profile_root/.managed-by-trellage-omp-profiles"
   || fail 'could not restore ownership marker'
 "$command_path" repair >/dev/null || fail 'repair after drift checks failed'
 
-installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/18.0.4/omp"
+installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/18.0.11/omp"
 rm "$installed_omp" || fail 'could not remove receipt-selected install for launch recovery test'
 "$command_path" -p 'Reply exactly OMP_INSTALL_RECOVERY' \
   >"$fixture_root/install-recovery.out" 2>&1 \
   || fail 'launch did not recover a missing receipt-selected install'
-grep -Fq 'omp: OMP 18.0.4 is not installed; installing' \
+grep -Fq 'omp: OMP 18.0.11 is not installed; installing' \
   "$fixture_root/install-recovery.out" \
   || fail 'launch did not report missing receipt-selected install recovery'
 [[ -x "$installed_omp" ]] || fail 'launch did not reinstall the missing receipt-selected executable'

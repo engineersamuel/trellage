@@ -468,8 +468,8 @@ pi_version_if_available() {
     return 0
   fi
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
-  binary="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version/bin/pi"
-  [[ -x "$binary" ]] || return 0
+  binary="$(mise_env x "$mise_tool@$version" -- which pi 2>/dev/null || :)"
+  [[ "$binary" == /* && -x "$binary" ]] || return 0
   actual="$("$binary" --version 2>/dev/null || :)"
   [[ "$actual" == "$version" ]] || return 0
   printf '%s\n' "$version"
@@ -594,7 +594,9 @@ installed_binary() {
     || die "Pi $version is not installed; run picx repair $profile_key"
   expected="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version"
   [[ "$install_dir" == "$expected" ]] || die "mise returned unexpected Pi path: $install_dir"
-  binary="$install_dir/bin/pi"
+  binary="$(mise_env x "$mise_tool@$version" -- which pi)" \
+    || die "mise could not resolve the Pi executable for $version"
+  [[ "$binary" == /* ]] || die "mise returned a relative Pi executable path: $binary"
   [[ -x "$binary" ]] || die "Pi executable is missing: $binary"
   resolved="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$binary")" \
     || die "could not resolve Pi executable: $binary"

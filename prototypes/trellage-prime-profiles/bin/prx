@@ -22,6 +22,7 @@ usage() {
 Usage:
   prx [PRIME_ARGS...]
   prx default [PRIME_ARGS...]
+  prx [default] --single-turn [PRIME_ARGS...]
   prx list [--json]
   prx inventory PROFILE --json
   prx setup [default]
@@ -1682,11 +1683,16 @@ inventory_profile() {
 }
 
 launch_prime() {
-  local version cli identity selected_model="$model_id"
+  local version cli identity selected_model="$model_id" single_turn=false
   local -a prime_args=() command_args
 
   while (( $# > 0 )); do
     case "$1" in
+      --single-turn)
+        [[ "$single_turn" == false ]] || die '--single-turn may be specified only once'
+        single_turn=true
+        shift
+        ;;
       --model)
         [[ $# -ge 2 && -n "$2" ]] || die '--model requires a value'
         selected_model="$2"
@@ -1733,9 +1739,11 @@ launch_prime() {
     --provider "$provider"
     --model "$selected_model"
     --offline
-    --autonomous
-    --daemon-socket "$daemon_socket"
   )
+  if [[ "$single_turn" == false ]]; then
+    command_args+=(--autonomous)
+  fi
+  command_args+=(--daemon-socket "$daemon_socket")
   # Bash 3.2 treats an empty array expansion as unbound under `set -u`.
   if (( ${#prime_args[@]} > 0 )); then
     command_args+=("${prime_args[@]}")
