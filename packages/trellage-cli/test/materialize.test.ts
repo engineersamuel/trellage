@@ -20,7 +20,6 @@ import { promisify } from "node:util"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
 import {
   hyperresearchSeedInstallArguments,
   managedClaudeFiles,
@@ -33,6 +32,8 @@ import {
   normalizeHyperresearchSeed,
   normalizeHyperresearchSitePermissions,
   stampClaudeMarketplaceVersions,
+  trustedHostUvArguments,
+  trustedHostUvVersionMatches,
 } from "../src/claude-materialize.js"
 import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
 import { parseLock, renderLock } from "../src/lock-file.js"
@@ -46,9 +47,50 @@ import {
 import { profileHash, type ProfileLock, type SourceLock } from "../src/lock.js"
 import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
 import { parseProfile } from "../src/profile.js"
+import { createPythonConstraintsSidecar } from "../src/resolution-sidecar.js"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
+import { cachedArtifactPath } from "../src/artifact-cache.js"
 
 const temporaryRoots: Array<string> = []
 const execFilePromise = promisify(execFile)
+const managedArtifacts = [
+  {
+    name: "node",
+    version: "24.8.0",
+    integrity: `sha256:${"a".repeat(64)}`,
+    url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-arm64.tar.gz",
+  },
+  {
+    name: "uv",
+    version: "0.11.22",
+    integrity: `sha256:${"c".repeat(64)}`,
+    url: "https://github.com/astral-sh/uv/releases/download/0.11.22/uv-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+] as const
+const pythonArtifact = {
+  name: "python",
+  version: "3.13.14",
+  integrity: `sha256:${"e".repeat(64)}`,
+  url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14%2B20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+  size: 1,
+} as const
+const rustArtifacts = [
+  {
+    name: "rust",
+    version: "1.96.0",
+    integrity: `sha256:${"4".repeat(64)}`,
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz",
+    size: 1,
+  },
+  {
+    name: "rust-std-musl",
+    version: "1.96.0",
+    integrity: `sha256:${"5".repeat(64)}`,
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+] as const
 const temporaryRoot = async (prefix: string): Promise<string> => {
   const root = await mkdtemp(path.join(os.tmpdir(), prefix))
   temporaryRoots.push(root)
@@ -106,6 +148,13 @@ const fixture = async (root: string, kind: "native" | "compat") => {
 }
 
 describe("Hyperresearch seed normalization", () => {
+  it("uses an exact isolated uv version at the trusted host-tool boundary", () => {
+    expect(trustedHostUvArguments("0.12.7")).toEqual(["--no-config", "x", "uv@0.12.7", "--", "uv"])
+    expect(() => trustedHostUvArguments("latest")).toThrow(/version is not exact/)
+    expect(trustedHostUvVersionMatches("0.12.7", "uv 0.12.7 (abcdef 2026-08-28)")).toBe(true)
+    expect(trustedHostUvVersionMatches("0.12.7", "uv 0.12.8")).toBe(false)
+  })
+
   it("defines the exact Claude settings used for first-launch initialization", async () => {
     const module = (await import("../src/claude-materialize.js")) as Record<string, unknown>
 
@@ -654,20 +703,31 @@ describe("locked Chromium materialization", () => {
       integrity: `sha256:${createHash("sha256")
         .update(await readFile(file))
         .digest("hex")}`,
-      url: `file://${file}`,
+      url: `https://example.test/${name}.zip`,
       size: (await readFile(file)).byteLength,
     })
+    const cacheHome = path.join(root, "cache")
+    const artifacts = [
+      await lockedArtifact("chromium", chromiumArchive),
+      await lockedArtifact("chromium-headless-shell", headlessArchive),
+    ]
+    for (const [artifact, archive] of [
+      [artifacts[0]!, chromiumArchive],
+      [artifacts[1]!, headlessArchive],
+    ] as const) {
+      const cached = cachedArtifactPath(cacheHome, artifact.integrity)
+      await mkdir(path.dirname(cached), { recursive: true })
+      await writeFile(cached, await readFile(archive))
+    }
     const request = {
       sourceDirectory: source,
       context,
+      artifactCacheHome: cacheHome,
       requirementsPath: path.join(root, "unused-requirements.lock"),
       browserAgentPath: path.join(root, "unused-browser-agent.md"),
       lock: {
         packages: {
-          artifacts: [
-            await lockedArtifact("chromium", chromiumArchive),
-            await lockedArtifact("chromium-headless-shell", headlessArchive),
-          ],
+          artifacts,
         },
       },
     } as unknown as Parameters<typeof materializeChromiumArchives>[0]
@@ -684,6 +744,102 @@ describe("locked Chromium materialization", () => {
 })
 
 describe("atomic build context", () => {
+  it("materializes and verifies the complete locked Debian closure for offline installation", async () => {
+    const root = await temporaryRoot("trellage-materialize-debian-")
+    const cacheHome = path.join(root, "cache")
+    const document = await Effect.runPromise(
+      parseProfile(
+        `
+schema = 1
+name = "pi-debian"
+description = "Debian closure profile"
+[harness]
+kind = "pi"
+version = "1.0.0"
+[harness.pi]
+implementation = "oh-my-pi"
+provider = "github-copilot"
+model = "gpt-5.6-terra"
+auth = "host-or-login"
+[image]
+base = "node:bookworm-slim"
+shell = "bash"
+packages = ["curl"]
+`,
+        path.join(root, "profile.toml"),
+      ),
+    )
+    const packageBytes = ["direct deb", "dependency deb"]
+    const runtime = packageBytes.map((content, index) => ({
+      name: index === 0 ? "curl" : "libdependency",
+      version: index === 0 ? "1.0" : "2.0",
+      integrity: `sha256:${createHash("sha256").update(content).digest("hex")}`,
+      size: Buffer.byteLength(content),
+      url: `https://deb.debian.org/debian/pool/${index === 0 ? "curl" : "libdependency"}.deb`,
+      direct: index === 0,
+    }))
+    for (const [index, entry] of runtime.entries()) {
+      const cached = cachedArtifactPath(cacheHome, entry.integrity)
+      await mkdir(path.dirname(cached), { recursive: true })
+      await writeFile(cached, packageBytes[index]!)
+    }
+    const lock: ProfileLock = {
+      schema: 1,
+      platform: "linux/arm64",
+      source_date_epoch: 1784379906,
+      profile_hash: profileHash(document),
+      sources: [],
+      packages: {
+        harness: {
+          kind: "pi",
+          selector: "1.0.0",
+          version: "1.0.0",
+          integrity: `sha256:${"a".repeat(64)}`,
+          url: "https://github.com/can1357/oh-my-pi/releases/download/v1.0.0/omp-linux-arm64",
+          size: 1,
+        },
+        runtime,
+        runtime_direct: ["curl"],
+        runtime_closure_integrity: `sha256:${"b".repeat(64)}`,
+      },
+      image: { base: "node:bookworm-slim", base_digest: `sha256:${"c".repeat(64)}` },
+    }
+    const piEntry = path.join(root, "runtime-pi-entry.sh")
+    await writeFile(piEntry, "#!/bin/sh\n")
+    const unused = () => Effect.fail("unexpected generator call")
+
+    const context = await Effect.runPromise(
+      createBuildContext(
+        document,
+        lock,
+        [],
+        {
+          codexEntry: path.join(root, "unused-codex.sh"),
+          copilotEntry: path.join(root, "unused-copilot.sh"),
+          finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
+          piEntry,
+        },
+        root,
+        unused,
+        undefined,
+        undefined,
+        cacheHome,
+      ),
+    )
+
+    const manifest = await readFile(path.join(context, "debian-packages", "manifest.tsv"), "utf8")
+    expect(manifest).toContain("package\tcurl\t1.0")
+    expect(manifest).toContain("package\tlibdependency\t2.0")
+    expect(manifest).toContain(`\t${runtime[0]!.integrity.slice("sha256:".length)}\t`)
+    await expect(readFile(path.join(context, "debian-packages", "0000-curl.deb"), "utf8")).resolves.toBe(
+      packageBytes[0],
+    )
+    const aptWrapper = await readFile(path.join(context, "build-support", "apt-get"), "utf8")
+    expect(aptWrapper).toContain("sha256sum --check --strict")
+    expect(aptWrapper).toContain("--no-download")
+    expect(aptWrapper).toContain("Dir::Etc::sourcelist=/dev/null")
+  })
+
   it("materializes the locked Headlong source and service image command", async () => {
     const root = await temporaryRoot("trellage-materialize-headlong-")
     const headlongSource = path.join(root, "headlong")
@@ -736,7 +892,7 @@ packages = ["bash"]
           integrity: sourceIntegrity,
         },
         runtime: [{ name: "bash", version: "5.2.15", integrity: `sha256:${"d".repeat(64)}` }],
-        artifacts: [...arm64ArtifactCatalog.headlongArtifacts],
+        artifacts: [...managedArtifacts, ...rustArtifacts],
       },
       image: { base: document.profile.image.base, base_digest: `sha256:${"c".repeat(64)}` },
     }
@@ -895,6 +1051,7 @@ packages = ["bash", "gh", "git"]
           size: 9323789,
         },
         runtime: [],
+        artifacts: managedArtifacts,
       },
       image: { base: document.profile.image.base, base_digest: `sha256:${"b".repeat(64)}` },
     }
@@ -916,7 +1073,7 @@ packages = ["bash", "gh", "git"]
     )
     const wrapper = path.join(context, "prime-agent-wrapper.sh")
     await expect(readFile(wrapper, "utf8")).resolves.toBe(
-      '#!/bin/sh\nexec /mise/installs/node/22.17.0/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n',
+      '#!/bin/sh\nexec /mise/installs/node/24.8.0/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n',
     )
     expect((await stat(wrapper)).mode & 0o777).toBe(0o755)
     await expect(readFile(path.join(context, "prime-seed", "models.json"), "utf8")).resolves.toBe(
@@ -946,7 +1103,7 @@ packages = ["bash", "gh", "git"]
     expect(miseConfig).toContain('PRIME_AGENT_CODING_AGENT_DIR = "/home/agent/.prime/agent"')
     const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
     expect(miseLock).toContain("[[tools.node]]")
-    expect(miseLock).toContain('checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"')
+    expect(miseLock).toContain(`checksum = "sha256:${"a".repeat(64)}"`)
     expect(miseLock).not.toMatch(/http:prime|prime-agent-0\.7\.0\.tgz/)
   })
 
@@ -1089,6 +1246,18 @@ gear = "full"
     await mkdir(checkout)
     await writeFile(path.join(checkout, "pyproject.toml"), '[project]\nname = "hyperresearch"\nversion = "0.9.1"\n')
     const files = await Effect.runPromise(inventoryDirectory(checkout))
+    const cacheHome = path.join(root, "cache")
+    const exactPlaywrightArtifacts = await Promise.all(
+      playwrightArtifacts.map(async (artifact) => {
+        if (!artifact.url.startsWith("npm:")) return artifact
+        const content = `${artifact.name} package`
+        const integrity = `sha256:${createHash("sha256").update(content).digest("hex")}`
+        const cached = cachedArtifactPath(cacheHome, integrity)
+        await mkdir(path.dirname(cached), { recursive: true })
+        await writeFile(cached, content)
+        return { ...artifact, integrity, size: Buffer.byteLength(content) }
+      }),
+    )
     const lock: ProfileLock = {
       schema: 1,
       platform: "linux/arm64",
@@ -1117,6 +1286,7 @@ gear = "full"
           size: 1,
         },
         runtime: [{ name: "bash", version: "5.2", integrity: `sha256:${"d".repeat(64)}` }],
+        artifacts: [pythonArtifact, ...managedArtifacts, ...exactPlaywrightArtifacts],
       },
       image: { base: document.profile.image.base, base_digest: `sha256:${"b".repeat(64)}` },
     }
@@ -1165,13 +1335,15 @@ gear = "full"
           finalizeCopilotSeed: path.join(root, "unused-finalizer.mjs"),
           finalizeClaudeSeed: claudeFinalizer,
           claudeEntry: entry,
-          hyperresearchRequirements: requirements,
           claudeBrowserAgent: browserAgent,
           claudeOutputStyleRundown: outputStyle,
         },
         root,
         unused,
         materializeClaude,
+        createPythonConstraintsSidecar(profileHash(document), "linux/arm64", await readFile(requirements, "utf8")),
+        cacheHome,
+        "https://packagefeedproxy.microsoft.io/npm/",
       ),
     )
 
@@ -1186,8 +1358,21 @@ gear = "full"
     await expect(readFile(path.join(context, "hyperresearch-wrapper.sh"), "utf8")).resolves.toBe("#!/bin/sh\n")
     const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
     expect(miseLock).toContain("[[tools.python]]")
+    expect(miseLock).toContain("[[tools.uv]]")
     expect(miseLock).toContain('[[tools."http:claude"]]')
     expect(miseLock).toContain('rename_exe = "claude"')
+    await expect(readFile(path.join(context, "npm-artifacts", "playwright-mcp.tgz"), "utf8")).resolves.toBe(
+      "playwright-mcp package",
+    )
+    await expect(readFile(path.join(context, "npm-artifacts", "playwright.tgz"), "utf8")).resolves.toBe(
+      "playwright package",
+    )
+    await expect(readFile(path.join(context, "npm-artifacts", "playwright-core.tgz"), "utf8")).resolves.toBe(
+      "playwright-core package",
+    )
+    await expect(readFile(path.join(context, "playwright-mcp-wrapper.sh"), "utf8")).resolves.toContain(
+      "@playwright/mcp/cli.js",
+    )
   })
   it("materializes a legacy Codex plugin lock from a self-verified executable source", async () => {
     const root = await temporaryRoot("harness-materialize-legacy-codex-")
@@ -1372,6 +1557,7 @@ final_digest = "sha256:final"
           { name: "bash", version: "5.2", integrity: "sha256:bash" },
           { name: "fish", version: "3.6", integrity: "sha256:fish" },
         ],
+        artifacts: [managedArtifacts[1]!],
       },
       image: { base: document.profile.image.base, base_digest: "sha256:base", final_digest: "sha256:final" },
     }
@@ -1533,6 +1719,7 @@ select = ["hve-core"]
           { name: "bash", version: "5.2", integrity: "sha256:bash" },
           { name: "fish", version: "3.6", integrity: "sha256:fish" },
         ],
+        artifacts: [managedArtifacts[1]!],
       },
       image: { base: document.profile.image.base, base_digest: "sha256:base", final_digest: "sha256:final" },
     }
@@ -1573,6 +1760,7 @@ select = ["hve-core"]
     )
     const miseLock = await readFile(path.join(context, "mise.lock"), "utf8")
     expect.soft(miseLock).toMatch(/^# @generated by Trellage profile compiler\n/)
+    expect.soft(miseLock).toContain("[[tools.uv]]")
     expect.soft(miseLock).not.toContain("# @generated by harness profile compiler")
     const allText = await Promise.all(
       ["mise.toml", "codex-config.toml", "profile.lock.toml", "initial-prompt.md"].map((file) =>
@@ -1726,6 +1914,14 @@ select = ["hve-core"]
           size: 106111479,
         },
         runtime: [],
+        artifacts: [
+          {
+            name: "node",
+            version: "24.8.0",
+            integrity: `sha256:${"c".repeat(64)}`,
+            url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-arm64.tar.gz",
+          },
+        ],
       },
       image: { base: document.profile.image.base, base_digest: "sha256:base" },
     }
@@ -1854,6 +2050,14 @@ select = ["hve-core"]
           size: 100,
         },
         runtime: [],
+        artifacts: [
+          {
+            name: "node",
+            version: "24.8.0",
+            integrity: `sha256:${"e".repeat(64)}`,
+            url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-x64.tar.gz",
+          },
+        ],
       },
       image: { base: document.profile.image.base, base_digest: `sha256:${"d".repeat(64)}` },
     }

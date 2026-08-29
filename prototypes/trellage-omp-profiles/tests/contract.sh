@@ -371,12 +371,13 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
   || fail 'launch before explicit setup did not self-heal'
 [[ -f "$profile_root/.managed-by-trellage-omp-profiles" ]] \
   || fail 'self-healed launch did not mark profile ownership'
-[[ -f "$runtime_root/version" ]] \
-  || fail 'self-healed launch did not pin a version'
-rm -rf "$profile_root" "$runtime_root/version"
+[[ -f "$runtime_root/installed-version" ]] \
+  || fail 'self-healed launch did not record an installed version'
+rm -rf "$profile_root" "$runtime_root/installed-version"
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
-[[ "$(<"$runtime_root/version")" == '18.0.4' ]] || fail 'setup did not pin resolved version'
+[[ "$(<"$runtime_root/installed-version")" == '18.0.4' ]] \
+  || fail 'setup did not record resolved installed version'
 [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \
   || fail 'setup did not materialize config.yml'
 [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] \
@@ -439,13 +440,19 @@ grep -Fqx "    - \"$copilot_agent_root/community-skills\"" "$copilot_agent_root/
   || fail 'Copilot profile does not discover managed community skills'
 assert_community_skills "$copilot_agent_root/community-skills" 'Copilot profile'
 
-rm -f -- "$runtime_root/version"
+rm -f -- "$runtime_root/installed-version"
 FAKE_MISE_LATEST=17.2.12 "$command_path" setup >"$fixture_root/setup-legacy.out" \
   || fail 'legacy setup failed'
 FAKE_MISE_LATEST=17.2.12 "$command_path" setup copilot \
   >"$fixture_root/setup-copilot-legacy.out" || fail 'legacy Copilot setup failed'
 ! grep -Fq 'community-skills' "$agent_root/config.yml" "$copilot_agent_root/config.yml" \
   || fail 'unsupported OMP version enabled community skill discovery'
+
+mv "$runtime_root/installed-version" "$runtime_root/version"
+"$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
+  || fail 'doctor did not migrate the legacy version receipt'
+[[ "$(<"$runtime_root/installed-version")" == 17.2.12 && ! -e "$runtime_root/version" ]] \
+  || fail 'legacy version receipt migration differs'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON profile list failed'
 jq -e '
@@ -502,7 +509,8 @@ printf 'profile session canary\n' >"$profile_root/reinstall-canary"
 "$installer" >"$fixture_root/reinstall.out" || fail 'idempotent reinstall failed'
 grep -Fqx 'profile session canary' "$profile_root/reinstall-canary" \
   || fail 'reinstall changed profile state'
-[[ "$(<"$runtime_root/version")" == '17.2.12' ]] || fail 'reinstall changed pinned version'
+[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+  || fail 'reinstall changed installed version receipt'
 
 worktree="$fixture_root/worktree with spaces"
 mkdir -p "$worktree"
@@ -746,18 +754,37 @@ FAKE_MISE_LATEST=17.2.13 "$command_path" update --check >"$fixture_root/check.ou
   || fail 'update check failed'
 grep -Fqx 'omp update: 17.2.12 -> 17.2.13 available' "$fixture_root/check.out" \
   || fail 'update check output differs'
-[[ "$(<"$runtime_root/version")" == '17.2.12' ]] || fail 'update check changed pinned version'
+[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+  || fail 'update check changed installed version receipt'
 
 if FAKE_MISE_LATEST=17.2.13 FAKE_MISE_INSTALL_FAIL_VERSION=17.2.13 \
   "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
   fail 'update unexpectedly succeeded when mise failed'
 fi
-[[ "$(<"$runtime_root/version")" == '17.2.12' ]] || fail 'failed update replaced pinned version'
+[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+  || fail 'failed update replaced installed version receipt'
+
+find "$agent_root" "$profile_root/.managed-by-trellage-omp-profiles" \
+  -type f -exec shasum -a 256 {} + | sort >"$fixture_root/update-state.before"
+if FAKE_MISE_LATEST=18.0.4 OMP_TEST_FAIL_AT=before-receipt-publication \
+  "$command_path" update >"$fixture_root/update-publication-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when receipt publication failed'
+fi
+grep -Fq 'injected failure before installed version receipt publication' \
+  "$fixture_root/update-publication-fail.out" \
+  || fail 'receipt publication failure diagnostic differs'
+[[ "$(<"$runtime_root/installed-version")" == '17.2.12' ]] \
+  || fail 'receipt publication failure replaced installed version receipt'
+find "$agent_root" "$profile_root/.managed-by-trellage-omp-profiles" \
+  -type f -exec shasum -a 256 {} + | sort >"$fixture_root/update-state.after"
+cmp -s "$fixture_root/update-state.before" "$fixture_root/update-state.after" \
+  || fail 'receipt publication failure did not restore the prior OMP profile state'
 
 rm -rf -- "$agent_root/community-skills/architect"
 FAKE_MISE_LATEST=18.0.4 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
-[[ "$(<"$runtime_root/version")" == '18.0.4' ]] || fail 'update did not publish new exact version'
+[[ "$(<"$runtime_root/installed-version")" == '18.0.4' ]] \
+  || fail 'update did not publish new installed version receipt'
 [[ -f "$agent_root/community-skills/architect/SKILL.md" ]] \
   || fail 'update did not restore managed community skills'
 mv "$agent_root/community-skills/architect" "$fixture_root/architect.missing"
@@ -810,7 +837,7 @@ if "$command_path" --headless-policy no-user-input -p headless-version-mismatch 
   >"$fixture_root/headless-version-mismatch.out" 2>"$fixture_root/headless-version-mismatch.err"; then
   fail 'headless policy unexpectedly succeeded on an unverified OMP version'
 fi
-grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 17.2.12; pinned version is 18.0.4' \
+grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 17.2.12; installed version is 18.0.4' \
   "$fixture_root/headless-version-mismatch.err" \
   || fail 'unverified OMP version diagnostic differs'
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$fail_closed_before" ]] \
@@ -827,7 +854,8 @@ fi
   || fail 'failed repair did not roll back config publication'
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" || fail 'repair did not restore config'
-[[ "$(<"$runtime_root/version")" == '18.0.4' ]] || fail 'repair changed pinned version'
+[[ "$(<"$runtime_root/installed-version")" == '18.0.4' ]] \
+  || fail 'repair changed installed version receipt'
 
 printf 'drifted managed config\n' >"$agent_root/config.yml"
 "$command_path" -p 'Reply exactly OMP_SELF_HEAL' >"$fixture_root/self-heal.out" 2>&1 \
@@ -869,14 +897,14 @@ mv "$fixture_root/marker-away" "$profile_root/.managed-by-trellage-omp-profiles"
 "$command_path" repair >/dev/null || fail 'repair after drift checks failed'
 
 installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/18.0.4/omp"
-rm "$installed_omp" || fail 'could not remove pinned install for launch recovery test'
+rm "$installed_omp" || fail 'could not remove receipt-selected install for launch recovery test'
 "$command_path" -p 'Reply exactly OMP_INSTALL_RECOVERY' \
   >"$fixture_root/install-recovery.out" 2>&1 \
-  || fail 'launch did not recover a missing pinned install'
+  || fail 'launch did not recover a missing receipt-selected install'
 grep -Fq 'omp: OMP 18.0.4 is not installed; installing' \
   "$fixture_root/install-recovery.out" \
-  || fail 'launch did not report missing pinned install recovery'
-[[ -x "$installed_omp" ]] || fail 'launch did not reinstall the missing pinned executable'
+  || fail 'launch did not report missing receipt-selected install recovery'
+[[ -x "$installed_omp" ]] || fail 'launch did not reinstall the missing receipt-selected executable'
 
 unsafe_home="$fixture_root/unsafe-home"
 mkdir -p "$unsafe_home/.omp/profiles/trellage-qwen-local/agent"

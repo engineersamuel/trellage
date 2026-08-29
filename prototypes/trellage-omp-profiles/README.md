@@ -36,11 +36,14 @@ omp repair
 
 The installer publishes `~/.local/bin/omp` and owns its runtime beneath
 `~/.local/share/trellage/omp`. `setup` resolves the latest release eligible
-under `mise` policy, installs it into the managed runtime, and pins that exact
-version. Ordinary launches never update it. Only `omp update` changes the pin.
-The bundled OMP community skills require OMP 17.3.5 or newer. Profiles pinned
-to an older OMP release omit the community skill directory from discovery;
-run `omp update` to enable it.
+under `mise` policy on first use, installs it into the managed runtime, and
+records the exact installed version in the local `installed-version` receipt.
+Ordinary launches reuse that version without a network request. Only explicit
+`omp update` resolves latest again, and a failed update preserves the last good
+installed version, receipt, version-specific configuration, and managed skill
+state. The bundled OMP community skills require OMP 17.3.5 or newer. Profiles
+using an older installed OMP release omit the community skill directory from
+discovery; run `omp update` to enable it.
 
 Managed OMP files live at:
 
@@ -69,17 +72,17 @@ native skills and this OMP-only cache from the approved default branches.
 
 Setup and repair refuse symlinked paths or unrelated existing profile files.
 They preserve other profile state, including sessions. `doctor` is read-only
-and checks managed bytes and the pinned `mise` installation. The `local`
+and checks managed bytes and the receipt-selected `mise` installation. The `local`
 doctor also checks proxy health and local model discovery. The `copilot` doctor
 checks native GitHub Copilot authentication and model availability.
 
 Launching self-heals. OMP rewrites its own config during use, so a launch that
 finds drifted managed bytes republishes them and reports
 `omp: managed config restored` on stderr before starting; a launch that finds the
-pinned version missing installs it. `omp repair` remains available for repairing
-without launching, and `omp doctor` keeps the strict read-only check. Self-healing
-never crosses the ownership boundary: an unmanaged or foreign-marked profile still
-fails with `profile is not managed`.
+receipt-selected version missing installs it. `omp repair` remains available
+for repairing without launching, and `omp doctor` keeps the strict read-only
+check. Self-healing never crosses the ownership boundary: an unmanaged or
+foreign-marked profile still fails with `profile is not managed`.
 
 The `copilot` profile matches the container profile's host-auth order:
 `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`.

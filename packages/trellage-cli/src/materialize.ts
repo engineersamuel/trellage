@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 
 import { Data, Effect } from "effect"
 
@@ -41,11 +40,15 @@ import {
   type RuntimeSupportSnapshot,
   writeRuntimeSupportSnapshot,
 } from "./runtime-support.js"
+import { pythonConstraints, type ResolutionSidecar } from "./resolution-sidecar.js"
+import { cacheArtifact } from "./artifact-cache.js"
+import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
 
 export type PluginGenerator = (
   sourceDirectory: string,
   selections: ReadonlyArray<string>,
   destination: string,
+  uvVersion: string,
 ) => Effect.Effect<void, unknown>
 
 export type RuntimeSupport = RuntimeSupportPaths
@@ -59,6 +62,8 @@ export interface ClaudeMaterializeRequest {
   readonly hyperresearchDefaultTier?: "light"
   readonly requirementsPath?: string
   readonly browserAgentPath?: string
+  readonly artifactCacheHome?: string
+  readonly npmRegistry?: string
 }
 
 export type ClaudeMaterializer = (request: ClaudeMaterializeRequest) => Effect.Effect<void, unknown>
@@ -358,14 +363,15 @@ const materializeClaudePlugins = (
   support: RuntimeSupportSnapshot,
   context: string,
   materializeClaude: ClaudeMaterializer,
+  pythonRequirementsPath?: string,
+  artifactCacheHome?: string,
+  npmRegistry?: string,
 ): Effect.Effect<void, MaterializeError> => {
   if (profile.plugins.length === 0) return Effect.void
   const adapter = profile.plugins[0]?.adapter
   if (adapter !== "hyperresearch" && adapter !== "claude-marketplace") {
     return Effect.fail(new MaterializeError({ message: "unsupported Claude plugin adapter" }))
   }
-  const requirements =
-    adapter === "hyperresearch" ? runtimeSupportFile(support, "hyperresearch-requirements") : undefined
   const browserAgent = adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
   const hyperresearchPlugin = adapter === "hyperresearch" ? profile.plugins[0] : undefined
   return materializeClaude({
@@ -379,8 +385,12 @@ const materializeClaudePlugins = (
           hyperresearchDefaultTier: hyperresearchPlugin.select[0],
         }
       : {}),
-    ...(requirements === undefined ? {} : { requirementsPath: path.join(context, requirements.buildContextPath) }),
+    ...(adapter !== "hyperresearch" || pythonRequirementsPath === undefined
+      ? {}
+      : { requirementsPath: pythonRequirementsPath }),
     ...(browserAgent === undefined ? {} : { browserAgentPath: path.join(context, browserAgent.buildContextPath) }),
+    ...(artifactCacheHome === undefined ? {} : { artifactCacheHome }),
+    ...(npmRegistry === undefined ? {} : { npmRegistry }),
   }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
 }
 
@@ -391,13 +401,26 @@ const materializeClaudeProfileAssets = (
   support: RuntimeSupportSnapshot,
   context: string,
   materializeClaude: ClaudeMaterializer,
+  pythonRequirementsPath?: string,
+  artifactCacheHome?: string,
+  npmRegistry?: string,
 ): Effect.Effect<void, MaterializeError> =>
   Effect.gen(function* materializeClaudeAssetsForProfile() {
     const harness = lock.packages.harness
     if (harness.kind !== "claude") {
       return yield* Effect.fail(new MaterializeError({ message: "Claude profile and lock harness kinds do not match" }))
     }
-    yield* materializeClaudePlugins(profile, lock, sourceDirectories, support, context, materializeClaude)
+    yield* materializeClaudePlugins(
+      profile,
+      lock,
+      sourceDirectories,
+      support,
+      context,
+      materializeClaude,
+      pythonRequirementsPath,
+      artifactCacheHome,
+      npmRegistry,
+    )
     if ((profile.harness.claude.mode ?? "hyperresearch") === "core") {
       yield* writeClaudeCoreSeed(context, harness.version)
     }
@@ -420,6 +443,88 @@ const materializePiProfileAssets = (context: string): Effect.Effect<void, Materi
     yield* io("cannot initialize Pi seed", () => mkdir(path.join(seed, "skills"), { recursive: true }))
     yield* io("cannot write Pi managed skill manifest", () => writeFile(path.join(seed, "managed-skills.txt"), ""))
   })
+
+const materializeDebianPackages = (
+  lock: ProfileLock,
+  context: string,
+  cacheHome: string | undefined,
+): Effect.Effect<void, MaterializeError> => {
+  const runtimeDirect = lock.packages.runtime_direct
+  if (runtimeDirect === undefined) return Effect.void
+  if (cacheHome === undefined) {
+    return Effect.fail(new MaterializeError({ message: "artifact cache is required for locked Debian packages" }))
+  }
+  return Effect.gen(function* () {
+    const directory = path.join(context, "debian-packages")
+    yield* io("cannot create Debian package context", () => mkdir(directory, { recursive: true }))
+    const manifest: Array<string> = ["schema\t1", `direct\t${runtimeDirect.join(",")}`]
+    for (const [index, runtime] of lock.packages.runtime.entries()) {
+      if (runtime.url === undefined || runtime.size === undefined) {
+        return yield* Effect.fail(
+          new MaterializeError({ message: `Debian package metadata is missing: ${runtime.name}` }),
+        )
+      }
+      const cached = yield* cacheArtifact({
+        cacheHome,
+        url: runtime.url,
+        expectedIntegrity: runtime.integrity,
+        expectedSize: runtime.size,
+      }).pipe(Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })))
+      const filename = `${String(index).padStart(4, "0")}-${runtime.name}.deb`
+      yield* io("cannot materialize Debian package", () => cp(cached.path, path.join(directory, filename)))
+      manifest.push(
+        [
+          "package",
+          runtime.name,
+          runtime.version,
+          runtime.integrity.slice("sha256:".length),
+          String(runtime.size),
+          filename,
+          String(runtime.direct === true),
+        ].join("\t"),
+      )
+    }
+    yield* io("cannot write Debian package manifest", () =>
+      writeFile(path.join(directory, "manifest.tsv"), `${manifest.join("\n")}\n`, { flag: "wx" }),
+    )
+  })
+}
+
+const materializeNpmArtifacts = (
+  lock: ProfileLock,
+  context: string,
+  cacheHome: string | undefined,
+  npmRegistry: string | undefined,
+): Effect.Effect<void, MaterializeError> => {
+  const artifacts = (lock.packages.artifacts ?? []).flatMap((artifact) => {
+    const identity = parseNpmArtifactIdentity(artifact.url)
+    return identity === undefined ? [] : [{ artifact, identity }]
+  })
+  if (artifacts.length === 0) return Effect.void
+  if (cacheHome === undefined || npmRegistry === undefined) {
+    return Effect.fail(new MaterializeError({ message: "npm registry and artifact cache are required" }))
+  }
+  return Effect.gen(function* () {
+    const directory = path.join(context, "npm-artifacts")
+    yield* io("cannot create npm artifact context", () => mkdir(directory, { recursive: true }))
+    for (const { artifact, identity } of artifacts) {
+      if (artifact.size === undefined) {
+        return yield* Effect.fail(new MaterializeError({ message: `npm artifact size is missing: ${artifact.name}` }))
+      }
+      const url = yield* Effect.try({
+        try: () => npmTarballUrl(npmRegistry, identity.name, identity.version),
+        catch: (cause) => new MaterializeError({ message: `npm artifact URL is invalid: ${artifact.name}`, cause }),
+      })
+      const cached = yield* cacheArtifact({
+        cacheHome,
+        url,
+        expectedIntegrity: artifact.integrity,
+        expectedSize: artifact.size,
+      }).pipe(Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })))
+      yield* io("cannot materialize npm artifact", () => cp(cached.path, path.join(directory, `${artifact.name}.tgz`)))
+    }
+  })
+}
 
 const primeSourceMatches = (
   sourceLock: ProfileLock["sources"][number] | undefined,
@@ -526,6 +631,7 @@ const materializeCodexSource = (
   sourceIndex: number,
   context: string,
   generatePlugin: PluginGenerator,
+  uvVersion: string | undefined,
 ): Effect.Effect<void, MaterializeError> => {
   if (sourceLock.adapter === "codex-native") {
     return Effect.forEach(
@@ -534,10 +640,13 @@ const materializeCodexSource = (
       { discard: true },
     )
   }
+  if (uvVersion === undefined) {
+    return Effect.fail(new MaterializeError({ message: "compatibility plugin uv lock is missing" }))
+  }
   const generated = path.join(context, `.plugin-generated-${sourceIndex}`)
   return Effect.gen(function* materializeCompatibilityPlugin() {
     yield* io("cannot create plugin generation directory", () => mkdir(generated, { recursive: true }))
-    yield* generatePlugin(sourceDirectory, sourceLock.select, generated).pipe(
+    yield* generatePlugin(sourceDirectory, sourceLock.select, generated, uvVersion).pipe(
       Effect.mapError((cause) => new MaterializeError({ message: "compatibility plugin generation failed", cause })),
     )
     yield* copyCodexTree(path.join(generated, ".codex"), context)
@@ -552,8 +661,17 @@ const materializeCodexProfileAssets = (
   generatePlugin: PluginGenerator,
 ): Effect.Effect<void, MaterializeError> =>
   Effect.gen(function* materializeCodexAssets() {
+    const needsGenerator = lock.sources.some((source) => source.adapter !== "codex-native")
+    const uvVersion = needsGenerator ? requiredArtifact(lock, "uv").version : undefined
     for (let index = 0; index < lock.sources.length; index += 1) {
-      yield* materializeCodexSource(lock.sources[index]!, sourceDirectories[index]!, index, context, generatePlugin)
+      yield* materializeCodexSource(
+        lock.sources[index]!,
+        sourceDirectories[index]!,
+        index,
+        context,
+        generatePlugin,
+        uvVersion,
+      )
     }
   })
 
@@ -572,33 +690,40 @@ checksum = ${JSON.stringify(harness.integrity)}
 url = ${JSON.stringify(harness.url)}
 `
 
-const claudeUvLock = (misePlatform: string): string => {
-  const platform =
-    misePlatform === "linux-arm64"
-      ? {
-          checksum: "sha256:e71badaed2a2c3a404a0a00974b51c7ed5f5bc7be947916846005b739c68a5a2",
-          asset: "uv-aarch64-unknown-linux-musl.tar.gz",
-        }
-      : {
-          checksum: "sha256:9dadff5b9e7b1d2d011e41852a1cbca713d9d5d88194f2eb6bd240fa4fb0a719",
-          asset: "uv-x86_64-unknown-linux-musl.tar.gz",
-        }
+const requiredArtifact = (lock: ProfileLock, name: string) => {
+  const artifact = lock.packages.artifacts?.find((candidate) => candidate.name === name)
+  if (artifact === undefined) throw new Error(`required artifact lock is missing: ${name}`)
+  return artifact
+}
+
+const renderNodeLock = (lock: ProfileLock, misePlatform: string): string => {
+  const node = requiredArtifact(lock, "node")
+  return `[[tools.node]]
+version = ${JSON.stringify(node.version)}
+backend = "core:node"
+
+[tools.node."platforms.${misePlatform}"]
+checksum = ${JSON.stringify(node.integrity)}
+url = ${JSON.stringify(node.url)}
+`
+}
+
+const renderUvLock = (lock: ProfileLock, misePlatform: string): string => {
+  const uv = requiredArtifact(lock, "uv")
   return `[[tools.uv]]
-version = "0.11.21"
+version = ${JSON.stringify(uv.version)}
 backend = "aqua:astral-sh/uv"
 
 [tools.uv."platforms.${misePlatform}"]
-checksum = "${platform.checksum}"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.21/${platform.asset}"
+checksum = ${JSON.stringify(uv.integrity)}
+url = ${JSON.stringify(uv.url)}
 provenance = "github-attestations"
 `
 }
 
-const renderClaudeMiseLock = (
-  document: ProfileDocument,
-  harness: Extract<HarnessPackageLock, { readonly kind: "claude" }>,
-  misePlatform: string,
-): string => {
+const renderClaudeMiseLock = (document: ProfileDocument, lock: ProfileLock, misePlatform: string): string => {
+  const harness = lock.packages.harness
+  if (harness.kind !== "claude") throw new Error("Claude harness package lock is missing")
   const toolLock = claudeToolLock(harness, misePlatform)
   if (
     document.profile.harness.kind === "claude" &&
@@ -606,67 +731,51 @@ const renderClaudeMiseLock = (
   ) {
     return `# @generated by Trellage profile compiler
 
-[[tools.node]]
-version = "22.17.0"
-backend = "core:node"
-
-[tools.node."platforms.${misePlatform}"]
-checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
-url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+${renderNodeLock(lock, misePlatform)}
 
 ${toolLock}
 `
   }
   const claudeMarketplace = document.profile.plugins[0]?.adapter === "claude-marketplace"
+  const hyperresearch = document.profile.plugins[0]?.adapter === "hyperresearch"
   const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
   const uvLock =
-    isClaudeProfile(document.profile) && claudeHasSerena(document.profile) ? claudeUvLock(misePlatform) : ""
+    hyperresearch || extraPython || (isClaudeProfile(document.profile) && claudeHasSerena(document.profile))
+      ? renderUvLock(lock, misePlatform)
+      : ""
+  const python = claudeMarketplace && !extraPython ? undefined : requiredArtifact(lock, "python")
   const pythonLock =
-    claudeMarketplace && !extraPython
+    python === undefined
       ? ""
       : `[[tools.python]]
-version = "3.13.14"
+version = ${JSON.stringify(python.version)}
 backend = "core:python"
 
 [tools.python."platforms.${misePlatform}"]
-checksum = "sha256:1eaf979af6c6986553b91a9e3b03647f63ce52a888e00892d3bddc96f43748e9"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = ${JSON.stringify(python.integrity)}
+url = ${JSON.stringify(python.url)}
 provenance = "github-attestations"
 
 `
-  const playwrightLock = claudeMarketplace
-    ? ""
-    : `[[tools."npm:@playwright/mcp"]]
-version = "0.0.78"
-backend = "npm:@playwright/mcp"
-`
   return `# @generated by Trellage profile compiler
 
-[[tools.node]]
-version = "22.17.0"
-backend = "core:node"
-
-[tools.node."platforms.${misePlatform}"]
-checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
-url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+${renderNodeLock(lock, misePlatform)}
 
 ${pythonLock}
 ${toolLock}
 
 ${uvLock}
-${playwrightLock}
 `
 }
 
-const renderPrimeMiseLock = (misePlatform: string): string => `# @generated by Trellage profile compiler
+const renderPrimeMiseLock = (
+  lock: ProfileLock,
+  misePlatform: string,
+): string => `# @generated by Trellage profile compiler
 
-[[tools.node]]
-version = "22.17.0"
-backend = "core:node"
+${renderNodeLock(lock, misePlatform)}
 
-[tools.node."platforms.${misePlatform}"]
-checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
-url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
+${renderUvLock(lock, misePlatform)}
 `
 
 const renderHarnessMiseLock = (harness: ReleaseHarnessPackageLock, misePlatform: string): string => {
@@ -688,35 +797,40 @@ url = ${JSON.stringify(harness.url)}
 }
 
 const renderHeadlongMiseLock = (lock: ProfileLock, misePlatform: string): string => {
-  const uv = lock.packages.artifacts?.find((artifact) => artifact.name === "uv")
-  if (uv === undefined) throw new Error("Headlong uv artifact lock is missing")
   return `# @generated by Trellage profile compiler
 
-[[tools.node]]
-version = "22.17.0"
-backend = "core:node"
+${renderNodeLock(lock, misePlatform)}
 
-[tools.node."platforms.${misePlatform}"]
-checksum = "sha256:3e99df8b01b27dc8b334a2a30d1cd500442b3b0877d217b308fd61a9ccfc33d4"
-url = "https://nodejs.org/dist/v22.17.0/node-v22.17.0-linux-arm64.tar.gz"
-
-[[tools.uv]]
-version = ${JSON.stringify(uv.version)}
-backend = "aqua:astral-sh/uv"
-
-[tools.uv."platforms.${misePlatform}"]
-checksum = ${JSON.stringify(uv.integrity)}
-url = ${JSON.stringify(uv.url)}
-provenance = "github-attestations"
+${renderUvLock(lock, misePlatform)}
 `
 }
 
 const renderMaterializedMiseLock = (document: ProfileDocument, lock: ProfileLock): string => {
   const harness = lock.packages.harness
   const misePlatform = lock.platform === "linux/arm64" ? "linux-arm64" : "linux-x64"
-  if (harness.kind === "claude") return renderClaudeMiseLock(document, harness, misePlatform)
+  if (harness.kind === "claude") return renderClaudeMiseLock(document, lock, misePlatform)
   if (harness.kind === "headlong") return renderHeadlongMiseLock(lock, misePlatform)
-  return harness.kind === "prime" ? renderPrimeMiseLock(misePlatform) : renderHarnessMiseLock(harness, misePlatform)
+  if (harness.kind === "copilot") {
+    return `# @generated by Trellage profile compiler
+
+${renderNodeLock(lock, misePlatform)}
+
+${renderHarnessMiseLock(harness, misePlatform)}
+`
+  }
+  if (harness.kind === "codex") {
+    const uvLock = lock.packages.artifacts?.some((artifact) => artifact.name === "uv")
+      ? `${renderUvLock(lock, misePlatform)}\n`
+      : ""
+    return `# @generated by Trellage profile compiler
+
+${uvLock}
+${renderHarnessMiseLock(harness, misePlatform)}
+`
+  }
+  return harness.kind === "prime"
+    ? renderPrimeMiseLock(lock, misePlatform)
+    : renderHarnessMiseLock(harness, misePlatform)
 }
 
 export const createBuildContext = (
@@ -727,6 +841,9 @@ export const createBuildContext = (
   temporaryParent: string,
   generatePlugin: PluginGenerator,
   materializeClaude: ClaudeMaterializer = materializeClaudeAssets,
+  resolutionSidecar?: ResolutionSidecar,
+  artifactCacheHome?: string,
+  npmRegistry?: string,
 ): Effect.Effect<string, MaterializeError> =>
   Effect.gen(function* createProfileBuildContext() {
     const requestError = buildRequestError(document, lock, sourceDirectories, runtimeSupport)
@@ -741,8 +858,17 @@ export const createBuildContext = (
     const context = yield* io("cannot create temporary build context", () =>
       mkdtemp(path.join(temporaryParent, "trellage-build-")),
     )
+    const constraints = pythonConstraints(resolutionSidecar)
+    const pythonRequirementsPath = constraints === undefined ? undefined : path.join(context, "python-constraints.lock")
     const build = Effect.gen(function* materializeBuildContext() {
       yield* initializeBuildContext(support, context, document.profile.harness.kind)
+      yield* materializeDebianPackages(lock, context, artifactCacheHome)
+      yield* materializeNpmArtifacts(lock, context, artifactCacheHome, npmRegistry)
+      if (constraints !== undefined && pythonRequirementsPath !== undefined) {
+        yield* io("cannot materialize generated Python constraints", () =>
+          writeFile(pythonRequirementsPath, constraints, { flag: "wx" }),
+        )
+      }
       yield* materializeHeadlongAssets(document, lock, sourceDirectories, context)
       if (document.profile.harness.kind === "copilot") {
         yield* materializeCopilotProfileAssets(lock, sourceDirectories, support, context)
@@ -755,12 +881,11 @@ export const createBuildContext = (
           support,
           context,
           materializeClaude,
+          pythonRequirementsPath,
+          artifactCacheHome,
+          npmRegistry,
         )
         if (document.profile.plugins[0]?.adapter === "claude-marketplace") {
-          const pythonRequirementsPath =
-            claudePypiToolNames(document.profile).length === 0
-              ? undefined
-              : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets/graph-of-loops-requirements.lock")
           yield* materializeClaudeExtraRuntime(document.profile, lock, context, pythonRequirementsPath).pipe(
             Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
           )
@@ -788,14 +913,51 @@ export const createBuildContext = (
           `#!/bin/sh
 set -eu
 
-/usr/bin/apt-get "$@"
-
 rootfs=
+command=
 for argument do
   case "$argument" in
     Dir=*) rootfs=\${argument#Dir=} ;;
+    update|install) command="$argument" ;;
   esac
 done
+
+manifest=/src/debian-packages/manifest.tsv
+if [ -f "$manifest" ]; then
+  case "$command" in
+    update) exit 0 ;;
+    install)
+      [ -n "$rootfs" ]
+      set --
+      found=false
+      while IFS="$(printf '\\t')" read -r kind name version sha256 size filename direct; do
+        [ "$kind" = package ] || continue
+        found=true
+        package="/src/debian-packages/$filename"
+        [ "$(wc -c < "$package")" -eq "$size" ]
+        printf '%s  %s\\n' "$sha256" "$package" | sha256sum --check --strict -
+        set -- "$@" "$package"
+      done <"$manifest"
+      [ "$found" = true ] || exit 0
+      /usr/bin/apt-get \
+        -o "Dir=$rootfs" \
+        -o Dir::Etc::sourcelist=/dev/null \
+        -o Dir::Etc::sourceparts=- \
+        --no-download \
+        --yes \
+        install "$@"
+      rm -f "$rootfs/var/cache/ldconfig/aux-cache" "$rootfs/var/log/alternatives.log"
+      for package_cache_dir in apt debconf man; do
+        if [ -d "$rootfs/var/cache/$package_cache_dir" ]; then
+          find "$rootfs/var/cache/$package_cache_dir" -type f -delete
+        fi
+      done
+      exit 0
+      ;;
+  esac
+fi
+
+/usr/bin/apt-get "$@"
 
 if [ -n "$rootfs" ]; then
   rm -f "$rootfs/var/cache/ldconfig/aux-cache" "$rootfs/var/log/alternatives.log"
@@ -852,13 +1014,21 @@ policy:
           }
         }
         if (document.profile.harness.kind === "prime") {
+          const node = requiredArtifact(lock, "node")
           await writeFile(
             path.join(context, "prime-agent-wrapper.sh"),
-            '#!/bin/sh\nexec /mise/installs/node/22.17.0/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n',
+            `#!/bin/sh\nexec /mise/installs/node/${node.version}/bin/node /usr/local/lib/node_modules/prime-agent/dist/bundle/cli.js "$@"\n`,
             { mode: 0o755 },
           )
           await mkdir(path.join(context, "prime-seed"), { recursive: true })
           await writeFile(path.join(context, "prime-seed", "models.json"), `${JSON.stringify(primeModels, null, 2)}\n`)
+        }
+        if (isClaudeProfile(document.profile) && document.profile.plugins[0]?.adapter === "hyperresearch") {
+          await writeFile(
+            path.join(context, "playwright-mcp-wrapper.sh"),
+            '#!/bin/sh\nexec node /opt/trellage/playwright-mcp/lib/node_modules/@playwright/mcp/cli.js "$@"\n',
+            { mode: 0o755 },
+          )
         }
         await writeFile(
           path.join(context, "mise.toml"),

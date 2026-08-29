@@ -1,4 +1,6 @@
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
@@ -6,41 +8,21 @@ import { describe, expect, it } from "vitest"
 
 import { builderScript, profileMetadata } from "../src/application.js"
 import { claudeDefaultOnboarding, claudeDefaultSettings, claudeDefaultUserSettings } from "../src/claude-materialize.js"
-import { parseLock } from "../src/lock-file.js"
-import { harnessPackageRevision, type ProfileLock } from "../src/lock.js"
+import type { ProfileLock } from "../src/lock.js"
 import { parseProfile } from "../src/profile.js"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
-const lockPath = fileURLToPath(
-  new URL("../../../profiles/claude-research/profile.linux-arm64.lock.toml", import.meta.url),
-)
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
-const qwenLockPath = fileURLToPath(
-  new URL("../../../profiles/claude-qwen-local/profile.linux-arm64.lock.toml", import.meta.url),
-)
 const socialProfilePath = fileURLToPath(new URL("../../../profiles/claude-social-media/profile.toml", import.meta.url))
-const socialLockPath = fileURLToPath(
-  new URL("../../../profiles/claude-social-media/profile.linux-arm64.lock.toml", import.meta.url),
-)
 const graphOfLoopsProfilePath = fileURLToPath(
   new URL("../../../profiles/claude-graph-of-loops/profile.toml", import.meta.url),
 )
-const graphOfLoopsLockPath = fileURLToPath(
-  new URL("../../../profiles/claude-graph-of-loops/profile.linux-arm64.lock.toml", import.meta.url),
-)
 const blogProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))
-const blogLockPath = fileURLToPath(
-  new URL("../../../profiles/claude-blog/profile.linux-arm64.lock.toml", import.meta.url),
-)
 const councilProfilePath = fileURLToPath(new URL("../../../profiles/claude-council/profile.toml", import.meta.url))
-const councilLockPath = fileURLToPath(
-  new URL("../../../profiles/claude-council/profile.linux-arm64.lock.toml", import.meta.url),
-)
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const claudeEntryPath = fileURLToPath(new URL("../../../prototypes/trellage/runtime-claude-entry.sh", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
-const stableVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
-const commitSha = /^[0-9a-f]{40}$/
 
 describe("authored Claude Research profile", () => {
   it("starts fresh Claude homes with permission prompts bypassed", () => {
@@ -66,25 +48,29 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('gear = "full"')
   })
 
-  it("uses floating common and research skills alongside locked Hyperresearch", async () => {
-    const [source, lockSource] = await Promise.all([readFile(profilePath, "utf8"), readFile(lockPath, "utf8")])
+  it("uses floating common, research, and Hyperresearch sources", async () => {
+    const source = await readFile(profilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, profilePath))
-    const lock = await Effect.runPromise(parseLock(lockSource))
 
     expect(document.profile.skill_bundles).toEqual(["sandbox-common", "claude-research"])
-    expect(lock.sources).toHaveLength(1)
-    expect(lock.sources[0]).toMatchObject({
-      kind: "plugin",
-      adapter: "hyperresearch",
-      repository: "https://github.com/jordan-gibbs/hyperresearch.git",
-    })
+    expect(document.profile.plugins).toEqual([
+      expect.objectContaining({
+        adapter: "hyperresearch",
+        repository: "https://github.com/jordan-gibbs/hyperresearch.git",
+        ref: "main",
+        select: ["light"],
+      }),
+    ])
   })
 
   it("publishes Claude-specific runtime metadata without credentials", async () => {
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
-    const lock = await Effect.runPromise(parseLock(await readFile(lockPath, "utf8")))
+    const cache = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-research-metadata-"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", cache))
 
     expect(metadata).toMatchObject({
+      resolution_policy: "floating",
+      locally_resolved: false,
+      release_lock_available: false,
       harness_kind: "claude",
       harness_executable: "claude",
       runtime_entry: "trellage-claude-entry",
@@ -95,7 +81,7 @@ describe("authored Claude Research profile", () => {
       claude_opus_model: "claude-opus-5",
       claude_sonnet_model: "claude-sonnet-5",
       claude_haiku_model: "claude-haiku-4.5",
-      resolved_version: harnessPackageRevision(lock.packages.harness),
+      resolved_version: null,
       headless: {
         schemaVersion: 1,
         prompt: false,
@@ -168,14 +154,45 @@ describe("authored Claude Research profile", () => {
           size: 1,
         },
         runtime: [],
+        artifacts: [
+          {
+            name: "node",
+            version: "24.8.0",
+            integrity: `sha256:${"c".repeat(64)}`,
+            url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-arm64.tar.gz",
+          },
+          {
+            name: "uv",
+            version: "0.11.22",
+            integrity: `sha256:${"d".repeat(64)}`,
+            url: "https://github.com/astral-sh/uv/releases/download/0.11.22/uv-aarch64-unknown-linux-musl.tar.gz",
+            size: 1,
+          },
+          {
+            name: "python",
+            version: "3.13.14",
+            integrity: `sha256:${"e".repeat(64)}`,
+            url: "https://example.test/python.tar.gz",
+          },
+          ...playwrightArtifacts,
+        ],
       },
       image: { base: "node:22.17.0-bookworm-slim", base_digest: `sha256:${"c".repeat(64)}` },
     }
 
     const script = builderScript(document, lock)
     expect(script).toContain(
-      "mise x uv@0.11.21 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps",
+      "mise x --locked uv@0.11.22 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps",
     )
+    expect(script).toContain(
+      '"$node_dir/bin/npm" install --global --prefix /src/playwright-mcp-prefix --ignore-scripts --omit=optional --offline',
+    )
+    expect(script).toContain("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1")
+    expect(script).toContain("/src/npm-artifacts/playwright-mcp.tgz")
+    expect(script).toContain('"@playwright/mcp":"0.0.78"')
+    expect(script).toContain('"playwright":"1.62.0-alpha-1783623505000"')
+    expect(script).toContain('"playwright-core":"1.62.0-alpha-1783623505000"')
+    expect(script).toContain('require(root+name+"/package.json").version')
     expect(script).toContain("cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch")
     expect(script).toContain("mise install --locked")
     expect(script).toContain("mise oci build --locked")
@@ -188,8 +205,7 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain(
       'claudeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-claude-entry.sh")',
     )
-    expect(source).toContain("hyperresearchRequirements: path.join(")
-    expect(source).toContain('"hyperresearch-requirements.lock"')
+    expect(source).not.toContain("hyperresearchRequirements")
     expect(source).toContain("claudeBrowserAgent: path.join(")
     expect(source).toContain('"hyperresearch-browser-fetcher.md"')
     expect(source).toContain("claudeOutputStyleRundown: path.join(")
@@ -202,23 +218,23 @@ describe("authored Claude Research profile", () => {
 
 describe("authored Claude social media profile", () => {
   it("selects the attributed native marketplace plugins without an unsolicited startup prompt", async () => {
-    const [source, lockSource] = await Promise.all([
-      readFile(socialProfilePath, "utf8"),
-      readFile(socialLockPath, "utf8"),
-    ])
+    const source = await readFile(socialProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, socialProfilePath))
-    const lock = await Effect.runPromise(parseLock(lockSource))
 
     expect(source).toContain("# Upstream project: https://github.com/charlie947/social-media-skills")
     expect(source).toContain("# Upstream project: https://github.com/blader/humanizer")
     expect(document.profile.plugins).toEqual([
       expect.objectContaining({
         adapter: "claude-marketplace",
+        repository: "https://github.com/charlie947/social-media-skills.git",
+        ref: "main",
         marketplace: "social-media-skills",
         select: ["social-media-skills"],
       }),
       expect.objectContaining({
         adapter: "claude-marketplace",
+        repository: "https://github.com/blader/humanizer.git",
+        ref: "main",
         marketplace: "humanizer",
         select: ["humanizer"],
       }),
@@ -226,32 +242,6 @@ describe("authored Claude social media profile", () => {
     expect(document.profile.secrets.required).toEqual([])
     expect(document.resolvedInitialPrompt).toBeUndefined()
     expect(document.profile.harness.initial_prompt).toBeUndefined()
-    expect(lock.sources).toHaveLength(document.profile.plugins.length)
-    const socialMediaSource = lock.sources.find(
-      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "social-media-skills",
-    )
-    expect(socialMediaSource).toMatchObject({
-      adapter: "claude-marketplace",
-      marketplace: "social-media-skills",
-      repository: "https://github.com/charlie947/social-media-skills.git",
-      select: ["social-media-skills"],
-      plugin_versions: { "social-media-skills": expect.stringMatching(stableVersion) },
-      commit: expect.stringMatching(commitSha),
-    })
-    expect(socialMediaSource?.files.some(({ path }) => path.endsWith("/SKILL.md"))).toBe(true)
-    const humanizerSource = lock.sources.find(
-      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "humanizer",
-    )
-    expect(humanizerSource).toMatchObject({
-      adapter: "claude-marketplace",
-      marketplace: "humanizer",
-      repository: "https://github.com/blader/humanizer.git",
-      select: ["humanizer"],
-      plugin_versions: { humanizer: expect.stringMatching(stableVersion) },
-      commit: expect.stringMatching(commitSha),
-    })
-    expect(humanizerSource?.files.some(({ path }) => path === "SKILL.md")).toBe(true)
-    expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
 
   it("forwards optional integration variables only to final Claude execution", async () => {
@@ -269,9 +259,8 @@ describe("authored Claude social media profile", () => {
 
 describe("authored Claude Blog profile", () => {
   it("routes Claude Opus 5 through copilot-proxy-rs and records the selected marketplace plugin", async () => {
-    const [source, lockSource] = await Promise.all([readFile(blogProfilePath, "utf8"), readFile(blogLockPath, "utf8")])
+    const source = await readFile(blogProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, blogProfilePath))
-    const lock = await Effect.runPromise(parseLock(lockSource))
 
     expect(source).toContain(
       "# Upstream project and published skill catalog: https://github.com/AgriciDaniel/claude-blog",
@@ -288,34 +277,18 @@ describe("authored Claude Blog profile", () => {
       expect.objectContaining({
         adapter: "claude-marketplace",
         repository: "https://github.com/AgriciDaniel/claude-blog.git",
+        ref: "main",
         marketplace: "agricidaniel-blog",
         select: ["claude-blog"],
       }),
     ])
-    expect(lock.sources).toHaveLength(document.profile.plugins.length)
-    const blogSource = lock.sources.find(
-      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "agricidaniel-blog",
-    )
-    expect(blogSource).toMatchObject({
-      adapter: "claude-marketplace",
-      marketplace: "agricidaniel-blog",
-      repository: "https://github.com/AgriciDaniel/claude-blog.git",
-      select: ["claude-blog"],
-      plugin_versions: { "claude-blog": expect.stringMatching(stableVersion) },
-      commit: expect.stringMatching(commitSha),
-    })
-    expect(blogSource?.files.some(({ path }) => /^skills\/[^/]+\/SKILL\.md$/.test(path))).toBe(true)
   })
 })
 
 describe("authored Claude council profile", () => {
   it("routes Claude Opus 5 through copilot-proxy-rs with Caveman always on", async () => {
-    const [source, lockSource] = await Promise.all([
-      readFile(councilProfilePath, "utf8"),
-      readFile(councilLockPath, "utf8"),
-    ])
+    const source = await readFile(councilProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, councilProfilePath))
-    const lock = await Effect.runPromise(parseLock(lockSource))
 
     expect(source).toContain("# Upstream project: https://github.com/0xNyk/council-of-high-intelligence")
     expect(source).toContain("# Upstream project: https://github.com/JuliusBrussee/caveman")
@@ -331,47 +304,18 @@ describe("authored Claude council profile", () => {
       expect.objectContaining({
         adapter: "claude-marketplace",
         repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
-        ref: expect.stringMatching(/^v\d+\.\d+\.\d+$/),
+        ref: "main",
         marketplace: "council-of-high-intelligence",
         select: ["council"],
       }),
       expect.objectContaining({
         adapter: "claude-marketplace",
         repository: "https://github.com/JuliusBrussee/caveman.git",
-        ref: expect.stringMatching(/^v\d+\.\d+\.\d+$/),
+        ref: "main",
         marketplace: "caveman",
         select: ["caveman"],
       }),
     ])
-    expect(lock.sources).toHaveLength(document.profile.plugins.length)
-    const councilSource = lock.sources.find(
-      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "council-of-high-intelligence",
-    )
-    expect(councilSource).toMatchObject({
-      adapter: "claude-marketplace",
-      marketplace: "council-of-high-intelligence",
-      repository: "https://github.com/0xNyk/council-of-high-intelligence.git",
-      ref: document.profile.plugins[0]?.ref,
-      select: ["council"],
-      plugin_versions: { council: expect.stringMatching(stableVersion) },
-      commit: expect.stringMatching(commitSha),
-    })
-    expect(
-      councilSource?.files.some((file) => file.kind === "symlink" && file.path === "skills/council/SKILL.md"),
-    ).toBe(true)
-    const cavemanPluginSource = lock.sources.find(
-      (candidate) => candidate.kind === "plugin" && candidate.marketplace === "caveman",
-    )
-    expect(cavemanPluginSource).toMatchObject({
-      adapter: "claude-marketplace",
-      marketplace: "caveman",
-      repository: "https://github.com/JuliusBrussee/caveman.git",
-      ref: document.profile.plugins[1]?.ref,
-      select: ["caveman"],
-      plugin_versions: { caveman: expect.stringMatching(stableVersion) },
-      commit: expect.stringMatching(commitSha),
-    })
-    expect(lock.packages.artifacts?.map(({ name }) => name)).toEqual(["node", "builder-oci", "skopeo-oci"])
   })
 })
 
@@ -383,46 +327,21 @@ describe("authored Claude graph-of-loops profile", () => {
     expect(source).toContain("https://x.com/granite0x/status/2080665298609328201")
   })
 
-  it("pins an independent Codex reviewer configured for copilot-proxy-rs", async () => {
-    const [source, lockSource] = await Promise.all([
-      readFile(graphOfLoopsProfilePath, "utf8"),
-      readFile(graphOfLoopsLockPath, "utf8"),
-    ])
+  it("declares an independent Codex reviewer and related floating tools", async () => {
+    const source = await readFile(graphOfLoopsProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, graphOfLoopsProfilePath))
-    const lock = await Effect.runPromise(parseLock(lockSource))
 
     expect(document.profile.image.tools).toContainEqual({
       kind: "github-release",
       repository: "openai/codex",
       name: "codex",
     })
-    expect(lock.packages.artifacts).toContainEqual(
-      expect.objectContaining({
-        name: "bv",
-        version: "0.22.0",
-        url: "https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.22.0/bv_linux_arm64.tar.gz",
-      }),
-    )
-    expect(lock.packages.artifacts).toContainEqual(
-      expect.objectContaining({
-        name: "codex",
-        version: "0.149.1",
-        url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-aarch64-unknown-linux-musl.tar.gz",
-      }),
-    )
-    expect(lock.packages.artifacts).toContainEqual(
-      expect.objectContaining({
-        name: "codex-code-mode-host",
-        version: "0.149.1",
-        url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
-      }),
-    )
-    expect(lock.packages.artifacts).toContainEqual(
-      expect.objectContaining({
-        name: "lefthook-linux-arm64",
-        version: "2.1.10",
-      }),
-    )
+    expect(document.profile.image.tools).toContainEqual({
+      kind: "github-release",
+      repository: "Dicklesworthstone/beads_viewer",
+      name: "bv",
+    })
+    expect(document.profile.plugins.every((plugin) => plugin.ref === "main")).toBe(true)
   })
 
   it("refreshes the Codex reviewer config in persistent Claude state", async () => {
@@ -446,8 +365,8 @@ describe("authored standalone Claude Qwen profile", () => {
   })
 
   it("publishes the exact local gateway and Qwen alias routes", async () => {
-    const metadata = await Effect.runPromise(profileMetadata(qwenProfilePath, "linux/arm64"))
-    const lock = await Effect.runPromise(parseLock(await readFile(qwenLockPath, "utf8")))
+    const cache = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-qwen-metadata-"))
+    const metadata = await Effect.runPromise(profileMetadata(qwenProfilePath, "linux/arm64", cache))
 
     expect(metadata).toMatchObject({
       claude_mode: "core",
@@ -455,7 +374,9 @@ describe("authored standalone Claude Qwen profile", () => {
       claude_opus_model: "qwen3.6-35b-a3b-local",
       claude_sonnet_model: "qwen3.6-35b-a3b-local",
       claude_haiku_model: "qwen3.6-35b-a3b-local",
-      resolved_version: harnessPackageRevision(lock.packages.harness),
+      locally_resolved: false,
+      release_lock_available: false,
+      resolved_version: null,
       headless: {
         outputFormats: ["text"],
         trellageEventContract: null,

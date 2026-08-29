@@ -7,6 +7,8 @@ cd "$repo_root"
 copilot_secret_file=''
 collection_staging=''
 skills_staging=''
+harness_npm_registry=https://registry.npmjs.org/
+harness_pypi_index=https://pypi.org/simple/
 cleanup_secret_file() {
   if [[ -n "$copilot_secret_file" && -f "$copilot_secret_file" ]]; then
     rm -f "$copilot_secret_file"
@@ -88,7 +90,7 @@ validate_manifest() {
       and (.packages | type == "array" and length == 1)
       and all(.packages[];
         (.source | type == "string" and test("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$"))
-        and (.ref | type == "string" and test("^[0-9a-f]{40}$"))
+        and (.ref | type == "string" and test("^(main|master|[0-9a-f]{40})$"))
         and (.plugins | type == "array" and length > 0)
         and all(.plugins[]; type == "string" and test("^[a-z0-9][a-z0-9-]*$"))
         and (.skills | type == "array")
@@ -145,6 +147,54 @@ resolve_copilot_token() {
     'native Copilot authentication unavailable: set COPILOT_GITHUB_TOKEN or GH_TOKEN, or run gh auth login' 67
 }
 
+known_npm_feed() {
+  case "$1" in
+    https://registry.npmjs.org | https://registry.npmjs.org/ \
+      | https://packagefeedproxy.microsoft.io/npm | https://packagefeedproxy.microsoft.io/npm/ \
+      | https://packagefeedproxy.microsoft.io/npm/registry \
+      | https://packagefeedproxy.microsoft.io/npm/registry/) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+known_python_feed() {
+  case "$1" in
+    https://pypi.org/simple | https://pypi.org/simple/ \
+      | https://packagefeedproxy.microsoft.io/pypi/simple \
+      | https://packagefeedproxy.microsoft.io/pypi/simple/) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+prepare_build_package_feeds() {
+  local npm_registry="${HARNESS_NPM_REGISTRY:-${npm_config_registry:-}}"
+  local python_index="${HARNESS_PYPI_INDEX:-${UV_DEFAULT_INDEX:-${PIP_INDEX_URL:-}}}"
+
+  if [[ -z "$npm_registry" ]] && command -v npm >/dev/null 2>&1; then
+    npm_registry="$(npm config get registry 2>/dev/null | tr -d '\r\n')" || npm_registry=
+  fi
+  known_npm_feed "$npm_registry" || npm_registry=https://registry.npmjs.org/
+  case "$npm_registry" in
+    https://packagefeedproxy.microsoft.io/npm/registry \
+      | https://packagefeedproxy.microsoft.io/npm/registry/)
+      npm_registry=https://packagefeedproxy.microsoft.io/npm/
+      ;;
+  esac
+  if ! known_python_feed "$python_index"; then
+    case "$npm_registry" in
+      https://packagefeedproxy.microsoft.io/npm | https://packagefeedproxy.microsoft.io/npm/)
+        python_index=https://packagefeedproxy.microsoft.io/pypi/simple/
+        ;;
+      *) python_index=https://pypi.org/simple/ ;;
+    esac
+  fi
+
+  harness_npm_registry="$npm_registry"
+  harness_pypi_index="$python_index"
+  npm_config_registry="$npm_registry"
+  export npm_config_registry
+}
+
 compose_for() {
   local contestant="$1"
   local secret_file="$2"
@@ -168,6 +218,8 @@ compose_for() {
     HARNESS_CONTESTANT_ID="$contestant_id"
     HARNESS_PROMPT_SHA256="$prompt_hash"
     HARNESS_SKILLS_CONTEXT="$skills_context"
+    HARNESS_NPM_REGISTRY="$harness_npm_registry"
+    HARNESS_PYPI_INDEX="$harness_pypi_index"
   )
 
   case "$runtime" in
@@ -192,6 +244,7 @@ compose_for() {
 }
 
 build_all() {
+  prepare_build_package_feeds
   skills_staging="$(mktemp -d "${TMPDIR:-/tmp}/trellage-harness-skills.XXXXXX")"
   node "$repo_root/scripts/floating-skills.mjs" stage \
     --catalog "$repo_root/skills.json" \
@@ -200,7 +253,7 @@ build_all() {
   local contestant service
   for contestant in "${contestants[@]}"; do
     service="$(jq -r '.service' <<<"$contestant")"
-    compose_for "$contestant" '' build "$service" app
+    compose_for "$contestant" '' build --pull --no-cache "$service" app
   done
 }
 

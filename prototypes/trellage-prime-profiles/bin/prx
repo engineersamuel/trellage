@@ -11,7 +11,6 @@ readonly mise_tool='github:PrimeIntellect-ai/prime-agent'
 readonly mise_install_name='github-prime-intellect-ai-prime-agent'
 readonly profile_marker_value='trellage-prime-profile-v1'
 readonly managed_extension_name='ask-user'
-readonly managed_extension_sha256='c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2'
 
 die() {
   printf 'prx: %s\n' "$1" >&2
@@ -66,7 +65,8 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
-readonly version_file="$runtime_root/version"
+readonly receipt_file="$runtime_root/installed-version"
+readonly legacy_version_file="$runtime_root/version"
 readonly npm_prefix="$runtime_root/npm-prefix"
 readonly managed_extension_source="$runtime_root/assets/extensions/${managed_extension_name}.ts"
 readonly profile_root="$HOME/.local/share/trellage/profiles/prime/default"
@@ -304,25 +304,10 @@ managed_models() {
     }'
 }
 
-file_sha256() {
-  local path="$1"
-
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 -- "$path" | awk '{ print $1 }'
-  else
-    sha256sum -- "$path" | awk '{ print $1 }'
-  fi
-}
-
 require_managed_extension_source() {
-  local actual
-
-  [[ -f "$managed_extension_source" && ! -L "$managed_extension_source" ]] \
+  [[ -f "$managed_extension_source" && -r "$managed_extension_source" \
+    && ! -L "$managed_extension_source" ]] \
     || die "managed ask-user extension asset is missing; reinstall prx ($managed_extension_source)"
-  actual="$(file_sha256 "$managed_extension_source")" \
-    || die "cannot hash managed ask-user extension asset: $managed_extension_source"
-  [[ "$actual" == "$managed_extension_sha256" ]] \
-    || die "managed ask-user extension asset integrity differs; reinstall prx"
 }
 
 publish_managed_extensions() {
@@ -449,12 +434,20 @@ resolve_latest_version() {
   printf '%s\n' "$version"
 }
 
-read_pinned_version() {
+read_installed_version() {
   local version
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] \
-    || die 'prime-agent version is not pinned; run prx setup'
-  version="$(<"$version_file")"
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
+    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
+    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
+      || die "unsafe legacy installed version receipt: $legacy_version_file"
+    version="$(<"$legacy_version_file")"
+    require_exact_version "$version"
+    publish_installed_version "$version"
+  fi
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+    || die 'prime-agent installed version receipt is missing; run prx setup'
+  version="$(<"$receipt_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
 }
@@ -488,9 +481,9 @@ require_node() {
 }
 
 installed_cli() {
-  local version="$1" cli package_root package_json
+  local version="$1" prefix="${2:-$npm_prefix}" cli package_root package_json
 
-  package_root="$npm_prefix/lib/node_modules/prime-agent"
+  package_root="$prefix/lib/node_modules/prime-agent"
   cli="$package_root/dist/bundle/cli.js"
   package_json="$package_root/package.json"
   # npm install of a bare directory path creates a symlink into the mise
@@ -511,12 +504,12 @@ installed_cli() {
 }
 
 verify_cli_version() {
-  local cli="$1" version="$2" actual status=0
+  local cli="$1" version="$2" prefix="${3:-$npm_prefix}" actual status=0
 
   require_node
   # Prime Agent prints --version on stderr; merge it into the capture.
-  if [[ -x "$npm_prefix/bin/prime-agent" ]]; then
-    actual="$("$npm_prefix/bin/prime-agent" --version 2>&1)" || status=$?
+  if [[ -x "$prefix/bin/prime-agent" ]]; then
+    actual="$("$prefix/bin/prime-agent" --version 2>&1)" || status=$?
   else
     actual="$(node "$cli" --version 2>&1)" || status=$?
   fi
@@ -556,7 +549,9 @@ pack_package_tarball() {
   printf '%s\n' "$tarball"
 }
 
-install_exact_version() {
+staged_npm_prefix=''
+
+stage_exact_version() {
   local version="$1" package_source tarball cli npm_log pack_dir
 
   require_command mise
@@ -565,52 +560,154 @@ install_exact_version() {
   mise_env install "$mise_tool@$version" \
     || die "mise could not install prime-agent $version"
   package_source="$(resolve_package_source "$version")"
-  mkdir -p "$npm_prefix"
-  [[ -d "$npm_prefix" && ! -L "$npm_prefix" ]] \
-    || die "unsafe npm prefix: $npm_prefix"
-  # Drop a previous broken symlink install before reinstalling.
-  if [[ -L "$npm_prefix/lib/node_modules/prime-agent" ]]; then
-    rm -f -- "$npm_prefix/lib/node_modules/prime-agent"
+  [[ ! -L "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
+  if [[ -e "$npm_prefix" ]]; then
+    [[ -d "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
   fi
   tarball="$(pack_package_tarball "$package_source" "$version")"
   pack_dir="$(dirname "$tarball")"
-  npm_log="$(mktemp "$runtime_root/.npm-install.XXXXXX")" \
+  staged_npm_prefix="$(mktemp -d "$runtime_root/.npm-prefix-stage.XXXXXX")" \
     || {
       rm -rf -- "$pack_dir"
+      die 'could not stage prime-agent npm prefix'
+    }
+  npm_log="$(mktemp "$runtime_root/.npm-install.XXXXXX")" \
+    || {
+      rm -rf -- "$pack_dir" "$staged_npm_prefix"
       die 'could not stage npm install log'
     }
   if ! PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 \
     PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 \
     PRIME_AGENT_INSTALL_UV=0 \
-    npm install --global --prefix "$npm_prefix" --no-fund --no-audit \
+    npm install --global --prefix "$staged_npm_prefix" --no-fund --no-audit \
       --loglevel=error --progress=false "$tarball" \
     >"$npm_log" 2>&1; then
     cat "$npm_log" >&2 || true
     rm -f -- "$npm_log"
-    rm -rf -- "$pack_dir"
+    rm -rf -- "$pack_dir" "$staged_npm_prefix"
     die "npm could not install prime-agent $version"
   fi
   rm -f -- "$npm_log"
   rm -rf -- "$pack_dir"
-  cli="$(installed_cli "$version")"
-  verify_cli_version "$cli" "$version"
+  cli="$(installed_cli "$version" "$staged_npm_prefix")"
+  verify_cli_version "$cli" "$version" "$staged_npm_prefix"
 }
 
-publish_version() {
+publish_staged_runtime() {
+  local prefix_stage="$1" prefix_backup=''
+
+  if [[ -d "$npm_prefix" ]]; then
+    prefix_backup="$(mktemp -d "$runtime_root/.npm-prefix-backup.XXXXXX")" \
+      || {
+        rm -rf -- "$prefix_stage"
+        die 'could not stage prime-agent npm prefix backup'
+      }
+    rmdir "$prefix_backup"
+    mv "$npm_prefix" "$prefix_backup" \
+      || {
+        rm -rf -- "$prefix_stage"
+        die 'could not preserve installed prime-agent runtime'
+      }
+  fi
+  if ! mv "$prefix_stage" "$npm_prefix"; then
+    [[ -z "$prefix_backup" ]] || mv "$prefix_backup" "$npm_prefix"
+    rm -rf -- "$prefix_stage"
+    die 'could not publish installed prime-agent runtime'
+  fi
+  if [[ -n "$prefix_backup" ]] && ! rm -rf -- "$prefix_backup"; then
+    printf 'prx: warning: could not remove old prime-agent runtime backup: %s\n' \
+      "$prefix_backup" >&2
+  fi
+}
+
+stage_installed_version_receipt() {
   local version="$1" staged
 
-  staged="$(mktemp "$runtime_root/.version.XXXXXX")" \
-    || die 'could not stage prime-agent version'
+  staged="$(mktemp "$runtime_root/.installed-version.XXXXXX")" \
+    || die 'could not stage prime-agent installed version receipt'
   printf '%s\n' "$version" >"$staged"
   chmod 0600 "$staged"
-  mv -f "$staged" "$version_file"
+  printf '%s\n' "$staged"
+}
+
+install_exact_version() {
+  local version="$1"
+
+  stage_exact_version "$version"
+  publish_staged_runtime "$staged_npm_prefix"
+  staged_npm_prefix=''
+}
+
+publish_installed_version() {
+  local version="$1" staged
+
+  staged="$(stage_installed_version_receipt "$version")"
+  mv -f "$staged" "$receipt_file"
+  rm -f -- "$legacy_version_file"
+}
+
+adopt_exact_version() {
+  local version="$1" receipt_stage prefix_backup='' adoption_error=''
+
+  stage_exact_version "$version"
+  receipt_stage="$(stage_installed_version_receipt "$version")"
+
+  if [[ -d "$npm_prefix" ]]; then
+    prefix_backup="$(mktemp -d "$runtime_root/.npm-prefix-backup.XXXXXX")" \
+      || {
+        rm -rf -- "$staged_npm_prefix" "$receipt_stage"
+        die 'could not stage prime-agent npm prefix backup'
+      }
+    rmdir "$prefix_backup"
+    mv "$npm_prefix" "$prefix_backup" \
+      || {
+        rm -rf -- "$staged_npm_prefix" "$receipt_stage"
+        die 'could not preserve installed prime-agent runtime'
+      }
+  fi
+  if ! mv "$staged_npm_prefix" "$npm_prefix"; then
+    [[ -z "$prefix_backup" ]] || mv "$prefix_backup" "$npm_prefix"
+    rm -rf -- "$staged_npm_prefix" "$receipt_stage"
+    die 'could not publish installed prime-agent runtime'
+  fi
+  staged_npm_prefix=''
+
+  if [[ "${PRX_TEST_FAIL_AT-}" == before-receipt-publication ]]; then
+    adoption_error='injected failure before installed version receipt publication'
+  elif ! mv -f "$receipt_stage" "$receipt_file"; then
+    adoption_error='could not publish prime-agent installed version receipt'
+  fi
+
+  if [[ -n "$adoption_error" ]]; then
+    rm -rf -- "$npm_prefix"
+    if [[ -n "$prefix_backup" ]]; then
+      mv "$prefix_backup" "$npm_prefix" \
+        || die "could not restore prior prime-agent runtime after adoption failure"
+    fi
+    rm -f -- "$receipt_stage"
+    die "$adoption_error"
+  fi
+
+  if ! rm -f -- "$legacy_version_file"; then
+    printf 'prx: warning: could not remove legacy installed version receipt: %s\n' \
+      "$legacy_version_file" >&2
+  fi
+  if [[ -n "$prefix_backup" ]] && ! rm -rf -- "$prefix_backup"; then
+    printf 'prx: warning: could not remove old prime-agent runtime backup: %s\n' \
+      "$prefix_backup" >&2
+  fi
 }
 
 prime_version_if_available() {
   local version cli actual actual_version status=0
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] || return 0
-  version="$(<"$version_file")"
+  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
+    version="$(<"$receipt_file")"
+  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
+    version="$(<"$legacy_version_file")"
+  else
+    return 0
+  fi
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   cli="$npm_prefix/lib/node_modules/prime-agent/dist/bundle/cli.js"
   if [[ -x "$npm_prefix/bin/prime-agent" ]]; then
@@ -925,15 +1022,16 @@ setup_profile() {
   local version
 
   require_command mise
-  if [[ -e "$version_file" || -L "$version_file" ]]; then
-    version="$(read_pinned_version)"
+  if [[ -e "$receipt_file" || -L "$receipt_file" \
+    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
+    version="$(read_installed_version)"
   else
     version="$(resolve_latest_version)"
   fi
   install_exact_version "$version"
   publish_managed_profile
   ensure_floating_skills
-  publish_version "$version"
+  publish_installed_version "$version"
   ensure_kernel_runtime
   printf 'prx setup: ready (%s, %s)\n' "$version" "$model_id"
 }
@@ -942,7 +1040,7 @@ repair_profile() {
   local version
 
   require_command mise
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   install_exact_version "$version"
   publish_managed_profile
   ensure_floating_skills
@@ -954,7 +1052,7 @@ check_for_update() {
   local current latest
 
   require_command mise
-  current="$(read_pinned_version)"
+  current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
     printf 'prx update: %s is current\n' "$current"
@@ -968,14 +1066,13 @@ update_profile() {
 
   require_command mise
   ensure_floating_skills
-  current="$(read_pinned_version)"
+  current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
     printf 'prx update: %s is current\n' "$current"
     return
   fi
-  install_exact_version "$latest"
-  publish_version "$latest"
+  adopt_exact_version "$latest"
   printf 'prx update: %s -> %s installed\n' "$current" "$latest"
 }
 
@@ -984,7 +1081,7 @@ doctor_profile() {
 
   require_command mise
   verify_managed_profile
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"
   verify_kernel_runtime
@@ -1057,12 +1154,13 @@ launch_prime() {
 
   require_command mise
   require_node
-  if [[ ! -e "$version_file" && ! -L "$version_file" ]]; then
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
+    && ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
     setup_profile >/dev/null
   fi
   publish_managed_profile "$selected_model"
   ensure_floating_skills
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"
   ensure_kernel_runtime

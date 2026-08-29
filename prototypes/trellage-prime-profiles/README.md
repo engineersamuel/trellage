@@ -37,8 +37,12 @@ prx repair
 
 The installer publishes `~/.local/bin/prx` and owns its runtime beneath
 `~/.local/share/trellage/prx`. `setup` resolves the latest Prime Agent release
-eligible under `mise` policy, installs the release package into a managed npm
-prefix, and pins that exact version. Ordinary launches never update it.
+eligible under `mise` policy on first use, installs the release package into a
+managed npm prefix, and records the exact installed version in the local
+`installed-version` receipt. Ordinary launches reuse that version without a
+network request. Only explicit `prx update` resolves latest again. Updates
+stage and verify a complete npm prefix before publication, so failure
+preserves the last good runtime and receipt.
 
 The launcher is named `prx` (Prime + `x`) so it does not collide with macOS
 `/bin/pax` (POSIX archive tool). `trx` refuses any `prx` that does not resolve
@@ -63,7 +67,10 @@ Every setup, repair, and launch also materializes the managed
 `…/home/extensions/ask-user.ts` (Prime auto-discovers `extensions/*.ts`). Only
 that extension is installed—not the full prime-agent-plugins collection. Unmanaged
 extensions in the same directory are preserved; do not replace the managed file
-with divergent content or a symlink.
+with divergent content or a symlink. The extension is a package-owned vendored
+asset. Installation checks that the source is a regular file, and profile
+verification compares installed bytes directly with that asset. No separate
+manually maintained source hash is required.
 
 Prime’s default daemon socket is UID-global, and resident workers inherit the
 supervisor environment at spawn — they do **not** receive client

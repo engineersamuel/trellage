@@ -29,9 +29,11 @@ services:
       additional_contexts:
         floating_skills: ${HARNESS_SKILLS_CONTEXT:?set HARNESS_SKILLS_CONTEXT to a staged floating-skill snapshot}
       args:
-        WSHOBSON_AGENTS_REF: ${WSHOBSON_AGENTS_REF:-c4b82b0ad771190355eb8e204b1329732a18449a}
+        NPM_CONFIG_REGISTRY: ${HARNESS_NPM_REGISTRY:-https://registry.npmjs.org/}
+        PIP_INDEX_URL: ${HARNESS_PYPI_INDEX:-https://pypi.org/simple/}
+        WSHOBSON_AGENTS_REF: ${WSHOBSON_AGENTS_REF:-main}
         WSHOBSON_AGENTS_PLUGIN: ${WSHOBSON_AGENTS_PLUGIN:-full-stack-orchestration}
-        CODEX_VERSION: ${CODEX_VERSION:-0.144.6}
+        CODEX_VERSION: ${CODEX_VERSION:-latest}
     user: "10001:10001"
     read_only: true
     cap_drop: [ALL]

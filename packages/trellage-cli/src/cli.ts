@@ -13,10 +13,10 @@ import { Cause, Console, Effect, Option } from "effect"
 import {
   ApplicationError,
   buildProfile,
-  compileProfileLock,
   loadProfile,
   profileMetadata,
   sanitizeNpmRegistry,
+  snapshotProfileReleaseLock,
   upgradeProfile,
   verifyProfile,
 } from "./application.js"
@@ -30,7 +30,7 @@ import { containerHerdrCompatibility, loadHerdrCompatibilityLedger } from "./her
 import { selectProfilePath } from "./selection.js"
 import { captureDockerTarget, type DockerTarget } from "./docker-target.js"
 import { assertProductionPlatform, type Platform } from "./platform.js"
-import { resolveProfileReference } from "./profile-reference.js"
+import { resolveProfileReference, type ProfileReferenceMode } from "./profile-reference.js"
 
 const execFilePromise = promisify(execFile)
 
@@ -44,13 +44,6 @@ const runtimeSupport = {
   finalizeCopilotSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-copilot-seed.mjs"),
   finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs"),
   claudeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-claude-entry.sh"),
-  hyperresearchRequirements: path.join(
-    repositoryRoot,
-    "packages",
-    "trellage-cli",
-    "assets",
-    "hyperresearch-requirements.lock",
-  ),
   claudeBrowserAgent: path.join(
     repositoryRoot,
     "packages",
@@ -131,8 +124,14 @@ const withDockerTarget = <A, E>(operation: (target: DockerTarget) => Effect.Effe
     Effect.flatMap((target) => assertProductionPlatform(target.platform).pipe(Effect.zipRight(operation(target)))),
   )
 
-const selectedResolvedProfile = (argument: Option.Option<string>, platform: Platform) =>
-  selectedProfile(argument).pipe(Effect.flatMap((reference) => resolveProfileReference(reference, platform, cacheHome)))
+const selectedResolvedProfile = (
+  argument: Option.Option<string>,
+  platform: Platform,
+  mode: ProfileReferenceMode = "development",
+) =>
+  selectedProfile(argument).pipe(
+    Effect.flatMap((reference) => resolveProfileReference(reference, platform, cacheHome, mode)),
+  )
 
 const validate = Command.make("validate", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>
@@ -146,15 +145,21 @@ const validate = Command.make("validate", { profile: profileArgument }, ({ profi
 const lock = Command.make("lock", { update, profile: profileArgument }, ({ profile, update: updateLock }) =>
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform).pipe(
-      Effect.flatMap((selected) => compileProfileLock(selected, updateLock, cacheHome, target.platform)),
-      Effect.flatMap((result) => Console.log(`locked: ${result.profile_hash} (${target.platform})`)),
+      Effect.flatMap((selected) =>
+        configuredNpmRegistry.pipe(
+          Effect.flatMap((npmRegistry) =>
+            snapshotProfileReleaseLock(selected, updateLock, cacheHome, target.platform, npmRegistry),
+          ),
+        ),
+      ),
+      Effect.flatMap((result) => Console.log(`release lock: ${result.profile_hash} (${target.platform})`)),
     ),
   ),
 )
 
 const build = Command.make("build", { locked, profile: profileArgument }, ({ profile, locked: lockedBuild }) =>
   withDockerTarget((target) =>
-    selectedResolvedProfile(profile, target.platform).pipe(
+    selectedResolvedProfile(profile, target.platform, lockedBuild ? "release" : "development").pipe(
       Effect.flatMap((selected) =>
         configuredNpmRegistry.pipe(
           Effect.flatMap((npmRegistry) =>
@@ -262,7 +267,7 @@ const list = Command.make("list", { json, jsonFull, full }, ({ json: asJson, jso
       const guides = yield* loadSandboxProfileGuides(repositoryRoot, choices).pipe(
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
-      const readiness = yield* resolveProfilesReadiness(choices)
+      const readiness = yield* resolveProfilesReadiness(choices, cacheHome)
       const ledger = yield* loadHerdrCompatibilityLedger(repositoryRoot)
       const herdrCompatibility = choices.map((choice) => containerHerdrCompatibility(ledger, choice.name))
       return yield* Console.log(JSON.stringify(toFullList(choices, guides, readiness, herdrCompatibility)))
@@ -278,7 +283,7 @@ const list = Command.make("list", { json, jsonFull, full }, ({ json: asJson, jso
 const metadata = Command.make("metadata", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform).pipe(
-      Effect.flatMap((selected) => profileMetadata(selected, target.platform)),
+      Effect.flatMap((selected) => profileMetadata(selected, target.platform, cacheHome)),
       Effect.flatMap((result) => Console.log(JSON.stringify(result))),
     ),
   ),
@@ -286,7 +291,7 @@ const metadata = Command.make("metadata", { profile: profileArgument }, ({ profi
 
 const ciVerify = Command.make("ci-verify", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>
-    selectedResolvedProfile(profile, target.platform).pipe(
+    selectedResolvedProfile(profile, target.platform, "release").pipe(
       Effect.flatMap((selected) => verifyProfile(selected, target.platform)),
       Effect.flatMap((result) =>
         Console.log(
@@ -307,7 +312,7 @@ const choices = Command.make("choices", {}, () =>
   Effect.gen(function* () {
     const worktree = yield* currentGitWorktree(process.cwd())
     const profiles = yield* discoverProfileChoices(profileDiscoveryRoots(worktree))
-    const readiness = yield* resolveProfilesReadiness(profiles)
+    const readiness = yield* resolveProfilesReadiness(profiles, cacheHome)
     const result = profiles.map((profile, index) => ({
       ...profile,
       headless: resolveSandboxHeadlessCapabilities(profile.headlessRuntime, readiness[index]?.resolvedVersion ?? null),

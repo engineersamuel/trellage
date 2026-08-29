@@ -137,6 +137,7 @@ tools = { allow = ["search"], deny = ["delete"] }
       supported_platforms: [],
       harness: { kind: "codex", version: "0.144.6", model: "gpt-5.5" },
       headlessRuntime: "codex",
+      resolutionPolicy: "floating",
       skillBundles: ["sandbox-common"],
       skillsMode: "floating",
       skills: [],
@@ -222,16 +223,14 @@ describe("profile discovery", () => {
     expect(choices[0]?.name).toBe("only")
   })
 
-  it("projects one profile with its platform-lock inventory", async () => {
+  it("projects compiler-supported development platforms without requiring release locks", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-profile-platforms-"))
     const bundled = path.join(root, "profiles")
-    const profilePath = await writeProfile(bundled, "portable", codexProfile("portable", "Portable profile"))
-    await writeFile(path.join(path.dirname(profilePath), "profile.linux-arm64.lock.toml"), "")
-    await writeFile(path.join(path.dirname(profilePath), "profile.linux-amd64.lock.toml"), "")
+    await writeProfile(bundled, "portable", codexProfile("portable", "Portable profile"))
 
     const choices = await Effect.runPromise(discoverProfileChoices({ bundled }))
 
     expect(choices).toHaveLength(1)
-    expect(choices[0]?.supported_platforms).toEqual(["linux/arm64", "linux/amd64"])
+    expect(choices[0]?.supported_platforms).toEqual(["linux/arm64"])
   })
 })

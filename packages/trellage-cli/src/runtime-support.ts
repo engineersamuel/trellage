@@ -15,7 +15,6 @@ export interface RuntimeSupportPaths {
   readonly finalizeCopilotSeed: string
   readonly finalizeClaudeSeed?: string
   readonly claudeEntry?: string
-  readonly hyperresearchRequirements?: string
   readonly claudeBrowserAgent?: string
   readonly claudeOutputStyleRundown?: string
   readonly copilotInstructionRundown?: string
@@ -141,13 +140,6 @@ const selectedFiles = (
         ...(claudeAdapter === "claude-marketplace"
           ? []
           : [
-              {
-                property: "hyperresearchRequirements" as const,
-                role: "hyperresearch-requirements",
-                destination: "/src/.runtime-support/hyperresearch-requirements.lock",
-                buildContextPath: ".runtime-support/hyperresearch-requirements.lock",
-                mode: 0o644,
-              },
               {
                 property: "claudeBrowserAgent" as const,
                 role: "claude-browser-agent",

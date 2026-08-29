@@ -1,4 +1,0 @@
-repository=https://github.com/am-will/prime-agent-plugins.git
-commit=699f9065acc5eb988a02666196c5837434fd839d
-path=plugins/ask-user/extensions/ask-user.ts
-sha256=c02e1ed58195ee6e4793c6e51ed8c9592141ab7cfd654347b1025dd6c9c6dbe2

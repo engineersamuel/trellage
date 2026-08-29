@@ -30,9 +30,15 @@ cat >"$fake_bin/mise" <<'FAKE_MISE'
 set -euo pipefail
 tool='npm:@earendil-works/pi-coding-agent'
 install_name='npm-earendil-works-pi-coding-agent'
+printf '%s\n' "$*" >>"$FAKE_MISE_LOG"
 case "${1-}" in
+  latest)
+    [[ "${2-}" == "$tool" ]] || exit 90
+    printf '%s\n' "${FAKE_MISE_LATEST:-0.84.2}"
+    ;;
   install)
     version="${2#"$tool"@}"
+    [[ "${FAKE_MISE_INSTALL_FAIL_VERSION-}" != "$version" ]] || exit 91
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
     mkdir -p "$destination/bin" "$destination/lib"
     sed "s/@VERSION@/$version/g" "$FAKE_PI_TEMPLATE" >"$destination/lib/pi"
@@ -60,6 +66,7 @@ fi
 if [[ "${1-}" == install ]]; then
   [[ "$#" == 2 ]] || exit 71
   spec="$2"
+  [[ "${FAKE_EXTENSION_FAIL_SPEC-}" != "$spec" ]] || exit 74
   printf '%s\n' "$spec" >>"$FAKE_EXTENSION_LOG"
   case "$spec" in
     git:github.com/DietrichGebert/ponytail)
@@ -80,12 +87,13 @@ if [[ "${1-}" == install ]]; then
     *) exit 72 ;;
   esac
   mkdir -p "$package_root"
-  printf '{"name":"%s","version":"%s"}\n' "$package" "$version" >"$package_root/package.json"
+  printf '{"name":"%s","version":"%s","piRuntime":"%s"}\n' \
+    "$package" "$version" '@VERSION@' >"$package_root/package.json"
   if [[ "$package" == '@ff-labs/pi-fff' ]]; then
     for dependency in fff-bun fff-node; do
       dependency_root="$PI_CODING_AGENT_DIR/npm/node_modules/@ff-labs/$dependency"
       mkdir -p "$dependency_root"
-      printf '{"name":"@ff-labs/%s","version":"0.10.5"}\n' "$dependency" \
+      printf '{"name":"@ff-labs/%s","version":"1.0.0"}\n' "$dependency" \
         >"$dependency_root/package.json"
     done
   fi
@@ -148,9 +156,11 @@ export FAKE_PI_TEMPLATE="$fixture_root/fake-pi-template"
 export FAKE_EXTENSION_LOG="$fixture_root/extensions.log"
 export FAKE_LAUNCH_LOG="$fixture_root/launch.log"
 export FAKE_PROXY_LOG="$fixture_root/proxy.log"
+export FAKE_MISE_LOG="$fixture_root/mise.log"
 : >"$FAKE_EXTENSION_LOG"
 : >"$FAKE_LAUNCH_LOG"
 : >"$FAKE_PROXY_LOG"
+: >"$FAKE_MISE_LOG"
 
 "$installer" >/dev/null
 command_path="$HOME/.local/bin/picx"
@@ -161,8 +171,8 @@ agent_root="$profile_root/agent"
 [[ -L "$command_path" ]] || fail 'installer did not publish picx'
 [[ "$(readlink "$command_path")" == "$runtime_root/bin/picx" ]] \
   || fail 'picx command target differs'
-[[ "$(<"$runtime_root/version")" == '0.84.2' ]] \
-  || fail 'installer did not publish the Pi version pin'
+[[ ! -e "$runtime_root/installed-version" && ! -e "$runtime_root/version" ]] \
+  || fail 'installer authored an installed version receipt'
 
 "$command_path" list --json >"$fixture_root/list.json"
 jq -e '
@@ -196,6 +206,15 @@ jq -e '
 ' "$fixture_root/not-setup.json" >/dev/null || fail 'not-setup inventory differs'
 
 "$command_path" setup >/dev/null
+[[ "$(<"$runtime_root/installed-version")" == '0.84.2' ]] \
+  || fail 'setup did not record the resolved installed version'
+grep -Fqx 'latest npm:@earendil-works/pi-coding-agent' "$FAKE_MISE_LOG" \
+  || fail 'first setup did not resolve latest Pi through mise'
+mv "$runtime_root/installed-version" "$runtime_root/version"
+"$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
+  || fail 'doctor did not migrate the legacy version receipt'
+[[ "$(<"$runtime_root/installed-version")" == 0.84.2 && ! -e "$runtime_root/version" ]] \
+  || fail 'legacy version receipt migration differs'
 "$command_path" list --json >"$fixture_root/setup-list.json"
 jq -e '
   .profiles[0].headless.prompt == true
@@ -212,6 +231,7 @@ jq -e '
   and .defaultThinkingLevel == "medium"
   and .defaultProjectTrust == "never"
   and .enableInstallTelemetry == false
+  and .lastChangelogVersion == "0.84.2"
   and (.packages | length) == 10
 ' "$agent_root/settings.json" >/dev/null || fail 'managed Pi settings differ'
 jq -e '
@@ -238,14 +258,14 @@ cmp -s "$HOME/.copilot/models.json" "$profile_root/.copilot-models.json" \
 cat >"$fixture_root/expected-extensions" <<'EXPECTED'
 git:github.com/DietrichGebert/ponytail
 npm:pi-web-access
-npm:pi-subagents@0.34.0
-npm:@ff-labs/pi-fff@0.10.5
+npm:pi-subagents
+npm:@ff-labs/pi-fff
 npm:pi-context-view
 npm:pi-mcp-adapter
-npm:@narumitw/pi-btw@0.11.0
-npm:@plannotator/pi-extension@0.20.3
-npm:@narumitw/pi-goal@0.48.0
-npm:@quintinshaw/pi-dynamic-workflows@2.14.1
+npm:@narumitw/pi-btw
+npm:@plannotator/pi-extension
+npm:@narumitw/pi-goal
+npm:@quintinshaw/pi-dynamic-workflows
 EXPECTED
 cmp -s "$fixture_root/expected-extensions" "$FAKE_EXTENSION_LOG" \
   || fail 'Pi extension install order differs'
@@ -332,6 +352,7 @@ jq -e '
 ' "$fixture_root/unhealthy-proxy-inventory.json" >/dev/null \
   || fail 'unhealthy proxy inventory differs'
 
+extension_installs_before="$(wc -l <"$FAKE_EXTENSION_LOG" | tr -d ' ')"
 COPILOT_GITHUB_TOKEN='do-not-forward' \
 GH_TOKEN='do-not-forward' \
 GITHUB_TOKEN='do-not-forward' \
@@ -352,6 +373,10 @@ if grep -Eq 'plan.*HTTP 401|MCP finished with failures.*plan' \
   "$fixture_root/live.out" "$fixture_root/live.err"; then
   fail 'launch inherited the host Claude plan MCP'
 fi
+[[ "$(grep -c '^latest ' "$FAKE_MISE_LOG")" == 1 ]] \
+  || fail 'ordinary launch resolved latest instead of reusing the receipt'
+[[ "$(wc -l <"$FAKE_EXTENSION_LOG" | tr -d ' ')" == "$extension_installs_before" ]] \
+  || fail 'ordinary launch refreshed extensions instead of reusing installed state'
 
 "$command_path" --headless-policy no-user-input -p 'headless probe' >/dev/null
 grep -Fq -- '--exclude-tools ask_question' "$FAKE_LAUNCH_LOG" \
@@ -359,6 +384,73 @@ grep -Fq -- '--exclude-tools ask_question' "$FAKE_LAUNCH_LOG" \
 "$command_path" update --check >"$fixture_root/update-check.out"
 grep -Fqx 'picx update: 0.84.2 is current' "$fixture_root/update-check.out" \
   || fail 'update check differs'
+
+if FAKE_MISE_LATEST=0.85.0 FAKE_MISE_INSTALL_FAIL_VERSION=0.85.0 \
+  "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when mise failed'
+fi
+[[ "$(<"$runtime_root/installed-version")" == '0.84.2' ]] \
+  || fail 'failed update replaced installed version receipt'
+{
+  find "$profile_root" -type f -exec shasum -a 256 {} +
+  shasum -a 256 "$runtime_root/installed-version"
+} | sort >"$fixture_root/update-extension-state.before"
+extension_fail_log_start="$(wc -l <"$FAKE_EXTENSION_LOG" | tr -d ' ')"
+if FAKE_MISE_LATEST=0.85.0 \
+  FAKE_EXTENSION_FAIL_SPEC='npm:pi-context-view' \
+  "$command_path" update >"$fixture_root/update-extension-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when extension installation failed'
+fi
+grep -Fq 'could not install managed extension: npm:pi-context-view' \
+  "$fixture_root/update-extension-fail.out" \
+  || fail 'failed extension refresh lost its original diagnostic'
+[[ "$(<"$runtime_root/installed-version")" == '0.84.2' ]] \
+  || fail 'failed extension refresh replaced installed version receipt'
+tail -n "+$((extension_fail_log_start + 1))" "$FAKE_EXTENSION_LOG" \
+  >"$fixture_root/update-extension-attempts"
+cat >"$fixture_root/expected-partial-update-extensions" <<'EXPECTED_PARTIAL'
+git:github.com/DietrichGebert/ponytail
+npm:pi-web-access
+npm:pi-subagents
+npm:@ff-labs/pi-fff
+EXPECTED_PARTIAL
+cmp -s "$fixture_root/expected-partial-update-extensions" \
+  "$fixture_root/update-extension-attempts" \
+  || fail 'extension failure did not occur after early extension mutations'
+{
+  find "$profile_root" -type f -exec shasum -a 256 {} +
+  shasum -a 256 "$runtime_root/installed-version"
+} | sort >"$fixture_root/update-extension-state.after"
+cmp -s "$fixture_root/update-extension-state.before" \
+  "$fixture_root/update-extension-state.after" \
+  || fail 'failed extension refresh did not restore all prior profile and receipt bytes'
+FAKE_MISE_LATEST=0.85.0 "$command_path" update >"$fixture_root/update.out"
+grep -Fqx 'picx update: 0.84.2 -> 0.85.0 installed' "$fixture_root/update.out" \
+  || fail 'update output differs'
+[[ "$(<"$runtime_root/installed-version")" == '0.85.0' ]] \
+  || fail 'update did not publish the new installed version receipt'
+"$command_path" list --json >"$fixture_root/updated-list.json"
+jq -e '
+  .profiles[0].headless.prompt == false
+  and .profiles[0].headless.questionToolControl == "none"
+  and .profiles[0].headless.testedHarnessVersion == null
+' "$fixture_root/updated-list.json" >/dev/null \
+  || fail 'unverified Pi version did not fall back to conservative capabilities'
+unverified_launches_before="$(wc -l <"$FAKE_LAUNCH_LOG" | tr -d ' ')"
+if "$command_path" --headless-policy no-user-input -p unverified-headless \
+  >"$fixture_root/unverified-headless.out" \
+  2>"$fixture_root/unverified-headless.err"; then
+  fail 'headless policy unexpectedly launched an unverified Pi version'
+fi
+grep -Fqx 'picx: --headless-policy no-user-input is verified only for Pi 0.84.2; installed version is 0.85.0' \
+  "$fixture_root/unverified-headless.err" \
+  || fail 'unverified Pi headless policy diagnostic differs'
+[[ "$(wc -l <"$FAKE_LAUNCH_LOG" | tr -d ' ')" == "$unverified_launches_before" ]] \
+  || fail 'unverified Pi headless policy invoked Pi'
+"$command_path" inventory default --json >"$fixture_root/updated-inventory.json"
+jq -e '.readiness == "healthy" and .harnessVersion == "0.85.0"' \
+  "$fixture_root/updated-inventory.json" >/dev/null \
+  || fail 'updated Pi version is not healthy and discoverable'
 
 "$uninstaller" >/dev/null
 [[ ! -e "$command_path" && ! -e "$runtime_root" ]] || fail 'uninstall left runtime'

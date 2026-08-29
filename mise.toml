@@ -32,4 +32,4 @@ run = "./scripts/prototype-azure-copilot-spike.sh"
 
 [tools]
 "github:PrimeIntellect-ai/prime-agent" = "latest"
-uv = "0.12.3"
+uv = "latest"

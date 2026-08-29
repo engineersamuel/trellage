@@ -2,7 +2,7 @@ import { readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 
 import { Data, Effect, Option } from "effect"
-import type { Platform } from "./platform.js"
+import { productionPlatforms, type Platform } from "./platform.js"
 
 import { sandboxHeadlessRuntimeAdapter, type SandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
 import {
@@ -63,6 +63,7 @@ export interface ProfileChoice {
     readonly model?: string
   }
   readonly headlessRuntime: SandboxHeadlessRuntimeAdapter
+  readonly resolutionPolicy?: "floating"
   readonly skillBundles?: ReadonlyArray<string>
   readonly skillsMode?: "floating" | "locked"
   readonly skills: ReadonlyArray<ProfileChoiceSource>
@@ -152,6 +153,7 @@ export const projectProfileChoice = (
       ...(profileModel === undefined ? {} : { model: profileModel }),
     },
     headlessRuntime: sandboxHeadlessRuntimeAdapter(profile),
+    resolutionPolicy: profile.resolution,
     skillBundles: profile.skill_bundles,
     skillsMode: profile.skill_bundles.length > 0 ? "floating" : "locked",
     skills: [],
@@ -195,14 +197,7 @@ const loadCandidate = (
     })
     if (source === undefined) return Option.none()
     const document = yield* parseProfile(source, canonicalPath).pipe(Effect.option)
-    const entries = yield* Effect.tryPromise({
-      try: () => readdir(path.dirname(canonicalPath)),
-      catch: () => [] as Array<string>,
-    })
-    const supportedPlatforms = (["linux/arm64", "linux/amd64"] as const).filter((platform) =>
-      entries.includes(`profile.${platform.replace("/", "-")}.lock.toml`),
-    )
-    return Option.map(document, (parsed) => ({ origin, document: parsed, supportedPlatforms }))
+    return Option.map(document, (parsed) => ({ origin, document: parsed, supportedPlatforms: productionPlatforms }))
   }).pipe(Effect.orElseSucceed(() => Option.none()))
 
 const discoverRoot = (

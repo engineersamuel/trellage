@@ -33,8 +33,11 @@ jcx repair
 
 The installer publishes `~/.local/bin/jcx` and owns its runtime beneath
 `~/.local/share/trellage/jcx`. `setup` resolves the latest jcode release
-eligible under `mise` policy, installs it into the managed runtime, and pins
-that exact version. Ordinary launches never update it.
+eligible under `mise` policy on first use, installs it into the managed
+runtime, and records the exact installed version in the local
+`installed-version` receipt. Ordinary launches reuse that version without a
+network request. Only explicit `jcx update` resolves latest again, and a failed
+update preserves the last good installed version and receipt.
 
 Profile state lives at:
 

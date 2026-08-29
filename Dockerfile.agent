@@ -1,21 +1,22 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
 
-FROM python:3.13.14-slim-bookworm AS adapter
+FROM python:slim-bookworm AS adapter
 
-ARG WSHOBSON_AGENTS_REF=c4b82b0ad771190355eb8e204b1329732a18449a
+ARG WSHOBSON_AGENTS_REF=main
 ARG WSHOBSON_AGENTS_PLUGIN=full-stack-orchestration
-ARG UV_VERSION=0.11.21
+ARG PIP_INDEX_URL=https://pypi.org/simple/
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git \
     && rm -rf /var/lib/apt/lists/* \
-    && python -m pip install --no-cache-dir "uv==${UV_VERSION}"
+    && python -m pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" uv
 
 RUN git init -q /opt/agents \
+    && printf '%s\n' "${WSHOBSON_AGENTS_REF}" | grep -Eq '^(main|master|[0-9a-f]{40})$' \
     && git -C /opt/agents remote add origin https://github.com/wshobson/agents.git \
     && git -C /opt/agents fetch --depth 1 origin "${WSHOBSON_AGENTS_REF}" \
     && git -C /opt/agents checkout --detach FETCH_HEAD \
-    && test "$(git -C /opt/agents rev-parse HEAD)" = "${WSHOBSON_AGENTS_REF}"
+    && git -C /opt/agents rev-parse HEAD > /opt/agents-commit
 
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
 
@@ -31,15 +32,16 @@ RUN mkdir -p /opt/agent-kit \
       | LC_ALL=C sort > /opt/agent-kit-inventory.txt \
     && test -s /opt/agent-kit-inventory.txt
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:bookworm-slim AS runtime
 
-ARG CODEX_VERSION=0.144.6
-ARG PLAYWRIGHT_VERSION=1.61.1
+ARG CODEX_VERSION=latest
+ARG PLAYWRIGHT_VERSION=latest
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git jq \
-    && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
-    && npm install --global "@openai/codex@${CODEX_VERSION}" \
+    && npm_config_registry="${NPM_CONFIG_REGISTRY}" npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
+    && npm_config_registry="${NPM_CONFIG_REGISTRY}" npm install --global "@openai/codex@${CODEX_VERSION}" \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 agent \
@@ -50,6 +52,7 @@ RUN apt-get update \
 
 COPY --from=adapter /opt/agent-kit /opt/agent-kit
 COPY --from=adapter /opt/agent-kit-inventory.txt /opt/agent-kit-inventory.txt
+COPY --from=adapter /opt/agents-commit /opt/agent-kit-source-commit.txt
 COPY --from=floating_skills / /opt/floating-skills
 COPY docker/codex-config.toml /opt/codex-config.toml
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
@@ -60,7 +63,7 @@ COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
 COPY scripts/run-agent.sh /usr/local/bin/run-agent.sh
 
 RUN chmod 0555 /usr/local/bin/agent-entrypoint.sh /usr/local/bin/run-agent.sh \
-    && chmod -R a=rX /opt/agent-kit /opt/agent-kit-inventory.txt /opt/codex-config.toml \
+    && chmod -R a=rX /opt/agent-kit /opt/agent-kit-inventory.txt /opt/agent-kit-source-commit.txt /opt/codex-config.toml \
       /opt/floating-skills /opt/floating-skills-catalog.json
 
 ENV HOME=/home/agent \

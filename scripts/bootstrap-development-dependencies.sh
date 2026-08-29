@@ -54,11 +54,11 @@ run_bootstrap() {
     fi
     mise_exec=(mise -C "$project_root" exec --)
   else
-    if ! mise where uv@0.12.3 >/dev/null 2>&1; then
-      log "installing uv 0.12.3"
-      mise install uv@0.12.3
+    if ! mise where uv@latest >/dev/null 2>&1; then
+      log "installing latest stable uv"
+      mise install uv@latest
     fi
-    mise_exec=(mise exec uv@0.12.3 --)
+    mise_exec=(mise exec uv@latest --)
   fi
 
   if ! "${mise_exec[@]}" uvx --offline yt-dlp --version >/dev/null 2>&1; then

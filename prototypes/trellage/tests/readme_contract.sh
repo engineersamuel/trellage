@@ -472,7 +472,7 @@ require_smoke_contract() {
 
   function_has_exact_line "$smoke_runner" build_image \
     'IMAGE_REF="$image_ref" ./build-image.sh' \
-    || fail 'smoke runner does not invoke a fresh locked build'
+    || fail 'smoke runner does not invoke a fresh development build'
   function_has_exact_line "$smoke_runner" check_shell_syntax \
     'bash -n "$source"' \
     || fail 'smoke runner does not execute shell syntax checks'
@@ -657,9 +657,9 @@ has_exact_mise_task "$mise_config" uninstall-trellage \
 for heading in \
   '## Prototype Question and Scope' \
   '## Prerequisites and Setup' \
-  '## Profiles and Locks' \
+  '## Development Receipts and Release Locks' \
   '## Build' \
-  '## Deterministic Smoke Verification' \
+  '## Smoke Verification' \
   '## Install' \
   '## Doctor' \
   '## Automatic Environment Loading' \
@@ -699,9 +699,8 @@ done
 for command in \
   'mise trust' \
   './trellage validate ../../profiles/codex-superpowers/profile.toml' \
+  './trellage build ../../profiles/codex-superpowers/profile.toml' \
   './trellage lock ../../profiles/codex-superpowers/profile.toml' \
-  './trellage lock --update ../../profiles/codex-superpowers/profile.toml' \
-  './trellage build --locked ../../profiles/codex-superpowers/profile.toml' \
   'mise run smoke' \
   './install-trellage.sh install' \
   './install-trellage.sh uninstall --dry-run' \
@@ -720,14 +719,14 @@ for command in \
   'trellage destroy' \
   'trellage upgrade all' \
   'trellage validate /absolute/path/to/profiles/copilot-hve/profile.toml' \
-  'trellage build --locked /absolute/path/to/profiles/copilot-hve/profile.toml' \
+  'trellage build /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage resume --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage doctor --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage destroy --profile /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml' \
   'trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
-  'trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
+  'trellage build /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
   'trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
   'trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"' \
   'trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml' \
@@ -753,12 +752,13 @@ for qualification in \
   'Device login persists in the profile state volume' \
   '`destroy` deletes that sensitive local state only after confirmation' \
   'HVE Core and HVE Core All are different products' \
-  'Upgrades never happen automatically'; do
+  'Run the explicit' \
+  '`trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml`'; do
   require_section_text '## Copilot with HVE Core' "$qualification"
 done
 
 for qualification in \
-  'standalone `omp` executable from' \
+  'resolves the latest stable standalone `omp` executable' \
   'OMP is not GitHub Copilot CLI' \
   '`github-copilot` provider' \
   '`gpt-5.6-terra`' \
@@ -775,15 +775,12 @@ done
 
 for qualification in \
   'requires Bash, Docker, Git, `gh`, jq, and mise' \
-  'existing `copilot-proxy-rs_default` network and reachable proxy service' \
-  'performs a fresh locked image build' \
-  'usually takes 5-10 minutes' \
-  'creates uniquely named `trellage-codex-smoke-*`, `trellage-codex-runtime-test-*`, and `trellage-codex-persistence-test-*` temporary resources' \
-  'tracks immutable container IDs and successful volume creation' \
-  'revalidates ownership labels before removing only tracked resources' \
-  'removes its temporary containers, volumes, bind directories, and installer directory' \
-  'retains the built image, proxy, network, Herdr, repository worktrees, and unrelated resources'; do
-  require_section_text '## Deterministic Smoke Verification' "$qualification"
+  'must provide the existing `copilot-proxy-rs_default` network' \
+  'proxy service. Run it from this directory' \
+  'performs a fresh resolved image build' \
+  'revalidates ownership before cleanup' \
+  'retains the built image and unrelated resources'; do
+  require_section_text '## Smoke Verification' "$qualification"
 done
 
 for qualification in \
@@ -1002,7 +999,8 @@ root_harness_line="$(grep -n '^## Generic Evaluation Harness$' "$root_readme" | 
   || fail 'root README does not put Trellage quick start before the generic harness'
 for command in \
   'trellage validate /absolute/path/to/profile.toml' \
-  'trellage build --locked /absolute/path/to/profile.toml' \
+  'trellage build /absolute/path/to/profile.toml' \
+  'trellage lock /absolute/path/to/profile.toml' \
   'trellage --profile /absolute/path/to/profile.toml' \
   'trellage resume --profile /absolute/path/to/profile.toml SESSION_ID' \
   'trellage resume --profile /absolute/path/to/profile.toml' \

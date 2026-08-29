@@ -1485,13 +1485,19 @@ real_sed="$(command -v sed)"
 cat >"$fake_bin/sed" <<'FAKE_SED_AUTH_LOCK'
 #!/bin/bash
 lock_path="${@: -1}"
+lock_read=''
+case "$lock_path" in
+  "$GRX_TEST_AUTH_LOCK"|"$GRX_TEST_AUTH_LOCK-owned."*/observed-lock)
+    lock_read='yes'
+    ;;
+esac
 if [ "${GRX_TEST_LOCK_READ_MODE:-}" = 'release-before-read' ] \
-  && [ "$lock_path" = "$GRX_TEST_AUTH_LOCK" ]; then
+  && [ -n "$lock_read" ]; then
   : >"$GRX_TEST_LOCK_READ_MARKER"
   while [ ! -e "$GRX_TEST_LOCK_READ_CONTINUE" ]; do sleep 0.05; done
 fi
 if [ "${GRX_TEST_LOCK_READ_MODE:-}" = 'capture-before-handoff' ] \
-  && [ "$lock_path" = "$GRX_TEST_AUTH_LOCK" ]; then
+  && [ -n "$lock_read" ]; then
   captured_lock_target="$("$GRX_TEST_REAL_SED" "$@")"
   captured_status=$?
   : >"$GRX_TEST_LOCK_READ_MARKER"
@@ -1583,6 +1589,16 @@ GRX_TEST_REAL_CP="$real_cp" \
   2>"$fixture_root/auth-handoff-owner-two.err" &
 handoff_owner_two_pid=$!
 wait_for_file "$handoff_owner_two_marker"
+handoff_observed_lock="$(find "$superpowers_home" -maxdepth 2 \
+  -path '*/.auth.lock-owned.*/observed-lock' -print -quit)"
+[ -f "$handoff_observed_lock" ] && [ ! -L "$handoff_observed_lock" ] \
+  || fail 'lock-owner handoff waiter did not retain a stable lock snapshot'
+[ ! "$superpowers_home/.auth.lock" -ef "$handoff_observed_lock" ] \
+  || fail 'lock-owner handoff did not replace the published lock owner'
+handoff_observed_target="$("$real_sed" -n '1p' "$handoff_observed_lock")"
+handoff_current_target="$("$real_sed" -n '1p' "$superpowers_home/.auth.lock")"
+[ "$handoff_observed_target" != "$handoff_current_target" ] \
+  || fail 'lock-owner handoff snapshot did not distinguish consecutive owners'
 : >"$fixture_root/auth-handoff-lock-continue"
 : >"$handoff_owner_two_release"
 
@@ -1590,10 +1606,14 @@ handoff_owner_two_status=0
 wait "$handoff_owner_two_pid" || handoff_owner_two_status=$?
 handoff_waiter_status=0
 wait "$handoff_waiter_pid" || handoff_waiter_status=$?
-[ "$handoff_owner_one_status" -eq 0 ] \
-  && [ "$handoff_owner_two_status" -eq 0 ] \
-  && [ "$handoff_waiter_status" -eq 0 ] \
-  || fail "lock-owner handoff failed: first=$handoff_owner_one_status second=$handoff_owner_two_status waiter=$handoff_waiter_status"
+if [ "$handoff_owner_one_status" -ne 0 ] \
+  || [ "$handoff_owner_two_status" -ne 0 ] \
+  || [ "$handoff_waiter_status" -ne 0 ]; then
+  cat "$fixture_root/auth-handoff-owner-one.err" \
+    "$fixture_root/auth-handoff-owner-two.err" \
+    "$fixture_root/auth-handoff-waiter.err" >&2
+  fail "lock-owner handoff failed: first=$handoff_owner_one_status second=$handoff_owner_two_status waiter=$handoff_waiter_status"
+fi
 assert_auth_marker 'handoff-owner-two' "$superpowers_home/auth.json"
 [ -z "$(find "$superpowers_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'lock-owner handoff left auth debris'

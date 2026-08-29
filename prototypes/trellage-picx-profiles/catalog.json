@@ -40,12 +40,12 @@
         {
           "name": "pi-subagents",
           "package": "pi-subagents",
-          "installSpec": "npm:pi-subagents@0.34.0"
+          "installSpec": "npm:pi-subagents"
         },
         {
           "name": "pi-fff",
           "package": "@ff-labs/pi-fff",
-          "installSpec": "npm:@ff-labs/pi-fff@0.10.5"
+          "installSpec": "npm:@ff-labs/pi-fff"
         },
         {
           "name": "pi-context-view",
@@ -60,22 +60,22 @@
         {
           "name": "pi-btw",
           "package": "@narumitw/pi-btw",
-          "installSpec": "npm:@narumitw/pi-btw@0.11.0"
+          "installSpec": "npm:@narumitw/pi-btw"
         },
         {
           "name": "Plannotator",
           "package": "@plannotator/pi-extension",
-          "installSpec": "npm:@plannotator/pi-extension@0.20.3"
+          "installSpec": "npm:@plannotator/pi-extension"
         },
         {
           "name": "pi-goal",
           "package": "@narumitw/pi-goal",
-          "installSpec": "npm:@narumitw/pi-goal@0.48.0"
+          "installSpec": "npm:@narumitw/pi-goal"
         },
         {
           "name": "pi-dynamic-workflows",
           "package": "@quintinshaw/pi-dynamic-workflows",
-          "installSpec": "npm:@quintinshaw/pi-dynamic-workflows@2.14.1"
+          "installSpec": "npm:@quintinshaw/pi-dynamic-workflows"
         }
       ]
     }

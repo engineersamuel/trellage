@@ -20,7 +20,8 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 install_root="$home/.local/share/trellage/picx"
 installed_launcher="$install_root/bin/picx"
 installed_catalog="$install_root/catalog.json"
-installed_version="$install_root/version"
+installed_version_receipt="$install_root/installed-version"
+legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-picx-profiles"
 command_path="$home/.local/bin/picx"
 
@@ -42,8 +43,12 @@ fi
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ -f "$installed_catalog" && ! -L "$installed_catalog" ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
-[[ -f "$installed_version" && ! -L "$installed_version" ]] \
-  || refuse "unsafe managed version: $installed_version"
+for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
+  if [[ -e "$receipt" || -L "$receipt" ]]; then
+    [[ -f "$receipt" && ! -L "$receipt" ]] \
+      || refuse "unsafe installed version receipt: $receipt"
+  fi
+done
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \

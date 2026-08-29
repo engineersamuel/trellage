@@ -2,10 +2,10 @@
 
 ## Prototype Question and Scope
 
-Trellage runs coding harnesses inside core-locked, profile-compiled Docker
-sandboxes while preserving Herdr detection, conversations, and recovery
-shells. Declarative TOML profiles select the harness configuration and named
-floating-skill bundles.
+Trellage runs coding harnesses inside profile-compiled Docker sandboxes while
+preserving Herdr detection, conversations, and recovery shells. Declarative
+TOML development profiles select approved floating stable inputs and named
+floating-skill bundles. Exact locks are explicit release artifacts.
 
 ## Prerequisites and Setup
 
@@ -19,44 +19,50 @@ The worktree launcher bootstraps the profile compiler automatically. It runs
 `npm ci` when compiler dependencies are missing and runs `npm run build` when
 compiler output is missing or stale.
 
-## Profiles and Locks
+## Development Receipts and Release Locks
 
-Validate or resolve the bundled compatibility profile:
+Validate or build the bundled compatibility profile:
 
 ```bash
 ./trellage validate ../../profiles/codex-superpowers/profile.toml
+./trellage build ../../profiles/codex-superpowers/profile.toml
+```
+
+Normal development resolution is stored under the Trellage XDG cache, not
+beside `profile.toml`. Only an explicit upgrade refreshes a complete local
+result:
+
+```bash
+./trellage upgrade ../../profiles/codex-superpowers/profile.toml
+```
+
+Use `trellage lock PROFILE` only to create an exact adjacent release snapshot.
+Trellage binds resolution to one local Unix Docker endpoint and refuses
+endpoint or server changes before mutation. Native ARM64 is the only supported
+platform today. AMD64 is recognized for future selection but rejected before
+downloads or Docker mutation until its artifact support is complete. Resolved
+source content is integrity-checked under `$XDG_CACHE_HOME` and is safe to
+delete. Approved skill repositories are declared without revisions in the root
+`skills.json` and are not stored in release locks. Credentials never enter
+build inputs.
+
+```bash
 ./trellage lock ../../profiles/codex-superpowers/profile.toml
 ```
 
-Only an explicit update refreshes unchanged Git refs:
-
-```bash
-./trellage lock --update ../../profiles/codex-superpowers/profile.toml
-```
-
-Profiles and adjacent platform locks are committed. Trellage binds the
-operation to one local Unix Docker endpoint and refuses endpoint or server
-changes before mutation. Native ARM64 is the only production platform today.
-AMD64 is recognized for future lock selection but rejected before downloads
-or Docker mutation until its artifact catalog and lock are complete. Pinned
-plugin source content is integrity-checked under the Trellage cache beneath
-`$XDG_CACHE_HOME` and is safe to delete. Approved skill repositories are
-declared without revisions in the root `skills.json` and are not stored in
-profile locks. Credentials never enter build inputs.
-
 ## Build
 
-Build with the existing core lock, fetch current skill content, and import the
+Resolve approved stable inputs, fetch current skill content, and import the
 platform-qualified image:
 
 ```bash
-./trellage build --locked ../../profiles/codex-superpowers/profile.toml
+./trellage build ../../profiles/codex-superpowers/profile.toml
 ```
 
 The current production tag is
 `trellage-profile-codex-superpowers-linux-arm64:locked`. Because this profile
-has floating skills, its lock has no final image digest and the build has no
-content-addressed image alias.
+has floating skills, normal development state does not claim one final image
+digest.
 
 ### Rebuild everything (post-merge / heavy dev)
 
@@ -71,8 +77,8 @@ That:
 1. Installs the worktree `trellage` into `~/.local/bin`
 2. Reinstalls every native launcher (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, `prx`) then `trx`
    from `prototypes/trellage-*-profiles` and `prototypes/trellage-router`
-3. Runs non-locked `trellage build` for every `profiles/*/profile.toml` (core
-   pins are kept and current skills are fetched)
+3. Runs `trellage build` for every `profiles/*/profile.toml` and resolves
+   current approved development inputs
 
 Equivalent: `./scripts/rebuild-profile-images.sh --install`
 
@@ -84,15 +90,21 @@ Useful variants:
 ./scripts/rebuild-profile-images.sh --install --locked
 ```
 
-## Deterministic Smoke Verification
+## Smoke Verification
 
-The deterministic smoke verification requires Bash, Docker, Git, `gh`, jq, and mise. Docker must provide the existing `copilot-proxy-rs_default` network and reachable proxy service. Run it from this directory:
+The smoke verification requires Bash, Docker, Git, `gh`, jq, and mise. Docker
+must provide the existing `copilot-proxy-rs_default` network and reachable
+proxy service. Run it from this directory:
 
 ```bash
 mise run smoke
 ```
 
-The smoke performs a fresh locked image build with one staged skill snapshot, static and live contracts, a restricted container probe, proxy checks, persistence recreation, recovery Fish, and an installer dry-run. It usually takes 5-10 minutes, depending on Docker build speed. It creates uniquely named `trellage-codex-smoke-*`, `trellage-codex-runtime-test-*`, and `trellage-codex-persistence-test-*` temporary resources. Each test tracks immutable container IDs and successful volume creation, then revalidates ownership labels before removing only tracked resources. The smoke removes its temporary containers, volumes, bind directories, and installer directory on exit. It retains the built image, proxy, network, Herdr, repository worktrees, and unrelated resources.
+The smoke performs a fresh resolved image build with one staged skill snapshot,
+static and live contracts, a restricted container probe, proxy checks,
+persistence recreation, recovery Fish, and an installer dry-run. It creates
+uniquely named temporary resources, revalidates ownership before cleanup, and
+retains the built image and unrelated resources.
 
 ## Install
 
@@ -213,13 +225,12 @@ trellage upgrade all         # transactionally upgrade every discovered profile
 `trellage upgrade all` uses the same bundled and current-worktree discovery as
 the interactive picker. Profiles run sequentially in declared-name order.
 Current-worktree profiles override bundled profiles with the same name. Each
-upgrade refreshes mutable Git refs, marketplace plugin versions, and harnesses
-declared with `version = "latest"`, then builds and atomically adopts the new
-lock and image. Exact versions and immutable refs stay pinned. If VPN or
-upstream access blocks one profile, its existing lock and image remain intact,
-the remaining profiles still run, and the command exits nonzero with a failure
-summary. Every image build resolves selected skill bundles from current
-default-branch content independently of the core upgrade policy.
+upgrade refreshes approved Git branches, marketplace plugin versions, and
+harnesses declared with `version = "latest"`, then builds and atomically adopts
+the new local receipt and image. If VPN or upstream access blocks one profile,
+its existing receipt and image remain intact, the remaining profiles still
+run, and the command exits nonzero with a failure summary. Every image build
+resolves selected skill bundles from current default-branch content.
 
 ### Remote Execution (Azure)
 
@@ -235,8 +246,8 @@ trellage -r --profile copilot-hve                    # interactive, on Azure
 
 `--remote` requires the Azure CLI (`az`) installed and an authenticated session
 (`az login`); it fails fast with a clear message otherwise, and never falls
-back to local automatically. When available, it builds the locked profile
-image locally (production builds are ARM64-only), then provisions (or reuses)
+back to local automatically. When available, it builds the resolved profile image locally (builds are
+ARM64-only), then provisions (or reuses)
 a single shared ARM64 Azure VM (`Standard_D2ps_v5`, `westus2`), mirrors the
 current worktree, Git common directory, and `~/.copilot/models.json` onto the
 VM at identical paths, transfers the built image, and re-execs the unmodified
@@ -249,9 +260,9 @@ trellage-remote-rg --yes`) when a remote session is no longer needed.
 For a profile bundled in this repository, use its directory name instead of an absolute path:
 
 ```bash
-trellage build --locked claude-research
+trellage build claude-research
 trellage --profile claude-research
-trellage build --locked claude-social-media
+trellage build claude-social-media
 trellage --profile claude-social-media
 ```
 
@@ -356,7 +367,7 @@ Use absolute profile paths when invoking the installed command from any worktree
 
 ```bash
 trellage validate /absolute/path/to/profiles/copilot-hve/profile.toml
-trellage build --locked /absolute/path/to/profiles/copilot-hve/profile.toml
+trellage build /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage resume --profile /absolute/path/to/profiles/copilot-hve/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/copilot-hve/profile.toml
@@ -368,19 +379,20 @@ For a launch, and for a resume when the inventory publishes resume support, host
 
 Treat the profile state volume as sensitive local state. `destroy` deletes that sensitive local state only after confirmation. Stop and ordinary container replacement preserve it.
 
-Locked builds never refresh mutable core selectors. They still fetch current skill content. Upgrades never happen automatically. Run the explicit one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml` flow when you intend to resolve, build, and adopt a core upgrade.
+Ordinary launches reuse the installed local receipt and image. Run the explicit
+one-command `trellage upgrade /absolute/path/to/profiles/copilot-hve/profile.toml`
+flow when you intend to resolve, build, and adopt current stable inputs.
 
 ## Prime Agent
 
-The `prime-agent` profile installs the exact Prime Intellect stable release
-recorded in `profile.linux-arm64.lock.toml`. The lock pins the official
-versioned tarball URL, size, SHA-256 digest, runtime packages, and base image.
-Its common skills float, so the lock does not record or enforce a final OCI
-digest.
+The `prime-agent` profile resolves the latest Prime Intellect stable release.
+Its local receipt records the official versioned tarball URL, size, SHA-256
+digest, runtime packages, and base image. Its common skills float, so normal
+development state does not record or enforce a final OCI digest.
 
 ```bash
 trellage validate /absolute/path/to/profiles/prime-agent/profile.toml
-trellage build --locked /absolute/path/to/profiles/prime-agent/profile.toml
+trellage build /absolute/path/to/profiles/prime-agent/profile.toml
 trellage --profile /absolute/path/to/profiles/prime-agent/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/prime-agent/profile.toml
 trellage destroy --profile /absolute/path/to/profiles/prime-agent/profile.toml
@@ -417,7 +429,7 @@ The approved CFS PyPI URL is
 
 ```bash
 export UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/
-trellage build --locked /absolute/path/to/profiles/prime-agent/profile.toml
+trellage build /absolute/path/to/profiles/prime-agent/profile.toml
 ```
 
 Hosts that use public registries leave those variables unset; Trellage does not
@@ -427,13 +439,14 @@ force CFS.
 
 The `headlong` profile installs the official
 [`laude-institute/headlong`](https://github.com/laude-institute/headlong)
-checkout. Its platform lock records the exact upstream commit, complete source
-inventory, runtime artifacts, managed skills, base image, and final OCI
-digest. Locked builds do not resolve `main` again.
+checkout. Its local receipt records the exact resolved upstream commit,
+complete source inventory, runtime artifacts, managed skills, base image, and
+final OCI digest. Ordinary launches reuse it; explicit upgrade resolves the
+stable channel again.
 
 ```bash
 trellage validate /absolute/path/to/profiles/headlong/profile.toml
-trellage build --locked /absolute/path/to/profiles/headlong/profile.toml
+trellage build /absolute/path/to/profiles/headlong/profile.toml
 trellage --profile /absolute/path/to/profiles/headlong/profile.toml
 trellage doctor --profile /absolute/path/to/profiles/headlong/profile.toml
 trellage stop --profile /absolute/path/to/profiles/headlong/profile.toml
@@ -450,14 +463,14 @@ client requires that variable, and it ignores all host provider API keys. The
 runtime supplies proxy settings only to initializer and service processes; it
 removes them before opening the attached shell.
 
-The image compiles the locked Rust `headlong-tui` with the pinned Rust
+The image compiles the resolved Rust `headlong-tui` with the resolved Rust
 toolchain, then keeps only the resulting executable in the runtime image. The
 runtime installs both `ada` and `headlong-tui` under
 `/home/agent/.local/bin`; login shells include that directory on `PATH`.
 Headlong starts `persona dash` by default and the persistent service restarts
 the dashboard if it exits.
 
-The proxy settings are absent from the platform lock, container configuration,
+The proxy settings are absent from the local receipt, container configuration,
 labels, and command arguments. GitHub CLI authentication remains separate and
 exists only in the container `/tmp` tmpfs. The dashboard is available only on
 <http://127.0.0.1:18080>. A process already using that host port blocks
@@ -476,7 +489,7 @@ Headlong differs from ephemeral harness profiles:
 The writable application lives at `/home/agent/.headlong/app`. Identity state
 lives in its real `.identities` directory so the dashboard can discover it;
 Trellage ownership metadata lives beside the application in the same volume.
-A new locked image replaces a clean managed application transactionally and
+A new resolved image replaces a clean managed application transactionally and
 preserves identities. If tracked or
 untracked application source changed, the runtime refuses the replacement and
 prints the old and new upstream commits. Inspect and back up the checkout
@@ -488,7 +501,7 @@ git -C /home/agent/.headlong/app status --short
 ```
 
 The managed checkout has no upstream Git remote, so the dashboard cannot
-bypass the profile lock with a pull. Profile-managed skills are synchronized
+bypass Trellage resolution with a pull. Profile-managed skills are synchronized
 without overwriting user-owned collisions; `always_on` skills are linked into
 the active identity kernel. Headlong uses the outer Trellage container as its
 sandbox. No Docker socket is mounted and no nested Docker daemon is started.
@@ -496,16 +509,17 @@ Prompt, resume, model override, and structured output remain unsupported.
 
 ## Pi with Oh My Pi
 
-The `pi-oh-my-pi` profile installs a pinned standalone `omp` executable from
-`can1357/oh-my-pi`. OMP is not GitHub Copilot CLI: this profile selects OMP's
-native `github-copilot` provider and pins model `gpt-5.6-terra`. At build time,
+The `pi-oh-my-pi` profile resolves the latest stable standalone `omp` executable
+from `can1357/oh-my-pi`. OMP is not GitHub Copilot CLI: this profile selects
+OMP's native `github-copilot` provider and fixes model `gpt-5.6-terra`. At build
+time,
 it fetches the current default-branch versions of three native skills:
 `semantic-compression`, `system-prompts`, and
 `tool-prompt-optimization`.
 
 ```bash
 trellage validate /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
-trellage build --locked /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
+trellage build /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
 trellage --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml -p "review this repository"
 trellage resume --profile /absolute/path/to/profiles/pi-oh-my-pi/profile.toml
@@ -524,18 +538,17 @@ profile/worktree state volume at `/home/agent/.omp/agent`. No host `.omp`,
 `.copilot`, or GitHub CLI configuration directory is mounted or baked.
 
 The profile uses Docker `bridge` and does not require `copilot-proxy-rs`.
-`profile.toml` pins the OMP executable release. The selected
-`profile.linux-<architecture>.lock.toml` pins its architecture-specific raw
-asset URL, size, and GitHub-provided SHA-256 digest. Native skill content is
-not part of the lock. Managed skills are refreshed from the image snapshot
-into the persistent state volume on every launch.
+The local receipt records the resolved architecture-specific raw asset URL,
+size, and GitHub-provided SHA-256 digest. Native skill content is not part of
+the receipt. Managed skills are refreshed from the image snapshot into the
+persistent state volume on every launch.
 
 ## Ten-step Herdr Human Test
 
 1. Create or open a disposable host Git worktree in Herdr.
 2. Run `trellage` in its existing Herdr pane.
 3. Confirm Codex opens at `/mounts/<worktree-name>`.
-4. Invoke a bundled Superpowers skill and the pinned
+4. Invoke a bundled Superpowers skill and the current approved
    full-stack-orchestration plugin.
 5. Edit a host-mounted file and confirm two-way host/container visibility.
 6. Observe Herdr detect Codex and follow its status transitions.

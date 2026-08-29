@@ -106,6 +106,8 @@ if [[ "${1-}" == pack ]]; then
   exit 0
 fi
 
+[[ "${FAKE_NPM_INSTALL_FAIL-}" != 1 ]] || exit 97
+
 prefix=''
 package=''
 while (($# > 0)); do
@@ -372,15 +374,17 @@ grep -Fq $'default\tPrime Agent for persistent exploratory analysis and multi-tu
 "$command_path" default -p 'self-heal-before-setup-probe' \
   >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
   || fail 'launch before explicit setup did not self-heal'
-[[ -f "$runtime_root/version" ]] \
-  || fail 'self-healed launch did not pin a version'
+[[ -f "$runtime_root/installed-version" ]] \
+  || fail 'self-healed launch did not record an installed version'
 [[ -f "$profile_root/.managed-by-trellage-prime-profiles" ]] \
   || fail 'self-healed launch did not mark profile ownership'
-rm -rf "$profile_root" "$runtime_root/version"
+rm -rf "$profile_root" "$runtime_root/installed-version"
 
 "$command_path" setup >"$fixture_root/setup.out" 2>"$fixture_root/setup.err" \
   || fail 'setup failed'
-[[ "$(<"$runtime_root/version")" == 0.7.0 ]] || fail 'setup did not pin version'
+[[ "$(<"$runtime_root/installed-version")" == 0.7.0 ]] \
+  || fail 'setup did not record installed version'
+[[ ! -e "$runtime_root/version" ]] || fail 'setup retained legacy version state'
 [[ -f "$profile_root/.managed-by-trellage-prime-profiles" ]] \
   || fail 'setup did not mark profile ownership'
 [[ "$(<"$profile_root/.managed-by-trellage-prime-profiles")" == trellage-prime-profile-v1 ]] \
@@ -418,7 +422,13 @@ grep -Fq 'prx setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
 [[ -f "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" ]] \
   || fail 'setup did not install prime-agent CLI'
 grep -Fq 'install github:PrimeIntellect-ai/prime-agent@0.7.0' "$FAKE_MISE_LOG" \
-  || fail 'setup did not ask mise to install the pinned release'
+  || fail 'setup did not ask mise to install the receipt-selected release'
+
+mv "$runtime_root/installed-version" "$runtime_root/version"
+"$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
+  || fail 'doctor did not migrate the legacy version receipt'
+[[ "$(<"$runtime_root/installed-version")" == 0.7.0 && ! -e "$runtime_root/version" ]] \
+  || fail 'legacy version receipt migration differs'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
 jq -e '
@@ -452,8 +462,11 @@ export GH_TOKEN=poison-gh
 export GITHUB_TOKEN=poison-github
 export COPILOT_GITHUB_TOKEN=poison-copilot
 : >"$FAKE_PRIME_LOG"
+latest_calls_before="$(grep -c '^latest ' "$FAKE_MISE_LOG" || :)"
 "$command_path" default -p 'two words' '' '--literal=*' \
   || fail 'explicit launch failed'
+[[ "$(grep -c '^latest ' "$FAKE_MISE_LOG" || :)" == "$latest_calls_before" ]] \
+  || fail 'ordinary launch resolved latest instead of reusing the receipt'
 jq -e --arg home "$profile_home" \
   --arg kernelPython "$profile_home/kernel-venv/bin/python" \
   --arg kernelVenv "$profile_home/kernel-venv" \
@@ -585,9 +598,33 @@ FAKE_MISE_LATEST=0.8.0 "$command_path" update --check \
   >"$fixture_root/update-check.out" || fail 'update check failed'
 grep -Fq '0.7.0 -> 0.8.0 available' "$fixture_root/update-check.out" \
   || fail 'update check output differs'
+if FAKE_MISE_LATEST=0.8.0 FAKE_NPM_INSTALL_FAIL=1 \
+  "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when npm failed'
+fi
+[[ "$(<"$runtime_root/installed-version")" == 0.7.0 ]] \
+  || fail 'failed update replaced installed version receipt'
+old_runtime_version="$(node "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" \
+  --version 2>&1)"
+[[ "$old_runtime_version" == 0.7.0 ]] \
+  || fail 'failed update replaced the last good Prime runtime'
+if FAKE_MISE_LATEST=0.8.0 PRX_TEST_FAIL_AT=before-receipt-publication \
+  "$command_path" update >"$fixture_root/update-publication-fail.out" 2>&1; then
+  fail 'update unexpectedly succeeded when receipt publication failed'
+fi
+grep -Fq 'injected failure before installed version receipt publication' \
+  "$fixture_root/update-publication-fail.out" \
+  || fail 'receipt publication failure diagnostic differs'
+[[ "$(<"$runtime_root/installed-version")" == 0.7.0 ]] \
+  || fail 'receipt publication failure replaced installed version receipt'
+old_runtime_version="$(node "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" \
+  --version 2>&1)"
+[[ "$old_runtime_version" == 0.7.0 ]] \
+  || fail 'receipt publication failure replaced the last good Prime runtime'
 FAKE_MISE_LATEST=0.8.0 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
-[[ "$(<"$runtime_root/version")" == 0.8.0 ]] || fail 'update did not change pin'
+[[ "$(<"$runtime_root/installed-version")" == 0.8.0 ]] \
+  || fail 'update did not change installed version receipt'
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 grep -Fq 'prx repair: restored (0.8.0, claude-opus-5)' "$fixture_root/repair.out" \
   || fail 'repair output differs after update'

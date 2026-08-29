@@ -1,16 +1,15 @@
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { loadProfile, profileMetadata } from "../src/application.js"
-import { parseLock } from "../src/lock-file.js"
-import { lockIsReady, profileHash } from "../src/lock.js"
+import { profileMetadata } from "../src/application.js"
 import { isPrimeProfile, parseProfile } from "../src/profile.js"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/prime-agent/profile.toml", import.meta.url))
-const lockPath = fileURLToPath(new URL("../../../profiles/prime-agent/profile.linux-arm64.lock.toml", import.meta.url))
 
 describe("authored Prime Agent profile", () => {
   it("declares the exact proxy profile with Caveman and GitHub CLI delivery support", async () => {
@@ -29,7 +28,7 @@ describe("authored Prime Agent profile", () => {
       },
     })
     expect(document.profile.image).toEqual({
-      base: "node:22.17.0-bookworm-slim",
+      base: "node:bookworm-slim",
       shell: "fish",
       packages: ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "ripgrep", "zsh"],
     })
@@ -39,38 +38,19 @@ describe("authored Prime Agent profile", () => {
     expect(document.profile.secrets).toEqual({ provider: "env", required: [] })
   })
 
-  it("accepts the generated Linux arm64 lock as complete and deterministic", async () => {
-    const lockSource = await readFile(lockPath, "utf8")
-    const document = await Effect.runPromise(loadProfile(profilePath))
-    const lock = await Effect.runPromise(parseLock(lockSource))
-
-    expect(lock.platform).toBe("linux/arm64")
-    expect(lock.profile_hash).toBe(profileHash(document))
-    expect(lock.sources).toEqual([])
-    expect(lock.packages.harness).toMatchObject({
-      kind: "prime",
-      selector: "latest",
-      version: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-      url: expect.stringMatching(
-        /^https:\/\/pub-728493de92a943e2a9b2d17b4719f318\.r2\.dev\/releases\/v(\d+\.\d+\.\d+)\/prime-agent-\1\.tgz$/,
-      ),
-      size: expect.any(Number),
-    })
-    expect(lock.packages.runtime.map(({ name }) => name)).toEqual(document.profile.image.packages)
-    expect(lock.packages.artifacts).toBeUndefined()
-    expect(lock.image.final_digest).toBeUndefined()
-    expect(lockIsReady(document, lock, "linux/arm64")).toBe(true)
-  })
-
-  it("publishes only the fixed Prime proxy route and platform image identity", async () => {
-    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64"))
+  it("publishes declared policy without claiming local or release resolution", async () => {
+    const cache = await mkdtemp(path.join(os.tmpdir(), "trellage-prime-metadata-"))
+    const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", cache))
 
     expect(metadata).toMatchObject({
       profile_name: "prime-agent",
       platform: "linux/arm64",
       image: "trellage-profile-prime-agent-linux-arm64:locked",
-      locked: true,
+      resolution_policy: "floating",
+      resolution_channel: "stable",
+      locally_resolved: false,
+      release_lock_available: false,
+      locked: false,
       harness_kind: "prime",
       harness_executable: "prime-agent",
       runtime_entry: "trellage-prime-entry",
@@ -96,7 +76,7 @@ describe("authored Prime Agent profile", () => {
         effortOverride: false,
         testedHarnessVersion: null,
       },
-      resolved_version: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      resolved_version: null,
     })
     expect(JSON.stringify(metadata)).not.toMatch(
       /ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN/,

@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { arm64ArtifactCatalog } from "../src/artifact-catalog.js"
-import { loadProfile } from "../src/application.js"
 
 import {
+  attachedSidecar,
   compileLock,
   lockIsReady,
   profileHash,
   requireLocked,
+  sha256Text,
+  withAttachedSidecar,
+  withPythonConstraints,
   withFinalDigest,
   type LockResolvers,
   type ProfileLock,
@@ -19,6 +19,8 @@ import {
 } from "../src/lock.js"
 import { parseLock, renderLock } from "../src/lock-file.js"
 import { parseProfile } from "../src/profile.js"
+import { runtimeIntegrities, runtimeVersions } from "./fixtures/runtime-packages.js"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
 
 const source = (model = "gpt-5.5") => `
 schema = 1
@@ -158,6 +160,53 @@ const releaseHarnessPackage = (lock: ProfileLock): ReleaseHarnessPackageLock => 
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
 const commit = (character: string) => character.repeat(40)
+const fixtureBaseDigest = digest("9")
+const sidecarReference = { schema: 1 as const, integrity: digest("8"), size: 1 }
+const managedArtifacts = [
+  {
+    name: "node",
+    version: "24.8.0",
+    integrity: digest("a"),
+    url: "https://nodejs.org/dist/v24.8.0/node-v24.8.0-linux-arm64.tar.gz",
+  },
+  {
+    name: "uv",
+    version: "0.11.22",
+    integrity: digest("c"),
+    url: "https://github.com/astral-sh/uv/releases/download/0.11.22/uv-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+] as const
+const pythonArtifact = {
+  name: "python",
+  version: "3.13.14",
+  integrity: digest("e"),
+  url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.13.14%2B20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+  size: 1,
+} as const
+const obscuraArtifact = {
+  name: "obscura",
+  version: "0.1.11",
+  integrity: digest("6"),
+  url: "https://github.com/h4ckf0r0day/obscura/releases/download/v0.1.11/obscura-aarch64-linux-stealth.tar.gz",
+  size: 1,
+} as const
+const rustArtifacts = [
+  {
+    name: "rust",
+    version: "1.96.0",
+    integrity: digest("4"),
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz",
+    size: 1,
+  },
+  {
+    name: "rust-std-musl",
+    version: "1.96.0",
+    integrity: digest("5"),
+    url: "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+] as const
 const treeIntegrity = (files: ReadonlyArray<unknown>) =>
   `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`
 
@@ -257,23 +306,32 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
                   url: fakeCodeModeHostUrl(request, version),
                   size: 1024,
                 },
+                managedArtifacts[1]!,
               ],
             }
           : request.kind === "headlong"
-            ? { artifacts: [...arm64ArtifactCatalog.headlongArtifacts] }
+            ? {
+                artifacts: [...managedArtifacts, ...rustArtifacts],
+              }
             : {}),
         runtime: request.packages.map((name) => ({
           name,
-          version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
-          integrity:
-            arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
+          version: runtimeVersions[name as keyof typeof runtimeVersions],
+          integrity: runtimeIntegrities[name as keyof typeof runtimeIntegrities],
+          size: 1,
+          url: `https://deb.debian.org/debian/pool/${name}.deb`,
         })),
       }
     }),
   resolveBase: (request) =>
     Effect.sync(() => {
       calls.push("base")
-      return { reference: request.reference, digest: arm64ArtifactCatalog.base.digest }
+      return { reference: request.reference, digest: fixtureBaseDigest }
+    }),
+  resolveBuild: () =>
+    Effect.succeed({
+      builder: { reference: "docker.io/jdxcode/mise:latest", digest: digest("b") },
+      importer: { reference: "quay.io/skopeo/stable:latest", digest: digest("d") },
     }),
 })
 
@@ -373,14 +431,13 @@ const completePrimeLock = (): ProfileLock => {
       },
       runtime: profile.profile.image.packages.map((name) => ({
         name,
-        version: arm64ArtifactCatalog.runtimeVersions[name as keyof typeof arm64ArtifactCatalog.runtimeVersions],
-        integrity:
-          arm64ArtifactCatalog.runtimeIntegrities[name as keyof typeof arm64ArtifactCatalog.runtimeIntegrities],
+        version: runtimeVersions[name as keyof typeof runtimeVersions],
+        integrity: runtimeIntegrities[name as keyof typeof runtimeIntegrities],
       })),
     },
     image: {
       base: profile.profile.image.base,
-      base_digest: arm64ArtifactCatalog.base.digest,
+      base_digest: fixtureBaseDigest,
       final_digest: digest("e"),
     },
   }
@@ -388,8 +445,26 @@ const completePrimeLock = (): ProfileLock => {
 
 const completeHyperresearchLock = async (packageVersion: string | undefined): Promise<ProfileLock> => {
   const profile = hyperresearchDocument()
-  const resolved = await Effect.runPromise(compileLock(profile, undefined, false, fakeResolvers(commit("a"), [])))
-  return {
+  const constraints = "platformdirs==4.3.8 --hash=sha256:fixture\n"
+  const baseResolvers = fakeResolvers(commit("a"), [])
+  const resolvers: LockResolvers = {
+    ...baseResolvers,
+    resolvePackages: (request) =>
+      baseResolvers.resolvePackages(request).pipe(
+        Effect.map((packages) =>
+          withPythonConstraints(
+            {
+              ...packages,
+              artifacts: [...managedArtifacts, ...playwrightArtifacts, obscuraArtifact, pythonArtifact],
+              python_lock_integrity: sha256Text(constraints),
+            },
+            constraints,
+          ),
+        ),
+      ),
+  }
+  const resolved = await Effect.runPromise(compileLock(profile, undefined, false, resolvers))
+  const lock: ProfileLock = {
     ...resolved,
     sources: resolved.sources.map((source) =>
       packageVersion === undefined
@@ -407,17 +482,14 @@ const completeHyperresearchLock = async (packageVersion: string | undefined): Pr
           }
         : { ...source, package_version: packageVersion },
     ),
-    packages: {
-      ...resolved.packages,
-      artifacts: [...arm64ArtifactCatalog.fixedArtifacts, ...arm64ArtifactCatalog.hyperresearchArtifacts],
-      python_lock_integrity: arm64ArtifactCatalog.hyperresearchPythonLockIntegrity,
-    },
     image: {
-      base: arm64ArtifactCatalog.base.reference,
-      base_digest: arm64ArtifactCatalog.base.digest,
+      base: profile.profile.image.base,
+      base_digest: fixtureBaseDigest,
       final_digest: digest("e"),
     },
   }
+  const sidecar = attachedSidecar(resolved)
+  return sidecar === undefined ? lock : withAttachedSidecar(lock, sidecar)
 }
 
 describe("lock inventory compatibility", () => {
@@ -493,15 +565,15 @@ select = ["social-media-skills"]
         runtime: [
           {
             name: "bash",
-            version: arm64ArtifactCatalog.runtimeVersions.bash,
-            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+            version: runtimeVersions.bash,
+            integrity: runtimeIntegrities.bash,
           },
         ],
-        artifacts: arm64ArtifactCatalog.fixedArtifacts,
+        artifacts: managedArtifacts,
       },
       image: {
         base: "node:22.17.0-bookworm-slim",
-        base_digest: arm64ArtifactCatalog.base.digest,
+        base_digest: fixtureBaseDigest,
         final_digest: digest("e"),
       },
     }
@@ -601,7 +673,7 @@ gear = "full"
       commit: commit("b"),
       package_version: "0.9.1",
     })
-    expect(calls).toEqual(["source:main", "packages", "base"])
+    expect(calls).toEqual(["source:main", "base", "packages"])
   })
 
   it.each(["latest", "v0.9.1", "0.9"])(
@@ -661,6 +733,7 @@ gear = "full"
     )
     const tampered: ProfileLock = {
       ...resolved,
+      sidecar: sidecarReference,
       packages: {
         ...resolved.packages,
         python_lock_integrity: digest("a"),
@@ -703,11 +776,12 @@ gear = "full"
     const resolved = await Effect.runPromise(
       compileLock(claudeDocument, undefined, false, fakeResolvers(commit("1"), [])),
     )
-    const artifacts = [...arm64ArtifactCatalog.fixedArtifacts, ...arm64ArtifactCatalog.hyperresearchArtifacts].map(
-      (artifact) => (artifact.name === "obscura" ? { ...artifact, integrity: digest("f") } : artifact),
+    const artifacts = [pythonArtifact, obscuraArtifact, ...managedArtifacts, ...playwrightArtifacts].map((artifact) =>
+      artifact.name === "obscura" ? { ...artifact, url: "https://example.test/obscura" } : artifact,
     )
     const tampered: ProfileLock = {
       ...resolved,
+      sidecar: sidecarReference,
       packages: {
         ...resolved.packages,
         harness: {
@@ -721,23 +795,25 @@ gear = "full"
         runtime: [
           {
             name: "bash",
-            version: arm64ArtifactCatalog.runtimeVersions.bash,
-            integrity: arm64ArtifactCatalog.runtimeIntegrities.bash,
+            version: runtimeVersions.bash,
+            integrity: runtimeIntegrities.bash,
+            size: 1,
+            url: "https://deb.debian.org/debian/pool/bash.deb",
           },
         ],
         artifacts,
-        python_lock_integrity: arm64ArtifactCatalog.hyperresearchPythonLockIntegrity,
+        python_lock_integrity: digest("b"),
       },
       image: {
-        base: arm64ArtifactCatalog.base.reference,
-        base_digest: arm64ArtifactCatalog.base.digest,
+        base: claudeDocument.profile.image.base,
+        base_digest: fixtureBaseDigest,
         final_digest: digest("e"),
       },
     }
     const persisted = await Effect.runPromise(parseLock(renderLock(tampered)))
 
     await expect(Effect.runPromise(requireLocked(claudeDocument, persisted))).rejects.toThrow(
-      /artifact does not match platform catalog: obscura/,
+      /artifact URL is invalid: obscura/,
     )
   })
 
@@ -774,14 +850,13 @@ gear = "full"
     )
     const artifacts = [
       "node",
+      "uv",
       "python",
       "playwright-mcp",
       "playwright",
       "playwright-core",
       "chromium",
       "obscura",
-      "builder-oci",
-      "skopeo-oci",
     ].map((name) => ({
       name,
       version: "1",
@@ -791,6 +866,7 @@ gear = "full"
     }))
     const legacy: ProfileLock = {
       ...resolved,
+      sidecar: sidecarReference,
       packages: { ...resolved.packages, artifacts, python_lock_integrity: digest("b") },
       image: { ...resolved.image, final_digest: digest("e") },
     }
@@ -922,22 +998,6 @@ gear = "full"
     expect(Object.getPrototypeOf(versions)).toBeNull()
     expect(Object.isFrozen(versions)).toBe(true)
     expect(renderLock(parsed)).toContain('plugin_versions = { "alpha" = "1.0.0", "zeta" = "2.0.0" }')
-  })
-
-  it("accepts a parsed historical file-only lock with legacy inventory integrity", async () => {
-    const profilePath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.toml", import.meta.url))
-    const lockPath = fileURLToPath(
-      new URL("../../../profiles/codex-superpowers/profile.linux-arm64.lock.toml", import.meta.url),
-    )
-    const serialized = await readFile(lockPath, "utf8")
-    const historicalDocument = await Effect.runPromise(loadProfile(profilePath))
-    const parsed = await Effect.runPromise(parseLock(serialized))
-
-    await expect(Effect.runPromise(requireLocked(historicalDocument, parsed))).resolves.toBe(parsed)
-    expect(renderLock(parsed)).toBe(serialized)
-    expect(JSON.stringify(parsed)).not.toContain("legacySourceProvenance")
-    expect(renderLock({ ...parsed })).toContain('[packages.harness]\nkind = "codex"')
-    expect(renderLock({ ...parsed })).toContain('[[sources.files]]\nkind = "file"')
   })
 
   it("does not let legacy integrity omit an executable file bit", async () => {
@@ -1119,66 +1179,6 @@ gear = "full"
 })
 
 describe("compileLock", () => {
-  it("re-resolves locked plugin sources when only profile content changes", async () => {
-    const profilePath = fileURLToPath(new URL("../../../profiles/codex-superpowers/profile.toml", import.meta.url))
-    const lockPath = fileURLToPath(
-      new URL("../../../profiles/codex-superpowers/profile.linux-arm64.lock.toml", import.meta.url),
-    )
-    const legacyProfileSource = await readFile(profilePath, "utf8")
-    const currentLock = await Effect.runPromise(parseLock(await readFile(lockPath, "utf8")))
-    const currentSource = currentLock.sources[0]!
-    const legacyFiles = currentSource.files.map((file, index) =>
-      index === 0 && file.kind === "file" ? { ...file, executable: true as const } : file,
-    )
-    const legacyLock = await Effect.runPromise(
-      parseLock(
-        renderLock({
-          ...currentLock,
-          sources: [
-            {
-              ...currentSource,
-              files: legacyFiles,
-              integrity: treeIntegrity(
-                legacyFiles.map((file) => ({ path: file.path, sha256: "sha256" in file ? file.sha256 : "" })),
-              ),
-            },
-            ...currentLock.sources.slice(1),
-          ],
-        }),
-      ),
-    )
-    const changedDocument = await Effect.runPromise(
-      parseProfile(legacyProfileSource.replace('model = "gpt-5.5"', 'model = "gpt-5.6"'), profilePath),
-    )
-    const calls: Array<string> = []
-    const baseResolvers = fakeResolvers(commit("b"), calls)
-    const resolvers: LockResolvers = {
-      ...baseResolvers,
-      resolveSource: (request) =>
-        baseResolvers.resolveSource(request).pipe(
-          Effect.map((resolution) => ({
-            ...resolution,
-            commit: /^[0-9a-f]{40}$/.test(request.ref) ? request.ref : resolution.commit,
-          })),
-        ),
-      resolvePackages: baseResolvers.resolvePackages,
-    }
-
-    const compiled = await Effect.runPromise(compileLock(changedDocument, legacyLock, false, resolvers))
-    const complete: ProfileLock = {
-      ...compiled,
-      image: { ...compiled.image, final_digest: digest("e") },
-    }
-    const reparsed = await Effect.runPromise(parseLock(renderLock(complete)))
-
-    expect(calls.filter((call) => call.startsWith("source:"))).toEqual([
-      "source:c4b82b0ad771190355eb8e204b1329732a18449a",
-    ])
-    expect(compiled.sources.every((source) => source.integrity === treeIntegrity(source.files))).toBe(true)
-    expect(renderLock(compiled)).toContain('[[sources.files]]\nkind = "file"')
-    await expect(Effect.runPromise(requireLocked(changedDocument, reparsed))).resolves.toBe(reparsed)
-  })
-
   it("records exact Copilot marketplace and harness resolutions", async () => {
     const calls: Array<string> = []
 
@@ -1199,7 +1199,7 @@ describe("compileLock", () => {
       url: "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-arm64.tar.gz",
       size: 1024,
     })
-    expect(calls).toEqual(["source:main", "packages", "base"])
+    expect(calls).toEqual(["source:main", "base", "packages"])
   })
 
   it("keeps resolved Copilot plugin versions immutable and prototype-safe", async () => {
@@ -1361,7 +1361,7 @@ describe("compileLock", () => {
       plugin_versions: { "hve-core": "3.3.102" },
     })
     expect(releaseHarnessPackage(updated).version).toBe("1.0.76")
-    expect(updateCalls).toEqual(["source:main", "packages", "base"])
+    expect(updateCalls).toEqual(["source:main", "base", "packages"])
   })
 
   it("creates a deterministic lock from exact resolutions", async () => {
@@ -1371,10 +1371,31 @@ describe("compileLock", () => {
 
     expect(first).toEqual(second)
     expect(first.sources[0]?.commit).toBe(commit("a"))
-    expect(first.image.base_digest).toBe(arm64ArtifactCatalog.base.digest)
+    expect(first.image.base_digest).toBe(fixtureBaseDigest)
     expect(first.image.final_digest).toBeUndefined()
     expect(first.source_date_epoch).toBe(1784379906)
-    expect(calls).toEqual(["source:v6.2.0", "packages", "base"])
+    expect(calls).toEqual(["source:v6.2.0", "base", "packages"])
+  })
+
+  it("references generated constraints through an attached content-addressed sidecar", async () => {
+    const base = fakeResolvers(commit("a"), [])
+    const constraints = `example==1.0.0 \\\n    --hash=sha256:${"f".repeat(64)}\n`
+    const resolvers: LockResolvers = {
+      ...base,
+      resolvePackages: (request) =>
+        base
+          .resolvePackages(request)
+          .pipe(
+            Effect.map((packages) =>
+              withPythonConstraints({ ...packages, python_lock_integrity: sha256Text(constraints) }, constraints),
+            ),
+          ),
+    }
+
+    const compiled = await Effect.runPromise(compileLock(document(), undefined, false, resolvers))
+
+    expect(compiled.sidecar).toMatchObject({ schema: 1, integrity: expect.stringMatching(/^sha256:/) })
+    expect(attachedSidecar(compiled)?.files[0]?.content).toBe(constraints)
   })
 
   it("requests the complete official Headlong checkout as a harness source", async () => {
@@ -1595,4 +1616,53 @@ describe("compileLock", () => {
       )
     },
   )
+
+  it("rejects a Debian dependency closure changed without a matching closure receipt", async () => {
+    const profile = copilotDocument()
+    const complete = completeCopilotLock()
+    const direct = complete.packages.runtime.map((runtime) => ({
+      ...runtime,
+      size: 1,
+      url: `https://deb.debian.org/debian/pool/${runtime.name}.deb`,
+      direct: true,
+    }))
+    const closure = [
+      ...direct,
+      {
+        name: "libdependency",
+        version: "1.0",
+        integrity: digest("7"),
+        size: 1,
+        url: "https://deb.debian.org/debian/pool/libdependency.deb",
+        direct: false,
+      },
+    ]
+    const closureIntegrity = sha256Text(
+      JSON.stringify(
+        [...closure]
+          .sort((left, right) => left.name.localeCompare(right.name, "en"))
+          .map(({ name, version, integrity, size, url, direct: isDirect }) => ({
+            name,
+            version,
+            integrity,
+            size,
+            url,
+            direct: isDirect,
+          })),
+      ),
+    )
+    const drifted: ProfileLock = {
+      ...complete,
+      packages: {
+        ...complete.packages,
+        runtime: direct,
+        runtime_direct: profile.profile.image.packages,
+        runtime_closure_integrity: closureIntegrity,
+      },
+    }
+
+    await expect(Effect.runPromise(requireLocked(profile, drifted))).rejects.toThrow(
+      /runtime package closure integrity does not match/,
+    )
+  })
 })

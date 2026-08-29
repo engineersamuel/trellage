@@ -185,6 +185,19 @@ describe("parseProfile", () => {
     expect(result.profile.runtime).toEqual({ tmpfs_size: "256m" })
   })
 
+  it("defaults and accepts the floating development resolution policy", async () => {
+    const implicit = await decode(profile())
+    const explicit = await decode(
+      profile().replace(
+        'description = "Codex test profile"',
+        'description = "Codex test profile"\nresolution = "floating"',
+      ),
+    )
+
+    expect(implicit.profile.resolution).toBe("floating")
+    expect(explicit.profile.resolution).toBe("floating")
+  })
+
   it("decodes an explicit runtime tmpfs size", async () => {
     const result = await decode(claudeProfile('[runtime]\ntmpfs_size = "2g"'))
 

@@ -65,10 +65,14 @@ export const pluginVersionFromRef = (ref: string): string | undefined => {
   return match?.[1]
 }
 
+export const pluginVersionFromCommit = (commit: string): string | undefined =>
+  /^[0-9a-f]{40}$/.test(commit) ? `0.0.0-commit.${commit.slice(0, 12)}` : undefined
+
 export type ReadClaudeMarketplaceOptions = {
   /**
    * Used only when marketplace.json and plugin.json both omit an exact version.
-   * Intended for lock-time injection from a pinned semver git tag (e.g. caveman@v1.10.0).
+   * Used only after source resolution, from either a semver ref or a
+   * deterministic generated version tied to the exact source commit.
    */
   readonly versionFallback?: string
 }

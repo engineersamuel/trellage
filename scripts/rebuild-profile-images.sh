@@ -2,7 +2,7 @@
 # Post-merge / heavy-dev refresh for Trellage:
 #   1. Install worktree trellage CLI (optional)
 #   2. Reinstall every native launcher + trx from this worktree
-#   3. Rebuild every sandbox profile OCI image (default: non-locked)
+#   3. Rebuild every sandbox development profile OCI image
 #
 # Native install order matches prototypes/trellage-router/README.md:
 # launchers first, router last. Any additional prototypes/trellage-*-profiles
@@ -22,11 +22,11 @@ Usage:
   --install         Install ~/.local/bin/trellage from this worktree first
   --native-only     Only refresh native launchers + trx (skip sandbox images)
   --sandbox-only    Only rebuild sandbox profile images (skip native reinstall)
-  --locked          Use `build --locked` for sandbox images
-  --fallback        With --locked, on digest mismatch retry without --locked
+  --locked          Use an existing release lock for sandbox images
+  --fallback        With --locked, on digest mismatch retry as a development build
   PROFILE...        Optional bare profile names (default: every profiles/*/profile.toml)
 
-Default: reinstall native launchers + trx, then non-locked sandbox rebuilds.
+Default: reinstall native launchers + trx, then development sandbox rebuilds.
 
 Examples:
   mise run rebuild-profiles
@@ -251,7 +251,6 @@ build_sandbox_images() {
   local -a failed=()
   local -a fallback_used=()
   local -a built=()
-  local lock_dirty_hint=0
 
   [[ -x "$trellage" ]] || fail "trellage launcher missing or not executable: $trellage"
   [[ -d "$profiles_dir" ]] || fail "profiles directory missing: $profiles_dir"
@@ -274,9 +273,9 @@ build_sandbox_images() {
   (( ${#profiles[@]} > 0 )) || fail "no profiles to rebuild under $profiles_dir"
 
   if (( use_locked == 1 )); then
-    printf 'rebuild-profile-images: sandbox mode=locked\n' >&2
+    printf 'rebuild-profile-images: sandbox mode=release-locked\n' >&2
   else
-    printf 'rebuild-profile-images: sandbox mode=refresh (non-locked)\n' >&2
+    printf 'rebuild-profile-images: sandbox mode=development\n' >&2
   fi
   printf 'rebuild-profile-images: rebuilding %d sandbox profile(s)\n' "${#profiles[@]}" >&2
 
@@ -301,9 +300,6 @@ build_sandbox_images() {
     if (( status == 0 )); then
       rm -f -- "$log"
       built+=("$name")
-      if (( use_locked == 0 )); then
-        lock_dirty_hint=1
-      fi
       continue
     fi
 
@@ -320,7 +316,6 @@ build_sandbox_images() {
         rm -f -- "$log"
         built+=("$name")
         fallback_used+=("$name")
-        lock_dirty_hint=1
         continue
       fi
     fi
@@ -332,11 +327,6 @@ build_sandbox_images() {
   printf 'rebuild-profile-images: sandbox built %d/%d\n' "${#built[@]}" "${#profiles[@]}" >&2
   if (( ${#fallback_used[@]} > 0 )); then
     printf 'rebuild-profile-images: locked fallback used for: %s\n' "${fallback_used[*]}" >&2
-  fi
-  if (( lock_dirty_hint == 1 )); then
-    printf \
-      'rebuild-profile-images: platform locks may have new final_digest values — review before committing\n' \
-      >&2
   fi
   if (( ${#failed[@]} > 0 )); then
     printf 'rebuild-profile-images: sandbox failed: %s\n' "${failed[*]}" >&2

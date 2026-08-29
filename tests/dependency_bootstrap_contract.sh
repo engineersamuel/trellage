@@ -38,17 +38,17 @@ case "$*" in
     printf '2026.07.04\n'
     exit 0
     ;;
-  *'where uv@0.12.3')
+  *'where uv@latest')
     exit 1
     ;;
-  *'install uv@0.12.3')
+  *'install uv@latest')
     sleep 3
     exit 0
     ;;
-  *'exec uv@0.12.3 -- uvx --offline yt-dlp --version')
+  *'exec uv@latest -- uvx --offline yt-dlp --version')
     exit 1
     ;;
-  *'exec uv@0.12.3 -- uvx yt-dlp --version')
+  *'exec uv@latest -- uvx yt-dlp --version')
     printf '2026.07.04\n'
     exit 0
     ;;
@@ -102,16 +102,16 @@ env \
   "$installed_bootstrap" --background
 
 for _ in {1..50}; do
-  grep -Fq 'exec uv@0.12.3 -- uvx yt-dlp --version' "$call_log" 2>/dev/null \
+  grep -Fq 'exec uv@latest -- uvx yt-dlp --version' "$call_log" 2>/dev/null \
     && break
   sleep 0.1
 done
 
-grep -Fq 'where uv@0.12.3' "$call_log" \
+grep -Fq 'where uv@latest' "$call_log" \
   || fail 'installed trx did not detect missing uv'
-grep -Fq 'install uv@0.12.3' "$call_log" \
+grep -Fq 'install uv@latest' "$call_log" \
   || fail 'installed trx did not install uv'
-grep -Fq 'exec uv@0.12.3 -- uvx yt-dlp --version' "$call_log" \
+grep -Fq 'exec uv@latest -- uvx yt-dlp --version' "$call_log" \
   || fail 'installed trx did not warm yt-dlp'
 
 grep -Fq '"$dependency_bootstrap" --background' \

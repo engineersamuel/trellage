@@ -78,7 +78,8 @@ cleanup_auth_assets() {
       && rm -f "$auth_lock" 2>/dev/null || :
   fi
   if [ -n "$auth_lock_owned" ] && [ -d "$auth_lock_owned" ] && [ ! -L "$auth_lock_owned" ]; then
-    rm -f "$auth_lock_owned/released-lock" "$auth_lock_owned/token" \
+    rm -f "$auth_lock_owned/observed-lock" "$auth_lock_owned/released-lock" \
+      "$auth_lock_owned/token" \
       "$auth_lock_owned/pid" 2>/dev/null || :
     rmdir "$auth_lock_owned" 2>/dev/null || :
   fi
@@ -582,7 +583,8 @@ release_auth_lock() {
   case "${GRX_AUTH_TEST_SIGNAL_LOCK_RELEASE:-}" in
     HUP) kill -HUP "$$" ;; INT) kill -INT "$$" ;; TERM) kill -TERM "$$" ;;
   esac
-  rm -f "$auth_lock_owned/released-lock" "$auth_lock_owned/token" \
+  rm -f "$auth_lock_owned/observed-lock" "$auth_lock_owned/released-lock" \
+    "$auth_lock_owned/token" \
     "$auth_lock_owned/pid" || return 1
   rmdir "$auth_lock_owned" || return 1
   auth_lock=""
@@ -592,11 +594,12 @@ release_auth_lock() {
 acquire_auth_lock() {
   local home="$1"
   local attempts=0
-  local lock_identity_before='' lock_identity_after='' lock_identity_current=''
   local lock_pid='' lock_target='' lock_target_valid=''
+  local observed_lock=''
 
   auth_lock="$home/.auth.lock"
   auth_lock_owned="$(mktemp -d "$home/.auth.lock-owned.XXXXXX")" || return 1
+  observed_lock="$auth_lock_owned/observed-lock"
   printf '%s\n' "${auth_lock_owned##*/}" >"$auth_lock_owned/token" || return 1
   printf '%s\n' "$$" >"$auth_lock_owned/pid" || return 1
   case "${GRX_AUTH_TEST_SIGNAL_LOCK_ACQUIRE:-}" in
@@ -613,27 +616,32 @@ acquire_auth_lock() {
       cleanup_auth_assets
       return 1
     fi
-    lock_identity_before="$(file_identity "$auth_lock" 2>/dev/null || :)"
-    [ -n "$lock_identity_before" ] || continue
-    lock_target="$(sed -n '1p' "$auth_lock" 2>/dev/null || :)"
-    lock_identity_after="$(file_identity "$auth_lock" 2>/dev/null || :)"
-    [ -n "$lock_identity_after" ] || continue
-    [ "$lock_identity_before" = "$lock_identity_after" ] || continue
+    rm -f "$observed_lock" || {
+      cleanup_auth_assets
+      return 1
+    }
+    ln "$auth_lock" "$observed_lock" 2>/dev/null || continue
+    if [ ! -f "$observed_lock" ] || [ -L "$observed_lock" ]; then
+      printf 'grx: unsafe profile authentication lock path: %s\n' "$auth_lock" >&2
+      cleanup_auth_assets
+      return 1
+    fi
+    [ "$auth_lock" -ef "$observed_lock" ] || continue
+    lock_target="$(sed -n '1p' "$observed_lock" 2>/dev/null || :)"
+    [ "$auth_lock" -ef "$observed_lock" ] || continue
     case "$lock_target" in
       .auth.lock-owned.*/*|'') lock_target_valid='' ;;
       .auth.lock-owned.*) lock_target_valid='yes' ;;
       *) lock_target_valid='' ;;
     esac
     if [ -z "$lock_target_valid" ]; then
-      lock_identity_current="$(file_identity "$auth_lock" 2>/dev/null || :)"
-      [ "$lock_identity_before" = "$lock_identity_current" ] || continue
+      [ "$auth_lock" -ef "$observed_lock" ] || continue
       cleanup_auth_assets
       return 1
     fi
     if [ ! -f "$home/$lock_target/token" ] || [ -L "$home/$lock_target/token" ] \
-      || ! [ "$auth_lock" -ef "$home/$lock_target/token" ]; then
-      lock_identity_current="$(file_identity "$auth_lock" 2>/dev/null || :)"
-      [ "$lock_identity_before" = "$lock_identity_current" ] || continue
+      || ! [ "$observed_lock" -ef "$home/$lock_target/token" ]; then
+      [ "$auth_lock" -ef "$observed_lock" ] || continue
       cleanup_auth_assets
       return 1
     fi
@@ -641,8 +649,7 @@ acquire_auth_lock() {
       lock_pid="$(sed -n '1p' "$home/$lock_target/pid" 2>/dev/null || :)"
       case "$lock_pid" in ''|*[!0-9]*) ;; *)
         if ! kill -0 "$lock_pid" 2>/dev/null; then
-          lock_identity_current="$(file_identity "$auth_lock" 2>/dev/null || :)"
-          [ "$lock_identity_before" = "$lock_identity_current" ] || continue
+          [ "$auth_lock" -ef "$observed_lock" ] || continue
           printf 'grx: stale profile authentication lock: %s\n' "$auth_lock" >&2
           cleanup_auth_assets
           return 1
@@ -655,6 +662,10 @@ acquire_auth_lock() {
       cleanup_auth_assets
       return 1
     fi
+    rm -f "$observed_lock" || {
+      cleanup_auth_assets
+      return 1
+    }
     sleep 0.05
   done
 }

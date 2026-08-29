@@ -61,7 +61,8 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
-readonly version_file="$runtime_root/version"
+readonly receipt_file="$runtime_root/installed-version"
+readonly legacy_version_file="$runtime_root/version"
 readonly profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
@@ -364,12 +365,20 @@ resolve_latest_version() {
   printf '%s\n' "$version"
 }
 
-read_pinned_version() {
+read_installed_version() {
   local version
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] \
-    || die 'jcode version is not pinned; run jcx setup'
-  version="$(<"$version_file")"
+  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
+    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
+    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
+      || die "unsafe legacy installed version receipt: $legacy_version_file"
+    version="$(<"$legacy_version_file")"
+    require_exact_version "$version"
+    publish_installed_version "$version"
+  fi
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+    || die 'jcode installed version receipt is missing; run jcx setup'
+  version="$(<"$receipt_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
 }
@@ -406,21 +415,27 @@ install_exact_version() {
   verify_binary_version "$binary" "$version"
 }
 
-publish_version() {
+publish_installed_version() {
   local version="$1" staged
 
-  staged="$(mktemp "$runtime_root/.version.XXXXXX")" \
-    || die 'could not stage jcode version'
+  staged="$(mktemp "$runtime_root/.installed-version.XXXXXX")" \
+    || die 'could not stage jcode installed version receipt'
   printf '%s\n' "$version" >"$staged"
   chmod 0600 "$staged"
-  mv -f "$staged" "$version_file"
+  mv -f "$staged" "$receipt_file"
+  rm -f -- "$legacy_version_file"
 }
 
 jcode_version_if_available() {
   local version install_dir binary actual_version
 
-  [[ -f "$version_file" && ! -L "$version_file" ]] || return 0
-  version="$(<"$version_file")"
+  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
+    version="$(<"$receipt_file")"
+  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
+    version="$(<"$legacy_version_file")"
+  else
+    return 0
+  fi
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   install_dir="$runtime_root/mise/installs/github-1jehuang-jcode/$version"
   [[ -d "$install_dir" && ! -L "$install_dir" ]] || return 0
@@ -494,8 +509,9 @@ setup_profile() {
   local version
 
   require_command mise
-  if [[ -e "$version_file" || -L "$version_file" ]]; then
-    version="$(read_pinned_version)"
+  if [[ -e "$receipt_file" || -L "$receipt_file" \
+    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
+    version="$(read_installed_version)"
   else
     version="$(resolve_latest_version)"
   fi
@@ -503,7 +519,7 @@ setup_profile() {
   publish_managed_profile
   ensure_floating_skills
   ensure_onboarding_skipped
-  publish_version "$version"
+  publish_installed_version "$version"
   printf 'jcx setup: ready (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
 }
 
@@ -511,7 +527,7 @@ repair_profile() {
   local version
 
   require_command mise
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   install_exact_version "$version"
   publish_managed_profile
   ensure_onboarding_skipped
@@ -522,7 +538,7 @@ check_for_update() {
   local current latest
 
   require_command mise
-  current="$(read_pinned_version)"
+  current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
     printf 'jcx update: %s is current\n' "$current"
@@ -536,14 +552,14 @@ update_profile() {
 
   require_command mise
   ensure_floating_skills
-  current="$(read_pinned_version)"
+  current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
     printf 'jcx update: %s is current\n' "$current"
     return
   fi
   install_exact_version "$latest"
-  publish_version "$latest"
+  publish_installed_version "$latest"
   printf 'jcx update: %s -> %s installed\n' "$current" "$latest"
 }
 
@@ -552,7 +568,7 @@ doctor_profile() {
 
   require_command mise
   verify_managed_profile
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
   jq -e '
@@ -612,7 +628,7 @@ launch_jcode() {
   require_command mise
   ensure_profile_ready_for_launch
   ensure_floating_skills
-  version="$(read_pinned_version)"
+  version="$(read_installed_version)"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
   ensure_onboarding_skipped

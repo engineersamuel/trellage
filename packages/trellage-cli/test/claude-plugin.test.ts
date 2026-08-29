@@ -8,7 +8,12 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { ClaudePluginError, pluginVersionFromRef, readClaudeMarketplace } from "../src/claude-plugin.js"
+import {
+  ClaudePluginError,
+  pluginVersionFromCommit,
+  pluginVersionFromRef,
+  readClaudeMarketplace,
+} from "../src/claude-plugin.js"
 
 const roots: Array<string> = []
 const execFilePromise = promisify(execFile)
@@ -530,6 +535,25 @@ describe("readClaudeMarketplace", () => {
     ).resolves.toEqual({ "social-media-skills": "1.10.0" })
   })
 
+  it("accepts a generated commit-tied fallback for a versionless floating plugin", async () => {
+    const root = await marketplace({
+      ...valid,
+      plugins: [{ ...valid.plugins[0], source: "./", version: undefined }],
+    })
+    await writeFile(
+      path.join(root, ".claude-plugin", "plugin.json"),
+      '{"name":"social-media-skills","description":"no version"}\n',
+    )
+
+    await expect(
+      Effect.runPromise(
+        readClaudeMarketplace(root, "social-media-skills", ["social-media-skills"], {
+          versionFallback: "0.0.0-commit.abcdef012345",
+        }),
+      ),
+    ).resolves.toEqual({ "social-media-skills": "0.0.0-commit.abcdef012345" })
+  })
+
   it("prefers declared marketplace version over a version fallback", async () => {
     const root = await marketplace(valid)
 
@@ -571,6 +595,11 @@ describe("readClaudeMarketplace", () => {
       expect(pluginVersionFromRef(ref)).toBeUndefined()
     },
   )
+
+  it("derives a deterministic exact prerelease version from a resolved commit", () => {
+    expect(pluginVersionFromCommit("abcdef0123456789abcdef0123456789abcdef01")).toBe("0.0.0-commit.abcdef012345")
+    expect(pluginVersionFromCommit("main")).toBeUndefined()
+  })
 
   it("rejects duplicate JSON keys before decoding", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-marketplace-"))

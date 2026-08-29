@@ -81,10 +81,13 @@ done
 jq -n \
   --arg tokenState "$token_state" \
   --arg promptHash "$prompt_hash" \
+  --arg npmRegistry "${HARNESS_NPM_REGISTRY:-}" \
+  --arg pypiIndex "${HARNESS_PYPI_INDEX:-}" \
   --arg wshobsonPlugin "${WSHOBSON_AGENTS_PLUGIN:-}" \
   --arg skillsContext "${HARNESS_SKILLS_CONTEXT:-}" \
   --arg skillsState "$skills_state" \
   '{tokenState: $tokenState, promptHash: $promptHash,
+    npmRegistry: $npmRegistry, pypiIndex: $pypiIndex,
     wshobsonPlugin: $wshobsonPlugin, skillsContext: $skillsContext,
     skillsState: $skillsState, args: $ARGS.positional}' \
   --args -- "$@" \
@@ -158,7 +161,10 @@ runner_env=(
   env
   -u COPILOT_GITHUB_TOKEN
   -u GH_TOKEN
+  -u UV_DEFAULT_INDEX
+  -u PIP_INDEX_URL
   PATH="$fake_bin:$PATH"
+  npm_config_registry='https://packagefeedproxy.microsoft.io/npm/registry/'
   FAKE_DOCKER_LOG_DIR="$docker_log_dir"
   FAKE_GH_LOG_DIR="$gh_log_dir"
   FAKE_PLAYWRIGHT_LOG="$fixture_root/playwright.log"
@@ -191,6 +197,8 @@ grep -Fq 'duplicate contestant port' "$fixture_root/invalid.stderr" \
 
 for invalid_mutation in \
   '.acceptance = "unknown-v1"' \
+  '.contestants[0].packages[0].ref = "../main"' \
+  '.contestants[0].packages[0].ref = "feature/unsafe"' \
   '.contestants[0].packages[0].plugins += ["api-security"]' \
   '.contestants[0].packages[0].skills = ["direct-skill"]' \
   '.contestants[1].packages[0].hooks = ["direct-hook"]' \
@@ -216,6 +224,9 @@ jq -s -e '
   and any(.[]; (.args | index("todo-side-by-side-copilot-awesome")) and (.args | index("copilot_agent")) and (.args | index("compose.copilot.yaml")))
   and ([.[].skillsContext] | unique | length) == 1
   and all(.[]; .skillsState == "fixture-skill")
+  and all(.[]; (.args | index("--pull")) and (.args | index("--no-cache")))
+  and all(.[]; .npmRegistry == "https://packagefeedproxy.microsoft.io/npm/")
+  and all(.[]; .pypiIndex == "https://packagefeedproxy.microsoft.io/pypi/simple/")
 ' "${build_calls[@]}" >/dev/null || fail 'build did not isolate both contestant projects and services'
 
 rm -f "$docker_log_dir"/* "$gh_log_dir"/*

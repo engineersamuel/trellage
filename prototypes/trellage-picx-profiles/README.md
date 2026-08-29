@@ -1,7 +1,8 @@
 # Trellage Native Pi extension profile
 
 `picx` is a standalone Trellage Native launcher with one profile, `default`.
-It runs upstream `@earendil-works/pi-coding-agent@0.84.2` and routes
+It runs the latest stable upstream `@earendil-works/pi-coding-agent` release
+resolved on first use and routes
 `copilot-proxy-rs/gpt-5.6-sol:medium` through the local
 `http://127.0.0.1:8080/v1` OpenAI Responses endpoint.
 
@@ -9,14 +10,14 @@ The profile installs exactly this ordered extension set:
 
 1. `git:github.com/DietrichGebert/ponytail`
 2. `npm:pi-web-access`
-3. `npm:pi-subagents@0.34.0`
-4. `npm:@ff-labs/pi-fff@0.10.5`
+3. `npm:pi-subagents`
+4. `npm:@ff-labs/pi-fff`
 5. `npm:pi-context-view`
 6. `npm:pi-mcp-adapter`
-7. `npm:@narumitw/pi-btw@0.11.0`
-8. `npm:@plannotator/pi-extension@0.20.3`
-9. `npm:@narumitw/pi-goal@0.48.0`
-10. `npm:@quintinshaw/pi-dynamic-workflows@2.14.1`
+7. `npm:@narumitw/pi-btw`
+8. `npm:@plannotator/pi-extension`
+9. `npm:@narumitw/pi-goal`
+10. `npm:@quintinshaw/pi-dynamic-workflows`
 
 The launcher owns
 `~/.local/share/trellage/profiles/pi/picx-default`. It sets
@@ -49,14 +50,28 @@ detailed diagnostic is needed.
 ./install.sh
 picx setup
 picx doctor
+picx update --check
+picx update
 picx -p "what extensions are installed"
 picx inventory default --json
 ```
 
-Bare `picx` and `picx default` select the same profile. Ordinary launches do
-not update the pinned Pi release or the extension set. The bare Pi runtime
-does not require the former Oh My Pi source patches for `pi-context-view` or
-`pi-fff`.
+First setup resolves the latest stable Pi release through `mise`, installs it,
+and records the exact installed version in the local `installed-version`
+receipt under `~/.local/share/trellage/picx`. Bare `picx` and `picx default`
+select the same profile. Ordinary launches reuse the receipt-selected version
+and installed extensions without a network request. Setup and explicit
+`picx update` resolve the current stable releases for unversioned npm extension
+specs. A failed update preserves the last good installed version, extensions,
+and receipt. The extension set remains the cataloged ordered set. The bare Pi
+runtime does not require the former Oh My Pi source patches for
+`pi-context-view` or `pi-fff`.
+
+Capability reporting remains version-gated. Pi `0.84.2` keeps its tested
+headless claims. Other installed versions remain usable but report
+conservative headless capability values until verified.
+`--headless-policy no-user-input` fails closed unless the installed version
+exactly matches the profile catalog's `testedHarnessVersion`.
 
 Run the deterministic contract with:
 

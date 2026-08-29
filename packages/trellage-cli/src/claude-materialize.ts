@@ -11,6 +11,8 @@ import { verifyInventory } from "./inventory.js"
 import type { ArtifactLock, ProfileLock } from "./lock.js"
 import type { ClaudeMaterializeRequest } from "./materialize.js"
 import { claudeGithubReleaseTools, claudeHasWorktreeCli, claudePypiToolNames, type ClaudeProfile } from "./profile.js"
+import { cachedArtifactPath } from "./artifact-cache.js"
+import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
 
 const execFilePromise = promisify(execFile)
 
@@ -260,6 +262,19 @@ const safeArchivePaths = (listing: string): boolean =>
     .filter(Boolean)
     .every((entry) => !path.posix.isAbsolute(entry) && !entry.split("/").some((segment) => segment === ".."))
 
+export const trustedHostUvArguments = (version: string): ReadonlyArray<string> => {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(`host uv version is not exact: ${version}`)
+  }
+  // The host can be macOS while the release lock targets Linux. The target
+  // checksum cannot cover this executable, so isolate mise configuration and
+  // require the exact version selected by the target resolver.
+  return ["--no-config", "x", `uv@${version}`, "--", "uv"]
+}
+
+export const trustedHostUvVersionMatches = (expected: string, observed: string): boolean =>
+  new RegExp(`^uv ${expected.replaceAll(".", "\\.")}(?:\\s|$)`).test(observed.trim())
+
 const archiveEntries = (listing: string): ReadonlySet<string> =>
   new Set(
     listing
@@ -268,23 +283,61 @@ const archiveEntries = (listing: string): ReadonlySet<string> =>
       .map((entry) => entry.replace(/^\.\//, "")),
   )
 
-const download = (locked: ArtifactLock, destination: string): Effect.Effect<void, ClaudeMaterializeError> =>
+const download = (
+  locked: ArtifactLock,
+  destination: string,
+  cacheHome?: string,
+  npmRegistry?: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
   Effect.gen(function* () {
-    yield* run("curl", [
-      "--fail",
-      "--location",
-      "--retry",
-      "5",
-      "--retry-all-errors",
-      locked.url,
-      "--output",
-      destination,
-    ])
+    const cached =
+      cacheHome === undefined
+        ? undefined
+        : yield* attempt("cannot inspect cached artifact", async () => {
+            const candidate = cachedArtifactPath(cacheHome, locked.integrity)
+            try {
+              return (await lstat(candidate)).isFile() ? candidate : undefined
+            } catch (cause) {
+              if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+              throw cause
+            }
+          })
+    if (cached === undefined) {
+      const npmIdentity = parseNpmArtifactIdentity(locked.url)
+      const downloadUrl =
+        npmIdentity === undefined
+          ? locked.url
+          : yield* Effect.try({
+              try: () => npmTarballUrl(npmRegistry ?? "", npmIdentity.name, npmIdentity.version),
+              catch: (cause) =>
+                new ClaudeMaterializeError({ message: `npm registry is unavailable: ${locked.name}`, cause }),
+            })
+      yield* run("curl", [
+        "--fail",
+        "--location",
+        "--retry",
+        "5",
+        "--retry-all-errors",
+        downloadUrl,
+        "--output",
+        destination,
+      ])
+    } else {
+      yield* attempt("cannot reuse cached artifact", () => cp(cached, destination))
+    }
     const actual = yield* digestFile(destination)
     if (actual !== locked.integrity) {
       return yield* Effect.fail(
         new ClaudeMaterializeError({
           message: `artifact integrity mismatch: ${locked.name}; expected ${locked.integrity}, actual ${actual}`,
+        }),
+      )
+    }
+    const size = yield* attempt("cannot inspect downloaded artifact", () => lstat(destination))
+    if (locked.size !== undefined && size.size !== locked.size) {
+      return yield* Effect.fail(
+        new ClaudeMaterializeError({
+          message: `artifact size mismatch: ${locked.name}; expected ${locked.size}, actual ${size.size}`,
         }),
       )
     }
@@ -313,7 +366,7 @@ export const materializeChromiumArchives = (
     for (const archive of archives) {
       const locked = yield* artifact(request, archive.artifactName)
       const archivePath = path.join(staging, archive.archiveName)
-      yield* download(locked, archivePath)
+      yield* download(locked, archivePath, request.artifactCacheHome, request.npmRegistry)
       const listing = yield* run("unzip", ["-Z1", archivePath])
       if (!safeArchivePaths(listing)) {
         return yield* Effect.fail(
@@ -738,7 +791,15 @@ const materializeHyperresearchAssets = (
           )
         }
 
-        const uv = ["x", "uv@0.11.21", "--", "uv"]
+        const uvArtifact = request.lock.packages.artifacts?.find((candidate) => candidate.name === "uv")
+        if (uvArtifact === undefined) {
+          return yield* Effect.fail(new ClaudeMaterializeError({ message: "uv artifact lock is missing" }))
+        }
+        const uv = trustedHostUvArguments(uvArtifact.version)
+        const observedUvVersion = (yield* run("mise", [...uv, "--version"])).trim()
+        if (!trustedHostUvVersionMatches(uvArtifact.version, observedUvVersion)) {
+          return yield* Effect.fail(new ClaudeMaterializeError({ message: "host uv version does not match lock" }))
+        }
         const pythonPackage = path.join(request.context, "hyperresearch-package")
         yield* attempt("cannot create Hyperresearch package target", () => mkdir(pythonPackage, { recursive: true }))
         yield* materializeHyperresearchPackage(request.sourceDirectories[0]!, pythonPackage)
@@ -834,7 +895,7 @@ const materializeHyperresearchAssets = (
 
         const obscura = yield* artifact(request, "obscura")
         const obscuraArchive = path.join(staging, "obscura.tar.gz")
-        yield* download(obscura, obscuraArchive)
+        yield* download(obscura, obscuraArchive, request.artifactCacheHome, request.npmRegistry)
         const tarListing = yield* run("tar", ["-tzf", obscuraArchive])
         if (!safeArchivePaths(tarListing))
           return yield* Effect.fail(new ClaudeMaterializeError({ message: "Obscura archive has unsafe paths" }))
@@ -1063,7 +1124,7 @@ const materializeClaudeGithubBinaries = (
     for (const tool of githubTools) {
       const locked = yield* artifact(request, tool.name)
       const archivePath = path.join(staging, path.posix.basename(new URL(locked.url).pathname))
-      yield* download(locked, archivePath)
+      yield* download(locked, archivePath, request.artifactCacheHome, request.npmRegistry)
       if (tool.name === "bd") yield* installBdBinary(staging, archivePath, context)
       else if (tool.name === "bv") yield* installBvBinary(staging, archivePath, context)
       else if (tool.name === "raindrop") yield* installRaindropBinary(archivePath, context)
@@ -1074,7 +1135,7 @@ const materializeClaudeGithubBinaries = (
           return yield* Effect.fail(new ClaudeMaterializeError({ message: "Codex code-mode host version mismatch" }))
         }
         const hostArchive = path.join(staging, path.posix.basename(new URL(host.url).pathname))
-        yield* download(host, hostArchive)
+        yield* download(host, hostArchive, request.artifactCacheHome, request.npmRegistry)
         yield* installCodexBinary(
           hostArchive,
           context,

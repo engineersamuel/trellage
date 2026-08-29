@@ -41,8 +41,8 @@ git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 mkdir -p "$state_dir"
 [[ -f "$ssh_key" ]] || ssh-keygen -t ed25519 -f "$ssh_key" -N "" -C "trellage-remote" >/dev/null
 
-printf 'trellage --remote: building locked profile image locally\n' >&2
-"$local_trellage" build --locked "$profile_path"
+printf 'trellage --remote: building resolved profile image locally\n' >&2
+"$local_trellage" build "$profile_path"
 image_tag="$(node "$compiler" metadata "$profile_path" | node -e \
   'process.stdin.once("data", d => process.stdout.write(JSON.parse(d).image))')"
 
@@ -108,7 +108,7 @@ rsync -az -e "ssh ${ssh_opts[*]}" "$git_common_dir/" "azureuser@$vm_ip:$git_comm
 [[ ! -f "$HOME/.copilot/models.json" ]] \
   || scp "${ssh_opts[@]}" "$HOME/.copilot/models.json" "azureuser@$vm_ip:~/.copilot/models.json"
 
-printf 'trellage --remote: transferring locked image to VM Docker\n' >&2
+printf 'trellage --remote: transferring resolved image to VM Docker\n' >&2
 docker save "$image_tag" | ssh "${ssh_opts[@]}" "azureuser@$vm_ip" docker load
 
 gh_token="$(gh auth token)"

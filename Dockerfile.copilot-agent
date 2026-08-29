@@ -1,8 +1,8 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
 
 FROM debian:bookworm-slim AS plugins
 
-ARG AWESOME_COPILOT_REF=ecf0f5a9f4b014d2e0f5e3c1cec55b4e7792ed8a
+ARG AWESOME_COPILOT_REF=main
 ARG AWESOME_COPILOT_PLUGINS="frontend-web-dev testing-automation"
 
 RUN apt-get update \
@@ -10,10 +10,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git init -q /opt/awesome-copilot \
+    && printf '%s\n' "${AWESOME_COPILOT_REF}" | grep -Eq '^(main|master|[0-9a-f]{40})$' \
     && git -C /opt/awesome-copilot remote add origin https://github.com/github/awesome-copilot.git \
     && git -C /opt/awesome-copilot fetch --depth 1 origin "${AWESOME_COPILOT_REF}" \
     && git -C /opt/awesome-copilot checkout --detach FETCH_HEAD \
-    && test "$(git -C /opt/awesome-copilot rev-parse HEAD)" = "${AWESOME_COPILOT_REF}"
+    && git -C /opt/awesome-copilot rev-parse HEAD > /opt/awesome-copilot-commit
 
 COPY --chmod=0555 scripts/materialize-awesome-plugin.sh /usr/local/bin/materialize-awesome-plugin.sh
 
@@ -21,16 +22,17 @@ RUN set -- ${AWESOME_COPILOT_PLUGINS}; \
     /usr/local/bin/materialize-awesome-plugin.sh /opt/awesome-copilot /opt/awesome-plugins "$@"; \
     chmod -R a=rX /opt/awesome-plugins
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:bookworm-slim AS runtime
 
-ARG COPILOT_VERSION=1.0.71-0
-ARG PLAYWRIGHT_VERSION=1.61.1
+ARG COPILOT_VERSION=latest
+ARG PLAYWRIGHT_VERSION=latest
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl git jq python3 \
-    && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
-    && npm install --global "@github/copilot@${COPILOT_VERSION}" \
+    && npm_config_registry="${NPM_CONFIG_REGISTRY}" npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
+    && npm_config_registry="${NPM_CONFIG_REGISTRY}" npm install --global "@github/copilot@${COPILOT_VERSION}" \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 agent \
@@ -40,6 +42,7 @@ RUN apt-get update \
     && chown -R 10001:10001 /workspace /home/agent
 
 COPY --from=plugins /opt/awesome-plugins /opt/awesome-plugins
+COPY --from=plugins /opt/awesome-copilot-commit /opt/awesome-copilot-source-commit.txt
 COPY --from=floating_skills / /opt/floating-skills
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
 COPY --chmod=0555 scripts/floating-skills.mjs /usr/local/bin/floating-skills.mjs
@@ -50,7 +53,8 @@ COPY --chmod=0444 prototypes/trellage/assets/rundown/rundown.instructions.md \
 COPY scripts/run-copilot-agent.sh /usr/local/bin/run-copilot-agent.sh
 
 RUN chmod 0555 /usr/local/bin/copilot-agent-entrypoint.sh /usr/local/bin/run-copilot-agent.sh \
-    && chmod -R a=rX /opt/awesome-plugins /opt/floating-skills /opt/floating-skills-catalog.json
+    && chmod -R a=rX /opt/awesome-plugins /opt/awesome-copilot-source-commit.txt \
+      /opt/floating-skills /opt/floating-skills-catalog.json
 
 ENV HOME=/home/agent \
     COPILOT_HOME=/workspace/.copilot-home \

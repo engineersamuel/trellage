@@ -288,18 +288,24 @@ describe("CLI identity and failure reporting", () => {
         name: string
         path: string
         supportedPlatforms: string[]
+        resolutionPolicy: string
+        locallyResolved: boolean
+        releaseLockAvailable: boolean
         headless: { schemaVersion: number; testedHarnessVersion: string | null }
         locked: boolean
         herdrCompatibility: { status: string }
       }>
     }
-    expect(parsed.schemaVersion).toBe(1)
+    expect(parsed.schemaVersion).toBe(2)
     expect(fullAlias.exitCode ?? 0).toBe(0)
     expect(fullAlias.logs.join("\n")).toBe(full.logs.join("\n"))
     expect(parsed.profiles.map((p) => p.name)).toEqual(["alpha", "beta", "gamma"])
     expect(parsed.profiles[0]).toMatchObject({
       path: "/profiles/alpha/profile.toml",
       supportedPlatforms: ["linux/arm64"],
+      resolutionPolicy: "floating",
+      locallyResolved: false,
+      releaseLockAvailable: false,
     })
     // These fixture profiles have no real file on disk, so readiness cannot
     // be determined and must degrade to false rather than failing `list`.

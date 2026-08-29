@@ -12,12 +12,17 @@ import { resolveGitHubSource } from "./github-cache.js"
 import { resolveSandboxHeadlessCapabilities, sandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
 import { parseLock, renderLock } from "./lock-file.js"
 import {
+  attachedSidecar,
   compileLock,
   hasLegacyPackageProvenance,
   harnessPackageRevision,
   lockIsReady,
+  packageResolutionInputsMatch,
+  packageResolutionRequest,
   profileHash,
   requireLocked,
+  requireResolvedLock,
+  withAttachedSidecar,
   withFinalDigest,
   type ArtifactLock,
   type HarnessPackageLock,
@@ -32,10 +37,28 @@ import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
 import { createRuntimeSupportSnapshot, type RuntimeSupportSnapshot } from "./runtime-support.js"
 import { dockerHostArguments, dockerSocketPath, verifyDockerTarget, type DockerTarget } from "./docker-target.js"
 import { managedClaudeFiles } from "./claude-materialize.js"
+import {
+  loadResolutionReceipt,
+  readResolutionReceiptBytes,
+  removeResolutionReceipt,
+  resolutionReceiptPath,
+  writeResolutionReceipt,
+  writeResolutionReceiptBytes,
+} from "./resolution-receipt.js"
+import { loadResolutionSidecar, writeResolutionSidecar } from "./resolution-sidecar-storage.js"
+import type { ResolutionSidecar } from "./resolution-sidecar.js"
+import { discoverPypiIndex, sanitizePypiIndex } from "./package-feeds.js"
+
+export {
+  discoverPypiIndex,
+  microsoftProtectedPypiIndex,
+  pypiIndexFromNpmRegistry,
+  sanitizeNpmRegistry,
+  sanitizePypiIndex,
+  type CommandOutputRunner,
+} from "./package-feeds.js"
 
 const execFilePromise = promisify(execFile)
-const builderImage = "docker.io/jdxcode/mise@sha256:b8f8c20fc3308f8b1d00ccca2bc968e4e208af1c5c1069e1ad9753baa099acff"
-const skopeoImage = "quay.io/skopeo/stable@sha256:47853bb9fb24202af9110531ebd6e43c5f97701254ca290596640290d17942f4"
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const compatibilityAdapter = path.join(repositoryRoot, "prototypes", "trellage", "adapt-agent-kit.sh")
 const floatingSkillsManager = path.join(repositoryRoot, "scripts", "floating-skills.mjs")
@@ -46,92 +69,6 @@ export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly message: string
   readonly cause?: unknown
 }> {}
-
-export const sanitizeNpmRegistry = (candidate: string): string | undefined => {
-  try {
-    const registry = new URL(candidate.trim())
-    if (
-      registry.protocol !== "https:" ||
-      registry.username !== "" ||
-      registry.password !== "" ||
-      registry.search !== "" ||
-      registry.hash !== ""
-    )
-      return undefined
-    return registry.toString()
-  } catch {
-    return undefined
-  }
-}
-
-/** Microsoft Central Feed Services (CFS) PyPI simple index for managed devices. */
-export const microsoftProtectedPypiIndex = "https://packagefeedproxy.microsoft.io/pypi/simple/"
-
-/** Sanitize a PyPI simple-index URL the same way as npm registries (HTTPS, no credentials). */
-export const sanitizePypiIndex = (candidate: string): string | undefined => sanitizeNpmRegistry(candidate)
-
-/**
- * When the host npm registry is Microsoft packagefeedproxy, map it to the CFS PyPI simple index.
- * Public pypi.org / files.pythonhosted.org are often blocked on Microsoft-managed devices.
- */
-export const pypiIndexFromNpmRegistry = (npmRegistry: string | undefined): string | undefined => {
-  if (npmRegistry === undefined) return undefined
-  try {
-    const registry = new URL(npmRegistry)
-    if (registry.hostname !== "packagefeedproxy.microsoft.io") return undefined
-    const pathName = registry.pathname.replace(/\/+$/, "") || "/"
-    if (pathName !== "/npm" && pathName !== "/npm/registry") return undefined
-    return microsoftProtectedPypiIndex
-  } catch {
-    return undefined
-  }
-}
-
-const pipConfigIndexUrl = (configList: string): string | undefined => {
-  for (const line of configList.split(/\r?\n/)) {
-    const match = /^global\.index-url=['"]?([^'"\s]+)['"]?\s*$/.exec(line.trim())
-    if (match?.[1] !== undefined) return sanitizePypiIndex(match[1])
-  }
-  return undefined
-}
-
-export type CommandOutputRunner = (command: string, args: ReadonlyArray<string>) => Promise<{ readonly stdout: string }>
-
-/**
- * Resolve a reachable PyPI simple index for uv/pip inside profile builds.
- * Prefer explicit env, then host pip config, then Microsoft CFS when npm already uses it.
- */
-export const discoverPypiIndex = async (options?: {
-  readonly environment?: Readonly<Record<string, string | undefined>>
-  readonly npmRegistry?: string
-  readonly run?: CommandOutputRunner
-}): Promise<string | undefined> => {
-  const environment = options?.environment ?? process.env
-  for (const key of ["UV_DEFAULT_INDEX", "PIP_INDEX_URL", "UV_INDEX_URL"] as const) {
-    const fromEnv = sanitizePypiIndex(environment[key] ?? "")
-    if (fromEnv !== undefined) return fromEnv
-  }
-
-  const run =
-    options?.run ??
-    (async (command, args) => {
-      const result = await execFilePromise(command, [...args], { encoding: "utf8" })
-      return { stdout: result.stdout }
-    })
-
-  for (const command of ["pip3", "pip", "python3"] as const) {
-    const args = command === "python3" ? ["-m", "pip", "config", "list"] : ["config", "list"]
-    try {
-      const { stdout } = await run(command, args)
-      const fromPip = pipConfigIndexUrl(stdout)
-      if (fromPip !== undefined) return fromPip
-    } catch {
-      // Try the next candidate.
-    }
-  }
-
-  return pypiIndexFromNpmRegistry(options?.npmRegistry)
-}
 
 export interface UpgradeServices {
   readonly buildCandidate: (
@@ -204,27 +141,37 @@ const impossibleBuilderInput = (message: string): never => {
   throw new ApplicationError({ message })
 }
 
+const requiredArtifact = (lock: ProfileLock, name: string): ArtifactLock => {
+  const artifact = lock.packages.artifacts?.find((candidate) => candidate.name === name)
+  return artifact ?? impossibleBuilderInput(`builder requires an exact locked artifact: ${name}`)
+}
+
+const validSizedArtifact = (artifact: ArtifactLock | undefined): artifact is ArtifactLock =>
+  artifact !== undefined &&
+  sha256Pattern.test(artifact.integrity) &&
+  Number.isSafeInteger(artifact.size) &&
+  (artifact.size ?? 0) > 0
+
 const resolveHeadlongRustArtifacts = (
   lock: ProfileLock,
 ): { readonly rust: ArtifactLock; readonly rustStandardLibrary: ArtifactLock } => {
   const rust = lock.packages.artifacts?.find((artifact) => artifact.name === "rust")
   if (
-    rust === undefined ||
-    rust.version !== "1.96.0" ||
-    rust.url !== "https://static.rust-lang.org/dist/2026-05-28/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz" ||
-    rust.integrity !== "sha256:20d5ebe3916fe489891fc577574e47fc679cdf62080c1bb1be6b6905ff4e275b" ||
-    rust.size !== 325287063
+    !validSizedArtifact(rust) ||
+    !/^\d+\.\d+\.\d+$/.test(rust.version) ||
+    !/^https:\/\/static\.rust-lang\.org\/dist\/\d{4}-\d{2}-\d{2}\/rust-\d+\.\d+\.\d+-aarch64-unknown-linux-gnu\.tar\.gz$/.test(
+      rust.url,
+    )
   ) {
     return impossibleBuilderInput("Headlong builder requires the exact locked Rust toolchain artifact")
   }
   const rustStandardLibrary = lock.packages.artifacts?.find((artifact) => artifact.name === "rust-std-musl")
   if (
-    rustStandardLibrary === undefined ||
-    rustStandardLibrary.version !== "1.96.0" ||
-    rustStandardLibrary.url !==
-      "https://static.rust-lang.org/dist/2026-05-28/rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz" ||
-    rustStandardLibrary.integrity !== "sha256:1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea" ||
-    rustStandardLibrary.size !== 42333691
+    !validSizedArtifact(rustStandardLibrary) ||
+    rustStandardLibrary.version !== rust.version ||
+    !/^https:\/\/static\.rust-lang\.org\/dist\/\d{4}-\d{2}-\d{2}\/rust-std-\d+\.\d+\.\d+-aarch64-unknown-linux-musl\.tar\.gz$/.test(
+      rustStandardLibrary.url,
+    )
   ) {
     return impossibleBuilderInput("Headlong builder requires the exact locked musl standard library artifact")
   }
@@ -241,8 +188,8 @@ const headlongBuilderScript = (
   }
   const { rust, rustStandardLibrary } = resolveHeadlongRustArtifacts(lock)
   const target = "aarch64-unknown-linux-musl"
-  const archive = "/src/rust-1.96.0-aarch64-unknown-linux-gnu.tar.gz"
-  const standardLibraryArchive = `/src/rust-std-1.96.0-${target}.tar.gz`
+  const archive = `/src/rust-${rust.version}-aarch64-unknown-linux-gnu.tar.gz`
+  const standardLibraryArchive = `/src/rust-std-${rust.version}-${target}.tar.gz`
   const stage = "/tmp/trellage-headlong-rust"
   const standardLibraryStage = "/tmp/trellage-headlong-rust-std"
   const toolchain = "/tmp/trellage-headlong-rust-toolchain"
@@ -259,8 +206,8 @@ const headlongBuilderScript = (
     `mkdir -p ${shellQuote(stage)} ${shellQuote(standardLibraryStage)} ${shellQuote(toolchain)}`,
     `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(archive)} -C ${shellQuote(stage)}`,
     `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(standardLibraryArchive)} -C ${shellQuote(standardLibraryStage)}`,
-    `${shellQuote(`${stage}/rust-1.96.0-aarch64-unknown-linux-gnu/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig --without=rust-docs`,
-    `${shellQuote(`${standardLibraryStage}/rust-std-1.96.0-${target}/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig`,
+    `${shellQuote(`${stage}/rust-${rust.version}-aarch64-unknown-linux-gnu/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig --without=rust-docs`,
+    `${shellQuote(`${standardLibraryStage}/rust-std-${rust.version}-${target}/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig`,
     `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH CARGO_HOME=/tmp/trellage-headlong-cargo RUSTC=${shellQuote(`${toolchain}/bin/rustc`)} RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= cargo build --locked --release --target ${target} --manifest-path /src/headlong-seed/tui/headlong/Cargo.toml`,
     `cp /src/headlong-seed/tui/headlong/target/${target}/release/headlong-tui /src/headlong-tui`,
     "chmod 0755 /src/headlong-tui",
@@ -286,7 +233,7 @@ const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): str
   const codeModeHostArtifact = artifacts.find((artifact) => artifact.name === "codex-code-mode-host")
   if (
     codeModeHostArtifact === undefined ||
-    artifacts.length !== 1 ||
+    artifacts.filter((artifact) => artifact.name === "codex-code-mode-host").length !== 1 ||
     codeModeHostArtifact.version !== harness.version ||
     !sha256Pattern.test(codeModeHostArtifact.integrity) ||
     !Number.isSafeInteger(codeModeHostArtifact.size ?? 0) ||
@@ -358,6 +305,78 @@ const claudeMarketplaceCommands = (
   return commands
 }
 
+const hyperresearchBuilderScript = (
+  lock: ProfileLock,
+  claudeDirectory: string,
+  normalizeClaudeMetadata: string,
+  build: string,
+): string => {
+  const node = requiredArtifact(lock, "node")
+  const uv = requiredArtifact(lock, "uv")
+  const python = requiredArtifact(lock, "python")
+  const mcp = requiredArtifact(lock, "playwright-mcp")
+  const playwright = requiredArtifact(lock, "playwright")
+  const core = requiredArtifact(lock, "playwright-core")
+  const packageCheck =
+    'const root="/src/playwright-mcp-prefix/lib/node_modules/";const expected=JSON.parse(process.argv[1]);for(const [name,version] of Object.entries(expected)){const actual=require(root+name+"/package.json").version;if(actual!==version)process.exit(1)}'
+  const pythonVersion = python.version.split(".").slice(0, 2).join(".")
+  const materializePythonSite = `mkdir -p /src/hyperresearch-site; mise x --locked uv@${uv.version} -- uv pip install --target /src/hyperresearch-site --python-version ${pythonVersion} --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/python-constraints.lock; cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch`
+  return [
+    "mise install --locked",
+    `node_dir="$(mise where node@${node.version})"`,
+    "rm -rf /src/playwright-mcp-prefix",
+    `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 "$node_dir/bin/npm" install --global --prefix /src/playwright-mcp-prefix --ignore-scripts --omit=optional --offline --no-audit --no-fund --loglevel=error /src/npm-artifacts/playwright-mcp.tgz /src/npm-artifacts/playwright.tgz /src/npm-artifacts/playwright-core.tgz`,
+    `"$node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(
+      JSON.stringify({
+        "@playwright/mcp": mcp.version,
+        playwright: playwright.version,
+        "playwright-core": core.version,
+      }),
+    )}`,
+    materializePythonSite,
+    claudeDirectory,
+    normalizeClaudeMetadata,
+    build,
+  ].join("; ")
+}
+
+const claudeMarketplaceBuilderScript = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  tool: string,
+  build: string,
+  harnessVersion: string,
+  claudeDirectory: string,
+  normalizeClaudeMetadata: string,
+): string => {
+  const node = requiredArtifact(lock, "node")
+  const nativeEnvironment =
+    "HOME=/src/claude-builder-home CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 NO_COLOR=1 TERM=dumb"
+  const marketplaceCommands = claudeMarketplaceCommands(document, lock, nativeEnvironment)
+  const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
+  const uv = extraPython ? requiredArtifact(lock, "uv") : undefined
+  const python = extraPython ? requiredArtifact(lock, "python") : undefined
+  const pythonVersion = python?.version.split(".").slice(0, 2).join(".")
+  return [
+    extraPython ? "mise install --locked" : `mise install --locked node@${node.version} ${tool}`,
+    claudeDirectory,
+    'claude_bin="$claude_dir/claude"',
+    '[ -x "$claude_bin" ]',
+    `node_bin="$(mise where node@${node.version})/bin/node"`,
+    '[ -x "$node_bin" ]',
+    normalizeClaudeMetadata,
+    ...marketplaceCommands,
+    `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harnessVersion}`,
+    ...(extraPython
+      ? [
+          "mkdir -p /src/graph-tools-site",
+          `mise x --locked uv@${uv!.version} -- uv pip install --target /src/graph-tools-site --python-version ${pythonVersion} --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/graph-of-loops-requirements.lock`,
+        ]
+      : []),
+    build,
+  ].join("; ")
+}
+
 const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool: string, build: string): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "claude") return impossibleBuilderInput("Claude builder requires a Claude package")
@@ -385,37 +404,24 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
     document.profile.plugins.length === 1 &&
     lock.sources.length === 1
   ) {
-    const materializePythonSite =
-      "mkdir -p /src/hyperresearch-site; mise x uv@0.11.21 -- uv pip install --target /src/hyperresearch-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/.runtime-support/hyperresearch-requirements.lock; cp -R /src/hyperresearch-package/hyperresearch /src/hyperresearch-site/hyperresearch"
-    return `${materializePythonSite}; mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
+    return hyperresearchBuilderScript(lock, claudeDirectory, normalizeClaudeMetadata, build)
   }
-  const nativeEnvironment =
-    "HOME=/src/claude-builder-home CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 NO_COLOR=1 TERM=dumb"
-  const marketplaceCommands = claudeMarketplaceCommands(document, lock, nativeEnvironment)
-  const extraPython = isClaudeProfile(document.profile) && claudePypiToolNames(document.profile).length > 0
-  return [
-    extraPython ? "mise install --locked" : `mise install --locked node@22.17.0 ${tool}`,
-    claudeDirectory,
-    'claude_bin="$claude_dir/claude"',
-    '[ -x "$claude_bin" ]',
-    'node_bin="$(mise where node@22.17.0)/bin/node"',
-    '[ -x "$node_bin" ]',
-    normalizeClaudeMetadata,
-    ...marketplaceCommands,
-    `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harness.version}`,
-    ...(extraPython
-      ? [
-          "mkdir -p /src/graph-tools-site",
-          "mise x uv@0.11.21 -- uv pip install --target /src/graph-tools-site --python-version 3.13 --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/graph-of-loops-requirements.lock",
-        ]
-      : []),
+  return claudeMarketplaceBuilderScript(
+    document,
+    lock,
+    tool,
     build,
-  ].join("; ")
+    harness.version,
+    claudeDirectory,
+    normalizeClaudeMetadata,
+  )
 }
 
 const primeBuilderScript = (lock: ProfileLock, build: string): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "prime") return impossibleBuilderInput("Prime builder requires a Prime package")
+  const node = requiredArtifact(lock, "node")
+  const uv = requiredArtifact(lock, "uv")
   const filename = `prime-agent-${harness.version}.tgz`
   const expectedUrl = `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/releases/v${harness.version}/${filename}`
   if (
@@ -429,19 +435,24 @@ const primeBuilderScript = (lock: ProfileLock, build: string): string => {
   const artifact = `/src/${filename}`
   const kernelHome = "/home/agent/.trellage/prime-kernel"
   const kernelSeed = "/src/prime-kernel-seed.tar.gz"
-  const kernelRequirements = "/tmp/trellage-prime-kernel-requirements.txt"
   const packageCheck =
     'const p=require("/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json");if(p.name!=="prime-agent"||p.version!==process.argv[1]||p.bin?.["prime-agent"]!=="dist/bundle/cli.js")process.exit(1)'
   const kernelBootstrap =
     'import { ensureKernelPython } from "file:///src/prime-agent-prefix/lib/node_modules/prime-agent/dist/core/kernel/bootstrap.js";await ensureKernelPython()'
+  const constraintInstall =
+    lock.packages.python_lock_integrity === undefined
+      ? []
+      : [
+          `PYTHONDONTWRITEBYTECODE=1 mise x --locked uv@${uv.version} -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall -r /src/python-constraints.lock`,
+        ]
   return [
     `prime_artifact=${shellQuote(artifact)}`,
     `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$prime_artifact" ${shellQuote(harness.url)}`,
     `[ "$(wc -c < "$prime_artifact")" -eq ${harness.size} ]`,
     `printf '%s  %s\\n' ${shellQuote(harness.integrity.slice("sha256:".length))} "$prime_artifact" | sha256sum --check --strict -`,
     "rm -f /mise/config.toml",
-    "mise install --locked node@22.17.0",
-    'prime_node_dir="$(mise where node@22.17.0)"',
+    `mise install --locked node@${node.version}`,
+    `prime_node_dir="$(mise where node@${node.version})"`,
     '[ -x "$prime_node_dir/bin/node" ]',
     '[ -x "$prime_node_dir/bin/npm" ]',
     `PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix --no-fund --no-audit --loglevel=error --progress=false "$prime_artifact"`,
@@ -456,10 +467,7 @@ const primeBuilderScript = (lock: ProfileLock, build: string): string => {
     "prime_kernel_status=0",
     `HOME="$prime_kernel_home" XDG_CACHE_HOME="$prime_kernel_home/.cache" PYTHONDONTWRITEBYTECODE=1 PRIME_AGENT_INSTALL_UV=1 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/node" --input-type=module -e ${shellQuote(kernelBootstrap)} || prime_kernel_status=$?`,
     '[ "$prime_kernel_status" -eq 0 ] || { printf \'%s\\n\' "trellage: Prime Python kernel bootstrap failed (exit $prime_kernel_status)." >&2; printf \'%s\\n\' "This step needs a reachable PyPI simple index for uv seed packages, ipykernel, and default runtime packages." >&2; printf \'%s\\n\' "On Microsoft-managed devices, public pypi.org / files.pythonhosted.org are blocked; use the CFS feed (UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/) or configure pip global.index-url, then rebuild." >&2; printf \'%s\\n\' "Elsewhere, set UV_DEFAULT_INDEX or PIP_INDEX_URL to any reachable simple-index mirror." >&2; exit "$prime_kernel_status"; }',
-    `prime_kernel_requirements=${shellQuote(kernelRequirements)}`,
-    `printf '%s\\n' 'platformdirs==4.11.0 --hash=sha256:360ccded2b7fce0af0ff80cc8f5942a1c5d99b0e856033acb030bfc634709e74' > "$prime_kernel_requirements"`,
-    'PYTHONDONTWRITEBYTECODE=1 mise x uv@0.11.21 -- uv pip install --python "$prime_kernel_home/.prime/agent/kernel-venv/bin/python" --require-hashes --no-deps --reinstall -r "$prime_kernel_requirements"',
-    'rm -f "$prime_kernel_requirements"',
+    ...constraintInstall,
     'printf \'%s\\n\' "schema=1" > "$prime_kernel_home/.trellage-prime-kernel"',
     'find "$prime_kernel_home" -type d -name __pycache__ -prune -exec rm -rf {} +',
     'prime_runtime_record="$(find "$prime_kernel_home/.prime/agent/kernel-venv/lib" -path \'*/site-packages/prime_agent_runtime-*.dist-info/RECORD\' -type f -print -quit)"',
@@ -551,12 +559,13 @@ const copilotPluginDetails = (
 const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool: string, build: string): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "copilot") return impossibleBuilderInput("Copilot builder requires a Copilot package")
+  const node = requiredArtifact(lock, "node")
   const { marketplace, selected, version } = copilotPluginDetails(document, lock)
   const plugin = `${selected}@${marketplace}`
   const nativeEnvironment = "COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb"
   const expectedRow = `  • ${plugin} (v${version})`
   return [
-    `mise install --locked ${tool}`,
+    `mise install --locked node@${node.version} ${tool}`,
     `copilot_dir="$(mise where ${tool})"`,
     'copilot_bin="$copilot_dir/copilot"',
     '[ -x "$copilot_bin" ]',
@@ -567,8 +576,9 @@ const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool
     `plugin_list="$(${nativeEnvironment} "$copilot_bin" plugin list)" || plugin_list_status=$?`,
     '[ "$plugin_list_status" -eq 0 ]',
     `printf '%s\\n' "$plugin_list" | awk -v expected='${expectedRow}' '$0 == expected || $0 == expected " (enabled)" { count++ } END { exit count == 1 ? 0 : 1 }'`,
-    "[ -x /mise/installs/node/24.18.0/bin/node ]",
-    `/mise/installs/node/24.18.0/bin/node /src/finalize-copilot-seed.mjs /src/copilot-seed ${marketplace} ${selected} ${version}`,
+    `node_bin="$(mise where node@${node.version})/bin/node"`,
+    '[ -x "$node_bin" ]',
+    `"$node_bin" /src/finalize-copilot-seed.mjs /src/copilot-seed ${marketplace} ${selected} ${version}`,
     build,
   ].join("; ")
 }
@@ -665,7 +675,7 @@ export const loadProfile = (profilePath: string): Effect.Effect<ProfileDocument,
     ),
   )
 
-export const loadLock = (
+export const loadReleaseLock = (
   profilePath: string,
   platform: Platform,
 ): Effect.Effect<ProfileLock | undefined, ApplicationError> => {
@@ -679,7 +689,7 @@ export const loadLock = (
         throw cause
       }
     },
-    catch: (cause) => new ApplicationError({ message: `cannot read lock: ${lockPath}`, cause }),
+    catch: (cause) => new ApplicationError({ message: `cannot read release lock: ${lockPath}`, cause }),
   }).pipe(
     Effect.flatMap((source) =>
       source === undefined
@@ -692,65 +702,133 @@ export const loadLock = (
   )
 }
 
+export const loadLock = loadReleaseLock
+
 let atomicWriteSequence = 0
-const writeLockBytes = (
+const writeReleaseLockBytes = (
   profilePath: string,
   platform: Platform,
   contents: string,
 ): Effect.Effect<void, ApplicationError> => {
   const destination = adjacentLockPath(profilePath, platform)
   const temporary = `${destination}.tmp-${process.pid}-${atomicWriteSequence++}`
-  return io(`cannot write lock: ${destination}`, async () => {
+  return io(`cannot write release lock: ${destination}`, async () => {
     await writeFile(temporary, contents, { flag: "wx" })
     await rename(temporary, destination)
   }).pipe(Effect.ensuring(io("cannot clean temporary lock", () => rm(temporary, { force: true })).pipe(Effect.ignore)))
 }
 
-export const writeLock = (profilePath: string, lock: ProfileLock): Effect.Effect<void, ApplicationError> =>
-  writeLockBytes(profilePath, lock.platform, renderLock(lock))
-
-const readLockBytes = (
-  profilePath: string,
-  platform: Platform,
-): Effect.Effect<string | undefined, ApplicationError> => {
-  const lockPath = adjacentLockPath(profilePath, platform)
-  return Effect.tryPromise({
-    try: async () => {
-      try {
-        return await readFile(lockPath, "utf8")
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
-        throw cause
+export const writeReleaseLock = (profilePath: string, lock: ProfileLock): Effect.Effect<void, ApplicationError> =>
+  Effect.gen(function* () {
+    const lockPath = adjacentLockPath(profilePath, lock.platform)
+    const sidecar = attachedSidecar(lock)
+    if (sidecar !== undefined) {
+      const reference = yield* writeResolutionSidecar(lockPath, sidecar).pipe(
+        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+      )
+      if (
+        lock.sidecar === undefined ||
+        reference.integrity !== lock.sidecar.integrity ||
+        reference.size !== lock.sidecar.size
+      ) {
+        return yield* Effect.fail(new ApplicationError({ message: "resolution sidecar reference mismatch" }))
       }
-    },
-    catch: (cause) => new ApplicationError({ message: `cannot read lock: ${lockPath}`, cause }),
+    }
+    yield* writeReleaseLockBytes(profilePath, lock.platform, renderLock(lock))
   })
-}
 
-const upgradeFileServices = {
-  readLockBytes,
-  writeLockBytes,
-  removeLock: (profilePath: string, platform: Platform): Effect.Effect<void, ApplicationError> => {
-    const lockPath = adjacentLockPath(profilePath, platform)
-    return io(`cannot remove lock: ${lockPath}`, () => rm(lockPath, { force: true }))
-  },
-}
+export const writeLock = writeReleaseLock
 
 export const compileProfileLock = (
   profilePath: string,
   update: boolean,
   xdgCacheHome: string,
   platform: Platform,
+  npmRegistry?: string,
 ): Effect.Effect<ProfileLock, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const current = yield* loadLock(profilePath, platform)
-    const lock = yield* compileLock(document, current, update, productionResolvers(xdgCacheHome, platform)).pipe(
+    const release = yield* loadReleaseLock(profilePath, platform)
+    const receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
-    if (lock !== current) yield* writeLock(profilePath, lock)
-    return lock
+    const current = receipt ?? release
+    const lock = yield* compileLock(
+      document,
+      current,
+      update,
+      productionResolvers(xdgCacheHome, platform, npmRegistry),
+    ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
+    if (!lockIsReady(document, lock, platform)) {
+      return yield* Effect.fail(
+        new ApplicationError({
+          message: "release snapshot is incomplete; run a development build before creating the release lock",
+        }),
+      )
+    }
+    if (lock === release) {
+      yield* resolveLockSidecar(adjacentLockPath(profilePath, platform), lock)
+      return lock
+    }
+    const sidecar =
+      lock.sidecar === undefined
+        ? undefined
+        : yield* resolveLockSidecar(
+            receipt === undefined
+              ? adjacentLockPath(profilePath, platform)
+              : resolutionReceiptPath(document, platform, xdgCacheHome),
+            lock,
+          )
+    const snapshot = sidecar === undefined ? lock : withAttachedSidecar(lock, sidecar)
+    yield* writeReleaseLock(profilePath, snapshot)
+    return snapshot
   })
+
+export const snapshotProfileReleaseLock = compileProfileLock
+
+interface DevelopmentResolution {
+  readonly receipt: ProfileLock | undefined
+  readonly current: ProfileLock | undefined
+}
+
+const loadDevelopmentResolution = (
+  document: ProfileDocument,
+  xdgCacheHome: string,
+  platform: Platform,
+): Effect.Effect<DevelopmentResolution, ApplicationError> =>
+  Effect.gen(function* () {
+    const receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
+    return { receipt, current: receipt }
+  })
+
+const resolveLockSidecar = (
+  lockPath: string,
+  lock: ProfileLock,
+): Effect.Effect<ResolutionSidecar | undefined, ApplicationError> => {
+  const sidecar = attachedSidecar(lock)
+  return sidecar === undefined
+    ? loadResolutionSidecar(lockPath, lock).pipe(
+        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+      )
+    : Effect.succeed(sidecar)
+}
+
+const publishAttachedSidecar = (lockPath: string, lock: ProfileLock): Effect.Effect<void, ApplicationError> => {
+  const sidecar = attachedSidecar(lock)
+  if (sidecar === undefined) return Effect.void
+  return writeResolutionSidecar(lockPath, sidecar).pipe(
+    Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    Effect.flatMap((reference) =>
+      lock.sidecar !== undefined &&
+      reference.integrity === lock.sidecar.integrity &&
+      reference.size === lock.sidecar.size
+        ? Effect.void
+        : Effect.fail(new ApplicationError({ message: "resolution sidecar reference mismatch" })),
+    ),
+  )
+}
 
 interface CommandOptions {
   readonly cwd?: string
@@ -795,9 +873,11 @@ export const compatibilityPluginArguments = (
   sourceDirectory: string,
   selection: string,
   destination: string,
+  uvVersion: string,
 ): ReadonlyArray<string> => [
+  "--no-config",
   "x",
-  "uv@0.11.21",
+  `uv@${uvVersion}`,
   "--",
   "uv",
   "run",
@@ -814,11 +894,11 @@ export const compatibilityPluginArguments = (
   destination,
 ]
 
-const pluginGenerator: PluginGenerator = (sourceDirectory, selections, destination) =>
+const pluginGenerator: PluginGenerator = (sourceDirectory, selections, destination, uvVersion) =>
   Effect.forEach(
     selections,
     (selection) =>
-      run("mise", compatibilityPluginArguments(sourceDirectory, selection, destination), {
+      run("mise", compatibilityPluginArguments(sourceDirectory, selection, destination, uvVersion), {
         env: {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: "1",
@@ -850,6 +930,15 @@ const buildOci = (
     if (platform !== target.platform) {
       return yield* Effect.fail(new ApplicationError({ message: "lock platform does not match Docker target" }))
     }
+    if (lock.build === undefined) {
+      return yield* Effect.fail(
+        new ApplicationError({
+          message: "lock has no exact build helper images; create a new development receipt or release snapshot",
+        }),
+      )
+    }
+    const builderImage = `${lock.build.builder.reference}@${lock.build.builder.digest}`
+    const importerImage = `${lock.build.importer.reference}@${lock.build.importer.digest}`
     yield* docker.verify(target)
     const pypiIndex = yield* Effect.promise(() =>
       discoverPypiIndex(npmRegistry === undefined ? {} : { npmRegistry }).catch(() => undefined),
@@ -933,7 +1022,7 @@ const buildOci = (
         `type=bind,src=${context},dst=/work,readonly`,
         "--mount",
         `type=bind,src=${dockerSocketPath(target)},dst=/var/run/docker.sock`,
-        skopeoImage,
+        importerImage,
         "copy",
         "oci:/work/oci",
         `docker-daemon:${imageTag}`,
@@ -1135,6 +1224,7 @@ const buildWithCurrentSkills = (
   image: string,
   target: DockerTarget,
   docker: DockerServices,
+  resolutionSidecar: ResolutionSidecar | undefined,
   expectedDigest?: string,
   npmRegistry?: string,
 ): Effect.Effect<string, ApplicationError> => {
@@ -1156,6 +1246,10 @@ const buildWithCurrentSkills = (
       runtimeSupport,
       temporaryParent,
       pluginGenerator,
+      undefined,
+      resolutionSidecar,
+      path.dirname(path.dirname(temporaryParent)),
+      npmRegistry,
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     yield* injectFloatingSkills(document, context, snapshot)
     return yield* buildOci(context, image, document, lock, target, docker, expectedDigest, npmRegistry)
@@ -1203,6 +1297,10 @@ const buildCandidateImage = (
     )
     const temporaryParent = path.join(xdgCacheHome, "trellage", "build")
     yield* io("cannot create build cache", () => mkdir(temporaryParent, { recursive: true }))
+    const resolutionSidecar = yield* resolveLockSidecar(
+      resolutionReceiptPath(document, lock.platform, xdgCacheHome),
+      lock,
+    )
     return yield* buildWithCurrentSkills(
       document,
       lock,
@@ -1212,6 +1310,7 @@ const buildCandidateImage = (
       image,
       target,
       docker,
+      resolutionSidecar,
       undefined,
       npmRegistry,
     )
@@ -1273,10 +1372,6 @@ const defaultRuntimeSupport: RuntimeSupport = {
   claudeEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-claude-entry.sh",
-  ),
-  hyperresearchRequirements: path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../assets/hyperresearch-requirements.lock",
   ),
   claudeBrowserAgent: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -1385,6 +1480,13 @@ const upgradeResolvers = (
   fallbacks: Array<string>,
 ): LockResolvers => {
   const canFallback = current !== undefined && lockIsReady(document, current, base.platform)
+  const currentPackageRequest =
+    current === undefined
+      ? undefined
+      : packageResolutionRequest(document, base.platform, current.sources, {
+          reference: current.image.base,
+          digest: current.image.base_digest,
+        })
   return {
     ...base,
     resolveSource: (request) =>
@@ -1405,6 +1507,8 @@ const upgradeResolvers = (
         Effect.catchAll((cause) => {
           if (
             !canFallback ||
+            currentPackageRequest === undefined ||
+            !packageResolutionInputsMatch(currentPackageRequest, request) ||
             current.packages.harness.kind !== request.kind ||
             current.packages.harness.selector !== request.selector
           ) {
@@ -1557,21 +1661,30 @@ export const upgradeProfile = (
       (lease) =>
         Effect.raceFirst(
           Effect.gen(function* () {
-            const originalLockBytes = yield* upgradeFileServices.readLockBytes(profilePath, platform)
-            const current = yield* originalLockBytes === undefined
+            const originalReceiptBytes = yield* readResolutionReceiptBytes(document, platform, xdgCacheHome).pipe(
+              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+            )
+            const receipt = yield* originalReceiptBytes === undefined
               ? Effect.succeed(undefined)
-              : parseLock(originalLockBytes).pipe(
+              : parseLock(originalReceiptBytes).pipe(
                   Effect.map((lock) => lock as ProfileLock | undefined),
                   Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
                 )
+            const current = receipt
             const fallbacks: Array<string> = []
             const resolvers = upgradeResolvers(
               document,
               current,
-              productionResolvers(xdgCacheHome, platform),
+              productionResolvers(xdgCacheHome, platform, npmRegistry),
               fallbacks,
             )
             const candidateLock = yield* compileLock(document, current, true, resolvers).pipe(
+              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+            )
+            const persistedCandidate = yield* parseLock(renderLock(candidateLock)).pipe(
+              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+            )
+            yield* requireResolvedLock(document, persistedCandidate, platform).pipe(
               Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
             )
             let candidateAttempted = false
@@ -1579,6 +1692,12 @@ export const upgradeProfile = (
             let backupSucceeded = false
             let canonicalExisted = false
             let canonicalAttempted = false
+            let alias: string | undefined
+            let aliasExisted = false
+            let aliasBackup: string | undefined
+            let aliasBackupAttempted = false
+            let aliasBackupSucceeded = false
+            let aliasAttempted = false
             let lockWriteAttempted = false
             let committed = false
 
@@ -1587,16 +1706,38 @@ export const upgradeProfile = (
               const digest = yield* retryUpgradeStep(
                 activeServices.buildCandidate(document, candidateLock, candidate, npmRegistry),
               )
-              const finalLock: ProfileLock =
+              const candidateSidecar = attachedSidecar(candidateLock)
+              const unresolvedFinalLock: ProfileLock =
                 document.profile.skill_bundles.length > 0
                   ? candidateLock
                   : {
                       ...candidateLock,
                       image: { ...candidateLock.image, final_digest: digest },
                     }
+              const finalLock =
+                candidateSidecar === undefined || unresolvedFinalLock === candidateLock
+                  ? unresolvedFinalLock
+                  : withAttachedSidecar(unresolvedFinalLock, candidateSidecar)
+              const persistedFinal = yield* parseLock(renderLock(finalLock)).pipe(
+                Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+              )
+              yield* requireLocked(document, persistedFinal, platform).pipe(
+                Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+              )
+              yield* publishAttachedSidecar(resolutionReceiptPath(document, platform, xdgCacheHome), finalLock)
+              if (document.profile.skill_bundles.length === 0) {
+                alias = profileImageAlias(document.profile.name, platform, finalLock.profile_hash, runtimeSnapshot.hash)
+                aliasBackup = `${alias}-backup-${process.pid}`
+                aliasExisted = yield* activeServices.imageExists(alias)
+              }
               canonicalExisted = yield* activeServices.imageExists(canonical)
               return yield* Effect.uninterruptibleMask(() =>
                 Effect.gen(function* () {
+                  if (alias !== undefined && aliasBackup !== undefined && aliasExisted) {
+                    aliasBackupAttempted = true
+                    yield* activeServices.tagImage(alias, aliasBackup)
+                    aliasBackupSucceeded = true
+                  }
                   if (canonicalExisted) {
                     backupAttempted = true
                     yield* activeServices.tagImage(canonical, backup)
@@ -1604,25 +1745,38 @@ export const upgradeProfile = (
                   }
                   canonicalAttempted = true
                   yield* activeServices.tagImage(candidate, canonical)
-                  if (document.profile.skill_bundles.length === 0) {
-                    yield* activeServices.tagImage(
-                      canonical,
-                      profileImageAlias(document.profile.name, platform, finalLock.profile_hash, runtimeSnapshot.hash),
-                    )
+                  if (alias !== undefined) {
+                    aliasAttempted = true
+                    yield* activeServices.tagImage(canonical, alias)
                   }
                   lockWriteAttempted = true
-                  yield* upgradeFileServices.writeLockBytes(profilePath, platform, renderLock(finalLock))
+                  yield* writeResolutionReceiptBytes(document, platform, xdgCacheHome, renderLock(finalLock)).pipe(
+                    Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+                  )
                   committed = true
                   return { image: canonical, digest, fallbacks }
                 }).pipe(
                   Effect.catchAllCause((primaryCause) => {
-                    if (!canonicalAttempted && !lockWriteAttempted) return Effect.failCause(primaryCause)
+                    if (!canonicalAttempted && !aliasAttempted && !lockWriteAttempted) {
+                      return Effect.failCause(primaryCause)
+                    }
                     const compensation: Array<Effect.Effect<void, ApplicationError>> = []
                     if (lockWriteAttempted) {
                       compensation.push(
-                        originalLockBytes === undefined
-                          ? upgradeFileServices.removeLock(profilePath, platform)
-                          : upgradeFileServices.writeLockBytes(profilePath, platform, originalLockBytes),
+                        originalReceiptBytes === undefined
+                          ? removeResolutionReceipt(document, platform, xdgCacheHome).pipe(
+                              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+                            )
+                          : writeResolutionReceiptBytes(document, platform, xdgCacheHome, originalReceiptBytes).pipe(
+                              Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+                            ),
+                      )
+                    }
+                    if (aliasAttempted && alias !== undefined) {
+                      compensation.push(
+                        aliasExisted && aliasBackupSucceeded && aliasBackup !== undefined
+                          ? activeServices.tagImage(aliasBackup, alias)
+                          : activeServices.removeImage(alias),
                       )
                     }
                     if (canonicalAttempted) {
@@ -1651,6 +1805,9 @@ export const upgradeProfile = (
               const operations: Array<Effect.Effect<void, ApplicationError>> = []
               if (candidateAttempted) operations.push(activeServices.removeImage(candidate))
               if (backupAttempted) operations.push(activeServices.removeImage(backup))
+              if (aliasBackupAttempted && aliasBackup !== undefined) {
+                operations.push(activeServices.removeImage(aliasBackup))
+              }
               return runAll(operations).pipe(
                 Effect.catchAllCause((cause) =>
                   committed
@@ -1721,18 +1878,23 @@ export const buildProfile = (
       runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    const current = yield* loadLock(profilePath, platform)
     let lock: ProfileLock
+    let receipt: ProfileLock | undefined
     if (locked) {
-      lock = yield* requireLocked(document, current, platform).pipe(
+      const release = yield* loadReleaseLock(profilePath, platform)
+      lock = yield* requireLocked(document, release, platform).pipe(
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
     } else {
-      lock = yield* compileLock(document, current, false, productionResolvers(xdgCacheHome, platform)).pipe(
-        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-      )
+      const development = yield* loadDevelopmentResolution(document, xdgCacheHome, platform)
+      receipt = development.receipt
+      lock = yield* compileLock(
+        document,
+        development.current,
+        false,
+        productionResolvers(xdgCacheHome, platform, npmRegistry),
+      ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
     }
-    if (!locked && lock !== current) yield* writeLock(profilePath, lock)
     const directories = yield* Effect.forEach(
       lock.sources,
       (source) =>
@@ -1761,6 +1923,10 @@ export const buildProfile = (
       image,
       target,
       docker,
+      yield* resolveLockSidecar(
+        locked ? adjacentLockPath(profilePath, platform) : resolutionReceiptPath(document, platform, xdgCacheHome),
+        lock,
+      ),
       locked && !floatingSkills ? lock.image.final_digest : undefined,
       npmRegistry,
     )
@@ -1775,8 +1941,13 @@ export const buildProfile = (
         ]),
       )
     }
-    if (!locked && !floatingSkills && digest !== lock.image.final_digest) {
-      yield* writeLock(profilePath, withFinalDigest(lock, digest))
+    if (!locked) {
+      const finalLock = !floatingSkills && digest !== lock.image.final_digest ? withFinalDigest(lock, digest) : lock
+      if (finalLock !== receipt) {
+        yield* writeResolutionReceipt(document, xdgCacheHome, finalLock).pipe(
+          Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+        )
+      }
     }
     return { image, digest }
   })
@@ -1800,10 +1971,11 @@ export const verifyProfile = (
 > =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const current = yield* loadLock(profilePath, platform)
+    const current = yield* loadReleaseLock(profilePath, platform)
     const lock = yield* requireLocked(document, current, platform).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
+    yield* resolveLockSidecar(adjacentLockPath(profilePath, platform), lock)
     const digest = lock.image.final_digest
     const skillsMode = document.profile.skill_bundles.length > 0 ? "floating" : "locked"
     if (digest === undefined && skillsMode === "locked") {
@@ -1890,15 +2062,16 @@ const harnessSpecificMetadata = (document: ProfileDocument): Readonly<Record<str
 
 const assembleProfileMetadata = (
   document: ProfileDocument,
-  lock: ProfileLock | undefined,
+  receipt: ProfileLock | undefined,
   platform: Platform,
   hash: string,
-  ready: boolean,
+  locallyResolved: boolean,
+  releaseLockAvailable: boolean,
   runtimeHash: string,
 ): Readonly<Record<string, unknown>> => {
   const harnessKind = document.profile.harness.kind
   const floatingSkills = document.profile.skill_bundles.length > 0
-  const resolvedVersion = metadataResolvedVersion(document, lock, ready)
+  const resolvedVersion = metadataResolvedVersion(document, receipt, locallyResolved)
   const headlong = harnessKind === "headlong"
   return {
     profile_path: document.path,
@@ -1909,11 +2082,17 @@ const assembleProfileMetadata = (
     platform,
     image: profileImage(document.profile.name, platform),
     image_alias: floatingSkills ? null : profileImageAlias(document.profile.name, platform, hash, runtimeHash),
-    locked: ready,
+    schema_version: 2,
+    resolution_policy: document.profile.resolution,
+    resolution_channel: "stable",
+    locally_resolved: locallyResolved,
+    release_lock_available: releaseLockAvailable,
+    locked: locallyResolved,
     skills_mode: floatingSkills ? "floating" : "locked",
     final_digest_locked: !floatingSkills,
-    build_command: `trellage build --locked ${document.path}`,
-    refresh_command: `trellage build ${document.path}`,
+    build_command: `trellage build ${document.path}`,
+    release_build_command: `trellage build --locked ${document.path}`,
+    refresh_command: `trellage upgrade ${document.path}`,
     harness_args: document.profile.harness.args ?? [],
     secrets_provider: document.profile.secrets.provider,
     required_secrets: document.profile.secrets.required,
@@ -1941,12 +2120,24 @@ const assembleProfileMetadata = (
 export const profileMetadata = (
   profilePath: string,
   platform: Platform,
+  xdgCacheHome: string = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache"),
 ): Effect.Effect<Readonly<Record<string, unknown>>, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const lock = yield* loadLock(profilePath, platform)
+    const receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
+    const release = yield* loadReleaseLock(profilePath, platform).pipe(Effect.orElseSucceed(() => undefined))
     const hash = profileHash(document)
-    const ready = lockIsReady(document, lock, platform)
+    const locallyResolved = lockIsReady(document, receipt, platform)
+    const releaseSidecarReady =
+      release?.sidecar === undefined
+        ? true
+        : yield* loadResolutionSidecar(adjacentLockPath(profilePath, platform), release).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          )
+    const releaseLockAvailable = lockIsReady(document, release, platform) && releaseSidecarReady
     const harnessKind = document.profile.harness.kind
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       harnessKind,
@@ -1954,5 +2145,13 @@ export const profileMetadata = (
       runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    return assembleProfileMetadata(document, lock, platform, hash, ready, runtimeSnapshot.hash)
+    return assembleProfileMetadata(
+      document,
+      receipt,
+      platform,
+      hash,
+      locallyResolved,
+      releaseLockAvailable,
+      runtimeSnapshot.hash,
+    )
   })

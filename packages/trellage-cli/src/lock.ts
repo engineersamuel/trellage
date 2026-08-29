@@ -4,12 +4,20 @@ import path from "node:path"
 import { Data, Effect } from "effect"
 
 import type { InventoryEntry } from "./inventory.js"
-import { claudePypiToolNames, isClaudeProfile, type ProfileDocument } from "./profile.js"
+import { claudeHasSerena, claudePypiToolNames, isClaudeProfile, type ProfileDocument } from "./profile.js"
 import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.js"
-import { arm64ArtifactCatalog, extraClaudeMarketplaceArtifacts, lockedArtifactError } from "./artifact-catalog.js"
+import { extraClaudeMarketplaceArtifactNames, lockedArtifactError } from "./artifact-catalog.js"
+import {
+  createPythonConstraintsSidecar,
+  resolutionSidecarReference,
+  type ResolutionSidecar,
+  type ResolutionSidecarReference,
+} from "./resolution-sidecar.js"
 
 const legacySourceProvenance = Symbol("legacySourceProvenance")
 const persistedLockProvenance = Symbol("persistedLockProvenance")
+const packagePythonConstraints = Symbol("packagePythonConstraints")
+const attachedResolutionSidecar = Symbol("attachedResolutionSidecar")
 
 interface LegacyLockProvenance {
   readonly packages: true
@@ -102,13 +110,24 @@ export interface RuntimePackageLock {
   readonly name: string
   readonly version: string
   readonly integrity: string
+  readonly size?: number
+  readonly url?: string
+  readonly direct?: boolean
 }
 
 export interface PackageLock {
   readonly harness: HarnessPackageLock
   readonly runtime: ReadonlyArray<RuntimePackageLock>
+  readonly runtime_direct?: ReadonlyArray<string>
+  readonly runtime_closure_integrity?: string
   readonly artifacts?: ReadonlyArray<ArtifactLock>
   readonly python_lock_integrity?: string
+  readonly [packagePythonConstraints]?: string
+}
+
+export interface OciImageLock {
+  readonly reference: string
+  readonly digest: string
 }
 
 export interface ProfileLock {
@@ -118,6 +137,11 @@ export interface ProfileLock {
   readonly profile_hash: string
   readonly sources: ReadonlyArray<SourceLock>
   readonly packages: PackageLock
+  readonly sidecar?: ResolutionSidecarReference
+  readonly build?: {
+    readonly builder: OciImageLock
+    readonly importer: OciImageLock
+  }
   readonly image: {
     readonly base: string
     readonly base_digest: string
@@ -125,7 +149,33 @@ export interface ProfileLock {
   }
   readonly [legacySourceProvenance]?: LegacyLockProvenance
   readonly [persistedLockProvenance]?: true
+  readonly [attachedResolutionSidecar]?: ResolutionSidecar
 }
+
+export const withPythonConstraints = <T extends object>(packages: T, content: string): T => {
+  Object.defineProperty(packages, packagePythonConstraints, {
+    value: content,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  })
+  return packages
+}
+
+export const pythonConstraintsFromPackages = (packages: object): string | undefined =>
+  (packages as { readonly [packagePythonConstraints]?: string })[packagePythonConstraints]
+
+export const withAttachedSidecar = (lock: ProfileLock, sidecar: ResolutionSidecar): ProfileLock => {
+  Object.defineProperty(lock, attachedResolutionSidecar, {
+    value: sidecar,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  })
+  return lock
+}
+
+export const attachedSidecar = (lock: ProfileLock): ResolutionSidecar | undefined => lock[attachedResolutionSidecar]
 
 export const markPersistedLock = (lock: ProfileLock): ProfileLock => {
   Object.defineProperty(lock, persistedLockProvenance, {
@@ -197,15 +247,21 @@ export interface LockResolvers {
     readonly selector: string
     readonly platform: "linux/arm64" | "linux/amd64"
     readonly packages: ReadonlyArray<string>
+    readonly base?: OciImageLock
     readonly claudeAdapter?: "claude-marketplace" | "hyperresearch"
-    readonly extraArtifacts?: ReadonlyArray<ArtifactLock>
-    readonly extraPythonLockIntegrity?: string
+    readonly extraArtifactNames?: ReadonlyArray<string>
+    readonly needsPython?: boolean
+    readonly pythonRequirements?: ReadonlyArray<string>
+    readonly pythonProject?: Pick<SourceLock, "repository" | "ref" | "commit">
     readonly headlongSource?: Pick<SourceLock, "commit" | "integrity">
   }) => Effect.Effect<PackageLock, unknown>
   readonly resolveBase: (request: {
     readonly reference: string
     readonly platform: string
   }) => Effect.Effect<{ readonly reference: string; readonly digest: string }, unknown>
+  readonly resolveBuild: (request: {
+    readonly platform: Platform
+  }) => Effect.Effect<NonNullable<ProfileLock["build"]>, unknown>
 }
 
 export class LockError extends Data.TaggedError("LockError")<{
@@ -283,6 +339,24 @@ const sortedRecord = (record: Readonly<Record<string, string>>): Readonly<Record
 
 const hasFloatingSkills = (document: ProfileDocument): boolean => document.profile.skill_bundles.length > 0
 
+const isOciUrl = (value: string): boolean => {
+  try {
+    const normalized = value.includes("://") ? value : `oci://${value}`
+    return new URL(normalized).protocol === "oci:"
+  } catch {
+    return false
+  }
+}
+
+const validateBuildIdentity = (build: ProfileLock["build"]): string | undefined => {
+  if (build === undefined) return undefined
+  if (!isOciUrl(build.builder.reference)) return "builder image reference is invalid"
+  if (!sha256Pattern.test(build.builder.digest)) return "builder image digest is invalid"
+  if (!isOciUrl(build.importer.reference)) return "importer image reference is invalid"
+  if (!sha256Pattern.test(build.importer.digest)) return "importer image digest is invalid"
+  return undefined
+}
+
 const unsafeSymlinkTarget = (filePath: string, target: string): boolean => {
   if (
     target.length === 0 ||
@@ -312,7 +386,22 @@ const validateLockIdentity = (
   if (current.image.final_digest !== undefined && !sha256Pattern.test(current.image.final_digest)) {
     return "final OCI digest is invalid"
   }
-  return undefined
+  if (
+    current.sidecar !== undefined &&
+    (!sha256Pattern.test(current.sidecar.integrity) ||
+      !Number.isSafeInteger(current.sidecar.size) ||
+      current.sidecar.size <= 0)
+  ) {
+    return "resolution sidecar reference is invalid"
+  }
+  if (
+    current.build !== undefined &&
+    current.packages.python_lock_integrity !== undefined &&
+    current.sidecar === undefined
+  ) {
+    return "Python dependency lock sidecar is missing"
+  }
+  return validateBuildIdentity(current.build)
 }
 
 const harnessLabels: Readonly<Record<HarnessPackageLock["kind"], string>> = {
@@ -404,7 +493,7 @@ interface ArtifactValidation {
 const isArtifactUrl = (value: string): boolean => {
   try {
     const protocol = new URL(value).protocol
-    return protocol === "https:" || protocol === "oci:"
+    return protocol === "https:" || protocol === "oci:" || protocol === "npm:"
   } catch {
     return false
   }
@@ -484,8 +573,13 @@ const validateClaudeArtifacts = (
   artifactNames: ReadonlySet<string>,
 ): string | undefined => {
   if (current.packages.harness.kind !== "claude") return undefined
-  const missingCommon = missingArtifact(artifactNames, ["node", "builder-oci", "skopeo-oci"])
+  const missingCommon = missingArtifact(artifactNames, ["node"])
   if (missingCommon !== undefined) return `required Claude artifact is missing: ${missingCommon}`
+  const needsUv =
+    document.profile.plugins[0]?.adapter === "hyperresearch" ||
+    (isClaudeProfile(document.profile) &&
+      (claudePypiToolNames(document.profile).length > 0 || claudeHasSerena(document.profile)))
+  if (needsUv && !artifactNames.has("uv")) return "required Claude artifact is missing: uv"
   const claudeAdapter = document.profile.harness.kind === "claude" ? document.profile.plugins[0]?.adapter : undefined
   if (claudeAdapter === "hyperresearch") return validateHyperresearchArtifacts(current, artifactNames)
   return validateClaudeMarketplaceArtifacts(document, current, artifactNames)
@@ -499,6 +593,18 @@ const codexCodeModeHostUrl = (version: string, platform: Platform): string => {
   return `https://github.com/openai/codex/releases/download/rust-v${version}/${asset}`
 }
 
+const validateCodexArtifactSet = (artifacts: ReadonlyArray<ArtifactLock>, requireUv: boolean): string | undefined => {
+  if (
+    artifacts.some((artifact) => artifact.name !== "codex-code-mode-host" && artifact.name !== "uv") ||
+    artifacts.length > 2
+  ) {
+    return "Codex artifact locks allow only codex-code-mode-host and uv"
+  }
+  return requireUv && !artifacts.some((artifact) => artifact.name === "uv")
+    ? "required Codex artifact is missing: uv"
+    : undefined
+}
+
 const validateCodexArtifacts = (current: ProfileLock, platform: Platform): string | undefined => {
   const harness = current.packages.harness
   if (harness.kind !== "codex") return undefined
@@ -506,7 +612,8 @@ const validateCodexArtifacts = (current: ProfileLock, platform: Platform): strin
     const artifacts = current.packages.artifacts ?? []
     const codeModeHost = artifacts.find((artifact) => artifact.name === "codex-code-mode-host")
     if (codeModeHost === undefined) return "required Codex artifact is missing: codex-code-mode-host"
-    if (artifacts.length !== 1) return "Codex artifact locks require exactly one artifact: codex-code-mode-host"
+    const artifactSetError = validateCodexArtifactSet(artifacts, current.build !== undefined)
+    if (artifactSetError !== undefined) return artifactSetError
     if (codeModeHost.version !== harness.version) {
       return "Codex code-mode host artifact version does not match harness version"
     }
@@ -529,12 +636,52 @@ const validateHeadlongArtifacts = (current: ProfileLock, artifactNames: Readonly
     : "Python dependency lock requires the Claude harness"
 }
 
+const validatePrimeArtifacts = (current: ProfileLock): string | undefined => {
+  if (
+    current.packages.python_lock_integrity !== undefined &&
+    validateClaudePythonIntegrity(current.packages.python_lock_integrity) !== undefined
+  ) {
+    return "Prime Python dependency lock integrity is invalid"
+  }
+  const artifacts = current.packages.artifacts
+  if (artifacts === undefined) return undefined
+  const names = new Set(artifacts.map((artifact) => artifact.name))
+  return names.size === 2 && names.has("node") && names.has("uv")
+    ? undefined
+    : "Prime artifact locks require exactly node and uv"
+}
+
+const validateCopilotArtifacts = (current: ProfileLock): string | undefined => {
+  const artifacts = current.packages.artifacts
+  if (artifacts === undefined) return undefined
+  return artifacts.length === 1 && artifacts[0]?.name === "node"
+    ? undefined
+    : "Copilot artifact locks require exactly node"
+}
+
 const validateOtherHarnessArtifacts = (current: ProfileLock): string | undefined => {
   const kind = current.packages.harness.kind
   if (kind === "claude" || kind === "codex" || kind === "headlong") return undefined
+  if (kind === "prime") return validatePrimeArtifacts(current)
+  if (kind === "copilot") return validateCopilotArtifacts(current)
   return current.packages.artifacts === undefined && current.packages.python_lock_integrity === undefined
     ? undefined
     : "Claude artifact locks require the Claude harness"
+}
+
+const validateRuntimePackage = (
+  runtime: RuntimePackageLock,
+  requireResolutionMetadata: boolean,
+): string | undefined => {
+  if (!isExactRuntimeVersion(runtime.version)) return `runtime package version is not exact: ${runtime.name}`
+  if (!sha256Pattern.test(runtime.integrity)) return `runtime package integrity is invalid: ${runtime.name}`
+  if (!requireResolutionMetadata) return undefined
+  if (!Number.isSafeInteger(runtime.size) || (runtime.size ?? 0) <= 0) {
+    return `runtime package size is invalid: ${runtime.name}`
+  }
+  return /^https?:\/\/(?:deb|security)\.debian\.org\//.test(runtime.url ?? "")
+    ? undefined
+    : `runtime package URL is invalid: ${runtime.name}`
 }
 
 const validateRuntimePackages = (current: ProfileLock): string | undefined => {
@@ -542,11 +689,44 @@ const validateRuntimePackages = (current: ProfileLock): string | undefined => {
   for (const runtime of current.packages.runtime) {
     if (runtimeNames.has(runtime.name)) return `duplicate runtime package: ${runtime.name}`
     runtimeNames.add(runtime.name)
-    if (!isExactRuntimeVersion(runtime.version)) return `runtime package version is not exact: ${runtime.name}`
-    if (!sha256Pattern.test(runtime.integrity)) return `runtime package integrity is invalid: ${runtime.name}`
+    const error = validateRuntimePackage(runtime, current.build !== undefined)
+    if (error !== undefined) return error
+  }
+  const direct = current.packages.runtime_direct
+  if (direct === undefined) return undefined
+  if (new Set(direct).size !== direct.length) return "direct runtime package list contains duplicates"
+  if (current.packages.runtime.some((runtime) => runtime.direct === undefined)) {
+    return "runtime package direct/transitive state is missing"
+  }
+  if (current.packages.runtime.some((runtime) => runtime.direct === true && !direct.includes(runtime.name))) {
+    return "runtime package direct state does not match requested packages"
+  }
+  if (current.packages.runtime.some((runtime) => direct.includes(runtime.name) && runtime.direct !== true)) {
+    return "requested runtime package is marked transitive"
+  }
+  const expectedClosure = sha256Text(
+    JSON.stringify(
+      [...current.packages.runtime]
+        .sort((left, right) => left.name.localeCompare(right.name, "en"))
+        .map(({ name, version, integrity, size, url, direct: isDirect }) => ({
+          name,
+          version,
+          integrity,
+          size,
+          url,
+          direct: isDirect,
+        })),
+    ),
+  )
+  if (current.packages.runtime_closure_integrity !== expectedClosure) {
+    return "runtime package closure integrity does not match"
   }
   return undefined
 }
+
+const directRuntimeNames = (packages: PackageLock): ReadonlyArray<string> =>
+  packages.runtime_direct ??
+  packages.runtime.filter((runtime) => runtime.direct !== false).map((runtime) => runtime.name)
 
 const validatePluginVersions = (
   label: string,
@@ -727,8 +907,7 @@ const lockMatchesProfile = (document: ProfileDocument, current: ProfileLock): bo
     requested.every((source, index) => sameSource(current.sources[index]!, source)) &&
     current.packages.harness.kind === document.profile.harness.kind &&
     current.packages.harness.selector === document.profile.harness.version &&
-    JSON.stringify(current.packages.runtime.map((runtime) => runtime.name)) ===
-      JSON.stringify(document.profile.image.packages) &&
+    JSON.stringify(directRuntimeNames(current.packages)) === JSON.stringify(document.profile.image.packages) &&
     current.image.base === document.profile.image.base
   )
 }
@@ -755,10 +934,7 @@ const reusablePackages = (
   if (current.platform !== platform) return undefined
   if (current.packages.harness.kind !== document.profile.harness.kind) return undefined
   if (current.packages.harness.selector !== document.profile.harness.version) return undefined
-  if (
-    JSON.stringify(current.packages.runtime.map((runtime) => runtime.name)) !==
-    JSON.stringify(document.profile.image.packages)
-  ) {
+  if (JSON.stringify(directRuntimeNames(current.packages)) !== JSON.stringify(document.profile.image.packages)) {
     return undefined
   }
   return current.packages
@@ -833,7 +1009,8 @@ const resolveSources = (
     { concurrency: 1 },
   )
 
-type PackageRequest = Parameters<LockResolvers["resolvePackages"]>[0]
+export type PackageResolutionRequest = Parameters<LockResolvers["resolvePackages"]>[0]
+type PackageRequest = PackageResolutionRequest
 
 const validCurrentLock = (
   document: ProfileDocument,
@@ -850,36 +1027,139 @@ const claudeLockAdapter = (document: ProfileDocument): PackageRequest["claudeAda
 
 const extraPackageFields = (
   document: ProfileDocument,
-): Pick<PackageRequest, "extraArtifacts" | "extraPythonLockIntegrity"> => {
-  const extraArtifacts = extraClaudeMarketplaceArtifacts(document)
-  if (extraArtifacts.length === 0) return {}
-  if (extraArtifacts.some((artifact) => artifact.name === "python")) {
-    return { extraArtifacts, extraPythonLockIntegrity: arm64ArtifactCatalog.graphOfLoopsPythonLockIntegrity }
+): Pick<PackageRequest, "extraArtifactNames" | "needsPython" | "pythonRequirements"> => {
+  const extraArtifactNames = extraClaudeMarketplaceArtifactNames(document)
+  const pythonRequirements = isClaudeProfile(document.profile) ? claudePypiToolNames(document.profile) : []
+  const needsPython = pythonRequirements.length > 0
+  if (extraArtifactNames.length === 0 && !needsPython) return {}
+  return {
+    ...(extraArtifactNames.length === 0 ? {} : { extraArtifactNames }),
+    ...(needsPython
+      ? {
+          needsPython: true,
+          pythonRequirements,
+        }
+      : {}),
   }
-  return { extraArtifacts }
 }
 
-const packageResolutionRequest = (
+export const packageResolutionRequest = (
   document: ProfileDocument,
   platform: Platform,
   sources: ReadonlyArray<SourceLock>,
+  base: OciImageLock,
 ): PackageRequest => {
   const claudeAdapter = claudeLockAdapter(document)
   const headlongSource =
     document.profile.harness.kind === "headlong"
       ? sources.find((source) => source.kind === "harness" && source.adapter === "headlong")
       : undefined
+  const pythonProject =
+    claudeAdapter === "hyperresearch"
+      ? sources.find((source) => source.kind === "plugin" && source.adapter === "hyperresearch")
+      : undefined
   return {
     kind: document.profile.harness.kind,
     selector: document.profile.harness.version,
     platform,
     packages: document.profile.image.packages,
+    base,
     ...(claudeAdapter === undefined ? {} : { claudeAdapter }),
     ...(headlongSource === undefined
       ? {}
       : { headlongSource: { commit: headlongSource.commit, integrity: headlongSource.integrity } }),
+    ...(pythonProject === undefined
+      ? {}
+      : {
+          pythonProject: {
+            repository: pythonProject.repository,
+            ref: pythonProject.ref,
+            commit: pythonProject.commit,
+          },
+        }),
     ...extraPackageFields(document),
   }
+}
+
+const sortedStrings = (values: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
+  values === undefined ? [] : [...values].sort((left, right) => left.localeCompare(right, "en"))
+
+export const packageResolutionInputsMatch = (
+  left: PackageResolutionRequest,
+  right: PackageResolutionRequest,
+): boolean =>
+  JSON.stringify({
+    kind: left.kind,
+    selector: left.selector,
+    platform: left.platform,
+    packages: left.packages,
+    base: left.base,
+    claudeAdapter: left.claudeAdapter,
+    extraArtifactNames: sortedStrings(left.extraArtifactNames),
+    needsPython: left.needsPython ?? false,
+    pythonRequirements: sortedStrings(left.pythonRequirements),
+    pythonProject: left.pythonProject,
+    headlongSource: left.headlongSource,
+  }) ===
+  JSON.stringify({
+    kind: right.kind,
+    selector: right.selector,
+    platform: right.platform,
+    packages: right.packages,
+    base: right.base,
+    claudeAdapter: right.claudeAdapter,
+    extraArtifactNames: sortedStrings(right.extraArtifactNames),
+    needsPython: right.needsPython ?? false,
+    pythonRequirements: sortedStrings(right.pythonRequirements),
+    pythonProject: right.pythonProject,
+    headlongSource: right.headlongSource,
+  })
+
+const compileResolutionSidecar = (
+  profileHash: string,
+  platform: Platform,
+  packages: PackageLock,
+  current: ProfileLock | undefined,
+): { readonly reference?: ResolutionSidecarReference; readonly sidecar?: ResolutionSidecar } => {
+  const constraints = pythonConstraintsFromPackages(packages)
+  if (constraints === undefined) return current?.sidecar === undefined ? {} : { reference: current.sidecar }
+  const sidecar = createPythonConstraintsSidecar(profileHash, platform, constraints)
+  return { reference: resolutionSidecarReference(sidecar), sidecar }
+}
+
+const assembleCompiledLock = (options: {
+  readonly platform: Platform
+  readonly profileHash: string
+  readonly sources: ReadonlyArray<SourceLock>
+  readonly packages: PackageLock
+  readonly build: NonNullable<ProfileLock["build"]>
+  readonly base: { readonly reference: string; readonly digest: string }
+  readonly current?: ProfileLock
+  readonly update: boolean
+}): ProfileLock => {
+  const compiledSidecar = compileResolutionSidecar(
+    options.profileHash,
+    options.platform,
+    options.packages,
+    options.current,
+  )
+  const finalDigest = !options.update ? options.current?.image.final_digest : undefined
+  const compiled: ProfileLock = {
+    schema: 1,
+    platform: options.platform,
+    source_date_epoch: 1784379906,
+    profile_hash: options.profileHash,
+    sources: options.sources,
+    packages: options.packages,
+    ...(compiledSidecar.reference === undefined ? {} : { sidecar: compiledSidecar.reference }),
+    build: options.build,
+    image: {
+      base: options.base.reference,
+      base_digest: options.base.digest,
+      ...(finalDigest === undefined ? {} : { final_digest: finalDigest }),
+    },
+  }
+  return compiledSidecar.sidecar === undefined ? compiled : withAttachedSidecar(compiled, compiledSidecar.sidecar)
 }
 
 export const compileLock = (
@@ -895,13 +1175,9 @@ export const compileLock = (
     )
     const hash = profileHash(document)
     const validCurrent = validCurrentLock(document, current, platform)
-    if (validCurrent !== undefined && lockMatchesProfile(document, validCurrent) && !update) return validCurrent
+    const sameProfile = validCurrent !== undefined && lockMatchesProfile(document, validCurrent)
+    if (validCurrent?.build !== undefined && sameProfile && !update) return validCurrent
     const sources = yield* resolveSources(document, validCurrent, update, resolvers)
-    const packages =
-      reusablePackages(document, validCurrent, update, platform) ??
-      (yield* resolvers
-        .resolvePackages(packageResolutionRequest(document, platform, sources))
-        .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
     const base =
       reusableBase(document, validCurrent, update, platform) ??
       (yield* resolvers
@@ -910,24 +1186,34 @@ export const compileLock = (
           platform,
         })
         .pipe(Effect.mapError((cause) => new LockError({ message: "base image resolution failed", cause }))))
-    return {
-      schema: 1,
+    const packages =
+      reusablePackages(document, validCurrent, update, platform) ??
+      (yield* resolvers
+        .resolvePackages(packageResolutionRequest(document, platform, sources, base))
+        .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
+    const build =
+      validCurrent?.build !== undefined && !update
+        ? validCurrent.build
+        : yield* resolvers
+            .resolveBuild({ platform })
+            .pipe(Effect.mapError((cause) => new LockError({ message: "build image resolution failed", cause })))
+    return assembleCompiledLock({
       platform,
-      source_date_epoch: 1784379906,
-      profile_hash: hash,
+      profileHash: hash,
       sources,
       packages,
-      image: {
-        base: base.reference,
-        base_digest: base.digest,
-      },
-    }
+      build,
+      base,
+      ...(sameProfile ? { current: validCurrent } : {}),
+      update,
+    })
   })
 
-export const requireLocked = (
+const requireValidatedLock = (
   document: ProfileDocument,
   current: ProfileLock | undefined,
-  platform?: Platform,
+  platform: Platform | undefined,
+  requireFinalDigest: boolean,
 ): Effect.Effect<ProfileLock, LockError> => {
   if (current === undefined) return Effect.fail(new LockError({ message: "missing lock" }))
   const selectedPlatform = platform ?? current.platform
@@ -938,9 +1224,22 @@ export const requireLocked = (
     return Effect.fail(new LockError({ message: `production artifacts are unavailable for ${selectedPlatform}` }))
   }
   if (current.profile_hash !== profileHash(document)) return Effect.fail(new LockError({ message: "stale lock" }))
-  const semanticError = lockSemanticError(document, current, !hasFloatingSkills(document), selectedPlatform)
+  const semanticError = lockSemanticError(document, current, requireFinalDigest, selectedPlatform)
   if (semanticError !== undefined)
     return Effect.fail(new LockError({ message: `lock is incomplete or invalid: ${semanticError}` }))
   if (!lockMatchesProfile(document, current)) return Effect.fail(new LockError({ message: "incompatible lock" }))
   return Effect.succeed(current)
 }
+
+export const requireResolvedLock = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  platform?: Platform,
+): Effect.Effect<ProfileLock, LockError> => requireValidatedLock(document, current, platform, false)
+
+export const requireLocked = (
+  document: ProfileDocument,
+  current: ProfileLock | undefined,
+  platform?: Platform,
+): Effect.Effect<ProfileLock, LockError> =>
+  requireValidatedLock(document, current, platform, !hasFloatingSkills(document))
