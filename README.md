@@ -86,6 +86,10 @@ Four resolution commands, four different jobs:
 - `trellage build --locked <profile>` and `trellage ci-verify <profile>`
   require that exact release snapshot. They never fall back to floating
   development resolution.
+- Prime is development-only for this policy today. Its `lock`,
+  `build --locked`, and `ci-verify` commands fail closed until Trellage can
+  lock and install the complete Prime npm and Python bootstrap closures
+  offline.
 
 Skill sources and bundles are approved in [`skills.json`](skills.json).
 Profiles select bundle names with `skill_bundles`; they do not store skill
@@ -389,6 +393,10 @@ access to PyPI. Every launch restores the managed provider definition so
 persisted edits cannot redirect this profile to another endpoint. Use
 `--model MODEL` only when the full inventory publishes
 `modelOverride: true`.
+
+Prime release snapshots are intentionally unavailable for now. The current
+bootstrap can still resolve transitive npm and Python content online, so
+Trellage refuses to label that state as a reproducible release lock.
 
 ## Headlong
 
@@ -1050,10 +1058,21 @@ results/<harness-id>/<run-id>/
     ├── events.jsonl
     ├── last-message.md
     ├── package-inventory.txt
+    ├── source-provenance.json
     ├── app-inventory.json
     └── artifact-hashes.json
 ```
 
 `comparison.json` records prompt parity, runtime/provider/model identity, evidence roots, and pass/fail status. It intentionally has no `winner` field, leaving a stable seam for a deterministic rubric or future LLM judge.
+
+Each contestant image creates `/opt/trellage/source-provenance.json` at build
+time. The read-only, network-disabled evidence exporter reads this receipt
+directly from the image, not from the writable workspace. The receipt records
+`schemaVersion`, `source`, `requestedRef`, and the lowercase full
+`resolvedCommit`. Collection fails if a receipt is missing, malformed,
+duplicated, unaccounted, or does not match the contestant's single package.
+`manifest.resolved.json` preserves the requested `ref` and adds the validated
+`resolvedCommit`; each contestant evidence directory also preserves the source
+receipt.
 
 See [docs/verification.md](docs/verification.md) for the current live proof and audit commands.

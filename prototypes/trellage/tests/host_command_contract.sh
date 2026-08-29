@@ -3,7 +3,6 @@ set -euo pipefail
 
 prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
-real_git="$(command -v git)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-host-test.XXXXXX")"
 test_root="$(cd "$test_root" && pwd -P)"
 trap 'rm -rf -- "$test_root"' EXIT
@@ -36,30 +35,67 @@ NODE
 write_codex_resolution_fixture() {
   local profile="$1"
   local lock="$2"
-  local profile_hash plugin_ref base_ref
-  profile_hash="$(profile_hash_for "$profile")"
-  plugin_ref="$(sed -n 's/^ref = "\(.*\)"/\1/p' "$profile" | head -n 1)"
-  base_ref="$(sed -n 's/^base = "\(.*\)"/\1/p' "$profile" | head -n 1)"
-  "$real_git" -C "$prototype_dir/../.." show \
-    HEAD:profiles/codex-superpowers/profile.linux-arm64.lock.toml >"$lock"
-  sed -i.bak \
-    -e "s/^profile_hash = .*/profile_hash = \"$profile_hash\"/" \
-    -e "s/^ref = .*/ref = \"$plugin_ref\"/" \
-    -e "s/^base = .*/base = \"$base_ref\"/" \
-    "$lock"
-  rm -f "$lock.bak"
   (
     cd "$prototype_dir/../../packages/trellage-cli"
     "$real_node" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
-import { readFile } from "node:fs/promises"
+import { writeFile } from "node:fs/promises"
 import { Effect } from "effect"
 import { loadProfile } from "./dist/application.js"
-import { parseLock } from "./dist/lock-file.js"
+import { profileHash, requireResolvedLock, sha256Text } from "./dist/lock.js"
+import { parseLock, renderLock } from "./dist/lock-file.js"
 import { writeResolutionReceipt } from "./dist/resolution-receipt.js"
 
 const document = await Effect.runPromise(loadProfile(process.argv[2]))
-const lock = await Effect.runPromise(parseLock(await readFile(process.argv[3], "utf8")))
-await Effect.runPromise(writeResolutionReceipt(document, process.argv[4], lock))
+const version = "9.9.9"
+const digest = sha256Text("host-command-contract")
+const lock = {
+  schema: 1,
+  platform: "linux/arm64",
+  source_date_epoch: 1,
+  profile_hash: profileHash(document),
+  sources: document.profile.plugins.map((plugin) => ({
+    kind: "plugin",
+    adapter: plugin.adapter,
+    ...("marketplace" in plugin ? { marketplace: plugin.marketplace } : {}),
+    repository: plugin.repository,
+    ref: plugin.ref,
+    select: plugin.select,
+    commit: /^[0-9a-f]{40}$/.test(plugin.ref) ? plugin.ref : "a".repeat(40),
+    integrity: sha256Text(JSON.stringify([])),
+    files: [],
+  })),
+  packages: {
+    harness: {
+      kind: "codex",
+      selector: document.profile.harness.version,
+      version,
+      integrity: digest,
+      url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-unknown-linux-musl.tar.gz`,
+      size: 1,
+    },
+    runtime: document.profile.image.packages.map((name) => ({
+      name,
+      version: "1.0.0",
+      integrity: digest,
+    })),
+    artifacts: [{
+      name: "codex-code-mode-host",
+      version,
+      integrity: digest,
+      url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz`,
+      size: 1,
+    }],
+  },
+  image: {
+    base: document.profile.image.base,
+    base_digest: digest,
+  },
+}
+const rendered = renderLock(lock)
+const parsed = await Effect.runPromise(parseLock(rendered))
+await Effect.runPromise(requireResolvedLock(document, parsed, "linux/arm64"))
+await writeFile(process.argv[3], rendered)
+await Effect.runPromise(writeResolutionReceipt(document, process.argv[4], parsed))
 NODE
   )
 }

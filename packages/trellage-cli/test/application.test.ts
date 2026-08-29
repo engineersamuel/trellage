@@ -339,6 +339,7 @@ import {
   sanitizePypiIndex,
   snapshotProfileReleaseLock,
   upgradeProfile,
+  verifyProfile,
   type CommandRunner,
   type DockerServices,
   type UpgradeServices,
@@ -968,6 +969,18 @@ describe("profile metadata", () => {
       locally_resolved: true,
       release_lock_available: true,
       locked: true,
+      development_resolution_bundle: {
+        schema_version: 1,
+        cache_relative_directory: expect.stringMatching(
+          /^trellage\/resolutions\/v1\/pi-oh-my-pi\/linux-arm64\/[0-9a-f]{64}$/,
+        ),
+        files: [
+          {
+            source: expect.stringMatching(/profile\.linux-arm64\.lock\.toml$/),
+            relative: "profile.linux-arm64.lock.toml",
+          },
+        ],
+      },
       headless: {
         schemaVersion: 1,
         prompt: false,
@@ -1004,7 +1017,7 @@ describe("profile metadata", () => {
       harness_executable: "prime-agent",
       image: "trellage-profile-prime-agent-linux-arm64:locked",
       locally_resolved: true,
-      release_lock_available: true,
+      release_lock_available: false,
       locked: true,
       headless: {
         schemaVersion: 1,
@@ -1093,6 +1106,7 @@ describe("transactional profile upgrade", () => {
     mocks.failLockRenames = 0
     mocks.lockRenameEvents = undefined
     mocks.resolvedSourceCommit = "a".repeat(40)
+    mocks.sourceDirectory = "/definitely-missing-harness-source"
   })
 
   it("keeps lock file services private to the application transaction", async () => {
@@ -1383,6 +1397,7 @@ adapter = "hyperresearch"
 repository = "https://github.com/jordan-gibbs/hyperresearch.git"
 ref = "main"
 select = ["light"]
+gear = "full"
 `
     await writeFile(profilePath, source)
     const document = await Effect.runPromise(parseProfile(source, profilePath))
@@ -1399,6 +1414,7 @@ select = ["light"]
           {
             kind: "plugin",
             adapter: "hyperresearch",
+            package_version: "0.9.1",
             repository: "https://github.com/jordan-gibbs/hyperresearch.git",
             ref: "main",
             select: ["light"],
@@ -1457,6 +1473,13 @@ select = ["light"]
       writeFile(support.claudeBrowserAgent, "browser\n"),
       writeFile(support.claudeOutputStyleRundown, "style\n"),
     ])
+    const sourceDirectory = path.join(root, "hyperresearch-source")
+    await mkdir(sourceDirectory, { recursive: true })
+    await writeFile(
+      path.join(sourceDirectory, "pyproject.toml"),
+      '[project]\nname = "hyperresearch"\nversion = "0.9.1"\n',
+    )
+    mocks.sourceDirectory = sourceDirectory
     mocks.resolvedSourceCommit = "b".repeat(40)
     mocks.sourceFiles = []
     mocks.failPackageResolutions = 3
@@ -2520,6 +2543,23 @@ describe("development build receipt persistence", () => {
     await expect(readFile(path.join(root, "profile.linux-arm64.lock.toml"), "utf8")).resolves.toContain(
       'platform = "linux/arm64"',
     )
+  })
+
+  it("fails closed for unsupported Prime release snapshots and locked verification", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-prime-release-unsupported-"))
+    roots.push(root)
+    const profilePath = await writeReadyProfile(root, primeSource, primeLock("replaced-by-writeReadyProfile"))
+    const support = runtimeSupport(root)
+    const diagnostic =
+      /Prime release snapshots are unavailable until the complete npm and Python bootstrap closures can be locked and installed offline/
+
+    await expect(
+      Effect.runPromise(snapshotProfileReleaseLock(profilePath, false, root, "linux/arm64")),
+    ).rejects.toThrow(diagnostic)
+    await expect(Effect.runPromise(buildProfile(profilePath, true, root, support, arm64Target))).rejects.toThrow(
+      diagnostic,
+    )
+    await expect(Effect.runPromise(verifyProfile(profilePath, "linux/arm64"))).rejects.toThrow(diagnostic)
   })
 
   it("copies content-addressed receipt sidecars into a portable release snapshot", async () => {

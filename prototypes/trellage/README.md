@@ -37,6 +37,9 @@ result:
 ```
 
 Use `trellage lock PROFILE` only to create an exact adjacent release snapshot.
+Prime profiles are development-only for now: `lock`, `build --locked`, and
+`ci-verify` fail closed until Trellage can lock and install Prime's complete npm
+and Python bootstrap closures offline.
 Trellage binds resolution to one local Unix Docker endpoint and refuses
 endpoint or server changes before mutation. Native ARM64 is the only supported
 platform today. AMD64 is recognized for future selection but rejected before
@@ -389,6 +392,9 @@ The `prime-agent` profile resolves the latest Prime Intellect stable release.
 Its local receipt records the official versioned tarball URL, size, SHA-256
 digest, runtime packages, and base image. Its common skills float, so normal
 development state does not record or enforce a final OCI digest.
+This receipt is valid development state, not a production release snapshot.
+Prime release commands fail closed because the current Prime bootstrap still
+resolves transitive npm and Python packages online.
 
 ```bash
 trellage validate /absolute/path/to/profiles/prime-agent/profile.toml

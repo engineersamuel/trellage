@@ -134,7 +134,8 @@ launcher alias, absolute binary path, and exact JSON argument vector—including
 empty or space-containing arguments—before the full catalog metadata and
 readiness status. Diagnostic inventory remains available directly from
 launchers that support `inventory PROFILE --json`; `trx` does not collect it on
-the launch path. `doctor` remains the full runtime health diagnostic.
+the launch path. Inventory can report `busy` while a launcher owns its mutation
+lock. `doctor` remains the full runtime health diagnostic.
 
 `trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`,
 and `prx`

@@ -33,7 +33,19 @@ for agent_dockerfile in Dockerfile.agent Dockerfile.copilot-agent; do
     || fail "$agent_dockerfile does not install Chromium runtime dependencies"
   grep -Fq 'ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' "$agent_dockerfile" \
     || fail "$agent_dockerfile does not accept the selected npm registry"
+  grep -Fq '/opt/trellage/source-provenance.json' "$agent_dockerfile" \
+    || fail "$agent_dockerfile does not install immutable source provenance"
+  grep -Fq '{schemaVersion: 1, source: $source, requestedRef: $requestedRef, resolvedCommit: $resolvedCommit}' \
+    "$agent_dockerfile" \
+    || fail "$agent_dockerfile source provenance schema is incomplete"
+  grep -Fq "grep -Eq '^[0-9a-f]{40}$'" "$agent_dockerfile" \
+    || fail "$agent_dockerfile does not require a lowercase full resolved commit"
 done
+
+if grep -Eq '/opt/(agent-kit|awesome-copilot)-source-commit\.txt' \
+  Dockerfile.agent Dockerfile.copilot-agent; then
+  fail 'legacy unstructured image source commit remains'
+fi
 
 grep -Fq 'ARG WSHOBSON_AGENTS_REF=main' Dockerfile.agent \
   || fail 'Codex package source does not follow its development branch'

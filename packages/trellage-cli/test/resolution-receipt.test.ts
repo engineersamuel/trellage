@@ -9,7 +9,12 @@ import { renderLock } from "../src/lock-file.js"
 import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "../src/lock.js"
 import { platformLockPath } from "../src/platform.js"
 import { parseProfile } from "../src/profile.js"
-import { loadResolutionReceipt, resolutionReceiptPath, writeResolutionReceipt } from "../src/resolution-receipt.js"
+import {
+  loadResolutionReceipt,
+  resolutionReceiptPath,
+  resolutionReceiptTransferBundle,
+  writeResolutionReceipt,
+} from "../src/resolution-receipt.js"
 import {
   createPythonConstraintsSidecar,
   pythonConstraints,
@@ -118,6 +123,20 @@ describe("development resolution receipts", () => {
     )
     const reloaded = await Effect.runPromise(loadResolutionReceipt(document, "linux/arm64", root))
     expect(pythonConstraints(attachedSidecar(reloaded!))).toBe(constraints)
+    expect(resolutionReceiptTransferBundle(document, reloaded!, root)).toEqual({
+      schema_version: 1,
+      cache_relative_directory: path.relative(root, path.dirname(receiptPath)),
+      files: [
+        {
+          source: receiptPath,
+          relative: path.basename(receiptPath),
+        },
+        {
+          source: resolutionSidecarPath(receiptPath, resolved.sidecar!),
+          relative: path.relative(path.dirname(receiptPath), resolutionSidecarPath(receiptPath, resolved.sidecar!)),
+        },
+      ],
+    })
   })
 
   it("does not adopt a staged sidecar until the receipt lock changes", async () => {

@@ -8,7 +8,7 @@ import { parseLock, renderLock } from "./lock-file.js"
 import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "./lock.js"
 import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
 import type { ProfileDocument } from "./profile.js"
-import { loadResolutionSidecar, writeResolutionSidecar } from "./resolution-sidecar-storage.js"
+import { loadResolutionSidecar, resolutionSidecarPath, writeResolutionSidecar } from "./resolution-sidecar-storage.js"
 
 export const developmentResolutionPolicy = "floating-stable" as const
 export type DevelopmentResolutionPolicy = typeof developmentResolutionPolicy
@@ -17,6 +17,17 @@ export class ResolutionReceiptError extends Data.TaggedError("ResolutionReceiptE
   readonly message: string
   readonly cause?: unknown
 }> {}
+
+export interface ResolutionReceiptTransferFile {
+  readonly source: string
+  readonly relative: string
+}
+
+export interface ResolutionReceiptTransferBundle {
+  readonly schema_version: 1
+  readonly cache_relative_directory: string
+  readonly files: ReadonlyArray<ResolutionReceiptTransferFile>
+}
 
 const receiptKey = (document: ProfileDocument, platform: Platform): string =>
   createHash("sha256")
@@ -42,6 +53,33 @@ export const resolutionReceiptPath = (document: ProfileDocument, platform: Platf
     receiptKey(document, platform),
     path.basename(platformLockPath(document.path, platform)),
   )
+
+export const resolutionReceiptTransferBundle = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  xdgCacheHome: string,
+): ResolutionReceiptTransferBundle => {
+  const receiptPath = resolutionReceiptPath(document, lock.platform, xdgCacheHome)
+  const directory = path.dirname(receiptPath)
+  const cacheRelativeDirectory = path.relative(xdgCacheHome, directory)
+  if (
+    cacheRelativeDirectory.length === 0 ||
+    path.isAbsolute(cacheRelativeDirectory) ||
+    cacheRelativeDirectory.split(path.sep).includes("..")
+  ) {
+    throw new Error(`development resolution receipt is outside the XDG cache: ${receiptPath}`)
+  }
+  const files: Array<ResolutionReceiptTransferFile> = [{ source: receiptPath, relative: path.basename(receiptPath) }]
+  if (lock.sidecar !== undefined) {
+    const sidecarPath = resolutionSidecarPath(receiptPath, lock.sidecar)
+    files.push({ source: sidecarPath, relative: path.relative(directory, sidecarPath) })
+  }
+  return {
+    schema_version: 1,
+    cache_relative_directory: cacheRelativeDirectory,
+    files,
+  }
+}
 
 const readOptional = (receiptPath: string): Effect.Effect<string | undefined, ResolutionReceiptError> =>
   Effect.tryPromise({

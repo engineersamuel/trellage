@@ -76,6 +76,28 @@ describe("selected profile readiness", () => {
     })
   })
 
+  it("blocks busy native profiles with a retry diagnostic", async () => {
+    const runner = new FakeRunner(ok('{"schemaVersion":1,"launcher":"prx","profile":"default","readiness":"busy"}'))
+
+    await expect(
+      checkSelectedProfileReadiness(
+        runner,
+        {
+          surface: "native",
+          launcher: "prx",
+          commandPath: "/opt/trellage/bin/prx",
+          profile: "default",
+          headlessPrompt: false,
+        },
+        "/repo",
+      ),
+    ).resolves.toEqual({
+      kind: ProfileReadinessKind.Blocked,
+      summary: "prx/default is busy",
+      diagnostic: "Wait for the current prx operation to finish, then retry.",
+    })
+  })
+
   it("rejects mismatched native inventory output", async () => {
     const runner = new FakeRunner(ok('{"schemaVersion":1,"launcher":"cpx","profile":"other","readiness":"healthy"}'))
 

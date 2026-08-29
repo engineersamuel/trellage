@@ -7,7 +7,7 @@ ARG WSHOBSON_AGENTS_PLUGIN=full-stack-orchestration
 ARG PIP_INDEX_URL=https://pypi.org/simple/
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git jq \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" uv
 
@@ -16,7 +16,16 @@ RUN git init -q /opt/agents \
     && git -C /opt/agents remote add origin https://github.com/wshobson/agents.git \
     && git -C /opt/agents fetch --depth 1 origin "${WSHOBSON_AGENTS_REF}" \
     && git -C /opt/agents checkout --detach FETCH_HEAD \
-    && git -C /opt/agents rev-parse HEAD > /opt/agents-commit
+    && resolved_commit="$(git -C /opt/agents rev-parse HEAD)" \
+    && printf '%s\n' "${resolved_commit}" | grep -Eq '^[0-9a-f]{40}$' \
+    && mkdir -p /opt/trellage \
+    && jq -n \
+      --arg source 'https://github.com/wshobson/agents.git' \
+      --arg requestedRef "${WSHOBSON_AGENTS_REF}" \
+      --arg resolvedCommit "${resolved_commit}" \
+      '{schemaVersion: 1, source: $source, requestedRef: $requestedRef, resolvedCommit: $resolvedCommit}' \
+      > /opt/trellage/source-provenance.json \
+    && chmod 0444 /opt/trellage/source-provenance.json
 
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
 
@@ -52,7 +61,7 @@ RUN apt-get update \
 
 COPY --from=adapter /opt/agent-kit /opt/agent-kit
 COPY --from=adapter /opt/agent-kit-inventory.txt /opt/agent-kit-inventory.txt
-COPY --from=adapter /opt/agents-commit /opt/agent-kit-source-commit.txt
+COPY --from=adapter /opt/trellage/source-provenance.json /opt/trellage/source-provenance.json
 COPY --from=floating_skills / /opt/floating-skills
 COPY docker/codex-config.toml /opt/codex-config.toml
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
@@ -63,7 +72,7 @@ COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
 COPY scripts/run-agent.sh /usr/local/bin/run-agent.sh
 
 RUN chmod 0555 /usr/local/bin/agent-entrypoint.sh /usr/local/bin/run-agent.sh \
-    && chmod -R a=rX /opt/agent-kit /opt/agent-kit-inventory.txt /opt/agent-kit-source-commit.txt /opt/codex-config.toml \
+    && chmod -R a=rX /opt/agent-kit /opt/agent-kit-inventory.txt /opt/trellage/source-provenance.json /opt/codex-config.toml \
       /opt/floating-skills /opt/floating-skills-catalog.json
 
 ENV HOME=/home/agent \

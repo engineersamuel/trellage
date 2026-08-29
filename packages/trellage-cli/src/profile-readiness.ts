@@ -47,7 +47,8 @@ export const resolveProfileReadiness = (
             Effect.as(true),
             Effect.orElseSucceed(() => false),
           )
-    const releaseLockAvailable = lockIsReady(document, release, platform) && releaseSidecarReady
+    const releaseLockAvailable =
+      document.profile.harness.kind !== "prime" && lockIsReady(document, release, platform) && releaseSidecarReady
     return {
       resolutionPolicy: document.profile.resolution,
       locallyResolved,

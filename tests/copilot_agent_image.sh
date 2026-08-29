@@ -29,6 +29,10 @@ grep -Fq '/usr/local/bin/materialize-awesome-plugin.sh' Dockerfile.copilot-agent
   || fail 'Awesome Copilot materializer is not used'
 grep -Fq 'USER 10001:10001' Dockerfile.copilot-agent \
   || fail 'Copilot agent user is not pinned non-root'
+grep -Fq '/opt/trellage/source-provenance.json' Dockerfile.copilot-agent \
+  || fail 'Copilot image does not install source provenance'
+grep -Fq -- "--arg source 'https://github.com/github/awesome-copilot.git'" Dockerfile.copilot-agent \
+  || fail 'Copilot source provenance does not identify Awesome Copilot'
 
 if grep -Eiq 'ARG[[:space:]]+.*(TOKEN|SECRET|PASSWORD|API_KEY)' Dockerfile.copilot-agent; then
   fail 'credential build argument found'
@@ -63,6 +67,12 @@ if [[ "${BUILD_IMAGE_SMOKE:-0}" == '1' ]]; then
     test -f /opt/awesome-plugins/frontend-web-dev/agents/expert-react-frontend-engineer.md
     test -f /opt/awesome-plugins/testing-automation/.github/plugin/plugin.json
     test -f /opt/awesome-plugins/testing-automation/agents/tdd-red.md
+    jq -e '\''
+      .schemaVersion == 1
+      and .source == "https://github.com/github/awesome-copilot.git"
+      and .requestedRef == "main"
+      and (.resolvedCommit | test("^[0-9a-f]{40}$"))
+    '\'' /opt/trellage/source-provenance.json >/dev/null
   '
 fi
 

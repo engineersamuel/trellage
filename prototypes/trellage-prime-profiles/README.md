@@ -41,8 +41,17 @@ eligible under `mise` policy on first use, installs the release package into a
 managed npm prefix, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
 network request. Only explicit `prx update` resolves latest again. Updates
-stage and verify a complete npm prefix before publication, so failure
-preserves the last good runtime and receipt.
+stage and verify a complete npm prefix before publication.
+
+`prx` records one canonical runtime identity containing the identity schema,
+the exact Prime Agent version, a deterministic SHA-256 of the bundled
+`dist/prime-agent-runtime` tree, and the managed kernel specification version.
+The kernel and daemon stamps include that identity. Normal launch compares
+these cheap stamps; `doctor` also hashes the published bundled runtime to
+detect content drift. Legacy version-only state causes one managed rebuild
+during doctor, repair, or launch. Inventory reports that state as unhealthy
+without changing it, and reports `busy` while another profile mutation owns
+the lock.
 
 The launcher is named `prx` (Prime + `x`) so it does not collide with macOS
 `/bin/pax` (POSIX archive tool). `trx` refuses any `prx` that does not resolve
@@ -76,8 +85,18 @@ Prime’s default daemon socket is UID-global, and resident workers inherit the
 supervisor environment at spawn — they do **not** receive client
 `PRIME_AGENT_KERNEL_*` over the wire. `prx` therefore pins
 `--daemon-socket ~/.local/share/trellage/profiles/prime/default/daemon/daemon.sock`
-and restarts that profile daemon when the kernel paths change, so workers see
-the managed venv. Use `prx shutdown` to stop the profile daemon.
+and restarts that profile daemon when its runtime identity or kernel paths
+change, so workers see the matching managed venv. Use `prx shutdown` to stop
+the profile daemon.
+
+Setup, repair, update, doctor, and launch readiness use a profile-local
+owner-token lock. Update verifies the staged npm runtime and identity first,
+stops the old profile daemon, backs up all published runtime, receipt, kernel,
+and stamp state, and builds the replacement venv at its final path from the
+staged npm prefix. It publishes only matching state. A failure restores the
+previous state and leaves any stopped daemon stopped; the next launch starts a
+clean daemon lazily. Launch also stops the profile daemon before it replaces a
+stale or incomplete kernel venv.
 
 Kernel bootstrap needs network access to a PyPI simple index; if
 `files.pythonhosted.org` is unreachable, `prx` falls back to

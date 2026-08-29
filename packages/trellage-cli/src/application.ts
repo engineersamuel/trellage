@@ -42,6 +42,7 @@ import {
   readResolutionReceiptBytes,
   removeResolutionReceipt,
   resolutionReceiptPath,
+  resolutionReceiptTransferBundle,
   writeResolutionReceipt,
   writeResolutionReceiptBytes,
 } from "./resolution-receipt.js"
@@ -739,6 +740,16 @@ export const writeReleaseLock = (profilePath: string, lock: ProfileLock): Effect
 
 export const writeLock = writeReleaseLock
 
+const primeReleaseSnapshotUnsupported = (document: ProfileDocument): Effect.Effect<void, ApplicationError> =>
+  document.profile.harness.kind === "prime"
+    ? Effect.fail(
+        new ApplicationError({
+          message:
+            "Prime release snapshots are unavailable until the complete npm and Python bootstrap closures can be locked and installed offline",
+        }),
+      )
+    : Effect.void
+
 export const compileProfileLock = (
   profilePath: string,
   update: boolean,
@@ -748,6 +759,7 @@ export const compileProfileLock = (
 ): Effect.Effect<ProfileLock, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
+    yield* primeReleaseSnapshotUnsupported(document)
     const release = yield* loadReleaseLock(profilePath, platform)
     const receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
@@ -1872,6 +1884,7 @@ export const buildProfile = (
   Effect.gen(function* () {
     const platform = target.platform
     const document = yield* loadProfile(profilePath)
+    if (locked) yield* primeReleaseSnapshotUnsupported(document)
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       document.profile.harness.kind,
       runtimeSupport,
@@ -1971,6 +1984,7 @@ export const verifyProfile = (
 > =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
+    yield* primeReleaseSnapshotUnsupported(document)
     const current = yield* loadReleaseLock(profilePath, platform)
     const lock = yield* requireLocked(document, current, platform).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
@@ -2137,7 +2151,16 @@ export const profileMetadata = (
             Effect.as(true),
             Effect.orElseSucceed(() => false),
           )
-    const releaseLockAvailable = lockIsReady(document, release, platform) && releaseSidecarReady
+    const releaseLockAvailable =
+      document.profile.harness.kind !== "prime" && lockIsReady(document, release, platform) && releaseSidecarReady
+    const developmentResolutionBundle =
+      locallyResolved && receipt !== undefined
+        ? yield* Effect.try({
+            try: () => resolutionReceiptTransferBundle(document, receipt, xdgCacheHome),
+            catch: (cause) =>
+              new ApplicationError({ message: "cannot prepare development resolution transfer bundle", cause }),
+          })
+        : null
     const harnessKind = document.profile.harness.kind
     const runtimeSnapshot = yield* createRuntimeSupportSnapshot(
       harnessKind,
@@ -2145,13 +2168,16 @@ export const profileMetadata = (
       runtimeAdapter(document),
       claudeRuntimeMode(document),
     ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))
-    return assembleProfileMetadata(
-      document,
-      receipt,
-      platform,
-      hash,
-      locallyResolved,
-      releaseLockAvailable,
-      runtimeSnapshot.hash,
-    )
+    return {
+      ...assembleProfileMetadata(
+        document,
+        receipt,
+        platform,
+        hash,
+        locallyResolved,
+        releaseLockAvailable,
+        runtimeSnapshot.hash,
+      ),
+      development_resolution_bundle: developmentResolutionBundle,
+    }
   })
