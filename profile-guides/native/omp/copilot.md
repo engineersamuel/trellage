@@ -14,7 +14,7 @@ bestFor:
 avoidFor:
   - Hosts with no usable GitHub Copilot credential and no willingness to run omp copilot auth-broker login github-copilot
   - Fully offline or airgapped model routing; use omp local for the keyless proxy-backed profile instead
-  - Non-interactive launches that must fail on any user prompt without OMP 17.2.12 exactly; questionToolControl=prompt-only is only proved for that version
+  - Non-interactive launches that must fail on any user prompt without OMP 18.0.10 exactly; questionToolControl=prompt-only is only proved for that version
 prerequisites:
   - id: mise
     description: mise installed on the host; setup resolves and pins the eligible OMP release.
@@ -78,7 +78,7 @@ local proxy. See `prototypes/trellage-omp-profiles/README.md`.
 - You want a fully offline, keyless proxy-backed route instead — use `omp
   local`.
 - You need `--headless-policy no-user-input` to fail closed on a live-proved
-  prompt/text contract and are not running exact OMP `17.2.12`; other
+  prompt/text contract and are not running exact OMP `18.0.10`; other
   versions fall back to conservative `headless` values.
 
 ## Workflow Notes

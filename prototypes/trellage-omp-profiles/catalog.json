@@ -20,7 +20,7 @@
         "cost": false,
         "modelOverride": false,
         "effortOverride": false,
-        "testedHarnessVersion": "17.2.12"
+        "testedHarnessVersion": "18.0.10"
       },
       "kind": "copilot",
       "ompProfile": "trellage-copilot-native",

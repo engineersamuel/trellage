@@ -51,6 +51,17 @@ case "${1-}" in
     [[ -x "$destination/bin/pi" ]]
     printf '%s\n' "$destination"
     ;;
+  x)
+    version="${2#"$tool"@}"
+    destination="$MISE_DATA_DIR/installs/$install_name/$version"
+    [[ "${3-}" == -- ]] || exit 93
+    shift 3
+    if [[ "${1-} ${2-}" == 'which pi' ]]; then
+      printf '%s\n' "$destination/bin/pi"
+      exit 0
+    fi
+    PATH="$destination/bin:$PATH" exec "$@"
+    ;;
   *) exit 92 ;;
 esac
 FAKE_MISE

@@ -350,6 +350,116 @@ describe("readClaudeMarketplace", () => {
       expect(managed).not.toContain(".codex-plugin")
     })
 
+    it("accepts node_modules generated from a locked root plugin package", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-node-modules-finalizer-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const cache = path.join(seed, "plugins", "cache", "caveman", "caveman", "2.3.1")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(source, "skills", "caveman"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "caveman",
+          owner: { name: "Julius Brussee" },
+          plugins: [{ name: "caveman", source: "./", description: "Caveman", version: "2.3.1" }],
+        })}\n`,
+      )
+      await writeFile(path.join(source, "package.json"), '{"name":"caveman","version":"2.3.1"}\n')
+      await writeFile(
+        path.join(source, "package-lock.json"),
+        '{"name":"caveman","version":"2.3.1","lockfileVersion":3,"packages":{}}\n',
+      )
+      await writeFile(path.join(source, "skills", "caveman", "SKILL.md"), "# Caveman\n")
+      await cp(source, cache, { recursive: true })
+      await mkdir(path.join(cache, "node_modules", ".bin"), { recursive: true })
+      await writeFile(path.join(cache, "node_modules", ".bin", "cave"), "#!/bin/sh\n", { mode: 0o755 })
+      await writeFile(path.join(seed, "settings.json"), '{"enabledPlugins":{"caveman@caveman":true}}\n')
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "caveman@caveman": [
+              { scope: "user", installPath: cache, version: "2.3.1", installedAt: "nondeterministic" },
+            ],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "caveman",
+              source,
+              commit: "c".repeat(40),
+              plugins: [{ plugin: "caveman", version: "2.3.1" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.251"])
+
+      const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
+      expect(managed).toContain("plugins/cache/caveman/caveman/2.3.1/node_modules/.bin/cave")
+    })
+
+    it("rejects generated node_modules when the plugin source has no npm lockfile", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-unlocked-node-modules-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const cache = path.join(seed, "plugins", "cache", "beads-marketplace", "beads", "1.2.2")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(source, "plugins", "beads"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "beads-marketplace",
+          owner: { name: "Steve Yegge" },
+          plugins: [{ name: "beads", source: "./plugins/beads", description: "Beads", version: "1.2.2" }],
+        })}\n`,
+      )
+      await writeFile(path.join(source, "plugins", "beads", "package.json"), '{"name":"beads"}\n')
+      await cp(path.join(source, "plugins", "beads"), cache, { recursive: true })
+      await mkdir(path.join(cache, "node_modules"), { recursive: true })
+      await writeFile(path.join(cache, "node_modules", "injected.js"), "injected\n")
+      await writeFile(path.join(seed, "settings.json"), '{"enabledPlugins":{"beads@beads-marketplace":true}}\n')
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "beads@beads-marketplace": [
+              { scope: "user", installPath: cache, version: "1.2.2", installedAt: "nondeterministic" },
+            ],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "beads-marketplace",
+              source,
+              commit: "c".repeat(40),
+              plugins: [{ plugin: "beads", version: "1.2.2" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await expect(execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.251"])).rejects.toThrow(
+        /installed Claude plugin does not match locked marketplace source: beads@beads-marketplace/,
+      )
+    })
+
     it("rejects a plugin cache that adds files not in the marketplace source", async () => {
       const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-extra-cache-"))
       roots.push(root)

@@ -120,15 +120,15 @@ ask:
 
 The launcher passes that file through OMP `--config`, removes it on exit or
 signal, and leaves the managed profile configuration unchanged. For exact OMP
-`17.2.12`, only the `copilot` profile publishes
+`18.0.10`, only the `copilot` profile publishes
 `headless.questionToolControl = "prompt-only"` with the live-proved prompt/text
 contract. The `local` profile stays fully conservative, including
 `headless.questionToolControl = "none"`, until it has its own live smoke.
 Other versions stay discoverable in `omp list --json`, but they fall back to
 conservative `headless` values and `--headless-policy no-user-input` fails
-closed. OMP 17.2.12 therefore retains its verified headless behavior without
-loading the newer community skills; current OMP releases load the skills but
-do not claim the older headless verification.
+closed. OMP 18.0.10 therefore retains its verified headless behavior while
+loading the current community skills; other releases do not inherit that
+verification without a new live probe.
 
 Tool approval is set to `yolo` in both managed configuration and every launch
 argument vector. The agents can use all host access available to the OMP process.

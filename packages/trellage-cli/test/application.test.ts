@@ -2828,6 +2828,7 @@ select = ["hve-core"]
     ])
     expect(scripts).toHaveLength(1)
     expect(builderArgs).toContain("npm_config_registry=https://packagefeedproxy.microsoft.io/npm/")
+    expect(builderArgs).toContain("MISE_GLOBAL_CONFIG_FILE=/tmp/mise-config/config.toml")
     expect(builderArgs).toContain("npm_config_fetch_retries=5")
     expect(builderArgs).toContain("npm_config_fetch_retry_mintimeout=1000")
     expect(builderArgs).toContain("npm_config_fetch_retry_maxtimeout=10000")

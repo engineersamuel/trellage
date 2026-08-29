@@ -30,6 +30,10 @@ run = "./scripts/cleanup-orphaned-trellage-containers.sh --apply"
 description = "Eval prototype: up|run|down|status a Copilot profile on an ephemeral Azure ARM64 VM"
 run = "./scripts/prototype-azure-copilot-spike.sh"
 
+[tasks.azure-fresh-install]
+description = "Create a fresh Azure ARM64 VM and prove Native + Sandbox Trellage installs"
+run = "./scripts/azure-fresh-install.sh"
+
 [tools]
 "github:PrimeIntellect-ai/prime-agent" = "latest"
 uv = "latest"

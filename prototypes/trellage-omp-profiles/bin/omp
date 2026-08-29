@@ -8,7 +8,7 @@ readonly model_selector="$provider/$model_id"
 readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
 readonly mise_tool='github:can1357/oh-my-pi'
 readonly profile_marker_value='trellage-omp-profile-v1'
-readonly verified_headless_policy_version='17.2.12'
+readonly verified_headless_policy_version='18.0.10'
 readonly minimum_community_skills_version='17.3.5'
 
 die() {

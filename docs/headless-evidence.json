@@ -105,7 +105,7 @@
       }
     },
     {
-      "id": "sandbox-claude-marketplace-2.1.233",
+      "id": "sandbox-claude-marketplace-2.1.251",
       "publication": {
         "surface": "sandbox",
         "adapter": "claude-marketplace"
@@ -128,7 +128,7 @@
         "cost": true,
         "modelOverride": true,
         "effortOverride": false,
-        "testedHarnessVersion": "2.1.233"
+        "testedHarnessVersion": "2.1.251"
       },
       "deterministicEvidence": [
         {
@@ -183,7 +183,7 @@
       ],
       "liveEvidence": {
         "recorded": true,
-        "source": "Trellage claude-council marketplace validation on Claude Code 2.1.233, 2026-08-17",
+        "source": "Trellage claude-council marketplace validation on Claude Code 2.1.251 on a fresh Azure Ubuntu 24.04 ARM64 VM on 2026-08-29",
         "cases": [
           "nonTtyCompletion",
           "machineOnlyStdout",
@@ -416,7 +416,7 @@
       }
     },
     {
-      "id": "native-omp-copilot-17.2.12",
+      "id": "native-omp-copilot-18.0.10",
       "publication": {
         "surface": "native",
         "catalog": "prototypes/trellage-omp-profiles/catalog.json",
@@ -441,7 +441,7 @@
         "cost": false,
         "modelOverride": false,
         "effortOverride": false,
-        "testedHarnessVersion": "17.2.12"
+        "testedHarnessVersion": "18.0.10"
       },
       "deterministicEvidence": [
         {
@@ -463,7 +463,7 @@
       ],
       "liveEvidence": {
         "recorded": true,
-        "source": "Trellage Native OMP 17.2.12 Copilot-profile validation recorded before this publication gate",
+        "source": "Trellage Native OMP 18.0.10 Copilot-profile validation on a fresh Azure Ubuntu 24.04 ARM64 VM on 2026-08-29",
         "cases": [
           "nonTtyCompletion"
         ]

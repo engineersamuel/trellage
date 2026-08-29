@@ -192,7 +192,7 @@ describe("profile list DTOs", () => {
           locallyResolved: true,
           releaseLockAvailable: false,
           locked: false,
-          resolvedVersion: "2.1.233",
+          resolvedVersion: "2.1.251",
         },
       ],
     ).profiles
@@ -203,7 +203,7 @@ describe("profile list DTOs", () => {
       eventContract: "claude-stream-json-v1",
       trellageEventContract: "trellage-headless-v1",
       changedFiles: "git-diff",
-      testedHarnessVersion: "2.1.233",
+      testedHarnessVersion: "2.1.251",
     })
 
     const [drifted] = toFullList(
@@ -215,7 +215,7 @@ describe("profile list DTOs", () => {
           locallyResolved: true,
           releaseLockAvailable: false,
           locked: false,
-          resolvedVersion: "2.1.234",
+          resolvedVersion: "2.1.252",
         },
       ],
     ).profiles
@@ -226,7 +226,7 @@ describe("profile list DTOs", () => {
       eventContract: null,
       trellageEventContract: null,
       changedFiles: "none",
-      testedHarnessVersion: "2.1.233",
+      testedHarnessVersion: "2.1.251",
     })
   })
 

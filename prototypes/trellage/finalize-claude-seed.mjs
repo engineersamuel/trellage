@@ -341,11 +341,14 @@ const sourceInventoryByPath = (sourceInventory) => {
   return byPath
 }
 
-/** Fail unless every installed cache file is present in the locked plugin source with the same hash. Extra source files (other-harness plugin trees) are allowed. */
+/** Fail unless every installed cache file is pinned by the plugin source. npm lockfiles permit installer-generated node_modules content. */
 const assertInstalledPluginMatchesSource = (cacheInventory, sourceInventory, id) => {
   if (cacheInventory.length === 0) fail(`installed Claude plugin cache is empty: ${id}`)
   const sourceByPath = sourceInventoryByPath(sourceInventory)
+  const permitsNodeModules =
+    sourceByPath.has("package.json") && sourceByPath.has("package-lock.json")
   for (const entry of cacheInventory) {
+    if (permitsNodeModules && entry.path.startsWith("node_modules/")) continue
     const sourceEntry = sourceByPath.get(entry.path)
     if (sourceEntry === undefined || !sameInventoryEntry(entry, sourceEntry)) {
       fail(`installed Claude plugin does not match locked marketplace source: ${id}`)

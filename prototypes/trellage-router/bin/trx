@@ -43,18 +43,20 @@ usage() {
 Usage:
   trx
   trx list [--json]
+  trx run LAUNCHER PROFILE [-- ARGS...]
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL]
   trx inventory LAUNCHER PROFILE --json
   trx skills status
   trx skills update
 
 Select an installed native harness/profile interactively, or list available
-profiles. Bare trx opens the launcher. `trx guide` recommends a profile and
-builds prompt candidates; its JSON mode is non-interactive and has no launch
-or Herdr side effects. `trx inventory` reports the live
-readiness (`healthy`, `unhealthy`, `not-setup`, or `busy`) of a single profile
-by delegating to that launcher's own `inventory` command. It is not called
-during `list` or interactive selection, so those stay fast.
+profiles. Bare trx opens the launcher. `trx run` validates an exact installed
+launcher/profile pair and executes it without the picker. `trx guide`
+recommends a profile and builds prompt candidates; its JSON mode is
+non-interactive and has no launch or Herdr side effects. `trx inventory`
+reports the live readiness (`healthy`, `unhealthy`, `not-setup`, or `busy`) of
+a single profile by delegating to that launcher's own `inventory` command. It
+is not called during `list` or interactive selection, so those stay fast.
 EOF
 }
 
@@ -376,6 +378,9 @@ mode=''
 list_json=0
 inventory_launcher=''
 inventory_profile_arg=''
+run_launcher=''
+run_profile=''
+run_args=()
 skills_action=''
 guide_args=()
 case "${1-}" in
@@ -410,6 +415,21 @@ case "${1-}" in
       || die 'inventory requires LAUNCHER PROFILE --json'
     inventory_launcher="$1"
     inventory_profile_arg="$2"
+    ;;
+  run)
+    mode='run'
+    shift
+    [[ "$#" -ge 2 ]] || die 'run requires LAUNCHER PROFILE [-- ARGS...]'
+    run_launcher="$1"
+    run_profile="$2"
+    shift 2
+    if [[ "$#" -gt 0 ]]; then
+      [[ "$1" == -- ]] || die 'run arguments must follow --'
+      shift
+    fi
+    [[ "$run_launcher" =~ ^[a-z0-9]+$ ]] || die "invalid launcher: $run_launcher"
+    [[ "$run_profile" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "invalid profile: $run_profile"
+    run_args=("$@")
     ;;
   skills)
     mode='skills'
@@ -587,6 +607,28 @@ picx_catalog="$(<"$catalog_tmp/picx")"
 prx_catalog="$(<"$catalog_tmp/prx")"
 cleanup_catalog_tmp
 trap - EXIT HUP INT TERM
+
+if [[ "$mode" == run ]]; then
+  case "$run_launcher" in
+    cpx) run_executable="$cpx"; run_catalog="$cpx_catalog" ;;
+    cdx) run_executable="$cdx"; run_catalog="$cdx_catalog" ;;
+    cldx) run_executable="$cldx"; run_catalog="$cldx_catalog" ;;
+    grx) run_executable="$grx"; run_catalog="$grx_catalog" ;;
+    jcx) run_executable="$jcx"; run_catalog="$jcx_catalog" ;;
+    omp) run_executable="$omp"; run_catalog="$omp_catalog" ;;
+    picx) run_executable="$picx"; run_catalog="$picx_catalog" ;;
+    prx) run_executable="$prx"; run_catalog="$prx_catalog" ;;
+    *) die "unknown launcher: $run_launcher" ;;
+  esac
+  jq -e --arg profile "$run_profile" \
+    '.profiles | map(.name) | index($profile) != null' \
+    <<<"$run_catalog" >/dev/null \
+    || die "unknown profile for $run_launcher: $run_profile"
+  if (( ${#run_args[@]} > 0 )); then
+    exec "$run_executable" "$run_profile" "${run_args[@]}"
+  fi
+  exec "$run_executable" "$run_profile"
+fi
 
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \

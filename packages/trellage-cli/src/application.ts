@@ -967,7 +967,7 @@ const buildOci = (
         "--env",
         "MISE_EXPERIMENTAL=1",
         "--env",
-        "MISE_GLOBAL_CONFIG_FILE=/dev/null",
+        "MISE_GLOBAL_CONFIG_FILE=/tmp/mise-config/config.toml",
         "--env",
         "MISE_CONFIG_DIR=/tmp/mise-config",
         "--env",

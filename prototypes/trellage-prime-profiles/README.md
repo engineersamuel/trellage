@@ -109,12 +109,15 @@ Bare and explicit launches are equivalent:
 prx
 prx default
 prx -p "Reply exactly PRX_OK"
+prx --single-turn -p "Reply exactly PRX_OK"
 ```
 
 Arguments pass after managed `--provider copilot-proxy-rs`, `--model`,
 `--offline`, and `--autonomous` flags. Pass `--model MODEL` or `--model=MODEL`
 to select another model advertised by the proxy. `doctor` verifies proxy health
 and confirms that the default `claude-opus-5` model is advertised.
+Use `--single-turn` to omit the managed `--autonomous` flag for one response
+whose process status must not depend on autonomous completion gates.
 
 Long-running interactive sessions may leave Prime background workers on the
 profile socket. Stop them with:
@@ -123,7 +126,7 @@ profile socket. Stop them with:
 prx shutdown
 ```
 
-Prefer `-p` / `--print` for one-shot smoke tests.
+Prefer `--single-turn -p` for one-shot smoke tests.
 
 `prx` adds no containment. Prime Agent runs with all host access available to
 the process.

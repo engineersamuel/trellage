@@ -836,8 +836,10 @@ packages = ["curl"]
     )
     const aptWrapper = await readFile(path.join(context, "build-support", "apt-get"), "utf8")
     expect(aptWrapper).toContain("sha256sum --check --strict")
-    expect(aptWrapper).toContain("--no-download")
-    expect(aptWrapper).toContain("Dir::Etc::sourcelist=/dev/null")
+    expect(aptWrapper).toContain("for attempt in 1 2 3 4 5 6 7 8")
+    expect(aptWrapper).toContain('chroot "$rootfs" /usr/bin/dpkg --unpack "$@"')
+    expect(aptWrapper).toContain('chroot "$rootfs" /usr/bin/dpkg --configure -a >/dev/null 2>&1 || true')
+    expect(aptWrapper).toContain('chroot "$rootfs" /usr/bin/dpkg --configure -a')
   })
 
   it("materializes the locked Headlong source and service image command", async () => {
