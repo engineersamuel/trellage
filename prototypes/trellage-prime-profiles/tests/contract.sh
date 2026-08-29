@@ -366,7 +366,7 @@ grep -Fq 'prx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err"
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
 "$command_path" list >"$fixture_root/list.txt" || fail 'text list failed'
-grep -Fq $'default\tPrime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.' \
+grep -Fq $'default\tPrime Agent for persistent exploratory analysis and multi-turn work through daemon-backed IPython/RLM subagents and managed clarification.' \
   "$fixture_root/list.txt" || fail 'text list differs'
 
 "$command_path" default -p 'self-heal-before-setup-probe' \

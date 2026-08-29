@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-council"
-description = "Claude Code (Opus via proxy) with Council of High Intelligence—structured multi-lens deliberation that preserves dissent, kill criteria, and next steps. Best for hard architecture/product tradeoffs and high-stakes design calls where one-shot answers fail. Skip for factual lookups, small reversible edits, or pure implementation throughput.  Invoke primarily with `/council <prompt>`"
+description = "Pinned Claude Code (Opus via proxy) Council for hard architecture and product decisions, preserving multi-lens dissent, kill criteria, and next steps. Its differentiator is decision quality, not fast implementation."
 skill_bundles = ["sandbox-common"]
 
 [harness]

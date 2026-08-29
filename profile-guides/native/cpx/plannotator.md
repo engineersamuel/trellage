@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - effective-html-visual-artifact-skills
+  - visual-html-artifact-creation
   - rundown-briefing-output-style
   - autopilot-no-ask-user-launch
   - native-common-skill-bundle

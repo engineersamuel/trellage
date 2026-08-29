@@ -1,6 +1,6 @@
 schema = 1
 name = "codex-superpowers"
-description = "Codex (gpt-5.6-sol) with Superpowers (brainstorm→plan→TDD→debug→review) plus full-stack orchestration agents. Best for multi-day implementation marathons that need disciplined execution and parallel agent roles more than a flashy TUI. Skip for pure research, content marketing, or one-shot Q&A without process."
+description = "Sandboxed Codex (`gpt-5.6-sol`) for disciplined feature delivery through brainstorm, plan, TDD, debugging, review, and verification. Its differentiator is a reproducible containerized Superpowers loop for implementation, not a host-native structured-engineering session."
 skill_bundles = ["sandbox-common", "codex-superpowers"]
 
 [harness]

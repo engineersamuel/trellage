@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-social-media"
-description = "Claude Code (Opus via proxy) with social-media skills (voice-first posts/threads/carousels) plus Humanizer to strip AI writing tells without inventing facts. Best for public short-form that must sound like a real person. Skip for long-form SEO blogs, deep research, or engineering delivery."
+description = "Claude Code (Opus via proxy) for voice-led public social content: posts, carousels, reels, thumbnails, and humanized rewrites. Choose it when short-form work must sound like its author, not like generic AI."
 skill_bundles = ["sandbox-common"]
 
 [harness]

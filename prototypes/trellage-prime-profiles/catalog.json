@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "default": {
-      "description": "Prime Agent with proxy-backed Claude Opus 5, persistent IPython/RLM subagents and daemon sessions, plus the managed ask_user extension.",
+      "description": "Prime Agent for persistent exploratory analysis and multi-turn work through daemon-backed IPython/RLM subagents and managed clarification.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,

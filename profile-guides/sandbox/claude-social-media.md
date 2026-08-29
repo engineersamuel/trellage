@@ -34,6 +34,7 @@ workflows:
   skill: social-media-skills:voice-builder
   examples:
   - Build my voice
+  - Interview me and create the voice files for this founder-content project
   promptTemplate: |
     /social-media-skills:voice-builder {{intent}}
 - id: post-writer
@@ -41,6 +42,7 @@ workflows:
   skill: social-media-skills:post-writer
   examples:
   - Write me a post about AI agents
+  - Draft a LinkedIn post from this customer lesson in my established voice
   promptTemplate: |
     /social-media-skills:post-writer {{intent}}
 - id: post-scorer
@@ -49,6 +51,7 @@ workflows:
   skill: social-media-skills:post-scorer
   examples:
   - Score this draft against my history
+  - Assess this launch post against the patterns in my prior high-performing posts
   promptTemplate: |
     /social-media-skills:post-scorer {{intent}}
 - id: gemini-carousel
@@ -56,6 +59,7 @@ workflows:
   skill: social-media-skills:gemini-carousel
   examples:
   - Make me a carousel from this
+  - Convert this newsletter section into a seven-slide LinkedIn carousel in my voice
   promptTemplate: |
     /social-media-skills:gemini-carousel {{intent}}
 - id: niche-research
@@ -64,6 +68,7 @@ workflows:
   skill: social-media-skills:niche-research
   examples:
   - What should I post this week
+  - Find current stories in my niche that could become timely posts this week
   promptTemplate: |
     /social-media-skills:niche-research {{intent}}
 - id: content-matrix
@@ -71,7 +76,7 @@ workflows:
     pillars with 8 formats for 32+ post ideas in one table.
   skill: social-media-skills:content-matrix
   examples:
-  - What should I post this week
+  - What should I post this week from my existing content pillars, not current outside news
   - Build me a content matrix from my three pillars
   promptTemplate: |
     /social-media-skills:content-matrix {{intent}}
@@ -81,6 +86,7 @@ workflows:
   skill: social-media-skills:reels-scripting
   examples:
   - Turn this outlier Reel into a script
+  - Reverse-engineer this high-performing Reel and write an original script from my newsletter
   promptTemplate: |
     /social-media-skills:reels-scripting {{intent}}
 - id: youtube-thumbnail
@@ -88,6 +94,7 @@ workflows:
   skill: social-media-skills:youtube-thumbnail
   examples:
   - I need a thumbnail for 'How I fired my team'
+  - Create a branded thumbnail prompt for my video about incident-response leadership
   promptTemplate: |
     /social-media-skills:youtube-thumbnail {{intent}}
 - id: pinned-comment
@@ -95,6 +102,7 @@ workflows:
   skill: social-media-skills:pinned-comment
   examples:
   - Write me a pinned comment
+  - Write a meme-style pinned comment and image prompt for this launch video
   promptTemplate: |
     /social-media-skills:pinned-comment {{intent}}
 - id: humanize-draft
@@ -102,6 +110,7 @@ workflows:
     plugin.
   examples:
   - Make this draft sound less like AI wrote it, don't add or invent claims
+  - Remove generic AI phrasing from this post while preserving every factual claim
   promptTemplate: |
     {{intent}}
 ---

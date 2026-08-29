@@ -163,9 +163,7 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
     const fields = record(item, itemPath)
     exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill"])
     const skill =
-      fields.skill === undefined
-        ? undefined
-        : text(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en")
+      fields.skill === undefined ? undefined : text(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en")
     if (skill !== undefined && !skillIdentifier.test(skill)) {
       fail(`${itemPath}.skill`, "must be a portable skill or command identifier")
     }
@@ -185,7 +183,7 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
       description: text(fields.description, `${itemPath}.description`, 2000),
       ...(skill === undefined ? {} : { skill }),
       examples: stringArray(fields.examples, `${itemPath}.examples`, {
-        minimum: 1,
+        minimum: 2,
         maximumItems: 32,
         itemMaximum: 2000,
       }),
@@ -195,8 +193,6 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
     return fail(path, "must contain unique workflow IDs")
   }
-  const exampleCount = result.reduce((count, workflow) => count + workflow.examples.length, 0)
-  if (exampleCount < 3) return fail(path, "must contain at least three example intents in total")
   return result
 }
 
@@ -241,12 +237,12 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
         identifiers: true,
       }),
       bestFor: stringArray(fields.bestFor, `${path} frontmatter.bestFor`, {
-        minimum: 1,
+        minimum: 2,
         maximumItems: 32,
         itemMaximum: 2000,
       }),
       avoidFor: stringArray(fields.avoidFor, `${path} frontmatter.avoidFor`, {
-        minimum: 1,
+        minimum: 2,
         maximumItems: 32,
         itemMaximum: 2000,
       }),
@@ -258,9 +254,7 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
 }
 
 export const profileGuideIdentityKey = (identity: ProfileGuideIdentity): string =>
-  identity.surface === "native"
-    ? `native:${identity.launcher}/${identity.profile}`
-    : `sandbox:${identity.profile}`
+  identity.surface === "native" ? `native:${identity.launcher}/${identity.profile}` : `sandbox:${identity.profile}`
 
 export const profileGuideRelativePath = (identity: ProfileGuideIdentity): string =>
   identity.surface === "native"
@@ -292,7 +286,9 @@ export const validateProfileGuideCoverage = (
   actualRelativePaths: ReadonlyArray<string>,
 ): ProfileGuideCoverage => {
   const expectedKeys = new Set(expected.map(profileGuideIdentityKey))
-  const actualKeys = new Set(actualRelativePaths.map((path) => profileGuideIdentityKey(parseProfileGuideIdentity(path))))
+  const actualKeys = new Set(
+    actualRelativePaths.map((path) => profileGuideIdentityKey(parseProfileGuideIdentity(path))),
+  )
   return {
     missing: [...expectedKeys].filter((key) => !actualKeys.has(key)).sort(),
     unexpected: [...actualKeys].filter((key) => !expectedKeys.has(key)).sort(),
@@ -342,10 +338,7 @@ const safeGuideFile = async (root: string, relativePath: string): Promise<string
   return resolved
 }
 
-export const loadProfileGuide = async (
-  root: string,
-  identity: ProfileGuideIdentity,
-): Promise<LoadedProfileGuide> => {
+export const loadProfileGuide = async (root: string, identity: ProfileGuideIdentity): Promise<LoadedProfileGuide> => {
   const resolvedRoot = await safeGuideRoot(root)
   const relativePath = profileGuideRelativePath(identity)
   const filename = await safeGuideFile(resolvedRoot, relativePath)

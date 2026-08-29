@@ -22,6 +22,7 @@ workflows:
     for a stated audience and constraint set.
   examples:
   - Design a landing page for a fintech SaaS, one CTA, audience is CFOs, no stock photos
+  - Define the visual system for an enterprise security product page aimed at CISOs, with no blue-gradient clichés
   promptTemplate: |
     {{intent}}
 - id: anti-slop-review
@@ -29,6 +30,7 @@ workflows:
     it ships.
   examples:
   - Review this landing page draft for generic AI-slop patterns and suggest fixes
+  - Critique this pricing page against its premium brand references before the design review
   promptTemplate: |
     {{intent}}
 - id: motion-polish
@@ -36,12 +38,14 @@ workflows:
     polish pass.
   examples:
   - Add a GSAP ScrollTrigger reveal animation to this pricing section
+  - Refine the product-demo transitions so they support the page hierarchy without distracting motion
   promptTemplate: |
     {{intent}}
 - id: html-to-video
   description: Convert a finished HTML page or component into a HyperFrames product-launch or PR video.
   examples:
   - Turn this landing page into a 30-second product launch video
+  - Create a short PR demo video from the finished settings component
   promptTemplate: |
     {{intent}}
 ---

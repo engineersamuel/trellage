@@ -139,6 +139,18 @@ const tokenize = (value: string): ReadonlySet<string> =>
       .filter((token) => token.length > 0),
   )
 
+const tokenOverlapCount = (tokens: ReadonlySet<string>, intentTokens: ReadonlySet<string>): number => {
+  let overlap = 0
+  for (const token of tokens) if (intentTokens.has(token)) overlap += 1
+  return overlap
+}
+
+const normalizedTokenOverlapScore = (value: string, intentTokens: ReadonlySet<string>): number => {
+  const tokens = tokenize(value)
+  if (tokens.size === 0 || intentTokens.size === 0) return 0
+  return tokenOverlapCount(tokens, intentTokens) / Math.sqrt(tokens.size * intentTokens.size)
+}
+
 // ---------------------------------------------------------------------------
 // Headless argv parsing.
 // ---------------------------------------------------------------------------
@@ -534,10 +546,7 @@ const workflowTokenOverlapScore = (
   },
   intentTokens: ReadonlySet<string>,
 ): number => {
-  const workflowTokens = tokenize([workflow.id, workflow.description, ...workflow.examples].join(" "))
-  let score = 0
-  for (const token of workflowTokens) if (intentTokens.has(token)) score += 1
-  return score
+  return normalizedTokenOverlapScore([workflow.id, workflow.description, ...workflow.examples].join(" "), intentTokens)
 }
 
 /** Deterministically picks the best workflow of `workflows` by token overlap with `intent`, source order as tie-break. */
@@ -791,10 +800,10 @@ export interface LiteralGuideCandidate {
 }
 
 const profileTokenOverlapScore = (entry: GuideCatalogEntryRef, intentTokens: ReadonlySet<string>): number => {
-  const profileTokens = tokenize([entry.description, ...entry.guide.capabilities, ...entry.guide.bestFor].join(" "))
-  let score = 0
-  for (const token of profileTokens) if (intentTokens.has(token)) score += 1
-  return score
+  const description = normalizedTokenOverlapScore(entry.description, intentTokens)
+  const capabilities = normalizedTokenOverlapScore(entry.guide.capabilities.join(" "), intentTokens)
+  const bestFor = normalizedTokenOverlapScore(entry.guide.bestFor.join(" "), intentTokens)
+  return description * 0.15 + capabilities * 0.1 + bestFor * 0.2
 }
 
 const bestWorkflowForEntry = (
@@ -834,8 +843,23 @@ export const literalGuideMatch = (
   const intentTokens = tokenize(intent)
   const scored = entries.map((entry, index) => {
     const bestWorkflow = bestWorkflowForEntry(entry.guide.workflows, intentTokens)
-    const score = profileTokenOverlapScore(entry, intentTokens) + bestWorkflow.score
-    return { entry, workflowId: bestWorkflow.id, score, index }
+    const workflow = entry.guide.workflows.find(({ id }) => id === bestWorkflow.id)
+    if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${bestWorkflow.id}`)
+    const score = profileTokenOverlapScore(entry, intentTokens) + bestWorkflow.score * 0.55
+    const matchedTerms = tokenOverlapCount(
+      tokenize(
+        [
+          entry.description,
+          ...entry.guide.capabilities,
+          ...entry.guide.bestFor,
+          workflow.id,
+          workflow.description,
+          ...workflow.examples,
+        ].join(" "),
+      ),
+      intentTokens,
+    )
+    return { entry, workflowId: bestWorkflow.id, score, matchedTerms, index }
   })
   const ranked = [...scored].sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
   const top = ranked.slice(0, 5)
@@ -846,8 +870,8 @@ export const literalGuideMatch = (
       workflowId: item.workflowId,
       confidence: item.score / maxScore,
       reason:
-        item.score > 0
-          ? `Shares ${item.score} matching term(s) with "${intent}" across its description, capabilities, best-fit notes, and the "${item.workflowId}" workflow.`
+        item.matchedTerms > 0
+          ? `Matches ${item.matchedTerms} intent term(s) across normalized profile signals and the "${item.workflowId}" workflow.`
           : `No strong term overlap with "${intent}" was found; offered as a fallback candidate.`,
       tradeoff: item.entry.guide.avoidFor[0] ?? "No specific tradeoffs recorded for this profile.",
     }),

@@ -5,12 +5,7 @@ import { describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
-import {
-  GuideEffort,
-  literalGuideMatch,
-  templatePromptCandidates,
-  type GuideRecommendation,
-} from "../src/guide-api.js"
+import { GuideEffort, literalGuideMatch, templatePromptCandidates, type GuideRecommendation } from "../src/guide-api.js"
 import type {
   GuideGenerateCandidate,
   GuideGenerateInput,
@@ -96,8 +91,8 @@ const headless = (overrides: { readonly prompt: boolean }) => ({
 const guideReviewer: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["code-review"],
-  bestFor: ["Reviewing pull requests"],
-  avoidFor: ["Long-running background jobs"],
+  bestFor: ["Reviewing pull requests", "Focused diff analysis"],
+  avoidFor: ["Long-running background jobs", "Unrelated content work"],
   prerequisites: [{ id: "git-repo", description: "A git repository checkout." }],
   workflows: [
     {
@@ -115,8 +110,10 @@ capabilities:
   - code-review
 bestFor:
   - Reviewing pull requests
+  - Focused diff analysis
 avoidFor:
   - Long-running background jobs
+  - Unrelated content work
 prerequisites:
   - id: git-repo
     description: A git repository checkout.
@@ -138,8 +135,8 @@ Use this profile to review diffs.
 const guideWriter: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["docs"],
-  bestFor: ["Writing documentation"],
-  avoidFor: ["Shell access"],
+  bestFor: ["Writing documentation", "Drafting release notes"],
+  avoidFor: ["Shell access", "Complex implementation work"],
   prerequisites: [],
   workflows: [
     {
@@ -154,8 +151,8 @@ const guideWriter: ProfileGuideV1 = {
 const guidePlanner: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["planning"],
-  bestFor: ["Planning a feature"],
-  avoidFor: ["One-line fixes"],
+  bestFor: ["Planning a feature", "Drafting technical designs"],
+  avoidFor: ["One-line fixes", "Immediate implementation"],
   prerequisites: [],
   workflows: [
     {
@@ -170,15 +167,15 @@ const guidePlanner: ProfileGuideV1 = {
 const guideCouncil: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["multi-perspective-deliberation"],
-  bestFor: ["Pressure-testing ideas"],
-  avoidFor: ["Quick factual lookups"],
+  bestFor: ["Pressure-testing ideas", "High-stakes architecture decisions"],
+  avoidFor: ["Quick factual lookups", "Small reversible edits"],
   prerequisites: [],
   workflows: [
     {
       id: "run-council-deliberation",
       description: "Pressure-test an idea and its implementation.",
       skill: "council",
-      examples: ["Pressure-test this architecture"],
+      examples: ["Pressure-test this architecture", "Challenge this product decision"],
       promptTemplate: "/council Pressure-test this idea and its implementation: {{intent}}",
     },
   ],
@@ -187,15 +184,15 @@ const guideCouncil: ProfileGuideV1 = {
 const guideResearch: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["bounded-factual-research"],
-  bestFor: ["Source-backed research"],
-  avoidFor: ["Pure implementation"],
+  bestFor: ["Source-backed research", "Comparing implementation options"],
+  avoidFor: ["Pure implementation", "One-line code fixes"],
   prerequisites: [],
   workflows: [
     {
       id: "vault-backed-research",
       description: "Research evidence before implementation.",
       skill: "hyperresearch",
-      examples: ["Research this implementation approach"],
+      examples: ["Research this implementation approach", "Compare these options with sources"],
       promptTemplate: "/hyperresearch Research this request before implementation: {{intent}}",
     },
   ],
@@ -204,14 +201,14 @@ const guideResearch: ProfileGuideV1 = {
 const guideHve: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["research-plan-implement-review-workflow"],
-  bestFor: ["Durable RPI delivery"],
-  avoidFor: ["One-line edits"],
+  bestFor: ["Durable RPI delivery", "Evidence-backed feature implementation"],
+  avoidFor: ["One-line edits", "Quick factual lookups"],
   prerequisites: [],
   workflows: [
     {
       id: "rpi-agent-cycle",
       description: "Run the dedicated HVE Core RPI agent.",
-      examples: ["Take this feature through the full RPI cycle"],
+      examples: ["Take this feature through the full RPI cycle", "Deliver this change with RPI evidence"],
       promptTemplate: "Research, plan, implement, and review: {{intent}}",
     },
   ],
@@ -1185,13 +1182,15 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
     it("pins council, research, and the HVE RPI agent with visible lens metadata", () => {
       const lenses = pinnedGuideLenses(buildCatalogWithPinnedLenses("/tmp-unused"))
 
-      expect(lenses.map(({ kind, key, emoji, recommendation }) => ({
-        kind,
-        key,
-        emoji,
-        profileRef: recommendation.profileRef,
-        workflowId: recommendation.workflowId,
-      }))).toEqual([
+      expect(
+        lenses.map(({ kind, key, emoji, recommendation }) => ({
+          kind,
+          key,
+          emoji,
+          profileRef: recommendation.profileRef,
+          workflowId: recommendation.workflowId,
+        })),
+      ).toEqual([
         {
           kind: "council",
           key: "c",
@@ -1374,9 +1373,7 @@ describe("destinationOptions", () => {
         expect(candidatePaneHeight(10)).toBe(6)
         expect(candidateRailWidth(100)).toBe(30)
         expect(candidateRailWidth(60)).toBe(20)
-        expect(compactCommandPreview("cpx hve -i 'line one\nline two'")).toBe(
-          "cpx hve -i 'line one line two'",
-        )
+        expect(compactCommandPreview("cpx hve -i 'line one\nline two'")).toBe("cpx hve -i 'line one line two'")
       })
     })
   })

@@ -9,12 +9,15 @@ capabilities:
 - tdd-workflow
 - stop-hook-review-gate
 bestFor:
-- Multi-node coding work that must be able to take 'done' back — resumable, reversible, memory-backed
-- Long-running feature work that benefits from curated specialist agent roles and a Stop-hook review gate
+- Reversible multi-node coding that needs isolated worktrees, persistent memory, and the ability to take
+  'done' back
+- Long-running feature work that needs research fan-out proven by a code spike before a review gate
 avoidFor:
 - One-shot Q&A
 - Content-only profiles (blogs, social posts) — use claude-blog or claude-social-media instead
 - Small, single-file edits that don't need worktree isolation or memory
+- Conventional structured feature delivery that does not need a graph, isolated worktrees, or retryable
+  nodes
 prerequisites: []
 workflows:
 - id: start-isolated-feature-branch
@@ -23,6 +26,8 @@ workflows:
   examples:
   - Start a new worktree to implement the rate-limiter service and staff the full-stack-orchestration
     role
+  - Build the billing migration as retryable implementation nodes, keeping each risky change in an isolated
+    worktree
   promptTemplate: |
     {{intent}}
 - id: fan-out-research-with-gate
@@ -30,6 +35,8 @@ workflows:
     before committing to one.
   examples:
   - Research three approaches to our webhook retry problem and gate them against a working code spike
+  - Compare queue designs for this ingest service, then prove the preferred option with a small working
+    implementation
   promptTemplate: |
     {{intent}}
 - id: resume-with-review-gate
@@ -37,6 +44,8 @@ workflows:
     before marking it done.
   examples:
   - Resume the auth-refactor task and run it through the review gate before closing it out
+  - Continue the paused authorization migration, retry the failed node, and challenge the completed work
+    before marking it done
   promptTemplate: |
     {{intent}}
 ---
@@ -48,6 +57,8 @@ workflows:
 - The task spans multiple coding nodes/steps and needs the ability to resume, retry, or roll a step back rather than commit to a single linear pass.
 - You want curated specialist agent roles (orchestration, TDD, comprehensive review, conductor) staffed instead of a single generalist agent.
 - You need a research fan-out that is gated by working code, not just competing write-ups.
+- You specifically need the Sandbox graph, isolated worktrees, and retryable nodes; a conventional structured
+  engineering workflow is less suitable when those controls are unnecessary.
 
 ## Avoid This Profile When
 

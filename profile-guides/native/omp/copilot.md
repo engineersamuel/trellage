@@ -4,7 +4,7 @@ capabilities:
   - native-copilot-auth-model-catalog
   - lsp-debugger-browser-eval-tools
   - typed-subagent-fan-out
-  - omp-community-skill-bundle
+  - community-skill-led-orchestration
   - native-common-skill-bundle
   - host-token-auth-forwarding
 bestFor:
@@ -25,18 +25,20 @@ prerequisites:
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
-  - id: model-catalog-task
-    description: Run a task against OMP's full discovered Copilot model catalog rather than the default gpt-5.6-sol:medium route.
+  - id: native-copilot-tool-assisted-engineering
+    description: Deliver a complex engineering outcome with OMP's native Copilot provider, tool surface, and typed subagents.
     examples:
-      - List the available models and switch this session to a stronger reasoning model for this refactor
-      - Reply exactly OMP_COPILOT_OK to confirm the profile is live
+      - Trace this production failure with the debugger, implement the fix, and verify the regression test
+      - Use typed subagents to complete this refactor and review the integrated result
     promptTemplate: |
-      {{intent}}
+      Use OMP's native GitHub Copilot provider, available tools, and typed
+      subagents to deliver {{intent}}.
   - id: poteto-mode-orchestration
     description: Use the shared poteto-mode community skill to structure multi-step orchestration work.
     skill: skill://poteto-mode
     examples:
       - Use poteto-mode to break this migration into coordinated phases
+      - Use poteto-mode to plan, implement, and verify this cross-service change
     promptTemplate: |
       Use skill://poteto-mode to plan and coordinate {{intent}}.
   - id: pstack-orchestrate-omp
@@ -44,6 +46,7 @@ workflows:
     skill: skill://pstack-omp
     examples:
       - Use the pstack workflow skills to drive this feature through design, implementation, and review
+      - Coordinate specialized subagents to debug this regression and verify the final fix
     promptTemplate: |
       Use skill://pstack-omp together with skill://orchestrate-omp to drive
       {{intent}} through OMP's typed subagent fan-out.

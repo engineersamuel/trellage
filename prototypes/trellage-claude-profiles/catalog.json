@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "default": {
-      "description": "Claude Code using keyless copilot-proxy-rs with Claude Opus 5 by default.",
+      "description": "Isolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Opus 5 through the local proxy.",
       "headless": {
         "schemaVersion": 1,
         "prompt": true,

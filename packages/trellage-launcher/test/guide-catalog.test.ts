@@ -12,14 +12,14 @@ import {
 const guide: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["code-review", "test-writing"],
-  bestFor: ["Reviewing pull requests"],
-  avoidFor: ["Long-running background jobs"],
+  bestFor: ["Reviewing pull requests", "Writing focused regression tests"],
+  avoidFor: ["Long-running background jobs", "Unrelated content work"],
   prerequisites: [{ id: "git-repo", description: "A git repository checkout." }],
   workflows: [
     {
       id: "review",
       description: "Review a diff.",
-      examples: ["Review my last commit"],
+      examples: ["Review my last commit", "Check this pull request"],
       promptTemplate: "Review the diff for: {{intent}}.",
     },
   ],
@@ -139,6 +139,48 @@ describe("parseGuideCatalog", () => {
         {
           ...validCatalog.native[0],
           guide: { ...guide, workflows: [] },
+        },
+      ],
+    }
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+  })
+
+  it("rejects a guide with fewer than two best-fit statements", () => {
+    const broken = {
+      ...validCatalog,
+      native: [
+        {
+          ...validCatalog.native[0],
+          guide: { ...guide, bestFor: guide.bestFor.slice(0, 1) },
+        },
+      ],
+    }
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+  })
+
+  it("rejects a guide with fewer than two avoid-fit statements", () => {
+    const broken = {
+      ...validCatalog,
+      native: [
+        {
+          ...validCatalog.native[0],
+          guide: { ...guide, avoidFor: guide.avoidFor.slice(0, 1) },
+        },
+      ],
+    }
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+  })
+
+  it("rejects a workflow with fewer than two outcome examples", () => {
+    const broken = {
+      ...validCatalog,
+      native: [
+        {
+          ...validCatalog.native[0],
+          guide: {
+            ...guide,
+            workflows: [{ ...guide.workflows[0], examples: guide.workflows[0]!.examples.slice(0, 1) }],
+          },
         },
       ],
     }

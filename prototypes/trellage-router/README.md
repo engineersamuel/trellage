@@ -96,7 +96,8 @@ printf '%s' \
 Without `--profile`, JSON mode returns the match phase. With an exact profile
 reference, it returns the generation phase. The stdin object accepts
 `schemaVersion`, `intent`, and optional `profile`, `model`, and `effort`
-fields. Match output has exactly three enriched recommendations. Generation
+fields. Current match output has five enriched recommendations; older cached
+responses can contain three. Generation
 output has the selected profile and exactly three prompt candidates with
 path-free command previews. JSON mode never launches a profile or changes
 Herdr. Interactive model failures can use deterministic literal/template

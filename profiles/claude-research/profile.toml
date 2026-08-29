@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-research"
-description = "Claude Code (Opus via proxy) with Hyperresearch full-scale gear and light-first routing plus last30days multi-source social research: bounded factual queries, surveys, and comparisons default to the focused 5-step light pipeline, while explicit deep-research requests can use the coherent full adversarial pipeline. Includes a persistent research vault and recency-scored pulls from Reddit, X, YouTube, HN, Polymarket, GitHub, and the web. Usage: `/hyperresearch <prompt>` for vault-backed research; explicitly request deep or full research when needed; `/last30days <topic>` for what people actually said in the last ~30 days (e.g. `/last30days nvidia earnings reaction`, `/last30days OpenClaw vs Hermes`); `/last30days doctor` to diagnose missing sources or auth."
+description = "Claude Code (Opus via proxy) research for source-backed factual comparisons and recent cross-community signal, with a persistent research vault. Choose it for bounded evidence before implementation rather than content drafting or autonomous coding."
 skill_bundles = ["sandbox-common", "claude-research"]
 
 [harness]

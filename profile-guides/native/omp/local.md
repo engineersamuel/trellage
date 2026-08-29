@@ -4,7 +4,7 @@ capabilities:
   - keyless-local-proxy-model-routing
   - lsp-debugger-browser-eval-tools
   - typed-subagent-fan-out
-  - omp-community-skill-bundle
+  - community-skill-led-orchestration
   - native-common-skill-bundle
 bestFor:
   - Fully keyless, local model routing where every model role is assigned to the single qwen3.6-35b-a3b-local route
@@ -24,18 +24,20 @@ prerequisites:
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
-  - id: local-smoke-test
-    description: Confirm the isolated keyless local profile launches and responds before starting real work.
+  - id: keyless-local-engineering
+    description: Deliver an engineering outcome with OMP's full tool and typed-subagent surface on the one local model route.
     examples:
-      - Reply exactly OMP_LOCAL_OK
-      - Check the models command reports the qwen3.6-35b-a3b-local route
+      - Analyze this failing integration test, implement the smallest fix, and verify it
+      - Use typed subagents to refactor this module and review the integrated result
     promptTemplate: |
-      {{intent}}
+      Use OMP's keyless local route, available tools, and typed subagents to
+      deliver {{intent}}.
   - id: poteto-mode-orchestration
     description: Use the shared poteto-mode community skill to structure multi-step orchestration work on the local model route.
     skill: skill://poteto-mode
     examples:
       - Use poteto-mode to break this task into coordinated phases
+      - Use poteto-mode to plan, implement, and verify this local-model change
     promptTemplate: |
       Use skill://poteto-mode to plan and coordinate {{intent}}.
   - id: pstack-orchestrate-omp
@@ -43,6 +45,7 @@ workflows:
     skill: skill://pstack-omp
     examples:
       - Use the pstack workflow skills to drive this feature through design, implementation, and review
+      - Coordinate specialized subagents to investigate this defect and verify the final patch
     promptTemplate: |
       Use skill://pstack-omp together with skill://orchestrate-omp to drive
       {{intent}} through OMP's typed subagent fan-out.

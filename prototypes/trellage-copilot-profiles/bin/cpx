@@ -155,7 +155,7 @@ validate_catalog() {
       "schemaVersion": 1,
       "profiles": {
         "awesome": {
-          "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
+          "description": "GitHub Copilot CLI for discovering and importing curated repository agents, instructions, and skills through Awesome Copilot meta-skills.",
           "headless": {
             "schemaVersion": 1,
             "prompt": true,
@@ -180,7 +180,7 @@ validate_catalog() {
           "standaloneMcps": []
         },
         "hve": {
-          "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
+          "description": "GitHub Copilot CLI for evidence-backed Research-Plan-Implement-Review delivery through native HVE Core RPI and specialist workflows.",
           "headless": {
             "schemaVersion": 1,
             "prompt": true,
@@ -206,7 +206,7 @@ validate_catalog() {
           "standaloneMcps": []
         },
         "plannotator": {
-          "description": "GitHub Copilot CLI with Effective HTML’s six focused skills for visual artifacts, wireframes, interactive prototypes, plans, and diagrams.",
+          "description": "GitHub Copilot CLI for self-contained visual HTML artifacts, wireframes, prototypes, plans, and diagrams through Effective HTML skills.",
           "headless": {
             "schemaVersion": 1,
             "prompt": true,
@@ -241,7 +241,7 @@ validate_catalog() {
           "standaloneMcps": []
         },
         "superpowers": {
-          "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
+          "description": "GitHub Copilot CLI for design-first TDD, root-cause fixes, review, verification, and clean branches through Superpowers.",
           "headless": {
             "schemaVersion": 1,
             "prompt": true,

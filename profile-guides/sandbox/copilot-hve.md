@@ -5,13 +5,15 @@ capabilities:
 - github-native-pr-delivery
 - durable-sdlc-gates
 - security-and-a11y-review-loops
+- sandboxed-hve-delivery
 bestFor:
-- 'GitHub-native, process-heavy delivery: features, PRs, issues'
-- Security, accessibility, or work-item loops needing durable SDLC gates
+- GitHub-native, process-heavy Sandbox delivery of features, PRs, and issues through RPI artifacts
+- Security, accessibility, or work-item loops needing durable SDLC gates in a reproducible container
 avoidFor:
 - One-line edits
 - Offline or private-only work
 - Experimental non-Copilot runtimes
+- Host-native HVE sessions or local-state continuity — use the separate native:cpx/hve profile
 prerequisites: []
 workflows:
 - id: rpi-agent-cycle
@@ -28,6 +30,7 @@ workflows:
   skill: hve-builder
   examples:
   - Help me fork the RPI pattern into our own agent instructions
+  - Adapt the HVE review and evidence gates for our internal release workflow
   promptTemplate: |
     /hve-builder {{intent}}
 ---
@@ -39,6 +42,8 @@ workflows:
 - You want a default, GitHub-native engineering harness with durable SDLC gates for features, PRs, and issues.
 - You want the Research → Plan → Implement → Review cycle run explicitly via `/rpi` rather than ad hoc.
 - You want to adapt or fork HVE Core's patterns into your own agent instructions via `/hve-builder`.
+- You need the isolated, reproducible Sandbox profile. Use `native:cpx/hve` when the separately managed
+  host-native HVE profile is the required destination.
 
 ## Avoid This Profile When
 
@@ -51,6 +56,8 @@ workflows:
 - HVE Core is explicitly called out upstream as opinionated and rapidly evolving — treat it as a source of patterns rather than a stable, unchanging platform.
 - `/rpi` selects the RPI Agent for the Research-Plan-Implement-Review cycle; `/hve-builder` helps fork or adapt those patterns into an independently owned agentic SDLC.
 - This profile installs the `microsoft/hve-core` plugin via the Copilot marketplace adapter, pinned to a specific commit.
+- This Sandbox profile and `native:cpx/hve` are separate profiles. They can share the HVE concept without
+  sharing a session, runtime state, or lifecycle.
 
 ## Gotchas
 

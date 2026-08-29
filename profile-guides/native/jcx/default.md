@@ -23,25 +23,28 @@ prerequisites:
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
-  - id: launch-smoke-test
-    description: Confirm the isolated profile launches, the proxy is healthy, and gpt-5.6-sol responds before starting real work.
-    examples:
-      - Reply exactly JCODE_OK
-      - Confirm the proxy is healthy and reply OK
-    promptTemplate: |
-      {{intent}}
   - id: recall-prior-context
     description: Use jcode's semantic memory to recall decisions or patterns from earlier sessions before starting related work.
     examples:
       - What did we decide about the retry strategy in an earlier session on this repo?
+      - Recall the earlier design constraints for this feature before proposing the next change
     promptTemplate: |
-      {{intent}}
+      Use jcode's semantic memory to recall prior context for {{intent}}.
   - id: browser-driven-task
     description: Drive jcode's Firefox browser automation for a task that needs real page interaction rather than a headless fetch.
     examples:
       - Open this internal dashboard in the browser and confirm the new deployment banner is visible
+      - Use Firefox to reproduce this checkout error and identify the failing request
     promptTemplate: |
-      {{intent}}
+      Use jcode's Firefox browser automation to complete {{intent}}.
+  - id: coordinated-swarm-delivery
+    description: Coordinate a larger outcome through jcode's native agent swarm while keeping the main task integrated.
+    examples:
+      - Coordinate a swarm to investigate this performance regression, implement the fix, and verify it
+      - Split this cross-cutting feature among a swarm, then integrate and test the complete result
+    promptTemplate: |
+      Use jcode's coordinated agent swarm to deliver {{intent}} while keeping
+      the final integration and verification in the main task.
 ---
 
 # Native jcode (`jcx`) — `default` profile

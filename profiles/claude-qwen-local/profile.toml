@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-qwen-local"
-description = "Claude Code (core) on local Qwen (`qwen3.6-35b-a3b-local`) via copilot-proxy-rs. Best for private, offline, or cost-controlled coding on bounded tasks. Not for peak quality on hard UI, multi-agent orchestration, deep research, or high-stakes architecture—use an Opus profile for those."
+description = "Claude Code Core on one local Qwen route (`qwen3.6-35b-a3b-local`) for bounded private, offline-capable, and cost-controlled edits. Its differentiator is a simple local-model coding loop, not OMP local's full host-tool and subagent surface."
 skill_bundles = ["sandbox-common"]
 
 [harness]

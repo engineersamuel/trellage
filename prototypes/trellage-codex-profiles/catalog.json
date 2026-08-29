@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "pstack": {
-      "description": "Codex CLI with Aqua-123’s explicit-invocation pstack engineering skills, led by Poteto Mode for structured playbook selection, controlled delegation, and verified multi-step work.",
+      "description": "Host-native Codex CLI with a workspace-write OS sandbox for structured, verified multi-step engineering through the explicit Aqua-123 pstack $poteto-mode workflow.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
@@ -31,7 +31,7 @@
       "standaloneMcps": []
     },
     "superpowers": {
-      "description": "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow.",
+      "description": "Host-native Codex CLI with a workspace-write OS sandbox for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,

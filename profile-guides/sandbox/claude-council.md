@@ -32,6 +32,7 @@ workflows:
     handoff notes.
   examples:
   - Summarize the council's verdict in compressed notes for the team channel
+  - Turn the recorded dissent and decision into a terse handoff for the next engineering shift
   promptTemplate: |
     {{intent}}
 ---

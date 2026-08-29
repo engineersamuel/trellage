@@ -11,8 +11,10 @@ capabilities:
   - repository-delivery
 bestFor:
   - Repository delivery
+  - Focused implementation and review
 avoidFor:
   - Unrelated content work
+  - Long-running background research
 prerequisites: []
 workflows:
   - id: deliver
@@ -57,8 +59,8 @@ describe("native profile guide list", () => {
         guide: {
           schemaVersion: 1,
           capabilities: ["repository-delivery"],
-          bestFor: ["Repository delivery"],
-          avoidFor: ["Unrelated content work"],
+          bestFor: ["Repository delivery", "Focused implementation and review"],
+          avoidFor: ["Unrelated content work", "Long-running background research"],
           prerequisites: [],
           workflows: [
             {

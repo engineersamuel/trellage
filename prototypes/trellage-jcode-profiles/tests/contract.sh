@@ -143,7 +143,7 @@ jq -e '
   and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "1jehuang/jcode"
-  and .profiles[0].description == "jcode with keyless proxy-backed gpt-5.6-sol medium, semantic memory, Firefox browser automation, persistent sessions, and coordinated swarms."
+  and .profiles[0].description == "jcode for memory-backed, browser-driven, and coordinated-swarm work, with persistent sessions and keyless gpt-5.6-sol routing."
   and .profiles[0].headless == {
     "schemaVersion": 1,
     "prompt": false,

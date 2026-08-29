@@ -20,7 +20,7 @@ jq -e '
   and .profiles.pstack.upstreamRepository == "https://github.com/Aqua-123/pstack-for-codex.git"
   and .profiles.pstack.plugin == "pstack-for-codex@pstack-for-codex-local"
   and .profiles.pstack.standaloneMcps == []
-  and .profiles.superpowers.description == "Codex CLI with Superpowers’ Codex-adapted design, plan, TDD, debugging, multi-agent review, verification, and branch-finishing workflow."
+  and .profiles.superpowers.description == "Host-native Codex CLI with a workspace-write OS sandbox for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow."
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
   and .profiles.superpowers.marketplaceName == "superpowers-marketplace"

@@ -61,8 +61,8 @@ const headless = (overrides: { readonly prompt: boolean }) => ({
 const guideCdxHve: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["code-review"],
-  bestFor: ["Reviewing pull requests"],
-  avoidFor: ["Long-running background jobs"],
+  bestFor: ["Reviewing pull requests", "Focused diff analysis"],
+  avoidFor: ["Long-running background jobs", "Unrelated content work"],
   prerequisites: [{ id: "git-repo", description: "A git repository checkout." }],
   workflows: [
     {
@@ -77,8 +77,8 @@ const guideCdxHve: ProfileGuideV1 = {
 const guideOther: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["docs"],
-  bestFor: ["Writing documentation"],
-  avoidFor: ["Shell access"],
+  bestFor: ["Writing documentation", "Release-note drafting"],
+  avoidFor: ["Shell access", "Complex code implementation"],
   prerequisites: [],
   workflows: [
     {
@@ -96,8 +96,10 @@ capabilities:
   - general-coding
 bestFor:
   - General repository work
+  - Repository planning and review
 avoidFor:
   - Highly regulated environments
+  - Long-running background investigation
 prerequisites: []
 workflows:
   - id: review
@@ -112,6 +114,7 @@ workflows:
     skill: writing-plans
     examples:
       - Plan this feature
+      - Draft a phased implementation plan
     promptTemplate: |
       Use the writing-plans skill:
       {{intent}}
@@ -124,8 +127,8 @@ Use this profile for general repository work.
 const guidePrimeAgent: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["general-coding"],
-  bestFor: ["General repository work"],
-  avoidFor: ["Highly regulated environments"],
+  bestFor: ["General repository work", "Repository planning and review"],
+  avoidFor: ["Highly regulated environments", "Long-running background investigation"],
   prerequisites: [],
   workflows: [
     {
@@ -138,7 +141,7 @@ const guidePrimeAgent: ProfileGuideV1 = {
       id: "plan",
       description: "Draft an implementation plan.",
       skill: "writing-plans",
-      examples: ["Plan this feature"],
+      examples: ["Plan this feature", "Draft a phased implementation plan"],
       promptTemplate: "Use the writing-plans skill:\n{{intent}}",
     },
   ],
@@ -153,28 +156,28 @@ describe("applyWorkflowPromptTemplate", () => {
   const guide: ProfileGuideV1 = {
     schemaVersion: 1,
     capabilities: ["social-media-writing"],
-    bestFor: ["LinkedIn posts"],
-    avoidFor: ["Long-form articles"],
+    bestFor: ["LinkedIn posts", "Short social drafts"],
+    avoidFor: ["Long-form articles", "Source-backed research"],
     prerequisites: [],
     workflows: [
       {
         id: "post-writer",
         description: "Draft a social post.",
         skill: "social-media-skills:post-writer",
-        examples: ["Write a post about AI agents"],
+        examples: ["Write a post about AI agents", "Draft a LinkedIn launch announcement"],
         promptTemplate: "/social-media-skills:post-writer {{intent}}",
       },
       {
         id: "plain",
         description: "Use a plain prompt.",
-        examples: ["Write plain text"],
+        examples: ["Write plain text", "Draft a concise unformatted note"],
         promptTemplate: "Plain: {{intent}}",
       },
       {
         id: "review-stack",
         description: "Run a review skill followed by cleanup skills.",
         skill: "interrogate",
-        examples: ["Review this change"],
+        examples: ["Review this change", "Interrogate this diff before cleanup"],
         promptTemplate: "$interrogate {{intent}}\n$no-comments\n$unslop",
       },
     ],
@@ -240,14 +243,17 @@ capabilities:
   - repository-delivery
 bestFor:
   - Small edits
+  - Focused subsystem refactors
 avoidFor:
   - Long refactors
+  - Broad content generation
 prerequisites: []
 workflows:
   - id: quick-fix
     description: Fix a small typo or bug quickly.
     examples:
       - Fix the typo in README
+      - Correct this small validation bug
     promptTemplate: |
       Fix this quickly: {{intent}}
   - id: deep-refactor
@@ -266,14 +272,14 @@ Use this profile for repository delivery.
 const guideFoo: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["repository-delivery"],
-  bestFor: ["Small edits"],
-  avoidFor: ["Long refactors"],
+  bestFor: ["Small edits", "Focused subsystem refactors"],
+  avoidFor: ["Long refactors", "Broad content generation"],
   prerequisites: [],
   workflows: [
     {
       id: "quick-fix",
       description: "Fix a small typo or bug quickly.",
-      examples: ["Fix the typo in README"],
+      examples: ["Fix the typo in README", "Correct this small validation bug"],
       promptTemplate: "Fix this quickly: {{intent}}",
     },
     {
@@ -568,9 +574,7 @@ describe("resolveGuideModelConfig", () => {
   })
 
   it("applies environment overrides across every phase", () => {
-    expect(
-      resolveGuideModelRouting({}, { TRELLAGE_GUIDE_MODEL: "gpt-5.4", TRELLAGE_GUIDE_EFFORT: "high" }),
-    ).toEqual({
+    expect(resolveGuideModelRouting({}, { TRELLAGE_GUIDE_MODEL: "gpt-5.4", TRELLAGE_GUIDE_EFFORT: "high" })).toEqual({
       match: { model: "gpt-5.4", effort: GuideEffort.High },
       generate: { model: "gpt-5.4", effort: GuideEffort.High },
       optimize: { model: "gpt-5.4", effort: GuideEffort.High },
@@ -616,9 +620,7 @@ describe("resolveGuideModelConfig", () => {
   })
 
   it("rejects an invalid model from the environment", () => {
-    expect(() => resolveGuideModelRouting({}, { TRELLAGE_GUIDE_MODEL: "Not A Model!" })).toThrow(
-      GuideValidationError,
-    )
+    expect(() => resolveGuideModelRouting({}, { TRELLAGE_GUIDE_MODEL: "Not A Model!" })).toThrow(GuideValidationError)
   })
 
   it("rejects an invalid effort from the environment", () => {
@@ -787,9 +789,7 @@ describe("runGuideGenerate", () => {
       expect(response.profile.workflowId).toBe("plan")
       expect(response.profile.profileRef).toBe("sandbox:prime-agent")
       expect(response.candidates).toHaveLength(3)
-      expect(response.candidates[0]?.prompt).toBe(
-        "Prompt Master: Use the writing-plans skill:\nDo the focused thing.",
-      )
+      expect(response.candidates[0]?.prompt).toBe("Prompt Master: Use the writing-plans skill:\nDo the focused thing.")
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "copilot",
@@ -970,6 +970,60 @@ describe("literalGuideMatch", () => {
     for (let i = 1; i < candidates.length; i += 1) {
       expect(candidates[i]!.confidence).toBeLessThanOrEqual(candidates[i - 1]!.confidence)
     }
+  })
+
+  it("normalizes token overlap so focused metadata outranks a broader keyword list", () => {
+    const catalog = buildCatalog("/tmp-unused")
+    const verboseGuide: ProfileGuideV1 = {
+      ...guideFoo,
+      capabilities: [
+        "payments",
+        "refactoring",
+        "documentation",
+        "browser-automation",
+        "deployment",
+        "monitoring",
+        "security",
+        "accessibility",
+      ],
+      bestFor: [
+        "Payment work plus documentation, browser automation, deployment, monitoring, security, and accessibility",
+      ],
+      workflows: [
+        {
+          id: "broad-repository-work",
+          description:
+            "Handle payment refactors, documentation, browser automation, deployment, monitoring, security, and accessibility.",
+          examples: ["Refactor the payment pipeline", "Work across many unrelated repository concerns"],
+          promptTemplate: "{{intent}}",
+        },
+      ],
+    }
+    const focusedGuide: ProfileGuideV1 = {
+      ...guideCdxHve,
+      capabilities: ["payment-pipeline-refactoring"],
+      bestFor: ["Focused payment pipeline refactors"],
+      workflows: [
+        {
+          id: "payment-refactor",
+          description: "Refactor a payment pipeline.",
+          examples: ["Refactor the payment pipeline", "Simplify the payment processing path"],
+          promptTemplate: "{{intent}}",
+        },
+      ],
+    }
+    const comparisonCatalog: CombinedGuideCatalog = {
+      ...catalog,
+      native: [
+        { ...catalog.native[1]!, guide: verboseGuide, description: "Broad repository engineering profile." },
+        { ...catalog.native[0]!, guide: focusedGuide, description: "Focused payment pipeline refactoring." },
+      ],
+    }
+
+    const refs = literalGuideMatch(comparisonCatalog, "Refactor the payment pipeline").map(
+      ({ profileRef }) => profileRef,
+    )
+    expect(refs.indexOf("native:cdx/pstack")).toBeLessThan(refs.indexOf("native:jcx/foo"))
   })
 
   it("throws when the catalog has fewer than three profiles", () => {
