@@ -640,11 +640,14 @@ runtime_hash="$(jq -er '.runtime_hash' <<<"$profile_metadata")" || fail 'profile
 [[ "$profile_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid profile hash'
 [[ "$runtime_hash" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'profile metadata has an invalid runtime hash'
 profile_path="$(jq -er '.profile_path' <<<"$profile_metadata")" || fail 'profile metadata has no path'
-profile_locked="$(jq -r '.locally_resolved // .locked' <<<"$profile_metadata")" \
+profile_locked="$(jq -r 'if has("locally_resolved") then .locally_resolved else .locked end' \
+  <<<"$profile_metadata")" \
   || fail 'profile metadata has no local resolution state'
 profile_resolution_policy="$(jq -r '.resolution_policy // "floating"' <<<"$profile_metadata")" \
   || fail 'profile metadata has no resolution policy'
-profile_release_lock_available="$(jq -r '.release_lock_available // .locked' <<<"$profile_metadata")" \
+profile_release_lock_available="$(jq -r \
+  'if has("release_lock_available") then .release_lock_available else .locked end' \
+  <<<"$profile_metadata")" \
   || fail 'profile metadata has no release lock state'
 [[ "$profile_locked" == true || "$profile_locked" == false ]] \
   || fail 'profile metadata has an invalid local resolution state'
@@ -1985,7 +1988,7 @@ if [[ "$profile_locked" != true ]]; then
   printf 'trellage: development resolution is unavailable; resolving and building: %s\n' "$build_command" >&2
   run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
     node "$compiler" build "$profile_path" \
-    || fail "automatic profile refresh failed: $refresh_command"
+    || fail "automatic profile build failed: $build_command"
   profile_locked=true
 fi
 if ! inspect_profile_image; then

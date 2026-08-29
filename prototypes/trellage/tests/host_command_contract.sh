@@ -2487,6 +2487,10 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   grep -Fqx 'dependency docker: available' <<<"$output" || fail 'doctor omitted Docker status'
   grep -Eq '^dependency mise: (available|missing)$' <<<"$output" || fail 'doctor omitted mise status'
   grep -Fqx 'environment: disabled' <<<"$output" || fail 'doctor omitted disabled environment status'
+  grep -Fqx 'development resolution: true' <<<"$output" \
+    || fail 'doctor omitted the available development resolution'
+  grep -Fqx 'release lock: false' <<<"$output" \
+    || fail 'doctor treated an explicit false release-lock state as missing'
   grep -Fqx "environment path: $expected_environment_path" <<<"$output" \
     || fail 'doctor omitted the default environment path'
   grep -Fqx "worktree: $worktree" <<<"$output" || fail 'doctor omitted canonical worktree'
