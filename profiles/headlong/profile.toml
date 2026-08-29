@@ -1,6 +1,6 @@
 schema = 1
 name = "headlong"
-description = "Headlong persistent agent microharness with continuous background thinking, durable identity and trajectory, shell-based agency, and a loopback dashboard. After launch, type ada to enter the TUI."
+description = "Headlong persistent agent microharness for investigations that continue autonomously between interactions, with durable identity, trajectory, and a loopback dashboard. Its differentiator is a continuous background mind, not a one-shot coding session."
 skill_bundles = ["sandbox-common"]
 
 [harness]

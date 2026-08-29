@@ -1,6 +1,6 @@
 schema = 1
 name = "prime-agent"
-description = "Prime Agent (Opus via copilot-proxy-rs): recursive, self-improving runtime with a persistent iPython control loop, detach/resume, and subagents. Best for experimental long-horizon agent research and novel automation—not conservative production delivery. Skip for everyday features, GitHub PR factories, or anything needing a stable, low-surprise harness."
+description = "Sandboxed Prime Agent (Opus via proxy) for experimental long-horizon research and automation through a persistent IPython control loop, detach/resume, and subagents. Unlike Headlong, it is user-directed control-loop research; unlike native `prx`, it runs in a reproducible Sandbox."
 skill_bundles = ["sandbox-common"]
 
 [harness]

@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - vox-daily-coding-extension-set
+  - daily-coding-extension-workflows
   - keyless-proxy-model-routing
   - isolated-pi-profile-home
   - native-common-skill-bundle
@@ -22,25 +22,29 @@ prerequisites:
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
-  - id: extension-inventory-check
-    description: Confirm which of the ten pinned extensions are active before relying on any of their tools.
+  - id: daily-coding-with-extension-support
+    description: Complete a daily coding task with Pi's fixed extension set providing context, fast file work, and workflow support.
     examples:
-      - What extensions are installed in this session?
-      - Confirm pi-subagents and pi-goal are active before I start
+      - Investigate this bug, update the smallest correct code path, and verify the result
+      - Use the available context and file tools to implement this focused repository change
     promptTemplate: |
-      {{intent}}
+      Use Pi's available daily-coding extensions to complete and verify
+      {{intent}}.
   - id: goal-and-plan-tracking
     description: Use the pi-goal and Plannotator extensions to track a multi-step objective and annotate the plan as work proceeds.
     examples:
       - Set a goal for this refactor and annotate the plan as each step completes
+      - Track this migration goal, keep the plan current, and verify each completed stage
     promptTemplate: |
-      {{intent}}
+      Use Pi's goal tracking and plan annotation support to complete
+      {{intent}}.
   - id: subagent-and-workflow-fanout
     description: Use pi-subagents and pi-dynamic-workflows to split a larger task across coordinated subagents with a dynamic workflow.
     examples:
       - Split this migration into subagent tasks driven by a dynamic workflow
+      - Coordinate subagents on this cross-cutting refactor and integrate the verified result
     promptTemplate: |
-      {{intent}}
+      Use Pi's subagent and dynamic workflow support to deliver {{intent}}.
 ---
 
 # Native Pi (`picx`) — `default` profile

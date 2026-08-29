@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-graph-of-loops"
-description = "Claude Code (Opus via proxy) that wires Granite's graph-of-loops stack: bernstein DAG, git worktree isolation, curated wshobson specialist roles, insane-research fan-out with a code gate, beads memory, the readable waku loop, serena symbol retrieval, Superpowers TDD, a Stop-hook review gate, and local Workshop evals. Best for multi-node coding work that must be able to take 'done' back. Skip for one-shot Q&A or content-only profiles."
+description = "Claude Code (Opus via proxy) Sandbox graph for reversible multi-node coding, with isolated worktrees, persistent task memory, code-gated research, and review gates. Choose it when a complex change must be resumed, retried, and challenged before completion."
 skill_bundles = ["sandbox-common"]
 
 # Source article: Granite, "A Graph of Loops"

@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - superpowers-tdd-and-debugging-skills
+  - superpowers-tdd-and-debugging-workflows
   - grok-workspace-sandbox
   - keyless-proxy-model-routing
   - isolated-grok-profile-home
@@ -36,8 +36,8 @@ workflows:
     description: Write a plan, execute it, and finish the development branch cleanly using writing-plans, executing-plans, and finishing-a-development-branch.
     skill: writing-plans
     examples:
-      - Write an implementation plan for this feature before touching any code
-      - This branch is ready; finish it and prepare it for review
+      - Plan, implement, and verify this feature before preparing the branch for review
+      - Complete this approved implementation plan and finish the branch cleanly
     promptTemplate: |
       Use the writing-plans skill to draft a plan for {{intent}}, then
       executing-plans to carry it out, and finishing-a-development-branch to
@@ -47,6 +47,7 @@ workflows:
     skill: dispatching-parallel-agents
     examples:
       - Split this refactor into independent pieces and dispatch them in parallel
+      - Have independent subagents assess the migration, API, and test changes before integration
     promptTemplate: |
       Use dispatching-parallel-agents and subagent-driven-development to
       split up {{intent}}, then run requesting-code-review and

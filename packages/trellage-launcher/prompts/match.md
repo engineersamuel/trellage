@@ -29,6 +29,17 @@ Pick exactly the five best-fitting profiles for the stated intent from
 `entries`, ranked most to least suitable. Each pick must name one workflow
 from that profile's own `guide.workflows` that best matches the intent.
 
+Rank the user's requested outcome, not the amount of text in a profile.
+Start with workflow descriptions and examples that closely resemble the
+intent, then use `bestFor` and capabilities as supporting evidence. Treat
+`avoidFor` and unmet prerequisites as negative evidence.
+
+When profiles share skills or broad capabilities, resolve the choice with
+their actual runtime differences: harness behavior, sandbox boundary,
+authentication, model route, tool surface, persistence model, and process
+discipline. Do not reward a profile only because it lists more capabilities,
+workflows, examples, or implementation details.
+
 The interactive guide separately pins `sandbox:claude-council`,
 `sandbox:claude-research`, and `native:cpx/hve` as optional decision or
 execution lenses. When any of these profiles is present in `entries`, do not
@@ -85,6 +96,9 @@ Requirements:
 - Order `candidates` by non-increasing `confidence`: the first entry must
   have the highest confidence, the last the lowest (or equal).
 - `reason` and `tradeoff` are short plain-text sentences, not Markdown.
+- `reason` must identify the matching user outcome or workflow strength.
+- `tradeoff` must state a profile-specific cost, limitation, prerequisite, or
+  advantage that a close alternative has.
 - Do not add, rename, or omit any key shown above. Do not include a
   `command`, `commandPath`, `args`, or any other field — commands are never
   produced by this step.

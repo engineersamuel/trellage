@@ -53,6 +53,54 @@ if (coverage.missing.length > 0 || coverage.unexpected.length > 0) {
 }
 
 const registry = await loadProfileGuideRegistry(guideRoot, expected)
+const operationalWorkflowId =
+  /^(?:(?:doctor|health-check|inventory|readiness|setup|smoke-test)|(?:extension|launch|launcher|local|model|profile|proxy)-(?:doctor|health-check|inventory-check|readiness-check|repair|setup|smoke-test))$/u
+const operationalExamplePatterns = [
+  /\breply exactly\b/iu,
+  /\b(?:run|use)\s+(?:the\s+)?(?:profile\s+)?doctor\b/iu,
+  /\b(?:check|confirm|verify)\b.*\b(?:profile|proxy|launcher)\b.*\b(?:health|healthy|live|respond(?:s|ing)?)\b/iu,
+  /\b(?:repair|set up|setup)\s+(?:the\s+)?(?:profile|launcher)\b/iu,
+  /\b(?:what|which|list|check|confirm)\b.*\b(?:extensions?|models?|plugins?)\b.*\b(?:active|advertised|available|installed)\b/iu,
+]
+const isOperationalExample = (example) =>
+  operationalExamplePatterns.some((pattern) => pattern.test(example))
+
+for (const id of ["launch-smoke-test", "health-check", "inventory", "profile-repair", "setup"]) {
+  if (!operationalWorkflowId.test(id)) throw new Error(`operational workflow guard missed fixture: ${id}`)
+}
+for (const id of ["diagnose-sources", "model-selection", "repair-production-data"]) {
+  if (operationalWorkflowId.test(id)) throw new Error(`operational workflow guard rejected valid fixture: ${id}`)
+}
+for (const example of [
+  "Please reply exactly PROFILE_OK",
+  "Run the profile doctor",
+  "Confirm the proxy is healthy",
+  "Repair the launcher profile",
+  "List which extensions are installed",
+]) {
+  if (!isOperationalExample(example)) throw new Error(`operational example guard missed fixture: ${example}`)
+}
+for (const example of [
+  "Diagnose why this external source is missing",
+  "Choose a stronger model for this refactor",
+  "Repair the production data without changing the profile",
+]) {
+  if (isOperationalExample(example)) throw new Error(`operational example guard rejected valid fixture: ${example}`)
+}
+
+for (const [profileRef, loaded] of registry) {
+  for (const workflow of loaded.guide.workflows) {
+    if (operationalWorkflowId.test(workflow.id)) {
+      throw new Error(`${profileRef} guide contains maintenance-only workflow: ${workflow.id}`)
+    }
+    for (const example of workflow.examples) {
+      if (isOperationalExample(example)) {
+        throw new Error(`${profileRef}/${workflow.id} contains maintenance-only example: ${example}`)
+      }
+    }
+  }
+}
+
 const socialGuide = registry.get("sandbox:claude-social-media")
 if (socialGuide === undefined) throw new Error("claude-social-media guide is missing")
 const socialWorkflowIds = new Set(socialGuide.guide.workflows.map(({ id }) => id))

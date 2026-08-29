@@ -20,8 +20,10 @@ capabilities:
   - social-writing
 bestFor:
   - Short public posts
+  - Human-sounding launch announcements
 avoidFor:
   - Long-form engineering design
+  - Source-backed technical research
 prerequisites:
   - id: voice-builder
     description: Build the voice files first
@@ -32,7 +34,6 @@ workflows:
     examples:
       - Write a post about agents
       - Turn this note into a LinkedIn post
-      - Draft a launch announcement
     promptTemplate: |
       /social-media-skills:post-writer {{intent}}
 ---
@@ -59,19 +60,15 @@ describe("profile guide parser", () => {
     expect(parsed.guide).toEqual({
       schemaVersion: 1,
       capabilities: ["social-writing"],
-      bestFor: ["Short public posts"],
-      avoidFor: ["Long-form engineering design"],
+      bestFor: ["Short public posts", "Human-sounding launch announcements"],
+      avoidFor: ["Long-form engineering design", "Source-backed technical research"],
       prerequisites: [{ id: "voice-builder", description: "Build the voice files first" }],
       workflows: [
         {
           id: "post-writer",
           description: "Draft a post in the user's voice",
           skill: "social-media-skills:post-writer",
-          examples: [
-            "Write a post about agents",
-            "Turn this note into a LinkedIn post",
-            "Draft a launch announcement",
-          ],
+          examples: ["Write a post about agents", "Turn this note into a LinkedIn post"],
           promptTemplate: "/social-media-skills:post-writer {{intent}}",
         },
       ],
@@ -86,16 +83,29 @@ describe("profile guide parser", () => {
     expect(() => parseProfileGuide("social.md", source)).toThrow("contains unsupported keys: profile")
   })
 
-  it("requires three example intents across workflows", () => {
-    const source = validGuide
-      .replace("      - Turn this note into a LinkedIn post\n", "")
-      .replace("      - Draft a launch announcement\n", "")
+  it("requires two outcome examples for every workflow", () => {
+    const source = validGuide.replace("      - Turn this note into a LinkedIn post\n", "")
 
-    expect(() => parseProfileGuide("social.md", source)).toThrow("at least three example intents")
+    expect(() => parseProfileGuide("social.md", source)).toThrow("must contain at least 2 entries")
+  })
+
+  it("accepts one workflow with exactly two outcome examples", () => {
+    expect(() => parseProfileGuide("social.md", validGuide)).not.toThrow()
+  })
+
+  it("requires two best-fit and two avoid-fit statements", () => {
+    const missingBestFit = validGuide.replace("  - Human-sounding launch announcements\n", "")
+    const missingAvoidFit = validGuide.replace("  - Source-backed technical research\n", "")
+
+    expect(() => parseProfileGuide("social.md", missingBestFit)).toThrow("must contain at least 2 entries")
+    expect(() => parseProfileGuide("social.md", missingAvoidFit)).toThrow("must contain at least 2 entries")
   })
 
   it("rejects duplicate capability identifiers", () => {
-    const source = validGuide.replace("  - social-writing\nbestFor:", "  - social-writing\n  - social-writing\nbestFor:")
+    const source = validGuide.replace(
+      "  - social-writing\nbestFor:",
+      "  - social-writing\n  - social-writing\nbestFor:",
+    )
 
     expect(() => parseProfileGuide("social.md", source)).toThrow("must contain unique entries")
   })
@@ -151,10 +161,7 @@ describe("profile guide identities", () => {
 
       expect(loaded.key).toBe("native:cpx/hve")
       expect(registry.size).toBe(2)
-      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual([
-        "native/cpx/hve.md",
-        "sandbox/social.md",
-      ])
+      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual(["native/cpx/hve.md", "sandbox/social.md"])
     })
 
     it("rejects symlinked guides", async () => {
@@ -165,9 +172,9 @@ describe("profile guide identities", () => {
       await writeFile(outside, validGuide)
       await symlink(outside, path.join(root, "native", "cpx", "hve.md"))
 
-      await expect(
-        loadProfileGuide(root, { surface: "native", launcher: "cpx", profile: "hve" }),
-      ).rejects.toThrow("non-symlink regular file")
+      await expect(loadProfileGuide(root, { surface: "native", launcher: "cpx", profile: "hve" })).rejects.toThrow(
+        "non-symlink regular file",
+      )
     })
   })
 })

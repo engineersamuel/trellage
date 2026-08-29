@@ -25,25 +25,20 @@ prerequisites:
   - id: cli-tools
     description: curl and jq available on the host for health checks used by setup, doctor, and launch.
 workflows:
-  - id: launch-smoke-test
-    description: Confirm the isolated profile launches, copilot-proxy-rs is healthy, and claude-opus-5 responds before starting real work.
+  - id: rundown-status-and-handoff
+    description: Produce a concise project status, blockers, and next action in the profile's automatic Rundown format.
     examples:
-      - Reply exactly CLDX_OK
-      - Confirm the proxy is healthy and reply OK
+      - Summarize this branch's progress, current blockers, and the next action
+      - Turn these investigation notes into a concise handoff for the next engineer
     promptTemplate: |
-      {{intent}}
-  - id: rundown-status-update
-    description: Ask for a status update, standup note, or PR summary and receive it in the built-in Rundown TL;DR, checklist, and Your-move format automatically, without requesting that format explicitly.
-    examples:
-      - Give me a status update on the current branch's open PRs
-      - Summarize what changed in this session and what's blocked
-    promptTemplate: |
-      {{intent}}
+      Use the Rundown output style to provide a clear status and handoff for
+      {{intent}}.
   - id: general-engineering-task
     description: Delegate an implementation, debugging, or review task to Claude Opus 5, with the shared native-common skill bundle (engineersamuel skills plus show-me) available for repository hygiene, naming, and review support.
     examples:
       - Review this PR diff for correctness and naming issues
       - Debug why this test intermittently fails
+      - Implement this API validation change and verify the affected behavior
     promptTemplate: |
       {{intent}}
 ---

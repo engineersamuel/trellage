@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - superpowers-tdd-and-debugging-skills
+  - superpowers-tdd-and-debugging-workflows
   - rundown-briefing-output-style
   - autopilot-no-ask-user-launch
   - native-common-skill-bundle
@@ -14,6 +14,7 @@ avoidFor:
   - Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use cpx awesome instead
   - Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user
   - Mixing in the hve-core plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile
+  - Work needing an OS-level sandbox; choose `cdx superpowers` for Codex or `grx superpowers` for Grok Build instead
 prerequisites:
   - id: copilot-cli
     description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
@@ -33,8 +34,8 @@ workflows:
     description: Write a plan, execute it, and finish the development branch cleanly using writing-plans, executing-plans, and finishing-a-development-branch.
     skill: writing-plans
     examples:
-      - Write an implementation plan for this feature before touching any code
-      - This branch is ready; finish it and prepare it for review
+      - Plan, implement, and verify this feature before preparing the branch for review
+      - Complete this approved implementation plan and finish the branch cleanly
     promptTemplate: |
       Use the writing-plans skill to draft a plan for {{intent}}, then
       executing-plans to carry it out, and finishing-a-development-branch to
@@ -44,6 +45,7 @@ workflows:
     skill: dispatching-parallel-agents
     examples:
       - Split this refactor into independent pieces and dispatch them in parallel
+      - Assign separate review passes for the API, UI, and migration portions of this change
     promptTemplate: |
       Use dispatching-parallel-agents and subagent-driven-development to
       split up {{intent}}, then run requesting-code-review and

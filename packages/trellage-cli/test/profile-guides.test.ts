@@ -22,8 +22,10 @@ capabilities:
   - ${capability}
 bestFor:
   - Guided fixture work
+  - Focused fixture delivery
 avoidFor:
   - Unrelated fixture work
+  - Long-running fixture research
 prerequisites: []
 workflows:
   - id: deliver

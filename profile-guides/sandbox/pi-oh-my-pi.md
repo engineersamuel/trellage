@@ -2,13 +2,14 @@
 schemaVersion: 1
 capabilities:
 - high-throughput-terminal-coding
-- lsp-aware-editing
-- browser-tool-integration
-- prompt-compaction
+- rapid-repository-repair
+- end-to-end-issue-resolution
+- long-refactor-continuity
 - minimal-ceremony-agent-loop
 bestFor:
-- High-throughput repo work wanting minimal ceremony and maximum tool surface
-- Sessions that benefit from LSP, debugger, and browser tool access in one loop
+- High-throughput repository work that must move from diagnosis through a validated patch with little process
+  overhead
+- Large refactors or difficult regressions that benefit from one continuous, compacted execution loop
 avoidFor:
 - Strict RPI process gates
 - Multi-perspective deliberation — use claude-council
@@ -16,17 +17,18 @@ avoidFor:
 prerequisites: []
 workflows:
 - id: rapid-repo-editing
-  description: Make fast, tool-rich repo edits (LSP, debug, browser) without process ceremony.
+  description: Turn a diagnosed repository failure into a repaired, verified patch without process ceremony.
   examples:
-  - Fix the failing integration tests in this repo and show me the diff
-  - Wire up a debugger session to find why this endpoint returns 500
+  - Trace this failing integration test, fix the root cause, and validate the complete patch
+  - Investigate why this endpoint returns 500, make the repair, and show the tested diff
   promptTemplate: |
     {{intent}}
 - id: compacted-long-session
   description: Keep a long agent session productive via automatic prompt/output compaction when context
     grows large.
   examples:
-  - Keep working through this large refactor without losing context
+  - Complete this cross-package refactor in one sustained session without losing the decisions already made
+  - Keep reducing this large test-failure backlog while preserving context from each completed fix
   promptTemplate: |
     {{intent}}
 ---
@@ -35,9 +37,10 @@ workflows:
 
 ## Use This Profile When
 
-- You want a batteries-included terminal agent (LSP, debugger, browser tools) with minimal process ceremony.
-- You are doing high-throughput repo work and want maximum tool surface rather than strict gating.
-- A session is expected to run long and needs automatic compaction to stay productive.
+- You want a fast, low-ceremony path from a repository problem to a tested patch.
+- You are doing high-throughput repo work where rapid diagnosis, repair, and validation matter more than
+  strict process gates.
+- A large refactor or issue backlog needs one continuous session that can retain its working context.
 
 ## Avoid This Profile When
 
@@ -48,7 +51,8 @@ workflows:
 ## Workflow Notes
 
 - This profile runs Oh My Pi on GitHub Copilot models (`gpt-5.6-terra`) with `--yolo`, so it does not pause for approval prompts inside the container.
-- Bundled `omp-native` skills (semantic-compression, system-prompts, tool-prompt-optimization) tune the agent's own prompt handling rather than exposing user-facing slash commands.
+- Bundled `omp-native` skills tune prompt handling and context compaction rather than exposing user-facing
+  slash commands.
 - Describe the task directly; there is no documented command syntax layered on top of the natural terminal-agent loop.
 
 ## Gotchas

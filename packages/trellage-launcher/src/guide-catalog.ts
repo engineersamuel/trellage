@@ -107,7 +107,7 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
     id: identifier(fields.id, `${path}.id`),
     description: text(fields.description, `${path}.description`, 2000),
     ...(skill === undefined ? {} : { skill }),
-    examples: stringArray(fields.examples, `${path}.examples`, { minimum: 1, maximumItems: 32, itemMaximum: 2000 }),
+    examples: stringArray(fields.examples, `${path}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
     promptTemplate,
   }
 }
@@ -135,8 +135,8 @@ export const validateProfileGuideV1 = (value: unknown, path: string): ProfileGui
   return {
     schemaVersion: 1,
     capabilities: identifierArray(fields.capabilities, `${path}.capabilities`, { minimum: 1, maximumItems: 64 }),
-    bestFor: stringArray(fields.bestFor, `${path}.bestFor`, { minimum: 1, maximumItems: 32, itemMaximum: 2000 }),
-    avoidFor: stringArray(fields.avoidFor, `${path}.avoidFor`, { minimum: 1, maximumItems: 32, itemMaximum: 2000 }),
+    bestFor: stringArray(fields.bestFor, `${path}.bestFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
+    avoidFor: stringArray(fields.avoidFor, `${path}.avoidFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
     prerequisites,
     workflows,
   }

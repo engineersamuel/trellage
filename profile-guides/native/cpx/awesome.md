@@ -34,6 +34,7 @@ workflows:
     skill: awesome-copilot:suggest-awesome-github-copilot-instructions
     examples:
       - Suggest instruction files that match the languages and frameworks used here
+      - Find a maintained instruction file for our test conventions and identify duplicates we already have
     promptTemplate: |
       /awesome-copilot:suggest-awesome-github-copilot-instructions {{intent}}
   - id: suggest-skills
@@ -41,6 +42,7 @@ workflows:
     skill: awesome-copilot:suggest-awesome-github-copilot-skills
     examples:
       - Suggest skills we're missing given the current repository content
+      - Recommend curated skills for this API project and flag installed skills that overlap
     promptTemplate: |
       /awesome-copilot:suggest-awesome-github-copilot-skills {{intent}}
 ---

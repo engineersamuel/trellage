@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "bounded-private-local-edit",
+      "intent": "Make a small bounded parser fix while keeping the code on a private local model. I do not need agents or a large workflow.",
+      "expectedProfiles": ["sandbox:claude-qwen-local"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:omp/local"]
+    },
+    {
+      "id": "persistent-background-investigation",
+      "intent": "Investigate an intermittent production reliability problem for several days, keep thinking after I disconnect, preserve hypotheses and evidence, and show progress in a dashboard.",
+      "expectedProfiles": ["sandbox:headlong"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:prime-agent"]
+    },
+    {
+      "id": "persistent-ipython-exploration",
+      "intent": "Use a persistent IPython control loop and delegated subagents to explore a prompt-compression experiment that I can detach and resume.",
+      "expectedProfiles": ["sandbox:prime-agent"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:headlong"]
+    },
+    {
+      "id": "visual-html-prototype",
+      "intent": "Create a self-contained interactive HTML wireframe and architecture diagram that I can review in a browser.",
+      "expectedProfiles": ["native:cpx/plannotator"],
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
+      "id": "voice-first-social-post",
+      "intent": "Turn these notes into a LinkedIn post in my established voice, then remove obvious AI writing patterns without inventing claims.",
+      "expectedProfiles": ["sandbox:claude-social-media"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:claude-blog"]
+    },
+    {
+      "id": "technical-seo-blog",
+      "intent": "Produce a long-form technical blog post with a content brief, editorial gates, SEO checks, and citation-ready structure.",
+      "expectedProfiles": ["sandbox:claude-blog"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:claude-social-media"]
+    },
+    {
+      "id": "motion-heavy-frontend",
+      "intent": "Design and polish a product landing page with one clear CTA, strong typography, and GSAP motion while avoiding generic AI design.",
+      "expectedProfiles": ["sandbox:claude-frontend-design"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/plannotator"]
+    },
+    {
+      "id": "sandbox-hve-delivery",
+      "intent": "Use a container-isolated GitHub Copilot RPI workflow to research, plan, implement, review, and prepare a feature for a pull request.",
+      "expectedProfiles": ["sandbox:copilot-hve"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/hve"]
+    },
+    {
+      "id": "grok-workspace-sandbox-tdd",
+      "intent": "Use Grok with network access and an OS-level workspace-write sandbox to debug this failure test-first with Superpowers.",
+      "expectedProfiles": ["native:grx/superpowers"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/superpowers"]
+    },
+    {
+      "id": "codex-native-superpowers",
+      "intent": "Use host-native Codex with its workspace-write sandbox and the Codex-adapted Superpowers workflow to plan, implement with TDD, review, and finish this branch.",
+      "expectedProfiles": ["native:cdx/superpowers"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:codex-superpowers"]
+    },
+    {
+      "id": "copilot-superpowers-tdd",
+      "intent": "Use GitHub Copilot CLI with Superpowers to reproduce this bug, implement the fix with TDD, review it, and finish the branch.",
+      "expectedProfiles": ["native:cpx/superpowers"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:grx/superpowers"]
+    },
+    {
+      "id": "isolated-claude-rundown",
+      "intent": "Use an isolated host-native Claude Opus session for this code review, then give me a concise Rundown-style status summary with a checklist.",
+      "expectedProfiles": ["native:cldx/default"],
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
+      "id": "awesome-copilot-assets",
+      "intent": "Inspect this repository and recommend curated GitHub Copilot agents, instruction files, and skills that we should import from Awesome Copilot.",
+      "expectedProfiles": ["native:cpx/awesome"],
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
+      "id": "omp-copilot-model-catalog",
+      "intent": "Use OMP with native GitHub Copilot authentication, choose from its full model catalog, and fan this refactor out to typed subagents with debugger support.",
+      "expectedProfiles": ["native:omp/copilot"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:omp/local"]
+    },
+    {
+      "id": "omp-keyless-local-orchestration",
+      "intent": "Run OMP without a GitHub credential on the local Qwen route, while keeping its debugger, browser, and typed subagent orchestration.",
+      "expectedProfiles": ["native:omp/local"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:omp/copilot"]
+    },
+    {
+      "id": "jcode-semantic-memory",
+      "intent": "Recall decisions from earlier sessions with semantic memory, then use a real Firefox browser and a coordinated agent swarm to continue the work.",
+      "expectedProfiles": ["native:jcx/default"],
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
+      "id": "pi-extension-guided-coding",
+      "intent": "Use Pi's goal tracking, plan annotation, fast context tools, and dynamic subagents to coordinate this daily coding task.",
+      "expectedProfiles": ["native:picx/default"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:pi-oh-my-pi"]
+    },
+    {
+      "id": "native-prime-clarifying-analysis",
+      "intent": "Run Prime Agent directly on the host, ask me questions instead of guessing, and keep a persistent IPython RLM analysis session across turns.",
+      "expectedProfiles": ["native:prx/default"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:prime-agent"]
+    },
+    {
+      "id": "rapid-rich-tool-repo-work",
+      "intent": "Work through a large repository refactor with minimal ceremony using LSP, debugger, browser tools, and context compaction in one fast loop.",
+      "expectedProfiles": ["sandbox:pi-oh-my-pi"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:copilot-hve"]
+    },
+    {
+      "id": "reversible-graph-of-loops",
+      "intent": "Run a long multi-node feature through isolated git worktrees, specialist roles, durable task memory, and a review gate that can take done back.",
+      "expectedProfiles": ["sandbox:claude-graph-of-loops"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:codex-superpowers"]
+    },
+    {
+      "id": "containerized-codex-marathon",
+      "intent": "Use container-isolated Codex for a multi-day implementation marathon with brainstorm, plan, TDD, debugging, review, and parallel full-stack agent roles.",
+      "expectedProfiles": ["sandbox:codex-superpowers"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cdx/superpowers"]
+    },
+    {
+      "id": "poteto-mode-structured-engineering",
+      "intent": "Drive a substantial multi-stage engineering change with Poteto Mode playbook selection, controlled delegation, verification checkpoints, and a decision trail.",
+      "expectedProfiles": ["native:cdx/pstack"],
+      "maxRank": 3,
+      "excludedProfiles": []
+    }
+  ]
+}

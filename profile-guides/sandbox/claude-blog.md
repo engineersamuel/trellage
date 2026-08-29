@@ -25,6 +25,7 @@ workflows:
   examples:
   - Write me a blog post about zero-trust networking for platform engineers
   - /blog write agentic coding workflows for enterprise teams
+  - Create a reviewed docs-as-blog article that explains our new deployment model to SRE leads
   promptTemplate: |
     /blog write {{intent}}
 - id: audit-existing-post
@@ -33,6 +34,7 @@ workflows:
   skill: blog-analyze
   examples:
   - Analyze https://example.com/blog/my-post for SEO and citation gaps
+  - Audit this published engineering post and list the P0 issues blocking publication
   promptTemplate: |
     /blog analyze {{intent}}
 - id: content-brief
@@ -40,6 +42,7 @@ workflows:
   skill: blog-brief
   examples:
   - Give me a content brief for a post about Kubernetes cost optimization
+  - Plan a three-post topic cluster for platform-engineering observability
   promptTemplate: |
     /blog brief {{intent}}
 ---

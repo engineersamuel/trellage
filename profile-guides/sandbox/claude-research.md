@@ -21,6 +21,8 @@ workflows:
   skill: hyperresearch
   examples:
   - /hyperresearch compare Postgres and CockroachDB for a multi-region OLTP workload
+  - Research whether passkeys reduce support costs for an enterprise SaaS, and save the evidence for the
+    implementation decision
   promptTemplate: |
     /hyperresearch Research the evidence that should inform this request before implementation: {{intent}}
 
@@ -35,14 +37,6 @@ workflows:
   - /last30days OpenClaw vs Hermes
   promptTemplate: |
     /last30days {{intent}}
-- id: diagnose-sources
-  description: Diagnose missing sources or authentication for the last30days pipeline.
-  skill: last30days
-  examples:
-  - /last30days doctor
-  promptTemplate: |
-    /last30days doctor
-    {{intent}}
 ---
 
 # claude-research

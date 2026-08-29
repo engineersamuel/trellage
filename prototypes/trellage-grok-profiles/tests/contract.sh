@@ -223,7 +223,7 @@ jq -e '
     "testedHarnessVersion": null
   }
   and (.profiles.superpowers | del(.headless)) == {
-    "description": "Grok Build with Superpowers’ design, TDD, debugging, review, verification, and branch-finishing skills, plus a separate Caveman plugin.",
+    "description": "Grok Build with a workspace sandbox for Superpowers-led TDD, root-cause fixes, reviews, verification, and clean branches.",
     "source": "obra/superpowers",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
     "plugin": "superpowers",

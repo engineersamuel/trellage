@@ -281,8 +281,10 @@ capabilities:
   - fixture-delivery
 bestFor:
   - Fixture delivery
+  - Router integration tests
 avoidFor:
   - Unrelated fixture work
+  - Production profile selection
 prerequisites: []
 workflows:
   - id: deliver
@@ -481,8 +483,8 @@ import { readFileSync } from "node:fs"
 const guide = {
   schemaVersion: 1,
   capabilities: ["fixture-delivery"],
-  bestFor: ["Fixture delivery"],
-  avoidFor: ["Unrelated fixture work"],
+  bestFor: ["Fixture delivery", "Router integration tests"],
+  avoidFor: ["Unrelated fixture work", "Production profile selection"],
   prerequisites: [],
   workflows: [
     {

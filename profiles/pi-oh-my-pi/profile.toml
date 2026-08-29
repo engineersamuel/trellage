@@ -1,6 +1,6 @@
 schema = 1
 name = "pi-oh-my-pi"
-description = "Oh My Pi on Copilot models: batteries-included terminal agent (LSP/debug/browser, compaction, prompt/tool tuning) that keeps cranking with rich output. Best for high-throughput repo work when you want minimal ceremony and maximum tool surface. Skip if you need strict RPI process gates, multi-perspective deliberation, or a simple lightweight CLI."
+description = "Sandboxed Oh My Pi on Copilot models for high-throughput repository progress: rapidly trace, fix, validate, and continue complex changes with minimal ceremony. Its differentiator is sustained tool-rich execution rather than RPI gates or deliberation."
 skill_bundles = ["sandbox-common", "pi-oh-my-pi"]
 
 [harness]

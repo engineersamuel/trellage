@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - hve-core-rpi-skill-bundle
+  - evidence-backed-rpi-delivery
   - rundown-briefing-output-style
   - autopilot-no-ask-user-launch
   - native-common-skill-bundle
@@ -10,6 +10,7 @@ bestFor:
   - Durable Research-Plan-Implement (RPI) SDLC work with GitHub Copilot CLI — research notes, plan critique, implementation evidence, and review
   - Specialist HVE Core workflows spanning accessibility, coding-standards, data-science, design-thinking, project-planning, rai, and security categories
   - Sessions where an autonomous, non-interactive Copilot CLI run with a durable evidence trail is preferred over ad hoc prompting
+  - Host-native RPI work with Copilot CLI and shared floating skills, rather than the containerized GitHub-native `copilot-hve` Sandbox harness
 avoidFor:
   - Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use cpx awesome instead
   - Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user
@@ -50,6 +51,7 @@ workflows:
     description: Implement against an approved plan and close the loop with rpi-review evidence.
     examples:
       - Implement the approved plan and show the verification evidence
+      - Execute this reviewed migration plan and record the evidence from the affected checks
     promptTemplate: |
       Use the rpi-implement skill to execute the approved plan for
       {{intent}}, then use rpi-review to record verification evidence.

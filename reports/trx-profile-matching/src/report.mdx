@@ -1,0 +1,232 @@
+import { GraphTable } from "./registry/default/graph-table"
+
+export const coverageRows = [
+  ["Change set", "109 files", "5,424 insertions / 305 deletions"],
+  ["Native guides", "13", "Host launchers and native harness routes"],
+  ["Sandbox guides", "12", "Container profile definitions"],
+  ["Profile locks", "12", "Refreshed after Sandbox descriptions changed"],
+]
+
+export const signalRows = [
+  [<code>workflow</code>, "55%", "ID, description, and realistic examples"],
+  [<code>bestFor</code>, "20%", "Strong outcomes for this profile"],
+  [<code>description</code>, "15%", "Identity, main outcome, and differentiator"],
+  [<code>capabilities</code>, "10%", "Stable searchable abilities"],
+]
+
+export const validationRows = [
+  ["Guide core and contract", <span className="status status-pass">Pass</span>, "11 tests; 25 guides; maintenance-only signals rejected"],
+  ["Deterministic scenario suite", <span className="status status-pass">Pass</span>, "22 rank-eligible profiles covered by 22 scenarios"],
+  ["Launcher and fingerprint", <span className="status status-pass">Pass</span>, "299 tests plus the profile-compiler fingerprint contract"],
+  ["Full repository suite", <span className="status status-pass">Pass</span>, "All repository contracts pass after lock refresh"],
+  ["Live model evaluation", <span className="status status-not-run">Not run</span>, "Explicit paid-quota opt-in was not used"],
+]
+
+<article className="report">
+  <header className="hero">
+    <p className="eyebrow">TRX guide · implementation report</p>
+    <h1>Profile matching now starts with user outcomes.</h1>
+    <p className="lede">
+      The overhaul turns 25 profile guides into distinct matching inputs,
+      strengthens their authoring contract, and tests every profile that can
+      enter the normal ranking.
+    </p>
+    <dl className="metric-strip" aria-label="Report summary">
+      <div>
+        <dt>Guides</dt>
+        <dd>25</dd>
+        <p>13 Native · 12 Sandbox</p>
+      </div>
+      <div>
+        <dt>Scenarios</dt>
+        <dd>22</dd>
+        <p>Deterministic and source controlled</p>
+      </div>
+      <div>
+        <dt>Pinned lenses</dt>
+        <dd>3</dd>
+        <p>Kept outside the ranked five</p>
+      </div>
+    </dl>
+  </header>
+
+  <section aria-labelledby="scope-heading">
+    <p className="section-number">01 / Scope</p>
+    <h2 id="scope-heading">One contract across both profile surfaces</h2>
+    <p>
+      The completed delivery changes 109 files with 5,424 insertions and 305
+      deletions. It revised catalog descriptions, guide
+      metadata, matcher guidance, deterministic ranking, validation, and live
+      evaluation support, then refreshed every affected Sandbox profile lock.
+    </p>
+    <GraphTable
+      title="Change inventory"
+      headers={["Surface", "Count", "Meaning"]}
+      rows={coverageRows}
+      align={["left", "right", "left"]}
+      className="report-table"
+    />
+  </section>
+
+  <section aria-labelledby="contract-heading">
+    <p className="section-number">02 / Authoring contract</p>
+    <h2 id="contract-heading">Weak metadata can no longer pass as complete</h2>
+    <p>
+      Every guide must now provide at least two <code>bestFor</code> outcomes,
+      two <code>avoidFor</code> boundaries, and two realistic examples for
+      every workflow. Descriptions state identity, strongest outcome, and the
+      main difference from nearby profiles.
+    </p>
+    <div className="callout-grid">
+      <aside>
+        <h3>Match-visible</h3>
+        <p>
+          Description, capabilities, best-fit outcomes, avoid cases,
+          prerequisites, workflow IDs, workflow descriptions, skills, and
+          examples.
+        </p>
+      </aside>
+      <aside>
+        <h3>Generation-only</h3>
+        <p>
+          The selected workflow’s prompt template and the Markdown body remain
+          available after selection for syntax, operating notes, and detailed
+          context.
+        </p>
+      </aside>
+    </div>
+    <div className="guard-note">
+      <strong>Operational-workflow guard.</strong>
+      <span>
+        Setup, repair, doctor, readiness, inventory, launcher smoke tests, and
+        prompts such as “Reply exactly OK” are rejected as matching signals.
+        They remain in operational documentation where they belong.
+      </span>
+    </div>
+  </section>
+
+  <section aria-labelledby="ranking-heading">
+    <p className="section-number">03 / Ranking</p>
+    <h2 id="ranking-heading">Workflow resemblance carries most of the signal</h2>
+    <p>
+      The model-facing prompt now ranks the requested outcome before metadata
+      volume. It starts with workflow descriptions and examples, then checks
+      <code>bestFor</code>, capabilities, negative evidence, prerequisites,
+      and real runtime differences such as sandbox boundary, authentication,
+      model route, persistence, tools, and process discipline.
+    </p>
+    <p>
+      The deterministic fallback follows the same intent with an explicit
+      weighted token-overlap score:
+    </p>
+    <GraphTable
+      title="Literal matcher weights"
+      headers={["Signal", "Weight", "Role"]}
+      rows={signalRows}
+      footer={["Total", "100%", "Stable source-order tie-break"]}
+      align={["left", "right", "left"]}
+      className="report-table"
+    />
+    <div className="lens-note">
+      <p className="lens-label">Pinned optional lenses</p>
+      <ul>
+        <li><code>native:cpx/hve</code></li>
+        <li><code>sandbox:claude-council</code></li>
+        <li><code>sandbox:claude-research</code></li>
+      </ul>
+      <p>
+        These remain available for decision or execution support, but they do
+        not consume positions in the five task-specific recommendations.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="flow-heading">
+    <p className="section-number">04 / Architecture</p>
+    <h2 id="flow-heading">Selection and generation stay separate</h2>
+    <ol className="architecture-flow" aria-label="TRX guide architecture flow">
+      <li>
+        <span>1</span>
+        <div>
+          <strong>Intent</strong>
+          <p>The user states the work outcome.</p>
+        </div>
+      </li>
+      <li>
+        <span>2</span>
+        <div>
+          <strong>Combined catalog</strong>
+          <p>Native and Sandbox entries expose match-visible guide fields.</p>
+        </div>
+      </li>
+      <li>
+        <span>3</span>
+        <div>
+          <strong>Rank</strong>
+          <p>The model or literal fallback returns distinct profile/workflow pairs.</p>
+        </div>
+      </li>
+      <li>
+        <span>4</span>
+        <div>
+          <strong>Select</strong>
+          <p>The user chooses a profile and one authored workflow.</p>
+        </div>
+      </li>
+      <li>
+        <span>5</span>
+        <div>
+          <strong>Generate</strong>
+          <p>The full guide supplies its template and detailed Markdown context.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="evaluation-heading">
+    <p className="section-number">05 / Evaluation</p>
+    <h2 id="evaluation-heading">Coverage is deterministic; model calls are explicit</h2>
+    <p>
+      The 22 source-controlled scenarios cover all 22 profiles eligible for
+      normal ranking. Each scenario sets the expected profile’s maximum rank
+      and can name a close alternative that must rank lower.
+    </p>
+    <p>
+      Live evaluation is a separate opt-in path. It builds the worktree
+      launcher, creates an isolated guide cache, assembles Native and Sandbox
+      lists, validates recommendation shape and enrichment, and runs the same
+      scenarios through <code>trx guide --json</code>.
+    </p>
+    <div className="guard-note">
+      <strong>Native catalog synchronization.</strong>
+      <span>
+        Before any model calls, the evaluator compares every installed Native
+        profile description with its source catalog. A mismatch or missing
+        profile fails closed and directs the operator to rebuild Native
+        profiles from the worktree.
+      </span>
+    </div>
+  </section>
+
+  <section aria-labelledby="validation-heading">
+    <p className="section-number">06 / Validation</p>
+    <h2 id="validation-heading">All static contracts pass; live evaluation stays explicit</h2>
+    <GraphTable
+      title="Validation record"
+      headers={["Check", "Result", "Evidence"]}
+      rows={validationRows}
+      align={["left", "left", "left"]}
+      className="report-table"
+    />
+    <p className="caveat">
+      The paid live model evaluation was not run. It remains an explicit
+      operator action because it can consume quota; deterministic guide
+      coverage and the full repository suite pass without it.
+    </p>
+  </section>
+
+  <footer className="report-footer">
+    <p>Measured against the completed delivery diff on 29 August 2026.</p>
+    <p>Report source: real MDX compiled by Vite and rendered with GraphTable.</p>
+  </footer>
+</article>

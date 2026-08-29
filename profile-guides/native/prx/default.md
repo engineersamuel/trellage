@@ -26,25 +26,29 @@ prerequisites:
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
-  - id: launch-smoke-test
-    description: Confirm the isolated profile launches, the proxy is healthy, and claude-opus-5 responds before starting real work.
+  - id: persistent-exploratory-investigation
+    description: Investigate a complex code or data question across turns with persistent daemon-backed IPython/RLM subagents.
     examples:
-      - Reply exactly PRX_OK
-      - Confirm the proxy is healthy and claude-opus-5 is advertised
+      - Explore this dataset across several turns, test the hypotheses, and report the evidence
+      - Investigate this intermittent failure with a persistent kernel and carry the findings into the fix
     promptTemplate: |
-      {{intent}}
+      Use persistent IPython/RLM subagents to investigate {{intent}} across
+      turns, retain the evidence, and report the resulting conclusion.
   - id: ask-user-clarification
     description: Rely on the managed ask_user extension so the agent pauses to ask a clarifying question instead of guessing on ambiguous instructions.
     examples:
       - This task is ambiguous; ask me before choosing an approach
+      - Before changing the API contract, ask which backward-compatibility option I want
     promptTemplate: |
       {{intent}}
   - id: ipython-rlm-analysis
     description: Use Prime's persistent IPython/RLM subagents for exploratory data or code analysis that benefits from a resident kernel across turns.
     examples:
       - Load this dataset into the kernel and iteratively explore it across several turns
+      - Use the persistent kernel to compare these implementation options with measurements across turns
     promptTemplate: |
-      {{intent}}
+      Use Prime's persistent IPython/RLM subagents to analyze {{intent}}
+      across turns and retain the findings in the resident session.
 ---
 
 # Native Prime Agent (`prx`) — `default` profile

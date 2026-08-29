@@ -410,7 +410,7 @@ jq -e '
     "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.awesome | del(.headless)) == {
-    "description": "GitHub Copilot CLI with three Awesome Copilot meta-skills for discovering and importing curated agents, instructions, and skills into a repository.",
+    "description": "GitHub Copilot CLI for discovering and importing curated repository agents, instructions, and skills through Awesome Copilot meta-skills.",
     "marketplace": "github/awesome-copilot",
     "marketplaceName": "awesome-copilot",
     "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
@@ -435,7 +435,7 @@ jq -e '
     "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.hve | del(.headless)) == {
-    "description": "GitHub Copilot CLI with HVE Core’s full RPI-centered SDLC suite for durable research, plans, implementation evidence, review, and specialist workflows.",
+    "description": "GitHub Copilot CLI for evidence-backed Research-Plan-Implement-Review delivery through native HVE Core RPI and specialist workflows.",
     "marketplace": "microsoft/hve-core",
     "marketplaceName": "hve-core",
     "manifestUrl": "https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json",
@@ -461,7 +461,7 @@ jq -e '
     "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.plannotator | del(.headless)) == {
-    "description": "GitHub Copilot CLI with Effective HTML’s six focused skills for visual artifacts, wireframes, interactive prototypes, plans, and diagrams.",
+    "description": "GitHub Copilot CLI for self-contained visual HTML artifacts, wireframes, prototypes, plans, and diagrams through Effective HTML skills.",
     "marketplace": "plannotator/effective-html",
     "marketplaceName": "effective-html",
     "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json",
@@ -496,7 +496,7 @@ jq -e '
     "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.superpowers | del(.headless)) == {
-    "description": "GitHub Copilot CLI with Superpowers’ design-first, TDD, root-cause debugging, review, verification, and branch-finishing discipline.",
+    "description": "GitHub Copilot CLI for design-first TDD, root-cause fixes, review, verification, and clean branches through Superpowers.",
     "marketplace": "obra/superpowers-marketplace",
     "marketplaceName": "superpowers-marketplace",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",

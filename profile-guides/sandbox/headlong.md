@@ -34,18 +34,22 @@ workflows:
   description: Start a persistent agent and give it a long-running research or implementation objective.
   examples:
   - Explore this codebase over several days and maintain a durable map of its architecture and unresolved risks
+  - Keep investigating this recurring deployment failure after I leave the terminal, and preserve each
+    hypothesis and result
   promptTemplate: |
     {{intent}}
 - id: continue-agent-world
   description: Continue an existing Headlong identity with its memories, trajectory, and background thinkers intact.
   examples:
   - Continue the architecture investigation and connect new findings to the existing trajectory
+  - Resume the reliability investigation and let the existing agent identity test the next lead
   promptTemplate: |
     {{intent}}
 - id: inspect-and-direct
   description: Follow the agent's thought stream in the loopback dashboard, then direct it from the TUI.
   examples:
   - Review the dashboard, then ask Ada to focus its next cycles on unresolved deployment risks
+  - Inspect the current trajectory and redirect the autonomous investigation toward the remaining memory leak
   promptTemplate: |
     {{intent}}
 ---

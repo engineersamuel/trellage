@@ -340,8 +340,8 @@ jq -e '
     "effortOverride": false,
     "testedHarnessVersion": null
   })
-  and (.profiles[] | select(.name == "copilot") | .description) == "OMP with native GitHub Copilot authentication and model catalog, default gpt-5.6-sol medium routing, LSP, debugger, browser, eval tools, and typed subagent fan-out."
-  and (.profiles[] | select(.name == "local") | .description) == "OMP with one keyless local Qwen 3.6 35B A3B route assigned to every model role, retaining OMP’s full host tool and subagent surface."
+  and (.profiles[] | select(.name == "copilot") | .description) == "OMP for tool-rich, typed-subagent engineering with native GitHub Copilot authentication and its discovered model catalog."
+  and (.profiles[] | select(.name == "local") | .description) == "OMP for keyless local-model engineering: one Qwen route serves every model role while retaining OMP tools and typed subagents."
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON profile list differs'
 
 cp "$runtime_root/catalog.json" "$fixture_root/catalog.saved" || fail 'could not save catalog'

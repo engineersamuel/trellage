@@ -6,13 +6,16 @@ capabilities:
 - full-stack-orchestration-agents
 - structured-debugging
 - code-review-workflow
+- containerized-verified-delivery
 bestFor:
-- Multi-day implementation marathons needing disciplined brainstorm-plan-TDD-debug-review execution
-- Coordinating parallel full-stack-orchestration agent roles for larger implementation work
+- Sandbox-contained feature delivery needing brainstorm-plan-TDD-debug-review execution and verification
+- Larger implementation work that benefits from full-stack orchestration roles inside one reproducible
+  container
 avoidFor:
 - Pure research tasks
 - Content marketing work
 - One-shot Q&A without process
+- A host-native structured-engineering workflow that must use its own local state and invocation surface
 prerequisites: []
 workflows:
 - id: brainstorm-to-plan
@@ -20,18 +23,21 @@ workflows:
     code is written.
   examples:
   - Brainstorm and plan the implementation of a rate-limiting middleware for our API
+  - Turn this approved audit-log requirement into a reviewed implementation plan before changing code
   promptTemplate: |
     {{intent}}
 - id: tdd-implementation
   description: Implement a planned task test-first, iterating red-green through the Superpowers TDD loop.
   examples:
   - Implement the rate-limiting middleware from the plan using TDD
+  - Deliver this feature in the Sandbox with failing tests first, then verify the completed behavior
   promptTemplate: |
     {{intent}}
 - id: systematic-debug
   description: Diagnose and fix a failing behavior with a systematic-debugging pass before patching it.
   examples:
   - Debug why the rate limiter is dropping legitimate requests under load
+  - Find the root cause of this intermittent checkout failure before proposing a patch
   promptTemplate: |
     {{intent}}
 ---
@@ -43,6 +49,8 @@ workflows:
 - You are starting multi-day implementation work and want brainstorm, spec, plan, TDD, debug, and review handled as a disciplined process rather than ad hoc.
 - You want full-stack-orchestration agent roles staffed for larger implementation tasks.
 - You are debugging a non-obvious failure and want a systematic root-cause pass rather than a quick patch.
+- You want the reproducible Sandbox Superpowers workflow for the change, rather than a host-native
+  structured-engineering profile and its separate local session state.
 
 ## Avoid This Profile When
 

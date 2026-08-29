@@ -2,7 +2,7 @@
 schemaVersion: 1
 capabilities:
   - pstack-poteto-mode-orchestration
-  - explicit-invocation-skill-catalog
+  - explicit-skill-invocation-workflows
   - codex-workspace-write-sandbox
   - keyless-proxy-model-routing
   - isolated-codex-profile-home
@@ -33,11 +33,11 @@ workflows:
     promptTemplate: |
       $poteto-mode {{intent}}
   - id: targeted-single-skill
-    description: Invoke one specific pstack skill directly instead of the full Poteto Mode flow, for a narrow single-operation request.
+    description: Use the architect skill directly to define module boundaries and types before implementation, without the full Poteto Mode flow.
     skill: architect
     examples:
       - Settle the types and module boundaries for this feature before I start implementing
-      - Trace how the retry subsystem actually works today
+      - Define the module boundaries and public interfaces for this new retry subsystem
     promptTemplate: |
       $architect {{intent}}
   - id: review-and-polish
@@ -45,6 +45,7 @@ workflows:
     skill: interrogate
     examples:
       - Review this diff skeptically before I open the PR
+      - Find correctness risks in this change, then remove unnecessary comments and mechanical prose
     promptTemplate: |
       $interrogate {{intent}}
       $no-comments

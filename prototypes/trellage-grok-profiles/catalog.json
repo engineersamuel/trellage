@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "superpowers": {
-      "description": "Grok Build with Superpowers’ design, TDD, debugging, review, verification, and branch-finishing skills, plus a separate Caveman plugin.",
+      "description": "Grok Build with a workspace sandbox for Superpowers-led TDD, root-cause fixes, reviews, verification, and clean branches.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,

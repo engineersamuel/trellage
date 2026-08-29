@@ -134,7 +134,7 @@ cmp -s "$root/assets/rundown/NOTICE.md" \
 "$installer" >"$fixture_root/reinstall.out" || fail 'repeat install failed'
 
 "$command_path" list >"$fixture_root/list.out" || fail 'list failed'
-grep -Fqx $'default\tClaude Code using keyless copilot-proxy-rs with Claude Opus 5 by default.' \
+grep -Fqx $'default\tIsolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Opus 5 through the local proxy.' \
   "$fixture_root/list.out" || fail 'list output differs'
 
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON list failed'
