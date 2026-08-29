@@ -34,6 +34,7 @@ interface ProfileGuideScenarios {
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")
+const scenarioPath = path.join(repositoryRoot, "tests", "fixtures", "profile-guide-scenarios.json")
 
 const text = (value: unknown, name: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`${name} must be text`)
@@ -76,7 +77,7 @@ const validateScenarioSet = (scenarios: ReadonlyArray<ProfileGuideScenario>): Re
 }
 
 const loadScenarios = async (): Promise<ProfileGuideScenarios> => {
-  const value: unknown = JSON.parse(await readFile(path.join(guideRoot, "scenarios.json"), "utf8"))
+  const value: unknown = JSON.parse(await readFile(scenarioPath, "utf8"))
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("profile guide scenarios must be an object")
   }

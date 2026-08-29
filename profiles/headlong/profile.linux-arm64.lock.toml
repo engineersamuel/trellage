@@ -1,7 +1,7 @@
 schema = 1
 platform = "linux/arm64"
 source_date_epoch = 1784379906
-profile_hash = "sha256:2714682f859e983805198f08b5a75750fa26aaf0f106b689538123907f395c9d"
+profile_hash = "sha256:a579f23490a27ca499b49d768866c258ddf2974f3ca9f42fe5e91f7c8bf7cfe9"
 
 [[sources]]
 kind = "harness"

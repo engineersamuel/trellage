@@ -53,7 +53,9 @@ const rank = (value, name) => {
 
 const loadScenarios = async () => {
   const rootValue = record(
-    JSON.parse(await readFile(path.join(root, "profile-guides", "scenarios.json"), "utf8")),
+    JSON.parse(
+      await readFile(path.join(root, "tests", "fixtures", "profile-guide-scenarios.json"), "utf8"),
+    ),
     "profile guide scenarios",
   )
   if (rootValue.schemaVersion !== 1 || !Array.isArray(rootValue.scenarios)) {

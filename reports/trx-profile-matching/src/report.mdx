@@ -1,9 +1,10 @@
 import { GraphTable } from "./registry/default/graph-table"
 
 export const coverageRows = [
-  ["Change set", "72 files", "574 insertions / 291 deletions"],
+  ["Change set", "109 files", "5,424 insertions / 305 deletions"],
   ["Native guides", "13", "Host launchers and native harness routes"],
   ["Sandbox guides", "12", "Container profile definitions"],
+  ["Profile locks", "12", "Refreshed after Sandbox descriptions changed"],
 ]
 
 export const signalRows = [
@@ -17,7 +18,7 @@ export const validationRows = [
   ["Guide core and contract", <span className="status status-pass">Pass</span>, "11 tests; 25 guides; maintenance-only signals rejected"],
   ["Deterministic scenario suite", <span className="status status-pass">Pass</span>, "22 rank-eligible profiles covered by 22 scenarios"],
   ["Launcher and fingerprint", <span className="status status-pass">Pass</span>, "299 tests plus the profile-compiler fingerprint contract"],
-  ["Full repository suite", <span className="status status-caveat">Caveat</span>, "Unrelated release-lock / resolved-version failures remain"],
+  ["Full repository suite", <span className="status status-pass">Pass</span>, "All repository contracts pass after lock refresh"],
   ["Live model evaluation", <span className="status status-not-run">Not run</span>, "Explicit paid-quota opt-in was not used"],
 ]
 
@@ -53,10 +54,10 @@ export const validationRows = [
     <p className="section-number">01 / Scope</p>
     <h2 id="scope-heading">One contract across both profile surfaces</h2>
     <p>
-      At the measured overhaul diff, the work changed 72 files with 574
-      insertions and 291 deletions. It revised catalog descriptions, guide
+      The completed delivery changes 109 files with 5,424 insertions and 305
+      deletions. It revised catalog descriptions, guide
       metadata, matcher guidance, deterministic ranking, validation, and live
-      evaluation support.
+      evaluation support, then refreshed every affected Sandbox profile lock.
     </p>
     <GraphTable
       title="Change inventory"
@@ -209,7 +210,7 @@ export const validationRows = [
 
   <section aria-labelledby="validation-heading">
     <p className="section-number">06 / Validation</p>
-    <h2 id="validation-heading">Focused contracts pass with two explicit limits</h2>
+    <h2 id="validation-heading">All static contracts pass; live evaluation stays explicit</h2>
     <GraphTable
       title="Validation record"
       headers={["Check", "Result", "Evidence"]}
@@ -218,16 +219,14 @@ export const validationRows = [
       className="report-table"
     />
     <p className="caveat">
-      The full <code>make test</code> result is not clean because existing
-      profile-readiness checks still report unrelated release-lock and
-      resolved-version state failures. The paid live model evaluation was not
-      run. Neither limit weakens the deterministic guide coverage described
-      above.
+      The paid live model evaluation was not run. It remains an explicit
+      operator action because it can consume quota; deterministic guide
+      coverage and the full repository suite pass without it.
     </p>
   </section>
 
   <footer className="report-footer">
-    <p>Measured against the in-progress overhaul diff on 28 August 2026.</p>
+    <p>Measured against the completed delivery diff on 29 August 2026.</p>
     <p>Report source: real MDX compiled by Vite and rendered with GraphTable.</p>
   </footer>
 </article>
