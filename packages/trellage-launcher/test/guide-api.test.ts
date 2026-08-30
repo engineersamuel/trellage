@@ -436,6 +436,7 @@ describe("parseGuideHeadlessArgv", () => {
       help: false,
       json: true,
       intent: "Review my PR",
+      intentStdin: false,
       profile: undefined,
       model: undefined,
       effort: undefined,
@@ -445,6 +446,11 @@ describe("parseGuideHeadlessArgv", () => {
   it("accepts a single positional intent instead of --intent", () => {
     const args = parseGuideHeadlessArgv(["--json", "Review my PR"])
     expect(args.intent).toBe("Review my PR")
+  })
+
+  it("accepts an inline intent that begins with option-like text", () => {
+    const intent = "---\nresult: complete"
+    expect(parseGuideHeadlessArgv(["--json", `--intent=${intent}`]).intent).toBe(intent)
   })
 
   it("accepts --profile only alongside --json", () => {
@@ -472,6 +478,7 @@ describe("parseGuideHeadlessArgv", () => {
 
   it("rejects a duplicate flag", () => {
     expect(() => parseGuideHeadlessArgv(["--json", "--json", "--intent", "Review my PR"])).toThrow(GuideArgsError)
+    expect(() => parseGuideHeadlessArgv(["--intent=first", "--intent", "second"])).toThrow(GuideArgsError)
   })
 
   it("rejects a flag missing its value", () => {
@@ -487,6 +494,11 @@ describe("parseGuideHeadlessArgv", () => {
     expect(() => parseGuideHeadlessArgv(["--json", "--intent", "hello\u0000world"])).toThrow(GuideValidationError)
   })
 
+  it("preserves multiline intent text", () => {
+    const intent = "Research the options.\n\nThen recommend:\n- a profile\n- a workflow"
+    expect(parseGuideHeadlessArgv(["--json", "--intent", intent]).intent).toBe(intent)
+  })
+
   it("accepts an intent at the 60000-character limit", () => {
     expect(parseGuideHeadlessArgv(["--json", "--intent", "a".repeat(guideIntentMaximumLength)]).intent).toHaveLength(
       guideIntentMaximumLength,
@@ -499,11 +511,29 @@ describe("parseGuideHeadlessArgv", () => {
     ).toThrow(GuideValidationError)
   })
 
+  it("counts non-BMP Unicode as code points", () => {
+    expect(parseGuideHeadlessArgv(["--intent", "😀".repeat(guideIntentMaximumLength)]).intent).toBe(
+      "😀".repeat(guideIntentMaximumLength),
+    )
+    expect(() =>
+      parseGuideHeadlessArgv(["--intent", "😀".repeat(guideIntentMaximumLength + 1)]),
+    ).toThrow(GuideValidationError)
+  })
+
   it("allows JSON mode to read stdin and interactive mode to open its intent editor", () => {
     expect(parseGuideHeadlessArgv(["--json"]).intent).toBeUndefined()
     expect(parseGuideHeadlessArgv([]).intent).toBeUndefined()
     expect(() => parseGuideHeadlessArgv(["--help"])).not.toThrow()
     expect(parseGuideHeadlessArgv(["--help"]).help).toBe(true)
+  })
+
+  it("accepts plain-text stdin only for the interactive guide", () => {
+    expect(parseGuideHeadlessArgv(["--intent-stdin"]).intentStdin).toBe(true)
+    expect(() => parseGuideHeadlessArgv(["--json", "--intent-stdin"])).toThrow(GuideArgsError)
+    expect(() => parseGuideHeadlessArgv(["--intent-stdin", "--intent", "duplicate"])).toThrow(
+      GuideArgsError,
+    )
+    expect(() => parseGuideHeadlessArgv(["--intent-stdin", "duplicate"])).toThrow(GuideArgsError)
   })
 
   it("validates --model as a safe bounded identifier", () => {
@@ -551,6 +581,12 @@ describe("parseGuideServiceRequestJson", () => {
   it("accepts a minimal valid request", () => {
     const request = parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "Review my PR" }))
     expect(request).toEqual({ schemaVersion: 1, intent: "Review my PR" })
+  })
+
+  it("preserves multiline intent text through the service request", () => {
+    const intent = "Research the options.\n\nReturn:\n- findings\n- recommendation"
+    const request = parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent }))
+    expect(request.intent).toBe(intent)
   })
 
   it("accepts optional profile/model/effort", () => {

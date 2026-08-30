@@ -436,6 +436,38 @@ lock_active=false
 trap - EXIT HUP INT TERM
 fi
 
+install_session_bridge_hook() {
+  local bridge=/usr/local/bin/trellage-session-bridge
+  local profile="${TRELLAGE_PROFILE_NAME-}"
+  local agent="${TRELLAGE_AGENT-}"
+  if [[ -z "$profile" && -z "$agent" ]]; then
+    return
+  fi
+  [[ "$agent" == claude ]] || fail 'TRELLAGE_AGENT must identify the Claude sandbox'
+  [[ "$profile" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
+    || fail 'TRELLAGE_PROFILE_NAME is invalid'
+  [[ -f "$bridge" && ! -L "$bridge" && -x "$bridge" ]] \
+    || fail "missing immutable session bridge: $bridge"
+  "$bridge" install-hook \
+    --mode sandbox \
+    --agent claude \
+    --profile "$profile" \
+    --config-dir "$runtime_home" \
+    --hook-path "$bridge"
+  local settings="$runtime_home/settings.json"
+  local command="$bridge sandbox-hook --agent claude --profile $profile"
+  [[ -f "$settings" && ! -L "$settings" ]] \
+    || fail 'Claude SessionStart hook settings were not installed'
+  jq -e --arg command "$command" '
+    any(.hooks.SessionStart[]?.hooks[]?;
+      .type == "command" and .command == $command
+    )
+  ' "$settings" >/dev/null \
+    || fail 'Claude SessionStart hook settings are invalid'
+}
+
+install_session_bridge_hook
+
 [[ "$#" -ge 2 ]] || fail 'mode and Claude command are required'
 mode="$1"
 shift

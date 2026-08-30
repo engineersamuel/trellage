@@ -265,11 +265,16 @@ headlong_metadata="$test_root/headlong-metadata.json"
 copilot_profile="$test_root/copilot-profile.toml"
 copilot_node_log="$test_root/copilot-node.log"
 copilot_gh_log="$test_root/copilot-gh.log"
+sandbox_metadata_node_environment="$test_root/sandbox-metadata-node.env"
 mkdir -p "$copilot_fake_bin"
 ln -s "$prototype_dir/tests/fakes/host-gh" "$copilot_fake_bin/gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
+  "if [[ \"\${1:-}\" == --input-type=module && \"\${2:-}\" == - && -z \"\${FAKE_NODE_LOG:-}\" ]]; then" \
+  "  /usr/bin/env >\"$sandbox_metadata_node_environment\"" \
+  "  exec \"$real_node\" \"\$@\"" \
+  'fi' \
   'fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"' \
   '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
@@ -288,7 +293,7 @@ printf '%s\n' \
 chmod +x "$copilot_fake_bin/node"
 no_gh_bin="$test_root/no-gh-bin"
 mkdir -p "$no_gh_bin"
-for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv \
+for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv od \
   mkdir chmod rm rmdir id; do
   ln -s "$(command -v "$utility")" "$no_gh_bin/$utility"
 done
@@ -629,6 +634,9 @@ assert_terminal_contract() {
     expected_env_count=$((expected_env_count + 1))
     assert_docker_env "$log" TRELLAGE_RESUME_PROFILE
   fi
+  if grep -Eq $'ARG\tTRELLAGE_HERDR_INVOCATION_ID=[0-9a-f]{32}$' "$log"; then
+    expected_env_count=$((expected_env_count + 1))
+  fi
   if grep -Fq $'ARG\tGH_CONFIG_DIR=/tmp/trellage-gh' "$log"; then
     expected_env_count=$((expected_env_count + 2))
   fi
@@ -768,7 +776,7 @@ test_new_container_from_subdirectory() {
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   assert_arg "$docker_log" 'test/image:locked'
   assert_arg "$docker_log" 'test_proxy_net'
-  assert_arg "$docker_log" 'fake-container-id'
+  assert_arg "$docker_log" "$(printf '%064d' 1)"
   assert_arg "$docker_log" '--user'
   assert_arg "$docker_log" '10001:10001'
   assert_arg "$docker_log" '--read-only'
@@ -1279,7 +1287,7 @@ test_bare_command_has_no_prompt() {
     || fail 'bare command did not pass the profile Codex argument'
   ! grep -Fqx $'ARG\tcreate' "$docker_log" || fail 'running matching container was recreated'
   ! grep -Fqx $'ARG\tstart' "$docker_log" || fail 'running matching container was restarted'
-  grep -Fqx $'ARG\tfake-container-id' "$docker_log" \
+  grep -Fqx $'ARG\t'"$(printf '%064d' 1)" "$docker_log" \
     || fail 'running container was not attached by immutable ID'
   printf 'Trellage host test: PASS: bare command injects no prompt\n'
 }
@@ -1739,7 +1747,7 @@ test_stopped_and_collision_behavior() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
   grep -Fqx $'ARG\tstart' "$docker_log" || fail 'matching stopped container was not started'
   ! grep -Fqx $'ARG\tcreate' "$docker_log" || fail 'matching stopped container was recreated'
-  grep -Fqx $'ARG\tfake-container-id' "$docker_log" \
+  grep -Fqx $'ARG\t'"$(printf '%064d' 1)" "$docker_log" \
     || fail 'stopped container was not started by immutable ID'
 
   : >"$docker_log"
@@ -2645,7 +2653,7 @@ test_destroy_requires_exact_confirmation_and_removes_in_order() {
     $0 == "ARG\tcontainer" { command = "container"; next }
     command == "container" && $0 == "ARG\trm" { saw_rm = 1; next }
     command == "container" && saw_rm && $0 == "ARG\t--force" { saw_force = 1; next }
-    command == "container" && saw_force && $0 == "ARG\tfake-container-id" { found = 1 }
+    command == "container" && saw_force && $0 == "ARG\t0000000000000000000000000000000000000000000000000000000000000001" { found = 1 }
     END { exit(found ? 0 : 1) }
   ' "$docker_log" || fail 'destroy did not force-remove running container by immutable ID'
   awk -v volume="$state_volume" '
@@ -2655,7 +2663,7 @@ test_destroy_requires_exact_confirmation_and_removes_in_order() {
     command == "volume" && saw_rm && $0 == "ARG\t" volume { found = 1 }
     END { exit(found ? 0 : 1) }
   ' "$docker_log" || fail 'destroy did not remove exact state volume'
-  container_rm_line="$(grep -n -F $'ARG\tfake-container-id' "$docker_log" | tail -n 1 | cut -d: -f1)"
+  container_rm_line="$(grep -n -F $'ARG\t0000000000000000000000000000000000000000000000000000000000000001' "$docker_log" | tail -n 1 | cut -d: -f1)"
   volume_rm_line="$(grep -n -F $'ARG\t'"$state_volume" "$docker_log" | tail -n 1 | cut -d: -f1)"
   [[ "$container_rm_line" -lt "$volume_rm_line" ]] || fail 'destroy removed volume before container'
   awk '
@@ -5194,6 +5202,253 @@ if [[ "${TRELLAGE_HOST_NEW_CONTAINER_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+test_sandbox_session_bridge_attachment_contract() {
+  local metadata_worktree="$test_root/sandbox-bridge-metadata"
+  local metadata_log="$test_root/sandbox-bridge-metadata.docker.log"
+  local metadata_socket="$test_root/h.sock"
+  local metadata_ready="$test_root/h.ready"
+  local metadata_request="$test_root/h.json"
+  local state_volume server_pid invocation
+  mkdir -p "$metadata_worktree"
+  : >"$metadata_log"
+  rm -f -- "$sandbox_metadata_node_environment"
+  state_volume="$(resource_names "$metadata_worktree" copilot-hve-test copilot | tail -n 1)"
+
+  python3 - "$metadata_socket" "$metadata_ready" "$metadata_request" <<'PY' &
+import json
+import socket
+import sys
+from pathlib import Path
+
+socket_path, ready_path, request_path = sys.argv[1:]
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+    listener.bind(socket_path)
+    listener.listen(3)
+    Path(ready_path).write_text("ready\n", encoding="utf-8")
+    for _ in range(3):
+        connection, _ = listener.accept()
+        with connection:
+            request = json.loads(connection.recv(16384).decode().strip())
+            if request["method"] == "agent.get":
+                result = {
+                    "type": "agent_info",
+                    "agent": {
+                        "pane_id": "w1:p1",
+                        "agent": "copilot",
+                        "agent_status": "working",
+                        "state_change_seq": 23,
+                    },
+                }
+            elif request["method"] == "pane.process_info":
+                result = {
+                    "type": "pane_process_info",
+                    "process_info": {
+                        "pane_id": "w1:p1",
+                        "foreground_process_group_id": 1357,
+                    },
+                }
+            else:
+                Path(request_path).write_text(json.dumps(request), encoding="utf-8")
+                result = {}
+            connection.sendall(
+                (json.dumps({"id": request["id"], "result": result}) + "\n").encode()
+            )
+PY
+  server_pid=$!
+  for _attempt in {1..200}; do
+    [[ -f "$metadata_ready" ]] && break
+    sleep 0.01
+  done
+  [[ -f "$metadata_ready" ]] || fail 'Sandbox metadata fixture did not start'
+
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$metadata_worktree" "$metadata_log" "$metadata_worktree" \
+      env HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH="$metadata_socket" \
+      TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p metadata
+  wait "$server_pid" || fail 'Sandbox metadata fixture failed'
+
+  invocation="$(sed -n 's/^ARG	TRELLAGE_HERDR_INVOCATION_ID=//p' "$metadata_log" | tail -n 1)"
+  [[ "$invocation" =~ ^[0-9a-f]{32}$ ]] \
+    || fail 'Sandbox attachment did not receive a 32-lowercase-hex invocation ID'
+  jq -e --arg invocation "$invocation" --arg container_id "$(printf '%064d' 1)" '
+    .method == "pane.report_metadata"
+    and .params.pane_id == "w1:p1"
+    and .params.source == "trellage.guide-handoff"
+    and .params.agent == "copilot"
+    and .params.seq == 47
+    and .params.tokens == {
+      trellage_surface: "sandbox",
+      trellage_agent: "copilot",
+      trellage_profile: "copilot-hve-test",
+      trellage_container_id: $container_id,
+      trellage_invocation_id: $invocation,
+      trellage_state_seq: "23",
+      trellage_pgrp: "1357"
+    }
+  ' "$metadata_request" >/dev/null \
+    || fail 'Sandbox metadata shape differs from the display-only contract'
+  ! grep -Fq 'pane.report_agent_session' "$metadata_request" \
+    || fail 'Sandbox attachment used the restoring agent-session method'
+  ! grep -Fq "$metadata_socket" "$metadata_log" \
+    || fail 'Herdr socket path reached Docker arguments'
+  ! grep -Eq $'ARG\t(HERDR_SOCKET_PATH|HERDR_PANE_ID|HERDR_ENV)=' "$metadata_log" \
+    || fail 'Herdr pane context reached the Sandbox container'
+  [[ -f "$sandbox_metadata_node_environment" ]] \
+    || fail 'Sandbox metadata reporter environment was not captured'
+  ! grep -Eq '(^|_)(TOKEN|KEY|SECRET|HERDR_)' "$sandbox_metadata_node_environment" \
+    || fail 'Sandbox metadata reporter inherited host credentials or Herdr context'
+
+  local first_worktree="$test_root/sandbox-bridge-concurrent-a"
+  local second_worktree="$test_root/sandbox-bridge-concurrent-b"
+  local first_log="$test_root/sandbox-bridge-concurrent-a.log"
+  local second_log="$test_root/sandbox-bridge-concurrent-b.log"
+  local first_volume second_volume first_pid second_pid first_status=0 second_status=0
+  local first_invocation second_invocation
+  mkdir -p "$first_worktree" "$second_worktree"
+  : >"$first_log"
+  : >"$second_log"
+  first_volume="$(resource_names "$first_worktree" copilot-hve-test copilot | tail -n 1)"
+  second_volume="$(resource_names "$second_worktree" copilot-hve-test copilot | tail -n 1)"
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$first_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$first_worktree" "$first_log" "$first_worktree" \
+      env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p first &
+  first_pid=$!
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$second_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$second_worktree" "$second_log" "$second_worktree" \
+      env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p second &
+  second_pid=$!
+  wait "$first_pid" || first_status=$?
+  wait "$second_pid" || second_status=$?
+  [[ "$first_status" -eq 0 && "$second_status" -eq 0 ]] \
+    || fail "concurrent Sandbox attachments failed: first=$first_status second=$second_status"
+  first_invocation="$(sed -n 's/^ARG	TRELLAGE_HERDR_INVOCATION_ID=//p' "$first_log" | tail -n 1)"
+  second_invocation="$(sed -n 's/^ARG	TRELLAGE_HERDR_INVOCATION_ID=//p' "$second_log" | tail -n 1)"
+  [[ "$first_invocation" =~ ^[0-9a-f]{32}$ \
+    && "$second_invocation" =~ ^[0-9a-f]{32}$ \
+    && "$first_invocation" != "$second_invocation" ]] \
+    || fail 'concurrent Sandbox attachments did not receive distinct invocation IDs'
+
+  local failure_log="$test_root/sandbox-bridge-metadata-failure.log"
+  local failure_stderr="$test_root/sandbox-bridge-metadata-failure.stderr"
+  : >"$failure_log"
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$metadata_worktree" "$failure_log" "$metadata_worktree" \
+      env HERDR_ENV=1 HERDR_PANE_ID=w1:p1 \
+      HERDR_SOCKET_PATH="$test_root/missing-herdr.sock" \
+      TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p metadata-failure \
+      2>"$failure_stderr"
+  grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
+    || fail 'Sandbox metadata failure was not visible'
+
+  printf 'Trellage host test: PASS: Sandbox attachment metadata and invocation isolation\n'
+}
+
+test_session_final_message_contract() {
+  local worktree="$test_root/session-final-message"
+  local docker_log="$test_root/session-final-message.docker.log"
+  local result_file="$test_root/session-final-message.json"
+  local stderr_file="$test_root/session-final-message.stderr"
+  local state_volume output status=0
+  local container_id invocation
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  container_id="$(printf '%064d' 1)"
+  invocation=0123456789abcdef0123456789abcdef
+  state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
+  printf '%s\n' '{"version":1,"agent":"copilot","profile":"copilot-hve-test","session_id":"session-1","answer":"exact"}' \
+    >"$result_file"
+
+  output="$(
+    FAKE_GH_STATE=failure \
+      FAKE_DOCKER_AGENT_STDOUT_FILE="$result_file" \
+      FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+      run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" \
+        --profile copilot-hve-test session final-message \
+        --agent copilot --container-id "$container_id" --invocation "$invocation"
+  )"
+  [[ "$output" == '{"version":1,"agent":"copilot","profile":"copilot-hve-test","session_id":"session-1","answer":"exact"}' ]] \
+    || fail 'session final-message stdout was not the single bridge result object'
+  assert_arg "$docker_log" /usr/local/bin/trellage-session-bridge
+  assert_arg "$docker_log" final-message
+  assert_arg "$docker_log" "$container_id"
+  assert_arg "$docker_log" "$invocation"
+  assert_arg "$docker_log" fake-image-id
+  ! grep -Fqx $'ARG\ttest/copilot:locked' "$docker_log" \
+    || fail 'session final-message depended on the mutable canonical image tag'
+  ! grep -Eq $'ARG\t(bash|fish|sh|-c|-lc|-Nlc)$' "$docker_log" \
+    || fail 'session final-message used a caller-controlled shell command'
+
+  : >"$docker_log"
+  status=0
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" \
+      --profile copilot-hve-test session final-message \
+      --agent copilot --container-id "$(printf '%064d' 2)" --invocation "$invocation" \
+      >"$test_root/session-mismatch.stdout" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'session final-message accepted a different container ID'
+  grep -Fq 'container ID does not match the selected profile' "$stderr_file" \
+    || fail 'session final-message container mismatch diagnostic differs'
+  ! grep -Fq /usr/local/bin/trellage-session-bridge "$docker_log" \
+    || fail 'session final-message executed the bridge after a target mismatch'
+
+  status=0
+  run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" --profile copilot-hve-test session final-message \
+    --agent claude --container-id "$container_id" --invocation "$invocation" \
+    >"$test_root/session-agent.stdout" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'session final-message accepted the wrong profile agent'
+  grep -Fq 'agent does not match profile harness' "$stderr_file" \
+    || fail 'session final-message agent mismatch diagnostic differs'
+
+  status=0
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-stopped \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" \
+      --profile copilot-hve-test session final-message \
+      --agent copilot --container-id "$container_id" --invocation "$invocation" \
+      >"$test_root/session-stopped.stdout" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'session final-message accepted a stopped container'
+  grep -Fq 'container is not running' "$stderr_file" \
+    || fail 'session final-message stopped-container diagnostic differs'
+
+  status=0
+  run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" --profile copilot-hve-test session final-message \
+    --agent copilot --container-id short --invocation "$invocation" \
+    >"$test_root/session-invalid.stdout" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'session final-message accepted a short container ID'
+  grep -Fq '64 lowercase hexadecimal characters' "$stderr_file" \
+    || fail 'session final-message strict argument diagnostic differs'
+
+  printf 'Trellage host test: PASS: exact session final-message target and argv validation\n'
+}
+
+if [[ "${TRELLAGE_HOST_SESSION_BRIDGE_ONLY:-}" == 1 ]]; then
+  test_sandbox_session_bridge_attachment_contract
+  test_session_final_message_contract
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_MODELS_CATALOG_ONLY:-}" == 1 ]]; then
   test_copilot_models_catalog_lifecycle
   exit 0
@@ -5368,6 +5623,8 @@ test_portable_prompt_parser_contract
 test_output_format_contract
 test_trellage_event_bridge_contract
 test_headless_capabilities_precede_mutation
+test_sandbox_session_bridge_attachment_contract
+test_session_final_message_contract
 test_stopped_and_collision_behavior
 test_stale_container_preserves_active_sessions
 test_volume_collision_and_mount_validation

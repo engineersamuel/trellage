@@ -88,6 +88,7 @@ const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/
 const safeLockedVersionPattern =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 const sha256Pattern = /^sha256:[0-9a-f]{64}$/
+const sessionBridgePythonTool = "python@3.13.14"
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`
 
@@ -224,7 +225,7 @@ const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): str
   if (hasLegacyPackageProvenance(lock)) {
     // Legacy Codex locks predate the code-mode-host companion binary; install just the CLI.
     return [
-      `mise install --locked ${tool}`,
+      `mise install --locked ${sessionBridgePythonTool} ${tool}`,
       `codex_dir=\"$(mise where ${tool})\"`,
       'rm -f "$codex_dir/metadata.json"',
       build,
@@ -253,7 +254,7 @@ const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): str
   const codeModeHostArchive = "/src/codex-code-mode-host.tar.gz"
   const codeModeHostStage = "/tmp/trellage-codex-code-mode-host"
   return [
-    `mise install --locked ${tool}`,
+    `mise install --locked ${sessionBridgePythonTool} ${tool}`,
     `codex_dir=\"$(mise where ${tool})\"`,
     'rm -f "$codex_dir/metadata.json"',
     `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(codeModeHostArchive)} ${shellQuote(codeModeHostArtifact.url)}`,
@@ -359,7 +360,9 @@ const claudeMarketplaceBuilderScript = (
   const python = extraPython ? requiredArtifact(lock, "python") : undefined
   const pythonVersion = python?.version.split(".").slice(0, 2).join(".")
   return [
-    extraPython ? "mise install --locked" : `mise install --locked node@${node.version} ${tool}`,
+    extraPython
+      ? "mise install --locked"
+      : `mise install --locked node@${node.version} ${sessionBridgePythonTool} ${tool}`,
     claudeDirectory,
     'claude_bin="$claude_dir/claude"',
     '[ -x "$claude_bin" ]',
@@ -566,7 +569,7 @@ const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool
   const nativeEnvironment = "COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb"
   const expectedRow = `  • ${plugin} (v${version})`
   return [
-    `mise install --locked node@${node.version} ${tool}`,
+    `mise install --locked node@${node.version} ${sessionBridgePythonTool} ${tool}`,
     `copilot_dir="$(mise where ${tool})"`,
     'copilot_bin="$copilot_dir/copilot"',
     '[ -x "$copilot_bin" ]',
@@ -1360,6 +1363,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
   copilotEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-copilot-entry.sh",
+  ),
+  sessionBridge: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../scripts/trellage-session-bridge.py",
   ),
   headlongEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),

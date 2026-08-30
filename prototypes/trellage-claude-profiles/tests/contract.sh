@@ -118,6 +118,13 @@ profile_home="$profile_root/home"
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
+[[ -f "$runtime_root/lib/trellage-session-bridge.py" \
+  && ! -L "$runtime_root/lib/trellage-session-bridge.py" \
+  && -x "$runtime_root/lib/trellage-session-bridge.py" ]] \
+  || fail 'installer did not publish the session bridge'
+cmp -s "$runtime_root/lib/trellage-session-bridge.py" \
+  "$root/../../scripts/trellage-session-bridge.py" \
+  || fail 'installed runtime session bridge differs'
 for asset in rundown.md NOTICE.md; do
   [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \
     || fail "installer did not publish asset: $asset"
@@ -218,6 +225,20 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
   || fail 'self-healed launch did not materialize the profile home'
 rm -rf "$profile_root"
 
+mkdir -p "$profile_home"
+printf '%s\n' 'trellage-claude-profile-v1' \
+  >"$profile_root/.managed-by-trellage-claude-profiles"
+cat >"$profile_home/settings.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "user-session-start"}]},
+      {"matcher": "*", "hooks": [{"type": "command", "command": "cccc-session-start"}]}
+    ]
+  },
+  "preserve": "user-settings"
+}
+EOF
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ -f "$profile_root/.managed-by-trellage-claude-profiles" ]] \
   || fail 'setup did not mark profile ownership'
@@ -234,8 +255,30 @@ cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
   || fail 'seeded output style differs'
 settings="$profile_home/settings.json"
 [[ -f "$settings" && ! -L "$settings" ]] || fail 'setup did not seed Claude settings'
-jq -e '.outputStyle == "Rundown"' "$settings" >/dev/null \
+jq -e '
+  .outputStyle == "Rundown"
+  and .preserve == "user-settings"
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "user-session-start"))
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "cccc-session-start"))
+  and ([.hooks.SessionStart[]
+    | .hooks[]
+    | select(.type == "command"
+      and (.command | contains(" native-hook --agent claude --profile default")))]
+    | length) == 1
+' "$settings" >/dev/null \
   || fail 'setup Claude output style differs'
+session_bridge="$profile_home/.trellage/trellage-session-bridge.py"
+[[ -f "$session_bridge" && ! -L "$session_bridge" && -x "$session_bridge" ]] \
+  || fail 'setup did not install a regular executable session bridge'
+cmp -s "$session_bridge" "$root/../../scripts/trellage-session-bridge.py" \
+  || fail 'installed session bridge differs from the shared executable'
+if grep -Fq 'pane.report_agent_session' "$session_bridge"; then
+  fail 'session bridge includes forbidden agent-session reporting'
+fi
+settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
+"$command_path" setup >"$fixture_root/setup-repeat.out" || fail 'repeat setup failed'
+[[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
+  || fail 'repeated setup changed session bridge hook settings'
 
 "$command_path" || fail 'bare launch failed'
 jq -e '
@@ -367,6 +410,17 @@ grep -Fqx TERM "$FAKE_CLAUDE_SIGNAL_LOG" \
 grep -Fq 'cldx doctor: OK (2.1.233, claude-opus-5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
+no_python_bin="$fixture_root/no-python-bin"
+mkdir "$no_python_bin"
+for command_name in bash dirname jq readlink; do
+  ln -s "$(command -v "$command_name")" "$no_python_bin/$command_name"
+done
+ln -s "$fake_bin/claude" "$no_python_bin/claude"
+PATH="$no_python_bin" /bin/bash "$command_path" doctor >"$fixture_root/python.out" 2>&1 \
+  && fail 'doctor accepted missing Python'
+grep -Fq 'required command not found: python3' "$fixture_root/python.out" \
+  || fail 'missing Python error differs'
+
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \
   && fail 'doctor accepted missing model'
 grep -Fq 'copilot-proxy-rs model is missing: claude-opus-5' "$fixture_root/model.out" \
@@ -398,9 +452,20 @@ jq -e '
 jq -e '
   .outputStyle == "Explanatory"
   and .preserve == "user-state"
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "user-session-start"))
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "cccc-session-start"))
+  and ([.hooks.SessionStart[]
+    | .hooks[]
+    | select(.type == "command"
+      and (.command | contains(" native-hook --agent claude --profile default")))]
+    | length) == 1
 ' "$settings" >/dev/null || fail 'repair did not preserve Claude settings'
 [[ "$(<"$profile_home/unrelated-state")" == preserve ]] \
   || fail 'repair changed unrelated profile state'
+settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
+"$command_path" repair >"$fixture_root/repair-repeat.out" || fail 'repeat repair failed'
+[[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
+  || fail 'repeated repair changed session bridge hook settings'
 
 mv "$fake_bin/claude" "$fake_bin/claude.absent"
 "$command_path" doctor >"$fixture_root/missing.out" 2>&1 \

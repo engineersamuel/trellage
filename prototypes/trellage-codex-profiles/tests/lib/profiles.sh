@@ -93,6 +93,7 @@ printf '%s\n' '# Unrelated package' \
 # exactly as the config block does.
 write_custom_main_config() {
   local base_config="$1"
+  local local_begin
 
 profile_local="$fixture_root/profile-local.bytes"
 cat >"$profile_local" <<'EOF'
@@ -106,10 +107,12 @@ args = ["hello world", "literal # text"]
 keep = "byte-for-byte"
 EOF
 custom_config="$fixture_root/custom-config.toml"
+local_begin="$(grep -Fnx -- '# trellage-profile-local-config-begin' \
+  "$base_config" | cut -d: -f1)"
 {
-  sed -n '1,7p' "$base_config"
+  sed -n "1,${local_begin}p" "$base_config"
   cat "$profile_local"
-  sed -n '9,$p' "$base_config"
+  sed -n "$((local_begin + 1)),\$p" "$base_config"
 } >"$custom_config"
 sed '/# trellage-managed-codex-provider-end/i\
 [marketplaces.user-owned]\

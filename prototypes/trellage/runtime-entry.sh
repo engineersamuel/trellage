@@ -95,6 +95,36 @@ resume_profile="${TRELLAGE_RESUME_PROFILE-}"
 requested_thread_id="${TRELLAGE_RESUME_SESSION_ID-}"
 unset TRELLAGE_RESUME_PROFILE TRELLAGE_RESUME_SESSION_ID
 
+install_session_bridge_hook() {
+  local bridge=/usr/local/bin/trellage-session-bridge
+  local profile="${TRELLAGE_PROFILE_NAME-}"
+  local agent="${TRELLAGE_AGENT-}"
+  if [[ -z "$profile" && -z "$agent" ]]; then
+    return
+  fi
+  [[ "$agent" == codex ]] || fail 'TRELLAGE_AGENT must identify the Codex sandbox'
+  [[ "$profile" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
+    || fail 'TRELLAGE_PROFILE_NAME is invalid'
+  [[ -f "$bridge" && ! -L "$bridge" && -x "$bridge" ]] \
+    || fail "missing immutable session bridge: $bridge"
+  "$bridge" install-hook \
+    --mode sandbox \
+    --agent codex \
+    --profile "$profile" \
+    --config-dir "$runtime_home" \
+    --hook-path "$bridge"
+  local hooks="$runtime_home/hooks.json"
+  local command="$bridge sandbox-hook --agent codex --profile $profile"
+  [[ -f "$hooks" && ! -L "$hooks" ]] \
+    || fail 'Codex SessionStart hook settings were not installed'
+  jq -e --arg command "$command" '
+    any(.hooks.SessionStart[]?.hooks[]?;
+      .type == "command" and .command == $command
+    )
+  ' "$hooks" >/dev/null \
+    || fail 'Codex SessionStart hook settings are invalid'
+}
+
 print_resume_hint() {
   local thread_id="$1"
   [[ -n "$resume_profile" ]] || return 0
@@ -128,6 +158,15 @@ esac
 if [[ "$mode" == passthrough ]]; then
   exec "$@"
 fi
+
+install_session_bridge_hook
+codex_command="$1"
+shift
+hook_trust_args=()
+if [[ -n "${CI:-}" || -n "${TRELLAGE_AUTOMATION:-}" || ! -t 0 || ! -t 1 || ! -t 2 ]]; then
+  hook_trust_args+=(--dangerously-bypass-hook-trust)
+fi
+set -- "$codex_command" --enable hooks "${hook_trust_args[@]}" "$@"
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required for native session discovery'
 umask 077

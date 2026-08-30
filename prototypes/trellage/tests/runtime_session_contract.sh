@@ -11,6 +11,11 @@ fail() {
   exit 1
 }
 
+grep -Fq 'local bridge=/usr/local/bin/trellage-session-bridge' "$prototype_dir/runtime-entry.sh" \
+  || fail 'Codex runtime does not use the immutable Sandbox session bridge'
+grep -Fq -- '--mode sandbox' "$prototype_dir/runtime-entry.sh" \
+  || fail 'Codex runtime does not install the Sandbox SessionStart hook'
+
 fake_bin="$test_root/fake-bin"
 seed_home="$test_root/seed/.codex"
 worktree="$test_root/worktree"
@@ -113,7 +118,7 @@ thread_id='019f93af-41dd-7333-9bea-d8edc20760e5'
 : >"$test_root/codex.log"
 FAKE_CODEX_CREATE_SESSION=1 FAKE_CODEX_THREAD_ID="$thread_id" \
   run_entry prompt codex --dangerously-bypass-approvals-and-sandbox -- 'hello $(false)'
-expected_prompt_args=$'ARG\texec\nARG\t--dangerously-bypass-approvals-and-sandbox\nARG\t--\nARG\thello $(false)'
+expected_prompt_args=$'ARG\t--enable\nARG\thooks\nARG\t--dangerously-bypass-hook-trust\nARG\texec\nARG\t--dangerously-bypass-approvals-and-sandbox\nARG\t--\nARG\thello $(false)'
 [[ "$(cat "$test_root/codex.log")" == "$expected_prompt_args" ]] \
   || fail 'portable prompt was not translated to exact native Codex exec argv'
 [[ "$(cat "$test_root/codex-home/.trellage-codex/last-thread-id")" == "$thread_id" ]] \
@@ -158,7 +163,7 @@ jq -nc --arg id "$exact_thread_id" --arg cwd "$worktree" \
   '{type:"session_meta",payload:{id:$id,cwd:$cwd}}' \
   >"$test_root/codex-home/sessions/2026/07/24/rollout-exact.jsonl"
 TRELLAGE_RESUME_SESSION_ID="$exact_thread_id" run_entry resume codex
-expected_exact_resume=$'ARG\tresume\nARG\t'"$exact_thread_id"
+expected_exact_resume=$'ARG\t--enable\nARG\thooks\nARG\t--dangerously-bypass-hook-trust\nARG\tresume\nARG\t'"$exact_thread_id"
 [[ "$(cat "$test_root/codex.log")" == "$expected_exact_resume" ]] \
   || fail 'exact Codex resume did not use the requested native thread ID'
 printf 'Trellage runtime session test: PASS: exact native resume argv\n'

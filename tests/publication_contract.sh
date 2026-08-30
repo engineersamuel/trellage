@@ -39,6 +39,13 @@ jq -e '
   and .license == "MIT"
 ' packages/trellage-guide-core/package.json >/dev/null \
   || fail 'profile guide core package identity or MIT license changed'
+package_manifest="$(npm pack --dry-run --ignore-scripts --json)" \
+  || fail 'npm package contents could not be inspected'
+jq -e '
+  .[0].files
+  | any(.path == "scripts/trellage-session-bridge.py")
+' <<<"$package_manifest" >/dev/null \
+  || fail 'npm package omits the Trellage session bridge'
 
 for required_ignore in \
   '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/' '/evidence/' \

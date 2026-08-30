@@ -166,6 +166,9 @@ prompt_argument_set=false
 interactive=false
 (( $# > 0 )) || [[ -n "${TRELLAGE_PROFILE:-}" ]] || interactive=true
 resume_session_id=
+session_agent=
+session_container_id=
+session_invocation_id=
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
   while (( $# > 0 )); do
@@ -278,6 +281,46 @@ if [[ "$compiler_mode" == false ]]; then
         fi
         mode=resume
         ;;
+      session)
+        [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with session commands'
+        [[ "$#" -ge 2 && "$2" == final-message ]] \
+          || fail 'session requires the final-message subcommand'
+        shift 2
+        while (( $# > 0 )); do
+          case "$1" in
+            --agent)
+              [[ -z "$session_agent" ]] || fail '--agent may be specified only once'
+              [[ $# -ge 2 && -n "$2" ]] || fail '--agent requires a value'
+              session_agent="$2"
+              shift 2
+              ;;
+            --container-id)
+              [[ -z "$session_container_id" ]] || fail '--container-id may be specified only once'
+              [[ $# -ge 2 && -n "$2" ]] || fail '--container-id requires a value'
+              session_container_id="$2"
+              shift 2
+              ;;
+            --invocation)
+              [[ -z "$session_invocation_id" ]] || fail '--invocation may be specified only once'
+              [[ $# -ge 2 && -n "$2" ]] || fail '--invocation requires a value'
+              session_invocation_id="$2"
+              shift 2
+              ;;
+            *) fail "unknown session final-message argument: $1" ;;
+          esac
+        done
+        [[ -n "$profile_argument" ]] || fail 'session final-message requires --profile'
+        case "$session_agent" in
+          copilot|codex|claude) ;;
+          *) fail 'session final-message agent must be copilot, codex, or claude' ;;
+        esac
+        [[ "$session_container_id" =~ ^[0-9a-f]{64}$ ]] \
+          || fail 'session final-message container ID must be 64 lowercase hexadecimal characters'
+        [[ "$session_invocation_id" =~ ^[0-9a-f]{32}$ ]] \
+          || fail 'session final-message invocation ID must be 32 lowercase hexadecimal characters'
+        set --
+        mode=session-final-message
+        ;;
       shell|start|stop|doctor|destroy)
         [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with positional arguments'
         [[ "$#" -eq 1 ]] || fail "$1 does not accept a prompt"
@@ -310,6 +353,12 @@ if [[ "$output_format_set" == true ]]; then
     new|prompt|resume) ;;
     *) fail '--output-format is supported only for agent launches' ;;
   esac
+fi
+if [[ "$mode" == session-final-message ]]; then
+  [[ -z "$auth_mode_argument" ]] || fail '--auth-mode cannot be combined with session final-message'
+  [[ -z "$model_argument" ]] || fail '--model cannot be combined with session final-message'
+  [[ "$output_format_set" == false ]] || fail '--output-format cannot be combined with session final-message'
+  [[ "$trellage_events" == false ]] || fail '--trellage-events cannot be combined with session final-message'
 fi
 
 case "$mode" in
@@ -344,7 +393,8 @@ profile_compiler_is_fresh() {
 # image builds) can run before the requested command owns stdout. Keep
 # machine-readable output streams free of npm and build status output.
 run_lifecycle_command() {
-  if [[ "$output_format" == jsonl || "$mode" == compiler && "${trellage_arguments[0]}" == list ]]; then
+  if [[ "$output_format" == jsonl || "$mode" == session-final-message \
+    || "$mode" == compiler && "${trellage_arguments[0]}" == list ]]; then
     "$@" 1>&2
   else
     "$@"
@@ -955,6 +1005,7 @@ sha256() {
 }
 
 if [[ "$mode" != prompt && "$mode" != start && "$mode" != stop && "$mode" != doctor && "$mode" != destroy \
+  && "$mode" != session-final-message \
   && ! ( "$mode" == resume && "$prompt_argument_set" == true ) \
   && "$output_format" != jsonl ]]; then
   [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
@@ -1209,10 +1260,15 @@ lifecycle_on_exit() {
 run_supervised_attachment() {
   local status
   lifecycle_attachment_started=true
+  start_sandbox_metadata_reporter
   set +e
   "$@"
   status="$?"
   set -e
+  if [[ -n "$sandbox_metadata_pid" ]]; then
+    wait "$sandbox_metadata_pid" || true
+    sandbox_metadata_pid=
+  fi
   if [[ "$lifecycle_signal_status" -ne 0 ]]; then
     status="$lifecycle_signal_status"
   fi
@@ -1244,6 +1300,175 @@ run_agent_attachment() {
     bridge_args+=(--expected-session-id "$resume_session_id")
   fi
   "${bridge_args[@]}" -- "${child_command[@]}"
+}
+
+report_sandbox_metadata() {
+  local agent="$1"
+  local invocation_id="$2"
+  local full_container_id="$3"
+  local pane_id="${HERDR_PANE_ID-}"
+  local socket_path="${HERDR_SOCKET_PATH-}"
+  local node_executable
+  [[ "${HERDR_ENV:-}" == 1 ]] || return 0
+  if [[ -z "$pane_id" || -z "$socket_path" ]]; then
+    printf 'trellage: Herdr metadata not reported: pane or socket context is missing\n' >&2
+    return 1
+  fi
+  node_executable="$(command -v node)" || return 1
+  env -i "$node_executable" --input-type=module - \
+    "$socket_path" "$pane_id" "$agent" "$profile_name" "$full_container_id" "$invocation_id" <<'NODE'
+import net from "node:net"
+
+const [socketPath, paneId, agent, profile, containerId, invocationId] = process.argv.slice(2)
+const source = "trellage.guide-handoff"
+const requestHerdr = (request) =>
+  new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath)
+    let sourceText = ""
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error("Herdr metadata request timed out"))
+    }, 250)
+    const finish = (error, result) => {
+      clearTimeout(timer)
+      socket.destroy()
+      error === undefined ? resolve(result) : reject(error)
+    }
+    socket.setEncoding("utf8")
+    socket.once("connect", () => socket.write(`${JSON.stringify(request)}\n`))
+    socket.on("data", (chunk) => {
+      sourceText += chunk
+      const newline = sourceText.indexOf("\n")
+      if (newline < 0) return
+      let response
+      try {
+        response = JSON.parse(sourceText.slice(0, newline))
+      } catch {
+        finish(new Error("Herdr metadata response is not valid JSON"))
+        return
+      }
+      if (response?.id !== request.id) {
+        finish(new Error("Herdr metadata response ID does not match"))
+        return
+      }
+      if (response.error !== undefined) {
+        finish(new Error(`Herdr metadata error: ${JSON.stringify(response.error)}`))
+        return
+      }
+      finish(undefined, response.result)
+    })
+    socket.once("error", finish)
+    socket.once("close", () => {
+      if (sourceText.indexOf("\n") < 0) {
+        finish(new Error("Herdr metadata socket closed without a response"))
+      }
+    })
+  })
+
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+let stateChangeSeq
+let processGroup
+for (let attempt = 0; attempt < 40; attempt += 1) {
+  try {
+    const agentResult = await requestHerdr({
+      id: `${source}:agent-get:${invocationId}:${attempt}`,
+      method: "agent.get",
+      params: { target: paneId },
+    })
+    const agentInfo = agentResult?.agent
+    const processResult = await requestHerdr({
+      id: `${source}:process-info:${invocationId}:${attempt}`,
+      method: "pane.process_info",
+      params: { pane_id: paneId },
+    })
+    const processInfo = processResult?.process_info
+    const candidateSequence = agentInfo?.state_change_seq
+    const candidateProcessGroup = processInfo?.foreground_process_group_id
+    if (
+      agentInfo?.pane_id === paneId &&
+      agentInfo?.agent === agent &&
+      agentInfo?.agent_status === "working" &&
+      processInfo?.pane_id === paneId &&
+      Number.isSafeInteger(candidateSequence) &&
+      candidateSequence >= 0 &&
+      candidateSequence <= (Number.MAX_SAFE_INTEGER - 1) / 2 &&
+      Number.isSafeInteger(candidateProcessGroup) &&
+      candidateProcessGroup > 0
+    ) {
+      stateChangeSeq = candidateSequence
+      processGroup = candidateProcessGroup
+      break
+    }
+  } catch {
+    // The tagged attachment can take a moment to become visible to Herdr.
+  }
+  await delay(50)
+}
+if (stateChangeSeq === undefined || processGroup === undefined) {
+  throw new Error("Herdr did not recognize the current Sandbox attachment")
+}
+const id = `${source}:report:${invocationId}`
+const request = {
+  id,
+  method: "pane.report_metadata",
+  params: {
+    pane_id: paneId,
+    source,
+    agent,
+    tokens: {
+      trellage_surface: "sandbox",
+      trellage_agent: agent,
+      trellage_profile: profile,
+      trellage_container_id: containerId,
+      trellage_invocation_id: invocationId,
+      trellage_state_seq: String(stateChangeSeq),
+      trellage_pgrp: String(processGroup),
+    },
+    seq: stateChangeSeq * 2 + 1,
+  },
+}
+
+await requestHerdr(request)
+NODE
+}
+
+sandbox_bridge_args=()
+sandbox_metadata_invocation_id=
+sandbox_metadata_container_id=
+sandbox_metadata_pid=
+prepare_sandbox_attachment() {
+  local invocation_id full_container_id
+  case "$harness_kind" in
+    copilot|codex|claude) ;;
+    *) return ;;
+  esac
+  invocation_id="$(LC_ALL=C od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
+    || fail 'cannot generate the Sandbox attachment invocation ID'
+  [[ "$invocation_id" =~ ^[0-9a-f]{32}$ ]] \
+    || fail 'generated Sandbox attachment invocation ID is invalid'
+  full_container_id="$(docker container inspect --format '{{ .Id }}' "$container_name" 2>/dev/null)" \
+    || fail "cannot revalidate Docker container ID: $container_name"
+  [[ "$full_container_id" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "Docker container does not have a full immutable ID: $container_name"
+  [[ "$full_container_id" == "$container_id" ]] \
+    || fail "refusing changed Docker container before attachment: $container_name"
+  sandbox_bridge_args=(--env "TRELLAGE_HERDR_INVOCATION_ID=$invocation_id")
+  if [[ "${TRELLAGE_AUTOMATION:-}" == 1 ]]; then
+    sandbox_bridge_args+=(--env TRELLAGE_AUTOMATION=1)
+  fi
+  sandbox_metadata_invocation_id="$invocation_id"
+  sandbox_metadata_container_id="$full_container_id"
+}
+
+start_sandbox_metadata_reporter() {
+  [[ -n "$sandbox_metadata_invocation_id" && -n "$sandbox_metadata_container_id" ]] || return 0
+  (
+    if ! report_sandbox_metadata \
+      "$harness_kind" "$sandbox_metadata_invocation_id" "$sandbox_metadata_container_id"; then
+      printf 'trellage: warning: Sandbox session metadata was not reported to Herdr\n' >&2
+    fi
+  ) &
+  sandbox_metadata_pid=$!
 }
 
 prototype_label='dev.trellage.prototype'
@@ -1981,6 +2206,47 @@ inspect_profile_image() {
   inspect_image_ref "$image"
 }
 
+if [[ "$mode" == session-final-message ]]; then
+  [[ "$profile_locked" == true ]] \
+    || fail 'session final-message requires a current locked profile'
+  [[ "$session_agent" == "$harness_kind" ]] \
+    || fail "session final-message agent does not match profile harness: $profile_name"
+  container_is_present \
+    || fail "session final-message container is unavailable: $container_name"
+  inspect_container
+  [[ "$container_id" == "$session_container_id" ]] \
+    || fail "session final-message container ID does not match the selected profile: $container_name"
+  container_is_current \
+    || fail "session final-message container is stale: $container_name"
+  volume_is_present || fail "Docker state volume is missing: $state_volume"
+  validate_state_volume
+  validate_container_mounts
+  validate_container_runtime
+  container_image_id="$(docker container inspect \
+    --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container image: $container_name"
+  inspect_image_ref "$container_image_id" \
+    || fail "session final-message container image is unavailable or stale: $container_name"
+  [[ "$resolved_image_id" == "$container_image_id" ]] \
+    || fail "session final-message container image identity changed: $container_name"
+  running="$(docker container inspect --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
+    || fail "cannot inspect Docker container state: $container_name"
+  [[ "$running" == true ]] \
+    || fail "session final-message container is not running: $container_name"
+  verify_docker_server
+  docker_executable="$(command -v docker)" \
+    || fail 'docker is required'
+  exec "$docker_executable" --host "$docker_endpoint" container exec \
+    --user '10001:10001' \
+    --workdir "$mount_path" \
+    "$container_id" \
+    /usr/local/bin/trellage-session-bridge \
+    final-message \
+    --agent "$session_agent" \
+    --profile "$profile_name" \
+    --invocation "$session_invocation_id"
+fi
+
 if [[ "$profile_locked" != true ]]; then
   [[ -z "${TRELLAGE_IMAGE:-}" ]] \
     || fail "development resolution is unavailable; run: $build_command"
@@ -2147,6 +2413,10 @@ if [[ ( "$mode" == new || "$mode" == prompt || "$mode" == resume ) \
   prepare_github_cli_auth
 fi
 
+if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume ]]; then
+  prepare_sandbox_attachment
+fi
+
 terminal_args=(--interactive --tty --env TERM=xterm-256color)
 case "${COLORTERM:-}" in
   truecolor|24bit) terminal_args+=(--env COLORTERM=truecolor) ;;
@@ -2219,6 +2489,7 @@ case "$mode" in
       prepare_claude_auth
     fi
     HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
+      ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
       ${github_cli_args[@]+"${github_cli_args[@]}"} \
       ${secret_args[@]+"${secret_args[@]}"} \
       ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -2239,6 +2510,7 @@ case "$mode" in
     fi
     if [[ "$prompt_argument_set" == true ]]; then
       HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
+        ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
         ${github_cli_args[@]+"${github_cli_args[@]}"} \
         ${secret_args[@]+"${secret_args[@]}"} \
         ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -2251,6 +2523,7 @@ case "$mode" in
         "$runtime_shell" "${runtime_shell_args[@]}" "$resume_prompt_command" -- ${harness_args[@]+"${harness_args[@]}"} "$prompt_argument"
     elif [[ "$output_format" == jsonl ]]; then
       HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
+        ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
         ${github_cli_args[@]+"${github_cli_args[@]}"} \
         ${secret_args[@]+"${secret_args[@]}"} \
         ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -2264,6 +2537,7 @@ case "$mode" in
     else
       HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
         "${terminal_args[@]}" \
+        ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
         ${github_cli_args[@]+"${github_cli_args[@]}"} \
         ${secret_args[@]+"${secret_args[@]}"} \
         ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -2302,6 +2576,7 @@ if (( $# > 0 )); then
   fi
   HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
     ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
+    ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -2323,6 +2598,7 @@ if [[ "$has_initial_prompt" == true ]]; then
   fi
   HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
     ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
+    ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
     ${github_cli_args[@]+"${github_cli_args[@]}"} \
     ${secret_args[@]+"${secret_args[@]}"} \
     ${package_feed_args[@]+"${package_feed_args[@]}"} \
@@ -2343,6 +2619,7 @@ elif [[ "$harness_kind" == claude ]]; then
 fi
 HERDR_AGENT="$herdr_agent" run_supervised_attachment run_agent_attachment "${codex_exec_prefix[@]}" \
   ${exec_terminal_args[@]+"${exec_terminal_args[@]}"} \
+  ${sandbox_bridge_args[@]+"${sandbox_bridge_args[@]}"} \
   ${github_cli_args[@]+"${github_cli_args[@]}"} \
   ${secret_args[@]+"${secret_args[@]}"} \
   ${package_feed_args[@]+"${package_feed_args[@]}"} \

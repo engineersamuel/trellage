@@ -197,9 +197,21 @@ printf '%s\n' \
   '[mcp_servers.host-only]' \
   'command = "must-not-copy"' >"$fixture_root/home/.codex/config.toml"
 
+pstack_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
+mkdir -p "$pstack_home"
+cat >"$pstack_home/hooks.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "user-session-start"}]},
+      {"hooks": [{"type": "command", "command": "cccc-session-start"}]}
+    ]
+  },
+  "preserve": "user-hooks"
+}
+EOF
 HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
   >"$fixture_root/setup-pstack.out" || fail 'setup pstack failed'
-pstack_home="$fixture_root/home/.local/share/trellage/profiles/codex/pstack/home"
 [ -d "$pstack_home" ] || fail 'setup did not create pstack home'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'setup created host authentication'
@@ -209,6 +221,41 @@ if grep -F -e 'host-only-secret' -e 'mcp_servers.host-only' -e 'must-not-copy' \
   "$pstack_home/config.toml" >/dev/null; then
   fail 'setup imported host config bytes'
 fi
+session_bridge="$pstack_home/.trellage/trellage-session-bridge.py"
+[ -f "$session_bridge" ] && [ ! -L "$session_bridge" ] && [ -x "$session_bridge" ] \
+  || fail 'setup did not install a regular executable session bridge'
+cmp -s "$session_bridge" "$root/../../scripts/trellage-session-bridge.py" \
+  || fail 'installed session bridge differs from the shared executable'
+grep -F -- 'pane.report_agent_session' "$session_bridge" >/dev/null \
+  && fail 'session bridge includes forbidden agent-session reporting'
+jq -e '
+  .preserve == "user-hooks"
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "user-session-start"))
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "cccc-session-start"))
+  and ([.hooks.SessionStart[]
+    | .hooks[]
+    | select(.type == "command"
+      and (.command | contains(" native-hook --agent codex --profile pstack")))]
+    | length) == 1
+' "$pstack_home/hooks.json" >/dev/null || fail 'setup session bridge hooks differ'
+awk '
+  $0 == "# trellage-profile-local-config-begin" { local_block = 1; next }
+  $0 == "# trellage-profile-local-config-end" { local_block = 0 }
+  local_block { print }
+' "$pstack_home/config.toml" >"$fixture_root/pstack-local-config.toml"
+grep -Fqx -- '[features]' "$fixture_root/pstack-local-config.toml" \
+  && grep -Fqx -- 'hooks = true' "$fixture_root/pstack-local-config.toml" \
+  || fail 'setup did not enable hooks inside the profile-local config block'
+[ "$(tail -n 1 "$pstack_home/config.toml")" = '# trellage-managed-codex-provider-end' ] \
+  || fail 'setup appended config after the managed provider marker'
+hooks_hash="$(shasum -a 256 "$pstack_home/hooks.json" | awk '{print $1}')"
+config_hash="$(shasum -a 256 "$pstack_home/config.toml" | awk '{print $1}')"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
+  >"$fixture_root/setup-pstack-repeat.out" || fail 'repeat setup pstack failed'
+[ "$(shasum -a 256 "$pstack_home/hooks.json" | awk '{print $1}')" = "$hooks_hash" ] \
+  || fail 'repeated setup changed session bridge hook settings'
+[ "$(shasum -a 256 "$pstack_home/config.toml" | awk '{print $1}')" = "$config_hash" ] \
+  || fail 'repeated setup changed Codex config'
 
 jq -se '
   any(.[]; .args == ["plugin","marketplace","list","--json"])
@@ -1229,6 +1276,9 @@ model_reasoning_effort = "medium"
 
 # trellage-profile-local-config-begin
 # Add profile-local MCP and other user sections here.
+
+[features]
+hooks = true
 # trellage-profile-local-config-end
 
 # trellage-managed-codex-provider-begin
@@ -1255,6 +1305,23 @@ write_main_plugin_cache
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor pstack \
   >"$fixture_root/doctor-pstack.out" || fail 'doctor pstack failed'
+(
+  command() {
+    if [ "$1" = -v ] && [ "${2-}" = python3 ]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+  export -f command
+  if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor pstack \
+    >"$fixture_root/doctor-pstack-python.out" 2>&1; then
+    fail 'doctor accepted missing Python'
+  fi
+)
+grep -F -- 'cdx: required command not found: python3' \
+  "$fixture_root/doctor-pstack-python.out" >/dev/null \
+  || fail 'missing Python error differs'
 : >"$fake_state/pstack/forbidden-superpowers"
 if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" doctor pstack \
@@ -1693,7 +1760,9 @@ real_mv="$(command -v mv)"
 real_ln="$(command -v ln)"
 
 write_custom_main_config "$expected_config"
-sed 's/model = "gpt-5.6-sol"/model = "wrong-managed-model"/' \
+sed \
+  -e 's/model = "gpt-5.6-sol"/model = "wrong-managed-model"/' \
+  -e 's/hooks = true/hooks = false/' \
   "$custom_config" >"$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 assert_command_fails doctor-wrong-managed env HOME="$fixture_root/home" \
@@ -1723,6 +1792,88 @@ grep -F -- '[marketplaces.pstack-for-codex-local]' "$pstack_home/config.toml" >/
     "$pstack_home/config.toml" >/dev/null \
   && grep -F -- 'future_flag = true' "$pstack_home/config.toml" >/dev/null \
   || fail 'repair lost selected or unrelated native config state'
+awk '
+  $0 == "# trellage-profile-local-config-begin" { local_block = 1; next }
+  $0 == "# trellage-profile-local-config-end" { local_block = 0 }
+  local_block { print }
+' "$pstack_home/config.toml" >"$fixture_root/repaired-local-config.toml"
+grep -Fqx -- '[features]' "$fixture_root/repaired-local-config.toml" \
+  && grep -Fqx -- 'hooks = true' "$fixture_root/repaired-local-config.toml" \
+  || fail 'repair did not enable hooks inside the profile-local config block'
+[ "$(tail -n 1 "$pstack_home/config.toml")" = '# trellage-managed-codex-provider-end' ] \
+  || fail 'repair appended config after the managed provider marker'
+jq -e '
+  .preserve == "user-hooks"
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "user-session-start"))
+  and any(.hooks.SessionStart[]; any(.hooks[]; .command == "cccc-session-start"))
+  and ([.hooks.SessionStart[]
+    | .hooks[]
+    | select(.type == "command"
+      and (.command | contains(" native-hook --agent codex --profile pstack")))]
+    | length) == 1
+' "$pstack_home/hooks.json" >/dev/null || fail 'repair session bridge hooks differ'
+hooks_hash="$(shasum -a 256 "$pstack_home/hooks.json" | awk '{print $1}')"
+config_hash="$(shasum -a 256 "$pstack_home/config.toml" | awk '{print $1}')"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" repair pstack \
+  >"$fixture_root/repair-pstack-repeat.out" || fail 'repeat repair pstack failed'
+[ "$(shasum -a 256 "$pstack_home/hooks.json" | awk '{print $1}')" = "$hooks_hash" ] \
+  || fail 'repeated repair changed session bridge hook settings'
+
+for hooks_key in '"hooks"' "'hooks'"; do
+  quoted_hooks_config="$fixture_root/quoted-hooks-$(printf '%s' "$hooks_key" | tr -d "'\"").toml"
+  awk -v key="$hooks_key" '
+    $0 == "hooks = true" {
+      print key " = false"
+      next
+    }
+    { print }
+  ' "$custom_config" >"$quoted_hooks_config"
+  cp "$quoted_hooks_config" "$pstack_home/config.toml"
+  chmod 0600 "$pstack_home/config.toml"
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" repair pstack \
+    >"$fixture_root/repair-quoted-hooks.out" \
+    || fail "repair rejected the equivalent $hooks_key key"
+  cmp -s "$custom_config" "$pstack_home/config.toml" \
+    || fail "repair did not normalize and enable the equivalent $hooks_key key"
+done
+
+supported_features_config="$fixture_root/supported-features-config.toml"
+cp "$pstack_home/config.toml" "$supported_features_config"
+for features_syntax in inline dotted; do
+  unsupported_config="$fixture_root/unsupported-features-$features_syntax.toml"
+  replacement='features = { web_search = true }'
+  [ "$features_syntax" != dotted ] || replacement='features.web_search = true'
+  awk -v replacement="$replacement" '
+    $0 == "[features]" {
+      print replacement
+      replace_hooks = 1
+      next
+    }
+    replace_hooks && $0 == "hooks = true" {
+      replace_hooks = 0
+      next
+    }
+    { print }
+  ' "$expected_config" >"$unsupported_config"
+  cp "$unsupported_config" "$pstack_home/config.toml"
+  chmod 0600 "$pstack_home/config.toml"
+  if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    "$fixture_launcher" repair pstack \
+    >"$fixture_root/repair-unsupported-features-$features_syntax.out" 2>&1; then
+    fail "repair accepted unsupported $features_syntax features syntax"
+  fi
+  cmp -s "$unsupported_config" "$pstack_home/config.toml" \
+    || fail "repair changed unsupported $features_syntax features syntax"
+  grep -F -- 'profile-local features must use a [features] table: pstack' \
+    "$fixture_root/repair-unsupported-features-$features_syntax.out" >/dev/null \
+    || fail "unsupported $features_syntax features diagnostic differs"
+done
+cp "$supported_features_config" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+[ "$(shasum -a 256 "$pstack_home/config.toml" | awk '{print $1}')" = "$config_hash" ] \
+  || fail 'repeated repair changed Codex config'
 auth_is_absent "$fixture_root/home/.codex/auth.json" \
   || fail 'repair created host authentication'
 auth_is_absent "$pstack_home/auth.json" || fail 'repair created profile authentication'

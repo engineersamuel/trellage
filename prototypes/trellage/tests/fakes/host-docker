@@ -502,9 +502,9 @@ case "${1:-} ${2:-}" in
       *dev.trellage.profile*) printf '%s\n' "$profile" ;;
       *'.Id'*)
         if [[ "${FAKE_DOCKER_CLEANUP_ID_MISMATCH:-0}" == 1 && -f "$log.agent-exec-finished" ]]; then
-          printf 'changed-container-id\n'
+          printf '%064d\n' 2
         else
-          printf 'fake-container-id\n'
+          printf '%064d\n' 1
         fi
         ;;
       *'.Image'*)
@@ -582,7 +582,7 @@ case "${1:-} ${2:-}" in
     persist_create_labels container "$@"
     printf '%s\n' "${@: -3:1}" >"$log.container-image"
     printf 'false\n' >"$log.container-running"
-    printf 'fake-container-id\n'
+    printf '%064d\n' 1
     ;;
   'container start')
     if [[ "$container_state" == created ]]; then
@@ -626,7 +626,8 @@ case "${1:-} ${2:-}" in
     fi
     if [[ -n "${FAKE_DOCKER_AGENT_EXEC_EXIT:-}" ]]; then
       for argument in "$@"; do
-        if [[ "$argument" == *trellage-*-entry* ]]; then
+        if [[ "$argument" == *trellage-*-entry* \
+          || "$argument" == /usr/local/bin/trellage-session-bridge ]]; then
           emit_agent_streams
           : >"$log.agent-exec-finished"
           exit "$FAKE_DOCKER_AGENT_EXEC_EXIT"
@@ -634,7 +635,8 @@ case "${1:-} ${2:-}" in
       done
     fi
     for argument in "$@"; do
-      if [[ "$argument" == *trellage-*-entry* ]]; then
+      if [[ "$argument" == *trellage-*-entry* \
+        || "$argument" == /usr/local/bin/trellage-session-bridge ]]; then
         if [[ "${FAKE_DOCKER_PTY_PROBE:-0}" == 1 ]]; then
           [[ -t 0 && -t 1 && -t 2 ]] || exit 91
           trap 'printf "PTY:interrupt\n"; exit 130' INT

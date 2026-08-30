@@ -6,6 +6,7 @@ import {
   createNodeCommandRunner,
   defaultWorktreeBranch,
   getHerdrContext,
+  GuideLaunchError,
   handoffToCurrentHerdrWorkspace,
   inspectGitWorktreeIntent,
   isHerdrAvailable,
@@ -123,6 +124,7 @@ const bareCommand: CommandSpec = {
   executable: "/opt/trellage/bin/cpx",
   args: ["hve-core"],
 }
+const automatedBareCommandPreview = "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cpx hve-core"
 
 const linkedHead = "1111111111111111111111111111111111111111"
 const primaryHead = "2222222222222222222222222222222222222222"
@@ -349,11 +351,95 @@ describe("Herdr availability helpers", () => {
     const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w1", HERDR_PANE_ID: "w1:p1" }
 
     await expect(probeHerdrAvailability(runner)).resolves.toBe(true)
-    expect(getHerdrContext(env)).toEqual({ workspaceId: "w1", paneId: "w1:p1" })
+    expect(getHerdrContext(env)).toEqual({ workspaceId: "w1", paneId: "w1:p1", surface: "pane" })
     expect(isHerdrAvailable(env, true)).toBe(true)
     expect(isHerdrAvailable({ HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w1" }, true)).toBe(false)
     expect(isHerdrAvailable(env, false)).toBe(false)
     runner.expectComplete()
+  })
+
+  it("uses validated popup source metadata when the popup has no pane id", () => {
+    const env = {
+      HERDR_ENV: "1",
+      TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+        schemaVersion: 1,
+        surface: "popup",
+        workspaceId: "w1",
+        paneId: "w1:p1",
+        cwd: "/repo",
+        capture: {
+          source: "terminal",
+          confidence: "snapshot",
+          agent: "copilot",
+        },
+      }),
+    }
+
+    expect(getHerdrContext(env)).toEqual({
+      workspaceId: "w1",
+      paneId: "w1:p1",
+      surface: "popup",
+      cwd: "/repo",
+      capture: {
+        source: "terminal",
+        confidence: "snapshot",
+        agent: "copilot",
+      },
+    })
+    expect(isHerdrAvailable(env, true)).toBe(true)
+  })
+
+  it("rejects malformed or incomplete popup source metadata", () => {
+    expect(() =>
+      getHerdrContext({
+        HERDR_ENV: "1",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          surface: "popup",
+          workspaceId: "w1",
+          paneId: "w1:p1",
+          cwd: "relative",
+        }),
+      }),
+    ).toThrow(GuideLaunchError)
+    expect(() =>
+      getHerdrContext({
+        HERDR_ENV: "1",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          surface: "popup",
+          workspaceId: "w1",
+          paneId: "w1:p1",
+        }),
+      }),
+    ).toThrow(GuideLaunchError)
+    expect(() =>
+      getHerdrContext({
+        HERDR_ENV: "1",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          surface: "popup",
+          workspaceId: "w1",
+          paneId: "w1:p1",
+          cwd: "/repo",
+          capture: {
+            source: "guessed",
+            confidence: "exact",
+          },
+        }),
+      }),
+    ).toThrow(GuideLaunchError)
+  })
+
+  it("prefers direct pane context over popup metadata", () => {
+    expect(
+      getHerdrContext({
+        HERDR_ENV: "1",
+        HERDR_WORKSPACE_ID: "w1",
+        HERDR_PANE_ID: "w1:p2",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: "{not-json",
+      }),
+    ).toEqual({ workspaceId: "w1", paneId: "w1:p2", surface: "pane" })
   })
 })
 
@@ -369,7 +455,7 @@ describe("current workspace handoff", () => {
       },
       {
         executable: "herdr",
-        args: ["pane", "run", "wCN:p2", "/opt/trellage/bin/cpx hve-core"],
+        args: ["pane", "run", "wCN:p2", automatedBareCommandPreview],
         result: ok(),
       },
       {
@@ -407,7 +493,7 @@ describe("current workspace handoff", () => {
 
     expect(result).toEqual({
       paneId: "wCN:p2",
-      commandPreview: "/opt/trellage/bin/cpx hve-core",
+      commandPreview: automatedBareCommandPreview,
     })
     expect(runner.calls[4]?.options?.timeoutMs).toBe(6_000)
     expect(runner.calls.map((call) => call.args.join(" ")).join("\n")).not.toMatch(/close|--force/)
@@ -423,7 +509,7 @@ describe("current workspace handoff", () => {
       },
       {
         executable: "herdr",
-        args: ["pane", "run", "wCN:p3", "/opt/trellage/bin/cpx hve-core"],
+        args: ["pane", "run", "wCN:p3", automatedBareCommandPreview],
         result: ok(),
       },
       {
@@ -456,7 +542,7 @@ describe("direct pane prompt delivery", () => {
     const blockedRunner = new FakeRunner([
       {
         executable: "herdr",
-        args: ["pane", "run", "w1:p2", "/opt/trellage/bin/cpx hve-core"],
+        args: ["pane", "run", "w1:p2", automatedBareCommandPreview],
         result: ok(),
       },
       {
@@ -497,7 +583,7 @@ describe("direct pane prompt delivery", () => {
     const timeoutRunner = new FakeRunner([
       {
         executable: "herdr",
-        args: ["pane", "run", "w1:p3", "/opt/trellage/bin/cpx hve-core"],
+        args: ["pane", "run", "w1:p3", automatedBareCommandPreview],
         result: ok(),
       },
       {
@@ -806,7 +892,7 @@ describe("worktree Herdr helpers", () => {
       },
       {
         executable: "herdr",
-        args: ["pane", "run", "wD3:p1", "/opt/trellage/bin/cpx hve-core"],
+        args: ["pane", "run", "wD3:p1", automatedBareCommandPreview],
         result: ok(),
       },
       {
@@ -839,7 +925,7 @@ describe("worktree Herdr helpers", () => {
       rootPaneId: "wD3:p1",
       checkoutPath: "/actual/worktree-created",
       paneId: "wD3:p1",
-      commandPreview: "/opt/trellage/bin/cpx hve-core",
+      commandPreview: automatedBareCommandPreview,
     })
     expect(createRunner.calls[2]?.options?.cwd).toBe("/actual/worktree-created")
     expect(createRunner.calls[4]?.options?.cwd).toBe("/actual/worktree-created")
@@ -864,7 +950,7 @@ describe("worktree Herdr helpers", () => {
       },
       {
         executable: "herdr",
-        args: ["pane", "run", "wD4:p1", "/opt/trellage/bin/cpx hve-core"],
+        args: ["pane", "run", "wD4:p1", automatedBareCommandPreview],
         result: ok(),
       },
       {
@@ -896,7 +982,7 @@ describe("worktree Herdr helpers", () => {
       rootPaneId: "wD4:p1",
       checkoutPath: "/actual/worktree-opened",
       paneId: "wD4:p1",
-      commandPreview: "/opt/trellage/bin/cpx hve-core",
+      commandPreview: automatedBareCommandPreview,
     })
     expect(openRunner.calls[1]?.options?.cwd).toBe("/actual/worktree-opened")
     expect(openRunner.calls[3]?.options?.cwd).toBe("/actual/worktree-opened")

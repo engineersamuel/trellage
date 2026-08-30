@@ -106,6 +106,14 @@ const renderRuntimeDotfile = (options: MiseRenderOptions, role: string): string 
   return `${quote(file.destination)} = { source = ${quote(file.buildContextPath)}, mode = "copy" }`
 }
 
+const renderSessionBridgeDotfile = (options: MiseRenderOptions): string =>
+  renderRuntimeDotfile(options, "session-bridge")
+
+const sessionBridgeEnvironment = (profile: Profile): ReadonlyArray<string> => [
+  `TRELLAGE_PROFILE_NAME = ${quote(profile.name)}`,
+  `TRELLAGE_AGENT = ${quote(profile.harness.kind)}`,
+]
+
 const renderPackages = (profile: Profile, options: MiseRenderOptions): string =>
   profile.image.packages
     .map((name) => `${quote(`apt:${name}`)} = ${quote(options.packageVersions?.[name] ?? "*")}`)
@@ -151,6 +159,9 @@ const renderCodexMiseConfig = (profile: CodexProfile, lock: ProfileLock, options
   if (harness.kind !== "codex") throw new Error("profile and lock harness kinds do not match")
   return `min_version = "2026.6.14"
 
+[tools]
+python = "3.13.14"
+
 [tools."http:codex"]
 version = ${quote(harness.version)}
 url = ${quote(harness.url)}
@@ -166,6 +177,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.codex/agents" = { source = "assets/agents", mode = "copy" }
 ${profile.skill_bundles.length > 0 ? '"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-entry")}
+${renderSessionBridgeDotfile(options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -173,7 +185,7 @@ ${renderOci(
   profile,
   lock,
   options,
-  ['CODEX_HOME = "/home/agent/.codex"'],
+  ['CODEX_HOME = "/home/agent/.codex"', ...sessionBridgeEnvironment(profile)],
   [`"dev.trellage.codex.version" = ${quote(harness.version)}`],
 )}`
 }
@@ -187,6 +199,7 @@ const renderCopilotMiseConfig = (profile: Profile, lock: ProfileLock, options: M
 
 [tools]
 node = "lts"
+python = "3.13.14"
 
 [tools."http:copilot"]
 version = ${quote(harness.version)}
@@ -201,6 +214,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 "/usr/local/share/trellage/copilot-seed" = { source = "copilot-seed", mode = "copy" }
 ${renderRuntimeDotfile(options, "runtime-copilot-entry")}
+${renderSessionBridgeDotfile(options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -208,7 +222,7 @@ ${renderOci(
   profile,
   lock,
   options,
-  ['COPILOT_HOME = "/home/agent/.copilot"', 'COPILOT_AUTO_UPDATE = "false"'],
+  ['COPILOT_HOME = "/home/agent/.copilot"', 'COPILOT_AUTO_UPDATE = "false"', ...sessionBridgeEnvironment(profile)],
   ['"dev.trellage.harness.kind" = "copilot"', `"dev.trellage.copilot.version" = ${quote(harness.version)}`],
   "/home/agent/.cache",
 )}`
@@ -217,8 +231,7 @@ ${renderOci(
 const optionalMiseLines = (lines: ReadonlyArray<string>): string => (lines.length === 0 ? "" : `${lines.join("\n")}\n`)
 
 const claudeMiseTools = (profile: ClaudeProfile, hyperresearch: boolean, extraPython: boolean): string => {
-  const tools: Array<string> = []
-  if (hyperresearch || extraPython) tools.push('python = "3.13"')
+  const tools: Array<string> = [hyperresearch || extraPython ? 'python = "3.13"' : 'python = "3.13.14"']
   if (claudeHasSerena(profile)) tools.push('uv = "latest"')
   return tools.join("\n")
 }
@@ -297,6 +310,7 @@ const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> =>
     return [
       'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
       'TRELLAGE_CLAUDE_RUNTIME_MODE = "hyperresearch"',
+      ...sessionBridgeEnvironment(profile),
       'PYTHONPATH = "/opt/trellage/hyperresearch-site"',
       'PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"',
     ]
@@ -304,6 +318,7 @@ const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> =>
   return [
     'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
     'TRELLAGE_CLAUDE_RUNTIME_MODE = "native-plugin"',
+    ...sessionBridgeEnvironment(profile),
     ...(claudeHasCodexReviewer(profile)
       ? [
           'CODEX_HOME = "/home/agent/.codex"',
@@ -355,6 +370,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 ${optionalMiseLines(claudeDotfilesBeforeSeed(profile))}"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
 ${optionalMiseLines(claudeDotfilesAfterSeed(profile, lock))}${renderRuntimeDotfile(options, "runtime-claude-entry")}
+${renderSessionBridgeDotfile(options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 

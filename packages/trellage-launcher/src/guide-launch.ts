@@ -9,6 +9,13 @@ const safeShellText = /^[A-Za-z0-9_./:-]+$/u
 const gitBranchPrefix = "refs/heads/"
 const commandOutputLimitBytes = 1024 * 1024
 const forcedKillDelayMs = 1000
+const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
+  "selection",
+  "transcript",
+  "sandbox-transcript",
+  "terminal",
+]
+const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = ["user-selected", "exact", "snapshot"]
 
 export type GuideSurface = "native" | "sandbox"
 export type PromptDeliveryMode = "none" | "argv"
@@ -16,6 +23,9 @@ export type PromptHandlingMode = "none" | "argv" | "manual-paste"
 export type HerdrPromptDeliveryMode = "command" | "agent"
 export type HerdrAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown"
 export type HerdrSplitDirection = "right" | "down"
+export type HerdrInvocationSurface = "pane" | "popup"
+export type GuideCaptureSource = "selection" | "transcript" | "sandbox-transcript" | "terminal"
+export type GuideCaptureConfidence = "user-selected" | "exact" | "snapshot"
 export type GuideLaunchErrorKind = "blocked" | "timeout" | "startup" | "invalid-output"
 export type WorktreeCollisionKind = "branch-exists" | "branch-active" | "path-active"
 export type GitWorktreeInspectionKind = "ready" | "collision" | "invalid-branch"
@@ -80,11 +90,24 @@ export interface HerdrEnvironment {
   readonly HERDR_ENV?: string
   readonly HERDR_WORKSPACE_ID?: string
   readonly HERDR_PANE_ID?: string
+  readonly TRELLAGE_GUIDE_HERDR_CONTEXT_JSON?: string
 }
 
 export interface HerdrContext {
   readonly workspaceId: string
   readonly paneId: string
+  readonly surface: HerdrInvocationSurface
+  readonly cwd?: string
+  readonly capture?: GuideCaptureProvenance
+}
+
+export interface GuideCaptureProvenance {
+  readonly source: GuideCaptureSource
+  readonly confidence: GuideCaptureConfidence
+  readonly agent?: string
+  readonly sessionId?: string
+  readonly identitySource?: string
+  readonly profile?: string
 }
 
 export interface TimeController {
@@ -785,13 +808,127 @@ export const runInteractiveCommand = async (
     })
   })
 
+  const optionalBoundedText = (value: unknown, name: string, maximum: number): string | undefined => {
+    if (value === undefined) return undefined
+    const text = getString(value, name)
+    if (text.length > maximum || controlCharacters.test(text)) {
+      throw new GuideLaunchError({
+        kind: "invalid-output",
+        message: `${name} is invalid`,
+      })
+    }
+    return text
+  }
+
+  const parseGuideCaptureProvenance = (value: unknown): GuideCaptureProvenance | undefined => {
+    if (value === undefined) return undefined
+    const fields = getRecord(value, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture")
+    const allowedKeys = new Set(["source", "confidence", "agent", "sessionId", "identitySource", "profile"])
+    const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
+    if (unexpectedKeys.length > 0) {
+      throw new GuideLaunchError({
+        kind: "invalid-output",
+        message: `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture contains unsupported keys: ${unexpectedKeys.join(", ")}`,
+      })
+    }
+    const source = getString(fields.source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.source")
+    const confidence = getString(fields.confidence, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.confidence")
+    if (!guideCaptureSources.includes(source as GuideCaptureSource)) {
+      throw new GuideLaunchError({
+        kind: "invalid-output",
+        message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported source",
+      })
+    }
+    if (!guideCaptureConfidences.includes(confidence as GuideCaptureConfidence)) {
+      throw new GuideLaunchError({
+        kind: "invalid-output",
+        message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported confidence",
+      })
+    }
+    const expectedConfidence =
+      source === "selection" ? "user-selected" : source === "terminal" ? "snapshot" : "exact"
+    if (confidence !== expectedConfidence) {
+      throw new GuideLaunchError({
+        kind: "invalid-output",
+        message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture source and confidence do not match",
+      })
+    }
+    const agent = optionalBoundedText(fields.agent, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.agent", 128)
+    const sessionId = optionalBoundedText(
+      fields.sessionId,
+      "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.sessionId",
+      128,
+    )
+    const identitySource = optionalBoundedText(
+      fields.identitySource,
+      "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.identitySource",
+      128,
+    )
+    const profile = optionalBoundedText(fields.profile, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.profile", 128)
+    return {
+      source: source as GuideCaptureSource,
+      confidence: confidence as GuideCaptureConfidence,
+      ...(agent === undefined ? {} : { agent }),
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(identitySource === undefined ? {} : { identitySource }),
+      ...(profile === undefined ? {} : { profile }),
+    }
+  }
+
+  const parsePopupHerdrContext = (source: string): HerdrContext => {
+    const fields = parseJsonRecord(source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON")
+  const allowedKeys = new Set(["schemaVersion", "surface", "workspaceId", "paneId", "cwd", "capture"])
+  const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
+  if (unexpectedKeys.length > 0) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON contains unsupported keys: ${unexpectedKeys.join(", ")}`,
+    })
+  }
+  if (fields.schemaVersion !== 1 || fields.surface !== "popup") {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON must identify a schema version 1 popup",
+    })
+  }
+  const workspaceId = getString(fields.workspaceId, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.workspaceId")
+  const paneId = getString(fields.paneId, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.paneId")
+  const cwd = getString(fields.cwd, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.cwd")
+  if (
+    controlCharacters.test(workspaceId) ||
+    controlCharacters.test(paneId) ||
+    controlCharacters.test(cwd) ||
+    workspaceId.length > 256 ||
+    paneId.length > 256 ||
+    cwd.length > 4096 ||
+    !path.isAbsolute(cwd)
+  ) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON contains invalid source pane metadata",
+    })
+  }
+  const capture = parseGuideCaptureProvenance(fields.capture)
+  return {
+    workspaceId,
+    paneId,
+    surface: "popup",
+    cwd,
+    ...(capture === undefined ? {} : { capture }),
+  }
+}
+
 export const getHerdrContext = (env: HerdrEnvironment): HerdrContext | null => {
   if (env.HERDR_ENV !== "1") return null
-  if (!hasNonEmptyText(env.HERDR_WORKSPACE_ID) || !hasNonEmptyText(env.HERDR_PANE_ID)) return null
-  return {
-    workspaceId: env.HERDR_WORKSPACE_ID,
-    paneId: env.HERDR_PANE_ID,
+  if (hasNonEmptyText(env.HERDR_WORKSPACE_ID) && hasNonEmptyText(env.HERDR_PANE_ID)) {
+    return {
+      workspaceId: env.HERDR_WORKSPACE_ID,
+      paneId: env.HERDR_PANE_ID,
+      surface: "pane",
+    }
   }
+  const source = env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON
+  return hasNonEmptyText(source) ? parsePopupHerdrContext(source) : null
 }
 
 export const isHerdrAvailable = (env: HerdrEnvironment, probeSucceeded: boolean): boolean =>
@@ -907,7 +1044,7 @@ export const launchInHerdrPaneAndPrompt = async (
   runner: CommandRunner,
   options: LaunchInHerdrPaneOptions,
 ): Promise<HerdrPaneLaunchResult> => {
-  const commandPreview = renderCommandPreview(options.command)
+  const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`
   await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
     cwd: options.cwd,
   })
