@@ -13,6 +13,7 @@ const forcedKillDelayMs = 1000
 export type GuideSurface = "native" | "sandbox"
 export type PromptDeliveryMode = "none" | "argv"
 export type PromptHandlingMode = "none" | "argv" | "manual-paste"
+export type HerdrPromptDeliveryMode = "command" | "agent"
 export type HerdrAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown"
 export type HerdrSplitDirection = "right" | "down"
 export type GuideLaunchErrorKind = "blocked" | "timeout" | "startup" | "invalid-output"
@@ -102,6 +103,7 @@ export interface LaunchInHerdrPaneOptions extends WaitForIdleOptions {
   readonly cwd: string
   readonly command: CommandSpec
   readonly prompt: string
+  readonly promptDelivery: HerdrPromptDeliveryMode
   readonly promptTimeoutMs: number
 }
 
@@ -909,6 +911,12 @@ export const launchInHerdrPaneAndPrompt = async (
   await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
     cwd: options.cwd,
   })
+  if (options.promptDelivery === "command") {
+    return {
+      paneId: options.paneId,
+      commandPreview,
+    }
+  }
   await waitForHerdrAgentIdle(runner, options.paneId, options)
   try {
     await runner.run(
@@ -954,6 +962,7 @@ export const handoffToCurrentHerdrWorkspace = async (
     cwd: options.cwd,
     command: options.command,
     prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
     promptTimeoutMs: options.promptTimeoutMs,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
@@ -1137,6 +1146,7 @@ export const createHerdrWorktreeAndHandoff = async (
     cwd: handle.checkoutPath,
     command: options.command,
     prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
     promptTimeoutMs: options.promptTimeoutMs,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
@@ -1164,6 +1174,7 @@ export const openHerdrWorktreeAndHandoff = async (
     cwd: handle.checkoutPath,
     command: options.command,
     prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
     promptTimeoutMs: options.promptTimeoutMs,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),

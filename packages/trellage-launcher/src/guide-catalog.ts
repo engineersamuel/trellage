@@ -293,6 +293,9 @@ export interface SandboxGuideCatalogEntry {
     readonly version: string
     readonly model?: string
   }
+  readonly resolutionPolicy: "floating"
+  readonly locallyResolved: boolean
+  readonly releaseLockAvailable: boolean
   readonly skillBundles: ReadonlyArray<string>
   readonly skillsMode: "floating" | "locked"
   readonly finalDigestLocked: boolean
@@ -314,6 +317,9 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
     "path",
     "supportedPlatforms",
     "harness",
+    "resolutionPolicy",
+    "locallyResolved",
+    "releaseLockAvailable",
     "skillBundles",
     "skillsMode",
     "finalDigestLocked",
@@ -343,6 +349,9 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
       version: text(harness.version, `${path}.harness.version`, 128),
       ...(harness.model === undefined ? {} : { model: text(harness.model, `${path}.harness.model`, 128) }),
     },
+    resolutionPolicy: literal(fields.resolutionPolicy, `${path}.resolutionPolicy`, ["floating"] as const),
+    locallyResolved: boolean(fields.locallyResolved, `${path}.locallyResolved`),
+    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path}.releaseLockAvailable`),
     skillBundles: stringArray(fields.skillBundles, `${path}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
     skillsMode: literal(fields.skillsMode, `${path}.skillsMode`, ["floating", "locked"] as const),
     finalDigestLocked: boolean(fields.finalDigestLocked, `${path}.finalDigestLocked`),

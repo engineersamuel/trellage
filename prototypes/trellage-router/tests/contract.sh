@@ -355,7 +355,9 @@ assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 assert_contains 'native:<launcher>/<profile> or sandbox:<profile>' \
   "$fixture_root/guide-help.out"
 assert_contains 'schemaVersion 1' "$fixture_root/guide-help.out"
-assert_contains 'schemaVersion 1' "$fixture_root/guide-help.out"
+assert_contains 'INTENT accepts up to 60,000 characters.' "$fixture_root/guide-help.out"
+assert_contains 'Interactive prompt viewers: pager, split, focus, bookends, dashboard.' \
+  "$fixture_root/guide-help.out"
 
 mv "$fixture_bin/cpx" "$fixture_root/cpx-link"
 "$fixture_bin/trx" skills status >"$fixture_root/skills-status.json" \
@@ -523,7 +525,7 @@ cat >"$fixture_bin/trellage" <<'EOF'
 set -euo pipefail
 [[ "$#" -eq 2 && "$1" == list && "$2" == --json-full ]] || exit 64
 cat <<'JSON'
-{"schemaVersion":1,"profiles":[{"name":"sandbox-fixture","description":"Sandbox fixture","guide":{"schemaVersion":1,"capabilities":["fixture-delivery"],"bestFor":["Fixture delivery"],"avoidFor":["Unrelated fixture work"],"prerequisites":[],"workflows":[{"id":"deliver","description":"Deliver fixture work","examples":["Build the fixture","Test the fixture","Review the fixture"],"promptTemplate":"{{intent}}"}]},"path":"/fixture/profiles/sandbox-fixture/profile.toml","supportedPlatforms":["linux/arm64"],"harness":{"kind":"codex","version":"latest","model":"gpt-5.6-sol"},"skillBundles":["sandbox-common"],"skillsMode":"floating","finalDigestLocked":false,"skills":[],"plugins":[],"mcps":[],"sandbox":true,"headless":{"schemaVersion":1,"prompt":true,"outputFormats":["text"],"eventContract":null,"trellageEventContract":null,"sessionId":"none","resume":false,"resumeWithPrompt":false,"questionToolControl":"hard-deny","changedFiles":"none","usage":false,"cost":false,"modelOverride":true,"effortOverride":false,"testedHarnessVersion":"1.0.0"},"locked":true,"herdrCompatibility":{"status":"untested"}}]}
+{"schemaVersion":2,"profiles":[{"name":"sandbox-fixture","description":"Sandbox fixture","guide":{"schemaVersion":1,"capabilities":["fixture-delivery"],"bestFor":["Fixture delivery"],"avoidFor":["Unrelated fixture work"],"prerequisites":[],"workflows":[{"id":"deliver","description":"Deliver fixture work","examples":["Build the fixture","Test the fixture","Review the fixture"],"promptTemplate":"{{intent}}"}]},"path":"/fixture/profiles/sandbox-fixture/profile.toml","supportedPlatforms":["linux/arm64"],"harness":{"kind":"codex","version":"latest","model":"gpt-5.6-sol"},"resolutionPolicy":"floating","locallyResolved":true,"releaseLockAvailable":true,"skillBundles":["sandbox-common"],"skillsMode":"floating","finalDigestLocked":false,"skills":[],"plugins":[],"mcps":[],"sandbox":true,"headless":{"schemaVersion":1,"prompt":true,"outputFormats":["text"],"eventContract":null,"trellageEventContract":null,"sessionId":"none","resume":false,"resumeWithPrompt":false,"questionToolControl":"hard-deny","changedFiles":"none","usage":false,"cost":false,"modelOverride":true,"effortOverride":false,"testedHarnessVersion":"1.0.0"},"locked":true,"herdrCompatibility":{"status":"untested"}}]}
 JSON
 EOF
 chmod 0755 "$fixture_bin/trellage"

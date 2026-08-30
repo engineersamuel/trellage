@@ -12,14 +12,17 @@
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are pure and exported so they can be unit tested without rendering Ink.
  */
-import React, { useEffect, useReducer, useState } from "react"
-import { Box, Text, useApp, useInput, useStdout, type Key } from "ink"
+import React, { useEffect, useReducer, useRef, useState } from "react"
+import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
+import stringWidth from "string-width"
 
 import { profileGuideIdentityKey, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
   applyWorkflowPromptTemplate,
+  guideIntentMaximumLength,
   guideTargetTool,
+  GuideLongPromptVariant,
   literalGuideMatch,
   publicGuideLaunchCommand,
   runGuideMatch,
@@ -46,6 +49,7 @@ import {
   type GitInspectionReady,
   type HerdrContext,
   type HerdrEnvironment,
+  type HerdrPromptDeliveryMode,
   type HerdrSplitDirection,
   type PromptHandlingMode,
   type SelectedProfile,
@@ -59,16 +63,21 @@ import { checkSelectedProfileReadiness, ProfileReadinessKind, type ProfileReadin
 
 type Triple<T> = readonly [T, T, T]
 
-const intentMaxLength = 4000
 const feedbackMaxLength = 2000
 const branchMaxLength = 200
 /** Mirrors guide-provider.ts's `validateGenerateCandidate` inline 8000-character prompt bound. */
 const promptMaxLength = 8000
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u
+const pastedControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu
 
 /** True when appending `addition` to `current` would stay within `maxLength`. Shared by every bounded text editor. */
 export const isWithinTextBound = (current: string, addition: string, maxLength: number): boolean =>
   current.length + addition.length <= maxLength
+
+export const boundedPastedText = (current: string, pasted: string, maximum: number): string => {
+  const normalized = pasted.replace(/\r\n?/gu, "\n").replace(pastedControlCharacters, "")
+  return normalized.slice(0, Math.max(0, maximum - current.length))
+}
 
 /** Surfaces a safe, non-leaky message for any thrown value. Never rethrows raw non-Error values. */
 export const describeGuideUiError = (error: unknown): string =>
@@ -107,6 +116,7 @@ export enum GuideUiStage {
   Matching = "matching",
   MatchFailed = "match-failed",
   Recommendations = "recommendations",
+  PromptReview = "prompt-review",
   Generating = "generating",
   GenerateFailed = "generate-failed",
   Candidates = "candidates",
@@ -159,6 +169,7 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.Matching]: GuideWizardStep.Profile,
   [GuideUiStage.MatchFailed]: GuideWizardStep.Profile,
   [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
+  [GuideUiStage.PromptReview]: GuideWizardStep.Profile,
   [GuideUiStage.Generating]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.GenerateFailed]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.Candidates]: GuideWizardStep.PromptCandidates,
@@ -215,6 +226,8 @@ export interface GuideUiState {
   readonly worktreeBranch: string | undefined
   readonly worktreeInspection: GitInspectionReady | WorktreeCollisionResult | undefined
   readonly worktreeConfirmations: number
+  readonly promptReviewReturnStage: GuideUiStage.Matching | GuideUiStage.MatchFailed | GuideUiStage.Recommendations | undefined
+  readonly promptReviewEditing: boolean
 }
 
 const emptyState: GuideUiState = {
@@ -239,9 +252,11 @@ const emptyState: GuideUiState = {
   worktreeBranch: undefined,
   worktreeInspection: undefined,
   worktreeConfirmations: 0,
+  promptReviewReturnStage: undefined,
+  promptReviewEditing: false,
 }
 
-/** Builds the initial state: goes straight to `Matching` when a non-empty `initialIntent` is supplied, otherwise `Intent`. */
+/** Builds initial state and starts matching immediately when a supplied intent is present. */
 export const createInitialGuideUiState = (initialIntent?: string): GuideUiState => {
   const trimmed = initialIntent?.trim()
   if (trimmed !== undefined && trimmed.length > 0) {
@@ -285,6 +300,12 @@ export enum GuideUiActionType {
   MatchLiteralFailed = "match/literal-failed",
   RecommendationsMove = "recommendations/move",
   RecommendationsConfirm = "recommendations/confirm",
+  PromptReviewOpen = "prompt-review/open",
+  PromptReviewEdit = "prompt-review/edit",
+  PromptReviewChange = "prompt-review/change",
+  PromptReviewBackspace = "prompt-review/backspace",
+  PromptReviewSubmit = "prompt-review/submit",
+  PromptReviewBack = "prompt-review/back",
   GenerateGuideLoaded = "generate/guide-loaded",
   GenerateProgress = "generate/progress",
   GenerateRetry = "generate/retry",
@@ -340,6 +361,12 @@ export type GuideUiAction =
       readonly selectedProfile: SelectedProfile
       readonly recommendation?: GuideRecommendation
     }
+  | { readonly type: GuideUiActionType.PromptReviewOpen }
+  | { readonly type: GuideUiActionType.PromptReviewEdit; readonly editing: boolean }
+  | { readonly type: GuideUiActionType.PromptReviewChange; readonly text: string }
+  | { readonly type: GuideUiActionType.PromptReviewBackspace }
+  | { readonly type: GuideUiActionType.PromptReviewSubmit }
+  | { readonly type: GuideUiActionType.PromptReviewBack }
   | { readonly type: GuideUiActionType.GenerateGuideLoaded; readonly guideDocument: SelectedGuideDocument }
   | { readonly type: GuideUiActionType.GenerateProgress; readonly phase: GuideGenerationPhase }
   | { readonly type: GuideUiActionType.GenerateRetry }
@@ -429,6 +456,77 @@ const recommendationsState = (
   usedLiteralFallback,
   errorMessage: undefined,
 })
+
+const promptReviewSourceStage = (
+  stage: GuideUiStage,
+): GuideUiStage.Matching | GuideUiStage.MatchFailed | GuideUiStage.Recommendations | undefined => {
+  if (stage === GuideUiStage.Matching || stage === GuideUiStage.MatchFailed || stage === GuideUiStage.Recommendations) {
+    return stage
+  }
+  return undefined
+}
+
+const openPromptReview = (state: GuideUiState): GuideUiState => {
+  const returnStage = promptReviewSourceStage(state.stage)
+  return returnStage === undefined || state.intent === undefined
+    ? state
+    : {
+        ...state,
+        stage: GuideUiStage.PromptReview,
+        textDraft: state.intent,
+        promptReviewReturnStage: returnStage,
+        promptReviewEditing: false,
+      }
+}
+
+const closePromptReview = (state: GuideUiState): GuideUiState =>
+  state.promptReviewEditing
+    ? { ...state, promptReviewEditing: false, textDraft: state.intent ?? state.textDraft }
+    : {
+        ...state,
+        stage: state.promptReviewReturnStage ?? GuideUiStage.Matching,
+        textDraft: "",
+        promptReviewReturnStage: undefined,
+      }
+
+const submitPromptReview = (state: GuideUiState): GuideUiState => {
+  const intent = state.textDraft.trim()
+  if (intent.length === 0) return state
+  if (intent === state.intent) {
+    return {
+      ...state,
+      stage: state.promptReviewReturnStage ?? GuideUiStage.Matching,
+      textDraft: "",
+      promptReviewReturnStage: undefined,
+      promptReviewEditing: false,
+    }
+  }
+  return {
+    ...emptyState,
+    stage: GuideUiStage.Matching,
+    intent,
+    matchPhase: GuideMatchPhase.LoadingProfiles,
+  }
+}
+
+const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  if (action.type === GuideUiActionType.PromptReviewOpen) return openPromptReview(state)
+  if (state.stage !== GuideUiStage.PromptReview) return state
+  switch (action.type) {
+    case GuideUiActionType.PromptReviewEdit:
+      return { ...state, promptReviewEditing: action.editing }
+    case GuideUiActionType.PromptReviewChange:
+      return state.promptReviewEditing ? { ...state, textDraft: action.text } : state
+    case GuideUiActionType.PromptReviewBackspace:
+      return state.promptReviewEditing ? { ...state, textDraft: state.textDraft.slice(0, -1) } : state
+    case GuideUiActionType.PromptReviewBack:
+      return closePromptReview(state)
+    case GuideUiActionType.PromptReviewSubmit:
+      return submitPromptReview(state)
+    default:
+      return state
+  }
+}
 
 const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
@@ -860,6 +958,12 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.MatchLiteralFailed]: reduceMatch,
   [GuideUiActionType.RecommendationsMove]: reduceRecommendations,
   [GuideUiActionType.RecommendationsConfirm]: reduceRecommendations,
+  [GuideUiActionType.PromptReviewOpen]: reducePromptReview,
+  [GuideUiActionType.PromptReviewEdit]: reducePromptReview,
+  [GuideUiActionType.PromptReviewChange]: reducePromptReview,
+  [GuideUiActionType.PromptReviewBackspace]: reducePromptReview,
+  [GuideUiActionType.PromptReviewSubmit]: reducePromptReview,
+  [GuideUiActionType.PromptReviewBack]: reducePromptReview,
   [GuideUiActionType.GenerateGuideLoaded]: reduceGenerate,
   [GuideUiActionType.GenerateProgress]: reduceGenerateProgress,
   [GuideUiActionType.GenerateRetry]: reduceGenerate,
@@ -1221,6 +1325,7 @@ export interface GuideUiCurrentHerdrWorkspaceResult {
   readonly profile: SelectedProfile
   readonly command: CommandSpec
   readonly prompt: string
+  readonly promptDelivery: HerdrPromptDeliveryMode
   readonly cwd: string
   readonly callerPaneId: string
   readonly direction: HerdrSplitDirection
@@ -1231,6 +1336,7 @@ export interface GuideUiNewHerdrWorktreeResult {
   readonly profile: SelectedProfile
   readonly command: CommandSpec
   readonly prompt: string
+  readonly promptDelivery: HerdrPromptDeliveryMode
   readonly primaryCheckoutPath: string
   readonly branch: string
   readonly baseRef: string
@@ -1241,6 +1347,7 @@ export interface GuideUiExistingHerdrWorktreeResult {
   readonly profile: SelectedProfile
   readonly command: CommandSpec
   readonly prompt: string
+  readonly promptDelivery: HerdrPromptDeliveryMode
   readonly primaryCheckoutPath: string
   readonly path: string
 }
@@ -1256,6 +1363,38 @@ export type GuideUiResult =
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
 export const buildPrintResult = (prompt: string): GuideUiPrintResult => ({ action: "print", prompt })
+
+const buildHerdrLaunch = (
+  profile: SelectedProfile,
+  prompt: string,
+): { readonly command: CommandSpec; readonly promptDelivery: HerdrPromptDeliveryMode } => {
+  if (profile.surface === "native" && profile.launcher === "cpx") {
+    // Copilot retains -i across its folder-trust gate; a later Herdr prompt can be consumed by that gate instead.
+    const baseCommand = buildGuideLaunchCommand(profile).command
+    return {
+      command: {
+        executable: baseCommand.executable,
+        args: [...baseCommand.args, "-i", prompt],
+      },
+      promptDelivery: "command",
+    }
+  }
+  if (profile.surface === "native" && profile.launcher === "cdx") {
+    // Codex retains its positional prompt while the user reviews trust for new or changed hooks.
+    const baseCommand = buildGuideLaunchCommand(profile).command
+    return {
+      command: {
+        executable: baseCommand.executable,
+        args: [...baseCommand.args, prompt],
+      },
+      promptDelivery: "command",
+    }
+  }
+  return {
+    command: buildGuideLaunchCommand(profile).command,
+    promptDelivery: "agent",
+  }
+}
 
 export const buildCurrentTerminalResult = (
   profile: SelectedProfile,
@@ -1280,12 +1419,13 @@ export const buildCurrentHerdrWorkspaceResult = (
   herdrContext: HerdrContext,
   direction: HerdrSplitDirection = "right",
 ): GuideUiCurrentHerdrWorkspaceResult => {
-  const built = buildGuideLaunchCommand(profile)
+  const built = buildHerdrLaunch(profile, prompt)
   return {
     action: "current-herdr-workspace",
     profile,
     command: built.command,
     prompt,
+    promptDelivery: built.promptDelivery,
     cwd,
     callerPaneId: herdrContext.paneId,
     direction,
@@ -1299,12 +1439,13 @@ export const buildNewHerdrWorktreeResult = (
   branch: string,
   baseRef: string,
 ): GuideUiNewHerdrWorktreeResult => {
-  const built = buildGuideLaunchCommand(profile)
+  const built = buildHerdrLaunch(profile, prompt)
   return {
     action: "herdr-worktree-create",
     profile,
     command: built.command,
     prompt,
+    promptDelivery: built.promptDelivery,
     primaryCheckoutPath,
     branch,
     baseRef,
@@ -1317,8 +1458,16 @@ export const buildExistingHerdrWorktreeResult = (
   primaryCheckoutPath: string,
   path: string,
 ): GuideUiExistingHerdrWorktreeResult => {
-  const built = buildGuideLaunchCommand(profile)
-  return { action: "herdr-worktree-open", profile, command: built.command, prompt, primaryCheckoutPath, path }
+  const built = buildHerdrLaunch(profile, prompt)
+  return {
+    action: "herdr-worktree-open",
+    profile,
+    command: built.command,
+    prompt,
+    promptDelivery: built.promptDelivery,
+    primaryCheckoutPath,
+    path,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1486,7 @@ export interface GuideUiProps {
   /** Whether a Herdr availability probe (e.g. `probeHerdrAvailability`) succeeded, checked before rendering. */
   readonly herdrAvailabilityProbe: boolean
   readonly initialIntent?: string
+  readonly uiVariant?: GuideLongPromptVariant
 }
 
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
@@ -1426,6 +1576,241 @@ export const summarizeGenerationIntent = (intent: string, maximumLength = 100): 
   return normalized.length <= maximumLength ? normalized : `${normalized.slice(0, maximumLength - 1)}…`
 }
 
+const guideTextSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
+
+const wrapGuideTextLine = (sourceLine: string, lineWidth: number): ReadonlyArray<string> => {
+  if (sourceLine.length === 0) return [""]
+  const lines: Array<string> = []
+  let line = ""
+  let displayWidth = 0
+  let continuation = false
+  for (const { segment } of guideTextSegmenter.segment(sourceLine)) {
+    const segmentWidth = stringWidth(segment)
+    if (line.length > 0 && displayWidth + segmentWidth > lineWidth) {
+      lines.push(line)
+      line = ""
+      displayWidth = 0
+      continuation = true
+    }
+    if (continuation && line.length === 0 && segment === " ") continue
+    line += segment
+    displayWidth += segmentWidth
+    continuation = false
+  }
+  if (line.length > 0) lines.push(line)
+  return lines
+}
+
+export const wrapGuideText = (value: string, width: number): ReadonlyArray<string> => {
+  const lineWidth = Math.max(1, width)
+  return value
+    .replaceAll("\t", "    ")
+    .split("\n")
+    .flatMap((sourceLine) => wrapGuideTextLine(sourceLine, lineWidth))
+}
+
+export interface GuideTextViewport {
+  readonly text: string
+  readonly lines: ReadonlyArray<string>
+  readonly startLine: number
+  readonly maximumStartLine: number
+  readonly atStart: boolean
+  readonly atEnd: boolean
+}
+
+export const guideTextViewport = (
+  value: string,
+  width: number,
+  height: number,
+  requestedStartLine: number,
+): GuideTextViewport => {
+  const lines = wrapGuideText(value, width)
+  const viewportHeight = Math.max(1, height)
+  const maximumStartLine = Math.max(0, lines.length - viewportHeight)
+  const startLine = Math.min(maximumStartLine, Math.max(0, requestedStartLine))
+  const visibleLines = lines.slice(startLine, startLine + viewportHeight)
+  return {
+    text: visibleLines.join("\n"),
+    lines: visibleLines,
+    startLine,
+    maximumStartLine,
+    atStart: startLine === 0,
+    atEnd: startLine === maximumStartLine,
+  }
+}
+
+const ScrollableTextViewport = ({
+  value,
+  width,
+  height,
+  startAtEnd,
+  cursor = false,
+  followChanges = false,
+  resetKey,
+}: {
+  readonly value: string
+  readonly width: number
+  readonly height: number
+  readonly startAtEnd: boolean
+  readonly cursor?: boolean
+  readonly followChanges?: boolean
+  readonly resetKey?: string
+}) => {
+  const [requestedStartLine, setRequestedStartLine] = useState(startAtEnd ? Number.MAX_SAFE_INTEGER : 0)
+  const previousValue = useRef(value)
+  const viewport = guideTextViewport(value, cursor ? Math.max(1, width - 1) : width, height, requestedStartLine)
+  const pageSize = Math.max(1, height - 1)
+
+  useEffect(() => {
+    setRequestedStartLine(startAtEnd ? Number.MAX_SAFE_INTEGER : 0)
+  }, [resetKey, startAtEnd])
+
+  useEffect(() => {
+    if (followChanges && previousValue.current !== value) setRequestedStartLine(Number.MAX_SAFE_INTEGER)
+    previousValue.current = value
+  }, [followChanges, value])
+
+  useInput((_input, key) => {
+    if (key.pageUp) setRequestedStartLine(Math.max(0, viewport.startLine - pageSize))
+    else if (key.pageDown)
+      setRequestedStartLine(Math.min(viewport.maximumStartLine, viewport.startLine + pageSize))
+  })
+
+  return (
+    <Box flexDirection="column" height={Math.max(1, height)} overflowY="hidden">
+      {viewport.lines.map((line, index) => {
+        const showCursor = cursor && viewport.atEnd && index === viewport.lines.length - 1
+        return (
+          <Text key={`${viewport.startLine + index}:${line}`} wrap="truncate-end">
+            {line}
+            {showCursor ? <Text color="yellow">█</Text> : null}
+          </Text>
+        )
+      })}
+    </Box>
+  )
+}
+
+type MarkdownDisplayKind = "body" | "heading" | "list" | "quote" | "code" | "rule"
+
+export interface MarkdownDisplayLine {
+  readonly text: string
+  readonly kind: MarkdownDisplayKind
+}
+
+const classifyMarkdownLine = (
+  source: string,
+  inCode: boolean,
+): { readonly text: string; readonly kind: MarkdownDisplayKind; readonly inCode: boolean } => {
+  if (/^\s*```/u.test(source)) return { text: source.trim(), kind: "code", inCode: !inCode }
+  if (inCode) return { text: source, kind: "code", inCode }
+  const heading = /^\s*#{1,6}\s+(.+)$/u.exec(source)
+  if (heading?.[1] !== undefined) return { text: heading[1], kind: "heading", inCode }
+  const listItem = /^\s*[-*+]\s+(.+)$/u.exec(source)
+  if (listItem?.[1] !== undefined) return { text: `• ${listItem[1]}`, kind: "list", inCode }
+  const quote = /^\s*>\s?(.*)$/u.exec(source)
+  if (quote?.[1] !== undefined) return { text: `│ ${quote[1]}`, kind: "quote", inCode }
+  if (/^\s*(?:---+|\*\*\*+|___+)\s*$/u.test(source)) return { text: "─".repeat(24), kind: "rule", inCode }
+  return { text: source, kind: "body", inCode }
+}
+
+export const markdownPromptLines = (value: string, width: number): ReadonlyArray<MarkdownDisplayLine> => {
+  const lines: Array<MarkdownDisplayLine> = []
+  let inCode = false
+  for (const source of value.replaceAll("\t", "    ").split("\n")) {
+    const classified = classifyMarkdownLine(source, inCode)
+    inCode = classified.inCode
+    const wrapped = wrapGuideTextLine(classified.text, Math.max(1, width))
+    for (const text of wrapped) lines.push({ text, kind: classified.kind })
+  }
+  return lines
+}
+
+const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
+  switch (line.kind) {
+    case "heading":
+      return (
+        <Text bold color="cyan" wrap="truncate-end">
+          {line.text}
+        </Text>
+      )
+    case "list":
+      return (
+        <Text color="green" wrap="truncate-end">
+          {line.text}
+        </Text>
+      )
+    case "quote":
+      return (
+        <Text italic dimColor wrap="truncate-end">
+          {line.text}
+        </Text>
+      )
+    case "code":
+      return (
+        <Text color="yellow" wrap="truncate-end">
+          {line.text}
+        </Text>
+      )
+    case "rule":
+      return <Text dimColor>{line.text}</Text>
+    case "body":
+      return <Text wrap="truncate-end">{line.text}</Text>
+  }
+}
+
+const MarkdownTextViewport = ({
+  value,
+  width,
+  height,
+}: {
+  readonly value: string
+  readonly width: number
+  readonly height: number
+}) => {
+  const [requestedStartLine, setRequestedStartLine] = useState(0)
+  const lines = markdownPromptLines(value, width)
+  const viewportHeight = Math.max(1, height)
+  const maximumStartLine = Math.max(0, lines.length - viewportHeight)
+  const startLine = Math.min(maximumStartLine, requestedStartLine)
+  const pageSize = Math.max(1, viewportHeight - 1)
+  useInput((_input, key) => {
+    if (key.pageUp) setRequestedStartLine(Math.max(0, startLine - pageSize))
+    else if (key.pageDown) setRequestedStartLine(Math.min(maximumStartLine, startLine + pageSize))
+  })
+  return (
+    <Box flexDirection="column" height={viewportHeight} overflowY="hidden">
+      {lines.slice(startLine, startLine + viewportHeight).map((line, index) => (
+        <MarkdownLine key={`${startLine + index}:${line.kind}:${line.text}`} line={line} />
+      ))}
+    </Box>
+  )
+}
+
+const PromptDocumentViewport = ({
+  textDraft,
+  width,
+  height,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly width: number
+  readonly height: number
+  readonly editing: boolean
+}) =>
+  editing ? (
+    <ScrollableTextViewport
+      value={textDraft}
+      width={width}
+      height={height}
+      startAtEnd={false}
+      cursor
+      followChanges
+    />
+  ) : (
+    <MarkdownTextViewport value={textDraft} width={width} height={height} />
+  )
+
 const ProgressPipeline = ({
   title,
   intent,
@@ -1480,13 +1865,16 @@ const MatchProgress = ({
   readonly model: string
   readonly effort: GuideEffort
 }) => (
-  <ProgressPipeline
-    title="Finding the best profiles"
-    intent={intent}
-    items={matchProgressItems(catalog.native.length + catalog.sandbox.length)}
-    activePhase={phase}
-    detail={`Copilot model: ${model} · Effort: ${effort}`}
-  />
+  <Box flexDirection="column">
+    <ProgressPipeline
+      title="Finding the best profiles"
+      intent={intent}
+      items={matchProgressItems(catalog.native.length + catalog.sandbox.length)}
+      activePhase={phase}
+      detail={`Copilot model: ${model} · Effort: ${effort}`}
+    />
+    <Text dimColor>p view prompt · q cancel</Text>
+  </Box>
 )
 
 const GenerationProgress = ({
@@ -1540,18 +1928,271 @@ const WizardBreadcrumbs = ({ activeStep }: { readonly activeStep: GuideWizardSte
   )
 }
 
-const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => (
-  <Box flexDirection="column" paddingX={1}>
+interface PromptReviewMetrics {
+  readonly characters: number
+  readonly words: number
+  readonly sourceLines: number
+  readonly headings: ReadonlyArray<string>
+}
+
+export const promptReviewMetrics = (value: string): PromptReviewMetrics => ({
+  characters: value.length,
+  words: value.trim().length === 0 ? 0 : value.trim().split(/\s+/u).length,
+  sourceLines: value.length === 0 ? 0 : value.split("\n").length,
+  headings: value
+    .split("\n")
+    .filter((line) => /^#{1,6}\s+\S/u.test(line))
+    .map((line) => line.replace(/^#{1,6}\s+/u, "").trim())
+    .slice(0, 8),
+})
+
+const PromptReviewHeader = ({
+  variant,
+  metrics,
+  editing,
+}: {
+  readonly variant: GuideLongPromptVariant
+  readonly metrics: PromptReviewMetrics
+  readonly editing: boolean
+}) => (
+  <Box justifyContent="space-between">
     <Text bold color="cyan">
-      What do you want to do?
+      Task prompt · {variant}
     </Text>
-    <Text>
-      {textDraft}
-      <Text color="yellow">█</Text>
+    <Text dimColor>
+      {editing ? "Raw edit" : "Markdown preview"} · {metrics.characters.toLocaleString("en")} chars ·{" "}
+      {metrics.words.toLocaleString("en")} words
     </Text>
-    <Text dimColor>Type your intent · ↵ submit · Ctrl-C cancel</Text>
   </Box>
 )
+
+const PromptReviewFooter = ({ editing }: { readonly editing: boolean }) => (
+  <Text dimColor wrap="truncate-end">
+    {editing
+      ? "Type, paste, or Backspace edit · PgUp/PgDn review · Enter re-match · Esc discard edits"
+      : "PgUp/PgDn review · e edit · Enter or Esc return"}
+  </Text>
+)
+
+const PagerPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly rows: number
+  readonly columns: number
+  readonly editing: boolean
+}) => {
+  const metrics = promptReviewMetrics(textDraft)
+  return (
+    <Box flexDirection="column" height={Math.max(4, rows - 1)} overflowY="hidden" paddingX={1}>
+      <PromptReviewHeader variant={GuideLongPromptVariant.Pager} metrics={metrics} editing={editing} />
+      <Box borderStyle="single" borderColor="gray" paddingX={1} flexGrow={1}>
+        <PromptDocumentViewport
+          textDraft={textDraft}
+          width={Math.max(1, columns - 6)}
+          height={Math.max(1, rows - 5)}
+          editing={editing}
+        />
+      </Box>
+      <PromptReviewFooter editing={editing} />
+    </Box>
+  )
+}
+
+const SplitPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly rows: number
+  readonly columns: number
+  readonly editing: boolean
+}) => {
+  const metrics = promptReviewMetrics(textDraft)
+  const railWidth = Math.min(28, Math.max(20, Math.floor(columns * 0.28)))
+  if (columns < 70) return <PagerPromptReview textDraft={textDraft} rows={rows} columns={columns} editing={editing} />
+  return (
+    <Box flexDirection="column" height={Math.max(4, rows - 1)} overflowY="hidden" paddingX={1}>
+      <PromptReviewHeader variant={GuideLongPromptVariant.Split} metrics={metrics} editing={editing} />
+      <Box flexGrow={1}>
+        <Box flexDirection="column" width={railWidth} borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Text bold>DOCUMENT MAP</Text>
+          <Text dimColor>{metrics.sourceLines.toLocaleString("en")} source lines</Text>
+          <Box flexDirection="column" marginTop={1}>
+            {(metrics.headings.length === 0 ? ["No Markdown headings"] : metrics.headings).map((heading, index) => (
+              <Text key={`${index}:${heading}`} wrap="truncate-end" dimColor={metrics.headings.length === 0}>
+                {metrics.headings.length === 0 ? heading : `${index + 1}. ${heading}`}
+              </Text>
+            ))}
+          </Box>
+        </Box>
+        <Box flexDirection="column" flexGrow={1} borderStyle="single" borderColor="gray" paddingX={1}>
+          <PromptDocumentViewport
+            textDraft={textDraft}
+            width={Math.max(1, columns - railWidth - 8)}
+            height={Math.max(1, rows - 5)}
+            editing={editing}
+          />
+        </Box>
+      </Box>
+      <PromptReviewFooter editing={editing} />
+    </Box>
+  )
+}
+
+const FocusPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly rows: number
+  readonly columns: number
+  readonly editing: boolean
+}) => {
+  const metrics = promptReviewMetrics(textDraft)
+  const readingWidth = Math.max(1, Math.min(76, columns - 4))
+  return (
+    <Box flexDirection="column" height={Math.max(4, rows - 1)} overflowY="hidden" alignItems="center">
+      <Box width={readingWidth} flexDirection="column">
+        <PromptReviewHeader variant={GuideLongPromptVariant.Focus} metrics={metrics} editing={editing} />
+        <Box borderStyle="round" borderColor="cyan" paddingX={2} flexGrow={1}>
+          <PromptDocumentViewport
+            textDraft={textDraft}
+            width={Math.max(1, readingWidth - 6)}
+            height={Math.max(1, rows - 5)}
+            editing={editing}
+          />
+        </Box>
+        <PromptReviewFooter editing={editing} />
+      </Box>
+    </Box>
+  )
+}
+
+const promptEdgePreview = (value: string, fromEnd: boolean): string => {
+  const lines = value.split("\n").filter((line) => line.trim().length > 0)
+  const line = fromEnd ? lines.at(-1) : lines[0]
+  return line === undefined ? "(empty)" : summarizeGenerationIntent(line, 120)
+}
+
+const BookendsPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly rows: number
+  readonly columns: number
+  readonly editing: boolean
+}) => {
+  const metrics = promptReviewMetrics(textDraft)
+  return (
+    <Box flexDirection="column" height={Math.max(6, rows - 1)} overflowY="hidden" paddingX={1}>
+      <PromptReviewHeader variant={GuideLongPromptVariant.Bookends} metrics={metrics} editing={editing} />
+      <Text dimColor wrap="truncate-end">
+        START · {promptEdgePreview(textDraft, false)}
+      </Text>
+      <Box borderStyle="single" borderColor="gray" paddingX={1} flexGrow={1}>
+        <PromptDocumentViewport
+          textDraft={textDraft}
+          width={Math.max(1, columns - 6)}
+          height={Math.max(1, rows - 7)}
+          editing={editing}
+        />
+      </Box>
+      <Text dimColor wrap="truncate-end">
+        END · {promptEdgePreview(textDraft, true)}
+      </Text>
+      <PromptReviewFooter editing={editing} />
+    </Box>
+  )
+}
+
+const DashboardPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly rows: number
+  readonly columns: number
+  readonly editing: boolean
+}) => {
+  const metrics = promptReviewMetrics(textDraft)
+  return (
+    <Box flexDirection="column" height={Math.max(6, rows - 1)} overflowY="hidden" paddingX={1}>
+      <PromptReviewHeader variant={GuideLongPromptVariant.Dashboard} metrics={metrics} editing={editing} />
+      <Box justifyContent="space-between" borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Text wrap="truncate-end">Characters {metrics.characters.toLocaleString("en")}</Text>
+        <Text wrap="truncate-end">Words {metrics.words.toLocaleString("en")}</Text>
+        <Text wrap="truncate-end">Lines {metrics.sourceLines.toLocaleString("en")}</Text>
+        <Text wrap="truncate-end">Headings {metrics.headings.length}</Text>
+      </Box>
+      <Box borderStyle="single" borderColor="gray" paddingX={1} flexGrow={1}>
+        <PromptDocumentViewport
+          textDraft={textDraft}
+          width={Math.max(1, columns - 6)}
+          height={Math.max(1, rows - 8)}
+          editing={editing}
+        />
+      </Box>
+      <PromptReviewFooter editing={editing} />
+    </Box>
+  )
+}
+
+const PromptReview = ({
+  textDraft,
+  variant,
+  editing,
+}: {
+  readonly textDraft: string
+  readonly variant: GuideLongPromptVariant
+  readonly editing: boolean
+}) => {
+  const { rows, columns } = useWindowSize()
+  const props = { textDraft, rows, columns, editing }
+  switch (variant) {
+    case GuideLongPromptVariant.Pager:
+      return <PagerPromptReview {...props} />
+    case GuideLongPromptVariant.Split:
+      return <SplitPromptReview {...props} />
+    case GuideLongPromptVariant.Focus:
+      return <FocusPromptReview {...props} />
+    case GuideLongPromptVariant.Bookends:
+      return <BookendsPromptReview {...props} />
+    case GuideLongPromptVariant.Dashboard:
+      return <DashboardPromptReview {...props} />
+  }
+}
+
+const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
+  const { rows, columns } = useWindowSize()
+  return (
+    <Box flexDirection="column" height={Math.max(3, rows - 1)} overflowY="hidden" paddingX={1}>
+      <Text bold color="cyan">
+        What do you want to do?
+      </Text>
+      <ScrollableTextViewport
+        value={textDraft}
+        width={Math.max(1, columns - 2)}
+        height={Math.max(1, rows - 3)}
+        startAtEnd
+        cursor
+      />
+      <Text dimColor>Type your intent · PgUp/PgDn scroll · ↵ submit · Ctrl-C cancel</Text>
+    </Box>
+  )
+}
 
 const ErrorPanel = ({
   title,
@@ -1709,13 +2350,15 @@ const RecommendationsView = ({
   readonly usedLiteralFallback: boolean
 }) => {
   const recommendation = recommendationAt(recommendations, index)
+  const metrics = promptReviewMetrics(intent)
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color="cyan">
-        Recommendations for: {intent}
+        Profile recommendations
       </Text>
       <Text dimColor>
-        Model: {model} · Effort: {effort}
+        Prompt: {metrics.characters.toLocaleString("en")} chars · {metrics.words.toLocaleString("en")} words · Model:{" "}
+        {model} · Effort: {effort}
       </Text>
       {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : null}
       <PinnedLenses lenses={pinnedLenses} />
@@ -1723,7 +2366,9 @@ const RecommendationsView = ({
         <RecommendationRail recommendations={recommendations} index={index} />
         <RecommendationDetail recommendation={recommendation} />
       </Box>
-      <Text dimColor>↑/↓ or j/k select · ↵ generate · c council · r research · h HVE RPI · q cancel</Text>
+      <Text dimColor>
+        ↑/↓ or j/k select · ↵ generate · p view prompt · c council · r research · h HVE RPI · q cancel
+      </Text>
     </Box>
   )
 }
@@ -1776,25 +2421,28 @@ const CandidateRail = ({
 const CandidateDetail = ({
   candidate,
   height,
+  width,
 }: {
   readonly candidate: GuideGenerateCandidate
   readonly height: number
-}) => (
-  <Box flexDirection="column" flexGrow={1} height={height} overflowY="hidden" paddingLeft={2}>
-    <Text bold color="cyan" wrap="truncate-end">
-      {candidate.title}
-    </Text>
-    <Text dimColor wrap="wrap">
-      {candidate.notes}
-    </Text>
-    <Box flexDirection="column" marginTop={1}>
-      <Text bold color="green">
-        PROMPT PREVIEW
+  readonly width: number
+}) => {
+  const detail = `${candidate.notes}\n\nPROMPT PREVIEW\n${candidate.prompt}`
+  return (
+    <Box flexDirection="column" flexGrow={1} height={height} overflowY="hidden" paddingLeft={2}>
+      <Text bold color="cyan" wrap="truncate-end">
+        {candidate.title}
       </Text>
-      <Text wrap="wrap">{candidate.prompt}</Text>
+      <ScrollableTextViewport
+        value={detail}
+        width={Math.max(1, width - 2)}
+        height={Math.max(1, height - 1)}
+        startAtEnd={false}
+        resetKey={candidate.title}
+      />
     </Box>
-  </Box>
-)
+  )
+}
 
 const CandidatesView = ({
   candidates,
@@ -1807,9 +2455,9 @@ const CandidatesView = ({
   readonly usedTemplateFallback: boolean
   readonly command: PublicGuideCommand
 }) => {
-  const { stdout } = useStdout()
-  const paneHeight = candidatePaneHeight(stdout.rows ?? 24)
-  const railWidth = candidateRailWidth(stdout.columns ?? 100)
+  const { rows, columns: terminalColumns } = useWindowSize()
+  const paneHeight = candidatePaneHeight(rows)
+  const railWidth = candidateRailWidth(terminalColumns)
   const candidate = tripleAt(candidates, index)
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -1819,14 +2467,19 @@ const CandidatesView = ({
       {usedTemplateFallback ? <Text color="yellow">Deterministic template fallback (no model call).</Text> : null}
       <Box marginTop={1}>
         <CandidateRail candidates={candidates} index={index} width={railWidth} height={paneHeight} />
-        <CandidateDetail candidate={candidate} height={paneHeight} />
+        <CandidateDetail
+          candidate={candidate}
+          height={paneHeight}
+          width={Math.max(1, terminalColumns - railWidth - 2)}
+        />
       </Box>
       <Text dimColor wrap="truncate-end">
         Command: {compactCommandPreview(command.preview)}
         {command.promptHandling === "manual-paste" ? " (manual paste required)" : ""}
       </Text>
-      <Text dimColor>
-        ↑/↓ or j/k select · ↵ continue · b/Esc back · r refine · e edit · c print full prompt · q cancel
+      <Text dimColor wrap="truncate-end">
+        ↑/↓ or j/k select · PgUp/PgDn scroll · ↵ continue · b/Esc back · r refine · e edit · c print full prompt · q
+        cancel
       </Text>
     </Box>
   )
@@ -1840,18 +2493,26 @@ const TextEditor = ({
   readonly title: string
   readonly textDraft: string
   readonly keys: string
-}) => (
-  <Box flexDirection="column" paddingX={1}>
-    <Text bold color="cyan">
-      {title}
-    </Text>
-    <Text wrap="wrap">
-      {textDraft}
-      <Text color="yellow">█</Text>
-    </Text>
-    <Text dimColor>{keys}</Text>
-  </Box>
-)
+}) => {
+  const { rows, columns } = useWindowSize()
+  return (
+    <Box flexDirection="column" height={Math.max(3, rows - 3)} overflowY="hidden" paddingX={1}>
+      <Text bold color="cyan">
+        {title}
+      </Text>
+      <ScrollableTextViewport
+        value={textDraft}
+        width={Math.max(1, columns - 2)}
+        height={Math.max(1, rows - 5)}
+        startAtEnd
+        cursor
+      />
+      <Text dimColor>
+        {keys} · PgUp/PgDn scroll
+      </Text>
+    </Box>
+  )
+}
 
 const DestinationView = ({
   options,
@@ -2113,15 +2774,24 @@ type GuideInputHandler = (context: GuideInputContext, input: string, key: Key) =
 
 const handleNoInput: GuideInputHandler = () => undefined
 
+const handleMatchingInput: GuideInputHandler = ({ dispatch, cancel }, input) => {
+  if (input === "p") dispatch({ type: GuideUiActionType.PromptReviewOpen })
+  else if (input === "q") cancel()
+}
+
 const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
   if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
   else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.IntentBackspace })
-  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, intentMaxLength)) {
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, guideIntentMaximumLength)) {
     dispatch({ type: GuideUiActionType.IntentChange, text: state.textDraft + input })
   }
 }
 
 const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input) => {
+  if (input === "p") {
+    dispatch({ type: GuideUiActionType.PromptReviewOpen })
+    return
+  }
   if (input === "r") {
     dispatch({ type: GuideUiActionType.MatchRetry })
     return
@@ -2142,6 +2812,10 @@ const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, can
 }
 
 const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input, key) => {
+  if (input === "p") {
+    dispatch({ type: GuideUiActionType.PromptReviewOpen })
+    return
+  }
   const pinnedLens = pinnedGuideLenses(props.catalog).find(({ key: lensKey }) => lensKey === input)
   if (pinnedLens !== undefined) {
     dispatch({
@@ -2151,6 +2825,7 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
     })
     return
   }
+
   if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
   else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
   else if (key.return && state.recommendations !== undefined) {
@@ -2160,6 +2835,22 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
       selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef),
     })
   } else if (input === "q") cancel()
+}
+
+const handlePromptReviewInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+  if (!state.promptReviewEditing) {
+    if (input === "e") dispatch({ type: GuideUiActionType.PromptReviewEdit, editing: true })
+    else if (key.escape || key.return || input === "p" || input === "b") {
+      dispatch({ type: GuideUiActionType.PromptReviewBack })
+    }
+    return
+  }
+  if (key.escape) dispatch({ type: GuideUiActionType.PromptReviewBack })
+  else if (key.return) dispatch({ type: GuideUiActionType.PromptReviewSubmit })
+  else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.PromptReviewBackspace })
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, guideIntentMaximumLength)) {
+    dispatch({ type: GuideUiActionType.PromptReviewChange, text: state.textDraft + input })
+  }
 }
 
 const handleGenerateFailedInput: GuideInputHandler = ({ state, dispatch, cancel }, input) => {
@@ -2352,9 +3043,10 @@ const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch, complete
 
 const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.Intent]: handleIntentInput,
-  [GuideUiStage.Matching]: handleNoInput,
+  [GuideUiStage.Matching]: handleMatchingInput,
   [GuideUiStage.MatchFailed]: handleMatchFailedInput,
   [GuideUiStage.Recommendations]: handleRecommendationsInput,
+  [GuideUiStage.PromptReview]: handlePromptReviewInput,
   [GuideUiStage.Generating]: handleNoInput,
   [GuideUiStage.GenerateFailed]: handleGenerateFailedInput,
   [GuideUiStage.Candidates]: handleCandidatesInput,
@@ -2377,6 +3069,30 @@ const handleGuideInput = (context: GuideInputContext, input: string, key: Key): 
     return
   }
   inputHandlerByStage[context.state.stage](context, input, key)
+}
+
+const pastedEditorMaximum = (state: GuideUiState): number | undefined => {
+  if (state.stage === GuideUiStage.Intent) return guideIntentMaximumLength
+  if (state.stage === GuideUiStage.PromptReview && state.promptReviewEditing) return guideIntentMaximumLength
+  if (state.stage === GuideUiStage.RefineEditor) return feedbackMaxLength
+  if (state.stage === GuideUiStage.DirectEditor) return promptMaxLength
+  return undefined
+}
+
+const handleGuidePaste = (state: GuideUiState, dispatch: GuideUiDispatch, pasted: string): void => {
+  const maximum = pastedEditorMaximum(state)
+  if (maximum === undefined) return
+  const addition = boundedPastedText(state.textDraft, pasted, maximum)
+  if (addition.length === 0) return
+  dispatch({
+    type:
+      state.stage === GuideUiStage.Intent
+        ? GuideUiActionType.IntentChange
+        : state.stage === GuideUiStage.PromptReview
+          ? GuideUiActionType.PromptReviewChange
+          : GuideUiActionType.EditorChange,
+    text: state.textDraft + addition,
+  })
 }
 
 interface GuideRenderContext {
@@ -2489,9 +3205,16 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
   [GuideUiStage.Matching]: matchingProgress,
   [GuideUiStage.MatchFailed]: ({ state }) => (
-    <ErrorPanel title="Match failed" message={state.errorMessage} keys="r retry · l literal match · q cancel" />
+    <ErrorPanel title="Match failed" message={state.errorMessage} keys="r retry · l literal match · p view prompt · q cancel" />
   ),
   [GuideUiStage.Recommendations]: renderRecommendations,
+  [GuideUiStage.PromptReview]: ({ props, state }) => (
+    <PromptReview
+      textDraft={state.textDraft}
+      variant={props.uiVariant ?? GuideLongPromptVariant.Dashboard}
+      editing={state.promptReviewEditing}
+    />
+  ),
   [GuideUiStage.Generating]: ({ props, state }) =>
     state.selectedRecommendation === undefined || state.intent === undefined ? (
       <Spinner label="Preparing prompt candidates" />
@@ -2580,6 +3303,9 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
     herdrEnabled,
   }
   useInput((input, key) => handleGuideInput(inputContext, input, key))
+  usePaste((pasted) => handleGuidePaste(state, dispatch, pasted), {
+    isActive: pastedEditorMaximum(state) !== undefined,
+  })
 
   const activeWizardStep = wizardStepForStage(state.stage)
   return (

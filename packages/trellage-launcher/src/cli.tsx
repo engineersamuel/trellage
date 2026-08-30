@@ -595,6 +595,7 @@ const runInteractiveGuideMode = async (
         herdrEnv={herdrEnvironment()}
         herdrAvailabilityProbe={herdrAvailabilityProbe}
         {...(args.intent === undefined ? {} : { initialIntent: args.intent })}
+        {...(args.uiVariant === undefined ? {} : { uiVariant: args.uiVariant })}
       />,
       {
         stdin: input,

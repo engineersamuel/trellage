@@ -28217,7 +28217,7 @@ var require_backend = __commonJS({
                     return [initialArg, function() {
                     }];
                   },
-                  useRef: function useRef4(initialValue) {
+                  useRef: function useRef5(initialValue) {
                     var hook = nextHook();
                     initialValue = null !== hook ? hook.memoizedState : {
                       current: initialValue
@@ -65740,6 +65740,35 @@ var use_input_default = useInput;
 
 // node_modules/ink/build/hooks/use-paste.js
 var import_react23 = __toESM(require_react(), 1);
+var usePaste = (handler, options = {}) => {
+  const { setRawMode, setBracketedPasteMode, internal_eventEmitter } = useStdinContext();
+  (0, import_react23.useEffect)(() => {
+    if (options.isActive === false) {
+      return;
+    }
+    setRawMode(true);
+    setBracketedPasteMode(true);
+    return () => {
+      setRawMode(false);
+      setBracketedPasteMode(false);
+    };
+  }, [options.isActive, setRawMode, setBracketedPasteMode]);
+  const handlePaste = (0, import_react23.useEffectEvent)((text4) => {
+    reconciler_default.discreteUpdates(() => {
+      handler(text4);
+    });
+  });
+  (0, import_react23.useEffect)(() => {
+    if (options.isActive === false) {
+      return;
+    }
+    internal_eventEmitter.on("paste", handlePaste);
+    return () => {
+      internal_eventEmitter.removeListener("paste", handlePaste);
+    };
+  }, [options.isActive, internal_eventEmitter]);
+};
+var use_paste_default = usePaste;
 
 // node_modules/ink/build/hooks/use-app.js
 var import_react24 = __toESM(require_react(), 1);
@@ -66707,6 +66736,9 @@ var validateSandboxEntry = (value, path6) => {
     "path",
     "supportedPlatforms",
     "harness",
+    "resolutionPolicy",
+    "locallyResolved",
+    "releaseLockAvailable",
     "skillBundles",
     "skillsMode",
     "finalDigestLocked",
@@ -66736,6 +66768,9 @@ var validateSandboxEntry = (value, path6) => {
       version: text3(harness.version, `${path6}.harness.version`, 128),
       ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path6}.harness.model`, 128) }
     },
+    resolutionPolicy: literal(fields.resolutionPolicy, `${path6}.resolutionPolicy`, ["floating"]),
+    locallyResolved: boolean(fields.locallyResolved, `${path6}.locallyResolved`),
+    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path6}.releaseLockAvailable`),
     skillBundles: stringArray3(fields.skillBundles, `${path6}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
     skillsMode: literal(fields.skillsMode, `${path6}.skillsMode`, ["floating", "locked"]),
     finalDigestLocked: boolean(fields.finalDigestLocked, `${path6}.finalDigestLocked`),
@@ -67436,6 +67471,12 @@ var launchInHerdrPaneAndPrompt = async (runner, options) => {
   await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
     cwd: options.cwd
   });
+  if (options.promptDelivery === "command") {
+    return {
+      paneId: options.paneId,
+      commandPreview
+    };
+  }
   await waitForHerdrAgentIdle(runner, options.paneId, options);
   try {
     await runner.run(
@@ -67477,6 +67518,7 @@ var handoffToCurrentHerdrWorkspace = async (runner, options) => {
     cwd: options.cwd,
     command: options.command,
     prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
     promptTimeoutMs: options.promptTimeoutMs,
     ...options.timeoutMs === void 0 ? {} : { timeoutMs: options.timeoutMs },
     ...options.pollIntervalMs === void 0 ? {} : { pollIntervalMs: options.pollIntervalMs },
@@ -67620,6 +67662,7 @@ var createHerdrWorktreeAndHandoff = async (runner, options) => {
     cwd: handle.checkoutPath,
     command: options.command,
     prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
     promptTimeoutMs: options.promptTimeoutMs,
     ...options.timeoutMs === void 0 ? {} : { timeoutMs: options.timeoutMs },
     ...options.pollIntervalMs === void 0 ? {} : { pollIntervalMs: options.pollIntervalMs },
@@ -67643,6 +67686,7 @@ var openHerdrWorktreeAndHandoff = async (runner, options) => {
     cwd: handle.checkoutPath,
     command: options.command,
     prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
     promptTimeoutMs: options.promptTimeoutMs,
     ...options.timeoutMs === void 0 ? {} : { timeoutMs: options.timeoutMs },
     ...options.pollIntervalMs === void 0 ? {} : { pollIntervalMs: options.pollIntervalMs },
@@ -67754,6 +67798,13 @@ var GuideServiceError = class extends Error {
     this.name = "GuideServiceError";
   }
 };
+var guideLongPromptVariantLiterals = [
+  "pager" /* Pager */,
+  "split" /* Split */,
+  "focus" /* Focus */,
+  "bookends" /* Bookends */,
+  "dashboard" /* Dashboard */
+];
 var guideEffortLiterals = ["low", "medium", "high", "xhigh", "max"];
 var guideEffortFromLiteral = (raw) => {
   switch (raw) {
@@ -67770,11 +67821,11 @@ var guideEffortFromLiteral = (raw) => {
   }
 };
 var parseGuideEffort = (value, path6) => guideEffortFromLiteral(literal(value, path6, guideEffortLiterals));
-var intentMaximumLength = 4e3;
+var guideIntentMaximumLength = 6e4;
 var profileRefMaximumLength = 256;
 var modelIdentifierMaximumLength = 128;
 var modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u;
-var validateIntent = (value, path6) => text3(value, path6, intentMaximumLength);
+var validateIntent = (value, path6) => text3(value, path6, guideIntentMaximumLength, { multiline: true });
 var validateProfileRef = (value, path6) => text3(value, path6, profileRefMaximumLength);
 var validateModelId = (value, path6) => {
   const trimmed = text3(value, path6, modelIdentifierMaximumLength);
@@ -67800,14 +67851,16 @@ var intentFlag = "--intent";
 var profileFlag = "--profile";
 var modelFlag = "--model";
 var effortFlag = "--effort";
+var uiVariantFlag = "--ui-variant";
 var booleanFlags = /* @__PURE__ */ new Set([helpFlag, jsonFlag]);
-var valueFlags = /* @__PURE__ */ new Set([intentFlag, profileFlag, modelFlag, effortFlag]);
+var valueFlags = /* @__PURE__ */ new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag]);
 var knownFlags = /* @__PURE__ */ new Set([...booleanFlags, ...valueFlags]);
 var setGuideValueFlag = (state, token, value) => {
   if (token === intentFlag) state.intentFromFlag = validateIntent(value, "--intent");
   else if (token === profileFlag) state.profile = validateProfileRef(value, "--profile");
   else if (token === modelFlag) state.model = validateModelId(value, "--model");
-  else state.effort = parseGuideEffort(value, "--effort");
+  else if (token === effortFlag) state.effort = parseGuideEffort(value, "--effort");
+  else state.uiVariant = literal(value, "--ui-variant", guideLongPromptVariantLiterals);
 };
 var consumeGuideFlag = (argv, index, state) => {
   const token = argv[index];
@@ -67837,13 +67890,15 @@ var finalizeGuideArgs = (state) => {
   const positionalIntent = state.positionals[0];
   const intent = state.intentFromFlag ?? (positionalIntent === void 0 ? void 0 : validateIntent(positionalIntent, "intent"));
   if (state.profile !== void 0 && !state.json) throw new GuideArgsError("--profile requires --json");
+  if (state.uiVariant !== void 0 && state.json) throw new GuideArgsError("--ui-variant is interactive-only");
   return {
     help: state.help,
     json: state.json,
     intent,
     profile: state.profile,
     model: state.model,
-    effort: state.effort
+    effort: state.effort,
+    ...state.uiVariant === void 0 ? {} : { uiVariant: state.uiVariant }
   };
 };
 var guideHeadlessHelpText = [
@@ -67854,13 +67909,15 @@ var guideHeadlessHelpText = [
   "Options:",
   "  <intent>             Start the interactive guide with an initial intent.",
   "  --json               Emit a machine-readable JSON response.",
-  "  --intent <text>       Natural-language description of the task.",
+  "  --intent <text>       Natural-language task description (up to 60,000 characters).",
   "                         May instead be given as a single positional argument.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
   "  --model <id>            Override the configured model.",
   "  --effort <level>       Override the configured reasoning effort:",
   "                         low, medium, high, xhigh, or max.",
+  "  --ui-variant <name>    Select the on-demand prompt viewer:",
+  "                         pager, split, focus, bookends, or dashboard.",
   "  --help                Show this help text."
 ].join("\n");
 var parseGuideHeadlessArgv = (argv) => {
@@ -67871,6 +67928,7 @@ var parseGuideHeadlessArgv = (argv) => {
     profile: void 0,
     model: void 0,
     effort: void 0,
+    uiVariant: void 0,
     positionals: [],
     seenFlags: /* @__PURE__ */ new Set()
   };
@@ -76267,6 +76325,7 @@ var executeHerdrResult = async (result, services) => {
           direction: result.direction,
           command: result.command,
           prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
           timeoutMs: startupTimeoutMs,
           promptTimeoutMs
         });
@@ -76278,6 +76337,7 @@ var executeHerdrResult = async (result, services) => {
           baseRef: result.baseRef,
           command: result.command,
           prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
           timeoutMs: startupTimeoutMs,
           promptTimeoutMs
         });
@@ -76288,6 +76348,7 @@ var executeHerdrResult = async (result, services) => {
           path: result.path,
           command: result.command,
           prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
           timeoutMs: startupTimeoutMs,
           promptTimeoutMs
         });
@@ -76432,12 +76493,16 @@ var checkSelectedProfileReadiness = (runner, selected, cwd2) => selected.surface
 
 // src/guide-ui.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
-var intentMaxLength = 4e3;
 var feedbackMaxLength = 2e3;
 var branchMaxLength = 200;
 var promptMaxLength = 8e3;
 var controlCharacters2 = /[\u0000-\u001f\u007f-\u009f]/u;
+var pastedControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu;
 var isWithinTextBound = (current, addition, maxLength) => current.length + addition.length <= maxLength;
+var boundedPastedText = (current, pasted, maximum) => {
+  const normalized = pasted.replace(/\r\n?/gu, "\n").replace(pastedControlCharacters, "");
+  return normalized.slice(0, Math.max(0, maximum - current.length));
+};
 var describeGuideUiError = (error) => error instanceof Error && error.message.length > 0 ? error.message : "An unknown error occurred.";
 var isPrintableInput = (input, key) => !key.ctrl && !key.meta && input.length > 0 && !controlCharacters2.test(input);
 var tripleAt = (items, index) => {
@@ -76467,6 +76532,7 @@ var wizardStepByStage = {
   ["matching" /* Matching */]: "profile" /* Profile */,
   ["match-failed" /* MatchFailed */]: "profile" /* Profile */,
   ["recommendations" /* Recommendations */]: "profile" /* Profile */,
+  ["prompt-review" /* PromptReview */]: "profile" /* Profile */,
   ["generating" /* Generating */]: "prompt-candidates" /* PromptCandidates */,
   ["generate-failed" /* GenerateFailed */]: "prompt-candidates" /* PromptCandidates */,
   ["candidates" /* Candidates */]: "prompt-candidates" /* PromptCandidates */,
@@ -76509,7 +76575,9 @@ var emptyState = {
   destinationIndex: 0,
   worktreeBranch: void 0,
   worktreeInspection: void 0,
-  worktreeConfirmations: 0
+  worktreeConfirmations: 0,
+  promptReviewReturnStage: void 0,
+  promptReviewEditing: false
 };
 var createInitialGuideUiState = (initialIntent) => {
   const trimmed = initialIntent?.trim();
@@ -76557,6 +76625,65 @@ var recommendationsState = (state, recommendations, usedLiteralFallback) => ({
   usedLiteralFallback,
   errorMessage: void 0
 });
+var promptReviewSourceStage = (stage) => {
+  if (stage === "matching" /* Matching */ || stage === "match-failed" /* MatchFailed */ || stage === "recommendations" /* Recommendations */) {
+    return stage;
+  }
+  return void 0;
+};
+var openPromptReview = (state) => {
+  const returnStage = promptReviewSourceStage(state.stage);
+  return returnStage === void 0 || state.intent === void 0 ? state : {
+    ...state,
+    stage: "prompt-review" /* PromptReview */,
+    textDraft: state.intent,
+    promptReviewReturnStage: returnStage,
+    promptReviewEditing: false
+  };
+};
+var closePromptReview = (state) => state.promptReviewEditing ? { ...state, promptReviewEditing: false, textDraft: state.intent ?? state.textDraft } : {
+  ...state,
+  stage: state.promptReviewReturnStage ?? "matching" /* Matching */,
+  textDraft: "",
+  promptReviewReturnStage: void 0
+};
+var submitPromptReview = (state) => {
+  const intent = state.textDraft.trim();
+  if (intent.length === 0) return state;
+  if (intent === state.intent) {
+    return {
+      ...state,
+      stage: state.promptReviewReturnStage ?? "matching" /* Matching */,
+      textDraft: "",
+      promptReviewReturnStage: void 0,
+      promptReviewEditing: false
+    };
+  }
+  return {
+    ...emptyState,
+    stage: "matching" /* Matching */,
+    intent,
+    matchPhase: "loading-profiles" /* LoadingProfiles */
+  };
+};
+var reducePromptReview = (state, action) => {
+  if (action.type === "prompt-review/open" /* PromptReviewOpen */) return openPromptReview(state);
+  if (state.stage !== "prompt-review" /* PromptReview */) return state;
+  switch (action.type) {
+    case "prompt-review/edit" /* PromptReviewEdit */:
+      return { ...state, promptReviewEditing: action.editing };
+    case "prompt-review/change" /* PromptReviewChange */:
+      return state.promptReviewEditing ? { ...state, textDraft: action.text } : state;
+    case "prompt-review/backspace" /* PromptReviewBackspace */:
+      return state.promptReviewEditing ? { ...state, textDraft: state.textDraft.slice(0, -1) } : state;
+    case "prompt-review/back" /* PromptReviewBack */:
+      return closePromptReview(state);
+    case "prompt-review/submit" /* PromptReviewSubmit */:
+      return submitPromptReview(state);
+    default:
+      return state;
+  }
+};
 var reduceMatchProgress = (state, action) => {
   switch (action.type) {
     case "match/progress" /* MatchProgress */:
@@ -76851,6 +76978,12 @@ var domainReducerByActionType = {
   ["match/literal-failed" /* MatchLiteralFailed */]: reduceMatch,
   ["recommendations/move" /* RecommendationsMove */]: reduceRecommendations,
   ["recommendations/confirm" /* RecommendationsConfirm */]: reduceRecommendations,
+  ["prompt-review/open" /* PromptReviewOpen */]: reducePromptReview,
+  ["prompt-review/edit" /* PromptReviewEdit */]: reducePromptReview,
+  ["prompt-review/change" /* PromptReviewChange */]: reducePromptReview,
+  ["prompt-review/backspace" /* PromptReviewBackspace */]: reducePromptReview,
+  ["prompt-review/submit" /* PromptReviewSubmit */]: reducePromptReview,
+  ["prompt-review/back" /* PromptReviewBack */]: reducePromptReview,
   ["generate/guide-loaded" /* GenerateGuideLoaded */]: reduceGenerate,
   ["generate/progress" /* GenerateProgress */]: reduceGenerateProgress,
   ["generate/retry" /* GenerateRetry */]: reduceGenerate,
@@ -77059,6 +77192,32 @@ var runGuideRefinementStep = async (catalog, provider, intent, recommendation, g
 };
 var buildCancelResult = () => ({ action: "cancel", exitCode: 130 });
 var buildPrintResult = (prompt) => ({ action: "print", prompt });
+var buildHerdrLaunch = (profile, prompt) => {
+  if (profile.surface === "native" && profile.launcher === "cpx") {
+    const baseCommand = buildGuideLaunchCommand(profile).command;
+    return {
+      command: {
+        executable: baseCommand.executable,
+        args: [...baseCommand.args, "-i", prompt]
+      },
+      promptDelivery: "command"
+    };
+  }
+  if (profile.surface === "native" && profile.launcher === "cdx") {
+    const baseCommand = buildGuideLaunchCommand(profile).command;
+    return {
+      command: {
+        executable: baseCommand.executable,
+        args: [...baseCommand.args, prompt]
+      },
+      promptDelivery: "command"
+    };
+  }
+  return {
+    command: buildGuideLaunchCommand(profile).command,
+    promptDelivery: "agent"
+  };
+};
 var buildCurrentTerminalResult = (profile, prompt, cwd2) => {
   const built = buildGuideLaunchCommand(profile, { mode: "argv", prompt });
   return {
@@ -77071,32 +77230,42 @@ var buildCurrentTerminalResult = (profile, prompt, cwd2) => {
   };
 };
 var buildCurrentHerdrWorkspaceResult = (profile, prompt, cwd2, herdrContext, direction = "right") => {
-  const built = buildGuideLaunchCommand(profile);
+  const built = buildHerdrLaunch(profile, prompt);
   return {
     action: "current-herdr-workspace",
     profile,
     command: built.command,
     prompt,
+    promptDelivery: built.promptDelivery,
     cwd: cwd2,
     callerPaneId: herdrContext.paneId,
     direction
   };
 };
 var buildNewHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, branch, baseRef) => {
-  const built = buildGuideLaunchCommand(profile);
+  const built = buildHerdrLaunch(profile, prompt);
   return {
     action: "herdr-worktree-create",
     profile,
     command: built.command,
     prompt,
+    promptDelivery: built.promptDelivery,
     primaryCheckoutPath,
     branch,
     baseRef
   };
 };
 var buildExistingHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, path6) => {
-  const built = buildGuideLaunchCommand(profile);
-  return { action: "herdr-worktree-open", profile, command: built.command, prompt, primaryCheckoutPath, path: path6 };
+  const built = buildHerdrLaunch(profile, prompt);
+  return {
+    action: "herdr-worktree-open",
+    profile,
+    command: built.command,
+    prompt,
+    promptDelivery: built.promptDelivery,
+    primaryCheckoutPath,
+    path: path6
+  };
 };
 var spinnerFrames = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
 var cyclicItemAt = (items, index) => items.length === 0 ? void 0 : items[index % items.length];
@@ -77159,6 +77328,153 @@ var summarizeGenerationIntent = (intent, maximumLength = 100) => {
   const normalized = intent.replace(/\s+/gu, " ").trim();
   return normalized.length <= maximumLength ? normalized : `${normalized.slice(0, maximumLength - 1)}\u2026`;
 };
+var guideTextSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+var wrapGuideTextLine = (sourceLine, lineWidth) => {
+  if (sourceLine.length === 0) return [""];
+  const lines = [];
+  let line = "";
+  let displayWidth = 0;
+  let continuation = false;
+  for (const { segment } of guideTextSegmenter.segment(sourceLine)) {
+    const segmentWidth = stringWidth(segment);
+    if (line.length > 0 && displayWidth + segmentWidth > lineWidth) {
+      lines.push(line);
+      line = "";
+      displayWidth = 0;
+      continuation = true;
+    }
+    if (continuation && line.length === 0 && segment === " ") continue;
+    line += segment;
+    displayWidth += segmentWidth;
+    continuation = false;
+  }
+  if (line.length > 0) lines.push(line);
+  return lines;
+};
+var wrapGuideText = (value, width) => {
+  const lineWidth = Math.max(1, width);
+  return value.replaceAll("	", "    ").split("\n").flatMap((sourceLine) => wrapGuideTextLine(sourceLine, lineWidth));
+};
+var guideTextViewport = (value, width, height, requestedStartLine) => {
+  const lines = wrapGuideText(value, width);
+  const viewportHeight = Math.max(1, height);
+  const maximumStartLine = Math.max(0, lines.length - viewportHeight);
+  const startLine = Math.min(maximumStartLine, Math.max(0, requestedStartLine));
+  const visibleLines = lines.slice(startLine, startLine + viewportHeight);
+  return {
+    text: visibleLines.join("\n"),
+    lines: visibleLines,
+    startLine,
+    maximumStartLine,
+    atStart: startLine === 0,
+    atEnd: startLine === maximumStartLine
+  };
+};
+var ScrollableTextViewport = ({
+  value,
+  width,
+  height,
+  startAtEnd,
+  cursor = false,
+  followChanges = false,
+  resetKey
+}) => {
+  const [requestedStartLine, setRequestedStartLine] = (0, import_react34.useState)(startAtEnd ? Number.MAX_SAFE_INTEGER : 0);
+  const previousValue = (0, import_react34.useRef)(value);
+  const viewport = guideTextViewport(value, cursor ? Math.max(1, width - 1) : width, height, requestedStartLine);
+  const pageSize = Math.max(1, height - 1);
+  (0, import_react34.useEffect)(() => {
+    setRequestedStartLine(startAtEnd ? Number.MAX_SAFE_INTEGER : 0);
+  }, [resetKey, startAtEnd]);
+  (0, import_react34.useEffect)(() => {
+    if (followChanges && previousValue.current !== value) setRequestedStartLine(Number.MAX_SAFE_INTEGER);
+    previousValue.current = value;
+  }, [followChanges, value]);
+  use_input_default((_input, key) => {
+    if (key.pageUp) setRequestedStartLine(Math.max(0, viewport.startLine - pageSize));
+    else if (key.pageDown)
+      setRequestedStartLine(Math.min(viewport.maximumStartLine, viewport.startLine + pageSize));
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", height: Math.max(1, height), overflowY: "hidden", children: viewport.lines.map((line, index) => {
+    const showCursor = cursor && viewport.atEnd && index === viewport.lines.length - 1;
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+      line,
+      showCursor ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "\u2588" }) : null
+    ] }, `${viewport.startLine + index}:${line}`);
+  }) });
+};
+var classifyMarkdownLine = (source, inCode) => {
+  if (/^\s*```/u.test(source)) return { text: source.trim(), kind: "code", inCode: !inCode };
+  if (inCode) return { text: source, kind: "code", inCode };
+  const heading = /^\s*#{1,6}\s+(.+)$/u.exec(source);
+  if (heading?.[1] !== void 0) return { text: heading[1], kind: "heading", inCode };
+  const listItem = /^\s*[-*+]\s+(.+)$/u.exec(source);
+  if (listItem?.[1] !== void 0) return { text: `\u2022 ${listItem[1]}`, kind: "list", inCode };
+  const quote = /^\s*>\s?(.*)$/u.exec(source);
+  if (quote?.[1] !== void 0) return { text: `\u2502 ${quote[1]}`, kind: "quote", inCode };
+  if (/^\s*(?:---+|\*\*\*+|___+)\s*$/u.test(source)) return { text: "\u2500".repeat(24), kind: "rule", inCode };
+  return { text: source, kind: "body", inCode };
+};
+var markdownPromptLines = (value, width) => {
+  const lines = [];
+  let inCode = false;
+  for (const source of value.replaceAll("	", "    ").split("\n")) {
+    const classified = classifyMarkdownLine(source, inCode);
+    inCode = classified.inCode;
+    const wrapped = wrapGuideTextLine(classified.text, Math.max(1, width));
+    for (const text4 of wrapped) lines.push({ text: text4, kind: classified.kind });
+  }
+  return lines;
+};
+var MarkdownLine = ({ line }) => {
+  switch (line.kind) {
+    case "heading":
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", wrap: "truncate-end", children: line.text });
+    case "list":
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "green", wrap: "truncate-end", children: line.text });
+    case "quote":
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { italic: true, dimColor: true, wrap: "truncate-end", children: line.text });
+    case "code":
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", wrap: "truncate-end", children: line.text });
+    case "rule":
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: line.text });
+    case "body":
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { wrap: "truncate-end", children: line.text });
+  }
+};
+var MarkdownTextViewport = ({
+  value,
+  width,
+  height
+}) => {
+  const [requestedStartLine, setRequestedStartLine] = (0, import_react34.useState)(0);
+  const lines = markdownPromptLines(value, width);
+  const viewportHeight = Math.max(1, height);
+  const maximumStartLine = Math.max(0, lines.length - viewportHeight);
+  const startLine = Math.min(maximumStartLine, requestedStartLine);
+  const pageSize = Math.max(1, viewportHeight - 1);
+  use_input_default((_input, key) => {
+    if (key.pageUp) setRequestedStartLine(Math.max(0, startLine - pageSize));
+    else if (key.pageDown) setRequestedStartLine(Math.min(maximumStartLine, startLine + pageSize));
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", height: viewportHeight, overflowY: "hidden", children: lines.slice(startLine, startLine + viewportHeight).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MarkdownLine, { line }, `${startLine + index}:${line.kind}:${line.text}`)) });
+};
+var PromptDocumentViewport = ({
+  textDraft,
+  width,
+  height,
+  editing
+}) => editing ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+  ScrollableTextViewport,
+  {
+    value: textDraft,
+    width,
+    height,
+    startAtEnd: false,
+    cursor: true,
+    followChanges: true
+  }
+) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MarkdownTextViewport, { value: textDraft, width, height });
 var ProgressPipeline = ({
   title,
   intent,
@@ -77196,16 +77512,19 @@ var MatchProgress = ({
   intent,
   model,
   effort
-}) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-  ProgressPipeline,
-  {
-    title: "Finding the best profiles",
-    intent,
-    items: matchProgressItems(catalog.native.length + catalog.sandbox.length),
-    activePhase: phase,
-    detail: `Copilot model: ${model} \xB7 Effort: ${effort}`
-  }
-);
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    ProgressPipeline,
+    {
+      title: "Finding the best profiles",
+      intent,
+      items: matchProgressItems(catalog.native.length + catalog.sandbox.length),
+      activePhase: phase,
+      detail: `Copilot model: ${model} \xB7 Effort: ${effort}`
+    }
+  ),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "p view prompt \xB7 q cancel" })
+] });
 var GenerationProgress = ({
   recommendation,
   phase,
@@ -77239,14 +77558,218 @@ var WizardBreadcrumbs = ({ activeStep }) => {
     ] }, step);
   }) });
 };
-var IntentEditor = ({ textDraft }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "What do you want to do?" }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
-    textDraft,
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "\u2588" })
+var promptReviewMetrics = (value) => ({
+  characters: value.length,
+  words: value.trim().length === 0 ? 0 : value.trim().split(/\s+/u).length,
+  sourceLines: value.length === 0 ? 0 : value.split("\n").length,
+  headings: value.split("\n").filter((line) => /^#{1,6}\s+\S/u.test(line)).map((line) => line.replace(/^#{1,6}\s+/u, "").trim()).slice(0, 8)
+});
+var PromptReviewHeader = ({
+  variant,
+  metrics,
+  editing
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", children: [
+    "Task prompt \xB7 ",
+    variant
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "Type your intent \xB7 \u21B5 submit \xB7 Ctrl-C cancel" })
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+    editing ? "Raw edit" : "Markdown preview",
+    " \xB7 ",
+    metrics.characters.toLocaleString("en"),
+    " chars \xB7",
+    " ",
+    metrics.words.toLocaleString("en"),
+    " words"
+  ] })
 ] });
+var PromptReviewFooter = ({ editing }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: editing ? "Type, paste, or Backspace edit \xB7 PgUp/PgDn review \xB7 Enter re-match \xB7 Esc discard edits" : "PgUp/PgDn review \xB7 e edit \xB7 Enter or Esc return" });
+var PagerPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing
+}) => {
+  const metrics = promptReviewMetrics(textDraft);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(4, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewHeader, { variant: "pager" /* Pager */, metrics, editing }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { borderStyle: "single", borderColor: "gray", paddingX: 1, flexGrow: 1, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      PromptDocumentViewport,
+      {
+        textDraft,
+        width: Math.max(1, columns - 6),
+        height: Math.max(1, rows - 5),
+        editing
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewFooter, { editing })
+  ] });
+};
+var SplitPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing
+}) => {
+  const metrics = promptReviewMetrics(textDraft);
+  const railWidth = Math.min(28, Math.max(20, Math.floor(columns * 0.28)));
+  if (columns < 70) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PagerPromptReview, { textDraft, rows, columns, editing });
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(4, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewHeader, { variant: "split" /* Split */, metrics, editing }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexGrow: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", width: railWidth, borderStyle: "single", borderColor: "cyan", paddingX: 1, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: "DOCUMENT MAP" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+          metrics.sourceLines.toLocaleString("en"),
+          " source lines"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: (metrics.headings.length === 0 ? ["No Markdown headings"] : metrics.headings).map((heading, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { wrap: "truncate-end", dimColor: metrics.headings.length === 0, children: metrics.headings.length === 0 ? heading : `${index + 1}. ${heading}` }, `${index}:${heading}`)) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, borderStyle: "single", borderColor: "gray", paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        PromptDocumentViewport,
+        {
+          textDraft,
+          width: Math.max(1, columns - railWidth - 8),
+          height: Math.max(1, rows - 5),
+          editing
+        }
+      ) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewFooter, { editing })
+  ] });
+};
+var FocusPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing
+}) => {
+  const metrics = promptReviewMetrics(textDraft);
+  const readingWidth = Math.max(1, Math.min(76, columns - 4));
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", height: Math.max(4, rows - 1), overflowY: "hidden", alignItems: "center", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { width: readingWidth, flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewHeader, { variant: "focus" /* Focus */, metrics, editing }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { borderStyle: "round", borderColor: "cyan", paddingX: 2, flexGrow: 1, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      PromptDocumentViewport,
+      {
+        textDraft,
+        width: Math.max(1, readingWidth - 6),
+        height: Math.max(1, rows - 5),
+        editing
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewFooter, { editing })
+  ] }) });
+};
+var promptEdgePreview = (value, fromEnd) => {
+  const lines = value.split("\n").filter((line2) => line2.trim().length > 0);
+  const line = fromEnd ? lines.at(-1) : lines[0];
+  return line === void 0 ? "(empty)" : summarizeGenerationIntent(line, 120);
+};
+var BookendsPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing
+}) => {
+  const metrics = promptReviewMetrics(textDraft);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(6, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewHeader, { variant: "bookends" /* Bookends */, metrics, editing }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "START \xB7 ",
+      promptEdgePreview(textDraft, false)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { borderStyle: "single", borderColor: "gray", paddingX: 1, flexGrow: 1, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      PromptDocumentViewport,
+      {
+        textDraft,
+        width: Math.max(1, columns - 6),
+        height: Math.max(1, rows - 7),
+        editing
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "END \xB7 ",
+      promptEdgePreview(textDraft, true)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewFooter, { editing })
+  ] });
+};
+var DashboardPromptReview = ({
+  textDraft,
+  rows,
+  columns,
+  editing
+}) => {
+  const metrics = promptReviewMetrics(textDraft);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(6, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewHeader, { variant: "dashboard" /* Dashboard */, metrics, editing }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { justifyContent: "space-between", borderStyle: "round", borderColor: "cyan", paddingX: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+        "Characters ",
+        metrics.characters.toLocaleString("en")
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+        "Words ",
+        metrics.words.toLocaleString("en")
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+        "Lines ",
+        metrics.sourceLines.toLocaleString("en")
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+        "Headings ",
+        metrics.headings.length
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { borderStyle: "single", borderColor: "gray", paddingX: 1, flexGrow: 1, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      PromptDocumentViewport,
+      {
+        textDraft,
+        width: Math.max(1, columns - 6),
+        height: Math.max(1, rows - 8),
+        editing
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PromptReviewFooter, { editing })
+  ] });
+};
+var PromptReview = ({
+  textDraft,
+  variant,
+  editing
+}) => {
+  const { rows, columns } = use_window_size_default();
+  const props = { textDraft, rows, columns, editing };
+  switch (variant) {
+    case "pager" /* Pager */:
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PagerPromptReview, { ...props });
+    case "split" /* Split */:
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SplitPromptReview, { ...props });
+    case "focus" /* Focus */:
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FocusPromptReview, { ...props });
+    case "bookends" /* Bookends */:
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BookendsPromptReview, { ...props });
+    case "dashboard" /* Dashboard */:
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DashboardPromptReview, { ...props });
+  }
+};
+var IntentEditor = ({ textDraft }) => {
+  const { rows, columns } = use_window_size_default();
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(3, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "What do you want to do?" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      ScrollableTextViewport,
+      {
+        value: textDraft,
+        width: Math.max(1, columns - 2),
+        height: Math.max(1, rows - 3),
+        startAtEnd: true,
+        cursor: true
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "Type your intent \xB7 PgUp/PgDn scroll \xB7 \u21B5 submit \xB7 Ctrl-C cancel" })
+  ] });
+};
 var ErrorPanel = ({
   title,
   message,
@@ -77377,13 +77900,16 @@ var RecommendationsView = ({
   usedLiteralFallback
 }) => {
   const recommendation = recommendationAt(recommendations, index);
+  const metrics = promptReviewMetrics(intent);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", children: [
-      "Recommendations for: ",
-      intent
-    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Profile recommendations" }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
-      "Model: ",
+      "Prompt: ",
+      metrics.characters.toLocaleString("en"),
+      " chars \xB7 ",
+      metrics.words.toLocaleString("en"),
+      " words \xB7 Model:",
+      " ",
       model,
       " \xB7 Effort: ",
       effort
@@ -77394,7 +77920,7 @@ var RecommendationsView = ({
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RecommendationRail, { recommendations, index }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RecommendationDetail, { recommendation })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 generate \xB7 c council \xB7 r research \xB7 h HVE RPI \xB7 q cancel" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 generate \xB7 p view prompt \xB7 c council \xB7 r research \xB7 h HVE RPI \xB7 q cancel" })
   ] });
 };
 var candidatePaneHeight = (terminalRows) => Math.max(6, terminalRows - 8);
@@ -77432,52 +77958,83 @@ var CandidateRail = ({
 );
 var CandidateDetail = ({
   candidate,
-  height
-}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, height, overflowY: "hidden", paddingLeft: 2, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", wrap: "truncate-end", children: candidate.title }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, wrap: "wrap", children: candidate.notes }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "green", children: "PROMPT PREVIEW" }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { wrap: "wrap", children: candidate.prompt })
-  ] })
-] });
+  height,
+  width
+}) => {
+  const detail = `${candidate.notes}
+
+PROMPT PREVIEW
+${candidate.prompt}`;
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, height, overflowY: "hidden", paddingLeft: 2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", wrap: "truncate-end", children: candidate.title }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      ScrollableTextViewport,
+      {
+        value: detail,
+        width: Math.max(1, width - 2),
+        height: Math.max(1, height - 1),
+        startAtEnd: false,
+        resetKey: candidate.title
+      }
+    )
+  ] });
+};
 var CandidatesView = ({
   candidates,
   index,
   usedTemplateFallback,
   command
 }) => {
-  const { stdout } = use_stdout_default();
-  const paneHeight = candidatePaneHeight(stdout.rows ?? 24);
-  const railWidth = candidateRailWidth(stdout.columns ?? 100);
+  const { rows, columns: terminalColumns } = use_window_size_default();
+  const paneHeight = candidatePaneHeight(rows);
+  const railWidth = candidateRailWidth(terminalColumns);
   const candidate = tripleAt(candidates, index);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Prompt candidates" }),
     usedTemplateFallback ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "Deterministic template fallback (no model call)." }) : null,
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { marginTop: 1, children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CandidateRail, { candidates, index, width: railWidth, height: paneHeight }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CandidateDetail, { candidate, height: paneHeight })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        CandidateDetail,
+        {
+          candidate,
+          height: paneHeight,
+          width: Math.max(1, terminalColumns - railWidth - 2)
+        }
+      )
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
       "Command: ",
       compactCommandPreview(command.preview),
       command.promptHandling === "manual-paste" ? " (manual paste required)" : ""
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 continue \xB7 b/Esc back \xB7 r refine \xB7 e edit \xB7 c print full prompt \xB7 q cancel" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: "\u2191/\u2193 or j/k select \xB7 PgUp/PgDn scroll \xB7 \u21B5 continue \xB7 b/Esc back \xB7 r refine \xB7 e edit \xB7 c print full prompt \xB7 q cancel" })
   ] });
 };
 var TextEditor = ({
   title,
   textDraft,
   keys
-}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: title }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "wrap", children: [
-    textDraft,
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: "\u2588" })
-  ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: keys })
-] });
+}) => {
+  const { rows, columns } = use_window_size_default();
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(3, rows - 3), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: title }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      ScrollableTextViewport,
+      {
+        value: textDraft,
+        width: Math.max(1, columns - 2),
+        height: Math.max(1, rows - 5),
+        startAtEnd: true,
+        cursor: true
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+      keys,
+      " \xB7 PgUp/PgDn scroll"
+    ] })
+  ] });
+};
 var DestinationView = ({
   options,
   index,
@@ -77697,14 +78254,22 @@ var useGuideWorktreeEffect = (props, state, dispatch) => {
   }, [state.stage, state.worktreeBranch]);
 };
 var handleNoInput = () => void 0;
+var handleMatchingInput = ({ dispatch, cancel }, input) => {
+  if (input === "p") dispatch({ type: "prompt-review/open" /* PromptReviewOpen */ });
+  else if (input === "q") cancel();
+};
 var handleIntentInput = ({ state, dispatch }, input, key) => {
   if (key.return) dispatch({ type: "intent/submit" /* IntentSubmit */ });
   else if (key.backspace || key.delete) dispatch({ type: "intent/backspace" /* IntentBackspace */ });
-  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, intentMaxLength)) {
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, guideIntentMaximumLength)) {
     dispatch({ type: "intent/change" /* IntentChange */, text: state.textDraft + input });
   }
 };
 var handleMatchFailedInput = ({ props, state, dispatch, cancel }, input) => {
+  if (input === "p") {
+    dispatch({ type: "prompt-review/open" /* PromptReviewOpen */ });
+    return;
+  }
   if (input === "r") {
     dispatch({ type: "match/retry" /* MatchRetry */ });
     return;
@@ -77724,6 +78289,10 @@ var handleMatchFailedInput = ({ props, state, dispatch, cancel }, input) => {
   }
 };
 var handleRecommendationsInput = ({ props, state, dispatch, cancel }, input, key) => {
+  if (input === "p") {
+    dispatch({ type: "prompt-review/open" /* PromptReviewOpen */ });
+    return;
+  }
   const pinnedLens = pinnedGuideLenses(props.catalog).find(({ key: lensKey }) => lensKey === input);
   if (pinnedLens !== void 0) {
     dispatch({
@@ -77742,6 +78311,21 @@ var handleRecommendationsInput = ({ props, state, dispatch, cancel }, input, key
       selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef)
     });
   } else if (input === "q") cancel();
+};
+var handlePromptReviewInput = ({ state, dispatch }, input, key) => {
+  if (!state.promptReviewEditing) {
+    if (input === "e") dispatch({ type: "prompt-review/edit" /* PromptReviewEdit */, editing: true });
+    else if (key.escape || key.return || input === "p" || input === "b") {
+      dispatch({ type: "prompt-review/back" /* PromptReviewBack */ });
+    }
+    return;
+  }
+  if (key.escape) dispatch({ type: "prompt-review/back" /* PromptReviewBack */ });
+  else if (key.return) dispatch({ type: "prompt-review/submit" /* PromptReviewSubmit */ });
+  else if (key.backspace || key.delete) dispatch({ type: "prompt-review/backspace" /* PromptReviewBackspace */ });
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, guideIntentMaximumLength)) {
+    dispatch({ type: "prompt-review/change" /* PromptReviewChange */, text: state.textDraft + input });
+  }
 };
 var handleGenerateFailedInput = ({ state, dispatch, cancel }, input) => {
   if (input === "r") dispatch({ type: "generate/retry" /* GenerateRetry */ });
@@ -77892,9 +78476,10 @@ var handleWorktreeReadyInput = ({ state, dispatch, complete }, input, key) => {
 };
 var inputHandlerByStage = {
   ["intent" /* Intent */]: handleIntentInput,
-  ["matching" /* Matching */]: handleNoInput,
+  ["matching" /* Matching */]: handleMatchingInput,
   ["match-failed" /* MatchFailed */]: handleMatchFailedInput,
   ["recommendations" /* Recommendations */]: handleRecommendationsInput,
+  ["prompt-review" /* PromptReview */]: handlePromptReviewInput,
   ["generating" /* Generating */]: handleNoInput,
   ["generate-failed" /* GenerateFailed */]: handleGenerateFailedInput,
   ["candidates" /* Candidates */]: handleCandidatesInput,
@@ -77916,6 +78501,23 @@ var handleGuideInput = (context, input, key) => {
     return;
   }
   inputHandlerByStage[context.state.stage](context, input, key);
+};
+var pastedEditorMaximum = (state) => {
+  if (state.stage === "intent" /* Intent */) return guideIntentMaximumLength;
+  if (state.stage === "prompt-review" /* PromptReview */ && state.promptReviewEditing) return guideIntentMaximumLength;
+  if (state.stage === "refine-editor" /* RefineEditor */) return feedbackMaxLength;
+  if (state.stage === "direct-editor" /* DirectEditor */) return promptMaxLength;
+  return void 0;
+};
+var handleGuidePaste = (state, dispatch, pasted) => {
+  const maximum = pastedEditorMaximum(state);
+  if (maximum === void 0) return;
+  const addition = boundedPastedText(state.textDraft, pasted, maximum);
+  if (addition.length === 0) return;
+  dispatch({
+    type: state.stage === "intent" /* Intent */ ? "intent/change" /* IntentChange */ : state.stage === "prompt-review" /* PromptReview */ ? "prompt-review/change" /* PromptReviewChange */ : "editor/change" /* EditorChange */,
+    text: state.textDraft + addition
+  });
 };
 var matchingProgress = ({ props, state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
   MatchProgress,
@@ -78005,8 +78607,16 @@ var renderWorktreeReady = ({ state }) => state.worktreeInspection === void 0 || 
 var stageRenderer = {
   ["intent" /* Intent */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IntentEditor, { textDraft: state.textDraft }),
   ["matching" /* Matching */]: matchingProgress,
-  ["match-failed" /* MatchFailed */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorPanel, { title: "Match failed", message: state.errorMessage, keys: "r retry \xB7 l literal match \xB7 q cancel" }),
+  ["match-failed" /* MatchFailed */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorPanel, { title: "Match failed", message: state.errorMessage, keys: "r retry \xB7 l literal match \xB7 p view prompt \xB7 q cancel" }),
   ["recommendations" /* Recommendations */]: renderRecommendations,
+  ["prompt-review" /* PromptReview */]: ({ props, state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    PromptReview,
+    {
+      textDraft: state.textDraft,
+      variant: props.uiVariant ?? "dashboard" /* Dashboard */,
+      editing: state.promptReviewEditing
+    }
+  ),
   ["generating" /* Generating */]: ({ props, state }) => state.selectedRecommendation === void 0 || state.intent === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Spinner, { label: "Preparing prompt candidates" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
     GenerationProgress,
     {
@@ -78089,6 +78699,9 @@ var GuideApp = (props) => {
     herdrEnabled
   };
   use_input_default((input, key) => handleGuideInput(inputContext, input, key));
+  use_paste_default((pasted) => handleGuidePaste(state, dispatch, pasted), {
+    isActive: pastedEditorMaximum(state) !== void 0
+  });
   const activeWizardStep = wizardStepForStage(state.stage);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
     activeWizardStep === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WizardBreadcrumbs, { activeStep: activeWizardStep }),
@@ -78510,7 +79123,8 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
           cwd: process.cwd(),
           herdrEnv: herdrEnvironment(),
           herdrAvailabilityProbe,
-          ...args.intent === void 0 ? {} : { initialIntent: args.intent }
+          ...args.intent === void 0 ? {} : { initialIntent: args.intent },
+          ...args.uiVariant === void 0 ? {} : { uiVariant: args.uiVariant }
         }
       ),
       {
