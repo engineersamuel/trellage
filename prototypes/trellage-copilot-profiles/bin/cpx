@@ -30,6 +30,10 @@ if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
+if [[ ! -f "$session_bridge_source" ]]; then
+  session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
+fi
 
 die() {
   printf 'cpx: %s\n' "$1" >&2
@@ -389,6 +393,44 @@ prepare_profile_home() {
   chmod 0700 "$(profile_home "$profile")" \
     || die "failed to secure profile home: $(profile_home "$profile")"
   ensure_instructions "$profile"
+}
+
+install_session_bridge() {
+  local profile="$1"
+  local home
+  local bridge_root
+  local bridge_path
+  local staged
+
+  require_command python3
+  home="$(profile_home "$profile")"
+  bridge_root="$home/.trellage"
+  bridge_path="$bridge_root/trellage-session-bridge.py"
+  [[ -f "$session_bridge_source" && -r "$session_bridge_source" \
+    && ! -L "$session_bridge_source" ]] \
+    || die "missing session bridge: $session_bridge_source"
+  [[ ! -L "$bridge_root" ]] || die "unsafe session bridge directory: $bridge_root"
+  if [[ ! -e "$bridge_root" ]]; then
+    mkdir "$bridge_root" || die "failed to create session bridge directory: $bridge_root"
+  fi
+  [[ -d "$bridge_root" && ! -L "$bridge_root" ]] \
+    || die "unsafe session bridge directory: $bridge_root"
+  chmod 0700 "$bridge_root" || die "failed to secure session bridge directory: $bridge_root"
+  [[ ! -L "$bridge_path" && ( ! -e "$bridge_path" || -f "$bridge_path" ) ]] \
+    || die "unsafe session bridge path: $bridge_path"
+  staged="$(mktemp "$bridge_root/.trellage-session-bridge.py.XXXXXX")" \
+    || die "failed to stage session bridge: $bridge_path"
+  cat -- "$session_bridge_source" >"$staged" \
+    || die "failed to stage session bridge: $bridge_path"
+  chmod 0700 "$staged" || die "failed to secure session bridge: $bridge_path"
+  mv -f "$staged" "$bridge_path" || die "failed to publish session bridge: $bridge_path"
+  "$bridge_path" install-hook \
+    --mode native \
+    --agent copilot \
+    --profile "$profile" \
+    --config-dir "$home" \
+    --hook-path "$bridge_path" \
+    || die "failed to install session bridge hook: $profile"
 }
 
 ensure_instructions() {
@@ -769,6 +811,7 @@ ensure_profile_for_launch() {
 
   prepare_profile_home "$profile"
   ensure_floating_skills "$profile"
+  install_session_bridge "$profile"
   inventory="$(plugin_inventory_snapshot "$profile")" \
     || die "failed to read installed plugins: $profile"
   forbidden="$(forbidden_superpowers_plugins_from_snapshot "$profile" "$inventory")" \
@@ -839,6 +882,7 @@ setup_profile() {
     *) die "failed to read installed plugins: $profile" ;;
   esac
   remove_retired_plugins "$profile"
+  install_session_bridge "$profile"
   printf '%s: ready\n' "$profile"
 }
 
@@ -1119,6 +1163,7 @@ doctor_profile() {
   local version
   require_profile "$profile"
   require_command copilot
+  require_command python3
   require_safe_profile_home "$profile"
   home="$(profile_home "$profile")"
   [[ -d "$home" ]] || die "profile is not set up: $profile"
@@ -1260,6 +1305,7 @@ repair_profile() {
     *) die "failed to read installed plugins: $profile" ;;
   esac
   remove_retired_plugins "$profile"
+  install_session_bridge "$profile"
   doctor_profile "$profile"
   printf '%s: repaired\n' "$profile"
 }

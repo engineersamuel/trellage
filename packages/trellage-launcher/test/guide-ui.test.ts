@@ -5,7 +5,13 @@ import { describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
-import { GuideEffort, literalGuideMatch, templatePromptCandidates, type GuideRecommendation } from "../src/guide-api.js"
+import {
+  GuideEffort,
+  guideIntentMaximumLength,
+  literalGuideMatch,
+  templatePromptCandidates,
+  type GuideRecommendation,
+} from "../src/guide-api.js"
 import type {
   GuideGenerateCandidate,
   GuideGenerateInput,
@@ -38,6 +44,7 @@ import {
   boundedPastedText,
   candidatePaneHeight,
   candidateRailWidth,
+  captureSourcePresentation,
   compactCommandPreview,
   createInitialGuideUiState,
   describeGuideUiError,
@@ -202,6 +209,47 @@ const guideResearch: ProfileGuideV1 = {
     },
   ],
 }
+
+describe("capture source presentation", () => {
+  it("labels exact and terminal sources without relying on color alone", () => {
+    expect(
+      captureSourcePresentation({
+        source: "transcript",
+        confidence: "exact",
+        agent: "copilot",
+        sessionId: "12345678-1234-4234-8234-123456789abc",
+      }),
+    ).toEqual({
+      label: "Exact agent result",
+      detail: "Copilot · session 12345678-123",
+      color: "green",
+    })
+    expect(
+      captureSourcePresentation({
+        source: "terminal",
+        confidence: "snapshot",
+        agent: "copilot",
+      }),
+    ).toEqual({
+      label: "Terminal snapshot",
+      detail: "This is not an exact message and can include prompts, status rows, or earlier output.",
+      color: "yellow",
+    })
+    expect(
+      captureSourcePresentation({
+        source: "sandbox-transcript",
+        confidence: "exact",
+        agent: "claude",
+        sessionId: "87654321-4321-4321-8321-cba987654321",
+        profile: "claude-research",
+      }),
+    ).toEqual({
+      label: "Exact Sandbox result",
+      detail: "Claude · session 87654321-432 · profile claude-research",
+      color: "green",
+    })
+  })
+})
 
 const guideHve: ProfileGuideV1 = {
   schemaVersion: 1,
@@ -518,6 +566,13 @@ describe("guideUiReducer: intent and match", () => {
     state = guideUiReducer(state, { type: GuideUiActionType.IntentSubmit })
     expect(state.stage).toBe(GuideUiStage.Matching)
     expect(state.intent).toBe("Review my PR")
+  })
+
+  it("backspaces one complete Unicode code point", () => {
+    let state = createInitialGuideUiState()
+    state = guideUiReducer(state, { type: GuideUiActionType.IntentChange, text: "Review 😀" })
+    state = guideUiReducer(state, { type: GuideUiActionType.IntentBackspace })
+    expect(state.textDraft).toBe("Review ")
   })
 
   describe("guideUiReducer: prompt review", () => {
@@ -1352,11 +1407,33 @@ describe("isWithinTextBound", () => {
   it("stays exact at the boundary (append that lands exactly on the maximum is allowed)", () => {
     expect(isWithinTextBound("a".repeat(7999), "b", 8000)).toBe(true)
   })
+
+  it("uses the shared guide intent boundary", () => {
+    expect(isWithinTextBound("a".repeat(guideIntentMaximumLength - 1), "b", guideIntentMaximumLength)).toBe(true)
+    expect(isWithinTextBound("a".repeat(guideIntentMaximumLength), "b", guideIntentMaximumLength)).toBe(false)
+  })
+
+  it("counts astral symbols as one character", () => {
+    expect(
+      isWithinTextBound(
+        "😀".repeat(guideIntentMaximumLength - 1),
+        "😀",
+        guideIntentMaximumLength,
+      ),
+    ).toBe(true)
+    expect(
+      isWithinTextBound("😀".repeat(guideIntentMaximumLength), "😀", guideIntentMaximumLength),
+    ).toBe(false)
+  })
 })
 
 describe("boundedPastedText", () => {
   it("preserves multiline paste while removing unsafe controls and respecting the remaining bound", () => {
     expect(boundedPastedText("123", "one\r\ntwo\u0000\nthree", 14)).toBe("one\ntwo\nthr")
+  })
+
+  it("does not split an astral symbol at the remaining character boundary", () => {
+    expect(boundedPastedText("a".repeat(13), "😀x", 14)).toBe("😀")
   })
 })
 
@@ -1508,6 +1585,13 @@ describe("destinationOptions", () => {
       GuideUiDestination.NewHerdrWorktree,
     ])
   })
+
+  it("omits the temporary current terminal in a Herdr popup", () => {
+    expect(destinationOptions(true, "popup")).toEqual([
+      GuideUiDestination.CurrentHerdrWorkspace,
+      GuideUiDestination.NewHerdrWorktree,
+    ])
+  })
 })
 
 describe("buildCurrentTerminalResult: headless gating", () => {
@@ -1574,7 +1658,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
 })
 
 describe("Herdr result builders: trust-safe initial prompt delivery", () => {
-  const herdrContext: HerdrContext = { workspaceId: "workspace-1", paneId: "pane-1" }
+  const herdrContext: HerdrContext = { workspaceId: "workspace-1", paneId: "pane-1", surface: "pane" }
 
   it("queues a cpx prompt in the interactive command so folder trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(

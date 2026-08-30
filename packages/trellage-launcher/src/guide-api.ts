@@ -137,7 +137,7 @@ const profileRefMaximumLength = 256
 const modelIdentifierMaximumLength = 128
 const modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u
 
-const validateIntent = (value: unknown, path: string): string =>
+export const validateGuideIntent = (value: unknown, path: string): string =>
   text(value, path, guideIntentMaximumLength, { multiline: true })
 
 const validateProfileRef = (value: unknown, path: string): string => text(value, path, profileRefMaximumLength)
@@ -176,6 +176,7 @@ export interface GuideHeadlessArgs {
   readonly help: boolean
   readonly json: boolean
   readonly intent: string | undefined
+  readonly intentStdin: boolean
   readonly profile: string | undefined
   readonly model: string | undefined
   readonly effort: GuideEffort | undefined
@@ -185,18 +186,21 @@ export interface GuideHeadlessArgs {
 const helpFlag = "--help"
 const jsonFlag = "--json"
 const intentFlag = "--intent"
+const intentStdinFlag = "--intent-stdin"
+const inlineIntentPrefix = `${intentFlag}=`
 const profileFlag = "--profile"
 const modelFlag = "--model"
 const effortFlag = "--effort"
 const uiVariantFlag = "--ui-variant"
 
-const booleanFlags = new Set([helpFlag, jsonFlag])
+const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag])
 const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
 interface MutableGuideArgs {
   help: boolean
   json: boolean
+  intentStdin: boolean
   intentFromFlag: string | undefined
   profile: string | undefined
   model: string | undefined
@@ -207,7 +211,7 @@ interface MutableGuideArgs {
 }
 
 const setGuideValueFlag = (state: MutableGuideArgs, token: string, value: string): void => {
-  if (token === intentFlag) state.intentFromFlag = validateIntent(value, "--intent")
+  if (token === intentFlag) state.intentFromFlag = validateGuideIntent(value, "--intent")
   else if (token === profileFlag) state.profile = validateProfileRef(value, "--profile")
   else if (token === modelFlag) state.model = validateModelId(value, "--model")
   else if (token === effortFlag) state.effort = parseGuideEffort(value, "--effort")
@@ -227,6 +231,10 @@ const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: Mut
     state.json = true
     return index
   }
+  if (token === intentStdinFlag) {
+    state.intentStdin = true
+    return index
+  }
   const value = argv[index + 1]
   if (value === undefined || value.startsWith("--")) {
     throw new GuideArgsError(`Missing value for flag: ${token}`)
@@ -235,20 +243,41 @@ const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: Mut
   return index + 1
 }
 
-const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
+const validateGuideIntentSource = (state: MutableGuideArgs): void => {
   if (state.positionals.length > 1) throw new GuideArgsError("Only one positional intent argument is allowed")
   if (state.intentFromFlag !== undefined && state.positionals.length === 1) {
     throw new GuideArgsError("Provide intent via --intent or a positional argument, not both")
   }
+  if (state.intentStdin && (state.intentFromFlag !== undefined || state.positionals.length > 0)) {
+    throw new GuideArgsError("Provide intent via --intent-stdin, --intent, or a positional argument, not more than one")
+  }
+  if (state.intentStdin && state.json) {
+    throw new GuideArgsError("--intent-stdin is available only for the interactive guide")
+  }
+}
+
+const resolveGuideIntent = (state: MutableGuideArgs): string | undefined => {
   const positionalIntent = state.positionals[0]
-  const intent =
-    state.intentFromFlag ?? (positionalIntent === undefined ? undefined : validateIntent(positionalIntent, "intent"))
+  return (
+    state.intentFromFlag ??
+    (positionalIntent === undefined ? undefined : validateGuideIntent(positionalIntent, "intent"))
+  )
+}
+
+const validateGuideModeFlags = (state: MutableGuideArgs): void => {
   if (state.profile !== undefined && !state.json) throw new GuideArgsError("--profile requires --json")
   if (state.uiVariant !== undefined && state.json) throw new GuideArgsError("--ui-variant is interactive-only")
+}
+
+const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
+  validateGuideIntentSource(state)
+  validateGuideModeFlags(state)
+  const intent = resolveGuideIntent(state)
   return {
     help: state.help,
     json: state.json,
     intent,
+    intentStdin: state.intentStdin,
     profile: state.profile,
     model: state.model,
     effort: state.effort,
@@ -258,14 +287,16 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
 
 export const guideHeadlessHelpText = [
   "Usage: trx guide [intent] [options]",
+  "       trx guide --intent-stdin [options]",
   "       trx guide --json --intent <text> [options]",
   "       trx guide --json <text> [options]",
   "",
   "Options:",
   "  <intent>             Start the interactive guide with an initial intent.",
   "  --json               Emit a machine-readable JSON response.",
-  "  --intent <text>       Natural-language task description (up to 60,000 characters).",
+  "  --intent <text>       Multiline task description, up to 60,000 characters.",
   "                         May instead be given as a single positional argument.",
+  "  --intent-stdin        Read the interactive guide intent as plain text from stdin.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
   "  --model <id>            Override the configured model.",
@@ -281,11 +312,13 @@ export const guideHeadlessHelpText = [
  * flags, flags missing a value, more than one positional argument, and
  * empty/control-containing/oversized text. `--profile` requires `--json`.
  * An omitted intent is supplied by stdin JSON mode or the interactive editor.
+ * Interactive plain-text stdin requires `--intent-stdin`.
  */
 export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadlessArgs => {
   const state: MutableGuideArgs = {
     help: false,
     json: false,
+    intentStdin: false,
     intentFromFlag: undefined,
     profile: undefined,
     model: undefined,
@@ -298,6 +331,12 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]
     if (token === undefined) continue
+    if (token.startsWith(inlineIntentPrefix)) {
+      if (state.seenFlags.has(intentFlag)) throw new GuideArgsError(`Duplicate flag: ${intentFlag}`)
+      state.seenFlags.add(intentFlag)
+      state.intentFromFlag = validateGuideIntent(token.slice(inlineIntentPrefix.length), "--intent")
+      continue
+    }
     if (!token.startsWith("--")) {
       state.positionals.push(token)
       continue
@@ -330,7 +369,7 @@ export const parseGuideServiceRequestJson = (source: string): GuideServiceReques
   const fields = record(payload, "request")
   exactKeys(fields, "request", ["schemaVersion", "intent"], ["profile", "model", "effort"])
   if (fields.schemaVersion !== 1) fail("request.schemaVersion", "must equal 1")
-  const intent = validateIntent(fields.intent, "request.intent")
+  const intent = validateGuideIntent(fields.intent, "request.intent")
   const profile = fields.profile === undefined ? undefined : validateProfileRef(fields.profile, "request.profile")
   const model = fields.model === undefined ? undefined : validateModelId(fields.model, "request.model")
   const effort = fields.effort === undefined ? undefined : parseGuideEffort(fields.effort, "request.effort")

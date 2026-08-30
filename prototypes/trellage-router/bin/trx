@@ -70,7 +70,7 @@ Usage:
 PROFILE_REF is native:<launcher>/<profile> or sandbox:<profile>. JSON mode
 uses schemaVersion 1, has no launch or Herdr side effects, and accepts a JSON
 request on stdin when --intent is omitted.
-INTENT accepts up to 60,000 characters.
+INTENT can contain line breaks and accepts up to 60,000 characters.
 Press p during matching or recommendations to view the prompt as Markdown.
 Press e in the prompt viewer to edit; Enter rematches a changed prompt.
 Interactive prompt viewers: pager, split, focus, bookends, dashboard.
@@ -744,9 +744,12 @@ if [[ "$mode" == guide ]]; then
     }' >"$guide_catalog_tmp/combined.json" \
     || die 'could not combine profile guide catalogs'
 
+  guide_command=(node "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master")
+  if ((${#guide_args[@]} > 0)); then
+    guide_command+=("${guide_args[@]}")
+  fi
   guide_status=0
-  node "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master" "${guide_args[@]}" \
-    3<"$guide_catalog_tmp/combined.json" || guide_status=$?
+  "${guide_command[@]}" 3<"$guide_catalog_tmp/combined.json" || guide_status=$?
   cleanup_guide_catalog_tmp
   trap - EXIT HUP INT TERM
   exit "$guide_status"

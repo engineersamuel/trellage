@@ -38,6 +38,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const runtimeSupport = {
   codexEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-entry.sh"),
   copilotEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-copilot-entry.sh"),
+  sessionBridge: path.join(repositoryRoot, "scripts", "trellage-session-bridge.py"),
   headlongEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-headlong-entry.sh"),
   piEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-pi-entry.sh"),
   primeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-prime-entry.sh"),

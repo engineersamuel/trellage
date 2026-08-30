@@ -606,6 +606,36 @@ ensure_workspace_trusted() {
   mv -f -- "$temporary" "$config"
 }
 
+install_session_bridge_hook() {
+  local bridge=/usr/local/bin/trellage-session-bridge
+  local profile="${TRELLAGE_PROFILE_NAME-}"
+  local agent="${TRELLAGE_AGENT-}"
+  if [[ -z "$profile" && -z "$agent" ]]; then
+    return
+  fi
+  [[ "$agent" == copilot ]] || fail 'TRELLAGE_AGENT must identify the Copilot sandbox'
+  [[ "$profile" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
+    || fail 'TRELLAGE_PROFILE_NAME is invalid'
+  [[ -f "$bridge" && ! -L "$bridge" && -x "$bridge" ]] \
+    || fail "missing immutable session bridge: $bridge"
+  "$bridge" install-hook \
+    --mode sandbox \
+    --agent copilot \
+    --profile "$profile" \
+    --config-dir "$runtime_home" \
+    --hook-path "$bridge"
+  local settings="$runtime_home/settings.json"
+  local command="$bridge sandbox-hook --agent copilot --profile $profile"
+  [[ -f "$settings" && ! -L "$settings" ]] \
+    || fail 'Copilot SessionStart hook settings were not installed'
+  jq -e --arg command "$command" '
+    any(.hooks.SessionStart[]?;
+      .type == "command" and (.bash == $command or .command == $command)
+    )
+  ' "$settings" >/dev/null \
+    || fail 'Copilot SessionStart hook settings are invalid'
+}
+
 atomic_copy_control() {
   local name="$1"
   local destination="$runtime_home/$name"
@@ -1000,6 +1030,7 @@ if ! current_state_is_valid; then
 fi
 if [[ "$read_only_probe" != true ]]; then
   ensure_workspace_trusted
+  install_session_bridge_hook
 fi
 release_runtime_lock
 

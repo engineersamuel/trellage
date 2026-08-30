@@ -47,9 +47,11 @@ import {
   type CommandRunner,
   type CommandSpec,
   type GitInspectionReady,
+  type GuideCaptureProvenance,
   type HerdrContext,
   type HerdrEnvironment,
   type HerdrPromptDeliveryMode,
+  type HerdrInvocationSurface,
   type HerdrSplitDirection,
   type PromptHandlingMode,
   type SelectedProfile,
@@ -70,13 +72,19 @@ const promptMaxLength = 8000
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u
 const pastedControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu
 
+const textCharacterLength = (value: string): number => [...value].length
+const takeTextCharacters = (value: string, maximum: number): string =>
+  [...value].slice(0, Math.max(0, maximum)).join("")
+const removeLastTextCharacter = (value: string): string =>
+  takeTextCharacters(value, textCharacterLength(value) - 1)
+
 /** True when appending `addition` to `current` would stay within `maxLength`. Shared by every bounded text editor. */
 export const isWithinTextBound = (current: string, addition: string, maxLength: number): boolean =>
-  current.length + addition.length <= maxLength
+  textCharacterLength(current) + textCharacterLength(addition) <= maxLength
 
 export const boundedPastedText = (current: string, pasted: string, maximum: number): string => {
   const normalized = pasted.replace(/\r\n?/gu, "\n").replace(pastedControlCharacters, "")
-  return normalized.slice(0, Math.max(0, maximum - current.length))
+  return takeTextCharacters(normalized, maximum - textCharacterLength(current))
 }
 
 /** Surfaces a safe, non-leaky message for any thrown value. Never rethrows raw non-Error values. */
@@ -189,13 +197,18 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
 export const wizardStepForStage = (stage: GuideUiStage): GuideWizardStep | undefined => wizardStepByStage[stage]
 
 /** The destination choices offered, in display order. Herdr choices only appear when `herdrEnabled`. */
-export const destinationOptions = (herdrEnabled: boolean): ReadonlyArray<GuideUiDestination> =>
+export const destinationOptions = (
+  herdrEnabled: boolean,
+  surface: HerdrInvocationSurface = "pane",
+): ReadonlyArray<GuideUiDestination> =>
   herdrEnabled
-    ? [
-        GuideUiDestination.CurrentTerminal,
-        GuideUiDestination.CurrentHerdrWorkspace,
-        GuideUiDestination.NewHerdrWorktree,
-      ]
+    ? surface === "popup"
+      ? [GuideUiDestination.CurrentHerdrWorkspace, GuideUiDestination.NewHerdrWorktree]
+      : [
+          GuideUiDestination.CurrentTerminal,
+          GuideUiDestination.CurrentHerdrWorkspace,
+          GuideUiDestination.NewHerdrWorktree,
+        ]
     : [GuideUiDestination.CurrentTerminal]
 
 // ---------------------------------------------------------------------------
@@ -424,7 +437,9 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       return state.stage === GuideUiStage.Intent ? { ...state, textDraft: action.text } : state
 
     case GuideUiActionType.IntentBackspace:
-      return state.stage === GuideUiStage.Intent ? { ...state, textDraft: state.textDraft.slice(0, -1) } : state
+      return state.stage === GuideUiStage.Intent
+        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) }
+        : state
 
     case GuideUiActionType.IntentSubmit: {
       if (state.stage !== GuideUiStage.Intent) return state
@@ -518,7 +533,9 @@ const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUi
     case GuideUiActionType.PromptReviewChange:
       return state.promptReviewEditing ? { ...state, textDraft: action.text } : state
     case GuideUiActionType.PromptReviewBackspace:
-      return state.promptReviewEditing ? { ...state, textDraft: state.textDraft.slice(0, -1) } : state
+      return state.promptReviewEditing
+        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) }
+        : state
     case GuideUiActionType.PromptReviewBack:
       return closePromptReview(state)
     case GuideUiActionType.PromptReviewSubmit:
@@ -755,7 +772,9 @@ const reduceEditor = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       return editingStages.has(state.stage) ? { ...state, textDraft: action.text } : state
 
     case GuideUiActionType.EditorBackspace:
-      return editingStages.has(state.stage) ? { ...state, textDraft: state.textDraft.slice(0, -1) } : state
+      return editingStages.has(state.stage)
+        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) }
+        : state
 
     default:
       return state
@@ -1489,6 +1508,47 @@ export interface GuideUiProps {
   readonly uiVariant?: GuideLongPromptVariant
 }
 
+export const captureSourcePresentation = (
+  capture: GuideCaptureProvenance,
+): { readonly label: string; readonly detail: string; readonly color: "cyan" | "green" | "yellow" } => {
+  if (capture.source === "selection") {
+    return {
+      label: "Highlighted text",
+      detail: "The guide is using text that you selected.",
+      color: "cyan",
+    }
+  }
+  if (capture.source === "terminal") {
+    return {
+      label: "Terminal snapshot",
+      detail: "This is not an exact message and can include prompts, status rows, or earlier output.",
+      color: "yellow",
+    }
+  }
+  const agent = capture.agent === undefined ? "Agent" : capture.agent[0]?.toUpperCase() + capture.agent.slice(1)
+  const session = capture.sessionId === undefined ? "" : ` · session ${capture.sessionId.slice(0, 12)}`
+  const profile = capture.profile === undefined ? "" : ` · profile ${capture.profile}`
+  return {
+    label: capture.source === "sandbox-transcript" ? "Exact Sandbox result" : "Exact agent result",
+    detail: `${agent}${session}${profile}`,
+    color: "green",
+  }
+}
+
+const CaptureSourceBanner = ({ capture }: { readonly capture: GuideCaptureProvenance }) => {
+  const presentation = captureSourcePresentation(capture)
+  return (
+    <Box flexDirection="column" paddingX={1} marginBottom={1} borderStyle="round" borderColor={presentation.color}>
+      <Text bold color={presentation.color}>
+        {presentation.label}
+      </Text>
+      <Text dimColor wrap="wrap">
+        {presentation.detail}
+      </Text>
+    </Box>
+  )
+}
+
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
 
 const cyclicItemAt = <T,>(items: ReadonlyArray<T>, index: number): T | undefined =>
@@ -1573,7 +1633,9 @@ export const generationProgressItems = (
 
 export const summarizeGenerationIntent = (intent: string, maximumLength = 100): string => {
   const normalized = intent.replace(/\s+/gu, " ").trim()
-  return normalized.length <= maximumLength ? normalized : `${normalized.slice(0, maximumLength - 1)}…`
+  return textCharacterLength(normalized) <= maximumLength
+    ? normalized
+    : `${takeTextCharacters(normalized, maximumLength - 1)}…`
 }
 
 const guideTextSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
@@ -1936,7 +1998,7 @@ interface PromptReviewMetrics {
 }
 
 export const promptReviewMetrics = (value: string): PromptReviewMetrics => ({
-  characters: value.length,
+  characters: textCharacterLength(value),
   words: value.trim().length === 0 ? 0 : value.trim().split(/\s+/u).length,
   sourceLines: value.length === 0 ? 0 : value.split("\n").length,
   headings: value
@@ -2965,8 +3027,8 @@ const completeDestination = (context: GuideInputContext, option: GuideUiDestinat
 }
 
 const handleDestinationInput: GuideInputHandler = (context, input, key) => {
-  const { state, dispatch, complete, cancel, herdrEnabled } = context
-  const options = destinationOptions(herdrEnabled)
+  const { state, dispatch, complete, cancel, herdrEnabled, herdrContext } = context
+  const options = destinationOptions(herdrEnabled, herdrContext?.surface)
   if (key.upArrow || input === "k")
     dispatch({ type: GuideUiActionType.DestinationMove, delta: -1, optionCount: options.length })
   else if (key.downArrow || input === "j")
@@ -3099,6 +3161,7 @@ interface GuideRenderContext {
   readonly props: GuideUiProps
   readonly state: GuideUiState
   readonly herdrEnabled: boolean
+  readonly herdrContext: HerdrContext | null
 }
 
 type GuideStageRenderer = (context: GuideRenderContext) => React.ReactElement
@@ -3160,8 +3223,8 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
   )
 }
 
-const renderDestination: GuideStageRenderer = ({ state, herdrEnabled }) => {
-  const options = destinationOptions(herdrEnabled)
+const renderDestination: GuideStageRenderer = ({ state, herdrEnabled, herdrContext }) => {
+  const options = destinationOptions(herdrEnabled, herdrContext?.surface)
   const option = options[state.destinationIndex]
   const command =
     state.selectedProfile === undefined
@@ -3310,8 +3373,9 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const activeWizardStep = wizardStepForStage(state.stage)
   return (
     <Box flexDirection="column">
+      {herdrContext?.capture === undefined ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
       {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
-      {stageRenderer[state.stage]({ props, state, herdrEnabled })}
+      {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })}
     </Box>
   )
 }

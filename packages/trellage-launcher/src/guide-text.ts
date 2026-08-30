@@ -60,7 +60,7 @@ export const text = (
   if (typeof value !== "string") return fail(path, "must be a string")
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ")
   if (normalized.length === 0) return fail(path, "must not be empty")
-  if (normalized.length > maximum) return fail(path, `must contain at most ${maximum} characters`)
+  if ([...normalized].length > maximum) return fail(path, `must contain at most ${maximum} characters`)
   if ((options.multiline ? multilineControls : singleLineControls).test(normalized)) {
     return fail(path, "must not contain control characters")
   }

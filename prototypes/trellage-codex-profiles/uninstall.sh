@@ -63,8 +63,23 @@ expected_entries="$(printf '%s\n' \
   './bin/cdx' \
   './catalog.json' \
   './lib' \
+  './lib/native-codex' \
+  './lib/trellage-session-bridge.py')"
+legacy_entries="$(printf '%s\n' \
+  '.' \
+  './.fish-recovery' \
+  './.fish-recovery/config-before' \
+  './.fish-recovery/original-mode' \
+  './.fish-recovery/removed-line' \
+  './.fish-recovery/sha256-after' \
+  './.fish-recovery/sha256-before' \
+  './.managed-by-trellage-codex-profiles' \
+  './bin' \
+  './bin/cdx' \
+  './catalog.json' \
+  './lib' \
   './lib/native-codex')"
-[ "$actual_entries" = "$expected_entries" ] \
+[ "$actual_entries" = "$expected_entries" ] || [ "$actual_entries" = "$legacy_entries" ] \
   || refuse "refusing unexpected content in owned runtime: $install_root"
 [ -z "$(find "$install_root" -type l -print -quit)" ] \
   || refuse "refusing symlinked content in owned runtime: $install_root"
@@ -80,6 +95,11 @@ for path in "$installed_launcher" "$install_root/lib/native-codex" \
   "$install_root/catalog.json"; do
   [ -f "$path" ] && [ ! -L "$path" ] || refuse "unsafe managed runtime file: $path"
 done
+if [ -e "$install_root/lib/trellage-session-bridge.py" ]; then
+  [ -f "$install_root/lib/trellage-session-bridge.py" ] \
+    && [ ! -L "$install_root/lib/trellage-session-bridge.py" ] \
+    || refuse "unsafe managed runtime file: $install_root/lib/trellage-session-bridge.py"
+fi
 expected_after="$(sed -n '1p' "$recovery/sha256-after")"
 [ "$(wc -l <"$recovery/original-mode" | tr -d ' ')" -eq 1 ] \
   || refuse 'invalid Fish recovery mode'

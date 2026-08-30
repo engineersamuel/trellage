@@ -216,6 +216,7 @@ afterAll(() => rm(runtimeRoot, { recursive: true, force: true }))
 const runtimePaths = {
   codexEntry: path.join(runtimeRoot, "runtime-entry.sh"),
   copilotEntry: path.join(runtimeRoot, "runtime-copilot-entry.sh"),
+  sessionBridge: path.join(runtimeRoot, "trellage-session-bridge.py"),
   piEntry: path.join(runtimeRoot, "runtime-pi-entry.sh"),
   primeEntry: path.join(runtimeRoot, "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
@@ -358,6 +359,12 @@ rename_exe = "copilot"`)
     expect
       .soft(rendered)
       .toContain('"/usr/local/bin/trellage-copilot-entry" = { source = "runtime-copilot-entry.sh", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',
+    )
+    expect(rendered).toContain('TRELLAGE_PROFILE_NAME = "copilot-hve"')
+    expect(rendered).toContain('TRELLAGE_AGENT = "copilot"')
+    expect(rendered).toContain('python = "3.13.14"')
     expect.soft(rendered).toContain('"dev.trellage.harness.kind" = "copilot"')
     expect.soft(rendered).toContain('"dev.trellage.copilot.version" = "1.0.75"')
     expect.soft(rendered).toContain(`"dev.trellage.runtime.hash" = "${copilotRuntime.hash}"`)
@@ -488,6 +495,11 @@ rename_exe = "copilot"`)
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-claude-entry" = { source = "runtime-claude-entry.sh", mode = "copy" }',
     )
+    expect(rendered).toContain(
+      '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',
+    )
+    expect(rendered).toContain('TRELLAGE_PROFILE_NAME = "claude-research"')
+    expect(rendered).toContain('TRELLAGE_AGENT = "claude"')
     expect(rendered).toContain('"dev.trellage.harness.kind" = "claude"')
     expect(rendered).toContain('"dev.trellage.hyperresearch.version" = "0.9.2"')
     expect(rendered).not.toContain('"dev.trellage.hyperresearch.version" = "0.9.1"')
@@ -543,6 +555,14 @@ rename_exe = "copilot"`)
     expect
       .soft(rendered)
       .toContain('"/usr/local/bin/trellage-codex-entry" = { source = "runtime-entry.sh", mode = "copy" }')
+    expect
+      .soft(rendered)
+      .toContain(
+        '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',
+      )
+    expect.soft(rendered).toContain('TRELLAGE_PROFILE_NAME = "golden"')
+    expect.soft(rendered).toContain('TRELLAGE_AGENT = "codex"')
+    expect.soft(rendered).toContain('python = "3.13.14"')
     expect.soft(rendered).toContain('"dev.trellage.prototype" = "trellage"')
     expect.soft(rendered).toContain('"dev.trellage.profile"')
     expect.soft(rendered).not.toContain("dev.sandbox-harness")

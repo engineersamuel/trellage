@@ -19,6 +19,7 @@ seed_fixture() {
   local fixture="$1"
   fixture_git init -q -b main "$fixture"
   mkdir -p \
+    "$fixture/scripts" \
     "$fixture/tests" \
     "$fixture/packages/trellage-cli" \
     "$fixture/packages/trellage-guide-core"
@@ -29,6 +30,10 @@ seed_fixture() {
     >"$fixture/packages/trellage-cli/package.json"
   printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
     >"$fixture/packages/trellage-guide-core/package.json"
+  printf '%s\n' \
+    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["scripts/trellage-session-bridge.py"]}' \
+    >"$fixture/package.json"
+  printf '%s\n' '#!/usr/bin/env python3' >"$fixture/scripts/trellage-session-bridge.py"
   printf 'Generic fixture\n' >"$fixture/README.md"
 }
 

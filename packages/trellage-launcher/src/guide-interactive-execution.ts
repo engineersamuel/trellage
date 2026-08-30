@@ -16,7 +16,10 @@ const promptTimeoutMs = 60_000
 export interface GuideInteractiveExecutionServices {
   readonly runner: CommandRunner
   readonly write: (text: string) => void
-  readonly runInteractive?: (command: CommandSpec, options: { readonly cwd: string }) => Promise<void>
+  readonly runInteractive?: (
+    command: CommandSpec,
+    options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
+  ) => Promise<void>
 }
 
 const writePrompt = (write: GuideInteractiveExecutionServices["write"], prompt: string, instruction: string): void => {
@@ -108,6 +111,7 @@ export const executeGuideUiResult = async (
       try {
         await (services.runInteractive ?? runInteractiveCommand)(result.command, {
           cwd: result.cwd,
+          env: { ...process.env, TRELLAGE_AUTOMATION: "1" },
         })
         return 0
       } catch (error) {

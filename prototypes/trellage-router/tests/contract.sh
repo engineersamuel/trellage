@@ -355,7 +355,8 @@ assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 assert_contains 'native:<launcher>/<profile> or sandbox:<profile>' \
   "$fixture_root/guide-help.out"
 assert_contains 'schemaVersion 1' "$fixture_root/guide-help.out"
-assert_contains 'INTENT accepts up to 60,000 characters.' "$fixture_root/guide-help.out"
+assert_contains 'INTENT can contain line breaks and accepts up to 60,000 characters.' \
+  "$fixture_root/guide-help.out"
 assert_contains 'Interactive prompt viewers: pager, split, focus, bookends, dashboard.' \
   "$fixture_root/guide-help.out"
 
@@ -549,6 +550,10 @@ jq -e \
       and .guide.schemaVersion == 1)
   ' "$fixture_root/guide-catalog.json" >/dev/null \
   || fail 'guide mode combined catalog or arguments differ'
+"$fixture_bin/trx" guide >"$fixture_root/guide-no-args.json" \
+  || fail 'guide mode rejected an omitted interactive intent'
+jq -e '.args == []' "$fixture_root/guide-no-args.json" >/dev/null \
+  || fail 'guide mode added arguments when the interactive intent was omitted'
 mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 
 TRX_ARGUMENT_LOG="$argument_log" \

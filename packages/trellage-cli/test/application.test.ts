@@ -433,6 +433,7 @@ const runtimeSupport = (root: string) => ({
   codexEntry: path.join(root, "runtime-entry.sh"),
   copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
   headlongEntry: path.join(root, "runtime-headlong-entry.sh"),
+  sessionBridge: fileURLToPath(new URL("../../../scripts/trellage-session-bridge.py", import.meta.url)),
   piEntry: path.join(root, "runtime-pi-entry.sh"),
   primeEntry: path.join(root, "runtime-prime-entry.sh"),
   finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
@@ -2038,7 +2039,7 @@ select = ["humanizer"]
 
     const script = builderScript(document, lock)
 
-    expect(script).toContain("mise install --locked node@24.8.0 http:claude@2.1.218")
+    expect(script).toContain("mise install --locked node@24.8.0 python@3.13.14 http:claude@2.1.218")
     expect(script).toContain('claude_metadata="$claude_dir/metadata.json"')
     expect(script).toContain(
       'sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"',
@@ -2134,7 +2135,7 @@ select = ["example"]
     const document = await Effect.runPromise(parseProfile(copilotSource, "/tmp/copilot/profile.toml"))
     const script = builderScript(document, copilotLock(profileHash(document)))
     const commands = [
-      "mise install --locked node@24.8.0 http:copilot@1.0.75",
+      "mise install --locked node@24.8.0 python@3.13.14 http:copilot@1.0.75",
       'copilot_dir="$(mise where http:copilot@1.0.75)"',
       'copilot_bin="$copilot_dir/copilot"',
       '[ -x "$copilot_bin" ]',
@@ -2200,7 +2201,7 @@ select = ["example"]
     }
 
     expect(builderScript(document, lock)).toBe(
-      "mise install --locked http:codex@0.144.6; codex_dir=\"$(mise where http:codex@0.144.6)\"; rm -f \"$codex_dir/metadata.json\"; curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output '/src/codex-code-mode-host.tar.gz' 'https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz'; [ \"$(wc -c < '/src/codex-code-mode-host.tar.gz')\" -eq 17260137 ]; printf '%s  %s\\n' 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' '/src/codex-code-mode-host.tar.gz' | sha256sum --check --strict -; rm -rf '/tmp/trellage-codex-code-mode-host'; mkdir -p '/tmp/trellage-codex-code-mode-host'; tar --no-same-owner --no-same-permissions -xzf '/src/codex-code-mode-host.tar.gz' -C '/tmp/trellage-codex-code-mode-host'; [ \"$(find '/tmp/trellage-codex-code-mode-host' -mindepth 1 -maxdepth 1 | wc -l)\" -eq 1 ]; mv '/tmp/trellage-codex-code-mode-host/codex-code-mode-host-aarch64-unknown-linux-musl' \"$codex_dir/codex-code-mode-host\"; chmod 0755 \"$codex_dir/codex-code-mode-host\"; PATH=/src/build-support:$PATH mise oci build --locked --output \"$OUTPUT_DIR\" --tag \"$IMAGE_REF\"",
+      "mise install --locked python@3.13.14 http:codex@0.144.6; codex_dir=\"$(mise where http:codex@0.144.6)\"; rm -f \"$codex_dir/metadata.json\"; curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output '/src/codex-code-mode-host.tar.gz' 'https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz'; [ \"$(wc -c < '/src/codex-code-mode-host.tar.gz')\" -eq 17260137 ]; printf '%s  %s\\n' 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' '/src/codex-code-mode-host.tar.gz' | sha256sum --check --strict -; rm -rf '/tmp/trellage-codex-code-mode-host'; mkdir -p '/tmp/trellage-codex-code-mode-host'; tar --no-same-owner --no-same-permissions -xzf '/src/codex-code-mode-host.tar.gz' -C '/tmp/trellage-codex-code-mode-host'; [ \"$(find '/tmp/trellage-codex-code-mode-host' -mindepth 1 -maxdepth 1 | wc -l)\" -eq 1 ]; mv '/tmp/trellage-codex-code-mode-host/codex-code-mode-host-aarch64-unknown-linux-musl' \"$codex_dir/codex-code-mode-host\"; chmod 0755 \"$codex_dir/codex-code-mode-host\"; PATH=/src/build-support:$PATH mise oci build --locked --output \"$OUTPUT_DIR\" --tag \"$IMAGE_REF\"",
     )
   })
 
@@ -2396,7 +2397,7 @@ exit "$FINALIZER_STATUS"
     await expect(execute({ pluginListOutput: `Installed plugins:\n${exact}` })).resolves.toEqual(
       expect.objectContaining({
         trace: [
-          "mise:install --locked node@24.8.0 http:copilot@1.0.75",
+          "mise:install --locked node@24.8.0 python@3.13.14 http:copilot@1.0.75",
           "mise:where http:copilot@1.0.75",
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin marketplace add /src/hve-core",
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin install hve-core@hve-core",

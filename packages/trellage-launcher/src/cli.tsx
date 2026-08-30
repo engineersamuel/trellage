@@ -17,9 +17,14 @@ import {
 import { tableColumns } from "./table-layout.js"
 import { enrichNativeProfileList } from "./native-guide-list.js"
 import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.js"
-import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.js"
+import {
+  guideHeadlessHelpText,
+  parseGuideHeadlessArgv,
+  resolveGuideModelRouting,
+} from "./guide-api.js"
 import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
+import { resolveInteractiveGuideIntent } from "./guide-interactive-intent.js"
 import { executeGuideUiResult } from "./guide-interactive-execution.js"
 import {
   createNodeCommandRunner,
@@ -523,14 +528,49 @@ const herdrEnvironment = (): HerdrEnvironment => ({
   ...(process.env.HERDR_ENV === undefined ? {} : { HERDR_ENV: process.env.HERDR_ENV }),
   ...(process.env.HERDR_WORKSPACE_ID === undefined ? {} : { HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID }),
   ...(process.env.HERDR_PANE_ID === undefined ? {} : { HERDR_PANE_ID: process.env.HERDR_PANE_ID }),
+  ...(process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON === undefined
+    ? {}
+    : { TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON }),
 })
 
-const probeInteractiveHerdr = async (runner: ReturnType<typeof createNodeCommandRunner>): Promise<boolean> => {
-  if (getHerdrContext(herdrEnvironment()) === null) return false
+const probeInteractiveHerdr = async (
+  runner: ReturnType<typeof createNodeCommandRunner>,
+  env: HerdrEnvironment,
+  cwd: string,
+): Promise<boolean> => {
+  if (getHerdrContext(env) === null) return false
   try {
-    return await probeHerdrAvailability(runner, { cwd: process.cwd(), timeoutMs: 5_000 })
+    return await probeHerdrAvailability(runner, { cwd, timeoutMs: 5_000 })
   } catch {
     return false
+  }
+}
+
+interface InteractiveTerminalStreams {
+  readonly input: NodeJS.ReadStream
+  readonly output: NodeJS.WriteStream
+  readonly close: () => void
+}
+
+const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
+  let input: NodeJS.ReadStream | undefined
+  try {
+    input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
+    const openedInput = input
+    const output = process.stderr.isTTY
+      ? process.stderr
+      : new tty.WriteStream(openSync("/dev/tty", constants.O_WRONLY))
+    return {
+      input: openedInput,
+      output,
+      close: () => {
+        if (openedInput !== process.stdin) openedInput.destroy()
+        if (output !== process.stderr) output.destroy()
+      },
+    }
+  } catch {
+    if (input !== undefined && input !== process.stdin) input.destroy()
+    throw new Error("an interactive controlling terminal is required")
   }
 }
 
@@ -540,6 +580,14 @@ const runInteractiveGuideMode = async (
   promptMasterSkillDirectory: string,
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
+  const herdrEnv = herdrEnvironment()
+  const herdrContext = getHerdrContext(herdrEnv)
+  const initialIntent = await resolveInteractiveGuideIntent({
+    args,
+    herdrContext,
+    env: process.env,
+    readStdin: () => readInput(undefined),
+  })
   const catalog = readGuideCatalog()
   const routing = resolveGuideModelRouting(
     {
@@ -564,18 +612,13 @@ const runInteractiveGuideMode = async (
     },
   )
   const runner = createNodeCommandRunner()
-  const herdrAvailabilityProbe = await probeInteractiveHerdr(runner)
-  let outputFd: number | undefined
-  let input: NodeJS.ReadStream
-  let output: NodeJS.WriteStream
-  try {
-    input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
-    output = process.stderr.isTTY
-      ? process.stderr
-      : new tty.WriteStream((outputFd = openSync("/dev/tty", constants.O_WRONLY)))
-  } catch {
-    throw new Error("an interactive controlling terminal is required")
+  const cwd = herdrContext?.cwd ?? process.cwd()
+  const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd)
+  if (herdrContext?.surface === "popup" && !herdrAvailabilityProbe) {
+    throw new Error("Herdr is unavailable for this guide popup")
   }
+  const terminal = openInteractiveTerminalStreams()
+  const { input, output } = terminal
   const redrawInitialFrame = createInitialGuideRenderHandler(
     (text) => {
       output.write(text)
@@ -591,10 +634,10 @@ const runInteractiveGuideMode = async (
         provider={provider}
         routing={routing}
         runner={runner}
-        cwd={process.cwd()}
-        herdrEnv={herdrEnvironment()}
+        cwd={cwd}
+        herdrEnv={herdrEnv}
         herdrAvailabilityProbe={herdrAvailabilityProbe}
-        {...(args.intent === undefined ? {} : { initialIntent: args.intent })}
+        {...(initialIntent === undefined ? {} : { initialIntent })}
         {...(args.uiVariant === undefined ? {} : { uiVariant: args.uiVariant })}
       />,
       {
@@ -615,8 +658,7 @@ const runInteractiveGuideMode = async (
     }
     result = resolved as GuideUiResult
   } finally {
-    if (input !== process.stdin) input.destroy()
-    if (output !== process.stderr) output.destroy()
+    terminal.close()
   }
   process.exitCode = await executeGuideUiResult(result, {
     runner,

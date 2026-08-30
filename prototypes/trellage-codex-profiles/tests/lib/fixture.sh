@@ -122,6 +122,7 @@ build_fixture_profiles() {
 fixture_profiles="$fixture_root/profiles"
 fixture_launcher="$fixture_profiles/bin/cdx"
 fixture_common_launcher="$fixture_profiles/lib/native-codex"
+fixture_session_bridge="$fixture_profiles/lib/trellage-session-bridge.py"
 fixture_catalog="$fixture_profiles/catalog.json"
 fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
 fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/skills"
@@ -133,6 +134,7 @@ mkdir -p \
   "$fixture_skills_cache/skills/show-me"
 cp "$launcher" "$fixture_launcher"
 cp "$common_launcher" "$fixture_common_launcher"
+cp "$root/../../scripts/trellage-session-bridge.py" "$fixture_session_bridge"
 cp "$catalog" "$fixture_catalog"
 install -m 0555 "$root/../../scripts/floating-skills.mjs" \
   "$fixture_skills_runtime/floating-skills.mjs"
@@ -143,7 +145,7 @@ printf '%s\n' '# Fixture show-me skill' \
   >"$fixture_skills_cache/skills/show-me/SKILL.md"
 printf '%s\n' fixture-personal show-me >"$fixture_skills_cache/managed-skills.txt"
 : >"$fixture_skills_cache/always-on.md"
-chmod +x "$fixture_launcher" "$fixture_common_launcher"
+chmod +x "$fixture_launcher" "$fixture_common_launcher" "$fixture_session_bridge"
 }
 
 # Writes the fake `codex` and `curl` stubs the blocks drive, and the `fake_env`

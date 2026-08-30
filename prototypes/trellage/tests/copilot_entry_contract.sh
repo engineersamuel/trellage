@@ -202,6 +202,8 @@ printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
 cp -R "$seed/skills/caveman" "$runtime/skills/caveman"
 cp "$seed/copilot-instructions.md" "$runtime/copilot-instructions.md"
 printf '{"keep":true,"trustedFolders":["/existing"]}\n' >"$runtime/config.json"
+printf '{"hooks":{"SessionStart":[{"type":"command","bash":"existing-session-start"}]}}\n' \
+  >"$runtime/settings.json"
 chmod -R a+rwX "$runtime/skills"
 printf '{"schema":1,"marketplace":"hve-core","plugin":"hve-core","version":"3.3.101"}\n' \
   >"$seed/managed-lock.json"
@@ -254,12 +256,15 @@ run_entry() {
     --user '10001:10001' \
     --entrypoint /bin/bash \
     --mount "type=bind,src=$entry,dst=/test/runtime-copilot-entry.sh,readonly" \
+    --mount "type=bind,src=$prototype_dir/../../scripts/trellage-session-bridge.py,dst=/usr/local/bin/trellage-session-bridge,readonly" \
     --mount "type=bind,src=$seed,dst=/usr/local/share/trellage/copilot-seed,readonly" \
     --mount "type=bind,src=$runtime,dst=/home/agent/.copilot" \
     --mount "type=bind,src=$fake_bin,dst=/test-bin,readonly" \
     --mount "type=bind,src=$output,dst=/test-output" \
     --env 'PATH=/test-bin:/usr/local/bin:/usr/bin:/bin' \
     --env 'TRELLAGE_TEST_OUTPUT=/test-output' \
+    --env 'TRELLAGE_AGENT=copilot' \
+    --env 'TRELLAGE_PROFILE_NAME=copilot-hve-test' \
     --env "COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN-}" \
     --env "GH_TOKEN=${GH_TOKEN-}" \
     --env "GITHUB_TOKEN=${GITHUB_TOKEN-}" \
@@ -369,6 +374,19 @@ assert_no_transaction_temps 'failed prompt mode'
 
 jq -e '.trustedFolders == ["/existing", "/"]' "$runtime/config.json" >/dev/null \
   || fail 'repeated Copilot launches duplicated the trusted workspace'
+jq -e '
+  .hooks.SessionStart
+  | map(select(
+      .type == "command"
+      and .bash == "/usr/local/bin/trellage-session-bridge sandbox-hook --agent copilot --profile copilot-hve-test"
+    ))
+  | length == 1
+' "$runtime/settings.json" >/dev/null \
+  || fail 'repeated Copilot launches did not install exactly one Sandbox SessionStart bridge'
+jq -e '
+  any(.hooks.SessionStart[]; .type == "command" and .bash == "existing-session-start")
+' "$runtime/settings.json" >/dev/null \
+  || fail 'Copilot SessionStart bridge replaced an existing hook'
 
 commented_config="$runtime/config.json.next"
 cat >"$commented_config" <<'EOF'

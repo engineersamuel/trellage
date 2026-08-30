@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import {
   chmod,
+  cp,
   link,
   lstat,
   mkdir,
@@ -28,6 +29,7 @@ const versionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/
 const dangerousIdentifiers = new Set(["__proto__", "prototype", "constructor"])
 const lockName = ".finalize.lock"
 const recoveryName = ".finalize.recovery"
+const copilotPluginLockName = "installed-plugins.lock"
 const stagePrefix = ".finalize-stage-"
 const privateLockPrefix = ".copilot-finalize-lock-"
 const privateRecoveryPrefix = ".copilot-finalize-recovery-"
@@ -80,6 +82,7 @@ const lexical = (left, right) => left < right ? -1 : left > right ? 1 : 0
 const modeString = (mode) => (mode & 0o777).toString(8).padStart(4, "0")
 
 const isMissing = (error) => error && typeof error === "object" && "code" in error && error.code === "ENOENT"
+const isAlreadyExists = (error) => error && typeof error === "object" && "code" in error && error.code === "EEXIST"
 
 const pathIsMissing = async (file) => {
   try {
@@ -87,6 +90,15 @@ const pathIsMissing = async (file) => {
     return false
   } catch (error) {
     if (isMissing(error)) return true
+    throw error
+  }
+}
+
+const optionalStatus = async (file) => {
+  try {
+    return await lstat(file)
+  } catch (error) {
+    if (isMissing(error)) return undefined
     throw error
   }
 }
@@ -138,59 +150,106 @@ const identityOf = async (directory) => {
   return { path: await realpath(directory), dev: String(status.dev), ino: String(status.ino) }
 }
 
-const readOwnedLock = async (publicPath, kind, seedIdentity, buildRoot) => {
-  const label = `${kind} lock`
-  let foundPublic = false
+const readStrictJson = async (handle, message) => {
   try {
-    const status = await lstat(publicPath)
-    foundPublic = true
-    if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 2) fail(`invalid ${label}`)
-    const handle = await open(publicPath, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const opened = await handle.stat()
-      if (!opened.isFile() || opened.dev !== status.dev || opened.ino !== status.ino) {
-        fail(`invalid ${label}`)
-      }
-      if (opened.nlink !== 2) {
-        if (await pathIsMissing(publicPath)) return undefined
-        fail(`invalid ${label}`)
-      }
-      let record
-      try {
-        record = JSON.parse(await handle.readFile("utf8"))
-      } catch (error) {
-        if (error instanceof SyntaxError) fail(`invalid ${label}`)
-        throw error
-      }
-      const prefix = kind === "main" ? privateLockPrefix : privateRecoveryPrefix
-      if (!sameKeys(record, ["schema", "kind", "pid", "nonce", "seed", "private"])
-        || record.schema !== 1 || record.kind !== kind || !Number.isSafeInteger(record.pid) || record.pid <= 0
-        || typeof record.nonce !== "string" || !/^[A-Za-z0-9-]+$/.test(record.nonce)
-        || !sameKeys(record.seed, ["path", "dev", "ino"]) || !sameIdentity(record.seed, seedIdentity)
-        || !sameKeys(record.private, ["name", "dev", "ino"])
-        || record.private.name !== `${prefix}${record.nonce}`
-        || record.private.dev !== String(opened.dev) || record.private.ino !== String(opened.ino)) {
-        fail(`invalid ${label}`)
-      }
-      const privatePath = path.join(buildRoot, record.private.name)
-      const privateStatus = await lstat(privatePath)
-      if (!privateStatus.isFile() || privateStatus.isSymbolicLink()
-        || privateStatus.dev !== opened.dev || privateStatus.ino !== opened.ino) fail(`invalid ${label}`)
-      if (privateStatus.nlink !== 2) {
-        if (await pathIsMissing(publicPath)) return undefined
-        fail(`invalid ${label}`)
-      }
-      return { publicPath, privatePath, record }
-    } finally {
-      await handle.close()
+    return JSON.parse(await handle.readFile("utf8"))
+  } catch (error) {
+    if (error instanceof SyntaxError) fail(message)
+    throw error
+  }
+}
+
+const readOptionalJson = async (handle) => {
+  try {
+    return JSON.parse(await handle.readFile("utf8"))
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined
+    throw error
+  }
+}
+
+const stableFileStatus = (opened, expected) =>
+  opened.isFile() && opened.dev === expected.dev && opened.ino === expected.ino
+
+const lockPrefix = (kind) => kind === "main" ? privateLockPrefix : privateRecoveryPrefix
+
+const validLockOwner = (record, kind) =>
+  sameKeys(record, ["schema", "kind", "pid", "nonce", "seed", "private"])
+  && record.schema === 1
+  && record.kind === kind
+  && Number.isSafeInteger(record.pid)
+  && record.pid > 0
+  && typeof record.nonce === "string"
+  && /^[A-Za-z0-9-]+$/.test(record.nonce)
+
+const validLockSeed = (record, seedIdentity) =>
+  sameKeys(record.seed, ["path", "dev", "ino"]) && sameIdentity(record.seed, seedIdentity)
+
+const validLockPrivateReference = (record, prefix, name, status) =>
+  sameKeys(record.private, ["name", "dev", "ino"])
+  && record.private.name === name
+  && name === `${prefix}${record.nonce}`
+  && record.private.dev === String(status.dev)
+  && record.private.ino === String(status.ino)
+
+const validOwnedLockRecord = (record, kind, seedIdentity, status) =>
+  validLockOwner(record, kind)
+  && validLockSeed(record, seedIdentity)
+  && validLockPrivateReference(record, lockPrefix(kind), record.private?.name, status)
+
+const lockWasReleased = async (error, publicPath, label) => {
+  if (!isMissing(error)) throw error
+  if (await pathIsMissing(publicPath)) return true
+  fail(`invalid ${label}`)
+}
+
+const openOwnedPublicLock = async (publicPath, label) => {
+  const status = await optionalStatus(publicPath)
+  if (status === undefined) return undefined
+  if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 2) fail(`invalid ${label}`)
+  try {
+    return {
+      status,
+      handle: await open(publicPath, constants.O_RDONLY | constants.O_NOFOLLOW),
     }
   } catch (error) {
-    if (isMissing(error) && !foundPublic) return undefined
-    if (isMissing(error)) {
-      if (await pathIsMissing(publicPath)) return undefined
-      fail(`invalid ${label}`)
-    }
-    throw error
+    if (await lockWasReleased(error, publicPath, label)) return undefined
+    return undefined
+  }
+}
+
+const validateOpenedOwnedLock = async (opened, expected, publicPath, label) => {
+  if (!stableFileStatus(opened, expected)) fail(`invalid ${label}`)
+  if (opened.nlink === 2) return true
+  if (await pathIsMissing(publicPath)) return false
+  fail(`invalid ${label}`)
+}
+
+const validateOwnedPrivateLock = async (privatePath, opened, publicPath, label) => {
+  const status = await lstat(privatePath)
+  if (!stableFileStatus(status, opened) || status.isSymbolicLink()) fail(`invalid ${label}`)
+  if (status.nlink === 2) return true
+  if (await pathIsMissing(publicPath)) return false
+  fail(`invalid ${label}`)
+}
+
+const readOwnedLock = async (publicPath, kind, seedIdentity, buildRoot) => {
+  const label = `${kind} lock`
+  const publicLock = await openOwnedPublicLock(publicPath, label)
+  if (publicLock === undefined) return undefined
+  try {
+    const opened = await publicLock.handle.stat()
+    if (!await validateOpenedOwnedLock(opened, publicLock.status, publicPath, label)) return undefined
+    const record = await readStrictJson(publicLock.handle, `invalid ${label}`)
+    if (!validOwnedLockRecord(record, kind, seedIdentity, opened)) fail(`invalid ${label}`)
+    const privatePath = path.join(buildRoot, record.private.name)
+    if (!await validateOwnedPrivateLock(privatePath, opened, publicPath, label)) return undefined
+    return { publicPath, privatePath, record }
+  } catch (error) {
+    if (await lockWasReleased(error, publicPath, label)) return undefined
+    return undefined
+  } finally {
+    await publicLock.handle.close()
   }
 }
 
@@ -246,97 +305,133 @@ const releaseOwnedLock = async (owned, kind, seedIdentity, buildRoot) => {
   }
 }
 
+const privateLockDescriptor = (name) => {
+  if (name.startsWith(privateLockPrefix)) return { kind: "main", prefix: privateLockPrefix }
+  if (name.startsWith(privateRecoveryPrefix)) {
+    return { kind: "recovery", prefix: privateRecoveryPrefix }
+  }
+  return undefined
+}
+
+const openOrphanPrivateLock = async (privatePath) => {
+  const status = await optionalStatus(privatePath)
+  if (status === undefined || !status.isFile() || status.isSymbolicLink() || status.nlink !== 1) {
+    return undefined
+  }
+  let handle
+  try {
+    handle = await open(privatePath, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isMissing(error)) return undefined
+    throw error
+  }
+  return { handle, status }
+}
+
+const readOrphanPrivateLock = async (privatePath) => {
+  const openedPrivate = await openOrphanPrivateLock(privatePath)
+  if (openedPrivate === undefined) return undefined
+  try {
+    const opened = await openedPrivate.handle.stat()
+    if (!stableFileStatus(opened, openedPrivate.status) || opened.nlink !== 1) return undefined
+    const record = await readOptionalJson(openedPrivate.handle)
+    return record === undefined ? undefined : { opened, record }
+  } finally {
+    await openedPrivate.handle.close()
+  }
+}
+
+const validOrphanPrivateLock = (record, descriptor, name, opened, seedIdentity) =>
+  validLockOwner(record, descriptor.kind)
+  && validLockSeed(record, seedIdentity)
+  && validLockPrivateReference(record, descriptor.prefix, name, opened)
+  && !processIsAlive(record.pid)
+
+const removeConfirmedOrphanPrivateLock = async (privatePath, opened) => {
+  const confirmed = await lstat(privatePath)
+  if (stableFileStatus(confirmed, opened) && confirmed.nlink === 1) await rm(privatePath)
+}
+
+const cleanupOrphanPrivateLock = async (buildRoot, seedIdentity, name) => {
+  const descriptor = privateLockDescriptor(name)
+  if (descriptor === undefined) return
+  const privatePath = path.join(buildRoot, name)
+  const orphan = await readOrphanPrivateLock(privatePath)
+  if (orphan === undefined) return
+  if (!validOrphanPrivateLock(orphan.record, descriptor, name, orphan.opened, seedIdentity)) return
+  await removeConfirmedOrphanPrivateLock(privatePath, orphan.opened)
+}
+
 const cleanupOrphanPrivateLocks = async (buildRoot, seedIdentity) => {
   const names = await readdir(buildRoot)
   for (const name of names.sort(lexical)) {
-    const kind = name.startsWith(privateLockPrefix)
-      ? "main"
-      : name.startsWith(privateRecoveryPrefix) ? "recovery" : undefined
-    if (kind === undefined) continue
-    const prefix = kind === "main" ? privateLockPrefix : privateRecoveryPrefix
-    const privatePath = path.join(buildRoot, name)
-    let status
-    try {
-      status = await lstat(privatePath)
-    } catch (error) {
-      if (isMissing(error)) continue
-      throw error
-    }
-    if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1) continue
-    const handle = await open(privatePath, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const opened = await handle.stat()
-      if (!opened.isFile() || opened.dev !== status.dev || opened.ino !== status.ino || opened.nlink !== 1) continue
-      let record
-      try {
-        record = JSON.parse(await handle.readFile("utf8"))
-      } catch (error) {
-        if (error instanceof SyntaxError) continue
-        throw error
-      }
-      if (!sameKeys(record, ["schema", "kind", "pid", "nonce", "seed", "private"])
-        || record.schema !== 1 || record.kind !== kind || !Number.isSafeInteger(record.pid) || record.pid <= 0
-        || typeof record.nonce !== "string" || !/^[A-Za-z0-9-]+$/.test(record.nonce)
-        || name !== `${prefix}${record.nonce}` || !sameKeys(record.seed, ["path", "dev", "ino"])
-        || !sameIdentity(record.seed, seedIdentity) || !sameKeys(record.private, ["name", "dev", "ino"])
-        || record.private.name !== name || record.private.dev !== String(opened.dev)
-        || record.private.ino !== String(opened.ino) || processIsAlive(record.pid)) continue
-      const confirmed = await lstat(privatePath)
-      if (confirmed.dev === opened.dev && confirmed.ino === opened.ino && confirmed.nlink === 1) await rm(privatePath)
-    } finally {
-      await handle.close()
-    }
+    await cleanupOrphanPrivateLock(buildRoot, seedIdentity, name)
   }
+}
+
+const validStageOwner = (record) =>
+  sameKeys(record, ["schema", "seed", "pid", "nonce", "stage", "phase"])
+  && record.schema === 1
+  && Number.isSafeInteger(record.pid)
+  && record.pid > 0
+  && typeof record.nonce === "string"
+  && /^[A-Za-z0-9-]+$/.test(record.nonce)
+
+const validStageSeed = (record, seedIdentity) =>
+  sameKeys(record.seed, ["path", "dev", "ino"]) && sameIdentity(record.seed, seedIdentity)
+
+const validStageLocation = (record, name, prefix, status) =>
+  name === `${prefix}${record.nonce}`
+  && sameKeys(record.stage, ["dev", "ino"])
+  && record.stage.dev === String(status.dev)
+  && record.stage.ino === String(status.ino)
+
+const validStageRecord = (record, seedIdentity, name, prefix, status) =>
+  validStageOwner(record)
+  && validStageSeed(record, seedIdentity)
+  && validStageLocation(record, name, prefix, status)
+  && typeof record.phase === "string"
+  && stagePhases.has(record.phase)
+
+const openOptionalStageState = async (statePath, stateStatus) => {
+  let handle
+  try {
+    handle = await open(statePath, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isMissing(error)) return undefined
+    throw error
+  }
+  try {
+    const opened = await handle.stat()
+    if (!stableFileStatus(opened, stateStatus) || opened.nlink !== 1) return undefined
+    return await readOptionalJson(handle)
+  } finally {
+    await handle.close()
+  }
+}
+
+const privateStageEntriesAreValid = async (stage) => {
+  const allowed = new Set(["state.json", "state.next.json", ...outputNames])
+  for (const entry of await readdir(stage)) {
+    if (!allowed.has(entry)) return false
+    const status = await lstat(path.join(stage, entry))
+    if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1) return false
+  }
+  return true
 }
 
 const readPrivateStageState = async (buildRoot, seedIdentity, name) => {
   const stage = path.join(buildRoot, name)
-  let status
-  try {
-    status = await lstat(stage)
-  } catch (error) {
-    if (isMissing(error)) return undefined
-    throw error
-  }
-  if (!status.isDirectory() || status.isSymbolicLink()) return undefined
+  const status = await optionalStatus(stage)
+  if (status === undefined || !status.isDirectory() || status.isSymbolicLink()) return undefined
   const statePath = path.join(stage, "state.json")
-  let stateStatus
-  try {
-    stateStatus = await lstat(statePath)
-  } catch (error) {
-    if (isMissing(error)) return undefined
-    throw error
+  const stateStatus = await optionalStatus(statePath)
+  if (stateStatus === undefined || !stateStatus.isFile() || stateStatus.isSymbolicLink() || stateStatus.nlink !== 1) {
+    return undefined
   }
-  if (!stateStatus.isFile() || stateStatus.isSymbolicLink() || stateStatus.nlink !== 1) return undefined
-  const handle = await open(statePath, constants.O_RDONLY | constants.O_NOFOLLOW)
-  let record
-  try {
-    const opened = await handle.stat()
-    if (!opened.isFile() || opened.dev !== stateStatus.dev || opened.ino !== stateStatus.ino || opened.nlink !== 1) {
-      return undefined
-    }
-    try {
-      record = JSON.parse(await handle.readFile("utf8"))
-    } catch (error) {
-      if (error instanceof SyntaxError) return undefined
-      throw error
-    }
-  } finally {
-    await handle.close()
-  }
-  if (!sameKeys(record, ["schema", "seed", "pid", "nonce", "stage", "phase"])
-    || record.schema !== 1 || !sameKeys(record.seed, ["path", "dev", "ino"])
-    || !sameIdentity(record.seed, seedIdentity) || !Number.isSafeInteger(record.pid) || record.pid <= 0
-    || typeof record.nonce !== "string" || !/^[A-Za-z0-9-]+$/.test(record.nonce)
-    || name !== `${privateStagePrefix}${record.nonce}` || !sameKeys(record.stage, ["dev", "ino"])
-    || record.stage.dev !== String(status.dev) || record.stage.ino !== String(status.ino)
-    || typeof record.phase !== "string" || !stagePhases.has(record.phase)) return undefined
-  const allowed = new Set(["state.json", "state.next.json", ...outputNames])
-  for (const entry of await readdir(stage)) {
-    if (!allowed.has(entry)) return undefined
-    const entryStatus = await lstat(path.join(stage, entry))
-    if (!entryStatus.isFile() || entryStatus.isSymbolicLink() || entryStatus.nlink !== 1) return undefined
-  }
+  const record = await openOptionalStageState(statePath, stateStatus)
+  if (!validStageRecord(record, seedIdentity, name, privateStagePrefix, status)) return undefined
+  if (!await privateStageEntriesAreValid(stage)) return undefined
   return { stage, status, record }
 }
 
@@ -435,89 +530,182 @@ const validatePluginManifest = (content, plugin, expectedVersion) => {
   if (parsed.version !== expectedVersion) fail("installed plugin version mismatch")
 }
 
-const inventoryPlugin = async (seed, installed, forbiddenBuildPaths, plugin, expectedVersion) => {
-  const seen = new Set()
-  const managedEntries = []
-  let foundManifest = false
-  const recordDirectory = async (absolute, relative, status) => {
-    const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const opened = await handle.stat()
-      if (!opened.isDirectory() || opened.dev !== status.dev || opened.ino !== status.ino) {
-        fail(`managed directory changed during inventory: ${relative}`)
-      }
-      if ((opened.mode & 0o7000) !== 0) fail(`managed directory has special permission bits: ${relative}`)
-      managedEntries.push({ path: relative, kind: "directory", mode: modeString(opened.mode) })
-    } finally {
-      await handle.close()
+const recordManagedDirectory = async (context, absolute, relative, status) => {
+  const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const opened = await handle.stat()
+    if (!opened.isDirectory() || opened.dev !== status.dev || opened.ino !== status.ino) {
+      fail(`managed directory changed during inventory: ${relative}`)
     }
+    if ((opened.mode & 0o7000) !== 0) {
+      fail(`managed directory has special permission bits: ${relative}`)
+    }
+    context.managedEntries.push({
+      path: relative,
+      kind: "directory",
+      mode: modeString(opened.mode),
+    })
+  } finally {
+    await handle.close()
   }
-  const visit = async (directory) => {
-    const entries = await readdir(directory, { withFileTypes: true })
-    entries.sort((left, right) => lexical(left.name, right.name))
-    for (const entry of entries) {
-      const absolute = path.join(directory, entry.name)
-      const relative = path.relative(seed, absolute).split(path.sep).join("/")
-      const installedRelative = path.relative(installed, absolute)
-      if (controlCharacterPattern.test(relative)) fail(`control character in managed path: ${JSON.stringify(relative)}`)
-      if (alternateManifests.includes(installedRelative)) fail(`ambiguous plugin manifest: ${installedRelative}`)
-      const normalized = relative.normalize("NFC")
-      if (seen.has(normalized)) fail(`duplicate managed path: ${relative}`)
-      seen.add(normalized)
-      const status = await lstat(absolute)
-      if (status.isSymbolicLink()) fail(`symlink rejected: ${relative}`)
-      const resolved = await realpath(absolute)
-      if (!inside(installed, resolved)) fail(`managed path escapes installed plugin: ${relative}`)
-      if (forbiddenBuildPaths.some((candidate) => relative.includes(candidate))) {
-        fail(`temporary build root leaked in path: ${relative}`)
-      }
-      if (status.isDirectory()) {
-        await recordDirectory(absolute, relative, status)
-        await visit(absolute)
-        continue
-      }
-      if (!status.isFile()) fail(`special file rejected: ${relative}`)
-      const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
-      try {
-        const opened = await handle.stat()
-        if (!opened.isFile() || opened.dev !== status.dev || opened.ino !== status.ino) {
-          fail(`managed file changed during inventory: ${relative}`)
-        }
-        if ((opened.mode & 0o7000) !== 0) fail(`managed file has special permission bits: ${relative}`)
-        if (opened.nlink !== 1) fail(`managed file must have exactly one link: ${relative}`)
-        const content = await handle.readFile()
-        const after = await handle.stat()
-        if (!after.isFile() || after.dev !== opened.dev || after.ino !== opened.ino
-          || after.nlink !== 1 || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs) {
-          fail(`managed file changed during inventory: ${relative}`)
-        }
-        if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
-          fail(`temporary build root leaked in managed content: ${relative}`)
-        }
-        if (installedRelative === authoritativeManifest) {
-          validatePluginManifest(content, plugin, expectedVersion)
-          foundManifest = true
-        }
-        managedEntries.push({
-          path: relative,
-          kind: "file",
-          mode: modeString(opened.mode),
-          sha256: sha256(content),
-        })
-      } finally {
-        await handle.close()
-      }
+}
+
+const managedFileUnchanged = (after, opened) =>
+  stableFileStatus(after, opened)
+  && after.nlink === 1
+  && after.size === opened.size
+  && after.mtimeMs === opened.mtimeMs
+
+const readManagedFile = async (absolute, relative, status) => {
+  const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const opened = await handle.stat()
+    if (!stableFileStatus(opened, status)) fail(`managed file changed during inventory: ${relative}`)
+    if ((opened.mode & 0o7000) !== 0) fail(`managed file has special permission bits: ${relative}`)
+    if (opened.nlink !== 1) fail(`managed file must have exactly one link: ${relative}`)
+    const content = await handle.readFile()
+    if (!managedFileUnchanged(await handle.stat(), opened)) {
+      fail(`managed file changed during inventory: ${relative}`)
     }
+    return { content, opened }
+  } finally {
+    await handle.close()
+  }
+}
+
+const recordManagedFile = async (context, entry) => {
+  const { content, opened } = await readManagedFile(entry.absolute, entry.relative, entry.status)
+  if (context.forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
+    fail(`temporary build root leaked in managed content: ${entry.relative}`)
+  }
+  if (entry.installedRelative === authoritativeManifest) {
+    validatePluginManifest(content, context.plugin, context.expectedVersion)
+    context.foundManifest = true
+  }
+  context.managedEntries.push({
+    path: entry.relative,
+    kind: "file",
+    mode: modeString(opened.mode),
+    sha256: sha256(content),
+  })
+}
+
+const registerManagedPath = (context, relative, installedRelative) => {
+  if (controlCharacterPattern.test(relative)) {
+    fail(`control character in managed path: ${JSON.stringify(relative)}`)
+  }
+  if (alternateManifests.includes(installedRelative)) {
+    fail(`ambiguous plugin manifest: ${installedRelative}`)
+  }
+  const normalized = relative.normalize("NFC")
+  if (context.seen.has(normalized)) fail(`duplicate managed path: ${relative}`)
+  context.seen.add(normalized)
+}
+
+const readManagedEntry = async (context, directory, entry) => {
+  const absolute = path.join(directory, entry.name)
+  const relative = path.relative(context.seed, absolute).split(path.sep).join("/")
+  const installedRelative = path.relative(context.installed, absolute)
+  registerManagedPath(context, relative, installedRelative)
+  const status = await lstat(absolute)
+  if (status.isSymbolicLink()) fail(`symlink rejected: ${relative}`)
+  if (!inside(context.installed, await realpath(absolute))) {
+    fail(`managed path escapes installed plugin: ${relative}`)
+  }
+  if (context.forbiddenBuildPaths.some((candidate) => relative.includes(candidate))) {
+    fail(`temporary build root leaked in path: ${relative}`)
+  }
+  return { absolute, relative, installedRelative, status }
+}
+
+const inventoryManagedEntry = async (context, directory, child) => {
+  const entry = await readManagedEntry(context, directory, child)
+  if (entry.status.isDirectory()) {
+    await recordManagedDirectory(context, entry.absolute, entry.relative, entry.status)
+    await inventoryManagedDirectory(context, entry.absolute)
+    return
+  }
+  if (!entry.status.isFile()) fail(`special file rejected: ${entry.relative}`)
+  await recordManagedFile(context, entry)
+}
+
+const inventoryManagedDirectory = async (context, directory) => {
+  const entries = await readdir(directory, { withFileTypes: true })
+  entries.sort((left, right) => lexical(left.name, right.name))
+  for (const entry of entries) await inventoryManagedEntry(context, directory, entry)
+}
+
+const inventoryPlugin = async (seed, installed, forbiddenBuildPaths, plugin, expectedVersion) => {
+  const context = {
+    seed,
+    installed,
+    forbiddenBuildPaths,
+    plugin,
+    expectedVersion,
+    seen: new Set(),
+    managedEntries: [],
+    foundManifest: false,
   }
   const installedStatus = await lstat(installed)
   if (!installedStatus.isDirectory() || installedStatus.isSymbolicLink()) fail("installed plugin path must be a directory")
   const installedRelative = path.relative(seed, installed).split(path.sep).join("/")
-  seen.add(installedRelative.normalize("NFC"))
-  await recordDirectory(installed, installedRelative, installedStatus)
-  await visit(installed)
-  if (!foundManifest) fail(`installed plugin manifest is missing: ${authoritativeManifest}`)
-  managedEntries.sort((left, right) => lexical(left.path, right.path))
-  return managedEntries
+  context.seen.add(installedRelative.normalize("NFC"))
+  await recordManagedDirectory(context, installed, installedRelative, installedStatus)
+  await inventoryManagedDirectory(context, installed)
+  if (!context.foundManifest) fail(`installed plugin manifest is missing: ${authoritativeManifest}`)
+  context.managedEntries.sort((left, right) => lexical(left.path, right.path))
+  return context.managedEntries
+}
+
+const validateGenericSkillPath = (relative) => {
+  if (controlCharacterPattern.test(relative)) fail(`unsafe generic skill path: ${relative}`)
+  if (relative.includes("\\")) fail(`unsafe generic skill path: ${relative}`)
+  for (const segment of relative.split("/")) {
+    if (segment === "" || segment === "." || segment === "..") {
+      fail(`unsafe generic skill path: ${relative}`)
+    }
+  }
+}
+
+const recordGenericSkillFile = async (context, absolute, relative, status) => {
+  const content = await readFile(absolute)
+  if (context.forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
+    fail(`temporary build root leaked in generic skill: ${relative}`)
+  }
+  context.entries.push({
+    path: path.posix.join("skills", relative),
+    kind: "file",
+    mode: modeString(status.mode),
+    sha256: sha256(content),
+  })
+}
+
+const inventoryGenericSkillEntry = async (context, directory, relativeDirectory, child) => {
+  const absolute = path.join(directory, child.name)
+  const relative = path.posix.join(relativeDirectory, child.name)
+  validateGenericSkillPath(relative)
+  const status = await lstat(absolute)
+  if (status.isSymbolicLink()) fail(`generic skill symlink rejected: ${relative}`)
+  if (!inside(context.root, await realpath(absolute))) {
+    fail(`generic skill path escapes seed: ${relative}`)
+  }
+  if (status.isDirectory()) {
+    await inventoryGenericSkillDirectory(context, absolute, relative)
+    return
+  }
+  if (status.isFile()) {
+    await recordGenericSkillFile(context, absolute, relative, status)
+    return
+  }
+  fail(`unsupported generic skill entry: ${relative}`)
+}
+
+const inventoryGenericSkillDirectory = async (context, directory, relativeDirectory) => {
+  const children = await readdir(directory, { withFileTypes: true })
+  children.sort((left, right) => lexical(left.name, right.name))
+  for (const child of children) {
+    await inventoryGenericSkillEntry(context, directory, relativeDirectory, child)
+  }
 }
 
 const inventoryGenericSkills = async (seed, forbiddenBuildPaths) => {
@@ -526,45 +714,10 @@ const inventoryGenericSkills = async (seed, forbiddenBuildPaths) => {
   const rootStatus = await lstat(skills)
   if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) fail("generic skills path must be a directory")
   const root = await realpath(skills)
-  const entries = []
-  const visit = async (directory, relativeDirectory) => {
-    const children = await readdir(directory, { withFileTypes: true })
-    children.sort((left, right) => lexical(left.name, right.name))
-    for (const child of children) {
-      const absolute = path.join(directory, child.name)
-      const relative = path.posix.join(relativeDirectory, child.name)
-      if (
-        controlCharacterPattern.test(relative) ||
-        relative.includes("\\") ||
-        relative.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
-      ) {
-        fail(`unsafe generic skill path: ${relative}`)
-      }
-      const status = await lstat(absolute)
-      if (status.isSymbolicLink()) fail(`generic skill symlink rejected: ${relative}`)
-      const resolved = await realpath(absolute)
-      if (!inside(root, resolved)) fail(`generic skill path escapes seed: ${relative}`)
-      if (status.isDirectory()) {
-        await visit(absolute, relative)
-      } else if (status.isFile()) {
-        const content = await readFile(absolute)
-        if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
-          fail(`temporary build root leaked in generic skill: ${relative}`)
-        }
-        entries.push({
-          path: path.posix.join("skills", relative),
-          kind: "file",
-          mode: modeString(status.mode),
-          sha256: sha256(content),
-        })
-      } else {
-        fail(`unsupported generic skill entry: ${relative}`)
-      }
-    }
-  }
+  const context = { root, forbiddenBuildPaths, entries: [] }
   for (const name of await readdir(skills)) safeIdentifier(name, "generic skill")
-  await visit(skills, "")
-  return entries
+  await inventoryGenericSkillDirectory(context, skills, "")
+  return context.entries
 }
 
 const instructionFilePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*\.instructions\.md$/
@@ -615,53 +768,45 @@ const inventoryGenericInstructions = async (seed, forbiddenBuildPaths) => {
   }]
 }
 
-const readStageState = async (seed, seedIdentity, name) => {
-  const stage = path.join(seed, name)
-  const status = await lstat(stage)
-  if (!status.isDirectory() || status.isSymbolicLink()) fail(`invalid finalization stage: ${name}`)
+const invalidStage = (name) => fail(`invalid finalization stage: ${name}`)
+
+const readRequiredStageRecord = async (stage, name) => {
   const statePath = path.join(stage, "state.json")
-  let record
   try {
     const stateStatus = await lstat(statePath)
     if (!stateStatus.isFile() || stateStatus.isSymbolicLink() || stateStatus.nlink !== 1) {
-      fail(`invalid finalization stage: ${name}`)
+      invalidStage(name)
     }
     const handle = await open(statePath, constants.O_RDONLY | constants.O_NOFOLLOW)
     try {
       const opened = await handle.stat()
-      if (!opened.isFile() || opened.dev !== stateStatus.dev || opened.ino !== stateStatus.ino || opened.nlink !== 1) {
-        fail(`invalid finalization stage: ${name}`)
-      }
-      try {
-        record = JSON.parse(await handle.readFile("utf8"))
-      } catch (error) {
-        if (error instanceof SyntaxError) fail(`invalid finalization stage: ${name}`)
-        throw error
-      }
+      if (!stableFileStatus(opened, stateStatus) || opened.nlink !== 1) invalidStage(name)
+      return await readStrictJson(handle, `invalid finalization stage: ${name}`)
     } finally {
       await handle.close()
     }
   } catch (error) {
-    if (isMissing(error)) fail(`invalid finalization stage: ${name}`)
+    if (isMissing(error)) invalidStage(name)
     throw error
   }
-  if (!sameKeys(record, ["schema", "seed", "pid", "nonce", "stage", "phase"])
-    || record.schema !== 1 || !sameKeys(record.seed, ["path", "dev", "ino"])
-    || !sameIdentity(record.seed, seedIdentity) || !Number.isSafeInteger(record.pid) || record.pid <= 0
-    || typeof record.nonce !== "string" || !/^[A-Za-z0-9-]+$/.test(record.nonce)
-    || name !== `${stagePrefix}${record.nonce}` || !sameKeys(record.stage, ["dev", "ino"])
-    || record.stage.dev !== String(status.dev) || record.stage.ino !== String(status.ino)
-    || typeof record.phase !== "string" || !stagePhases.has(record.phase)) {
-    fail(`invalid finalization stage: ${name}`)
-  }
+}
+
+const validatePublicStageEntries = async (stage, name) => {
   const allowed = new Set(["state.json", "state.next.json", ...outputNames])
   for (const entry of await readdir(stage)) {
-    if (!allowed.has(entry)) fail(`invalid finalization stage: ${name}`)
-    const entryStatus = await lstat(path.join(stage, entry))
-    if (!entryStatus.isFile() || entryStatus.isSymbolicLink() || entryStatus.nlink !== 1) {
-      fail(`invalid finalization stage: ${name}`)
-    }
+    if (!allowed.has(entry)) invalidStage(name)
+    const status = await lstat(path.join(stage, entry))
+    if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1) invalidStage(name)
   }
+}
+
+const readStageState = async (seed, seedIdentity, name) => {
+  const stage = path.join(seed, name)
+  const status = await lstat(stage)
+  if (!status.isDirectory() || status.isSymbolicLink()) invalidStage(name)
+  const record = await readRequiredStageRecord(stage, name)
+  if (!validStageRecord(record, seedIdentity, name, stagePrefix, status)) invalidStage(name)
+  await validatePublicStageEntries(stage, name)
   return { stage, record }
 }
 
@@ -675,6 +820,182 @@ const recoverStages = async (seed, seedIdentity) => {
   }
 }
 
+const removeEmptyCopilotPluginLock = async (seed) => {
+  const lockPath = path.join(seed, copilotPluginLockName)
+  let status
+  try {
+    status = await lstat(lockPath)
+  } catch (error) {
+    if (isMissing(error)) return
+    throw error
+  }
+  if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1 || status.size !== 0) {
+    fail(`${copilotPluginLockName} must be an empty regular file`)
+  }
+  await rm(lockPath)
+}
+
+const nativeMarketplacePath = (settings, marketplace) => {
+  const localSource = settings?.extraKnownMarketplaces?.[marketplace]?.source
+  if (localSource?.source !== "directory") fail("native marketplace source is not local")
+  if (
+    typeof localSource.path !== "string" ||
+    !path.isAbsolute(localSource.path) ||
+    path.resolve(localSource.path) !== localSource.path
+  ) {
+    fail("native marketplace directory path is unsafe")
+  }
+  return localSource.path
+}
+
+const validateNativeMarketplacePath = async (localPath, expectedSourceArgument, expectedSource, seed) => {
+  if (path.resolve(localPath) !== expectedSourceArgument) {
+    fail("marketplace directory must equal materialized hve-core source")
+  }
+  const sourceStatus = await lstat(localPath)
+  if (!sourceStatus.isDirectory() || sourceStatus.isSymbolicLink()) {
+    fail("native marketplace path must be a directory")
+  }
+  const source = await realpath(localPath)
+  if (source !== expectedSource || inside(seed, source)) {
+    fail("native marketplace directory escapes build root")
+  }
+}
+
+const validateNativePluginRegistration = async (
+  settingsPath,
+  marketplace,
+  plugin,
+  expectedSourceArgument,
+  expectedSource,
+  seed,
+) => {
+  const settings = JSON.parse(await readFile(settingsPath, "utf8"))
+  const localPath = nativeMarketplacePath(settings, marketplace)
+  await validateNativeMarketplacePath(localPath, expectedSourceArgument, expectedSource, seed)
+  if (settings?.enabledPlugins?.[`${plugin}@${marketplace}`] !== true) {
+    fail("native plugin is not enabled")
+  }
+}
+
+const ensureDirectory = async (directory, label) => {
+  try {
+    await mkdir(directory, { mode: 0o700 })
+  } catch (error) {
+    if (!isAlreadyExists(error)) throw error
+  }
+  const status = await lstat(directory)
+  if (!status.isDirectory() || status.isSymbolicLink()) fail(`${label} must be a directory`)
+}
+
+const beginDereferencedDirectory = async (directory, allowedRoot, ancestors, visited) => {
+  const resolved = await realpath(directory)
+  if (!inside(allowedRoot, resolved)) {
+    fail("live plugin symlink target escapes the marketplace")
+  }
+  if (ancestors.has(resolved)) fail("live plugin symlink cycle rejected")
+  if (visited.has(resolved)) return undefined
+  visited.add(resolved)
+  return new Set(ancestors).add(resolved)
+}
+
+const validateDereferencedSymlink = async (absolute, context) => {
+  const target = await realpath(absolute)
+  if (!inside(context.allowedRoot, target)) {
+    fail("live plugin symlink target escapes the marketplace")
+  }
+  const status = await lstat(target)
+  if (status.isDirectory()) {
+    await validateDereferencedDirectory(
+      target,
+      context.allowedRoot,
+      context.ancestors,
+      context.visited,
+    )
+    return
+  }
+  if (!status.isFile()) fail("live plugin symlink target must be a regular file or directory")
+}
+
+const validateDereferencedEntry = async (absolute, status, context) => {
+  if (status.isSymbolicLink()) {
+    await validateDereferencedSymlink(absolute, context)
+    return
+  }
+  if (status.isDirectory()) {
+    await validateDereferencedDirectory(
+      absolute,
+      context.allowedRoot,
+      context.ancestors,
+      context.visited,
+    )
+    return
+  }
+  if (!status.isFile()) fail("live plugin source contains an unsupported path")
+}
+
+const validateDereferencedDirectory = async (
+  directory,
+  allowedRoot,
+  ancestors,
+  visited,
+) => {
+  const nextAncestors = await beginDereferencedDirectory(
+    directory,
+    allowedRoot,
+    ancestors,
+    visited,
+  )
+  if (nextAncestors === undefined) return
+  const context = { allowedRoot, ancestors: nextAncestors, visited }
+  const entries = await readdir(directory, { withFileTypes: true })
+  for (const entry of entries) {
+    const absolute = path.join(directory, entry.name)
+    await validateDereferencedEntry(absolute, await lstat(absolute), context)
+  }
+}
+
+const validateDereferencedPlugin = async (sourcePlugin, allowedRoot) => {
+  await validateDereferencedDirectory(sourcePlugin, allowedRoot, new Set(), new Set())
+}
+
+const materializeLivePlugin = async (seed, expectedSource, marketplace, plugin) => {
+  const installedRoot = path.join(seed, "installed-plugins")
+  const marketplaceRoot = path.join(installedRoot, marketplace)
+  const installed = path.join(marketplaceRoot, plugin)
+  try {
+    await lstat(installed)
+    return
+  } catch (error) {
+    if (!isMissing(error)) throw error
+  }
+
+  const sourcePlugin = path.join(expectedSource, "plugins", plugin)
+  const sourceStatus = await lstat(sourcePlugin)
+  if (!sourceStatus.isDirectory() || sourceStatus.isSymbolicLink()) {
+    fail("live plugin source must be a directory")
+  }
+  const sourcePluginReal = await realpath(sourcePlugin)
+  if (!inside(expectedSource, sourcePluginReal)) fail("live plugin source escapes the marketplace")
+  await validateDereferencedPlugin(sourcePluginReal, expectedSource)
+
+  await ensureDirectory(installedRoot, "installed-plugins")
+  await ensureDirectory(marketplaceRoot, `installed-plugins/${marketplace}`)
+  const temporary = path.join(marketplaceRoot, `.trellage-live-plugin-${randomUUID()}`)
+  try {
+    await cp(sourcePluginReal, temporary, {
+      recursive: true,
+      dereference: true,
+      errorOnExist: true,
+      force: false,
+      preserveTimestamps: false,
+    })
+    await rename(temporary, installed)
+  } finally {
+    await rm(temporary, { recursive: true, force: true })
+  }
+}
+
 const requireExactDirectory = async (directory, expected, label) => {
   const status = await lstat(directory)
   if (!status.isDirectory() || status.isSymbolicLink()) fail(`${label} must be a directory`)
@@ -684,56 +1005,123 @@ const requireExactDirectory = async (directory, expected, label) => {
   }
 }
 
-const validateSeedTree = async (seed, marketplace, plugin, forbiddenBuildPaths) => {
-  const allowed = new Set([
-    "settings.json",
-    "config.json",
-    "installed-plugins",
-    "skills",
-    "instructions",
-    "copilot-instructions.md",
-    ...outputNames,
-    lockName,
-    recoveryName,
-  ])
-  const names = await readdir(seed)
-  for (const name of names) {
-    if (controlCharacterPattern.test(name)) fail(`control character in seed path: ${JSON.stringify(name)}`)
-    if (!allowed.has(name)) fail(`unexpected seed path: ${name}`)
-    const absolute = path.join(seed, name)
-    let status
-    try {
-      status = await lstat(absolute)
-    } catch (error) {
-      if (name === recoveryName && isMissing(error)) continue
-      throw error
-    }
-    if (name === "installed-plugins" || name === "skills" || name === "instructions") {
-      if (!status.isDirectory() || status.isSymbolicLink()) fail(`${name} must be a directory`)
-      continue
-    }
-    if (!status.isFile() || status.isSymbolicLink()) fail(`${name} must be a regular file`)
-    const expectedLinks = name === lockName || name === recoveryName ? 2 : 1
-    if (status.nlink !== expectedLinks) fail(`${name} must have exactly ${expectedLinks} links`)
-    if (outputNames.includes(name)) {
-      const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
-      try {
-        const content = await handle.readFile()
-        if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
-          fail(`temporary build root leaked in retained file: ${name}`)
-        }
-      } finally {
-        await handle.close()
-      }
-    }
+const seedDirectoryNames = new Set(["installed-plugins", "skills", "instructions"])
+const allowedSeedNames = new Set([
+  "settings.json",
+  "config.json",
+  ...seedDirectoryNames,
+  "copilot-instructions.md",
+  ...outputNames,
+  lockName,
+  recoveryName,
+])
+
+const validateSeedEntryName = (name) => {
+  if (controlCharacterPattern.test(name)) {
+    fail(`control character in seed path: ${JSON.stringify(name)}`)
   }
-  const marketplaceRoot = path.join(seed, "installed-plugins", marketplace)
+  if (!allowedSeedNames.has(name)) fail(`unexpected seed path: ${name}`)
+}
+
+const readSeedEntryStatus = async (seed, name) => {
+  try {
+    return await lstat(path.join(seed, name))
+  } catch (error) {
+    if (name === recoveryName && isMissing(error)) return undefined
+    throw error
+  }
+}
+
+const validateSeedDirectory = (name, status) => {
+  if (!status.isDirectory() || status.isSymbolicLink()) fail(`${name} must be a directory`)
+}
+
+const expectedSeedLinks = (name) => name === lockName || name === recoveryName ? 2 : 1
+
+const validateRetainedSeedFile = async (absolute, name, forbiddenBuildPaths) => {
+  const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const content = await handle.readFile()
+    if (forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
+      fail(`temporary build root leaked in retained file: ${name}`)
+    }
+  } finally {
+    await handle.close()
+  }
+}
+
+const validateSeedFile = async (absolute, name, status, forbiddenBuildPaths) => {
+  if (!status.isFile() || status.isSymbolicLink()) fail(`${name} must be a regular file`)
+  const expectedLinks = expectedSeedLinks(name)
+  if (status.nlink !== expectedLinks) fail(`${name} must have exactly ${expectedLinks} links`)
+  if (outputNames.includes(name)) {
+    await validateRetainedSeedFile(absolute, name, forbiddenBuildPaths)
+  }
+}
+
+const validateSeedEntry = async (seed, name, forbiddenBuildPaths) => {
+  validateSeedEntryName(name)
+  const status = await readSeedEntryStatus(seed, name)
+  if (status === undefined) return
+  if (seedDirectoryNames.has(name)) {
+    validateSeedDirectory(name, status)
+    return
+  }
+  await validateSeedFile(path.join(seed, name), name, status, forbiddenBuildPaths)
+}
+
+const validateInstalledPluginTree = async (seed, marketplace, plugin) => {
+  const installedRoot = path.join(seed, "installed-plugins")
+  const marketplaceRoot = path.join(installedRoot, marketplace)
   const installed = path.join(marketplaceRoot, plugin)
-  await requireExactDirectory(path.join(seed, "installed-plugins"), [marketplace], "installed-plugins")
+  await requireExactDirectory(installedRoot, [marketplace], "installed-plugins")
   await requireExactDirectory(marketplaceRoot, [plugin], `installed-plugins/${marketplace}`)
-  const installedStatus = await lstat(installed)
-  if (!installedStatus.isDirectory() || installedStatus.isSymbolicLink()) fail("installed plugin path must be a directory")
+  const status = await lstat(installed)
+  if (!status.isDirectory() || status.isSymbolicLink()) {
+    fail("installed plugin path must be a directory")
+  }
   return installed
+}
+
+const validateSeedTree = async (seed, marketplace, plugin, forbiddenBuildPaths) => {
+  const names = await readdir(seed)
+  for (const name of names) await validateSeedEntry(seed, name, forbiddenBuildPaths)
+  return validateInstalledPluginTree(seed, marketplace, plugin)
+}
+
+const prepareInstalledPlugin = async ({
+  seed,
+  marketplace,
+  plugin,
+  forbiddenBuildPaths,
+  expectedSourceArgument,
+  expectedSource,
+  managed,
+}) => {
+  const settingsPath = path.join(seed, "settings.json")
+  const configPath = path.join(seed, "config.json")
+  const settingsFile = await optionalRegularFile(settingsPath, "settings.json")
+  await optionalRegularFile(configPath, "config.json")
+  if (settingsFile !== undefined) {
+    await validateNativePluginRegistration(
+      settingsPath,
+      marketplace,
+      plugin,
+      expectedSourceArgument,
+      expectedSource,
+      seed,
+    )
+    await materializeLivePlugin(seed, expectedSource, marketplace, plugin)
+  }
+  const installed = await validateSeedTree(seed, marketplace, plugin, forbiddenBuildPaths)
+  if (settingsFile === undefined) {
+    for (const name of outputNames) {
+      const output = await optionalRegularFile(path.join(seed, name), name)
+      if (output === undefined) fail(`finalized seed is missing ${name}`)
+    }
+    assertExactJson(JSON.parse(await readFile(path.join(seed, "managed-settings.json"), "utf8")), managed, "managed-settings.json")
+  }
+  return { installed, settingsFile }
 }
 
 const writeStageState = async (stage, seedIdentity, stageIdentity, owner, phase) => {
@@ -813,42 +1201,22 @@ const main = async () => {
   try {
     await cleanupOrphanPrivateStages(buildRoot, seedIdentity)
     await recoverStages(seed, seedIdentity)
-    const installed = await validateSeedTree(seed, marketplace, plugin, forbiddenBuildPaths)
+    await removeEmptyCopilotPluginLock(seed)
     const managed = {
       extraKnownMarketplaces: {
         [marketplace]: { source: { source: "github", repo: "microsoft/hve-core" } },
       },
       enabledPlugins: { [`${plugin}@${marketplace}`]: true },
     }
-    const settingsPath = path.join(seed, "settings.json")
-    const configPath = path.join(seed, "config.json")
-    const settingsFile = await optionalRegularFile(settingsPath, "settings.json")
-    await optionalRegularFile(configPath, "config.json")
-    if (settingsFile !== undefined) {
-      const settings = JSON.parse(await readFile(settingsPath, "utf8"))
-      const localSource = settings?.extraKnownMarketplaces?.[marketplace]?.source
-      if (localSource?.source !== "directory") fail("native marketplace source is not local")
-      if (typeof localSource.path !== "string" || !path.isAbsolute(localSource.path)
-        || path.resolve(localSource.path) !== localSource.path) fail("native marketplace directory path is unsafe")
-      if (path.resolve(localSource.path) !== expectedSourceArgument) {
-        fail("marketplace directory must equal materialized hve-core source")
-      }
-      const sourceStatus = await lstat(localSource.path)
-      if (!sourceStatus.isDirectory() || sourceStatus.isSymbolicLink()) {
-        fail("native marketplace path must be a directory")
-      }
-      const source = await realpath(localSource.path)
-      if (source !== expectedSource || inside(seed, source)) {
-        fail("native marketplace directory escapes build root")
-      }
-      if (settings?.enabledPlugins?.[`${plugin}@${marketplace}`] !== true) fail("native plugin is not enabled")
-    } else {
-      for (const name of outputNames) {
-        const output = await optionalRegularFile(path.join(seed, name), name)
-        if (output === undefined) fail(`finalized seed is missing ${name}`)
-      }
-      assertExactJson(JSON.parse(await readFile(path.join(seed, "managed-settings.json"), "utf8")), managed, "managed-settings.json")
-    }
+    const { installed, settingsFile } = await prepareInstalledPlugin({
+      seed,
+      marketplace,
+      plugin,
+      forbiddenBuildPaths,
+      expectedSourceArgument,
+      expectedSource,
+      managed,
+    })
 
     const installedReal = await realpath(installed)
     if (!inside(seed, installedReal)) fail("installed plugin path escapes seed")

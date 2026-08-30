@@ -92,6 +92,10 @@ if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
+if [[ ! -f "$session_bridge_source" ]]; then
+  session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
+fi
 
 ensure_floating_skills() {
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
@@ -424,6 +428,38 @@ ensure_settings() {
   mv -f "$staged" "$settings"
 }
 
+install_session_bridge() {
+  local bridge_root="$profile_home/.trellage"
+  local bridge_path="$bridge_root/trellage-session-bridge.py"
+  local staged
+
+  require_command python3
+  [[ -f "$session_bridge_source" && -r "$session_bridge_source" \
+    && ! -L "$session_bridge_source" ]] \
+    || die "missing session bridge: $session_bridge_source"
+  [[ ! -L "$bridge_root" ]] || die "unsafe session bridge directory: $bridge_root"
+  [[ -e "$bridge_root" ]] || mkdir "$bridge_root"
+  [[ -d "$bridge_root" && ! -L "$bridge_root" ]] \
+    || die "unsafe session bridge directory: $bridge_root"
+  chmod 0700 "$bridge_root"
+  [[ ! -L "$bridge_path" && ( ! -e "$bridge_path" || -f "$bridge_path" ) ]] \
+    || die "unsafe session bridge path: $bridge_path"
+  staged="$(mktemp "$bridge_root/.trellage-session-bridge.py.XXXXXX")" \
+    || die 'could not stage the session bridge'
+  cat -- "$session_bridge_source" >"$staged" \
+    || die 'could not stage the session bridge'
+  chmod 0700 "$staged"
+  mv -f "$staged" "$bridge_path"
+  "$bridge_path" install-hook \
+    --mode native \
+    --agent claude \
+    --profile default \
+    --config-dir "$profile_home" \
+    --hook-path "$bridge_path" \
+    || die 'could not install the session bridge hook'
+  ensure_settings
+}
+
 ensure_trust() {
   local workspace staged
 
@@ -474,6 +510,7 @@ setup_profile() {
   local executable version
 
   require_command jq
+  require_command python3
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
   prepare_profile
@@ -481,6 +518,7 @@ setup_profile() {
   ensure_onboarding "$version"
   ensure_output_style
   ensure_settings
+  install_session_bridge
   check_proxy
   printf 'cldx setup: ready (%s, %s)\n' "$version" "$model_id"
 }
@@ -496,6 +534,7 @@ repair_profile() {
   ensure_onboarding "$version"
   ensure_output_style
   ensure_settings
+  install_session_bridge
   check_proxy
   printf 'cldx repair: restored (%s, %s)\n' "$version" "$model_id"
 }
@@ -504,6 +543,7 @@ doctor_profile() {
   local executable version
 
   require_command jq
+  require_command python3
   executable="$(claude_executable)"
   version="$(claude_version "$executable")"
   require_owned_profile
@@ -567,6 +607,7 @@ launch_profile() {
   ensure_output_style
   ensure_floating_skills
   ensure_settings
+  install_session_bridge
   ensure_trust
   check_proxy
 

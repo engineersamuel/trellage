@@ -27,7 +27,10 @@ mkdir -p "$runtime/bin" "$runtime/lib" "$fake_bin" "$state" "$home" \
 cp "$root/bin/cdx" "$runtime/bin/cdx"
 cp "$root/catalog.json" "$runtime/catalog.json"
 cp "$root/../trellage-codex-common/native-codex" "$runtime/lib/native-codex"
-chmod 0755 "$runtime/bin/cdx" "$runtime/lib/native-codex"
+cp "$repository_root/scripts/trellage-session-bridge.py" \
+  "$runtime/lib/trellage-session-bridge.py"
+chmod 0755 "$runtime/bin/cdx" "$runtime/lib/native-codex" \
+  "$runtime/lib/trellage-session-bridge.py"
 install -m 0555 "$repository_root/scripts/floating-skills.mjs" \
   "$common_runtime/floating-skills.mjs"
 install -m 0444 "$repository_root/skills.json" "$common_runtime/skills.json"

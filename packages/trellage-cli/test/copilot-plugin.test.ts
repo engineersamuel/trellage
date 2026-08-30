@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { execFile, spawn } from "node:child_process"
 import {
   chmod,
+  cp,
   link,
   lstat,
   mkdtemp,
@@ -1001,6 +1002,56 @@ describe("finalize-copilot-seed", () => {
     await writeFile(path.join(fixture.seed, "notes.txt"), "benign\n")
 
     await expect(runFinalizer(fixture.seed)).rejects.toThrow(/unexpected seed path: notes\.txt/)
+  })
+
+  it("removes Copilot's empty plugin-operation lock before finalizing the seed", async () => {
+    const fixture = await nativeSeed()
+    const pluginLock = path.join(fixture.seed, "installed-plugins.lock")
+    await writeFile(pluginLock, "")
+
+    await runFinalizer(fixture.seed)
+
+    await expect(exists(pluginLock)).resolves.toBe(false)
+    await expectFinalSeed(fixture.seed)
+  })
+
+  it("materializes a Copilot live-loaded local plugin into the immutable seed", async () => {
+    const fixture = await nativeSeed()
+    const sourcePlugin = path.join(fixture.root, "hve-core", "plugins", "hve-core")
+    await mkdir(path.dirname(sourcePlugin), { recursive: true })
+    await cp(fixture.installed, sourcePlugin, { recursive: true })
+    await writeFile(path.join(fixture.root, "hve-core", "shared.md"), "shared target\n")
+    await symlink("../../shared.md", path.join(sourcePlugin, "linked.md"))
+    await rm(path.join(fixture.seed, "installed-plugins"), { recursive: true })
+    await writeFile(path.join(fixture.seed, "installed-plugins.lock"), "")
+
+    await runFinalizer(fixture.seed)
+
+    await expect(readFile(nativeManifest(fixture.installed), "utf8")).resolves.toContain('"version": "3.3.101"')
+    await expect(readFile(path.join(fixture.installed, "README.md"), "utf8")).resolves.toBe("# HVE Core\n")
+    await expect(readFile(path.join(fixture.installed, "linked.md"), "utf8")).resolves.toBe("shared target\n")
+    expect((await lstat(path.join(fixture.installed, "linked.md"))).isSymbolicLink()).toBe(false)
+    await expectFinalSeed(fixture.seed)
+  })
+
+  it("rejects a live plugin symlink that escapes the locked marketplace", async () => {
+    const fixture = await nativeSeed()
+    const sourcePlugin = path.join(fixture.root, "hve-core", "plugins", "hve-core")
+    await mkdir(path.dirname(sourcePlugin), { recursive: true })
+    await cp(fixture.installed, sourcePlugin, { recursive: true })
+    await writeFile(path.join(fixture.root, "outside.txt"), "builder secret\n")
+    await symlink("../../../outside.txt", path.join(sourcePlugin, "escaped.txt"))
+    await rm(path.join(fixture.seed, "installed-plugins"), { recursive: true })
+    await writeFile(path.join(fixture.seed, "installed-plugins.lock"), "")
+
+    await expect(runFinalizer(fixture.seed)).rejects.toThrow(/live plugin symlink target escapes the marketplace/u)
+  })
+
+  it("rejects a nonempty Copilot plugin-operation lock", async () => {
+    const fixture = await nativeSeed()
+    await writeFile(path.join(fixture.seed, "installed-plugins.lock"), "unexpected\n")
+
+    await expect(runFinalizer(fixture.seed)).rejects.toThrow(/installed-plugins\.lock must be an empty regular file/)
   })
 
   it("rejects control characters in managed paths", async () => {

@@ -1,0 +1,29 @@
+id = "trellage.guide-handoff"
+name = "Trellage Guide Handoff"
+version = "0.2.1"
+min_herdr_version = "0.8.2"
+description = "Open highlighted terminal text or a completed agent result in trx guide."
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "open"
+title = "Open text in Trellage guide"
+description = "Open highlighted terminal text or the focused completed agent's final answer in trx guide."
+contexts = ["pane"]
+command = ["node", "action.mjs"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "event.mjs"]
+
+[[panes]]
+id = "guide"
+title = "Trellage guide"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ["node", "popup.mjs"]

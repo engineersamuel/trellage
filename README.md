@@ -532,12 +532,13 @@ machine:
    it is missing, then reload the shell.
 2. **Install only the underlying agent CLIs you actually use**, each launcher
    only needs its own dependency:
-   - `cdx` (Codex) needs the `codex` CLI: `npm install -g @openai/codex`.
+   - `cdx` (Codex) needs the `codex` CLI (`npm install -g @openai/codex`)
+     and `python3`.
    - `cpx` (GitHub Copilot) needs `copilot` (`gh extension install
      github/gh-copilot` or the standalone Copilot CLI) already authenticated,
-     plus `jq`.
-   - `cldx` (Claude Code) needs the `claude` CLI: `npm install -g
-     @anthropic-ai/claude-code`.
+     plus `jq` and `python3`.
+   - `cldx` (Claude Code) needs the `claude` CLI (`npm install -g
+     @anthropic-ai/claude-code`) and `python3`.
    - `grx` (Grok) needs the `grok` CLI already logged in
      (`~/.grok/auth.json` present).
    - `jcx` (jcode), `omp` (Oh My Pi), and `picx` (Pi) need `mise` and `curl`.

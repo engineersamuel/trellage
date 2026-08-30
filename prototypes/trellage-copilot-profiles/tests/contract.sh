@@ -742,16 +742,24 @@ for profile in awesome hve plannotator superpowers; do
   [[ -f "$profile_home/config.json" \
     && -f "$profile_home/sessions/$profile-session" \
     && -f "$profile_home/mcp-config.json" \
-    && -f "$profile_home/plugins/$profile-plugin/manifest.json" ]] \
+    && -f "$profile_home/plugins/$profile-plugin/manifest.json" \
+    && -f "$profile_home/settings.json" \
+    && -x "$profile_home/.trellage/trellage-session-bridge.py" ]] \
     || fail "$profile did not retain distinct profile-local config, session, MCP, and plugin state"
   [[ "$(<"$profile_home/config.json")" == "{\"profile\":\"$profile\"}" \
     && "$(<"$profile_home/sessions/$profile-session")" == "$profile session" \
     && "$(<"$profile_home/mcp-config.json")" == "{\"mcpServers\":{},\"profile\":\"$profile\"}" \
     && "$(<"$profile_home/plugins/$profile-plugin/manifest.json")" == "{\"profile\":\"$profile\"}" \
-    && ! -e "$profile_home/settings.json" \
     && ! -e "$profile_home/sessions/host-session" \
     && ! -e "$profile_home/encryption_key" ]] \
     || fail "$profile copied host Copilot configuration, sessions, MCPs, or encryption material"
+  jq -e --arg profile "$profile" '
+    [.hooks.SessionStart[]
+      | select(.type == "command"
+        and (.bash | contains(" native-hook --agent copilot --profile " + $profile)))]
+    | length == 1
+  ' "$profile_home/settings.json" >/dev/null \
+    || fail "$profile launch did not migrate the session bridge hook"
 done
 
 before_native_auth_failure_hash="$(profile_tree_hash "$expected_hve_home")"
@@ -921,10 +929,40 @@ jq -e '
 mkdir -p "$expected_hve_home/fake-state"
 printf '%s\t%s\n' 'hve-core-preview' 'fixture/hve-core-preview' \
   >"$expected_hve_home/fake-state/marketplaces"
+cat >"$expected_hve_home/settings.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {"type": "command", "bash": "user-session-start"},
+      {"type": "command", "bash": "cccc-session-start"}
+    ]
+  },
+  "preserve": "user-settings"
+}
+EOF
 "$launcher" setup hve
 assert_contains 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log"
 assert_contains 'args=plugin install hve-core@hve-core ' "$fake_copilot_log"
 [[ -f "$expected_hve_home/fake-state/plugins" ]] || fail 'setup did not use isolated profile state'
+session_bridge="$expected_hve_home/.trellage/trellage-session-bridge.py"
+settings="$expected_hve_home/settings.json"
+[[ -f "$session_bridge" && ! -L "$session_bridge" && -x "$session_bridge" ]] \
+  || fail 'setup did not install a regular executable session bridge'
+cmp -s "$session_bridge" "$prototype_root/../../scripts/trellage-session-bridge.py" \
+  || fail 'installed session bridge differs from the shared executable'
+assert_not_contains 'pane.report_agent_session' "$session_bridge"
+jq -e '
+  .preserve == "user-settings"
+  and ([.hooks.SessionStart[]
+    | select(.type == "command" and .bash == "user-session-start")] | length) == 1
+  and ([.hooks.SessionStart[]
+    | select(.type == "command" and .bash == "cccc-session-start")] | length) == 1
+  and ([.hooks.SessionStart[]
+    | select(.type == "command"
+      and (.bash | contains(" native-hook --agent copilot --profile hve")))] | length) == 1
+' "$settings" >/dev/null || fail 'setup session bridge hooks differ'
+settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
+bridge_hash="$(shasum -a 256 "$session_bridge" | awk '{print $1}')"
 managed_instructions="$expected_hve_home/instructions/rundown.instructions.md"
 [[ -f "$managed_instructions" && ! -L "$managed_instructions" ]] \
   || fail 'setup did not seed the managed instructions'
@@ -967,10 +1005,38 @@ marketplace_add_count="$(grep -Fc 'args=plugin marketplace add microsoft/hve-cor
 "$launcher" setup hve
 [[ "$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")" == "$marketplace_add_count" ]] \
   || fail 'repeated setup re-added an already registered marketplace'
+[[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
+  || fail 'repeated setup changed session bridge hook settings'
+[[ "$(shasum -a 256 "$session_bridge" | awk '{print $1}')" == "$bridge_hash" ]] \
+  || fail 'repeated setup changed session bridge bytes'
+"$launcher" repair hve >"$fixture_root/hve-session-bridge-repair.out"
+"$launcher" repair hve >>"$fixture_root/hve-session-bridge-repair.out"
+[[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
+  || fail 'repeated repair changed session bridge hook settings'
+jq -e '
+  ([.hooks.SessionStart[]
+    | select(.type == "command"
+      and (.bash | contains(" native-hook --agent copilot --profile hve")))] | length) == 1
+  and any(.hooks.SessionStart[]; .bash == "user-session-start")
+  and any(.hooks.SessionStart[]; .bash == "cccc-session-start")
+' "$settings" >/dev/null || fail 'repair session bridge hooks differ'
 
 doctor_output="$fixture_root/doctor.out"
 "$launcher" doctor hve >"$doctor_output"
 assert_contains 'hve: healthy' "$doctor_output"
+(
+  command() {
+    if [[ "$1" == -v && "${2-}" == python3 ]]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+  export -f command
+  if "$launcher" doctor hve >"$fixture_root/doctor-python.out" 2>&1; then
+    fail 'doctor accepted missing Python'
+  fi
+)
+assert_contains 'required command not found: python3' "$fixture_root/doctor-python.out"
 inventory_output="$fixture_root/inventory.json"
 "$launcher" inventory hve --json >"$inventory_output"
 jq -e '
@@ -1417,6 +1483,13 @@ rm -rf "$runtime_root"
 "$installer"
 [[ -x "$installed" ]] || fail 'installer did not create ~/.local/bin/cpx'
 assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
+[[ -f "$runtime_root/lib/trellage-session-bridge.py" \
+  && ! -L "$runtime_root/lib/trellage-session-bridge.py" \
+  && -x "$runtime_root/lib/trellage-session-bridge.py" ]] \
+  || fail 'installer did not publish the session bridge'
+cmp -s "$runtime_root/lib/trellage-session-bridge.py" \
+  "$prototype_root/../../scripts/trellage-session-bridge.py" \
+  || fail 'installed runtime session bridge differs'
 for asset in rundown.instructions.md NOTICE.md; do
   [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \
     || fail "installer did not publish asset: $asset"

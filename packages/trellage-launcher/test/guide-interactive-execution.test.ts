@@ -91,7 +91,10 @@ describe("interactive guide result execution", () => {
 
     await expect(executeGuideUiResult(result, services(runner, writes, runInteractive))).resolves.toBe(0)
     expect(writes).toEqual(["Paste this prompt after the profile starts:\n\nDraft the post.\n"])
-    expect(runInteractive).toHaveBeenCalledWith(command, { cwd: "/repo" })
+    expect(runInteractive).toHaveBeenCalledWith(command, {
+      cwd: "/repo",
+      env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }),
+    })
   })
 
   it("does not print an argv-delivered terminal prompt", async () => {
@@ -107,7 +110,10 @@ describe("interactive guide result execution", () => {
         executable: "/opt/trellage/bin/cpx",
         args: ["hve-core", "-i", "Draft the post."],
       },
-      { cwd: "/repo" },
+      {
+        cwd: "/repo",
+        env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }),
+      },
     )
   })
 
@@ -133,7 +139,10 @@ describe("interactive guide result execution", () => {
         executable: "/opt/trellage/bin/trellage",
         args: ["--profile", "claude-research", "Research the repository."],
       },
-      { cwd: "/repo" },
+      {
+        cwd: "/repo",
+        env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }),
+      },
     )
   })
 
@@ -183,6 +192,7 @@ describe("interactive guide result execution", () => {
         buildCurrentHerdrWorkspaceResult(agentPromptProfile, "Draft the post.", "/repo", {
           workspaceId: "2",
           paneId: "2-1",
+          surface: "pane",
         }),
         services(runner, writes),
       ),
@@ -211,6 +221,7 @@ describe("interactive guide result execution", () => {
         buildCurrentHerdrWorkspaceResult(profile(false), "Draft the post.", "/repo", {
           workspaceId: "2",
           paneId: "2-1",
+          surface: "pane",
         }),
         services(runner, writes),
       ),
@@ -219,7 +230,7 @@ describe("interactive guide result execution", () => {
     expect(runner.calls).toHaveLength(2)
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "2-3", "/opt/trellage/bin/cpx hve-core -i 'Draft the post.'"],
+      args: ["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cpx hve-core -i 'Draft the post.'"],
     })
     expect(writes).toHaveLength(0)
   })
@@ -243,6 +254,7 @@ describe("interactive guide result execution", () => {
         buildCurrentHerdrWorkspaceResult(cdxProfile, "Run the full workflow.", "/repo", {
           workspaceId: "2",
           paneId: "2-1",
+          surface: "pane",
         }),
         services(runner, writes),
       ),
@@ -251,7 +263,12 @@ describe("interactive guide result execution", () => {
     expect(runner.calls).toHaveLength(2)
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "2-4", "/opt/trellage/bin/cdx pstack 'Run the full workflow.'"],
+      args: [
+        "pane",
+        "run",
+        "2-4",
+        "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx pstack 'Run the full workflow.'",
+      ],
     })
     expect(writes).toHaveLength(0)
   })
@@ -274,6 +291,7 @@ describe("interactive guide result execution", () => {
     const result = buildCurrentHerdrWorkspaceResult(agentPromptProfile, "Draft the post.", "/repo", {
       workspaceId: "2",
       paneId: "2-1",
+      surface: "pane",
     })
 
     await expect(executeGuideUiResult(result, services(runner, writes))).rejects.toMatchObject({
@@ -306,7 +324,7 @@ describe("interactive guide result execution", () => {
     await expect(executeGuideUiResult(result, services(runner, writes))).rejects.toThrow("pane launch failed")
     expect(runner.calls[2]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "3-1", "/opt/trellage/bin/grx reviewer"],
+      args: ["pane", "run", "3-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/grx reviewer"],
       options: { cwd: "/actual/path" },
     })
     expect(writes).toEqual(["Profile launch did not complete. Selected prompt:\n\nDraft the post.\n"])
@@ -339,7 +357,7 @@ describe("interactive guide result execution", () => {
     })
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "4-1", "/opt/trellage/bin/grx reviewer"],
+      args: ["pane", "run", "4-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/grx reviewer"],
       options: { cwd: "/returned/path" },
     })
     expect(writes).toHaveLength(0)

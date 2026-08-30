@@ -29,7 +29,8 @@
     "profiles",
     "prototypes",
     "scripts/build-profile-compiler.sh",
-    "scripts/profile-compiler-fingerprint.sh"
+    "scripts/profile-compiler-fingerprint.sh",
+    "scripts/trellage-session-bridge.py"
   ],
   "scripts": {
     "build": "npm run build --prefix packages/trellage-guide-core && npm run build --prefix packages/trellage-launcher",

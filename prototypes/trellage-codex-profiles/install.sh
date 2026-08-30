@@ -15,6 +15,7 @@ home="$(cd -L "$home" >/dev/null 2>&1 && pwd -L)" || refuse "refusing unsafe HOM
 
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 common_launcher="$source_dir/../trellage-codex-common/native-codex"
+session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
@@ -436,13 +437,19 @@ if [ -d "$install_root" ]; then
     './marketplaces/hve-core/.agents' \
     './marketplaces/hve-core/.agents/plugins' \
     './marketplaces/hve-core/.agents/plugins/marketplace.json')"
-  lib_entries="$(printf '%s\n' './lib' './lib/native-codex')"
+  lib_entries="$(printf '%s\n' \
+    './lib' \
+    './lib/native-codex' \
+    './lib/trellage-session-bridge.py')"
+  legacy_lib_entries="$(printf '%s\n' './lib' './lib/native-codex')"
   expected_entries="$(printf '%s\n%s' "$recovery_entries" "$lib_entries")"
   legacy_lib_marketplace_entries="$(printf '%s\n%s\n%s' \
-    "$recovery_entries" "$lib_entries" "$marketplace_entries")"
+    "$recovery_entries" "$legacy_lib_entries" "$marketplace_entries")"
+  legacy_lib_entries="$(printf '%s\n%s' "$recovery_entries" "$legacy_lib_entries")"
   legacy_marketplace_entries="$(printf '%s\n%s' \
     "$recovery_entries" "$marketplace_entries")"
   [ "$actual_entries" = "$expected_entries" ] \
+    || [ "$actual_entries" = "$legacy_lib_entries" ] \
     || [ "$actual_entries" = "$legacy_lib_marketplace_entries" ] \
     || [ "$actual_entries" = "$legacy_marketplace_entries" ] \
     || refuse "refusing unexpected content in owned runtime: $install_root"
@@ -461,6 +468,11 @@ if [ -d "$install_root" ]; then
     [ -f "$install_root/lib/native-codex" ] \
       && [ ! -L "$install_root/lib/native-codex" ] \
       || refuse "refusing unsafe managed runtime file: $install_root/lib/native-codex"
+  fi
+  if [ "$actual_entries" = "$expected_entries" ]; then
+    [ -f "$install_root/lib/trellage-session-bridge.py" ] \
+      && [ ! -L "$install_root/lib/trellage-session-bridge.py" ] \
+      || refuse "refusing unsafe managed runtime file: $install_root/lib/trellage-session-bridge.py"
   fi
   runtime_owned=true
 fi
@@ -671,6 +683,8 @@ chmod 0755 \
 chmod 0700 "$staging_root/new-runtime/.fish-recovery"
 install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
 install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
+install -m 0755 "$session_bridge_source" \
+  "$staging_root/new-runtime/lib/trellage-session-bridge.py"
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json"
 printf '%s\n' "$ownership_value" >"$staging_root/new-runtime/.managed-by-trellage-codex-profiles"
 chmod 0644 "$staging_root/new-runtime/.managed-by-trellage-codex-profiles"

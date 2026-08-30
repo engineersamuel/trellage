@@ -9,6 +9,7 @@ import type { Profile } from "./profile.js"
 export interface RuntimeSupportPaths {
   readonly codexEntry: string
   readonly copilotEntry: string
+  readonly sessionBridge?: string
   readonly headlongEntry?: string
   readonly piEntry?: string
   readonly primeEntry?: string
@@ -76,6 +77,13 @@ const selectedFiles = (
           buildContextPath: "runtime-entry.sh",
           mode: 0o755,
         },
+        {
+          property: "sessionBridge",
+          role: "session-bridge",
+          destination: "/usr/local/bin/trellage-session-bridge",
+          buildContextPath: ".runtime-support/trellage-session-bridge",
+          mode: 0o755,
+        },
       ]
     case "copilot":
       return [
@@ -99,6 +107,13 @@ const selectedFiles = (
           destination: "/usr/local/share/trellage/copilot-seed/instructions/rundown.instructions.md",
           buildContextPath: ".runtime-support/instruction-rundown.md",
           mode: 0o644,
+        },
+        {
+          property: "sessionBridge",
+          role: "session-bridge",
+          destination: "/usr/local/bin/trellage-session-bridge",
+          buildContextPath: ".runtime-support/trellage-session-bridge",
+          mode: 0o755,
         },
       ]
     case "headlong":
@@ -126,7 +141,14 @@ const selectedFiles = (
         buildContextPath: ".runtime-support/output-style-rundown.md",
         mode: 0o644,
       }
-      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, outputStyle]
+      const sessionBridge: SelectedFile = {
+        property: "sessionBridge",
+        role: "session-bridge",
+        destination: "/usr/local/bin/trellage-session-bridge",
+        buildContextPath: ".runtime-support/trellage-session-bridge",
+        mode: 0o755,
+      }
+      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, outputStyle, sessionBridge]
       return [
         entry,
         outputStyle,
@@ -148,6 +170,7 @@ const selectedFiles = (
                 mode: 0o644,
               },
             ]),
+        sessionBridge,
       ]
     case "pi":
       return [

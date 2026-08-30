@@ -144,6 +144,11 @@ assert_install_published() {
     <(printf 'trellage-codex-profiles-v1\n') || fail 'ownership marker differs'
   cmp -s "$installed/bin/cdx" "$launcher" || fail 'installed launcher bytes differ'
   cmp -s "$installed/catalog.json" "$catalog" || fail 'installed catalog bytes differ'
+  cmp -s "$installed/lib/trellage-session-bridge.py" \
+    "$root/../../scripts/trellage-session-bridge.py" \
+    || fail 'installed session bridge bytes differ'
+  [ -x "$installed/lib/trellage-session-bridge.py" ] \
+    || fail 'installed session bridge is not executable'
   [ -L "$command" ] || fail 'managed command is not a symlink'
   [ "$(readlink "$command")" = "$logical_home/.local/share/trellage/cdx/bin/cdx" ] \
     || fail 'managed command target differs'
@@ -226,7 +231,8 @@ cmp -s "$recovery/removed-line" \
   || fail 'Fish recovery did not record the exact removed line'
 assert_no_install_staging "$install_home"
 
-rm "$install_home/.local/share/trellage/cdx/lib/native-codex"
+rm "$install_home/.local/share/trellage/cdx/lib/native-codex" \
+  "$install_home/.local/share/trellage/cdx/lib/trellage-session-bridge.py"
 rmdir "$install_home/.local/share/trellage/cdx/lib"
 legacy_marketplace_dir="$install_home/.local/share/trellage/cdx/marketplaces/hve-core/.agents/plugins"
 mkdir -p "$legacy_marketplace_dir"
