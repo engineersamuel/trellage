@@ -19,11 +19,13 @@ import {
   applyWorkflowPromptTemplate,
   GuideArgsError,
   GuideEffort,
+  GuideLongPromptVariant,
   GuidePhase,
   GuideServiceError,
   defaultGuideEffort,
   defaultGuideModelId,
   defaultGuideModelRouting,
+  guideIntentMaximumLength,
   literalGuideMatch,
   parseGuideHeadlessArgv,
   parseGuideServiceRequestJson,
@@ -329,6 +331,9 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           path: path.join(tmpRoot, "profiles", "prime-agent", "profile.toml"),
           supportedPlatforms: ["linux/amd64"],
           harness: { kind: "copilot", version: "1.0.0" },
+          resolutionPolicy: "floating",
+          locallyResolved: false,
+          releaseLockAvailable: false,
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -347,6 +352,9 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           path: path.join(tmpRoot, "profiles", "other", "profile.toml"),
           supportedPlatforms: ["linux/amd64"],
           harness: { kind: "copilot", version: "1.0.0" },
+          resolutionPolicy: "floating",
+          locallyResolved: false,
+          releaseLockAvailable: false,
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -479,8 +487,16 @@ describe("parseGuideHeadlessArgv", () => {
     expect(() => parseGuideHeadlessArgv(["--json", "--intent", "hello\u0000world"])).toThrow(GuideValidationError)
   })
 
-  it("rejects an oversized intent", () => {
-    expect(() => parseGuideHeadlessArgv(["--json", "--intent", "a".repeat(4001)])).toThrow(GuideValidationError)
+  it("accepts an intent at the 60000-character limit", () => {
+    expect(parseGuideHeadlessArgv(["--json", "--intent", "a".repeat(guideIntentMaximumLength)]).intent).toHaveLength(
+      guideIntentMaximumLength,
+    )
+  })
+
+  it("rejects an intent above the 60000-character limit", () => {
+    expect(() =>
+      parseGuideHeadlessArgv(["--json", "--intent", "a".repeat(guideIntentMaximumLength + 1)]),
+    ).toThrow(GuideValidationError)
   })
 
   it("allows JSON mode to read stdin and interactive mode to open its intent editor", () => {
@@ -504,6 +520,26 @@ describe("parseGuideHeadlessArgv", () => {
     expect(() => parseGuideHeadlessArgv(["--json", "--intent", "x", "--effort", "extreme"])).toThrow(
       GuideValidationError,
     )
+  })
+
+  it("accepts each interactive long-prompt UI variant", () => {
+    for (const variant of Object.values(GuideLongPromptVariant)) {
+      expect(parseGuideHeadlessArgv(["--intent", "Review this", "--ui-variant", variant]).uiVariant).toBe(variant)
+    }
+  })
+
+  it("rejects unknown or JSON-mode UI variants", () => {
+    expect(() => parseGuideHeadlessArgv(["--intent", "Review this", "--ui-variant", "unknown"])).toThrow(
+      GuideValidationError,
+    )
+    expect(() =>
+      parseGuideHeadlessArgv(["--json", "--intent", "Review this", "--ui-variant", GuideLongPromptVariant.Pager]),
+    ).toThrow(GuideArgsError)
+  })
+
+  it("preserves multiline Markdown intent formatting", () => {
+    const intent = "# Heading\n\n- first\n- second"
+    expect(parseGuideHeadlessArgv(["--intent", intent]).intent).toBe(intent)
   })
 })
 
@@ -534,6 +570,13 @@ describe("parseGuideServiceRequestJson", () => {
       model: "gpt-5.4",
       effort: GuideEffort.XHigh,
     })
+  })
+
+  it("accepts an stdin intent at the 60000-character limit", () => {
+    const request = parseGuideServiceRequestJson(
+      JSON.stringify({ schemaVersion: 1, intent: "a".repeat(guideIntentMaximumLength) }),
+    )
+    expect(request.intent).toHaveLength(guideIntentMaximumLength)
   })
 
   it("rejects malformed JSON", () => {

@@ -35,18 +35,22 @@ import {
   buildExistingHerdrWorktreeResult,
   buildNewHerdrWorktreeResult,
   buildPrintResult,
+  boundedPastedText,
   candidatePaneHeight,
   candidateRailWidth,
   compactCommandPreview,
   createInitialGuideUiState,
   describeGuideUiError,
   destinationOptions,
+  guideTextViewport,
   enrichLiteralCandidate,
   generationProgressItems,
   guideUiReducer,
   isWithinTextBound,
+  promptReviewMetrics,
   isWorktreeConfirmed,
   literalGuideRecommendations,
+  markdownPromptLines,
   matchProgressItems,
   pinnedGuideLenses,
   requiredWorktreeConfirmations,
@@ -57,6 +61,7 @@ import {
   spinnerFrameAt,
   spinnerMessageAt,
   summarizeGenerationIntent,
+  wrapGuideText,
   templateGuideCandidates,
   wizardStepForStage,
   wizardBreadcrumbLabel,
@@ -252,6 +257,9 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           path: path.join(tmpRoot, "profiles", "planner", "profile.toml"),
           supportedPlatforms: ["linux/amd64"],
           harness: { kind: "copilot", version: "1.0.0" },
+          resolutionPolicy: "floating",
+          locallyResolved: false,
+          releaseLockAvailable: false,
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -280,6 +288,9 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
     path: path.join(tmpRoot, "profiles", name, "profile.toml"),
     supportedPlatforms: ["linux/amd64"],
     harness: { kind: "claude", version: "1.0.0" },
+    resolutionPolicy: "floating",
+    locallyResolved: false,
+    releaseLockAvailable: false,
     skillBundles: ["sandbox-common"],
     skillsMode: "floating",
     finalDigestLocked: false,
@@ -484,6 +495,12 @@ describe("createInitialGuideUiState", () => {
     expect(state.stage).toBe(GuideUiStage.Intent)
     expect(state.intent).toBeUndefined()
   })
+
+  it("starts matching a supplied multiline intent without an initial review gate", () => {
+    const state = createInitialGuideUiState("# Large prompt\n\nReview this")
+    expect(state.stage).toBe(GuideUiStage.Matching)
+    expect(state.intent).toBe("# Large prompt\n\nReview this")
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -501,6 +518,57 @@ describe("guideUiReducer: intent and match", () => {
     state = guideUiReducer(state, { type: GuideUiActionType.IntentSubmit })
     expect(state.stage).toBe(GuideUiStage.Matching)
     expect(state.intent).toBe("Review my PR")
+  })
+
+  describe("guideUiReducer: prompt review", () => {
+    it("opens the prompt dashboard from matching and returns without rematching when unchanged", () => {
+      const matching = createInitialGuideUiState("# Goal\n\nReview this")
+      const review = guideUiReducer(matching, { type: GuideUiActionType.PromptReviewOpen })
+      expect(review).toMatchObject({
+        stage: GuideUiStage.PromptReview,
+        textDraft: "# Goal\n\nReview this",
+        promptReviewReturnStage: GuideUiStage.Matching,
+        promptReviewEditing: false,
+      })
+      expect(guideUiReducer(review, { type: GuideUiActionType.PromptReviewSubmit })).toMatchObject({
+        stage: GuideUiStage.Matching,
+        intent: "# Goal\n\nReview this",
+      })
+    })
+
+    it("discards draft edits before returning from the Markdown preview", () => {
+      const matching = createInitialGuideUiState("Original prompt")
+      let state = guideUiReducer(matching, { type: GuideUiActionType.PromptReviewOpen })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewChange, text: "Changed draft" })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack })
+      expect(state).toMatchObject({
+        stage: GuideUiStage.PromptReview,
+        textDraft: "Original prompt",
+        promptReviewEditing: false,
+      })
+      expect(guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack }).stage).toBe(GuideUiStage.Matching)
+    })
+
+    it("returns to recommendations unchanged, but rematches after an edited prompt is submitted", () => {
+      let state = createInitialGuideUiState("Review this")
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.MatchSucceeded,
+        recommendations: recommendationTriple(),
+      })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewOpen })
+      expect(guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack }).stage).toBe(GuideUiStage.Recommendations)
+
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewChange, text: "Review this carefully" })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewSubmit })
+      expect(state).toMatchObject({
+        stage: GuideUiStage.Matching,
+        intent: "Review this carefully",
+        matchPhase: GuideMatchPhase.LoadingProfiles,
+        recommendations: undefined,
+      })
+    })
   })
 
   it("does not submit an empty/whitespace-only intent", () => {
@@ -1286,6 +1354,37 @@ describe("isWithinTextBound", () => {
   })
 })
 
+describe("boundedPastedText", () => {
+  it("preserves multiline paste while removing unsafe controls and respecting the remaining bound", () => {
+    expect(boundedPastedText("123", "one\r\ntwo\u0000\nthree", 14)).toBe("one\ntwo\nthr")
+  })
+})
+
+describe("promptReviewMetrics", () => {
+  it("summarizes long Markdown prompts for split and dashboard variants", () => {
+    expect(promptReviewMetrics("# Goal\n\nDo the work.\n## Checks\nRun tests.")).toEqual({
+      characters: 41,
+      words: 9,
+      sourceLines: 5,
+      headings: ["Goal", "Checks"],
+    })
+  })
+})
+
+describe("markdownPromptLines", () => {
+  it("styles common Markdown structures without exposing markup prefixes", () => {
+    expect(markdownPromptLines("# Goal\n\n- first\n> note\n```\nconst x = 1\n```", 80)).toEqual([
+      { text: "Goal", kind: "heading" },
+      { text: "", kind: "body" },
+      { text: "• first", kind: "list" },
+      { text: "│ note", kind: "quote" },
+      { text: "```", kind: "code" },
+      { text: "const x = 1", kind: "code" },
+      { text: "```", kind: "code" },
+    ])
+  })
+})
+
 describe("worktreeDirtyWarning", () => {
   it("explicitly states uncommitted changes will not be included in the new worktree when dirty", () => {
     expect(worktreeDirtyWarning(true)).toBe(
@@ -1311,6 +1410,7 @@ describe("destinationOptions", () => {
     it("maps the interactive flow to profile, prompt candidate, and destination steps", () => {
       expect(wizardStepForStage(GuideUiStage.Intent)).toBeUndefined()
       expect(wizardStepForStage(GuideUiStage.Recommendations)).toBe(GuideWizardStep.Profile)
+      expect(wizardStepForStage(GuideUiStage.PromptReview)).toBe(GuideWizardStep.Profile)
       expect(wizardStepForStage(GuideUiStage.Generating)).toBe(GuideWizardStep.PromptCandidates)
       expect(wizardStepForStage(GuideUiStage.Candidates)).toBe(GuideWizardStep.PromptCandidates)
       expect(wizardStepForStage(GuideUiStage.Destination)).toBe(GuideWizardStep.Destination)
@@ -1374,6 +1474,29 @@ describe("destinationOptions", () => {
         expect(candidateRailWidth(100)).toBe(30)
         expect(candidateRailWidth(60)).toBe(20)
         expect(compactCommandPreview("cpx hve -i 'line one\nline two'")).toBe("cpx hve -i 'line one line two'")
+      })
+
+      it("wraps and pages large guide text without losing content", () => {
+        expect(wrapGuideText("alpha beta gamma\n\ndelta", 10)).toEqual(["alpha beta", "gamma", "", "delta"])
+        expect(wrapGuideText("    indented\n   ", 20)).toEqual(["    indented", "   "])
+        expect(wrapGuideText("你好世界", 4)).toEqual(["你好", "世界"])
+        expect(wrapGuideText("ab👨‍👩‍👧‍👦cd", 4)).toEqual(["ab👨‍👩‍👧‍👦", "cd"])
+        expect(guideTextViewport("one\ntwo\nthree\nfour", 20, 2, 0)).toEqual({
+          text: "one\ntwo",
+          lines: ["one", "two"],
+          startLine: 0,
+          maximumStartLine: 2,
+          atStart: true,
+          atEnd: false,
+        })
+        expect(guideTextViewport("one\ntwo\nthree\nfour", 20, 2, Number.MAX_SAFE_INTEGER)).toEqual({
+          text: "three\nfour",
+          lines: ["three", "four"],
+          startLine: 2,
+          maximumStartLine: 2,
+          atStart: false,
+          atEnd: true,
+        })
       })
     })
   })
@@ -1450,13 +1573,38 @@ describe("buildCurrentTerminalResult: headless gating", () => {
   })
 })
 
-describe("Herdr result builders: base interactive command, never -p", () => {
+describe("Herdr result builders: trust-safe initial prompt delivery", () => {
   const herdrContext: HerdrContext = { workspaceId: "workspace-1", paneId: "pane-1" }
 
-  it("buildCurrentHerdrWorkspaceResult previews the base interactive command and carries the caller pane id", () => {
+  it("queues a cpx prompt in the interactive command so folder trust cannot consume later prompt injection", () => {
+    const result = buildCurrentHerdrWorkspaceResult(
+      {
+        surface: "native",
+        launcher: "cpx",
+        commandPath: "/opt/trellage/cpx/bin/cpx",
+        profile: "hve",
+        headlessPrompt: false,
+        agent: "hve-core:rpi-agent",
+      },
+      "Run the complete RPI cycle.",
+      "/repo",
+      herdrContext,
+    )
+    expect(result.command.args).toEqual([
+      "hve",
+      "--agent",
+      "hve-core:rpi-agent",
+      "-i",
+      "Run the complete RPI cycle.",
+    ])
+    expect(result.promptDelivery).toBe("command")
+  })
+
+  it("queues a cdx positional prompt so hook trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(nativeSelectedProfile(true), "Do the thing.", "/repo", herdrContext)
     expect(result.action).toBe("current-herdr-workspace")
-    expect(result.command.args).toEqual(["reviewer"])
+    expect(result.command.args).toEqual(["reviewer", "Do the thing."])
+    expect(result.promptDelivery).toBe("command")
     expect(result.callerPaneId).toBe("pane-1")
     expect(result.direction).toBe("right")
   })
@@ -1470,7 +1618,8 @@ describe("Herdr result builders: base interactive command, never -p", () => {
       "main",
     )
     expect(result.action).toBe("herdr-worktree-create")
-    expect(result.command.args).toEqual(["reviewer"])
+    expect(result.command.args).toEqual(["reviewer", "Do the thing."])
+    expect(result.promptDelivery).toBe("command")
     expect(result.branch).toBe("worktree/do-the-thing")
     expect(result.baseRef).toBe("main")
     expect(result.primaryCheckoutPath).toBe("/repo")
@@ -1484,7 +1633,8 @@ describe("Herdr result builders: base interactive command, never -p", () => {
       "/repo-worktrees/existing",
     )
     expect(result.action).toBe("herdr-worktree-open")
-    expect(result.command.args).toEqual(["reviewer"])
+    expect(result.command.args).toEqual(["reviewer", "Do the thing."])
+    expect(result.promptDelivery).toBe("command")
     expect(result.path).toBe("/repo-worktrees/existing")
   })
 })

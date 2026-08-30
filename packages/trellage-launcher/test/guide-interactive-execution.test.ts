@@ -46,6 +46,13 @@ const profile = (headlessPrompt: boolean): SelectedProfile => ({
   profile: "hve-core",
   headlessPrompt,
 })
+const agentPromptProfile: SelectedProfile = {
+  surface: "native",
+  launcher: "grx",
+  commandPath: "/opt/trellage/bin/grx",
+  profile: "reviewer",
+  headlessPrompt: false,
+}
 
 const services = (
   runner: CommandRunner,
@@ -173,7 +180,7 @@ describe("interactive guide result execution", () => {
 
     await expect(
       executeGuideUiResult(
-        buildCurrentHerdrWorkspaceResult(profile(false), "Draft the post.", "/repo", {
+        buildCurrentHerdrWorkspaceResult(agentPromptProfile, "Draft the post.", "/repo", {
           workspaceId: "2",
           paneId: "2-1",
         }),
@@ -188,6 +195,63 @@ describe("interactive guide result execution", () => {
     expect(runner.calls[3]).toMatchObject({
       executable: "herdr",
       args: ["agent", "prompt", "2-3", "Draft the post.", "--wait", "--timeout", "60000"],
+    })
+    expect(writes).toHaveLength(0)
+  })
+
+  it("queues cpx prompts in the launch command before a workspace trust decision", async () => {
+    const runner = new RecordingRunner([
+      { stdout: '{"result":{"pane":{"pane_id":"2-3"}}}', stderr: "", exitCode: 0 },
+      { stdout: "", stderr: "", exitCode: 0 },
+    ])
+    const writes: string[] = []
+
+    await expect(
+      executeGuideUiResult(
+        buildCurrentHerdrWorkspaceResult(profile(false), "Draft the post.", "/repo", {
+          workspaceId: "2",
+          paneId: "2-1",
+        }),
+        services(runner, writes),
+      ),
+    ).resolves.toBe(0)
+
+    expect(runner.calls).toHaveLength(2)
+    expect(runner.calls[1]).toMatchObject({
+      executable: "herdr",
+      args: ["pane", "run", "2-3", "/opt/trellage/bin/cpx hve-core -i 'Draft the post.'"],
+    })
+    expect(writes).toHaveLength(0)
+  })
+
+  it("queues cdx prompts in the launch command before a hook trust decision", async () => {
+    const runner = new RecordingRunner([
+      { stdout: '{"result":{"pane":{"pane_id":"2-4"}}}', stderr: "", exitCode: 0 },
+      { stdout: "", stderr: "", exitCode: 0 },
+    ])
+    const writes: string[] = []
+    const cdxProfile: SelectedProfile = {
+      surface: "native",
+      launcher: "cdx",
+      commandPath: "/opt/trellage/bin/cdx",
+      profile: "pstack",
+      headlessPrompt: false,
+    }
+
+    await expect(
+      executeGuideUiResult(
+        buildCurrentHerdrWorkspaceResult(cdxProfile, "Run the full workflow.", "/repo", {
+          workspaceId: "2",
+          paneId: "2-1",
+        }),
+        services(runner, writes),
+      ),
+    ).resolves.toBe(0)
+
+    expect(runner.calls).toHaveLength(2)
+    expect(runner.calls[1]).toMatchObject({
+      executable: "herdr",
+      args: ["pane", "run", "2-4", "/opt/trellage/bin/cdx pstack 'Run the full workflow.'"],
     })
     expect(writes).toHaveLength(0)
   })
@@ -207,7 +271,7 @@ describe("interactive guide result execution", () => {
       }),
     ])
     const writes: string[] = []
-    const result = buildCurrentHerdrWorkspaceResult(profile(false), "Draft the post.", "/repo", {
+    const result = buildCurrentHerdrWorkspaceResult(agentPromptProfile, "Draft the post.", "/repo", {
       workspaceId: "2",
       paneId: "2-1",
     })
@@ -232,7 +296,7 @@ describe("interactive guide result execution", () => {
     ])
     const writes: string[] = []
     const result: GuideUiResult = buildNewHerdrWorktreeResult(
-      profile(false),
+      agentPromptProfile,
       "Draft the post.",
       "/primary",
       "worktree/linkedin-post",
@@ -242,7 +306,7 @@ describe("interactive guide result execution", () => {
     await expect(executeGuideUiResult(result, services(runner, writes))).rejects.toThrow("pane launch failed")
     expect(runner.calls[2]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "3-1", "/opt/trellage/bin/cpx hve-core"],
+      args: ["pane", "run", "3-1", "/opt/trellage/bin/grx reviewer"],
       options: { cwd: "/actual/path" },
     })
     expect(writes).toEqual(["Profile launch did not complete. Selected prompt:\n\nDraft the post.\n"])
@@ -261,7 +325,12 @@ describe("interactive guide result execution", () => {
       { stdout: "", stderr: "", exitCode: 0 },
     ])
     const writes: string[] = []
-    const result = buildExistingHerdrWorktreeResult(profile(false), "Draft the post.", "/primary", "/existing/path")
+    const result = buildExistingHerdrWorktreeResult(
+      agentPromptProfile,
+      "Draft the post.",
+      "/primary",
+      "/existing/path",
+    )
 
     await expect(executeGuideUiResult(result, services(runner, writes))).resolves.toBe(0)
     expect(runner.calls[0]).toMatchObject({
@@ -270,7 +339,7 @@ describe("interactive guide result execution", () => {
     })
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "4-1", "/opt/trellage/bin/cpx hve-core"],
+      args: ["pane", "run", "4-1", "/opt/trellage/bin/grx reviewer"],
       options: { cwd: "/returned/path" },
     })
     expect(writes).toHaveLength(0)

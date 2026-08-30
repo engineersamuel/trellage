@@ -71,6 +71,9 @@ const validCatalog = {
         version: "1.0.0",
         model: "mai-code-1.1-flash",
       },
+      resolutionPolicy: "floating",
+      locallyResolved: false,
+      releaseLockAvailable: true,
       skillBundles: ["sandbox-common"],
       skillsMode: "floating",
       finalDigestLocked: false,
@@ -117,6 +120,11 @@ describe("parseGuideCatalog", () => {
     expect(entries.map((entry) => entry.ref)).toEqual(["native:cdx/pstack", "sandbox:prime-agent"])
     expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", harness: "codex", name: "pstack" })
     expect(entries[1]).toMatchObject({ surface: "sandbox", harness: "copilot", name: "prime-agent" })
+    expect(catalog.sandbox[0]).toMatchObject({
+      resolutionPolicy: "floating",
+      locallyResolved: false,
+      releaseLockAvailable: true,
+    })
   })
 
   it("builds a workflow index keyed by ref", () => {

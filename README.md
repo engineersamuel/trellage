@@ -786,12 +786,20 @@ editable prompt candidates. By default, matching, Prompt Master optimization,
 and refinement use `gpt-5.6-sol` with medium reasoning; candidate drafting uses
 `gpt-5.6-luna` with medium reasoning. `--model` forces one model across every
 model-backed phase, while `--effort` applies one effort level across the phase
-route:
+route. Intent input accepts up to 60,000 characters:
 
 ```bash
 trx guide --intent "Turn a technical outline into a LinkedIn post"
 trx guide --intent "Review this architecture" --model claude-opus-5 --effort medium
+trx guide "$(cat /tmp/large-prompt.md)" --ui-variant pager
 ```
+
+The guide starts profile matching immediately. Press `p` during matching or
+recommendations to open the supplied prompt as rendered Markdown. The default
+viewer is `dashboard`; use `--ui-variant pager`, `split`, `focus`, `bookends`,
+or `dashboard` to select another layout. Each viewer supports Page Up/Page
+Down. Press `e` to edit the raw prompt, then Enter to re-run matching when the
+prompt changed.
 
 The last successful profile match is cached under
 `${XDG_CACHE_HOME:-~/.cache}/trellage/trx-guide/last-match.json`. Repeating the
@@ -809,9 +817,12 @@ declared skill keep the generated prompt unchanged.
 
 The guide shows the exact command and asks for confirmation before it starts a
 profile, creates a Herdr pane, or creates a Herdr worktree. A profile receives
-`-p` only when its published headless contract supports prompt input.
-Otherwise, the guide starts the interactive profile and shows the prompt for
-manual paste, or sends it through the Herdr agent API after the agent is idle.
+`-p` only when its published headless contract supports prompt input. For
+Copilot (`cpx`) and Codex (`cdx`) Herdr handoffs, the guide queues the prompt in
+the initial harness command. The harness keeps that prompt while you answer
+Copilot workspace-trust or Codex hook-trust requests; the guide does not
+approve trust automatically. Other Herdr profiles receive the prompt through
+the Herdr agent API after the agent is idle.
 
 Agent Skills can use the side-effect-free JSON API:
 

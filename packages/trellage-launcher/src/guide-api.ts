@@ -91,6 +91,22 @@ export enum GuideEffort {
   Max = "max",
 }
 
+export enum GuideLongPromptVariant {
+  Pager = "pager",
+  Split = "split",
+  Focus = "focus",
+  Bookends = "bookends",
+  Dashboard = "dashboard",
+}
+
+const guideLongPromptVariantLiterals = [
+  GuideLongPromptVariant.Pager,
+  GuideLongPromptVariant.Split,
+  GuideLongPromptVariant.Focus,
+  GuideLongPromptVariant.Bookends,
+  GuideLongPromptVariant.Dashboard,
+] as const
+
 const guideEffortLiterals = ["low", "medium", "high", "xhigh", "max"] as const
 type GuideEffortLiteral = (typeof guideEffortLiterals)[number]
 
@@ -116,12 +132,13 @@ const parseGuideEffort = (value: unknown, path: string): GuideEffort =>
 // Shared bounds and validators.
 // ---------------------------------------------------------------------------
 
-const intentMaximumLength = 4000
+export const guideIntentMaximumLength = 60_000
 const profileRefMaximumLength = 256
 const modelIdentifierMaximumLength = 128
 const modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u
 
-const validateIntent = (value: unknown, path: string): string => text(value, path, intentMaximumLength)
+const validateIntent = (value: unknown, path: string): string =>
+  text(value, path, guideIntentMaximumLength, { multiline: true })
 
 const validateProfileRef = (value: unknown, path: string): string => text(value, path, profileRefMaximumLength)
 
@@ -162,6 +179,7 @@ export interface GuideHeadlessArgs {
   readonly profile: string | undefined
   readonly model: string | undefined
   readonly effort: GuideEffort | undefined
+  readonly uiVariant?: GuideLongPromptVariant
 }
 
 const helpFlag = "--help"
@@ -170,9 +188,10 @@ const intentFlag = "--intent"
 const profileFlag = "--profile"
 const modelFlag = "--model"
 const effortFlag = "--effort"
+const uiVariantFlag = "--ui-variant"
 
 const booleanFlags = new Set([helpFlag, jsonFlag])
-const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag])
+const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
 interface MutableGuideArgs {
@@ -182,6 +201,7 @@ interface MutableGuideArgs {
   profile: string | undefined
   model: string | undefined
   effort: GuideEffort | undefined
+  uiVariant: GuideLongPromptVariant | undefined
   readonly positionals: string[]
   readonly seenFlags: Set<string>
 }
@@ -190,7 +210,8 @@ const setGuideValueFlag = (state: MutableGuideArgs, token: string, value: string
   if (token === intentFlag) state.intentFromFlag = validateIntent(value, "--intent")
   else if (token === profileFlag) state.profile = validateProfileRef(value, "--profile")
   else if (token === modelFlag) state.model = validateModelId(value, "--model")
-  else state.effort = parseGuideEffort(value, "--effort")
+  else if (token === effortFlag) state.effort = parseGuideEffort(value, "--effort")
+  else state.uiVariant = literal(value, "--ui-variant", guideLongPromptVariantLiterals)
 }
 
 const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: MutableGuideArgs): number => {
@@ -223,6 +244,7 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
   const intent =
     state.intentFromFlag ?? (positionalIntent === undefined ? undefined : validateIntent(positionalIntent, "intent"))
   if (state.profile !== undefined && !state.json) throw new GuideArgsError("--profile requires --json")
+  if (state.uiVariant !== undefined && state.json) throw new GuideArgsError("--ui-variant is interactive-only")
   return {
     help: state.help,
     json: state.json,
@@ -230,6 +252,7 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
     profile: state.profile,
     model: state.model,
     effort: state.effort,
+    ...(state.uiVariant === undefined ? {} : { uiVariant: state.uiVariant }),
   }
 }
 
@@ -241,13 +264,15 @@ export const guideHeadlessHelpText = [
   "Options:",
   "  <intent>             Start the interactive guide with an initial intent.",
   "  --json               Emit a machine-readable JSON response.",
-  "  --intent <text>       Natural-language description of the task.",
+  "  --intent <text>       Natural-language task description (up to 60,000 characters).",
   "                         May instead be given as a single positional argument.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
   "  --model <id>            Override the configured model.",
   "  --effort <level>       Override the configured reasoning effort:",
   "                         low, medium, high, xhigh, or max.",
+  "  --ui-variant <name>    Select the on-demand prompt viewer:",
+  "                         pager, split, focus, bookends, or dashboard.",
   "  --help                Show this help text.",
 ].join("\n")
 
@@ -265,6 +290,7 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
     profile: undefined,
     model: undefined,
     effort: undefined,
+    uiVariant: undefined,
     positionals: [],
     seenFlags: new Set(),
   }

@@ -50,6 +50,7 @@ const executeHerdrResult = async (
           direction: result.direction,
           command: result.command,
           prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
           timeoutMs: startupTimeoutMs,
           promptTimeoutMs,
         })
@@ -61,6 +62,7 @@ const executeHerdrResult = async (
           baseRef: result.baseRef,
           command: result.command,
           prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
           timeoutMs: startupTimeoutMs,
           promptTimeoutMs,
         })
@@ -71,6 +73,7 @@ const executeHerdrResult = async (
           path: result.path,
           command: result.command,
           prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
           timeoutMs: startupTimeoutMs,
           promptTimeoutMs,
         })

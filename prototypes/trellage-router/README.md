@@ -50,6 +50,7 @@ trx list
 trx list --json
 trx guide
 trx guide --intent "Write a technical LinkedIn post"
+trx guide --intent "$(cat /tmp/large-prompt.md)" --ui-variant pager
 trx skills status
 trx skills update
 ```
@@ -62,6 +63,7 @@ mise run trx
 mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
 mise run trx -- guide --intent "Write a technical LinkedIn post"
+mise run trx -- guide "$(cat /tmp/large-prompt.md)" --ui-variant split
 ```
 
 `trx list` prints one `launcher/profile` and catalog description per line.
@@ -81,7 +83,20 @@ rank five profiles, drafts three prompt candidates with `gpt-5.6-luna` at
 medium, then uses `gpt-5.6-sol` at medium for Prompt Master optimization and
 refinement. The model session has no tools, repository attachments, or
 persistent history. `--model` forces one model across all model-backed phases;
-`--effort` applies one effort level across the phase route.
+`--effort` applies one effort level across the phase route. Positional,
+`--intent`, and stdin JSON intent input accepts up to 60,000 characters.
+The guide starts profile matching immediately. Press `p` during matching or
+recommendations to open the supplied prompt as rendered Markdown. The default
+viewer is `dashboard`; `--ui-variant` selects one of five layouts:
+
+- `pager`: a full-width paged document.
+- `split`: a Markdown heading map beside the document.
+- `focus`: a centered, narrow reading column.
+- `bookends`: persistent start and end anchors around the document.
+- `dashboard`: prompt metrics above the document.
+
+All layouts use Page Up and Page Down for navigation. Press `e` to edit the
+raw prompt. Enter re-runs matching when the prompt changed.
 
 The non-interactive API is side-effect-free:
 
@@ -104,6 +119,10 @@ path-free command previews. JSON mode never launches a profile or changes
 Herdr. Interactive model failures can use deterministic literal/template
 fallbacks. Interactive guide mode previews the exact command and requires
 confirmation before current-terminal, Herdr-pane, or Herdr-worktree handoff.
+For `cpx` and `cdx` Herdr handoffs, the selected prompt is queued in the
+harness's initial interactive command. Copilot workspace-trust and Codex
+hook-trust requests cannot consume a later prompt injection. Trust decisions
+remain interactive.
 
 The first sorted row is selected when the launcher opens. Start typing to filter
 by profile, harness, or description; no leading `/` is required. The arrow keys

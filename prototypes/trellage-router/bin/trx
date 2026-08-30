@@ -44,7 +44,7 @@ Usage:
   trx
   trx list [--json]
   trx run LAUNCHER PROFILE [-- ARGS...]
-  trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL]
+  trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx inventory LAUNCHER PROFILE --json
   trx skills status
   trx skills update
@@ -64,12 +64,16 @@ guide_usage() {
   cat <<'EOF'
 Usage:
   trx guide [INTENT]
-  trx guide --intent INTENT [--model MODEL] [--effort LEVEL]
+  trx guide --intent INTENT [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
 
 PROFILE_REF is native:<launcher>/<profile> or sandbox:<profile>. JSON mode
 uses schemaVersion 1, has no launch or Herdr side effects, and accepts a JSON
 request on stdin when --intent is omitted.
+INTENT accepts up to 60,000 characters.
+Press p during matching or recommendations to view the prompt as Markdown.
+Press e in the prompt viewer to edit; Enter rematches a changed prompt.
+Interactive prompt viewers: pager, split, focus, bookends, dashboard.
 EOF
 }
 
