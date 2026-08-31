@@ -18,6 +18,24 @@ const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
 ]
 const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = ["user-selected", "exact", "snapshot", "user-curated"]
 
+const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLength: number): number => {
+  target.push(buffer)
+  let boundedLength = currentLength + buffer.length
+  while (boundedLength > commandOutputLimitBytes) {
+    const first = target[0]
+    if (first === undefined) return 0
+    const excess = boundedLength - commandOutputLimitBytes
+    if (first.length <= excess) {
+      target.shift()
+      boundedLength -= first.length
+    } else {
+      target[0] = first.subarray(excess)
+      boundedLength -= excess
+    }
+  }
+  return boundedLength
+}
+
 export type GuideSurface = "native" | "sandbox"
 export type PromptDeliveryMode = "none" | "argv"
 export type PromptHandlingMode = "none" | "argv" | "manual-paste"
@@ -80,6 +98,7 @@ export interface CommandRunOptions {
   readonly env?: NodeJS.ProcessEnv
   readonly timeoutMs?: number
   readonly signal?: AbortSignal
+  readonly outputOverflow?: "terminate" | "truncate"
 }
 
 export interface CommandRunResult {
@@ -653,7 +672,17 @@ export const createNodeCommandRunner = (): CommandRunner => ({
         const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk
         const nextLength = (stream === "stdout" ? stdoutLength : stderrLength) + buffer.length
         if (nextLength > commandOutputLimitBytes) {
-          requestTermination("output-limit", stream)
+          if (options?.outputOverflow !== "truncate") {
+            requestTermination("output-limit", stream)
+            return
+          }
+          const boundedLength = appendTruncatedChunk(
+            target,
+            buffer,
+            stream === "stdout" ? stdoutLength : stderrLength,
+          )
+          if (stream === "stdout") stdoutLength = boundedLength
+          else stderrLength = boundedLength
           return
         }
         target.push(buffer)

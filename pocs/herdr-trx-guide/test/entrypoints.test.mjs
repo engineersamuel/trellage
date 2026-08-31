@@ -231,6 +231,72 @@ test("action opens and clears the persistent capture queue in insertion order", 
   assert.equal((await readCaptureQueue(root)).entries.length, 0)
 })
 
+test("action preserves captures appended after the opened queue snapshot", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-action-queue-race-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const capturePath = path.join(root, "herdr-call.json")
+  const fakeHerdr = path.join(root, "herdr")
+  const stateModuleUrl = new URL("../lib/state.mjs", import.meta.url).href
+  await writeFile(
+    fakeHerdr,
+    `#!/usr/bin/env node
+const fs = require("node:fs")
+;(async () => {
+  const { appendCaptureQueue } = await import(${JSON.stringify(stateModuleUrl)})
+  await appendCaptureQueue(process.env.HERDR_PLUGIN_STATE_DIR, {
+    id: "later",
+    answer: "Capture appended while the guide opened"
+  })
+  fs.writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify({
+    argv: process.argv.slice(2)
+  }))
+})().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exitCode = 1
+})
+`,
+    "utf8",
+  )
+  await chmod(fakeHerdr, 0o755)
+  const socketPath = await socketServer(t, (request) => {
+    assert.equal(request.method, "popup.close")
+    return { type: "popup_closed" }
+  })
+  await appendCaptureQueue(root, { id: "snapshot-1", answer: "First capture" })
+  await appendCaptureQueue(root, { id: "snapshot-2", answer: "Second capture" })
+  const token = await writeChoice(root, { schemaVersion: 1, kind: "queue" })
+
+  await execFileAsync(process.execPath, [actionEntrypoint], {
+    env: {
+      ...process.env,
+      HERDR_BIN_PATH: fakeHerdr,
+      HERDR_SOCKET_PATH: socketPath,
+      HERDR_PLUGIN_STATE_DIR: root,
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+        workspace_id: "w1",
+        focused_pane_id: "w1:p1",
+        focused_pane_cwd: "/repo",
+        invocation_source: "trellage-guide-panel",
+        selected_text: token,
+      }),
+    },
+  })
+
+  const call = await waitForJsonFile(capturePath)
+  const envArgument = call.argv.find((argument) =>
+    argument.startsWith("TRELLAGE_GUIDE_INVOCATION_PATH="),
+  )
+  const invocation = await consumeInvocation(
+    root,
+    envArgument.slice("TRELLAGE_GUIDE_INVOCATION_PATH=".length),
+  )
+  assert.equal(
+    invocation.answer,
+    "## Captured item 1\n\nFirst capture\n\n---\n\n## Captured item 2\n\nSecond capture",
+  )
+  assert.deepEqual((await readCaptureQueue(root)).entries.map((entry) => entry.id), ["later"])
+})
+
 test("popup keeps stdin attached while staging a multiline intent for interactive raw mode", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-popup-"))
   t.after(() => rm(root, { recursive: true, force: true }))

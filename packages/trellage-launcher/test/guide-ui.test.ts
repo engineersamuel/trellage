@@ -3267,3 +3267,109 @@ describe("guideUiReducer: stage-guarded no-ops", () => {
     expect(result).toBe(state)
   })
 })
+
+describe("guideUiReducer: batch queue", () => {
+  const candidatesState = (): GuideUiState => {
+    let state = createInitialGuideUiState("Review my PR")
+    state = guideUiReducer(state, { type: GuideUiActionType.MatchSucceeded, recommendations: recommendationTriple() })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+    })
+    return guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
+  }
+
+  it("keeps Enter on the unchanged single-job destination path", () => {
+    let state = guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesConfirm })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.ReadinessReady,
+      result: { kind: ProfileReadinessKind.Ready, summary: "ok" },
+    })
+    expect(state.stage).toBe(GuideUiStage.Destination)
+    expect(state.queue.entries).toEqual([])
+  })
+
+  const enqueuedHere = (): GuideUiState => {
+    const placing = guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesEnqueue })
+    expect(placing.stage).toBe(GuideUiStage.QueuePlacement)
+    return guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementHere })
+  }
+
+  it("gives each queued entry its own placement", () => {
+    const here = enqueuedHere()
+    expect(here.stage).toBe(GuideUiStage.Queue)
+    expect(here.queue.entries[0]?.placement).toEqual({ kind: "current-workspace-pane", direction: "right" })
+
+    const routed = guideUiReducer(here, {
+      type: GuideUiActionType.QueuePlacementWorktree,
+      placement: { kind: "new-worktree", branch: "worktree/research", baseRef: "main" },
+      primaryCheckoutPath: "/repo",
+    })
+    expect(routed.queue.entries.map((job) => job.placement)).toEqual([
+      { kind: "current-workspace-pane", direction: "right" },
+      { kind: "new-worktree", branch: "worktree/research", baseRef: "main" },
+    ])
+    expect(routed.primaryCheckoutPath).toBe("/repo")
+    expect(guideUiReducer(routed, { type: GuideUiActionType.QueueAddAnother }).primaryCheckoutPath).toBe("/repo")
+  })
+
+  it("starts the branch editor for a queued worktree and comes back to the placement picker", () => {
+    const placing = guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesEnqueue })
+    const moved = guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementMove, delta: 1 })
+    expect(moved.destinationIndex).toBe(1)
+    const editing = guideUiReducer(moved, { type: GuideUiActionType.QueuePlacementStartWorktree })
+    expect(editing.stage).toBe(GuideUiStage.WorktreeBranchEditor)
+    expect(editing.worktreePurpose).toBe("queue")
+    expect(guideUiReducer(editing, { type: GuideUiActionType.WorktreeBack }).stage).toBe(GuideUiStage.QueuePlacement)
+    expect(guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementBack }).stage).toBe(GuideUiStage.Candidates)
+  })
+
+  it("enqueues, views, edits, removes, and starts another normal pass", () => {
+    let state = enqueuedHere()
+    expect(state.stage).toBe(GuideUiStage.Queue)
+    expect(state.queue.entries).toHaveLength(1)
+
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueEditStart })
+    state = guideUiReducer(state, { type: GuideUiActionType.EditorChange, text: "Edited queued prompt" })
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueEditSubmit })
+    expect(state.queue.entries[0]?.prompt).toBe("Edited queued prompt")
+    expect(state.queue.entries[0]?.command.args.at(-1)).toBe("Edited queued prompt")
+
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueRemove })
+    expect(state.queue.entries).toEqual([])
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueExecuteBlocked, message: "Batch queue is empty." })
+    expect(state.stage).toBe(GuideUiStage.Queue)
+    expect(state.errorMessage).toBe("Batch queue is empty.")
+
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueAddAnother })
+    expect(state.stage).toBe(GuideUiStage.Intent)
+    expect(state.queue.entries).toEqual([])
+  })
+
+  it("opens an existing non-empty queue from candidates", () => {
+    let state = guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueBack })
+    expect(state.stage).toBe(GuideUiStage.Candidates)
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesViewQueue })
+    expect(state.stage).toBe(GuideUiStage.Queue)
+  })
+
+  it("preserves the queue when a later intent is edited and rematched", () => {
+    let state = guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueAddAnother })
+    state = guideUiReducer(state, { type: GuideUiActionType.IntentChange, text: "Research the queue design" })
+    state = guideUiReducer(state, { type: GuideUiActionType.IntentSubmit })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewOpen })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.PromptReviewChange,
+      text: "Research the queue design carefully",
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewSubmit })
+
+    expect(state.stage).toBe(GuideUiStage.Matching)
+    expect(state.queue.entries).toHaveLength(1)
+  })
+})

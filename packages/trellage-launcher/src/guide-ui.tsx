@@ -74,6 +74,18 @@ import {
   type WorktreeCollisionResult,
 } from "./guide-launch.js"
 import { checkSelectedProfileReadiness, ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.js"
+import {
+  describeJobPlacement,
+  emptyGuideQueue,
+  enqueueGuideJob,
+  removeSelectedQueuedGuideJob,
+  selectQueuedGuideJob,
+  startQueuedGuidePromptEdit,
+  submitQueuedGuidePromptEdit,
+  type GuideBatch,
+  type GuideQueueState,
+  type JobPlacement,
+} from "./guide-batch.js"
 
 // ---------------------------------------------------------------------------
 // Shared small helpers.
@@ -163,12 +175,16 @@ export enum GuideUiStage {
   InspectingWorktree = "inspecting-worktree",
   WorktreeCollision = "worktree-collision",
   WorktreeReady = "worktree-ready",
+  Queue = "queue",
+  QueuePromptEditor = "queue-prompt-editor",
+  QueuePlacement = "queue-placement",
 }
 
 const editingStages: ReadonlySet<GuideUiStage> = new Set([
   GuideUiStage.RefineEditor,
   GuideUiStage.DirectEditor,
   GuideUiStage.WorktreeBranchEditor,
+  GuideUiStage.QueuePromptEditor,
 ])
 
 export enum GuideUiDestination {
@@ -216,6 +232,9 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.InspectingWorktree]: GuideWizardStep.Destination,
   [GuideUiStage.WorktreeCollision]: GuideWizardStep.Destination,
   [GuideUiStage.WorktreeReady]: GuideWizardStep.Destination,
+  [GuideUiStage.Queue]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.QueuePromptEditor]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.QueuePlacement]: GuideWizardStep.Destination,
 }
 
 export const wizardStepForStage = (stage: GuideUiStage): GuideWizardStep | undefined => wizardStepByStage[stage]
@@ -269,6 +288,10 @@ export interface GuideUiState {
     | GuideUiStage.Recommendations
     | undefined
   readonly promptReviewEditing: boolean
+  readonly queue: GuideQueueState
+  readonly worktreePurpose: "single" | "queue"
+  /** The git checkout every queued worktree placement was resolved against. */
+  readonly primaryCheckoutPath: string | undefined
 }
 
 const emptyState: GuideUiState = {
@@ -295,6 +318,9 @@ const emptyState: GuideUiState = {
   worktreeConfirmations: 0,
   promptReviewReturnStage: undefined,
   promptReviewEditing: false,
+  queue: emptyGuideQueue(),
+  worktreePurpose: "single",
+  primaryCheckoutPath: undefined,
 }
 
 /** Builds initial state and starts matching immediately when a supplied intent is present. */
@@ -358,6 +384,8 @@ export enum GuideUiActionType {
   CandidatesMove = "candidates/move",
   CandidatesBack = "candidates/back",
   CandidatesConfirm = "candidates/confirm",
+  CandidatesEnqueue = "candidates/enqueue",
+  CandidatesViewQueue = "candidates/view-queue",
   CandidatesRefineStart = "candidates/refine-start",
   CandidatesDirectEditStart = "candidates/direct-edit-start",
   EditorChange = "editor/change",
@@ -384,6 +412,19 @@ export enum GuideUiActionType {
   WorktreeConfirm = "worktree/confirm",
   WorktreeEditBranch = "worktree/edit-branch",
   WorktreeBack = "worktree/back",
+  QueueMove = "queue/move",
+  QueueEditStart = "queue/edit-start",
+  QueueEditSubmit = "queue/edit-submit",
+  QueueRemove = "queue/remove",
+  QueueAddAnother = "queue/add-another",
+  QueueBack = "queue/back",
+  QueueExecuteBlocked = "queue/execute-blocked",
+  QueuePlacementMove = "queue-placement/move",
+  QueuePlacementBack = "queue-placement/back",
+  QueuePlacementUnavailable = "queue-placement/unavailable",
+  QueuePlacementHere = "queue-placement/here",
+  QueuePlacementStartWorktree = "queue-placement/start-worktree",
+  QueuePlacementWorktree = "queue-placement/worktree",
 }
 
 export type GuideUiAction =
@@ -419,6 +460,8 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.CandidatesMove; readonly delta: 1 | -1 }
   | { readonly type: GuideUiActionType.CandidatesBack }
   | { readonly type: GuideUiActionType.CandidatesConfirm }
+  | { readonly type: GuideUiActionType.CandidatesEnqueue }
+  | { readonly type: GuideUiActionType.CandidatesViewQueue }
   | { readonly type: GuideUiActionType.CandidatesRefineStart }
   | { readonly type: GuideUiActionType.CandidatesDirectEditStart }
   | { readonly type: GuideUiActionType.EditorChange; readonly text: string }
@@ -445,6 +488,19 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.WorktreeConfirm }
   | { readonly type: GuideUiActionType.WorktreeEditBranch }
   | { readonly type: GuideUiActionType.WorktreeBack }
+  | { readonly type: GuideUiActionType.QueueMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.QueueEditStart }
+  | { readonly type: GuideUiActionType.QueueEditSubmit }
+  | { readonly type: GuideUiActionType.QueueRemove }
+  | { readonly type: GuideUiActionType.QueueAddAnother }
+  | { readonly type: GuideUiActionType.QueueBack }
+  | { readonly type: GuideUiActionType.QueueExecuteBlocked; readonly message: string }
+  | { readonly type: GuideUiActionType.QueuePlacementMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.QueuePlacementBack }
+  | { readonly type: GuideUiActionType.QueuePlacementUnavailable }
+  | { readonly type: GuideUiActionType.QueuePlacementHere }
+  | { readonly type: GuideUiActionType.QueuePlacementStartWorktree }
+  | { readonly type: GuideUiActionType.QueuePlacementWorktree; readonly placement: JobPlacement; readonly primaryCheckoutPath: string }
 
 // ---------------------------------------------------------------------------
 // Reducer. Pure: every transition is guarded by the stage it applies to, and
@@ -475,6 +531,7 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       if (trimmed.length === 0) return state
       return {
         ...emptyState,
+        queue: state.queue,
         stage: GuideUiStage.Matching,
         intent: trimmed,
         matchPhase: GuideMatchPhase.LoadingProfiles,
@@ -546,6 +603,7 @@ const submitPromptReview = (state: GuideUiState): GuideUiState => {
   }
   return {
     ...emptyState,
+    queue: state.queue,
     stage: GuideUiStage.Matching,
     intent,
     matchPhase: GuideMatchPhase.LoadingProfiles,
@@ -749,6 +807,16 @@ const reduceCandidateNavigation = (state: GuideUiState, action: GuideUiAction): 
           }
         : state
 
+    case GuideUiActionType.CandidatesEnqueue:
+      return state.stage === GuideUiStage.Candidates && state.candidates !== undefined && state.selectedProfile !== undefined
+        ? { ...state, stage: GuideUiStage.QueuePlacement, destinationIndex: 0, errorMessage: undefined }
+        : state
+
+    case GuideUiActionType.CandidatesViewQueue:
+      return state.stage === GuideUiStage.Candidates && state.queue.entries.length > 0
+        ? { ...state, stage: GuideUiStage.Queue, errorMessage: undefined }
+        : state
+
     default:
       return state
   }
@@ -950,6 +1018,105 @@ const reduceDestination = (state: GuideUiState, action: GuideUiAction): GuideUiS
   }
 }
 
+const reduceQueue = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.QueueMove:
+      return state.stage === GuideUiStage.Queue ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state
+    case GuideUiActionType.QueueEditStart: {
+      if (state.stage !== GuideUiStage.Queue) return state
+      const queue = startQueuedGuidePromptEdit(state.queue)
+      const job = queue.entries[queue.selectedIndex]
+      return job === undefined ? state : { ...state, stage: GuideUiStage.QueuePromptEditor, queue, textDraft: job.prompt }
+    }
+    case GuideUiActionType.QueueEditSubmit:
+      return state.stage === GuideUiStage.QueuePromptEditor && state.textDraft.trim().length > 0
+        ? { ...state, stage: GuideUiStage.Queue, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) }
+        : state
+    case GuideUiActionType.QueueRemove:
+      return state.stage === GuideUiStage.Queue
+        ? { ...state, queue: removeSelectedQueuedGuideJob(state.queue), errorMessage: undefined }
+        : state
+    case GuideUiActionType.QueueAddAnother:
+      return state.stage === GuideUiStage.Queue
+        ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath }
+        : state
+    case GuideUiActionType.QueueBack:
+      if (state.stage === GuideUiStage.QueuePromptEditor) {
+        const { editingId: _, ...queue } = state.queue
+        return { ...state, stage: GuideUiStage.Queue, queue, errorMessage: undefined }
+      }
+      return state.stage === GuideUiStage.Queue
+        ? { ...state, stage: GuideUiStage.Candidates, errorMessage: undefined }
+        : state
+    case GuideUiActionType.QueueExecuteBlocked:
+      return state.stage === GuideUiStage.Queue ? { ...state, errorMessage: action.message } : state
+    default:
+      return state
+  }
+}
+
+/**
+ * Adds the candidate on screen to the queue with the placement just chosen for
+ * it. Every entry picks its own placement, so a queue can mix panes here with
+ * one worktree per entry.
+ */
+const enqueueSelectedCandidate = (
+  state: GuideUiState,
+  placement: JobPlacement,
+  primaryCheckoutPath?: string,
+): GuideUiState =>
+  state.candidates === undefined || state.selectedProfile === undefined
+    ? state
+    : {
+        ...state,
+        stage: GuideUiStage.Queue,
+        queue: enqueueGuideJob(
+          state.queue,
+          state.selectedProfile,
+          tripleAt(state.candidates, state.candidateIndex).prompt,
+          placement,
+        ),
+        worktreePurpose: "single",
+        worktreeInspection: undefined,
+        worktreeConfirmations: 0,
+        ...(primaryCheckoutPath === undefined ? {} : { primaryCheckoutPath }),
+        errorMessage: undefined,
+      }
+
+const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.QueuePlacementMove:
+      return state.stage === GuideUiStage.QueuePlacement
+        ? { ...state, destinationIndex: (state.destinationIndex + action.delta + 2) % 2 }
+        : state
+    case GuideUiActionType.QueuePlacementBack:
+      return state.stage === GuideUiStage.QueuePlacement ? { ...state, stage: GuideUiStage.Candidates } : state
+    case GuideUiActionType.QueuePlacementUnavailable:
+      return state.stage === GuideUiStage.QueuePlacement
+        ? { ...state, errorMessage: "Herdr is unavailable. Start trx guide from a Herdr pane or popup." }
+        : state
+    case GuideUiActionType.QueuePlacementHere:
+      return state.stage === GuideUiStage.QueuePlacement
+        ? enqueueSelectedCandidate(state, { kind: "current-workspace-pane", direction: "right" })
+        : state
+    case GuideUiActionType.QueuePlacementStartWorktree:
+      return state.stage === GuideUiStage.QueuePlacement
+        ? {
+            ...state,
+            stage: GuideUiStage.WorktreeBranchEditor,
+            textDraft: defaultWorktreeBranch(state.intent ?? "queue"),
+            worktreeInspection: undefined,
+            worktreePurpose: "queue",
+            errorMessage: undefined,
+          }
+        : state
+    case GuideUiActionType.QueuePlacementWorktree:
+      return enqueueSelectedCandidate(state, action.placement, action.primaryCheckoutPath)
+    default:
+      return state
+  }
+}
+
 const reduceWorktreeBranch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.WorktreeSubmitBranch:
@@ -1032,7 +1199,7 @@ const reduceWorktreeResolution = (state: GuideUiState, action: GuideUiAction): G
         state.stage === GuideUiStage.WorktreeReady
         ? {
             ...state,
-            stage: GuideUiStage.Destination,
+            stage: state.worktreePurpose === "queue" ? GuideUiStage.QueuePlacement : GuideUiStage.Destination,
             worktreeInspection: undefined,
             worktreeConfirmations: 0,
           }
@@ -1075,6 +1242,8 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.CandidatesMove]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesBack]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesConfirm]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesEnqueue]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesViewQueue]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesRefineStart]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesDirectEditStart]: reduceCandidateSelection,
   [GuideUiActionType.DirectEditSubmit]: reduceDirectEdit,
@@ -1101,6 +1270,19 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.WorktreeConfirm]: reduceWorktreeResolution,
   [GuideUiActionType.WorktreeEditBranch]: reduceWorktreeResolution,
   [GuideUiActionType.WorktreeBack]: reduceWorktreeResolution,
+  [GuideUiActionType.QueueMove]: reduceQueue,
+  [GuideUiActionType.QueueEditStart]: reduceQueue,
+  [GuideUiActionType.QueueEditSubmit]: reduceQueue,
+  [GuideUiActionType.QueueRemove]: reduceQueue,
+  [GuideUiActionType.QueueAddAnother]: reduceQueue,
+  [GuideUiActionType.QueueBack]: reduceQueue,
+  [GuideUiActionType.QueueExecuteBlocked]: reduceQueue,
+  [GuideUiActionType.QueuePlacementMove]: reduceQueuePlacement,
+  [GuideUiActionType.QueuePlacementBack]: reduceQueuePlacement,
+  [GuideUiActionType.QueuePlacementUnavailable]: reduceQueuePlacement,
+  [GuideUiActionType.QueuePlacementHere]: reduceQueuePlacement,
+  [GuideUiActionType.QueuePlacementStartWorktree]: reduceQueuePlacement,
+  [GuideUiActionType.QueuePlacementWorktree]: reduceQueuePlacement,
 }
 
 export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1539,6 +1721,11 @@ export interface GuideUiExistingHerdrWorktreeResult {
   readonly path: string
 }
 
+export interface GuideUiBatchResult {
+  readonly action: "batch"
+  readonly batch: GuideBatch
+}
+
 export type GuideUiResult =
   | GuideUiCancelResult
   | GuideUiPrintResult
@@ -1546,6 +1733,7 @@ export type GuideUiResult =
   | GuideUiCurrentHerdrWorkspaceResult
   | GuideUiNewHerdrWorktreeResult
   | GuideUiExistingHerdrWorktreeResult
+  | GuideUiBatchResult
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
@@ -2923,6 +3111,39 @@ const DestinationView = ({
   </Box>
 )
 
+const QueueView = ({ queue, errorMessage }: { readonly queue: GuideQueueState; readonly errorMessage?: string }) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Text bold color="cyan">Batch queue. {queue.entries.length} jobs</Text>
+    {queue.entries.map((job, index) => (
+      <Box key={job.id} flexDirection="column">
+        <Text bold={index === queue.selectedIndex} {...(index === queue.selectedIndex ? { color: "green" as const } : {})}>
+          {index === queue.selectedIndex ? "❯ " : "  "}{job.id}. {job.profile.profile} · {job.prompt.replaceAll(/\s+/gu, " ").slice(0, 80)}
+        </Text>
+        <Text dimColor wrap="truncate-end">   → {describeJobPlacement(job.placement)}</Text>
+        <Text dimColor wrap="truncate-end">   {renderCommandPreview(job.command)}</Text>
+      </Box>
+    ))}
+    {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
+    <Text dimColor>j/k select · e edit prompt · x remove · a add another · ↵ launch all · b current candidate · q cancel</Text>
+  </Box>
+)
+
+const QueuePlacementView = ({ index, errorMessage }: { readonly index: number; readonly errorMessage?: string }) => {
+  const options = ["Pane in this Herdr workspace", "Herdr worktree"] as const
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold color="cyan">Where does this queued job run?</Text>
+      {options.map((option, itemIndex) => (
+        <Text key={option} bold={itemIndex === index} {...(itemIndex === index ? { color: "green" as const } : {})}>
+          {itemIndex === index ? "❯ " : "  "}{option}
+        </Text>
+      ))}
+      {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
+      <Text dimColor>j/k select · ↵ confirm · b back</Text>
+    </Box>
+  )
+}
+
 const WorktreeReadyView = ({
   inspection,
   confirmations,
@@ -2970,7 +3191,7 @@ const WorktreeCollisionView = ({ inspection }: { readonly inspection: WorktreeCo
     ) : (
       <>
         <Text wrap="wrap">An active worktree already exists at {inspection.collision.path}.</Text>
-        <Text dimColor>↵ open existing worktree · e edit branch · q cancel</Text>
+        <Text dimColor>↵ open existing worktree · e edit branch · b back · q cancel</Text>
       </>
     )}
   </Box>
@@ -3090,10 +3311,11 @@ const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispa
   useEffect(() => {
     if (state.stage !== GuideUiStage.CheckingReadiness || state.selectedProfile === undefined) return undefined
     let cancelled = false
+    const abort = new AbortController()
     const selectedProfile = state.selectedProfile
     void (async () => {
       try {
-        const result = await checkSelectedProfileReadiness(props.runner, selectedProfile, props.cwd)
+        const result = await checkSelectedProfileReadiness(props.runner, selectedProfile, props.cwd, abort.signal)
         if (cancelled) return
         dispatch(
           result.kind === ProfileReadinessKind.Ready
@@ -3115,6 +3337,7 @@ const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispa
     })()
     return () => {
       cancelled = true
+      abort.abort()
     }
   }, [state.stage])
 }
@@ -3271,23 +3494,62 @@ const candidateNavigationAction = (input: string, key: Key): GuideUiAction | und
   return undefined
 }
 
-const candidateCommandAction = (input: string): GuideUiAction | undefined => {
+const candidateCommandAction = (state: GuideUiState, input: string): GuideUiAction | undefined => {
+  if (input === "a") return { type: GuideUiActionType.CandidatesEnqueue }
+  if (input === "v" && state.queue.entries.length > 0) return { type: GuideUiActionType.CandidatesViewQueue }
   if (input === "r") return { type: GuideUiActionType.CandidatesRefineStart }
   if (input === "e") return { type: GuideUiActionType.CandidatesDirectEditStart }
   return undefined
 }
 
-const handleCandidatesInput: GuideInputHandler = (context, input, key) => {
-  const action = candidateNavigationAction(input, key) ?? candidateCommandAction(input)
+const launchQueue: GuideInputHandler = ({ state, dispatch, complete, herdrContext, herdrEnabled, props }) => {
+  if (state.queue.entries.length === 0) {
+    dispatch({ type: GuideUiActionType.QueueExecuteBlocked, message: "Batch queue is empty." })
+    return
+  }
+  if (!herdrEnabled || herdrContext === null) {
+    dispatch({
+      type: GuideUiActionType.QueueExecuteBlocked,
+      message: "Herdr is unavailable. Start trx guide from a Herdr pane or popup.",
+    })
+    return
+  }
+  const cwd = herdrContext.cwd ?? props.cwd
+  complete({
+    action: "batch",
+    batch: {
+      jobs: state.queue.entries,
+      context: {
+        workspaceId: herdrContext.workspaceId,
+        cwd,
+        callerPaneId: herdrContext.paneId,
+        primaryCheckoutPath: state.primaryCheckoutPath ?? cwd,
+      },
+    },
+  })
+}
+
+const handleQueueInput: GuideInputHandler = (context, input, key) => {
+  const { dispatch, cancel } = context
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.QueueMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.QueueMove, delta: 1 })
+  else if (input === "e") dispatch({ type: GuideUiActionType.QueueEditStart })
+  else if (input === "x") dispatch({ type: GuideUiActionType.QueueRemove })
+  else if (input === "a") dispatch({ type: GuideUiActionType.QueueAddAnother })
+  else if (key.return) launchQueue(context, input, key)
+  else if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.QueueBack })
+  else if (input === "q") cancel()
+}
+
+const handleCandidatesInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
+  const action = candidateNavigationAction(input, key) ?? candidateCommandAction(state, input)
   if (action !== undefined) {
-    context.dispatch(action)
+    dispatch(action)
     return
   }
-  if (input === "c" && context.state.candidates !== undefined) {
-    context.complete(buildPrintResult(tripleAt(context.state.candidates, context.state.candidateIndex).prompt))
-    return
-  }
-  if (input === "q") context.cancel()
+  if (input === "c" && state.candidates !== undefined) {
+    complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt))
+  } else if (input === "q") cancel()
 }
 
 const handleTextEditorInput = (
@@ -3325,6 +3587,15 @@ const handleDirectEditorInput: GuideInputHandler = (context, input, key) =>
     { type: GuideUiActionType.DirectEditSubmit },
     { type: GuideUiActionType.DirectEditBack },
   )
+
+const handleQueuePromptEditorInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+  if (key.escape) dispatch({ type: GuideUiActionType.QueueBack })
+  else if (key.return) dispatch({ type: GuideUiActionType.QueueEditSubmit })
+  else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.EditorBackspace })
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
+    dispatch({ type: GuideUiActionType.EditorChange, text: state.textDraft + input })
+  }
+}
 
 const handleBranchEditorInput: GuideInputHandler = (context, input, key) =>
   handleTextEditorInput(
@@ -3380,6 +3651,17 @@ const handleDestinationInput: GuideInputHandler = (context, input, key) => {
   else if (input === "q") cancel()
 }
 
+const handleQueuePlacementInput: GuideInputHandler = ({ state, dispatch, herdrContext, herdrEnabled }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.QueuePlacementMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.QueuePlacementMove, delta: 1 })
+  else if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.QueuePlacementBack })
+  else if (key.return) {
+    if (!herdrEnabled || herdrContext === null) dispatch({ type: GuideUiActionType.QueuePlacementUnavailable })
+    else if (state.destinationIndex === 0) dispatch({ type: GuideUiActionType.QueuePlacementHere })
+    else dispatch({ type: GuideUiActionType.QueuePlacementStartWorktree })
+  }
+}
+
 const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
   if (input === "e") {
     dispatch({ type: GuideUiActionType.WorktreeEditBranch })
@@ -3395,11 +3677,20 @@ const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, comp
     inspection === undefined ||
     !("collision" in inspection) ||
     inspection.collision.path === undefined ||
-    state.selectedProfile === undefined ||
-    state.selectedCandidate === undefined
+    state.selectedProfile === undefined
   ) {
+    if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
+  if (state.worktreePurpose === "queue") {
+    dispatch({
+      type: GuideUiActionType.QueuePlacementWorktree,
+      placement: { kind: "existing-worktree", path: inspection.collision.path },
+      primaryCheckoutPath: inspection.primaryCheckoutPath,
+    })
+    return
+  }
+  if (state.selectedCandidate === undefined) return
   complete(
     buildExistingHerdrWorktreeResult(
       state.selectedProfile,
@@ -3430,12 +3721,36 @@ const confirmedWorktreeResult = (state: GuideUiState): GuideUiNewHerdrWorktreeRe
   )
 }
 
+/** The confirmed fresh worktree a queued entry will run in, once the dirty-checkout gate is cleared. */
+const confirmedQueueWorktree = (
+  state: GuideUiState,
+): { readonly placement: JobPlacement; readonly primaryCheckoutPath: string } | undefined => {
+  const inspection = state.worktreeInspection
+  if (
+    inspection === undefined ||
+    "collision" in inspection ||
+    !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty)
+  ) {
+    return undefined
+  }
+  return {
+    placement: { kind: "new-worktree", branch: inspection.branch, baseRef: inspection.baseRef },
+    primaryCheckoutPath: inspection.primaryCheckoutPath,
+  }
+}
+
 const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
   if (key.escape) {
     dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
   if (!key.return && input !== "y") return
+  if (state.worktreePurpose === "queue") {
+    const confirmed = confirmedQueueWorktree(state)
+    if (confirmed === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
+    else dispatch({ type: GuideUiActionType.QueuePlacementWorktree, ...confirmed })
+    return
+  }
   const result = confirmedWorktreeResult(state)
   if (result === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
   else complete(result)
@@ -3461,6 +3776,9 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.InspectingWorktree]: handleNoInput,
   [GuideUiStage.WorktreeCollision]: handleWorktreeCollisionInput,
   [GuideUiStage.WorktreeReady]: handleWorktreeReadyInput,
+  [GuideUiStage.Queue]: handleQueueInput,
+  [GuideUiStage.QueuePromptEditor]: handleQueuePromptEditorInput,
+  [GuideUiStage.QueuePlacement]: handleQueuePlacementInput,
 }
 
 const handleGuideInput = (context: GuideInputContext, input: string, key: Key): void => {
@@ -3476,6 +3794,7 @@ const pastedEditorMaximum = (state: GuideUiState): number | undefined => {
   if (state.stage === GuideUiStage.PromptReview && state.promptReviewEditing) return guideIntentMaximumLength
   if (state.stage === GuideUiStage.RefineEditor) return feedbackMaxLength
   if (state.stage === GuideUiStage.DirectEditor) return promptMaxLength
+  if (state.stage === GuideUiStage.QueuePromptEditor) return promptMaxLength
   return undefined
 }
 
@@ -3678,6 +3997,18 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   ),
   [GuideUiStage.WorktreeCollision]: renderWorktreeCollision,
   [GuideUiStage.WorktreeReady]: renderWorktreeReady,
+  [GuideUiStage.Queue]: ({ state }) => (
+    <QueueView queue={state.queue} {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })} />
+  ),
+  [GuideUiStage.QueuePromptEditor]: ({ state }) => (
+    <TextEditor title="Edit queued prompt" textDraft={state.textDraft} keys="↵ save · Esc back" />
+  ),
+  [GuideUiStage.QueuePlacement]: ({ state }) => (
+    <QueuePlacementView
+      index={state.destinationIndex}
+      {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })}
+    />
+  ),
 }
 
 /**

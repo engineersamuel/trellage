@@ -1,9 +1,12 @@
 id = "trellage.guide-handoff"
 name = "Trellage Guide Handoff"
-version = "0.2.4"
+version = "0.3.0"
 min_herdr_version = "0.8.2"
 description = "Open highlighted terminal text or a completed agent result in trx guide."
 platforms = ["linux", "macos"]
+
+[[build]]
+command = ["npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]
 
 [[actions]]
 id = "open"
@@ -11,6 +14,22 @@ title = "Open text in Trellage guide"
 description = "Open highlighted terminal text or the focused completed agent's final answer in trx guide."
 contexts = ["pane"]
 command = ["node", "action.mjs"]
+
+[[actions]]
+id = "queue-add-selection"
+title = "Add selection to Trellage guide queue"
+description = "Add a private macOS overlay selection request to the Trellage guide queue."
+contexts = ["pane"]
+platforms = ["macos"]
+command = ["node", "overlay-action.mjs"]
+
+[[actions]]
+id = "queue-add-selection-open"
+title = "Add selection and open Trellage guide queue"
+description = "Add a private macOS overlay selection request and open the Trellage guide queue editor."
+contexts = ["pane"]
+platforms = ["macos"]
+command = ["node", "overlay-action.mjs"]
 
 [[events]]
 on = "pane.agent_status_changed"
@@ -27,3 +46,11 @@ placement = "popup"
 width = "90%"
 height = "90%"
 command = ["node", "popup.mjs"]
+
+[[panes]]
+id = "queue-editor"
+title = "Trellage guide queue"
+placement = "popup"
+width = 88
+height = 20
+command = ["node", "queue-editor.mjs"]

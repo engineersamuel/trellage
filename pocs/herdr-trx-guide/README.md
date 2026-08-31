@@ -30,6 +30,7 @@ From the Trellage repository root:
 ```sh
 mise trust
 npm run build --prefix packages/trellage-launcher
+npm ci --prefix pocs/herdr-trx-guide --omit=dev --ignore-scripts --no-audit --no-fund
 herdr plugin link pocs/herdr-trx-guide --enabled
 herdr integration install copilot
 herdr integration install codex
@@ -96,8 +97,69 @@ explicit terminal snapshot, then press `Enter`.
 
 Press `e` to edit the capture queue on a separate screen. There, use `j`/`k`
 or the arrow keys to select an item, `x` to remove that item, `a` to return to
-the source list and add another, and `b` to return without changing it. Press
-`q` or `Esc` to close the picker from either screen.
+the source list and add another, `c` to clear the complete queue, and `b` to
+return without changing it. Press `Enter` to open the complete queue in `trx
+guide`. Press `q` or `Esc` to close the picker from either screen. The queue
+clears only after the guide popup opens.
+
+## macOS selection-overlay protocol
+
+The macOS overlay invokes one of two pane-context plugin actions:
+
+- `trellage.guide-handoff.queue-add-selection` adds one selection and returns.
+- `trellage.guide-handoff.queue-add-selection-open` adds one selection and
+  opens the dedicated `queue-editor` plugin popup without clearing the queue.
+
+Both actions use `overlay-action.mjs`. The invocation source must be
+`trellage-guide-overlay`. The action context `selected_text` contains only:
+
+```text
+trellage-guide-overlay-request:v1:<lowercase UUID>
+```
+
+The correlation ID must match the request UUID when it is present. Selected
+text is never put in the action context. The matching one-use request is:
+
+```text
+~/Library/Application Support/Trellage/TRX Guide Overlay/requests/<uuid>.json
+```
+
+Request JSON uses this schema:
+
+```json
+{"schemaVersion":1,"requestId":"<uuid>","selection":"...","capturedAt":"<ISO-8601>","source":{"workspaceId":"...","tabId":"...","paneId":"...","cwd":"/absolute/path","agent":"optional","paneTitle":"optional"}}
+```
+
+The overlay parent and request directories use mode `0700`. Request files must
+be atomic regular files owned by the current user, with mode `0600`, one link,
+no symlink, and bounded size. The action unlinks a valid file before it reads
+and validates the JSON. It rejects stale requests and removes safe request
+files older than 24 hours.
+
+The request workspace, tab, pane, working directory, and optional agent must
+agree with `HERDR_PLUGIN_CONTEXT_JSON`. The request UUID becomes the queue item
+ID, so retrying the same request is idempotent. Overlay queue items include
+optional source metadata; queue files created before this metadata remain
+readable.
+
+Queue mutations use `proper-lockfile` with `realpath: false`, bounded retries,
+a five-minute stale interval, lock-heartbeat updates, and compromised-lock
+failure. The lock stays under the private plugin state directory. Queue JSON
+replacement remains atomic and mode `0600`. After the guide pane opens, the
+action removes only IDs from the queue snapshot it opened, so captures appended
+during pane startup remain queued.
+
+Action stdout is one compact result and never contains captured text:
+
+```json
+{"schemaVersion":1,"requestId":"<uuid>","queued":true,"opened":false,"queueCount":1}
+```
+
+If add-and-open queues the item but cannot open the queue editor, `queued`
+remains `true`, `opened` is `false`, the diagnostic is written only to stderr,
+and the action exits nonzero. Queue-editor launch has a 10-second timeout; on
+timeout the plugin terminates and reaps only its Herdr CLI child, then reports
+the same safe partial result.
 
 The popup does not offer **Current terminal**. A modal popup is temporary and
 is not a safe host for a new agent. It keeps these guide outcomes:
@@ -187,6 +249,10 @@ agent turn before the shortcut is available.
 Source-picker choices and captured answers move through separate one-use JSON
 files under `HERDR_PLUGIN_STATE_DIR`. Herdr action context contains only a
 short opaque choice token, not the selected text or source identity.
+
+The macOS selection overlay uses its separate Application Support request path
+described above. Its action result and diagnostics contain request state only,
+never selected text.
 
 - Answer-bearing state subdirectories use mode `0700`.
 - Choice and invocation files use mode `0600`.

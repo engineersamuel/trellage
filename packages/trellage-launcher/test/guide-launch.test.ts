@@ -335,6 +335,19 @@ describe("node command runner regression coverage", () => {
     expect(error.stderr).toBe("")
   })
 
+  it("keeps the latest bounded output without terminating when truncation is requested", async () => {
+    const runner = createNodeCommandRunner()
+    const marker = "build-complete"
+    const result = await runner.run(
+      process.execPath,
+      ["-e", `process.stdout.write("x".repeat(2 * 1024 * 1024)); process.stdout.write("${marker}")`],
+      { outputOverflow: "truncate" },
+    )
+
+    expect(Buffer.byteLength(result.stdout, "utf8")).toBeLessThanOrEqual(1024 * 1024)
+    expect(result.stdout.endsWith(marker)).toBe(true)
+  })
+
   it("runs interactive commands without a shell and reports non-zero exits", async () => {
     await expect(
       runInteractiveCommand({

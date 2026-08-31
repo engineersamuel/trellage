@@ -123,6 +123,9 @@ path-free command previews. JSON mode never launches a profile or changes
 Herdr. Interactive model failures can use deterministic literal/template
 fallbacks. Interactive guide mode previews the exact command and requires
 confirmation before current-terminal, Herdr-pane, or Herdr-worktree handoff.
+Before a Sandbox handoff, the guide checks the development resolution and
+image. It automatically builds a missing or stale profile and confirms the
+repaired state before it starts the destination session.
 For `cpx` and `cdx` Herdr handoffs, the selected prompt is queued in the
 harness's initial interactive command. Copilot workspace-trust and Codex
 hook-trust requests cannot consume a later prompt injection. Trust decisions

@@ -34,9 +34,37 @@ interface NativeInventory {
   readonly readiness: "healthy" | "unhealthy" | "not-setup" | "busy"
 }
 
+interface SandboxDoctor {
+  readonly developmentResolution: boolean
+  readonly image: SandboxImageState
+}
+
+type SandboxImageState = "available" | "absent" | "stale" | "error"
+
+const sandboxDoctorTimeoutMs = 5 * 60_000
+const sandboxBuildTimeoutMs = 30 * 60_000
+
 const diagnosticFromError = (error: CommandRunnerError): string => {
   const diagnostic = error.stderr.trim() || error.stdout.trim()
   return diagnostic.length > 0 ? diagnostic : error.message
+}
+
+const parseSandboxImageState = (value: string | undefined): SandboxImageState => {
+  if (value === "available" || value === "absent" || value === "stale" || value === "error") return value
+  throw new ProfilePreflightError("Sandbox doctor returned an unsupported image status")
+}
+
+const parseSandboxDoctor = (source: string, selectedProfile: string): SandboxDoctor => {
+  const profile = /^profile: ([^ ]+) \(.+\)$/mu.exec(source)?.[1]
+  const developmentResolution = /^development resolution: (true|false)$/mu.exec(source)?.[1]
+  const image = /^image: .+ \((available|absent|stale|error)\)$/mu.exec(source)?.[1]
+  if (profile !== selectedProfile || developmentResolution === undefined) {
+    throw new ProfilePreflightError("Sandbox doctor returned an unsupported status")
+  }
+  return {
+    developmentResolution: developmentResolution === "true",
+    image: parseSandboxImageState(image),
+  }
 }
 
 const parseNativeInventory = (source: string, selected: NativeSelectedProfile): NativeInventory => {
@@ -113,21 +141,65 @@ const checkSandboxReadiness = async (
   runner: CommandRunner,
   selected: Extract<SelectedProfile, { readonly surface: "sandbox" }>,
   cwd: string,
+  signal?: AbortSignal,
 ): Promise<ProfileReadinessResult> => {
+  const options = (timeoutMs: number, outputOverflow?: "terminate" | "truncate") => ({
+    cwd,
+    timeoutMs,
+    ...(signal === undefined ? {} : { signal }),
+    ...(outputOverflow === undefined ? {} : { outputOverflow }),
+  })
+  const doctor = async (): Promise<SandboxDoctor> =>
+    parseSandboxDoctor(
+      (
+        await runner.run(selected.commandPath, ["doctor", "--profile", selected.profile], {
+          ...options(sandboxDoctorTimeoutMs),
+        })
+      ).stdout,
+      selected.profile,
+    )
+
+  let initial: SandboxDoctor
   try {
-    await runner.run(selected.commandPath, ["validate", selected.profile], {
-      cwd,
-      timeoutMs: 30_000,
-    })
+    initial = await doctor()
+  } catch (cause) {
+    if (cause instanceof CommandRunnerError) {
+      return {
+        kind: ProfileReadinessKind.Blocked,
+        summary: `${selected.profile} status check failed`,
+        diagnostic: diagnosticFromError(cause),
+      }
+    }
+    throw cause
+  }
+  if (initial.developmentResolution && initial.image === "available") {
     return {
       kind: ProfileReadinessKind.Ready,
-      summary: `${selected.profile} is valid`,
+      summary: `${selected.profile} is ready`,
+    }
+  }
+
+  try {
+    await runner.run(selected.commandPath, ["build", selected.profile], {
+      ...options(sandboxBuildTimeoutMs, "truncate"),
+    })
+    const repaired = await doctor()
+    if (!repaired.developmentResolution || repaired.image !== "available") {
+      return {
+        kind: ProfileReadinessKind.Blocked,
+        summary: `${selected.profile} remains unavailable after automatic repair`,
+        diagnostic: `Development resolution: ${repaired.developmentResolution}; image: ${repaired.image}.`,
+      }
+    }
+    return {
+      kind: ProfileReadinessKind.Ready,
+      summary: `${selected.profile} was repaired and is ready`,
     }
   } catch (cause) {
     if (cause instanceof CommandRunnerError) {
       return {
         kind: ProfileReadinessKind.Blocked,
-        summary: `${selected.profile} failed validation`,
+        summary: `${selected.profile} automatic repair failed`,
         diagnostic: diagnosticFromError(cause),
       }
     }
@@ -139,7 +211,8 @@ export const checkSelectedProfileReadiness = (
   runner: CommandRunner,
   selected: SelectedProfile,
   cwd: string,
+  signal?: AbortSignal,
 ): Promise<ProfileReadinessResult> =>
   selected.surface === "native"
     ? checkNativeReadiness(runner, selected, cwd)
-    : checkSandboxReadiness(runner, selected, cwd)
+    : checkSandboxReadiness(runner, selected, cwd, signal)

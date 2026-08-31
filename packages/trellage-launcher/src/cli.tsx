@@ -36,6 +36,12 @@ import { loadDefaultGuidePrompts } from "./guide-prompts.js"
 import { CachedGuideProvider, defaultGuideMatchCachePath } from "./guide-match-cache.js"
 import { createInitialGuideRenderHandler } from "./guide-terminal.js"
 import { GuideApp, type GuideUiResult } from "./guide-ui.js"
+import {
+  BasketPreviewApp,
+  basketPreviewHelpText,
+  parseBasketPreviewArgv,
+  type BasketPreviewResult,
+} from "./basket-preview.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -684,9 +690,48 @@ const runGuideMode = async (): Promise<void> => {
   await runInteractiveGuideMode(argv, guideRoot, promptMasterSkillDirectory)
 }
 
+/**
+ * Renders one staged prompt basket layout from fixture data. It reads no
+ * catalog, calls no provider, and runs no command, so it opens instantly and
+ * works with no Docker and no Copilot credentials.
+ */
+const runGuidePreviewMode = async (): Promise<void> => {
+  const args = parseBasketPreviewArgv(process.argv.slice(3))
+  if (args.help) {
+    process.stdout.write(`${basketPreviewHelpText}\n`)
+    return
+  }
+  const terminal = openInteractiveTerminalStreams()
+  let result: BasketPreviewResult
+  try {
+    const instance = render(<BasketPreviewApp />, {
+      stdin: terminal.input,
+      stdout: terminal.output,
+      interactive: true,
+      exitOnCtrlC: false,
+      kittyKeyboard: { mode: "disabled" },
+      alternateScreen: true,
+      maxFps: 30,
+    })
+    const resolved = await instance.waitUntilExit()
+    if (resolved === undefined) {
+      process.exitCode = 130
+      return
+    }
+    result = resolved as BasketPreviewResult
+  } finally {
+    terminal.close()
+  }
+  if (result.kind === "submitted") process.stdout.write(`${result.prompt}\n`)
+}
+
 const main = async () => {
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList()
+    return
+  }
+  if (process.argv[2] === "guide-preview") {
+    await runGuidePreviewMode()
     return
   }
   if (process.argv[2] === "guide") {

@@ -9630,14 +9630,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React13 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React14 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React13.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -22230,14 +22230,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React13 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React14 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React13.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -27982,7 +27982,7 @@ var require_backend = __commonJS({
                     return o2 && "function" == typeof Symbol && o2.constructor === Symbol && o2 !== Symbol.prototype ? "symbol" : typeof o2;
                   }, _typeof(o);
                 }
-                var ErrorStackParser = __webpack_require__2(206), React13 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React13.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
+                var ErrorStackParser = __webpack_require__2(206), React14 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
                 function getPrimitiveStackCache() {
                   if (null === primitiveStackCache) {
                     var cache3 = /* @__PURE__ */ new Map();
@@ -28190,7 +28190,7 @@ var require_backend = __commonJS({
                       dispatcherHookName: "InsertionEffect"
                     });
                   },
-                  useMemo: function useMemo6(nextCreate) {
+                  useMemo: function useMemo7(nextCreate) {
                     var hook = nextHook();
                     nextCreate = null !== hook ? hook.memoizedState[0] : nextCreate();
                     hookLog.push({
@@ -28203,7 +28203,7 @@ var require_backend = __commonJS({
                     });
                     return nextCreate;
                   },
-                  useReducer: function useReducer2(reducer, initialArg, init) {
+                  useReducer: function useReducer3(reducer, initialArg, init) {
                     reducer = nextHook();
                     initialArg = null !== reducer ? reducer.memoizedState : void 0 !== init ? init(initialArg) : initialArg;
                     hookLog.push({
@@ -56540,18 +56540,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React13 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React13.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React14 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React13 = {
+      React14 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React13.react_stack_bottom_frame.bind(
-        React13,
+      var unknownOwnerDebugStack = React14.react_stack_bottom_frame.bind(
+        React14,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -56596,7 +56596,7 @@ var require_jsx_runtime = __commonJS({
 });
 
 // src/cli.tsx
-var import_react35 = __toESM(require_react(), 1);
+var import_react36 = __toESM(require_react(), 1);
 import { constants as constants4, openSync } from "node:fs";
 import { readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
 import tty3 from "node:tty";
@@ -66892,6 +66892,23 @@ var guideCaptureSources = [
   "capture-queue"
 ];
 var guideCaptureConfidences = ["user-selected", "exact", "snapshot", "user-curated"];
+var appendTruncatedChunk = (target, buffer, currentLength) => {
+  target.push(buffer);
+  let boundedLength = currentLength + buffer.length;
+  while (boundedLength > commandOutputLimitBytes) {
+    const first = target[0];
+    if (first === void 0) return 0;
+    const excess = boundedLength - commandOutputLimitBytes;
+    if (first.length <= excess) {
+      target.shift();
+      boundedLength -= first.length;
+    } else {
+      target[0] = first.subarray(excess);
+      boundedLength -= excess;
+    }
+  }
+  return boundedLength;
+};
 var systemTime = {
   now: () => Date.now(),
   sleep: (milliseconds) => new Promise((resolve2) => setTimeout(resolve2, milliseconds))
@@ -67241,7 +67258,17 @@ var createNodeCommandRunner = () => ({
       const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
       const nextLength = (stream === "stdout" ? stdoutLength : stderrLength) + buffer.length;
       if (nextLength > commandOutputLimitBytes) {
-        requestTermination("output-limit", stream);
+        if (options?.outputOverflow !== "truncate") {
+          requestTermination("output-limit", stream);
+          return;
+        }
+        const boundedLength = appendTruncatedChunk(
+          target,
+          buffer,
+          stream === "stdout" ? stdoutLength : stderrLength
+        );
+        if (stream === "stdout") stdoutLength = boundedLength;
+        else stderrLength = boundedLength;
         return;
       }
       target.push(buffer);
@@ -77425,118 +77452,6 @@ var resolveInteractiveGuideIntent = async ({
   return args.intentStdin ? validateGuideIntent(await readStdin(), "stdin intent") : void 0;
 };
 
-// src/guide-interactive-execution.ts
-var startupTimeoutMs = 6e4;
-var promptTimeoutMs = 6e4;
-var writePrompt = (write, prompt, instruction) => {
-  write(`${instruction}
-
-${prompt}
-`);
-};
-var writeRecoveryPrompt = (services, prompt) => writePrompt(services.write, prompt, "Automatic prompt delivery failed. Use this prompt manually:");
-var writeIncompleteLaunchPrompt = (services, prompt) => writePrompt(services.write, prompt, "Profile launch did not complete. Selected prompt:");
-var unexpectedGuideResult = (result) => {
-  const action = typeof result === "object" && result !== null && "action" in result ? String(result.action) : "missing";
-  throw new Error(`interactive guide returned an unsupported action: ${action}`);
-};
-var executeHerdrResult = async (result, services) => {
-  try {
-    switch (result.action) {
-      case "current-herdr-workspace":
-        await handoffToCurrentHerdrWorkspace(services.runner, {
-          callerPaneId: result.callerPaneId,
-          cwd: result.cwd,
-          direction: result.direction,
-          command: result.command,
-          prompt: result.prompt,
-          promptDelivery: result.promptDelivery,
-          timeoutMs: startupTimeoutMs,
-          promptTimeoutMs
-        });
-        return;
-      case "herdr-worktree-create":
-        await createHerdrWorktreeAndHandoff(services.runner, {
-          primaryCheckoutPath: result.primaryCheckoutPath,
-          branch: result.branch,
-          baseRef: result.baseRef,
-          command: result.command,
-          prompt: result.prompt,
-          promptDelivery: result.promptDelivery,
-          timeoutMs: startupTimeoutMs,
-          promptTimeoutMs
-        });
-        return;
-      case "herdr-worktree-open":
-        await openHerdrWorktreeAndHandoff(services.runner, {
-          primaryCheckoutPath: result.primaryCheckoutPath,
-          path: result.path,
-          command: result.command,
-          prompt: result.prompt,
-          promptDelivery: result.promptDelivery,
-          timeoutMs: startupTimeoutMs,
-          promptTimeoutMs
-        });
-        return;
-      default:
-        unexpectedGuideResult(result);
-    }
-  } catch (error) {
-    if (error instanceof GuideLaunchError && error.paneId !== void 0) {
-      writeRecoveryPrompt(services, result.prompt);
-    } else {
-      writeIncompleteLaunchPrompt(services, result.prompt);
-    }
-    throw error;
-  }
-};
-var executeGuideUiResult = async (result, services) => {
-  switch (result.action) {
-    case "cancel":
-      return result.exitCode;
-    case "print":
-      writePrompt(services.write, result.prompt, "Selected prompt:");
-      return 0;
-    case "current-terminal":
-      if (result.promptHandling === "manual-paste") {
-        writePrompt(services.write, result.prompt, "Paste this prompt after the profile starts:");
-      }
-      try {
-        await (services.runInteractive ?? runInteractiveCommand)(result.command, {
-          cwd: result.cwd,
-          env: { ...process.env, TRELLAGE_AUTOMATION: "1" }
-        });
-        return 0;
-      } catch (error) {
-        if (error instanceof CommandRunnerError && error.kind === "exited") {
-          return error.exitCode ?? 130;
-        }
-        throw error;
-      }
-    case "current-herdr-workspace":
-    case "herdr-worktree-create":
-    case "herdr-worktree-open":
-      await executeHerdrResult(result, services);
-      return 0;
-    default:
-      return unexpectedGuideResult(result);
-  }
-};
-
-// src/guide-terminal.ts
-var clearAndHome = "\x1B[2J\x1B[H";
-var createInitialGuideRenderHandler = (write, enabled) => {
-  let pending = enabled;
-  return () => {
-    if (!pending) return;
-    pending = false;
-    write(clearAndHome);
-  };
-};
-
-// src/guide-ui.tsx
-var import_react34 = __toESM(require_react(), 1);
-
 // src/guide-preflight.ts
 var ProfilePreflightError = class extends Error {
   constructor(message, options) {
@@ -77544,9 +77459,27 @@ var ProfilePreflightError = class extends Error {
     this.name = "ProfilePreflightError";
   }
 };
+var sandboxDoctorTimeoutMs = 5 * 6e4;
+var sandboxBuildTimeoutMs = 30 * 6e4;
 var diagnosticFromError = (error) => {
   const diagnostic = error.stderr.trim() || error.stdout.trim();
   return diagnostic.length > 0 ? diagnostic : error.message;
+};
+var parseSandboxImageState = (value) => {
+  if (value === "available" || value === "absent" || value === "stale" || value === "error") return value;
+  throw new ProfilePreflightError("Sandbox doctor returned an unsupported image status");
+};
+var parseSandboxDoctor = (source, selectedProfile) => {
+  const profile = /^profile: ([^ ]+) \(.+\)$/mu.exec(source)?.[1];
+  const developmentResolution = /^development resolution: (true|false)$/mu.exec(source)?.[1];
+  const image2 = /^image: .+ \((available|absent|stale|error)\)$/mu.exec(source)?.[1];
+  if (profile !== selectedProfile || developmentResolution === void 0) {
+    throw new ProfilePreflightError("Sandbox doctor returned an unsupported status");
+  }
+  return {
+    developmentResolution: developmentResolution === "true",
+    image: parseSandboxImageState(image2)
+  };
 };
 var parseNativeInventory = (source, selected) => {
   let value;
@@ -77594,30 +77527,373 @@ var checkNativeReadiness = async (runner, selected, cwd2) => {
     diagnostic: inventory.readiness === "not-setup" ? `Run ${selected.launcher} setup ${selected.profile}, then retry.` : inventory.readiness === "busy" ? `Wait for the current ${selected.launcher} operation to finish, then retry.` : `Run ${selected.launcher} doctor ${selected.profile} for details.`
   };
 };
-var checkSandboxReadiness = async (runner, selected, cwd2) => {
+var checkSandboxReadiness = async (runner, selected, cwd2, signal) => {
+  const options = (timeoutMs, outputOverflow) => ({
+    cwd: cwd2,
+    timeoutMs,
+    ...signal === void 0 ? {} : { signal },
+    ...outputOverflow === void 0 ? {} : { outputOverflow }
+  });
+  const doctor = async () => parseSandboxDoctor(
+    (await runner.run(selected.commandPath, ["doctor", "--profile", selected.profile], {
+      ...options(sandboxDoctorTimeoutMs)
+    })).stdout,
+    selected.profile
+  );
+  let initial;
   try {
-    await runner.run(selected.commandPath, ["validate", selected.profile], {
-      cwd: cwd2,
-      timeoutMs: 3e4
-    });
+    initial = await doctor();
+  } catch (cause) {
+    if (cause instanceof CommandRunnerError) {
+      return {
+        kind: "blocked" /* Blocked */,
+        summary: `${selected.profile} status check failed`,
+        diagnostic: diagnosticFromError(cause)
+      };
+    }
+    throw cause;
+  }
+  if (initial.developmentResolution && initial.image === "available") {
     return {
       kind: "ready" /* Ready */,
-      summary: `${selected.profile} is valid`
+      summary: `${selected.profile} is ready`
+    };
+  }
+  try {
+    await runner.run(selected.commandPath, ["build", selected.profile], {
+      ...options(sandboxBuildTimeoutMs, "truncate")
+    });
+    const repaired = await doctor();
+    if (!repaired.developmentResolution || repaired.image !== "available") {
+      return {
+        kind: "blocked" /* Blocked */,
+        summary: `${selected.profile} remains unavailable after automatic repair`,
+        diagnostic: `Development resolution: ${repaired.developmentResolution}; image: ${repaired.image}.`
+      };
+    }
+    return {
+      kind: "ready" /* Ready */,
+      summary: `${selected.profile} was repaired and is ready`
     };
   } catch (cause) {
     if (cause instanceof CommandRunnerError) {
       return {
         kind: "blocked" /* Blocked */,
-        summary: `${selected.profile} failed validation`,
+        summary: `${selected.profile} automatic repair failed`,
         diagnostic: diagnosticFromError(cause)
       };
     }
     throw cause;
   }
 };
-var checkSelectedProfileReadiness = (runner, selected, cwd2) => selected.surface === "native" ? checkNativeReadiness(runner, selected, cwd2) : checkSandboxReadiness(runner, selected, cwd2);
+var checkSelectedProfileReadiness = (runner, selected, cwd2, signal) => selected.surface === "native" ? checkNativeReadiness(runner, selected, cwd2) : checkSandboxReadiness(runner, selected, cwd2, signal);
+
+// src/guide-batch.ts
+var startupTimeoutMs = 6e4;
+var promptTimeoutMs = 6e4;
+var emptyGuideQueue = () => ({ entries: [], nextId: 1, selectedIndex: 0 });
+var createQueuedGuideJob = (id, profile, prompt, placement) => {
+  const built = buildHerdrGuideLaunch(profile, prompt);
+  return { id, profile, prompt, command: built.command, promptDelivery: built.promptDelivery, placement };
+};
+var enqueueGuideJob = (queue, profile, prompt, placement) => ({
+  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement)],
+  nextId: queue.nextId + 1,
+  selectedIndex: queue.entries.length
+});
+var selectQueuedGuideJob = (queue, delta) => queue.entries.length === 0 ? queue : { ...queue, selectedIndex: (queue.selectedIndex + delta + queue.entries.length) % queue.entries.length };
+var startQueuedGuidePromptEdit = (queue) => {
+  const selected = queue.entries[queue.selectedIndex];
+  return selected === void 0 ? queue : { ...queue, editingId: selected.id };
+};
+var replaceQueuedGuideJobPrompt = (job, prompt) => createQueuedGuideJob(job.id, job.profile, prompt, job.placement);
+var submitQueuedGuidePromptEdit = (queue, prompt) => {
+  if (queue.editingId === void 0 || prompt.trim().length === 0) return queue;
+  const { editingId, ...rest } = queue;
+  return {
+    ...rest,
+    entries: queue.entries.map((job) => job.id === editingId ? replaceQueuedGuideJobPrompt(job, prompt) : job)
+  };
+};
+var removeSelectedQueuedGuideJob = (queue) => {
+  if (queue.entries[queue.selectedIndex] === void 0) return queue;
+  const entries = queue.entries.filter((_, index) => index !== queue.selectedIndex);
+  return { entries, nextId: queue.nextId, selectedIndex: Math.min(queue.selectedIndex, Math.max(0, entries.length - 1)) };
+};
+var describeJobPlacement = (placement) => {
+  if (placement.kind === "current-workspace-pane") return `pane here (split ${placement.direction})`;
+  if (placement.kind === "new-worktree") return `new worktree ${placement.branch} from ${placement.baseRef}`;
+  return `existing worktree ${placement.path}`;
+};
+var describeError = (error) => error instanceof Error && error.message.length > 0 ? error.message : "An unknown error occurred.";
+var validatePlacement = (placement) => {
+  if (placement.kind === "new-worktree") {
+    if (placement.branch.trim().length === 0) return "Queued worktree branch must not be empty.";
+    if (placement.baseRef.trim().length === 0) return "Queued worktree base ref must not be empty.";
+  }
+  if (placement.kind === "existing-worktree" && placement.path.trim().length === 0) {
+    return "Queued worktree path must not be empty.";
+  }
+  return void 0;
+};
+var validateQueuedJob = (job) => {
+  if (!Number.isSafeInteger(job.id) || job.id < 1) return "Queue entry ID must be a positive integer.";
+  if (job.prompt.trim().length === 0) return "Queued prompt must not be empty.";
+  if ([...job.prompt].length > 8e3) return "Queued prompt exceeds 8000 characters.";
+  const placementMessage = validatePlacement(job.placement);
+  if (placementMessage !== void 0) return placementMessage;
+  try {
+    const profile = parseSelectedProfile(job.profile);
+    const built = buildHerdrGuideLaunch(profile, job.prompt);
+    if (built.promptDelivery !== job.promptDelivery || built.command.executable !== job.command.executable || built.command.args.length !== job.command.args.length || built.command.args.some((arg, index) => arg !== job.command.args[index])) {
+      return "Queued command does not match its profile and prompt.";
+    }
+  } catch (error) {
+    return describeError(error);
+  }
+  return void 0;
+};
+var collidingEntryMessage = (job, seenIds, seenBranches) => {
+  if (seenIds.has(job.id)) return `Queue entry ID ${job.id} is duplicated.`;
+  if (job.placement.kind !== "new-worktree") return void 0;
+  const branch = job.placement.branch.trim();
+  return seenBranches.has(branch) ? `Two queued jobs would both create branch ${branch}.` : void 0;
+};
+var rememberEntry = (job, seenIds, seenBranches) => {
+  seenIds.add(job.id);
+  if (job.placement.kind === "new-worktree") seenBranches.add(job.placement.branch.trim());
+};
+var allocateJob = async (runner, context, placement) => {
+  if (placement.kind === "current-workspace-pane") {
+    const paneId = await splitHerdrPane(runner, {
+      anchorPaneId: context.callerPaneId,
+      cwd: context.cwd,
+      direction: placement.direction
+    });
+    return { paneId, cwd: context.cwd, workspaceId: context.workspaceId };
+  }
+  const handle = placement.kind === "new-worktree" ? await createHerdrWorktree(runner, {
+    primaryCheckoutPath: context.primaryCheckoutPath,
+    branch: placement.branch,
+    baseRef: placement.baseRef
+  }) : await openHerdrWorktree(runner, { primaryCheckoutPath: context.primaryCheckoutPath, path: placement.path });
+  return { paneId: handle.rootPaneId, cwd: handle.checkoutPath, workspaceId: handle.workspaceId };
+};
+var allocationFailure = (job, message) => job.placement.kind === "current-workspace-pane" ? { job, status: "allocation-failed", stage: "pane-allocation", message } : { job, status: "workspace-create-failed", stage: "worktree-create", message };
+var allocateJobs = async (services, context, launchable, entries) => {
+  const allocated = [];
+  for (const item of launchable) {
+    try {
+      allocated.push({ ...item, ...await allocateJob(services.runner, context, item.job.placement) });
+    } catch (error) {
+      entries[item.index] = allocationFailure(item.job, describeError(error));
+    }
+  }
+  return allocated;
+};
+var checkReadiness = async (services, context, structurallyValid, entries) => {
+  const checked = await Promise.all(
+    structurallyValid.map(async (item) => {
+      try {
+        return { item, result: await checkSelectedProfileReadiness(services.runner, item.job.profile, context.cwd) };
+      } catch (error) {
+        return { item, error };
+      }
+    })
+  );
+  const launchable = [];
+  for (const outcome of checked) {
+    const message = "error" in outcome ? describeError(outcome.error) : outcome.result.kind === "blocked" /* Blocked */ ? `${outcome.result.summary}. ${outcome.result.diagnostic}` : void 0;
+    if (message === void 0) launchable.push(outcome.item);
+    else entries[outcome.item.index] = { job: outcome.item.job, status: "not-ready", stage: "readiness", message };
+  }
+  return launchable;
+};
+var writeSummary = (services, result) => {
+  services.write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}
+`);
+  for (const entry of result.entries) {
+    const identity = `${entry.job.id}. ${entry.job.profile.profile}`;
+    if (entry.status === "launched") {
+      services.write(`${identity}: launched in pane ${entry.paneId} \xB7 ${entry.cwd}
+`);
+    } else {
+      services.write(
+        `${identity} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}
+Selected prompt:
+
+${entry.job.prompt}
+`
+      );
+    }
+  }
+};
+var executeGuideBatch = async (batch, services) => {
+  if (batch.jobs.length === 0) {
+    services.write("Batch queue is empty.\n");
+    return { exitCode: 1, result: { entries: [] } };
+  }
+  const entries = new Array(batch.jobs.length);
+  const structurallyValid = [];
+  const seenIds = /* @__PURE__ */ new Set();
+  const seenBranches = /* @__PURE__ */ new Set();
+  batch.jobs.forEach((job, index) => {
+    const message = collidingEntryMessage(job, seenIds, seenBranches) ?? validateQueuedJob(job);
+    rememberEntry(job, seenIds, seenBranches);
+    if (message === void 0) structurallyValid.push({ index, job });
+    else entries[index] = { job, status: "invalid", stage: "validation", message };
+  });
+  const launchable = await checkReadiness(services, batch.context, structurallyValid, entries);
+  const allocated = await allocateJobs(services, batch.context, launchable, entries);
+  const launches = await Promise.allSettled(
+    allocated.map(
+      (item) => launchInHerdrPaneAndPrompt(services.runner, {
+        paneId: item.paneId,
+        cwd: item.cwd,
+        command: item.job.command,
+        prompt: item.job.prompt,
+        promptDelivery: item.job.promptDelivery,
+        timeoutMs: startupTimeoutMs,
+        promptTimeoutMs
+      })
+    )
+  );
+  launches.forEach((launch, launchIndex) => {
+    const item = allocated[launchIndex];
+    if (item === void 0) return;
+    entries[item.index] = launch.status === "fulfilled" ? { job: item.job, status: "launched", paneId: item.paneId, workspaceId: item.workspaceId, cwd: item.cwd } : {
+      job: item.job,
+      status: "launch-failed",
+      stage: "launch",
+      paneId: item.paneId,
+      message: describeError(launch.reason)
+    };
+  });
+  const result = {
+    entries: entries.map((entry, index) => {
+      if (entry !== void 0) return entry;
+      const job = batch.jobs[index];
+      if (job === void 0) throw new Error("Batch result lost its queue entry.");
+      return { job, status: "invalid", stage: "validation", message: "Batch entry was not processed." };
+    })
+  };
+  writeSummary(services, result);
+  return { exitCode: result.entries.every((entry) => entry.status === "launched") ? 0 : 1, result };
+};
+
+// src/guide-interactive-execution.ts
+var startupTimeoutMs2 = 6e4;
+var promptTimeoutMs2 = 6e4;
+var writePrompt = (write, prompt, instruction) => {
+  write(`${instruction}
+
+${prompt}
+`);
+};
+var writeRecoveryPrompt = (services, prompt) => writePrompt(services.write, prompt, "Automatic prompt delivery failed. Use this prompt manually:");
+var writeIncompleteLaunchPrompt = (services, prompt) => writePrompt(services.write, prompt, "Profile launch did not complete. Selected prompt:");
+var unexpectedGuideResult = (result) => {
+  const action = typeof result === "object" && result !== null && "action" in result ? String(result.action) : "missing";
+  throw new Error(`interactive guide returned an unsupported action: ${action}`);
+};
+var executeHerdrResult = async (result, services) => {
+  try {
+    switch (result.action) {
+      case "current-herdr-workspace":
+        await handoffToCurrentHerdrWorkspace(services.runner, {
+          callerPaneId: result.callerPaneId,
+          cwd: result.cwd,
+          direction: result.direction,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      case "herdr-worktree-create":
+        await createHerdrWorktreeAndHandoff(services.runner, {
+          primaryCheckoutPath: result.primaryCheckoutPath,
+          branch: result.branch,
+          baseRef: result.baseRef,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      case "herdr-worktree-open":
+        await openHerdrWorktreeAndHandoff(services.runner, {
+          primaryCheckoutPath: result.primaryCheckoutPath,
+          path: result.path,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      default:
+        unexpectedGuideResult(result);
+    }
+  } catch (error) {
+    if (error instanceof GuideLaunchError && error.paneId !== void 0) {
+      writeRecoveryPrompt(services, result.prompt);
+    } else {
+      writeIncompleteLaunchPrompt(services, result.prompt);
+    }
+    throw error;
+  }
+};
+var executeGuideUiResult = async (result, services) => {
+  switch (result.action) {
+    case "cancel":
+      return result.exitCode;
+    case "print":
+      writePrompt(services.write, result.prompt, "Selected prompt:");
+      return 0;
+    case "current-terminal":
+      if (result.promptHandling === "manual-paste") {
+        writePrompt(services.write, result.prompt, "Paste this prompt after the profile starts:");
+      }
+      try {
+        await (services.runInteractive ?? runInteractiveCommand)(result.command, {
+          cwd: result.cwd,
+          env: { ...process.env, TRELLAGE_AUTOMATION: "1" }
+        });
+        return 0;
+      } catch (error) {
+        if (error instanceof CommandRunnerError && error.kind === "exited") {
+          return error.exitCode ?? 130;
+        }
+        throw error;
+      }
+    case "current-herdr-workspace":
+    case "herdr-worktree-create":
+    case "herdr-worktree-open":
+      await executeHerdrResult(result, services);
+      return 0;
+    case "batch":
+      return (await executeGuideBatch(result.batch, services)).exitCode;
+    default:
+      return unexpectedGuideResult(result);
+  }
+};
+
+// src/guide-terminal.ts
+var clearAndHome = "\x1B[2J\x1B[H";
+var createInitialGuideRenderHandler = (write, enabled) => {
+  let pending = enabled;
+  return () => {
+    if (!pending) return;
+    pending = false;
+    write(clearAndHome);
+  };
+};
 
 // src/guide-ui.tsx
+var import_react34 = __toESM(require_react(), 1);
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
 var feedbackMaxLength = 2e3;
 var branchMaxLength = 200;
@@ -77659,7 +77935,8 @@ var selectedGuideWorkflow = (guide, workflowId) => {
 var editingStages = /* @__PURE__ */ new Set([
   "refine-editor" /* RefineEditor */,
   "direct-editor" /* DirectEditor */,
-  "worktree-branch-editor" /* WorktreeBranchEditor */
+  "worktree-branch-editor" /* WorktreeBranchEditor */,
+  "queue-prompt-editor" /* QueuePromptEditor */
 ]);
 var wizardStepByStage = {
   ["intent" /* Intent */]: void 0,
@@ -77680,7 +77957,10 @@ var wizardStepByStage = {
   ["worktree-branch-editor" /* WorktreeBranchEditor */]: "destination" /* Destination */,
   ["inspecting-worktree" /* InspectingWorktree */]: "destination" /* Destination */,
   ["worktree-collision" /* WorktreeCollision */]: "destination" /* Destination */,
-  ["worktree-ready" /* WorktreeReady */]: "destination" /* Destination */
+  ["worktree-ready" /* WorktreeReady */]: "destination" /* Destination */,
+  ["queue" /* Queue */]: "prompt-candidates" /* PromptCandidates */,
+  ["queue-prompt-editor" /* QueuePromptEditor */]: "prompt-candidates" /* PromptCandidates */,
+  ["queue-placement" /* QueuePlacement */]: "destination" /* Destination */
 };
 var wizardStepForStage = (stage) => wizardStepByStage[stage];
 var destinationOptions = (herdrEnabled, surface = "pane") => herdrEnabled ? surface === "popup" ? ["current-herdr-workspace" /* CurrentHerdrWorkspace */, "new-herdr-worktree" /* NewHerdrWorktree */] : [
@@ -77711,7 +77991,10 @@ var emptyState = {
   worktreeInspection: void 0,
   worktreeConfirmations: 0,
   promptReviewReturnStage: void 0,
-  promptReviewEditing: false
+  promptReviewEditing: false,
+  queue: emptyGuideQueue(),
+  worktreePurpose: "single",
+  primaryCheckoutPath: void 0
 };
 var createInitialGuideUiState = (initialIntent) => {
   const trimmed = initialIntent?.trim();
@@ -77741,6 +78024,7 @@ var reduceIntent = (state, action) => {
       if (trimmed.length === 0) return state;
       return {
         ...emptyState,
+        queue: state.queue,
         stage: "matching" /* Matching */,
         intent: trimmed,
         matchPhase: "loading-profiles" /* LoadingProfiles */
@@ -77795,6 +78079,7 @@ var submitPromptReview = (state) => {
   }
   return {
     ...emptyState,
+    queue: state.queue,
     stage: "matching" /* Matching */,
     intent,
     matchPhase: "loading-profiles" /* LoadingProfiles */
@@ -77945,6 +78230,10 @@ var reduceCandidateNavigation = (state, action) => {
         selectedCandidate: tripleAt(state.candidates, state.candidateIndex),
         readiness: void 0
       } : state;
+    case "candidates/enqueue" /* CandidatesEnqueue */:
+      return state.stage === "candidates" /* Candidates */ && state.candidates !== void 0 && state.selectedProfile !== void 0 ? { ...state, stage: "queue-placement" /* QueuePlacement */, destinationIndex: 0, errorMessage: void 0 } : state;
+    case "candidates/view-queue" /* CandidatesViewQueue */:
+      return state.stage === "candidates" /* Candidates */ && state.queue.entries.length > 0 ? { ...state, stage: "queue" /* Queue */, errorMessage: void 0 } : state;
     default:
       return state;
   }
@@ -78083,6 +78372,74 @@ var reduceDestination = (state, action) => {
       return state;
   }
 };
+var reduceQueue = (state, action) => {
+  switch (action.type) {
+    case "queue/move" /* QueueMove */:
+      return state.stage === "queue" /* Queue */ ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state;
+    case "queue/edit-start" /* QueueEditStart */: {
+      if (state.stage !== "queue" /* Queue */) return state;
+      const queue = startQueuedGuidePromptEdit(state.queue);
+      const job = queue.entries[queue.selectedIndex];
+      return job === void 0 ? state : { ...state, stage: "queue-prompt-editor" /* QueuePromptEditor */, queue, textDraft: job.prompt };
+    }
+    case "queue/edit-submit" /* QueueEditSubmit */:
+      return state.stage === "queue-prompt-editor" /* QueuePromptEditor */ && state.textDraft.trim().length > 0 ? { ...state, stage: "queue" /* Queue */, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) } : state;
+    case "queue/remove" /* QueueRemove */:
+      return state.stage === "queue" /* Queue */ ? { ...state, queue: removeSelectedQueuedGuideJob(state.queue), errorMessage: void 0 } : state;
+    case "queue/add-another" /* QueueAddAnother */:
+      return state.stage === "queue" /* Queue */ ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath } : state;
+    case "queue/back" /* QueueBack */:
+      if (state.stage === "queue-prompt-editor" /* QueuePromptEditor */) {
+        const { editingId: _, ...queue } = state.queue;
+        return { ...state, stage: "queue" /* Queue */, queue, errorMessage: void 0 };
+      }
+      return state.stage === "queue" /* Queue */ ? { ...state, stage: "candidates" /* Candidates */, errorMessage: void 0 } : state;
+    case "queue/execute-blocked" /* QueueExecuteBlocked */:
+      return state.stage === "queue" /* Queue */ ? { ...state, errorMessage: action.message } : state;
+    default:
+      return state;
+  }
+};
+var enqueueSelectedCandidate = (state, placement, primaryCheckoutPath) => state.candidates === void 0 || state.selectedProfile === void 0 ? state : {
+  ...state,
+  stage: "queue" /* Queue */,
+  queue: enqueueGuideJob(
+    state.queue,
+    state.selectedProfile,
+    tripleAt(state.candidates, state.candidateIndex).prompt,
+    placement
+  ),
+  worktreePurpose: "single",
+  worktreeInspection: void 0,
+  worktreeConfirmations: 0,
+  ...primaryCheckoutPath === void 0 ? {} : { primaryCheckoutPath },
+  errorMessage: void 0
+};
+var reduceQueuePlacement = (state, action) => {
+  switch (action.type) {
+    case "queue-placement/move" /* QueuePlacementMove */:
+      return state.stage === "queue-placement" /* QueuePlacement */ ? { ...state, destinationIndex: (state.destinationIndex + action.delta + 2) % 2 } : state;
+    case "queue-placement/back" /* QueuePlacementBack */:
+      return state.stage === "queue-placement" /* QueuePlacement */ ? { ...state, stage: "candidates" /* Candidates */ } : state;
+    case "queue-placement/unavailable" /* QueuePlacementUnavailable */:
+      return state.stage === "queue-placement" /* QueuePlacement */ ? { ...state, errorMessage: "Herdr is unavailable. Start trx guide from a Herdr pane or popup." } : state;
+    case "queue-placement/here" /* QueuePlacementHere */:
+      return state.stage === "queue-placement" /* QueuePlacement */ ? enqueueSelectedCandidate(state, { kind: "current-workspace-pane", direction: "right" }) : state;
+    case "queue-placement/start-worktree" /* QueuePlacementStartWorktree */:
+      return state.stage === "queue-placement" /* QueuePlacement */ ? {
+        ...state,
+        stage: "worktree-branch-editor" /* WorktreeBranchEditor */,
+        textDraft: defaultWorktreeBranch(state.intent ?? "queue"),
+        worktreeInspection: void 0,
+        worktreePurpose: "queue",
+        errorMessage: void 0
+      } : state;
+    case "queue-placement/worktree" /* QueuePlacementWorktree */:
+      return enqueueSelectedCandidate(state, action.placement, action.primaryCheckoutPath);
+    default:
+      return state;
+  }
+};
 var reduceWorktreeBranch = (state, action) => {
   switch (action.type) {
     case "worktree/submit-branch" /* WorktreeSubmitBranch */:
@@ -78139,7 +78496,7 @@ var reduceWorktreeResolution = (state, action) => {
     case "worktree/back" /* WorktreeBack */:
       return state.stage === "worktree-branch-editor" /* WorktreeBranchEditor */ || state.stage === "worktree-collision" /* WorktreeCollision */ || state.stage === "worktree-ready" /* WorktreeReady */ ? {
         ...state,
-        stage: "destination" /* Destination */,
+        stage: state.worktreePurpose === "queue" ? "queue-placement" /* QueuePlacement */ : "destination" /* Destination */,
         worktreeInspection: void 0,
         worktreeConfirmations: 0
       } : state;
@@ -78176,6 +78533,8 @@ var domainReducerByActionType = {
   ["candidates/move" /* CandidatesMove */]: reduceCandidateSelection,
   ["candidates/back" /* CandidatesBack */]: reduceCandidateSelection,
   ["candidates/confirm" /* CandidatesConfirm */]: reduceCandidateSelection,
+  ["candidates/enqueue" /* CandidatesEnqueue */]: reduceCandidateSelection,
+  ["candidates/view-queue" /* CandidatesViewQueue */]: reduceCandidateSelection,
   ["candidates/refine-start" /* CandidatesRefineStart */]: reduceCandidateSelection,
   ["candidates/direct-edit-start" /* CandidatesDirectEditStart */]: reduceCandidateSelection,
   ["direct-edit/submit" /* DirectEditSubmit */]: reduceDirectEdit,
@@ -78201,7 +78560,20 @@ var domainReducerByActionType = {
   ["worktree/ready" /* WorktreeReady */]: reduceWorktreeInspection,
   ["worktree/confirm" /* WorktreeConfirm */]: reduceWorktreeResolution,
   ["worktree/edit-branch" /* WorktreeEditBranch */]: reduceWorktreeResolution,
-  ["worktree/back" /* WorktreeBack */]: reduceWorktreeResolution
+  ["worktree/back" /* WorktreeBack */]: reduceWorktreeResolution,
+  ["queue/move" /* QueueMove */]: reduceQueue,
+  ["queue/edit-start" /* QueueEditStart */]: reduceQueue,
+  ["queue/edit-submit" /* QueueEditSubmit */]: reduceQueue,
+  ["queue/remove" /* QueueRemove */]: reduceQueue,
+  ["queue/add-another" /* QueueAddAnother */]: reduceQueue,
+  ["queue/back" /* QueueBack */]: reduceQueue,
+  ["queue/execute-blocked" /* QueueExecuteBlocked */]: reduceQueue,
+  ["queue-placement/move" /* QueuePlacementMove */]: reduceQueuePlacement,
+  ["queue-placement/back" /* QueuePlacementBack */]: reduceQueuePlacement,
+  ["queue-placement/unavailable" /* QueuePlacementUnavailable */]: reduceQueuePlacement,
+  ["queue-placement/here" /* QueuePlacementHere */]: reduceQueuePlacement,
+  ["queue-placement/start-worktree" /* QueuePlacementStartWorktree */]: reduceQueuePlacement,
+  ["queue-placement/worktree" /* QueuePlacementWorktree */]: reduceQueuePlacement
 };
 var guideUiReducer = (state, action) => {
   const domainReducer = domainReducerByActionType[action.type];
@@ -79434,6 +79806,45 @@ var DestinationView = ({
   ] }),
   /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 confirm \xB7 c print prompt \xB7 b back" })
 ] });
+var QueueView = ({ queue, errorMessage }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", children: [
+    "Batch queue. ",
+    queue.entries.length,
+    " jobs"
+  ] }),
+  queue.entries.map((job, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: index === queue.selectedIndex, ...index === queue.selectedIndex ? { color: "green" } : {}, children: [
+      index === queue.selectedIndex ? "\u276F " : "  ",
+      job.id,
+      ". ",
+      job.profile.profile,
+      " \xB7 ",
+      job.prompt.replaceAll(/\s+/gu, " ").slice(0, 80)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "   \u2192 ",
+      describeJobPlacement(job.placement)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "   ",
+      renderCommandPreview(job.command)
+    ] })
+  ] }, job.id)),
+  errorMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: errorMessage }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "j/k select \xB7 e edit prompt \xB7 x remove \xB7 a add another \xB7 \u21B5 launch all \xB7 b current candidate \xB7 q cancel" })
+] });
+var QueuePlacementView = ({ index, errorMessage }) => {
+  const options = ["Pane in this Herdr workspace", "Herdr worktree"];
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Where does this queued job run?" }),
+    options.map((option, itemIndex) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: itemIndex === index, ...itemIndex === index ? { color: "green" } : {}, children: [
+      itemIndex === index ? "\u276F " : "  ",
+      option
+    ] }, option)),
+    errorMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: errorMessage }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "j/k select \xB7 \u21B5 confirm \xB7 b back" })
+  ] });
+};
 var WorktreeReadyView = ({
   inspection,
   confirmations
@@ -79486,7 +79897,7 @@ var WorktreeCollisionView = ({ inspection }) => /* @__PURE__ */ (0, import_jsx_r
       inspection.collision.path,
       "."
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u21B5 open existing worktree \xB7 e edit branch \xB7 q cancel" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u21B5 open existing worktree \xB7 e edit branch \xB7 b back \xB7 q cancel" })
   ] })
 ] });
 var useGuideMatchEffect = (props, state, dispatch) => {
@@ -79588,10 +79999,11 @@ var useGuideReadinessEffect = (props, state, dispatch) => {
   (0, import_react34.useEffect)(() => {
     if (state.stage !== "checking-readiness" /* CheckingReadiness */ || state.selectedProfile === void 0) return void 0;
     let cancelled = false;
+    const abort = new AbortController();
     const selectedProfile = state.selectedProfile;
     void (async () => {
       try {
-        const result = await checkSelectedProfileReadiness(props.runner, selectedProfile, props.cwd);
+        const result = await checkSelectedProfileReadiness(props.runner, selectedProfile, props.cwd, abort.signal);
         if (cancelled) return;
         dispatch(
           result.kind === "ready" /* Ready */ ? { type: "readiness/ready" /* ReadinessReady */, result } : { type: "readiness/blocked" /* ReadinessBlocked */, result }
@@ -79611,6 +80023,7 @@ var useGuideReadinessEffect = (props, state, dispatch) => {
     })();
     return () => {
       cancelled = true;
+      abort.abort();
     };
   }, [state.stage]);
 };
@@ -79738,22 +80151,59 @@ var candidateNavigationAction = (input, key) => {
   if (key.return) return { type: "candidates/confirm" /* CandidatesConfirm */ };
   return void 0;
 };
-var candidateCommandAction = (input) => {
+var candidateCommandAction = (state, input) => {
+  if (input === "a") return { type: "candidates/enqueue" /* CandidatesEnqueue */ };
+  if (input === "v" && state.queue.entries.length > 0) return { type: "candidates/view-queue" /* CandidatesViewQueue */ };
   if (input === "r") return { type: "candidates/refine-start" /* CandidatesRefineStart */ };
   if (input === "e") return { type: "candidates/direct-edit-start" /* CandidatesDirectEditStart */ };
   return void 0;
 };
-var handleCandidatesInput = (context, input, key) => {
-  const action = candidateNavigationAction(input, key) ?? candidateCommandAction(input);
+var launchQueue = ({ state, dispatch, complete, herdrContext, herdrEnabled, props }) => {
+  if (state.queue.entries.length === 0) {
+    dispatch({ type: "queue/execute-blocked" /* QueueExecuteBlocked */, message: "Batch queue is empty." });
+    return;
+  }
+  if (!herdrEnabled || herdrContext === null) {
+    dispatch({
+      type: "queue/execute-blocked" /* QueueExecuteBlocked */,
+      message: "Herdr is unavailable. Start trx guide from a Herdr pane or popup."
+    });
+    return;
+  }
+  const cwd2 = herdrContext.cwd ?? props.cwd;
+  complete({
+    action: "batch",
+    batch: {
+      jobs: state.queue.entries,
+      context: {
+        workspaceId: herdrContext.workspaceId,
+        cwd: cwd2,
+        callerPaneId: herdrContext.paneId,
+        primaryCheckoutPath: state.primaryCheckoutPath ?? cwd2
+      }
+    }
+  });
+};
+var handleQueueInput = (context, input, key) => {
+  const { dispatch, cancel } = context;
+  if (key.upArrow || input === "k") dispatch({ type: "queue/move" /* QueueMove */, delta: -1 });
+  else if (key.downArrow || input === "j") dispatch({ type: "queue/move" /* QueueMove */, delta: 1 });
+  else if (input === "e") dispatch({ type: "queue/edit-start" /* QueueEditStart */ });
+  else if (input === "x") dispatch({ type: "queue/remove" /* QueueRemove */ });
+  else if (input === "a") dispatch({ type: "queue/add-another" /* QueueAddAnother */ });
+  else if (key.return) launchQueue(context, input, key);
+  else if (input === "b" || key.escape) dispatch({ type: "queue/back" /* QueueBack */ });
+  else if (input === "q") cancel();
+};
+var handleCandidatesInput = ({ state, dispatch, complete, cancel }, input, key) => {
+  const action = candidateNavigationAction(input, key) ?? candidateCommandAction(state, input);
   if (action !== void 0) {
-    context.dispatch(action);
+    dispatch(action);
     return;
   }
-  if (input === "c" && context.state.candidates !== void 0) {
-    context.complete(buildPrintResult(tripleAt(context.state.candidates, context.state.candidateIndex).prompt));
-    return;
-  }
-  if (input === "q") context.cancel();
+  if (input === "c" && state.candidates !== void 0) {
+    complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt));
+  } else if (input === "q") cancel();
 };
 var handleTextEditorInput = (context, input, key, maximum, submit, back) => {
   if (key.escape) context.dispatch(back);
@@ -79779,6 +80229,14 @@ var handleDirectEditorInput = (context, input, key) => handleTextEditorInput(
   { type: "direct-edit/submit" /* DirectEditSubmit */ },
   { type: "direct-edit/back" /* DirectEditBack */ }
 );
+var handleQueuePromptEditorInput = ({ state, dispatch }, input, key) => {
+  if (key.escape) dispatch({ type: "queue/back" /* QueueBack */ });
+  else if (key.return) dispatch({ type: "queue/edit-submit" /* QueueEditSubmit */ });
+  else if (key.backspace || key.delete) dispatch({ type: "editor/backspace" /* EditorBackspace */ });
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
+    dispatch({ type: "editor/change" /* EditorChange */, text: state.textDraft + input });
+  }
+};
 var handleBranchEditorInput = (context, input, key) => handleTextEditorInput(
   context,
   input,
@@ -79827,6 +80285,16 @@ var handleDestinationInput = (context, input, key) => {
   } else if (input === "b") dispatch({ type: "destination/back" /* DestinationBack */ });
   else if (input === "q") cancel();
 };
+var handleQueuePlacementInput = ({ state, dispatch, herdrContext, herdrEnabled }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: "queue-placement/move" /* QueuePlacementMove */, delta: -1 });
+  else if (key.downArrow || input === "j") dispatch({ type: "queue-placement/move" /* QueuePlacementMove */, delta: 1 });
+  else if (input === "b" || key.escape) dispatch({ type: "queue-placement/back" /* QueuePlacementBack */ });
+  else if (key.return) {
+    if (!herdrEnabled || herdrContext === null) dispatch({ type: "queue-placement/unavailable" /* QueuePlacementUnavailable */ });
+    else if (state.destinationIndex === 0) dispatch({ type: "queue-placement/here" /* QueuePlacementHere */ });
+    else dispatch({ type: "queue-placement/start-worktree" /* QueuePlacementStartWorktree */ });
+  }
+};
 var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input, key) => {
   if (input === "e") {
     dispatch({ type: "worktree/edit-branch" /* WorktreeEditBranch */ });
@@ -79837,9 +80305,19 @@ var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input
     return;
   }
   const inspection = state.worktreeInspection;
-  if (!key.return || inspection === void 0 || !("collision" in inspection) || inspection.collision.path === void 0 || state.selectedProfile === void 0 || state.selectedCandidate === void 0) {
+  if (!key.return || inspection === void 0 || !("collision" in inspection) || inspection.collision.path === void 0 || state.selectedProfile === void 0) {
+    if (input === "b" || key.escape) dispatch({ type: "worktree/back" /* WorktreeBack */ });
     return;
   }
+  if (state.worktreePurpose === "queue") {
+    dispatch({
+      type: "queue-placement/worktree" /* QueuePlacementWorktree */,
+      placement: { kind: "existing-worktree", path: inspection.collision.path },
+      primaryCheckoutPath: inspection.primaryCheckoutPath
+    });
+    return;
+  }
+  if (state.selectedCandidate === void 0) return;
   complete(
     buildExistingHerdrWorktreeResult(
       state.selectedProfile,
@@ -79862,12 +80340,28 @@ var confirmedWorktreeResult = (state) => {
     inspection.baseRef
   );
 };
+var confirmedQueueWorktree = (state) => {
+  const inspection = state.worktreeInspection;
+  if (inspection === void 0 || "collision" in inspection || !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty)) {
+    return void 0;
+  }
+  return {
+    placement: { kind: "new-worktree", branch: inspection.branch, baseRef: inspection.baseRef },
+    primaryCheckoutPath: inspection.primaryCheckoutPath
+  };
+};
 var handleWorktreeReadyInput = ({ state, dispatch, complete }, input, key) => {
   if (key.escape) {
     dispatch({ type: "worktree/back" /* WorktreeBack */ });
     return;
   }
   if (!key.return && input !== "y") return;
+  if (state.worktreePurpose === "queue") {
+    const confirmed = confirmedQueueWorktree(state);
+    if (confirmed === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
+    else dispatch({ type: "queue-placement/worktree" /* QueuePlacementWorktree */, ...confirmed });
+    return;
+  }
   const result = confirmedWorktreeResult(state);
   if (result === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
   else complete(result);
@@ -79891,7 +80385,10 @@ var inputHandlerByStage = {
   ["worktree-branch-editor" /* WorktreeBranchEditor */]: handleBranchEditorInput,
   ["inspecting-worktree" /* InspectingWorktree */]: handleNoInput,
   ["worktree-collision" /* WorktreeCollision */]: handleWorktreeCollisionInput,
-  ["worktree-ready" /* WorktreeReady */]: handleWorktreeReadyInput
+  ["worktree-ready" /* WorktreeReady */]: handleWorktreeReadyInput,
+  ["queue" /* Queue */]: handleQueueInput,
+  ["queue-prompt-editor" /* QueuePromptEditor */]: handleQueuePromptEditorInput,
+  ["queue-placement" /* QueuePlacement */]: handleQueuePlacementInput
 };
 var handleGuideInput = (context, input, key) => {
   if (key.ctrl && input === "c") {
@@ -79905,6 +80402,7 @@ var pastedEditorMaximum = (state) => {
   if (state.stage === "prompt-review" /* PromptReview */ && state.promptReviewEditing) return guideIntentMaximumLength;
   if (state.stage === "refine-editor" /* RefineEditor */) return feedbackMaxLength;
   if (state.stage === "direct-editor" /* DirectEditor */) return promptMaxLength;
+  if (state.stage === "queue-prompt-editor" /* QueuePromptEditor */) return promptMaxLength;
   return void 0;
 };
 var handleGuidePaste = (state, dispatch, pasted) => {
@@ -80080,7 +80578,16 @@ var stageRenderer = {
     }
   ),
   ["worktree-collision" /* WorktreeCollision */]: renderWorktreeCollision,
-  ["worktree-ready" /* WorktreeReady */]: renderWorktreeReady
+  ["worktree-ready" /* WorktreeReady */]: renderWorktreeReady,
+  ["queue" /* Queue */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(QueueView, { queue: state.queue, ...state.errorMessage === void 0 ? {} : { errorMessage: state.errorMessage } }),
+  ["queue-prompt-editor" /* QueuePromptEditor */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Edit queued prompt", textDraft: state.textDraft, keys: "\u21B5 save \xB7 Esc back" }),
+  ["queue-placement" /* QueuePlacement */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    QueuePlacementView,
+    {
+      index: state.destinationIndex,
+      ...state.errorMessage === void 0 ? {} : { errorMessage: state.errorMessage }
+    }
+  )
 };
 var GuideApp = (props) => {
   const { exit } = use_app_default();
@@ -80115,8 +80622,590 @@ var GuideApp = (props) => {
   ] });
 };
 
-// src/cli.tsx
+// src/basket-preview.tsx
+var import_react35 = __toESM(require_react(), 1);
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
+var BasketPreviewArgsError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BasketPreviewArgsError";
+  }
+};
+var previewFlag = "--preview";
+var helpFlags = /* @__PURE__ */ new Set(["--help", "-h"]);
+var basketPreviewHelpText = [
+  "Usage:",
+  "  trx guide --preview",
+  "",
+  "Renders the staged prompt basket composer overlay from fixture data.",
+  "It never calls a model, reads the profile catalog, or launches anything.",
+  "",
+  "List keys:",
+  "  down/up        next or previous staged block (j and k also work)",
+  "  J K            move the selected block later or earlier",
+  "  o              open the selected block in full",
+  "  f              open the assembled final prompt in full",
+  "  e              edit the selected block",
+  "  u              revert the selected block to its captured text",
+  "  x X            drop the selected block, clear the basket",
+  "  r              restore the fixture blocks",
+  "  Enter          send: print the assembled prompt and exit",
+  "  q or Esc       quit",
+  "",
+  "Viewer keys:",
+  "  down/up        scroll one line (j and k also work)",
+  "  PgDn PgUp      scroll one page",
+  "  e              edit the block being viewed",
+  "  q or Esc       back to the list",
+  "",
+  "Editor keys:",
+  "  Backspace      delete the last character",
+  "  Enter          save the block",
+  "  Esc            discard the edit"
+].join("\n");
+var applyPreviewToken = (draft, token) => {
+  if (helpFlags.has(token)) return { ...draft, help: true };
+  if (token !== previewFlag) throw new BasketPreviewArgsError(`Preview mode accepts no argument: ${token}`);
+  if (draft.sawPreview) throw new BasketPreviewArgsError(`Duplicate flag: ${previewFlag}`);
+  return { ...draft, sawPreview: true };
+};
+var parseBasketPreviewArgv = (argv) => {
+  const draft = argv.reduce(applyPreviewToken, { help: false, sawPreview: false });
+  if (!draft.help && !draft.sawPreview) throw new BasketPreviewArgsError(`Preview mode requires ${previewFlag}`);
+  return { help: draft.help };
+};
+var previewDestination = {
+  session: "profile-match",
+  launcher: "cldx",
+  harness: "claude",
+  profile: "default",
+  model: "claude-opus-5",
+  effort: "medium",
+  sandbox: false,
+  cwd: "~/src/trellage",
+  herdrPane: "%4 right split"
+};
+var previewChunks = [
+  {
+    id: "council",
+    pane: "council",
+    harness: "claude-council",
+    color: "blue",
+    capturedAt: "09:38",
+    text: [
+      "Verdict 3/4: prefer streaming resolve over lockfile pinning for the dev loop; pin only at release.",
+      "",
+      "Member 1 (for): the dev loop already tolerates a cold first resolve, and streaming removes the",
+      "whole class of merge conflicts we keep hitting on the lockfile. Measured 47-55ms warm against",
+      "68ms cold, so the cost is inside the noise floor for an interactive command.",
+      "",
+      "Member 2 (against): cold start on a fresh machine goes from 0.4s to 6.2s because nothing is",
+      "cached yet. That is the first impression for a new contributor and it reads as broken.",
+      "",
+      "Member 4 (for, with a condition): accept streaming, but keep the release job pinned and add a",
+      "`--frozen` escape hatch so CI can still fail loudly when a transitive dependency moves.",
+      "",
+      "Unresolved: whether the offline reuse guarantee survives. Nobody in the room could name the",
+      "exact cache directory the resolver reads when the network is gone."
+    ].join("\n")
+  },
+  {
+    id: "research",
+    pane: "research",
+    harness: "codex",
+    color: "green",
+    capturedAt: "09:39",
+    text: [
+      "mcptoon token savings: 41% p50, 28% p95 across 12 tool schemas (n=340).",
+      "",
+      "  schema group        p50     p95     calls   accuracy delta",
+      "  file operations     46%     33%     104     +0.2%",
+      "  shell / process     39%     26%      88     -0.1%",
+      "  search / grep       44%     31%      71     +0.0%",
+      "  editor / patch      37%     22%      52     -0.4%",
+      "  misc                31%     19%      25     +0.1%",
+      "",
+      "No regression in tool-call accuracy at the 95% interval. The p95 tail is dominated by the",
+      "editor/patch group, where the schema carries a long enum of edit modes that does not compress.",
+      "Recommend landing this behind a flag and measuring again once the patch schema is trimmed."
+    ].join("\n")
+  },
+  {
+    id: "doctor",
+    pane: "doctor",
+    harness: "trx",
+    color: "yellow",
+    capturedAt: "09:40",
+    text: "prx default \u2192 agent_not_ready: not an active named agent."
+  },
+  {
+    id: "trace",
+    pane: "trace",
+    harness: "shell",
+    color: "red",
+    capturedAt: "09:42",
+    text: [
+      "$ trx inventory prx default --json",
+      "trx: prx inventory failed for default",
+      "",
+      "prx: readiness probe timed out after 300000ms",
+      "    at probeAgent (/opt/prx/lib/agent.mjs:412:15)",
+      "    at async inventory (/opt/prx/lib/inventory.mjs:88:22)",
+      "    at async main (/opt/prx/bin/prx:203:5)",
+      "",
+      "Last 3 probe attempts:",
+      "  09:41:58  pane not found",
+      "  09:42:03  pane found, agent handshake pending",
+      "  09:42:08  pane found, agent handshake pending"
+    ].join("\n")
+  },
+  {
+    id: "spec",
+    pane: "spec",
+    harness: "editor",
+    color: "cyan",
+    capturedAt: "09:44",
+    text: [
+      "Acceptance criteria for the staged prompt basket:",
+      "",
+      "1. Staging is persistent. A captured block survives pane focus changes and stays held until it",
+      "   is sent or explicitly dropped. Closing the source pane must not drop the block.",
+      "2. The queue is ordered and reorderable. The assembled prompt follows the on-screen order.",
+      "3. Every block records its origin: source pane, harness, and capture time. The assembled",
+      "   prompt carries that origin as a `## from <pane> \xB7 <time>` header so the receiving agent can",
+      "   tell the blocks apart.",
+      "4. Long blocks are readable. The list truncates; opening a block shows the whole thing with",
+      "   paging, and never reflows into unreadable fragments at 60 columns.",
+      "5. A block can be edited in place before sending, and reverted to the captured text.",
+      "6. The destination is visible without leaving the composer: launcher, harness, profile, model,",
+      "   effort, sandbox flag, working directory, target pane, and session name.",
+      "7. Sending is one keystroke and prints the assembled prompt on stdout.",
+      "",
+      "Out of scope for now: persisting a basket across processes, and capturing from a pane that is",
+      "not on the current Herdr workspace."
+    ].join("\n")
+  },
+  {
+    id: "notes",
+    pane: "notes",
+    harness: "editor",
+    color: "magenta",
+    capturedAt: "09:45",
+    text: "Constraint: keep offline reuse. No lockfile writes outside release. Doctor must stay under 20s."
+  }
+];
+var capturedText = (id) => previewChunks.find((chunk) => chunk.id === id)?.text;
+var previewPromptMaximumLength = 6e4;
+var initialBasketPreviewState = () => ({
+  chunks: previewChunks,
+  cursor: 0,
+  view: "list" /* List */,
+  scroll: 0,
+  draft: ""
+});
+var selectedChunk = (state) => state.chunks[state.cursor];
+var swapped = (chunks, first, second) => {
+  const left = chunks[first];
+  const right = chunks[second];
+  if (left === void 0 || right === void 0) return chunks;
+  const next = [...chunks];
+  next[first] = right;
+  next[second] = left;
+  return next;
+};
+var withSelectedText = (state, text4) => ({
+  ...state,
+  chunks: state.chunks.map((chunk, index) => index === state.cursor ? { ...chunk, text: text4 } : chunk)
+});
+var reduceSelection = (state, action) => {
+  const total = state.chunks.length;
+  switch (action.type) {
+    case "next-chunk" /* NextChunk */:
+      return total === 0 ? state : { ...state, cursor: (state.cursor + 1) % total };
+    case "previous-chunk" /* PreviousChunk */:
+      return total === 0 ? state : { ...state, cursor: (state.cursor - 1 + total) % total };
+    case "move-chunk-later" /* MoveChunkLater */:
+      return state.cursor + 1 >= total ? state : { ...state, chunks: swapped(state.chunks, state.cursor, state.cursor + 1), cursor: state.cursor + 1 };
+    case "move-chunk-earlier" /* MoveChunkEarlier */:
+      return state.cursor === 0 ? state : { ...state, chunks: swapped(state.chunks, state.cursor, state.cursor - 1), cursor: state.cursor - 1 };
+    default:
+      return void 0;
+  }
+};
+var reduceContents = (state, action) => {
+  switch (action.type) {
+    case "drop-chunk" /* DropChunk */: {
+      if (state.chunks.length === 0) return state;
+      const chunks = state.chunks.filter((_chunk, index) => index !== state.cursor);
+      return { ...state, chunks, cursor: Math.max(0, Math.min(state.cursor, chunks.length - 1)) };
+    }
+    case "clear-chunks" /* ClearChunks */:
+      return { ...state, chunks: [], cursor: 0 };
+    case "restore-chunks" /* RestoreChunks */:
+      return initialBasketPreviewState();
+    case "revert-chunk" /* RevertChunk */: {
+      const selected = selectedChunk(state);
+      const original = selected === void 0 ? void 0 : capturedText(selected.id);
+      return original === void 0 || original === selected?.text ? state : withSelectedText(state, original);
+    }
+    default:
+      return void 0;
+  }
+};
+var reduceView = (state, action) => {
+  switch (action.type) {
+    case "open-block" /* OpenBlock */:
+      return state.chunks.length === 0 ? state : { ...state, view: "block" /* Block */, scroll: 0 };
+    case "open-final" /* OpenFinal */:
+      return state.chunks.length === 0 ? state : { ...state, view: "final" /* Final */, scroll: 0 };
+    case "close-view" /* CloseView */:
+      return { ...state, view: "list" /* List */, scroll: 0 };
+    case "scroll" /* Scroll */:
+      return { ...state, scroll: Math.max(0, Math.min(state.scroll + action.delta, action.maximum)) };
+    default:
+      return void 0;
+  }
+};
+var reduceEditor2 = (state, action) => {
+  switch (action.type) {
+    case "edit-start" /* EditStart */: {
+      const selected = selectedChunk(state);
+      return selected === void 0 ? state : { ...state, view: "edit" /* Edit */, draft: selected.text };
+    }
+    case "edit-append" /* EditAppend */:
+      return state.draft.length + action.text.length > previewPromptMaximumLength ? state : { ...state, draft: state.draft + action.text };
+    case "edit-backspace" /* EditBackspace */:
+      return { ...state, draft: state.draft.slice(0, -1) };
+    case "edit-save" /* EditSave */:
+      return state.draft.trim().length === 0 ? state : { ...withSelectedText(state, state.draft), view: "list" /* List */, scroll: 0, draft: "" };
+    case "edit-cancel" /* EditCancel */:
+      return { ...state, view: "list" /* List */, scroll: 0, draft: "" };
+    default:
+      return state;
+  }
+};
+var basketPreviewReducer = (state, action) => reduceSelection(state, action) ?? reduceContents(state, action) ?? reduceView(state, action) ?? reduceEditor2(state, action);
+var assembleStagedPrompt = (chunks) => chunks.map((chunk) => `## from ${chunk.pane} \xB7 ${chunk.capturedAt}
+${chunk.text}`).join("\n\n");
+var stagedCharacterCount = (chunks) => chunks.reduce((total, chunk) => total + chunk.text.length, 0);
+var countTextLines = (text4) => text4.length === 0 ? 0 : text4.split("\n").length;
+var countLabel = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+var isChunkEdited = (chunk) => capturedText(chunk.id) !== chunk.text;
+var previewBlockLines = 2;
+var clipLine = (line, width) => {
+  const limit = Math.max(1, width);
+  return line.length <= limit ? line : `${line.slice(0, limit - 1).trimEnd()}\u2026`;
+};
+var basketBlockPreview = (text4, width, limit = previewBlockLines) => {
+  const source = text4.split("\n").filter((line) => line.trim().length > 0);
+  const kept = source.slice(0, Math.max(1, limit));
+  return {
+    lines: kept.map((line) => clipLine(line, width)),
+    truncated: source.length > kept.length || kept.some((line) => line.length > Math.max(1, width))
+  };
+};
+var basketVisibleRange = (heights, cursor, capacity) => {
+  if (heights.length === 0) return { start: 0, end: 0 };
+  const index = Math.max(0, Math.min(cursor, heights.length - 1));
+  let start = index;
+  let end = index + 1;
+  let used = heights[index] ?? 0;
+  while (start > 0 && used + (heights[start - 1] ?? 0) <= capacity) {
+    start -= 1;
+    used += heights[start] ?? 0;
+  }
+  while (end < heights.length && used + (heights[end] ?? 0) <= capacity) {
+    used += heights[end] ?? 0;
+    end += 1;
+  }
+  return { start, end };
+};
+var destinationSummaryLines = (destination) => [
+  `${destination.launcher} \xB7 ${destination.harness}/${destination.profile} \xB7 ${destination.model} \xB7 effort ${destination.effort} \xB7 sandbox ${destination.sandbox ? "on" : "off"}`,
+  `${destination.cwd} \xB7 herdr pane ${destination.herdrPane} \xB7 session ${destination.session}`
+];
+var controlCharacters3 = /[\p{Cc}\p{Cf}]/u;
+var isPrintableInput2 = (input, key) => !key.ctrl && !key.meta && input.length > 0 && !controlCharacters3.test(input);
+var listNavigationCommand = (input, key) => {
+  if (key.rightArrow || key.downArrow || input === "j") return { type: "next-chunk" /* NextChunk */ };
+  if (key.leftArrow || key.upArrow || input === "k") return { type: "previous-chunk" /* PreviousChunk */ };
+  if (input === "J") return { type: "move-chunk-later" /* MoveChunkLater */ };
+  if (input === "K") return { type: "move-chunk-earlier" /* MoveChunkEarlier */ };
+  return void 0;
+};
+var listOpenCommand = (input) => {
+  if (input === "o") return { type: "open-block" /* OpenBlock */ };
+  if (input === "f") return { type: "open-final" /* OpenFinal */ };
+  if (input === "e") return { type: "edit-start" /* EditStart */ };
+  if (input === "u") return { type: "revert-chunk" /* RevertChunk */ };
+  return void 0;
+};
+var listContentsCommand = (input) => {
+  if (input === "x") return { type: "drop-chunk" /* DropChunk */ };
+  if (input === "X") return { type: "clear-chunks" /* ClearChunks */ };
+  if (input === "r") return { type: "restore-chunks" /* RestoreChunks */ };
+  return void 0;
+};
+var listCommand = (input, key) => {
+  if (key.escape || input === "q") return { type: "quit" };
+  if (key.return) return { type: "submit" };
+  return listNavigationCommand(input, key) ?? listOpenCommand(input) ?? listContentsCommand(input);
+};
+var viewerCommand = (input, key, editable) => {
+  if (key.escape || input === "q" || input === "o") return { type: "close-view" /* CloseView */ };
+  if (key.downArrow || input === "j") return { type: "scroll", delta: 1 };
+  if (key.upArrow || input === "k") return { type: "scroll", delta: -1 };
+  if (key.pageDown || input === " ") return { type: "scroll", delta: 10 };
+  if (key.pageUp) return { type: "scroll", delta: -10 };
+  if (editable && input === "e") return { type: "edit-start" /* EditStart */ };
+  return void 0;
+};
+var editorCommand = (input, key) => {
+  if (key.escape) return { type: "edit-cancel" /* EditCancel */ };
+  if (key.return) return { type: "edit-save" /* EditSave */ };
+  if (key.backspace || key.delete) return { type: "edit-backspace" /* EditBackspace */ };
+  if (isPrintableInput2(input, key)) return { type: "edit-append" /* EditAppend */, text: input };
+  return void 0;
+};
+var basketPreviewCommandForKey = (input, key, view) => {
+  if (view === "edit" /* Edit */) return editorCommand(input, key);
+  if (view === "block" /* Block */) return viewerCommand(input, key, true);
+  if (view === "final" /* Final */) return viewerCommand(input, key, false);
+  return listCommand(input, key);
+};
+var TabBar = ({ narrow }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { justifyContent: "space-between", flexShrink: 0, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { wrap: "truncate-end", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "magenta", children: "trellage" }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: " " }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { inverse: true, children: " 1 resolve " }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: " 2 build" })
+  ] }),
+  narrow ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: "Composer overlay \xB7 fixture preview" })
+] });
+var DestinationPanel = ({ destination }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: destinationSummaryLines(destination).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { wrap: "truncate-end", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "green", children: index === 0 ? "\u2192 runs on " : "\u2192 in      " }),
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: line })
+] }, line)) });
+var StagedHeader = ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { bold: true, color: "magenta", wrap: "truncate-end", children: [
+  "STAGED PROMPT \xB7 ",
+  countLabel(state.chunks.length, "block"),
+  " \xB7 ",
+  stagedCharacterCount(state.chunks),
+  " chars \xB7",
+  " ",
+  countLabel(countTextLines(assembleStagedPrompt(state.chunks)), "line")
+] });
+var Footer = ({ lines }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: lines.map((line) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: line }, line)) });
+var StagedBlock = ({
+  chunk,
+  index,
+  selected,
+  preview
+}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", marginBottom: 1, flexShrink: 0, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { wrap: "truncate-end", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { inverse: selected, children: [
+      " ",
+      index + 1,
+      " "
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: chunk.color, children: [
+      " ## from ",
+      chunk.pane
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
+      " ",
+      "\xB7 ",
+      chunk.harness,
+      " \xB7 ",
+      chunk.capturedAt,
+      " \xB7 ",
+      chunk.text.length,
+      "c \xB7 ",
+      countLabel(countTextLines(chunk.text), "line")
+    ] }),
+    isChunkEdited(chunk) ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "yellow", children: " \xB7 edited" }) : null,
+    preview.truncated ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, color: "cyan", children: [
+      " ",
+      "\xB7 o opens"
+    ] }) : null
+  ] }),
+  preview.lines.map((line, lineIndex) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: !selected, wrap: "truncate-end", children: line.length === 0 ? " " : line }, `${chunk.id}:${lineIndex}`))
+] });
+var listFooterLines = [
+  "j/k move \xB7 J/K reorder \xB7 o open block \xB7 f final prompt \xB7 e edit \xB7 u revert",
+  "x drop \xB7 X clear \xB7 r restore \xB7 \u21B5 send \xB7 q quit"
+];
+var ListView = ({
+  state,
+  height,
+  columns,
+  narrow
+}) => {
+  const width = Math.max(20, columns - 6);
+  const previews = state.chunks.map((chunk) => basketBlockPreview(chunk.text, width));
+  const heights = previews.map((preview) => preview.lines.length + 2);
+  const capacity = Math.max(3, height - 7);
+  const { start, end } = basketVisibleRange(heights, state.cursor, capacity);
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", height, overflowY: "hidden", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "council \xB7 research \xB7 doctor \xB7 trace \xB7 spec \xB7 notes ",
+      narrow ? "" : "\u2014 panes dimmed behind the composer"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+      Box_default,
+      {
+        flexDirection: "column",
+        flexGrow: 1,
+        borderStyle: "round",
+        borderColor: "magenta",
+        paddingX: 1,
+        overflowY: "hidden",
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(StagedHeader, { state }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(DestinationPanel, { destination: previewDestination }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, flexGrow: 1, overflowY: "hidden", children: [
+            state.chunks.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: "basket empty \xB7 r restores the fixture blocks" }) : null,
+            state.chunks.slice(start, end).map((chunk, offset) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+              StagedBlock,
+              {
+                chunk,
+                index: start + offset,
+                selected: start + offset === state.cursor,
+                preview: previews[start + offset] ?? { lines: [], truncated: false }
+              },
+              chunk.id
+            ))
+          ] }),
+          end - start < state.chunks.length ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+            "showing blocks ",
+            start + 1,
+            "\u2013",
+            end,
+            " of ",
+            state.chunks.length
+          ] }) : null
+        ]
+      }
+    )
+  ] });
+};
+var ViewerBody = ({
+  lines,
+  from,
+  capacity
+}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, overflowY: "hidden", children: lines.slice(from, from + capacity).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { wrap: "truncate-end", children: line.length === 0 ? " " : line }, `${from + index}`)) });
+var ViewerView = ({
+  title,
+  subtitle,
+  lines,
+  from,
+  capacity,
+  height
+}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", height, overflowY: "hidden", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, overflowY: "hidden", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "cyan", wrap: "truncate-end", children: title }),
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: subtitle }),
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(DestinationPanel, { destination: previewDestination }),
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, flexGrow: 1, overflowY: "hidden", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ViewerBody, { lines, from, capacity }) }),
+  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+    "lines ",
+    Math.min(from + 1, lines.length),
+    "\u2013",
+    Math.min(from + capacity, lines.length),
+    " of ",
+    lines.length
+  ] })
+] }) });
+var EditView = ({
+  state,
+  lines,
+  height
+}) => {
+  const capacity = Math.max(3, height - 6);
+  const shown = lines.slice(Math.max(0, lines.length - capacity));
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", height, overflowY: "hidden", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, borderStyle: "round", borderColor: "yellow", paddingX: 1, overflowY: "hidden", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { bold: true, color: "yellow", wrap: "truncate-end", children: [
+      "EDIT block ",
+      state.cursor + 1,
+      " \xB7 ",
+      selectedChunk(state)?.pane ?? "?",
+      " \xB7 ",
+      state.draft.length,
+      " chars"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", marginTop: 1, flexGrow: 1, overflowY: "hidden", children: shown.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { wrap: "truncate-end", children: index === shown.length - 1 ? `${line}\u2588` : line.length === 0 ? " " : line }, `${index}`)) })
+  ] }) });
+};
+var viewerScreenBody = (state, lines, height) => {
+  const capacity = Math.max(3, height - 8);
+  const maximum = Math.max(0, lines.length - capacity);
+  const from = Math.min(state.scroll, maximum);
+  const block = state.view === "block" /* Block */ ? selectedChunk(state) : void 0;
+  const title = block === void 0 ? `FINAL PROMPT \xB7 ${countLabel(state.chunks.length, "block")} \xB7 ${stagedCharacterCount(state.chunks)} chars` : `BLOCK ${state.cursor + 1} of ${state.chunks.length} \xB7 ## from ${block.pane} \xB7 ${block.capturedAt}`;
+  const subtitle = block === void 0 ? "exactly what is sent, block headers included" : `captured from ${block.pane} \xB7 ${block.harness}${isChunkEdited(block) ? " \xB7 edited" : ""}`;
+  return {
+    node: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ViewerView, { title, subtitle, lines, from, capacity, height }),
+    footer: [
+      block === void 0 ? "j/k scroll \xB7 PgDn/PgUp page \xB7 q back" : "j/k scroll \xB7 PgDn/PgUp page \xB7 e edit \xB7 q back"
+    ],
+    maximum
+  };
+};
+var screenBody = (state, lines, height, columns, narrow) => {
+  if (state.view === "edit" /* Edit */)
+    return {
+      node: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(EditView, { state, lines, height }),
+      footer: ["type to append \xB7 Backspace delete \xB7 \u21B5 save \xB7 Esc discard"],
+      maximum: 0
+    };
+  if (state.view === "list" /* List */)
+    return {
+      node: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ListView, { state, height, columns, narrow }),
+      footer: listFooterLines,
+      maximum: 0
+    };
+  return viewerScreenBody(state, lines, height);
+};
+var activeViewText = (state) => {
+  if (state.view === "edit" /* Edit */) return state.draft;
+  if (state.view === "final" /* Final */) return assembleStagedPrompt(state.chunks);
+  if (state.view === "block" /* Block */) return selectedChunk(state)?.text ?? "";
+  return "";
+};
+var BasketPreviewApp = () => {
+  const { exit } = use_app_default();
+  const { rows, columns } = use_window_size_default();
+  const [state, dispatch] = (0, import_react35.useReducer)(basketPreviewReducer, void 0, initialBasketPreviewState);
+  const narrow = columns < 70;
+  const height = Math.max(10, rows - 3);
+  const lines = (0, import_react35.useMemo)(() => wrapGuideText(activeViewText(state), Math.max(20, columns - 6)), [state, columns]);
+  const body = screenBody(state, lines, height, columns, narrow);
+  use_input_default((input, key) => {
+    const command = basketPreviewCommandForKey(input, key, state.view);
+    if (command === void 0) return;
+    if (command.type === "quit") {
+      exit({ kind: "quit" });
+      return;
+    }
+    if (command.type === "submit") {
+      if (state.chunks.length === 0) return;
+      exit({ kind: "submitted", prompt: assembleStagedPrompt(state.chunks) });
+      return;
+    }
+    if (command.type === "scroll") {
+      dispatch({ type: "scroll" /* Scroll */, delta: command.delta, maximum: body.maximum });
+      return;
+    }
+    dispatch(command);
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", height: Math.max(12, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(TabBar, { narrow }),
+    body.node,
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Footer, { lines: body.footer })
+  ] });
+};
+
+// src/cli.tsx
+var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
   if (filename !== void 0) return readFile3(filename, "utf8");
   const chunks = [];
@@ -80143,8 +81232,8 @@ var detailColors = {
   Sandbox: "green",
   Status: "gray"
 };
-var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { wrap: "wrap", children: [
-  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
+var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
+  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
     row.label,
     ":",
     " "
@@ -80157,10 +81246,10 @@ var DetailsView = ({
   visibleDetails,
   detailOffset,
   detailCapacity
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
       detailOffset + 1,
       "\u2013",
       Math.min(expandedDetails.length, detailOffset + detailCapacity),
@@ -80168,40 +81257,40 @@ var DetailsView = ({
       expandedDetails.length
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
 ] });
 var ProfileTable = ({
   shown,
   state,
   widths
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: " " }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " " }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
   ] }),
-  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
+  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
     const active = entry.id === state.selectedId;
     const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
     const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
     const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
     ] }, entry.id);
   })
 ] });
@@ -80209,37 +81298,37 @@ var SelectionSummary = ({
   selected,
   summaryRows,
   summaryTruncated
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
-  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
+  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
+  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
 ] }) });
 var ModelChooser = ({
   selected,
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, children: "Select model" }),
-  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: "Select model" }),
+  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
     index === modelIndex ? "\u276F " : "  ",
     candidate,
     candidate === selected.defaultModel ? " (default)" : ""
   ] }, candidate)),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
     modelIndex === selected.models.length ? "\u276F " : "  ",
     "Custom\u2026"
   ] }),
-  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
     "Model ID: ",
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: "yellow", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: "yellow", children: [
       customModel,
       "\u2588"
     ] })
@@ -80249,7 +81338,7 @@ var ShortcutHelp = ({
   searching,
   herdrAvailable,
   remoteAvailable
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
 var SelectionView = ({
   catalog,
   state,
@@ -80265,10 +81354,10 @@ var SelectionView = ({
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
       "Sort: ",
       state.sort,
       " \xB7 Herdr: ",
@@ -80278,21 +81367,21 @@ var SelectionView = ({
       remoteAvailable ? "available" : "unavailable"
     ] })
   ] }),
-  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { wrap: "wrap", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { bold: true, color: "blue", children: [
+  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: "blue", children: [
       "Context:",
       " "
     ] }),
     catalog.description
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
     "Search: ",
     state.query,
     searching ? "\u2588" : ""
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ProfileTable, { shown, state, widths }),
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
-  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ProfileTable, { shown, state, widths }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
+  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
     ModelChooser,
     {
       selected,
@@ -80301,7 +81390,7 @@ var SelectionView = ({
       customModel
     }
   ) : null,
-  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
 ] });
 var Launcher = ({
   catalog,
@@ -80310,20 +81399,20 @@ var Launcher = ({
 }) => {
   const { exit } = use_app_default();
   const { columns, rows } = use_window_size_default();
-  const [state, updateState] = (0, import_react35.useState)(() => createLauncherState(catalog.entries));
-  const [searching, setSearching] = (0, import_react35.useState)(true);
-  const [choosingModel, setChoosingModel] = (0, import_react35.useState)(false);
-  const [modelIndex, setModelIndex] = (0, import_react35.useState)(0);
-  const [editingCustomModel, setEditingCustomModel] = (0, import_react35.useState)(false);
-  const [customModel, setCustomModel] = (0, import_react35.useState)("");
-  const [showingDetails, setShowingDetails] = (0, import_react35.useState)(false);
-  const [detailOffset, setDetailOffset] = (0, import_react35.useState)(0);
-  const visible = (0, import_react35.useMemo)(() => visibleEntries(state), [state]);
+  const [state, updateState] = (0, import_react36.useState)(() => createLauncherState(catalog.entries));
+  const [searching, setSearching] = (0, import_react36.useState)(true);
+  const [choosingModel, setChoosingModel] = (0, import_react36.useState)(false);
+  const [modelIndex, setModelIndex] = (0, import_react36.useState)(0);
+  const [editingCustomModel, setEditingCustomModel] = (0, import_react36.useState)(false);
+  const [customModel, setCustomModel] = (0, import_react36.useState)("");
+  const [showingDetails, setShowingDetails] = (0, import_react36.useState)(false);
+  const [detailOffset, setDetailOffset] = (0, import_react36.useState)(0);
+  const visible = (0, import_react36.useMemo)(() => visibleEntries(state), [state]);
   const selected = selectedEntry(state);
   const selectedModel = selected === void 0 ? void 0 : state.modelByEntry[selected.id];
   const model = selected === void 0 ? void 0 : selectedModel ?? selected.defaultModel;
   const forwardedModel = selectedModel === void 0 || selectedModel === selected?.defaultModel ? void 0 : selectedModel;
-  const expandedDetails = (0, import_react35.useMemo)(
+  const expandedDetails = (0, import_react36.useMemo)(
     () => selected === void 0 ? [] : detailRows(selected, model, Math.max(16, columns - 4), forwardedModel),
     [selected, model, columns, forwardedModel]
   );
@@ -80404,11 +81493,11 @@ var Launcher = ({
   );
   const start = Math.max(0, Math.min(selectedIndex - Math.floor(capacity / 2), visible.length - capacity));
   const shown = visible.slice(start, start + capacity);
-  const widths = (0, import_react35.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
+  const widths = (0, import_react36.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
   const detailCapacity = Math.max(1, rows - 4);
   const visibleDetails = expandedDetails.slice(detailOffset, detailOffset + detailCapacity);
   if (showingDetails && selected !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       DetailsView,
       {
         selected,
@@ -80419,7 +81508,7 @@ var Launcher = ({
       }
     );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
     SelectionView,
     {
       catalog,
@@ -80543,7 +81632,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
   let result;
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         GuideApp,
         {
           catalog,
@@ -80601,9 +81690,44 @@ var runGuideMode = async () => {
   }
   await runInteractiveGuideMode(argv, guideRoot, promptMasterSkillDirectory);
 };
+var runGuidePreviewMode = async () => {
+  const args = parseBasketPreviewArgv(process.argv.slice(3));
+  if (args.help) {
+    process.stdout.write(`${basketPreviewHelpText}
+`);
+    return;
+  }
+  const terminal = openInteractiveTerminalStreams();
+  let result;
+  try {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime3.jsx)(BasketPreviewApp, {}), {
+      stdin: terminal.input,
+      stdout: terminal.output,
+      interactive: true,
+      exitOnCtrlC: false,
+      kittyKeyboard: { mode: "disabled" },
+      alternateScreen: true,
+      maxFps: 30
+    });
+    const resolved = await instance.waitUntilExit();
+    if (resolved === void 0) {
+      process.exitCode = 130;
+      return;
+    }
+    result = resolved;
+  } finally {
+    terminal.close();
+  }
+  if (result.kind === "submitted") process.stdout.write(`${result.prompt}
+`);
+};
 var main = async () => {
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList();
+    return;
+  }
+  if (process.argv[2] === "guide-preview") {
+    await runGuidePreviewMode();
     return;
   }
   if (process.argv[2] === "guide") {
@@ -80622,7 +81746,7 @@ var main = async () => {
   }
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         Launcher,
         {
           catalog,

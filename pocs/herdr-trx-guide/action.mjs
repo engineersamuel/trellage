@@ -17,10 +17,10 @@ import { resolveSourceAgent } from "./lib/source-agent.mjs"
 import {
   appendCaptureQueue,
   captureQueueIntent,
-  clearCaptureQueue,
   consumeChoice,
   readCaptureQueue,
   readCompletionMarker,
+  removeCaptureQueueEntries,
   removeInvocation,
   writeInvocation,
 } from "./lib/state.mjs"
@@ -146,7 +146,7 @@ const main = async () => {
         "plugin", "pane", "open", "--plugin", pluginId, "--entrypoint", "guide",
         "--env", `TRELLAGE_GUIDE_INVOCATION_PATH=${invocationPath}`, "--focus",
       ])
-      await clearCaptureQueue(stateDir)
+      await removeCaptureQueueEntries(stateDir, queue.entries.map((entry) => entry.id))
       return
     } catch (error) {
       await removeInvocation(invocationPath)
