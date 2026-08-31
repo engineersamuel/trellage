@@ -9,7 +9,6 @@ import {
   type CommandSpec,
 } from "./guide-launch.js"
 import type { GuideUiResult } from "./guide-ui.js"
-import { executeGuideBatch } from "./guide-batch.js"
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000
@@ -42,7 +41,7 @@ const unexpectedGuideResult = (result: never): never => {
 }
 
 const executeHerdrResult = async (
-  result: Exclude<GuideUiResult, { readonly action: "cancel" | "print" | "current-terminal" | "batch" }>,
+  result: Exclude<GuideUiResult, { readonly action: "cancel" | "print" | "current-terminal" }>,
   services: GuideInteractiveExecutionServices,
 ): Promise<void> => {
   try {
@@ -126,8 +125,6 @@ export const executeGuideUiResult = async (
     case "herdr-worktree-open":
       await executeHerdrResult(result, services)
       return 0
-    case "batch":
-      return (await executeGuideBatch(result.batch, services)).exitCode
     default:
       return unexpectedGuideResult(result)
   }
