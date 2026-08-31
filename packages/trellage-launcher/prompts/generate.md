@@ -40,6 +40,12 @@ this workflow, each pursuing the stated `intent`. Vary them meaningfully
 (for example: scope, level of detail, or which constraints are made
 explicit) rather than producing near-duplicates.
 
+Write each candidate's `prompt` as a well-structured Markdown document. Use
+short headings, paragraphs, bullet or numbered lists, task lists, blockquotes,
+and fenced code blocks when they make the work easier to scan. Do not add
+markup only for decoration, do not wrap the complete prompt in a code fence,
+and do not emit MDX, JSX, HTML, or executable expressions.
+
 If the selected workflow's `promptTemplate` adds substantive requirements
 before or after `{{intent}}`, preserve those requirements naturally in every
 candidate. Integrate them into one coherent prompt; do not repeat the same
@@ -80,10 +86,10 @@ Requirements:
 
 - `candidates` must contain exactly three entries.
 - `title` is a short label, not a full sentence.
-- `prompt` is the complete text the user would send; it must be a plain
-  instruction to the target profile's agent, not a description about the
-  prompt. Every candidate's `prompt` must be distinct text (not
-  near-duplicates or copies of one another).
+- `prompt` is the complete Markdown-formatted instruction the user would send
+  to the target profile's agent, not a description about the prompt. Every
+  candidate's `prompt` must be distinct text (not near-duplicates or copies of
+  one another).
 - `notes` is a short plain-text sentence, not Markdown.
 - Do not add, rename, or omit any key shown above. Do not include a
   `command`, `commandPath`, `args`, or any other field — commands are never

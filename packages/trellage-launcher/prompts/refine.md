@@ -39,6 +39,11 @@ Produce one revised candidate that keeps what worked about `candidate` and
 addresses `feedback`, still pursuing the stated `intent` with the selected
 workflow.
 
+Write the revised `prompt` as a well-structured Markdown document. Preserve
+useful Markdown structure from the prior candidate and improve it when that
+makes the prompt easier to scan. Do not wrap the complete prompt in a code
+fence, and do not emit MDX, JSX, HTML, or executable expressions.
+
 ## Output contract
 
 Respond with raw JSON only: no Markdown code fences, no prose before or
@@ -60,9 +65,8 @@ Requirements:
 - The response has exactly one top-level key, `candidate`, holding exactly
   one object (never an array).
 - `title` is a short label, not a full sentence.
-- `prompt` is the complete text the user would send; it must be a plain
-  instruction to the target profile's agent, not a description about the
-  prompt.
+- `prompt` is the complete Markdown-formatted instruction the user would send
+  to the target profile's agent, not a description about the prompt.
 - `notes` is a short plain-text sentence, not Markdown.
 - Do not add, rename, or omit any key shown above. Do not include a
   `command`, `commandPath`, `args`, or any other field — commands are never

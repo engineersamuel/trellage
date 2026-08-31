@@ -90,7 +90,7 @@ describe("guide batch queue", () => {
 
     expect(queue.entries.map((job) => job.id)).toEqual([1, 2])
     expect(queue.entries[0]?.command.args).toEqual(["council", "--agent", "claude-council", "-i", "/council First proposal"])
-    expect(queue.entries[1]?.command.args).toEqual(["research", "Research prior work"])
+    expect(queue.entries[1]?.command.args).toEqual(["research", "--", "Research prior work"])
     expect(queue.entries.map((job) => job.promptDelivery)).toEqual(["command", "command"])
 
     queue = selectQueuedGuideJob(queue, -1)

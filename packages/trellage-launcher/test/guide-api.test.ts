@@ -1147,4 +1147,25 @@ describe("templatePromptCandidates", () => {
   it("throws for an unknown workflow id", () => {
     expect(() => templatePromptCandidates(guidePrimeAgent, "does-not-exist", "x")).toThrow(GuideServiceError)
   })
+
+  it("keeps required workflow activation markers before Markdown fallback sections", () => {
+    const guide: ProfileGuideV1 = {
+      ...guidePrimeAgent,
+      workflows: [
+        {
+          id: "poteto",
+          description: "Run Poteto Mode.",
+          skill: "pstack-for-codex:poteto-mode",
+          examples: ["Implement a feature"],
+          promptTemplate: "$poteto-mode\n$pstack-for-codex:poteto-mode {{intent}}",
+        },
+      ],
+    }
+    const candidates = templatePromptCandidates(guide, "poteto", "Implement the queue")
+    for (const candidate of candidates) {
+      expect(candidate.prompt).toMatch(/^\$poteto-mode\n\$pstack-for-codex:poteto-mode/u)
+    }
+    expect(candidates[1].prompt).toContain("\n\n## Scope\n")
+    expect(candidates[2].prompt).toContain("\n\n## Completion\n")
+  })
 })

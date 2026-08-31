@@ -59,10 +59,11 @@ catalog contains `native:cdx/pstack` and the intent describes a substantial
 software-engineering investigation, feature, bug fix, refactor, comparison,
 review, or other multi-stage task, include its `poteto-mode-entry-point`
 workflow among the five candidates even when the user supplied only a plain
-task description. The generated prompt can add the required `$poteto-mode`
-invocation later. When both Headlong and Poteto Mode fit, include both and use
-the third position for the strongest task-specific alternative. Do not force
-Poteto Mode into simple questions, quick lookups, or small edits.
+task description. The generated prompt can add the required
+`$poteto-mode` hook marker and `$pstack-for-codex:poteto-mode` skill invocation
+later. When both Headlong and Poteto Mode fit, include both and use the third
+position for the strongest task-specific alternative. Do not force Poteto Mode
+into simple questions, quick lookups, or small edits.
 
 ## Output contract
 

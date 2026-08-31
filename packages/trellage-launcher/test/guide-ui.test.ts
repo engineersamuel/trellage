@@ -58,6 +58,7 @@ import {
   isWorktreeConfirmed,
   literalGuideRecommendations,
   markdownPromptLines,
+  markdownInlineSegments,
   matchProgressItems,
   pinnedGuideLenses,
   requiredWorktreeConfirmations,
@@ -1457,14 +1458,44 @@ describe("promptReviewMetrics", () => {
 
 describe("markdownPromptLines", () => {
   it("styles common Markdown structures without exposing markup prefixes", () => {
-    expect(markdownPromptLines("# Goal\n\n- first\n> note\n```\nconst x = 1\n```", 80)).toEqual([
+    expect(markdownPromptLines("# Goal\nIntro\n## Work\n- first\n1. second\n- [x] done\n> note\n```\nconst x = 1\n```", 80)).toEqual([
       { text: "Goal", kind: "heading" },
       { text: "", kind: "body" },
+      { text: "Intro", kind: "body" },
+      { text: "", kind: "body" },
+      { text: "Work", kind: "heading" },
+      { text: "", kind: "body" },
       { text: "• first", kind: "list" },
+      { text: "1. second", kind: "list" },
+      { text: "☒ done", kind: "list" },
       { text: "│ note", kind: "quote" },
       { text: "```", kind: "code" },
       { text: "const x = 1", kind: "code" },
       { text: "```", kind: "code" },
+    ])
+  })
+
+  it("does not split inline Markdown delimiters across wrapped lines", () => {
+    expect(markdownPromptLines("Use **important requirement** now", 12)).toEqual([
+      { text: "Use ", kind: "body" },
+      { text: "**important requirement**", kind: "body" },
+      { text: "now", kind: "body" },
+    ])
+  })
+
+  it("parses safe inline Markdown without evaluating MDX or HTML", () => {
+    expect(markdownInlineSegments("Use **bold**, *italics*, `code`, ~~old~~, and [docs](https://example.com).")).toEqual([
+      { text: "Use ", kind: "text" },
+      { text: "bold", kind: "bold" },
+      { text: ", ", kind: "text" },
+      { text: "italics", kind: "italic" },
+      { text: ", ", kind: "text" },
+      { text: "code", kind: "code" },
+      { text: ", ", kind: "text" },
+      { text: "old", kind: "strikethrough" },
+      { text: ", and ", kind: "text" },
+      { text: "docs (https://example.com)", kind: "link" },
+      { text: ".", kind: "text" },
     ])
   })
 })
@@ -1642,8 +1673,24 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     expect(result.promptHandling).toBe("argv")
   })
 
-  it("omits -p and marks manual paste when the selected profile's headless.prompt is false", () => {
+  it("passes a cdx prompt positionally even when conservative headless support is false", () => {
     const result = buildCurrentTerminalResult(nativeSelectedProfile(false), "Do the thing.", "/repo")
+    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.promptHandling).toBe("argv")
+  })
+
+  it("omits -p and marks manual paste for other native profiles without prompt support", () => {
+    const result = buildCurrentTerminalResult(
+      {
+        surface: "native",
+        launcher: "grx",
+        commandPath: "/opt/trellage/grx/bin/grx",
+        profile: "reviewer",
+        headlessPrompt: false,
+      },
+      "Do the thing.",
+      "/repo",
+    )
     expect(result.command.args).toEqual(["reviewer"])
     expect(result.promptHandling).toBe("manual-paste")
   })
@@ -1694,7 +1741,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
   it("queues a cdx positional prompt so hook trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(nativeSelectedProfile(true), "Do the thing.", "/repo", herdrContext)
     expect(result.action).toBe("current-herdr-workspace")
-    expect(result.command.args).toEqual(["reviewer", "Do the thing."])
+    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
     expect(result.callerPaneId).toBe("pane-1")
     expect(result.direction).toBe("right")
@@ -1709,7 +1756,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "main",
     )
     expect(result.action).toBe("herdr-worktree-create")
-    expect(result.command.args).toEqual(["reviewer", "Do the thing."])
+    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
     expect(result.branch).toBe("worktree/do-the-thing")
     expect(result.baseRef).toBe("main")
@@ -1724,7 +1771,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "/repo-worktrees/existing",
     )
     expect(result.action).toBe("herdr-worktree-open")
-    expect(result.command.args).toEqual(["reviewer", "Do the thing."])
+    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
     expect(result.path).toBe("/repo-worktrees/existing")
   })

@@ -1889,10 +1889,131 @@ const ScrollableTextViewport = ({
 }
 
 type MarkdownDisplayKind = "body" | "heading" | "list" | "quote" | "code" | "rule"
+type MarkdownInlineKind = "text" | "bold" | "italic" | "code" | "strikethrough" | "link"
 
 export interface MarkdownDisplayLine {
   readonly text: string
   readonly kind: MarkdownDisplayKind
+}
+
+export interface MarkdownInlineSegment {
+  readonly text: string
+  readonly kind: MarkdownInlineKind
+}
+
+const markdownInlineTokenPattern =
+  /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^\s)\n]+\))/u
+
+interface MarkdownInlineSourcePart {
+  readonly value: string
+  readonly token: boolean
+}
+
+const markdownInlineSourceParts = (value: string): ReadonlyArray<MarkdownInlineSourcePart> => {
+  const parts: Array<MarkdownInlineSourcePart> = []
+  let remaining = value
+  while (remaining.length > 0) {
+    const match = markdownInlineTokenPattern.exec(remaining)
+    if (match?.index === undefined || match[0] === undefined) {
+      parts.push({ value: remaining, token: false })
+      break
+    }
+    if (match.index > 0) parts.push({ value: remaining.slice(0, match.index), token: false })
+    parts.push({ value: match[0], token: true })
+    remaining = remaining.slice(match.index + match[0].length)
+  }
+  return parts
+}
+
+export const markdownInlineSegments = (value: string): ReadonlyArray<MarkdownInlineSegment> => {
+  const segments: Array<MarkdownInlineSegment> = []
+  for (const part of markdownInlineSourceParts(value)) {
+    if (!part.token) {
+      segments.push({ text: part.value, kind: "text" })
+      continue
+    }
+    const matched = part.value
+    if (matched.startsWith("`")) segments.push({ text: matched.slice(1, -1), kind: "code" })
+    else if (matched.startsWith("**") || matched.startsWith("__")) {
+      segments.push({ text: matched.slice(2, -2), kind: "bold" })
+    } else if (matched.startsWith("~~")) {
+      segments.push({ text: matched.slice(2, -2), kind: "strikethrough" })
+    } else if (matched.startsWith("[")) {
+      const labelEnd = matched.indexOf("](")
+      segments.push({
+        text: `${matched.slice(1, labelEnd)} (${matched.slice(labelEnd + 2, -1)})`,
+        kind: "link",
+      })
+    } else {
+      segments.push({ text: matched.slice(1, -1), kind: "italic" })
+    }
+  }
+  return segments
+}
+
+interface MarkdownWrapState {
+  line: string
+  displayWidth: number
+}
+
+const pushMarkdownWrapLine = (lines: Array<string>, state: MarkdownWrapState): void => {
+  lines.push(state.line)
+  state.line = ""
+  state.displayWidth = 0
+}
+
+const appendMarkdownToken = (
+  lines: Array<string>,
+  state: MarkdownWrapState,
+  token: string,
+  lineWidth: number,
+): void => {
+  const tokenWidth = stringWidth(markdownInlineSegments(token).map(({ text }) => text).join(""))
+  if (state.line.length > 0 && state.displayWidth + tokenWidth > lineWidth) pushMarkdownWrapLine(lines, state)
+  state.line += token
+  state.displayWidth += tokenWidth
+  if (state.displayWidth >= lineWidth) pushMarkdownWrapLine(lines, state)
+}
+
+const appendMarkdownText = (
+  lines: Array<string>,
+  state: MarkdownWrapState,
+  text: string,
+  lineWidth: number,
+): void => {
+  for (const { segment } of guideTextSegmenter.segment(text)) {
+    const segmentWidth = stringWidth(segment)
+    if (state.line.length > 0 && state.displayWidth + segmentWidth > lineWidth) {
+      pushMarkdownWrapLine(lines, state)
+    }
+    if (state.line.length === 0 && segment === " ") continue
+    state.line += segment
+    state.displayWidth += segmentWidth
+  }
+}
+
+const wrapMarkdownTextLine = (sourceLine: string, lineWidth: number): ReadonlyArray<string> => {
+  if (sourceLine.length === 0) return [""]
+  const lines: Array<string> = []
+  const state: MarkdownWrapState = { line: "", displayWidth: 0 }
+  for (const part of markdownInlineSourceParts(sourceLine)) {
+    if (part.token) appendMarkdownToken(lines, state, part.value, lineWidth)
+    else appendMarkdownText(lines, state, part.value, lineWidth)
+  }
+  if (state.line.length > 0) lines.push(state.line)
+  return lines
+}
+
+const classifyMarkdownListLine = (source: string): string | undefined => {
+  const taskItem = /^\s*[-*+]\s+\[([ xX])\]\s+(.+)$/u.exec(source)
+  if (taskItem?.[1] !== undefined && taskItem[2] !== undefined) {
+    return `${taskItem[1] === " " ? "☐" : "☒"} ${taskItem[2]}`
+  }
+  const unorderedItem = /^(\s*)[-*+]\s+(.+)$/u.exec(source)
+  if (unorderedItem?.[2] !== undefined) return `${unorderedItem[1] ?? ""}• ${unorderedItem[2]}`
+  const orderedItem = /^(\s*)\d+[.)]\s+(.+)$/u.exec(source)
+  if (orderedItem?.[2] !== undefined) return `${orderedItem[1] ?? ""}1. ${orderedItem[2]}`
+  return undefined
 }
 
 const classifyMarkdownLine = (
@@ -1903,8 +2024,8 @@ const classifyMarkdownLine = (
   if (inCode) return { text: source, kind: "code", inCode }
   const heading = /^\s*#{1,6}\s+(.+)$/u.exec(source)
   if (heading?.[1] !== undefined) return { text: heading[1], kind: "heading", inCode }
-  const listItem = /^\s*[-*+]\s+(.+)$/u.exec(source)
-  if (listItem?.[1] !== undefined) return { text: `• ${listItem[1]}`, kind: "list", inCode }
+  const listLine = classifyMarkdownListLine(source)
+  if (listLine !== undefined) return { text: listLine, kind: "list", inCode }
   const quote = /^\s*>\s?(.*)$/u.exec(source)
   if (quote?.[1] !== undefined) return { text: `│ ${quote[1]}`, kind: "quote", inCode }
   if (/^\s*(?:---+|\*\*\*+|___+)\s*$/u.test(source)) return { text: "─".repeat(24), kind: "rule", inCode }
@@ -1917,30 +2038,82 @@ export const markdownPromptLines = (value: string, width: number): ReadonlyArray
   for (const source of value.replaceAll("\t", "    ").split("\n")) {
     const classified = classifyMarkdownLine(source, inCode)
     inCode = classified.inCode
-    const wrapped = wrapGuideTextLine(classified.text, Math.max(1, width))
-    for (const text of wrapped) lines.push({ text, kind: classified.kind })
+    const previous = lines.at(-1)
+    if (classified.kind === "heading" && previous !== undefined && previous.text.length > 0) {
+      lines.push({ text: "", kind: "body" })
+    }
+    const wrapped =
+      classified.kind === "code"
+        ? wrapGuideTextLine(classified.text, Math.max(1, width))
+        : wrapMarkdownTextLine(classified.text, Math.max(1, width))
+    for (const text of wrapped) {
+      if (text.length > 0 || lines.at(-1)?.text.length !== 0) lines.push({ text, kind: classified.kind })
+    }
+    if (classified.kind === "heading") lines.push({ text: "", kind: "body" })
   }
   return lines
 }
+
+const MarkdownInline = ({ value }: { readonly value: string }) => (
+  <>
+    {markdownInlineSegments(value).map((segment, index) => {
+      const key = `${index}:${segment.kind}:${segment.text}`
+      switch (segment.kind) {
+        case "bold":
+          return (
+            <Text key={key} bold>
+              {segment.text}
+            </Text>
+          )
+        case "italic":
+          return (
+            <Text key={key} italic>
+              {segment.text}
+            </Text>
+          )
+        case "code":
+          return (
+            <Text key={key} color="yellow">
+              {segment.text}
+            </Text>
+          )
+        case "strikethrough":
+          return (
+            <Text key={key} strikethrough>
+              {segment.text}
+            </Text>
+          )
+        case "link":
+          return (
+            <Text key={key} color="blue" underline>
+              {segment.text}
+            </Text>
+          )
+        case "text":
+          return segment.text
+      }
+    })}
+  </>
+)
 
 const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
   switch (line.kind) {
     case "heading":
       return (
         <Text bold color="cyan" wrap="truncate-end">
-          {line.text}
+          <MarkdownInline value={line.text} />
         </Text>
       )
     case "list":
       return (
         <Text color="green" wrap="truncate-end">
-          {line.text}
+          <MarkdownInline value={line.text} />
         </Text>
       )
     case "quote":
       return (
         <Text italic dimColor wrap="truncate-end">
-          {line.text}
+          <MarkdownInline value={line.text} />
         </Text>
       )
     case "code":
@@ -1952,7 +2125,11 @@ const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
     case "rule":
       return <Text dimColor>{line.text}</Text>
     case "body":
-      return <Text wrap="truncate-end">{line.text}</Text>
+      return (
+        <Text wrap="truncate-end">
+          <MarkdownInline value={line.text} />
+        </Text>
+      )
   }
 }
 
@@ -1960,10 +2137,12 @@ const MarkdownTextViewport = ({
   value,
   width,
   height,
+  resetKey,
 }: {
   readonly value: string
   readonly width: number
   readonly height: number
+  readonly resetKey?: string
 }) => {
   const [requestedStartLine, setRequestedStartLine] = useState(0)
   const lines = markdownPromptLines(value, width)
@@ -1971,6 +2150,9 @@ const MarkdownTextViewport = ({
   const maximumStartLine = Math.max(0, lines.length - viewportHeight)
   const startLine = Math.min(maximumStartLine, requestedStartLine)
   const pageSize = Math.max(1, viewportHeight - 1)
+  useEffect(() => {
+    setRequestedStartLine(0)
+  }, [resetKey])
   useInput((_input, key) => {
     if (key.pageUp) setRequestedStartLine(Math.max(0, startLine - pageSize))
     else if (key.pageDown) setRequestedStartLine(Math.min(maximumStartLine, startLine + pageSize))
@@ -2624,17 +2806,24 @@ const CandidateDetail = ({
   readonly height: number
   readonly width: number
 }) => {
-  const detail = `${candidate.notes}\n\nPROMPT PREVIEW\n${candidate.prompt}`
+  const promptHeight = Math.max(1, height - 5)
   return (
     <Box flexDirection="column" flexGrow={1} height={height} overflowY="hidden" paddingLeft={2}>
       <Text bold color="cyan" wrap="truncate-end">
         {candidate.title}
       </Text>
-      <ScrollableTextViewport
-        value={detail}
+      <Text dimColor wrap="truncate-end">
+        {candidate.notes}
+      </Text>
+      <Box marginTop={1} marginBottom={1}>
+        <Text bold color="cyan">
+          Prompt
+        </Text>
+      </Box>
+      <MarkdownTextViewport
+        value={candidate.prompt}
         width={Math.max(1, width - 2)}
-        height={Math.max(1, height - 1)}
-        startAtEnd={false}
+        height={promptHeight}
         resetKey={candidate.title}
       />
     </Box>

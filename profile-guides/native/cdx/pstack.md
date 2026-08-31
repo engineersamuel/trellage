@@ -7,9 +7,9 @@ capabilities:
   - keyless-proxy-model-routing
   - isolated-codex-profile-home
 bestFor:
-  - Substantial engineering tasks that benefit from Poteto Mode's playbook selection, verification checkpoints, controlled delegation, and an optional decision trail for long or multi-phase work ($poteto-mode)
-  - Targeted single-operation work such as tracing a subsystem ($how), reconstructing why code looks the way it does ($why), or a skeptical multi-lens diff review ($interrogate)
-  - Reproduce-first bug fixing with $tdd, or removing low-value comments/prose with $no-comments and $unslop
+  - Substantial engineering tasks that benefit from Poteto Mode's playbook selection, verification checkpoints, controlled delegation, and an optional decision trail for long or multi-phase work ($poteto-mode activation marker plus $pstack-for-codex:poteto-mode skill)
+  - Targeted single-operation work such as tracing a subsystem ($pstack-for-codex:how), reconstructing why code looks the way it does ($pstack-for-codex:why), or a skeptical multi-lens diff review ($pstack-for-codex:interrogate)
+  - Reproduce-first bug fixing with $pstack-for-codex:tdd, or removing low-value comments/prose with $pstack-for-codex:no-comments and $pstack-for-codex:unslop
 avoidFor:
   - Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered
   - Tasks needing native OpenAI authentication by default; the profile routes through copilot-proxy-rs unless you opt in with cdx --native-auth
@@ -26,30 +26,32 @@ prerequisites:
 workflows:
   - id: poteto-mode-entry-point
     description: Route a substantial engineering task through Poteto Mode, which selects the applicable playbook and principles, plans the work, delegates isolated tasks when useful, and verifies the real result without expanding the agent's authority.
+    skill: pstack-for-codex:poteto-mode
     examples:
       - Add a --json flag to this command; keep text output byte-identical and verify both modes
       - This retry path creates duplicate rows; reproduce it first, fix the root cause, and verify the real behavior
       - Investigate intermittent test failures
     promptTemplate: |
-      $poteto-mode {{intent}}
+      $poteto-mode
+      $pstack-for-codex:poteto-mode {{intent}}
   - id: targeted-single-skill
     description: Use the architect skill directly to define module boundaries and types before implementation, without the full Poteto Mode flow.
-    skill: architect
+    skill: pstack-for-codex:architect
     examples:
       - Settle the types and module boundaries for this feature before I start implementing
       - Define the module boundaries and public interfaces for this new retry subsystem
     promptTemplate: |
-      $architect {{intent}}
+      $pstack-for-codex:architect {{intent}}
   - id: review-and-polish
     description: Run a skeptical multi-lens review of a diff, then strip low-value comments and machine-shaped prose.
-    skill: interrogate
+    skill: pstack-for-codex:interrogate
     examples:
       - Review this diff skeptically before I open the PR
       - Find correctness risks in this change, then remove unnecessary comments and mechanical prose
     promptTemplate: |
-      $interrogate {{intent}}
-      $no-comments
-      $unslop
+      $pstack-for-codex:interrogate {{intent}}
+      $pstack-for-codex:no-comments
+      $pstack-for-codex:unslop
 ---
 
 # Native Codex (`cdx`) — `pstack` profile
@@ -67,14 +69,20 @@ the real result before declaring completion.
 
 ## Use This Profile When
 
-- You want deliberate, explicit-invocation engineering skills: `$poteto-mode`
-  as the main entry point, plus 45 narrower skills such as `$how`, `$why`,
-  `$recall`, `$architect`, `$arena`, `$swarm`, `$interrogate`, `$tdd`,
-  `$no-comments`, `$unslop`, `$show-me-your-work`, and `$setup-benny`.
+- You want deliberate, explicit-invocation engineering skills:
+  `$pstack-for-codex:poteto-mode` as the main entry point, plus 45 narrower
+  skills such as `$pstack-for-codex:how`, `$pstack-for-codex:why`,
+  `$pstack-for-codex:recall`, `$pstack-for-codex:architect`,
+  `$pstack-for-codex:arena`, `$pstack-for-codex:swarm`,
+  `$pstack-for-codex:interrogate`, `$pstack-for-codex:tdd`,
+  `$pstack-for-codex:no-comments`, `$pstack-for-codex:unslop`,
+  `$pstack-for-codex:show-me-your-work`, and
+  `$pstack-for-codex:setup-benny`.
 - You want Codex's native OS-level sandbox: writes restricted to workspace and
   temp directories, reads and network access allowed, no approval prompts.
 - You want verification checkpoints and, for long, autonomous, or multi-phase
-  work, a recorded decision trail through `$show-me-your-work`.
+  work, a recorded decision trail through
+  `$pstack-for-codex:show-me-your-work`.
 
 ## Avoid This Profile When
 
@@ -87,15 +95,18 @@ the real result before declaring completion.
 - You need native OpenAI authentication by default; use
   `cdx --native-auth pstack exec "..."` for one launch instead.
 - You need the optional `pstack-poteto-agent` / `pstack-comment-sicko` agent
-  profiles without running `$setup-pstack` first — they are opt-in and not
-  installed by plain `cdx setup pstack`.
+  profiles without running `$pstack-for-codex:setup-pstack` first — they are
+  opt-in and not installed by plain `cdx setup pstack`.
 
 ## Workflow Notes
 
-- Start `$poteto-mode` as the first non-whitespace text in the prompt:
+- Codex namespaces plugin skills with the plugin name, but the upstream sticky
+  hook still recognizes the legacy `$poteto-mode` activation marker. Start with
+  the marker, then invoke the discovered skill identity:
 
   ```text
-  $poteto-mode create a SIMD Rust binary search and verify its accuracy
+  $poteto-mode
+  $pstack-for-codex:poteto-mode create a SIMD Rust binary search and verify its accuracy
   ```
 
 - Start a new Codex task after installing or updating the plugin so Codex
@@ -107,7 +118,7 @@ the real result before declaring completion.
   responsibility when it delegates.
 - A trusted hook can keep Poteto Mode active for later turns in the same Codex
   session. Without a valid sticky receipt, the complete workflow still applies
-  to the current turn, but `$poteto-mode` must be invoked again later. Say
+  to the current turn, but both invocation lines must be used again later. Say
   `disable $poteto-mode` to clear persistent activation.
 - Codex CLI 0.146.0 has no offline runtime skill-index command; verify the
   installed catalog with `codex plugin list --json` rather than a live index.

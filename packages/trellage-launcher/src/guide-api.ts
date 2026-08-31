@@ -965,16 +965,16 @@ export const templatePromptCandidates = (
     {
       title: "Direct",
       prompt: base,
-      notes: "Uses the profile's authored prompt template as-is.",
+      notes: "Uses the profile's authored prompt template in a focused Markdown document.",
     },
     {
       title: "Scoped",
-      prompt: `${base}\n\nLimit the change to the smallest reasonable scope.`,
+      prompt: `${base}\n\n## Scope\n\nLimit the change to the smallest reasonable scope.`,
       notes: "Adds an explicit scope constraint to the authored template.",
     },
     {
       title: "Verified",
-      prompt: `${base}\n\nAfter completing the work, verify it and report the verification evidence.`,
+      prompt: `${base}\n\n## Completion\n\nAfter completing the work, verify it and report the verification evidence.`,
       notes: "Adds an explicit verification request to the authored template.",
     },
   ]
