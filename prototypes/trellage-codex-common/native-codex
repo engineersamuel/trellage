@@ -174,7 +174,7 @@ validate_catalog() {
       "schemaVersion": 1,
       "profiles": {
         "pstack": {
-          "description": "Host-native Codex CLI with a workspace-write OS sandbox for structured, verified multi-step engineering through the explicit Aqua-123 pstack $poteto-mode workflow.",
+          "description": "Host-native Codex CLI with a workspace-write OS sandbox for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow.",
           "headless": {
             "schemaVersion": 1,
             "prompt": false,

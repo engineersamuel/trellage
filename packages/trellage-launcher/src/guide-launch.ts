@@ -506,6 +506,16 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   throw new Error("selected profile surface must be native or sandbox")
 }
 
+const nativePromptArgs = (
+  selectedProfile: NativeSelectedProfile,
+  baseArgs: ReadonlyArray<string>,
+  prompt: string,
+): ReadonlyArray<string> => {
+  if (selectedProfile.launcher === "cdx") return [...baseArgs, "--", prompt]
+  if (!selectedProfile.headlessPrompt) return baseArgs
+  return [...baseArgs, selectedProfile.launcher === "cpx" ? "-i" : "-p", prompt]
+}
+
 export const buildGuideLaunchCommand = (
   selectedProfile: SelectedProfile,
   delivery?: PromptDelivery,
@@ -531,11 +541,10 @@ export const buildGuideLaunchCommand = (
     return {
       command: {
         executable: selectedProfile.commandPath,
-        args: selectedProfile.headlessPrompt
-          ? [...baseArgs, selectedProfile.launcher === "cpx" ? "-i" : "-p", normalizedDelivery.prompt]
-          : baseArgs,
+        args: nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
-      promptHandling: selectedProfile.headlessPrompt ? "argv" : "manual-paste",
+      promptHandling:
+        selectedProfile.headlessPrompt || selectedProfile.launcher === "cdx" ? "argv" : "manual-paste",
     }
   }
   return {
@@ -561,7 +570,7 @@ export const buildHerdrGuideLaunch = (
   if (selectedProfile.surface === "native" && selectedProfile.launcher === "cdx") {
     const baseCommand = buildGuideLaunchCommand(selectedProfile).command
     return {
-      command: { executable: baseCommand.executable, args: [...baseCommand.args, prompt] },
+      command: { executable: baseCommand.executable, args: [...baseCommand.args, "--", prompt] },
       promptDelivery: "command",
     }
   }

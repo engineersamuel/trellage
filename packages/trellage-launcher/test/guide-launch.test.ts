@@ -114,6 +114,14 @@ const nativeProfile = parseSelectedProfile({
   headlessPrompt: true,
 })
 
+const codexProfile = parseSelectedProfile({
+  surface: "native",
+  launcher: "cdx",
+  commandPath: "/opt/trellage/bin/cdx",
+  profile: "pstack",
+  headlessPrompt: true,
+})
+
 const sandboxProfile = parseSelectedProfile({
   surface: "sandbox",
   commandPath: "/opt/trellage/bin/trellage",
@@ -166,6 +174,25 @@ describe("guide launch command building", () => {
     expect(sandboxResult.command.executable).toBe("/opt/trellage/bin/trellage")
     expect(sandboxResult.command.args).toEqual(["--profile", "prime-agent", prompt])
     expect(sandboxResult.command.args[2]).toBe(prompt)
+  })
+
+  it("protects positional Codex prompts with an end-of-options marker", () => {
+    const prompt = "- [ ] Review the queue"
+
+    expect(buildGuideLaunchCommand(codexProfile, { mode: "argv", prompt })).toEqual({
+      command: {
+        executable: "/opt/trellage/bin/cdx",
+        args: ["pstack", "--", prompt],
+      },
+      promptHandling: "argv",
+    })
+    expect(buildHerdrGuideLaunch(codexProfile, prompt)).toEqual({
+      command: {
+        executable: "/opt/trellage/bin/cdx",
+        args: ["pstack", "--", prompt],
+      },
+      promptDelivery: "command",
+    })
   })
 
   it("places a validated Copilot agent override before the interactive prompt", () => {

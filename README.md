@@ -721,9 +721,12 @@ variables before setting only the local proxy environment. See the
 The native `cdx pstack` profile runs Codex with
 [pstack for Codex](https://github.com/Aqua-123/pstack-for-codex), created and
 maintained by Aqua-123. It installs only the upstream marketplace plugin in
-`~/.local/share/trellage/profiles/codex/pstack/home/`; optional pstack agent
-profiles, Poteto Mode activation, and Benny automations are not enabled
-automatically.
+`~/.local/share/trellage/profiles/codex/pstack/home/`. Codex exposes its skills
+with the plugin namespace, such as `$pstack-for-codex:poteto-mode`; the shorter
+`$poteto-mode` name is only the upstream hook's activation marker, not the
+installed skill identity. Poteto prompts use both forms. Optional pstack agent
+profiles, Poteto Mode cross-turn activation, and Benny automations are not
+enabled automatically.
 Its Trellage identity is launcher `cdx`, harness `codex`, and profile
 `pstack`.
 

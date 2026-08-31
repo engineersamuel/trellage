@@ -14,7 +14,9 @@ Do not ask clarifying questions. The earlier guide stages already chose the
 target tool, profile, workflow, and candidate content. Do not add capabilities,
 commands, permissions, file paths, dependencies, or constraints that are not
 supported by the candidate. Preserve slash-command or skill invocations at the
-start of a candidate prompt.
+start of a candidate prompt. Preserve and improve useful Markdown structure so
+each optimized prompt is easy to scan. Do not wrap the complete prompt in a
+code fence, and do not emit MDX, JSX, HTML, or executable expressions.
 
 ## Output contract
 
@@ -33,5 +35,6 @@ order, using exactly this shape:
 }
 ```
 
-Do not add Markdown fences, strategy metadata, setup notes, target labels, or
-any key other than those shown. The `prompt` field is the final copyable prompt.
+Do not add an outer Markdown fence, strategy metadata, setup notes, target
+labels, or any key other than those shown. The `prompt` field is the final
+copyable Markdown prompt.

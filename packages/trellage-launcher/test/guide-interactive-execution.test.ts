@@ -153,6 +153,36 @@ describe("interactive guide result execution", () => {
     )
   })
 
+  it("passes a cdx prompt positionally without printing manual-paste instructions", async () => {
+    const runner = new RecordingRunner()
+    const writes: string[] = []
+    const runInteractive = vi.fn(async () => undefined)
+    const result = buildCurrentTerminalResult(
+      {
+        surface: "native",
+        launcher: "cdx",
+        commandPath: "/opt/trellage/bin/cdx",
+        profile: "pstack",
+        headlessPrompt: false,
+      },
+      "Run the full workflow.",
+      "/repo",
+    )
+
+    await expect(executeGuideUiResult(result, services(runner, writes, runInteractive))).resolves.toBe(0)
+    expect(writes).toHaveLength(0)
+    expect(runInteractive).toHaveBeenCalledWith(
+      {
+        executable: "/opt/trellage/bin/cdx",
+        args: ["pstack", "--", "Run the full workflow."],
+      },
+      {
+        cwd: "/repo",
+        env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }),
+      },
+    )
+  })
+
   it("launches a Sandbox profile with its initial prompt and no paste instruction", async () => {
     const runner = new RecordingRunner()
     const writes: string[] = []
@@ -303,7 +333,7 @@ describe("interactive guide result execution", () => {
         "pane",
         "run",
         "2-4",
-        "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx pstack 'Run the full workflow.'",
+        "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx pstack -- 'Run the full workflow.'",
       ],
     })
     expect(writes).toHaveLength(0)

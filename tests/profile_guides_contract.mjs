@@ -189,4 +189,29 @@ for (const phrase of ["before implementation", "source-backed evidence", "unreso
   }
 }
 
+const pstackGuide = registry.get("native:cdx/pstack")
+if (pstackGuide === undefined) throw new Error("cdx pstack guide is missing")
+const expectedPstackWorkflows = new Map([
+  [
+    "poteto-mode-entry-point",
+    ["pstack-for-codex:poteto-mode", "$poteto-mode\n$pstack-for-codex:poteto-mode {{intent}}"],
+  ],
+  ["targeted-single-skill", ["pstack-for-codex:architect", "$pstack-for-codex:architect {{intent}}"]],
+  [
+    "review-and-polish",
+    [
+      "pstack-for-codex:interrogate",
+      "$pstack-for-codex:interrogate {{intent}}\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop",
+    ],
+  ],
+])
+for (const [workflowId, [skill, promptTemplate]] of expectedPstackWorkflows) {
+  const workflow = pstackGuide.guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new Error(`cdx pstack guide is missing workflow: ${workflowId}`)
+  if (workflow.skill !== skill) throw new Error(`cdx pstack workflow uses the wrong skill identity: ${workflowId}`)
+  if (workflow.promptTemplate !== promptTemplate) {
+    throw new Error(`cdx pstack workflow uses the wrong prompt invocation: ${workflowId}`)
+  }
+}
+
 process.stdout.write(`profile guides: PASS (${expected.length} profiles)\n`)
