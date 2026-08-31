@@ -141,12 +141,14 @@ projected_headless_map_json() {
     --argjson awesome "$(projected_headless awesome)" \
     --argjson hve "$(projected_headless hve)" \
     --argjson plannotator "$(projected_headless plannotator)" \
-    --argjson superpowers "$(projected_headless superpowers)" '
+    --argjson superpowers "$(projected_headless superpowers)" \
+    --argjson tufteVdqi "$(projected_headless tufte-vdqi)" '
     {
       awesome: $awesome,
       hve: $hve,
       plannotator: $plannotator,
-      superpowers: $superpowers
+      superpowers: $superpowers,
+      "tufte-vdqi": $tufteVdqi
     }
   '
 }
@@ -267,6 +269,32 @@ validate_catalog() {
           "marketplaceName": "superpowers-marketplace",
           "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
           "plugin": "superpowers@superpowers-marketplace",
+          "standaloneMcps": []
+        },
+        "tufte-vdqi": {
+          "description": "Data-visualization specialist for critiquing and rebuilding quantitative charts with Edward Tufte\u0027s VDQI principles. Detects misleading scales, lie factor, and chartjunk; recommends better chart forms; and creates publication-ready static SVG or offline HTML from structured data, including time series, small multiples, quartile plots, and range-frame scatterplots. Not for interactive dashboards or general UI design.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": true,
+            "outputFormats": ["text", "json"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "hard-deny",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": true,
+            "effortOverride": false,
+            "testedHarnessVersion": "1.0.81"
+          },
+          "marketplace": "gnurio/tufte-vdqi-plugin",
+          "marketplaceName": "tufte-vdqi-marketplace",
+          "manifestUrl": "https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json",
+          "plugin": "tufte-vdqi@tufte-vdqi-marketplace",
+          "requiredPackageSkills": ["tufte-chart", "tufte-critique"],
           "standaloneMcps": []
         }
       }
@@ -1118,7 +1146,7 @@ skill_inventory_snapshot() {
 
 verify_required_package_skills() {
   local profile="$1"
-  local plugin plugin_root skills_root skill skill_root skill_file inventory
+  local plugin plugin_root skills_root skill skill_root canonical_skill_root skill_file inventory
 
   if ! jq -e --arg profile "$profile" \
     '(.profiles[$profile].requiredPackageSkills // []) | length > 0' \
@@ -1143,11 +1171,16 @@ verify_required_package_skills() {
     [[ -d "$skill_root" && ! -L "$skill_root" \
       && -f "$skill_file" && ! -L "$skill_file" ]] \
       || die "required package skill is missing or unsafe: $profile/$skill"
-    jq -e --arg skill "$skill" --arg path "$skill_root" '
+    canonical_skill_root="$(cd -P "$skill_root" 2>/dev/null && pwd -P)" \
+      || die "required package skill is missing or unsafe: $profile/$skill"
+    jq -e \
+      --arg skill "$skill" \
+      --arg path "$skill_root" \
+      --arg canonicalPath "$canonical_skill_root" '
       [.[] | select(
         .name == $skill
         and .source == "plugin"
-        and .path == $path
+        and (.path == $path or .path == $canonicalPath)
         and .enabled == true
       )] | length == 1
     ' <<<"$inventory" >/dev/null \
