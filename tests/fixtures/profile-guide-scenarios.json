@@ -30,6 +30,27 @@
       "excludedProfiles": []
     },
     {
+      "id": "tufte-quantitative-chart",
+      "intent": "Critique this misleading quantitative chart with Tufte principles, then rebuild it as a static SVG with direct labels and minimal chartjunk.",
+      "expectedProfiles": ["native:cpx/tufte-vdqi"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/plannotator", "sandbox:claude-frontend-design"]
+    },
+    {
+      "id": "tufte-inflation-adjusted-series",
+      "intent": "Adjust this multi-year revenue series with real CPI values, then create a Tufte time-series SVG labeled in constant dollars.",
+      "expectedProfiles": ["native:cpx/tufte-vdqi"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/plannotator", "sandbox:claude-frontend-design"]
+    },
+    {
+      "id": "tufte-small-multiples",
+      "intent": "Compare many regional series with shared-scale small multiples instead of an unreadable overplotted chart.",
+      "expectedProfiles": ["native:cpx/tufte-vdqi"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/plannotator", "sandbox:claude-frontend-design"]
+    },
+    {
       "id": "voice-first-social-post",
       "intent": "Turn these notes into a LinkedIn post in my established voice, then remove obvious AI writing patterns without inventing claims.",
       "expectedProfiles": ["sandbox:claude-social-media"],

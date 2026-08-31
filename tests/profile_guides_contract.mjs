@@ -214,4 +214,35 @@ for (const [workflowId, [skill, promptTemplate]] of expectedPstackWorkflows) {
   }
 }
 
+const tufteGuide = registry.get("native:cpx/tufte-vdqi")
+if (tufteGuide === undefined) throw new Error("cpx tufte-vdqi guide is missing")
+const expectedTufteWorkflows = new Map([
+  ["critique-visualization", "tufte-critique"],
+  ["critique-and-rebuild", "tufte-critique"],
+  ["build-tufte-chart", "tufte-chart"],
+  ["adjust-monetary-series", "tufte-chart"],
+  ["publish-offline-html", "tufte-chart"],
+  ["compare-many-series", "tufte-chart"],
+  ["compare-distributions", "tufte-chart"],
+  ["build-range-frame-scatter", "tufte-chart"],
+])
+for (const [workflowId, skill] of expectedTufteWorkflows) {
+  const workflow = tufteGuide.guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new Error(`cpx tufte-vdqi guide is missing workflow: ${workflowId}`)
+  if (workflow.skill !== skill) {
+    throw new Error(`cpx tufte-vdqi workflow uses the wrong skill identity: ${workflowId}`)
+  }
+  if (!workflow.promptTemplate.includes(skill)) {
+    throw new Error(`cpx tufte-vdqi workflow prompt does not invoke its declared skill: ${workflowId}`)
+  }
+}
+const critiqueAndRebuild = tufteGuide.guide.workflows.find(({ id }) => id === "critique-and-rebuild")
+if (
+  critiqueAndRebuild === undefined ||
+  !critiqueAndRebuild.promptTemplate.includes("tufte-critique") ||
+  !critiqueAndRebuild.promptTemplate.includes("tufte-chart")
+) {
+  throw new Error("cpx tufte-vdqi critique-and-rebuild prompt must invoke both skills")
+}
+
 process.stdout.write(`profile guides: PASS (${expected.length} profiles)\n`)

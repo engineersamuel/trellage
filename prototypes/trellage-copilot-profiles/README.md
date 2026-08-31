@@ -10,6 +10,7 @@ Copilot authentication is inherited through the CLI native credential mechanism;
 ## Requirements
 
 - GitHub Copilot CLI 1.0.74 or later, already authenticated
+- Python 3
 - `jq`
 - `curl`
 
@@ -32,8 +33,8 @@ Profile homes use this layout:
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
 ```
 
-The checked-in profiles are `awesome`, `hve`, `plannotator`, and
-`superpowers`.
+The checked-in profiles are `awesome`, `hve`, `plannotator`, `superpowers`,
+and `tufte-vdqi`.
 
 ## Commands
 
@@ -43,22 +44,29 @@ cpx inventory hve --json
 cpx setup awesome
 cpx setup hve
 cpx setup plannotator
+cpx setup tufte-vdqi
 cpx setup --all
 cpx awesome --prompt "Suggest useful repository skills"
 cpx hve
 cpx plannotator --prompt "Create an implementation plan as a self-contained HTML artifact"
 cpx superpowers --prompt "Review this repository"
+cpx tufte-vdqi --prompt "Critique this chart, then rebuild it as a static SVG"
 cpx doctor awesome
 cpx doctor hve
 cpx doctor plannotator
+cpx doctor tufte-vdqi
 cpx inventory plannotator --json
+cpx inventory tufte-vdqi --json
 cpx update --check awesome
 cpx update --check hve
 cpx update --check plannotator
+cpx update --check tufte-vdqi
 cpx update --check --all
 cpx update hve
+cpx update tufte-vdqi
 cpx update --all
 cpx repair hve
+cpx repair tufte-vdqi
 ```
 
 Use `cpx list --json` for the stable machine-readable catalog, including
@@ -99,6 +107,20 @@ Its health check requires the six Effective HTML package skills:
 `html-wireframe`. The plugin does not print a version in `copilot plugin list`,
 so `cpx` reads its validated installed `.codex-plugin/plugin.json` for local
 version state and uses the matching upstream manifest for update checks.
+
+The `tufte-vdqi` profile installs
+`tufte-vdqi@tufte-vdqi-marketplace` from
+[`gnurio/tufte-vdqi-plugin`](https://github.com/gnurio/tufte-vdqi-plugin).
+It critiques and rebuilds quantitative charts with Tufte's VDQI principles,
+including lie-factor checks, chartjunk classification, chart-genre selection,
+and direct labeling. Its health check requires the `tufte-chart` and
+`tufte-critique` package skills. Python 3 standard-library scripts create
+static SVG time series, small multiples, quartile plots, and range-frame
+scatterplots, with an optional offline HTML wrapper. See the upstream
+[common workflows](https://github.com/gnurio/tufte-vdqi-plugin#common-workflows).
+It is not an interactive plotting system and does not provide PNG or PDF
+export. The upstream repository has no root license as of this profile's
+addition; Trellage links to the marketplace and does not vendor its source.
 
 The checked-in [`catalog.json`](catalog.json) declares marketplaces, official
 manifest URLs, plugins, and the empty standalone MCP lists. Installed Copilot

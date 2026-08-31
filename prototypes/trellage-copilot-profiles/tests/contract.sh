@@ -136,6 +136,10 @@ if [[ "${1-} ${2-} ${3-} ${4-}" == '--autopilot --allow-all --no-ask-user --fixt
           'plugin-skill:html-plan' \
           'plugin-skill:html-prototype' \
           'plugin-skill:html-wireframe'
+      elif [[ "$plugin" == 'tufte-vdqi@tufte-vdqi-marketplace' ]]; then
+        printf '%s\n' \
+          'plugin-skill:tufte-chart' \
+          'plugin-skill:tufte-critique'
       fi
     done <"$installed"
   fi
@@ -171,7 +175,10 @@ case "${1-} ${2-} ${3-}" in
     ;;
   'plugin marketplace add')
     marketplace_source="${4:?marketplace source required}"
-    marketplace_name="${marketplace_source##*/}"
+    case "$marketplace_source" in
+      gnurio/tufte-vdqi-plugin) marketplace_name='tufte-vdqi-marketplace' ;;
+      *) marketplace_name="${marketplace_source##*/}" ;;
+    esac
     mkdir -p "$(dirname "$marketplaces")"
     if [[ ! -f "$marketplaces" ]] \
       || ! awk -F '\t' -v expected="$marketplace_name" '$1 == expected { found = 1 } END { exit !found }' "$marketplaces"; then
@@ -210,6 +217,7 @@ case "${1-} ${2-}" in
       hve-core@hve-core) version='3.2.2' ;;
       plannotator-effective-html@effective-html) version='' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
+      tufte-vdqi@tufte-vdqi-marketplace) version='4.0.0' ;;
     esac
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
@@ -229,6 +237,16 @@ case "${1-} ${2-}" in
         mkdir -p "$plugin_root/skills/$skill"
         printf '# %s\n' "$skill" >"$plugin_root/skills/$skill/SKILL.md"
       done
+    elif [[ "$plugin" == 'tufte-vdqi@tufte-vdqi-marketplace' ]]; then
+      plugin_root="$COPILOT_HOME/installed-plugins/tufte-vdqi-marketplace/tufte-vdqi"
+      mkdir -p "$plugin_root/.claude-plugin"
+      printf '%s\n' \
+        '{"name":"tufte-vdqi","version":"4.0.0"}' \
+        >"$plugin_root/.claude-plugin/plugin.json"
+      for skill in tufte-chart tufte-critique; do
+        mkdir -p "$plugin_root/skills/$skill"
+        printf '# %s\n' "$skill" >"$plugin_root/skills/$skill/SKILL.md"
+      done
     fi
     ;;
   'plugin update')
@@ -239,6 +257,7 @@ case "${1-} ${2-}" in
       hve-core@hve-core) version='3.2.2' ;;
       plannotator-effective-html@effective-html) version='' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
+      tufte-vdqi@tufte-vdqi-marketplace) version='4.0.0' ;;
     esac
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
@@ -255,9 +274,10 @@ case "${1-} ${2-}" in
     IFS=$'\t' read -r plugin version <"$installed"
     plugin_name="${plugin%%@*}"
     marketplace_name="${plugin#*@}"
+    canonical_copilot_home="$(cd -P "$COPILOT_HOME" && pwd -P)"
     if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
       jq -cn \
-        --arg root "$COPILOT_HOME/installed-plugins/$marketplace_name/$plugin_name/" \
+        --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" \
         --arg disabled "${FAKE_COPILOT_DISABLED_SKILL-}" \
         --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '[
         {name:"design-artifact",description:"Design artifact",source:"plugin",path:($root + "skills/design-artifact"),enabled:true},
@@ -270,8 +290,19 @@ case "${1-} ${2-}" in
       ]
       | map(select(.name != $omitted))
       | map(if .name == $disabled then .enabled = false else . end)'
+    elif [[ "$plugin" == 'tufte-vdqi@tufte-vdqi-marketplace' ]]; then
+      jq -cn \
+        --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" \
+        --arg disabled "${FAKE_COPILOT_DISABLED_SKILL-}" \
+        --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '[
+        {name:"tufte-chart",description:"Tufte chart",source:"plugin",path:($root + "skills/tufte-chart"),enabled:true},
+        {name:"tufte-critique",description:"Tufte critique",source:"plugin",path:($root + "skills/tufte-critique"),enabled:true},
+        {name:"builtin-one",description:"Built-in skill",source:"builtin",path:"/fixture/builtin-one",enabled:true}
+      ]
+      | map(select(.name != $omitted))
+      | map(if .name == $disabled then .enabled = false else . end)'
     else
-      jq -cn --arg root "$COPILOT_HOME/installed-plugins/$marketplace_name/$plugin_name/" '[
+      jq -cn --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" '[
         {name:"package-one",description:"Package skill",source:"plugin",path:($root + "skills/package-one"),enabled:true},
         {name:"package-two",description:"Package skill",source:"plugin",path:($root + "skills/package-two"),enabled:true},
         {name:"builtin-one",description:"Built-in skill",source:"builtin",path:"/fixture/builtin-one",enabled:true}
@@ -322,6 +353,9 @@ case "$url" in
   https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json)
     printf '%s\n' '{"name":"superpowers-marketplace","plugins":[{"name":"superpowers","version":"6.2.0"}]}'
     ;;
+  https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json)
+    printf '%s\n' '{"name":"tufte-vdqi-marketplace","plugins":[{"name":"tufte-vdqi","version":"4.0.0"}]}'
+    ;;
   *)
     printf 'unexpected URL: %s\n' "$url" >&2
     exit 22
@@ -369,7 +403,7 @@ printf '%s\n' '{"mcpServers":{"global-mcp-one":{},"global-mcp-two":{},"global-mc
 printf '%s\n' 'host session sentinel' >"$HOME/.copilot/sessions/host-session"
 printf '%s\n' 'host encryption sentinel' >"$HOME/.copilot/encryption_key"
 
-for profile in awesome hve plannotator superpowers; do
+for profile in awesome hve plannotator superpowers tufte-vdqi; do
   profile_home="$HOME/.local/share/trellage/profiles/copilot/$profile/home"
   mkdir -p \
     "$profile_home/sessions" \
@@ -391,7 +425,7 @@ readme="$prototype_root/README.md"
 assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.' "$readme"
 jq -e '
   .schemaVersion == 1
-  and (.profiles | keys | sort) == ["awesome", "hve", "plannotator", "superpowers"]
+  and (.profiles | keys | sort) == ["awesome", "hve", "plannotator", "superpowers", "tufte-vdqi"]
   and .profiles.awesome.headless == {
     "schemaVersion": 1,
     "prompt": true,
@@ -503,6 +537,16 @@ jq -e '
     "plugin": "superpowers@superpowers-marketplace",
     "standaloneMcps": []
   }
+  and .profiles["tufte-vdqi"].headless == .profiles.awesome.headless
+  and (.profiles["tufte-vdqi"] | del(.headless)) == {
+    "description": "Data-visualization specialist for critiquing and rebuilding quantitative charts with Edward Tufte\u0027s VDQI principles. Detects misleading scales, lie factor, and chartjunk; recommends better chart forms; and creates publication-ready static SVG or offline HTML from structured data, including time series, small multiples, quartile plots, and range-frame scatterplots. Not for interactive dashboards or general UI design.",
+    "marketplace": "gnurio/tufte-vdqi-plugin",
+    "marketplaceName": "tufte-vdqi-marketplace",
+    "manifestUrl": "https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json",
+    "plugin": "tufte-vdqi@tufte-vdqi-marketplace",
+    "requiredPackageSkills": ["tufte-chart", "tufte-critique"],
+    "standaloneMcps": []
+  }
 ' catalog.json >/dev/null || fail 'catalog does not match the approved profile contract'
 
 mkdir -p "$HOME/.ssh"
@@ -587,6 +631,7 @@ actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot
 
 expected_awesome_home="$HOME/.local/share/trellage/profiles/copilot/awesome/home"
 expected_plannotator_home="$HOME/.local/share/trellage/profiles/copilot/plannotator/home"
+expected_tufte_home="$HOME/.local/share/trellage/profiles/copilot/tufte-vdqi/home"
 (
   cd "$worktree"
   "$prototype_root/bin/cpx" awesome --prompt 'find useful skills' --deny-url=example.com --model 'gpt-5.5'
@@ -598,6 +643,22 @@ expected_awesome_launch="$(jq -cn \
 actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" tufte-vdqi --prompt 'critique this chart'
+) >"$fixture_root/tufte-launch.out"
+expected_tufte_launch="$(jq -cn \
+  --arg home "$expected_tufte_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--prompt", "critique this chart"]}')"
+actual_tufte_launch="$(jq -c \
+  --arg home "$expected_tufte_home" \
+  --arg prompt 'critique this chart' \
+  'select(.home == $home and (.args | index($prompt) != null))' \
+  "$fake_copilot_argv_log" | tail -n 1)"
+[[ "$actual_tufte_launch" == "$expected_tufte_launch" ]] \
+  || fail 'Tufte launch did not preserve the exact ordered argument vector'
 
 (
   cd "$worktree"
@@ -718,7 +779,7 @@ after_unsafe_log_lines="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 rm "$expected_hve_home"
 mv "$safe_hve_home" "$expected_hve_home"
 
-for profile in awesome hve plannotator superpowers; do
+for profile in awesome hve plannotator superpowers tufte-vdqi; do
   inventory_output="$fixture_root/$profile-inventory.out"
   (
     cd "$worktree"
@@ -870,6 +931,7 @@ assert_contains $'hve\thve-core@hve-core' "$list_output"
 assert_contains $'plannotator\tplannotator-effective-html@effective-html' "$list_output"
 assert_contains $'superpowers\tsuperpowers@superpowers-marketplace' "$list_output"
 assert_contains $'awesome\tawesome-copilot@awesome-copilot' "$list_output"
+assert_contains $'tufte-vdqi\ttufte-vdqi@tufte-vdqi-marketplace' "$list_output"
 json_list_output="$fixture_root/list.json"
 "$launcher" list --json >"$json_list_output"
 jq -e '
@@ -877,7 +939,7 @@ jq -e '
   and .launcher == "cpx"
   and .harness == "copilot"
   and .sandbox == false
-  and [.profiles[].name] == ["awesome", "hve", "plannotator", "superpowers"]
+  and [.profiles[].name] == ["awesome", "hve", "plannotator", "superpowers", "tufte-vdqi"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -899,6 +961,7 @@ jq -e '
   and .profiles[1].headless == .profiles[0].headless
   and .profiles[2].headless == .profiles[0].headless
   and .profiles[3].headless == .profiles[0].headless
+  and .profiles[4].headless == .profiles[0].headless
   and .profiles[0].plugin == "awesome-copilot@awesome-copilot"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
@@ -917,6 +980,14 @@ jq -e '
     "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json"
   }
   and .profiles[3].standaloneMcps == []
+  and .profiles[4].plugin == "tufte-vdqi@tufte-vdqi-marketplace"
+  and .profiles[4].marketplace == {
+    "kind": "git",
+    "source": "gnurio/tufte-vdqi-plugin",
+    "name": "tufte-vdqi-marketplace",
+    "manifestUrl": "https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json"
+  }
+  and .profiles[4].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
 
 FAKE_COPILOT_VERSION=1.0.81 "$launcher" list --json >"$fixture_root/list-drift.json"
@@ -1194,6 +1265,125 @@ assert_contains 'failed to fetch or parse official manifest for plannotator' \
 assert_not_contains 'plannotator: update available' \
   "$fixture_root/plannotator-malformed-version.out"
 
+tufte_plugin_root="$expected_tufte_home/installed-plugins/tufte-vdqi-marketplace/tufte-vdqi"
+tufte_install_count="$(grep -Fc \
+  'args=plugin install tufte-vdqi@tufte-vdqi-marketplace ' "$fake_copilot_log")"
+"$launcher" setup tufte-vdqi >"$fixture_root/tufte-setup.out"
+"$launcher" tufte-vdqi --prompt 'render a range-frame scatterplot' \
+  >"$fixture_root/tufte-profile-launch.out"
+"$launcher" repair tufte-vdqi >"$fixture_root/tufte-repair.out"
+[[ "$(grep -Fc 'args=plugin install tufte-vdqi@tufte-vdqi-marketplace ' \
+  "$fake_copilot_log")" == "$tufte_install_count" ]] \
+  || fail 'Tufte setup, launch, or repair reinstalled a healthy plugin'
+"$launcher" doctor tufte-vdqi >"$fixture_root/tufte-doctor.out"
+assert_contains \
+  'tufte-vdqi: healthy (plugin tufte-vdqi@tufte-vdqi-marketplace, version 4.0.0)' \
+  "$fixture_root/tufte-doctor.out"
+"$launcher" inventory tufte-vdqi --json >"$fixture_root/tufte-inventory.json"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cpx"
+  and .harness == "copilot"
+  and .profile == "tufte-vdqi"
+  and .readiness == "healthy"
+  and .plugins == [{name:"tufte-vdqi@tufte-vdqi-marketplace",version:"4.0.0"}]
+  and .skills == {packageCount:2,visibleCount:3}
+  and .mcps == ["docs","files"]
+' "$fixture_root/tufte-inventory.json" >/dev/null \
+  || fail 'Tufte inventory output differs'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" tufte-vdqi --fixture-capability-inventory
+) >"$fixture_root/tufte-capabilities.out"
+assert_line 'plugin:tufte-vdqi@tufte-vdqi-marketplace' \
+  "$fixture_root/tufte-capabilities.out"
+assert_line 'plugin-skill:tufte-chart' "$fixture_root/tufte-capabilities.out"
+assert_line 'plugin-skill:tufte-critique' "$fixture_root/tufte-capabilities.out"
+[[ "$(grep -c '^plugin-skill:' "$fixture_root/tufte-capabilities.out")" == '2' ]] \
+  || fail 'Tufte capability inventory did not expose exactly two plugin skills'
+
+mv "$tufte_plugin_root/skills/tufte-chart/SKILL.md" \
+  "$tufte_plugin_root/skills/tufte-chart/SKILL.md.safe"
+if "$launcher" doctor tufte-vdqi \
+  >"$fixture_root/tufte-missing-skill.out" \
+  2>"$fixture_root/tufte-missing-skill.err"; then
+  fail 'doctor accepted a missing required Tufte skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: tufte-vdqi/tufte-chart' \
+  "$fixture_root/tufte-missing-skill.err"
+mv "$tufte_plugin_root/skills/tufte-chart/SKILL.md.safe" \
+  "$tufte_plugin_root/skills/tufte-chart/SKILL.md"
+
+if FAKE_COPILOT_DISABLED_SKILL=tufte-critique "$launcher" doctor tufte-vdqi \
+  >"$fixture_root/tufte-disabled-skill.out" \
+  2>"$fixture_root/tufte-disabled-skill.err"; then
+  fail 'doctor accepted a disabled required Tufte skill'
+fi
+assert_contains \
+  'cpx: required package skill is not enabled by Copilot: tufte-vdqi/tufte-critique' \
+  "$fixture_root/tufte-disabled-skill.err"
+
+mv "$tufte_plugin_root/skills/tufte-critique" \
+  "$tufte_plugin_root/skills/tufte-critique.safe"
+ln -s "$tufte_plugin_root/skills/tufte-chart" \
+  "$tufte_plugin_root/skills/tufte-critique"
+if "$launcher" doctor tufte-vdqi \
+  >"$fixture_root/tufte-symlink-skill.out" \
+  2>"$fixture_root/tufte-symlink-skill.err"; then
+  fail 'doctor accepted a redirected Tufte skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: tufte-vdqi/tufte-critique' \
+  "$fixture_root/tufte-symlink-skill.err"
+rm "$tufte_plugin_root/skills/tufte-critique"
+mv "$tufte_plugin_root/skills/tufte-critique.safe" \
+  "$tufte_plugin_root/skills/tufte-critique"
+
+before_tufte_check_hash="$(profile_tree_hash "$expected_tufte_home")"
+export FAKE_FORBID_PROFILE_MUTATION=1
+"$launcher" update --check tufte-vdqi >"$fixture_root/tufte-check.out"
+unset FAKE_FORBID_PROFILE_MUTATION
+assert_contains 'tufte-vdqi: current (4.0.0)' "$fixture_root/tufte-check.out"
+assert_contains \
+  'https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json' \
+  "$fake_curl_log"
+[[ "$(profile_tree_hash "$expected_tufte_home")" == "$before_tufte_check_hash" ]] \
+  || fail 'Tufte update --check mutated the profile home tree'
+
+export FAKE_CURL_MALFORMED_VERSION_URL='https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json'
+tufte_malformed_version_status=0
+"$launcher" update --check tufte-vdqi \
+  >"$fixture_root/tufte-malformed-version.out" \
+  2>"$fixture_root/tufte-malformed-version.err" \
+  || tufte_malformed_version_status=$?
+unset FAKE_CURL_MALFORMED_VERSION_URL
+[[ "$tufte_malformed_version_status" == '2' ]] \
+  || fail "malformed Tufte version returned status $tufte_malformed_version_status instead of 2"
+assert_contains 'failed to fetch or parse official manifest for tufte-vdqi' \
+  "$fixture_root/tufte-malformed-version.err"
+assert_not_contains 'tufte-vdqi: update available' \
+  "$fixture_root/tufte-malformed-version.out"
+
+printf '%s\t%s\n' 'tufte-vdqi@tufte-vdqi-marketplace' '3.9.0' \
+  >"$expected_tufte_home/fake-state/plugins"
+if "$launcher" update --check tufte-vdqi >"$fixture_root/tufte-outdated.out"; then
+  fail 'update --check returned success for an outdated Tufte profile'
+fi
+assert_contains 'tufte-vdqi: update available (3.9.0 -> 4.0.0)' \
+  "$fixture_root/tufte-outdated.out"
+before_tufte_update_curl_calls="$(wc -l <"$fake_curl_log" | tr -d ' ')"
+"$launcher" update tufte-vdqi
+[[ "$(wc -l <"$fake_curl_log" | tr -d ' ')" == "$before_tufte_update_curl_calls" ]] \
+  || fail 'Tufte update fetched the manifest outside Copilot marketplace commands'
+assert_contains 'args=plugin marketplace update tufte-vdqi-marketplace ' \
+  "$fake_copilot_log"
+assert_contains 'args=plugin update tufte-vdqi@tufte-vdqi-marketplace ' \
+  "$fake_copilot_log"
+assert_contains $'tufte-vdqi@tufte-vdqi-marketplace\t4.0.0' \
+  "$expected_tufte_home/fake-state/plugins"
+
 mv "$expected_hve_home/installed-plugins/hve-core/hve-core" \
   "$expected_hve_home/installed-plugins/hve-core/hve-core.safe"
 ln -s "$expected_hve_home/installed-plugins/unrelated/unrelated" \
@@ -1314,10 +1504,15 @@ assert_contains 'args=plugin install superpowers@superpowers-marketplace ' "$fak
 assert_contains 'args=plugin marketplace add plannotator/effective-html ' "$fake_copilot_log"
 assert_contains 'args=plugin install plannotator-effective-html@effective-html ' \
   "$fake_copilot_log"
+assert_contains 'args=plugin marketplace add gnurio/tufte-vdqi-plugin ' "$fake_copilot_log"
+assert_contains 'args=plugin install tufte-vdqi@tufte-vdqi-marketplace ' \
+  "$fake_copilot_log"
 [[ -f "$expected_superpowers_home/fake-state/plugins" ]] \
   || fail 'setup --all did not provision superpowers'
 [[ -f "$expected_plannotator_home/fake-state/plugins" ]] \
   || fail 'setup --all did not provision Plannotator'
+[[ -f "$expected_tufte_home/fake-state/plugins" ]] \
+  || fail 'setup --all did not provision Tufte VDQI'
 assert_contains $'awesome-copilot@awesome-copilot\t1.1.0' \
   "$expected_awesome_home/fake-state/plugins"
 [[ "$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")" == "$awesome_marketplace_add_count" ]] \
@@ -1356,7 +1551,7 @@ assert_contains $'hve-core@hve-core\t3.2.2' \
 [[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" -gt "$launch_calls_before" ]] \
   || fail 'self-healed launch did not start the underlying Copilot agent'
 
-for profile in awesome hve plannotator superpowers; do
+for profile in awesome hve plannotator superpowers tufte-vdqi; do
   "$launcher" doctor "$profile" >"$fixture_root/$profile-native-auth-doctor.out"
   assert_contains "$profile: healthy" "$fixture_root/$profile-native-auth-doctor.out"
 done
@@ -1499,6 +1694,8 @@ done
 "$installed" list >"$fixture_root/installed-list.out"
 assert_contains $'hve\thve-core@hve-core' "$fixture_root/installed-list.out"
 assert_contains $'plannotator\tplannotator-effective-html@effective-html' \
+  "$fixture_root/installed-list.out"
+assert_contains $'tufte-vdqi\ttufte-vdqi@tufte-vdqi-marketplace' \
   "$fixture_root/installed-list.out"
 "$installer"
 "$uninstaller"
