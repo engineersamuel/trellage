@@ -35,17 +35,18 @@ proved unreliable for some of the Grok config claims below.
 
 ## 2. Codex and Grok: what changed
 
-Per explicit product direction: **network access stays allowed**, and **all
-permissions are granted within the sandbox boundary** (no per-action approval
-prompts) — the filesystem/network sandbox scope is the security control here,
-not approval fatigue.
+Network access stays allowed. The filesystem/network sandbox remains the main
+security boundary; interactive Codex sessions may request approval only when a
+command must cross that boundary, while unattended launches never prompt.
 
 - **`cdx`**, including its `pstack` profile: uses
-  `--sandbox workspace-write -c sandbox_workspace_write.network_access=true --ask-for-approval never`.
+  `--sandbox workspace-write -c sandbox_workspace_write.network_access=true`.
   `workspace-write` restricts writes to the workspace + temp dirs (reads
   elsewhere are still permitted by this Codex sandbox mode); the `-c`
   override re-enables network access, which `workspace-write` blocks by
-  default; `--ask-for-approval never` removes approval prompts.
+  default. Interactive launches use `--ask-for-approval on-request` so the
+  user can approve protected Git metadata writes; non-interactive launches use
+  `--ask-for-approval never` so automation fails closed instead of hanging.
 - **`grx`**: added `--sandbox workspace` alongside the existing
   `--permission-mode bypassPermissions --always-approve`. Per xAI's docs,
   `workspace` is the only built-in profile that keeps network access

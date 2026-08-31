@@ -15,7 +15,11 @@ import {
 } from "./lib/herdr.mjs"
 import { resolveSourceAgent } from "./lib/source-agent.mjs"
 import {
+  appendCaptureQueue,
+  captureQueueIntent,
+  clearCaptureQueue,
   consumeChoice,
+  readCaptureQueue,
   readCompletionMarker,
   removeInvocation,
   writeInvocation,
@@ -96,9 +100,11 @@ const resolvePanelChoice = async (context, stateDir) => {
   if (context.selectedText === undefined) throw new Error("The source picker choice token is missing")
   const choice = parsePanelChoice(await consumeChoice(stateDir, context.selectedText))
   const { selectedText: _choiceToken, ...base } = context
-  if (choice.kind === "selection") return { ...base, selectedText: choice.selectedText }
+  if (choice.kind === "queue") return { ...base, captureQueue: true }
+  if (choice.kind === "selection") return { ...base, operation: choice.operation, selectedText: choice.selectedText }
   return {
     ...base,
+    operation: choice.operation,
     sourcePaneId: choice.sourcePaneId,
     captureMode: choice.captureMode,
     expectedSessionId: choice.expectedSessionId,
@@ -122,7 +128,41 @@ const main = async () => {
   if (stateDir === undefined) throw new Error("HERDR_PLUGIN_STATE_DIR is not set")
 
   const context = await resolvePanelChoice(parseInvocationContext(contextSource), stateDir)
+  if (context.captureQueue) {
+    const queue = await readCaptureQueue(stateDir)
+    const invocationPath = await writeInvocation(stateDir, {
+      schemaVersion: 1,
+      answer: captureQueueIntent(queue),
+      capture: { source: "capture-queue", confidence: "user-curated" },
+      source: {
+        workspaceId: context.workspaceId,
+        paneId: context.paneId,
+        cwd: context.cwd,
+      },
+    })
+    try {
+      await closeSourcePicker(context.invocationSource)
+      await runHerdr([
+        "plugin", "pane", "open", "--plugin", pluginId, "--entrypoint", "guide",
+        "--env", `TRELLAGE_GUIDE_INVOCATION_PATH=${invocationPath}`, "--focus",
+      ])
+      await clearCaptureQueue(stateDir)
+      return
+    } catch (error) {
+      await removeInvocation(invocationPath)
+      throw error
+    }
+  }
   const { captured, cwd, paneId } = await captureInvocation(context, stateDir)
+  if (context.operation === "enqueue") {
+    const queue = await appendCaptureQueue(stateDir, {
+      answer: captured.answer,
+      capture: captureProvenance(captured),
+      addedAt: new Date().toISOString(),
+    })
+    await notify("Added to Trellage capture queue", `${queue.entries.length} item${queue.entries.length === 1 ? "" : "s"} queued`)
+    return
+  }
   const invocationPath = await writeInvocation(stateDir, {
     schemaVersion: 1,
     answer: captured.answer,

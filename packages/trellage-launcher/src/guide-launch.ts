@@ -14,8 +14,9 @@ const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
   "transcript",
   "sandbox-transcript",
   "terminal",
+  "capture-queue",
 ]
-const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = ["user-selected", "exact", "snapshot"]
+const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = ["user-selected", "exact", "snapshot", "user-curated"]
 
 export type GuideSurface = "native" | "sandbox"
 export type PromptDeliveryMode = "none" | "argv"
@@ -24,8 +25,8 @@ export type HerdrPromptDeliveryMode = "command" | "agent"
 export type HerdrAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown"
 export type HerdrSplitDirection = "right" | "down"
 export type HerdrInvocationSurface = "pane" | "popup"
-export type GuideCaptureSource = "selection" | "transcript" | "sandbox-transcript" | "terminal"
-export type GuideCaptureConfidence = "user-selected" | "exact" | "snapshot"
+export type GuideCaptureSource = "selection" | "transcript" | "sandbox-transcript" | "terminal" | "capture-queue"
+export type GuideCaptureConfidence = "user-selected" | "exact" | "snapshot" | "user-curated"
 export type GuideLaunchErrorKind = "blocked" | "timeout" | "startup" | "invalid-output"
 export type WorktreeCollisionKind = "branch-exists" | "branch-active" | "path-active"
 export type GitWorktreeInspectionKind = "ready" | "collision" | "invalid-branch"
@@ -67,6 +68,11 @@ export interface CommandSpec {
 export interface BuiltCommandSpec {
   readonly command: CommandSpec
   readonly promptHandling: PromptHandlingMode
+}
+
+export interface BuiltHerdrGuideLaunch {
+  readonly command: CommandSpec
+  readonly promptDelivery: HerdrPromptDeliveryMode
 }
 
 export interface CommandRunOptions {
@@ -541,6 +547,30 @@ export const buildGuideLaunchCommand = (
   }
 }
 
+export const buildHerdrGuideLaunch = (
+  selectedProfile: SelectedProfile,
+  prompt: string,
+): BuiltHerdrGuideLaunch => {
+  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cpx") {
+    const baseCommand = buildGuideLaunchCommand(selectedProfile).command
+    return {
+      command: { executable: baseCommand.executable, args: [...baseCommand.args, "-i", prompt] },
+      promptDelivery: "command",
+    }
+  }
+  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cdx") {
+    const baseCommand = buildGuideLaunchCommand(selectedProfile).command
+    return {
+      command: { executable: baseCommand.executable, args: [...baseCommand.args, prompt] },
+      promptDelivery: "command",
+    }
+  }
+  return {
+    command: buildGuideLaunchCommand(selectedProfile).command,
+    promptDelivery: "agent",
+  }
+}
+
 export const posixShellEscape = (value: string): string => {
   if (value.length === 0) return "''"
   if (safeShellText.test(value)) return value
@@ -845,8 +875,13 @@ export const runInteractiveCommand = async (
         message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported confidence",
       })
     }
-    const expectedConfidence =
-      source === "selection" ? "user-selected" : source === "terminal" ? "snapshot" : "exact"
+    const expectedConfidence = source === "selection"
+      ? "user-selected"
+      : source === "terminal"
+        ? "snapshot"
+        : source === "capture-queue"
+          ? "user-curated"
+          : "exact"
     if (confidence !== expectedConfidence) {
       throw new GuideLaunchError({
         kind: "invalid-output",
@@ -1074,17 +1109,21 @@ export const launchInHerdrPaneAndPrompt = async (
   }
 }
 
-export const handoffToCurrentHerdrWorkspace = async (
+export const splitHerdrPane = async (
   runner: CommandRunner,
-  options: CurrentWorkspaceHandoffOptions,
-): Promise<HerdrPaneLaunchResult> => {
+  options: {
+    readonly anchorPaneId: string
+    readonly cwd: string
+    readonly direction: HerdrSplitDirection
+  },
+): Promise<string> => {
   const split = await runner.run(
     "herdr",
     [
       "pane",
       "split",
       "--pane",
-      options.callerPaneId,
+      options.anchorPaneId,
       "--cwd",
       options.cwd,
       "--direction",
@@ -1093,7 +1132,18 @@ export const handoffToCurrentHerdrWorkspace = async (
     ],
     { cwd: options.cwd },
   )
-  const paneId = parseHerdrSplitPaneId(split.stdout)
+  return parseHerdrSplitPaneId(split.stdout)
+}
+
+export const handoffToCurrentHerdrWorkspace = async (
+  runner: CommandRunner,
+  options: CurrentWorkspaceHandoffOptions,
+): Promise<HerdrPaneLaunchResult> => {
+  const paneId = await splitHerdrPane(runner, {
+    anchorPaneId: options.callerPaneId,
+    cwd: options.cwd,
+    direction: options.direction,
+  })
   return launchInHerdrPaneAndPrompt(runner, {
     paneId,
     cwd: options.cwd,

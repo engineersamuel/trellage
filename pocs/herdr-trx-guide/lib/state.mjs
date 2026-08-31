@@ -5,6 +5,7 @@ import path from "node:path"
 
 const maximumStateFileBytes = 512 * 1024
 const staleGuideIntentAgeMs = 24 * 60 * 60 * 1000
+const maximumCaptureQueueCharacters = 60_000
 const pluginId = "trellage.guide-handoff"
 const choiceTokenPrefix = "trellage-guide-choice:v1:"
 const choiceTokenPattern =
@@ -71,6 +72,18 @@ const readPrivateJson = async (target, missingIsNull) => {
 
 const paneKey = (paneId) => createHash("sha256").update(paneId).digest("hex")
 
+const captureQueuePath = (stateDir) => path.join(stateRoot(stateDir), "capture-queue.json")
+
+const emptyCaptureQueue = () => ({ schemaVersion: 1, entries: [] })
+
+const validatedCaptureQueue = (value) => {
+  if (value === null) return emptyCaptureQueue()
+  if (value?.schemaVersion !== 1 || !Array.isArray(value.entries)) {
+    throw new Error("Capture queue is invalid")
+  }
+  return value
+}
+
 const completionPath = (stateDir, paneId) =>
   path.join(stateRoot(stateDir), "completed", `${paneKey(paneId)}.json`)
 
@@ -118,6 +131,43 @@ export const readCompletionMarker = async (stateDir, paneId) =>
 
 export const removeCompletionMarker = async (stateDir, paneId) => {
   await rm(completionPath(stateDir, paneId), { force: true })
+}
+
+export const readCaptureQueue = async (stateDir) =>
+  validatedCaptureQueue(await readPrivateJson(captureQueuePath(stateDir), true))
+
+export const captureQueueIntent = (queue) => {
+  const validated = validatedCaptureQueue(queue)
+  if (validated.entries.length === 0) throw new Error("Capture queue is empty")
+  return validated.entries
+    .map((entry, index) => `## Captured item ${index + 1}\n\n${entry.answer}`)
+    .join("\n\n---\n\n")
+}
+
+export const appendCaptureQueue = async (stateDir, entry) => {
+  const queue = await readCaptureQueue(stateDir)
+  const next = {
+    schemaVersion: 1,
+    entries: [...queue.entries, { id: randomUUID(), ...entry }],
+  }
+  if ([...captureQueueIntent(next)].length > maximumCaptureQueueCharacters) {
+    throw new Error(`Capture queue exceeds trx guide's ${maximumCaptureQueueCharacters}-character intent limit`)
+  }
+  await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
+  return next
+}
+
+export const clearCaptureQueue = async (stateDir) => {
+  await rm(captureQueuePath(stateDir), { force: true })
+}
+
+export const removeCaptureQueueEntry = async (stateDir, id) => {
+  const queue = await readCaptureQueue(stateDir)
+  const next = { schemaVersion: 1, entries: queue.entries.filter((entry) => entry.id !== id) }
+  if (next.entries.length === queue.entries.length) throw new Error("Queued capture was not found")
+  if (next.entries.length === 0) await clearCaptureQueue(stateDir)
+  else await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
+  return next
 }
 
 export const writeInvocation = async (stateDir, invocation) =>

@@ -11,7 +11,15 @@ import {
   validateAnswer,
 } from "./lib/context.mjs"
 import { requestHerdr } from "./lib/herdr.mjs"
-import { removeChoice, resolvePluginStateDirectory, writeChoice } from "./lib/state.mjs"
+import {
+  captureQueueIntent,
+  clearCaptureQueue,
+  readCaptureQueue,
+  removeCaptureQueueEntry,
+  removeChoice,
+  resolvePluginStateDirectory,
+  writeChoice,
+} from "./lib/state.mjs"
 import { stringWidth, truncateToWidth, wrapText } from "./lib/terminal-text.mjs"
 
 export { panelInvocationSource }
@@ -34,13 +42,34 @@ const selectionFromClipboard = (clipboard) => {
   }
 }
 
-export const orderedSourceChoices = (inspectedChoices, selectedText) => [
-  ...inspectedChoices,
+export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue) => [
   ...(selectedText === undefined ? [] : [selectedTextChoice(selectedText)]),
+  ...inspectedChoices,
+  ...(captureQueue?.entries.length > 0
+    ? [{
+        kind: "queue",
+        label: `Open capture queue in trx guide (${captureQueue.entries.length})`,
+        detail: "Opens all queued items in trx guide, then clears this capture queue.",
+        preview: captureQueueIntent(captureQueue),
+      }]
+    : []),
 ]
 
 export const sourcePickerStatus = (initialStatus, notes, selectionError) =>
   initialStatus || notes.join(" ") || selectionError || ""
+
+export const waitForCaptureQueueGrowth = async (
+  stateDir,
+  previousLength,
+  reader = readCaptureQueue,
+) => {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const queue = await reader(stateDir)
+    if (queue.entries.length > previousLength) return queue
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error("The capture queue did not update")
+}
 
 const movedChoiceIndex = (current, count, text, key) => {
   if (count === 0) return current
@@ -51,15 +80,9 @@ const movedChoiceIndex = (current, count, text, key) => {
   return current
 }
 
-const shortcutChoiceKind = (keyName) => {
-  if (keyName === "s") return "selection"
-  if (keyName === "e") return "exact"
-  if (keyName === "t") return "terminal"
-  return undefined
-}
-
 export const invokeGuideChoice = async ({
   choice,
+  operation = "open",
   context,
   stateDir,
   request = requestHerdr,
@@ -68,15 +91,19 @@ export const invokeGuideChoice = async ({
 }) => {
   const choiceToken = await choiceWriter(
     stateDir,
-    choice.kind === "selection"
+    choice.kind === "queue"
+      ? { schemaVersion: 1, kind: choice.kind }
+      : choice.kind === "selection"
       ? {
           schemaVersion: 1,
           kind: choice.kind,
+          ...(operation === "enqueue" ? { operation } : {}),
           selectedText: choice.preview,
         }
       : {
           schemaVersion: 1,
           kind: choice.kind,
+          ...(operation === "enqueue" ? { operation } : {}),
           paneId: choice.paneId,
           stateChangeSeq: choice.stateChangeSeq,
           ...(choice.sessionId === undefined ? {} : { sessionId: choice.sessionId }),
@@ -114,14 +141,17 @@ export const main = async ({
   const context = parseCustomPopupContext(env)
   const stateDir = resolvePluginStateDirectory(env)
   const selection = selectionFromClipboard(clipboardReader())
+  let captureQueue = await readCaptureQueue(stateDir)
   let inspected
   try {
     inspected = await captureInspector(context)
   } catch (error) {
     inspected = { choices: [], notes: [error instanceof Error ? error.message : String(error)] }
   }
-  const choices = orderedSourceChoices(inspected.choices, selection.value)
+  let choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
   let selectedIndex = 0
+  let queueIndex = 0
+  let screen = "sources"
   let status = sourcePickerStatus(initialStatus, inspected.notes, selection.error)
   let busy = false
   let finished = false
@@ -139,10 +169,17 @@ export const main = async ({
     const rows = Math.max(14, output.rows || 18)
     const left = 3
     const width = Math.max(20, columns - 5)
-    const optionRows = Math.max(2, Math.min(6, choices.length || 2))
+    const queueChoices = captureQueue.entries.map((entry, index) => ({
+      label: `${index + 1}. ${entry.capture?.source ?? "capture"} · ${entry.answer.replaceAll(/\s+/gu, " ").slice(0, 48)}`,
+      detail: `Queued capture ${index + 1} of ${captureQueue.entries.length}`,
+      preview: entry.answer,
+    }))
+    const visibleSet = screen === "queue" ? queueChoices : choices
+    const activeIndex = screen === "queue" ? queueIndex : selectedIndex
+    const optionRows = Math.max(2, Math.min(6, visibleSet.length || 2))
     const optionStart = rows - optionRows - 2
     const previewRows = Math.max(2, optionStart - 7)
-    const selected = choices[selectedIndex]
+    const selected = visibleSet[activeIndex]
     const wrappedPreview = wrapText(
       selected?.preview ?? "No usable source is available. Highlight text or wait for an agent to finish.",
       width,
@@ -150,12 +187,12 @@ export const main = async ({
     const preview = wrappedPreview.slice(0, previewRows)
     const firstOption = Math.max(
       0,
-      Math.min(selectedIndex - Math.floor(optionRows / 2), Math.max(0, choices.length - optionRows)),
+      Math.min(activeIndex - Math.floor(optionRows / 2), Math.max(0, visibleSet.length - optionRows)),
     )
-    const visibleChoices = choices.slice(firstOption, firstOption + optionRows)
+    const visibleChoices = visibleSet.slice(firstOption, firstOption + optionRows)
 
     out(output, "\x1b[2J\x1b[H\x1b[?25l")
-    writeAt(2, left, "\x1b[1mSend to Trellage guide\x1b[0m")
+    writeAt(2, left, `\x1b[1m${screen === "queue" ? "Edit capture queue" : "Send to Trellage guide"}\x1b[0m`)
     writeAt(3, left, `\x1b[2m${clipped(selected?.detail ?? status, width)}\x1b[0m`)
     if (status) writeAt(4, left, `\x1b[33m${clipped(status, width)}\x1b[0m`)
     writeAt(5, left, "\x1b[1mPreview\x1b[0m")
@@ -168,7 +205,7 @@ export const main = async ({
 
     visibleChoices.forEach((choice, visibleIndex) => {
       const index = firstOption + visibleIndex
-      const active = index === selectedIndex
+      const active = index === activeIndex
       const marker = active ? ">" : " "
       const label = `${marker} ${choice.label}`
       writeAt(optionStart + visibleIndex, left, `${active ? "\x1b[7m" : ""}${clipped(label, width)}\x1b[0m`)
@@ -176,9 +213,11 @@ export const main = async ({
 
     const footer = busy
       ? status
+      : screen === "queue"
+        ? "x remove selected  a add another  b back  q/Esc close"
       : choices.length === 0
         ? status || "Esc cancel"
-        : "Up/Down choose  Enter open  s selection  e exact  t terminal  Esc cancel"
+        : "Enter open  a add selected  e edit queue  x clear queue  q/Esc close"
     writeAt(rows, left, `\x1b[2m${clipped(footer, width)}\x1b[0m`)
   }
 
@@ -230,6 +269,84 @@ export const main = async ({
     }
   }
 
+  const enqueueSelectedChoice = async () => {
+    if (busy) return
+    const choice = choices[selectedIndex]
+    if (choice === undefined || choice.kind === "queue") {
+      status = "Choose highlighted text, an exact result, or a terminal snapshot to add"
+      render()
+      return
+    }
+    busy = true
+    status = "Adding capture to queue..."
+    render()
+    try {
+      const previousLength = captureQueue.entries.length
+      await invokeGuideChoice({ choice, operation: "enqueue", context, stateDir, request })
+      captureQueue = await waitForCaptureQueueGrowth(stateDir, previousLength)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
+      selectedIndex = choices.findIndex((candidate) => candidate.kind === "queue")
+      busy = false
+      status = `Added. ${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued. Enter opens the queue.`
+      render()
+    } catch (error) {
+      busy = false
+      status = error instanceof Error ? error.message : String(error)
+      render()
+    }
+  }
+
+  const removeSelectedQueuedChoice = async () => {
+    if (busy) return
+    const entry = captureQueue.entries[queueIndex]
+    if (entry === undefined) {
+      status = "Capture queue is empty"
+      render()
+      return
+    }
+    busy = true
+    status = "Removing queued capture..."
+    render()
+    try {
+      captureQueue = await removeCaptureQueueEntry(stateDir, entry.id)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
+      queueIndex = Math.min(queueIndex, Math.max(0, captureQueue.entries.length - 1))
+      busy = false
+      status = `${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued`
+      render()
+    } catch (error) {
+      busy = false
+      status = error instanceof Error ? error.message : String(error)
+      render()
+    }
+  }
+
+  const clearQueuedChoices = async () => {
+    if (busy) return
+    if (captureQueue.entries.length === 0) {
+      status = "Capture queue is already empty"
+      render()
+      return
+    }
+    busy = true
+    status = "Clearing capture queue..."
+    render()
+    try {
+      await clearCaptureQueue(stateDir)
+      captureQueue = await readCaptureQueue(stateDir)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
+      selectedIndex = 0
+      queueIndex = 0
+      busy = false
+      status = "Capture queue cleared"
+      render()
+    } catch (error) {
+      busy = false
+      status = error instanceof Error ? error.message : String(error)
+      render()
+    }
+  }
+
   const onTerminate = () => exit(0)
   const wasRaw = input.isRaw
   process.on("SIGTERM", onTerminate)
@@ -243,19 +360,36 @@ export const main = async ({
   readline.emitKeypressEvents(input, { escapeCodeTimeout: 20 })
   input.setRawMode(true)
   input.resume()
-  const selectFirst = (kind) => {
-    const index = choices.findIndex((choice) => choice.kind === kind)
-    if (index < 0) return false
-    selectedIndex = index
-    return true
-  }
   const onKeypress = (text, key) => {
     if (busy) return
     if (key.ctrl && key.name === "c") return exit(0)
     if (key.name === "escape" || key.name === "q") return exit(0)
-    const shortcutKind = shortcutChoiceKind(key.name)
-    if (shortcutKind !== undefined) {
-      if (selectFirst(shortcutKind)) void openSelectedChoice()
+    if (screen === "queue") {
+      if (key.name === "x") void removeSelectedQueuedChoice()
+      else if (key.name === "a" || key.name === "b") {
+        screen = "sources"
+        status = key.name === "a" ? "Choose a source, then press a to add it" : ""
+        render()
+      } else {
+        queueIndex = movedChoiceIndex(queueIndex, captureQueue.entries.length, text, key)
+        status = ""
+        render()
+      }
+      return
+    }
+    if (key.name === "a") {
+      void enqueueSelectedChoice()
+      return
+    }
+    if (key.name === "e") {
+      screen = "queue"
+      queueIndex = Math.min(queueIndex, Math.max(0, captureQueue.entries.length - 1))
+      status = ""
+      render()
+      return
+    }
+    if (key.name === "x") {
+      void clearQueuedChoices()
       return
     }
     if (key.name === "return") {

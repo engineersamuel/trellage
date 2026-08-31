@@ -64,13 +64,27 @@ Reload the Herdr configuration after you save it.
 
 ## Use it
 
-To guide highlighted text:
+To collect highlighted text before opening the guide:
 
 1. Drag to highlight terminal text. Herdr copies it to the clipboard.
 2. Press `prefix+shift+b`.
-3. Confirm **Open highlighted text** with `Enter`.
-4. Use the full guide popup to select the next profile, workflow, prompt, and
-   destination.
+3. **Open highlighted text** is selected first. Verify the preview, then press
+   `a` to add it to the capture queue. The picker stays open and selects
+   **Open capture queue in trx guide (N)** so you can press `Enter` immediately
+   if finished.
+4. Press `q` or `Esc` when you want to close the picker and collect another
+   highlighted section or exact agent result.
+5. Press `prefix+shift+b` again, move to **Open capture queue in trx guide
+   (N)**, and press `Enter`. The full guide opens with every captured item in
+   insertion order. The capture queue clears only after the guide popup opens.
+
+When the capture queue is empty, `Enter` still opens the currently selected
+source immediately. Use the arrow keys or `j`/`k` to choose highlighted text,
+an exact result, a terminal snapshot, or the accumulated queue. Press `a` to
+queue the selected source or `Enter` to open it directly.
+
+Press `x` on the main source screen to clear the complete capture queue while
+keeping the picker open.
 
 To open the latest complete agent response directly:
 
@@ -80,9 +94,10 @@ To open the latest complete agent response directly:
 You can also press `prefix+shift+b`, select an exact agent result or an
 explicit terminal snapshot, then press `Enter`.
 
-The compact source picker also accepts `s` for highlighted text, `e` for an
-exact result, `t` for a terminal snapshot, `j`/`k` or arrow keys to move, and
-`Esc` to cancel.
+Press `e` to edit the capture queue on a separate screen. There, use `j`/`k`
+or the arrow keys to select an item, `x` to remove that item, `a` to return to
+the source list and add another, and `b` to return without changing it. Press
+`q` or `Esc` to close the picker from either screen.
 
 The popup does not offer **Current terminal**. A modal popup is temporary and
 is not a safe host for a new agent. It keeps these guide outcomes:
@@ -229,8 +244,8 @@ then finish one more turn in that pane.
 
 Confirm that `[ui] copy_on_select` is not set to `false`. Drag over the text
 again before opening the picker. The picker shows the exact clipboard text
-that it will send. Focused-pane exact and terminal results appear before
-clipboard text, so stale clipboard content is never selected by default.
+that it will send. Highlighted text appears first so `a` can queue it
+immediately; always verify the preview before adding it.
 
 **The plugin says the terminal output is truncated**
 

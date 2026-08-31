@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildGuideLaunchCommand,
+  buildHerdrGuideLaunch,
   CommandRunnerError,
   createNodeCommandRunner,
   defaultWorktreeBranch,
@@ -138,6 +139,17 @@ describe("guide launch command building", () => {
     expect(buildGuideLaunchCommand(sandboxProfile).command).toEqual({
       executable: "/opt/trellage/bin/trellage",
       args: ["--profile", "prime-agent"],
+    })
+  })
+
+  it("builds trusted Herdr prompt delivery for embedded and agent-delivered profiles", () => {
+    expect(buildHerdrGuideLaunch(nativeProfile, "Run /council now")).toEqual({
+      command: { executable: "/opt/trellage/bin/cpx", args: ["hve-core", "-i", "Run /council now"] },
+      promptDelivery: "command",
+    })
+    expect(buildHerdrGuideLaunch(sandboxProfile, "Research this")).toEqual({
+      command: { executable: "/opt/trellage/bin/trellage", args: ["--profile", "prime-agent"] },
+      promptDelivery: "agent",
     })
   })
 
@@ -387,6 +399,19 @@ describe("Herdr availability helpers", () => {
       },
     })
     expect(isHerdrAvailable(env, true)).toBe(true)
+    expect(
+      getHerdrContext({
+        HERDR_ENV: "1",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          surface: "popup",
+          workspaceId: "w1",
+          paneId: "w1:p1",
+          cwd: "/repo",
+          capture: { source: "capture-queue", confidence: "user-curated" },
+        }),
+      }),
+    ).toMatchObject({ capture: { source: "capture-queue", confidence: "user-curated" } })
   })
 
   it("rejects malformed or incomplete popup source metadata", () => {

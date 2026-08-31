@@ -5,12 +5,17 @@ import path from "node:path"
 import test from "node:test"
 
 import {
+  appendCaptureQueue,
+  captureQueueIntent,
+  clearCaptureQueue,
   consumeChoice,
   consumeInvocation,
   cleanupStaleGuideIntents,
   readCompletionMarker,
+  readCaptureQueue,
   removeChoice,
   removeCompletionMarker,
+  removeCaptureQueueEntry,
   removeGuideIntent,
   removeGuideIntentSync,
   resolvePluginStateDirectory,
@@ -120,6 +125,32 @@ test("resolves the plugin state directory from Herdr or XDG conventions", () => 
     resolvePluginStateDirectory({ HOME: "/home/example" }),
     "/home/example/.local/state/herdr/plugins/trellage.guide-handoff",
   )
+})
+
+test("capture queue persists ordered snippets until explicitly cleared", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-capture-queue-"))
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises")
+    await rm(root, { recursive: true, force: true })
+  })
+  await appendCaptureQueue(root, {
+    answer: "First highlighted section",
+    capture: { source: "selection", confidence: "user-selected" },
+  })
+  const queue = await appendCaptureQueue(root, {
+    answer: "Second agent result",
+    capture: { source: "transcript", confidence: "exact" },
+  })
+  assert.equal(queue.entries.length, 2)
+  assert.equal(
+    captureQueueIntent(queue),
+    "## Captured item 1\n\nFirst highlighted section\n\n---\n\n## Captured item 2\n\nSecond agent result",
+  )
+  assert.equal((await stat(path.join(root, "capture-queue.json"))).mode & 0o777, 0o600)
+  const reduced = await removeCaptureQueueEntry(root, queue.entries[1].id)
+  assert.deepEqual(reduced.entries.map((entry) => entry.answer), ["First highlighted section"])
+  await clearCaptureQueue(root)
+  assert.deepEqual(await readCaptureQueue(root), { schemaVersion: 1, entries: [] })
 })
 
 test("removes stale guide intents and keeps current files", async (t) => {

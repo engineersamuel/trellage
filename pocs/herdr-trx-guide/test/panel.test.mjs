@@ -6,6 +6,7 @@ import {
   orderedSourceChoices,
   panelInvocationSource,
   sourcePickerStatus,
+  waitForCaptureQueueGrowth,
 } from "../custom-popup.mjs"
 import { ExactCaptureUnavailableError } from "../lib/capture.mjs"
 import { inspectCaptureOptions, selectedTextChoice } from "../lib/capture-options.mjs"
@@ -16,13 +17,38 @@ const context = {
   cwd: "/repo",
 }
 
-test("puts focused-pane captures before unrelated clipboard text", () => {
+test("puts highlighted text before exact results and the capture queue last", () => {
   const choices = orderedSourceChoices(
-    [{ kind: "terminal", paneId: "w1:p1", preview: "Current pane result" }],
-    "Old clipboard text",
+    [{ kind: "exact", paneId: "w1:p1", preview: "Current pane result" }],
+    "Highlighted text",
+    { schemaVersion: 1, entries: [{ id: "one", answer: "Previously queued text" }] },
   )
-  assert.deepEqual(choices.map((choice) => choice.kind), ["terminal", "selection"])
-  assert.equal(choices[0].preview, "Current pane result")
+  assert.deepEqual(choices.map((choice) => choice.kind), ["selection", "exact", "queue"])
+  assert.equal(choices[0].preview, "Highlighted text")
+  assert.equal(choices[2].label, "Open capture queue in trx guide (1)")
+})
+
+test("marks a selected source for enqueue without putting text in action context", async () => {
+  let written
+  const calls = []
+  await invokeGuideChoice({
+    choice: selectedTextChoice("Queued highlighted text"),
+    operation: "enqueue",
+    context,
+    stateDir: "/plugin-state",
+    choiceWriter: async (_stateDir, value) => {
+      written = value
+      return "trellage-guide-choice:v1:55555555-5555-4555-8555-555555555555"
+    },
+    request: async (method, params) => calls.push({ method, params }),
+  })
+  assert.deepEqual(written, {
+    schemaVersion: 1,
+    kind: "selection",
+    operation: "enqueue",
+    selectedText: "Queued highlighted text",
+  })
+  assert.equal(calls[0].params.context.selected_text.includes("Queued highlighted text"), false)
 })
 
 test("shows all capture diagnostics when no exact result is available", () => {
@@ -30,6 +56,22 @@ test("shows all capture diagnostics when no exact result is available", () => {
     sourcePickerStatus("", ["No exact session identity.", "Terminal snapshot is truncated."], ""),
     "No exact session identity. Terminal snapshot is truncated.",
   )
+})
+
+test("waits for an asynchronously invoked action to persist the queued capture", async () => {
+  let calls = 0
+  const queue = await waitForCaptureQueueGrowth("/plugin-state", 1, async () => {
+    calls += 1
+    return {
+      schemaVersion: 1,
+      entries: calls < 3 ? [{ id: "one", answer: "First" }] : [
+        { id: "one", answer: "First" },
+        { id: "two", answer: "Second" },
+      ],
+    }
+  })
+  assert.equal(calls, 3)
+  assert.equal(queue.entries.length, 2)
 })
 
 test("invokes the guide action with highlighted text and source context", async () => {

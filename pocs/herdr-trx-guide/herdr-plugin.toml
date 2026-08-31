@@ -1,6 +1,6 @@
 id = "trellage.guide-handoff"
 name = "Trellage Guide Handoff"
-version = "0.2.1"
+version = "0.2.4"
 min_herdr_version = "0.8.2"
 description = "Open highlighted terminal text or a completed agent result in trx guide."
 platforms = ["linux", "macos"]

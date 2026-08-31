@@ -124,6 +124,15 @@ harness's initial interactive command. Copilot workspace-trust and Codex
 hook-trust requests cannot consume a later prompt injection. Trust decisions
 remain interactive.
 
+At Prompt candidates, Enter keeps the single-job flow. Press `a` to add the
+selected profile and prompt to a batch. The queue shows each profile, prompt,
+and exact command in insertion order. Use `j` and `k` to select an entry, `e`
+to edit its prompt, `x` to remove it, and `a` to add another job through the
+normal guide flow. Press Enter when the queue is ready, then choose the current
+Herdr workspace or one fresh Herdr worktree for the complete batch. The guide
+reports every job in queue order, including readiness, worktree, pane, and
+launch failures. Jobs that can still launch continue after a peer fails.
+
 The first sorted row is selected when the launcher opens. Start typing to filter
 by profile, harness, or description; no leading `/` is required. The arrow keys
 move within the filtered results. Enter launches the selected profile directly

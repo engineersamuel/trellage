@@ -326,6 +326,14 @@ if status != 0 or b"TTY_READ_DONE" not in output:
     raise SystemExit(1)
 PY
 
+jq -se '
+  map(select(.args[0] == "--sandbox")) as $launches |
+  ($launches | length) == 1
+  and (($launches[0].args | index("--ask-for-approval")) as $approvalIndex |
+    $launches[0].args[$approvalIndex + 1] == "on-request")
+' "$fixture_root/pty-fake-codex.log" >/dev/null \
+  || fail 'interactive Codex launch did not enable on-request approvals'
+
 cmp -s "$fixture_root/proxy-launch-config-before.toml" "$pstack_home/config.toml" \
   || fail 'proxy launch did not restore exact prelaunch config bytes'
 original_cwd_physical="$(CDPATH= cd -P -- "$original_cwd" && pwd)"
