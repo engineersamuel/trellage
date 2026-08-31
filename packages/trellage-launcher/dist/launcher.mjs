@@ -66880,9 +66880,10 @@ var guideCaptureSources = [
   "selection",
   "transcript",
   "sandbox-transcript",
-  "terminal"
+  "terminal",
+  "capture-queue"
 ];
-var guideCaptureConfidences = ["user-selected", "exact", "snapshot"];
+var guideCaptureConfidences = ["user-selected", "exact", "snapshot", "user-curated"];
 var systemTime = {
   now: () => Date.now(),
   sleep: (milliseconds) => new Promise((resolve2) => setTimeout(resolve2, milliseconds))
@@ -67146,6 +67147,26 @@ var buildGuideLaunchCommand = (selectedProfile, delivery) => {
       args: baseArgs
     },
     promptHandling: "none"
+  };
+};
+var buildHerdrGuideLaunch = (selectedProfile, prompt) => {
+  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cpx") {
+    const baseCommand = buildGuideLaunchCommand(selectedProfile).command;
+    return {
+      command: { executable: baseCommand.executable, args: [...baseCommand.args, "-i", prompt] },
+      promptDelivery: "command"
+    };
+  }
+  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cdx") {
+    const baseCommand = buildGuideLaunchCommand(selectedProfile).command;
+    return {
+      command: { executable: baseCommand.executable, args: [...baseCommand.args, prompt] },
+      promptDelivery: "command"
+    };
+  }
+  return {
+    command: buildGuideLaunchCommand(selectedProfile).command,
+    promptDelivery: "agent"
   };
 };
 var posixShellEscape = (value) => {
@@ -67417,7 +67438,7 @@ var parseGuideCaptureProvenance = (value) => {
       message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported confidence"
     });
   }
-  const expectedConfidence = source === "selection" ? "user-selected" : source === "terminal" ? "snapshot" : "exact";
+  const expectedConfidence = source === "selection" ? "user-selected" : source === "terminal" ? "snapshot" : source === "capture-queue" ? "user-curated" : "exact";
   if (confidence !== expectedConfidence) {
     throw new GuideLaunchError({
       kind: "invalid-output",
@@ -67605,14 +67626,14 @@ var launchInHerdrPaneAndPrompt = async (runner, options) => {
     commandPreview
   };
 };
-var handoffToCurrentHerdrWorkspace = async (runner, options) => {
+var splitHerdrPane = async (runner, options) => {
   const split = await runner.run(
     "herdr",
     [
       "pane",
       "split",
       "--pane",
-      options.callerPaneId,
+      options.anchorPaneId,
       "--cwd",
       options.cwd,
       "--direction",
@@ -67621,7 +67642,14 @@ var handoffToCurrentHerdrWorkspace = async (runner, options) => {
     ],
     { cwd: options.cwd }
   );
-  const paneId = parseHerdrSplitPaneId(split.stdout);
+  return parseHerdrSplitPaneId(split.stdout);
+};
+var handoffToCurrentHerdrWorkspace = async (runner, options) => {
+  const paneId = await splitHerdrPane(runner, {
+    anchorPaneId: options.callerPaneId,
+    cwd: options.cwd,
+    direction: options.direction
+  });
   return launchInHerdrPaneAndPrompt(runner, {
     paneId,
     cwd: options.cwd,
@@ -76545,118 +76573,6 @@ var resolveInteractiveGuideIntent = async ({
   return args.intentStdin ? validateGuideIntent(await readStdin(), "stdin intent") : void 0;
 };
 
-// src/guide-interactive-execution.ts
-var startupTimeoutMs = 6e4;
-var promptTimeoutMs = 6e4;
-var writePrompt = (write, prompt, instruction) => {
-  write(`${instruction}
-
-${prompt}
-`);
-};
-var writeRecoveryPrompt = (services, prompt) => writePrompt(services.write, prompt, "Automatic prompt delivery failed. Use this prompt manually:");
-var writeIncompleteLaunchPrompt = (services, prompt) => writePrompt(services.write, prompt, "Profile launch did not complete. Selected prompt:");
-var unexpectedGuideResult = (result) => {
-  const action = typeof result === "object" && result !== null && "action" in result ? String(result.action) : "missing";
-  throw new Error(`interactive guide returned an unsupported action: ${action}`);
-};
-var executeHerdrResult = async (result, services) => {
-  try {
-    switch (result.action) {
-      case "current-herdr-workspace":
-        await handoffToCurrentHerdrWorkspace(services.runner, {
-          callerPaneId: result.callerPaneId,
-          cwd: result.cwd,
-          direction: result.direction,
-          command: result.command,
-          prompt: result.prompt,
-          promptDelivery: result.promptDelivery,
-          timeoutMs: startupTimeoutMs,
-          promptTimeoutMs
-        });
-        return;
-      case "herdr-worktree-create":
-        await createHerdrWorktreeAndHandoff(services.runner, {
-          primaryCheckoutPath: result.primaryCheckoutPath,
-          branch: result.branch,
-          baseRef: result.baseRef,
-          command: result.command,
-          prompt: result.prompt,
-          promptDelivery: result.promptDelivery,
-          timeoutMs: startupTimeoutMs,
-          promptTimeoutMs
-        });
-        return;
-      case "herdr-worktree-open":
-        await openHerdrWorktreeAndHandoff(services.runner, {
-          primaryCheckoutPath: result.primaryCheckoutPath,
-          path: result.path,
-          command: result.command,
-          prompt: result.prompt,
-          promptDelivery: result.promptDelivery,
-          timeoutMs: startupTimeoutMs,
-          promptTimeoutMs
-        });
-        return;
-      default:
-        unexpectedGuideResult(result);
-    }
-  } catch (error) {
-    if (error instanceof GuideLaunchError && error.paneId !== void 0) {
-      writeRecoveryPrompt(services, result.prompt);
-    } else {
-      writeIncompleteLaunchPrompt(services, result.prompt);
-    }
-    throw error;
-  }
-};
-var executeGuideUiResult = async (result, services) => {
-  switch (result.action) {
-    case "cancel":
-      return result.exitCode;
-    case "print":
-      writePrompt(services.write, result.prompt, "Selected prompt:");
-      return 0;
-    case "current-terminal":
-      if (result.promptHandling === "manual-paste") {
-        writePrompt(services.write, result.prompt, "Paste this prompt after the profile starts:");
-      }
-      try {
-        await (services.runInteractive ?? runInteractiveCommand)(result.command, {
-          cwd: result.cwd,
-          env: { ...process.env, TRELLAGE_AUTOMATION: "1" }
-        });
-        return 0;
-      } catch (error) {
-        if (error instanceof CommandRunnerError && error.kind === "exited") {
-          return error.exitCode ?? 130;
-        }
-        throw error;
-      }
-    case "current-herdr-workspace":
-    case "herdr-worktree-create":
-    case "herdr-worktree-open":
-      await executeHerdrResult(result, services);
-      return 0;
-    default:
-      return unexpectedGuideResult(result);
-  }
-};
-
-// src/guide-terminal.ts
-var clearAndHome = "\x1B[2J\x1B[H";
-var createInitialGuideRenderHandler = (write, enabled) => {
-  let pending = enabled;
-  return () => {
-    if (!pending) return;
-    pending = false;
-    write(clearAndHome);
-  };
-};
-
-// src/guide-ui.tsx
-var import_react34 = __toESM(require_react(), 1);
-
 // src/guide-preflight.ts
 var ProfilePreflightError = class extends Error {
   constructor(message, options) {
@@ -76737,7 +76653,320 @@ var checkSandboxReadiness = async (runner, selected, cwd2) => {
 };
 var checkSelectedProfileReadiness = (runner, selected, cwd2) => selected.surface === "native" ? checkNativeReadiness(runner, selected, cwd2) : checkSandboxReadiness(runner, selected, cwd2);
 
+// src/guide-batch.ts
+var startupTimeoutMs = 6e4;
+var promptTimeoutMs = 6e4;
+var emptyGuideQueue = () => ({ entries: [], nextId: 1, selectedIndex: 0 });
+var createQueuedGuideJob = (id, profile, prompt) => {
+  const built = buildHerdrGuideLaunch(profile, prompt);
+  return { id, profile, prompt, command: built.command, promptDelivery: built.promptDelivery };
+};
+var enqueueGuideJob = (queue, profile, prompt) => ({
+  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt)],
+  nextId: queue.nextId + 1,
+  selectedIndex: queue.entries.length
+});
+var selectQueuedGuideJob = (queue, delta) => queue.entries.length === 0 ? queue : { ...queue, selectedIndex: (queue.selectedIndex + delta + queue.entries.length) % queue.entries.length };
+var startQueuedGuidePromptEdit = (queue) => {
+  const selected = queue.entries[queue.selectedIndex];
+  return selected === void 0 ? queue : { ...queue, editingId: selected.id };
+};
+var replaceQueuedGuideJobPrompt = (job, prompt) => createQueuedGuideJob(job.id, job.profile, prompt);
+var submitQueuedGuidePromptEdit = (queue, prompt) => {
+  if (queue.editingId === void 0 || prompt.trim().length === 0) return queue;
+  const { editingId, ...rest } = queue;
+  return {
+    ...rest,
+    entries: queue.entries.map(
+      (job) => job.id === editingId ? replaceQueuedGuideJobPrompt(job, prompt) : job
+    )
+  };
+};
+var removeSelectedQueuedGuideJob = (queue) => {
+  if (queue.entries[queue.selectedIndex] === void 0) return queue;
+  const entries = queue.entries.filter((_, index) => index !== queue.selectedIndex);
+  return { entries, nextId: queue.nextId, selectedIndex: Math.min(queue.selectedIndex, Math.max(0, entries.length - 1)) };
+};
+var describeError = (error) => error instanceof Error && error.message.length > 0 ? error.message : "An unknown error occurred.";
+var validateQueuedJob = (job) => {
+  if (!Number.isSafeInteger(job.id) || job.id < 1) return "Queue entry ID must be a positive integer.";
+  if (job.prompt.trim().length === 0) return "Queued prompt must not be empty.";
+  if ([...job.prompt].length > 8e3) return "Queued prompt exceeds 8000 characters.";
+  try {
+    const profile = parseSelectedProfile(job.profile);
+    const built = buildHerdrGuideLaunch(profile, job.prompt);
+    if (built.promptDelivery !== job.promptDelivery || built.command.executable !== job.command.executable || built.command.args.length !== job.command.args.length || built.command.args.some((arg, index) => arg !== job.command.args[index])) {
+      return "Queued command does not match its profile and prompt.";
+    }
+  } catch (error) {
+    return describeError(error);
+  }
+  return void 0;
+};
+var writeSummary = (services, result) => {
+  services.write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}
+`);
+  for (const entry of result.entries) {
+    const identity = `${entry.job.id}. ${entry.job.profile.profile}`;
+    if (entry.status === "launched") {
+      services.write(`${identity}: launched in pane ${entry.paneId}
+`);
+    } else {
+      services.write(`${identity}: ${entry.stage} failed: ${entry.message}
+Selected prompt:
+
+${entry.job.prompt}
+`);
+    }
+  }
+};
+var executeGuideBatch = async (batch, services) => {
+  if (batch.jobs.length === 0) {
+    const result2 = { workspace: { status: "not-allocated" }, entries: [] };
+    services.write("Batch queue is empty.\n");
+    return { exitCode: 1, result: result2 };
+  }
+  const entries = new Array(batch.jobs.length);
+  const structurallyValid = [];
+  const seenIds = /* @__PURE__ */ new Set();
+  batch.jobs.forEach((job, index) => {
+    const message = seenIds.has(job.id) ? `Queue entry ID ${job.id} is duplicated.` : validateQueuedJob(job);
+    seenIds.add(job.id);
+    if (message === void 0) structurallyValid.push({ index, job });
+    else entries[index] = { job, status: "invalid", stage: "validation", message };
+  });
+  const readiness = await Promise.all(
+    structurallyValid.map(async (item) => {
+      try {
+        return { item, result: await checkSelectedProfileReadiness(services.runner, item.job.profile, policyCwd(batch.policy)) };
+      } catch (error) {
+        return { item, error };
+      }
+    })
+  );
+  const launchable = [];
+  for (const checked of readiness) {
+    if ("error" in checked) {
+      entries[checked.item.index] = {
+        job: checked.item.job,
+        status: "not-ready",
+        stage: "readiness",
+        message: describeError(checked.error)
+      };
+    } else if (checked.result.kind === "blocked" /* Blocked */) {
+      entries[checked.item.index] = {
+        job: checked.item.job,
+        status: "not-ready",
+        stage: "readiness",
+        message: `${checked.result.summary}. ${checked.result.diagnostic}`
+      };
+    } else launchable.push(checked.item);
+  }
+  let workspace = { status: "not-allocated" };
+  const allocated = [];
+  if (launchable.length > 0 && batch.policy.kind === "fresh-herdr-worktree") {
+    try {
+      const handle = await createHerdrWorktree(services.runner, batch.policy);
+      workspace = { status: "created", workspaceId: handle.workspaceId, checkoutPath: handle.checkoutPath };
+      const [first, ...rest] = launchable;
+      if (first !== void 0) allocated.push({ ...first, paneId: handle.rootPaneId, cwd: handle.checkoutPath });
+      for (const item of rest) {
+        try {
+          const paneId = await splitHerdrPane(services.runner, {
+            anchorPaneId: handle.rootPaneId,
+            cwd: handle.checkoutPath,
+            direction: "right"
+          });
+          allocated.push({ ...item, paneId, cwd: handle.checkoutPath });
+        } catch (error) {
+          entries[item.index] = {
+            job: item.job,
+            status: "allocation-failed",
+            stage: "pane-allocation",
+            message: describeError(error)
+          };
+        }
+      }
+    } catch (error) {
+      const message = describeError(error);
+      workspace = { status: "creation-failed", message };
+      for (const item of launchable) {
+        entries[item.index] = { job: item.job, status: "workspace-create-failed", stage: "worktree-create", message };
+      }
+    }
+  } else if (launchable.length > 0) {
+    const policy = batch.policy;
+    if (policy.kind !== "current-herdr-workspace") throw new Error("Unsupported batch workspace policy.");
+    workspace = { status: "existing", workspaceId: policy.workspaceId };
+    for (const item of launchable) {
+      try {
+        const paneId = await splitHerdrPane(services.runner, {
+          anchorPaneId: policy.callerPaneId,
+          cwd: policy.cwd,
+          direction: policy.direction
+        });
+        allocated.push({ ...item, paneId, cwd: policy.cwd });
+      } catch (error) {
+        entries[item.index] = {
+          job: item.job,
+          status: "allocation-failed",
+          stage: "pane-allocation",
+          message: describeError(error)
+        };
+      }
+    }
+  }
+  const launches = await Promise.allSettled(
+    allocated.map(
+      (item) => launchInHerdrPaneAndPrompt(services.runner, {
+        paneId: item.paneId,
+        cwd: item.cwd,
+        command: item.job.command,
+        prompt: item.job.prompt,
+        promptDelivery: item.job.promptDelivery,
+        timeoutMs: startupTimeoutMs,
+        promptTimeoutMs
+      })
+    )
+  );
+  launches.forEach((launch, launchIndex) => {
+    const item = allocated[launchIndex];
+    if (item === void 0) return;
+    entries[item.index] = launch.status === "fulfilled" ? { job: item.job, status: "launched", paneId: item.paneId } : {
+      job: item.job,
+      status: "launch-failed",
+      stage: "launch",
+      paneId: item.paneId,
+      message: describeError(launch.reason)
+    };
+  });
+  const result = {
+    workspace,
+    entries: entries.map((entry, index) => {
+      if (entry !== void 0) return entry;
+      const job = batch.jobs[index];
+      if (job === void 0) throw new Error("Batch result lost its queue entry.");
+      return { job, status: "invalid", stage: "validation", message: "Batch entry was not processed." };
+    })
+  };
+  writeSummary(services, result);
+  return { exitCode: result.entries.every((entry) => entry.status === "launched") ? 0 : 1, result };
+};
+var policyCwd = (policy) => policy.kind === "current-herdr-workspace" ? policy.cwd : policy.primaryCheckoutPath;
+
+// src/guide-interactive-execution.ts
+var startupTimeoutMs2 = 6e4;
+var promptTimeoutMs2 = 6e4;
+var writePrompt = (write, prompt, instruction) => {
+  write(`${instruction}
+
+${prompt}
+`);
+};
+var writeRecoveryPrompt = (services, prompt) => writePrompt(services.write, prompt, "Automatic prompt delivery failed. Use this prompt manually:");
+var writeIncompleteLaunchPrompt = (services, prompt) => writePrompt(services.write, prompt, "Profile launch did not complete. Selected prompt:");
+var unexpectedGuideResult = (result) => {
+  const action = typeof result === "object" && result !== null && "action" in result ? String(result.action) : "missing";
+  throw new Error(`interactive guide returned an unsupported action: ${action}`);
+};
+var executeHerdrResult = async (result, services) => {
+  try {
+    switch (result.action) {
+      case "current-herdr-workspace":
+        await handoffToCurrentHerdrWorkspace(services.runner, {
+          callerPaneId: result.callerPaneId,
+          cwd: result.cwd,
+          direction: result.direction,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      case "herdr-worktree-create":
+        await createHerdrWorktreeAndHandoff(services.runner, {
+          primaryCheckoutPath: result.primaryCheckoutPath,
+          branch: result.branch,
+          baseRef: result.baseRef,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      case "herdr-worktree-open":
+        await openHerdrWorktreeAndHandoff(services.runner, {
+          primaryCheckoutPath: result.primaryCheckoutPath,
+          path: result.path,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      default:
+        unexpectedGuideResult(result);
+    }
+  } catch (error) {
+    if (error instanceof GuideLaunchError && error.paneId !== void 0) {
+      writeRecoveryPrompt(services, result.prompt);
+    } else {
+      writeIncompleteLaunchPrompt(services, result.prompt);
+    }
+    throw error;
+  }
+};
+var executeGuideUiResult = async (result, services) => {
+  switch (result.action) {
+    case "cancel":
+      return result.exitCode;
+    case "print":
+      writePrompt(services.write, result.prompt, "Selected prompt:");
+      return 0;
+    case "current-terminal":
+      if (result.promptHandling === "manual-paste") {
+        writePrompt(services.write, result.prompt, "Paste this prompt after the profile starts:");
+      }
+      try {
+        await (services.runInteractive ?? runInteractiveCommand)(result.command, {
+          cwd: result.cwd,
+          env: { ...process.env, TRELLAGE_AUTOMATION: "1" }
+        });
+        return 0;
+      } catch (error) {
+        if (error instanceof CommandRunnerError && error.kind === "exited") {
+          return error.exitCode ?? 130;
+        }
+        throw error;
+      }
+    case "current-herdr-workspace":
+    case "herdr-worktree-create":
+    case "herdr-worktree-open":
+      await executeHerdrResult(result, services);
+      return 0;
+    case "batch":
+      return (await executeGuideBatch(result.batch, services)).exitCode;
+    default:
+      return unexpectedGuideResult(result);
+  }
+};
+
+// src/guide-terminal.ts
+var clearAndHome = "\x1B[2J\x1B[H";
+var createInitialGuideRenderHandler = (write, enabled) => {
+  let pending = enabled;
+  return () => {
+    if (!pending) return;
+    pending = false;
+    write(clearAndHome);
+  };
+};
+
 // src/guide-ui.tsx
+var import_react34 = __toESM(require_react(), 1);
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
 var feedbackMaxLength = 2e3;
 var branchMaxLength = 200;
@@ -76774,7 +77003,8 @@ var replaceCandidateAt = (items, index, value) => {
 var editingStages = /* @__PURE__ */ new Set([
   "refine-editor" /* RefineEditor */,
   "direct-editor" /* DirectEditor */,
-  "worktree-branch-editor" /* WorktreeBranchEditor */
+  "worktree-branch-editor" /* WorktreeBranchEditor */,
+  "queue-prompt-editor" /* QueuePromptEditor */
 ]);
 var wizardStepByStage = {
   ["intent" /* Intent */]: void 0,
@@ -76795,7 +77025,10 @@ var wizardStepByStage = {
   ["worktree-branch-editor" /* WorktreeBranchEditor */]: "destination" /* Destination */,
   ["inspecting-worktree" /* InspectingWorktree */]: "destination" /* Destination */,
   ["worktree-collision" /* WorktreeCollision */]: "destination" /* Destination */,
-  ["worktree-ready" /* WorktreeReady */]: "destination" /* Destination */
+  ["worktree-ready" /* WorktreeReady */]: "destination" /* Destination */,
+  ["queue" /* Queue */]: "prompt-candidates" /* PromptCandidates */,
+  ["queue-prompt-editor" /* QueuePromptEditor */]: "prompt-candidates" /* PromptCandidates */,
+  ["batch-destination" /* BatchDestination */]: "destination" /* Destination */
 };
 var wizardStepForStage = (stage) => wizardStepByStage[stage];
 var destinationOptions = (herdrEnabled, surface = "pane") => herdrEnabled ? surface === "popup" ? ["current-herdr-workspace" /* CurrentHerdrWorkspace */, "new-herdr-worktree" /* NewHerdrWorktree */] : [
@@ -76826,7 +77059,9 @@ var emptyState = {
   worktreeInspection: void 0,
   worktreeConfirmations: 0,
   promptReviewReturnStage: void 0,
-  promptReviewEditing: false
+  promptReviewEditing: false,
+  queue: emptyGuideQueue(),
+  worktreePurpose: "single"
 };
 var createInitialGuideUiState = (initialIntent) => {
   const trimmed = initialIntent?.trim();
@@ -76856,6 +77091,7 @@ var reduceIntent = (state, action) => {
       if (trimmed.length === 0) return state;
       return {
         ...emptyState,
+        queue: state.queue,
         stage: "matching" /* Matching */,
         intent: trimmed,
         matchPhase: "loading-profiles" /* LoadingProfiles */
@@ -76910,6 +77146,7 @@ var submitPromptReview = (state) => {
   }
   return {
     ...emptyState,
+    queue: state.queue,
     stage: "matching" /* Matching */,
     intent,
     matchPhase: "loading-profiles" /* LoadingProfiles */
@@ -77060,6 +77297,19 @@ var reduceCandidateSelection = (state, action) => {
         selectedCandidate: tripleAt(state.candidates, state.candidateIndex),
         readiness: void 0
       } : state;
+    case "candidates/enqueue" /* CandidatesEnqueue */:
+      return state.stage === "candidates" /* Candidates */ && state.candidates !== void 0 && state.selectedProfile !== void 0 ? {
+        ...state,
+        stage: "queue" /* Queue */,
+        queue: enqueueGuideJob(
+          state.queue,
+          state.selectedProfile,
+          tripleAt(state.candidates, state.candidateIndex).prompt
+        ),
+        errorMessage: void 0
+      } : state;
+    case "candidates/view-queue" /* CandidatesViewQueue */:
+      return state.stage === "candidates" /* Candidates */ && state.queue.entries.length > 0 ? { ...state, stage: "queue" /* Queue */, errorMessage: void 0 } : state;
     case "candidates/refine-start" /* CandidatesRefineStart */:
       return state.stage === "candidates" /* Candidates */ ? { ...state, stage: "refine-editor" /* RefineEditor */, textDraft: "", errorMessage: void 0 } : state;
     case "candidates/direct-edit-start" /* CandidatesDirectEditStart */:
@@ -77124,7 +77374,8 @@ var reduceRefine = (state, action) => {
 var reduceReadiness = (state, action) => {
   switch (action.type) {
     case "readiness/ready" /* ReadinessReady */:
-      return state.stage === "checking-readiness" /* CheckingReadiness */ ? { ...state, stage: "destination" /* Destination */, readiness: action.result, destinationIndex: 0 } : state;
+      if (state.stage !== "checking-readiness" /* CheckingReadiness */) return state;
+      return { ...state, stage: "destination" /* Destination */, readiness: action.result, destinationIndex: 0 };
     case "readiness/blocked" /* ReadinessBlocked */:
       return state.stage === "checking-readiness" /* CheckingReadiness */ ? { ...state, stage: "readiness-blocked" /* ReadinessBlocked */, readiness: action.result } : state;
     case "readiness/retry" /* ReadinessRetry */:
@@ -77150,6 +77401,56 @@ var reduceDestination = (state, action) => {
         stage: "worktree-branch-editor" /* WorktreeBranchEditor */,
         textDraft: defaultWorktreeBranch(state.intent ?? ""),
         worktreeInspection: void 0,
+        errorMessage: void 0,
+        worktreePurpose: "single"
+      } : state;
+    default:
+      return state;
+  }
+};
+var reduceQueue = (state, action) => {
+  switch (action.type) {
+    case "queue/move" /* QueueMove */:
+      return state.stage === "queue" /* Queue */ ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state;
+    case "queue/edit-start" /* QueueEditStart */: {
+      if (state.stage !== "queue" /* Queue */) return state;
+      const queue = startQueuedGuidePromptEdit(state.queue);
+      const job = queue.entries[queue.selectedIndex];
+      return job === void 0 ? state : { ...state, stage: "queue-prompt-editor" /* QueuePromptEditor */, queue, textDraft: job.prompt };
+    }
+    case "queue/edit-submit" /* QueueEditSubmit */:
+      return state.stage === "queue-prompt-editor" /* QueuePromptEditor */ && state.textDraft.trim().length > 0 ? { ...state, stage: "queue" /* Queue */, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) } : state;
+    case "queue/remove" /* QueueRemove */:
+      return state.stage === "queue" /* Queue */ ? { ...state, queue: removeSelectedQueuedGuideJob(state.queue), errorMessage: void 0 } : state;
+    case "queue/add-another" /* QueueAddAnother */:
+      return state.stage === "queue" /* Queue */ ? { ...emptyState, queue: state.queue } : state;
+    case "queue/back" /* QueueBack */:
+      if (state.stage === "queue-prompt-editor" /* QueuePromptEditor */) {
+        const { editingId: _, ...queue } = state.queue;
+        return { ...state, stage: "queue" /* Queue */, queue, errorMessage: void 0 };
+      }
+      return state.stage === "queue" /* Queue */ ? { ...state, stage: "candidates" /* Candidates */, errorMessage: void 0 } : state;
+    case "queue/choose-destination" /* QueueChooseDestination */:
+      return state.stage === "queue" /* Queue */ ? state.queue.entries.length === 0 ? { ...state, errorMessage: "Batch queue is empty." } : { ...state, stage: "batch-destination" /* BatchDestination */, destinationIndex: 0, errorMessage: void 0 } : state;
+    default:
+      return state;
+  }
+};
+var reduceBatchDestination = (state, action) => {
+  switch (action.type) {
+    case "batch-destination/move" /* BatchDestinationMove */:
+      return state.stage === "batch-destination" /* BatchDestination */ ? { ...state, destinationIndex: (state.destinationIndex + action.delta + 2) % 2 } : state;
+    case "batch-destination/back" /* BatchDestinationBack */:
+      return state.stage === "batch-destination" /* BatchDestination */ ? { ...state, stage: "queue" /* Queue */ } : state;
+    case "batch-destination/unavailable" /* BatchDestinationUnavailable */:
+      return state.stage === "batch-destination" /* BatchDestination */ ? { ...state, errorMessage: "Herdr is unavailable. Start trx guide from a Herdr pane or popup." } : state;
+    case "batch-destination/start-worktree" /* BatchDestinationStartWorktree */:
+      return state.stage === "batch-destination" /* BatchDestination */ ? {
+        ...state,
+        stage: "worktree-branch-editor" /* WorktreeBranchEditor */,
+        textDraft: defaultWorktreeBranch(state.intent ?? "batch"),
+        worktreeInspection: void 0,
+        worktreePurpose: "batch",
         errorMessage: void 0
       } : state;
     default:
@@ -77210,7 +77511,12 @@ var reduceWorktreeResolution = (state, action) => {
         errorMessage: void 0
       } : state;
     case "worktree/back" /* WorktreeBack */:
-      return state.stage === "worktree-branch-editor" /* WorktreeBranchEditor */ || state.stage === "worktree-collision" /* WorktreeCollision */ || state.stage === "worktree-ready" /* WorktreeReady */ ? { ...state, stage: "destination" /* Destination */, worktreeInspection: void 0, worktreeConfirmations: 0 } : state;
+      return state.stage === "worktree-branch-editor" /* WorktreeBranchEditor */ || state.stage === "worktree-collision" /* WorktreeCollision */ || state.stage === "worktree-ready" /* WorktreeReady */ ? {
+        ...state,
+        stage: state.worktreePurpose === "batch" ? "batch-destination" /* BatchDestination */ : "destination" /* Destination */,
+        worktreeInspection: void 0,
+        worktreeConfirmations: 0
+      } : state;
     default:
       return state;
   }
@@ -77246,6 +77552,8 @@ var domainReducerByActionType = {
   ["candidates/confirm" /* CandidatesConfirm */]: reduceCandidateSelection,
   ["candidates/refine-start" /* CandidatesRefineStart */]: reduceCandidateSelection,
   ["candidates/direct-edit-start" /* CandidatesDirectEditStart */]: reduceCandidateSelection,
+  ["candidates/enqueue" /* CandidatesEnqueue */]: reduceCandidateSelection,
+  ["candidates/view-queue" /* CandidatesViewQueue */]: reduceCandidateSelection,
   ["direct-edit/submit" /* DirectEditSubmit */]: reduceDirectEdit,
   ["direct-edit/back" /* DirectEditBack */]: reduceDirectEdit,
   ["editor/change" /* EditorChange */]: reduceEditor,
@@ -77269,7 +77577,18 @@ var domainReducerByActionType = {
   ["worktree/ready" /* WorktreeReady */]: reduceWorktreeInspection,
   ["worktree/confirm" /* WorktreeConfirm */]: reduceWorktreeResolution,
   ["worktree/edit-branch" /* WorktreeEditBranch */]: reduceWorktreeResolution,
-  ["worktree/back" /* WorktreeBack */]: reduceWorktreeResolution
+  ["worktree/back" /* WorktreeBack */]: reduceWorktreeResolution,
+  ["queue/move" /* QueueMove */]: reduceQueue,
+  ["queue/edit-start" /* QueueEditStart */]: reduceQueue,
+  ["queue/edit-submit" /* QueueEditSubmit */]: reduceQueue,
+  ["queue/remove" /* QueueRemove */]: reduceQueue,
+  ["queue/add-another" /* QueueAddAnother */]: reduceQueue,
+  ["queue/back" /* QueueBack */]: reduceQueue,
+  ["queue/choose-destination" /* QueueChooseDestination */]: reduceQueue,
+  ["batch-destination/move" /* BatchDestinationMove */]: reduceBatchDestination,
+  ["batch-destination/back" /* BatchDestinationBack */]: reduceBatchDestination,
+  ["batch-destination/unavailable" /* BatchDestinationUnavailable */]: reduceBatchDestination,
+  ["batch-destination/start-worktree" /* BatchDestinationStartWorktree */]: reduceBatchDestination
 };
 var guideUiReducer = (state, action) => {
   const domainReducer = domainReducerByActionType[action.type];
@@ -77441,32 +77760,6 @@ var runGuideRefinementStep = async (catalog, provider, intent, recommendation, g
 };
 var buildCancelResult = () => ({ action: "cancel", exitCode: 130 });
 var buildPrintResult = (prompt) => ({ action: "print", prompt });
-var buildHerdrLaunch = (profile, prompt) => {
-  if (profile.surface === "native" && profile.launcher === "cpx") {
-    const baseCommand = buildGuideLaunchCommand(profile).command;
-    return {
-      command: {
-        executable: baseCommand.executable,
-        args: [...baseCommand.args, "-i", prompt]
-      },
-      promptDelivery: "command"
-    };
-  }
-  if (profile.surface === "native" && profile.launcher === "cdx") {
-    const baseCommand = buildGuideLaunchCommand(profile).command;
-    return {
-      command: {
-        executable: baseCommand.executable,
-        args: [...baseCommand.args, prompt]
-      },
-      promptDelivery: "command"
-    };
-  }
-  return {
-    command: buildGuideLaunchCommand(profile).command,
-    promptDelivery: "agent"
-  };
-};
 var buildCurrentTerminalResult = (profile, prompt, cwd2) => {
   const built = buildGuideLaunchCommand(profile, { mode: "argv", prompt });
   return {
@@ -77479,7 +77772,7 @@ var buildCurrentTerminalResult = (profile, prompt, cwd2) => {
   };
 };
 var buildCurrentHerdrWorkspaceResult = (profile, prompt, cwd2, herdrContext, direction = "right") => {
-  const built = buildHerdrLaunch(profile, prompt);
+  const built = buildHerdrGuideLaunch(profile, prompt);
   return {
     action: "current-herdr-workspace",
     profile,
@@ -77492,7 +77785,7 @@ var buildCurrentHerdrWorkspaceResult = (profile, prompt, cwd2, herdrContext, dir
   };
 };
 var buildNewHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, branch, baseRef) => {
-  const built = buildHerdrLaunch(profile, prompt);
+  const built = buildHerdrGuideLaunch(profile, prompt);
   return {
     action: "herdr-worktree-create",
     profile,
@@ -77505,7 +77798,7 @@ var buildNewHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, branch,
   };
 };
 var buildExistingHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, path7) => {
-  const built = buildHerdrLaunch(profile, prompt);
+  const built = buildHerdrGuideLaunch(profile, prompt);
   return {
     action: "herdr-worktree-open",
     profile,
@@ -77517,6 +77810,13 @@ var buildExistingHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, pa
   };
 };
 var captureSourcePresentation = (capture) => {
+  if (capture.source === "capture-queue") {
+    return {
+      label: "Curated capture queue",
+      detail: "The guide is using the highlighted text and agent results you queued.",
+      color: "cyan"
+    };
+  }
   if (capture.source === "selection") {
     return {
       label: "Highlighted text",
@@ -78288,7 +78588,7 @@ var CandidatesView = ({
       compactCommandPreview(command.preview),
       command.promptHandling === "manual-paste" ? " (manual paste required)" : ""
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: "\u2191/\u2193 or j/k select \xB7 PgUp/PgDn scroll \xB7 \u21B5 continue \xB7 b/Esc back \xB7 r refine \xB7 e edit \xB7 c print full prompt \xB7 q cancel" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: "\u2191/\u2193 or j/k select \xB7 \u21B5 continue \xB7 a add to batch \xB7 v view batch \xB7 b/Esc back \xB7 r refine \xB7 e edit \xB7 c print \xB7 q cancel" })
   ] });
 };
 var TextEditor = ({
@@ -78331,6 +78631,41 @@ var DestinationView = ({
   ] }),
   /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 confirm \xB7 c print prompt \xB7 b back" })
 ] });
+var QueueView = ({ queue, errorMessage }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", children: [
+    "Batch queue. ",
+    queue.entries.length,
+    " jobs"
+  ] }),
+  queue.entries.map((job, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: index === queue.selectedIndex, ...index === queue.selectedIndex ? { color: "green" } : {}, children: [
+      index === queue.selectedIndex ? "\u276F " : "  ",
+      job.id,
+      ". ",
+      job.profile.profile,
+      " \xB7 ",
+      job.prompt.replaceAll(/\s+/gu, " ").slice(0, 80)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "   ",
+      renderCommandPreview(job.command)
+    ] })
+  ] }, job.id)),
+  errorMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: errorMessage }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "j/k select \xB7 e edit prompt \xB7 x remove \xB7 a add another \xB7 \u21B5 choose workspace \xB7 b current candidate \xB7 q cancel" })
+] });
+var BatchDestinationView = ({ index, errorMessage }) => {
+  const options = ["Current Herdr workspace", "Fresh Herdr worktree"];
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Choose a batch workspace" }),
+    options.map((option, itemIndex) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: itemIndex === index, ...itemIndex === index ? { color: "green" } : {}, children: [
+      itemIndex === index ? "\u276F " : "  ",
+      option
+    ] }, option)),
+    errorMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: errorMessage }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "j/k select \xB7 \u21B5 confirm \xB7 b back" })
+  ] });
+};
 var WorktreeReadyView = ({
   inspection,
   confirmations
@@ -78365,7 +78700,10 @@ var WorktreeReadyView = ({
     ] })
   ] });
 };
-var WorktreeCollisionView = ({ inspection }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, borderStyle: "round", borderColor: "yellow", children: [
+var WorktreeCollisionView = ({
+  inspection,
+  allowExisting
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, borderStyle: "round", borderColor: "yellow", children: [
   /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "yellow", children: [
     "Worktree collision: ",
     inspection.collision.kind
@@ -78383,7 +78721,7 @@ var WorktreeCollisionView = ({ inspection }) => /* @__PURE__ */ (0, import_jsx_r
       inspection.collision.path,
       "."
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u21B5 open existing worktree \xB7 e edit branch \xB7 q cancel" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: allowExisting ? "\u21B5 open existing worktree \xB7 e edit branch \xB7 q cancel" : "e edit branch \xB7 b back \xB7 q cancel" })
   ] })
 ] });
 var useGuideMatchEffect = (props, state, dispatch) => {
@@ -78631,11 +78969,32 @@ var handleCandidatesInput = ({ state, dispatch, complete, cancel }, input, key) 
   else if (key.downArrow || input === "j") dispatch({ type: "candidates/move" /* CandidatesMove */, delta: 1 });
   else if (key.escape || input === "b") dispatch({ type: "candidates/back" /* CandidatesBack */ });
   else if (key.return) dispatch({ type: "candidates/confirm" /* CandidatesConfirm */ });
+  else if (input === "a") dispatch({ type: "candidates/enqueue" /* CandidatesEnqueue */ });
+  else if (input === "v" && state.queue.entries.length > 0)
+    dispatch({ type: "candidates/view-queue" /* CandidatesViewQueue */ });
   else if (input === "r") dispatch({ type: "candidates/refine-start" /* CandidatesRefineStart */ });
   else if (input === "e") dispatch({ type: "candidates/direct-edit-start" /* CandidatesDirectEditStart */ });
   else if (input === "c" && state.candidates !== void 0) {
     complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt));
   } else if (input === "q") cancel();
+};
+var handleQueueInput = ({ state, dispatch, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: "queue/move" /* QueueMove */, delta: -1 });
+  else if (key.downArrow || input === "j") dispatch({ type: "queue/move" /* QueueMove */, delta: 1 });
+  else if (input === "e") dispatch({ type: "queue/edit-start" /* QueueEditStart */ });
+  else if (input === "x") dispatch({ type: "queue/remove" /* QueueRemove */ });
+  else if (input === "a") dispatch({ type: "queue/add-another" /* QueueAddAnother */ });
+  else if (key.return) dispatch({ type: "queue/choose-destination" /* QueueChooseDestination */ });
+  else if (input === "b" || key.escape) dispatch({ type: "queue/back" /* QueueBack */ });
+  else if (input === "q") cancel();
+};
+var handleQueuePromptEditorInput = ({ state, dispatch }, input, key) => {
+  if (key.escape) dispatch({ type: "queue/back" /* QueueBack */ });
+  else if (key.return) dispatch({ type: "queue/edit-submit" /* QueueEditSubmit */ });
+  else if (key.backspace || key.delete) dispatch({ type: "editor/backspace" /* EditorBackspace */ });
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
+    dispatch({ type: "editor/change" /* EditorChange */, text: state.textDraft + input });
+  }
 };
 var handleTextEditorInput = (context, input, key, maximum, submit, back) => {
   if (key.escape) context.dispatch(back);
@@ -78709,6 +79068,30 @@ var handleDestinationInput = (context, input, key) => {
   } else if (input === "b") dispatch({ type: "destination/back" /* DestinationBack */ });
   else if (input === "q") cancel();
 };
+var handleBatchDestinationInput = ({ state, dispatch, complete, herdrContext, herdrEnabled, props }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: "batch-destination/move" /* BatchDestinationMove */, delta: -1 });
+  else if (key.downArrow || input === "j") dispatch({ type: "batch-destination/move" /* BatchDestinationMove */, delta: 1 });
+  else if (input === "b") dispatch({ type: "batch-destination/back" /* BatchDestinationBack */ });
+  else if (key.return) {
+    if (!herdrEnabled || herdrContext === null) {
+      dispatch({ type: "batch-destination/unavailable" /* BatchDestinationUnavailable */ });
+    } else if (state.destinationIndex === 0) {
+      complete({
+        action: "batch",
+        batch: {
+          jobs: state.queue.entries,
+          policy: {
+            kind: "current-herdr-workspace",
+            workspaceId: herdrContext.workspaceId,
+            cwd: herdrContext.cwd ?? props.cwd,
+            callerPaneId: herdrContext.paneId,
+            direction: "right"
+          }
+        }
+      });
+    } else dispatch({ type: "batch-destination/start-worktree" /* BatchDestinationStartWorktree */ });
+  }
+};
 var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input, key) => {
   if (input === "e") {
     dispatch({ type: "worktree/edit-branch" /* WorktreeEditBranch */ });
@@ -78716,6 +79099,10 @@ var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input
   }
   if (input === "q") {
     cancel();
+    return;
+  }
+  if (state.worktreePurpose === "batch") {
+    if (input === "b" || key.escape) dispatch({ type: "worktree/back" /* WorktreeBack */ });
     return;
   }
   const inspection = state.worktreeInspection;
@@ -78744,13 +79131,31 @@ var confirmedWorktreeResult = (state) => {
     inspection.baseRef
   );
 };
+var confirmedBatchWorktreeResult = (state) => {
+  const inspection = state.worktreeInspection;
+  if (inspection === void 0 || "collision" in inspection || !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty)) {
+    return void 0;
+  }
+  return {
+    action: "batch",
+    batch: {
+      jobs: state.queue.entries,
+      policy: {
+        kind: "fresh-herdr-worktree",
+        primaryCheckoutPath: inspection.primaryCheckoutPath,
+        branch: inspection.branch,
+        baseRef: inspection.baseRef
+      }
+    }
+  };
+};
 var handleWorktreeReadyInput = ({ state, dispatch, complete }, input, key) => {
   if (key.escape) {
     dispatch({ type: "worktree/back" /* WorktreeBack */ });
     return;
   }
   if (!key.return && input !== "y") return;
-  const result = confirmedWorktreeResult(state);
+  const result = state.worktreePurpose === "batch" ? confirmedBatchWorktreeResult(state) : confirmedWorktreeResult(state);
   if (result === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
   else complete(result);
 };
@@ -78773,7 +79178,10 @@ var inputHandlerByStage = {
   ["worktree-branch-editor" /* WorktreeBranchEditor */]: handleBranchEditorInput,
   ["inspecting-worktree" /* InspectingWorktree */]: handleNoInput,
   ["worktree-collision" /* WorktreeCollision */]: handleWorktreeCollisionInput,
-  ["worktree-ready" /* WorktreeReady */]: handleWorktreeReadyInput
+  ["worktree-ready" /* WorktreeReady */]: handleWorktreeReadyInput,
+  ["queue" /* Queue */]: handleQueueInput,
+  ["queue-prompt-editor" /* QueuePromptEditor */]: handleQueuePromptEditorInput,
+  ["batch-destination" /* BatchDestination */]: handleBatchDestinationInput
 };
 var handleGuideInput = (context, input, key) => {
   if (key.ctrl && input === "c") {
@@ -78787,6 +79195,7 @@ var pastedEditorMaximum = (state) => {
   if (state.stage === "prompt-review" /* PromptReview */ && state.promptReviewEditing) return guideIntentMaximumLength;
   if (state.stage === "refine-editor" /* RefineEditor */) return feedbackMaxLength;
   if (state.stage === "direct-editor" /* DirectEditor */) return promptMaxLength;
+  if (state.stage === "queue-prompt-editor" /* QueuePromptEditor */) return promptMaxLength;
   return void 0;
 };
 var handleGuidePaste = (state, dispatch, pasted) => {
@@ -78876,7 +79285,7 @@ var renderWorktreeCollision = ({ state }) => state.worktreeInspection === void 0
     label: "Inspecting git worktree",
     messages: ["Checking branch and path collisions", "Resolving the existing worktree location"]
   }
-) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeCollisionView, { inspection: state.worktreeInspection });
+) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeCollisionView, { inspection: state.worktreeInspection, allowExisting: state.worktreePurpose === "single" });
 var renderWorktreeReady = ({ state }) => state.worktreeInspection === void 0 || "collision" in state.worktreeInspection ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
   Spinner,
   {
@@ -78955,7 +79364,16 @@ var stageRenderer = {
     }
   ),
   ["worktree-collision" /* WorktreeCollision */]: renderWorktreeCollision,
-  ["worktree-ready" /* WorktreeReady */]: renderWorktreeReady
+  ["worktree-ready" /* WorktreeReady */]: renderWorktreeReady,
+  ["queue" /* Queue */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(QueueView, { queue: state.queue, ...state.errorMessage === void 0 ? {} : { errorMessage: state.errorMessage } }),
+  ["queue-prompt-editor" /* QueuePromptEditor */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Edit queued prompt", textDraft: state.textDraft, keys: "\u21B5 save \xB7 Esc back" }),
+  ["batch-destination" /* BatchDestination */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    BatchDestinationView,
+    {
+      index: state.destinationIndex,
+      ...state.errorMessage === void 0 ? {} : { errorMessage: state.errorMessage }
+    }
+  )
 };
 var GuideApp = (props) => {
   const { exit } = use_app_default();

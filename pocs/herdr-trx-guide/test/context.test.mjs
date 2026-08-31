@@ -44,6 +44,7 @@ test("parses a multiline selected-text invocation", () => {
 })
 
 test("parses private source-picker choices", () => {
+  assert.deepEqual(parsePanelChoice({ schemaVersion: 1, kind: "queue" }), { kind: "queue" })
   assert.deepEqual(
     parsePanelChoice({
       schemaVersion: 1,
@@ -80,6 +81,15 @@ test("parses private source-picker choices", () => {
         stateChangeSeq: 9,
       }),
     /session id is missing/u,
+  )
+  assert.equal(
+    parsePanelChoice({
+      schemaVersion: 1,
+      kind: "selection",
+      operation: "enqueue",
+      selectedText: "Queued text",
+    }).operation,
+    "enqueue",
   )
 })
 

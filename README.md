@@ -825,6 +825,12 @@ Copilot workspace-trust or Codex hook-trust requests; the guide does not
 approve trust automatically. Other Herdr profiles receive the prompt through
 the Herdr agent API after the agent is idle.
 
+Press `a` on Prompt candidates to add the selected job to a staged batch.
+The queue keeps each profile, prompt, and exact command in insertion order.
+You can edit or remove entries, add more Council, Research, Native, or Sandbox
+jobs, then launch the batch in the current Herdr workspace or one fresh Herdr
+worktree. Enter still follows the existing single-job destination flow.
+
 Agent Skills can use the side-effect-free JSON API:
 
 ```bash

@@ -10,6 +10,7 @@ import {
   type GuideUiResult,
 } from "../src/guide-ui.js"
 import { CommandRunnerError } from "../src/guide-launch.js"
+import { createQueuedGuideJob } from "../src/guide-batch.js"
 import type {
   CommandRunOptions,
   CommandRunResult,
@@ -65,6 +66,41 @@ const services = (
 })
 
 describe("interactive guide result execution", () => {
+  it("returns the batch exit code and prints its ordered summary", async () => {
+    const runner = new RecordingRunner([
+      {
+        stdout: JSON.stringify({ schemaVersion: 1, launcher: "cpx", profile: "hve-core", readiness: "healthy" }),
+        stderr: "",
+        exitCode: 0,
+      },
+      { stdout: '{"result":{"pane":{"pane_id":"2-3"}}}', stderr: "", exitCode: 0 },
+      { stdout: "", stderr: "", exitCode: 0 },
+    ])
+    const writes: string[] = []
+    const job = createQueuedGuideJob(1, profile(false), "Draft the post.")
+
+    await expect(
+      executeGuideUiResult(
+        {
+          action: "batch",
+          batch: {
+            jobs: [job],
+            policy: {
+              kind: "current-herdr-workspace",
+              workspaceId: "2",
+              cwd: "/repo",
+              callerPaneId: "2-1",
+              direction: "right",
+            },
+          },
+        },
+        services(runner, writes),
+      ),
+    ).resolves.toBe(0)
+    expect(writes.join("")).toContain("Batch launch summary: 1 job")
+    expect(writes.join("")).toContain("1. hve-core: launched in pane 2-3")
+  })
+
   it("returns 130 for cancellation without side effects", async () => {
     const runner = new RecordingRunner()
     const writes: string[] = []

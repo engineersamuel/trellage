@@ -8,7 +8,14 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { consumeChoice, consumeInvocation, writeChoice, writeInvocation } from "../lib/state.mjs"
+import {
+  appendCaptureQueue,
+  consumeChoice,
+  consumeInvocation,
+  readCaptureQueue,
+  writeChoice,
+  writeInvocation,
+} from "../lib/state.mjs"
 
 const execFileAsync = promisify(execFile)
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -152,6 +159,76 @@ test("action stages selected text and opens the guide popup without answer text 
   const invocation = await consumeInvocation(root, invocationPath)
   assert.equal(invocation.answer, "Selected\nanswer")
   assert.deepEqual(invocation.source, { workspaceId: "w1", paneId: "w1:p1", cwd: "/repo" })
+})
+
+test("action queues a selected source without opening the full guide", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-action-queue-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const notificationPath = path.join(root, "notification.json")
+  const fakeHerdr = await writeCaptureExecutable(root, "herdr", notificationPath)
+  const socketPath = await socketServer(t, (request) => {
+    assert.equal(request.method, "popup.close")
+    return { type: "popup_closed" }
+  })
+  const token = await writeChoice(root, {
+    schemaVersion: 1,
+    kind: "selection",
+    operation: "enqueue",
+    selectedText: "First queued selection",
+  })
+  await execFileAsync(process.execPath, [actionEntrypoint], {
+    env: {
+      ...process.env,
+      HERDR_BIN_PATH: fakeHerdr,
+      HERDR_SOCKET_PATH: socketPath,
+      HERDR_PLUGIN_STATE_DIR: root,
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+        workspace_id: "w1",
+        focused_pane_id: "w1:p1",
+        focused_pane_cwd: "/repo",
+        invocation_source: "trellage-guide-panel",
+        selected_text: token,
+      }),
+    },
+  })
+  assert.deepEqual((await readCaptureQueue(root)).entries.map((entry) => entry.answer), ["First queued selection"])
+  const notification = await waitForJsonFile(notificationPath)
+  assert.deepEqual(notification.argv.slice(0, 3), ["notification", "show", "Added to Trellage capture queue"])
+})
+
+test("action opens and clears the persistent capture queue in insertion order", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-action-open-queue-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const capturePath = path.join(root, "herdr-call.json")
+  const fakeHerdr = await writeCaptureExecutable(root, "herdr", capturePath)
+  const socketPath = await socketServer(t, (request) => {
+    assert.equal(request.method, "popup.close")
+    return { type: "popup_closed" }
+  })
+  await appendCaptureQueue(root, { answer: "First capture" })
+  await appendCaptureQueue(root, { answer: "Second capture" })
+  const token = await writeChoice(root, { schemaVersion: 1, kind: "queue" })
+  await execFileAsync(process.execPath, [actionEntrypoint], {
+    env: {
+      ...process.env,
+      HERDR_BIN_PATH: fakeHerdr,
+      HERDR_SOCKET_PATH: socketPath,
+      HERDR_PLUGIN_STATE_DIR: root,
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+        workspace_id: "w1",
+        focused_pane_id: "w1:p1",
+        focused_pane_cwd: "/repo",
+        invocation_source: "trellage-guide-panel",
+        selected_text: token,
+      }),
+    },
+  })
+  const call = await waitForJsonFile(capturePath)
+  const envArgument = call.argv.find((argument) => argument.startsWith("TRELLAGE_GUIDE_INVOCATION_PATH="))
+  const invocation = await consumeInvocation(root, envArgument.slice("TRELLAGE_GUIDE_INVOCATION_PATH=".length))
+  assert.equal(invocation.answer, "## Captured item 1\n\nFirst capture\n\n---\n\n## Captured item 2\n\nSecond capture")
+  assert.deepEqual(invocation.capture, { source: "capture-queue", confidence: "user-curated" })
+  assert.equal((await readCaptureQueue(root)).entries.length, 0)
 })
 
 test("popup keeps stdin attached while staging a multiline intent for interactive raw mode", async (t) => {

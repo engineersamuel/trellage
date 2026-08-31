@@ -39,6 +39,7 @@ import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.js"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.js"
 import {
   buildGuideLaunchCommand,
+  buildHerdrGuideLaunch,
   defaultWorktreeBranch,
   getHerdrContext,
   inspectGitWorktreeIntent,
@@ -58,6 +59,16 @@ import {
   type WorktreeCollisionResult,
 } from "./guide-launch.js"
 import { checkSelectedProfileReadiness, ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.js"
+import {
+  emptyGuideQueue,
+  enqueueGuideJob,
+  removeSelectedQueuedGuideJob,
+  selectQueuedGuideJob,
+  startQueuedGuidePromptEdit,
+  submitQueuedGuidePromptEdit,
+  type GuideBatch,
+  type GuideQueueState,
+} from "./guide-batch.js"
 
 // ---------------------------------------------------------------------------
 // Shared small helpers.
@@ -139,12 +150,16 @@ export enum GuideUiStage {
   InspectingWorktree = "inspecting-worktree",
   WorktreeCollision = "worktree-collision",
   WorktreeReady = "worktree-ready",
+  Queue = "queue",
+  QueuePromptEditor = "queue-prompt-editor",
+  BatchDestination = "batch-destination",
 }
 
 const editingStages: ReadonlySet<GuideUiStage> = new Set([
   GuideUiStage.RefineEditor,
   GuideUiStage.DirectEditor,
   GuideUiStage.WorktreeBranchEditor,
+  GuideUiStage.QueuePromptEditor,
 ])
 
 export enum GuideUiDestination {
@@ -192,6 +207,9 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.InspectingWorktree]: GuideWizardStep.Destination,
   [GuideUiStage.WorktreeCollision]: GuideWizardStep.Destination,
   [GuideUiStage.WorktreeReady]: GuideWizardStep.Destination,
+  [GuideUiStage.Queue]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.QueuePromptEditor]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.BatchDestination]: GuideWizardStep.Destination,
 }
 
 export const wizardStepForStage = (stage: GuideUiStage): GuideWizardStep | undefined => wizardStepByStage[stage]
@@ -241,6 +259,8 @@ export interface GuideUiState {
   readonly worktreeConfirmations: number
   readonly promptReviewReturnStage: GuideUiStage.Matching | GuideUiStage.MatchFailed | GuideUiStage.Recommendations | undefined
   readonly promptReviewEditing: boolean
+  readonly queue: GuideQueueState
+  readonly worktreePurpose: "single" | "batch"
 }
 
 const emptyState: GuideUiState = {
@@ -267,6 +287,8 @@ const emptyState: GuideUiState = {
   worktreeConfirmations: 0,
   promptReviewReturnStage: undefined,
   promptReviewEditing: false,
+  queue: emptyGuideQueue(),
+  worktreePurpose: "single",
 }
 
 /** Builds initial state and starts matching immediately when a supplied intent is present. */
@@ -332,6 +354,8 @@ export enum GuideUiActionType {
   CandidatesConfirm = "candidates/confirm",
   CandidatesRefineStart = "candidates/refine-start",
   CandidatesDirectEditStart = "candidates/direct-edit-start",
+  CandidatesEnqueue = "candidates/enqueue",
+  CandidatesViewQueue = "candidates/view-queue",
   EditorChange = "editor/change",
   EditorBackspace = "editor/backspace",
   RefineSubmit = "refine/submit",
@@ -356,6 +380,17 @@ export enum GuideUiActionType {
   WorktreeConfirm = "worktree/confirm",
   WorktreeEditBranch = "worktree/edit-branch",
   WorktreeBack = "worktree/back",
+  QueueMove = "queue/move",
+  QueueEditStart = "queue/edit-start",
+  QueueEditSubmit = "queue/edit-submit",
+  QueueRemove = "queue/remove",
+  QueueAddAnother = "queue/add-another",
+  QueueBack = "queue/back",
+  QueueChooseDestination = "queue/choose-destination",
+  BatchDestinationMove = "batch-destination/move",
+  BatchDestinationBack = "batch-destination/back",
+  BatchDestinationUnavailable = "batch-destination/unavailable",
+  BatchDestinationStartWorktree = "batch-destination/start-worktree",
 }
 
 export type GuideUiAction =
@@ -393,6 +428,8 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.CandidatesConfirm }
   | { readonly type: GuideUiActionType.CandidatesRefineStart }
   | { readonly type: GuideUiActionType.CandidatesDirectEditStart }
+  | { readonly type: GuideUiActionType.CandidatesEnqueue }
+  | { readonly type: GuideUiActionType.CandidatesViewQueue }
   | { readonly type: GuideUiActionType.EditorChange; readonly text: string }
   | { readonly type: GuideUiActionType.EditorBackspace }
   | { readonly type: GuideUiActionType.RefineSubmit }
@@ -417,6 +454,17 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.WorktreeConfirm }
   | { readonly type: GuideUiActionType.WorktreeEditBranch }
   | { readonly type: GuideUiActionType.WorktreeBack }
+  | { readonly type: GuideUiActionType.QueueMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.QueueEditStart }
+  | { readonly type: GuideUiActionType.QueueEditSubmit }
+  | { readonly type: GuideUiActionType.QueueRemove }
+  | { readonly type: GuideUiActionType.QueueAddAnother }
+  | { readonly type: GuideUiActionType.QueueBack }
+  | { readonly type: GuideUiActionType.QueueChooseDestination }
+  | { readonly type: GuideUiActionType.BatchDestinationMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.BatchDestinationBack }
+  | { readonly type: GuideUiActionType.BatchDestinationUnavailable }
+  | { readonly type: GuideUiActionType.BatchDestinationStartWorktree }
 
 // ---------------------------------------------------------------------------
 // Reducer. Pure: every transition is guarded by the stage it applies to, and
@@ -447,6 +495,7 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       if (trimmed.length === 0) return state
       return {
         ...emptyState,
+        queue: state.queue,
         stage: GuideUiStage.Matching,
         intent: trimmed,
         matchPhase: GuideMatchPhase.LoadingProfiles,
@@ -518,6 +567,7 @@ const submitPromptReview = (state: GuideUiState): GuideUiState => {
   }
   return {
     ...emptyState,
+    queue: state.queue,
     stage: GuideUiStage.Matching,
     intent,
     matchPhase: GuideMatchPhase.LoadingProfiles,
@@ -722,6 +772,25 @@ const reduceCandidateSelection = (state: GuideUiState, action: GuideUiAction): G
           }
         : state
 
+    case GuideUiActionType.CandidatesEnqueue:
+      return state.stage === GuideUiStage.Candidates && state.candidates !== undefined && state.selectedProfile !== undefined
+        ? {
+            ...state,
+            stage: GuideUiStage.Queue,
+            queue: enqueueGuideJob(
+              state.queue,
+              state.selectedProfile,
+              tripleAt(state.candidates, state.candidateIndex).prompt,
+            ),
+            errorMessage: undefined,
+          }
+        : state
+
+    case GuideUiActionType.CandidatesViewQueue:
+      return state.stage === GuideUiStage.Candidates && state.queue.entries.length > 0
+        ? { ...state, stage: GuideUiStage.Queue, errorMessage: undefined }
+        : state
+
     case GuideUiActionType.CandidatesRefineStart:
       return state.stage === GuideUiStage.Candidates
         ? { ...state, stage: GuideUiStage.RefineEditor, textDraft: "", errorMessage: undefined }
@@ -821,9 +890,8 @@ const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState 
 const reduceReadiness = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.ReadinessReady:
-      return state.stage === GuideUiStage.CheckingReadiness
-        ? { ...state, stage: GuideUiStage.Destination, readiness: action.result, destinationIndex: 0 }
-        : state
+      if (state.stage !== GuideUiStage.CheckingReadiness) return state
+      return { ...state, stage: GuideUiStage.Destination, readiness: action.result, destinationIndex: 0 }
 
     case GuideUiActionType.ReadinessBlocked:
       return state.stage === GuideUiStage.CheckingReadiness
@@ -866,9 +934,77 @@ const reduceDestination = (state: GuideUiState, action: GuideUiAction): GuideUiS
             textDraft: defaultWorktreeBranch(state.intent ?? ""),
             worktreeInspection: undefined,
             errorMessage: undefined,
+            worktreePurpose: "single",
           }
         : state
 
+    default:
+      return state
+  }
+}
+
+const reduceQueue = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.QueueMove:
+      return state.stage === GuideUiStage.Queue ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state
+    case GuideUiActionType.QueueEditStart: {
+      if (state.stage !== GuideUiStage.Queue) return state
+      const queue = startQueuedGuidePromptEdit(state.queue)
+      const job = queue.entries[queue.selectedIndex]
+      return job === undefined ? state : { ...state, stage: GuideUiStage.QueuePromptEditor, queue, textDraft: job.prompt }
+    }
+    case GuideUiActionType.QueueEditSubmit:
+      return state.stage === GuideUiStage.QueuePromptEditor && state.textDraft.trim().length > 0
+        ? { ...state, stage: GuideUiStage.Queue, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) }
+        : state
+    case GuideUiActionType.QueueRemove:
+      return state.stage === GuideUiStage.Queue
+        ? { ...state, queue: removeSelectedQueuedGuideJob(state.queue), errorMessage: undefined }
+        : state
+    case GuideUiActionType.QueueAddAnother:
+      return state.stage === GuideUiStage.Queue ? { ...emptyState, queue: state.queue } : state
+    case GuideUiActionType.QueueBack:
+      if (state.stage === GuideUiStage.QueuePromptEditor) {
+        const { editingId: _, ...queue } = state.queue
+        return { ...state, stage: GuideUiStage.Queue, queue, errorMessage: undefined }
+      }
+      return state.stage === GuideUiStage.Queue
+        ? { ...state, stage: GuideUiStage.Candidates, errorMessage: undefined }
+        : state
+    case GuideUiActionType.QueueChooseDestination:
+      return state.stage === GuideUiStage.Queue
+        ? state.queue.entries.length === 0
+          ? { ...state, errorMessage: "Batch queue is empty." }
+          : { ...state, stage: GuideUiStage.BatchDestination, destinationIndex: 0, errorMessage: undefined }
+        : state
+    default:
+      return state
+  }
+}
+
+const reduceBatchDestination = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.BatchDestinationMove:
+      return state.stage === GuideUiStage.BatchDestination
+        ? { ...state, destinationIndex: (state.destinationIndex + action.delta + 2) % 2 }
+        : state
+    case GuideUiActionType.BatchDestinationBack:
+      return state.stage === GuideUiStage.BatchDestination ? { ...state, stage: GuideUiStage.Queue } : state
+    case GuideUiActionType.BatchDestinationUnavailable:
+      return state.stage === GuideUiStage.BatchDestination
+        ? { ...state, errorMessage: "Herdr is unavailable. Start trx guide from a Herdr pane or popup." }
+        : state
+    case GuideUiActionType.BatchDestinationStartWorktree:
+      return state.stage === GuideUiStage.BatchDestination
+        ? {
+            ...state,
+            stage: GuideUiStage.WorktreeBranchEditor,
+            textDraft: defaultWorktreeBranch(state.intent ?? "batch"),
+            worktreeInspection: undefined,
+            worktreePurpose: "batch",
+            errorMessage: undefined,
+          }
+        : state
     default:
       return state
   }
@@ -954,7 +1090,12 @@ const reduceWorktreeResolution = (state: GuideUiState, action: GuideUiAction): G
       return state.stage === GuideUiStage.WorktreeBranchEditor ||
         state.stage === GuideUiStage.WorktreeCollision ||
         state.stage === GuideUiStage.WorktreeReady
-        ? { ...state, stage: GuideUiStage.Destination, worktreeInspection: undefined, worktreeConfirmations: 0 }
+        ? {
+            ...state,
+            stage: state.worktreePurpose === "batch" ? GuideUiStage.BatchDestination : GuideUiStage.Destination,
+            worktreeInspection: undefined,
+            worktreeConfirmations: 0,
+          }
         : state
 
     default:
@@ -996,6 +1137,8 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.CandidatesConfirm]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesRefineStart]: reduceCandidateSelection,
   [GuideUiActionType.CandidatesDirectEditStart]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesEnqueue]: reduceCandidateSelection,
+  [GuideUiActionType.CandidatesViewQueue]: reduceCandidateSelection,
   [GuideUiActionType.DirectEditSubmit]: reduceDirectEdit,
   [GuideUiActionType.DirectEditBack]: reduceDirectEdit,
   [GuideUiActionType.EditorChange]: reduceEditor,
@@ -1020,6 +1163,17 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.WorktreeConfirm]: reduceWorktreeResolution,
   [GuideUiActionType.WorktreeEditBranch]: reduceWorktreeResolution,
   [GuideUiActionType.WorktreeBack]: reduceWorktreeResolution,
+  [GuideUiActionType.QueueMove]: reduceQueue,
+  [GuideUiActionType.QueueEditStart]: reduceQueue,
+  [GuideUiActionType.QueueEditSubmit]: reduceQueue,
+  [GuideUiActionType.QueueRemove]: reduceQueue,
+  [GuideUiActionType.QueueAddAnother]: reduceQueue,
+  [GuideUiActionType.QueueBack]: reduceQueue,
+  [GuideUiActionType.QueueChooseDestination]: reduceQueue,
+  [GuideUiActionType.BatchDestinationMove]: reduceBatchDestination,
+  [GuideUiActionType.BatchDestinationBack]: reduceBatchDestination,
+  [GuideUiActionType.BatchDestinationUnavailable]: reduceBatchDestination,
+  [GuideUiActionType.BatchDestinationStartWorktree]: reduceBatchDestination,
 }
 
 export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1371,6 +1525,11 @@ export interface GuideUiExistingHerdrWorktreeResult {
   readonly path: string
 }
 
+export interface GuideUiBatchResult {
+  readonly action: "batch"
+  readonly batch: GuideBatch
+}
+
 export type GuideUiResult =
   | GuideUiCancelResult
   | GuideUiPrintResult
@@ -1378,42 +1537,11 @@ export type GuideUiResult =
   | GuideUiCurrentHerdrWorkspaceResult
   | GuideUiNewHerdrWorktreeResult
   | GuideUiExistingHerdrWorktreeResult
+  | GuideUiBatchResult
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
 export const buildPrintResult = (prompt: string): GuideUiPrintResult => ({ action: "print", prompt })
-
-const buildHerdrLaunch = (
-  profile: SelectedProfile,
-  prompt: string,
-): { readonly command: CommandSpec; readonly promptDelivery: HerdrPromptDeliveryMode } => {
-  if (profile.surface === "native" && profile.launcher === "cpx") {
-    // Copilot retains -i across its folder-trust gate; a later Herdr prompt can be consumed by that gate instead.
-    const baseCommand = buildGuideLaunchCommand(profile).command
-    return {
-      command: {
-        executable: baseCommand.executable,
-        args: [...baseCommand.args, "-i", prompt],
-      },
-      promptDelivery: "command",
-    }
-  }
-  if (profile.surface === "native" && profile.launcher === "cdx") {
-    // Codex retains its positional prompt while the user reviews trust for new or changed hooks.
-    const baseCommand = buildGuideLaunchCommand(profile).command
-    return {
-      command: {
-        executable: baseCommand.executable,
-        args: [...baseCommand.args, prompt],
-      },
-      promptDelivery: "command",
-    }
-  }
-  return {
-    command: buildGuideLaunchCommand(profile).command,
-    promptDelivery: "agent",
-  }
-}
 
 export const buildCurrentTerminalResult = (
   profile: SelectedProfile,
@@ -1438,7 +1566,7 @@ export const buildCurrentHerdrWorkspaceResult = (
   herdrContext: HerdrContext,
   direction: HerdrSplitDirection = "right",
 ): GuideUiCurrentHerdrWorkspaceResult => {
-  const built = buildHerdrLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt)
   return {
     action: "current-herdr-workspace",
     profile,
@@ -1458,7 +1586,7 @@ export const buildNewHerdrWorktreeResult = (
   branch: string,
   baseRef: string,
 ): GuideUiNewHerdrWorktreeResult => {
-  const built = buildHerdrLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt)
   return {
     action: "herdr-worktree-create",
     profile,
@@ -1477,7 +1605,7 @@ export const buildExistingHerdrWorktreeResult = (
   primaryCheckoutPath: string,
   path: string,
 ): GuideUiExistingHerdrWorktreeResult => {
-  const built = buildHerdrLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt)
   return {
     action: "herdr-worktree-open",
     profile,
@@ -1511,6 +1639,13 @@ export interface GuideUiProps {
 export const captureSourcePresentation = (
   capture: GuideCaptureProvenance,
 ): { readonly label: string; readonly detail: string; readonly color: "cyan" | "green" | "yellow" } => {
+  if (capture.source === "capture-queue") {
+    return {
+      label: "Curated capture queue",
+      detail: "The guide is using the highlighted text and agent results you queued.",
+      color: "cyan",
+    }
+  }
   if (capture.source === "selection") {
     return {
       label: "Highlighted text",
@@ -2540,8 +2675,7 @@ const CandidatesView = ({
         {command.promptHandling === "manual-paste" ? " (manual paste required)" : ""}
       </Text>
       <Text dimColor wrap="truncate-end">
-        ↑/↓ or j/k select · PgUp/PgDn scroll · ↵ continue · b/Esc back · r refine · e edit · c print full prompt · q
-        cancel
+        ↑/↓ or j/k select · ↵ continue · a add to batch · v view batch · b/Esc back · r refine · e edit · c print · q cancel
       </Text>
     </Box>
   )
@@ -2602,6 +2736,38 @@ const DestinationView = ({
   </Box>
 )
 
+const QueueView = ({ queue, errorMessage }: { readonly queue: GuideQueueState; readonly errorMessage?: string }) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Text bold color="cyan">Batch queue. {queue.entries.length} jobs</Text>
+    {queue.entries.map((job, index) => (
+      <Box key={job.id} flexDirection="column">
+        <Text bold={index === queue.selectedIndex} {...(index === queue.selectedIndex ? { color: "green" as const } : {})}>
+          {index === queue.selectedIndex ? "❯ " : "  "}{job.id}. {job.profile.profile} · {job.prompt.replaceAll(/\s+/gu, " ").slice(0, 80)}
+        </Text>
+        <Text dimColor wrap="truncate-end">   {renderCommandPreview(job.command)}</Text>
+      </Box>
+    ))}
+    {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
+    <Text dimColor>j/k select · e edit prompt · x remove · a add another · ↵ choose workspace · b current candidate · q cancel</Text>
+  </Box>
+)
+
+const BatchDestinationView = ({ index, errorMessage }: { readonly index: number; readonly errorMessage?: string }) => {
+  const options = ["Current Herdr workspace", "Fresh Herdr worktree"] as const
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold color="cyan">Choose a batch workspace</Text>
+      {options.map((option, itemIndex) => (
+        <Text key={option} bold={itemIndex === index} {...(itemIndex === index ? { color: "green" as const } : {})}>
+          {itemIndex === index ? "❯ " : "  "}{option}
+        </Text>
+      ))}
+      {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
+      <Text dimColor>j/k select · ↵ confirm · b back</Text>
+    </Box>
+  )
+}
+
 const WorktreeReadyView = ({
   inspection,
   confirmations,
@@ -2634,7 +2800,13 @@ const WorktreeReadyView = ({
   )
 }
 
-const WorktreeCollisionView = ({ inspection }: { readonly inspection: WorktreeCollisionResult }) => (
+const WorktreeCollisionView = ({
+  inspection,
+  allowExisting,
+}: {
+  readonly inspection: WorktreeCollisionResult
+  readonly allowExisting: boolean
+}) => (
   <Box flexDirection="column" paddingX={1} borderStyle="round" borderColor="yellow">
     <Text bold color="yellow">
       Worktree collision: {inspection.collision.kind}
@@ -2649,7 +2821,7 @@ const WorktreeCollisionView = ({ inspection }: { readonly inspection: WorktreeCo
     ) : (
       <>
         <Text wrap="wrap">An active worktree already exists at {inspection.collision.path}.</Text>
-        <Text dimColor>↵ open existing worktree · e edit branch · q cancel</Text>
+        <Text dimColor>{allowExisting ? "↵ open existing worktree · e edit branch · q cancel" : "e edit branch · b back · q cancel"}</Text>
       </>
     )}
   </Box>
@@ -2945,11 +3117,34 @@ const handleCandidatesInput: GuideInputHandler = ({ state, dispatch, complete, c
   else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.CandidatesMove, delta: 1 })
   else if (key.escape || input === "b") dispatch({ type: GuideUiActionType.CandidatesBack })
   else if (key.return) dispatch({ type: GuideUiActionType.CandidatesConfirm })
+  else if (input === "a") dispatch({ type: GuideUiActionType.CandidatesEnqueue })
+  else if (input === "v" && state.queue.entries.length > 0)
+    dispatch({ type: GuideUiActionType.CandidatesViewQueue })
   else if (input === "r") dispatch({ type: GuideUiActionType.CandidatesRefineStart })
   else if (input === "e") dispatch({ type: GuideUiActionType.CandidatesDirectEditStart })
   else if (input === "c" && state.candidates !== undefined) {
     complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt))
   } else if (input === "q") cancel()
+}
+
+const handleQueueInput: GuideInputHandler = ({ state, dispatch, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.QueueMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.QueueMove, delta: 1 })
+  else if (input === "e") dispatch({ type: GuideUiActionType.QueueEditStart })
+  else if (input === "x") dispatch({ type: GuideUiActionType.QueueRemove })
+  else if (input === "a") dispatch({ type: GuideUiActionType.QueueAddAnother })
+  else if (key.return) dispatch({ type: GuideUiActionType.QueueChooseDestination })
+  else if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.QueueBack })
+  else if (input === "q") cancel()
+}
+
+const handleQueuePromptEditorInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+  if (key.escape) dispatch({ type: GuideUiActionType.QueueBack })
+  else if (key.return) dispatch({ type: GuideUiActionType.QueueEditSubmit })
+  else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.EditorBackspace })
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
+    dispatch({ type: GuideUiActionType.EditorChange, text: state.textDraft + input })
+  }
 }
 
 const handleTextEditorInput = (
@@ -3042,6 +3237,35 @@ const handleDestinationInput: GuideInputHandler = (context, input, key) => {
   else if (input === "q") cancel()
 }
 
+const handleBatchDestinationInput: GuideInputHandler = (
+  { state, dispatch, complete, herdrContext, herdrEnabled, props },
+  input,
+  key,
+) => {
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.BatchDestinationMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.BatchDestinationMove, delta: 1 })
+  else if (input === "b") dispatch({ type: GuideUiActionType.BatchDestinationBack })
+  else if (key.return) {
+    if (!herdrEnabled || herdrContext === null) {
+      dispatch({ type: GuideUiActionType.BatchDestinationUnavailable })
+    } else if (state.destinationIndex === 0) {
+      complete({
+        action: "batch",
+        batch: {
+          jobs: state.queue.entries,
+          policy: {
+            kind: "current-herdr-workspace",
+            workspaceId: herdrContext.workspaceId,
+            cwd: herdrContext.cwd ?? props.cwd,
+            callerPaneId: herdrContext.paneId,
+            direction: "right",
+          },
+        },
+      })
+    } else dispatch({ type: GuideUiActionType.BatchDestinationStartWorktree })
+  }
+}
+
 const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
   if (input === "e") {
     dispatch({ type: GuideUiActionType.WorktreeEditBranch })
@@ -3049,6 +3273,10 @@ const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, comp
   }
   if (input === "q") {
     cancel()
+    return
+  }
+  if (state.worktreePurpose === "batch") {
+    if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
   const inspection = state.worktreeInspection
@@ -3092,13 +3320,36 @@ const confirmedWorktreeResult = (state: GuideUiState): GuideUiNewHerdrWorktreeRe
   )
 }
 
+const confirmedBatchWorktreeResult = (state: GuideUiState): GuideUiBatchResult | undefined => {
+  const inspection = state.worktreeInspection
+  if (
+    inspection === undefined ||
+    "collision" in inspection ||
+    !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty)
+  ) {
+    return undefined
+  }
+  return {
+    action: "batch",
+    batch: {
+      jobs: state.queue.entries,
+      policy: {
+        kind: "fresh-herdr-worktree",
+        primaryCheckoutPath: inspection.primaryCheckoutPath,
+        branch: inspection.branch,
+        baseRef: inspection.baseRef,
+      },
+    },
+  }
+}
+
 const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
   if (key.escape) {
     dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
   if (!key.return && input !== "y") return
-  const result = confirmedWorktreeResult(state)
+  const result = state.worktreePurpose === "batch" ? confirmedBatchWorktreeResult(state) : confirmedWorktreeResult(state)
   if (result === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
   else complete(result)
 }
@@ -3123,6 +3374,9 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.InspectingWorktree]: handleNoInput,
   [GuideUiStage.WorktreeCollision]: handleWorktreeCollisionInput,
   [GuideUiStage.WorktreeReady]: handleWorktreeReadyInput,
+  [GuideUiStage.Queue]: handleQueueInput,
+  [GuideUiStage.QueuePromptEditor]: handleQueuePromptEditorInput,
+  [GuideUiStage.BatchDestination]: handleBatchDestinationInput,
 }
 
 const handleGuideInput = (context: GuideInputContext, input: string, key: Key): void => {
@@ -3138,6 +3392,7 @@ const pastedEditorMaximum = (state: GuideUiState): number | undefined => {
   if (state.stage === GuideUiStage.PromptReview && state.promptReviewEditing) return guideIntentMaximumLength
   if (state.stage === GuideUiStage.RefineEditor) return feedbackMaxLength
   if (state.stage === GuideUiStage.DirectEditor) return promptMaxLength
+  if (state.stage === GuideUiStage.QueuePromptEditor) return promptMaxLength
   return undefined
 }
 
@@ -3251,7 +3506,7 @@ const renderWorktreeCollision: GuideStageRenderer = ({ state }) =>
       messages={["Checking branch and path collisions", "Resolving the existing worktree location"]}
     />
   ) : (
-    <WorktreeCollisionView inspection={state.worktreeInspection} />
+    <WorktreeCollisionView inspection={state.worktreeInspection} allowExisting={state.worktreePurpose === "single"} />
   )
 
 const renderWorktreeReady: GuideStageRenderer = ({ state }) =>
@@ -3336,6 +3591,18 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   ),
   [GuideUiStage.WorktreeCollision]: renderWorktreeCollision,
   [GuideUiStage.WorktreeReady]: renderWorktreeReady,
+  [GuideUiStage.Queue]: ({ state }) => (
+    <QueueView queue={state.queue} {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })} />
+  ),
+  [GuideUiStage.QueuePromptEditor]: ({ state }) => (
+    <TextEditor title="Edit queued prompt" textDraft={state.textDraft} keys="↵ save · Esc back" />
+  ),
+  [GuideUiStage.BatchDestination]: ({ state }) => (
+    <BatchDestinationView
+      index={state.destinationIndex}
+      {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })}
+    />
+  ),
 }
 
 /**

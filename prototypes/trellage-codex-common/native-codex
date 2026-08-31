@@ -250,9 +250,9 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: $launcher,
       harness: "codex",
-      # cdx now enables the Codex native --sandbox workspace-write profile
-      # (network access re-enabled via config override, approvals never
-      # prompted). See docs/native-sandbox-research.md.
+      # cdx enables the Codex native --sandbox workspace-write profile with
+      # network access. Interactive sessions can approve commands that must
+      # cross the sandbox boundary; unattended sessions fail closed.
       sandbox: true,
       profiles: [
         .profiles
@@ -3123,6 +3123,7 @@ run_codex_child() {
   local profile="$1" native="$2"
   local target="$(profile_home "$profile")/config.toml"
   local before child_status cleanup_status wait_status release_status=0
+  local approval_policy=never
   local monitor_child=yes
   # Bash 3.2-safe: builders fill these arrays.
   trust_codex_args=()
@@ -3161,6 +3162,7 @@ run_codex_child() {
   trap 'launch_signal TERM' TERM
   if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
     monitor_child=no
+    approval_policy=on-request
   else
     set -m
   fi
@@ -3169,7 +3171,7 @@ run_codex_child() {
     env CODEX_HOME="$(profile_home "$profile")" \
       "$codex_executable" --sandbox workspace-write \
       -c sandbox_workspace_write.network_access=true \
-      --ask-for-approval never \
+      --ask-for-approval "$approval_policy" \
       --disable default_mode_request_user_input \
       ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
       -c 'model_provider="openai"' \
@@ -3179,7 +3181,7 @@ run_codex_child() {
     env CODEX_HOME="$(profile_home "$profile")" \
       "$codex_executable" --sandbox workspace-write \
       -c sandbox_workspace_write.network_access=true \
-      --ask-for-approval never \
+      --ask-for-approval "$approval_policy" \
       --disable default_mode_request_user_input \
       ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
       ${trust_codex_args[@]+"${trust_codex_args[@]}"} \

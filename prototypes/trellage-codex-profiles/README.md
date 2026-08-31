@@ -77,15 +77,17 @@ harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
 after selection; `trx` never performs setup, repair, or update.
 
 Profile launch always passes `--sandbox workspace-write -c
-sandbox_workspace_write.network_access=true --ask-for-approval never` and
-disables `default_mode_request_user_input`. Codex's native OS-level sandbox
-(Seatbelt on macOS, Landlock+bubblewrap on Linux) restricts writes to the
-workspace and temp directories while still allowing reads and network access;
-approvals never pause for interactive input, so full permissions apply within
-that sandbox boundary. Plugin code and Codex commands can still read any host
-data available to the process and reach the network. Use `cdx` only with
-trusted repositories and plugins. Lifecycle commands do not add these launch
-flags.
+sandbox_workspace_write.network_access=true` and disables
+`default_mode_request_user_input`. Interactive launches use
+`--ask-for-approval on-request`, which lets Codex request permission for Git
+metadata writes and other commands that must cross the workspace sandbox
+boundary. Non-interactive launches use `--ask-for-approval never` so automation
+cannot hang waiting for input. Codex's native OS-level sandbox (Seatbelt on
+macOS, Landlock+bubblewrap on Linux) restricts writes to the workspace and temp
+directories while still allowing reads and network access. Plugin code and
+Codex commands can still read any host data available to the process and reach
+the network. Use `cdx` only with trusted repositories and plugins. Lifecycle
+commands do not add these launch flags.
 
 Hook trust uses contextual `--dangerously-bypass-hook-trust`:
 

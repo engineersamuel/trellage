@@ -6,8 +6,8 @@ const multilineControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]
 const identifierControls = /[\u0000-\u001f\u007f-\u009f]/u
 const safeSessionId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const captureModes = new Set(["exact", "terminal"])
-const captureSources = new Set(["selection", "transcript", "sandbox-transcript", "terminal"])
-const captureConfidences = new Set(["user-selected", "exact", "snapshot"])
+const captureSources = new Set(["selection", "transcript", "sandbox-transcript", "terminal", "capture-queue"])
+const captureConfidences = new Set(["user-selected", "exact", "snapshot", "user-curated"])
 
 export const panelInvocationSource = "trellage-guide-panel"
 
@@ -92,9 +92,12 @@ export const parsePanelChoice = (value) => {
     throw new Error("The source picker choice is invalid")
   }
   const kind = requiredString(value, "kind", "source picker choice", 32)
+  const operation = value.operation === "enqueue" ? "enqueue" : undefined
+  if (kind === "queue") return { kind }
   if (kind === "selection") {
     return {
       kind,
+      ...(operation === undefined ? {} : { operation }),
       selectedText: validateAnswer(value.selectedText, "Selected text"),
     }
   }
@@ -107,6 +110,7 @@ export const parsePanelChoice = (value) => {
   if (kind === "terminal") {
     return {
       kind,
+      ...(operation === undefined ? {} : { operation }),
       sourcePaneId,
       captureMode: kind,
       expectedStateChangeSeq,
@@ -118,6 +122,7 @@ export const parsePanelChoice = (value) => {
   }
   return {
     kind,
+    ...(operation === undefined ? {} : { operation }),
     sourcePaneId,
     captureMode: kind,
     expectedSessionId,
@@ -198,8 +203,13 @@ export const parseCaptureProvenance = (value) => {
   if (!captureSources.has(source) || !captureConfidences.has(confidence)) {
     throw new Error("The guide invocation capture is invalid")
   }
-  const expectedConfidence =
-    source === "selection" ? "user-selected" : source === "terminal" ? "snapshot" : "exact"
+  const expectedConfidence = source === "selection"
+    ? "user-selected"
+    : source === "terminal"
+      ? "snapshot"
+      : source === "capture-queue"
+        ? "user-curated"
+        : "exact"
   if (confidence !== expectedConfidence) throw new Error("The guide invocation capture is invalid")
   const agent = captureOptionalString(value, "agent", 128)
   const sessionId = captureOptionalString(value, "sessionId", 128)
