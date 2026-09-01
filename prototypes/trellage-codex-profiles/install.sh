@@ -16,19 +16,38 @@ home="$(cd -L "$home" >/dev/null 2>&1 && pwd -L)" || refuse "refusing unsafe HOM
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 common_launcher="$source_dir/../trellage-codex-common/native-codex"
 session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
+floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
+environment_runtime_installer="$source_dir/../../scripts/install-native-environment-runtime.sh"
+floating_skills_manager="$source_dir/../../scripts/floating-skills.mjs"
+floating_skills_catalog="$source_dir/../../skills.json"
+for runtime_installer in "$floating_runtime_installer" "$environment_runtime_installer"; do
+  [ -f "$runtime_installer" ] && [ ! -L "$runtime_installer" ] && [ -x "$runtime_installer" ] \
+    || refuse "required runtime installer is missing or unsafe: $runtime_installer"
+done
+for runtime_input in "$floating_skills_manager" "$floating_skills_catalog"; do
+  [ -f "$runtime_input" ] && [ ! -L "$runtime_input" ] \
+    || refuse "required runtime input is missing or unsafe: $runtime_input"
+done
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
+common_runtime_root="$runtime_parent/common"
+environment_runtime_destination="$common_runtime_root/native-environment-runtime"
+floating_runtime_destination="$common_runtime_root/floating-skills-runtime"
 install_root="$runtime_parent/cdx"
 installed_launcher="$install_root/bin/cdx"
 ownership_marker="$install_root/.managed-by-trellage-codex-profiles"
-ownership_value='trellage-codex-profiles-v1'
+# v2 is an installation barrier: older v1 worktrees must not replace a newer
+# profile catalog. This installer can migrate a validated v1 runtime once.
+ownership_value='trellage-codex-profiles-v2'
+legacy_ownership_value='trellage-codex-profiles-v1'
 command_dir="$local_dir/bin"
 command_path="$command_dir/cdx"
 config_dir="$home/.config"
 fish_dir="$home/.config/fish"
 fish_config="$fish_dir/config.fish"
 legacy_alias='alias cdx="codex --dangerously-bypass-approvals-and-sandbox"'
+current_uid="$(id -u 2>/dev/null)" || refuse 'could not identify the current user'
 
 file_mode() {
   case "$(uname -s 2>/dev/null)" in
@@ -36,6 +55,85 @@ file_mode() {
     Linux) stat -c '%a' "$1" ;;
     *) return 1 ;;
   esac
+}
+
+file_uid() {
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) stat -f '%u' "$1" ;;
+    Linux) stat -c '%u' "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
+mode_has_shared_write() {
+  case "$1" in
+    *[2367][0-7] | *[0-7][2367]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+assert_owned_safe_directory() {
+  local candidate="$1"
+  local mode
+  local owner
+
+  [ -d "$candidate" ] && [ ! -L "$candidate" ] \
+    || refuse "unsafe shared runtime directory: $candidate"
+  owner="$(file_uid "$candidate")" || refuse "cannot inspect shared runtime owner: $candidate"
+  [ "$owner" = "$current_uid" ] \
+    || refuse "shared runtime directory is not owned by the current user: $candidate"
+  mode="$(file_mode "$candidate")" || refuse "cannot inspect shared runtime mode: $candidate"
+  case "$mode" in [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;; *) refuse "invalid shared runtime mode: $candidate" ;; esac
+  ! mode_has_shared_write "$mode" \
+    || refuse "shared runtime directory must not be writable by group or other users: $candidate"
+}
+
+assert_owned_safe_file() {
+  local candidate="$1"
+  local mode
+  local owner
+
+  [ -f "$candidate" ] && [ ! -L "$candidate" ] \
+    || refuse "unsafe shared runtime file: $candidate"
+  owner="$(file_uid "$candidate")" || refuse "cannot inspect shared runtime owner: $candidate"
+  [ "$owner" = "$current_uid" ] \
+    || refuse "shared runtime file is not owned by the current user: $candidate"
+  mode="$(file_mode "$candidate")" || refuse "cannot inspect shared runtime mode: $candidate"
+  case "$mode" in [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;; *) refuse "invalid shared runtime mode: $candidate" ;; esac
+  ! mode_has_shared_write "$mode" \
+    || refuse "shared runtime file must not be writable by group or other users: $candidate"
+}
+
+validate_environment_runtime_destination() {
+  local destination="$1"
+
+  assert_owned_safe_directory "$destination"
+  [ -f "$destination/.managed-by-trellage" ] \
+    && [ ! -L "$destination/.managed-by-trellage" ] \
+    || refuse "refusing unowned native environment runtime: $destination"
+  assert_owned_safe_file "$destination/.managed-by-trellage"
+  cmp -s "$destination/.managed-by-trellage" \
+      <(printf '%s\n' 'trellage-native-environment-runtime-v1') \
+    || refuse "refusing unowned native environment runtime: $destination"
+  [ -z "$(find "$destination" -type l -print -quit)" ] \
+    || refuse "refusing symlinked native environment runtime content: $destination"
+}
+
+validate_floating_runtime_destination() {
+  local destination="$1"
+  local actual_entries
+  local expected_entries
+  local runtime_file
+
+  assert_owned_safe_directory "$destination"
+  actual_entries="$(CDPATH= cd -- "$destination" && find . -print | LC_ALL=C sort)" \
+    || refuse "cannot inspect floating-skills runtime: $destination"
+  expected_entries="$(printf '%s\n' '.' './floating-skills.mjs' './skills.json')"
+  [ "$actual_entries" = "$expected_entries" ] \
+    || refuse "refusing unexpected floating-skills runtime content: $destination"
+  for runtime_file in "$destination/floating-skills.mjs" "$destination/skills.json"; do
+    assert_owned_safe_file "$runtime_file"
+  done
 }
 
 sha256_file() {
@@ -416,8 +514,10 @@ fi
 if [ -d "$install_root" ]; then
   [ -f "$ownership_marker" ] && [ ! -L "$ownership_marker" ] \
     || refuse "refusing unowned runtime root: $install_root"
-  cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value") \
-    || refuse "refusing unowned runtime root: $install_root"
+  if ! cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value") \
+    && ! cmp -s "$ownership_marker" <(printf '%s\n' "$legacy_ownership_value"); then
+    refuse "refusing unowned runtime root: $install_root"
+  fi
   actual_entries="$(CDPATH= cd -- "$install_root" && find . -print | LC_ALL=C sort)"
   recovery_entries="$(printf '%s\n' \
     '.' \
@@ -538,6 +638,27 @@ else
   refuse 'Fish config must contain no cdx definition or exactly the known legacy cdx alias'
 fi
 
+for shared_parent in "$home" "$local_dir" "$share_dir" "$runtime_parent"; do
+  if [ -e "$shared_parent" ] || [ -L "$shared_parent" ]; then
+    assert_owned_safe_directory "$shared_parent"
+  fi
+done
+shared_common_preexisting=false
+if [ -e "$common_runtime_root" ] || [ -L "$common_runtime_root" ]; then
+  assert_owned_safe_directory "$common_runtime_root"
+  shared_common_preexisting=true
+fi
+environment_runtime_preexisting=false
+if [ -e "$environment_runtime_destination" ] || [ -L "$environment_runtime_destination" ]; then
+  validate_environment_runtime_destination "$environment_runtime_destination"
+  environment_runtime_preexisting=true
+fi
+floating_runtime_preexisting=false
+if [ -e "$floating_runtime_destination" ] || [ -L "$floating_runtime_destination" ]; then
+  validate_floating_runtime_destination "$floating_runtime_destination"
+  floating_runtime_preexisting=true
+fi
+
 staging_root=''
 command_staging=''
 fish_new=''
@@ -550,6 +671,10 @@ runtime_old_intent=false
 runtime_publish_intent=false
 command_old_intent=false
 command_publish_intent=false
+environment_runtime_old_intent="$environment_runtime_preexisting"
+environment_runtime_publish_intent=false
+floating_runtime_old_intent="$floating_runtime_preexisting"
+floating_runtime_publish_intent=false
 created_local_dir=false
 created_share_dir=false
 created_runtime_parent=false
@@ -585,6 +710,67 @@ cleanup_created_parents() {
 
 rollback() {
   local ok=true
+  local shared_entries
+  if [ "$floating_runtime_publish_intent" = true ]; then
+    if [ "$floating_runtime_old_intent" = false ] \
+      || [ -d "$staging_root/old-floating-skills-runtime" ]; then
+      if [ -e "$floating_runtime_destination" ] || [ -L "$floating_runtime_destination" ]; then
+        shared_entries="$(
+          if [ -d "$floating_runtime_destination" ] && [ ! -L "$floating_runtime_destination" ]; then
+            CDPATH= cd -- "$floating_runtime_destination" \
+              && find . -print | LC_ALL=C sort
+          fi
+        )"
+        if [ "$shared_entries" = "$(printf '%s\n' '.' './floating-skills.mjs' './skills.json')" ] \
+          && [ -f "$floating_runtime_destination/floating-skills.mjs" ] \
+          && [ ! -L "$floating_runtime_destination/floating-skills.mjs" ] \
+          && [ -f "$floating_runtime_destination/skills.json" ] \
+          && [ ! -L "$floating_runtime_destination/skills.json" ] \
+          && cmp -s "$floating_runtime_destination/floating-skills.mjs" \
+            "$floating_skills_manager" \
+          && cmp -s "$floating_runtime_destination/skills.json" "$floating_skills_catalog"; then
+          rm -rf -- "$floating_runtime_destination" || ok=false
+        else
+          ok=false
+        fi
+      fi
+      if [ -d "$staging_root/old-floating-skills-runtime" ]; then
+        [ ! -e "$floating_runtime_destination" ] \
+          && [ ! -L "$floating_runtime_destination" ] \
+          && mv "$staging_root/old-floating-skills-runtime" \
+            "$floating_runtime_destination" || ok=false
+      fi
+    fi
+  fi
+  if [ "$environment_runtime_publish_intent" = true ]; then
+    if [ "$environment_runtime_old_intent" = false ] \
+      || [ -d "$staging_root/old-native-environment-runtime" ]; then
+      if [ -e "$environment_runtime_destination" ] \
+        || [ -L "$environment_runtime_destination" ]; then
+        if [ -d "$environment_runtime_destination" ] \
+          && [ ! -L "$environment_runtime_destination" ] \
+          && [ -f "$environment_runtime_destination/.managed-by-trellage" ] \
+          && [ ! -L "$environment_runtime_destination/.managed-by-trellage" ] \
+          && cmp -s "$environment_runtime_destination/.managed-by-trellage" \
+            <(printf '%s\n' 'trellage-native-environment-runtime-v1') \
+          && [ -z "$(find "$environment_runtime_destination" -type l -print -quit)" ]; then
+          rm -rf -- "$environment_runtime_destination" || ok=false
+        else
+          ok=false
+        fi
+      fi
+      if [ -d "$staging_root/old-native-environment-runtime" ]; then
+        [ ! -e "$environment_runtime_destination" ] \
+          && [ ! -L "$environment_runtime_destination" ] \
+          && mv "$staging_root/old-native-environment-runtime" \
+            "$environment_runtime_destination" || ok=false
+      fi
+    fi
+  fi
+  if [ "$shared_common_preexisting" = false ] \
+    && [ -d "$common_runtime_root" ] && [ ! -L "$common_runtime_root" ]; then
+    rmdir "$common_runtime_root" 2>/dev/null || ok=false
+  fi
   if [ "$command_publish_intent" = true ] \
     && [ ! -e "$command_staging/new-command" ] \
     && { [ "$command_old_intent" = false ] || [ -L "$command_staging/old-command" ]; }; then
@@ -763,7 +949,24 @@ mv "$command_staging/new-command" "$command_path"
 [ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-command-publication ] \
   || refuse 'injected failure at after-command-publication'
 
+environment_runtime_publish_intent=true
+if [ "$environment_runtime_old_intent" = true ]; then
+  mv "$environment_runtime_destination" \
+    "$staging_root/old-native-environment-runtime"
+fi
+"$environment_runtime_installer"
+[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-environment-runtime-publication ] \
+  || refuse 'injected failure at after-environment-runtime-publication'
+
+floating_runtime_publish_intent=true
+if [ "$floating_runtime_old_intent" = true ]; then
+  mv "$floating_runtime_destination" \
+    "$staging_root/old-floating-skills-runtime"
+fi
+"$floating_runtime_installer"
+[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-floating-runtime-publication ] \
+  || refuse 'injected failure at after-floating-runtime-publication'
+
 publication_active=false
 cleanup_staging
 printf 'Installed cdx at %s. Reload Fish to clear the legacy alias from existing shells.\n' "$command_path"
-"$source_dir/../../scripts/install-floating-skills-runtime.sh"

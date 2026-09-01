@@ -98,9 +98,8 @@ review, verification, and branch-finishing discipline. See
 
 ## Gotchas
 
-- Unlike `cldx`, `cpx`, `grx`, `jcx`, `omp`, `picx`, and `prx`, `bin/cdx` shows
-  no wiring to the shared `native-common` floating-skills bundle — do not
-  assume `engineersamuel` or `show-me` skills are present here.
+- The profile includes the shared `native-common` floating skills in addition
+  to the Superpowers marketplace plugin.
 - This repo has no verified evidence of an explicit `$name` invocation
   requirement for superpowers skills in Codex (unlike `cdx pstack`'s
   documented `$name` convention); treat skill names as descriptive vocabulary

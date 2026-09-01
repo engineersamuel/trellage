@@ -23,7 +23,12 @@ for required in \
   .eslintrc.json \
   .prettierrc.json \
   scripts/build-profile-compiler.sh \
+  scripts/floating-skills.mjs \
+  scripts/install-floating-skills-runtime.sh \
+  scripts/install-native-environment-runtime.sh \
+  scripts/native-environment.mjs \
   scripts/profile-compiler-fingerprint.sh \
+  skills.json \
   scripts/install-lefthook-hook.sh; do
   [[ -f "${required}" ]] || fail "missing ${required}"
 done
@@ -31,6 +36,12 @@ done
 [[ -x .agents/hooks/guard-shell.sh ]] || fail "guard hook is not executable"
 [[ -x .agents/hooks/check-edit.sh ]] || fail "edit hook is not executable"
 [[ -x scripts/build-profile-compiler.sh ]] || fail "profile compiler build script is not executable"
+[[ -x scripts/floating-skills.mjs ]] || fail "floating skills manager is not executable"
+[[ -x scripts/install-floating-skills-runtime.sh ]] \
+  || fail "floating skills runtime installer is not executable"
+[[ -x scripts/install-native-environment-runtime.sh ]] \
+  || fail "native environment runtime installer is not executable"
+[[ -x scripts/native-environment.mjs ]] || fail "native environment resolver is not executable"
 [[ -x scripts/profile-compiler-fingerprint.sh ]] \
   || fail "profile compiler fingerprint script is not executable"
 [[ -x scripts/install-lefthook-hook.sh ]] || fail "Lefthook installer is not executable"

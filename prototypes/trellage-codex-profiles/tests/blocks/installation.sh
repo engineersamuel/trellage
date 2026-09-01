@@ -5,6 +5,7 @@
 
 set -u
 set -o pipefail
+umask 077
 
 blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 . "$blocks_dir/../lib/fixture.sh"
@@ -38,6 +39,15 @@ assert_install_text() {
   grep -F -- "$1" "$2" >/dev/null || fail "missing text: $1"
 }
 
+assert_not_shared_writable() {
+  local mode
+
+  mode="$(path_mode "$1")" || fail "could not inspect path mode: $1"
+  case "$mode" in
+    *[2367][0-7] | *[0-7][2367]) fail "path is writable by group or other users: $1" ;;
+  esac
+}
+
 printf 'assertion sentinel\n' >"$fixture_root/install-assertion-self-check"
 assert_install_line 'assertion sentinel' "$fixture_root/install-assertion-self-check"
 if (assert_install_line 'missing sentinel' \
@@ -58,6 +68,10 @@ assert_install_text 'do not require or copy `~/.codex/auth.json`.' "$readme"
 assert_install_text 'only the selected profile' "$readme"
 assert_install_text 'Missing or invalid native auth fails without proxy fallback.' "$readme"
 assert_install_text 'Superpowers update uses' "$readme"
+assert_install_text 'Node.js 22+' "$readme"
+assert_install_text 'Automatic Varlock Environment Loading' "$readme"
+assert_install_text '`~/.config/trellage/.env.local`' "$readme"
+assert_install_text '`TRELLAGE_ENVIRONMENT=off`' "$readme"
 assert_install_line 'Doctor performs no native marketplace/plugin mutation, but may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.' "$readme"
 assert_install_text 'Reload Fish after install' "$readme"
 assert_install_text 'It preserves every Codex profile home' "$readme"
@@ -77,6 +91,7 @@ assert_no_install_staging() {
   staging_paths="$(find "$fixture_home" \( -name '.cdx-install.*' -o -name '.cdx-command.*' \
     -o -name '.cdx-fish.*' -o -name '.cdx-uninstall.*' \
     -o -name '.cdx-uninstall-command.*' -o -name '.cdx-uninstall-fish.*' \
+    -o -name '.native-environment-runtime.*' \
     \) -print)" || fail "could not inspect installation staging beneath $fixture_home"
   [ -z "$staging_paths" ] \
     || fail "installation staging debris remains beneath $fixture_home: $staging_paths"
@@ -138,10 +153,11 @@ assert_install_published() {
   fixture_home="$1"
   installed="$fixture_home/.local/share/trellage/cdx"
   command="$fixture_home/.local/bin/cdx"
+  environment_runtime="$fixture_home/.local/share/trellage/common/native-environment-runtime"
   logical_home="$(CDPATH= cd -L -- "$fixture_home" && pwd -L)"
   [ -d "$installed" ] && [ ! -L "$installed" ] || fail 'managed runtime root was not published'
   cmp -s "$installed/.managed-by-trellage-codex-profiles" \
-    <(printf 'trellage-codex-profiles-v1\n') || fail 'ownership marker differs'
+    <(printf 'trellage-codex-profiles-v2\n') || fail 'ownership marker differs'
   cmp -s "$installed/bin/cdx" "$launcher" || fail 'installed launcher bytes differ'
   cmp -s "$installed/catalog.json" "$catalog" || fail 'installed catalog bytes differ'
   cmp -s "$installed/lib/trellage-session-bridge.py" \
@@ -149,6 +165,29 @@ assert_install_published() {
     || fail 'installed session bridge bytes differ'
   [ -x "$installed/lib/trellage-session-bridge.py" ] \
     || fail 'installed session bridge is not executable'
+  cmp -s "$environment_runtime/.managed-by-trellage" \
+    <(printf 'trellage-native-environment-runtime-v1\n') \
+    || fail 'native environment runtime ownership marker differs'
+  cmp -s "$environment_runtime/native-environment.mjs" \
+    "$root/../../scripts/native-environment.mjs" \
+    || fail 'installed native environment resolver bytes differ'
+  [ -f "$environment_runtime/node_modules/varlock/bin/cli.js" ] \
+    && [ ! -L "$environment_runtime/node_modules/varlock/bin/cli.js" ] \
+    || fail 'installed Varlock CLI is missing or unsafe'
+  [ -f "$environment_runtime/node_modules/smol-toml/package.json" ] \
+    && [ ! -L "$environment_runtime/node_modules/smol-toml/package.json" ] \
+    || fail 'installed TOML parser is missing or unsafe'
+  [ -z "$(find "$environment_runtime" -type l -print -quit)" ] \
+    || fail 'native environment runtime contains a symbolic link'
+  for safe_path in \
+    "$fixture_home" \
+    "$fixture_home/.local" \
+    "$fixture_home/.local/share" \
+    "$fixture_home/.local/share/trellage" \
+    "$fixture_home/.local/share/trellage/common" \
+    "$environment_runtime"; do
+    assert_not_shared_writable "$safe_path"
+  done
   [ -L "$command" ] || fail 'managed command is not a symlink'
   [ "$(readlink "$command")" = "$logical_home/.local/share/trellage/cdx/bin/cdx" ] \
     || fail 'managed command target differs'
@@ -198,12 +237,23 @@ fish_before_mode="$(path_mode "$fish_config")"
 HOME="$install_home" /bin/bash "$install_script" >"$fixture_root/install.out" \
   || fail 'fixture install failed'
 assert_install_published "$install_home"
+if cmp -s "$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles" \
+  <(printf 'trellage-codex-profiles-v1\n'); then
+  fail 'current ownership marker does not block a legacy installer'
+fi
+printf 'trellage-codex-profiles-v1\n' \
+  >"$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles"
+HOME="$install_home" /bin/bash "$install_script" \
+  >"$fixture_root/legacy-marker-migration-install.out" \
+  || fail 'installer did not migrate the legacy ownership marker'
+assert_install_published "$install_home"
 HOME="$install_home" "$install_home/.local/bin/cdx" list \
   >"$fixture_root/installed-list.out" 2>"$fixture_root/installed-list.err" \
   || fail "installed cdx list failed: $(cat "$fixture_root/installed-list.err")"
 cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
-  $'superpowers\tsuperpowers@superpowers-marketplace') \
+  $'superpowers\tsuperpowers@superpowers-marketplace' \
+  $'youtube\tyoutube-full') \
   || fail 'installed cdx list output differs'
 ln -s cdx "$install_home/.local/bin/cdx-relative"
 HOME="$install_home" "$install_home/.local/bin/cdx-relative" list \
@@ -245,6 +295,8 @@ assert_install_published "$install_home"
 mkdir -p "$install_home/.local/share/trellage/profiles/codex/pstack/home"
 printf 'preserved profile\n' \
   >"$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
+printf 'trellage-codex-profiles-v1\n' \
+  >"$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles"
 HOME="$install_home" /bin/bash "$uninstall_script" >"$fixture_root/uninstall.out" \
   || fail 'fixture uninstall failed'
 cmp -s "$fish_config" "$fixture_root/fish-before" || fail 'uninstall did not restore exact Fish bytes'
@@ -1033,5 +1085,116 @@ if HOME="$symlink_runtime_home" /bin/bash "$install_script" \
 fi
 [ -L "$symlink_runtime_home/.local/share/trellage/cdx" ] \
   || fail 'rejected symlinked runtime was changed'
+
+shared_rollback_home="$fixture_root/shared-runtime-rollback-home"
+write_legacy_fish "$shared_rollback_home"
+HOME="$shared_rollback_home" /bin/bash "$install_script" >/dev/null \
+  || fail 'shared-runtime rollback fixture install failed'
+shared_runtime_root="$shared_rollback_home/.local/share/trellage/common"
+chmod 0755 "$shared_runtime_root/native-environment-runtime/native-environment.mjs"
+printf '%s\n' '# preserved native environment runtime' \
+  >"$shared_runtime_root/native-environment-runtime/native-environment.mjs"
+chmod 0555 "$shared_runtime_root/native-environment-runtime/native-environment.mjs"
+chmod 0755 "$shared_runtime_root/floating-skills-runtime/floating-skills.mjs"
+printf '%s\n' '# preserved floating skills runtime' \
+  >"$shared_runtime_root/floating-skills-runtime/floating-skills.mjs"
+chmod 0555 "$shared_runtime_root/floating-skills-runtime/floating-skills.mjs"
+write_owned_runtime_snapshot "$shared_runtime_root" \
+  "$fixture_root/shared-runtime.before"
+for failure_point in \
+  after-environment-runtime-publication \
+  after-floating-runtime-publication; do
+  if HOME="$shared_rollback_home" CDX_INSTALL_TEST_FAIL_AT="$failure_point" \
+    /bin/bash "$install_script" \
+    >"$fixture_root/shared-runtime-$failure_point.out" 2>&1; then
+    fail "shared-runtime injected install failure unexpectedly succeeded: $failure_point"
+  fi
+  assert_install_text "injected failure at $failure_point" \
+    "$fixture_root/shared-runtime-$failure_point.out"
+  write_owned_runtime_snapshot "$shared_runtime_root" \
+    "$fixture_root/shared-runtime-$failure_point.after"
+  cmp -s "$fixture_root/shared-runtime.before" \
+    "$fixture_root/shared-runtime-$failure_point.after" \
+    || fail "shared-runtime rollback changed prior runtime bytes: $failure_point"
+  cmp -s "$shared_rollback_home/.local/share/trellage/cdx/bin/cdx" "$launcher" \
+    || fail "shared-runtime rollback changed the cdx launcher: $failure_point"
+  assert_no_install_staging "$shared_rollback_home"
+done
+
+new_shared_failure_home="$fixture_root/new-shared-runtime-failure-home"
+write_legacy_fish "$new_shared_failure_home"
+cp "$new_shared_failure_home/.config/fish/config.fish" \
+  "$fixture_root/new-shared-runtime.fish-before"
+if HOME="$new_shared_failure_home" \
+  CDX_INSTALL_TEST_FAIL_AT=after-environment-runtime-publication \
+  /bin/bash "$install_script" \
+  >"$fixture_root/new-shared-runtime.out" 2>&1; then
+  fail 'new install accepted a shared-runtime publication failure'
+fi
+cmp -s "$new_shared_failure_home/.config/fish/config.fish" \
+  "$fixture_root/new-shared-runtime.fish-before" \
+  || fail 'new shared-runtime failure changed Fish bytes'
+[ ! -e "$new_shared_failure_home/.local/share/trellage/cdx" ] \
+  || fail 'new shared-runtime failure left the cdx runtime'
+[ ! -e "$new_shared_failure_home/.local/share/trellage/common" ] \
+  || fail 'new shared-runtime failure left shared runtime state'
+assert_no_install_staging "$new_shared_failure_home"
+
+unowned_environment_home="$fixture_root/unowned-environment-home"
+write_legacy_fish "$unowned_environment_home"
+mkdir -p \
+  "$unowned_environment_home/.local/share/trellage/common/native-environment-runtime"
+printf 'preserve unowned runtime\n' \
+  >"$unowned_environment_home/.local/share/trellage/common/native-environment-runtime/keep"
+cp "$unowned_environment_home/.config/fish/config.fish" \
+  "$fixture_root/unowned-environment.fish-before"
+if HOME="$unowned_environment_home" /bin/bash "$install_script" \
+  >"$fixture_root/unowned-environment.out" 2>&1; then
+  fail 'install accepted an unowned native environment runtime'
+fi
+assert_install_text 'refusing unowned native environment runtime' \
+  "$fixture_root/unowned-environment.out"
+cmp -s "$unowned_environment_home/.config/fish/config.fish" \
+  "$fixture_root/unowned-environment.fish-before" \
+  || fail 'native environment runtime failure changed Fish bytes'
+[ ! -e "$unowned_environment_home/.local/share/trellage/cdx" ] \
+  || fail 'native environment runtime failure left the cdx runtime'
+[ ! -e "$unowned_environment_home/.local/bin/cdx" ] \
+  && [ ! -L "$unowned_environment_home/.local/bin/cdx" ] \
+  || fail 'native environment runtime failure left the cdx command'
+assert_install_line 'preserve unowned runtime' \
+  "$unowned_environment_home/.local/share/trellage/common/native-environment-runtime/keep"
+assert_no_install_staging "$unowned_environment_home"
+
+writable_environment_home="$fixture_root/writable-environment-home"
+write_legacy_fish "$writable_environment_home"
+mkdir -p "$writable_environment_home/.local/share/trellage/common"
+chmod 0775 "$writable_environment_home/.local/share/trellage/common"
+cp "$writable_environment_home/.config/fish/config.fish" \
+  "$fixture_root/writable-environment.fish-before"
+if HOME="$writable_environment_home" /bin/bash "$install_script" \
+  >"$fixture_root/writable-environment.out" 2>&1; then
+  fail 'install accepted a group-writable native runtime parent'
+fi
+assert_install_text 'must not be writable by group or other users' \
+  "$fixture_root/writable-environment.out"
+cmp -s "$writable_environment_home/.config/fish/config.fish" \
+  "$fixture_root/writable-environment.fish-before" \
+  || fail 'writable native runtime parent failure changed Fish bytes'
+[ ! -e "$writable_environment_home/.local/share/trellage/cdx" ] \
+  || fail 'writable native runtime parent failure left the cdx runtime'
+[ ! -e "$writable_environment_home/.local/bin/cdx" ] \
+  && [ ! -L "$writable_environment_home/.local/bin/cdx" ] \
+  || fail 'writable native runtime parent failure left the cdx command'
+assert_no_install_staging "$writable_environment_home"
+
+permissive_umask_home="$fixture_root/permissive-umask-home"
+write_legacy_fish "$permissive_umask_home"
+(
+  umask 000
+  HOME="$permissive_umask_home" /bin/bash "$install_script" >/dev/null
+) || fail 'install failed with a permissive process umask'
+assert_install_published "$permissive_umask_home"
+assert_no_install_staging "$permissive_umask_home"
 
 printf 'trellage Codex installation contract: PASS\n'

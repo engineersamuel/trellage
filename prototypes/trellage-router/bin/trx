@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
+set +x
+set +a
 set -euo pipefail
+
+unset trx_transcript_api_key trx_transcript_api_key_is_set
+trx_transcript_api_key_is_set=false
+trx_transcript_api_key=""
+if [[ "${TRANSCRIPT_API_KEY+x}" == x ]]; then
+  trx_transcript_api_key_is_set=true
+  trx_transcript_api_key="$TRANSCRIPT_API_KEY"
+fi
+unset TRANSCRIPT_API_KEY
 
 # Reuse V8's compiled bytecode across invocations. The launcher bundle and the
 # skills manager are re-compiled on every `node` call otherwise; a warm cache
@@ -8,7 +19,7 @@ set -euo pipefail
 # cold start rather than failing.
 export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/trellage/node-compile-cache}"
 
-readonly ownership_value='trellage-router-v1'
+readonly ownership_value='trellage-router-v2'
 
 # Hand-maintained Herdr-compatibility ledger for native launcher/profile pairs,
 # merged into `trx list --json` as each profile's `herdrCompatibility` field.
@@ -23,6 +34,7 @@ readonly trx_herdr_ledger='[
   { "launcher": "omp", "profile": "copilot", "status": "verified" },
   { "launcher": "picx", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
   { "launcher": "cdx", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native sandbox contracts pass; awaiting an end-to-end Herdr round trip." },
+  { "launcher": "cdx", "profile": "youtube", "status": "verified", "notes": "Verified end-to-end with Herdr v0.8.2: a fresh cdx youtube session loaded youtube-full and completed one free TranscriptAPI channel/resolve request for @GitHub with the expected channel ID and canonical URL, using standard-input curl configuration without putting the key in process arguments." },
   { "launcher": "cpx", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
   { "launcher": "cpx", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrators own repo/worktree; never finished." },
   { "launcher": "cpx", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
@@ -36,6 +48,12 @@ readonly trx_herdr_ledger='[
 die() {
   printf 'trx: %s\n' "$1" >&2
   exit 1
+}
+
+restore_transcript_api_key() {
+  if [[ "$1" == cdx && "$2" == youtube && "$trx_transcript_api_key_is_set" == true ]]; then
+    export TRANSCRIPT_API_KEY="$trx_transcript_api_key"
+  fi
 }
 
 usage() {
@@ -123,7 +141,9 @@ discover_launcher() {
   local launcher="$1"
   local marker_name="$2"
   local marker_value="$3"
+  local legacy_marker_value="${4-}"
   local discovered
+  local installed_marker_value
   local resolved
   local runtime="$canonical_home/.local/share/trellage/$launcher"
   local expected="$runtime/bin/$launcher"
@@ -145,8 +165,11 @@ discover_launcher() {
     || die "unsafe owned catalog: $catalog"
   [[ -f "$marker" && -r "$marker" && ! -L "$marker" ]] \
     || die "missing ownership marker for $launcher"
-  [[ "$(<"$marker")" == "$marker_value" ]] \
-    || die "invalid ownership marker for $launcher"
+  installed_marker_value="$(<"$marker")"
+  if [[ "$installed_marker_value" != "$marker_value" ]] \
+    && { [[ -z "$legacy_marker_value" ]] || [[ "$installed_marker_value" != "$legacy_marker_value" ]]; }; then
+    die "invalid ownership marker for $launcher"
+  fi
 
   printf '%s\n' "$expected"
 }
@@ -228,7 +251,24 @@ read_catalog() {
           | type == "string"
           and length > 0
           and (test("[\u0000-\u001f\u007f-\u009f]") | not)))
+      and ((has("kind") | not) or (.kind == "plugin" or .kind == "skills"))
       and (.source == null or (.source | type == "string" and length > 0))
+      and ((has("skillBundles") | not) or
+        (.skillBundles
+          | type == "array"
+          and length > 0
+          and length == (unique | length)
+          and all(.[]; type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$"))))
+      and ((has("managedSkills") | not) or
+        (.managedSkills
+          | type == "array"
+          and length == (unique | length)
+          and all(.[]; type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))))
+      and ((has("requiredEnvironment") | not) or
+        (.requiredEnvironment
+          | type == "array"
+          and length == (unique | length)
+          and all(.[]; type == "string" and test("^[A-Z][A-Z0-9_]*$"))))
       and (.marketplace == null or (.marketplace | type == "object"))
       and (.standaloneMcps | type == "array")
       and all(.standaloneMcps[];
@@ -314,7 +354,7 @@ build_choices() {
         passthroughArgs: $passthroughArgs,
         description: $profile.description,
         plugins: ([$profile.plugin] | map(select(type == "string" and length > 0)) | unique),
-        skills: [],
+        skills: ($profile.managedSkills // []),
         mcps: ([$profile.standaloneMcps[]? | if type == "string" then . else .name end] | map(select(type == "string" and length > 0)) | unique),
         sandbox: $catalog.sandbox,
         details: "The selected launcher checks readiness before starting."
@@ -462,6 +502,7 @@ esac
 [[ -d "$HOME" && ! -L "$HOME" ]] || die "unsafe HOME: $HOME"
 canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
 [[ "$canonical_home" != / ]] || die 'HOME must not be /'
+native_common_root="${XDG_DATA_HOME:-$canonical_home/.local/share}/trellage/common"
 
 script_path="$(resolve_file "${BASH_SOURCE[0]}")" || die 'cannot resolve trx runtime'
 script_dir="$(canonical_directory "$(dirname "$script_path")")" || die 'cannot resolve trx runtime'
@@ -516,6 +557,12 @@ if [[ "$mode" == skills ]]; then
       || die 'failed to update native skills'
     node "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
+      --bundle native-common \
+      --bundle youtube \
+      --cache "$native_common_root/cdx-youtube-skills" \
+      || die 'failed to update native YouTube skills'
+    node "$floating_skills_manager" update \
+      --catalog "$floating_skills_catalog" \
       --bundle omp-community \
       --cache "$canonical_home/.local/share/trellage/common/omp-community-skills" \
       || die 'failed to update OMP community skills'
@@ -532,7 +579,7 @@ if [[ "$mode" == skills ]]; then
 fi
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
-cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v1)"
+cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1)"
 cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1)"
 grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
@@ -628,6 +675,7 @@ if [[ "$mode" == run ]]; then
     '.profiles | map(.name) | index($profile) != null' \
     <<<"$run_catalog" >/dev/null \
     || die "unknown profile for $run_launcher: $run_profile"
+  restore_transcript_api_key "$run_launcher" "$run_profile"
   if (( ${#run_args[@]} > 0 )); then
     exec "$run_executable" "$run_profile" "${run_args[@]}"
   fi
@@ -832,6 +880,10 @@ launch_arguments=("$selected_launcher" "$profile")
 [[ -z "$selected_model" ]] || launch_arguments+=(--model "$selected_model")
 launch_arguments+=("$@")
 if [[ "$launch_target" == herdr ]]; then
+  if [[ "$launcher" == cdx && "$profile" == youtube \
+      && "$trx_transcript_api_key_is_set" == true ]]; then
+    die 'explicit TRANSCRIPT_API_KEY cannot be forwarded securely to Herdr; use the Trellage Varlock source or launch in the current pane'
+  fi
   [[ "${HERDR_ENV:-}" == 1 && -n "${HERDR_PANE_ID:-}" ]] \
     || die 'Herdr launch requested outside a Herdr pane'
   command -v herdr >/dev/null 2>&1 || die 'Herdr command is unavailable'
@@ -845,4 +897,5 @@ if [[ "$launch_target" == herdr ]]; then
   herdr pane run "$pane" "$command_line" || die 'could not start the selected profile in Herdr'
   exit 0
 fi
+restore_transcript_api_key "$launcher" "$profile"
 exec "${launch_arguments[@]}"

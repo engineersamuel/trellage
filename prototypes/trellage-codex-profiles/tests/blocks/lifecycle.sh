@@ -23,12 +23,16 @@ assert_status() {
 }
 
 mkdir -p "$pstack_home/sessions" "$pstack_home/plugins/unrelated" \
-  "$superpowers_home/sessions" "$superpowers_home/plugins/unrelated"
+  "$superpowers_home/sessions" "$superpowers_home/plugins/unrelated" \
+  "$youtube_home/sessions" "$youtube_home/plugins/unrelated"
 printf '%s\n' 'pstack session bytes' >"$pstack_home/sessions/keep.jsonl"
 printf '%s\n' 'pstack unrelated plugin bytes' >"$pstack_home/plugins/unrelated/state"
 printf '%s\n' 'superpowers session bytes' >"$superpowers_home/sessions/keep.jsonl"
 printf '%s\n' 'superpowers unrelated plugin bytes' \
   >"$superpowers_home/plugins/unrelated/state"
+printf '%s\n' 'youtube session bytes' >"$youtube_home/sessions/keep.jsonl"
+printf '%s\n' 'youtube unrelated plugin bytes' \
+  >"$youtube_home/plugins/unrelated/state"
 cp "$pstack_home/sessions/keep.jsonl" "$fixture_root/snapshot-session.saved"
 write_isolation_snapshot snapshot-sensitivity
 printf '%s\n' 'mutated session bytes' >"$pstack_home/sessions/keep.jsonl"
@@ -66,6 +70,24 @@ jq -se --arg pstack "$pstack_home" --arg superpowers "$superpowers_home" '
   and all(.[4:8][]; .codexHome == $superpowers)
   and all(.[]; (.args | join(" ") | test(" add | remove | upgrade ") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null || fail 'setup --all order or idempotence differs'
+
+printf '%s\n' '# Drifted YouTube skill' >"$youtube_home/skills/youtube-full/SKILL.md"
+assert_status 1 doctor-youtube-drift env \
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  "$fixture_launcher" doctor youtube
+grep -F -- 'cdx: floating skills are unhealthy: youtube' \
+  "$fixture_root/doctor-youtube-drift.out" >/dev/null \
+  || fail 'drifted YouTube skill diagnostic differs'
+pstack_config_before="$(state_file_hash "$pstack_home/config.toml")"
+superpowers_config_before="$(state_file_hash "$superpowers_home/config.toml")"
+HOME="$fixture_root/home" fake_env "$fixture_launcher" repair youtube \
+  >"$fixture_root/repair-youtube.out" || fail 'repair youtube failed'
+grep -F -- '# Fixture YouTube skill' "$youtube_home/skills/youtube-full/SKILL.md" >/dev/null \
+  || fail 'repair youtube did not restore the managed skill'
+[ "$(state_file_hash "$pstack_home/config.toml")" = "$pstack_config_before" ] \
+  && [ "$(state_file_hash "$superpowers_home/config.toml")" = "$superpowers_config_before" ] \
+  || fail 'repair youtube changed another profile'
 
 # Lifecycle actions still share the profile lock with each other. One held
 # setup must block other lifecycle work without native activity until release.
@@ -771,7 +793,8 @@ auth_is_absent "$superpowers_home/auth.json" \
 : >"$fixture_root/fake-curl.log"
 write_isolation_snapshot update-check-all-ordinary
 assert_status 0 update-check-all-current env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" update --check --all
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_CONSUME_STDIN=1 \
+  "$fixture_launcher" update --check --all
 assert_isolation_snapshot_unchanged update-check-all-ordinary
 cmp -s "$fixture_root/fake-curl.log" <(printf '%s\n' \
   '-fsSL https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json') \
@@ -779,6 +802,27 @@ cmp -s "$fixture_root/fake-curl.log" <(printf '%s\n' \
 assert_status 1 update-check-all-available env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_SUPERPOWERS_AVAILABLE_VERSION=99.0.0 \
   "$fixture_launcher" update --check --all
+
+: >"$fixture_root/fake-floating-skills.log"
+assert_status 0 update-check-youtube-current env \
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  "$fixture_launcher" update --check youtube
+grep -F -- 'youtube: current' "$fixture_root/update-check-youtube-current.out" >/dev/null \
+  || fail 'current YouTube skill update diagnostic differs'
+grep -Fxq check "$fixture_root/fake-floating-skills.log" \
+  && grep -Fxq native-common "$fixture_root/fake-floating-skills.log" \
+  && grep -Fxq youtube "$fixture_root/fake-floating-skills.log" \
+  && grep -Fxq "$fixture_youtube_skills_cache" "$fixture_root/fake-floating-skills.log" \
+  || fail 'YouTube update check omitted its bundle plan or cache'
+assert_status 1 update-check-youtube-available env \
+  HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+  FAKE_FLOATING_SKILLS_CHECK_STATUS=10 \
+  "$fixture_launcher" update --check youtube
+grep -F -- 'youtube: update available' \
+  "$fixture_root/update-check-youtube-available.out" >/dev/null \
+  || fail 'available YouTube skill update diagnostic differs'
 
 printf '%s\n' '{"plugins":[{"name":"superpowers","version":"99.0.0"}]}' >"$fixture_root/manifest-new.json"
 FAKE_CURL_OVERRIDE="$fixture_root/manifest-new.json" \
@@ -790,6 +834,26 @@ FAKE_CURL_OVERRIDE="$fixture_root/manifest-bad.json" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" "$fixture_launcher" update --check superpowers
 
 # Explicit update operations are profile-scoped and ordered.
+: >"$fixture_root/fake-floating-skills.log"
+write_isolation_snapshot update-youtube-ordinary
+HOME="$fixture_root/home" fake_env "$fixture_launcher" update youtube \
+  >"$fixture_root/update-youtube.out" || fail 'update youtube failed'
+assert_isolation_snapshot_unchanged update-youtube-ordinary
+grep -Fxq update "$fixture_root/fake-floating-skills.log" \
+  && grep -Fxq native-common "$fixture_root/fake-floating-skills.log" \
+  && grep -Fxq youtube "$fixture_root/fake-floating-skills.log" \
+  && grep -Fxq "$fixture_youtube_skills_cache" "$fixture_root/fake-floating-skills.log" \
+  || fail 'YouTube update omitted its bundle plan or cache'
+youtube_skill_before="$(state_file_hash "$youtube_home/skills/youtube-full/SKILL.md")"
+FAKE_FLOATING_SKILLS_UPDATE_STATUS=73 \
+  assert_status 2 update-youtube-failure env \
+    HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+    FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
+    FAKE_FLOATING_SKILLS_UPDATE_STATUS=73 \
+    "$fixture_launcher" update youtube
+[ "$(state_file_hash "$youtube_home/skills/youtube-full/SKILL.md")" = "$youtube_skill_before" ] \
+  || fail 'failed YouTube update changed the installed skill'
+
 : >"$fixture_root/fake-codex.log"
 write_isolation_snapshot update-pstack-ordinary
 HOME="$fixture_root/home" fake_env "$fixture_launcher" update pstack \

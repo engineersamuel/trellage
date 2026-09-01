@@ -17,7 +17,8 @@ runtime_parent="$home/.local/share/trellage"
 install_root="$runtime_parent/cdx"
 installed_launcher="$install_root/bin/cdx"
 marker="$install_root/.managed-by-trellage-codex-profiles"
-marker_value='trellage-codex-profiles-v1'
+marker_value='trellage-codex-profiles-v2'
+legacy_marker_value='trellage-codex-profiles-v1'
 command_dir="$home/.local/bin"
 command_path="$command_dir/cdx"
 fish_dir="$home/.config/fish"
@@ -47,8 +48,12 @@ for path in "$local_dir" "$share_dir" "$runtime_parent" "$command_dir" "$config_
   [ -d "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed path: $path"
 done
 [ -d "$install_root" ] && [ ! -L "$install_root" ] || refuse "refusing unowned runtime root: $install_root"
-[ -f "$marker" ] && [ ! -L "$marker" ] && cmp -s "$marker" <(printf '%s\n' "$marker_value") \
+[ -f "$marker" ] && [ ! -L "$marker" ] \
   || refuse "refusing unowned runtime root: $install_root"
+if ! cmp -s "$marker" <(printf '%s\n' "$marker_value") \
+  && ! cmp -s "$marker" <(printf '%s\n' "$legacy_marker_value"); then
+  refuse "refusing unowned runtime root: $install_root"
+fi
 actual_entries="$(CDPATH= cd -- "$install_root" && find . -print | LC_ALL=C sort)"
 expected_entries="$(printf '%s\n' \
   '.' \

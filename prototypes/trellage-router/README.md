@@ -27,6 +27,9 @@ Prerequisites: Bash, Node.js, and `jq`.
 
 `~/.local/bin` must be on `PATH`. The `trx` installer publishes
 `~/.local/bin/trx` as a symlink to its managed runtime.
+Successful installation migrates the router runtime to ownership generation
+v2. Older v1 worktree installers then fail closed instead of replacing newer
+profile guides or launcher compatibility data.
 
 The router-specific owned paths are:
 

@@ -4,7 +4,7 @@
 write_isolation_snapshot() {
   local label="$1" profile home
 
-  for profile in pstack superpowers; do
+  for profile in pstack superpowers youtube; do
     home="$fixture_root/home/.local/share/trellage/profiles/codex/$profile/home"
     printf '%s\t%s\n' "$profile.config" "$(state_file_hash "$home/config.toml")"
     printf '%s\t%s\n' "$profile.session" "$(state_file_hash "$home/sessions/keep.jsonl")"
@@ -19,6 +19,8 @@ write_isolation_snapshot() {
       "$(state_file_hash "$home/plugins/cache/superpowers-marketplace/superpowers/6.2.0/.fake-materialized-cache")"
     printf '%s\t%s\n' "$profile.plugin-unrelated-same-marketplace" \
       "$(state_file_hash "$home/plugins/cache/superpowers-marketplace/unrelated/1.0.0/.fake-materialized-cache")"
+    printf '%s\t%s\n' "$profile.youtube-skill" \
+      "$(state_file_hash "$home/skills/youtube-full/SKILL.md")"
   done >"$fixture_root/$label.state-before"
 }
 
@@ -62,6 +64,8 @@ establish_main_profiles() {
     >"$fixture_root/prelude-setup-all.out" || fail 'setup --all failed'
   superpowers_home="$fixture_root/home/.local/share/trellage/profiles/codex/superpowers/home"
   [ -d "$superpowers_home" ] || fail 'setup --all did not create superpowers home'
+  youtube_home="$fixture_root/home/.local/share/trellage/profiles/codex/youtube/home"
+  [ -d "$youtube_home" ] || fail 'setup --all did not create youtube home'
 
   write_main_plugin_cache
   cp "$pstack_home/config.toml" "$fixture_root/prelude-managed-config.toml"

@@ -336,10 +336,14 @@ theme changes and unrelated Claude user state are preserved. The current mounted
 worktree is pre-approved as trusted inside the isolated container.
 ## Automatic Varlock Environment Loading
 
-Trellage bundles Varlock and uses it automatically for new, prompt, and resume launches when a user environment source exists. Always invoke `trellage` directly:
+Trellage bundles Varlock and uses it automatically for Sandbox new, prompt,
+and resume launches and for Native profile launches that declare required
+environment variables. Always invoke `trellage`, `cdx`, or `trx` directly:
 
 ```bash
 trellage --profile claude-research
+cdx youtube
+trx
 trellage list --json --full
 ```
 
@@ -380,6 +384,25 @@ chmod 600 ~/.config/trellage/.env.local
 ```
 
 On launch, Trellage resolves the Varlock source before it captures host credentials. The resolved `PLAYWRIGHT_MCP_EXTENSION_TOKEN` is then forwarded only to the final Claude process, allowing the profile to expose both Playwright and Obscura. Existing process environment values take precedence over file values, so explicit credentials supplied by automation remain authoritative.
+
+The Native `cdx youtube` profile uses the same source and policy. Add
+`TRANSCRIPT_API_KEY` to the schema and value file:
+
+```dotenv
+# ~/.config/trellage/.env.schema
+# @sensitive
+TRANSCRIPT_API_KEY=
+```
+
+```dotenv
+# ~/.config/trellage/.env.local
+TRANSCRIPT_API_KEY=replace-with-token
+```
+
+`cdx` asks Varlock to inject only the environment names required by the
+selected profile. It then removes the key from the launcher environment before
+setup, skill, Git, Node, inventory, and other helper subprocesses run. `trx`
+gets the same behavior because it starts the installed `cdx` launcher.
 
 ### Configuration
 
@@ -558,8 +581,8 @@ machine:
    it is missing, then reload the shell.
 2. **Install only the underlying agent CLIs you actually use**, each launcher
    only needs its own dependency:
-   - `cdx` (Codex) needs the `codex` CLI (`npm install -g @openai/codex`)
-     and `python3`.
+   - `cdx` (Codex) needs the `codex` CLI (`npm install -g @openai/codex`),
+     Node.js 22+, npm, and `python3`.
    - `cpx` (GitHub Copilot) needs `copilot` (`gh extension install
      github/gh-copilot` or the standalone Copilot CLI) already authenticated,
      plus `jq` and `python3`.
@@ -769,6 +792,21 @@ policy as `cdx`. Node.js is required by upstream hooks and validation. Bun is
 optional. Pstack is a Codex profile, so Trellage does not install a `pstack`
 executable and does not shadow the Unix debugger with that name.
 
+The opt-in `cdx youtube` profile adds only the `youtube-full` Agent Skill from
+[`ZeroPointRepo/youtube-skills`](https://github.com/ZeroPointRepo/youtube-skills)
+to the shared native skill set. It requires an existing
+`TRANSCRIPT_API_KEY` at launch and can consume paid TranscriptAPI credits.
+Setup, doctor, repair, inventory, and update do not require the key. Trellage
+does not create accounts, handle OTP signup, or persist the key outside the
+user-managed Varlock source.
+
+```bash
+cdx setup youtube
+cdx doctor youtube
+cdx update --check youtube
+cdx youtube
+```
+
 After the eight native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
 
@@ -954,7 +992,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `cldx` and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-oriented profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `cldx` and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 
@@ -986,7 +1024,7 @@ Codex discovery and static checks require the managed `cdx` launcher and isolate
 
 Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
 
-Static verification performs no native marketplace/plugin mutation or live prompt and never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
+Static verification performs no native marketplace, plugin, or managed-skill mutation and no live prompt. It never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
 
 Exit statuses:
 

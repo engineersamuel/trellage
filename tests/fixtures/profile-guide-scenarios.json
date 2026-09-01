@@ -100,6 +100,13 @@
       "excludedProfiles": ["sandbox:codex-superpowers"]
     },
     {
+      "id": "youtube-transcript-research",
+      "intent": "Search YouTube for this topic, compare evidence from several video transcripts, and review the related channel and playlist for recurring claims.",
+      "expectedProfiles": ["native:cdx/youtube"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:claude-social-media"]
+    },
+    {
       "id": "copilot-superpowers-tdd",
       "intent": "Use GitHub Copilot CLI with Superpowers to reproduce this bug, implement the fix with TDD, review it, and finish the branch.",
       "expectedProfiles": ["native:cpx/superpowers"],

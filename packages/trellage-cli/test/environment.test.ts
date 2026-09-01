@@ -1,21 +1,36 @@
+import { execFile } from "node:child_process"
 import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { promisify } from "node:util"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { environmentMetadata } from "../src/environment.js"
 
+const execFilePromise = promisify(execFile)
+const nativeResolver = path.resolve(import.meta.dirname, "../../../scripts/native-environment.mjs")
+
 const withHome = async (run: (home: string, environment: NodeJS.ProcessEnv) => Promise<void>): Promise<void> => {
   const home = await mkdtemp(path.join(os.tmpdir(), "trellage-environment-"))
   await run(home, {})
 }
 
+const nativeEnvironmentMetadata = async (
+  home: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<Record<string, unknown>> => {
+  const { stdout } = await execFilePromise(process.execPath, [nativeResolver], {
+    env: { HOME: home, ...environment },
+  })
+  return JSON.parse(stdout) as Record<string, unknown>
+}
+
 describe("environmentMetadata", () => {
   it("defaults to an optional secure Varlock directory", async () => {
     await withHome(async (home, environment) => {
-      await expect(Effect.runPromise(environmentMetadata(environment, home))).resolves.toEqual({
+      const expected = {
         config_path: path.join(home, ".config", "trellage", "config.toml"),
         config_present: false,
         provider: "varlock",
@@ -24,7 +39,10 @@ describe("environmentMetadata", () => {
         source_present: false,
         required: false,
         strict_permissions: true,
-      })
+      }
+
+      await expect(Effect.runPromise(environmentMetadata(environment, home))).resolves.toEqual(expected)
+      await expect(nativeEnvironmentMetadata(home, environment)).resolves.toEqual(expected)
     })
   })
 
@@ -46,14 +64,36 @@ describe("environmentMetadata", () => {
     })
   })
 
+  it("keeps the native launcher resolver aligned with compiler metadata", async () => {
+    await withHome(async (home, environment) => {
+      const configDirectory = path.join(home, "configuration")
+      const environmentDirectory = path.join(configDirectory, "secrets")
+      await mkdir(environmentDirectory, { recursive: true, mode: 0o700 })
+      await writeFile(path.join(environmentDirectory, ".env.schema"), "# @sensitive\nTOKEN=\n", { mode: 0o644 })
+      await writeFile(path.join(environmentDirectory, ".env.local"), "TOKEN=encrypted\n", { mode: 0o600 })
+      await writeFile(
+        path.join(configDirectory, "config.toml"),
+        '[environment]\npath = "secrets"\nrequired = true\nstrict_permissions = true\n',
+      )
+      environment.TRELLAGE_CONFIG = path.join(configDirectory, "config.toml")
+
+      const compilerMetadata = await Effect.runPromise(environmentMetadata(environment, home))
+      const nativeMetadata = await nativeEnvironmentMetadata(home, environment)
+
+      expect(nativeMetadata).toEqual(compilerMetadata)
+    })
+  })
+
   it("supports a noninteractive environment override", async () => {
     await withHome(async (home, environment) => {
       environment.TRELLAGE_ENVIRONMENT = "off"
 
       const result = await Effect.runPromise(environmentMetadata(environment, home))
+      const nativeResult = await nativeEnvironmentMetadata(home, environment)
 
       expect(result.enabled).toBe(false)
       expect(result.source_present).toBe(false)
+      expect(nativeResult).toEqual(result)
     })
   })
 
@@ -68,6 +108,9 @@ describe("environmentMetadata", () => {
       await expect(Effect.runPromise(environmentMetadata(environment, home))).rejects.toThrow(
         /must not be accessible by group or other users/,
       )
+      await expect(nativeEnvironmentMetadata(home, environment)).rejects.toThrow(
+        /must not be accessible by group or other users/,
+      )
     })
   })
 
@@ -80,6 +123,7 @@ describe("environmentMetadata", () => {
       await symlink(target, path.join(directory, ".env.local"))
 
       await expect(Effect.runPromise(environmentMetadata(environment, home))).rejects.toThrow(/regular file/)
+      await expect(nativeEnvironmentMetadata(home, environment)).rejects.toThrow(/regular file/)
     })
   })
 
@@ -90,6 +134,9 @@ describe("environmentMetadata", () => {
       await writeFile(path.join(directory, "config.toml"), "[environment]\nenabled = true\nsurprise = true\n")
 
       await expect(Effect.runPromise(environmentMetadata(environment, home))).rejects.toThrow(
+        /invalid \[environment\] configuration/,
+      )
+      await expect(nativeEnvironmentMetadata(home, environment)).rejects.toThrow(
         /invalid \[environment\] configuration/,
       )
     })
@@ -104,6 +151,9 @@ describe("environmentMetadata", () => {
       await chmod(config, 0o620)
 
       await expect(Effect.runPromise(environmentMetadata(environment, home))).rejects.toThrow(
+        /must not be writable by group or other users/,
+      )
+      await expect(nativeEnvironmentMetadata(home, environment)).rejects.toThrow(
         /must not be writable by group or other users/,
       )
     })

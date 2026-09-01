@@ -202,7 +202,14 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 runtime="$(cd -P "$(dirname "$0")/.." && pwd -P)"
-if [[ "${1-} ${2-}" == 'list --json' ]]; then
+  if [[ -n "${TRX_ENV_LOG-}" ]]; then
+    if [[ -n "${TRANSCRIPT_API_KEY-}" || "${trx_transcript_api_key+x}" == x ]]; then
+      printf '%s:true\n' "$(basename "$0")" >>"$TRX_ENV_LOG"
+    else
+      printf '%s:false\n' "$(basename "$0")" >>"$TRX_ENV_LOG"
+    fi
+  fi
+  if [[ "${1-} ${2-}" == 'list --json' ]]; then
   cat "$runtime/catalog.json"
   exit 0
 fi
@@ -252,17 +259,32 @@ EOF
 }
 
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
-create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v1
+create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v2
 catalog_stage="$fixture_root/cdx-catalog.json"
-"$real_jq" '.profiles += [{
-  name:"pstack",
-  description:"Aqua-123 pstack for Codex",
-  headless:.profiles[0].headless,
-  plugin:"pstack-for-codex@pstack-for-codex-local",
-  source:null,
-  marketplace:null,
-  standaloneMcps:[]
-}]' "$runtime_parent/cdx/catalog.json" >"$catalog_stage"
+"$real_jq" '.profiles += [
+  {
+    name:"pstack",
+    description:"Aqua-123 pstack for Codex",
+    headless:.profiles[0].headless,
+    plugin:"pstack-for-codex@pstack-for-codex-local",
+    source:null,
+    marketplace:null,
+    standaloneMcps:[]
+  },
+  {
+    name:"youtube",
+    description:"YouTube transcript research with youtube-full",
+    headless:.profiles[0].headless,
+    plugin:null,
+    source:"ZeroPointRepo/youtube-skills",
+    kind:"skills",
+    skillBundles:["native-common","youtube"],
+    managedSkills:["youtube-full"],
+    requiredEnvironment:["TRANSCRIPT_API_KEY"],
+    marketplace:null,
+    standaloneMcps:[]
+  }
+]' "$runtime_parent/cdx/catalog.json" >"$catalog_stage"
 mv "$catalog_stage" "$runtime_parent/cdx/catalog.json"
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
@@ -312,11 +334,66 @@ export PATH="$fixture_bin:/usr/bin:/bin"
 [[ -L "$fixture_bin/trx" ]] || fail 'installer did not publish trx command symlink'
 [[ "$(readlink "$fixture_bin/trx")" == "$runtime_parent/trx/bin/trx" ]] \
   || fail 'installer published the wrong trx command target'
+cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
+  <(printf 'trellage-router-v2\n') \
+  || fail 'installer ownership marker differs'
+if cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
+  <(printf 'trellage-router-v1\n'); then
+  fail 'current router ownership marker does not block a legacy installer'
+fi
 assert_contains 'Installed trx' "$fixture_root/install.out"
 
+printf 'trellage-router-v1\n' \
+  >"$runtime_parent/trx/.managed-by-trellage-router"
 mv "$runtime_parent/trx/lib/launcher.mjs" \
   "$runtime_parent/trx/lib/terminal-picker.mjs"
+cat >"$runtime_parent/trx/bin/trx" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+launcher="$0"
+if [[ -L "$launcher" ]]; then
+  launcher="$(readlink "$launcher")"
+fi
+runtime="$(cd -P "$(dirname "$launcher")/.." && pwd -P)"
+[[ "$(<"$runtime/.managed-by-trellage-router")" == trellage-router-v1 ]] \
+  || exit 1
+printf 'trx-v1-fixture\n'
+EOF
+chmod 0755 "$runtime_parent/trx/bin/trx"
+[[ "$("$fixture_bin/trx" --version)" == trx-v1-fixture ]] \
+  || fail 'legacy router fixture was not usable before migration'
+mkdir "$runtime_parent/.trx-install.lock"
+if "$prototype_root/install.sh" >"$fixture_root/reinstall-lock.out" 2>&1; then
+  fail 'router install unexpectedly ignored an active install lock'
+fi
+assert_contains \
+  'another router install is in progress' \
+  "$fixture_root/reinstall-lock.out"
+[[ "$("$fixture_bin/trx" --version)" == trx-v1-fixture ]] \
+  || fail 'lock refusal changed the usable legacy router'
+rmdir "$runtime_parent/.trx-install.lock"
+if TRX_INSTALL_TEST_FAIL_AT=after-runtime-publication \
+  "$prototype_root/install.sh" >"$fixture_root/reinstall-failure.out" 2>&1; then
+  fail 'injected router publication failure unexpectedly succeeded'
+fi
+assert_contains \
+  'injected failure at after-runtime-publication' \
+  "$fixture_root/reinstall-failure.out"
+cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
+  <(printf 'trellage-router-v1\n') \
+  || fail 'failed migration did not restore the legacy ownership marker'
+[[ "$("$fixture_bin/trx" --version)" == trx-v1-fixture ]] \
+  || fail 'failed migration did not restore the usable legacy router'
+[[ ! -e "$runtime_parent/trx/lib/launcher.mjs" ]] \
+  || fail 'failed migration left a v2 launcher bundle in the legacy runtime'
+[[ -x "$runtime_parent/trx/lib/terminal-picker.mjs" ]] \
+  || fail 'failed migration did not restore the legacy terminal picker'
+[[ ! -e "$runtime_parent/.trx-install.lock" ]] \
+  || fail 'failed migration left the router install lock behind'
 "$prototype_root/install.sh" >"$fixture_root/reinstall.out"
+cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
+  <(printf 'trellage-router-v2\n') \
+  || fail 'installer did not migrate the legacy router ownership marker'
 [[ -x "$runtime_parent/trx/bin/trx" ]] || fail 'repeat install removed launcher'
 [[ -x "$runtime_parent/trx/lib/launcher.mjs" ]] \
   || fail 'upgrade did not install the Ink launcher'
@@ -332,6 +409,7 @@ for pair in \
   cpx:cpx-p \
   cdx:cdx-p \
   cdx:pstack \
+  cdx:youtube \
   cldx:cldx-p \
   grx:grx-p \
   jcx:jcx-p \
@@ -379,10 +457,16 @@ printf '%s\n' --- "$@" >>"$TRX_NODE_LOG"
 EOF
 chmod 0755 "$fixture_bin/node"
 : >"$fixture_root/skills-update.argv"
-TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
+XDG_DATA_HOME="$fixture_root/xdg-data" \
+  TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
   || fail 'skills update did not delegate to the floating-skills manager'
 grep -Fxq native-common "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the native bundle'
+grep -Fxq youtube "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the native YouTube bundle'
+grep -Fxq "$fixture_root/xdg-data/trellage/common/cdx-youtube-skills" \
+  "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the native YouTube cache'
 grep -Fxq omp-community "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the OMP community bundle'
 grep -Fxq "$fixture_home/.local/share/trellage/common/omp-community-skills" \
@@ -393,7 +477,7 @@ grep -Fxq guide-prompt-master "$fixture_root/skills-update.argv" \
 grep -Fxq "$fixture_home/.local/share/trellage/common/guide-prompt-master-skills" \
   "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the guide Prompt Master cache'
-[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 3 ]] \
+[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 4 ]] \
   || fail 'skills update did not invoke all bundle updates'
 rm "$fixture_bin/node"
 ln -s "$real_node" "$fixture_bin/node"
@@ -415,6 +499,7 @@ assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
 assert_contains $'omp/local\tLocal Qwen' "$fixture_root/list.out"
 assert_contains $'picx/default\tOrdered Pi extension profile' "$fixture_root/list.out"
 assert_contains $'cdx/pstack\tAqua-123 pstack for Codex' "$fixture_root/list.out"
+assert_contains $'cdx/youtube\tYouTube transcript research with youtube-full' "$fixture_root/list.out"
 assert_contains $'prx/prx-p\tprx' "$fixture_root/list.out"
 
 "$fixture_bin/trx" list --json >"$fixture_root/list.json" \
@@ -432,6 +517,7 @@ jq -e '
     "cpx/cpx-p",
     "cdx/cdx-p",
     "cdx/pstack",
+    "cdx/youtube",
     "cldx/cldx-p",
     "grx/grx-p",
     "jcx/jcx-p",
@@ -444,6 +530,7 @@ jq -e '
     "copilot",
     "codex",
     "codex",
+    "codex",
     "claude",
     "grok",
     "jcode",
@@ -454,6 +541,7 @@ jq -e '
   ]
   and [.profiles[] | .sandbox] == [
     false,
+    true,
     true,
     true,
     false,
@@ -469,6 +557,7 @@ jq -e '
   and (.profiles[] | select(.launcher == "omp" and .name == "local") | .herdrCompatibility.status) == "known-issue"
   and (.profiles[] | select(.launcher == "picx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cdx" and .name == "pstack") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "cdx" and .name == "youtube") | .herdrCompatibility.status) == "verified"
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
   and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
@@ -543,7 +632,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath
     and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 10)
+    and (.catalog.native | length == 11)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -682,6 +771,15 @@ jq -e '
       and .[0].commandAlias == "cdx"
       and .[0].defaultModel == "gpt-5.6-sol"
       and .[0].modelOverrideSupported == true)
+  and ([.choices[] | select(.id == "cdx:youtube")]
+    | length == 1
+      and .[0].label == "codex / youtube"
+      and .[0].harness == "codex"
+      and .[0].profile == "youtube"
+      and .[0].commandAlias == "cdx"
+      and .[0].defaultModel == "gpt-5.6-sol"
+      and .[0].skills == ["youtube-full"]
+      and .[0].modelOverrideSupported == true)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices did not expose launcher harness/profile identities'
 jq -e '
@@ -703,6 +801,7 @@ jq -e '
   ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [true])
+  and ([.choices[] | select(.id == "cdx:youtube") | .sandbox] == [true])
   and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'
@@ -798,6 +897,30 @@ mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 assert_contains 'pane split --current --direction right --cwd ' "$herdr_log"
 assert_contains 'pane run w1:p2 ' "$herdr_log"
 assert_contains '--model gpt-5.6-terra --literal=herdr' "$herdr_log"
+
+cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
+cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+import {writeFileSync} from "node:fs"
+writeFileSync(process.argv[3], '{"id":"cdx:youtube","target":"herdr"}\n')
+EOF
+: >"$herdr_log"
+herdr_youtube_status=0
+TRANSCRIPT_API_KEY='router-herdr-contract-secret' \
+  HERDR_ENV=1 HERDR_PANE_ID=w1:p1 TRX_HERDR_LOG="$herdr_log" \
+  python3 "$prototype_root/tests/pty_driver.py" \
+    "$fixture_root/herdr-youtube-select.out" '\r' '' "$fixture_bin/trx" \
+  || herdr_youtube_status=$?
+[[ "$herdr_youtube_status" == 1 ]] \
+  || fail "explicit-key Herdr launch exited $herdr_youtube_status instead of 1"
+assert_contains \
+  'explicit TRANSCRIPT_API_KEY cannot be forwarded securely to Herdr' \
+  "$fixture_root/herdr-youtube-select.out"
+[[ ! -s "$herdr_log" ]] || fail 'rejected explicit-key Herdr launch invoked Herdr'
+if grep -F 'router-herdr-contract-secret' \
+  "$fixture_root/herdr-youtube-select.out" "$herdr_log" >/dev/null; then
+  fail 'rejected explicit-key Herdr launch disclosed the key'
+fi
+mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 rm "$fixture_bin/herdr"
 
 cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
@@ -849,6 +972,27 @@ actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
 expected = [b"cpx", b"cpx-p", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
+
+: >"$argument_log"
+: >"$fixture_root/router-environment.log"
+TRANSCRIPT_API_KEY='router-contract-secret' \
+  TRX_ARGUMENT_LOG="$argument_log" \
+  TRX_ENV_LOG="$fixture_root/router-environment.log" \
+  bash -a "$fixture_bin/trx" run cdx youtube
+python3 - "$argument_log" <<'PY' || fail 'trx run YouTube arguments differ'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cdx", b"youtube", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+[[ "$(grep -Fxc 'cdx:true' "$fixture_root/router-environment.log")" == 1 ]] \
+  || fail 'trx did not restore the YouTube key only for the selected cdx child'
+if grep -F ':true' "$fixture_root/router-environment.log" \
+  | grep -Fvx 'cdx:true' >/dev/null; then
+  fail 'trx exposed the YouTube key to a catalog helper'
+fi
 
 status=0
 "$fixture_bin/trx" run cpx missing >"$fixture_root/run-missing.out" \

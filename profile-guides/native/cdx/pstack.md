@@ -125,9 +125,9 @@ the real result before declaring completion.
 
 ## Gotchas
 
-- Unlike `cldx`, `cpx`, `grx`, `jcx`, `omp`, `picx`, and `prx`, `bin/cdx` shows
-  no wiring to the shared `native-common` floating-skills bundle — do not
-  assume `engineersamuel` or `show-me` skills are present alongside pstack.
+- The profile includes the shared `native-common` floating skills in addition
+  to the pstack plugin. Pstack-specific workflows still require the documented
+  plugin skill identities.
 - The `$name` skill-invocation syntax is specific to this Codex-native plugin;
   it does not carry over to `cdx superpowers` or any other native
   launcher's skill system.
