@@ -16,7 +16,6 @@ file_mode() {
 entry="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/runtime-claude-entry.sh"
 real_cp="$(command -v cp)"
 real_mv="$(command -v mv)"
-real_rm="$(command -v rm)"
 real_tar="$(command -v tar)"
 seed="$root/seed"
 runtime="$root/home/.claude"
@@ -105,6 +104,11 @@ fi
 exit "${CLAUDE_EXIT:-0}"
 SH
 chmod +x "$fake_bin/claude"
+cat >"$fake_bin/flock" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$fake_bin/flock"
 
 args_out="$root/args"
 config_out="$root/config"
@@ -459,30 +463,9 @@ if [[ "$extract" == true && ! -e "${TRELLAGE_TEST_FAIL_TAR_MARKER:?}" ]]; then
 fi
 exec "$TRELLAGE_TEST_REAL_TAR" "$@"
 SH
-cat >"$fail_tar_bin/rm" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ -n "${TRELLAGE_TEST_RM_REFUSE:-}" \
-  && -e "${TRELLAGE_TEST_FAIL_TAR_MARKER:-}" ]]; then
-  refused=false
-  filtered=()
-  for argument in "$@"; do
-    if [[ "$argument" == "$TRELLAGE_TEST_RM_REFUSE" ]]; then
-      refused=true
-      continue
-    fi
-    filtered+=("$argument")
-  done
-  "${TRELLAGE_TEST_REAL_RM:?}" "${filtered[@]}"
-  [[ "$refused" == false ]]
-  exit
-fi
-exec "${TRELLAGE_TEST_REAL_RM:?}" "$@"
-SH
-chmod +x "$fail_tar_bin/tar" "$fail_tar_bin/rm"
+chmod +x "$fail_tar_bin/tar"
 if PATH="$fail_tar_bin:$fake_bin:$PATH" \
   TRELLAGE_TEST_REAL_TAR="$real_tar" \
-  TRELLAGE_TEST_REAL_RM="$real_rm" \
   TRELLAGE_TEST_FAIL_TAR_DEST="$runtime" \
   TRELLAGE_TEST_FAIL_TAR_MARKER="$root/fail-tar-marker" \
   TRELLAGE_TEST_DIRECT_TAR_MARKER="$root/direct-tar-marker" \
@@ -501,19 +484,17 @@ fi
 grep -Fqx 'before rollback' "$runtime/skills/hyperresearch/SKILL.md"
 grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/CLAUDE.md"
 cmp -s "$root/base-managed-paths.txt" "$runtime/.trellage-claude-managed"
-[[ ! -e "$runtime/.trellage-claude.lock" ]]
+[[ -f "$runtime/.trellage-claude.lock" && ! -L "$runtime/.trellage-claude.lock" ]]
 [[ -z "$(find "$runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
 
 rm -f -- "$root/fail-tar-marker" "$root/direct-tar-marker"
 if PATH="$fail_tar_bin:$fake_bin:$PATH" \
   TRELLAGE_TEST_REAL_TAR="$real_tar" \
-  TRELLAGE_TEST_REAL_RM="$real_rm" \
   TRELLAGE_TEST_FAIL_TAR_DEST="$runtime" \
   TRELLAGE_TEST_FAIL_TAR_MARKER="$root/fail-tar-marker" \
   TRELLAGE_TEST_DIRECT_TAR_MARKER="$root/direct-tar-marker" \
   TRELLAGE_TEST_FAIL_TAR_MEMBER=CLAUDE.md \
   TRELLAGE_TEST_TAR_COLLISION_PATH="$runtime/CLAUDE.md" \
-  TRELLAGE_TEST_RM_REFUSE=CLAUDE.md \
   TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
   TRELLAGE_CLAUDE_AUTH_MODE=native \
   CLAUDE_ARGS_OUT="$root/restore-fail-args" CLAUDE_CONFIG_OUT="$root/restore-fail-config" \
@@ -525,11 +506,542 @@ fi
 grep -Fqx 'concurrent collision' "$runtime/CLAUDE.md"
 grep -Fqx 'before rollback' "$runtime/skills/hyperresearch/SKILL.md" \
   || { printf 'rollback stopped after one managed-file restore collision\n' >&2; exit 1; }
-[[ ! -e "$runtime/.trellage-claude.lock" ]]
+[[ -f "$runtime/.trellage-claude.lock" && ! -L "$runtime/.trellage-claude.lock" ]]
 [[ -z "$(find "$runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
 printf 'ACTIVE EVERY RESPONSE\n' >"$runtime/CLAUDE.md"
 printf 'new skill\n' >"$seed/skills/hyperresearch/SKILL.md"
 printf 'ACTIVE EVERY RESPONSE\n' >"$seed/CLAUDE.md"
+
+printf 'before late rollback\n' >"$runtime/skills/hyperresearch/SKILL.md"
+printf 'late replacement\n' >"$seed/skills/hyperresearch/SKILL.md"
+printf 'late replacement root instructions\n' >"$seed/CLAUDE.md"
+exchange_hook_dir="$root/exchange-hook"
+mkdir -p "$exchange_hook_dir"
+cat >"$exchange_hook_dir/sitecustomize.py" <<'PY'
+import ctypes
+import os
+
+real_cdll = ctypes.CDLL
+
+
+class WrappedFunction:
+    def __init__(self, function):
+        object.__setattr__(self, "function", function)
+
+    def __getattr__(self, name):
+        return getattr(self.function, name)
+
+    def __setattr__(self, name, value):
+        setattr(self.function, name, value)
+
+    def __call__(self, *arguments):
+        destination_index = 3 if len(arguments) == 5 else 1
+        destination = os.path.realpath(os.fsdecode(arguments[destination_index]))
+        target = os.environ.get("TRELLAGE_TEST_EXCHANGE_TARGET", "")
+        marker = os.environ.get("TRELLAGE_TEST_EXCHANGE_MARKER", "")
+        action = ""
+        kill_after = False
+        if target and destination == os.path.realpath(target) and marker and not os.path.exists(marker):
+            open(marker, "w", encoding="utf-8").close()
+            action = os.environ.get("TRELLAGE_TEST_EXCHANGE_ACTION", "")
+            replace_path = os.environ.get("TRELLAGE_TEST_EXCHANGE_REPLACE_PATH", "")
+            if replace_path:
+                try:
+                    os.unlink(replace_path)
+                except FileNotFoundError:
+                    pass
+                with open(replace_path, "w", encoding="utf-8") as replacement:
+                    replacement.write(
+                        os.environ.get("TRELLAGE_TEST_EXCHANGE_REPLACE_CONTENT", "")
+                    )
+            if action == "delete":
+                os.unlink(destination)
+            if action == "fail":
+                raise OSError("injected atomic exchange failure")
+            if action == "kill":
+                os.kill(os.getppid(), 9)
+                os._exit(137)
+            kill_after = action == "kill-after"
+        result = self.function(*arguments)
+        if action == "delete-kill-after":
+            os.unlink(destination)
+            os.kill(os.getppid(), 9)
+            os._exit(137)
+        if kill_after:
+            os.kill(os.getppid(), 9)
+            os._exit(137)
+        return result
+
+
+class WrappedLibrary:
+    def __init__(self, library):
+        self.library = library
+
+    def __getattr__(self, name):
+        function = getattr(self.library, name)
+        if name in {"renameat2", "renamex_np"}:
+            return WrappedFunction(function)
+        return function
+
+
+def wrapped_cdll(*arguments, **keywords):
+    return WrappedLibrary(real_cdll(*arguments, **keywords))
+
+
+ctypes.CDLL = wrapped_cdll
+PY
+if PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/late-fail-marker" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_PATH="$runtime/CLAUDE.md" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_CONTENT=$'concurrent replacement\n' \
+  TRELLAGE_TEST_EXCHANGE_ACTION=fail \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/late-fail-args" CLAUDE_CONFIG_OUT="$root/late-fail-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/late-fail-config-path" CLAUDE_ENV_OUT="$root/late-fail-env" \
+  "$entry" new claude --print hello >"$root/late-fail.out" 2>"$root/late-fail.err"; then
+  printf 'expected post-publication Claude settings update to fail\n' >&2
+  exit 1
+fi
+[[ -f "$root/late-fail-marker" ]]
+grep -Fqx 'concurrent replacement' "$runtime/CLAUDE.md" \
+  || { printf 'rollback deleted a concurrently replaced managed file\n' >&2; exit 1; }
+grep -Fqx 'before late rollback' "$runtime/skills/hyperresearch/SKILL.md" \
+  || { printf 'rollback did not restore an unchanged managed file\n' >&2; exit 1; }
+[[ -f "$runtime/.trellage-claude.lock" && ! -L "$runtime/.trellage-claude.lock" ]]
+[[ -z "$(find "$runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+printf 'ACTIVE EVERY RESPONSE\n' >"$runtime/CLAUDE.md"
+printf 'new skill\n' >"$seed/skills/hyperresearch/SKILL.md"
+printf 'ACTIVE EVERY RESPONSE\n' >"$seed/CLAUDE.md"
+
+publication_seed="$root/publication-seed"
+publication_runtime="$root/publication-home/.claude"
+mkdir -p "$root/publication-home"
+cp -R "$seed" "$publication_seed"
+cp -R "$runtime" "$publication_runtime"
+printf 'prior publication state\n' >"$publication_runtime/skills/hyperresearch/SKILL.md"
+printf 'new publication state\n' >"$publication_seed/skills/hyperresearch/SKILL.md"
+publication_preload="$root/publication-collision.cjs"
+cat >"$publication_preload" <<'JS'
+const fs = require('node:fs')
+const path = require('node:path')
+
+const linkSync = fs.linkSync
+fs.linkSync = (source, destination) => {
+  if (
+    path.resolve(destination) ===
+      path.resolve(process.env.TRELLAGE_TEST_PUBLICATION_COLLISION_PATH) &&
+    !fs.existsSync(process.env.TRELLAGE_TEST_PUBLICATION_COLLISION_MARKER)
+  ) {
+    fs.writeFileSync(destination, 'concurrent publication\n')
+    fs.writeFileSync(process.env.TRELLAGE_TEST_PUBLICATION_COLLISION_MARKER, '')
+  }
+  return linkSync(source, destination)
+}
+JS
+if NODE_OPTIONS="--require=$publication_preload" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_PUBLICATION_COLLISION_PATH="$publication_runtime/skills/hyperresearch/SKILL.md" \
+  TRELLAGE_TEST_PUBLICATION_COLLISION_MARKER="$root/publication-collision-marker" \
+  TRELLAGE_CLAUDE_SEED_HOME="$publication_seed" \
+  TRELLAGE_CLAUDE_HOME="$publication_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/publication-args" CLAUDE_CONFIG_OUT="$root/publication-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/publication-config-path" CLAUDE_ENV_OUT="$root/publication-env" \
+  "$entry" new claude --print hello >"$root/publication.out" 2>"$root/publication.err"; then
+  printf 'expected atomic managed-file publication collision to fail\n' >&2
+  exit 1
+fi
+[[ -f "$root/publication-collision-marker" ]]
+grep -Fqx 'concurrent publication' \
+  "$publication_runtime/skills/hyperresearch/SKILL.md" \
+  || { printf 'managed publication replaced a concurrently created file\n' >&2; exit 1; }
+[[ -f "$publication_runtime/.trellage-claude.lock" \
+  && ! -L "$publication_runtime/.trellage-claude.lock" ]]
+[[ -z "$(find "$publication_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+identity_seed="$root/identity-seed"
+identity_runtime="$root/identity-home/.claude"
+mkdir -p "$root/identity-home"
+cp -R "$seed" "$identity_seed"
+cp -R "$runtime" "$identity_runtime"
+printf 'prior identity state\n' >"$identity_runtime/skills/hyperresearch/SKILL.md"
+printf 'new identity state\n' >"$identity_seed/skills/hyperresearch/SKILL.md"
+if PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$identity_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/identity-marker" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_PATH="$identity_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_CONTENT=$'concurrent identity replacement\n' \
+  TRELLAGE_CLAUDE_SEED_HOME="$identity_seed" \
+  TRELLAGE_CLAUDE_HOME="$identity_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/identity-args" CLAUDE_CONFIG_OUT="$root/identity-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/identity-config-path" CLAUDE_ENV_OUT="$root/identity-env" \
+  "$entry" new claude --print hello >"$root/identity.out" 2>"$root/identity.err"; then
+  printf 'expected changed Claude settings identity to fail publication\n' >&2
+  exit 1
+fi
+grep -Fqx 'concurrent identity replacement' "$identity_runtime/settings.json"
+grep -Fqx 'prior identity state' "$identity_runtime/skills/hyperresearch/SKILL.md"
+grep -Fq 'Claude state changed during publication: settings.json' "$root/identity.err"
+[[ -z "$(find "$identity_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+delete_seed="$root/delete-seed"
+delete_runtime="$root/delete-home/.claude"
+mkdir -p "$root/delete-home"
+cp -R "$seed" "$delete_seed"
+cp -R "$runtime" "$delete_runtime"
+printf 'prior delete state\n' >"$delete_runtime/skills/hyperresearch/SKILL.md"
+printf 'new delete state\n' >"$delete_seed/skills/hyperresearch/SKILL.md"
+if PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$delete_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/delete-marker" \
+  TRELLAGE_TEST_EXCHANGE_ACTION=delete \
+  TRELLAGE_CLAUDE_SEED_HOME="$delete_seed" \
+  TRELLAGE_CLAUDE_HOME="$delete_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/delete-args" CLAUDE_CONFIG_OUT="$root/delete-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/delete-config-path" CLAUDE_ENV_OUT="$root/delete-env" \
+  "$entry" new claude --print hello >"$root/delete.out" 2>"$root/delete.err"; then
+  printf 'expected deleted Claude settings to fail publication\n' >&2
+  exit 1
+fi
+[[ ! -e "$delete_runtime/settings.json" && ! -L "$delete_runtime/settings.json" ]]
+grep -Fqx 'prior delete state' "$delete_runtime/skills/hyperresearch/SKILL.md"
+[[ -z "$(find "$delete_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+exchange_crash_seed="$root/exchange-crash-seed"
+exchange_crash_runtime="$root/exchange-crash-home/.claude"
+mkdir -p "$root/exchange-crash-home"
+cp -R "$seed" "$exchange_crash_seed"
+cp -R "$runtime" "$exchange_crash_runtime"
+printf 'prior exchange crash state\n' \
+  >"$exchange_crash_runtime/skills/hyperresearch/SKILL.md"
+printf 'new exchange crash state\n' \
+  >"$exchange_crash_seed/skills/hyperresearch/SKILL.md"
+exchange_crash_status=0
+{
+  PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$exchange_crash_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/exchange-crash-marker" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_PATH="$exchange_crash_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_CONTENT=$'concurrent exchange crash replacement\n' \
+  TRELLAGE_TEST_EXCHANGE_ACTION=kill-after \
+  TRELLAGE_CLAUDE_SEED_HOME="$exchange_crash_seed" \
+  TRELLAGE_CLAUDE_HOME="$exchange_crash_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/exchange-crash-args" \
+  CLAUDE_CONFIG_OUT="$root/exchange-crash-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/exchange-crash-config-path" \
+  CLAUDE_ENV_OUT="$root/exchange-crash-env" \
+    "$entry" new claude --print hello \
+    >"$root/exchange-crash.out" 2>"$root/exchange-crash.err" \
+    || exchange_crash_status=$?
+} 2>>"$root/exchange-crash.err"
+[[ "$exchange_crash_status" -ne 0 && -f "$root/exchange-crash-marker" ]] || {
+  printf 'expected SIGKILL after a mismatched Claude state exchange\n' >&2
+  exit 1
+}
+exchange_crash_transaction="$(
+  find "$exchange_crash_runtime" -maxdepth 1 \
+    -name '.trellage-claude-transaction.*' -print -quit
+)"
+[[ -n "$exchange_crash_transaction" ]]
+printf 'skills/hyperresearch/missing-after-exchange-recovery.md\n' \
+  >"$exchange_crash_seed/managed-paths.txt"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$exchange_crash_seed" \
+  TRELLAGE_CLAUDE_HOME="$exchange_crash_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/exchange-recovery-args" \
+  CLAUDE_CONFIG_OUT="$root/exchange-recovery-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/exchange-recovery-config-path" \
+  CLAUDE_ENV_OUT="$root/exchange-recovery-env" \
+  "$entry" new claude --print hello \
+  >"$root/exchange-recovery.out" 2>"$root/exchange-recovery.err"; then
+  printf 'expected invalid seed after exchange recovery to fail\n' >&2
+  exit 1
+fi
+grep -Fqx 'concurrent exchange crash replacement' \
+  "$exchange_crash_runtime/settings.json"
+grep -Fqx 'prior exchange crash state' \
+  "$exchange_crash_runtime/skills/hyperresearch/SKILL.md"
+[[ -z "$(find "$exchange_crash_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+delete_crash_seed="$root/delete-crash-seed"
+delete_crash_runtime="$root/delete-crash-home/.claude"
+mkdir -p "$root/delete-crash-home"
+cp -R "$seed" "$delete_crash_seed"
+cp -R "$runtime" "$delete_crash_runtime"
+printf 'prior delete crash state\n' \
+  >"$delete_crash_runtime/skills/hyperresearch/SKILL.md"
+printf 'new delete crash state\n' \
+  >"$delete_crash_seed/skills/hyperresearch/SKILL.md"
+delete_crash_status=0
+{
+  PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$delete_crash_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/delete-crash-marker" \
+  TRELLAGE_TEST_EXCHANGE_ACTION=delete-kill-after \
+  TRELLAGE_CLAUDE_SEED_HOME="$delete_crash_seed" \
+  TRELLAGE_CLAUDE_HOME="$delete_crash_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/delete-crash-args" \
+  CLAUDE_CONFIG_OUT="$root/delete-crash-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/delete-crash-config-path" \
+  CLAUDE_ENV_OUT="$root/delete-crash-env" \
+    "$entry" new claude --print hello \
+    >"$root/delete-crash.out" 2>"$root/delete-crash.err" \
+    || delete_crash_status=$?
+} 2>>"$root/delete-crash.err"
+[[ "$delete_crash_status" -ne 0 && -f "$root/delete-crash-marker" ]] || {
+  printf 'expected SIGKILL after deleting exchanged Claude settings\n' >&2
+  exit 1
+}
+printf 'skills/hyperresearch/missing-after-delete-recovery.md\n' \
+  >"$delete_crash_seed/managed-paths.txt"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$delete_crash_seed" \
+  TRELLAGE_CLAUDE_HOME="$delete_crash_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/delete-recovery-args" \
+  CLAUDE_CONFIG_OUT="$root/delete-recovery-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/delete-recovery-config-path" \
+  CLAUDE_ENV_OUT="$root/delete-recovery-env" \
+  "$entry" new claude --print hello \
+  >"$root/delete-recovery.out" 2>"$root/delete-recovery.err"; then
+  printf 'expected invalid seed after deletion recovery to fail\n' >&2
+  exit 1
+fi
+[[ ! -e "$delete_crash_runtime/settings.json" \
+  && ! -L "$delete_crash_runtime/settings.json" ]]
+grep -Fqx 'prior delete crash state' \
+  "$delete_crash_runtime/skills/hyperresearch/SKILL.md"
+[[ -z "$(find "$delete_crash_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+absent_seed="$root/absent-seed"
+absent_runtime="$root/absent-home/.claude"
+mkdir -p "$root/absent-home"
+cp -R "$seed" "$absent_seed"
+cp -R "$runtime" "$absent_runtime"
+rm -f -- "$absent_runtime/settings.json"
+printf '{}\n' >"$absent_seed/plugin-marketplaces.json"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$absent_seed" \
+  TRELLAGE_CLAUDE_HOME="$absent_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/absent-args" CLAUDE_CONFIG_OUT="$root/absent-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/absent-config-path" CLAUDE_ENV_OUT="$root/absent-env" \
+  "$entry" new claude --print hello >"$root/absent.out" 2>"$root/absent.err"; then
+  printf 'expected invalid marketplace state after initial settings publication to fail\n' >&2
+  exit 1
+fi
+grep -Fq 'baked Claude plugin marketplaces are invalid' "$root/absent.err"
+[[ ! -e "$absent_runtime/settings.json" && ! -L "$absent_runtime/settings.json" ]]
+[[ -z "$(find "$absent_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+hardlink_seed="$root/hardlink-seed"
+hardlink_runtime="$root/hardlink-home/.claude"
+mkdir -p "$root/hardlink-home"
+cp -R "$seed" "$hardlink_seed"
+cp -R "$runtime" "$hardlink_runtime"
+printf 'prior hardlink state\n' >"$hardlink_runtime/skills/hyperresearch/SKILL.md"
+ln "$hardlink_runtime/settings.json" "$root/settings-hardlink"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$hardlink_seed" \
+  TRELLAGE_CLAUDE_HOME="$hardlink_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/hardlink-args" CLAUDE_CONFIG_OUT="$root/hardlink-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/hardlink-config-path" CLAUDE_ENV_OUT="$root/hardlink-env" \
+  "$entry" new claude --print hello >"$root/hardlink.out" 2>"$root/hardlink.err"; then
+  printf 'expected hard-linked Claude settings to fail before publication\n' >&2
+  exit 1
+fi
+grep -Fq 'Claude state must be a single-link regular file: settings.json' \
+  "$root/hardlink.err"
+cmp -s "$hardlink_runtime/settings.json" "$root/settings-hardlink"
+grep -Fqx 'prior hardlink state' "$hardlink_runtime/skills/hyperresearch/SKILL.md"
+[[ -z "$(find "$hardlink_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+legacy_lock_seed="$root/legacy-lock-seed"
+legacy_lock_runtime="$root/legacy-lock-home/.claude"
+mkdir -p "$root/legacy-lock-home"
+cp -R "$seed" "$legacy_lock_seed"
+cp -R "$runtime" "$legacy_lock_runtime"
+rm -f -- "$legacy_lock_runtime/.trellage-claude.lock"
+mkdir "$legacy_lock_runtime/.trellage-claude.lock"
+printf '999999\n' >"$legacy_lock_runtime/.trellage-claude.lock/pid"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$legacy_lock_seed" \
+  TRELLAGE_CLAUDE_HOME="$legacy_lock_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/legacy-lock-args" CLAUDE_CONFIG_OUT="$root/legacy-lock-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/legacy-lock-config-path" CLAUDE_ENV_OUT="$root/legacy-lock-env" \
+  "$entry" new claude --print hello \
+  >"$root/legacy-lock.out" 2>"$root/legacy-lock.err"; then
+  printf 'expected legacy Claude lock directory to fail closed\n' >&2
+  exit 1
+fi
+grep -Fq 'legacy Claude lock directory requires manual removal' "$root/legacy-lock.err"
+[[ -d "$legacy_lock_runtime/.trellage-claude.lock" ]]
+
+crash_seed="$root/crash-seed"
+crash_runtime="$root/crash-home/.claude"
+mkdir -p "$root/crash-home"
+cp -R "$seed" "$crash_seed"
+cp -R "$runtime" "$crash_runtime"
+printf 'prior crash state\n' >"$crash_runtime/skills/hyperresearch/SKILL.md"
+printf 'published before crash\n' >"$crash_seed/skills/hyperresearch/SKILL.md"
+cp "$crash_runtime/settings.json" "$root/crash-settings.before"
+cp "$crash_runtime/.trellage-claude-managed" "$root/crash-manifest.before"
+crash_status=0
+{
+  PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$crash_runtime/.claude.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/crash-marker" \
+  TRELLAGE_TEST_EXCHANGE_ACTION=kill \
+  TRELLAGE_CLAUDE_SEED_HOME="$crash_seed" \
+  TRELLAGE_CLAUDE_HOME="$crash_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/crash-args" CLAUDE_CONFIG_OUT="$root/crash-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/crash-config-path" CLAUDE_ENV_OUT="$root/crash-env" \
+    "$entry" new claude --print hello >"$root/crash.out" 2>"$root/crash.err" \
+    || crash_status=$?
+} 2>>"$root/crash.err"
+[[ "$crash_status" -ne 0 && -f "$root/crash-marker" ]] || {
+  printf 'expected SIGKILL during Claude state publication\n' >&2
+  exit 1
+}
+crash_transaction="$(find "$crash_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)"
+[[ -n "$crash_transaction" && -f "$crash_runtime/.trellage-claude.lock" \
+  && ! -L "$crash_runtime/.trellage-claude.lock" ]]
+grep -Fq '"path":"settings.json"' "$crash_transaction/published.jsonl"
+grep -Fqx 'published before crash' "$crash_runtime/skills/hyperresearch/SKILL.md"
+cp "$crash_seed/managed-paths.txt" "$root/crash-managed-paths.valid"
+printf 'skills/hyperresearch/missing-after-recovery.md\n' >"$crash_seed/managed-paths.txt"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$crash_seed" \
+  TRELLAGE_CLAUDE_HOME="$crash_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/crash-recovery-args" CLAUDE_CONFIG_OUT="$root/crash-recovery-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/crash-recovery-config-path" CLAUDE_ENV_OUT="$root/crash-recovery-env" \
+  "$entry" new claude --print hello >"$root/crash-recovery.out" 2>"$root/crash-recovery.err"; then
+  printf 'expected post-recovery invalid managed seed to fail\n' >&2
+  exit 1
+fi
+grep -Fqx 'prior crash state' "$crash_runtime/skills/hyperresearch/SKILL.md"
+cmp -s "$root/crash-settings.before" "$crash_runtime/settings.json"
+cmp -s "$root/crash-manifest.before" "$crash_runtime/.trellage-claude-managed"
+[[ -f "$crash_runtime/.trellage-claude.lock" \
+  && ! -L "$crash_runtime/.trellage-claude.lock" ]]
+[[ -z "$(find "$crash_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+retained_seed="$root/retained-seed"
+retained_runtime="$root/retained-home/.claude"
+mkdir -p "$root/retained-home"
+cp -R "$seed" "$retained_seed"
+cp -R "$runtime" "$retained_runtime"
+printf 'prior retained state\n' >"$retained_runtime/skills/hyperresearch/SKILL.md"
+printf 'new retained state\n' >"$retained_seed/skills/hyperresearch/SKILL.md"
+retained_tar_bin="$root/retained-tar-bin"
+retained_tar_count="$root/retained-tar-count"
+mkdir -p "$retained_tar_bin"
+printf '0\n' >"$retained_tar_count"
+cat >"$retained_tar_bin/tar" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+destination=
+extract=false
+args=("$@")
+for ((index = 0; index < ${#args[@]}; index++)); do
+  if [[ "${args[$index]}" == -C ]]; then
+    ((index += 1))
+    destination="${args[$index]}"
+  elif [[ "${args[$index]}" == -xf && "${args[$((index + 1))]-}" == - ]]; then
+    extract=true
+  fi
+done
+if [[ "$extract" == true ]]; then
+  case "$destination" in
+    "${TRELLAGE_TEST_RETAINED_RUNTIME:?}"/.trellage-claude-transaction.*/.managed-runtime-copy.*)
+      count="$(cat "${TRELLAGE_TEST_RETAINED_COUNT:?}")"
+      printf '%s\n' "$((count + 1))" >"$TRELLAGE_TEST_RETAINED_COUNT"
+      exit 76
+      ;;
+  esac
+fi
+exec "${TRELLAGE_TEST_REAL_TAR:?}" "$@"
+SH
+chmod +x "$retained_tar_bin/tar"
+if PATH="$retained_tar_bin:$fake_bin:$PATH" \
+  TRELLAGE_TEST_REAL_TAR="$real_tar" \
+  TRELLAGE_TEST_RETAINED_RUNTIME="$retained_runtime" \
+  TRELLAGE_TEST_RETAINED_COUNT="$retained_tar_count" \
+  TRELLAGE_CLAUDE_SEED_HOME="$retained_seed" \
+  TRELLAGE_CLAUDE_HOME="$retained_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/retained-args" CLAUDE_CONFIG_OUT="$root/retained-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/retained-config-path" CLAUDE_ENV_OUT="$root/retained-env" \
+  "$entry" new claude --print hello >"$root/retained.out" 2>"$root/retained.err"; then
+  printf 'expected managed publication and rollback staging to fail\n' >&2
+  exit 1
+fi
+grep -Fq 'rollback incomplete; transaction retained:' "$root/retained.err"
+[[ "$(cat "$retained_tar_count")" == 2 ]]
+retained_transaction="$(find "$retained_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)"
+[[ -n "$retained_transaction" && -d "$retained_transaction" ]]
+[[ ! -e "$retained_runtime/skills/hyperresearch/SKILL.md" ]]
+printf 'skills/hyperresearch/missing-after-retained-recovery.md\n' \
+  >"$retained_seed/managed-paths.txt"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$retained_seed" \
+  TRELLAGE_CLAUDE_HOME="$retained_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/retained-recovery-args" CLAUDE_CONFIG_OUT="$root/retained-recovery-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/retained-recovery-config-path" CLAUDE_ENV_OUT="$root/retained-recovery-env" \
+  "$entry" new claude --print hello >"$root/retained-recovery.out" 2>"$root/retained-recovery.err"; then
+  printf 'expected invalid seed after retained rollback recovery to fail\n' >&2
+  exit 1
+fi
+grep -Fqx 'prior retained state' "$retained_runtime/skills/hyperresearch/SKILL.md"
+[[ -z "$(find "$retained_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
+
+state_seed="$root/state-seed"
+state_runtime="$root/state-home/.claude"
+mkdir -p "$root/state-home"
+cp -R "$seed" "$state_seed"
+cp -R "$runtime" "$state_runtime"
+printf 'prior state rollback\n' >"$state_runtime/skills/hyperresearch/SKILL.md"
+printf 'new state rollback\n' >"$state_seed/skills/hyperresearch/SKILL.md"
+if PYTHONPATH="$exchange_hook_dir" \
+  PATH="$fake_bin:$PATH" \
+  TRELLAGE_TEST_EXCHANGE_TARGET="$state_runtime/.claude.json" \
+  TRELLAGE_TEST_EXCHANGE_MARKER="$root/state-fail-marker" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_PATH="$state_runtime/settings.json" \
+  TRELLAGE_TEST_EXCHANGE_REPLACE_CONTENT=$'concurrent settings replacement\n' \
+  TRELLAGE_TEST_EXCHANGE_ACTION=fail \
+  TRELLAGE_CLAUDE_SEED_HOME="$state_seed" \
+  TRELLAGE_CLAUDE_HOME="$state_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/state-fail-args" CLAUDE_CONFIG_OUT="$root/state-fail-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/state-fail-config-path" CLAUDE_ENV_OUT="$root/state-fail-env" \
+  "$entry" new claude --print hello >"$root/state-fail.out" 2>"$root/state-fail.err"; then
+  printf 'expected late Claude state publication to fail\n' >&2
+  exit 1
+fi
+grep -Fqx 'concurrent settings replacement' "$state_runtime/settings.json" \
+  || { printf 'rollback replaced a concurrent Claude settings update\n' >&2; exit 1; }
+grep -Fqx 'prior state rollback' "$state_runtime/skills/hyperresearch/SKILL.md"
+[[ -f "$state_runtime/.trellage-claude.lock" \
+  && ! -L "$state_runtime/.trellage-claude.lock" ]]
+[[ -z "$(find "$state_runtime" -maxdepth 1 -name '.trellage-claude-transaction.*' -print -quit)" ]]
 
 core_seed="$root/core-seed"
 core_runtime="$root/core-home/.claude"

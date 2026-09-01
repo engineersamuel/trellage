@@ -1070,7 +1070,7 @@ lifecycle_lease=
 lifecycle_resource_dir=
 lifecycle_mutex=
 
-lifecycle_process_identity() {
+lifecycle_process_description() {
   local pid="$1"
   local process_description ps_command=
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
@@ -1086,7 +1086,93 @@ lifecycle_process_identity() {
       -o lstart= -o ppid= -o pgid= -o command= 2>/dev/null
   )" || return 1
   [[ -n "${process_description//[[:space:]]/}" ]] || return 1
+  printf '%s' "$process_description"
+}
+
+lifecycle_process_identity() {
+  local pid="$1"
+  local process_description
+  process_description="$(lifecycle_process_description "$pid")" || return 1
   printf '%s' "$process_description" | sha256
+}
+
+lifecycle_process_elapsed_seconds() {
+  local pid="$1"
+  local days=0 elapsed hours=0 minutes seconds ps_command=
+  local -a parts
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  for ps_command in /bin/ps /usr/bin/ps; do
+    [[ -x "$ps_command" ]] && break
+    ps_command=
+  done
+  if [[ -z "$ps_command" ]]; then
+    ps_command="$(command -v ps 2>/dev/null)" || return 1
+  fi
+  elapsed="$(LC_ALL=C "$ps_command" -p "$pid" -o etime= 2>/dev/null)" || return 1
+  elapsed="${elapsed//[[:space:]]/}"
+  if [[ "$elapsed" == *-* ]]; then
+    days="${elapsed%%-*}"
+    elapsed="${elapsed#*-}"
+  fi
+  IFS=: read -r -a parts <<<"$elapsed"
+  case "${#parts[@]}" in
+    2)
+      minutes="${parts[0]}"
+      seconds="${parts[1]}"
+      ;;
+    3)
+      hours="${parts[0]}"
+      minutes="${parts[1]}"
+      seconds="${parts[2]}"
+      ;;
+    *) return 1 ;;
+  esac
+  [[ "$days" =~ ^[0-9]+$ && "$hours" =~ ^[0-9]+$ \
+    && "$minutes" =~ ^[0-9]+$ && "$seconds" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$((10#$days * 86400 + 10#$hours * 3600 + 10#$minutes * 60 + 10#$seconds))"
+}
+
+lifecycle_record_mtime() {
+  local record="$1"
+  local stat_command= value
+  for stat_command in /usr/bin/stat /bin/stat; do
+    [[ -x "$stat_command" ]] && break
+    stat_command=
+  done
+  if [[ -z "$stat_command" ]]; then
+    stat_command="$(command -v stat 2>/dev/null)" || return 1
+  fi
+  if value="$("$stat_command" -f '%m' "$record" 2>/dev/null)" \
+    && [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$value"
+    return
+  fi
+  if value="$("$stat_command" -c '%Y' "$record" 2>/dev/null)" \
+    && [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$value"
+    return
+  fi
+  return 1
+}
+
+lifecycle_legacy_record_is_live() {
+  local record="$1"
+  local pid="$2"
+  local current_time date_command= elapsed_seconds process_started record_mtime
+  for date_command in /bin/date /usr/bin/date; do
+    [[ -x "$date_command" ]] && break
+    date_command=
+  done
+  if [[ -z "$date_command" ]]; then
+    date_command="$(command -v date 2>/dev/null)" || return 1
+  fi
+  current_time="$("$date_command" +%s 2>/dev/null)" || return 1
+  elapsed_seconds="$(lifecycle_process_elapsed_seconds "$pid")" || return 1
+  record_mtime="$(lifecycle_record_mtime "$record")" || return 1
+  [[ "$current_time" =~ ^[0-9]+$ && "$elapsed_seconds" =~ ^[0-9]+$ \
+    && "$record_mtime" =~ ^[0-9]+$ ]] || return 1
+  process_started="$((current_time - elapsed_seconds))"
+  (( process_started <= record_mtime + 2 ))
 }
 
 lifecycle_record_is_live() {
@@ -1098,7 +1184,10 @@ lifecycle_record_is_live() {
     IFS= read -r identity || true
   } <"$record" || return 1
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null || return 1
-  [[ -n "$identity" ]] || return 0
+  if [[ -z "$identity" ]]; then
+    lifecycle_legacy_record_is_live "$record" "$pid"
+    return
+  fi
   [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || return 1
   current_identity="$(lifecycle_process_identity "$pid")" || return 1
   [[ "$current_identity" == "$identity" ]]
@@ -1412,6 +1501,7 @@ report_sandbox_metadata() {
     printf 'trellage: Herdr metadata not reported: pane or socket context is missing\n' >&2
     return 1
   fi
+  [[ -S "$socket_path" ]] || return 1
   node_executable="$(command -v node)" || return 1
   env -i "$node_executable" --input-type=module - \
     "$socket_path" "$pane_id" "$agent" "$profile_name" "$full_container_id" "$invocation_id" <<'NODE'
@@ -1419,15 +1509,21 @@ import net from "node:net"
 
 const [socketPath, paneId, agent, profile, containerId, invocationId] = process.argv.slice(2)
 const source = "trellage.guide-handoff"
+const permanentConnectionErrors = new Set(["EACCES", "ECONNREFUSED", "ENOENT", "ENOTDIR"])
+let permanentConnectionFailure
+let permanentProtocolFailure
 const requestHerdr = (request) =>
   new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath)
     let sourceText = ""
+    let settled = false
     const timer = setTimeout(() => {
       socket.destroy()
       reject(new Error("Herdr metadata request timed out"))
     }, 250)
     const finish = (error, result) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
       socket.destroy()
       error === undefined ? resolve(result) : reject(error)
@@ -1442,11 +1538,13 @@ const requestHerdr = (request) =>
       try {
         response = JSON.parse(sourceText.slice(0, newline))
       } catch {
-        finish(new Error("Herdr metadata response is not valid JSON"))
+        permanentProtocolFailure = new Error("Herdr metadata response is not valid JSON")
+        finish(permanentProtocolFailure)
         return
       }
       if (response?.id !== request.id) {
-        finish(new Error("Herdr metadata response ID does not match"))
+        permanentProtocolFailure = new Error("Herdr metadata response ID does not match")
+        finish(permanentProtocolFailure)
         return
       }
       if (response.error !== undefined) {
@@ -1455,7 +1553,12 @@ const requestHerdr = (request) =>
       }
       finish(undefined, response.result)
     })
-    socket.once("error", finish)
+    socket.once("error", (error) => {
+      if (permanentConnectionErrors.has(error?.code)) {
+        permanentConnectionFailure = error
+      }
+      finish(error)
+    })
     socket.once("close", () => {
       if (sourceText.indexOf("\n") < 0) {
         finish(new Error("Herdr metadata socket closed without a response"))
@@ -1505,7 +1608,9 @@ try {
         processGroup = candidateProcessGroup
         break
       }
-    } catch {
+    } catch (error) {
+      if (permanentConnectionFailure !== undefined) throw permanentConnectionFailure
+      if (permanentProtocolFailure !== undefined) throw permanentProtocolFailure
       // The tagged attachment can take a moment to become visible to Herdr.
     }
     await delay(100)

@@ -2313,7 +2313,7 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
   local worktree="$test_root/lease-guards-worktree"
   local docker_log="$test_root/lease-guards.docker.log"
   local state_volume shell_ready shell_release harness_ready harness_release shell_pid harness_pid
-  local leases_dir resource_dir
+  local leases_dir legacy_live_lease resource_dir
   mkdir -p "$worktree"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   shell_ready="$test_root/shell.ready"
@@ -2328,6 +2328,12 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" shell &
   shell_pid=$!
   wait_for_file "$shell_ready"
+  leases_dir="$(ls -td "$runtime_dir"/trellage-*/*/leases 2>/dev/null | sed -n '1p')"
+  [[ -n "$leases_dir" ]] || fail 'live lifecycle lease directory was not created'
+  legacy_live_lease="$(find "$leases_dir" -mindepth 1 -maxdepth 1 -type f -print -quit)"
+  [[ -n "$legacy_live_lease" ]] || fail 'live lifecycle lease was not created'
+  sed -n '1p' "$legacy_live_lease" >"$legacy_live_lease.legacy"
+  mv "$legacy_live_lease.legacy" "$legacy_live_lease"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     FAKE_DOCKER_EXEC_READY_FILE="$harness_ready" FAKE_DOCKER_EXEC_RELEASE_FILE="$harness_release" \
@@ -2365,6 +2371,15 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
   grep -Fqx $'ARG\tstop' "$docker_log" || fail 'reused PID lease prevented automatic shutdown'
   [[ ! -e "$leases_dir/reused-pid" ]] || fail 'reused PID lease was not pruned'
 
+  printf '%s\n' "$$" >"$leases_dir/legacy-reused-pid"
+  touch -t 200001010000 "$leases_dir/legacy-reused-pid"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'legacy reused PID lease prevented automatic shutdown'
+  [[ ! -e "$leases_dir/legacy-reused-pid" ]] || fail 'legacy reused PID lease was not pruned'
+
   resource_dir="$(dirname "$leases_dir")"
   mkdir "$resource_dir/mutex"
   printf '%s\n%s\n' "$$" "$(printf '0%.0s' {1..64})" >"$resource_dir/mutex/owner"
@@ -2374,6 +2389,16 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
   grep -Fqx $'ARG\tstop' "$docker_log" || fail 'reused PID mutex owner blocked launch cleanup'
   [[ ! -e "$resource_dir/mutex" ]] || fail 'reused PID mutex owner was not replaced and released'
+
+  mkdir "$resource_dir/mutex"
+  printf '%s\n' "$$" >"$resource_dir/mutex/owner"
+  touch -t 200001010000 "$resource_dir/mutex/owner"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'legacy reused PID mutex owner blocked launch cleanup'
+  [[ ! -e "$resource_dir/mutex" ]] || fail 'legacy reused PID mutex owner was not replaced and released'
   printf 'Trellage host test: PASS: lifecycle records reject reused PIDs and guard shutdown\n'
 }
 
@@ -5275,7 +5300,9 @@ test_sandbox_session_bridge_attachment_contract() {
   local metadata_socket="$test_root/h.sock"
   local metadata_ready="$test_root/h.ready"
   local metadata_request="$test_root/h.json"
-  local state_volume server_pid invocation
+  local state_volume server_pid invocation failure_started failure_elapsed
+  local protocol_socket protocol_ready protocol_pid protocol_started protocol_elapsed
+  local protocol_log protocol_stderr
   mkdir -p "$metadata_worktree"
   : >"$metadata_log"
   rm -f -- "$sandbox_metadata_node_environment"
@@ -5415,6 +5442,7 @@ PY
   local failure_log="$test_root/sandbox-bridge-metadata-failure.log"
   local failure_stderr="$test_root/sandbox-bridge-metadata-failure.stderr"
   : >"$failure_log"
+  failure_started="$(date +%s)"
   FAKE_GH_STATE=failure \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
@@ -5424,10 +5452,62 @@ PY
       HERDR_SOCKET_PATH="$test_root/missing-herdr.sock" \
       TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p metadata-failure \
       2>"$failure_stderr"
+  failure_elapsed="$(( $(date +%s) - failure_started ))"
+  (( failure_elapsed < 5 )) \
+    || fail "permanent Herdr socket failure delayed command exit by ${failure_elapsed}s"
   grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
     || fail 'Sandbox metadata failure was not visible'
   ! grep -Eq '(^|[[:space:]])Error:|\\[eval[0-9]*\\]' "$failure_stderr" \
     || fail 'Sandbox metadata failure leaked an internal Node stack trace'
+
+  protocol_socket="$test_root/p.sock"
+  protocol_ready="$test_root/p.ready"
+  protocol_log="$test_root/sandbox-bridge-protocol-failure.log"
+  protocol_stderr="$test_root/sandbox-bridge-protocol-failure.stderr"
+  : >"$protocol_log"
+  python3 - "$protocol_socket" "$protocol_ready" <<'PY' &
+import socket
+import sys
+from pathlib import Path
+
+socket_path, ready_path = sys.argv[1:]
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+    listener.bind(socket_path)
+    listener.listen(8)
+    listener.settimeout(1)
+    Path(ready_path).write_text("ready\n", encoding="utf-8")
+    while True:
+        try:
+            connection, _ = listener.accept()
+        except TimeoutError:
+            break
+        with connection:
+            connection.recv(16384)
+            connection.sendall(b"not-json\n")
+PY
+  protocol_pid=$!
+  for _attempt in {1..200}; do
+    [[ -f "$protocol_ready" ]] && break
+    sleep 0.01
+  done
+  [[ -f "$protocol_ready" ]] || fail 'Sandbox protocol-failure fixture did not start'
+  protocol_started="$(date +%s)"
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$metadata_worktree" "$protocol_log" "$metadata_worktree" \
+      env HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH="$protocol_socket" \
+      TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p protocol-failure \
+      2>"$protocol_stderr"
+  protocol_elapsed="$(( $(date +%s) - protocol_started ))"
+  wait "$protocol_pid" || fail 'Sandbox protocol-failure fixture failed'
+  (( protocol_elapsed < 5 )) \
+    || fail "permanent Herdr protocol failure delayed command exit by ${protocol_elapsed}s"
+  grep -Fq 'Sandbox session metadata was not reported to Herdr' "$protocol_stderr" \
+    || fail 'Sandbox protocol failure was not visible'
+  ! grep -Eq '(^|[[:space:]])Error:|\\[eval[0-9]*\\]' "$protocol_stderr" \
+    || fail 'Sandbox protocol failure leaked an internal Node stack trace'
 
   printf 'Trellage host test: PASS: Sandbox attachment metadata and invocation isolation\n'
 }

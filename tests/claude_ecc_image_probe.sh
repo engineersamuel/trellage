@@ -8,7 +8,18 @@ fail() {
   exit 1
 }
 
-image="${TRELLAGE_CLAUDE_ECC_IMAGE:-trellage-profile-claude-ecc-linux-arm64:locked}"
+if [[ -n "${TRELLAGE_CLAUDE_ECC_IMAGE:-}" ]]; then
+  image="$TRELLAGE_CLAUDE_ECC_IMAGE"
+else
+  docker_platform="$(docker info --format '{{.OSType}}/{{.Architecture}}' 2>/dev/null)" \
+    || fail 'cannot determine the Docker server platform'
+  case "$docker_platform" in
+    linux/aarch64|linux/arm64) platform_identity=linux-arm64 ;;
+    linux/x86_64|linux/amd64) platform_identity=linux-amd64 ;;
+    *) fail "unsupported Docker server platform: ${docker_platform:-unknown}" ;;
+  esac
+  image="trellage-profile-claude-ecc-${platform_identity}:locked"
+fi
 docker image inspect "$image" >/dev/null 2>&1 \
   || fail "image is missing: $image"
 
@@ -27,6 +38,14 @@ run "jq -e '
     and (\$records[0].version | type == \"string\" and length > 0)
 ' $seed/plugins/installed_plugins.json >/dev/null" \
   || fail 'ecc plugin registration is invalid'
+run "jq -e '
+  .enabledPlugins[\"ecc@ecc\"] == true
+  and .pluginConfigs[\"ecc@ecc\"].options == {
+    \"hook_profile\": \"standard\",
+    \"hooks_enabled\": true
+  }
+' $seed/plugin-settings.json >/dev/null" \
+  || fail 'ecc plugin runtime configuration is invalid'
 
 run "set -e
   plugin_parent=$seed/plugins/cache/ecc/ecc
@@ -37,6 +56,7 @@ run "set -e
   test -f \"\$plugin_root/package.json\"
   test -f \"\$plugin_root/package-lock.json\"
   test -f \"\$plugin_root/hooks/hooks.json\"
+  test ! -e \"\$plugin_root/.mcp.json\"
   test -n \"\$(find \"\$plugin_root/skills\" -name SKILL.md -type f -print -quit)\"
   test -n \"\$(find \"\$plugin_root/agents\" -name '*.md' -type f -print -quit)\"
   test -n \"\$(find \"\$plugin_root/commands\" -name '*.md' -type f -print -quit)\"
@@ -52,7 +72,12 @@ run "set -e
     test -f \"agents/\$agent.md\"
   done
   node -e 'for (const name of [\"@iarna/toml\", \"ajv\", \"js-yaml\", \"sql.js\"]) require.resolve(name)'
-  jq -e '(.mcpServers // {}) == {}' .claude-plugin/plugin.json >/dev/null
+  jq -e 'has(\"mcpServers\") | not' .claude-plugin/plugin.json >/dev/null
+  jq -e '
+    [.plugins[] | select(.name == \"ecc\")] as \$plugins
+    | (\$plugins | length) == 1
+      and (\$plugins[0] | has(\"mcpServers\") | not)
+  ' .claude-plugin/marketplace.json >/dev/null
   jq -e '
     .hooks.SessionStart
     and .hooks.PreToolUse
@@ -86,9 +111,9 @@ run "set -e
   grep -Fq 'main(trellageHookSessionId(rawInput));' scripts/hooks/stop-format-typecheck.js" \
   || fail 'ECC accumulator hooks are not scoped to the Claude session'
 
-run "test ! -e $seed/claude-mcp.json" \
+run "test ! -e /usr/local/share/trellage/claude-mcp.json" \
   || fail 'ECC repository MCP configuration became an active Trellage MCP'
-run 'gh --version >/dev/null' \
-  || fail 'gh is missing'
+run 'command -v flock gh python3 >/dev/null && gh --version >/dev/null' \
+  || fail 'required Claude runtime commands are missing'
 
 printf 'claude-ecc image probe: PASS\n'
