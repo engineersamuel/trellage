@@ -117,6 +117,27 @@ target-evidence path must exist in the repository.
   `aarch64-unknown-linux-musl` target for executable AArch64 gates, or use
   `cargo check --target aarch64-unknown-linux-gnu` when a non-linking compiler
   check is specifically required.
+- When the request requires AVX2 for both `target_arch = "x86"` and
+  `target_arch = "x86_64"`, plan one backend seam compiled under
+  `cfg(any(target_arch = "x86", target_arch = "x86_64"))`. The implementation
+  must select `std::arch::x86` or `std::arch::x86_64` imports with matching
+  `cfg` attributes. Do not route 32-bit x86 to the scalar fallback. Include an
+  `i686-unknown-linux-musl` `cargo test --no-run` gate whose compiled tests
+  directly reference the private AVX2 seam, in addition to equivalent
+  x86_64 coverage.
+- Do not create a redundant research node for toolchain facts already grounded
+  by committed profile locks, materializer source, guide text, and installed
+  image probes. Use implementation-node compile and test-build gates for
+  future source. If a research node is still necessary, each executable
+  acceptance claim must be proved by a gate that executes the exact stronger
+  command: use `rustc -vV` for the compiler host, do not claim a target-libdir
+  exists from a command that only prints text, and do not claim Cargo defaults
+  or intrinsic compilation without a direct gate for each fact.
+- A conditional test that accepts a scalar fallback does not prove that NEON
+  detection succeeds. Claim successful NEON detection or vector execution
+  only when an AArch64 gate unconditionally asserts the NEON backend and
+  positive vector work; otherwise limit the acceptance criterion to the exact
+  conditional behavior the gate proves.
 - Research acceptance criteria about writes apply to tracked repository
   changes, not ordinary ignored build output. If a research gate runs Cargo
   and strict filesystem containment is required, set `CARGO_TARGET_DIR` to a
