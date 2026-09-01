@@ -615,35 +615,73 @@ probe_copilot_inventory() {
   docker container exec "$copilot_container_id" bash -ceu '
     hve_version="$1"
     plugin="$COPILOT_HOME/installed-plugins/hve-core/hve-core"
-    expected_agents="documentation.md
+    if test -f "$plugin/plugin.json"; then
+      jq -e --arg version "$hve_version" \
+        '\''.name == "hve-core" and .version == $version'\'' "$plugin/plugin.json" >/dev/null
+      expected_agents="documentation.agent.md
+rpi-agent.agent.md"
+      actual_agents="$(find "$plugin/.github/agents/hve-core" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
+      test "$actual_agents" = "$expected_agents"
+      expected_subagents="hve-artifact-tester.agent.md
+rpi-planner.agent.md
+rpi-researcher.agent.md
+vally-test-author.agent.md"
+      actual_subagents="$(find "$plugin/.github/agents/hve-core/subagents" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
+      test "$actual_subagents" = "$expected_subagents"
+      expected_commands="ado-create-pull-request.prompt.md
+ado-get-build-info.prompt.md
+evals-import.prompt.md
+git-commit-message.prompt.md
+git-commit.prompt.md
+git-merge.prompt.md
+git-setup.prompt.md
+pr-review.prompt.md
+pull-request.prompt.md
+rpi.prompt.md
+vally-test-write.prompt.md"
+      actual_commands="$(find "$plugin/.github/prompts/hve-core" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
+      test "$actual_commands" = "$expected_commands"
+      expected_skills="rpi-challenger
+rpi-implement
+rpi-plan
+rpi-plan-critique
+rpi-quick
+rpi-research
+rpi-review
+rpi-walkthrough"
+      actual_skills="$(find "$plugin/.github/skills/rpi" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort)"
+      test "$actual_skills" = "$expected_skills"
+    else
+      expected_agents="documentation.md
 rpi-agent.md"
-    actual_agents="$(find "$plugin/agents/hve-core" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
-    test "$actual_agents" = "$expected_agents"
-    expected_subagents="hve-artifact-tester.md
+      actual_agents="$(find "$plugin/agents/hve-core" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
+      test "$actual_agents" = "$expected_agents"
+      expected_subagents="hve-artifact-tester.md
 rpi-planner.md
 rpi-researcher.md"
-    actual_subagents="$(find "$plugin/agents/hve-core/subagents" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
-    test "$actual_subagents" = "$expected_subagents"
-    expected_commands="git-commit-message.md
+      actual_subagents="$(find "$plugin/agents/hve-core/subagents" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
+      test "$actual_subagents" = "$expected_subagents"
+      expected_commands="git-commit-message.md
 git-commit.md
 git-merge.md
 git-setup.md
 pr-review.md
 pull-request.md
 rpi.md"
-    actual_commands="$(find "$plugin/commands/hve-core" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
-    test "$actual_commands" = "$expected_commands"
-    expected_skills="rpi-challenger
+      actual_commands="$(find "$plugin/commands/hve-core" -mindepth 1 -maxdepth 1 -type f -printf "%f\n" | sort)"
+      test "$actual_commands" = "$expected_commands"
+      expected_skills="rpi-challenger
 rpi-implement
 rpi-plan
 rpi-plan-critique
 rpi-quick
 rpi-research
 rpi-review"
-    actual_skills="$(find "$plugin/skills/rpi" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort)"
-    test "$actual_skills" = "$expected_skills"
-    test ! -e "$plugin/agents/ado"
-    test ! -e "$plugin/skills/project-planning"
+      actual_skills="$(find "$plugin/skills/rpi" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort)"
+      test "$actual_skills" = "$expected_skills"
+      test ! -e "$plugin/agents/ado"
+      test ! -e "$plugin/skills/project-planning"
+    fi
   ' -- "$hve_version" || fail 'Copilot marketplace, HVE Core, or exact RPI inventory probe failed'
   printf 'trellage smoke: PASS: Copilot %s and HVE Core %s exact inventory\n' \
     "$(sed -n '/^\[packages.harness\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' "${copilot_profile%.toml}.lock.toml")" \

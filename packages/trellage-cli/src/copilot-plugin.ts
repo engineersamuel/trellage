@@ -12,7 +12,7 @@ const MarketplaceSchema = Schema.Struct({
   metadata: Schema.Struct({
     description: Schema.String,
     version: Schema.String,
-    pluginRoot: Schema.String,
+    pluginRoot: Schema.optional(Schema.String),
   }),
   owner: Schema.Struct({
     name: Schema.String,
@@ -23,6 +23,16 @@ const MarketplaceSchema = Schema.Struct({
       source: Schema.String,
       description: Schema.String,
       version: Schema.String,
+      author: Schema.optional(
+        Schema.Struct({
+          name: Schema.String,
+          url: Schema.optional(Schema.String),
+        }),
+      ),
+      homepage: Schema.optional(Schema.String),
+      repository: Schema.optional(Schema.String),
+      license: Schema.optional(Schema.String),
+      keywords: Schema.optional(Schema.Array(Schema.String)),
     }),
   ),
 })
@@ -38,13 +48,13 @@ const safeKey = (value: string): boolean =>
   safeSegment.test(value) && !dangerousKeys.has(value) && !Object.hasOwn(Object.prototype, value)
 
 const safeSource = (value: string): boolean =>
-  safeSegment.test(value) &&
-  value !== "." &&
-  value !== ".." &&
-  !path.posix.isAbsolute(value) &&
-  !path.win32.isAbsolute(value) &&
-  !value.includes("/") &&
-  !value.includes("\\")
+  value === "." ||
+  (safeSegment.test(value) &&
+    value !== ".." &&
+    !path.posix.isAbsolute(value) &&
+    !path.win32.isAbsolute(value) &&
+    !value.includes("/") &&
+    !value.includes("\\"))
 
 const safeRelativePath = (value: string): boolean => {
   if (value.length === 0 || value.includes("\\") || path.posix.isAbsolute(value) || path.win32.isAbsolute(value))
@@ -258,7 +268,7 @@ export const readCopilotMarketplace = (
         new CopilotPluginError({ message: "Copilot marketplace metadata version is not exact" }),
       )
     }
-    if (!safeRelativePath(metadata.metadata.pluginRoot)) {
+    if (metadata.metadata.pluginRoot !== undefined && !safeRelativePath(metadata.metadata.pluginRoot)) {
       return yield* Effect.fail(new CopilotPluginError({ message: "Copilot marketplace pluginRoot is unsafe" }))
     }
     if (metadata.owner.name.length === 0) {
