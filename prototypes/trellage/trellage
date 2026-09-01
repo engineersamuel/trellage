@@ -1366,69 +1366,73 @@ const requestHerdr = (request) =>
   })
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
-let stateChangeSeq
-let processGroup
-for (let attempt = 0; attempt < 40; attempt += 1) {
-  try {
-    const agentResult = await requestHerdr({
-      id: `${source}:agent-get:${invocationId}:${attempt}`,
-      method: "agent.get",
-      params: { target: paneId },
-    })
-    const agentInfo = agentResult?.agent
-    const processResult = await requestHerdr({
-      id: `${source}:process-info:${invocationId}:${attempt}`,
-      method: "pane.process_info",
-      params: { pane_id: paneId },
-    })
-    const processInfo = processResult?.process_info
-    const candidateSequence = agentInfo?.state_change_seq
-    const candidateProcessGroup = processInfo?.foreground_process_group_id
-    if (
-      agentInfo?.pane_id === paneId &&
-      agentInfo?.agent === agent &&
-      agentInfo?.agent_status === "working" &&
-      processInfo?.pane_id === paneId &&
-      Number.isSafeInteger(candidateSequence) &&
-      candidateSequence >= 0 &&
-      candidateSequence <= (Number.MAX_SAFE_INTEGER - 1) / 2 &&
-      Number.isSafeInteger(candidateProcessGroup) &&
-      candidateProcessGroup > 0
-    ) {
-      stateChangeSeq = candidateSequence
-      processGroup = candidateProcessGroup
-      break
+try {
+  let stateChangeSeq
+  let processGroup
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      const agentResult = await requestHerdr({
+        id: `${source}:agent-get:${invocationId}:${attempt}`,
+        method: "agent.get",
+        params: { target: paneId },
+      })
+      const agentInfo = agentResult?.agent
+      const processResult = await requestHerdr({
+        id: `${source}:process-info:${invocationId}:${attempt}`,
+        method: "pane.process_info",
+        params: { pane_id: paneId },
+      })
+      const processInfo = processResult?.process_info
+      const candidateSequence = agentInfo?.state_change_seq
+      const candidateProcessGroup = processInfo?.foreground_process_group_id
+      if (
+        agentInfo?.pane_id === paneId &&
+        agentInfo?.agent === agent &&
+        agentInfo?.agent_status === "working" &&
+        processInfo?.pane_id === paneId &&
+        Number.isSafeInteger(candidateSequence) &&
+        candidateSequence >= 0 &&
+        candidateSequence <= (Number.MAX_SAFE_INTEGER - 1) / 2 &&
+        Number.isSafeInteger(candidateProcessGroup) &&
+        candidateProcessGroup > 0
+      ) {
+        stateChangeSeq = candidateSequence
+        processGroup = candidateProcessGroup
+        break
+      }
+    } catch {
+      // The tagged attachment can take a moment to become visible to Herdr.
     }
-  } catch {
-    // The tagged attachment can take a moment to become visible to Herdr.
+    await delay(50)
   }
-  await delay(50)
-}
-if (stateChangeSeq === undefined || processGroup === undefined) {
-  throw new Error("Herdr did not recognize the current Sandbox attachment")
-}
-const id = `${source}:report:${invocationId}`
-const request = {
-  id,
-  method: "pane.report_metadata",
-  params: {
-    pane_id: paneId,
-    source,
-    agent,
-    tokens: {
-      trellage_surface: "sandbox",
-      trellage_agent: agent,
-      trellage_profile: profile,
-      trellage_container_id: containerId,
-      trellage_invocation_id: invocationId,
-      trellage_state_seq: String(stateChangeSeq),
-      trellage_pgrp: String(processGroup),
+  if (stateChangeSeq === undefined || processGroup === undefined) {
+    throw new Error("Herdr did not recognize the current Sandbox attachment")
+  }
+  const id = `${source}:report:${invocationId}`
+  const request = {
+    id,
+    method: "pane.report_metadata",
+    params: {
+      pane_id: paneId,
+      source,
+      agent,
+      tokens: {
+        trellage_surface: "sandbox",
+        trellage_agent: agent,
+        trellage_profile: profile,
+        trellage_container_id: containerId,
+        trellage_invocation_id: invocationId,
+        trellage_state_seq: String(stateChangeSeq),
+        trellage_pgrp: String(processGroup),
+      },
+      seq: stateChangeSeq * 2 + 1,
     },
-    seq: stateChangeSeq * 2 + 1,
-  },
-}
+  }
 
-await requestHerdr(request)
+  await requestHerdr(request)
+} catch {
+  process.exitCode = 1
+}
 NODE
 }
 

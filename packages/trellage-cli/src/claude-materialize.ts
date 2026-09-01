@@ -11,6 +11,7 @@ import { verifyInventory } from "./inventory.js"
 import type { ArtifactLock, ProfileLock } from "./lock.js"
 import type { ClaudeMaterializeRequest } from "./materialize.js"
 import { claudeGithubReleaseTools, claudeHasWorktreeCli, claudePypiToolNames, type ClaudeProfile } from "./profile.js"
+import { claudePluginRootForSource, isSafeClaudePluginSource } from "./claude-plugin.js"
 import { cachedArtifactPath } from "./artifact-cache.js"
 import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
 
@@ -198,6 +199,103 @@ export const stampClaudeMarketplaceVersions = async (
 
   const pluginManifestPath = path.join(marketplaceRoot, ".claude-plugin", "plugin.json")
   await stampClaudePluginManifest(pluginManifestPath, pluginVersions)
+}
+
+const stripPluginManifestMcpServers = async (pluginRoot: string): Promise<void> => {
+  const manifestPath = path.join(pluginRoot, ".claude-plugin", "plugin.json")
+  let source
+  try {
+    const status = await lstat(manifestPath)
+    if (!status.isFile() || status.isSymbolicLink()) {
+      throw new Error("Claude plugin manifest must be a regular file")
+    }
+    source = await readFile(manifestPath, "utf8")
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return
+    throw cause
+  }
+  const value: unknown = JSON.parse(source)
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Claude plugin manifest is invalid")
+  }
+  const manifest = value as Record<string, unknown>
+  if (!Object.hasOwn(manifest, "mcpServers")) return
+  delete manifest.mcpServers
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
+}
+
+const recordValue = (value: unknown, message: string): Record<string, unknown> => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(message)
+  return value as Record<string, unknown>
+}
+
+const selectedMarketplacePlugin = (
+  value: unknown,
+  remaining: ReadonlySet<string>,
+): { readonly name: string; readonly source: string; readonly record: Record<string, unknown> } | undefined => {
+  const plugin = recordValue(value, "Claude marketplace plugin entry is invalid")
+  if (typeof plugin.name !== "string" || !remaining.has(plugin.name)) return undefined
+  if (typeof plugin.source !== "string" || !isSafeClaudePluginSource(plugin.source)) {
+    throw new Error(`Claude plugin source must be a relative marketplace path: ${plugin.name}`)
+  }
+  return { name: plugin.name, source: plugin.source, record: plugin }
+}
+
+const containedClaudePluginRoot = async (
+  marketplaceRoot: string,
+  resolvedMarketplaceRoot: string,
+  plugin: { readonly name: string; readonly source: string },
+): Promise<string> => {
+  const pluginRoot = await realpath(claudePluginRootForSource(marketplaceRoot, plugin.source))
+  const containment = path.relative(resolvedMarketplaceRoot, pluginRoot)
+  if (containment === ".." || containment.startsWith(`..${path.sep}`) || path.isAbsolute(containment)) {
+    throw new Error(`Claude plugin source escapes marketplace root: ${plugin.name}`)
+  }
+  return pluginRoot
+}
+
+const stripSelectedPluginMcp = async (
+  marketplaceRoot: string,
+  resolvedMarketplaceRoot: string,
+  plugin: { readonly name: string; readonly source: string; readonly record: Record<string, unknown> },
+): Promise<boolean> => {
+  const pluginRoot = await containedClaudePluginRoot(marketplaceRoot, resolvedMarketplaceRoot, plugin)
+  await rm(path.join(pluginRoot, ".mcp.json"), { force: true })
+  await stripPluginManifestMcpServers(pluginRoot)
+  if (!Object.hasOwn(plugin.record, "mcpServers")) return false
+  delete plugin.record.mcpServers
+  return true
+}
+
+const stripClaudeMarketplacePluginMcps = async (
+  marketplaceRoot: string,
+  selections: ReadonlyArray<string>,
+): Promise<void> => {
+  const marketplacePath = path.join(marketplaceRoot, ".claude-plugin", "marketplace.json")
+  const marketplace = recordValue(
+    JSON.parse(await readFile(marketplacePath, "utf8")) as unknown,
+    "Claude marketplace metadata is invalid",
+  )
+  if (!Array.isArray(marketplace.plugins)) {
+    throw new Error("Claude marketplace metadata plugins array is missing")
+  }
+
+  const resolvedMarketplaceRoot = await realpath(marketplaceRoot)
+  const remaining = new Set(selections)
+  let marketplaceChanged = false
+  for (const value of marketplace.plugins) {
+    const plugin = selectedMarketplacePlugin(value, remaining)
+    if (plugin === undefined) continue
+    marketplaceChanged =
+      (await stripSelectedPluginMcp(marketplaceRoot, resolvedMarketplaceRoot, plugin)) || marketplaceChanged
+    remaining.delete(plugin.name)
+  }
+  if (remaining.size > 0) {
+    throw new Error(`Claude MCP policy references missing plugins: ${[...remaining].sort().join(", ")}`)
+  }
+  if (marketplaceChanged) {
+    await writeFile(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`, { mode: 0o644 })
+  }
 }
 
 const attempt = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ClaudeMaterializeError> =>
@@ -678,17 +776,109 @@ export const materializeHyperresearchPackage = (
     }
   })
 
+const validateClaudeMarketplaceMaterializeRequest = (
+  request: ClaudeMaterializeRequest,
+): Effect.Effect<string, ClaudeMaterializeError> => {
+  if (request.lock.packages.harness.kind !== "claude") {
+    return Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
+  }
+  if (request.sourceDirectories.length !== request.lock.sources.length || request.sourceDirectories.length === 0) {
+    return Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace sources do not match lock" }))
+  }
+  if (
+    request.marketplaceIncludeMcp !== undefined &&
+    (request.marketplaceIncludeMcp.length !== request.sourceDirectories.length ||
+      request.marketplaceIncludeMcp.some((includeMcp) => typeof includeMcp !== "boolean"))
+  ) {
+    return Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace MCP policy is invalid" }))
+  }
+  return Effect.succeed(request.lock.packages.harness.version)
+}
+
+const lockedClaudeMarketplaceSource = (
+  request: ClaudeMaterializeRequest,
+  index: number,
+): Effect.Effect<
+  {
+    readonly marketplace: string
+    readonly pluginVersions: Readonly<Record<string, string>>
+    readonly select: ReadonlyArray<string>
+    readonly commit: string
+    readonly files: ProfileLock["sources"][number]["files"]
+  },
+  ClaudeMaterializeError
+> => {
+  const source = request.lock.sources[index]
+  if (
+    source === undefined ||
+    source.adapter !== "claude-marketplace" ||
+    source.marketplace === undefined ||
+    source.plugin_versions === undefined
+  ) {
+    return Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace lock is invalid" }))
+  }
+  return Effect.succeed({
+    marketplace: source.marketplace,
+    pluginVersions: source.plugin_versions,
+    select: source.select,
+    commit: source.commit,
+    files: source.files,
+  })
+}
+
+const materializeClaudeMarketplaceSource = (
+  request: ClaudeMaterializeRequest,
+  index: number,
+): Effect.Effect<
+  {
+    readonly marketplace: string
+    readonly source: string
+    readonly commit: string
+    readonly plugins: ReadonlyArray<{ readonly plugin: string; readonly version: string }>
+  },
+  ClaudeMaterializeError
+> =>
+  Effect.gen(function* () {
+    const sourceDirectory = request.sourceDirectories[index]!
+    const source = yield* lockedClaudeMarketplaceSource(request, index)
+    const marketplace = path.join(request.context, `claude-marketplace-${index}`)
+    yield* attempt("cannot copy Claude marketplace source", () =>
+      cp(sourceDirectory, marketplace, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        verbatimSymlinks: true,
+      }),
+    )
+    yield* verifyInventory(marketplace, source.files, { allowSymlinks: true }).pipe(
+      Effect.mapError(
+        (cause) => new ClaudeMaterializeError({ message: "copied Claude marketplace inventory mismatch", cause }),
+      ),
+    )
+    yield* attempt("cannot stamp locked Claude marketplace plugin versions", () =>
+      stampClaudeMarketplaceVersions(marketplace, source.pluginVersions),
+    )
+    if (request.marketplaceIncludeMcp?.[index] === false) {
+      yield* attempt("cannot exclude Claude marketplace plugin MCPs", () =>
+        stripClaudeMarketplacePluginMcps(marketplace, source.select),
+      )
+    }
+    return {
+      marketplace: source.marketplace,
+      source: `/src/claude-marketplace-${index}`,
+      commit: source.commit,
+      plugins: source.select.map((plugin) => ({
+        plugin,
+        version: source.pluginVersions[plugin]!,
+      })),
+    }
+  })
+
 const materializeClaudeMarketplaceAssets = (
   request: ClaudeMaterializeRequest,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
   Effect.gen(function* () {
-    if (request.lock.packages.harness.kind !== "claude") {
-      return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
-    }
-    const harnessVersion = request.lock.packages.harness.version
-    if (request.sourceDirectories.length !== request.lock.sources.length || request.sourceDirectories.length === 0) {
-      return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace sources do not match lock" }))
-    }
+    const harnessVersion = yield* validateClaudeMarketplaceMaterializeRequest(request)
     const marketplaces: Array<{
       readonly marketplace: string
       readonly source: string
@@ -696,43 +886,7 @@ const materializeClaudeMarketplaceAssets = (
       readonly plugins: ReadonlyArray<{ readonly plugin: string; readonly version: string }>
     }> = []
     for (let index = 0; index < request.sourceDirectories.length; index += 1) {
-      const sourceDirectory = request.sourceDirectories[index]!
-      const source = request.lock.sources[index]
-      if (
-        source === undefined ||
-        source.adapter !== "claude-marketplace" ||
-        source.marketplace === undefined ||
-        source.plugin_versions === undefined
-      ) {
-        return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude marketplace lock is invalid" }))
-      }
-      const pluginVersions = source.plugin_versions
-      const marketplace = path.join(request.context, `claude-marketplace-${index}`)
-      yield* attempt("cannot copy Claude marketplace source", () =>
-        cp(sourceDirectory, marketplace, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-          verbatimSymlinks: true,
-        }),
-      )
-      yield* verifyInventory(marketplace, source.files, { allowSymlinks: true }).pipe(
-        Effect.mapError(
-          (cause) => new ClaudeMaterializeError({ message: "copied Claude marketplace inventory mismatch", cause }),
-        ),
-      )
-      yield* attempt("cannot stamp locked Claude marketplace plugin versions", () =>
-        stampClaudeMarketplaceVersions(marketplace, pluginVersions),
-      )
-      marketplaces.push({
-        marketplace: source.marketplace,
-        source: `/src/claude-marketplace-${index}`,
-        commit: source.commit,
-        plugins: source.select.map((plugin) => ({
-          plugin,
-          version: pluginVersions[plugin]!,
-        })),
-      })
+      marketplaces.push(yield* materializeClaudeMarketplaceSource(request, index))
     }
     const seed = path.join(request.context, "claude-seed")
     yield* attempt("cannot create Claude marketplace seed", async () => {
@@ -760,6 +914,37 @@ const materializeClaudeMarketplaceAssets = (
     })
   })
 
+interface HyperresearchMaterializeInputs {
+  readonly harnessVersion: string
+  readonly requirementsPath: string
+  readonly browserAgentPath: string
+  readonly gear: "full" | "premier"
+  readonly defaultTier: "light"
+}
+
+const requireHyperresearchMaterializeInputs = (
+  request: ClaudeMaterializeRequest,
+): Effect.Effect<HyperresearchMaterializeInputs, ClaudeMaterializeError> => {
+  if (request.lock.packages.harness.kind !== "claude") {
+    return Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
+  }
+  if (
+    request.requirementsPath === undefined ||
+    request.browserAgentPath === undefined ||
+    request.hyperresearchGear === undefined ||
+    request.hyperresearchDefaultTier === undefined
+  ) {
+    return Effect.fail(new ClaudeMaterializeError({ message: "Hyperresearch runtime support is missing" }))
+  }
+  return Effect.succeed({
+    harnessVersion: request.lock.packages.harness.version,
+    requirementsPath: request.requirementsPath,
+    browserAgentPath: request.browserAgentPath,
+    gear: request.hyperresearchGear,
+    defaultTier: request.hyperresearchDefaultTier,
+  })
+}
+
 const materializeHyperresearchAssets = (
   request: ClaudeMaterializeRequest,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
@@ -767,20 +952,8 @@ const materializeHyperresearchAssets = (
     attempt("cannot create Claude materialization staging", () => mkdtemp(path.join(os.tmpdir(), "trellage-claude-"))),
     (staging) =>
       Effect.gen(function* () {
-        if (request.lock.packages.harness.kind !== "claude") {
-          return yield* Effect.fail(new ClaudeMaterializeError({ message: "Claude harness package lock is missing" }))
-        }
-        const harnessVersion = request.lock.packages.harness.version
-        if (
-          request.requirementsPath === undefined ||
-          request.browserAgentPath === undefined ||
-          request.hyperresearchGear === undefined ||
-          request.hyperresearchDefaultTier === undefined
-        ) {
-          return yield* Effect.fail(new ClaudeMaterializeError({ message: "Hyperresearch runtime support is missing" }))
-        }
-        const requirementsPath = request.requirementsPath
-        const browserAgentPath = request.browserAgentPath
+        const { harnessVersion, requirementsPath, browserAgentPath, gear, defaultTier } =
+          yield* requireHyperresearchMaterializeInputs(request)
         const expectedRequirements = request.lock.packages.python_lock_integrity
         const actualRequirements = yield* digestFile(requirementsPath)
         if (expectedRequirements === undefined || actualRequirements !== expectedRequirements) {
@@ -803,7 +976,7 @@ const materializeHyperresearchAssets = (
         const pythonPackage = path.join(request.context, "hyperresearch-package")
         yield* attempt("cannot create Hyperresearch package target", () => mkdir(pythonPackage, { recursive: true }))
         yield* materializeHyperresearchPackage(request.sourceDirectories[0]!, pythonPackage)
-        yield* normalizeHyperresearchPackagePromptContracts(pythonPackage, request.hyperresearchDefaultTier)
+        yield* normalizeHyperresearchPackagePromptContracts(pythonPackage, defaultTier)
         yield* normalizeHyperresearchSitePermissions(pythonPackage)
 
         const hostVenv = path.join(staging, "host-venv")
@@ -841,10 +1014,10 @@ const materializeHyperresearchAssets = (
           resolvedHostSitePackages,
           path.join(hostVenv, "bin", "hyperresearch"),
         )
-        yield* normalizeHyperresearchPackagePromptContracts(resolvedHostSitePackages, request.hyperresearchDefaultTier)
+        yield* normalizeHyperresearchPackagePromptContracts(resolvedHostSitePackages, defaultTier)
         const installHome = path.join(staging, "seed-home")
         yield* attempt("cannot create Claude seed home", () => mkdir(installHome, { recursive: true }))
-        for (const args of hyperresearchSeedInstallArguments(installHome, request.hyperresearchGear)) {
+        for (const args of hyperresearchSeedInstallArguments(installHome, gear)) {
           yield* run(hostPython, args, {
             env: { ...process.env, HOME: installHome, PYTHONDONTWRITEBYTECODE: "1" },
           })
@@ -880,7 +1053,7 @@ const materializeHyperresearchAssets = (
           )
         })
         yield* normalizeHyperresearchSeed(seed, path.join(hostVenv, "bin", "hyperresearch"))
-        yield* normalizeHyperresearchPromptContracts(seed, request.hyperresearchDefaultTier, request.hyperresearchGear)
+        yield* normalizeHyperresearchPromptContracts(seed, defaultTier, gear)
         yield* attempt("cannot write managed Claude seed manifest", async () => {
           const manifest = await managedClaudeFiles(seed)
           await writeFile(path.join(seed, "managed-paths.txt"), `${manifest.join("\n")}\n`, { mode: 0o644 })

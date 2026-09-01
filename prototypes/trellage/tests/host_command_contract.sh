@@ -7,6 +7,7 @@ test_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-host-test.XXXXXX")"
 test_root="$(cd "$test_root" && pwd -P)"
 trap 'rm -rf -- "$test_root"' EXIT
 export TRELLAGE_ENVIRONMENT=off
+export HERDR_ENV=0
 test_home="$test_root/home"
 mkdir -p "$test_home/.copilot"
 printf '{}\n' >"$test_home/.copilot/models.json"
@@ -5351,6 +5352,8 @@ PY
       2>"$failure_stderr"
   grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
     || fail 'Sandbox metadata failure was not visible'
+  ! grep -Eq '(^|[[:space:]])Error:|\\[eval[0-9]*\\]' "$failure_stderr" \
+    || fail 'Sandbox metadata failure leaked an internal Node stack trace'
 
   printf 'Trellage host test: PASS: Sandbox attachment metadata and invocation isolation\n'
 }

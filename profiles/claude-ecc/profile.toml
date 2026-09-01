@@ -1,0 +1,28 @@
+schema = 1
+name = "claude-ecc"
+description = "Claude Code (Opus via proxy) with the official Everything Claude Code plugin for broad software delivery, configured with minimal lifecycle and safety hooks."
+skill_bundles = ["sandbox-common"]
+
+[harness]
+kind = "claude"
+version = "latest"
+
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+
+[image]
+base = "node:bookworm-slim"
+shell = "fish"
+packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
+
+# Official upstream project: https://github.com/affaan-m/ECC
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/affaan-m/ECC.git"
+ref = "main"
+marketplace = "ecc"
+select = ["ecc"]
+include_mcp = false
+config = { hooks_enabled = "true", hook_profile = "minimal" }

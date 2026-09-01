@@ -80,7 +80,14 @@ describe("readClaudeMarketplace", () => {
       await writeFile(path.join(seed, ".claude.json"), '{"machineID":"transient"}\n')
       await writeFile(
         path.join(seed, "settings.json"),
-        '{"enabledPlugins":{"social-media-skills@social-media-skills":true}}\n',
+        `${JSON.stringify({
+          enabledPlugins: { "social-media-skills@social-media-skills": true },
+          pluginConfigs: {
+            "social-media-skills@social-media-skills": {
+              options: { hook_profile: "minimal", hooks_enabled: true },
+            },
+          },
+        })}\n`,
       )
       await writeFile(
         path.join(seed, "plugins", "installed_plugins.json"),
@@ -108,9 +115,25 @@ describe("readClaudeMarketplace", () => {
               marketplace: "social-media-skills",
               source,
               commit: "a".repeat(40),
-              plugins: [{ plugin: "social-media-skills", version: "1.0.0" }],
+              plugins: [
+                {
+                  plugin: "social-media-skills",
+                  version: "1.0.0",
+                },
+              ],
             },
           ],
+        })}\n`,
+      )
+      await writeFile(
+        path.join(root, "claude-plugin-configs.json"),
+        `${JSON.stringify({
+          pluginConfigs: {
+            "social-media-skills@social-media-skills": {
+              hook_profile: "minimal",
+              hooks_enabled: "true",
+            },
+          },
         })}\n`,
       )
 
@@ -151,12 +174,83 @@ describe("readClaudeMarketplace", () => {
           2,
         )}\n`,
       )
+      await expect(readFile(path.join(seed, "plugin-settings.json"), "utf8")).resolves.toBe(
+        `${JSON.stringify(
+          {
+            enabledPlugins: { "social-media-skills@social-media-skills": true },
+            pluginConfigs: {
+              "social-media-skills@social-media-skills": {
+                options: {
+                  hook_profile: "minimal",
+                  hooks_enabled: true,
+                },
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      )
       const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
       expect(managed).toContain("plugins/cache/social-media-skills/social-media-skills/1.0.0/skills/writer/SKILL.md")
       expect(managed).toContain("plugins/installed_plugins.json")
       expect(managed).toContain("skills/caveman/SKILL.md")
       expect(managed).toContain("CLAUDE.md")
       expect(managed).not.toContain("[object Object]")
+    })
+
+    it("rejects generated plugin options that were not declared by the profile", async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-config-finalizer-"))
+      roots.push(root)
+      const source = path.join(root, "source")
+      const seed = path.join(root, "seed")
+      const cache = path.join(seed, "plugins", "cache", "ecc", "ecc", "2.2.0")
+      await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+      await mkdir(path.join(source, "skills", "ecc-guide"), { recursive: true })
+      await writeFile(
+        path.join(source, ".claude-plugin", "marketplace.json"),
+        `${JSON.stringify({
+          name: "ecc",
+          owner: { name: "ECC" },
+          plugins: [{ name: "ecc", source: "./", description: "ECC", version: "2.2.0" }],
+        })}\n`,
+      )
+      await writeFile(path.join(source, "skills", "ecc-guide", "SKILL.md"), "# ECC Guide\n")
+      await cp(source, cache, { recursive: true })
+      await writeFile(
+        path.join(seed, "settings.json"),
+        `${JSON.stringify({
+          enabledPlugins: { "ecc@ecc": true },
+          pluginConfigs: { "ecc@ecc": { options: { hook_profile: "strict" } } },
+        })}\n`,
+      )
+      await writeFile(
+        path.join(seed, "plugins", "installed_plugins.json"),
+        `${JSON.stringify({
+          version: 2,
+          plugins: {
+            "ecc@ecc": [{ scope: "user", installPath: cache, version: "2.2.0" }],
+          },
+        })}\n`,
+      )
+      const manifest = path.join(root, "marketplaces.json")
+      await writeFile(
+        manifest,
+        `${JSON.stringify({
+          marketplaces: [
+            {
+              marketplace: "ecc",
+              source,
+              commit: "b".repeat(40),
+              plugins: [{ plugin: "ecc", version: "2.2.0" }],
+            },
+          ],
+        })}\n`,
+      )
+
+      await expect(execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.251"])).rejects.toThrow(
+        /generated Claude plugin config does not match profile/,
+      )
     })
 
     it("accepts relative in-tree skill symlinks when comparing installed plugin inventory", async () => {

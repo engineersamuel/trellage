@@ -72,6 +72,13 @@
       "excludedProfiles": ["native:cpx/plannotator"]
     },
     {
+      "id": "containerized-claude-ecc-delivery",
+      "intent": "Use container-isolated Claude with ECC to discover the right engineering workflow, plan a substantial repository change, implement it test-first, review it, and verify delivery with minimal hooks.",
+      "expectedProfiles": ["sandbox:claude-ecc"],
+      "maxRank": 3,
+      "excludedProfiles": ["sandbox:codex-superpowers"]
+    },
+    {
       "id": "sandbox-hve-delivery",
       "intent": "Use a container-isolated GitHub Copilot RPI workflow to research, plan, implement, review, and prepare a feature for a pull request.",
       "expectedProfiles": ["sandbox:copilot-hve"],

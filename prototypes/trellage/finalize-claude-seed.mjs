@@ -23,6 +23,12 @@ const safeIdentifier = (value, label) => {
   }
 }
 
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+const hasControlCharacter = (value) =>
+  Array.from(value).some((character) => {
+    const codePoint = character.charCodeAt(0)
+    return codePoint <= 0x1f || codePoint === 0x7f
+  })
 const lexical = (left, right) => (left < right ? -1 : left > right ? 1 : 0)
 const sha256 = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`
@@ -266,9 +272,45 @@ const normalizeMarketplaceManifest = (manifest) => {
   return { marketplaces, pluginIds }
 }
 
+const normalizeExpectedPluginConfig = (candidate, id) => {
+  if (!isRecord(candidate) || Object.keys(candidate).length === 0) {
+    fail(`locked Claude plugin config is invalid: ${id}`)
+  }
+  const normalized = Object.create(null)
+  for (const key of Object.keys(candidate).sort(lexical)) {
+    safeIdentifier(key, "plugin config key")
+    const value = candidate[key]
+    if (typeof value !== "string" || value.length === 0 || hasControlCharacter(value)) {
+      fail(`locked Claude plugin config is invalid: ${id}`)
+    }
+    normalized[key] = value
+  }
+  return normalized
+}
+
+/** Read the optional profile-declared plugin config manifest written by the builder. */
+const readExpectedPluginConfigs = async (manifestPath, pluginIds) => {
+  const configPath = path.join(path.dirname(manifestPath), "claude-plugin-configs.json")
+  let manifest
+  try {
+    manifest = await readJson(configPath, "locked Claude plugin config manifest")
+  } catch (error) {
+    if (error?.code === "ENOENT") return Object.create(null)
+    throw error
+  }
+  if (!isRecord(manifest) || !isRecord(manifest.pluginConfigs)) {
+    fail("locked Claude plugin config manifest is invalid")
+  }
+  const normalized = Object.create(null)
+  for (const id of Object.keys(manifest.pluginConfigs).sort(lexical)) {
+    if (!pluginIds.has(id)) fail(`locked Claude plugin config has an unknown plugin: ${id}`)
+    normalized[id] = normalizeExpectedPluginConfig(manifest.pluginConfigs[id], id)
+  }
+  return normalized
+}
+
 /** Fail unless the generated Claude settings.json enabled-plugin state matches the locked plugin selections. */
-const assertGeneratedEnabledPluginsMatch = async (seed, expectedEnabled) => {
-  const settings = await readJson(path.join(seed, "settings.json"), "generated Claude settings")
+const assertGeneratedEnabledPluginsMatch = (settings, expectedEnabled) => {
   const generatedEnabled =
     settings.enabledPlugins !== null &&
     typeof settings.enabledPlugins === "object" &&
@@ -282,6 +324,46 @@ const assertGeneratedEnabledPluginsMatch = async (seed, expectedEnabled) => {
   ) {
     fail("generated Claude enabled plugin state does not match locked selections")
   }
+}
+
+const normalizeGeneratedPluginOption = (value, expected, id, key) => {
+  const scalar =
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  if (!scalar || String(value) !== expected) {
+    fail(`generated Claude plugin config does not match profile: ${id}.${key}`)
+  }
+  return value
+}
+
+/** Validate Claude's typed plugin options against the profile strings and preserve only that exact state. */
+const normalizeGeneratedPluginConfigs = (settings, expectedConfigs) => {
+  const generated = settings.pluginConfigs ?? {}
+  if (!isRecord(generated)) fail("generated Claude plugin config is invalid")
+  const expectedIds = Object.keys(expectedConfigs).sort(lexical)
+  if (JSON.stringify(Object.keys(generated).sort(lexical)) !== JSON.stringify(expectedIds)) {
+    fail("generated Claude plugin config does not match profile")
+  }
+
+  const normalized = Object.create(null)
+  for (const id of expectedIds) {
+    const entry = generated[id]
+    if (!isRecord(entry) || !isRecord(entry.options) || Object.keys(entry).some((key) => key !== "options")) {
+      fail(`generated Claude plugin config is invalid: ${id}`)
+    }
+    const expected = expectedConfigs[id]
+    const optionKeys = Object.keys(entry.options).sort(lexical)
+    if (JSON.stringify(optionKeys) !== JSON.stringify(Object.keys(expected).sort(lexical))) {
+      fail(`generated Claude plugin config does not match profile: ${id}`)
+    }
+    const options = Object.create(null)
+    for (const key of optionKeys) {
+      options[key] = normalizeGeneratedPluginOption(entry.options[key], expected[key], id, key)
+    }
+    normalized[id] = { options }
+  }
+  return normalized
 }
 
 /** Collect managed paths under one optional generated directory, tolerating a missing directory. */
@@ -442,6 +524,7 @@ const writeFinalizedClaudeSeedFiles = async (
   normalizedPlugins,
   normalizedMarketplaces,
   expectedEnabled,
+  pluginConfigs,
   onboardingDefaults,
 ) => {
   await writeFile(
@@ -450,9 +533,11 @@ const writeFinalizedClaudeSeedFiles = async (
     { mode: 0o600 },
   )
   await writeFile(path.join(seed, "plugin-marketplaces.json"), json(normalizedMarketplaces), { mode: 0o600 })
-  await writeFile(path.join(seed, "plugin-settings.json"), json({ enabledPlugins: expectedEnabled }), {
-    mode: 0o600,
-  })
+  const pluginSettings =
+    Object.keys(pluginConfigs).length === 0
+      ? { enabledPlugins: expectedEnabled }
+      : { enabledPlugins: expectedEnabled, pluginConfigs }
+  await writeFile(path.join(seed, "plugin-settings.json"), json(pluginSettings), { mode: 0o600 })
   await writeFile(path.join(seed, "default-onboarding.json"), json(onboardingDefaults), {
     mode: 0o600,
   })
@@ -506,7 +591,10 @@ const main = async () => {
   const { marketplaces, pluginIds } = normalizeMarketplaceManifest(manifest)
 
   const expectedEnabled = Object.fromEntries([...pluginIds].sort(lexical).map((id) => [id, true]))
-  await assertGeneratedEnabledPluginsMatch(seed, expectedEnabled)
+  const expectedPluginConfigs = await readExpectedPluginConfigs(manifestPath, pluginIds)
+  const settings = await readJson(path.join(seed, "settings.json"), "generated Claude settings")
+  assertGeneratedEnabledPluginsMatch(settings, expectedEnabled)
+  const pluginConfigs = normalizeGeneratedPluginConfigs(settings, expectedPluginConfigs)
 
   const installed = await readJson(
     path.join(seed, "plugins", "installed_plugins.json"),
@@ -526,6 +614,7 @@ const main = async () => {
     normalizedPlugins,
     normalizedMarketplaces,
     expectedEnabled,
+    pluginConfigs,
     onboardingDefaults,
   )
   await removeStaleGeneratedFiles(seed)

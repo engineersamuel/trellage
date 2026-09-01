@@ -1983,6 +1983,7 @@ repository = "https://github.com/charlie947/social-media-skills.git"
 ref = "main"
 marketplace = "social-media-skills"
 select = ["social-media-skills"]
+config = { hooks_enabled = "true", hook_profile = "minimal" }
 [[plugins]]
 adapter = "claude-marketplace"
 repository = "https://github.com/blader/humanizer.git"
@@ -2050,9 +2051,17 @@ select = ["humanizer"]
     )
     expect(script).toContain("plugin marketplace add /src/claude-marketplace-0")
     expect(script).toContain("plugin marketplace add /src/claude-marketplace-1")
-    expect(script).toContain("plugin install social-media-skills@social-media-skills --scope user")
+    expect(script).toContain("then rm -f '/src/claude-marketplace-0/yarn.lock'; fi")
+    const pluginConfigManifest = `printf '%s\\n' '{"pluginConfigs":{"social-media-skills@social-media-skills":{"hook_profile":"minimal","hooks_enabled":"true"}}}' > /src/claude-plugin-configs.json`
+    expect(script).toContain(pluginConfigManifest)
+    expect(script).toContain(
+      "plugin install social-media-skills@social-media-skills --scope user --config 'hook_profile=minimal' --config 'hooks_enabled=true'",
+    )
     expect(script).toContain("plugin install humanizer@humanizer --scope user")
+    expect(script).not.toContain("plugin install humanizer@humanizer --scope user --config")
     expect(script).toContain("/src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json 2.1.218")
+    expect(script.indexOf("plugin install humanizer@humanizer")).toBeLessThan(script.indexOf(pluginConfigManifest))
+    expect(script.indexOf(pluginConfigManifest)).toBeLessThan(script.indexOf("/src/finalize-claude-seed.mjs"))
     expect(script).not.toMatch(/hyperresearch|playwright|obscura|APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
   })
 
@@ -2129,6 +2138,7 @@ select = ["example"]
     const script = builderScript(document, lock)
     expect(script).toContain("mise x --locked uv@0.11.22 -- uv pip install")
     expect(script).not.toContain("mise x uv@")
+    expect(script).not.toContain("claude-plugin-configs.json")
   })
 
   it("installs and verifies the exact locked Copilot plugin before finalizing the seed", async () => {

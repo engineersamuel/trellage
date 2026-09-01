@@ -12,6 +12,10 @@ const TmpfsSize = Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*(?:k|m|g)$/))
 const StringMap = Schema.Record({ key: NonEmpty, value: Schema.String })
 const SecretMap = Schema.Record({ key: NonEmpty, value: NonEmpty })
 const safeName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+const isControlCharacter = (character: string): boolean => {
+  const codePoint = character.charCodeAt(0)
+  return codePoint <= 0x1f || codePoint === 0x7f
+}
 
 const Tools = Schema.Struct({
   allow: Schema.optional(Schema.Array(NonEmpty)),
@@ -61,6 +65,8 @@ const ClaudeMarketplacePlugin = Schema.Struct({
   ref: NonEmpty,
   marketplace: NonEmpty,
   select: Schema.Array(NonEmpty),
+  include_mcp: Schema.optional(Schema.Boolean),
+  config: Schema.optional(Schema.Record({ key: NonEmpty, value: NonEmpty })),
 })
 
 const HyperresearchPlugin = Schema.Struct({
@@ -284,6 +290,10 @@ export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
 export type PiProfile = NormalizedProfile<DecodedPiProfile>
 export type PrimeProfile = NormalizedProfile<DecodedPrimeProfile>
 export type HeadlongProfile = NormalizedProfile<DecodedHeadlongProfile>
+type ClaudeMarketplaceProfilePlugin = Extract<
+  ClaudeProfile["plugins"][number],
+  { readonly adapter: "claude-marketplace" }
+>
 export type Profile = CodexProfile | CopilotProfile | ClaudeProfile | PiProfile | PrimeProfile | HeadlongProfile
 
 export const isCodexProfile = (profile: Profile): profile is CodexProfile => profile.harness.kind === "codex"
@@ -534,6 +544,36 @@ const validateClaudeExtras = (profile: ClaudeProfile): Effect.Effect<void, Profi
     )
   })
 
+const unsafeClaudePluginConfigKeys = new Set(["__proto__", "constructor", "prototype"])
+
+const validateClaudeMarketplaceConfig = (plugin: ClaudeMarketplaceProfilePlugin): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    if (plugin.config === undefined) return
+    const entries = Object.entries(plugin.config)
+    if (entries.length === 0) return yield* fail("Claude marketplace plugin config is empty")
+    if (plugin.select.length !== 1) {
+      return yield* fail("Claude marketplace plugin config requires exactly one selected asset")
+    }
+    for (const [key, value] of entries) {
+      if (!safeName.test(key) || unsafeClaudePluginConfigKeys.has(key) || Object.hasOwn(Object.prototype, key)) {
+        return yield* fail(`Claude marketplace plugin config key is unsafe: ${key}`)
+      }
+      if (Array.from(value).some(isControlCharacter)) {
+        return yield* fail(`Claude marketplace plugin config value contains control characters: ${key}`)
+      }
+    }
+  })
+
+const validateClaudeMarketplacePlugin = (plugin: ClaudeMarketplaceProfilePlugin): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    if (!safeName.test(plugin.marketplace)) {
+      return yield* fail(`Claude marketplace name is unsafe: ${plugin.marketplace}`)
+    }
+    yield* unique(plugin.select, "selected asset")
+    if (plugin.select.length === 0) return yield* fail("Claude marketplace plugin selection is empty")
+    yield* validateClaudeMarketplaceConfig(plugin)
+  })
+
 const validateClaudeProfile = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
   Effect.gen(function* () {
     yield* validateHarnessVersion("Claude", profile.harness.version)
@@ -548,11 +588,7 @@ const validateClaudeProfile = (profile: ClaudeProfile): Effect.Effect<void, Prof
     }
     const marketplaces = profile.plugins.filter((plugin) => plugin.adapter === "claude-marketplace")
     for (const plugin of marketplaces) {
-      if (!safeName.test(plugin.marketplace)) {
-        return yield* fail(`Claude marketplace name is unsafe: ${plugin.marketplace}`)
-      }
-      yield* unique(plugin.select, "selected asset")
-      if (plugin.select.length === 0) return yield* fail("Claude marketplace plugin selection is empty")
+      yield* validateClaudeMarketplacePlugin(plugin)
     }
     yield* unique(
       marketplaces.map((plugin) => plugin.marketplace),
