@@ -321,7 +321,7 @@ describe("authored Claude council profile", () => {
 })
 
 describe("authored Claude ECC profile", () => {
-  it("installs the official ECC plugin with minimal hooks and no extra integrations", async () => {
+  it("installs the official full ECC plugin with standard hooks and no extra integrations", async () => {
     const source = await readFile(eccProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, eccProfilePath))
 
@@ -336,8 +336,13 @@ describe("authored Claude ECC profile", () => {
         gateway: "http://copilot-proxy-rs:8080",
       },
     })
+    expect(document.profile.runtime).toEqual({ tmpfs_size: "2g" })
     expect(document.profile.skill_bundles).toEqual(["sandbox-common"])
-    expect(document.profile.image.base).toBe("node:bookworm-slim")
+    expect(document.profile.image).toMatchObject({
+      base: "node:bookworm-slim",
+      shell: "fish",
+      packages: expect.arrayContaining(["gh", "git", "jq"]),
+    })
     expect(document.profile.image.packages).not.toContain("tmux")
     expect(document.profile.plugins).toEqual([
       {
@@ -349,7 +354,7 @@ describe("authored Claude ECC profile", () => {
         include_mcp: false,
         config: {
           hooks_enabled: "true",
-          hook_profile: "minimal",
+          hook_profile: "standard",
         },
       },
     ])

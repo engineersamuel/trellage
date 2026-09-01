@@ -294,7 +294,7 @@ printf '%s\n' \
 chmod +x "$copilot_fake_bin/node"
 no_gh_bin="$test_root/no-gh-bin"
 mkdir -p "$no_gh_bin"
-for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv od \
+for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv od ps \
   mkdir chmod rm rmdir id; do
   ln -s "$(command -v "$utility")" "$no_gh_bin/$utility"
 done
@@ -1798,6 +1798,16 @@ test_stale_container_preserves_active_sessions() {
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       "$prototype_dir/trellage" -p test
   grep -Fqx $'ARG\trm' "$docker_log" || fail 'idle stale container was not replaced'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_CONTAINER_RUNTIME_HASH=sha256:stale \
+    FAKE_DOCKER_INIT_WRAPPER=1 \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test
+  grep -Fqx $'ARG\trm' "$docker_log" \
+    || fail 'Docker init baseline was mistaken for an active stale-container session'
   printf 'Trellage host test: PASS: stale containers preserve active sessions\n'
 }
 
@@ -2302,7 +2312,8 @@ test_pending_launch_is_serialized_with_cleanup() {
 test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
   local worktree="$test_root/lease-guards-worktree"
   local docker_log="$test_root/lease-guards.docker.log"
-  local state_volume shell_ready shell_release harness_ready harness_release shell_pid harness_pid leases_dir
+  local state_volume shell_ready shell_release harness_ready harness_release shell_pid harness_pid
+  local leases_dir resource_dir
   mkdir -p "$worktree"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   shell_ready="$test_root/shell.ready"
@@ -2345,7 +2356,25 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
   grep -Fqx $'ARG\tstop' "$docker_log" || fail 'dead lease prevented automatic shutdown'
   [[ ! -e "$leases_dir/99999999" ]] || fail 'dead lease was not pruned'
-  printf 'Trellage host test: PASS: shell leases, processes, and dead leases guard shutdown\n'
+
+  printf '%s\n%s\n' "$$" "$(printf '0%.0s' {1..64})" >"$leases_dir/reused-pid"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'reused PID lease prevented automatic shutdown'
+  [[ ! -e "$leases_dir/reused-pid" ]] || fail 'reused PID lease was not pruned'
+
+  resource_dir="$(dirname "$leases_dir")"
+  mkdir "$resource_dir/mutex"
+  printf '%s\n%s\n' "$$" "$(printf '0%.0s' {1..64})" >"$resource_dir/mutex/owner"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'reused PID mutex owner blocked launch cleanup'
+  [[ ! -e "$resource_dir/mutex" ]] || fail 'reused PID mutex owner was not replaced and released'
+  printf 'Trellage host test: PASS: lifecycle records reject reused PIDs and guard shutdown\n'
 }
 
 test_cleanup_status_signals_secrets_and_validation() {
@@ -2451,7 +2480,7 @@ send -- "/status\r"
 expect "PTY:slash:/status"
 send -- "\003"
 expect "PTY:interrupt"
-expect eof
+close
 set result [wait]
 set status [lindex $result 3]
 if {$status != 130} {
@@ -2468,6 +2497,43 @@ EXPECT
   grep -Fq 'PTY:interrupt' "$transcript" || fail 'foreground Docker exec lost Ctrl-C'
   grep -Fqx $'ARG\tstop' "$docker_log" || fail 'Ctrl-C cleanup did not stop the idle container'
   printf 'Trellage host test: PASS: foreground wrapper preserves direct PTY behavior\n'
+}
+
+test_claude_attachment_prepares_and_restores_tty() {
+  local worktree="$test_root/claude-tty-worktree"
+  local docker_log="$test_root/claude-tty.docker.log"
+  local transcript="$test_root/claude-tty.transcript"
+  local tty_before="$test_root/claude-tty.before"
+  local tty_after="$test_root/claude-tty.after"
+  local state_volume status=0
+  mkdir -p "$worktree/.git"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
+  : >"$docker_log"
+
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+      env FAKE_DOCKER_REQUIRE_PREPARED_TTY=1 FAKE_DOCKER_AGENT_EXEC_EXIT=23 \
+      TRELLAGE_TEST_TTY_BEFORE="$tty_before" TRELLAGE_TEST_TTY_AFTER="$tty_after" \
+      bash -c '
+        stty -g 2>/dev/null </dev/tty >"$TRELLAGE_TEST_TTY_BEFORE"
+        "$@"
+        status=$?
+        # script(1) queues EOF; consume it so Darwin clears its transient PENDIN flag.
+        IFS= read -r -t 1 _ </dev/tty || true
+        stty -g 2>/dev/null </dev/tty >"$TRELLAGE_TEST_TTY_AFTER"
+        exit "$status"
+      ' trellage-tty-wrapper "$prototype_dir/trellage" --profile claude-headless-test \
+      >"$transcript" 2>&1 || status=$?
+
+  [[ "$status" -eq 23 ]] || fail "Claude TTY preparation changed agent status 23 to $status"
+  grep -Fqx $'AGENT_TTY\tprepared' "$docker_log" \
+    || fail 'Claude Docker attachment did not receive a prepared terminal'
+  [[ -s "$tty_before" && -s "$tty_after" ]] || fail 'Claude TTY state capture is incomplete'
+  cmp -s "$tty_before" "$tty_after" || fail 'Claude attachment did not restore the exact terminal state'
+  printf 'Trellage host test: PASS: Claude attachment prepares and restores its PTY\n'
 }
 
 test_doctor_reports_status_without_mutation_or_secrets() {
@@ -5224,20 +5290,23 @@ from pathlib import Path
 socket_path, ready_path, request_path = sys.argv[1:]
 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
     listener.bind(socket_path)
-    listener.listen(3)
+    listener.listen(8)
     Path(ready_path).write_text("ready\n", encoding="utf-8")
-    for _ in range(3):
+    agent_requests = 0
+    reported = False
+    for _ in range(8):
         connection, _ = listener.accept()
         with connection:
             request = json.loads(connection.recv(16384).decode().strip())
             if request["method"] == "agent.get":
+                agent_requests += 1
                 result = {
                     "type": "agent_info",
                     "agent": {
                         "pane_id": "w1:p1",
                         "agent": "copilot",
-                        "agent_status": "working",
-                        "state_change_seq": 23,
+                        "agent_status": "unknown" if agent_requests == 1 else "idle",
+                        "state_change_seq": 0 if agent_requests == 1 else 23,
                     },
                 }
             elif request["method"] == "pane.process_info":
@@ -5251,9 +5320,14 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
             else:
                 Path(request_path).write_text(json.dumps(request), encoding="utf-8")
                 result = {}
+                reported = True
             connection.sendall(
                 (json.dumps({"id": request["id"], "result": result}) + "\n").encode()
             )
+            if reported:
+                break
+    if not reported:
+        raise RuntimeError("Sandbox metadata was not reported after delayed idle detection")
 PY
   server_pid=$!
   for _attempt in {1..200}; do
@@ -5479,11 +5553,17 @@ if [[ "${TRELLAGE_HOST_VALIDATION_ONLY:-}" == 1 ]]; then
 fi
 
 if [[ "${TRELLAGE_HOST_LIFECYCLE_ONLY:-}" == 1 ]]; then
+  test_stale_container_preserves_active_sessions
   test_last_harness_exit_stops_idle_container
   test_concurrent_harnesses_stop_after_last_exit
   test_pending_launch_is_serialized_with_cleanup
   test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
   test_cleanup_status_signals_secrets_and_validation
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_LEASE_ONLY:-}" == 1 ]]; then
+  test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
   exit 0
 fi
 
@@ -5497,7 +5577,13 @@ if [[ "${TRELLAGE_HOST_CLEANUP_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_CLAUDE_TTY_ONLY:-}" == 1 ]]; then
+  test_claude_attachment_prepares_and_restores_tty
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_PTY_ONLY:-}" == 1 ]]; then
+  test_claude_attachment_prepares_and_restores_tty
   test_foreground_wrapper_preserves_pty_contract
   exit 0
 fi

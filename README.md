@@ -167,6 +167,9 @@ trellage --profile claude-research
 trellage validate claude-social-media
 trellage build claude-social-media
 trellage --profile claude-social-media
+trellage validate claude-ecc
+trellage build claude-ecc
+trellage --profile claude-ecc
 trellage validate prime-agent
 trellage build prime-agent
 trellage --profile prime-agent
@@ -288,29 +291,45 @@ proxy-backed Claude profiles.
 
 ### Claude ECC
 
-`claude-ecc` runs Claude Opus 5 through `copilot-proxy-rs` with the official
-[`affaan-m/ECC`](https://github.com/affaan-m/ECC) marketplace plugin. It provides
-ECC's plugin-discovered engineering skills, commands, agents, and hooks for
-broad planning, implementation, debugging, review, and verification work.
+`claude-ecc` runs Claude Opus 5 through `copilot-proxy-rs` with the official,
+complete
+[`affaan-m/ECC`](https://github.com/affaan-m/ECC) `ecc@ecc` marketplace plugin.
+It provides ECC's broad agent, skill, command, hook, memory, testing, security,
+and verification system inside the Trellage Sandbox boundary.
 
 ```bash
+trellage validate claude-ecc
+trellage build claude-ecc
 trellage --profile claude-ecc
+trellage upgrade claude-ecc
+make claude-ecc-image-probe
 ```
 
-ECC hooks are enabled with the `minimal` profile. This preserves essential
-lifecycle and safety behavior without the automatic tmux, formatting,
-type-checking, and strict reminder hooks. The image therefore does not add
-`tmux`.
+The profile enables ECC's `standard` hook profile. It installs the Claude plugin
+surface only, not ECC's repository `rules/` or `contexts/`, and the image does
+not add `tmux`. Prefer the narrower `claude-research`, `claude-council`,
+`claude-frontend-design`, `claude-blog`, `claude-social-media`, or
+`claude-graph-of-loops` profile when one of those workflows matches the task.
 
-The profile installs the Claude plugin surface only. It does not import ECC's
-repository `rules/` or `contexts/`, and `include_mcp = false` excludes the
-root `.mcp.json` so its unpinned sample Chrome DevTools MCP cannot run. Use
-`/ecc:ecc-guide` to inspect the installed catalog, `/ecc:plan` before a
-substantial change, `/ecc:tdd-workflow` during implementation, and
-`/ecc:code-review` plus `/ecc:verification-loop` before delivery.
+ECC's hook processes run inside the container. They can modify the mounted
+worktree and shared Git metadata, and their state persists in the profile's
+`/home/agent` volume. The container does not provide default-deny outbound
+network filtering. The image contains no Anthropic credential; launch uses the
+same external `copilot-proxy-rs_default` network as other proxy-backed Claude
+profiles.
 
-Like other proxy-backed Claude profiles, it requires the external
-`copilot-proxy-rs_default` Docker network.
+ECC's orchestrated feature and defect workflows have plan and commit approval
+gates. Start `trellage --profile claude-ecc` interactively and paste those
+prompts; a one-shot `-p` launch cannot answer the gates.
+
+At build time, Trellage scopes ECC's temporary edit accumulator to the Claude
+hook payload's session ID. The build fails closed if the upstream hook shape
+drifts, instead of shipping cross-session Stop-hook work.
+
+`include_mcp = false` excludes ECC's repository `.mcp.json`, so this profile
+does not enable its unpinned `chrome-devtools-mcp@latest` command. Use
+`/ecc:ecc-guide` to inspect the installed catalog, or start with the
+repository-grounded workflows in `profile-guides/sandbox/claude-ecc.md`.
 
 ### Claude social media skills
 

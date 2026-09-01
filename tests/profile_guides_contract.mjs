@@ -186,6 +186,9 @@ const expectedEccWorkflows = new Map([
   ["plan-change", ["ecc:plan", "/ecc:plan"]],
   ["tdd-implementation", ["ecc:tdd-workflow", "/ecc:tdd-workflow"]],
   ["review-and-verify", ["ecc:code-review", "/ecc:code-review"]],
+  ["end-to-end-feature-delivery", ["ecc:orch-add-feature", "/ecc:orch-add-feature {{intent}}"]],
+  ["systematic-defect-repair", ["ecc:orch-fix-defect", "/ecc:orch-fix-defect {{intent}}"]],
+  ["repository-audit-and-hardening", ["ecc:production-audit", "/ecc:production-audit {{intent}}"]],
 ])
 for (const [workflowId, [skill, promptPhrase]] of expectedEccWorkflows) {
   const workflow = eccGuide.guide.workflows.find(({ id }) => id === workflowId)
@@ -198,6 +201,50 @@ for (const [workflowId, [skill, promptPhrase]] of expectedEccWorkflows) {
 const eccReviewWorkflow = eccGuide.guide.workflows.find(({ id }) => id === "review-and-verify")
 if (eccReviewWorkflow === undefined || !eccReviewWorkflow.promptTemplate.includes("/ecc:verification-loop")) {
   throw new Error("claude-ecc review workflow must finish with verification-loop")
+}
+for (const workflow of eccGuide.guide.workflows) {
+  if (workflow.skill === undefined || !workflow.skill.startsWith("ecc:")) {
+    throw new Error(`claude-ecc workflow must declare an ecc: entry point: ${workflow.id}`)
+  }
+}
+for (const entryPoint of [
+  "/ecc:orch-add-feature",
+  "/ecc:orch-fix-defect",
+  "/ecc:orch-change-feature",
+  "/ecc:orch-refine-code",
+  "/ecc:code-review",
+  "/ecc:security-scan",
+  "/ecc:test-coverage",
+  "/ecc:production-audit",
+  "/ecc:verification-loop",
+  "/ecc:tdd-workflow",
+]) {
+  if (!eccGuide.body.includes(entryPoint)) {
+    throw new Error(`claude-ecc guide body does not document the ECC entry point: ${entryPoint}`)
+  }
+}
+for (const specialist of [
+  "claude-research",
+  "claude-council",
+  "claude-frontend-design",
+  "claude-blog",
+  "claude-social-media",
+  "claude-graph-of-loops",
+]) {
+  if (!eccGuide.guide.avoidFor.some((entry) => entry.includes(specialist))) {
+    throw new Error(`claude-ecc guide does not defer to specialist profile: ${specialist}`)
+  }
+}
+if (!eccGuide.body.includes("complete `ecc@ecc` Claude marketplace plugin")) {
+  throw new Error("claude-ecc guide does not disclose the full plugin scope")
+}
+if (!eccGuide.body.includes("default-deny egress boundary")) {
+  throw new Error("claude-ecc guide does not disclose the network boundary")
+}
+for (const phrase of ["Gate 1", "Gate 2", "security-reviewer", "silent-failure-hunter", "one-shot `-p`"]) {
+  if (!eccGuide.body.includes(phrase)) {
+    throw new Error(`claude-ecc guide body is missing workflow guidance: ${phrase}`)
+  }
 }
 
 const researchGuide = registry.get("sandbox:claude-research")

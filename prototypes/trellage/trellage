@@ -1063,12 +1063,91 @@ lifecycle_mutex_owned=false
 lifecycle_auto_stop=false
 lifecycle_attachment_started=false
 lifecycle_signal_status=0
+lifecycle_self_identity=
+claude_attachment_tty_state=
+claude_attachment_tty_restore_pending=false
 lifecycle_lease=
 lifecycle_resource_dir=
 lifecycle_mutex=
 
+lifecycle_process_identity() {
+  local pid="$1"
+  local process_description ps_command=
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  for ps_command in /bin/ps /usr/bin/ps; do
+    [[ -x "$ps_command" ]] && break
+    ps_command=
+  done
+  if [[ -z "$ps_command" ]]; then
+    ps_command="$(command -v ps 2>/dev/null)" || return 1
+  fi
+  process_description="$(
+    LC_ALL=C TZ=UTC0 "$ps_command" -ww -p "$pid" \
+      -o lstart= -o ppid= -o pgid= -o command= 2>/dev/null
+  )" || return 1
+  [[ -n "${process_description//[[:space:]]/}" ]] || return 1
+  printf '%s' "$process_description" | sha256
+}
+
+lifecycle_record_is_live() {
+  local record="$1"
+  local current_identity identity= pid=
+  [[ -f "$record" && ! -L "$record" ]] || return 1
+  {
+    IFS= read -r pid || true
+    IFS= read -r identity || true
+  } <"$record" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null || return 1
+  [[ -n "$identity" ]] || return 0
+  [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || return 1
+  current_identity="$(lifecycle_process_identity "$pid")" || return 1
+  [[ "$current_identity" == "$identity" ]]
+}
+
+write_lifecycle_record() {
+  local record="$1"
+  (umask 077 && printf '%s\n%s\n' "$$" "$lifecycle_self_identity" >"$record")
+}
+
+restore_claude_attachment_tty() {
+  [[ "$claude_attachment_tty_restore_pending" == true ]] || return 0
+  if ! stty "$claude_attachment_tty_state" 2>/dev/null </dev/tty; then
+    return 1
+  fi
+  claude_attachment_tty_state=
+  claude_attachment_tty_restore_pending=false
+}
+
+prepare_claude_attachment_tty() {
+  local argument saved_state
+  local uses_tty=false
+  [[ "$harness_kind" == "claude" && -t 0 && -t 1 ]] || return 0
+  for argument in "$@"; do
+    if [[ "$argument" == "--tty" ]]; then
+      uses_tty=true
+      break
+    fi
+  done
+  [[ "$uses_tty" == true ]] || return 0
+  command -v stty >/dev/null 2>&1 || return 1
+  if ! saved_state="$(stty -g 2>/dev/null </dev/tty)"; then
+    return 1
+  fi
+  claude_attachment_tty_state="$saved_state"
+  claude_attachment_tty_restore_pending=true
+  # Claude probes terminal capabilities before Docker has switched the host PTY.
+  if ! stty -echo -icanon min 1 time 0 2>/dev/null </dev/tty; then
+    restore_claude_attachment_tty >/dev/null 2>&1 || true
+    return 1
+  fi
+}
+
 initialize_lifecycle() {
   local runtime_base runtime_root lifecycle_key
+  if [[ -z "$lifecycle_self_identity" ]]; then
+    lifecycle_self_identity="$(lifecycle_process_identity "$$")" \
+      || fail "cannot identify lifecycle process: $$"
+  fi
   runtime_base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
   runtime_root="$runtime_base/trellage-${UID:-$(id -u)}"
   [[ ! -L "$runtime_root" ]] || fail "unsafe lifecycle runtime directory: $runtime_root"
@@ -1092,26 +1171,25 @@ initialize_lifecycle() {
 }
 
 acquire_lifecycle_mutex() {
-  local owner missing_owner_attempts=0
+  local missing_owner_attempts=0 owner_file
   [[ "$lifecycle_mutex_owned" == false ]] || return 0
+  owner_file="$lifecycle_mutex/owner"
   while ! mkdir -- "$lifecycle_mutex" 2>/dev/null; do
-    owner=
-    [[ ! -f "$lifecycle_mutex/owner" ]] || IFS= read -r owner <"$lifecycle_mutex/owner"
-    if [[ "$owner" =~ ^[1-9][0-9]*$ ]] && kill -0 "$owner" 2>/dev/null; then
+    if lifecycle_record_is_live "$owner_file"; then
       missing_owner_attempts=0
       sleep 0.05
       continue
     fi
-    if [[ -z "$owner" && "$missing_owner_attempts" -lt 20 ]]; then
+    if [[ ! -s "$owner_file" && "$missing_owner_attempts" -lt 20 ]]; then
       missing_owner_attempts=$((missing_owner_attempts + 1))
       sleep 0.05
       continue
     fi
-    rm -f -- "$lifecycle_mutex/owner" 2>/dev/null || true
+    rm -f -- "$owner_file" 2>/dev/null || true
     rmdir -- "$lifecycle_mutex" 2>/dev/null || true
     missing_owner_attempts=0
   done
-  printf '%s\n' "$$" >"$lifecycle_mutex/owner" \
+  write_lifecycle_record "$owner_file" \
     || fail "cannot record lifecycle mutex ownership: $lifecycle_mutex"
   lifecycle_mutex_owned=true
 }
@@ -1126,7 +1204,7 @@ release_lifecycle_mutex() {
 register_lifecycle_lease() {
   initialize_lifecycle
   acquire_lifecycle_mutex
-  printf '%s\n' "$$" >"$lifecycle_lease" \
+  write_lifecycle_record "$lifecycle_lease" \
     || fail "cannot register lifecycle lease: $lifecycle_lease"
   trap lifecycle_on_exit EXIT
   trap 'record_lifecycle_signal 129' HUP
@@ -1140,13 +1218,11 @@ record_lifecycle_signal() {
 }
 
 prune_lifecycle_leases() {
-  local lease pid
+  local lease
   lifecycle_has_live_lease=false
   shopt -s nullglob
   for lease in "$lifecycle_resource_dir"/leases/*; do
-    pid=
-    [[ ! -f "$lease" ]] || IFS= read -r pid <"$lease"
-    if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null; then
+    if lifecycle_record_is_live "$lease"; then
       lifecycle_has_live_lease=true
       continue
     fi
@@ -1206,17 +1282,30 @@ validate_cleanup_target() {
   printf '%s\n' "$cleanup_running"
 }
 
-container_has_non_init_process() {
+container_has_active_ephemeral_process() {
   local main_pid processes
   main_pid="$(docker container inspect \
     --format '{{ .State.Pid }}' "$container_id" 2>/dev/null)" \
     || fail "cannot inspect Docker container PID: $container_name"
   [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] \
     || fail "Docker container has an invalid PID: $container_name"
-  processes="$(docker container top "$container_id" -eo pid,ppid,comm 2>/dev/null)" \
+  processes="$(docker container top "$container_id" -eo pid,ppid,comm,args 2>/dev/null)" \
     || fail "cannot inspect Docker container processes: $container_name"
+  # Docker --init adds one direct `sleep infinity` child below docker-init.
+  # That child keeps the container ready for exec sessions but is not a session.
   awk -v main_pid="$main_pid" \
-    'NR > 1 && $1 != main_pid { found = 1 } END { exit(found ? 0 : 1) }' \
+    'NR > 1 {
+      if ($1 == main_pid) {
+        next
+      }
+      if (!baseline_seen && $2 == main_pid && $3 == "sleep" &&
+          $4 == "sleep" && $5 == "infinity" && NF == 5) {
+        baseline_seen = 1
+        next
+      }
+      found = 1
+    }
+    END { exit(found ? 0 : 1) }' \
     <<<"$processes"
 }
 
@@ -1226,7 +1315,7 @@ automatic_shutdown_if_idle() {
   [[ "$running" == true ]] || return 0
   prune_lifecycle_leases
   [[ "$lifecycle_has_live_lease" == false ]] || return 0
-  if container_has_non_init_process; then
+  if container_has_active_ephemeral_process; then
     return 0
   fi
   verify_docker_server
@@ -1239,6 +1328,9 @@ lifecycle_on_exit() {
   trap - EXIT
   trap '' HUP INT TERM
   set +e
+  if ! restore_claude_attachment_tty; then
+    echo "trellage: warning: could not restore the terminal after the Claude attachment" >&2
+  fi
   scrub_cleanup_environment
   acquire_lifecycle_mutex
   rm -f -- "$lifecycle_lease" 2>/dev/null || true
@@ -1261,10 +1353,16 @@ run_supervised_attachment() {
   local status
   lifecycle_attachment_started=true
   start_sandbox_metadata_reporter
+  if ! prepare_claude_attachment_tty "$@"; then
+    echo "trellage: warning: could not prepare the terminal for the Claude attachment" >&2
+  fi
   set +e
   "$@"
   status="$?"
   set -e
+  if ! restore_claude_attachment_tty; then
+    echo "trellage: warning: could not restore the terminal after the Claude attachment" >&2
+  fi
   if [[ -n "$sandbox_metadata_pid" ]]; then
     wait "$sandbox_metadata_pid" || true
     sandbox_metadata_pid=
@@ -1366,10 +1464,12 @@ const requestHerdr = (request) =>
   })
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+const recognizedAgentStatuses = new Set(["idle", "working", "blocked", "done"])
+const recognitionDeadline = Date.now() + 30_000
 try {
   let stateChangeSeq
   let processGroup
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; Date.now() < recognitionDeadline; attempt += 1) {
     try {
       const agentResult = await requestHerdr({
         id: `${source}:agent-get:${invocationId}:${attempt}`,
@@ -1377,22 +1477,27 @@ try {
         params: { target: paneId },
       })
       const agentInfo = agentResult?.agent
+      const candidateSequence = agentInfo?.state_change_seq
+      if (
+        agentInfo?.pane_id !== paneId ||
+        agentInfo?.agent !== agent ||
+        !recognizedAgentStatuses.has(agentInfo?.agent_status) ||
+        !Number.isSafeInteger(candidateSequence) ||
+        candidateSequence < 0 ||
+        candidateSequence > (Number.MAX_SAFE_INTEGER - 1) / 2
+      ) {
+        await delay(100)
+        continue
+      }
       const processResult = await requestHerdr({
         id: `${source}:process-info:${invocationId}:${attempt}`,
         method: "pane.process_info",
         params: { pane_id: paneId },
       })
       const processInfo = processResult?.process_info
-      const candidateSequence = agentInfo?.state_change_seq
       const candidateProcessGroup = processInfo?.foreground_process_group_id
       if (
-        agentInfo?.pane_id === paneId &&
-        agentInfo?.agent === agent &&
-        agentInfo?.agent_status === "working" &&
         processInfo?.pane_id === paneId &&
-        Number.isSafeInteger(candidateSequence) &&
-        candidateSequence >= 0 &&
-        candidateSequence <= (Number.MAX_SAFE_INTEGER - 1) / 2 &&
         Number.isSafeInteger(candidateProcessGroup) &&
         candidateProcessGroup > 0
       ) {
@@ -1403,7 +1508,7 @@ try {
     } catch {
       // The tagged attachment can take a moment to become visible to Herdr.
     }
-    await delay(50)
+    await delay(100)
   }
   if (stateChangeSeq === undefined || processGroup === undefined) {
     throw new Error("Herdr did not recognize the current Sandbox attachment")
@@ -1611,7 +1716,7 @@ container_is_current() {
 }
 
 remove_stale_container() {
-  local lease running main_pid processes
+  local lease running
   running="$(docker container inspect --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
     || fail "cannot inspect Docker container state: $container_name"
   [[ "$running" == true || "$running" == false ]] \
@@ -1626,16 +1731,8 @@ remove_stale_container() {
         fail "profile container is stale but has an active session; exit it and retry: $container_name"
       done
       shopt -u nullglob
-    else
-      main_pid="$(docker container inspect --format '{{ .State.Pid }}' "$container_id" 2>/dev/null)" \
-        || fail "cannot inspect Docker container PID: $container_name"
-      [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || fail "Docker container has an invalid PID: $container_name"
-      processes="$(docker container top "$container_id" -eo pid,ppid,comm 2>/dev/null)" \
-        || fail "cannot inspect Docker container processes: $container_name"
-      if awk -v main_pid="$main_pid" 'NR > 1 && $1 != main_pid { found = 1 } END { exit(found ? 0 : 1) }' \
-        <<<"$processes"; then
-        fail "profile container is stale but has an active session; exit it and retry: $container_name"
-      fi
+    elif container_has_active_ephemeral_process; then
+      fail "profile container is stale but has an active session; exit it and retry: $container_name"
     fi
   fi
   verify_docker_server

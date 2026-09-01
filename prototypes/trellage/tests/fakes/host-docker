@@ -63,6 +63,17 @@ emit_agent_streams() {
   fi
 }
 
+assert_prepared_agent_tty() {
+  local tty_settings
+  [[ "${FAKE_DOCKER_REQUIRE_PREPARED_TTY:-0}" == 1 ]] || return 0
+  [[ -t 0 && -t 1 && -t 2 ]] || exit 91
+  tty_settings="$(stty -a 2>/dev/null </dev/tty)" || exit 92
+  [[ "$tty_settings" =~ (^|[[:space:];])-icanon([[:space:];]|$) ]] || exit 93
+  [[ "$tty_settings" =~ (^|[[:space:];])-echo([[:space:];]|$) ]] || exit 94
+  [[ "$tty_settings" =~ (^|[[:space:];])isig([[:space:];]|$) ]] || exit 95
+  printf 'AGENT_TTY\tprepared\n' >>"$log"
+}
+
 if [[ "${1:-}" == --host ]]; then
   [[ $# -ge 3 ]] || exit 64
   shift 2
@@ -602,10 +613,19 @@ case "${1:-} ${2:-}" in
     printf '%s\n' "${@: -1}"
     ;;
   'container top')
-    printf 'PID PPID COMMAND\n'
-    printf '100 0 sleep\n'
-    if [[ "${FAKE_DOCKER_ACTIVE_SESSION:-0}" == 1 ]]; then
-      printf '101 100 claude\n'
+    if [[ "${FAKE_DOCKER_INIT_WRAPPER:-0}" == 1 ]]; then
+      printf 'PID PPID COMMAND COMMAND\n'
+      printf '100 0 docker-init /sbin/docker-init -- sleep infinity\n'
+      printf '101 100 sleep sleep infinity\n'
+      if [[ "${FAKE_DOCKER_ACTIVE_SESSION:-0}" == 1 ]]; then
+        printf '102 0 claude claude\n'
+      fi
+    else
+      printf 'PID PPID COMMAND\n'
+      printf '100 0 sleep\n'
+      if [[ "${FAKE_DOCKER_ACTIVE_SESSION:-0}" == 1 ]]; then
+        printf '101 100 claude\n'
+      fi
     fi
     ;;
   'container rm') printf '%s\n' "${@: -1}" ;;
@@ -628,6 +648,7 @@ case "${1:-} ${2:-}" in
       for argument in "$@"; do
         if [[ "$argument" == *trellage-*-entry* \
           || "$argument" == /usr/local/bin/trellage-session-bridge ]]; then
+          assert_prepared_agent_tty
           emit_agent_streams
           : >"$log.agent-exec-finished"
           exit "$FAKE_DOCKER_AGENT_EXEC_EXIT"
@@ -637,6 +658,7 @@ case "${1:-} ${2:-}" in
     for argument in "$@"; do
       if [[ "$argument" == *trellage-*-entry* \
         || "$argument" == /usr/local/bin/trellage-session-bridge ]]; then
+        assert_prepared_agent_tty
         if [[ "${FAKE_DOCKER_PTY_PROBE:-0}" == 1 ]]; then
           [[ -t 0 && -t 1 && -t 2 ]] || exit 91
           trap 'printf "PTY:interrupt\n"; exit 130' INT

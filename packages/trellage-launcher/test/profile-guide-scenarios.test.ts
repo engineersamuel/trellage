@@ -9,7 +9,7 @@ import {
 } from "../../trellage-guide-core/dist/index.js"
 import { describe, expect, it } from "vitest"
 
-import { literalGuideMatch } from "../src/guide-api.js"
+import { applyWorkflowPromptTemplate, literalGuideMatch } from "../src/guide-api.js"
 import { guideCatalogEntries } from "../src/guide-catalog.js"
 import type {
   CombinedGuideCatalog,
@@ -307,6 +307,37 @@ describe("profile guide recommendation scenarios", () => {
       for (const profileRef of pinnedProfiles) {
         expect(refs, `${scenario.id} must leave ${profileRef} to its pinned lens`).not.toContain(profileRef)
       }
+    }
+  })
+})
+
+describe("claude-ecc authored prompt templates", () => {
+  const eccWorkflowOpenings = new Map([
+    ["discover-ecc-workflow", "/ecc:ecc-guide "],
+    ["plan-change", "/ecc:plan "],
+    ["tdd-implementation", "/ecc:tdd-workflow "],
+    ["review-and-verify", "/ecc:code-review "],
+    ["end-to-end-feature-delivery", "/ecc:orch-add-feature "],
+    ["systematic-defect-repair", "/ecc:orch-fix-defect "],
+    ["repository-audit-and-hardening", "/ecc:production-audit "],
+  ])
+
+  it("wraps each candidate with the exact ECC entry point", async () => {
+    const loaded = await loadProfileGuide(guideRoot, sandboxGuideIdentity("claude-ecc.md"))
+    const candidate = {
+      title: "Generated",
+      prompt: "Add rate limiting to the public API.",
+      notes: "Direct opening.",
+    }
+
+    for (const workflow of loaded.guide.workflows) {
+      const opening = eccWorkflowOpenings.get(workflow.id)
+      expect(opening, `unmapped claude-ecc workflow: ${workflow.id}`).toBeDefined()
+      const applied = applyWorkflowPromptTemplate(loaded.guide, workflow.id, candidate)
+
+      expect(applied.prompt.startsWith(`${opening ?? ""}${candidate.prompt}`), workflow.id).toBe(true)
+      expect(applied.prompt, workflow.id).toBe(workflow.promptTemplate.replaceAll("{{intent}}", candidate.prompt))
+      expect(applyWorkflowPromptTemplate(loaded.guide, workflow.id, applied), workflow.id).toEqual(applied)
     }
   })
 })

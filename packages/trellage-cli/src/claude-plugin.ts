@@ -321,3 +321,68 @@ export const readClaudeMarketplace = (
     const plugins = yield* collectSelectedPluginVersions(sourceDirectory, metadata, selections, fallback)
     return yield* freezeSelectedVersions(selections, plugins)
   })
+
+const selectedClaudePluginNames = (selections: ReadonlyArray<string>): Effect.Effect<Set<string>, ClaudePluginError> =>
+  Effect.gen(function* () {
+    const requested = new Set<string>()
+    for (const selection of selections) {
+      if (!safeKey(selection)) {
+        return yield* Effect.fail(new ClaudePluginError({ message: `Claude plugin selection is unsafe: ${selection}` }))
+      }
+      if (requested.has(selection)) {
+        return yield* Effect.fail(new ClaudePluginError({ message: `duplicate selection: ${selection}` }))
+      }
+      requested.add(selection)
+    }
+    return requested
+  })
+
+const collectSelectedPluginDirectories = (
+  sourceDirectory: string,
+  metadata: ClaudeMarketplace,
+  requested: Set<string>,
+): Effect.Effect<ReadonlyArray<string>, ClaudePluginError> =>
+  Effect.gen(function* () {
+    const roots: Array<string> = []
+    const seen = new Set<string>()
+    for (const plugin of metadata.plugins) {
+      if (!safeKey(plugin.name)) {
+        return yield* Effect.fail(new ClaudePluginError({ message: `Claude plugin name is unsafe: ${plugin.name}` }))
+      }
+      if (seen.has(plugin.name)) {
+        return yield* Effect.fail(new ClaudePluginError({ message: `duplicate plugin: ${plugin.name}` }))
+      }
+      seen.add(plugin.name)
+      if (!requested.has(plugin.name)) continue
+      if (typeof plugin.source !== "string" || !isSafeClaudePluginSource(plugin.source)) {
+        return yield* Effect.fail(
+          new ClaudePluginError({
+            message: `Claude plugin source must be a relative marketplace path: ${plugin.name}`,
+          }),
+        )
+      }
+      roots.push(claudePluginRootForSource(sourceDirectory, plugin.source))
+      requested.delete(plugin.name)
+    }
+    return roots
+  })
+
+export const selectedClaudePluginDirectories = (
+  sourceDirectory: string,
+  expectedMarketplace: string,
+  selections: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, ClaudePluginError> =>
+  Effect.gen(function* () {
+    if (!safeKey(expectedMarketplace)) {
+      return yield* Effect.fail(new ClaudePluginError({ message: "expected Claude marketplace name is unsafe" }))
+    }
+    const metadata = yield* loadClaudeMarketplace(sourceDirectory, expectedMarketplace)
+    const requested = yield* selectedClaudePluginNames(selections)
+    const roots = yield* collectSelectedPluginDirectories(sourceDirectory, metadata, requested)
+    if (requested.size > 0) {
+      return yield* Effect.fail(
+        new ClaudePluginError({ message: `Claude plugin selection is missing: ${[...requested].sort().join(", ")}` }),
+      )
+    }
+    return roots
+  })

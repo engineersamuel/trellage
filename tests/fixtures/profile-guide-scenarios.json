@@ -73,7 +73,7 @@
     },
     {
       "id": "containerized-claude-ecc-delivery",
-      "intent": "Use container-isolated Claude with ECC to discover the right engineering workflow, plan a substantial repository change, implement it test-first, review it, and verify delivery with minimal hooks.",
+      "intent": "Use container-isolated Claude with ECC to discover the right engineering workflow, plan a substantial repository change, implement it test-first, review it, and verify delivery with standard hooks.",
       "expectedProfiles": ["sandbox:claude-ecc"],
       "maxRank": 3,
       "excludedProfiles": ["sandbox:codex-superpowers"]
@@ -118,7 +118,14 @@
       "intent": "Use an isolated host-native Claude Opus session for this code review, then give me a concise Rundown-style status summary with a checklist.",
       "expectedProfiles": ["native:cldx/default"],
       "maxRank": 3,
-      "excludedProfiles": []
+      "excludedProfiles": ["sandbox:claude-ecc"]
+    },
+    {
+      "id": "ecc-cross-stack-delivery",
+      "intent": "Use the full ECC Claude engineering toolbox with specialist agents, lifecycle hooks, persistent memory, TDD, security review, and verification to deliver this cross-stack feature in a container.",
+      "expectedProfiles": ["sandbox:claude-ecc"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cldx/default"]
     },
     {
       "id": "awesome-copilot-assets",

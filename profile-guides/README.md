@@ -26,6 +26,7 @@ Use these fields as follows:
 | `bestFor` | State user outcomes for which this profile is a strong choice. |
 | `avoidFor` | State concrete disqualifiers, costs, and close alternatives. |
 | Workflow description | State the outcome one workflow delivers. |
+| Workflow `skill` | Declare the portable command or skill identifier when its `promptTemplate` contains an invocation that Prompt Master must preserve. This field is also visible during matching. |
 | Workflow examples | Give natural user prompts that should select that workflow. |
 
 Every workflow must have at least two realistic examples. At least one example

@@ -13,6 +13,7 @@ import type { ClaudeMaterializeRequest } from "./materialize.js"
 import { claudeGithubReleaseTools, claudeHasWorktreeCli, claudePypiToolNames, type ClaudeProfile } from "./profile.js"
 import { claudePluginRootForSource, isSafeClaudePluginSource } from "./claude-plugin.js"
 import { cachedArtifactPath } from "./artifact-cache.js"
+import { selectedClaudePluginDirectories } from "./claude-plugin.js"
 import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
 
 const execFilePromise = promisify(execFile)
@@ -693,10 +694,12 @@ const portableHyperresearchHookCommand = '            "command": hook_command,'
 const vulnerableHyperresearchHookScriptPath = '    hook_path = hook_dir / "hook.js"'
 const portableHyperresearchHookScriptPath = '    hook_path = hook_dir / "hook.cjs"'
 
-const replaceExactlyOnce = (source: string, vulnerable: string, portable: string): string => {
+const hyperresearchHookInstallerUnsupported = "unsupported Hyperresearch project hook installer source"
+
+const replaceExactlyOnce = (source: string, vulnerable: string, portable: string, unsupported: string): string => {
   const first = source.indexOf(vulnerable)
   if (first < 0 || source.indexOf(vulnerable, first + vulnerable.length) >= 0) {
-    throw new Error("unsupported Hyperresearch project hook installer source")
+    throw new Error(unsupported)
   }
   return `${source.slice(0, first)}${portable}${source.slice(first + vulnerable.length)}`
 }
@@ -722,24 +725,31 @@ export const normalizeHyperresearchHookInstaller = (
           source.includes(vulnerableHyperresearchHookCommand) ||
           source.includes(vulnerableHyperresearchHookScriptPath)
         ) {
-          throw new Error("unsupported Hyperresearch project hook installer source")
+          throw new Error(hyperresearchHookInstallerUnsupported)
         }
         return
       }
       if (portableFragments.some((fragment) => source.includes(fragment))) {
-        throw new Error("unsupported Hyperresearch project hook installer source")
+        throw new Error(hyperresearchHookInstallerUnsupported)
       }
 
-      const normalizedLoop = replaceExactlyOnce(source, vulnerableHyperresearchHookLoop, portableHyperresearchHookLoop)
+      const normalizedLoop = replaceExactlyOnce(
+        source,
+        vulnerableHyperresearchHookLoop,
+        portableHyperresearchHookLoop,
+        hyperresearchHookInstallerUnsupported,
+      )
       const normalized = replaceExactlyOnce(
         normalizedLoop,
         vulnerableHyperresearchHookCommand,
         portableHyperresearchHookCommand,
+        hyperresearchHookInstallerUnsupported,
       )
       const normalizedScriptPath = replaceExactlyOnce(
         normalized,
         vulnerableHyperresearchHookScriptPath,
         portableHyperresearchHookScriptPath,
+        hyperresearchHookInstallerUnsupported,
       )
       await writeFile(hooksPath, normalizedScriptPath)
     },
@@ -863,6 +873,8 @@ const materializeClaudeMarketplaceSource = (
         stripClaudeMarketplacePluginMcps(marketplace, source.select),
       )
     }
+    yield* preferNpmPluginLocks(marketplace, source.marketplace, source.select)
+    yield* scopeEccAccumulatorHooks(marketplace, source.marketplace, source.select)
     return {
       marketplace: source.marketplace,
       source: `/src/claude-marketplace-${index}`,
@@ -872,6 +884,264 @@ const materializeClaudeMarketplaceSource = (
         version: source.pluginVersions[plugin]!,
       })),
     }
+  })
+
+const isRegularFile = async (candidate: string): Promise<boolean> => {
+  try {
+    const status = await lstat(candidate)
+    return status.isFile() && !status.isSymbolicLink()
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false
+    throw cause
+  }
+}
+
+const preferNpmPluginLocks = (
+  marketplaceRoot: string,
+  marketplace: string,
+  selections: ReadonlyArray<string>,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    const pluginRoots = yield* selectedClaudePluginDirectories(marketplaceRoot, marketplace, selections).pipe(
+      Effect.mapError((cause) => new ClaudeMaterializeError({ message: cause.message, cause })),
+    )
+    yield* Effect.forEach(
+      pluginRoots,
+      (pluginRoot) =>
+        attempt("cannot normalize Claude plugin package-manager locks", async () => {
+          if (
+            !(await isRegularFile(path.join(pluginRoot, "package.json"))) ||
+            !(await isRegularFile(path.join(pluginRoot, "package-lock.json")))
+          ) {
+            return
+          }
+          await Promise.all(
+            ["yarn.lock", ".yarnrc.yml"].map((entry) => rm(path.join(pluginRoot, entry), { force: true })),
+          )
+        }),
+      { concurrency: 1 },
+    )
+  })
+
+const eccAccumulatorHookUnsupported = "unsupported ECC accumulator hook source"
+const eccMarketplaceName = "ecc"
+const eccPluginName = "ecc"
+
+const eccAccumulatorHookRelativePath = path.join("scripts", "hooks", "post-edit-accumulator.js")
+const eccStopHookRelativePath = path.join("scripts", "hooks", "stop-format-typecheck.js")
+
+const eccScopedHookMarker = "function trellageHookSessionId(rawInput) {"
+
+/**
+ * Claude Code never exports CLAUDE_SESSION_ID to hook processes; it only carries
+ * the session in the hook payload on stdin. ECC's accumulator hooks therefore
+ * always fall back to a digest of the working directory, so every Claude session
+ * in one worktree shares `${TMPDIR}/ecc-edited-<digest>.txt`. A session that ends
+ * before its Stop hook drains the accumulator leaves that list for the next
+ * session — after `/clear`, a prompt that edited nothing still formats and
+ * typechecks the previous session's files until the Stop budget runs out. These
+ * anchors require the payload session for accumulator work, retain ECC's
+ * filename sanitizer and read-then-unlink cleanup, and skip accumulation when
+ * Claude does not supply a usable session identity.
+ */
+const eccHookSessionIdHelper = `\
+function trellageHookSessionId(rawInput) {
+  try {
+    const payload = JSON.parse(rawInput);
+    const candidate = payload?.session_id ?? payload?.sessionId;
+    if (typeof candidate === 'string' && candidate.length > 0) return candidate;
+    process.stderr.write('[Hook] hook payload carries no session id; skipping shared accumulator\\n');
+  } catch {
+    process.stderr.write('[Hook] hook payload is unparsable; skipping shared accumulator\\n');
+  }
+  return undefined;
+}
+
+`
+
+const vulnerableEccAccumulatorPath = `\
+function getAccumFile() {
+  const raw =
+    process.env.CLAUDE_SESSION_ID ||
+    crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
+`
+
+const portableEccAccumulatorPath = `${eccHookSessionIdHelper}\
+function getAccumFile(hookSessionId) {
+  const raw = hookSessionId;
+`
+
+const vulnerableEccAppendPath = `\
+function appendPath(filePath) {
+  if (filePath && JS_TS_EXT.test(filePath)) {
+    fs.appendFileSync(getAccumFile(), filePath + '\\n', 'utf8');
+`
+
+const portableEccAppendPath = `\
+function appendPath(filePath, hookSessionId) {
+  if (filePath && JS_TS_EXT.test(filePath)) {
+    fs.appendFileSync(getAccumFile(hookSessionId), filePath + '\\n', 'utf8');
+`
+
+const vulnerableEccAccumulatorRun = `\
+    const input = JSON.parse(rawInput);
+    // Edit / Write: single file_path
+    appendPath(input.tool_input?.file_path);
+    // MultiEdit: array of edits, each with its own file_path
+    const edits = input.tool_input?.edits;
+    if (Array.isArray(edits)) {
+      for (const edit of edits) appendPath(edit?.file_path);
+    }
+`
+
+const portableEccAccumulatorRun = `\
+    const input = JSON.parse(rawInput);
+    const hookSessionId = trellageHookSessionId(rawInput);
+    if (!hookSessionId) return rawInput;
+    // Edit / Write: single file_path
+    appendPath(input.tool_input?.file_path, hookSessionId);
+    // MultiEdit: array of edits, each with its own file_path
+    const edits = input.tool_input?.edits;
+    if (Array.isArray(edits)) {
+      for (const edit of edits) appendPath(edit?.file_path, hookSessionId);
+    }
+`
+
+const vulnerableEccStopMain = `\
+function main() {
+  const accumFile = getAccumFile();
+`
+
+const portableEccStopMain = `\
+function main(hookSessionId) {
+  if (!hookSessionId) return;
+  const accumFile = getAccumFile(hookSessionId);
+`
+
+const vulnerableEccStopRun = `\
+function run(rawInput) {
+  try {
+    main();
+`
+
+const portableEccStopRun = `\
+function run(rawInput) {
+  try {
+    main(trellageHookSessionId(rawInput));
+`
+
+type EccHookRewrite = {
+  readonly relativePath: string
+  readonly anchors: ReadonlyArray<{ readonly vulnerable: string; readonly portable: string }>
+}
+
+const eccHookRewrites: ReadonlyArray<EccHookRewrite> = [
+  {
+    relativePath: eccAccumulatorHookRelativePath,
+    anchors: [
+      { vulnerable: vulnerableEccAccumulatorPath, portable: portableEccAccumulatorPath },
+      { vulnerable: vulnerableEccAppendPath, portable: portableEccAppendPath },
+      { vulnerable: vulnerableEccAccumulatorRun, portable: portableEccAccumulatorRun },
+    ],
+  },
+  {
+    relativePath: eccStopHookRelativePath,
+    anchors: [
+      { vulnerable: vulnerableEccAccumulatorPath, portable: portableEccAccumulatorPath },
+      { vulnerable: vulnerableEccStopMain, portable: portableEccStopMain },
+      { vulnerable: vulnerableEccStopRun, portable: portableEccStopRun },
+    ],
+  },
+]
+
+type EccHookPresence = "absent" | "regular" | "other"
+
+const eccHookPresence = async (candidate: string): Promise<EccHookPresence> => {
+  try {
+    const status = await lstat(candidate)
+    return status.isFile() && !status.isSymbolicLink() ? "regular" : "other"
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return "absent"
+    throw cause
+  }
+}
+
+const rewriteEccHook = async (rewrite: EccHookRewrite, pluginRoot: string): Promise<void> => {
+  const hookPath = path.join(pluginRoot, rewrite.relativePath)
+  const source = await readFile(hookPath, "utf8")
+  if (source.includes(eccScopedHookMarker)) {
+    // Already scoped by an earlier materialization: tolerate it only when no
+    // unscoped anchor survives and every complete replacement is present, so
+    // a half-applied or drifted rewrite still fails closed.
+    if (
+      rewrite.anchors.some((anchor) => source.includes(anchor.vulnerable)) ||
+      !rewrite.anchors.every((anchor) => source.includes(anchor.portable))
+    ) {
+      throw new Error(eccAccumulatorHookUnsupported)
+    }
+    return
+  }
+  let normalized = source
+  for (const anchor of rewrite.anchors) {
+    normalized = replaceExactlyOnce(normalized, anchor.vulnerable, anchor.portable, eccAccumulatorHookUnsupported)
+  }
+  await writeFile(hookPath, normalized)
+}
+
+/**
+ * Scope ECC's accumulator hooks to the Claude session that owns them, so one
+ * session can never drain another session's pending edit list. Plugins that ship
+ * neither hook are left alone; a plugin that ships only one, ships one as a
+ * symlink or other non-regular file, or whose hooks have drifted from the
+ * anchored upstream shape, fails the build rather than silently keeping the
+ * shared accumulator.
+ */
+export const normalizeEccAccumulatorHookSessionScoping = (
+  pluginRoot: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const rootStatus = await lstat(pluginRoot).catch((cause: unknown) => {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new Error("ECC plugin root is not a directory")
+        }
+        throw cause
+      })
+      if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) {
+        throw new Error("ECC plugin root is not a directory")
+      }
+      const presence = await Promise.all(
+        eccHookRewrites.map((rewrite) => eccHookPresence(path.join(pluginRoot, rewrite.relativePath))),
+      )
+      if (presence.every((candidate) => candidate === "absent")) return
+      // A plugin that ships only one hook, or ships one as a symlink or another
+      // non-regular file, cannot be rewritten in place: refuse the build rather
+      // than shipping hooks that still share one accumulator.
+      if (presence.some((candidate) => candidate !== "regular")) {
+        throw new Error(eccAccumulatorHookUnsupported)
+      }
+      for (const rewrite of eccHookRewrites) {
+        await rewriteEccHook(rewrite, pluginRoot)
+      }
+    },
+    catch: (cause) =>
+      new ClaudeMaterializeError({
+        message: `cannot scope ECC accumulator hooks${cause instanceof Error ? `: ${cause.message}` : ""}`,
+        cause,
+      }),
+  })
+
+const scopeEccAccumulatorHooks = (
+  marketplaceRoot: string,
+  marketplace: string,
+  selections: ReadonlyArray<string>,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    if (marketplace !== eccMarketplaceName || !selections.includes(eccPluginName)) return
+    const pluginRoots = yield* selectedClaudePluginDirectories(marketplaceRoot, marketplace, [eccPluginName]).pipe(
+      Effect.mapError((cause) => new ClaudeMaterializeError({ message: cause.message, cause })),
+    )
+    yield* Effect.forEach(pluginRoots, normalizeEccAccumulatorHookSessionScoping, { concurrency: 1 })
   })
 
 const materializeClaudeMarketplaceAssets = (

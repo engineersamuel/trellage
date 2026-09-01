@@ -203,6 +203,118 @@ ensure_runtime_parent() {
   done
 }
 
+copy_managed_files() {
+  local source_root="$1"
+  local destination_root="$2"
+  local paths="$3"
+  local staging_prefix=.managed-copy
+  local staging
+  [[ -s "$paths" ]] || return 0
+  if [[ "$destination_root" == "$runtime_home" ]]; then
+    staging_prefix=.managed-runtime-copy
+  fi
+  staging="$(mktemp -d "$transaction/$staging_prefix.XXXXXX")" || {
+    printf 'trellage-claude-entry: cannot create managed-file staging directory\n' >&2
+    return 1
+  }
+  if ! tar -C "$source_root" -cf - -T "$paths" |
+    tar -C "$staging" -xf -; then
+    rm -rf -- "$staging"
+    printf 'trellage-claude-entry: cannot stage managed Claude files\n' >&2
+    return 1
+  fi
+  if ! node - "$staging" "$destination_root" "$paths" <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
+
+const [stagingRoot, destinationRoot, pathsFile] = process.argv.slice(2)
+const stagingPrefix = `${path.resolve(stagingRoot)}${path.sep}`
+const destinationPrefix = `${path.resolve(destinationRoot)}${path.sep}`
+
+const ensureDirectory = (root, relativeDirectory) => {
+  let current = root
+  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment)
+    try {
+      const stat = fs.lstatSync(current)
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        throw new Error(`unsafe destination directory: ${current}`)
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+      fs.mkdirSync(current, { mode: 0o700 })
+    }
+  }
+}
+
+let failed = false
+
+try {
+  const destinationStat = fs.lstatSync(destinationRoot)
+  if (!destinationStat.isDirectory() || destinationStat.isSymbolicLink()) {
+    throw new Error(`unsafe destination root: ${destinationRoot}`)
+  }
+  const managedPaths = fs
+    .readFileSync(pathsFile, 'utf8')
+    .split('\n')
+    .filter((managedPath) => managedPath.length > 0)
+  for (const managedPath of managedPaths) {
+    try {
+      const staged = path.resolve(stagingRoot, managedPath)
+      const destination = path.resolve(destinationRoot, managedPath)
+      if (!staged.startsWith(stagingPrefix) || !destination.startsWith(destinationPrefix)) {
+        throw new Error(`unsafe managed path: ${managedPath}`)
+      }
+      const stagedStat = fs.lstatSync(staged)
+      if (!stagedStat.isFile() || stagedStat.isSymbolicLink()) {
+        throw new Error(`unsafe staged file: ${managedPath}`)
+      }
+      try {
+        fs.lstatSync(destination)
+        throw new Error(`managed destination already exists: ${managedPath}`)
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
+      ensureDirectory(destinationRoot, path.dirname(managedPath))
+      fs.renameSync(staged, destination)
+    } catch (error) {
+      failed = true
+      process.stderr.write(
+        `trellage-claude-entry: atomic publication failed for ${managedPath}: ${error.message}\n`,
+      )
+    }
+  }
+} catch (error) {
+  failed = true
+  process.stderr.write(`trellage-claude-entry: atomic publication failed: ${error.message}\n`)
+}
+if (failed) process.exitCode = 1
+NODE
+  then
+    rm -rf -- "$staging"
+    return 1
+  fi
+  rm -rf -- "$staging"
+}
+
+remove_managed_files() {
+  local root="$1"
+  local paths="$2"
+  [[ -s "$paths" ]] || return 0
+  (
+    cd "$root"
+    while IFS= read -r managed_path; do
+      [[ -n "$managed_path" ]] || continue
+      printf '%s\0' "$managed_path"
+    done <"$paths" | xargs -0 rm -f --
+  )
+}
+
+command -v tar >/dev/null 2>&1 || fail 'tar is required to synchronize Claude managed files'
+command -v xargs >/dev/null 2>&1 || fail 'xargs is required to synchronize Claude managed files'
+command -v node >/dev/null 2>&1 || fail 'node is required to synchronize Claude managed files'
+command -v mktemp >/dev/null 2>&1 || fail 'mktemp is required to synchronize Claude managed files'
+
 manifest="$runtime_home/.trellage-claude-managed"
 legacy_manifest="$runtime_home/.trellage-hyperresearch-managed"
 lock_dir="$runtime_home/.trellage-claude.lock"
@@ -224,21 +336,43 @@ for _attempt in {1..200}; do
 done
 [[ "$lock_active" == true ]] || fail 'cannot acquire Claude managed-state lock'
 
+while IFS= read -r -d '' stale_transaction; do
+  [[ "$stale_transaction" == "$runtime_home"/.trellage-claude-transaction.* \
+    && -d "$stale_transaction" && ! -L "$stale_transaction" ]] \
+    || fail "unsafe stale Claude transaction: $stale_transaction"
+  rm -rf -- "$stale_transaction"
+done < <(
+  find "$runtime_home" -mindepth 1 -maxdepth 1 \
+    -name '.trellage-claude-transaction.*' -print0
+)
+
 new_manifest="$seed_home/managed-paths.txt"
 cmp -s "$new_manifest" <(LC_ALL=C sort -u "$new_manifest") \
   || fail 'baked Claude managed-path manifest is not sorted and unique'
+managed_file_count=0
 while IFS= read -r managed_path; do
   validate_managed_path "$managed_path" || fail "unsafe managed Claude seed path: $managed_path"
   [[ -f "$seed_home/$managed_path" && ! -L "$seed_home/$managed_path" ]] \
     || fail "missing managed Claude seed file: $managed_path"
+  ((managed_file_count += 1))
 done <"$new_manifest"
+sync_progress=false
+if (( managed_file_count >= 1000 )); then
+  printf 'trellage-claude-entry: synchronizing %d managed Claude files...\n' \
+    "$managed_file_count" >&2
+  sync_progress=true
+fi
 
-transaction="$runtime_home/.trellage-claude-transaction.$$"
+transaction="$(mktemp -d "$runtime_home/.trellage-claude-transaction.XXXXXX")" \
+  || fail 'cannot create Claude managed-state transaction'
 backup="$transaction/backup"
 placed="$transaction/placed"
+prior_present="$transaction/prior-present"
 mkdir -p "$backup"
 : >"$placed"
+: >"$prior_present"
 transaction_active=true
+prior_removed=false
 settings_created=false
 settings_replaced=false
 marketplaces_created=false
@@ -247,7 +381,7 @@ global_state_created=false
 global_state_replaced=false
 
 rollback_sync() {
-  local managed_path
+  local managed_path rollback_remove rollback_restore
   if [[ "$global_state_created" == true ]]; then
     rm -f -- "$global_state"
   elif [[ "$global_state_replaced" == true && -f "$backup/.claude.json" ]]; then
@@ -264,17 +398,26 @@ rollback_sync() {
     mv -f -- "$backup/plugins/known_marketplaces.json" \
       "$runtime_home/plugins/known_marketplaces.json" 2>/dev/null || true
   fi
-  while IFS= read -r managed_path; do
-    [[ -n "$managed_path" ]] || continue
-    ensure_runtime_parent "$managed_path" || continue
-    rm -f -- "$runtime_home/$managed_path"
-  done <"$placed" 2>/dev/null || true
-  if [[ -d "$backup" ]]; then
-    while IFS= read -r -d '' restored; do
-      managed_path="${restored#"$backup/"}"
+  rollback_remove="$transaction/rollback-remove"
+  : >"$rollback_remove"
+  if [[ -f "$placed" && ! -L "$placed" ]]; then
+    while IFS= read -r managed_path; do
+      validate_managed_path "$managed_path" || continue
       ensure_runtime_parent "$managed_path" || continue
-      mv -f -- "$restored" "$runtime_home/$managed_path" 2>/dev/null || true
-    done < <(find "$backup" -type f -print0 2>/dev/null)
+      printf '%s\n' "$managed_path" >>"$rollback_remove"
+    done <"$placed" 2>/dev/null || true
+  fi
+  remove_managed_files "$runtime_home" "$rollback_remove" 2>/dev/null || true
+  if [[ "$prior_removed" == true && -f "$prior_present" && ! -L "$prior_present" ]]; then
+    rollback_restore="$transaction/rollback-restore"
+    : >"$rollback_restore"
+    while IFS= read -r managed_path; do
+      validate_managed_path "$managed_path" || continue
+      [[ -f "$backup/$managed_path" && ! -L "$backup/$managed_path" ]] || continue
+      ensure_runtime_parent "$managed_path" || continue
+      printf '%s\n' "$managed_path" >>"$rollback_restore"
+    done <"$prior_present" 2>/dev/null || true
+    copy_managed_files "$backup" "$runtime_home" "$rollback_restore" 2>/dev/null || true
   fi
   rm -rf -- "$transaction"
 }
@@ -299,13 +442,20 @@ if [[ -f "$prior_manifest" && ! -L "$prior_manifest" ]]; then
     if [[ -e "$runtime_home/$managed_path" || -L "$runtime_home/$managed_path" ]]; then
       [[ -f "$runtime_home/$managed_path" && ! -L "$runtime_home/$managed_path" ]] \
         || fail "managed Claude destination is unsafe: $managed_path"
-      mkdir -p "$backup/$(dirname "$managed_path")"
-      mv -- "$runtime_home/$managed_path" "$backup/$managed_path"
+      printf '%s\n' "$managed_path" >>"$prior_present"
     fi
   done <"$prior_manifest"
 elif [[ -e "$prior_manifest" || -L "$prior_manifest" ]]; then
   fail 'Claude managed-path manifest is unsafe'
 fi
+
+copy_managed_files "$runtime_home" "$backup" "$prior_present"
+while IFS= read -r managed_path; do
+  [[ -f "$backup/$managed_path" && ! -L "$backup/$managed_path" ]] \
+    || fail "failed to back up managed Claude file: $managed_path"
+done <"$prior_present"
+prior_removed=true
+remove_managed_files "$runtime_home" "$prior_present"
 
 while IFS= read -r managed_path; do
   destination="$runtime_home/$managed_path"
@@ -313,10 +463,12 @@ while IFS= read -r managed_path; do
     || fail "managed Claude destination parent is unsafe: $managed_path"
   [[ ! -e "$destination" && ! -L "$destination" ]] \
     || fail "managed Claude destination collides with an unmanaged path: $managed_path"
-  temporary="$(dirname "$destination")/.trellage.$(basename "$destination").$$"
-  cp -- "$seed_home/$managed_path" "$temporary"
-  mv -- "$temporary" "$destination"
-  printf '%s\n' "$managed_path" >>"$placed"
+done <"$new_manifest"
+cp -- "$new_manifest" "$placed"
+copy_managed_files "$seed_home" "$runtime_home" "$new_manifest"
+while IFS= read -r managed_path; do
+  [[ -f "$runtime_home/$managed_path" && ! -L "$runtime_home/$managed_path" ]] \
+    || fail "failed to install managed Claude file: $managed_path"
 done <"$new_manifest"
 settings="$runtime_home/settings.json"
 if [[ ! -e "$settings" && ! -L "$settings" ]]; then
@@ -450,6 +602,9 @@ rm -rf -- "$transaction"
 rm -rf -- "$lock_dir"
 lock_active=false
 trap - EXIT HUP INT TERM
+if [[ "$sync_progress" == true ]]; then
+  printf 'trellage-claude-entry: managed Claude files are ready\n' >&2
+fi
 fi
 
 install_session_bridge_hook() {

@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   readlink,
   realpath,
   rm,
@@ -26,6 +27,7 @@ import {
   materializeClaudeAssets,
   materializeChromiumArchives,
   materializeHyperresearchPackage,
+  normalizeEccAccumulatorHookSessionScoping,
   normalizeHyperresearchHookInstaller,
   normalizeHyperresearchPackagePromptContracts,
   normalizeHyperresearchPromptContracts,
@@ -463,7 +465,7 @@ unrelated_after = "keep"
 })
 
 describe("native Claude marketplace materialization", () => {
-  it("copies only the verified locked source and creates common seed settings", async () => {
+  it("copies and scopes the verified ECC source, prefers its npm lock, and creates common seed settings", async () => {
     const root = await temporaryRoot("trellage-claude-marketplace-materialize-")
     const source = path.join(root, "source")
     const context = path.join(root, "context")
@@ -473,19 +475,24 @@ describe("native Claude marketplace materialization", () => {
     await writeFile(
       path.join(source, ".claude-plugin", "marketplace.json"),
       `${JSON.stringify({
-        name: "social-media-skills",
-        owner: { name: "Owner" },
+        name: "ecc",
+        owner: { name: "ECC" },
         plugins: [
           {
-            name: "social-media-skills",
+            name: "ecc",
             source: "./",
-            description: "Social media skills",
+            description: "Everything Claude Code",
             version: "1.0.0",
           },
         ],
       })}\n`,
     )
     await writeFile(path.join(source, "skills", "writer", "SKILL.md"), "# Writer\n")
+    await writeFile(path.join(source, "package.json"), '{"name":"ecc"}\n')
+    await writeFile(path.join(source, "package-lock.json"), '{"lockfileVersion":3}\n')
+    await writeFile(path.join(source, "yarn.lock"), "source yarn lock\n")
+    await writeFile(path.join(source, ".yarnrc.yml"), "nodeLinker: node-modules\n")
+    await writeEccHookFixture(source, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
     const files = await Effect.runPromise(inventoryDirectory(source))
 
     await Effect.runPromise(
@@ -497,9 +504,9 @@ describe("native Claude marketplace materialization", () => {
           sources: [
             {
               adapter: "claude-marketplace",
-              marketplace: "social-media-skills",
-              plugin_versions: { "social-media-skills": "1.0.0" },
-              select: ["social-media-skills"],
+              marketplace: "ecc",
+              plugin_versions: { ecc: "1.0.0" },
+              select: ["ecc"],
               commit: "a".repeat(40),
               files,
             },
@@ -522,8 +529,24 @@ describe("native Claude marketplace materialization", () => {
     await expect(
       readFile(path.join(context, "claude-marketplace-0", "skills", "writer", "SKILL.md"), "utf8"),
     ).resolves.toBe("# Writer\n")
+    await expect(readFile(path.join(context, "claude-marketplace-0", "package-lock.json"), "utf8")).resolves.toBe(
+      '{"lockfileVersion":3}\n',
+    )
+    await expect(readFile(path.join(context, "claude-marketplace-0", "yarn.lock"))).rejects.toMatchObject({
+      code: "ENOENT",
+    })
+    await expect(readFile(path.join(context, "claude-marketplace-0", ".yarnrc.yml"))).rejects.toMatchObject({
+      code: "ENOENT",
+    })
+    await expect(readFile(path.join(source, "yarn.lock"), "utf8")).resolves.toBe("source yarn lock\n")
+    for (const hook of ["post-edit-accumulator.js", "stop-format-typecheck.js"]) {
+      const scoped = await readEccHook(path.join(context, "claude-marketplace-0"), hook)
+      expect(scoped).toContain("function getAccumFile(hookSessionId) {")
+      expect(scoped).toContain("function trellageHookSessionId(rawInput) {")
+      expect(scoped).not.toContain("function getAccumFile() {")
+    }
     await expect(readFile(path.join(context, "claude-marketplaces.json"), "utf8")).resolves.toContain(
-      '"marketplace": "social-media-skills"',
+      '"marketplace": "ecc"',
     )
     await expect(readFile(path.join(context, "claude-seed", "default-settings.json"), "utf8")).resolves.toContain(
       '"defaultMode": "bypassPermissions"',
@@ -2212,5 +2235,372 @@ select = ["hve-core"]
       'url = "https://github.com/github/copilot-cli/releases/download/v1.0.75/copilot-linux-x64.tar.gz"',
     )
     expect(rendered).not.toContain("platforms.linux-arm64")
+  })
+})
+
+/**
+ * Faithful replica of ECC's upstream PostToolUse accumulator hook: every region
+ * the Trellage normalizer anchors on is byte-identical to the shipped script, so
+ * the fixture doubles as a runnable script for the isolation assertions below.
+ */
+const upstreamEccAccumulatorHook = `\
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const MAX_STDIN = 1024 * 1024;
+
+function getAccumFile() {
+  const raw =
+    process.env.CLAUDE_SESSION_ID ||
+    crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
+  // Strip path separators and traversal sequences so the value is safe to embed
+  // directly in a filename regardless of what CLAUDE_SESSION_ID contains.
+  const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  return path.join(os.tmpdir(), \`ecc-edited-\${sessionId}.txt\`);
+}
+
+const JS_TS_EXT = /\\.(ts|tsx|js|jsx)$/;
+
+function appendPath(filePath) {
+  if (filePath && JS_TS_EXT.test(filePath)) {
+    fs.appendFileSync(getAccumFile(), filePath + '\\n', 'utf8');
+  }
+}
+
+function run(rawInput) {
+  try {
+    const input = JSON.parse(rawInput);
+    // Edit / Write: single file_path
+    appendPath(input.tool_input?.file_path);
+    // MultiEdit: array of edits, each with its own file_path
+    const edits = input.tool_input?.edits;
+    if (Array.isArray(edits)) {
+      for (const edit of edits) appendPath(edit?.file_path);
+    }
+  } catch {
+    // Invalid input — pass through
+  }
+  return rawInput;
+}
+
+module.exports = { run, MAX_STDIN };
+`
+
+/** Faithful replica of ECC's upstream Stop hook across every anchored region. */
+const upstreamEccStopHook = `\
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+function getAccumFile() {
+  const raw =
+    process.env.CLAUDE_SESSION_ID ||
+    crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
+  const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  return path.join(os.tmpdir(), \`ecc-edited-\${sessionId}.txt\`);
+}
+
+function main() {
+  const accumFile = getAccumFile();
+
+  let raw;
+  try {
+    raw = fs.readFileSync(accumFile, 'utf8');
+  } catch {
+    return; // No accumulator — nothing edited this response
+  }
+
+  try { fs.unlinkSync(accumFile); } catch { /* best-effort */ }
+  process.stdout.write(raw);
+}
+
+function run(rawInput) {
+  try {
+    main();
+  } catch (err) {
+    process.stderr.write(\`[Hook] stop-format-typecheck error: \${err.message}\\n\`);
+  }
+  return rawInput;
+}
+
+module.exports = { run };
+`
+
+const writeEccHookFixture = async (
+  pluginRoot: string,
+  files: { readonly accumulator?: string; readonly stop?: string },
+): Promise<void> => {
+  await mkdir(path.join(pluginRoot, "scripts", "hooks"), { recursive: true })
+  if (files.accumulator !== undefined) {
+    await writeFile(path.join(pluginRoot, "scripts", "hooks", "post-edit-accumulator.js"), files.accumulator)
+  }
+  if (files.stop !== undefined) {
+    await writeFile(path.join(pluginRoot, "scripts", "hooks", "stop-format-typecheck.js"), files.stop)
+  }
+}
+
+const readEccHook = (pluginRoot: string, name: string): Promise<string> =>
+  readFile(path.join(pluginRoot, "scripts", "hooks", name), "utf8")
+
+describe("ECC accumulator hook session scoping", () => {
+  it("requires the hook payload session instead of sharing a fallback accumulator", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-")
+    await writeEccHookFixture(root, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))
+
+    const accumulator = await readEccHook(root, "post-edit-accumulator.js")
+    const stop = await readEccHook(root, "stop-format-typecheck.js")
+    for (const normalized of [accumulator, stop]) {
+      expect(normalized).toContain("function trellageHookSessionId(rawInput) {")
+      expect(normalized).toContain("payload?.session_id ?? payload?.sessionId")
+      expect(normalized).toContain("function getAccumFile(hookSessionId) {")
+      expect(normalized).toContain("const raw = hookSessionId;")
+      expect(normalized).not.toContain("process.env.CLAUDE_SESSION_ID")
+      expect(normalized).not.toContain("process.env.TRELLAGE_HERDR_INVOCATION_ID")
+      expect(normalized).not.toContain("crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);")
+      expect(normalized).toContain("const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);")
+      expect(normalized).not.toContain("function getAccumFile() {")
+    }
+    expect(accumulator).toContain("const MAX_STDIN = 1024 * 1024;\n")
+    expect(accumulator).toContain("function appendPath(filePath, hookSessionId) {")
+    expect(accumulator).toContain("fs.appendFileSync(getAccumFile(hookSessionId), filePath + '\\n', 'utf8');")
+    expect(accumulator).toContain("const hookSessionId = trellageHookSessionId(rawInput);")
+    expect(accumulator).toContain("if (!hookSessionId) return rawInput;")
+    expect(accumulator).toContain("appendPath(input.tool_input?.file_path, hookSessionId);")
+    expect(accumulator).toContain("for (const edit of edits) appendPath(edit?.file_path, hookSessionId);")
+    expect(accumulator).not.toContain("appendPath(input.tool_input?.file_path);")
+    // ECC's read-then-unlink cleanup is untouched.
+    expect(stop).toContain("  try { fs.unlinkSync(accumFile); } catch { /* best-effort */ }")
+    expect(stop).toContain("function main(hookSessionId) {")
+    expect(stop).toContain("if (!hookSessionId) return;")
+    expect(stop).toContain("const accumFile = getAccumFile(hookSessionId);")
+    expect(stop).toContain("main(trellageHookSessionId(rawInput));")
+    expect(stop).not.toContain("    main();")
+  })
+
+  it("isolates two sessions in one working directory and normalizes hostile session identifiers", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-behavior-")
+    const plugin = path.join(root, "plugin")
+    await writeEccHookFixture(plugin, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(plugin))
+
+    const script = path.join(plugin, "scripts", "hooks", "post-edit-accumulator.js")
+    const workspace = path.join(root, "workspace")
+    const temporary = path.join(root, "tmp")
+    await mkdir(workspace, { recursive: true })
+    await mkdir(temporary, { recursive: true })
+    const environment: NodeJS.ProcessEnv = { ...process.env, TMPDIR: temporary }
+    delete environment.CLAUDE_SESSION_ID
+    delete environment.TRELLAGE_HERDR_INVOCATION_ID
+    const append = (sessionId: string, filePath: string): Promise<unknown> =>
+      execFilePromise(
+        "node",
+        [
+          "-e",
+          `require(${JSON.stringify(script)}).run(process.argv[1])`,
+          JSON.stringify({ session_id: sessionId, tool_input: { file_path: filePath } }),
+        ],
+        { cwd: workspace, env: environment },
+      )
+
+    await append("aaaaaaaa-1111-2222-3333-444444444444", "first.ts")
+    await append("bbbbbbbb-5555-6666-7777-888888888888", "second.ts")
+    await append("../../escape/../etc", "third.ts")
+
+    const accumulators = (await readdir(temporary)).sort()
+    expect(accumulators).toEqual([
+      "ecc-edited-______escape____etc.txt",
+      "ecc-edited-aaaaaaaa-1111-2222-3333-444444444444.txt",
+      "ecc-edited-bbbbbbbb-5555-6666-7777-888888888888.txt",
+    ])
+    await expect(
+      readFile(path.join(temporary, "ecc-edited-aaaaaaaa-1111-2222-3333-444444444444.txt"), "utf8"),
+    ).resolves.toBe("first.ts\n")
+    await expect(
+      readFile(path.join(temporary, "ecc-edited-bbbbbbbb-5555-6666-7777-888888888888.txt"), "utf8"),
+    ).resolves.toBe("second.ts\n")
+  })
+
+  it("skips accumulation when the payload carries no session", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-fallback-")
+    const plugin = path.join(root, "plugin")
+    await writeEccHookFixture(plugin, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(plugin))
+
+    const script = path.join(plugin, "scripts", "hooks", "post-edit-accumulator.js")
+    const workspace = path.join(root, "workspace")
+    const temporary = path.join(root, "tmp")
+    await mkdir(workspace, { recursive: true })
+    await mkdir(temporary, { recursive: true })
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      TMPDIR: temporary,
+      CLAUDE_SESSION_ID: "shared-claude-session",
+      TRELLAGE_HERDR_INVOCATION_ID: "shared-herdr-invocation",
+    }
+    const { stderr } = await execFilePromise(
+      "node",
+      [
+        "-e",
+        `require(${JSON.stringify(script)}).run(process.argv[1])`,
+        JSON.stringify({ tool_input: { file_path: "only.ts" } }),
+      ],
+      { cwd: workspace, env: environment },
+    )
+
+    await expect(readdir(temporary)).resolves.toEqual([])
+    expect(stderr).toContain("[Hook] hook payload carries no session id; skipping shared accumulator")
+  })
+
+  it("leaves shared fallback state untouched when the payload is unparsable", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-unparsable-")
+    const plugin = path.join(root, "plugin")
+    await writeEccHookFixture(plugin, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(plugin))
+
+    const script = path.join(plugin, "scripts", "hooks", "stop-format-typecheck.js")
+    const workspace = path.join(root, "workspace")
+    const temporary = path.join(root, "tmp")
+    await mkdir(workspace, { recursive: true })
+    await mkdir(temporary, { recursive: true })
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      TMPDIR: temporary,
+      CLAUDE_SESSION_ID: "shared-claude-session",
+      TRELLAGE_HERDR_INVOCATION_ID: "shared-herdr-invocation",
+    }
+    const sharedAccumulator = path.join(temporary, "ecc-edited-shared-claude-session.txt")
+    await writeFile(sharedAccumulator, "stale.ts\n")
+    const { stderr } = await execFilePromise(
+      "node",
+      ["-e", `require(${JSON.stringify(script)}).run(process.argv[1])`, "{ truncated payload"],
+      { cwd: workspace, env: environment },
+    )
+
+    expect(stderr).toContain("[Hook] hook payload is unparsable; skipping shared accumulator")
+    await expect(readFile(sharedAccumulator, "utf8")).resolves.toBe("stale.ts\n")
+  })
+
+  it("fails closed when the plugin root does not exist", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-missing-root-")
+
+    await expect(
+      Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(path.join(root, "absent"))),
+    ).rejects.toMatchObject({
+      message: "cannot scope ECC accumulator hooks: ECC plugin root is not a directory",
+    })
+  })
+
+  it("leaves an already-scoped ECC plugin byte-identical", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-idempotent-")
+    await writeEccHookFixture(root, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))
+    const scopedAccumulator = await readEccHook(root, "post-edit-accumulator.js")
+    const scopedStop = await readEccHook(root, "stop-format-typecheck.js")
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))
+
+    await expect(readEccHook(root, "post-edit-accumulator.js")).resolves.toBe(scopedAccumulator)
+    await expect(readEccHook(root, "stop-format-typecheck.js")).resolves.toBe(scopedStop)
+  })
+
+  it("fails closed when an already-scoped hook is incomplete", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-incomplete-")
+    await writeEccHookFixture(root, { accumulator: upstreamEccAccumulatorHook, stop: upstreamEccStopHook })
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))
+    const accumulatorPath = path.join(root, "scripts", "hooks", "post-edit-accumulator.js")
+    const accumulator = await readFile(accumulatorPath, "utf8")
+    await writeFile(
+      accumulatorPath,
+      accumulator.replace(
+        "appendPath(input.tool_input?.file_path, hookSessionId);",
+        "appendPath(input.tool_input?.file_path, undefined);",
+      ),
+    )
+
+    await expect(Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))).rejects.toMatchObject({
+      message: "cannot scope ECC accumulator hooks: unsupported ECC accumulator hook source",
+    })
+  })
+
+  it("ignores plugins that ship neither accumulator hook", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-absent-")
+    await mkdir(path.join(root, "skills"), { recursive: true })
+    await writeFile(path.join(root, "skills", "SKILL.md"), "# Skill\n")
+
+    await Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))
+
+    await expect(readFile(path.join(root, "skills", "SKILL.md"), "utf8")).resolves.toBe("# Skill\n")
+  })
+
+  it("fails closed when only one accumulator hook is present", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-partial-")
+    await writeEccHookFixture(root, { accumulator: upstreamEccAccumulatorHook })
+
+    await expect(Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))).rejects.toMatchObject({
+      message: "cannot scope ECC accumulator hooks: unsupported ECC accumulator hook source",
+    })
+  })
+
+  it("fails closed when the accumulator hooks are symlinks rather than regular files", async () => {
+    // Both hooks symlinked is the case that would otherwise read as "this plugin
+    // ships no accumulator hooks" and skip the rewrite without a word.
+    const root = await temporaryRoot("trellage-ecc-accumulator-symlink-")
+    await mkdir(path.join(root, "scripts", "hooks"), { recursive: true })
+    await writeFile(path.join(root, "shared-accumulator-hook.js"), upstreamEccAccumulatorHook)
+    await writeFile(path.join(root, "shared-stop-hook.js"), upstreamEccStopHook)
+    await symlink(
+      path.join(root, "shared-accumulator-hook.js"),
+      path.join(root, "scripts", "hooks", "post-edit-accumulator.js"),
+    )
+    await symlink(
+      path.join(root, "shared-stop-hook.js"),
+      path.join(root, "scripts", "hooks", "stop-format-typecheck.js"),
+    )
+
+    await expect(Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))).rejects.toMatchObject({
+      message: "cannot scope ECC accumulator hooks: unsupported ECC accumulator hook source",
+    })
+    // The symlink targets are never written through.
+    await expect(readFile(path.join(root, "shared-accumulator-hook.js"), "utf8")).resolves.toBe(
+      upstreamEccAccumulatorHook,
+    )
+    await expect(readFile(path.join(root, "shared-stop-hook.js"), "utf8")).resolves.toBe(upstreamEccStopHook)
+  })
+
+  it("fails closed when the upstream accumulator hook drifts", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-drift-")
+    await writeEccHookFixture(root, {
+      accumulator: "function getAccumFile(session) {\n  return session;\n}\n",
+      stop: upstreamEccStopHook,
+    })
+
+    await expect(Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))).rejects.toMatchObject({
+      message: "cannot scope ECC accumulator hooks: unsupported ECC accumulator hook source",
+    })
+  })
+
+  it("fails closed when an upstream anchor appears more than once", async () => {
+    const root = await temporaryRoot("trellage-ecc-accumulator-ambiguous-")
+    await writeEccHookFixture(root, {
+      accumulator: `${upstreamEccAccumulatorHook}${upstreamEccAccumulatorHook}`,
+      stop: upstreamEccStopHook,
+    })
+
+    await expect(Effect.runPromise(normalizeEccAccumulatorHookSessionScoping(root))).rejects.toMatchObject({
+      message: "cannot scope ECC accumulator hooks: unsupported ECC accumulator hook source",
+    })
   })
 })
