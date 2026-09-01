@@ -76,7 +76,6 @@ printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
 printf 'keep unrelated\n' >"$runtime/unrelated/file"
 printf 'skills/hyperresearch/SKILL.md\n' >"$runtime/.trellage-hyperresearch-managed"
 mkdir "$runtime/.trellage-claude-transaction.stale"
-printf 'stale transaction\n' >"$runtime/.trellage-claude-transaction.stale/partial"
 
 cat >"$fake_bin/claude" <<'SH'
 #!/usr/bin/env bash
@@ -166,6 +165,34 @@ if [[ "$dangerous_line" -ge "$separator_line" || "$settings_line" -ge "$separato
   printf 'managed Claude flags must precede the user argument separator\n' >&2
   exit 1
 fi
+
+legacy_runtime="$root/legacy-home/.claude"
+legacy_transaction="$legacy_runtime/.trellage-claude-transaction.4242"
+mkdir -p "$legacy_transaction/backup/skills/hyperresearch"
+printf 'recoverable legacy skill\n' \
+  >"$legacy_transaction/backup/skills/hyperresearch/SKILL.md"
+printf 'skills/hyperresearch/SKILL.md\n' >"$legacy_transaction/placed"
+if PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+  TRELLAGE_CLAUDE_HOME="$legacy_runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/legacy-args" \
+  CLAUDE_CONFIG_OUT="$root/legacy-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/legacy-config-path" \
+  CLAUDE_ENV_OUT="$root/legacy-env" \
+  "$entry" new claude --print hello \
+    >"$root/legacy-transaction.out" 2>"$root/legacy-transaction.err"; then
+  printf 'expected legacy Claude recovery transaction to fail closed\n' >&2
+  exit 1
+fi
+grep -Fq \
+  "incomplete Claude rollback requires manual recovery: $legacy_transaction" \
+  "$root/legacy-transaction.err"
+grep -Fqx \
+  'recoverable legacy skill' \
+  "$legacy_transaction/backup/skills/hyperresearch/SKILL.md"
+grep -Fqx 'skills/hyperresearch/SKILL.md' "$legacy_transaction/placed"
+[[ ! -e "$legacy_runtime/.trellage-claude.lock" ]]
 
 prompt_args_out="$root/prompt-args"
 PATH="$fake_bin:$PATH" \

@@ -868,7 +868,13 @@ while IFS= read -r -d '' stale_transaction; do
     lock_active=false
     fail "incomplete Claude rollback requires manual recovery: $stale_transaction"
   fi
-  rm -rf -- "$stale_transaction"
+  # Older launchers stored recovery data without a journal, so only an empty
+  # pre-journal transaction can be removed automatically.
+  if ! rmdir -- "$stale_transaction" 2>/dev/null; then
+    rm -rf -- "$lock_dir"
+    lock_active=false
+    fail "incomplete Claude rollback requires manual recovery: $stale_transaction"
+  fi
 done < <(
   find "$runtime_home" -mindepth 1 -maxdepth 1 \
     -name '.trellage-claude-transaction.*' -print0
