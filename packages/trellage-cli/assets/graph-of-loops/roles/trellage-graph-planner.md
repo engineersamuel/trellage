@@ -109,6 +109,14 @@ target-evidence path must exist in the repository.
   and cross-build feasibility. It must not claim that future SIMD source or
   future test targets were compiled or test-built. Limit such claims to the
   exact probe or current-tree command that actually ran.
+- Distinguish the Rust compiler host from targets that have a configured
+  linker. In the locked Graph profile, `aarch64-unknown-linux-gnu` is the
+  compiler host but only the musl targets have bundled `rust-lld` Cargo linker
+  configuration. Do not plan `cargo build`, `cargo test`, `cargo run`, or
+  `cargo bench` for the GNU host target. Use the default
+  `aarch64-unknown-linux-musl` target for executable AArch64 gates, or use
+  `cargo check --target aarch64-unknown-linux-gnu` when a non-linking compiler
+  check is specifically required.
 - Research acceptance criteria about writes apply to tracked repository
   changes, not ordinary ignored build output. If a research gate runs Cargo
   and strict filesystem containment is required, set `CARGO_TARGET_DIR` to a

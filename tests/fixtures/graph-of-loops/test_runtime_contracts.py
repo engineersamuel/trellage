@@ -4768,6 +4768,10 @@ class TestRunLifecycle(unittest.TestCase):
                 ".sdd/graph-of-loops/runs/review-blocked/candidate-plan.json",
                 prompt,
             )
+            self.assertIn(
+                "compiler-host targets from targets with configured linkers",
+                prompt,
+            )
 
     def test_resume_retries_only_infrastructure_plan_review(self) -> None:
         from trellage_graph.run_lifecycle import (

@@ -661,7 +661,10 @@ class RunLifecycle:
             "missing requested target architectures, benchmark seams that cannot "
             "call the declared comparison implementation, or node criteria that "
             "claim controller-owned integration, review, proof, cleanup, or root "
-            "closure. Return only the required JSON."
+            "closure. Distinguish compiler-host targets from targets with configured "
+            "linkers: reject build, test, run, or benchmark gates that require "
+            "linking for a target when the evidence proves only compiler or standard "
+            "library availability. Return only the required JSON."
         )
         result = self._plan_reviewer.review(
             node_id=f"plan-g{generation}",
