@@ -1,10 +1,29 @@
 #!/usr/bin/env node
 
 import { lstat, readFile, readdir } from "node:fs/promises"
+import { createRequire } from "node:module"
 import os from "node:os"
 import path from "node:path"
 
-import { parse } from "smol-toml"
+const isMissingTomlDependency = (cause) =>
+  cause instanceof Error &&
+  "code" in cause &&
+  cause.code === "MODULE_NOT_FOUND" &&
+  cause.message.startsWith("Cannot find module 'smol-toml'")
+
+const loadToml = () => {
+  const requireFromCompiler = createRequire(
+    new URL("../packages/trellage-cli/package.json", import.meta.url),
+  )
+  try {
+    return requireFromCompiler("smol-toml")
+  } catch (cause) {
+    if (!isMissingTomlDependency(cause)) throw cause
+    return createRequire(import.meta.url)("smol-toml")
+  }
+}
+
+const { parse } = loadToml()
 
 const allowedKeys = new Set(["provider", "enabled", "path", "required", "strict_permissions"])
 const schemaOnlyFiles = new Set([".env.schema", ".env.example", ".env.sample", ".env.template"])
