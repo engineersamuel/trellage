@@ -275,12 +275,15 @@ const fs = require('node:fs')
 const net = require('node:net')
 
 const attempts = process.env.TRELLAGE_TEST_ENOTSOCK_ATTEMPTS
-const createConnection = net.createConnection
-net.createConnection = (...args) => {
+net.createConnection = () => {
   fs.appendFileSync(attempts, 'attempt\n')
-  const connection = createConnection.apply(net, args)
+  const connection = new net.Socket()
   connection.once('error', (error) => {
     fs.appendFileSync(attempts, `error:${error.code}\n`)
+  })
+  process.nextTick(() => {
+    const error = Object.assign(new Error('injected ENOTSOCK'), { code: 'ENOTSOCK' })
+    connection.destroy(error)
   })
   return connection
 }
@@ -292,9 +295,6 @@ printf '%s\n' \
   'set -euo pipefail' \
   "if [[ \"\${1:-}\" == --input-type=module && \"\${2:-}\" == - && -z \"\${FAKE_NODE_LOG:-}\" ]]; then" \
   "  if [[ -f \"$sandbox_metadata_socket_swap\" ]]; then" \
-  '    socket_path="${3:?}"' \
-  '    rm -f -- "$socket_path"' \
-  '    printf '\''not a socket\n'\'' >"$socket_path"' \
   "    export NODE_OPTIONS=\"--require=$sandbox_metadata_socket_preload\"" \
   "    export TRELLAGE_TEST_ENOTSOCK_ATTEMPTS=\"$sandbox_metadata_socket_attempts\"" \
   '  fi' \
@@ -5519,14 +5519,16 @@ PY
   rm -f -- "$sandbox_metadata_socket_swap"
   kill "$replacement_server_pid" 2>/dev/null || true
   wait "$replacement_server_pid" 2>/dev/null || true
-  [[ -f "$replacement_socket" && ! -S "$replacement_socket" ]] \
-    || fail 'metadata fixture did not replace the socket with a regular file'
+  [[ -S "$replacement_socket" ]] \
+    || fail 'ENOTSOCK fixture did not preserve the validated socket'
   [[ "$(grep -Fxc attempt "$sandbox_metadata_socket_attempts")" -eq 1 ]] \
     || fail 'ENOTSOCK metadata failure was retried'
   grep -Fqx 'error:ENOTSOCK' "$sandbox_metadata_socket_attempts" \
-    || fail 'replacement socket fixture did not produce ENOTSOCK'
+    || fail 'metadata fixture did not produce ENOTSOCK'
   grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
     || fail 'ENOTSOCK metadata failure was not visible'
+  ! grep -Eq '(^|[[:space:]])Error:|Unhandled .error. event|\\[eval[0-9]*\\]' "$failure_stderr" \
+    || fail 'ENOTSOCK metadata failure leaked an internal Node stack trace'
 
   printf 'Trellage host test: PASS: Sandbox attachment metadata and invocation isolation\n'
 }
