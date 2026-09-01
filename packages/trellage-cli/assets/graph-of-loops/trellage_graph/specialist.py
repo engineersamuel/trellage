@@ -885,6 +885,10 @@ class SpecialistLauncher:
             "constraint_reconciliation",
             "notes",
             "decision",
+            "decision_summary",
+            "discovery_gaps_carried_forward",
+            "base_revision",
+            "discovery_fallback_note",
         ):
             decision.pop(key, None)
         plan = decision.get("plan")

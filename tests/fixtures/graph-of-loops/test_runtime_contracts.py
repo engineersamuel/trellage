@@ -2164,6 +2164,10 @@ class TestSpecialist(unittest.TestCase):
             "summary": "not applicable",
             "evidence": [],
             "constraint_conflicts": [],
+            "decision_summary": "planner explanation",
+            "discovery_gaps_carried_forward": [],
+            "base_revision": "model-selected-revision",
+            "discovery_fallback_note": "fallback was not required",
         }
 
         normalized = SpecialistLauncher._normalize_planning_decision(
