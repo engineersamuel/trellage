@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trellage.dev/schemas/planning-decision.schema.json",
+  "title": "Graph of Loops Planning Decision",
+  "type": "object",
+  "required": ["status", "objective", "constraints"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["planned", "blocked"]
+    },
+    "objective": { "type": "string", "minLength": 1 },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "target_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "plan": { "type": "object" },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "target-not-found",
+        "constraint-conflict",
+        "insufficient-evidence"
+      ]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "constraint_conflicts": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "required": ["path", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string", "minLength": 1 },
+        "symbols": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

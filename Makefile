@@ -1,13 +1,14 @@
-.PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test build compare compare-down clean
+.PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 HEADLESS_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime azure-fresh-install-contract agent-harness claude-entry copilot-entry headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-firstmate-profile native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test
+PARALLEL_TEST_TARGETS := dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime azure-fresh-install-contract agent-harness claude-entry copilot-entry headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-claude-profile native-firstmate-profile native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test graph-of-loops-runtime-contract
 TIMING_SENSITIVE_TEST_TARGETS := native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles
 SERIAL_TEST_TARGETS := native-profile-router headless-matrix
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
+TRELLAGE_GRAPH_OF_LOOPS_IMAGE ?= trellage-profile-claude-graph-of-loops-linux-arm64:locked
 
 test:
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(PARALLEL_TEST_TARGETS)
@@ -189,6 +190,25 @@ headless-matrix-live:
 
 headless-matrix-test:
 	bash tests/headless_contract_matrix.sh
+
+graph-of-loops-runtime-contract:
+	bash tests/graph_of_loops_runtime_contract.sh
+
+# Builds the claude-graph-of-loops profile image (mirrors the
+# copilot-hve-image / copilot-hve-smoke split below). Not part of `make
+# test`: a Docker build is too slow/heavy for the default suite, and this
+# target consumes no model quota itself but can take several minutes.
+graph-of-loops-image:
+	cd prototypes/trellage && ./trellage build ../../profiles/claude-graph-of-loops/profile.toml
+
+# Probes an already-built claude-graph-of-loops image. Does NOT build
+# the image itself: run `make graph-of-loops-image` first (or any equivalent
+# `trellage build` invocation) so $(TRELLAGE_GRAPH_OF_LOOPS_IMAGE)
+# exists, then run this target. Not part of `make test` for the same reason
+# `graph-of-loops-image` is not: no model quota is consumed, but building
+# and probing a real container is too slow/heavy for the default suite.
+graph-of-loops-image-probe:
+	TRELLAGE_GRAPH_OF_LOOPS_IMAGE=$(TRELLAGE_GRAPH_OF_LOOPS_IMAGE) bash tests/graph_of_loops_image_probe.sh
 
 build:
 	@skills_stage="$$(mktemp -d "$${TMPDIR:-/tmp}/trellage-make-skills.XXXXXX")"; \

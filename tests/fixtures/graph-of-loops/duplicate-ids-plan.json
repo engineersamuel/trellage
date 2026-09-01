@@ -1,0 +1,20 @@
+{
+  "objective": "Dups",
+  "base_revision": "abc1234567890def1234567890abcdef12345678",
+  "nodes": [
+    {
+      "id": "dup-node", "type": "implement", "role": "team-implementer",
+      "prompt": "Node A",
+      "prompt_digest": "sha256:e3486d9f7c5dc9c8aebee6e9462b126abaa4ee81ddf4c09e8212f1a59e7d1f71",
+      "dependencies": [], "read_set": ["src/**"],
+      "write_set": ["src/a.py"], "behavior_change": false, "gates": []
+    },
+    {
+      "id": "dup-node", "type": "implement", "role": "team-implementer",
+      "prompt": "Node B",
+      "prompt_digest": "sha256:f4f16310049eda6083efa981f251896f2bd4c5f6d715114c4f73424b8406cc78",
+      "dependencies": [], "read_set": ["src/**"],
+      "write_set": ["src/b.py"], "behavior_change": false, "gates": []
+    }
+  ]
+}

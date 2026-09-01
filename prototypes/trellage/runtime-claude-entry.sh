@@ -15,6 +15,7 @@ auth_mode="${TRELLAGE_CLAUDE_AUTH_MODE:-proxy}"
 claude_mode="${TRELLAGE_CLAUDE_MODE:-hyperresearch}"
 runtime_mode="${TRELLAGE_CLAUDE_RUNTIME_MODE:-$claude_mode}"
 codex_reviewer_config="${TRELLAGE_CODEX_REVIEWER_CONFIG-}"
+graph_rust_cargo_config="${TRELLAGE_GRAPH_RUST_CARGO_CONFIG-}"
 resume_profile="${TRELLAGE_RESUME_PROFILE-}"
 resume_session_id="${TRELLAGE_RESUME_SESSION_ID-}"
 output_format="${TRELLAGE_OUTPUT_FORMAT-}"
@@ -79,6 +80,20 @@ if [[ -n "$codex_reviewer_config" ]]; then
   cp -- "$codex_reviewer_config" "$codex_config_tmp"
   chmod 600 "$codex_config_tmp"
   mv -f -- "$codex_config_tmp" "$codex_config"
+fi
+if [[ -n "$graph_rust_cargo_config" ]]; then
+  [[ "$graph_rust_cargo_config" == /* && -f "$graph_rust_cargo_config" && ! -L "$graph_rust_cargo_config" ]] \
+    || fail 'Graph Rust Cargo config must be an absolute regular file'
+  cargo_home="$(dirname "$runtime_home")/.cargo"
+  [[ ! -L "$cargo_home" ]] || fail 'Graph Rust Cargo home must not be a symlink'
+  mkdir -p "$cargo_home"
+  [[ -d "$cargo_home" && ! -L "$cargo_home" ]] || fail 'Graph Rust Cargo home must be a directory'
+  cargo_config="$cargo_home/config.toml"
+  cargo_config_tmp="$cargo_home/.config.toml.trellage.$$"
+  cp -- "$graph_rust_cargo_config" "$cargo_config_tmp"
+  chmod 644 "$cargo_config_tmp"
+  mv -f -- "$cargo_config_tmp" "$cargo_config"
+  export CARGO_HOME="$cargo_home"
 fi
 if [[ "$runtime_mode" != core ]]; then
   [[ -f "$seed_home/managed-paths.txt" && ! -L "$seed_home/managed-paths.txt" ]] \
@@ -881,6 +896,7 @@ done < <(
 )
 
 new_manifest="$seed_home/managed-paths.txt"
+adopt_manifest="$seed_home/adopt-paths.txt"
 cmp -s "$new_manifest" <(LC_ALL=C sort -u "$new_manifest") \
   || fail 'baked Claude managed-path manifest is not sorted and unique'
 managed_file_count=0
@@ -895,6 +911,17 @@ if (( managed_file_count >= 1000 )); then
   printf 'trellage-claude-entry: synchronizing %d managed Claude files...\n' \
     "$managed_file_count" >&2
   sync_progress=true
+fi
+if [[ -e "$adopt_manifest" || -L "$adopt_manifest" ]]; then
+  [[ -f "$adopt_manifest" && ! -L "$adopt_manifest" ]] \
+    || fail 'Claude managed-path adoption manifest is unsafe'
+  cmp -s "$adopt_manifest" <(LC_ALL=C sort -u "$adopt_manifest") \
+    || fail 'Claude managed-path adoption manifest is not sorted and unique'
+  while IFS= read -r managed_path; do
+    validate_managed_path "$managed_path" || fail "unsafe adopted Claude path: $managed_path"
+    grep -Fxq -- "$managed_path" "$new_manifest" \
+      || fail "adopted Claude path is not managed by the current seed: $managed_path"
+  done <"$adopt_manifest"
 fi
 
 transaction="$(mktemp -d "$runtime_home/.trellage-claude-transaction.XXXXXX")" \
@@ -1051,6 +1078,18 @@ if [[ -f "$prior_manifest" && ! -L "$prior_manifest" ]]; then
   done <"$prior_manifest"
 elif [[ -e "$prior_manifest" || -L "$prior_manifest" ]]; then
   fail 'Claude managed-path manifest is unsafe'
+fi
+if [[ -f "$adopt_manifest" && ! -L "$adopt_manifest" ]]; then
+  while IFS= read -r managed_path; do
+    ensure_runtime_parent "$managed_path" \
+      || fail "adopted Claude destination parent is unsafe: $managed_path"
+    if [[ -e "$runtime_home/$managed_path" || -L "$runtime_home/$managed_path" ]]; then
+      [[ -f "$runtime_home/$managed_path" && ! -L "$runtime_home/$managed_path" ]] \
+        || fail "adopted Claude destination is unsafe: $managed_path"
+      mkdir -p "$backup/$(dirname "$managed_path")"
+      mv -- "$runtime_home/$managed_path" "$backup/$managed_path"
+    fi
+  done <"$adopt_manifest"
 fi
 
 sync_regular_file "$prior_present" \

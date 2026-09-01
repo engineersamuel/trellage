@@ -4,10 +4,10 @@ import {
   claudeHasCodexReviewer,
   claudeHasLefthook,
   claudeHasSerena,
-  claudeHasWorktreeCli,
   claudePypiToolNames,
   isClaudeProfile,
   isCodexProfile,
+  isGraphOfLoopsProfile,
   isHeadlongProfile,
   isPiProfile,
   isPrimeProfile,
@@ -268,19 +268,31 @@ const claudeDotfilesBeforeSeed = (profile: ClaudeProfile): ReadonlyArray<string>
       lines.push(`"${`/usr/local/bin/${tool.name}`}" = { source = ${quote(`binaries/${tool.name}`)}, mode = "copy" }`)
     }
   }
-  if (claudeHasWorktreeCli(profile)) lines.push('"/usr/local/bin/wt" = { source = "wt-wrapper.sh", mode = "copy" }')
   if (claudeHasCodexReviewer(profile)) {
     lines.push(
       '"/home/agent/.codex/config.toml" = { source = "codex-reviewer-config.toml", mode = "copy" }',
       '"/usr/local/share/trellage/codex-reviewer-config.toml" = { source = "codex-reviewer-config.toml", mode = "copy" }',
       '"/usr/local/bin/codex-code-mode-host" = { source = "binaries/codex-code-mode-host", mode = "copy" }',
     )
-    if (claudeHasBeads(profile)) {
+    if (isGraphOfLoopsProfile(profile)) {
       lines.push(
         '"/etc/codex/skills/graph-of-loops/SKILL.md" = { source = "codex-graph-of-loops-skill.md", mode = "copy" }',
         '"/etc/codex/skills/graph-of-loops/agents/openai.yaml" = { source = "codex-graph-of-loops-skill.yaml", mode = "copy" }',
       )
     }
+  }
+  if (isGraphOfLoopsProfile(profile)) {
+    lines.push(
+      '"/opt/trellage/graph-of-loops" = { source = "graph-of-loops-runtime", mode = "copy" }',
+      '"/opt/trellage/rust" = { source = "rust-toolchain", mode = "copy" }',
+      '"/usr/local/bin/trellage-graph" = { source = "trellage-graph-wrapper.sh", mode = "copy" }',
+      '"/usr/local/share/trellage/graph-of-loops-policy.json" = { source = "graph-of-loops-policy.json", mode = "copy" }',
+      '"/usr/local/share/trellage/graph-rust-cargo-config.toml" = { source = "graph-rust-cargo-config.toml", mode = "copy" }',
+      '"/home/agent/.cargo/config.toml" = { source = "graph-rust-cargo-config.toml", mode = "copy" }',
+      ...["cargo", "rustc", "rustfmt", "rustdoc", "cargo-clippy", "clippy-driver"].map(
+        (name) => `"/usr/local/bin/${name}" = { source = "graph-rust-wrapper.sh", mode = "copy" }`,
+      ),
+    )
   }
   if (profile.mcps.length > 0) {
     lines.push('"/usr/local/share/trellage/claude-mcp.json" = { source = "claude-mcp.json", mode = "copy" }')
@@ -306,6 +318,7 @@ const claudeDotfilesAfterSeed = (profile: ClaudeProfile, lock: ProfileLock): Rea
 const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> => {
   const hyperresearch = profile.plugins[0]?.adapter === "hyperresearch"
   const extraPython = claudePypiToolNames(profile).length > 0
+  const graphOfLoops = isGraphOfLoopsProfile(profile)
   if (hyperresearch) {
     return [
       'CLAUDE_CONFIG_DIR = "/home/agent/.claude"',
@@ -327,7 +340,16 @@ const claudeMiseEnvironment = (profile: ClaudeProfile): ReadonlyArray<string> =>
       : []),
     ...(claudeHasBeads(profile) ? ['BD_DISABLE_METRICS = "1"', 'BD_DISABLE_EVENT_FLUSH = "1"'] : []),
     ...(claudeHasLefthook(profile) ? ['NODE_PATH = "/usr/local/lib/trellage/node_modules"'] : []),
-    ...(extraPython ? ['PYTHONPATH = "/opt/trellage/graph-tools"'] : []),
+    ...(graphOfLoops
+      ? [
+          'TRELLAGE_GRAPH_POLICY = "/usr/local/share/trellage/graph-of-loops-policy.json"',
+          'TRELLAGE_GRAPH_RUST_CARGO_CONFIG = "/usr/local/share/trellage/graph-rust-cargo-config.toml"',
+          'PYTHONPATH = "/opt/trellage/graph-of-loops:/opt/trellage/graph-tools"',
+          'CARGO_HOME = "/home/agent/.cargo"',
+        ]
+      : extraPython
+        ? ['PYTHONPATH = "/opt/trellage/graph-tools"']
+        : []),
   ]
 }
 

@@ -1,0 +1,10 @@
+{
+  "event_name": "integration-test",
+  "source_run_id": "wkshp_trace_abc123",
+  "assertions": [
+    {"name": "replay-succeeds", "check": "replay_ok"},
+    {"name": "no-config-change", "check": "file_unchanged", "value": "config.yaml"}
+  ],
+  "allowed_file_effects": ["reports/**"],
+  "timeout_seconds": 120
+}

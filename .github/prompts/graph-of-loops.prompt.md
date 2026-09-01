@@ -1,133 +1,133 @@
 ---
 name: graph-of-loops
-description: 'Execute a build, fix, or investigation as a dependency-aware graph with validation and review loops.'
+description: 'Run an objective through the trellage-graph controller: Beads state, Bernstein worktrees, bounded Waku node supervision, TDD gates, Codex review, and repository-opt-in Raindrop proof.'
 ---
 
 # Execute a Graph of Loops
 
 ## Mission
 
-Use this workflow only when explicitly invoked as `$graph-of-loops`. Parse the
+Use this workflow only when explicitly invoked as `/graph-of-loops`. Parse the
 invocation arguments as named `OBJECTIVE` and `CONSTRAINTS` inputs.
 
-Complete the software engineering objective supplied as:
-
 `OBJECTIVE="<what to build, fix, or investigate>"`
-
-Apply the constraints and required outcomes supplied as:
-
 `CONSTRAINTS="<limits, requirements, compatibility needs, and evidence>"`
 
-This is an execution workflow. Inspect the real repository, adapt to its
-technology and conventions, and continue until the objective is complete or a
-concrete external blocker prevents progress.
+This workflow is a thin controller front end. It does not plan, schedule, or
+execute the graph itself. All graph state, scheduling, node supervision,
+gates, review, and proof live in the `trellage-graph` CLI and its Beads,
+Bernstein, Waku, Codex, and Raindrop integrations. This prompt's job is to
+invoke the CLI correctly, read back its status, and report it accurately.
 
 ## Operating boundaries
 
-- Do not invent files, commands, architecture, behavior, or test results.
-- Preserve unrelated worktree changes and existing user state.
-- Follow repository instructions before changing files.
-- Use the current worktree by default.
-- Create child worktrees only when tasks are independent, have disjoint write
-  sets, and gain meaningful value from parallel execution.
-- Do not merge, push, deploy, delete data, or perform other approval-sensitive
-  actions unless the user explicitly authorizes them.
+- **Never simulate graph state.** Do not narrate fake nodes, dependencies,
+  gate results, review findings, or proof outcomes in prose. If the CLI has
+  not reported an event, it did not happen.
+- **Never edit code directly in graph mode.** All reads and writes to
+  repository files happen inside a node's Bernstein worktree, driven by the
+  node's authorized Waku-supervised specialist. This prompt does not open an
+  editor on the target repository itself.
+- **Always start with a direct `trellage-graph run`.** Do not wrap it in a
+  pipeline, redirection, command list, evaluator, or environment wrapper. Do
+  not hand-decompose the
+  objective into ad hoc tasks before invoking the CLI; the planner role
+  (`trellage-graph-planner`) produces the schema-valid graph plan.
+- Merging, pushing, opening a pull request, and deploying are unsupported
+  and blocked. The typed schema fixes `[orchestration.authorization]`'s
+  `allow_push`, `allow_pull_request`, and `allow_deploy` to `false`, with no
+  per-invocation override.
 - Do not weaken tests, security, type safety, validation, or product behavior
-  to make a gate pass.
+  to make a gate, review, or proof step pass.
+- Preserve unrelated worktree changes and existing user state.
 
-## Adaptive entry
+## CLI contract
 
-Classify the objective from evidence:
+Use only these `trellage-graph` commands. Do not invent additional
+subcommands.
 
-- **Build:** define observable behavior and acceptance criteria before code.
-- **Fix:** reproduce the defect, identify the root cause, and add a regression
-  check before or with the repair.
-- **Investigate:** define the question and evidence threshold. Do not change
-  production code unless the objective or verified findings require a fix.
+| Command | Purpose |
+| --- | --- |
+| `trellage-graph run --goal "<objective>" [--constraint "<text>"]...` | Start a new graph run. Prints and flushes a `run-id` before planning, then plans, validates, accepts Beads state, and schedules ready nodes. |
+| `trellage-graph status --run <run-id>` | Report planning, acceptance, node, gate, review, and proof state. Use this to observe progress; never substitute for it. |
+| `trellage-graph resume --run <run-id>` | Continue the same run after an interruption. A current, reviewed plan is reused instead of regenerated. |
+| `trellage-graph resume --run <run-id> --replan` | Explicitly supersede a blocked or stale plan generation when the controller proves it is safe. |
+| `trellage-graph validate-plan --plan <path>` | Validate a graph plan document against the locked schema and structural rules without starting execution. Use only to check a plan produced for inspection. |
+| `trellage-graph finding reject <finding-id> --run <run-id> --evidence <path>` | Record an explicit, evidence-backed rejection of one Codex review finding. Use only when a finding is confirmed incorrect, never to silently dismiss it. |
 
-If required information cannot be discovered from the repository or runtime,
-ask only the smallest blocking question.
+If a required command, flag, or contract in this table does not yet exist in
+the installed CLI, report that gap; do not paper over it with a manual
+substitute.
 
 ## Workflow
 
-1. **Inspect**
-   - Read repository instructions, status, manifests, relevant code, tests,
-     documentation, and runtime state.
-   - Derive the correct validation commands from repository sources.
-   - Record assumptions as unknown until verified.
+1. **Invoke**
+   - Confirm `OBJECTIVE` is present. Pass `CONSTRAINTS` as one or more
+     `--constraint` values.
+   - Run `trellage-graph run --goal "<OBJECTIVE>" --constraint "<CONSTRAINTS>"`
+     from the current worktree.
+   - Record the `run-id` as soon as it is printed, before planning finishes.
 
-2. **Specify**
-   - Translate the objective into testable requirements.
-   - Define acceptance criteria, non-regression constraints, edge cases, and
-     failure behavior.
-   - Identify the final evidence needed for completion.
+2. **Observe**
+   - Poll `trellage-graph status --run <run-id>` at reasonable intervals.
+   - During bootstrap, read the reported planning, planned, accepting, or
+     blocked phase. After acceptance, read node states, gate results, Codex
+     review findings, and Raindrop proof status (`passed`, `not-applicable`,
+     or `blocked`) directly from the command output.
+   - Do not infer a node's state from elapsed time or from what the
+     objective implies should be happening.
 
-3. **Build the dependency graph**
-   - Decompose the work into small tasks with explicit read sets, write sets,
-     dependencies, gates, and expected evidence.
-   - Mark tasks parallel only when their dependencies are satisfied and their
-     write sets do not overlap.
-   - Keep integration, validation, and final review as explicit graph nodes.
+3. **Resume on interruption**
+   - If planning infrastructure, validation, Beads acceptance, the session, or the container
+     fails mid-run, call
+     `trellage-graph resume --run <run-id>` before doing anything else with
+     that run. Do not start a second run for the same objective or ask the
+     planner to regenerate a current persisted plan.
+   - If planning returns a durable target mismatch or plan-review blocker,
+     report it. Do not retry it with ordinary `resume`. Use `--replan` only
+     when the user explicitly requests a new plan generation.
 
-4. **Track and triage**
-   - If the repository uses Beads, represent the task graph with its configured
-     tracker.
-   - Use `bv --robot-triage --format toon` or another `--robot-*` command for
-     dependency-aware prioritization. Never run bare `bv` in an agent session.
-   - Verify tracker state before claiming work. Use the tracker for mutation;
-     use `bv` only for analysis.
+4. **Handle blocked findings**
+   - If status reports a blocked Codex finding that is a confirmed
+     false positive, use `trellage-graph finding reject <finding-id>
+     --run <run-id> --evidence <path>` with a real evidence file. Otherwise, wait for the
+     controller to route the finding to repair work and reflect it in a
+     later `status` call.
 
-5. **Execute ready nodes**
-   - Work from dependencies outward.
-   - Use test-driven development when behavior changes.
-   - Parallelize only ready, isolated nodes. Keep shared integration files in
-     one ownership path.
-   - After each node, run its smallest meaningful gate and update the graph.
-
-6. **Integrate**
-   - Combine completed nodes in dependency order.
-   - Resolve conflicts by preserving the intent of both sides.
-   - Run integration checks after every join.
-   - If a gate fails, add a repair node and continue the loop.
-
-7. **Review**
-   - Review the integrated result against both repository standards and the
-     stated requirements.
-   - Use an independent reviewer when available.
-   - Reproduce each finding before accepting it. Reject unsupported findings
-     with evidence.
-   - Turn confirmed findings into graph nodes, fix them, and rerun affected
-     gates.
-
-8. **Prove completion**
-   - Run all relevant formatting, lint, type, unit, integration, build, and
-     runtime checks.
-   - Verify the real requested behavior, not a proxy metric.
-   - Reinspect the final diff and worktree state.
-   - Take “done” back if any requirement, finding, gate, or integration surface
-     remains incomplete.
+5. **Report**
+   - Once `status` reports the root Bead closed, or reports a concrete
+     blocker the controller cannot resolve on its own, stop polling and
+     report the outcome below.
 
 ## Completion rule
 
-Stop only when:
+Report completion only when `trellage-graph status --run <run-id>` shows all
+of the following, not when the objective merely seems finished:
 
-- Every requirement maps to passing evidence.
-- Every discovered in-scope issue is fixed or has a concrete external blocker.
-- All relevant repository gates pass.
-- The final review has no unresolved confirmed finding.
-- The worktree contains no accidental files or unrelated modifications caused
-  by this workflow.
+- Every node Bead is closed.
+- No Codex review finding is unresolved (fixed or explicitly rejected with
+  evidence).
+- Raindrop proof is either `passed` or `not-applicable`; never report
+  `passed` when the CLI reported `not-applicable`.
+- No node worktree remains pending integration.
+- The root Bead itself is closed.
+
+If any late gate, review, proof check, or integration step fails after an
+earlier pass, the controller reopens the affected node Bead and the root
+Bead. Treat that run as still open and continue observing or resuming it; do
+not report completion until the root closes again.
 
 ## Output format
 
-Report concise execution state:
+Report concise execution state from the CLI's own output:
 
 ```markdown
 **Outcome:** <complete, blocked, or in progress>
 
-- **Graph:** <completed nodes and dependency state>
-- **Changed:** <files and meaningful behavior>
-- **Verified:** <exact checks and results>
-- **Review:** <accepted, fixed, and rejected findings>
-- **Remaining:** <none, or exact next nodes/blockers>
+- **Run:** <run-id>
+- **Graph:** <node states from `status`, e.g. closed/running/blocked counts>
+- **Review:** <resolved and rejected Codex findings, with evidence for
+  rejections>
+- **Proof:** <passed, not-applicable, or blocked, exactly as reported>
+- **Remaining:** <none, or the exact blocked node/finding from `status`>
 ```

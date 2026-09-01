@@ -1,0 +1,31 @@
+projects: []
+web_dashboard: false
+web_dashboard_open_on_launch: false
+base_modes:
+  - interactive
+  - no-onboarding
+fixed_tools:
+  - get_symbols_overview
+  - find_symbol
+  - find_referencing_symbols
+  - read_file
+  - list_dir
+  - find_file
+  - search_for_pattern
+ignored_paths:
+  - ".sdd/**"
+  - ".agent_work/**"
+  - ".git/**"
+  - ".serena/**"
+  - "node_modules/**"
+  - "target/**"
+  - "dist/**"
+  - "build/**"
+  - ".venv/**"
+  - "**/__pycache__/**"
+ls_specific_settings:
+  python:
+    ls_base_cmd:
+      - /mise/installs/python/3.13.14/bin/python
+      - -m
+      - pyright.langserver

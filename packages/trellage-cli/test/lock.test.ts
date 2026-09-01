@@ -2,6 +2,9 @@ import { createHash } from "node:crypto"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+import { lockedArtifactError } from "../src/artifact-catalog.js"
+import { graphOfLoopsRuntimeAssetPath, graphOfLoopsRuntimeIntegrity } from "../src/graph-runtime.js"
+import { graphRustArtifactNames, graphRustArtifactUrl } from "../src/rust-release.js"
 
 import {
   attachedSidecar,
@@ -66,6 +69,93 @@ repository = "https://github.com/microsoft/hve-core.git"
 ref = "main"
 marketplace = "hve-core"
 select = ["hve-core"]
+`
+
+const graphSource = `
+schema = 1
+name = "claude-graph-of-loops"
+description = "Graph of Loops lock profile"
+[harness]
+kind = "claude"
+version = "2.1.218"
+[harness.claude]
+default_auth = "proxy"
+model = "claude-opus-5"
+gateway = "http://copilot-proxy-rs:8080"
+[image]
+base = "node:22.17.0-bookworm-slim"
+shell = "fish"
+packages = ["bash", "git", "jq"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/fivetaku/insane-research.git"
+ref = "main"
+marketplace = "insane-research"
+select = ["insane-research"]
+[[plugins]]
+adapter = "claude-marketplace"
+repository = "https://github.com/wshobson/agents.git"
+ref = "main"
+marketplace = "wshobson-agents"
+select = ["agent-teams", "tdd-workflows", "conductor"]
+[[image.tools]]
+kind = "pypi"
+name = "serena-agent"
+[[image.tools]]
+kind = "pypi"
+name = "bernstein"
+[[image.tools]]
+kind = "pypi"
+name = "waku-agent"
+[[image.tools]]
+kind = "github-release"
+repository = "gastownhall/beads"
+name = "bd"
+[[image.tools]]
+kind = "github-release"
+repository = "openai/codex"
+name = "codex"
+[[image.tools]]
+kind = "github-release"
+repository = "raindrop-ai/workshop"
+name = "raindrop"
+[[mcps]]
+name = "serena"
+transport = "stdio"
+command = "serena"
+args = ["start-mcp-server", "--context", "claude-code", "--project-from-cwd"]
+[orchestration]
+kind = "graph-of-loops"
+tracker = "beads"
+scheduler = "bernstein"
+worktree_backend = "bernstein"
+node_runtime = "waku"
+supervisor_model = "claude-haiku-4.5"
+max_parallel_nodes = 3
+max_node_iterations = 10
+max_specialist_attempts = 3
+max_gate_calls = 12
+max_supervisor_tokens = 2048
+node_timeout_seconds = 1800
+[orchestration.roles]
+planner = "trellage-graph-planner"
+research = "insane-research"
+implement = "team-implementer"
+tdd = "tdd-workflows-tdd-orchestrator"
+debug = "team-debugger"
+validate = "conductor-validator"
+[orchestration.review]
+kind = "codex"
+required = true
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+[orchestration.proof]
+kind = "raindrop"
+mode = "repository-opt-in"
+[orchestration.authorization]
+allow_push = false
+allow_pull_request = false
+allow_deploy = false
 `
 
 const piSource = `
@@ -146,6 +236,8 @@ const document = (model?: string) => Effect.runSync(parseProfile(source(model), 
 const copilotDocument = (_platform: "linux/arm64" | "linux/amd64" = "linux/arm64") =>
   Effect.runSync(parseProfile(copilotSource, "/profiles/copilot/profile.toml"))
 
+const graphDocument = () => Effect.runSync(parseProfile(graphSource, "/profiles/claude-graph/profile.toml"))
+
 const piDocument = () => Effect.runSync(parseProfile(piSource, "/profiles/pi-oh-my-pi/profile.toml"))
 
 const primeDocument = () => Effect.runSync(parseProfile(primeSource, "/profiles/prime-agent/profile.toml"))
@@ -207,8 +299,53 @@ const rustArtifacts = [
     size: 1,
   },
 ] as const
+const graphToolArtifacts = [
+  {
+    name: "bd",
+    version: "1.2.2",
+    integrity: digest("7"),
+    url: "https://github.com/gastownhall/beads/releases/download/v1.2.2/beads_1.2.2_linux_arm64.tar.gz",
+    size: 1,
+  },
+  {
+    name: "raindrop",
+    version: "0.4.0",
+    integrity: digest("8"),
+    url: "https://github.com/raindrop-ai/workshop/releases/download/v0.4.0/raindrop-bun-linux-arm64.gz",
+    size: 1,
+  },
+  {
+    name: "codex",
+    version: "0.144.6",
+    integrity: digest("9"),
+    url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+  {
+    name: "codex-code-mode-host",
+    version: "0.144.6",
+    integrity: digest("a"),
+    url: "https://github.com/openai/codex/releases/download/rust-v0.144.6/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+    size: 1,
+  },
+] as const
+
+const graphRustFixtureArtifacts = graphRustArtifactNames.map((name) => ({
+  name,
+  version: "1.96.0",
+  integrity: digest("4"),
+  url: graphRustArtifactUrl(name, "1.96.0", "2026-05-28")!,
+  size: 1,
+}))
+
 const treeIntegrity = (files: ReadonlyArray<unknown>) =>
   `sha256:${createHash("sha256").update(JSON.stringify(files)).digest("hex")}`
+
+const persistedGraphLock = (lock: ProfileLock): ProfileLock => {
+  const persisted: ProfileLock = { ...lock, image: { ...lock.image, final_digest: digest("e") } }
+  const sidecar = attachedSidecar(lock)
+  return sidecar === undefined ? persisted : withAttachedSidecar(persisted, sidecar)
+}
 
 type PackageRequest = Parameters<LockResolvers["resolvePackages"]>[0]
 type FakeResolverOptions = { readonly copilotVersion?: string; readonly pluginVersion?: string }
@@ -254,16 +391,35 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
   resolveSource: (request) =>
     Effect.sync(() => {
       calls.push(`source:${request.ref}`)
-      const files = [
-        {
-          kind: "file" as const,
-          path:
-            request.adapter === "copilot-marketplace"
-              ? ".github/plugin/marketplace.json"
-              : "plugins/example/.codex/agents/example.toml",
-          sha256: digest("f"),
-        },
-      ]
+      const files =
+        request.adapter === "claude-marketplace" &&
+        request.repository === "https://github.com/fivetaku/insane-research.git"
+          ? [{ kind: "file" as const, path: "commands/insane-research.md", sha256: digest("f") }]
+          : request.adapter === "claude-marketplace" && request.repository === "https://github.com/wshobson/agents.git"
+            ? [
+                { kind: "file" as const, path: "plugins/agent-teams/agents/team-debugger.md", sha256: digest("f") },
+                { kind: "file" as const, path: "plugins/agent-teams/agents/team-implementer.md", sha256: digest("f") },
+                {
+                  kind: "file" as const,
+                  path: "plugins/conductor/agents/conductor-validator.md",
+                  sha256: digest("f"),
+                },
+                {
+                  kind: "file" as const,
+                  path: "plugins/tdd-workflows/agents/tdd-orchestrator.md",
+                  sha256: digest("f"),
+                },
+              ]
+            : [
+                {
+                  kind: "file" as const,
+                  path:
+                    request.adapter === "copilot-marketplace"
+                      ? ".github/plugin/marketplace.json"
+                      : "plugins/example/.codex/agents/example.toml",
+                  sha256: digest("f"),
+                },
+              ]
       return {
         commit,
         integrity: treeIntegrity(files),
@@ -272,14 +428,17 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
           ? { plugin_versions: { "hve-core": options.pluginVersion ?? "3.3.101" } }
           : request.adapter === "hyperresearch"
             ? { package_version: "0.9.1" }
-            : {}),
+            : request.adapter === "claude-marketplace"
+              ? { plugin_versions: Object.fromEntries(request.select.map((selected) => [selected, "1.0.0"])) }
+              : {}),
       }
     }),
   resolvePackages: (request) =>
     Effect.sync(() => {
       calls.push("packages")
       const version = fakeHarnessVersion(request, options)
-      return {
+      const graphConstraints = "bernstein==1.0.0\nserena-agent==1.0.0\nwaku-agent==1.0.0\n"
+      const packages = {
         harness:
           request.kind === "headlong"
             ? {
@@ -313,7 +472,12 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
             ? {
                 artifacts: [...managedArtifacts, ...rustArtifacts],
               }
-            : {}),
+            : request.needsGraphRustToolchain
+              ? {
+                  artifacts: [...managedArtifacts, pythonArtifact, ...graphToolArtifacts, ...graphRustFixtureArtifacts],
+                  python_lock_integrity: sha256Text(graphConstraints),
+                }
+              : {}),
         runtime: request.packages.map((name) => ({
           name,
           version: runtimeVersions[name as keyof typeof runtimeVersions],
@@ -322,6 +486,7 @@ const fakeResolvers = (commit: string, calls: Array<string>, options: FakeResolv
           url: `https://deb.debian.org/debian/pool/${name}.deb`,
         })),
       }
+      return request.needsGraphRustToolchain ? withPythonConstraints(packages, graphConstraints) : packages
     }),
   resolveBase: (request) =>
     Effect.sync(() => {
@@ -629,12 +794,124 @@ gear = "full"
     }
     const enriched: ProfileLock = {
       ...lock,
-      packages: { ...lock.packages, artifacts: [artifact], python_lock_integrity: digest("b") },
+      packages: {
+        ...lock.packages,
+        artifacts: [artifact],
+        python_lock_integrity: digest("b"),
+        graph_runtime_integrity: digest("c"),
+      },
     }
 
     const parsed = await Effect.runPromise(parseLock(renderLock(enriched)))
     expect(parsed.packages.artifacts).toEqual([artifact])
     expect(parsed.packages.python_lock_integrity).toBe(digest("b"))
+    expect(parsed.packages.graph_runtime_integrity).toBe(digest("c"))
+  })
+
+  it("locks the Graph of Loops runtime to the bundled runtime assets", async () => {
+    const lock = await Effect.runPromise(compileLock(graphDocument(), undefined, false, fakeResolvers(commit("1"), [])))
+    const expected = await Effect.runPromise(graphOfLoopsRuntimeIntegrity(graphOfLoopsRuntimeAssetPath))
+
+    expect(lock.packages.graph_runtime_integrity).toBe(expected)
+  })
+
+  it("rejects missing or malformed Graph of Loops runtime integrity", async () => {
+    const resolved = await Effect.runPromise(
+      compileLock(graphDocument(), undefined, false, fakeResolvers(commit("1"), [])),
+    )
+    const persisted = persistedGraphLock(resolved)
+    const missingPackages: ProfileLock["packages"] = {
+      harness: persisted.packages.harness,
+      runtime: persisted.packages.runtime,
+      ...(persisted.packages.artifacts === undefined ? {} : { artifacts: persisted.packages.artifacts }),
+      ...(persisted.packages.python_lock_integrity === undefined
+        ? {}
+        : { python_lock_integrity: persisted.packages.python_lock_integrity }),
+    }
+    const missing: ProfileLock = {
+      ...persisted,
+      packages: missingPackages,
+    }
+    const malformed: ProfileLock = {
+      ...persisted,
+      packages: { ...persisted.packages, graph_runtime_integrity: "sha256:not-a-digest" },
+    }
+
+    await expect(Effect.runPromise(requireLocked(graphDocument(), missing))).rejects.toThrow(
+      /runtime integrity is missing or invalid/i,
+    )
+    await expect(Effect.runPromise(requireLocked(graphDocument(), malformed))).rejects.toThrow(
+      /runtime integrity is missing or invalid/i,
+    )
+  })
+
+  it("rejects a Graph of Loops lock with a missing Rust target", async () => {
+    const resolved = await Effect.runPromise(
+      compileLock(graphDocument(), undefined, false, fakeResolvers(commit("1"), [])),
+    )
+    const persisted = persistedGraphLock(resolved)
+    const artifacts = persisted.packages.artifacts ?? []
+    const missingTarget: ProfileLock = {
+      ...persisted,
+      packages: {
+        ...persisted.packages,
+        artifacts: artifacts.filter((artifact) => artifact.name !== "rust-std-x86_64-musl"),
+      },
+    }
+
+    expect(lockedArtifactError(graphDocument(), missingTarget, "linux/arm64")).toMatch(
+      /dynamic artifact set does not match profile tools/i,
+    )
+  })
+
+  it("requires every configured Graph of Loops specialist to resolve exactly once", async () => {
+    const resolved = await Effect.runPromise(
+      compileLock(graphDocument(), undefined, false, fakeResolvers(commit("1"), [])),
+    )
+    const persisted = persistedGraphLock(resolved)
+
+    await expect(Effect.runPromise(requireLocked(graphDocument(), persisted))).resolves.toBe(persisted)
+
+    const sources = persisted.sources.map((lockedSource) => {
+      if (
+        lockedSource.kind !== "plugin" ||
+        lockedSource.adapter !== "claude-marketplace" ||
+        lockedSource.marketplace !== "wshobson-agents"
+      ) {
+        return lockedSource
+      }
+      const files = lockedSource.files.filter((file) => !file.path.endsWith("/team-debugger.md"))
+      return { ...lockedSource, files, integrity: treeIntegrity(files) }
+    })
+    const missingRole: ProfileLock = { ...persisted, sources }
+
+    await expect(Effect.runPromise(requireLocked(graphDocument(), missingRole))).rejects.toThrow(
+      /role team-debugger must resolve exactly once; found 0/i,
+    )
+  })
+
+  it("does not compile a Graph of Loops lock with an unresolved specialist", async () => {
+    const baseResolvers = fakeResolvers(commit("1"), [])
+    const resolvers: LockResolvers = {
+      ...baseResolvers,
+      resolveSource: (request) =>
+        baseResolvers.resolveSource(request).pipe(
+          Effect.map((resolution) => {
+            if (
+              request.adapter !== "claude-marketplace" ||
+              request.repository !== "https://github.com/wshobson/agents.git"
+            ) {
+              return resolution
+            }
+            const files = resolution.files.filter((file) => !file.path.endsWith("/team-debugger.md"))
+            return { ...resolution, files, integrity: treeIntegrity(files) }
+          }),
+        ),
+    }
+
+    await expect(Effect.runPromise(compileLock(graphDocument(), undefined, false, resolvers))).rejects.toThrow(
+      /role team-debugger must resolve exactly once; found 0/i,
+    )
   })
 
   it("round-trips exact Hyperresearch package version provenance", async () => {

@@ -75,14 +75,8 @@ const artifactSize = (cacheHome: string, url: string, integrity: string): Effect
     ),
   )
 
-export const resolveRustToolchain = (
-  cacheHome: string,
-  platform: Platform,
-): Effect.Effect<ReadonlyArray<ArtifactLock>, RustReleaseError> =>
+const stableRustManifest = (): Effect.Effect<unknown, RustReleaseError> =>
   Effect.gen(function* () {
-    if (platform !== "linux/arm64") {
-      return yield* Effect.fail(new RustReleaseError({ message: `Rust toolchain is unavailable for ${platform}` }))
-    }
     const response = yield* Effect.tryPromise({
       try: (signal) =>
         fetch("https://static.rust-lang.org/dist/channel-rust-stable.toml", { redirect: "error", signal }),
@@ -97,10 +91,21 @@ export const resolveRustToolchain = (
       try: () => response.text(),
       catch: (cause) => new RustReleaseError({ message: "cannot read stable Rust manifest", cause }),
     })
-    const manifest = yield* Effect.try({
+    return yield* Effect.try({
       try: () => parse(source) as unknown,
       catch: (cause) => new RustReleaseError({ message: "stable Rust manifest is invalid", cause }),
     })
+  })
+
+export const resolveRustToolchain = (
+  cacheHome: string,
+  platform: Platform,
+): Effect.Effect<ReadonlyArray<ArtifactLock>, RustReleaseError> =>
+  Effect.gen(function* () {
+    if (platform !== "linux/arm64") {
+      return yield* Effect.fail(new RustReleaseError({ message: `Rust toolchain is unavailable for ${platform}` }))
+    }
+    const manifest = yield* stableRustManifest()
     const resolved = rustManifestArtifacts(manifest)
     const { version } = resolved
     const { url: rustUrl, hash: rustHash } = resolved.rust
@@ -140,4 +145,80 @@ export const resolveRustToolchain = (
         size: standardLibrarySize,
       },
     ]
+  })
+
+const graphRustPackages = [
+  { name: "rust", packageName: "rust", target: "aarch64-unknown-linux-gnu", stem: "rust" },
+  { name: "rustfmt", packageName: "rustfmt-preview", target: "aarch64-unknown-linux-gnu", stem: "rustfmt" },
+  { name: "clippy", packageName: "clippy-preview", target: "aarch64-unknown-linux-gnu", stem: "clippy" },
+  { name: "rust-std-aarch64-musl", packageName: "rust-std", target: "aarch64-unknown-linux-musl", stem: "rust-std" },
+  { name: "rust-std-x86_64-musl", packageName: "rust-std", target: "x86_64-unknown-linux-musl", stem: "rust-std" },
+  { name: "rust-std-i686-musl", packageName: "rust-std", target: "i686-unknown-linux-musl", stem: "rust-std" },
+] as const
+
+export const graphRustArtifactNames: ReadonlyArray<string> = graphRustPackages.map((entry) => entry.name)
+
+export const graphRustArtifactUrl = (name: string, version: string, date: string): string | undefined => {
+  const entry = graphRustPackages.find((candidate) => candidate.name === name)
+  return entry === undefined
+    ? undefined
+    : `https://static.rust-lang.org/dist/${date}/${entry.stem}-${version}-${entry.target}.tar.gz`
+}
+
+export const graphRustUrlIdentity = (
+  name: string,
+  url: string,
+): { readonly date: string; readonly version: string } | undefined => {
+  const entry = graphRustPackages.find((candidate) => candidate.name === name)
+  if (entry === undefined) return undefined
+  const match = new RegExp(
+    `^https://static\\.rust-lang\\.org/dist/(\\d{4}-\\d{2}-\\d{2})/${entry.stem}-(\\d+\\.\\d+\\.\\d+)-${entry.target}\\.tar\\.gz$`,
+  ).exec(url)
+  return match?.[1] === undefined || match[2] === undefined ? undefined : { date: match[1], version: match[2] }
+}
+
+// The Graph of Loops image compiles and cross-checks SIMD backends, so it needs
+// rustfmt, Clippy, and every musl standard library the graph proves against.
+export const resolveGraphRustToolchain = (
+  cacheHome: string,
+  platform: Platform,
+): Effect.Effect<ReadonlyArray<ArtifactLock>, RustReleaseError> =>
+  Effect.gen(function* () {
+    if (platform !== "linux/arm64") {
+      return yield* Effect.fail(new RustReleaseError({ message: `Rust toolchain is unavailable for ${platform}` }))
+    }
+    const manifest = yield* stableRustManifest()
+    const packages = record(record(manifest)?.pkg)
+    const version = /^(\d+\.\d+\.\d+)/.exec(text(record(packages?.rust)?.version) ?? "")?.[1]
+    if (version === undefined)
+      return yield* Effect.fail(new RustReleaseError({ message: "stable Rust version is missing" }))
+    const selected = graphRustPackages.map((entry) => ({
+      entry,
+      artifact: targetArtifact(packages, entry.packageName, entry.target),
+    }))
+    for (const { entry, artifact } of selected) {
+      if (artifact.url === undefined || !/^[0-9a-f]{64}$/.test(artifact.hash ?? "")) {
+        return yield* Effect.fail(new RustReleaseError({ message: `stable Rust artifact is missing: ${entry.name}` }))
+      }
+    }
+    const dates = new Set(
+      selected.map(({ entry, artifact }) => graphRustUrlIdentity(entry.name, artifact.url!)?.date ?? ""),
+    )
+    if (dates.size !== 1 || dates.has("")) {
+      return yield* Effect.fail(new RustReleaseError({ message: "stable Rust artifact set is inconsistent" }))
+    }
+    if (selected.some(({ entry, artifact }) => graphRustUrlIdentity(entry.name, artifact.url!)?.version !== version)) {
+      return yield* Effect.fail(new RustReleaseError({ message: "stable Rust artifact set is inconsistent" }))
+    }
+    const sizes = yield* Effect.all(
+      selected.map(({ artifact }) => artifactSize(cacheHome, artifact.url!, `sha256:${artifact.hash!}`)),
+      { concurrency: 3 },
+    )
+    return selected.map(({ entry, artifact }, index) => ({
+      name: entry.name,
+      version,
+      integrity: `sha256:${artifact.hash!}`,
+      url: artifact.url!,
+      size: sizes[index]!,
+    }))
   })

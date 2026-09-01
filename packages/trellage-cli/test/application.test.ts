@@ -228,9 +228,11 @@ vi.mock("../src/tool-artifacts.js", async () => {
   }
 })
 
-vi.mock("../src/rust-release.js", async () => {
+vi.mock("../src/rust-release.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/rust-release.js")>()
   const { Effect: EffectModule } = await import("effect")
   return {
+    ...original,
     resolveRustToolchain: () =>
       EffectModule.succeed([
         {

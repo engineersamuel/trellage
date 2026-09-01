@@ -1,0 +1,53 @@
+{
+  "objective": "Add a greeting utility function",
+  "base_revision": "abc1234567890def1234567890abcdef12345678",
+  "nodes": [
+    {
+      "id": "add-greeter",
+      "type": "tdd",
+      "role": "tdd-workflows-tdd-orchestrator",
+      "prompt": "Add greeter with tests",
+      "prompt_digest": "sha256:10b512b87051fd3bc89a25b9db388265cd66f321a2c5bf2581b84e79f717003f",
+      "dependencies": [],
+      "read_set": ["src/**"],
+      "write_set": ["src/greeter.py"],
+      "test_write_set": ["tests/test_greeter.py"],
+      "repair_write_set": ["src/greeter.py", "tests/test_greeter.py"],
+      "parallel_safe": false,
+      "behavior_change": true,
+      "gates": [
+        {"name": "test-red", "argv": ["python", "-m", "pytest", "tests/test_greeter.py"], "phase": "red"},
+        {"name": "test-green", "argv": ["python", "-m", "pytest", "tests/test_greeter.py"], "phase": "green"},
+        {"name": "test-final", "argv": ["python", "-m", "pytest", "tests/test_greeter.py"], "phase": "final"}
+      ],
+      "review_required": true,
+      "proof_required": false,
+      "acceptance_criteria": ["Greeter returns correct greeting"]
+    },
+    {
+      "id": "add-formatter",
+      "type": "implement",
+      "role": "team-implementer",
+      "prompt": "Add formatter module",
+      "prompt_digest": "sha256:af7f086c4ec992f7cb912dbc5b42027beec2dddfc8087463ca01bf47b94c93b2",
+      "dependencies": ["add-greeter"],
+      "read_set": ["src/**"],
+      "write_set": ["src/formatter.py"],
+      "test_write_set": [],
+      "parallel_safe": false,
+      "behavior_change": false,
+      "gates": [
+        {"name": "lint", "argv": ["python", "-m", "flake8", "src/formatter.py"]}
+      ],
+      "review_required": true,
+      "proof_required": false,
+      "acceptance_criteria": ["Formatter module exists"]
+    }
+  ],
+  "graph_gates": [],
+  "authorization": {
+    "allow_push": false,
+    "allow_pull_request": false,
+    "allow_deploy": false
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "findings": [
+    {
+      "id": "finding-001",
+      "severity": "high",
+      "file": "src/greeter.py",
+      "description": "Potential null reference in greeting function"
+    }
+  ],
+  "summary": "Found one high-severity issue"
+}

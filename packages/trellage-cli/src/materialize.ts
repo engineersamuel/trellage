@@ -13,11 +13,10 @@ import {
   type ReleaseHarnessPackageLock,
 } from "./lock.js"
 import {
-  claudeHasBeads,
-  claudeHasCodexReviewer,
   claudeHasSerena,
   claudePypiToolNames,
   isClaudeProfile,
+  isGraphOfLoopsProfile,
   isPrimeProfile,
   type ClaudeProfile,
   type PrimeProfile,
@@ -42,6 +41,7 @@ import {
 } from "./runtime-support.js"
 import { pythonConstraints, type ResolutionSidecar } from "./resolution-sidecar.js"
 import { cacheArtifact } from "./artifact-cache.js"
+import { graphOfLoopsRuntimeAssetPath } from "./graph-runtime.js"
 import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
 
 export type PluginGenerator = (
@@ -73,6 +73,28 @@ export class MaterializeError extends Data.TaggedError("MaterializeError")<{
   readonly message: string
   readonly cause?: unknown
 }> {}
+
+export const renderGraphCodexReviewerConfig = (profile: ClaudeProfile): string | undefined => {
+  if (!isGraphOfLoopsProfile(profile)) return undefined
+  return `approval_policy = "never"\nsandbox_mode = "read-only"\n\n${renderCodexConfiguration(
+    {
+      model: profile.orchestration.review.model,
+      reasoning_effort: profile.orchestration.review.reasoning_effort,
+      model_provider: "copilot_proxy",
+      providers: {
+        copilot_proxy: {
+          name: "Copilot Proxy RS",
+          base_url: "http://copilot-proxy-rs:8080/v1",
+          wire_api: "responses",
+          request_max_retries: 3,
+          stream_max_retries: 5,
+          stream_idle_timeout_ms: 300000,
+        },
+      },
+    },
+    [],
+  )}\n[features]\nmulti_agent = true\n`
+}
 
 const io = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, MaterializeError> =>
   Effect.tryPromise({
@@ -502,6 +524,21 @@ const materializeClaudeProfileAssets = (
       writeFile(path.join(context, "claude-seed", "managed-paths.txt"), `${manifest.join("\n")}\n`),
     )
   })
+
+const graphOfLoopsSkillAssetPath = path.join(graphOfLoopsRuntimeAssetPath, "skills", "graph-of-loops.md")
+
+const materializeGraphOfLoopsClaudeSkill = (
+  profile: ClaudeProfile,
+  context: string,
+): Effect.Effect<void, MaterializeError> =>
+  isGraphOfLoopsProfile(profile)
+    ? Effect.all([
+        copy(graphOfLoopsSkillAssetPath, path.join(context, "claude-seed", "skills", "graph-of-loops", "SKILL.md")),
+        io("cannot write Claude managed-path adoption manifest", () =>
+          writeFile(path.join(context, "claude-seed", "adopt-paths.txt"), "skills/graph-of-loops/SKILL.md\n"),
+        ),
+      ]).pipe(Effect.asVoid)
+    : Effect.void
 
 const materializePiProfileAssets = (context: string): Effect.Effect<void, MaterializeError> =>
   Effect.gen(function* materializePiAssets() {
@@ -967,6 +1004,7 @@ export const createBuildContext = (
         yield* materializeCopilotProfileAssets(lock, sourceDirectories, support, context)
       }
       if (isClaudeProfile(document.profile)) {
+        yield* materializeGraphOfLoopsClaudeSkill(document.profile, context)
         yield* materializeClaudeProfileAssets(
           document.profile,
           lock,
@@ -979,9 +1017,14 @@ export const createBuildContext = (
           npmRegistry,
         )
         if (document.profile.plugins[0]?.adapter === "claude-marketplace") {
-          yield* materializeClaudeExtraRuntime(document.profile, lock, context, pythonRequirementsPath).pipe(
-            Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })),
-          )
+          const graphRuntimePath = isGraphOfLoopsProfile(document.profile) ? graphOfLoopsRuntimeAssetPath : undefined
+          yield* materializeClaudeExtraRuntime(
+            document.profile,
+            lock,
+            context,
+            pythonRequirementsPath,
+            graphRuntimePath,
+          ).pipe(Effect.mapError((cause) => new MaterializeError({ message: cause.message, cause })))
         }
       }
       if (document.profile.harness.kind === "pi") {
@@ -1077,45 +1120,25 @@ fi
         if (document.profile.harness.kind === "codex") {
           await writeFile(path.join(context, "codex-config.toml"), renderCodexConfig(document.profile))
         }
-        if (isClaudeProfile(document.profile) && claudeHasCodexReviewer(document.profile)) {
+        if (isClaudeProfile(document.profile)) {
+          const reviewerConfig = renderGraphCodexReviewerConfig(document.profile)
+          if (reviewerConfig !== undefined) {
+            await writeFile(path.join(context, "codex-reviewer-config.toml"), reviewerConfig)
+          }
+        }
+        if (isGraphOfLoopsProfile(document.profile)) {
+          const graphOfLoopsSkill = await readFile(graphOfLoopsSkillAssetPath)
+          await writeFile(path.join(context, "codex-graph-of-loops-skill.md"), graphOfLoopsSkill)
           await writeFile(
-            path.join(context, "codex-reviewer-config.toml"),
-            `approval_policy = "never"\nsandbox_mode = "danger-full-access"\n\n${renderCodexConfiguration(
-              {
-                model: "gpt-5.6-sol",
-                reasoning_effort: "medium",
-                model_provider: "copilot_proxy",
-                providers: {
-                  copilot_proxy: {
-                    name: "Copilot Proxy RS",
-                    base_url: "http://copilot-proxy-rs:8080/v1",
-                    wire_api: "responses",
-                    request_max_retries: 3,
-                    stream_max_retries: 5,
-                    stream_idle_timeout_ms: 300000,
-                  },
-                },
-              },
-              [],
-            )}\n[features]\nmulti_agent = true\n`,
-          )
-          if (claudeHasBeads(document.profile)) {
-            const graphOfLoopsPromptPath = path.resolve(
-              document.directory,
-              "../../.github/prompts/graph-of-loops.prompt.md",
-            )
-            await writeFile(path.join(context, "codex-graph-of-loops-skill.md"), await readFile(graphOfLoopsPromptPath))
-            await writeFile(
-              path.join(context, "codex-graph-of-loops-skill.yaml"),
-              `interface:
+            path.join(context, "codex-graph-of-loops-skill.yaml"),
+            `interface:
   display_name: "Graph of Loops"
   short_description: "Run a dependency-aware engineering workflow"
   default_prompt: '$graph-of-loops OBJECTIVE="<objective>" CONSTRAINTS="<constraints and evidence>"'
 policy:
   allow_implicit_invocation: false
 `,
-            )
-          }
+          )
         }
         if (document.profile.harness.kind === "prime") {
           const node = requiredArtifact(lock, "node")

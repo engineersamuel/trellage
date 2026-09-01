@@ -122,6 +122,13 @@ marketplace = "social-media-skills"
 select = ["social-media-skills"]
 `
 
+const claudeCodexToolSource = `${claudeMarketplaceSource}
+[[image.tools]]
+kind = "github-release"
+repository = "openai/codex"
+name = "codex"
+`
+
 const claudeGraphSource = `
 schema = 1
 name = "claude-graph-of-loops"
@@ -148,6 +155,12 @@ select = ["graph"]
 kind = "pypi"
 name = "serena-agent"
 [[image.tools]]
+kind = "pypi"
+name = "bernstein"
+[[image.tools]]
+kind = "pypi"
+name = "waku-agent"
+[[image.tools]]
 kind = "github-release"
 repository = "gastownhall/beads"
 name = "bd"
@@ -157,12 +170,54 @@ repository = "openai/codex"
 name = "codex"
 [[image.tools]]
 kind = "github-release"
+repository = "raindrop-ai/workshop"
+name = "raindrop"
+[[image.tools]]
+kind = "github-release"
 repository = "evilmartians/lefthook"
 name = "lefthook-linux-arm64"
 [[mcps]]
 name = "serena"
 transport = "stdio"
 command = "serena"
+args = ["start-mcp-server", "--context", "claude-code", "--project-from-cwd"]
+
+[orchestration]
+kind = "graph-of-loops"
+tracker = "beads"
+scheduler = "bernstein"
+worktree_backend = "bernstein"
+node_runtime = "waku"
+supervisor_model = "claude-haiku-4.5"
+max_parallel_nodes = 3
+max_node_iterations = 10
+max_specialist_attempts = 3
+max_gate_calls = 12
+max_supervisor_tokens = 2048
+node_timeout_seconds = 1800
+
+[orchestration.roles]
+planner = "trellage-graph-planner"
+research = "insane-research"
+implement = "team-implementer"
+tdd = "tdd-workflows-tdd-orchestrator"
+debug = "team-debugger"
+validate = "conductor-validator"
+
+[orchestration.review]
+kind = "codex"
+required = true
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+
+[orchestration.proof]
+kind = "raindrop"
+mode = "repository-opt-in"
+
+[orchestration.authorization]
+allow_push = false
+allow_pull_request = false
+allow_deploy = false
 `
 
 const piSource = `
@@ -209,6 +264,9 @@ const piProfile = Effect.runSync(parseProfile(piSource, "/profile/pi.toml")).pro
 const primeProfile = Effect.runSync(parseProfile(primeSource, "/profile/prime.toml")).profile
 const claudeMarketplaceProfile = Effect.runSync(
   parseProfile(claudeMarketplaceSource, "/profile/claude-marketplace.toml"),
+).profile
+const claudeCodexToolProfile = Effect.runSync(
+  parseProfile(claudeCodexToolSource, "/profile/claude-codex-tool.toml"),
 ).profile
 const claudeGraphProfile = Effect.runSync(parseProfile(claudeGraphSource, "/profile/claude-graph.toml")).profile
 const runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "trellage-render-runtime-"))
@@ -521,6 +579,17 @@ rename_exe = "copilot"`)
     expect(rendered).not.toMatch(/hyperresearch|playwright|chromium|obscura|PYTHONPATH/)
   })
 
+  it("does not infer Graph of Loops review behavior from the Codex binary", () => {
+    const rendered = renderMiseConfig(claudeCodexToolProfile, lock("claude"), {
+      baseReference: "docker.io/library/node@sha256:base",
+      imageTag: "trellage-profile-claude-codex-tool:locked",
+      runtimeSupport: claudeMarketplaceRuntime,
+    })
+
+    expect(rendered).not.toContain("/tmp/trellage-build/codex-reviewer-config.toml")
+    expect(rendered).not.toContain("/home/agent/.agents/skills/code-review")
+  })
+
   it("renders graph profile process and companion-tool safeguards", () => {
     const rendered = renderMiseConfig(claudeGraphProfile, lock("claude"), {
       baseReference: "docker.io/library/node@sha256:base",
@@ -535,8 +604,32 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('"/usr/local/bin/codex-code-mode-host"')
     expect(rendered).toContain('"/etc/codex/skills/graph-of-loops/SKILL.md"')
     expect(rendered).toContain('"/etc/codex/skills/graph-of-loops/agents/openai.yaml"')
+    expect(rendered).toContain('"/opt/trellage/graph-of-loops" = { source = "graph-of-loops-runtime", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/bin/trellage-graph" = { source = "trellage-graph-wrapper.sh", mode = "copy" }',
+    )
+    expect(rendered).toContain(
+      '"/usr/local/share/trellage/graph-of-loops-policy.json" = { source = "graph-of-loops-policy.json", mode = "copy" }',
+    )
+    expect(rendered).toContain('"/opt/trellage/rust" = { source = "rust-toolchain", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/home/agent/.cargo/config.toml" = { source = "graph-rust-cargo-config.toml", mode = "copy" }',
+    )
+    expect(rendered).toContain(
+      '"/usr/local/share/trellage/graph-rust-cargo-config.toml" = { source = "graph-rust-cargo-config.toml", mode = "copy" }',
+    )
+    expect(rendered).toContain('"/usr/local/bin/cargo" = { source = "graph-rust-wrapper.sh", mode = "copy" }')
+    expect(rendered).toContain('"/usr/local/bin/rustc" = { source = "graph-rust-wrapper.sh", mode = "copy" }')
+    expect(rendered).not.toContain('"/home/agent/.claude/skills/graph-of-loops/SKILL.md"')
+    expect(rendered).toContain('TRELLAGE_GRAPH_POLICY = "/usr/local/share/trellage/graph-of-loops-policy.json"')
+    expect(rendered).toContain('PYTHONPATH = "/opt/trellage/graph-of-loops:/opt/trellage/graph-tools"')
+    expect(rendered).toContain('CARGO_HOME = "/home/agent/.cargo"')
+    expect(rendered).toContain(
+      'TRELLAGE_GRAPH_RUST_CARGO_CONFIG = "/usr/local/share/trellage/graph-rust-cargo-config.toml"',
+    )
     expect(rendered).toContain('"/usr/local/lib/trellage/node_modules/lefthook-linux-arm64"')
     expect(rendered).not.toContain('"/usr/local/bin/lefthook-linux-arm64"')
+    expect(rendered).not.toContain('"/usr/local/bin/wt"')
   })
 
   it("renders locked mise OCI input", () => {

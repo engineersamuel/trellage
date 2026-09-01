@@ -1,0 +1,40 @@
+{
+  "gateway": "http://copilot-proxy-rs:8080",
+  "runtime_integrity": "sha256:test-runtime",
+  "models": {
+    "supervisor": "claude-haiku-4.5",
+    "specialist": "claude-sonnet-4.6",
+    "reviewer": "gpt-5.6-sol"
+  },
+  "roles": {
+    "planner": "trellage-graph-planner",
+    "research": "insane-research",
+    "implement": "team-implementer",
+    "tdd": "tdd-workflows-tdd-orchestrator",
+    "debug": "team-debugger",
+    "validate": "conductor-validator"
+  },
+  "authorization": {
+    "allow_push": false,
+    "allow_pull_request": false,
+    "allow_deploy": false
+  },
+  "limits": {
+    "max_parallel_nodes": 3,
+    "max_node_iterations": 10,
+    "max_specialist_attempts": 3,
+    "max_gate_calls": 12,
+    "max_supervisor_tokens": 2048,
+    "node_timeout_seconds": 1800
+  },
+  "review": {
+    "kind": "codex",
+    "required": true,
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium"
+  },
+  "proof": {
+    "kind": "raindrop",
+    "mode": "repository-opt-in"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "objective": "Missing gates",
+  "base_revision": "abc1234567890def1234567890abcdef12345678",
+  "nodes": [
+    {
+      "id": "missing-gates", "type": "tdd", "role": "tdd-workflows-tdd-orchestrator",
+      "prompt": "Implement change",
+      "prompt_digest": "sha256:40a4d3a41d27af056adde85c2c7181b01a3fcf15cbf661c7007582e80f3aadaf",
+      "dependencies": [], "read_set": ["src/**"],
+      "write_set": ["src/thing.py"], "test_write_set": ["tests/test_thing.py"],
+      "behavior_change": true,
+      "gates": [
+        {"name": "test-red", "argv": ["pytest", "tests/"], "phase": "red"}
+      ]
+    }
+  ]
+}
