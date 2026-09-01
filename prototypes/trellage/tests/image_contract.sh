@@ -460,10 +460,19 @@ elif [[ "$harness_kind" == copilot ]]; then
         test -f "$seed/$control"
       done
       plugin="$seed/installed-plugins/hve-core/hve-core"
-      test -f "$plugin/.github/plugin/plugin.json"
+      manifest=
+      for candidate in "$plugin/plugin.json" "$plugin/.github/plugin/plugin.json"; do
+        if test -f "$candidate"; then
+          test -z "$manifest"
+          manifest="$candidate"
+        fi
+      done
+      test -n "$manifest"
+      test ! -e "$plugin/.copilot/plugin.json"
+      test ! -e "$plugin/.claude-plugin/plugin.json"
       jq -e --arg version "$hve_version" '\''
         .name == "hve-core" and .version == $version
-      '\'' "$plugin/.github/plugin/plugin.json" >/dev/null
+      '\'' "$manifest" >/dev/null
       jq -e '\''
         .extraKnownMarketplaces["hve-core"].source
           == {source:"github", repo:"microsoft/hve-core"}

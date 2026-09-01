@@ -84,6 +84,39 @@ describe("readCopilotMarketplace", () => {
     })
   })
 
+  it("accepts the official repository-root HVE marketplace format", async () => {
+    const root = await marketplace({
+      name: "hve-core",
+      metadata: {
+        description: "HVE Core",
+        version: "3.2.2",
+      },
+      owner: {
+        name: "Microsoft",
+      },
+      plugins: [
+        {
+          name: "hve-core",
+          source: ".",
+          description: "Opinionated, rapidly evolving HVE Core agentic SDLC patterns and tools",
+          version: "3.2.2",
+          author: {
+            name: "Microsoft",
+            url: "https://www.microsoft.com",
+          },
+          homepage: "https://github.com/microsoft/hve-core",
+          repository: "https://github.com/microsoft/hve-core",
+          license: "MIT",
+          keywords: ["hve", "hve-core", "agents", "prompts", "instructions", "skills"],
+        },
+      ],
+    })
+
+    await expect(Effect.runPromise(readCopilotMarketplace(root, "hve-core", ["hve-core"]))).resolves.toEqual({
+      "hve-core": "3.2.2",
+    })
+  })
+
   it("pins machine-checkable provenance for the normalized official fixture", async () => {
     const fixtureUrl = new URL("./fixtures/hve-core-marketplace-v3.3.101.json", import.meta.url)
     const provenanceUrl = new URL("./fixtures/hve-core-marketplace-v3.3.101.provenance.json", import.meta.url)
@@ -144,7 +177,7 @@ describe("readCopilotMarketplace", () => {
     })
   })
 
-  it.each(["", ".", "..", "../hve-core", "plugins/hve-core", "plugins\\hve-core", "/hve-core", "C:\\hve-core"])(
+  it.each(["", "..", "../hve-core", "plugins/hve-core", "plugins\\hve-core", "/hve-core", "C:\\hve-core"])(
     "rejects unsafe plugin source %j",
     async (source) => {
       const root = await marketplace({
@@ -398,7 +431,17 @@ const nativeSeed = async (): Promise<NativeSeed> => {
   const seed = path.join(root, "copilot-seed")
   const installed = path.join(seed, "installed-plugins", "hve-core", "hve-core")
   await mkdir(path.dirname(nativeManifest(installed)), { recursive: true })
-  await mkdir(path.join(root, "hve-core"), { recursive: true })
+  const marketplaceDirectory = path.join(root, "hve-core", ".github", "plugin")
+  await mkdir(marketplaceDirectory, { recursive: true })
+  await writeFile(
+    path.join(marketplaceDirectory, "marketplace.json"),
+    `${JSON.stringify({
+      name: "hve-core",
+      metadata: { description: "HVE Core", version: "3.3.101", pluginRoot: "./plugins" },
+      owner: { name: "Microsoft" },
+      plugins: [{ name: "hve-core", source: "hve-core", description: "HVE Core", version: "3.3.101" }],
+    })}\n`,
+  )
   const source = await readFile(new URL("./fixtures/copilot-native-install/settings.json", import.meta.url), "utf8")
   const settings = JSON.parse(source.replace("__HVE_SOURCE__", path.join(root, "hve-core"))) as Record<string, unknown>
   await writeFile(path.join(seed, "settings.json"), `${JSON.stringify(settings, null, 2)}\n`)
@@ -413,11 +456,15 @@ const nativeSeed = async (): Promise<NativeSeed> => {
     ),
   )
   await writeFile(path.join(installed, "README.md"), "# HVE Core\n")
+  await cp(installed, path.join(root, "hve-core", "plugins", "hve-core"), { recursive: true })
   return { root, seed, installed, settings }
 }
 
 const runFinalizer = (seed: string, ...args: ReadonlyArray<string>) =>
   execFilePromise(process.execPath, [finalizer, seed, "hve-core", "hve-core", "3.3.101", ...args])
+
+const runFinalizerVersion = (seed: string, version: string) =>
+  execFilePromise(process.execPath, [finalizer, seed, "hve-core", "hve-core", version])
 
 const runFinalizerWithUmask = (seed: string) =>
   execFilePromise("/bin/sh", [
@@ -629,6 +676,61 @@ describe("finalize-copilot-seed", () => {
     expect(upstream.length).toBe(provenance.upstream_bytes)
     expect(fixture.length).toBe(provenance.fixture_bytes)
     expect(gitBlobSha1).toBe(provenance.git_blob_sha1)
+  })
+
+  it("materializes the repository-root HVE plugin from its marketplace source", async () => {
+    const fixture = await nativeSeed()
+    const source = path.join(fixture.root, "hve-core")
+    await rm(path.join(fixture.seed, "installed-plugins"), { recursive: true, force: true })
+    await mkdir(path.join(source, ".github", "plugin"), { recursive: true })
+    await writeFile(
+      path.join(source, ".github", "plugin", "marketplace.json"),
+      `${JSON.stringify({
+        name: "hve-core",
+        metadata: { description: "HVE Core", version: "3.2.2" },
+        owner: { name: "Microsoft" },
+        plugins: [
+          {
+            name: "hve-core",
+            source: ".",
+            description: "HVE Core",
+            version: "3.2.2",
+          },
+        ],
+      })}\n`,
+    )
+    await rm(path.join(source, "plugins"), { recursive: true })
+    await writeFile(path.join(source, "plugin.json"), '{"name":"hve-core","version":"3.2.2"}\n')
+    await writeFile(path.join(source, "README.md"), "# Root HVE Core\n")
+    await mkdir(path.join(source, "scripts"))
+    await writeFile(path.join(source, "scripts", "run.sh"), "#!/bin/sh\n", { mode: 0o700 })
+    await chmod(source, 0o700)
+    await chmod(path.join(source, "plugin.json"), 0o600)
+    await chmod(path.join(source, "README.md"), 0o600)
+
+    await runFinalizerVersion(fixture.seed, "3.2.2")
+
+    await expect(readFile(path.join(fixture.installed, "plugin.json"), "utf8")).resolves.toContain('"version":"3.2.2"')
+    await expect(readFile(path.join(fixture.installed, "README.md"), "utf8")).resolves.toBe("# Root HVE Core\n")
+    expect((await stat(fixture.installed)).mode & 0o777).toBe(0o755)
+    expect((await stat(path.join(fixture.installed, "plugin.json"))).mode & 0o777).toBe(0o644)
+    expect((await stat(path.join(fixture.installed, "README.md"))).mode & 0o777).toBe(0o644)
+    expect((await stat(path.join(fixture.installed, "scripts", "run.sh"))).mode & 0o777).toBe(0o755)
+    await expect(readFile(path.join(fixture.seed, "managed-files.txt"), "utf8")).resolves.toContain(
+      "installed-plugins/hve-core/hve-core/plugin.json",
+    )
+    await expectFinalSeed(fixture.seed)
+  })
+
+  it("rejects duplicate path keys in the native marketplace manifest", async () => {
+    const fixture = await nativeSeed()
+    const source = path.join(fixture.root, "hve-core")
+    await writeFile(
+      path.join(source, ".github", "plugin", "marketplace.json"),
+      '{"name":"hve-core","metadata":{"description":"HVE Core","version":"3.2.2"},"owner":{"name":"Microsoft"},"plugins":[{"name":"hve-core","source":"hve-core","source":".","description":"HVE Core","version":"3.2.2"}]}\n',
+    )
+
+    await expect(runFinalizerVersion(fixture.seed, "3.2.2")).rejects.toThrow(/duplicate JSON key/u)
   })
 
   it("rewrites only managed settings and produces deterministic inventories, hashes, and lock marker", async () => {
@@ -913,6 +1015,16 @@ describe("finalize-copilot-seed", () => {
     await expect(runFinalizer(fixture.seed)).rejects.toThrow(/installed plugin name mismatch/)
   })
 
+  it("rejects duplicate keys in the installed plugin manifest", async () => {
+    const fixture = await nativeSeed()
+    await writeFile(
+      nativeManifest(fixture.installed),
+      '{"name":"other","name":"hve-core","version":"0.0.0","version":"3.3.101"}\n',
+    )
+
+    await expect(runFinalizer(fixture.seed)).rejects.toThrow(/duplicate JSON key/u)
+  })
+
   it("rejects a disabled native plugin", async () => {
     const fixture = await nativeSeed()
     const settings = fixture.settings as { enabledPlugins: Record<string, boolean> }
@@ -1018,8 +1130,6 @@ describe("finalize-copilot-seed", () => {
   it("materializes a Copilot live-loaded local plugin into the immutable seed", async () => {
     const fixture = await nativeSeed()
     const sourcePlugin = path.join(fixture.root, "hve-core", "plugins", "hve-core")
-    await mkdir(path.dirname(sourcePlugin), { recursive: true })
-    await cp(fixture.installed, sourcePlugin, { recursive: true })
     await writeFile(path.join(fixture.root, "hve-core", "shared.md"), "shared target\n")
     await symlink("../../shared.md", path.join(sourcePlugin, "linked.md"))
     await rm(path.join(fixture.seed, "installed-plugins"), { recursive: true })
@@ -1037,8 +1147,6 @@ describe("finalize-copilot-seed", () => {
   it("rejects a live plugin symlink that escapes the locked marketplace", async () => {
     const fixture = await nativeSeed()
     const sourcePlugin = path.join(fixture.root, "hve-core", "plugins", "hve-core")
-    await mkdir(path.dirname(sourcePlugin), { recursive: true })
-    await cp(fixture.installed, sourcePlugin, { recursive: true })
     await writeFile(path.join(fixture.root, "outside.txt"), "builder secret\n")
     await symlink("../../../outside.txt", path.join(sourcePlugin, "escaped.txt"))
     await rm(path.join(fixture.seed, "installed-plugins"), { recursive: true })

@@ -44,9 +44,13 @@ const stagePhases = new Set([
   "removed-config",
 ])
 const controlCharacterPattern = /[\u0000-\u001f\u007f]/
-const authoritativeManifest = path.join(".github", "plugin", "plugin.json")
-const alternateManifests = [
+const maxJsonCharacters = 1_000_000
+const maxJsonDepth = 128
+const authoritativeManifests = new Set([
+  path.join(".github", "plugin", "plugin.json"),
   "plugin.json",
+])
+const unsupportedAlternateManifests = [
   path.join(".copilot", "plugin.json"),
   path.join(".claude-plugin", "plugin.json"),
 ]
@@ -156,6 +160,168 @@ const readStrictJson = async (handle, message) => {
   } catch (error) {
     if (error instanceof SyntaxError) fail(message)
     throw error
+  }
+}
+
+const skipJsonWhitespace = (parser) => {
+  while (
+    parser.index < parser.source.length
+    && /[\u0020\u0009\u000a\u000d]/.test(parser.source[parser.index])
+  ) {
+    parser.index += 1
+  }
+}
+
+const jsonEscapeEnd = (source, cursor, message) => {
+  const escape = source[cursor]
+  if (escape === undefined) fail(message)
+  if (escape === "u") {
+    if (!/^[0-9a-fA-F]{4}$/.test(source.slice(cursor + 1, cursor + 5))) fail(message)
+    return cursor + 5
+  }
+  if (!'"\\/bfnrt'.includes(escape)) fail(message)
+  return cursor + 1
+}
+
+const readJsonStringToken = (parser, message) => {
+  if (parser.source[parser.index] !== '"') fail(message)
+  let cursor = parser.index + 1
+  while (cursor < parser.source.length) {
+    const character = parser.source[cursor]
+    if (character === '"') {
+      const end = cursor + 1
+      return { value: JSON.parse(parser.source.slice(parser.index, end)), end }
+    }
+    if (character.charCodeAt(0) < 0x20) fail(message)
+    cursor = character === "\\"
+      ? jsonEscapeEnd(parser.source, cursor + 1, message)
+      : cursor + 1
+  }
+  fail(message)
+}
+
+const pushJsonFrame = (parser, kind, state, message) => {
+  if (parser.frames.length >= maxJsonDepth) fail(message)
+  parser.frames.push(kind === "object"
+    ? { kind, keys: new Set(), state }
+    : { kind, state })
+  parser.index += 1
+}
+
+const readJsonValue = (parser, message) => {
+  const character = parser.source[parser.index]
+  if (character === "{") return pushJsonFrame(parser, "object", "keyOrEnd", message)
+  if (character === "[") return pushJsonFrame(parser, "array", "valueOrEnd", message)
+  if (character === '"') {
+    parser.index = readJsonStringToken(parser, message).end
+    return
+  }
+  for (const literal of ["true", "false", "null"]) {
+    if (parser.source.startsWith(literal, parser.index)) {
+      parser.index += literal.length
+      return
+    }
+  }
+  const number = parser.source.slice(parser.index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/u)?.[0]
+  if (number === undefined) fail(message)
+  parser.index += number.length
+}
+
+const closeJsonFrame = (parser) => {
+  parser.index += 1
+  parser.frames.pop()
+}
+
+const readJsonObjectKey = (parser, frame, allowEnd, message) => {
+  if (parser.source[parser.index] === "}") {
+    if (!allowEnd) fail(message)
+    closeJsonFrame(parser)
+    return
+  }
+  const key = readJsonStringToken(parser, message)
+  if (frame.keys.has(key.value)) fail(`${message}: duplicate JSON key`)
+  frame.keys.add(key.value)
+  frame.state = "colon"
+  parser.index = key.end
+}
+
+const readJsonObjectEnd = (parser, frame, message) => {
+  if (parser.source[parser.index] === ",") {
+    parser.index += 1
+    frame.state = "key"
+    return
+  }
+  if (parser.source[parser.index] !== "}") fail(message)
+  closeJsonFrame(parser)
+}
+
+const advanceJsonObject = (parser, frame, message) => {
+  switch (frame.state) {
+    case "keyOrEnd":
+      return readJsonObjectKey(parser, frame, true, message)
+    case "key":
+      return readJsonObjectKey(parser, frame, false, message)
+    case "colon":
+      if (parser.source[parser.index] !== ":") fail(message)
+      parser.index += 1
+      frame.state = "value"
+      return
+    case "value":
+      frame.state = "commaOrEnd"
+      return readJsonValue(parser, message)
+    default:
+      return readJsonObjectEnd(parser, frame, message)
+  }
+}
+
+const readJsonArrayValue = (parser, frame, allowEnd, message) => {
+  if (parser.source[parser.index] === "]") {
+    if (!allowEnd) fail(message)
+    closeJsonFrame(parser)
+    return
+  }
+  frame.state = "commaOrEnd"
+  readJsonValue(parser, message)
+}
+
+const readJsonArrayEnd = (parser, frame, message) => {
+  if (parser.source[parser.index] === ",") {
+    parser.index += 1
+    frame.state = "value"
+    return
+  }
+  if (parser.source[parser.index] !== "]") fail(message)
+  closeJsonFrame(parser)
+}
+
+const advanceJsonArray = (parser, frame, message) => {
+  switch (frame.state) {
+    case "valueOrEnd":
+      return readJsonArrayValue(parser, frame, true, message)
+    case "value":
+      return readJsonArrayValue(parser, frame, false, message)
+    default:
+      return readJsonArrayEnd(parser, frame, message)
+  }
+}
+
+const assertNoDuplicateJsonKeys = (source, message) => {
+  if (source.length > maxJsonCharacters) fail(message)
+  const parser = { source, index: 0, frames: [], rootState: "value" }
+  while (true) {
+    skipJsonWhitespace(parser)
+    const frame = parser.frames.at(-1)
+    if (frame !== undefined) {
+      if (frame.kind === "object") advanceJsonObject(parser, frame, message)
+      else advanceJsonArray(parser, frame, message)
+      continue
+    }
+    if (parser.rootState === "end") {
+      if (parser.index !== source.length) fail(message)
+      return
+    }
+    parser.rootState = "end"
+    readJsonValue(parser, message)
   }
 }
 
@@ -518,9 +684,11 @@ const acquireLock = async (seed, seedIdentity, buildRoot) => {
 }
 
 const validatePluginManifest = (content, plugin, expectedVersion) => {
+  const source = content.toString("utf8")
+  assertNoDuplicateJsonKeys(source, "installed plugin manifest is invalid")
   let parsed
   try {
-    parsed = JSON.parse(content.toString("utf8"))
+    parsed = JSON.parse(source)
   } catch (error) {
     if (error instanceof SyntaxError) fail("installed plugin manifest is invalid")
     throw error
@@ -578,9 +746,12 @@ const recordManagedFile = async (context, entry) => {
   if (context.forbiddenBuildPaths.some((candidate) => content.includes(Buffer.from(candidate)))) {
     fail(`temporary build root leaked in managed content: ${entry.relative}`)
   }
-  if (entry.installedRelative === authoritativeManifest) {
+  if (authoritativeManifests.has(entry.installedRelative)) {
+    if (context.foundManifest !== undefined) {
+      fail(`ambiguous plugin manifest: ${entry.installedRelative}`)
+    }
     validatePluginManifest(content, context.plugin, context.expectedVersion)
-    context.foundManifest = true
+    context.foundManifest = entry.installedRelative
   }
   context.managedEntries.push({
     path: entry.relative,
@@ -594,7 +765,7 @@ const registerManagedPath = (context, relative, installedRelative) => {
   if (controlCharacterPattern.test(relative)) {
     fail(`control character in managed path: ${JSON.stringify(relative)}`)
   }
-  if (alternateManifests.includes(installedRelative)) {
+  if (unsupportedAlternateManifests.includes(installedRelative)) {
     fail(`ambiguous plugin manifest: ${installedRelative}`)
   }
   const normalized = relative.normalize("NFC")
@@ -644,7 +815,7 @@ const inventoryPlugin = async (seed, installed, forbiddenBuildPaths, plugin, exp
     expectedVersion,
     seen: new Set(),
     managedEntries: [],
-    foundManifest: false,
+    foundManifest: undefined,
   }
   const installedStatus = await lstat(installed)
   if (!installedStatus.isDirectory() || installedStatus.isSymbolicLink()) fail("installed plugin path must be a directory")
@@ -652,7 +823,7 @@ const inventoryPlugin = async (seed, installed, forbiddenBuildPaths, plugin, exp
   context.seen.add(installedRelative.normalize("NFC"))
   await recordManagedDirectory(context, installed, installedRelative, installedStatus)
   await inventoryManagedDirectory(context, installed)
-  if (!context.foundManifest) fail(`installed plugin manifest is missing: ${authoritativeManifest}`)
+  if (context.foundManifest === undefined) fail("installed plugin manifest is missing")
   context.managedEntries.sort((left, right) => lexical(left.path, right.path))
   return context.managedEntries
 }
@@ -878,6 +1049,98 @@ const validateNativePluginRegistration = async (
   }
 }
 
+const readMarketplaceManifest = async (expectedSource) => {
+  const manifestPath = path.join(expectedSource, ".github", "plugin", "marketplace.json")
+  const handle = await open(manifestPath, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const status = await handle.stat()
+    if (!status.isFile()) fail("native marketplace manifest must be a regular file")
+    const source = await handle.readFile("utf8")
+    assertNoDuplicateJsonKeys(source, "native marketplace manifest is invalid")
+    let manifest
+    try {
+      manifest = JSON.parse(source)
+    } catch (error) {
+      if (error instanceof SyntaxError) fail("native marketplace manifest is invalid")
+      throw error
+    }
+    if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+      fail("native marketplace manifest is invalid")
+    }
+    return manifest
+  } finally {
+    await handle.close()
+  }
+}
+
+const marketplacePluginEntry = (manifest, marketplace, plugin, expectedVersion) => {
+  if (manifest.name !== marketplace || !Array.isArray(manifest.plugins)) {
+    fail("native marketplace manifest does not match the selected marketplace")
+  }
+  const matches = manifest.plugins.filter(
+    (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry) && entry.name === plugin,
+  )
+  if (matches.length !== 1) fail("native marketplace plugin source is missing or ambiguous")
+  if (matches[0].version !== expectedVersion) fail("native marketplace plugin version does not match the lock")
+  return matches[0]
+}
+
+const marketplacePluginRootSegments = (metadata) => {
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) {
+    fail("native marketplace metadata is invalid")
+  }
+  const pluginRoot = metadata.pluginRoot
+  if (pluginRoot === undefined) return []
+  if (
+    typeof pluginRoot !== "string" ||
+    pluginRoot.length === 0 ||
+    controlCharacterPattern.test(pluginRoot) ||
+    pluginRoot.includes("\\") ||
+    path.posix.isAbsolute(pluginRoot) ||
+    path.win32.isAbsolute(pluginRoot)
+  ) {
+    fail("native marketplace pluginRoot is unsafe")
+  }
+  const relative = pluginRoot.startsWith("./") ? pluginRoot.slice(2) : pluginRoot
+  const segments = relative.split("/")
+  if (segments.length === 0 || segments.some((segment) => !identifierPattern.test(segment))) {
+    fail("native marketplace pluginRoot is unsafe")
+  }
+  return segments
+}
+
+const marketplacePluginSourceSegments = (source) => {
+  if (source === ".") return []
+  if (
+    typeof source !== "string" ||
+    !identifierPattern.test(source) ||
+    path.posix.isAbsolute(source) ||
+    path.win32.isAbsolute(source) ||
+    source.includes("/") ||
+    source.includes("\\")
+  ) {
+    fail("native marketplace plugin source is unsafe")
+  }
+  return [source]
+}
+
+const resolveMarketplacePluginSource = async (expectedSource, marketplace, plugin, expectedVersion) => {
+  const manifest = await readMarketplaceManifest(expectedSource)
+  const entry = marketplacePluginEntry(manifest, marketplace, plugin, expectedVersion)
+  const candidate = path.join(
+    expectedSource,
+    ...marketplacePluginRootSegments(manifest.metadata),
+    ...marketplacePluginSourceSegments(entry.source),
+  )
+  const sourceStatus = await lstat(candidate)
+  if (!sourceStatus.isDirectory() || sourceStatus.isSymbolicLink()) {
+    fail("live plugin source must be a directory")
+  }
+  const resolved = await realpath(candidate)
+  if (!inside(expectedSource, resolved)) fail("live plugin source escapes the marketplace")
+  return resolved
+}
+
 const ensureDirectory = async (directory, label) => {
   try {
     await mkdir(directory, { mode: 0o700 })
@@ -959,10 +1222,32 @@ const validateDereferencedPlugin = async (sourcePlugin, allowedRoot) => {
   await validateDereferencedDirectory(sourcePlugin, allowedRoot, new Set(), new Set())
 }
 
-const materializeLivePlugin = async (seed, expectedSource, marketplace, plugin) => {
+const normalizeCopiedPluginDirectory = async (directory) => {
+  await chmod(directory, 0o755)
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name)
+    const status = await lstat(absolute)
+    if (status.isDirectory() && !status.isSymbolicLink()) {
+      await normalizeCopiedPluginDirectory(absolute)
+      continue
+    }
+    if (!status.isFile() || status.isSymbolicLink()) {
+      fail("copied live plugin contains an unsupported path")
+    }
+    await chmod(absolute, status.mode & 0o111 ? 0o755 : 0o644)
+  }
+}
+
+const materializeLivePlugin = async (seed, expectedSource, marketplace, plugin, expectedVersion) => {
   const installedRoot = path.join(seed, "installed-plugins")
   const marketplaceRoot = path.join(installedRoot, marketplace)
   const installed = path.join(marketplaceRoot, plugin)
+  const sourcePluginReal = await resolveMarketplacePluginSource(
+    expectedSource,
+    marketplace,
+    plugin,
+    expectedVersion,
+  )
   try {
     await lstat(installed)
     return
@@ -970,13 +1255,6 @@ const materializeLivePlugin = async (seed, expectedSource, marketplace, plugin) 
     if (!isMissing(error)) throw error
   }
 
-  const sourcePlugin = path.join(expectedSource, "plugins", plugin)
-  const sourceStatus = await lstat(sourcePlugin)
-  if (!sourceStatus.isDirectory() || sourceStatus.isSymbolicLink()) {
-    fail("live plugin source must be a directory")
-  }
-  const sourcePluginReal = await realpath(sourcePlugin)
-  if (!inside(expectedSource, sourcePluginReal)) fail("live plugin source escapes the marketplace")
   await validateDereferencedPlugin(sourcePluginReal, expectedSource)
 
   await ensureDirectory(installedRoot, "installed-plugins")
@@ -990,6 +1268,7 @@ const materializeLivePlugin = async (seed, expectedSource, marketplace, plugin) 
       force: false,
       preserveTimestamps: false,
     })
+    await normalizeCopiedPluginDirectory(temporary)
     await rename(temporary, installed)
   } finally {
     await rm(temporary, { recursive: true, force: true })
@@ -1096,6 +1375,7 @@ const prepareInstalledPlugin = async ({
   forbiddenBuildPaths,
   expectedSourceArgument,
   expectedSource,
+  expectedVersion,
   managed,
 }) => {
   const settingsPath = path.join(seed, "settings.json")
@@ -1111,7 +1391,7 @@ const prepareInstalledPlugin = async ({
       expectedSource,
       seed,
     )
-    await materializeLivePlugin(seed, expectedSource, marketplace, plugin)
+    await materializeLivePlugin(seed, expectedSource, marketplace, plugin, expectedVersion)
   }
   const installed = await validateSeedTree(seed, marketplace, plugin, forbiddenBuildPaths)
   if (settingsFile === undefined) {
@@ -1215,6 +1495,7 @@ const main = async () => {
       forbiddenBuildPaths,
       expectedSourceArgument,
       expectedSource,
+      expectedVersion,
       managed,
     })
 
