@@ -461,6 +461,14 @@ cat >"$native_seed/plugin-settings.json" <<'JSON'
 {
   "enabledPlugins": {
     "social-media-skills@social-media-skills": true
+  },
+  "pluginConfigs": {
+    "social-media-skills@social-media-skills": {
+      "options": {
+        "hook_profile": "minimal",
+        "hooks_enabled": true
+      }
+    }
   }
 }
 JSON
@@ -502,6 +510,8 @@ jq -e '
   .theme == "dark"
   and .outputStyle == "Rundown"
   and .enabledPlugins["social-media-skills@social-media-skills"] == true
+  and .pluginConfigs["social-media-skills@social-media-skills"].options.hook_profile == "minimal"
+  and .pluginConfigs["social-media-skills@social-media-skills"].options.hooks_enabled == true
 ' "$native_runtime/settings.json" >/dev/null
 jq -e '
   .["social-media-skills"].source.source == "directory"

@@ -270,6 +270,49 @@ const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): str
   ].join("; ")
 }
 
+type ClaudeMarketplaceProfilePlugin = Extract<
+  ProfileDocument["profile"]["plugins"][number],
+  { readonly adapter: "claude-marketplace" }
+>
+
+const requireLockedClaudeMarketplacePlugin = (
+  plugin: ProfileDocument["profile"]["plugins"][number],
+  source: ProfileLock["sources"][number] | undefined,
+): ClaudeMarketplaceProfilePlugin => {
+  const versions = source?.plugin_versions === undefined ? [] : Object.entries(source.plugin_versions)
+  if (
+    plugin.adapter !== "claude-marketplace" ||
+    source?.adapter !== "claude-marketplace" ||
+    source.marketplace !== plugin.marketplace ||
+    source.repository !== plugin.repository ||
+    source.ref !== plugin.ref ||
+    JSON.stringify(source.select) !== JSON.stringify(plugin.select) ||
+    versions.length !== plugin.select.length ||
+    versions.some(([name, version]) => !safeIdentifierPattern.test(name) || !safeLockedVersionPattern.test(version))
+  ) {
+    return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
+  }
+  return plugin
+}
+
+const sortedClaudePluginConfig = (config: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
+  Object.fromEntries(Object.entries(config).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)))
+
+const claudePluginConfigArguments = (plugin: ClaudeMarketplaceProfilePlugin): string =>
+  Object.entries(plugin.config ?? {})
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([key, value]) => ` --config ${shellQuote(`${key}=${value}`)}`)
+    .join("")
+
+const preferNpmLockCommand = (marketplaceRoot: string): string => {
+  const packageManifest = `${marketplaceRoot}/package.json`
+  const packageLock = `${marketplaceRoot}/package-lock.json`
+  const yarnLock = `${marketplaceRoot}/yarn.lock`
+  const detectModernYarn =
+    'const fs=require("node:fs");try{const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).packageManager;process.exit(typeof value==="string"&&/^yarn@(?:[2-9]|[1-9][0-9]+)\\./.test(value)?0:1)}catch{process.exit(1)}'
+  return `if [ -f ${shellQuote(packageLock)} ] && [ -f ${shellQuote(yarnLock)} ] && "$node_bin" -e ${shellQuote(detectModernYarn)} ${shellQuote(packageManifest)}; then rm -f ${shellQuote(yarnLock)}; fi`
+}
+
 const claudeMarketplaceCommands = (
   document: ProfileDocument,
   lock: ProfileLock,
@@ -279,30 +322,29 @@ const claudeMarketplaceCommands = (
     return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
   }
   const commands: Array<string> = []
+  const pluginConfigs: Record<string, Readonly<Record<string, string>>> = Object.create(null)
   for (let index = 0; index < document.profile.plugins.length; index += 1) {
-    const marketplacePlugin = document.profile.plugins[index]!
-    const marketplaceSource = lock.sources[index]
-    const versions =
-      marketplaceSource?.plugin_versions === undefined ? [] : Object.entries(marketplaceSource.plugin_versions)
-    if (
-      marketplacePlugin.adapter !== "claude-marketplace" ||
-      marketplaceSource?.adapter !== "claude-marketplace" ||
-      marketplaceSource.marketplace !== marketplacePlugin.marketplace ||
-      marketplaceSource.repository !== marketplacePlugin.repository ||
-      marketplaceSource.ref !== marketplacePlugin.ref ||
-      JSON.stringify(marketplaceSource.select) !== JSON.stringify(marketplacePlugin.select) ||
-      versions.length !== marketplacePlugin.select.length ||
-      versions.some(([name, version]) => !safeIdentifierPattern.test(name) || !safeLockedVersionPattern.test(version))
-    ) {
-      return impossibleBuilderInput("Claude builder requires exact locked marketplace plugins")
+    const marketplacePlugin = requireLockedClaudeMarketplacePlugin(
+      document.profile.plugins[index]!,
+      lock.sources[index],
+    )
+    const configArguments = claudePluginConfigArguments(marketplacePlugin)
+    if (marketplacePlugin.config !== undefined) {
+      const id = `${marketplacePlugin.select[0]}@${marketplacePlugin.marketplace}`
+      pluginConfigs[id] = sortedClaudePluginConfig(marketplacePlugin.config)
     }
+    const marketplaceRoot = `/src/claude-marketplace-${index}`
     commands.push(
-      `${nativeEnvironment} "$claude_bin" plugin marketplace add /src/claude-marketplace-${index}`,
+      preferNpmLockCommand(marketplaceRoot),
+      `${nativeEnvironment} "$claude_bin" plugin marketplace add ${marketplaceRoot}`,
       ...marketplacePlugin.select.map(
         (selection) =>
-          `${nativeEnvironment} "$claude_bin" plugin install ${selection}@${marketplacePlugin.marketplace} --scope user`,
+          `${nativeEnvironment} "$claude_bin" plugin install ${selection}@${marketplacePlugin.marketplace} --scope user${configArguments}`,
       ),
     )
+  }
+  if (Object.keys(pluginConfigs).length > 0) {
+    commands.push(`printf '%s\\n' ${shellQuote(JSON.stringify({ pluginConfigs }))} > /src/claude-plugin-configs.json`)
   }
   return commands
 }

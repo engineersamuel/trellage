@@ -40,7 +40,7 @@ const dangerousKeys = new Set(["__proto__", "constructor", "prototype"])
 const safeKey = (value: string): boolean =>
   safeSegment.test(value) && !dangerousKeys.has(value) && !Object.hasOwn(Object.prototype, value)
 
-const isSafeClaudePluginSource = (value: string): boolean => {
+export const isSafeClaudePluginSource = (value: string): boolean => {
   if (value === "." || value === "./") return true
   if (value.length === 0 || value.includes("\\") || path.posix.isAbsolute(value) || path.win32.isAbsolute(value)) {
     return false
@@ -53,7 +53,7 @@ const isSafeClaudePluginSource = (value: string): boolean => {
   )
 }
 
-const pluginRootForSource = (sourceDirectory: string, source: string): string => {
+export const claudePluginRootForSource = (sourceDirectory: string, source: string): string => {
   if (source === "." || source === "./") return sourceDirectory
   const relative = source.startsWith("./") ? source.slice(2) : source
   return path.join(sourceDirectory, ...relative.split("/"))
@@ -187,7 +187,7 @@ const nestedPluginManifestVersion = (
 ): Effect.Effect<NestedPluginManifest, ClaudePluginError> =>
   Effect.gen(function* () {
     const optionalManifest = yield* readOptionalUtf8(
-      path.join(pluginRootForSource(sourceDirectory, source), ".claude-plugin", "plugin.json"),
+      path.join(claudePluginRootForSource(sourceDirectory, source), ".claude-plugin", "plugin.json"),
       `cannot read Claude plugin metadata: ${pluginName}`,
     )
     if (optionalManifest === undefined) return { found: false }

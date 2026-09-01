@@ -342,10 +342,22 @@ if [[ -e "$plugin_settings" || -L "$plugin_settings" ]]; then
     || fail 'baked Claude plugin settings are unsafe'
   jq -e '
     type == "object"
-    and keys == ["enabledPlugins"]
+    and ((keys == ["enabledPlugins"]) or (keys == ["enabledPlugins", "pluginConfigs"]))
     and (.enabledPlugins | type == "object")
     and ([.enabledPlugins[]] | all(. == true))
     and ([.enabledPlugins | keys[]] | all(test("^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$")))
+    and (
+      (.pluginConfigs // {}) | type == "object"
+      and ([to_entries[] |
+        (.key | test("^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$"))
+        and (.value | type == "object" and keys == ["options"])
+        and (.value.options | type == "object" and length > 0)
+        and ([.value.options | to_entries[] |
+          (.key | test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+          and ((.value | type) as $kind | $kind == "string" or $kind == "boolean" or $kind == "number")
+        ] | all)
+      ] | all)
+    )
   ' "$plugin_settings" >/dev/null || fail 'baked Claude plugin settings are invalid'
   [[ -f "$settings" && ! -L "$settings" ]] || fail 'Claude settings must be a regular file'
   jq -e 'type == "object"' "$settings" >/dev/null || fail 'Claude settings are invalid'
@@ -355,7 +367,11 @@ if [[ -e "$plugin_settings" || -L "$plugin_settings" ]]; then
   fi
   settings_tmp="$runtime_home/.settings.json.trellage.$$"
   jq -S --slurpfile plugin "$plugin_settings" \
-    '.enabledPlugins = ((.enabledPlugins // {}) + $plugin[0].enabledPlugins)' \
+    '.enabledPlugins = ((.enabledPlugins // {}) + $plugin[0].enabledPlugins)
+    | if $plugin[0].pluginConfigs == null
+      then .
+      else .pluginConfigs = ((.pluginConfigs // {}) + $plugin[0].pluginConfigs)
+      end' \
     "$settings" >"$settings_tmp"
   chmod 600 "$settings_tmp"
   mv -f -- "$settings_tmp" "$settings"

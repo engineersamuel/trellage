@@ -20,6 +20,7 @@ const graphOfLoopsProfilePath = fileURLToPath(
 )
 const blogProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))
 const councilProfilePath = fileURLToPath(new URL("../../../profiles/claude-council/profile.toml", import.meta.url))
+const eccProfilePath = fileURLToPath(new URL("../../../profiles/claude-ecc/profile.toml", import.meta.url))
 const launcherPath = fileURLToPath(new URL("../../../prototypes/trellage/trellage", import.meta.url))
 const claudeEntryPath = fileURLToPath(new URL("../../../prototypes/trellage/runtime-claude-entry.sh", import.meta.url))
 const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
@@ -316,6 +317,46 @@ describe("authored Claude council profile", () => {
         select: ["caveman"],
       }),
     ])
+  })
+})
+
+describe("authored Claude ECC profile", () => {
+  it("installs the official ECC plugin with minimal hooks and no extra integrations", async () => {
+    const source = await readFile(eccProfilePath, "utf8")
+    const document = await Effect.runPromise(parseProfile(source, eccProfilePath))
+
+    expect(source).toContain("# Official upstream project: https://github.com/affaan-m/ECC")
+    expect(document.profile.harness.kind).toBe("claude")
+    if (document.profile.harness.kind !== "claude") throw new Error("expected Claude harness")
+    expect(document.profile.harness).toMatchObject({
+      version: "latest",
+      claude: {
+        default_auth: "proxy",
+        model: "claude-opus-5",
+        gateway: "http://copilot-proxy-rs:8080",
+      },
+    })
+    expect(document.profile.skill_bundles).toEqual(["sandbox-common"])
+    expect(document.profile.image.base).toBe("node:bookworm-slim")
+    expect(document.profile.image.packages).not.toContain("tmux")
+    expect(document.profile.plugins).toEqual([
+      {
+        adapter: "claude-marketplace",
+        repository: "https://github.com/affaan-m/ECC.git",
+        ref: "main",
+        marketplace: "ecc",
+        select: ["ecc"],
+        include_mcp: false,
+        config: {
+          hooks_enabled: "true",
+          hook_profile: "minimal",
+        },
+      },
+    ])
+    expect(document.profile.mcps).toEqual([])
+    expect(document.profile.secrets.required).toEqual([])
+    expect(document.resolvedInitialPrompt).toBeUndefined()
+    expect(document.profile.harness.initial_prompt).toBeUndefined()
   })
 })
 

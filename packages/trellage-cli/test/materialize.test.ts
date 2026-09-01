@@ -606,6 +606,91 @@ describe("native Claude marketplace materialization", () => {
     expect(stamped.plugins[0]?.version).toBe("1.2.0")
   })
 
+  it("excludes selected plugin MCP configuration only from the verified build-context copy", async () => {
+    const root = await temporaryRoot("trellage-claude-marketplace-mcp-policy-")
+    const source = path.join(root, "source")
+    const context = path.join(root, "context")
+    await mkdir(path.join(source, ".claude-plugin"), { recursive: true })
+    await mkdir(context)
+    const mcpServers = {
+      "chrome-devtools": {
+        command: "npx",
+        args: ["-y", "chrome-devtools-mcp@latest"],
+      },
+    }
+    await writeFile(
+      path.join(source, ".claude-plugin", "marketplace.json"),
+      `${JSON.stringify({
+        name: "ecc",
+        owner: { name: "ECC" },
+        plugins: [
+          {
+            name: "ecc",
+            source: "./",
+            description: "Everything Claude Code",
+            version: "2.2.0",
+            mcpServers,
+          },
+        ],
+      })}\n`,
+    )
+    await writeFile(
+      path.join(source, ".claude-plugin", "plugin.json"),
+      `${JSON.stringify({
+        name: "ecc",
+        description: "Everything Claude Code",
+        version: "2.2.0",
+        mcpServers,
+      })}\n`,
+    )
+    await writeFile(path.join(source, ".mcp.json"), `${JSON.stringify({ mcpServers })}\n`)
+    const files = await Effect.runPromise(inventoryDirectory(source))
+
+    await Effect.runPromise(
+      materializeClaudeAssets({
+        adapter: "claude-marketplace",
+        sourceDirectories: [source],
+        context,
+        marketplaceIncludeMcp: [false],
+        lock: {
+          sources: [
+            {
+              adapter: "claude-marketplace",
+              marketplace: "ecc",
+              plugin_versions: { ecc: "2.2.0" },
+              select: ["ecc"],
+              commit: "e".repeat(40),
+              files,
+            },
+          ],
+          packages: {
+            harness: {
+              kind: "claude",
+              selector: "latest",
+              version: "2.1.222",
+              integrity: `sha256:${"a".repeat(64)}`,
+              url: "https://github.com/anthropics/claude-code/releases/download/v2.1.222/claude-linux-arm64.tar.gz",
+              size: 88123930,
+            },
+            runtime: [],
+          },
+        } as unknown as ProfileLock,
+      }),
+    )
+
+    const copied = path.join(context, "claude-marketplace-0")
+    await expect(readFile(path.join(copied, ".mcp.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+    const copiedMarketplace = JSON.parse(
+      await readFile(path.join(copied, ".claude-plugin", "marketplace.json"), "utf8"),
+    ) as { plugins: Array<Record<string, unknown>> }
+    expect(copiedMarketplace.plugins[0]).not.toHaveProperty("mcpServers")
+    const copiedPlugin = JSON.parse(
+      await readFile(path.join(copied, ".claude-plugin", "plugin.json"), "utf8"),
+    ) as Record<string, unknown>
+    expect(copiedPlugin).not.toHaveProperty("mcpServers")
+    await expect(readFile(path.join(source, ".mcp.json"), "utf8")).resolves.toContain("chrome-devtools-mcp@latest")
+  })
+
   it("stamps locked plugin versions into the marketplace copy after inventory verification", async () => {
     const root = await temporaryRoot("trellage-claude-marketplace-stamp-")
     const source = path.join(root, "source")

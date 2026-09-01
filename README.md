@@ -286,6 +286,32 @@ the Opus route for that new, prompt, or resumed launch.
 Requires the external `copilot-proxy-rs_default` Docker network, same as other
 proxy-backed Claude profiles.
 
+### Claude ECC
+
+`claude-ecc` runs Claude Opus 5 through `copilot-proxy-rs` with the official
+[`affaan-m/ECC`](https://github.com/affaan-m/ECC) marketplace plugin. It provides
+ECC's plugin-discovered engineering skills, commands, agents, and hooks for
+broad planning, implementation, debugging, review, and verification work.
+
+```bash
+trellage --profile claude-ecc
+```
+
+ECC hooks are enabled with the `minimal` profile. This preserves essential
+lifecycle and safety behavior without the automatic tmux, formatting,
+type-checking, and strict reminder hooks. The image therefore does not add
+`tmux`.
+
+The profile installs the Claude plugin surface only. It does not import ECC's
+repository `rules/` or `contexts/`, and `include_mcp = false` excludes the
+root `.mcp.json` so its unpinned sample Chrome DevTools MCP cannot run. Use
+`/ecc:ecc-guide` to inspect the installed catalog, `/ecc:plan` before a
+substantial change, `/ecc:tdd-workflow` during implementation, and
+`/ecc:code-review` plus `/ecc:verification-loop` before delivery.
+
+Like other proxy-backed Claude profiles, it requires the external
+`copilot-proxy-rs_default` Docker network.
+
 ### Claude social media skills
 
 `claude-social-media` installs every skill from

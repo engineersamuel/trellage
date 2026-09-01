@@ -58,6 +58,7 @@ export interface ClaudeMaterializeRequest {
   readonly sourceDirectories: ReadonlyArray<string>
   readonly context: string
   readonly lock: ProfileLock
+  readonly marketplaceIncludeMcp?: ReadonlyArray<boolean>
   readonly hyperresearchGear?: "full" | "premier"
   readonly hyperresearchDefaultTier?: "light"
   readonly requirementsPath?: string
@@ -356,6 +357,69 @@ const writeClaudeCoreSeed = (context: string, harnessVersion: string): Effect.Ef
     await writeFile(path.join(seed, "managed-paths.txt"), "")
   })
 
+const claudeMaterializeCacheOptions = (
+  artifactCacheHome?: string,
+  npmRegistry?: string,
+): Pick<ClaudeMaterializeRequest, "artifactCacheHome" | "npmRegistry"> => ({
+  ...(artifactCacheHome === undefined ? {} : { artifactCacheHome }),
+  ...(npmRegistry === undefined ? {} : { npmRegistry }),
+})
+
+const materializeClaudeMarketplacePlugins = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  sourceDirectories: ReadonlyArray<string>,
+  context: string,
+  materializeClaude: ClaudeMaterializer,
+  artifactCacheHome?: string,
+  npmRegistry?: string,
+): Effect.Effect<void, MaterializeError> => {
+  const plugins = profile.plugins.filter(
+    (plugin): plugin is Extract<ClaudeProfile["plugins"][number], { readonly adapter: "claude-marketplace" }> =>
+      plugin.adapter === "claude-marketplace",
+  )
+  if (plugins.length !== profile.plugins.length) {
+    return Effect.fail(new MaterializeError({ message: "Claude marketplace profile plugins are inconsistent" }))
+  }
+  return materializeClaude({
+    adapter: "claude-marketplace",
+    sourceDirectories,
+    context,
+    lock,
+    marketplaceIncludeMcp: plugins.map((plugin) => plugin.include_mcp ?? true),
+    ...claudeMaterializeCacheOptions(artifactCacheHome, npmRegistry),
+  }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
+}
+
+const materializeHyperresearchPlugin = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  sourceDirectories: ReadonlyArray<string>,
+  support: RuntimeSupportSnapshot,
+  context: string,
+  materializeClaude: ClaudeMaterializer,
+  pythonRequirementsPath?: string,
+  artifactCacheHome?: string,
+  npmRegistry?: string,
+): Effect.Effect<void, MaterializeError> => {
+  const plugin = profile.plugins[0]
+  if (profile.plugins.length !== 1 || plugin?.adapter !== "hyperresearch") {
+    return Effect.fail(new MaterializeError({ message: "Hyperresearch profile plugins are inconsistent" }))
+  }
+  const browserAgent = runtimeSupportFile(support, "claude-browser-agent")
+  return materializeClaude({
+    adapter: "hyperresearch",
+    sourceDirectories,
+    context,
+    lock,
+    hyperresearchGear: plugin.gear,
+    hyperresearchDefaultTier: plugin.select[0],
+    ...(pythonRequirementsPath === undefined ? {} : { requirementsPath: pythonRequirementsPath }),
+    browserAgentPath: path.join(context, browserAgent.buildContextPath),
+    ...claudeMaterializeCacheOptions(artifactCacheHome, npmRegistry),
+  }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
+}
+
 const materializeClaudePlugins = (
   profile: ClaudeProfile,
   lock: ProfileLock,
@@ -369,29 +433,31 @@ const materializeClaudePlugins = (
 ): Effect.Effect<void, MaterializeError> => {
   if (profile.plugins.length === 0) return Effect.void
   const adapter = profile.plugins[0]?.adapter
-  if (adapter !== "hyperresearch" && adapter !== "claude-marketplace") {
-    return Effect.fail(new MaterializeError({ message: "unsupported Claude plugin adapter" }))
+  if (adapter === "claude-marketplace") {
+    return materializeClaudeMarketplacePlugins(
+      profile,
+      lock,
+      sourceDirectories,
+      context,
+      materializeClaude,
+      artifactCacheHome,
+      npmRegistry,
+    )
   }
-  const browserAgent = adapter === "hyperresearch" ? runtimeSupportFile(support, "claude-browser-agent") : undefined
-  const hyperresearchPlugin = adapter === "hyperresearch" ? profile.plugins[0] : undefined
-  return materializeClaude({
-    adapter,
-    sourceDirectories,
-    context,
-    lock,
-    ...(hyperresearchPlugin?.adapter === "hyperresearch"
-      ? {
-          hyperresearchGear: hyperresearchPlugin.gear,
-          hyperresearchDefaultTier: hyperresearchPlugin.select[0],
-        }
-      : {}),
-    ...(adapter !== "hyperresearch" || pythonRequirementsPath === undefined
-      ? {}
-      : { requirementsPath: pythonRequirementsPath }),
-    ...(browserAgent === undefined ? {} : { browserAgentPath: path.join(context, browserAgent.buildContextPath) }),
-    ...(artifactCacheHome === undefined ? {} : { artifactCacheHome }),
-    ...(npmRegistry === undefined ? {} : { npmRegistry }),
-  }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
+  if (adapter === "hyperresearch") {
+    return materializeHyperresearchPlugin(
+      profile,
+      lock,
+      sourceDirectories,
+      support,
+      context,
+      materializeClaude,
+      pythonRequirementsPath,
+      artifactCacheHome,
+      npmRegistry,
+    )
+  }
+  return Effect.fail(new MaterializeError({ message: "unsupported Claude plugin adapter" }))
 }
 
 const materializeClaudeProfileAssets = (

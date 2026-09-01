@@ -179,6 +179,27 @@ for (const phrase of [
   }
 }
 
+const eccGuide = registry.get("sandbox:claude-ecc")
+if (eccGuide === undefined) throw new Error("claude-ecc guide is missing")
+const expectedEccWorkflows = new Map([
+  ["discover-ecc-workflow", ["ecc:ecc-guide", "/ecc:ecc-guide"]],
+  ["plan-change", ["ecc:plan", "/ecc:plan"]],
+  ["tdd-implementation", ["ecc:tdd-workflow", "/ecc:tdd-workflow"]],
+  ["review-and-verify", ["ecc:code-review", "/ecc:code-review"]],
+])
+for (const [workflowId, [skill, promptPhrase]] of expectedEccWorkflows) {
+  const workflow = eccGuide.guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new Error(`claude-ecc guide is missing workflow: ${workflowId}`)
+  if (workflow.skill !== skill) throw new Error(`claude-ecc workflow uses the wrong skill: ${workflowId}`)
+  if (!workflow.promptTemplate.includes(promptPhrase)) {
+    throw new Error(`claude-ecc workflow prompt is missing ${promptPhrase}: ${workflowId}`)
+  }
+}
+const eccReviewWorkflow = eccGuide.guide.workflows.find(({ id }) => id === "review-and-verify")
+if (eccReviewWorkflow === undefined || !eccReviewWorkflow.promptTemplate.includes("/ecc:verification-loop")) {
+  throw new Error("claude-ecc review workflow must finish with verification-loop")
+}
+
 const researchGuide = registry.get("sandbox:claude-research")
 if (researchGuide === undefined) throw new Error("claude-research guide is missing")
 const researchWorkflow = researchGuide.guide.workflows.find(({ id }) => id === "vault-backed-research")

@@ -318,6 +318,24 @@ select = ["humanizer"]
     expect(result.profile.secrets.required).toEqual([])
   })
 
+  it("decodes non-secret configuration and MCP policy for one Claude marketplace plugin", async () => {
+    const result = await decode(
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills"]\ninclude_mcp = false\nconfig = { hooks_enabled = "true", hook_profile = "minimal" }',
+      ),
+    )
+
+    expect(result.profile.plugins[0]).toMatchObject({
+      adapter: "claude-marketplace",
+      include_mcp: false,
+      config: {
+        hooks_enabled: "true",
+        hook_profile: "minimal",
+      },
+    })
+  })
+
   it("accepts extra stdio MCPs and image tools on a native Claude marketplace profile", async () => {
     const result = await decode(
       claudeMarketplaceProfile(`
@@ -483,6 +501,51 @@ select = ["humanizer"]
     ],
   ])("rejects invalid native Claude marketplace shape: %s", async (_label, input) => {
     await expect(decode(input)).rejects.toThrow(/Claude|marketplace|selection|duplicate/i)
+  })
+
+  it.each([
+    [
+      "empty config",
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills"]\nconfig = {}',
+      ),
+      /config is empty/i,
+    ],
+    [
+      "multiple selected plugins",
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills", "humanizer"]\nconfig = { hook_profile = "minimal" }',
+      ),
+      /config requires exactly one selected asset/i,
+    ],
+    [
+      "unsafe key",
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills"]\nconfig = { constructor = "minimal" }',
+      ),
+      /config key is unsafe: constructor/i,
+    ],
+    [
+      "control character",
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills"]\nconfig = { hook_profile = "minimal\\u0001" }',
+      ),
+      /config value contains control characters: hook_profile/i,
+    ],
+    [
+      "non-string value",
+      claudeMarketplaceProfile().replace(
+        'select = ["social-media-skills"]',
+        'select = ["social-media-skills"]\nconfig = { hooks_enabled = true }',
+      ),
+      /string/i,
+    ],
+  ])("rejects invalid Claude marketplace config: %s", async (_label, input, error) => {
+    await expect(decode(input)).rejects.toThrow(error)
   })
 
   it.each([
