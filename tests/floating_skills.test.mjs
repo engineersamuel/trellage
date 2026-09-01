@@ -8,6 +8,7 @@ import { promisify } from "node:util"
 import { afterEach, test } from "node:test"
 
 import {
+  checkNative,
   ensureNative,
   parseCatalog,
   readCatalog,
@@ -105,8 +106,15 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.ok(Object.hasOwn(catalog.bundles, "sandbox-common"))
   assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "cursor-pstack"])
   assert.deepEqual(catalog.bundles["guide-prompt-master"], ["prompt-master"])
+  assert.deepEqual(catalog.bundles.youtube, ["youtube-skills"])
   assert.deepEqual(catalog.sources["prompt-master"].select, ["prompt-master"])
   assert.equal(catalog.sources["prompt-master"].repository, "https://github.com/nidhinjs/prompt-master.git")
+  assert.deepEqual(catalog.sources["youtube-skills"].select, ["youtube-full"])
+  assert.equal(
+    catalog.sources["youtube-skills"].repository,
+    "https://github.com/ZeroPointRepo/youtube-skills.git",
+  )
+  assert.equal(catalog.sources["youtube-skills"].allowExecutables, false)
   const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
     (sourceId) => catalog.sources[sourceId].select,
   )
@@ -268,11 +276,32 @@ test("all launcher and container surfaces consume their common skill bundle", as
     const commonRoot = path.join(prototypesRoot, family.replace(/-profiles$/u, "-common"))
     const commonStatus = await lstat(commonRoot).catch(() => undefined)
     const commonSources = commonStatus?.isDirectory() ? await readRegularTextFiles(commonRoot) : []
-    assert.match(
-      [launcher, installer, ...commonSources].join("\n"),
-      /--bundle native-common/u,
-      `${family} launcher runtime must select native-common`,
-    )
+    const runtimeSource = [launcher, installer, ...commonSources].join("\n")
+    if (family === "trellage-codex-profiles") {
+      const catalog = JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8"))
+      assert.ok(
+        Object.values(catalog.profiles).every(
+          (profile) => Array.isArray(profile.skillBundles) && profile.skillBundles.includes("native-common"),
+        ),
+        `${family} catalog profiles must select native-common`,
+      )
+      assert.match(
+        launcher,
+        /native-environment-runtime/u,
+        `${family} launcher must consume the native environment runtime`,
+      )
+      assert.match(
+        installer,
+        /install-native-environment-runtime\.sh/u,
+        `${family} installer must publish the native environment runtime`,
+      )
+    } else {
+      assert.match(
+        runtimeSource,
+        /--bundle native-common/u,
+        `${family} launcher runtime must select native-common`,
+      )
+    }
     assert.match(
       installer,
       /install-floating-skills-runtime\.sh/u,
@@ -347,6 +376,65 @@ test("first use installs, later use is offline, and update observes the latest c
   })
   await syncSnapshot(fixture.cache, fixture.target)
   assert.match(await readFile(path.join(fixture.target, "fixture", "SKILL.md"), "utf8"), /version two/)
+})
+
+test("update checks compare the latest source without replacing the cache", async () => {
+  const fixture = await createFixture()
+  assert.equal(
+    await checkNative({
+      catalog: fixture.catalog,
+      bundleIds: ["test"],
+      cache: fixture.cache,
+    }),
+    false,
+  )
+  await ensureNative({
+    catalog: fixture.catalog,
+    bundleIds: ["test"],
+    cache: fixture.cache,
+    target: fixture.target,
+  })
+  assert.equal(
+    await checkNative({
+      catalog: fixture.catalog,
+      bundleIds: ["test"],
+      cache: fixture.cache,
+    }),
+    true,
+  )
+
+  await writeSkill(fixture.repository, "version two")
+  await commit(fixture.repository, "update skill")
+  assert.equal(
+    await checkNative({
+      catalog: fixture.catalog,
+      bundleIds: ["test"],
+      cache: fixture.cache,
+    }),
+    false,
+  )
+  assert.match(await readFile(path.join(fixture.cache, "skills", "fixture", "SKILL.md"), "utf8"), /version one/)
+})
+
+test("a failed update check preserves the current cache", async () => {
+  const fixture = await createFixture()
+  await ensureNative({
+    catalog: fixture.catalog,
+    bundleIds: ["test"],
+    cache: fixture.cache,
+    target: fixture.target,
+  })
+  const before = await readFile(path.join(fixture.cache, "skills", "fixture", "SKILL.md"), "utf8")
+  await rename(fixture.repository, `${fixture.repository}.offline`)
+  await assert.rejects(
+    checkNative({
+      catalog: fixture.catalog,
+      bundleIds: ["test"],
+      cache: fixture.cache,
+    }),
+    /command failed: git/,
+  )
+  assert.equal(await readFile(path.join(fixture.cache, "skills", "fixture", "SKILL.md"), "utf8"), before)
 })
 
 test("a failed update preserves the cache and unmanaged skills", async () => {

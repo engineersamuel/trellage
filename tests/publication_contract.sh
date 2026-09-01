@@ -44,8 +44,13 @@ package_manifest="$(npm pack --dry-run --ignore-scripts --json)" \
 jq -e '
   .[0].files
   | any(.path == "scripts/trellage-session-bridge.py")
+    and any(.path == "scripts/floating-skills.mjs")
+    and any(.path == "scripts/install-floating-skills-runtime.sh")
+    and any(.path == "scripts/native-environment.mjs")
+    and any(.path == "scripts/install-native-environment-runtime.sh")
+    and any(.path == "skills.json")
 ' <<<"$package_manifest" >/dev/null \
-  || fail 'npm package omits the Trellage session bridge'
+  || fail 'npm package omits a required Trellage runtime helper'
 
 for required_ignore in \
   '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/' '/evidence/' \

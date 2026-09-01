@@ -684,6 +684,49 @@ export const verifyTarget = async (snapshot, target) => {
   return expected
 }
 
+const snapshotsMatch = async (left, right) => {
+  const leftPath = path.resolve(left)
+  const rightPath = path.resolve(right)
+  const [leftNames, rightNames] = await Promise.all([validateSnapshot(leftPath), validateSnapshot(rightPath)])
+  if (JSON.stringify(leftNames) !== JSON.stringify(rightNames)) return false
+  try {
+    for (const name of leftNames) {
+      await compareManagedTree(path.join(leftPath, "skills", name), path.join(rightPath, "skills", name), name)
+    }
+  } catch (cause) {
+    if (cause instanceof FloatingSkillsError && cause.message.startsWith("managed skill differs")) return false
+    throw cause
+  }
+  const [leftAlwaysOn, rightAlwaysOn] = await Promise.all([
+    readFile(path.join(leftPath, "always-on.md")),
+    readFile(path.join(rightPath, "always-on.md")),
+  ])
+  return leftAlwaysOn.equals(rightAlwaysOn)
+}
+
+export const checkNative = ({ catalog, bundleIds, cache, skillsCli }) =>
+  withLock(`${cache}.lock`, async () => {
+    const cachePath = path.resolve(cache)
+    const cacheStatus = await lstat(cachePath).catch(() => undefined)
+    if (cacheStatus === undefined) return false
+    if (!cacheStatus.isDirectory() || cacheStatus.isSymbolicLink()) {
+      fail(`invalid skill cache: ${cachePath}`)
+    }
+    const temporary = await mkdtemp(path.join(path.dirname(cachePath), ".trellage-floating-skills-check."))
+    const latest = path.join(temporary, "snapshot")
+    try {
+      await stageLatest({
+        catalog,
+        bundleIds,
+        destination: latest,
+        skillsCli,
+      })
+      return await snapshotsMatch(latest, cachePath)
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
+    }
+  })
+
 const defaultCatalogPath = async () => {
   for (const candidate of [path.join(scriptDirectory, "skills.json"), path.join(scriptDirectory, "..", "skills.json")]) {
     try {
@@ -716,7 +759,7 @@ const parseArguments = (arguments_) => {
       index += 1
     } else {
       fail(
-        "usage: floating-skills.mjs <stage|ensure|update|status|sync|verify|verify-repairable> [--bundle NAME] [--catalog FILE] [--output DIR] [--target DIR] [--cache DIR] [--skills-cli FILE]",
+        "usage: floating-skills.mjs <stage|ensure|check|update|status|sync|verify|verify-repairable> [--bundle NAME] [--catalog FILE] [--output DIR] [--target DIR] [--cache DIR] [--skills-cli FILE]",
       )
     }
   }
@@ -785,6 +828,17 @@ const updateCommand = (catalog, bundles, cache, options) =>
     skillsCli: options.skills_cli,
   })
 
+const checkCommand = async (catalog, bundles, cache, options) => {
+  const current = await checkNative({
+    catalog,
+    bundleIds: bundles,
+    cache,
+    skillsCli: options.skills_cli,
+  })
+  process.stdout.write(current ? "current\n" : "update available\n")
+  if (!current) process.exitCode = 10
+}
+
 const statusCommand = async (bundles, cache) => {
   const names = await readManagedNames(path.join(cache, "managed-skills.txt"), "snapshot manifest")
   process.stdout.write(`${JSON.stringify({ bundles, installed: names.length > 0, skills: names })}\n`)
@@ -804,11 +858,12 @@ const dispatch = (command, catalog, bundles, cache, options) => {
   if (command === "stage") return stageCommand(catalog, bundles, options)
   if (command === "sync") return syncCommand(options)
   if (command === "ensure") return ensureCommand(catalog, bundles, cache, options)
+  if (command === "check") return checkCommand(catalog, bundles, cache, options)
   if (command === "update") return updateCommand(catalog, bundles, cache, options)
   if (command === "status") return statusCommand(bundles, cache)
   if (command === "verify") return verifyCommand(cache, options)
   if (command === "verify-repairable") return verifyRepairableCommand(options)
-  fail("usage: floating-skills.mjs <stage|ensure|update|status|sync|verify|verify-repairable>")
+  fail("usage: floating-skills.mjs <stage|ensure|check|update|status|sync|verify|verify-repairable>")
 }
 
 const main = async () => {

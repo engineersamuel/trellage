@@ -6,6 +6,7 @@ local_dir="$HOME/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/trx"
+install_lock="$runtime_parent/.trx-install.lock"
 command_dir="$local_dir/bin"
 command_path="$command_dir/trx"
 installed_launcher="$install_root/bin/trx"
@@ -14,7 +15,10 @@ installed_share="$install_root/share"
 installed_guides="$installed_share/profile-guides"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
-ownership_value='trellage-router-v1'
+# v2 prevents an older router installer from replacing newer guide/catalog
+# support. This installer can migrate a validated v1 runtime once.
+ownership_value='trellage-router-v2'
+legacy_ownership_value='trellage-router-v1'
 
 refuse() {
   printf 'trx install: %s\n' "$1" >&2
@@ -100,11 +104,166 @@ require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/trx" 'runtime root'
 require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
 
+launcher_bundle="$source_dir/../../packages/trellage-launcher/dist/launcher.mjs"
+dependency_bootstrap="$source_dir/../../scripts/bootstrap-development-dependencies.sh"
+source_guides="$source_dir/../../profile-guides"
+floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
+[[ -f "$launcher_bundle" && ! -L "$launcher_bundle" ]] \
+  || refuse "Ink launcher bundle is missing; run npm run build in packages/trellage-launcher"
+[[ -f "$dependency_bootstrap" && -x "$dependency_bootstrap" && ! -L "$dependency_bootstrap" ]] \
+  || refuse "dependency bootstrap is missing or unsafe: $dependency_bootstrap"
+[[ -d "$source_guides" && ! -L "$source_guides" ]] \
+  || refuse "profile guide registry is missing or unsafe: $source_guides"
+[[ -f "$floating_runtime_installer" && -x "$floating_runtime_installer" \
+  && ! -L "$floating_runtime_installer" ]] \
+  || refuse "floating-skills runtime installer is missing or unsafe: $floating_runtime_installer"
+while IFS= read -r guide_path; do
+  [[ ! -L "$guide_path" ]] || refuse "profile guide registry contains a symlink: $guide_path"
+  [[ -d "$guide_path" || (-f "$guide_path" && "$guide_path" == *.md) ]] \
+    || refuse "profile guide registry contains an unsupported path: $guide_path"
+done < <(find "$source_guides" -mindepth 1 -print)
+
+staging_root=''
+publication_active=false
+runtime_old_intent=false
+runtime_publish_intent=false
+command_publish_intent=false
+lock_acquired=false
+created_local_dir=false
+created_share_dir=false
+created_runtime_parent=false
+created_command_dir=false
+
+cleanup_staging() {
+  if [[ -n "$staging_root" && -d "$staging_root" ]]; then
+    case "$staging_root" in
+      "$runtime_parent"/.trx-install.*) rm -rf -- "$staging_root" ;;
+    esac
+  fi
+}
+
+cleanup_created_parents() {
+  if [[ "$created_command_dir" == true && -d "$command_dir" && ! -L "$command_dir" ]]; then
+    rmdir "$command_dir" 2>/dev/null || :
+  fi
+  if [[ "$created_runtime_parent" == true && -d "$runtime_parent" \
+    && ! -L "$runtime_parent" ]]; then
+    rmdir "$runtime_parent" 2>/dev/null || :
+  fi
+  if [[ "$created_share_dir" == true && -d "$share_dir" && ! -L "$share_dir" ]]; then
+    rmdir "$share_dir" 2>/dev/null || :
+  fi
+  if [[ "$created_local_dir" == true && -d "$local_dir" && ! -L "$local_dir" ]]; then
+    rmdir "$local_dir" 2>/dev/null || :
+  fi
+}
+
+release_install_lock() {
+  if [[ "$lock_acquired" == false ]]; then
+    return 0
+  fi
+  [[ -d "$install_lock" && ! -L "$install_lock" ]] \
+    && rmdir "$install_lock" \
+    || return 1
+  lock_acquired=false
+}
+
+rollback() {
+  local ok=true
+
+  if [[ "$command_publish_intent" == true ]]; then
+    if [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]]; then
+      rm -f -- "$command_path" || ok=false
+    elif [[ -e "$command_path" || -L "$command_path" ]]; then
+      ok=false
+    fi
+  fi
+
+  if [[ "$runtime_publish_intent" == true \
+    && ! -d "$staging_root/new-runtime" ]]; then
+    if [[ -d "$install_root" && ! -L "$install_root" \
+      && -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
+      && cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value"); then
+      rm -rf -- "$install_root" || ok=false
+    else
+      ok=false
+    fi
+  fi
+
+  if [[ -d "$staging_root/old-runtime" ]]; then
+    [[ ! -e "$install_root" && ! -L "$install_root" ]] \
+      && mv "$staging_root/old-runtime" "$install_root" || ok=false
+  fi
+
+  [[ "$ok" == true ]]
+}
+
+on_exit() {
+  local status=$?
+  trap - EXIT HUP INT TERM
+  if [[ "$publication_active" == true ]]; then
+    if rollback; then
+      cleanup_staging
+    else
+      printf 'trx install: rollback failed; recovery may be required\n' >&2
+    fi
+  else
+    cleanup_staging
+  fi
+  if ! release_install_lock; then
+    printf 'trx install: could not release install lock: %s\n' "$install_lock" >&2
+    if [[ "$status" -eq 0 ]]; then
+      status=1
+    fi
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    cleanup_created_parents
+  fi
+  exit "$status"
+}
+trap on_exit EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [[ ! -d "$local_dir" ]]; then
+  mkdir -m 0755 "$local_dir"
+  created_local_dir=true
+fi
+if [[ ! -d "$share_dir" ]]; then
+  mkdir -m 0755 "$share_dir"
+  created_share_dir=true
+fi
+if [[ ! -d "$runtime_parent" ]]; then
+  mkdir -m 0755 "$runtime_parent"
+  created_runtime_parent=true
+fi
+if [[ ! -d "$command_dir" ]]; then
+  mkdir -m 0755 "$command_dir"
+  created_command_dir=true
+fi
+
+require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
+require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
+require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
+require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+
+if ! mkdir -m 0700 "$install_lock" 2>/dev/null; then
+  refuse "another router install is in progress: $install_lock"
+fi
+lock_acquired=true
+
+require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/trx" 'runtime root'
+require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+
 if [[ -e "$install_root" ]]; then
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "refusing unowned runtime root: $install_root"
-  [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
-    || refuse "refusing unowned runtime root: $install_root"
+  if [[ "$(<"$ownership_marker")" != "$ownership_value" ]] \
+    && [[ "$(<"$ownership_marker")" != "$legacy_ownership_value" ]]; then
+    refuse "refusing unowned runtime root: $install_root"
+  fi
   require_owned_runtime_contents
 fi
 
@@ -113,62 +272,63 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "refusing to replace unrelated command: $command_path"
 fi
 
-mkdir -p "$install_root/bin" "$install_root/lib" "$installed_share" "$command_dir"
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/trx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/trx/bin" 'runtime bin'
-require_safe_directory "$install_root/lib" "$canonical_home/.local/share/trellage/trx/lib" 'runtime library'
-require_safe_directory "$installed_share" "$canonical_home/.local/share/trellage/trx/share" 'runtime share'
-require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
-
-printf '%s\n' "$ownership_value" >"$ownership_marker"
-launcher_bundle="$source_dir/../../packages/trellage-launcher/dist/launcher.mjs"
-dependency_bootstrap="$source_dir/../../scripts/bootstrap-development-dependencies.sh"
-source_guides="$source_dir/../../profile-guides"
-[[ -f "$launcher_bundle" && ! -L "$launcher_bundle" ]] \
-  || refuse "Ink launcher bundle is missing; run npm run build in packages/trellage-launcher"
-[[ -f "$dependency_bootstrap" && -x "$dependency_bootstrap" && ! -L "$dependency_bootstrap" ]] \
-  || refuse "dependency bootstrap is missing or unsafe: $dependency_bootstrap"
-[[ -d "$source_guides" && ! -L "$source_guides" ]] \
-  || refuse "profile guide registry is missing or unsafe: $source_guides"
-while IFS= read -r guide_path; do
-  [[ ! -L "$guide_path" ]] || refuse "profile guide registry contains a symlink: $guide_path"
-  [[ -d "$guide_path" || (-f "$guide_path" && "$guide_path" == *.md) ]] \
-    || refuse "profile guide registry contains an unsupported path: $guide_path"
-done < <(find "$source_guides" -mindepth 1 -print)
-install -m 0755 "$launcher_bundle" "$install_root/lib/launcher.mjs"
-install -m 0755 "$dependency_bootstrap" "$installed_dependency_bootstrap"
-install -m 0755 "$source_dir/bin/trx" "$installed_launcher"
-
-guide_stage="$(mktemp -d "$installed_share/.profile-guides.XXXXXX")" \
-  || refuse 'cannot stage profile guides'
-guide_backup=''
-cleanup_guides() {
-  [[ ! -d "$guide_stage" ]] || rm -rf -- "$guide_stage"
-  [[ -z "$guide_backup" || ! -d "$guide_backup" ]] || rm -rf -- "$guide_backup"
-}
-trap cleanup_guides EXIT HUP INT TERM
+staging_root="$(mktemp -d "$runtime_parent/.trx-install.XXXXXX")" \
+  || refuse "cannot stage router runtime in: $runtime_parent"
+chmod 0700 "$staging_root"
+mkdir -p \
+  "$staging_root/new-runtime/bin" \
+  "$staging_root/new-runtime/lib" \
+  "$staging_root/new-runtime/share/profile-guides"
+chmod 0755 \
+  "$staging_root/new-runtime" \
+  "$staging_root/new-runtime/bin" \
+  "$staging_root/new-runtime/lib" \
+  "$staging_root/new-runtime/share" \
+  "$staging_root/new-runtime/share/profile-guides"
+install -m 0755 "$launcher_bundle" "$staging_root/new-runtime/lib/launcher.mjs"
+install -m 0755 "$dependency_bootstrap" \
+  "$staging_root/new-runtime/lib/bootstrap-development-dependencies.sh"
+install -m 0755 "$source_dir/bin/trx" "$staging_root/new-runtime/bin/trx"
+printf '%s\n' "$ownership_value" \
+  >"$staging_root/new-runtime/.managed-by-trellage-router"
+chmod 0644 "$staging_root/new-runtime/.managed-by-trellage-router"
 while IFS= read -r guide_path; do
   relative="${guide_path#"$source_guides/"}"
-  mkdir -p "$guide_stage/$(dirname "$relative")"
-  install -m 0644 "$guide_path" "$guide_stage/$relative"
+  mkdir -p "$staging_root/new-runtime/share/profile-guides/$(dirname "$relative")"
+  install -m 0644 "$guide_path" \
+    "$staging_root/new-runtime/share/profile-guides/$relative"
 done < <(find "$source_guides" -type f -name '*.md' -print)
-if [[ -e "$installed_guides" ]]; then
-  guide_backup="$installed_share/.profile-guides.previous.$$"
-  mv "$installed_guides" "$guide_backup"
+[[ -z "$(find "$staging_root/new-runtime" -type l -print -quit)" ]] \
+  || refuse 'staged router runtime contains a symlink'
+[[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-runtime-staging ]] \
+  || refuse 'injected failure at after-runtime-staging'
+
+publication_active=true
+if [[ -d "$install_root" ]]; then
+  runtime_old_intent=true
+  mv "$install_root" "$staging_root/old-runtime"
 fi
-if ! mv "$guide_stage" "$installed_guides"; then
-  [[ -z "$guide_backup" || ! -d "$guide_backup" ]] || mv "$guide_backup" "$installed_guides"
-  refuse 'cannot publish profile guides'
-fi
-[[ -z "$guide_backup" || ! -d "$guide_backup" ]] || rm -rf -- "$guide_backup"
-guide_backup=''
-trap - EXIT HUP INT TERM
-if [[ -e "$legacy_picker" ]]; then
-  rm "$legacy_picker"
-fi
+[[ "${TRX_INSTALL_TEST_FAIL_AT-}" != during-runtime-publication ]] \
+  || refuse 'injected failure at during-runtime-publication'
+runtime_publish_intent=true
+[[ ! -e "$install_root" && ! -L "$install_root" ]] \
+  || refuse "router runtime changed during publication: $install_root"
+mv "$staging_root/new-runtime" "$install_root"
+[[ ! -e "$install_root/new-runtime" && ! -L "$install_root/new-runtime" ]] \
+  || refuse "router runtime changed during publication: $install_root"
+[[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-runtime-publication ]] \
+  || refuse 'injected failure at after-runtime-publication'
+
 if [[ ! -L "$command_path" ]]; then
+  command_publish_intent=true
   ln -s "$installed_launcher" "$command_path"
 fi
+[[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-command-publication ]] \
+  || refuse 'injected failure at after-command-publication'
 
+"$floating_runtime_installer"
+publication_active=false
+cleanup_staging
+release_install_lock \
+  || refuse "could not release install lock: $install_lock"
 printf 'Installed trx at %s\n' "$command_path"
-"$source_dir/../../scripts/install-floating-skills-runtime.sh"

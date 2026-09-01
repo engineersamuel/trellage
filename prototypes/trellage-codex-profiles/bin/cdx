@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
+set +x
+set +a
 set -u
+
+unset cdx_transcript_api_key cdx_transcript_api_key_is_set
+cdx_transcript_api_key_is_set=false
+cdx_transcript_api_key=""
+if [[ "${TRANSCRIPT_API_KEY+x}" == x ]]; then
+  cdx_transcript_api_key_is_set=true
+  cdx_transcript_api_key="$TRANSCRIPT_API_KEY"
+fi
+unset TRANSCRIPT_API_KEY
 
 resolve_script_dir() {
   local source_path="${BASH_SOURCE[0]}" source_dir link_target
@@ -20,6 +31,7 @@ script_dir="$(resolve_script_dir)" || {
   printf 'cdx: could not resolve launcher directory\n' >&2
   exit 1
 }
+launcher_path="$script_dir/cdx"
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" || {
   printf 'cdx: could not resolve runtime root\n' >&2
   exit 1
@@ -32,6 +44,203 @@ fi
   printf 'cdx: shared native Codex launcher is missing or unsafe: %s\n' "$common_launcher" >&2
   exit 1
 }
+
+native_runtime_system_name=""
+native_runtime_uid=""
+
+native_runtime_fail() {
+  printf 'cdx: %s\n' "$1" >&2
+  exit 1
+}
+
+native_runtime_path_mode() {
+  case "$native_runtime_system_name" in
+    Darwin) stat -f '%Lp' "$1" ;;
+    Linux) stat -c '%a' "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
+native_runtime_path_uid() {
+  case "$native_runtime_system_name" in
+    Darwin) stat -f '%u' "$1" ;;
+    Linux) stat -c '%u' "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
+native_runtime_mode_has_shared_write() {
+  case "$1" in
+    *[2367][0-7] | *[0-7][2367]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+assert_native_runtime_path() {
+  local candidate="$1"
+  local expected_kind="$2"
+  local mode=""
+  local owner=""
+
+  [[ ! -L "$candidate" ]] || native_runtime_fail "unsafe symlinked native environment runtime path: $candidate"
+  case "$expected_kind" in
+    directory)
+      [[ -d "$candidate" ]] \
+        || native_runtime_fail "native environment runtime path is not a directory: $candidate"
+      ;;
+    file)
+      [[ -f "$candidate" ]] \
+        || native_runtime_fail "native environment runtime path is not a regular file: $candidate"
+      ;;
+    *) native_runtime_fail "internal native environment path-kind error: $expected_kind" ;;
+  esac
+  owner="$(native_runtime_path_uid "$candidate")" \
+    || native_runtime_fail "could not inspect native environment runtime owner: $candidate"
+  [[ "$owner" == "$native_runtime_uid" ]] \
+    || native_runtime_fail "native environment runtime path is not owned by the current user: $candidate"
+  mode="$(native_runtime_path_mode "$candidate")" \
+    || native_runtime_fail "could not inspect native environment runtime mode: $candidate"
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] \
+    || native_runtime_fail "invalid native environment runtime mode: $candidate"
+  ! native_runtime_mode_has_shared_write "$mode" \
+    || native_runtime_fail "native environment runtime path must not be writable by group or other users: $candidate"
+}
+
+maybe_load_native_environment() {
+  local profile=""
+  local required_environment=""
+  local metadata=""
+  local environment_path=""
+  local environment_runtime="$runtime_root/../common/native-environment-runtime"
+  local resolver="$environment_runtime/native-environment.mjs"
+  local varlock="$environment_runtime/node_modules/varlock/bin/cli.js"
+  local source_resolver="$runtime_root/../../scripts/native-environment.mjs"
+  local source_varlock="$runtime_root/../../packages/trellage-cli/node_modules/varlock/bin/cli.js"
+  local root_varlock="$runtime_root/../../node_modules/varlock/bin/cli.js"
+  local environment_name=""
+  local runtime_parent=""
+  local common_runtime_root=""
+  local canonical_home=""
+
+  if [[ "${_TRELLAGE_NATIVE_VARLOCK_ACTIVE-}" == 1 ]]; then
+    unset _TRELLAGE_NATIVE_VARLOCK_ACTIVE
+    if [[ "$cdx_transcript_api_key_is_set" == true ]]; then
+      export TRANSCRIPT_API_KEY="$cdx_transcript_api_key"
+    fi
+    return
+  fi
+
+  case "${1-}" in
+    --native-auth) profile="${2-}" ;;
+    "" | --help | -h | list | inventory | setup | doctor | update | repair) return ;;
+    *) profile="$1" ;;
+  esac
+  [[ -n "$profile" ]] || return
+
+  required_environment="$(jq -er --arg profile "$profile" '
+    .profiles[$profile].requiredEnvironment
+    | select(type == "array" and length > 0)
+    | sort
+    | join(",")
+  ' "$runtime_root/catalog.json" 2>/dev/null)" || return
+  [[ -n "$required_environment" ]] || return
+  while IFS= read -r environment_name; do
+    case "$environment_name" in
+      TRANSCRIPT_API_KEY) ;;
+      *)
+        printf 'cdx: unsupported required environment variable: %s\n' "$environment_name" >&2
+        exit 1
+        ;;
+    esac
+  done <<<"${required_environment//,/$'\n'}"
+
+  if [[ -e "$environment_runtime" || -L "$environment_runtime" ]]; then
+    native_runtime_system_name="$(uname -s 2>/dev/null)" \
+      || native_runtime_fail "could not identify the host system"
+    native_runtime_uid="$(id -u 2>/dev/null)" \
+      || native_runtime_fail "could not identify the current user"
+    runtime_parent="$(CDPATH= cd -P -- "$runtime_root/.." && pwd -P)" \
+      || native_runtime_fail "could not resolve the native runtime parent"
+    common_runtime_root="$runtime_parent/common"
+    environment_runtime="$common_runtime_root/native-environment-runtime"
+    canonical_home="$(CDPATH= cd -P -- "${HOME-}" 2>/dev/null && pwd -P)" || canonical_home=""
+    if [[ -n "$canonical_home" \
+        && "$runtime_parent" == "$canonical_home/.local/share/trellage" ]]; then
+      assert_native_runtime_path "$canonical_home" directory
+      assert_native_runtime_path "$canonical_home/.local" directory
+      assert_native_runtime_path "$canonical_home/.local/share" directory
+    fi
+    assert_native_runtime_path "$runtime_parent" directory
+    assert_native_runtime_path "$runtime_root" directory
+    assert_native_runtime_path "$runtime_root/catalog.json" file
+    assert_native_runtime_path "$common_launcher" file
+    assert_native_runtime_path "$common_runtime_root" directory
+    assert_native_runtime_path "$environment_runtime" directory
+    assert_native_runtime_path "$environment_runtime/node_modules" directory
+    assert_native_runtime_path "$environment_runtime/node_modules/varlock" directory
+    assert_native_runtime_path "$environment_runtime/node_modules/varlock/bin" directory
+    assert_native_runtime_path "$environment_runtime/node_modules/smol-toml" directory
+    assert_native_runtime_path "$resolver" file
+    assert_native_runtime_path "$varlock" file
+  else
+    resolver="$source_resolver"
+    varlock="$source_varlock"
+    [[ -f "$varlock" && ! -L "$varlock" ]] || varlock="$root_varlock"
+  fi
+  [[ -f "$resolver" && ! -L "$resolver" && -r "$resolver" ]] || {
+    printf 'cdx: native environment resolver is missing or unsafe: %s\n' "$resolver" >&2
+    exit 1
+  }
+  [[ -f "$varlock" && ! -L "$varlock" && -r "$varlock" ]] || {
+    printf 'cdx: bundled Varlock CLI is missing or unsafe: %s\n' "$varlock" >&2
+    exit 1
+  }
+  command -v node >/dev/null 2>&1 || {
+    printf 'cdx: required command not found: node\n' >&2
+    exit 1
+  }
+
+  metadata="$(
+    while IFS= read -r secret_name; do
+      [[ -z "$secret_name" ]] || unset "$secret_name"
+    done <<<"${required_environment//,/$'\n'}"
+    exec node "$resolver"
+  )" || {
+    printf 'cdx: automatic Varlock environment resolution failed\n' >&2
+    exit 1
+  }
+  jq -e '
+    type == "object"
+    and .provider == "varlock"
+    and (.enabled | type == "boolean")
+    and (.path | type == "string" and length > 0)
+    and (.source_present | type == "boolean")
+    and (.required | type == "boolean")
+    and (.strict_permissions | type == "boolean")
+  ' <<<"$metadata" >/dev/null 2>&1 || {
+    printf 'cdx: native environment resolver returned invalid metadata\n' >&2
+    exit 1
+  }
+  if [[ "$(jq -r '.source_present' <<<"$metadata")" != true ]]; then
+    if [[ "$cdx_transcript_api_key_is_set" == true ]]; then
+      export TRANSCRIPT_API_KEY="$cdx_transcript_api_key"
+    fi
+    return
+  fi
+  environment_path="$(jq -r '.path' <<<"$metadata")"
+
+  if [[ "$cdx_transcript_api_key_is_set" == true ]]; then
+    export TRANSCRIPT_API_KEY="$cdx_transcript_api_key"
+  fi
+  export _TRELLAGE_NATIVE_VARLOCK_ACTIVE=1
+  exec node "$varlock" run \
+    --path "$environment_path" \
+    --inject vars \
+    --filter "$required_environment" \
+    -- "$launcher_path" "$@"
+}
+
+maybe_load_native_environment "$@"
 
 export TRELLAGE_CODEX_LAUNCHER_NAME=cdx
 export TRELLAGE_CODEX_RUNTIME_ROOT="$runtime_root"

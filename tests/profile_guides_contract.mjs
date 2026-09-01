@@ -266,4 +266,45 @@ if (
   throw new Error("cpx tufte-vdqi critique-and-rebuild prompt must invoke both skills")
 }
 
+const youtubeGuide = registry.get("native:cdx/youtube")
+if (youtubeGuide === undefined) throw new Error("cdx youtube guide is missing")
+for (const workflowId of ["transcript-analysis", "youtube-topic-research", "channel-playlist-review"]) {
+  const workflow = youtubeGuide.guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new Error(`cdx youtube guide is missing workflow: ${workflowId}`)
+  if (workflow.skill !== "youtube-full") {
+    throw new Error(`cdx youtube workflow uses the wrong skill identity: ${workflowId}`)
+  }
+}
+if (!youtubeGuide.guide.prerequisites.some(({ id }) => id === "transcript-api-key")) {
+  throw new Error("cdx youtube guide must declare the TranscriptAPI key prerequisite")
+}
+if (!youtubeGuide.guide.avoidFor.some((item) => /visual analysis/iu.test(item))) {
+  throw new Error("cdx youtube guide must state the visual-analysis boundary")
+}
+if (!youtubeGuide.guide.avoidFor.some((item) => /paid TranscriptAPI credits/iu.test(item))) {
+  throw new Error("cdx youtube guide must state the paid-credit boundary")
+}
+const youtubeGuideText = await readFile(path.join(guideRoot, "native", "cdx", "youtube.md"), "utf8")
+for (const phrase of [
+  "~/.config/trellage/.env.schema",
+  "~/.config/trellage/.env.local",
+  "mode `0700`",
+  "mode-`0600`",
+  "explicit process environment value takes precedence",
+  "/api/v2/youtube/channel/resolve",
+  "`channel_id`",
+  "`resolved_from`",
+  "`canonical_url`",
+  "do not make a second request",
+  "external process argument",
+  "exactly one",
+  "`--config -`",
+  "`--max-redirs 0 --retry 0`",
+  "`location = false`",
+]) {
+  if (!youtubeGuideText.includes(phrase)) {
+    throw new Error(`cdx youtube guide must document Varlock setup: ${phrase}`)
+  }
+}
+
 process.stdout.write(`profile guides: PASS (${expected.length} profiles)\n`)

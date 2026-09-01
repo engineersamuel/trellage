@@ -125,13 +125,18 @@ fixture_common_launcher="$fixture_profiles/lib/native-codex"
 fixture_session_bridge="$fixture_profiles/lib/trellage-session-bridge.py"
 fixture_catalog="$fixture_profiles/catalog.json"
 fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
+fixture_environment_runtime="$fixture_root/common/native-environment-runtime"
 fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/skills"
+fixture_youtube_skills_cache="$fixture_root/home/.local/share/trellage/common/cdx-youtube-skills"
 mkdir -p \
   "$(dirname "$fixture_launcher")" \
   "$(dirname "$fixture_common_launcher")" \
   "$fixture_skills_runtime" \
   "$fixture_skills_cache/skills/fixture-personal" \
-  "$fixture_skills_cache/skills/show-me"
+  "$fixture_skills_cache/skills/show-me" \
+  "$fixture_youtube_skills_cache/skills/fixture-personal" \
+  "$fixture_youtube_skills_cache/skills/show-me" \
+  "$fixture_youtube_skills_cache/skills/youtube-full"
 cp "$launcher" "$fixture_launcher"
 cp "$common_launcher" "$fixture_common_launcher"
 cp "$root/../../scripts/trellage-session-bridge.py" "$fixture_session_bridge"
@@ -145,7 +150,83 @@ printf '%s\n' '# Fixture show-me skill' \
   >"$fixture_skills_cache/skills/show-me/SKILL.md"
 printf '%s\n' fixture-personal show-me >"$fixture_skills_cache/managed-skills.txt"
 : >"$fixture_skills_cache/always-on.md"
+cp "$fixture_skills_cache/skills/fixture-personal/SKILL.md" \
+  "$fixture_youtube_skills_cache/skills/fixture-personal/SKILL.md"
+cp "$fixture_skills_cache/skills/show-me/SKILL.md" \
+  "$fixture_youtube_skills_cache/skills/show-me/SKILL.md"
+printf '%s\n' '# Fixture YouTube skill' \
+  >"$fixture_youtube_skills_cache/skills/youtube-full/SKILL.md"
+printf '%s\n' fixture-personal show-me youtube-full \
+  >"$fixture_youtube_skills_cache/managed-skills.txt"
+: >"$fixture_youtube_skills_cache/always-on.md"
 chmod +x "$fixture_launcher" "$fixture_common_launcher" "$fixture_session_bridge"
+}
+
+install_fixture_native_environment_runtime() {
+mkdir -p \
+  "$fixture_environment_runtime/node_modules" \
+  "$fixture_environment_runtime/node_modules/varlock/bin"
+install -m 0555 "$root/../../scripts/native-environment.mjs" \
+  "$fixture_environment_runtime/native-environment.mjs"
+cp -R "$root/../../packages/trellage-cli/node_modules/smol-toml" \
+  "$fixture_environment_runtime/node_modules/smol-toml"
+printf '%s\n' '{"type":"module"}' \
+  >"$fixture_environment_runtime/node_modules/varlock/package.json"
+cat >"$fixture_environment_runtime/node_modules/varlock/bin/cli.js" <<'EOF'
+import { readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+
+const args = process.argv.slice(2)
+const separator = args.indexOf("--")
+const pathIndex = args.indexOf("--path")
+const filterIndex = args.indexOf("--filter")
+if (
+  args[0] !== "run" ||
+  pathIndex < 0 ||
+  args[pathIndex + 1] === undefined ||
+  filterIndex < 0 ||
+  args[filterIndex + 1] !== "TRANSCRIPT_API_KEY" ||
+  args[args.indexOf("--inject") + 1] !== "vars" ||
+  separator < 0 ||
+  args[separator + 1] === undefined
+) {
+  process.exit(64)
+}
+
+const environmentPath = args[pathIndex + 1]
+const values = new Map()
+for (const line of readFileSync(`${environmentPath}/.env.local`, "utf8").split(/\r?\n/u)) {
+  const match = /^([A-Z][A-Z0-9_]*)=(.*)$/u.exec(line)
+  if (match !== null) values.set(match[1], match[2])
+}
+const ambientKeyPresent = Boolean(process.env.TRANSCRIPT_API_KEY)
+const childEnvironment = { ...process.env }
+if (!ambientKeyPresent && values.has("TRANSCRIPT_API_KEY")) {
+  childEnvironment.TRANSCRIPT_API_KEY = values.get("TRANSCRIPT_API_KEY")
+}
+for (const name of values.keys()) {
+  if (name !== "TRANSCRIPT_API_KEY") delete childEnvironment[name]
+}
+if (process.env.FAKE_VARLOCK_LOG) {
+  const record = {
+    args,
+    ambientKeyPresent,
+    injectedKeyPresent: Boolean(childEnvironment.TRANSCRIPT_API_KEY),
+    unrelatedValuePresent: Boolean(childEnvironment.UNRELATED_VARLOCK_SECRET),
+  }
+  await import("node:fs/promises").then(({ appendFile }) =>
+    appendFile(process.env.FAKE_VARLOCK_LOG, `${JSON.stringify(record)}\n`),
+  )
+}
+
+const result = spawnSync(args[separator + 1], args.slice(separator + 2), {
+  env: childEnvironment,
+  stdio: "inherit",
+})
+if (result.error) throw result.error
+process.exit(result.status ?? 1)
+EOF
+chmod 0555 "$fixture_environment_runtime/node_modules/varlock/bin/cli.js"
 }
 
 # Writes the fake `codex` and `curl` stubs the blocks drive, and the `fake_env`
@@ -153,25 +234,84 @@ chmod +x "$fixture_launcher" "$fixture_common_launcher" "$fixture_session_bridge
 write_fake_bin() {
 fake_bin="$fixture_root/fake-bin"
 fake_state="$fixture_root/fake-state"
+REAL_ENV="$(command -v env)"
 REAL_GIT="$(command -v git)"
+REAL_JQ="$(command -v jq)"
+REAL_NODE="$(command -v node)"
 mkdir -p "$fake_bin" "$fake_state" "$fixture_root/home"
+cat >"$fake_bin/jq" <<'EOF'
+#!/usr/bin/env bash
+set -u
+if [ -n "${FAKE_JQ_ENV_LOG:-}" ] && [ "${1-}" != -cn ]; then
+  if [ -n "${TRANSCRIPT_API_KEY:-}" ] || [[ "${cdx_transcript_api_key+x}" == x ]]; then
+    printf '%s\n' true >>"$FAKE_JQ_ENV_LOG"
+  else
+    printf '%s\n' false >>"$FAKE_JQ_ENV_LOG"
+  fi
+fi
+exec "$REAL_JQ" "$@"
+EOF
+chmod +x "$fake_bin/jq"
+cat >"$fake_bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -u
+if [ -n "${FAKE_NODE_ENV_LOG:-}" ] \
+  && [[ "${1-}" != */node_modules/varlock/bin/cli.js ]]; then
+  if [ -n "${TRANSCRIPT_API_KEY:-}" ]; then
+    printf '%s\n' true >>"$FAKE_NODE_ENV_LOG"
+  else
+    printf '%s\n' false >>"$FAKE_NODE_ENV_LOG"
+  fi
+fi
+case "${1-}:${2-}" in
+  *floating-skills.mjs:check)
+    printf '%s\n' "$@" >>"$FAKE_FLOATING_SKILLS_LOG"
+    exit "${FAKE_FLOATING_SKILLS_CHECK_STATUS:-0}"
+    ;;
+  *floating-skills.mjs:update)
+    printf '%s\n' "$@" >>"$FAKE_FLOATING_SKILLS_LOG"
+    exit "${FAKE_FLOATING_SKILLS_UPDATE_STATUS:-0}"
+    ;;
+esac
+exec "$REAL_NODE" "$@"
+EOF
+chmod +x "$fake_bin/node"
 cat >"$fake_bin/codex" <<'EOF'
 #!/usr/bin/env bash
 set -u
+
+if [ -n "${FAKE_CODEX_ENV_LOG:-}" ]; then
+  if [ -n "${TRANSCRIPT_API_KEY:-}" ]; then
+    printf '%s\n' true >>"$FAKE_CODEX_ENV_LOG"
+  else
+    printf '%s\n' false >>"$FAKE_CODEX_ENV_LOG"
+  fi
+fi
 
 if [ "${1-}" = '--version' ]; then
   printf 'codex-cli 0.146.0\n'
   exit 0
 fi
 
+[ "${FAKE_CODEX_CONSUME_STDIN:-}" != 1 ] || cat >/dev/null
+
 profile="$(basename "$(dirname "$CODEX_HOME")")"
 state="$FAKE_CODEX_STATE/$profile"
 mkdir -p "$state"
+jq_youtube_key=false
+[ -z "${TRANSCRIPT_API_KEY-}" ] || jq_youtube_key=true
 jq -cn \
   --arg codexHome "$CODEX_HOME" \
   --arg home "$HOME" \
   --arg cwd "$PWD" \
-  '$ARGS.named + {args: $ARGS.positional}' \
+  --arg profile "$profile" \
+  --argjson youtubeApiKeyPresent "$jq_youtube_key" \
+  '(($ARGS.named + {args: $ARGS.positional})
+      | del(.profile, .youtubeApiKeyPresent))
+    + if $profile == "youtube"
+        then {youtubeApiKeyPresent: $youtubeApiKeyPresent}
+        else {}
+      end' \
   --args -- "$@" >>"$FAKE_CODEX_LOG"
 
 if [ "$*" = 'login status' ]; then
@@ -426,7 +566,11 @@ case "$*" in
     jq -cn '[{name:"docs",enabled:true},{name:"disabled",enabled:false}]'
     ;;
   'debug prompt-input inventory')
-    jq -cn '[{role:"user",content:[{type:"input_text",text:"### Available skills\n- alpha: First (file: r0/alpha/SKILL.md)\n- beta: Second (file: r1/beta/SKILL.md)\n- Not a skill: explanatory bullet\n### Instructions\nStatic inventory"}]}]'
+    if [ "$profile" = youtube ]; then
+      jq -cn '[{role:"user",content:[{type:"input_text",text:"### Available skills\n- alpha: First (file: r0/alpha/SKILL.md)\n- beta: Second (file: r1/beta/SKILL.md)\n- youtube-full: YouTube API skill (file: r2/youtube-full/SKILL.md)\n- Not a skill: explanatory bullet\n### Instructions\nStatic inventory"}]}]'
+    else
+      jq -cn '[{role:"user",content:[{type:"input_text",text:"### Available skills\n- alpha: First (file: r0/alpha/SKILL.md)\n- beta: Second (file: r1/beta/SKILL.md)\n- Not a skill: explanatory bullet\n### Instructions\nStatic inventory"}]}]'
+    fi
     ;;
   plugin\ add\ *\ --json)
     if [ "${FAKE_CODEX_FAIL_MUTATION:-}" = 'plugin-add' ]; then
@@ -655,19 +799,33 @@ chmod +x "$fake_bin/git"
 
 fake_env() {
   env PATH="$fake_bin:$PATH" \
-    REAL_GIT="$(command -v git)" \
+    REAL_ENV="$REAL_ENV" \
+    REAL_GIT="$REAL_GIT" \
+    REAL_JQ="$REAL_JQ" \
+    REAL_NODE="$REAL_NODE" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_STATE="$fake_state" \
+    FAKE_ENV_ENV_LOG="$fixture_root/fake-env-env.log" \
+    FAKE_FLOATING_SKILLS_LOG="$fixture_root/fake-floating-skills.log" \
+    FAKE_NODE_ENV_LOG="$fixture_root/fake-node-env.log" \
+    FAKE_VARLOCK_LOG="$fixture_root/fake-varlock.log" \
     FAKE_CODEX_MARKETPLACE_OVERRIDE="${FAKE_CODEX_MARKETPLACE_OVERRIDE:-$fixture_root/no-marketplace-override}" \
     FAKE_CODEX_PLUGIN_OVERRIDE="${FAKE_CODEX_PLUGIN_OVERRIDE:-$fixture_root/no-plugin-override}" \
     "$@"
 }
 export FAKE_CODEX_STATE="$fake_state"
+export FAKE_ENV_ENV_LOG="$fixture_root/fake-env-env.log"
+export REAL_ENV
 export REAL_GIT
+export REAL_JQ
+export REAL_NODE
 export FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override"
 export FAKE_CODEX_PLUGIN_OVERRIDE="$fixture_root/no-plugin-override"
 export FAKE_CURL_LOG="$fixture_root/fake-curl.log"
 export FAKE_CURL_OVERRIDE="$fixture_root/no-curl-override"
+export FAKE_FLOATING_SKILLS_LOG="$fixture_root/fake-floating-skills.log"
+export FAKE_NODE_ENV_LOG="$fixture_root/fake-node-env.log"
+export FAKE_VARLOCK_LOG="$fixture_root/fake-varlock.log"
 }
 
 # Generic status and file-probe helpers shared by every block.

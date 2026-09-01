@@ -13,7 +13,8 @@ installed_share="$install_root/share"
 installed_guides="$installed_share/profile-guides"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
-ownership_value='trellage-router-v1'
+ownership_value='trellage-router-v2'
+legacy_ownership_value='trellage-router-v1'
 
 refuse() {
   printf 'trx uninstall: %s\n' "$1" >&2
@@ -84,8 +85,10 @@ fi
 
 [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
   || refuse "refusing unowned runtime root: $install_root"
-[[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
-  || refuse "refusing unowned runtime root: $install_root"
+if [[ "$(<"$ownership_marker")" != "$ownership_value" ]] \
+  && [[ "$(<"$ownership_marker")" != "$legacy_ownership_value" ]]; then
+  refuse "refusing unowned runtime root: $install_root"
+fi
 [[ -d "$install_root/bin" && ! -L "$install_root/bin" ]] \
   || refuse "refusing unsafe managed runtime: $install_root/bin"
 [[ -d "$install_root/lib" && ! -L "$install_root/lib" ]] \

@@ -661,6 +661,7 @@ verify_codex_profiles() {
   local skills_file
   local section_count
   local visible_count
+  local package_count
   local sample
   local row_static
   local row_live
@@ -675,8 +676,10 @@ verify_codex_profiles() {
       && $2 == "pstack-for-codex@pstack-for-codex-local" { next }
     NR == 2 && $1 == "superpowers" \
       && $2 == "superpowers@superpowers-marketplace" { next }
+    NR == 3 && $1 == "youtube" \
+      && $2 == "youtube-full" { next }
     { invalid = 1 }
-    END { exit invalid || NR != 2 }
+    END { exit invalid || NR != 3 }
   ' "$inventory"; then inventory_valid=yes; else inventory_valid=no; fi
   if [ "$inventory_valid" != yes ]; then
     report_error "$launcher profile inventory does not match managed catalog"
@@ -688,6 +691,7 @@ verify_codex_profiles() {
     text_file="$temp_dir/$launcher-$profile-text"
     skills_file="$temp_dir/$launcher-$profile-skills"
     row_static='pass'
+    package_count='n/a'
     visible_count='?'
     sample=''
     row_live='not run'
@@ -700,8 +704,15 @@ verify_codex_profiles() {
       set_row_failure 'doctor command'
     fi
     command_status=0
-    "$launcher" "$profile" debug prompt-input 'profile verification' \
-      >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
+    if [ "$profile" = 'youtube' ]; then
+      TRELLAGE_ENVIRONMENT=off \
+        TRANSCRIPT_API_KEY='trellage-static-profile-verification' \
+        "$launcher" "$profile" debug prompt-input 'profile verification' \
+        >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
+    else
+      "$launcher" "$profile" debug prompt-input 'profile verification' \
+        >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
+    fi
     if [ "$command_status" -ne 0 ]; then
       report_error "Codex prompt-input failed for $profile (exit $command_status)"
       set_row_failure 'prompt input command'
@@ -723,6 +734,7 @@ verify_codex_profiles() {
       else
         awk '
           $0 == "### Available skills" { in_skills = 1; next }
+          in_skills && $0 == "</skills_instructions>" { exit }
           in_skills && /^### / { exit }
           in_skills && /^- / {
             line = substr($0, 3)
@@ -736,6 +748,15 @@ verify_codex_profiles() {
         else
           visible_count="$(line_count "$skills_file")"
           sample="$(sample_skills "$skills_file")"
+          if [ "$profile" = 'youtube' ]; then
+            if grep -Fxq -- "$package" "$skills_file"; then
+              package_count=1
+            else
+              report_error "Codex managed skill validation failed for $profile: cataloged package is not visible"
+              set_row_failure 'missing managed skill'
+              package_count='?'
+            fi
+          fi
         fi
       fi
     fi
@@ -745,7 +766,7 @@ verify_codex_profiles() {
         row_live='pass'
       fi
     fi
-    emit_row "$launcher" "$profile" "$package" n/a "$visible_count" "$sample" "$row_static" "$row_live"
+    emit_row "$launcher" "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
   done <"$inventory"
 }
 

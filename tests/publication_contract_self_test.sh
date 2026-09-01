@@ -31,9 +31,14 @@ seed_fixture() {
   printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
     >"$fixture/packages/trellage-guide-core/package.json"
   printf '%s\n' \
-    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["scripts/trellage-session-bridge.py"]}' \
+    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["scripts/trellage-session-bridge.py","scripts/floating-skills.mjs","scripts/install-floating-skills-runtime.sh","scripts/native-environment.mjs","scripts/install-native-environment-runtime.sh","skills.json"]}' \
     >"$fixture/package.json"
   printf '%s\n' '#!/usr/bin/env python3' >"$fixture/scripts/trellage-session-bridge.py"
+  printf '%s\n' '#!/usr/bin/env node' >"$fixture/scripts/floating-skills.mjs"
+  printf '%s\n' '#!/usr/bin/env bash' >"$fixture/scripts/install-floating-skills-runtime.sh"
+  printf '%s\n' '#!/usr/bin/env node' >"$fixture/scripts/native-environment.mjs"
+  printf '%s\n' '#!/usr/bin/env bash' >"$fixture/scripts/install-native-environment-runtime.sh"
+  printf '%s\n' '{"schemaVersion":1,"sources":{},"bundles":{}}' >"$fixture/skills.json"
   printf 'Generic fixture\n' >"$fixture/README.md"
 }
 

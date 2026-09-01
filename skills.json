@@ -162,6 +162,10 @@
     "prompt-master": {
       "repository": "https://github.com/nidhinjs/prompt-master.git",
       "select": ["prompt-master"]
+    },
+    "youtube-skills": {
+      "repository": "https://github.com/ZeroPointRepo/youtube-skills.git",
+      "select": ["youtube-full"]
     }
   },
   "bundles": {
@@ -173,6 +177,7 @@
     "claude-research": ["last30days"],
     "omp-community": ["dsebban-omp", "cursor-pstack"],
     "pi-oh-my-pi": ["omp-native"],
-    "guide-prompt-master": ["prompt-master"]
+    "guide-prompt-master": ["prompt-master"],
+    "youtube": ["youtube-skills"]
   }
 }

@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "lastUpdated": "2026-08-25",
+  "lastUpdated": "2026-09-01",
   "description": "Hand-maintained ledger of whether each Trellage profile has been observed to work end-to-end when driven as a Herdr agent (launched, detected, and able to complete a one-line task). This is a curated signal refreshed by manual verification runs, not a live probe: Trellage cannot detect Herdr-side bugs (agent detection, consent-dialog handling, etc.) automatically. Status values: 'verified' (completed an end-to-end round trip), 'known-issue' (observed to fail, see issue/notes), 'untested' (no verification run recorded). See docs/rlm-herdr-handoff.md for the source report and category definitions (A-G).",
   "entries": [
     { "kind": "native", "launcher": "cldx", "profile": "default", "harness": "claude", "status": "verified" },
     { "kind": "native", "launcher": "omp", "profile": "copilot", "harness": "oh-my-pi", "status": "verified" },
     { "kind": "native", "launcher": "picx", "profile": "default", "harness": "pi", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
     { "kind": "native", "launcher": "cdx", "profile": "pstack", "harness": "codex", "status": "untested", "notes": "Static profile, plugin inventory, and native sandbox contracts pass; awaiting an end-to-end Herdr round trip." },
+    { "kind": "native", "launcher": "cdx", "profile": "youtube", "harness": "codex", "status": "verified", "notes": "Verified end-to-end with Herdr v0.8.2: a fresh cdx youtube session loaded youtube-full and completed one free TranscriptAPI channel/resolve request for @GitHub with the expected channel ID and canonical URL, using standard-input curl configuration without putting the key in process arguments." },
     { "kind": "native", "launcher": "cpx", "profile": "hve", "harness": "copilot", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
     { "kind": "native", "launcher": "cpx", "profile": "awesome", "harness": "copilot", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrator's own repo/worktree; never finished." },
     { "kind": "native", "launcher": "cpx", "profile": "superpowers", "harness": "copilot", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
