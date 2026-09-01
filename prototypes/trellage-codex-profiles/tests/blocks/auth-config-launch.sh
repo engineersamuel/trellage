@@ -10,6 +10,15 @@ blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 . "$blocks_dir/../lib/fixture.sh"
 . "$blocks_dir/../lib/profiles.sh"
 
+# Contract launches must not inherit user or runner environment policy.
+unset \
+  BASH_ENV \
+  ENV \
+  TRANSCRIPT_API_KEY \
+  TRELLAGE_CONFIG \
+  TRELLAGE_ENVIRONMENT \
+  XDG_CONFIG_HOME \
+  _TRELLAGE_NATIVE_VARLOCK_ACTIVE
 
 jq -e '
   .schemaVersion == 1
@@ -1642,13 +1651,26 @@ chmod 0600 "$youtube_environment/.env.local"
 : >"$fixture_root/fake-jq-env.log"
 : >"$fixture_root/fake-node-env.log"
 : >"$fixture_root/fake-varlock.log"
+youtube_varlock_status=0
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_JQ_ENV_LOG="$fixture_root/fake-jq-env.log" \
   bash -a "$fixture_launcher" youtube --version \
   >"$fixture_root/youtube-varlock-launch.out" \
   2>"$fixture_root/youtube-varlock-launch.err" \
-  || fail 'YouTube launch did not load its key through Varlock'
+  || youtube_varlock_status=$?
+if [ "$youtube_varlock_status" -ne 0 ]; then
+  for diagnostic in \
+    "$fixture_root/youtube-varlock-launch.out" \
+    "$fixture_root/youtube-varlock-launch.err" \
+    "$fixture_root/fake-varlock.log" \
+    "$fixture_root/fake-codex.log" \
+    "$fixture_root/fake-node-env.log" \
+    "$fixture_root/fake-jq-env.log"; do
+    [ ! -s "$diagnostic" ] || cat "$diagnostic" >&2
+  done
+  fail "YouTube launch did not load its key through Varlock (exit $youtube_varlock_status)"
+fi
 jq -se '
   length == 1
   and .[0].args[0] == "run"
