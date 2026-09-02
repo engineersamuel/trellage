@@ -89,10 +89,11 @@ target-evidence path must exist in the repository.
   page, results file, or other repository artifact unless the request
   explicitly requires that artifact.
 - Release benchmark acceptance criteria must prevent dead-code elimination and
-  loop hoisting. Require `std::hint::black_box` on benchmark inputs and each
-  scan result, or require an accumulated result that is validated after every
-  timed loop. A loop that discards pure scan results is not valid performance
-  evidence.
+  loop hoisting. Require the kernel to receive
+  `std::hint::black_box(input)` inside every timed iteration, then black-box and
+  accumulate that iteration's scan result. Black-boxing a loop-invariant input
+  only before the loop is insufficient. A loop that discards pure scan results
+  is not valid performance evidence.
 - Compare semantic result checksums separately from backend instrumentation.
   Scalar and SIMD index checksums must match. Consume `vector_steps` through a
   separate black-boxed accumulator; require the scalar accumulator to be zero
@@ -182,6 +183,12 @@ target-evidence path must exist in the repository.
   --all-targets --target <target> -- -D warnings` gates for both
   `x86_64-unknown-linux-musl` and `i686-unknown-linux-musl`; do not claim an
   AArch64 Clippy gate covers the AVX2 module.
+- A cross-target `cargo test --no-run` gate is compile-and-link evidence only.
+  It does not execute target-specific tests and must not be cited as
+  `targeted-test` coverage for a backend that is cfg-excluded from all
+  executable host gates. Keep the validation matrix's targeted-test evidence
+  limited to tests that actually execute; describe unavailable AVX2 runtime
+  coverage as an explicit platform limitation.
 - When the request requires both host and target-specific Clippy, also include
   `cargo clippy --locked --all-targets --target
   aarch64-unknown-linux-gnu -- -D warnings` as a node final gate and a

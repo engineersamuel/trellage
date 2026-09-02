@@ -5439,7 +5439,7 @@ class TestSchemaValidation(unittest.TestCase):
             planner_role,
         )
         self.assertIn(
-            "Require `std::hint::black_box`",
+            "`std::hint::black_box(input)` inside every timed iteration",
             planner_role,
         )
         self.assertIn(
@@ -5448,6 +5448,10 @@ class TestSchemaValidation(unittest.TestCase):
         )
         self.assertIn(
             "A grep for a symbol name is not proof",
+            planner_role,
+        )
+        self.assertIn(
+            "compile-and-link evidence only",
             planner_role,
         )
         self.assertIn(
