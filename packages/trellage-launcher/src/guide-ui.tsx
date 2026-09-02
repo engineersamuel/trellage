@@ -3087,7 +3087,7 @@ const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
   }
 }
 
-const MarkdownTextViewport = ({
+export const MarkdownTextViewport = ({
   value,
   width,
   height,

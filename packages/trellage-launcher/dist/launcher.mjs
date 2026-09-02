@@ -83676,7 +83676,8 @@ var AdminDetailPanel = ({
   guideRoot,
   diagnosis,
   herdrAvailable,
-  onForkToFix
+  onForkToFix,
+  columns
 }) => {
   const [, forceRender] = (0, import_react37.useState)(0);
   const [guideBody, setGuideBody] = (0, import_react37.useState)(void 0);
@@ -83824,7 +83825,10 @@ var AdminDetailPanel = ({
       ] }) : null
     ] }),
     guideNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: guideNote }),
-    guideBody === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: guideBody.slice(0, 4e3) }) }),
+    guideBody === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: guideBody, width: Math.max(20, columns - 6), height: 18, resetKey: entry.ref }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "[PageUp/PageDown] scroll guide" })
+    ] }),
     launchConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
       "Press [y] to hand this terminal to ",
       entry.name,
@@ -83856,7 +83860,7 @@ var AdminApp = ({
   cwd: cwd2
 }) => {
   const { exit } = use_app_default();
-  const { rows } = use_window_size_default();
+  const { rows, columns } = use_window_size_default();
   const [query, setQuery2] = (0, import_react37.useState)("");
   const [searching, setSearching] = (0, import_react37.useState)(false);
   const [sortIndex, setSortIndex] = (0, import_react37.useState)(0);
@@ -84034,7 +84038,8 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         guideRoot,
         diagnosis: diagnosisByRef.get(selected.ref),
         herdrAvailable,
-        onForkToFix
+        onForkToFix,
+        columns
       }
     ) : null
   ] });

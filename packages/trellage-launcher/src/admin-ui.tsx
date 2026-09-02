@@ -22,6 +22,7 @@ import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } fro
 import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.js"
 import type { CombinedGuideCatalog } from "./guide-catalog.js"
 import type { CommandRunner, HerdrEnvironment } from "./guide-launch.js"
+import { MarkdownTextViewport } from "./guide-ui.js"
 
 type DiagnosisState =
   | { readonly status: "diagnosing" }
@@ -43,6 +44,7 @@ const AdminDetailPanel = ({
   diagnosis,
   herdrAvailable,
   onForkToFix,
+  columns,
 }: {
   readonly entry: AdminProfileEntry
   readonly runManager: AdminRunManager
@@ -50,6 +52,7 @@ const AdminDetailPanel = ({
   readonly diagnosis: DiagnosisState | undefined
   readonly herdrAvailable: boolean | undefined
   readonly onForkToFix: (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined) => Promise<HerdrForkOutcome>
+  readonly columns: number
 }) => {
   const [, forceRender] = useState(0)
   const [guideBody, setGuideBody] = useState<string | undefined>(undefined)
@@ -246,7 +249,8 @@ const AdminDetailPanel = ({
       )}
       {guideBody === undefined ? null : (
         <Box flexDirection="column" marginTop={1}>
-          <Text wrap="wrap">{guideBody.slice(0, 4000)}</Text>
+          <MarkdownTextViewport value={guideBody} width={Math.max(20, columns - 6)} height={18} resetKey={entry.ref} />
+          <Text dimColor>[PageUp/PageDown] scroll guide</Text>
         </Box>
       )}
       {launchConfirming ? (
@@ -296,7 +300,7 @@ export const AdminApp = ({
   readonly cwd: string
 }) => {
   const { exit } = useApp()
-  const { rows } = useWindowSize()
+  const { rows, columns } = useWindowSize()
   const [query, setQuery] = useState("")
   const [searching, setSearching] = useState(false)
   const [sortIndex, setSortIndex] = useState(0)
@@ -506,6 +510,7 @@ export const AdminApp = ({
           diagnosis={diagnosisByRef.get(selected.ref)}
           herdrAvailable={herdrAvailable}
           onForkToFix={onForkToFix}
+          columns={columns}
         />
       ) : null}
     </Box>
