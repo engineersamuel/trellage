@@ -1,8 +1,13 @@
 import AppKit
 import Foundation
+import OSLog
 import OverlayCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let logger = Logger(
+        subsystem: "dev.trellage.trx-guide-overlay",
+        category: "capture"
+    )
     private let panelController = OverlayPanelController()
     private let launchPolicy = OverlayLaunchPolicy(arguments: CommandLine.arguments)
     private lazy var pasteboard = NSPasteboard.general
@@ -32,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var reconciliationInProgress = false
     private var actionInProgress = false
     private var markerReconciliationInProgress = false
+    private var captureMonitoringActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -43,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UserDefaults.standard.object(forKey: "captureEnabled") as? Bool ?? true
         configureService()
         configureStatusItem()
+        requestPermissionsOnFirstLaunchIfNeeded()
         configureMonitoring()
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -50,6 +57,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
+    }
+
+    private func requestPermissionsOnFirstLaunchIfNeeded() {
+        let defaultsKey = "didRequestPermissions"
+        guard
+            !PermissionStatus.accessibilityGranted || !PermissionStatus.inputMonitoringGranted,
+            !UserDefaults.standard.bool(forKey: defaultsKey)
+        else {
+            return
+        }
+        UserDefaults.standard.set(true, forKey: defaultsKey)
+        PermissionStatus.request()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -141,22 +160,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         stopPasteboardPolling()
         guard startupReady else {
             statusMessage = "Checking pending action"
+            logger.info("Capture monitoring blocked: startup is not ready")
             return
         }
         guard !actionUnresolved else {
             statusMessage = "Action status unknown"
+            logger.info("Capture monitoring blocked: action status is unresolved")
             return
         }
         guard captureEnabled else {
             statusMessage = "Capture disabled"
+            logger.info("Capture monitoring blocked: capture is disabled")
             return
         }
         guard contextProvider != nil else {
             statusMessage = "Install required"
+            logger.info("Capture monitoring blocked: app configuration is unavailable")
+            return
+        }
+        let copyOnSelect = CopyOnSelectInspection.inspect()
+        guard copyOnSelect == .enabled else {
+            statusMessage = copyOnSelect == .disabled
+                ? "Herdr copy_on_select is disabled"
+                : "Herdr copy_on_select is unknown"
+            logger.info("Capture monitoring blocked: copy_on_select is \(copyOnSelect.rawValue)")
             return
         }
         guard PermissionStatus.accessibilityGranted, PermissionStatus.inputMonitoringGranted else {
             statusMessage = "Permissions required"
+            logger.info(
+                "Capture monitoring blocked: accessibility=\(PermissionStatus.accessibilityGranted) inputMonitoring=\(PermissionStatus.inputMonitoringGranted)"
+            )
             return
         }
         guard CaptureMonitoringEligibility.shouldStart(
@@ -165,23 +199,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             startupReady: startupReady,
             actionUnresolved: actionUnresolved,
             permissionsGranted: true,
-            contextAvailable: contextProvider != nil
+            contextAvailable: contextProvider != nil,
+            copyOnSelectEnabled: copyOnSelect == .enabled
         ) else {
             statusMessage = "Capture unavailable"
+            logger.info("Capture monitoring blocked: eligibility policy rejected startup")
             return
         }
         guard eventMonitor?.start() == true else {
             statusMessage = "Event tap unavailable"
+            logger.error("Capture monitoring blocked: event tap creation failed")
             return
         }
         startPasteboardPolling()
         statusMessage = "Capture ready"
+        logger.info("Capture monitoring started")
     }
 
     private func handleMouse(type: CGEventType, point: CGPoint, bundleId: String?) {
         let time = ProcessInfo.processInfo.systemUptime
         if type == .leftMouseDown {
+            logger.info("Selection gesture started in bundle \(bundleId ?? "unknown")")
             invalidatePendingSelectionResolution()
+        } else if type == .leftMouseUp {
+            logger.info("Selection gesture ended in bundle \(bundleId ?? "unknown")")
         }
         if panelController.isVisible, panelController.contains(quartzPoint: point) {
             return
@@ -215,11 +256,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 bundleId: bundleId
             ))
         case .leftMouseUp:
+            let windowIdentity: SourceWindowIdentity?
+            do {
+                windowIdentity = try KittyAccessibility.focusedWindow().identity
+                logger.info("Focused Kitty window identity resolved")
+            } catch {
+                windowIdentity = nil
+                logger.error("Focused Kitty window identity resolution failed")
+            }
             candidate = detector.receive(.mouseUp(
                 point: point,
                 time: time,
                 bundleId: bundleId,
-                windowIdentity: try? KittyAccessibility.focusedWindow().identity
+                windowIdentity: windowIdentity
             ))
         default:
             candidate = nil
@@ -236,13 +285,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let count = pasteboard.changeCount
         if count != observedPasteboardCount {
             observedPasteboardCount = count
-            guard detector.isAwaitingPasteboardUpdate else { return }
+            logger.info("Pasteboard generation changed during capture monitoring")
+            let copyOnSelect = CopyOnSelectInspection.inspect()
+            guard CapturePrivacyPolicy.mayReadPasteboardText(
+                monitoringActive: captureMonitoringActive,
+                detectorAwaitingText: detector.isAwaitingPasteboardUpdate,
+                copyOnSelect: copyOnSelect
+            ) else {
+                if copyOnSelect != .enabled {
+                    updateCaptureMonitoring()
+                }
+                return
+            }
             let candidate = detector.receive(.pasteboardChanged(
                 changeCount: count,
                 text: pasteboard.string(forType: .string),
                 time: time
             ))
             if let candidate {
+                logger.info("Selection candidate accepted")
                 resolve(candidate)
             }
         } else {
@@ -298,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.currentSelection = selection
                     self.panelWindowIdentity = proven.window
                     self.statusMessage = "Capture ready"
+                    self.logger.info("Selection context proved; showing overlay")
                     self.panelController.show(
                         quartzSelectionBounds: candidate.globalBounds
                     ) { [weak self] action in
@@ -310,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self?.resolvingGeneration = nil
                     self?.resolvingWindowIdentity = nil
                     self?.statusMessage = "Context unavailable"
+                    self?.logger.error("Selection context proof failed")
                 }
             }
         }
@@ -395,7 +458,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(diagnosticItem(
             "Input Monitoring: \(PermissionStatus.inputMonitoringGranted ? "Granted" : "Required")"
         ))
-        menu.addItem(diagnosticItem("Herdr copy_on_select: \(CopyOnSelectStatus.inspect().rawValue)"))
+        menu.addItem(diagnosticItem(
+            "Herdr copy_on_select: \(CopyOnSelectInspection.inspect().rawValue)"
+        ))
         if actionUnresolved {
             menu.addItem(diagnosticItem("Check the queue before resuming capture."))
             let retry = NSMenuItem(
@@ -417,12 +482,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let permissions = NSMenuItem(
-            title: "Request permissions",
+            title: "Request permissions and open settings",
             action: #selector(requestPermissions),
             keyEquivalent: ""
         )
         permissions.target = self
         menu.addItem(permissions)
+        let accessibilitySettings = NSMenuItem(
+            title: "Open Accessibility settings",
+            action: #selector(openAccessibilitySettings),
+            keyEquivalent: ""
+        )
+        accessibilitySettings.target = self
+        menu.addItem(accessibilitySettings)
+        let inputMonitoringSettings = NSMenuItem(
+            title: "Open Input Monitoring settings",
+            action: #selector(openInputMonitoringSettings),
+            keyEquivalent: ""
+        )
+        inputMonitoringSettings.target = self
+        menu.addItem(inputMonitoringSettings)
         menu.addItem(.separator())
 
         let test = NSMenuItem(
@@ -465,6 +544,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.updateCaptureMonitoring()
         }
+    }
+
+    @objc private func openAccessibilitySettings() {
+        PermissionStatus.openAccessibilitySettings()
+    }
+
+    @objc private func openInputMonitoringSettings() {
+        PermissionStatus.openInputMonitoringSettings()
     }
 
     @objc private func showTestOverlay() {
@@ -648,11 +735,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] _ in
             self?.pollPasteboard()
         }
+        captureMonitoringActive = true
     }
 
     private func stopPasteboardPolling() {
         pasteboardTimer?.invalidate()
         pasteboardTimer = nil
+        captureMonitoringActive = false
         _ = detector.receive(.cancel)
     }
 

@@ -14,6 +14,34 @@ run = "./prototypes/trellage/trellage"
 description = "Run the repository worktree trx router"
 run = "env TRELLAGE_TRX_SOURCE_ROOT=\"$MISE_PROJECT_ROOT/prototypes/trellage-router\" \"$MISE_PROJECT_ROOT/prototypes/trellage-router/bin/trx\""
 
+[tasks.trx-guide-overlay-build]
+description = "Build the local macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/build.sh"
+
+[tasks.trx-guide-overlay-test]
+description = "Test the macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/test.sh"
+
+[tasks.trx-guide-overlay-demo]
+description = "Show the fixture-only macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/demo.sh"
+
+[tasks.trx-guide-overlay-install]
+description = "Build and install the local macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/install.sh"
+
+[tasks.trx-guide-overlay-start]
+description = "Start the installed macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/start.sh"
+
+[tasks.trx-guide-overlay-stop]
+description = "Stop the installed macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/stop.sh"
+
+[tasks.trx-guide-overlay-uninstall]
+description = "Remove the installed macOS TRX guide selection overlay"
+run = "./pocs/herdr-trx-guide/macos-overlay/scripts/uninstall.sh"
+
 [tasks.rebuild-profiles]
 description = "Refresh native trx/launchers + rebuild all sandbox profile images"
 run = "./scripts/rebuild-profile-images.sh --install"

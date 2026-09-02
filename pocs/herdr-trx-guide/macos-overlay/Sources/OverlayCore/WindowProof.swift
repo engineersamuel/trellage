@@ -14,13 +14,24 @@ public protocol ForegroundWindowReading {
     func frontmostKittyWindow() throws -> ForegroundWindowObservation
 }
 
+public enum WindowMarkerLeaseKind: Equatable, Sendable {
+    case acknowledged
+    case indeterminate
+}
+
 public struct DeferredWindowMarker: Equatable, Sendable {
     public let identity: SourceWindowIdentity
     public let marker: String
+    public let kind: WindowMarkerLeaseKind
 
-    public init(identity: SourceWindowIdentity, marker: String) {
+    public init(
+        identity: SourceWindowIdentity,
+        marker: String,
+        kind: WindowMarkerLeaseKind = .indeterminate
+    ) {
         self.identity = identity
         self.marker = marker
+        self.kind = kind
     }
 }
 
@@ -108,13 +119,13 @@ public final class ForegroundClientProof: WindowIdentityProving {
             unacknowledgedSetMayHaveApplied = Self.setMayHaveBeenApplied(error)
         }
 
-        let deferred = DeferredWindowMarker(
-            identity: sourceWindow.identity,
-            marker: expectedMarker
-        )
         if unacknowledgedSetMayHaveApplied {
             do {
-                try pollUnacknowledgedSet(deferred)
+                try pollUnacknowledgedSet(DeferredWindowMarker(
+                    identity: sourceWindow.identity,
+                    marker: expectedMarker,
+                    kind: .indeterminate
+                ))
             } catch {
                 if proofError == nil {
                     proofError = error
@@ -122,7 +133,11 @@ public final class ForegroundClientProof: WindowIdentityProving {
             }
         } else if setWasAcknowledged {
             do {
-                try clearMarkerIfSafe(deferred)
+                try clearAcknowledgedLeaseIfSafe(DeferredWindowMarker(
+                    identity: sourceWindow.identity,
+                    marker: expectedMarker,
+                    kind: .acknowledged
+                ))
             } catch {
                 if proofError == nil {
                     proofError = error
@@ -148,7 +163,7 @@ public final class ForegroundClientProof: WindowIdentityProving {
         guard current.identity == deferred.identity else {
             return .waiting
         }
-        guard current.title == deferred.marker else {
+        if deferred.kind == .indeterminate, current.title != deferred.marker {
             tracker.clear(ifMatching: deferred)
             return .discarded
         }
@@ -199,7 +214,9 @@ public final class ForegroundClientProof: WindowIdentityProving {
         throw OverlayError.invalidContext("Kitty did not render the exact Herdr window proof")
     }
 
-    private func clearMarkerIfSafe(_ deferred: DeferredWindowMarker) throws {
+    private func clearIndeterminateMarkerIfSafe(
+        _ deferred: DeferredWindowMarker
+    ) throws {
         let current: ForegroundWindowObservation
         do {
             current = try windowReader.frontmostKittyWindow()
@@ -238,7 +255,7 @@ public final class ForegroundClientProof: WindowIdentityProving {
                 if current.identity != deferred.identity {
                     sourceStayedFrontmost = false
                 } else if current.title == deferred.marker {
-                    try clearMarkerIfSafe(deferred)
+                    try clearIndeterminateMarkerIfSafe(deferred)
                     return
                 }
             } catch {
@@ -251,6 +268,33 @@ public final class ForegroundClientProof: WindowIdentityProving {
         }
         if sourceStayedFrontmost {
             tracker.clear(ifMatching: deferred)
+        }
+    }
+
+    private func clearAcknowledgedLeaseIfSafe(
+        _ deferred: DeferredWindowMarker
+    ) throws {
+        let current: ForegroundWindowObservation
+        do {
+            current = try windowReader.frontmostKittyWindow()
+        } catch {
+            tracker.deferMarker(deferred)
+            return
+        }
+        guard current.identity == deferred.identity else {
+            tracker.deferMarker(deferred)
+            return
+        }
+        do {
+            let cleared = try herdr.request(
+                method: "client.window_title.clear",
+                params: [:]
+            )
+            try HerdrResponseParser.windowTitleChange(cleared, expectedReason: "cleared")
+            tracker.clear(ifMatching: deferred)
+        } catch {
+            tracker.deferMarker(deferred)
+            throw error
         }
     }
 

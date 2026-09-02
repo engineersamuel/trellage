@@ -26,6 +26,13 @@ class OverlayActionFailure extends Error {
   }
 }
 
+class OverlayActionUnresolvedFailure extends Error {
+  constructor(message) {
+    super(message)
+    this.name = "OverlayActionUnresolvedFailure"
+  }
+}
+
 const localActionId = (value) => {
   if (typeof value !== "string") throw new Error("HERDR_PLUGIN_ACTION_ID is not set")
   const prefix = `${pluginId}.`
@@ -37,7 +44,7 @@ const localActionId = (value) => {
 }
 
 export const openOverlayQueueEditor = async (
-  source,
+  _source,
   runner = runHerdr,
   timeoutMs = queueEditorOpenTimeoutMs,
 ) => {
@@ -49,10 +56,6 @@ export const openOverlayQueueEditor = async (
     pluginId,
     "--entrypoint",
     "queue-editor",
-    "--workspace",
-    source.workspaceId,
-    "--target-pane",
-    source.paneId,
     "--focus",
   ], { timeoutMs })
 }
@@ -65,10 +68,25 @@ const actionResult = (requestId, queued, opened, queueCount) => ({
   queueCount,
 })
 
+const queueCommitResult = async (stateDir, requestId, queueReader) => {
+  try {
+    const queue = await queueReader(stateDir)
+    return actionResult(
+      requestId,
+      queue.entries.some((entry) => entry.id === requestId),
+      false,
+      queue.entries.length,
+    )
+  } catch {
+    return undefined
+  }
+}
+
 export const runOverlayAction = async ({
   env = process.env,
   requestConsumer = consumeOverlayRequest,
   queueAppender = appendCaptureQueue,
+  queueReader = readCaptureQueue,
   queueEditorOpener = openOverlayQueueEditor,
 } = {}) => {
   const actionId = localActionId(env.HERDR_PLUGIN_ACTION_ID)
@@ -78,22 +96,31 @@ export const runOverlayAction = async ({
   const context = parseOverlayInvocationContext(env.HERDR_PLUGIN_CONTEXT_JSON)
   const stateDir = resolvePluginStateDirectory(env)
   const request = await requestConsumer(env, context.requestId, context)
-  const queue = await queueAppender(stateDir, {
-    id: request.requestId,
-    answer: request.selection,
-    capture: { source: "selection", confidence: "user-selected" },
-    addedAt: new Date().toISOString(),
-    origin: {
-      surface: "trellage-guide-overlay",
-      workspaceId: request.source.workspaceId,
-      tabId: request.source.tabId,
-      paneId: request.source.paneId,
-      cwd: request.source.cwd,
-      capturedAt: request.capturedAt,
-      ...(request.source.agent === undefined ? {} : { agent: request.source.agent }),
-      ...(request.source.paneTitle === undefined ? {} : { paneTitle: request.source.paneTitle }),
-    },
-  })
+  let queue
+  try {
+    queue = await queueAppender(stateDir, {
+      id: request.requestId,
+      answer: request.selection,
+      capture: { source: "selection", confidence: "user-selected" },
+      addedAt: new Date().toISOString(),
+      origin: {
+        surface: "trellage-guide-overlay",
+        workspaceId: request.source.workspaceId,
+        tabId: request.source.tabId,
+        paneId: request.source.paneId,
+        cwd: request.source.cwd,
+        capturedAt: request.capturedAt,
+        ...(request.source.agent === undefined ? {} : { agent: request.source.agent }),
+        ...(request.source.paneTitle === undefined ? {} : { paneTitle: request.source.paneTitle }),
+      },
+    })
+  } catch {
+    const result = await queueCommitResult(stateDir, request.requestId, queueReader)
+    if (result === undefined) {
+      throw new OverlayActionUnresolvedFailure("Capture queue append completion could not be proven")
+    }
+    throw new OverlayActionFailure("Capture queue append did not complete cleanly", result)
+  }
   const queuedResult = actionResult(request.requestId, true, false, queue.entries.length)
   if (actionId === addActionId) return queuedResult
   try {
@@ -106,34 +133,48 @@ export const runOverlayAction = async ({
 }
 
 const failureResult = async (env, requestId) => {
-  let queueCount = 0
   try {
-    queueCount = (await readCaptureQueue(resolvePluginStateDirectory(env))).entries.length
+    const queue = await readCaptureQueue(resolvePluginStateDirectory(env))
+    return actionResult(
+      requestId,
+      queue.entries.some((entry) => entry.id === requestId),
+      false,
+      queue.entries.length,
+    )
   } catch {
-    // Keep failure output bounded and independent from secondary state errors.
+    return undefined
   }
-  return actionResult(requestId, false, false, queueCount)
 }
 
-export const main = async (env = process.env) => {
+const safeFailureResult = async (error, env, requestId) => {
+  if (error instanceof OverlayActionFailure) return error.result
+  if (error instanceof OverlayActionUnresolvedFailure || requestId === undefined) {
+    return undefined
+  }
+  return failureResult(env, requestId)
+}
+
+export const main = async (
+  env = process.env,
+  {
+    output = process.stdout,
+    errorOutput = process.stderr,
+    actionRunner = runOverlayAction,
+  } = {},
+) => {
   let requestId
   try {
     if (typeof env.HERDR_PLUGIN_CONTEXT_JSON === "string") {
       requestId = parseOverlayInvocationContext(env.HERDR_PLUGIN_CONTEXT_JSON).requestId
     }
-    const result = await runOverlayAction({ env })
-    process.stdout.write(JSON.stringify(result))
+    const result = await actionRunner({ env })
+    output.write(JSON.stringify(result))
     return 0
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const result =
-      error instanceof OverlayActionFailure
-        ? error.result
-        : requestId === undefined
-          ? undefined
-          : await failureResult(env, requestId)
-    if (result !== undefined) process.stdout.write(JSON.stringify(result))
-    process.stderr.write(`${message}\n`)
+    const result = await safeFailureResult(error, env, requestId)
+    if (result !== undefined) output.write(JSON.stringify(result))
+    errorOutput.write(`${message}\n`)
     return 1
   }
 }

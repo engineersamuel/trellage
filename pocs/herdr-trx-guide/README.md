@@ -161,6 +161,13 @@ and the action exits nonzero. Queue-editor launch has a 10-second timeout; on
 timeout the plugin terminates and reaps only its Herdr CLI child, then reports
 the same safe partial result.
 
+If an atomic queue write succeeds but lock release later fails, the action
+reads the queue snapshot and correlates the request UUID before reporting
+status. A present UUID reports `queued: true`; a readable queue without it can
+report `queued: false`. If queue state cannot be read, stdout stays empty so
+the overlay treats the result as unresolved. Diagnostics never include the
+captured text.
+
 The popup does not offer **Current terminal**. A modal popup is temporary and
 is not a safe host for a new agent. It keeps these guide outcomes:
 

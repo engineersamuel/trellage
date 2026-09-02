@@ -12,7 +12,7 @@
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are pure and exported so they can be unit tested without rendering Ink.
  */
-import React, { useEffect, useReducer, useRef, useState } from "react"
+import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 import stringWidth from "string-width"
 
@@ -21,6 +21,13 @@ import {
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
 } from "../../trellage-guide-core/dist/index.js"
+import {
+  basketBlockPreview,
+  basketVisibleRange,
+  countLabel,
+  countTextLines,
+  type BasketBlockPreview,
+} from "./basket.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
   applyRequiredProfilePromptTemplate,
@@ -78,12 +85,18 @@ import {
   describeJobPlacement,
   emptyGuideQueue,
   enqueueGuideJob,
+  removeQueuedGuideJobById,
   removeSelectedQueuedGuideJob,
+  replaceQueuedGuideJob,
   selectQueuedGuideJob,
   startQueuedGuidePromptEdit,
   submitQueuedGuidePromptEdit,
+  executeGuideBatch,
   type GuideBatch,
+  type GuideBatchExecutionResult,
+  type GuideBatchProgressEvent,
   type GuideQueueState,
+  type QueuedGuideJob,
   type JobPlacement,
 } from "./guide-batch.js"
 
@@ -142,10 +155,7 @@ const replaceCandidateAt = <T,>(items: Triple<T>, index: number, value: T): Trip
   return [value, second, third]
 }
 
-const selectedGuideWorkflow = (
-  guide: ProfileGuideV1,
-  workflowId: string,
-): ProfileGuideWorkflow => {
+const selectedGuideWorkflow = (guide: ProfileGuideV1, workflowId: string): ProfileGuideWorkflow => {
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new Error(`Unknown workflow reference: ${workflowId}`)
   return workflow
@@ -176,8 +186,10 @@ export enum GuideUiStage {
   WorktreeCollision = "worktree-collision",
   WorktreeReady = "worktree-ready",
   Queue = "queue",
+  QueueEntry = "queue-entry",
   QueuePromptEditor = "queue-prompt-editor",
   QueuePlacement = "queue-placement",
+  Launching = "launching",
 }
 
 const editingStages: ReadonlySet<GuideUiStage> = new Set([
@@ -190,7 +202,16 @@ const editingStages: ReadonlySet<GuideUiStage> = new Set([
 export enum GuideUiDestination {
   CurrentTerminal = "current-terminal",
   CurrentHerdrWorkspace = "current-herdr-workspace",
+  NewHerdrTab = "new-herdr-tab",
   NewHerdrWorktree = "new-herdr-worktree",
+}
+
+/** What each destination reads as on screen. */
+export const destinationLabels: Readonly<Record<GuideUiDestination, string>> = {
+  [GuideUiDestination.CurrentTerminal]: "This terminal",
+  [GuideUiDestination.CurrentHerdrWorkspace]: "New pane in this Herdr workspace",
+  [GuideUiDestination.NewHerdrTab]: "New tab in this Herdr worktree",
+  [GuideUiDestination.NewHerdrWorktree]: "New Herdr worktree",
 }
 
 export enum GuideWizardStep {
@@ -233,8 +254,10 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.WorktreeCollision]: GuideWizardStep.Destination,
   [GuideUiStage.WorktreeReady]: GuideWizardStep.Destination,
   [GuideUiStage.Queue]: GuideWizardStep.PromptCandidates,
+  [GuideUiStage.QueueEntry]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.QueuePromptEditor]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.QueuePlacement]: GuideWizardStep.Destination,
+  [GuideUiStage.Launching]: GuideWizardStep.Destination,
 }
 
 export const wizardStepForStage = (stage: GuideUiStage): GuideWizardStep | undefined => wizardStepByStage[stage]
@@ -246,10 +269,11 @@ export const destinationOptions = (
 ): ReadonlyArray<GuideUiDestination> =>
   herdrEnabled
     ? surface === "popup"
-      ? [GuideUiDestination.CurrentHerdrWorkspace, GuideUiDestination.NewHerdrWorktree]
+      ? [GuideUiDestination.CurrentHerdrWorkspace, GuideUiDestination.NewHerdrTab, GuideUiDestination.NewHerdrWorktree]
       : [
           GuideUiDestination.CurrentTerminal,
           GuideUiDestination.CurrentHerdrWorkspace,
+          GuideUiDestination.NewHerdrTab,
           GuideUiDestination.NewHerdrWorktree,
         ]
     : [GuideUiDestination.CurrentTerminal]
@@ -289,9 +313,19 @@ export interface GuideUiState {
     | undefined
   readonly promptReviewEditing: boolean
   readonly queue: GuideQueueState
-  readonly worktreePurpose: "single" | "queue"
+  /** Where `b` returns from the worktree sub-flow, which both placement screens share. */
+  readonly worktreeReturnStage: GuideUiStage.Destination | GuideUiStage.QueuePlacement
   /** The git checkout every queued worktree placement was resolved against. */
   readonly primaryCheckoutPath: string | undefined
+  /** The batch `L` is launching; `undefined` unless the launch screen is showing. */
+  readonly launchBatch: GuideBatch | undefined
+  /** The newest step reported for each queued job, in queue order. */
+  readonly launchProgress: ReadonlyArray<GuideBatchProgressEvent>
+  /** Every unfinished draft opened from the main screen, in tab order. */
+  readonly forks: ReadonlyArray<GuideForkTab>
+  /** `undefined` means the main recommendations screen is showing. */
+  readonly activeForkId: number | undefined
+  readonly nextForkId: number
 }
 
 const emptyState: GuideUiState = {
@@ -319,8 +353,13 @@ const emptyState: GuideUiState = {
   promptReviewReturnStage: undefined,
   promptReviewEditing: false,
   queue: emptyGuideQueue(),
-  worktreePurpose: "single",
+  worktreeReturnStage: GuideUiStage.Destination,
   primaryCheckoutPath: undefined,
+  launchBatch: undefined,
+  launchProgress: [],
+  forks: [],
+  activeForkId: undefined,
+  nextForkId: 1,
 }
 
 /** Builds initial state and starts matching immediately when a supplied intent is present. */
@@ -349,6 +388,145 @@ const worktreeDirtyWarningMessage =
 /** Explicit consequence text for a dirty source working tree; `undefined` when clean (nothing to warn about). */
 export const worktreeDirtyWarning = (dirty: boolean): string | undefined =>
   dirty ? worktreeDirtyWarningMessage : undefined
+
+// ---------------------------------------------------------------------------
+// Fork tabs. A tab and a queue entry are the same thing seen twice: the main
+// screen keeps the intent, the recommendations and the queue, while each tab
+// keeps its own profile, prompt candidate and destination. An unfinished tab
+// holds no entry yet; adding it to the queue binds the two, and removing
+// either one removes the other, so the tab bar always reads as the queue.
+// ---------------------------------------------------------------------------
+
+/** The state the main screen and every fork share. Everything else is per fork. */
+type GuideForkSharedKey =
+  | "intent"
+  | "matchPhase"
+  | "recommendations"
+  | "recommendationIndex"
+  | "usedLiteralFallback"
+  | "queue"
+  | "primaryCheckoutPath"
+  | "launchBatch"
+  | "launchProgress"
+  | "forks"
+  | "activeForkId"
+  | "nextForkId"
+
+export type GuideForkSlice = Omit<GuideUiState, GuideForkSharedKey>
+
+export interface GuideForkTab {
+  readonly id: number
+  readonly slice: GuideForkSlice
+  /** The queue entry this tab produced, or `undefined` while its draft is unfinished. */
+  readonly jobId: number | undefined
+}
+
+/** Drops every shared field, so a parked fork can never overwrite the intent, the recommendations or the queue. */
+const forkSlice = ({
+  intent: _intent,
+  matchPhase: _matchPhase,
+  recommendations: _recommendations,
+  recommendationIndex: _recommendationIndex,
+  usedLiteralFallback: _usedLiteralFallback,
+  queue: _queue,
+  primaryCheckoutPath: _primaryCheckoutPath,
+  launchBatch: _launchBatch,
+  launchProgress: _launchProgress,
+  forks: _forks,
+  activeForkId: _activeForkId,
+  nextForkId: _nextForkId,
+  ...slice
+}: GuideUiState): GuideForkSlice => slice
+
+const mainForkSlice: GuideForkSlice = forkSlice({ ...emptyState, stage: GuideUiStage.Recommendations })
+
+/** Writes the live state back into the active fork, so leaving a tab keeps its progress. */
+const parkActiveFork = (state: GuideUiState): GuideUiState =>
+  state.activeForkId === undefined
+    ? state
+    : {
+        ...state,
+        forks: state.forks.map((fork) =>
+          fork.id === state.activeForkId ? { ...fork, slice: forkSlice(state) } : fork,
+        ),
+      }
+
+const enterMainScreen = (state: GuideUiState): GuideUiState => ({
+  ...parkActiveFork(state),
+  ...mainForkSlice,
+  activeForkId: undefined,
+})
+
+const enterFork = (state: GuideUiState, id: number): GuideUiState => {
+  const parked = parkActiveFork(state)
+  const target = parked.forks.find((fork) => fork.id === id)
+  return target === undefined ? state : { ...parked, ...target.slice, activeForkId: id }
+}
+
+const openFork = (state: GuideUiState, slice: GuideForkSlice): GuideUiState => {
+  const parked = parkActiveFork(state)
+  return {
+    ...parked,
+    ...slice,
+    forks: [...parked.forks, { id: parked.nextForkId, slice, jobId: undefined }],
+    activeForkId: parked.nextForkId,
+    nextForkId: parked.nextForkId + 1,
+  }
+}
+
+/** Binds the active tab to the entry it just produced and returns to the main screen. The tab stays. */
+const bindActiveForkToJob = (state: GuideUiState, jobId: number): GuideUiState => {
+  const parked = parkActiveFork(state)
+  return {
+    ...parked,
+    ...mainForkSlice,
+    forks: parked.forks.map((fork) => (fork.id === state.activeForkId ? { ...fork, jobId } : fork)),
+    activeForkId: undefined,
+  }
+}
+
+/** Drops the active tab and, because the two are one thing, the queue entry it held. */
+const dropActiveFork = (state: GuideUiState): GuideUiState => {
+  const dropped = state.forks.find((fork) => fork.id === state.activeForkId)
+  if (dropped === undefined) return state
+  const main = enterMainScreen(state)
+  return {
+    ...main,
+    forks: main.forks.filter((fork) => fork.id !== dropped.id),
+    queue: dropped.jobId === undefined ? main.queue : removeQueuedGuideJobById(main.queue, dropped.jobId),
+  }
+}
+
+/** The state one fork sees: the shared fields live, its own fields from its slice. */
+const hydrateFork = (state: GuideUiState, slice: GuideForkSlice): GuideUiState => ({ ...state, ...slice })
+
+/** The state the fork with `id` is really in, whether it is on screen or parked. */
+export const forkState = (state: GuideUiState, id: number): GuideUiState | undefined => {
+  if (state.activeForkId === id) return state
+  const target = state.forks.find((fork) => fork.id === id)
+  return target === undefined ? undefined : hydrateFork(state, target.slice)
+}
+
+/** Every stage that waits on a model or a git call. A tab in one of these shows a spinner. */
+const busyStages: ReadonlySet<GuideUiStage> = new Set([
+  GuideUiStage.Matching,
+  GuideUiStage.Generating,
+  GuideUiStage.Refining,
+  GuideUiStage.CheckingReadiness,
+  GuideUiStage.InspectingWorktree,
+])
+
+export const forkIsBusy = (state: GuideUiState, id: number): boolean => {
+  const target = forkState(state, id)
+  return target !== undefined && busyStages.has(target.stage)
+}
+
+/** Tab order: the main screen first, then every open fork. */
+const cycleFork = (state: GuideUiState, delta: 1 | -1): GuideUiState => {
+  const ids: ReadonlyArray<number | undefined> = [undefined, ...state.forks.map((fork) => fork.id)]
+  const next = ids[(ids.indexOf(state.activeForkId) + delta + ids.length) % ids.length]
+  return next === undefined ? enterMainScreen(state) : enterFork(state, next)
+}
 
 // ---------------------------------------------------------------------------
 // Actions.
@@ -404,6 +582,7 @@ export enum GuideUiActionType {
   DestinationMove = "destination/move",
   DestinationBack = "destination/back",
   DestinationStartWorktree = "destination/start-worktree",
+  DestinationEnqueue = "destination/enqueue",
   WorktreeSubmitBranch = "worktree/submit-branch",
   WorktreeInvalidBranch = "worktree/invalid-branch",
   WorktreeInspectFailed = "worktree/inspect-failed",
@@ -413,18 +592,27 @@ export enum GuideUiActionType {
   WorktreeEditBranch = "worktree/edit-branch",
   WorktreeBack = "worktree/back",
   QueueMove = "queue/move",
+  QueueOpenEntry = "queue/open-entry",
   QueueEditStart = "queue/edit-start",
   QueueEditSubmit = "queue/edit-submit",
   QueueRemove = "queue/remove",
   QueueAddAnother = "queue/add-another",
   QueueBack = "queue/back",
   QueueExecuteBlocked = "queue/execute-blocked",
+  LaunchStart = "launch/start",
+  LaunchProgress = "launch/progress",
   QueuePlacementMove = "queue-placement/move",
   QueuePlacementBack = "queue-placement/back",
   QueuePlacementUnavailable = "queue-placement/unavailable",
   QueuePlacementHere = "queue-placement/here",
   QueuePlacementStartWorktree = "queue-placement/start-worktree",
   QueuePlacementWorktree = "queue-placement/worktree",
+  ForkNext = "fork/next",
+  ForkPrevious = "fork/previous",
+  ForkMain = "fork/main",
+  ForkSelect = "fork/select",
+  ForkDrop = "fork/drop",
+  ForkDeliver = "fork/deliver",
 }
 
 export type GuideUiAction =
@@ -480,6 +668,7 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.DestinationMove; readonly delta: 1 | -1; readonly optionCount: number }
   | { readonly type: GuideUiActionType.DestinationBack }
   | { readonly type: GuideUiActionType.DestinationStartWorktree }
+  | { readonly type: GuideUiActionType.DestinationEnqueue; readonly placement: JobPlacement }
   | { readonly type: GuideUiActionType.WorktreeSubmitBranch }
   | { readonly type: GuideUiActionType.WorktreeInvalidBranch }
   | { readonly type: GuideUiActionType.WorktreeInspectFailed; readonly message: string }
@@ -489,18 +678,31 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.WorktreeEditBranch }
   | { readonly type: GuideUiActionType.WorktreeBack }
   | { readonly type: GuideUiActionType.QueueMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.QueueOpenEntry }
   | { readonly type: GuideUiActionType.QueueEditStart }
   | { readonly type: GuideUiActionType.QueueEditSubmit }
   | { readonly type: GuideUiActionType.QueueRemove }
   | { readonly type: GuideUiActionType.QueueAddAnother }
   | { readonly type: GuideUiActionType.QueueBack }
   | { readonly type: GuideUiActionType.QueueExecuteBlocked; readonly message: string }
+  | { readonly type: GuideUiActionType.LaunchStart; readonly batch: GuideBatch }
+  | { readonly type: GuideUiActionType.LaunchProgress; readonly event: GuideBatchProgressEvent }
   | { readonly type: GuideUiActionType.QueuePlacementMove; readonly delta: 1 | -1 }
   | { readonly type: GuideUiActionType.QueuePlacementBack }
   | { readonly type: GuideUiActionType.QueuePlacementUnavailable }
   | { readonly type: GuideUiActionType.QueuePlacementHere }
   | { readonly type: GuideUiActionType.QueuePlacementStartWorktree }
-  | { readonly type: GuideUiActionType.QueuePlacementWorktree; readonly placement: JobPlacement; readonly primaryCheckoutPath: string }
+  | {
+      readonly type: GuideUiActionType.QueuePlacementWorktree
+      readonly placement: JobPlacement
+      readonly primaryCheckoutPath: string
+    }
+  | { readonly type: GuideUiActionType.ForkNext }
+  | { readonly type: GuideUiActionType.ForkPrevious }
+  | { readonly type: GuideUiActionType.ForkMain }
+  | { readonly type: GuideUiActionType.ForkSelect; readonly index: number }
+  | { readonly type: GuideUiActionType.ForkDrop }
+  | { readonly type: GuideUiActionType.ForkDeliver; readonly forkId: number; readonly action: GuideUiAction }
 
 // ---------------------------------------------------------------------------
 // Reducer. Pure: every transition is guarded by the stage it applies to, and
@@ -688,8 +890,8 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
 
     case GuideUiActionType.RecommendationsConfirm: {
       if (state.stage !== GuideUiStage.Recommendations || state.recommendations === undefined) return state
-      return {
-        ...state,
+      const slice: GuideForkSlice = {
+        ...forkSlice(state),
         stage: GuideUiStage.Generating,
         selectedRecommendation:
           action.recommendation ?? recommendationAt(state.recommendations, state.recommendationIndex),
@@ -700,6 +902,9 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
         usedTemplateFallback: false,
         errorMessage: undefined,
       }
+      // From the main screen this starts a new fork; inside a fork it replaces
+      // that fork's profile, so `b` back from the candidates still works.
+      return state.activeForkId === undefined ? openFork(state, slice) : { ...state, ...slice }
     }
 
     default:
@@ -808,13 +1013,16 @@ const reduceCandidateNavigation = (state: GuideUiState, action: GuideUiAction): 
         : state
 
     case GuideUiActionType.CandidatesEnqueue:
-      return state.stage === GuideUiStage.Candidates && state.candidates !== undefined && state.selectedProfile !== undefined
+      return state.stage === GuideUiStage.Candidates &&
+        state.candidates !== undefined &&
+        state.selectedProfile !== undefined
         ? { ...state, stage: GuideUiStage.QueuePlacement, destinationIndex: 0, errorMessage: undefined }
         : state
 
+    // The queue belongs to the main screen, so viewing it parks whatever tab is open.
     case GuideUiActionType.CandidatesViewQueue:
-      return state.stage === GuideUiStage.Candidates && state.queue.entries.length > 0
-        ? { ...state, stage: GuideUiStage.Queue, errorMessage: undefined }
+      return state.queue.entries.length > 0
+        ? { ...enterMainScreen(state), stage: GuideUiStage.Queue, errorMessage: undefined }
         : state
 
     default:
@@ -825,10 +1033,7 @@ const reduceCandidateNavigation = (state: GuideUiState, action: GuideUiAction): 
 const candidateEditingWorkflow = (state: GuideUiState): ProfileGuideWorkflow | undefined =>
   state.guideDocument === undefined || state.selectedRecommendation === undefined
     ? undefined
-    : selectedGuideWorkflow(
-        state.guideDocument.guide,
-        state.selectedRecommendation.workflowId,
-      )
+    : selectedGuideWorkflow(state.guideDocument.guide, state.selectedRecommendation.workflowId)
 
 const candidateDirectEditDraft = (state: GuideUiState): string => {
   if (state.candidates === undefined) throw new Error("Direct editing requires prompt candidates")
@@ -879,11 +1084,7 @@ const reduceDirectEdit = (state: GuideUiState, action: GuideUiAction): GuideUiSt
         ? {
             ...state,
             stage: GuideUiStage.Candidates,
-            candidates: replaceCandidateAt(
-              state.candidates,
-              state.candidateIndex,
-              directlyEditedCandidate(state),
-            ),
+            candidates: replaceCandidateAt(state.candidates, state.candidateIndex, directlyEditedCandidate(state)),
           }
         : state
 
@@ -908,10 +1109,7 @@ const reduceEditor = (state: GuideUiState, action: GuideUiAction): GuideUiState 
   }
 }
 
-const refineSucceededState = (
-  state: GuideUiState,
-  candidate: GuideGenerateCandidate,
-): GuideUiState => {
+const refineSucceededState = (state: GuideUiState, candidate: GuideGenerateCandidate): GuideUiState => {
   if (state.stage !== GuideUiStage.Refining || state.candidates === undefined) return state
   try {
     return {
@@ -1010,48 +1208,114 @@ const reduceDestination = (state: GuideUiState, action: GuideUiAction): GuideUiS
             textDraft: defaultWorktreeBranch(state.intent ?? ""),
             worktreeInspection: undefined,
             errorMessage: undefined,
+            worktreeReturnStage: GuideUiStage.Destination,
           }
         : state
+
+    case GuideUiActionType.DestinationEnqueue:
+      return state.stage === GuideUiStage.Destination ? enqueueSelectedCandidate(state, action.placement) : state
 
     default:
       return state
   }
 }
 
-const reduceQueue = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceQueueNavigation = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.QueueMove:
-      return state.stage === GuideUiStage.Queue ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state
-    case GuideUiActionType.QueueEditStart: {
-      if (state.stage !== GuideUiStage.Queue) return state
-      const queue = startQueuedGuidePromptEdit(state.queue)
-      const job = queue.entries[queue.selectedIndex]
-      return job === undefined ? state : { ...state, stage: GuideUiStage.QueuePromptEditor, queue, textDraft: job.prompt }
-    }
-    case GuideUiActionType.QueueEditSubmit:
-      return state.stage === GuideUiStage.QueuePromptEditor && state.textDraft.trim().length > 0
-        ? { ...state, stage: GuideUiStage.Queue, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) }
-        : state
-    case GuideUiActionType.QueueRemove:
       return state.stage === GuideUiStage.Queue
-        ? { ...state, queue: removeSelectedQueuedGuideJob(state.queue), errorMessage: undefined }
+        ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) }
         : state
-    case GuideUiActionType.QueueAddAnother:
-      return state.stage === GuideUiStage.Queue
-        ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath }
+    case GuideUiActionType.QueueOpenEntry:
+      return state.stage === GuideUiStage.Queue && state.queue.entries[state.queue.selectedIndex] !== undefined
+        ? { ...state, stage: GuideUiStage.QueueEntry }
         : state
     case GuideUiActionType.QueueBack:
+      if (state.stage === GuideUiStage.QueueEntry) return { ...state, stage: GuideUiStage.Queue }
       if (state.stage === GuideUiStage.QueuePromptEditor) {
         const { editingId: _, ...queue } = state.queue
         return { ...state, stage: GuideUiStage.Queue, queue, errorMessage: undefined }
       }
       return state.stage === GuideUiStage.Queue
-        ? { ...state, stage: GuideUiStage.Candidates, errorMessage: undefined }
+        ? {
+            ...state,
+            stage: state.candidates === undefined ? GuideUiStage.Recommendations : GuideUiStage.Candidates,
+            errorMessage: undefined,
+          }
         : state
+    default:
+      return state
+  }
+}
+
+const reduceQueueEditing = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.QueueEditStart: {
+      if (state.stage !== GuideUiStage.Queue) return state
+      const queue = startQueuedGuidePromptEdit(state.queue)
+      const job = queue.entries[queue.selectedIndex]
+      return job === undefined
+        ? state
+        : { ...state, stage: GuideUiStage.QueuePromptEditor, queue, textDraft: job.prompt }
+    }
+    case GuideUiActionType.QueueEditSubmit:
+      return state.stage === GuideUiStage.QueuePromptEditor && state.textDraft.trim().length > 0
+        ? { ...state, stage: GuideUiStage.Queue, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) }
+        : state
+    default:
+      return state
+  }
+}
+
+const reduceQueueContents = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.QueueRemove: {
+      const removed = state.stage === GuideUiStage.Queue ? state.queue.entries[state.queue.selectedIndex] : undefined
+      return removed === undefined
+        ? state
+        : {
+            ...state,
+            queue: removeSelectedQueuedGuideJob(state.queue),
+            forks: state.forks.filter((fork) => fork.jobId !== removed.id),
+            errorMessage: undefined,
+          }
+    }
+    case GuideUiActionType.QueueAddAnother:
+      if (state.stage !== GuideUiStage.Queue) return state
+      return state.recommendations === undefined
+        ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath }
+        : enterMainScreen(state)
     case GuideUiActionType.QueueExecuteBlocked:
       return state.stage === GuideUiStage.Queue ? { ...state, errorMessage: action.message } : state
     default:
       return state
+  }
+}
+
+const reduceQueue = (state: GuideUiState, action: GuideUiAction): GuideUiState =>
+  reduceQueueContents(reduceQueueEditing(reduceQueueNavigation(state, action), action), action)
+
+/**
+ * Drives the launch screen. The launch belongs to the whole queue, not to one
+ * tab, so it starts on the main screen: the effects that run it read the main
+ * slice, and a parked fork keeps its own progress.
+ */
+const reduceLaunch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  if (action.type === GuideUiActionType.LaunchStart) {
+    return {
+      ...enterMainScreen(state),
+      stage: GuideUiStage.Launching,
+      launchBatch: action.batch,
+      launchProgress: [],
+    }
+  }
+  if (action.type !== GuideUiActionType.LaunchProgress) return state
+  const known = state.launchProgress.some((event) => event.jobId === action.event.jobId)
+  return {
+    ...state,
+    launchProgress: known
+      ? state.launchProgress.map((event) => (event.jobId === action.event.jobId ? action.event : event))
+      : [...state.launchProgress, action.event],
   }
 }
 
@@ -1064,24 +1328,22 @@ const enqueueSelectedCandidate = (
   state: GuideUiState,
   placement: JobPlacement,
   primaryCheckoutPath?: string,
-): GuideUiState =>
-  state.candidates === undefined || state.selectedProfile === undefined
-    ? state
-    : {
-        ...state,
-        stage: GuideUiStage.Queue,
-        queue: enqueueGuideJob(
-          state.queue,
-          state.selectedProfile,
-          tripleAt(state.candidates, state.candidateIndex).prompt,
-          placement,
-        ),
-        worktreePurpose: "single",
-        worktreeInspection: undefined,
-        worktreeConfirmations: 0,
-        ...(primaryCheckoutPath === undefined ? {} : { primaryCheckoutPath }),
-        errorMessage: undefined,
-      }
+): GuideUiState => {
+  const profile = state.selectedProfile
+  if (state.candidates === undefined || profile === undefined) return state
+  const prompt = tripleAt(state.candidates, state.candidateIndex).prompt
+  const held = state.forks.find((fork) => fork.id === state.activeForkId)?.jobId
+  return {
+    ...bindActiveForkToJob(state, held ?? state.queue.nextId),
+    stage: GuideUiStage.Queue,
+    queue:
+      held === undefined
+        ? enqueueGuideJob(state.queue, profile, prompt, placement)
+        : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement),
+    ...(primaryCheckoutPath === undefined ? {} : { primaryCheckoutPath }),
+    errorMessage: undefined,
+  }
+}
 
 const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
@@ -1106,7 +1368,7 @@ const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): Guide
             stage: GuideUiStage.WorktreeBranchEditor,
             textDraft: defaultWorktreeBranch(state.intent ?? "queue"),
             worktreeInspection: undefined,
-            worktreePurpose: "queue",
+            worktreeReturnStage: GuideUiStage.QueuePlacement,
             errorMessage: undefined,
           }
         : state
@@ -1199,12 +1461,53 @@ const reduceWorktreeResolution = (state: GuideUiState, action: GuideUiAction): G
         state.stage === GuideUiStage.WorktreeReady
         ? {
             ...state,
-            stage: state.worktreePurpose === "queue" ? GuideUiStage.QueuePlacement : GuideUiStage.Destination,
+            stage: state.worktreeReturnStage,
             worktreeInspection: undefined,
             worktreeConfirmations: 0,
           }
         : state
 
+    default:
+      return state
+  }
+}
+
+/**
+ * An async result belongs to the fork that started it, which is often not the
+ * fork on screen: a parked fork keeps generating and its result is written
+ * straight into its slice, so no work is lost and no tab has to be visited.
+ */
+const deliverToFork = (state: GuideUiState, forkId: number, action: GuideUiAction): GuideUiState => {
+  if (action.type === GuideUiActionType.ForkDeliver) return state
+  if (state.activeForkId === forkId) return guideUiReducer(state, action)
+  const target = state.forks.find((fork) => fork.id === forkId)
+  if (target === undefined) return state
+  const applied = guideUiReducer(hydrateFork(state, target.slice), action)
+  return {
+    ...applied,
+    ...forkSlice(state),
+    forks: applied.forks.map((fork) => (fork.id === forkId ? { ...fork, slice: forkSlice(applied) } : fork)),
+  }
+}
+
+const reduceFork = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.ForkNext:
+      return cycleFork(state, 1)
+    case GuideUiActionType.ForkPrevious:
+      return cycleFork(state, -1)
+    case GuideUiActionType.ForkMain:
+      return state.stage === GuideUiStage.Recommendations && state.activeForkId === undefined
+        ? state
+        : enterMainScreen(state)
+    case GuideUiActionType.ForkSelect: {
+      const target = state.forks[action.index]
+      return target === undefined ? state : enterFork(state, target.id)
+    }
+    case GuideUiActionType.ForkDrop:
+      return dropActiveFork(state)
+    case GuideUiActionType.ForkDeliver:
+      return deliverToFork(state, action.forkId, action.action)
     default:
       return state
   }
@@ -1262,6 +1565,7 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.DestinationMove]: reduceDestination,
   [GuideUiActionType.DestinationBack]: reduceDestination,
   [GuideUiActionType.DestinationStartWorktree]: reduceDestination,
+  [GuideUiActionType.DestinationEnqueue]: reduceDestination,
   [GuideUiActionType.WorktreeSubmitBranch]: reduceWorktreeBranch,
   [GuideUiActionType.WorktreeInvalidBranch]: reduceWorktreeBranch,
   [GuideUiActionType.WorktreeInspectFailed]: reduceWorktreeBranch,
@@ -1271,18 +1575,27 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.WorktreeEditBranch]: reduceWorktreeResolution,
   [GuideUiActionType.WorktreeBack]: reduceWorktreeResolution,
   [GuideUiActionType.QueueMove]: reduceQueue,
+  [GuideUiActionType.QueueOpenEntry]: reduceQueue,
   [GuideUiActionType.QueueEditStart]: reduceQueue,
   [GuideUiActionType.QueueEditSubmit]: reduceQueue,
   [GuideUiActionType.QueueRemove]: reduceQueue,
   [GuideUiActionType.QueueAddAnother]: reduceQueue,
   [GuideUiActionType.QueueBack]: reduceQueue,
   [GuideUiActionType.QueueExecuteBlocked]: reduceQueue,
+  [GuideUiActionType.LaunchStart]: reduceLaunch,
+  [GuideUiActionType.LaunchProgress]: reduceLaunch,
   [GuideUiActionType.QueuePlacementMove]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementBack]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementUnavailable]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementHere]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementStartWorktree]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementWorktree]: reduceQueuePlacement,
+  [GuideUiActionType.ForkNext]: reduceFork,
+  [GuideUiActionType.ForkPrevious]: reduceFork,
+  [GuideUiActionType.ForkMain]: reduceFork,
+  [GuideUiActionType.ForkSelect]: reduceFork,
+  [GuideUiActionType.ForkDrop]: reduceFork,
+  [GuideUiActionType.ForkDeliver]: reduceFork,
 }
 
 export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1543,30 +1856,15 @@ export const runGuideGenerationStep = async (
     [
       renderWorkflowBodyCandidate(
         workflow,
-        resolveWorkflowBodyCandidate(
-          guideDocument.guide,
-          workflow,
-          bodyCandidates[0],
-          optimizedFirst,
-        ),
+        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[0], optimizedFirst),
       ),
       renderWorkflowBodyCandidate(
         workflow,
-        resolveWorkflowBodyCandidate(
-          guideDocument.guide,
-          workflow,
-          bodyCandidates[1],
-          optimizedSecond,
-        ),
+        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[1], optimizedSecond),
       ),
       renderWorkflowBodyCandidate(
         workflow,
-        resolveWorkflowBodyCandidate(
-          guideDocument.guide,
-          workflow,
-          bodyCandidates[2],
-          optimizedThird,
-        ),
+        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[2], optimizedThird),
       ),
     ],
     GuideCandidatePromptStage.FinalRendering,
@@ -1644,12 +1942,7 @@ export const runGuideRefinementStep = async (
   if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
   const renderedCandidate = renderWorkflowBodyCandidate(
     workflow,
-    resolveWorkflowBodyCandidate(
-      guideDocument.guide,
-      workflow,
-      refinedBodyCandidate,
-      optimizedCandidate,
-    ),
+    resolveWorkflowBodyCandidate(guideDocument.guide, workflow, refinedBodyCandidate, optimizedCandidate),
   )
   const finalCandidate = applyRequiredProfilePromptTemplate(
     recommendation.profileRef,
@@ -1721,9 +2014,24 @@ export interface GuideUiExistingHerdrWorktreeResult {
   readonly path: string
 }
 
+/**
+ * What a queue launch produced. The launch runs inside the guide so it can show
+ * progress, so this carries the finished result and not the work to do.
+ */
 export interface GuideUiBatchResult {
   readonly action: "batch"
-  readonly batch: GuideBatch
+  readonly result: GuideBatchExecutionResult
+}
+
+/** A new Herdr tab in this workspace, on this checkout. */
+export interface GuideUiNewHerdrTabResult {
+  readonly action: "new-herdr-tab"
+  readonly profile: SelectedProfile
+  readonly command: CommandSpec
+  readonly prompt: string
+  readonly promptDelivery: HerdrPromptDeliveryMode
+  readonly cwd: string
+  readonly workspaceId: string
 }
 
 export type GuideUiResult =
@@ -1731,6 +2039,7 @@ export type GuideUiResult =
   | GuideUiPrintResult
   | GuideUiCurrentTerminalResult
   | GuideUiCurrentHerdrWorkspaceResult
+  | GuideUiNewHerdrTabResult
   | GuideUiNewHerdrWorktreeResult
   | GuideUiExistingHerdrWorktreeResult
   | GuideUiBatchResult
@@ -1752,6 +2061,24 @@ export const buildCurrentTerminalResult = (
     promptHandling: built.promptHandling,
     prompt,
     cwd,
+  }
+}
+
+export const buildNewHerdrTabResult = (
+  profile: SelectedProfile,
+  prompt: string,
+  cwd: string,
+  herdrContext: HerdrContext,
+): GuideUiNewHerdrTabResult => {
+  const built = buildHerdrGuideLaunch(profile, prompt)
+  return {
+    action: "new-herdr-tab",
+    profile,
+    command: built.command,
+    prompt,
+    promptDelivery: built.promptDelivery,
+    cwd,
+    workspaceId: herdrContext.workspaceId,
   }
 }
 
@@ -2725,7 +3052,7 @@ const PromptReview = ({
   readonly variant: GuideLongPromptVariant
   readonly editing: boolean
 }) => {
-  const { rows, columns } = useWindowSize()
+  const { rows, columns } = useGuideWindowSize()
   const props = { textDraft, rows, columns, editing }
   switch (variant) {
     case GuideLongPromptVariant.Pager:
@@ -2742,7 +3069,7 @@ const PromptReview = ({
 }
 
 const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
-  const { rows, columns } = useWindowSize()
+  const { rows, columns } = useGuideWindowSize()
   return (
     <Box flexDirection="column" height={Math.max(3, rows - 1)} overflowY="hidden" paddingX={1}>
       <Text bold color="cyan">
@@ -2940,6 +3267,59 @@ const RecommendationsView = ({
   )
 }
 
+/**
+ * Rows the persistent chrome above a stage takes: the tab bar and its hint line
+ * when any tab is open. Every stage sizes itself to the whole terminal, so
+ * without this the chrome is pushed off the top of a tall screen.
+ */
+const forkTabBarRows = 2
+
+const ChromeRowsContext = createContext(0)
+
+/** Terminal size minus the chrome, so a stage never overflows the screen. */
+const useGuideWindowSize = (): { readonly rows: number; readonly columns: number } => {
+  const { rows, columns } = useWindowSize()
+  return { rows: Math.max(6, rows - useContext(ChromeRowsContext)), columns }
+}
+
+const forkTabLabel = (fork: GuideForkTab): string =>
+  fork.slice.selectedRecommendation === undefined ? "fork" : recommendationLabel(fork.slice.selectedRecommendation)
+
+/**
+ * The open forks, so an unfinished draft is never hidden behind the screen you
+ * are on. A spinning tab is still working; you do not have to wait on it.
+ */
+/** `●` marks a tab already in the queue, `○` one still being drafted, a spinner one still working. */
+const forkTabMarker = (state: GuideUiState, fork: GuideForkTab, tick: number): string => {
+  if (forkIsBusy(state, fork.id)) return spinnerFrameAt(tick)
+  return fork.jobId === undefined ? "○" : "●"
+}
+
+const ForkTabBar = ({ state }: { readonly state: GuideUiState }) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80)
+    return () => clearInterval(timer)
+  }, [])
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text wrap="truncate-end">
+        <Text inverse={state.activeForkId === undefined}> main </Text>
+        {state.forks.map((fork, index) => (
+          <Text key={fork.id}>
+            <Text dimColor> │ </Text>
+            <Text inverse={fork.id === state.activeForkId} color={fork.jobId === undefined ? "yellow" : "green"}>
+              {" "}
+              {index + 1} {forkTabLabel(fork)} {forkTabMarker(state, fork, tick)}{" "}
+            </Text>
+          </Text>
+        ))}
+      </Text>
+      <Text dimColor>Tab/Shift-Tab switch tab · ` main · 1-9 jump · v queue · x drop tab</Text>
+    </Box>
+  )
+}
+
 export const candidatePaneHeight = (terminalRows: number): number => Math.max(6, terminalRows - 8)
 
 export const candidateRailWidth = (terminalColumns: number): number =>
@@ -3029,7 +3409,7 @@ const CandidatesView = ({
   readonly usedTemplateFallback: boolean
   readonly command: PublicGuideCommand
 }) => {
-  const { rows, columns: terminalColumns } = useWindowSize()
+  const { rows, columns: terminalColumns } = useGuideWindowSize()
   const paneHeight = candidatePaneHeight(rows)
   const railWidth = candidateRailWidth(terminalColumns)
   const candidate = tripleAt(candidates, index)
@@ -3067,7 +3447,7 @@ const TextEditor = ({
   readonly textDraft: string
   readonly keys: string
 }) => {
-  const { rows, columns } = useWindowSize()
+  const { rows, columns } = useGuideWindowSize()
   return (
     <Box flexDirection="column" height={Math.max(3, rows - 3)} overflowY="hidden" paddingX={1}>
       <Text bold color="cyan">
@@ -3101,41 +3481,134 @@ const DestinationView = ({
     {options.map((option, itemIndex) => (
       <Text key={option} bold={itemIndex === index} {...(itemIndex === index ? { color: "green" as const } : {})}>
         {itemIndex === index ? "❯ " : "  "}
-        {option}
+        {destinationLabels[option]}
       </Text>
     ))}
     <Text dimColor wrap="wrap">
       Command: {commandPreview}
     </Text>
-    <Text dimColor>↑/↓ or j/k select · ↵ confirm · c print prompt · b back</Text>
+    <Text dimColor>↑/↓ or j/k select · ↵ queue it · L launch all · c print prompt · b back</Text>
   </Box>
 )
 
-const QueueView = ({ queue, errorMessage }: { readonly queue: GuideQueueState; readonly errorMessage?: string }) => (
-  <Box flexDirection="column" paddingX={1}>
-    <Text bold color="cyan">Batch queue. {queue.entries.length} jobs</Text>
-    {queue.entries.map((job, index) => (
-      <Box key={job.id} flexDirection="column">
-        <Text bold={index === queue.selectedIndex} {...(index === queue.selectedIndex ? { color: "green" as const } : {})}>
-          {index === queue.selectedIndex ? "❯ " : "  "}{job.id}. {job.profile.profile} · {job.prompt.replaceAll(/\s+/gu, " ").slice(0, 80)}
-        </Text>
-        <Text dimColor wrap="truncate-end">   → {describeJobPlacement(job.placement)}</Text>
-        <Text dimColor wrap="truncate-end">   {renderCommandPreview(job.command)}</Text>
-      </Box>
+/** `cpx · council`, or `sandbox · claude-council`. */
+const describeJobRunner = (profile: SelectedProfile): string =>
+  profile.surface === "native"
+    ? `${profile.launcher} · ${profile.profile}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
+    : `sandbox · ${profile.profile}`
+
+const QueuedJobBlock = ({
+  job,
+  selected,
+  preview,
+}: {
+  readonly job: QueuedGuideJob
+  readonly selected: boolean
+  readonly preview: BasketBlockPreview
+}) => (
+  <Box flexDirection="column" marginBottom={1} flexShrink={0}>
+    <Text wrap="truncate-end">
+      <Text inverse={selected}> {job.id} </Text>
+      <Text color="cyan"> {describeJobRunner(job.profile)}</Text>
+      <Text dimColor>
+        {" "}
+        · {job.prompt.length}c · {countLabel(countTextLines(job.prompt), "line")}
+      </Text>
+      {preview.truncated ? <Text color="cyan"> · o opens</Text> : null}
+    </Text>
+    <Text {...(selected ? { color: "green" as const } : { dimColor: true })} wrap="truncate-end">
+      {"  → "}
+      {describeJobPlacement(job.placement)}
+    </Text>
+    <Text dimColor wrap="truncate-end">
+      {"  "}
+      {renderCommandPreview(job.command)}
+    </Text>
+    {preview.lines.map((line, index) => (
+      <Text key={`${job.id}:${index}`} dimColor={!selected} wrap="truncate-end">
+        {line.length === 0 ? " " : line}
+      </Text>
     ))}
-    {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
-    <Text dimColor>j/k select · e edit prompt · x remove · a add another · ↵ launch all · b current candidate · q cancel</Text>
   </Box>
 )
+
+const queueFooterLines: ReadonlyArray<string> = [
+  "j/k select · o open prompt · e edit prompt · x remove job and its tab · a add another",
+  "↵ or L launch all · ` main · Tab or 1-9 reopen a job · q cancel",
+]
+
+const QueueView = ({ queue, errorMessage }: { readonly queue: GuideQueueState; readonly errorMessage?: string }) => {
+  const { rows, columns } = useGuideWindowSize()
+  const width = Math.max(20, columns - 6)
+  const previews = queue.entries.map((job) => basketBlockPreview(job.prompt, width))
+  const heights = previews.map((preview) => preview.lines.length + 4)
+  const { start, end } = basketVisibleRange(heights, queue.selectedIndex, Math.max(4, rows - 8))
+  return (
+    <Box flexDirection="column" height={Math.max(6, rows - 2)} overflowY="hidden" paddingX={1}>
+      <Text bold color="cyan">
+        Batch queue. {countLabel(queue.entries.length, "job")} launch together
+      </Text>
+      <Box flexDirection="column" flexGrow={1} marginTop={1} overflowY="hidden">
+        {queue.entries.slice(start, end).map((job, offset) => (
+          <QueuedJobBlock
+            key={job.id}
+            job={job}
+            selected={start + offset === queue.selectedIndex}
+            preview={previews[start + offset] ?? { lines: [], truncated: false }}
+          />
+        ))}
+      </Box>
+      {end - start < queue.entries.length ? (
+        <Text dimColor wrap="truncate-end">
+          showing jobs {start + 1}–{end} of {queue.entries.length}
+        </Text>
+      ) : null}
+      {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
+      {queueFooterLines.map((line) => (
+        <Text key={line} dimColor wrap="truncate-end">
+          {line}
+        </Text>
+      ))}
+    </Box>
+  )
+}
+
+const QueueEntryView = ({ queue }: { readonly queue: GuideQueueState }) => {
+  const { rows, columns } = useGuideWindowSize()
+  const job = queue.entries[queue.selectedIndex]
+  if (job === undefined) return null
+  return (
+    <Box flexDirection="column" height={Math.max(4, rows - 2)} overflowY="hidden" paddingX={1}>
+      <Text bold color="cyan" wrap="truncate-end">
+        Queued prompt {job.id} · {describeJobRunner(job.profile)}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        → {describeJobPlacement(job.placement)} · {job.prompt.length}c ·{" "}
+        {countLabel(countTextLines(job.prompt), "line")}
+      </Text>
+      <ScrollableTextViewport
+        value={job.prompt}
+        width={Math.max(1, columns - 2)}
+        height={Math.max(1, rows - 6)}
+        startAtEnd={false}
+        resetKey={`${job.id}`}
+      />
+      <Text dimColor>PgUp/PgDn scroll · o/b/Esc back · q cancel</Text>
+    </Box>
+  )
+}
 
 const QueuePlacementView = ({ index, errorMessage }: { readonly index: number; readonly errorMessage?: string }) => {
   const options = ["Pane in this Herdr workspace", "Herdr worktree"] as const
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">Where does this queued job run?</Text>
+      <Text bold color="cyan">
+        Where does this queued job run?
+      </Text>
       {options.map((option, itemIndex) => (
         <Text key={option} bold={itemIndex === index} {...(itemIndex === index ? { color: "green" as const } : {})}>
-          {itemIndex === index ? "❯ " : "  "}{option}
+          {itemIndex === index ? "❯ " : "  "}
+          {option}
         </Text>
       ))}
       {errorMessage === undefined ? null : <Text color="yellow">{errorMessage}</Text>}
@@ -3368,6 +3841,64 @@ const useGuideWorktreeEffect = (props: GuideUiProps, state: GuideUiState, dispat
   }, [state.stage, state.worktreeBranch])
 }
 
+/**
+ * Runs the queued launch inside the guide, so every step of every job is on
+ * screen while it happens. The summary is printed by the caller after Ink
+ * exits, so nothing writes over the live screen.
+ */
+const useGuideLaunchEffect = (
+  props: GuideUiProps,
+  state: GuideUiState,
+  dispatch: GuideUiDispatch,
+  complete: (result: GuideUiResult) => void,
+): void => {
+  useEffect(() => {
+    if (state.stage !== GuideUiStage.Launching || state.launchBatch === undefined) return undefined
+    let cancelled = false
+    const batch = state.launchBatch
+    void (async () => {
+      const executed = await executeGuideBatch(batch, {
+        runner: props.runner,
+        write: () => {},
+        onProgress: (event) => {
+          if (!cancelled) dispatch({ type: GuideUiActionType.LaunchProgress, event })
+        },
+      })
+      if (!cancelled) complete({ action: "batch", result: executed.result })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [state.stage])
+}
+
+/**
+ * One fork's async work, mounted for as long as that fork is open. Each fork is
+ * its own component instance, so its effects run off its own stage whether or
+ * not it is the tab on screen, and every result it dispatches is addressed back
+ * to it. This is what makes a fork non-blocking.
+ */
+const ForkWorker = ({
+  props,
+  state,
+  forkId,
+  dispatch,
+}: {
+  readonly props: GuideUiProps
+  readonly state: GuideUiState
+  readonly forkId: number
+  readonly dispatch: GuideUiDispatch
+}) => {
+  const deliver: GuideUiDispatch = (action) =>
+    dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction })
+  useGuideMatchEffect(props, state, deliver)
+  useGuideGenerationEffect(props, state, deliver)
+  useGuideRefinementEffect(props, state, deliver)
+  useGuideReadinessEffect(props, state, deliver)
+  useGuideWorktreeEffect(props, state, deliver)
+  return null
+}
+
 interface GuideInputContext {
   readonly props: GuideUiProps
   readonly state: GuideUiState
@@ -3502,7 +4033,7 @@ const candidateCommandAction = (state: GuideUiState, input: string): GuideUiActi
   return undefined
 }
 
-const launchQueue: GuideInputHandler = ({ state, dispatch, complete, herdrContext, herdrEnabled, props }) => {
+const launchQueue: GuideInputHandler = ({ state, dispatch, herdrContext, herdrEnabled, props }) => {
   if (state.queue.entries.length === 0) {
     dispatch({ type: GuideUiActionType.QueueExecuteBlocked, message: "Batch queue is empty." })
     return
@@ -3515,8 +4046,8 @@ const launchQueue: GuideInputHandler = ({ state, dispatch, complete, herdrContex
     return
   }
   const cwd = herdrContext.cwd ?? props.cwd
-  complete({
-    action: "batch",
+  dispatch({
+    type: GuideUiActionType.LaunchStart,
     batch: {
       jobs: state.queue.entries,
       context: {
@@ -3529,10 +4060,16 @@ const launchQueue: GuideInputHandler = ({ state, dispatch, complete, herdrContex
   })
 }
 
+const handleQueueEntryInput: GuideInputHandler = ({ dispatch, cancel }, input, key) => {
+  if (input === "b" || input === "o" || key.escape) dispatch({ type: GuideUiActionType.QueueBack })
+  else if (input === "q") cancel()
+}
+
 const handleQueueInput: GuideInputHandler = (context, input, key) => {
   const { dispatch, cancel } = context
   if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.QueueMove, delta: -1 })
   else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.QueueMove, delta: 1 })
+  else if (input === "o") dispatch({ type: GuideUiActionType.QueueOpenEntry })
   else if (input === "e") dispatch({ type: GuideUiActionType.QueueEditStart })
   else if (input === "x") dispatch({ type: GuideUiActionType.QueueRemove })
   else if (input === "a") dispatch({ type: GuideUiActionType.QueueAddAnother })
@@ -3618,16 +4155,28 @@ const handleReadinessBlockedInput: GuideInputHandler = ({ dispatch, cancel }, in
   else if (input === "q") cancel()
 }
 
+/**
+ * Every Herdr destination only marks the entry and returns to the queue, so a
+ * batch of forks stays intact until `L` launches all of it. This terminal is
+ * the one exception: it seizes stdio, so no queue can hold it and it runs now.
+ */
 const completeDestination = (context: GuideInputContext, option: GuideUiDestination): void => {
   const { state, props, herdrContext, dispatch, complete } = context
   if (state.selectedProfile === undefined || state.selectedCandidate === undefined) return
-  const prompt = state.selectedCandidate.prompt
   if (option === GuideUiDestination.CurrentTerminal) {
-    complete(buildCurrentTerminalResult(state.selectedProfile, prompt, props.cwd))
+    complete(buildCurrentTerminalResult(state.selectedProfile, state.selectedCandidate.prompt, props.cwd))
     return
   }
-  if (option === GuideUiDestination.CurrentHerdrWorkspace && herdrContext !== null) {
-    complete(buildCurrentHerdrWorkspaceResult(state.selectedProfile, prompt, props.cwd, herdrContext))
+  if (herdrContext === null) return
+  if (option === GuideUiDestination.CurrentHerdrWorkspace) {
+    dispatch({
+      type: GuideUiActionType.DestinationEnqueue,
+      placement: { kind: "current-workspace-pane", direction: "right" },
+    })
+    return
+  }
+  if (option === GuideUiDestination.NewHerdrTab) {
+    dispatch({ type: GuideUiActionType.DestinationEnqueue, placement: { kind: "new-tab" } })
     return
   }
   if (option === GuideUiDestination.NewHerdrWorktree) {
@@ -3662,7 +4211,7 @@ const handleQueuePlacementInput: GuideInputHandler = ({ state, dispatch, herdrCo
   }
 }
 
-const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, complete, cancel }, input, key) => {
+const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, cancel }, input, key) => {
   if (input === "e") {
     dispatch({ type: GuideUiActionType.WorktreeEditBranch })
     return
@@ -3682,43 +4231,11 @@ const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, comp
     if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
-  if (state.worktreePurpose === "queue") {
-    dispatch({
-      type: GuideUiActionType.QueuePlacementWorktree,
-      placement: { kind: "existing-worktree", path: inspection.collision.path },
-      primaryCheckoutPath: inspection.primaryCheckoutPath,
-    })
-    return
-  }
-  if (state.selectedCandidate === undefined) return
-  complete(
-    buildExistingHerdrWorktreeResult(
-      state.selectedProfile,
-      state.selectedCandidate.prompt,
-      inspection.primaryCheckoutPath,
-      inspection.collision.path,
-    ),
-  )
-}
-
-const confirmedWorktreeResult = (state: GuideUiState): GuideUiNewHerdrWorktreeResult | undefined => {
-  const inspection = state.worktreeInspection
-  if (
-    inspection === undefined ||
-    "collision" in inspection ||
-    !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty) ||
-    state.selectedProfile === undefined ||
-    state.selectedCandidate === undefined
-  ) {
-    return undefined
-  }
-  return buildNewHerdrWorktreeResult(
-    state.selectedProfile,
-    state.selectedCandidate.prompt,
-    inspection.primaryCheckoutPath,
-    inspection.branch,
-    inspection.baseRef,
-  )
+  dispatch({
+    type: GuideUiActionType.QueuePlacementWorktree,
+    placement: { kind: "existing-worktree", path: inspection.collision.path },
+    primaryCheckoutPath: inspection.primaryCheckoutPath,
+  })
 }
 
 /** The confirmed fresh worktree a queued entry will run in, once the dirty-checkout gate is cleared. */
@@ -3739,21 +4256,15 @@ const confirmedQueueWorktree = (
   }
 }
 
-const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
+const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
   if (key.escape) {
     dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
   if (!key.return && input !== "y") return
-  if (state.worktreePurpose === "queue") {
-    const confirmed = confirmedQueueWorktree(state)
-    if (confirmed === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
-    else dispatch({ type: GuideUiActionType.QueuePlacementWorktree, ...confirmed })
-    return
-  }
-  const result = confirmedWorktreeResult(state)
-  if (result === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
-  else complete(result)
+  const confirmed = confirmedQueueWorktree(state)
+  if (confirmed === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
+  else dispatch({ type: GuideUiActionType.QueuePlacementWorktree, ...confirmed })
 }
 
 const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
@@ -3777,13 +4288,64 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.WorktreeCollision]: handleWorktreeCollisionInput,
   [GuideUiStage.WorktreeReady]: handleWorktreeReadyInput,
   [GuideUiStage.Queue]: handleQueueInput,
+  [GuideUiStage.QueueEntry]: handleQueueEntryInput,
   [GuideUiStage.QueuePromptEditor]: handleQueuePromptEditorInput,
   [GuideUiStage.QueuePlacement]: handleQueuePlacementInput,
+  [GuideUiStage.Launching]: handleNoInput,
+}
+
+/**
+ * Tab switching is off only while text is typed, where Tab, a backtick and a
+ * digit are all ordinary characters. A busy fork keeps working in its own
+ * ForkWorker, so leaving it costs nothing.
+ */
+const acceptsGlobalKeys = (state: GuideUiState): boolean =>
+  state.stage !== GuideUiStage.Intent &&
+  state.stage !== GuideUiStage.Launching &&
+  !editingStages.has(state.stage) &&
+  !(state.stage === GuideUiStage.PromptReview && state.promptReviewEditing)
+
+const canSwitchForks = (state: GuideUiState): boolean => state.forks.length > 0 && acceptsGlobalKeys(state)
+
+/**
+ * Keys that read the same on every non-typing screen. The queue and the tab bar
+ * are one list, so `v` reaches it from anywhere and `x` drops the open tab with
+ * whatever entry it holds.
+ */
+const globalCommand = (state: GuideUiState, input: string): GuideUiAction | undefined => {
+  if (input === "`") return { type: GuideUiActionType.ForkMain }
+  if (input === "x" && state.activeForkId !== undefined) return { type: GuideUiActionType.ForkDrop }
+  if (input === "v" && state.queue.entries.length > 0) return { type: GuideUiActionType.CandidatesViewQueue }
+  return undefined
+}
+
+const forkCommand = (input: string, key: Key): GuideUiAction | undefined => {
+  if (key.tab) return { type: key.shift ? GuideUiActionType.ForkPrevious : GuideUiActionType.ForkNext }
+  const digit = Number.parseInt(input, 10)
+  return Number.isInteger(digit) && digit >= 1 && digit <= 9
+    ? { type: GuideUiActionType.ForkSelect, index: digit - 1 }
+    : undefined
 }
 
 const handleGuideInput = (context: GuideInputContext, input: string, key: Key): void => {
   if (key.ctrl && input === "c") {
     context.cancel()
+    return
+  }
+  if (acceptsGlobalKeys(context.state)) {
+    if (input === "L" && context.state.queue.entries.length > 0) {
+      launchQueue(context, input, key)
+      return
+    }
+    const global = globalCommand(context.state, input)
+    if (global !== undefined) {
+      context.dispatch(global)
+      return
+    }
+  }
+  const fork = canSwitchForks(context.state) ? forkCommand(input, key) : undefined
+  if (fork !== undefined) {
+    context.dispatch(fork)
     return
   }
   inputHandlerByStage[context.state.stage](context, input, key)
@@ -3921,6 +4483,52 @@ const renderWorktreeReady: GuideStageRenderer = ({ state }) =>
     <WorktreeReadyView inspection={state.worktreeInspection} confirmations={state.worktreeConfirmations} />
   )
 
+/** What one queued job is doing right now, so a launch is never a silent pause. */
+export const launchRowDetail = (event: GuideBatchProgressEvent | undefined): string =>
+  event === undefined ? "Waiting to start" : event.detail
+
+export const launchRowMarker = (event: GuideBatchProgressEvent | undefined, tick: number): string => {
+  if (event === undefined) return "○"
+  if (event.phase === "done") return "✔"
+  if (event.phase === "failed") return "✖"
+  return spinnerFrameAt(tick)
+}
+
+const launchRowColor = (event: GuideBatchProgressEvent | undefined): string => {
+  if (event === undefined) return "gray"
+  if (event.phase === "done") return "green"
+  if (event.phase === "failed") return "red"
+  return "cyan"
+}
+
+const LaunchProgress = ({ state }: { readonly state: GuideUiState }) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80)
+    return () => clearInterval(timer)
+  }, [])
+  const jobs = state.launchBatch?.jobs ?? []
+  const finished = state.launchProgress.filter((event) => event.phase === "done" || event.phase === "failed").length
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold>
+        Launching {jobs.length} job{jobs.length === 1 ? "" : "s"} · {finished}/{jobs.length} finished
+      </Text>
+      {jobs.map((job) => {
+        const event = state.launchProgress.find((entry) => entry.jobId === job.id)
+        return (
+          <Text key={job.id} wrap="truncate-end">
+            <Text color={launchRowColor(event)}>{launchRowMarker(event, tick)}</Text> {job.id}. {job.profile.profile}
+            {" · "}
+            {describeJobPlacement(job.placement)} — {launchRowDetail(event)}
+          </Text>
+        )
+      })}
+      <Text dimColor>Every job runs in its own pane. The summary prints when all of them finish.</Text>
+    </Box>
+  )
+}
+
 const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
   [GuideUiStage.Matching]: matchingProgress,
@@ -3998,11 +4606,16 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.WorktreeCollision]: renderWorktreeCollision,
   [GuideUiStage.WorktreeReady]: renderWorktreeReady,
   [GuideUiStage.Queue]: ({ state }) => (
-    <QueueView queue={state.queue} {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })} />
+    <QueueView
+      queue={state.queue}
+      {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })}
+    />
   ),
+  [GuideUiStage.QueueEntry]: ({ state }) => <QueueEntryView queue={state.queue} />,
   [GuideUiStage.QueuePromptEditor]: ({ state }) => (
     <TextEditor title="Edit queued prompt" textDraft={state.textDraft} keys="↵ save · Esc back" />
   ),
+  [GuideUiStage.Launching]: ({ state }) => <LaunchProgress state={state} />,
   [GuideUiStage.QueuePlacement]: ({ state }) => (
     <QueuePlacementView
       index={state.destinationIndex}
@@ -4023,11 +4636,15 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const complete = (result: GuideUiResult): void => exit(result)
   const cancel = (): void => complete(buildCancelResult())
 
-  useGuideMatchEffect(props, state, dispatch)
-  useGuideGenerationEffect(props, state, dispatch)
-  useGuideRefinementEffect(props, state, dispatch)
-  useGuideReadinessEffect(props, state, dispatch)
-  useGuideWorktreeEffect(props, state, dispatch)
+  // The main screen owns only its own async work; each fork's runs in its own
+  // ForkWorker below, so parking a fork never abandons the call it started.
+  const mainState = state.activeForkId === undefined ? state : { ...state, ...mainForkSlice }
+  useGuideMatchEffect(props, mainState, dispatch)
+  useGuideGenerationEffect(props, mainState, dispatch)
+  useGuideRefinementEffect(props, mainState, dispatch)
+  useGuideReadinessEffect(props, mainState, dispatch)
+  useGuideWorktreeEffect(props, mainState, dispatch)
+  useGuideLaunchEffect(props, mainState, dispatch, complete)
 
   const inputContext: GuideInputContext = {
     props,
@@ -4047,8 +4664,17 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   return (
     <Box flexDirection="column">
       {herdrContext?.capture === undefined ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
-      {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
-      {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })}
+      {state.forks.map((fork) => {
+        const slice = forkState(state, fork.id)
+        return slice === undefined ? null : (
+          <ForkWorker key={fork.id} props={props} state={slice} forkId={fork.id} dispatch={dispatch} />
+        )
+      })}
+      {state.forks.length === 0 ? null : <ForkTabBar state={state} />}
+      <ChromeRowsContext.Provider value={state.forks.length === 0 ? 0 : forkTabBarRows}>
+        {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
+        {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })}
+      </ChromeRowsContext.Provider>
     </Box>
   )
 }

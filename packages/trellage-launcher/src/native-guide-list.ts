@@ -1,6 +1,9 @@
+import { lstat } from "node:fs/promises"
+import path from "node:path"
 import {
   loadProfileGuideRegistry,
   profileGuideIdentityKey,
+  profileGuideRelativePath,
   type ProfileGuideIdentity,
 } from "../../trellage-guide-core/dist/index.js"
 
@@ -53,18 +56,45 @@ const parseNativeProfileList = (source: string): NativeProfileList => {
   return { schemaVersion: 1, profiles }
 }
 
+/**
+ * Whether a guide file is present. The profile catalogs are installed for the
+ * whole machine, but guides live in one checkout, so a profile added in another
+ * checkout has no guide here. Absence must not stop the other profiles;
+ * everything else about the file stays fatal in `loadProfileGuideRegistry`.
+ */
+const guidePresent = async (guideRoot: string, identity: ProfileGuideIdentity): Promise<boolean> => {
+  try {
+    await lstat(path.join(guideRoot, profileGuideRelativePath(identity)))
+    return true
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+    return false
+  }
+}
+
 export const enrichNativeProfileList = async (source: string, guideRoot: string): Promise<string> => {
   const parsed = parseNativeProfileList(source)
-  const identities: ReadonlyArray<ProfileGuideIdentity> = parsed.profiles.map(({ launcher, name }) => ({
-    surface: "native",
-    launcher,
-    profile: name,
+  const candidates = parsed.profiles.map((profile) => ({
+    profile,
+    identity: { surface: "native", launcher: profile.launcher, profile: profile.name } as const,
   }))
-  const registry = await loadProfileGuideRegistry(guideRoot, identities)
+  const kept: Array<(typeof candidates)[number]> = []
+  for (const candidate of candidates) {
+    if (await guidePresent(guideRoot, candidate.identity)) kept.push(candidate)
+    else {
+      process.stderr.write(
+        `trellage-launcher: warning: skipping ${profileGuideIdentityKey(candidate.identity)}: no guide at ` +
+          `${profileGuideRelativePath(candidate.identity)} in ${guideRoot}\n`,
+      )
+    }
+  }
+  const registry = await loadProfileGuideRegistry(
+    guideRoot,
+    kept.map((candidate) => candidate.identity),
+  )
   return JSON.stringify({
     ...parsed,
-    profiles: parsed.profiles.map((profile, index) => {
-      const identity = identities[index]!
+    profiles: kept.map(({ profile, identity }) => {
       const loaded = registry.get(profileGuideIdentityKey(identity))
       if (loaded === undefined) throw new Error(`profile guide registry omitted ${profileGuideIdentityKey(identity)}`)
       return { ...profile, guide: loaded.guide }

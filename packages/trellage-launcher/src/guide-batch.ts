@@ -1,5 +1,6 @@
 import {
   buildHerdrGuideLaunch,
+  createHerdrTab,
   createHerdrWorktree,
   launchInHerdrPaneAndPrompt,
   openHerdrWorktree,
@@ -7,6 +8,7 @@ import {
   splitHerdrPane,
   type CommandRunner,
   type CommandSpec,
+  type HerdrLaunchPhase,
   type HerdrPromptDeliveryMode,
   type HerdrSplitDirection,
   type SelectedProfile,
@@ -24,6 +26,7 @@ const promptTimeoutMs = 60_000
  */
 export type JobPlacement =
   | { readonly kind: "current-workspace-pane"; readonly direction: HerdrSplitDirection }
+  | { readonly kind: "new-tab" }
   | { readonly kind: "new-worktree"; readonly branch: string; readonly baseRef: string }
   | { readonly kind: "existing-worktree"; readonly path: string }
 
@@ -94,9 +97,19 @@ export interface GuideBatchExecutionResult {
   readonly entries: ReadonlyArray<GuideBatchEntryResult>
 }
 
+/** One step of one queued job, so a caller can narrate the launch while it runs. */
+export type GuideBatchPhase = "checking" | "allocating" | "starting" | "waiting" | "prompting" | "done" | "failed"
+
+export interface GuideBatchProgressEvent {
+  readonly jobId: number
+  readonly phase: GuideBatchPhase
+  readonly detail: string
+}
+
 export interface GuideBatchExecutionServices {
   readonly runner: CommandRunner
   readonly write: (text: string) => void
+  readonly onProgress?: (event: GuideBatchProgressEvent) => void
 }
 
 export const emptyGuideQueue = (): GuideQueueState => ({ entries: [], nextId: 1, selectedIndex: 0 })
@@ -150,9 +163,40 @@ export const removeSelectedQueuedGuideJob = (queue: GuideQueueState): GuideQueue
   return { entries, nextId: queue.nextId, selectedIndex: Math.min(queue.selectedIndex, Math.max(0, entries.length - 1)) }
 }
 
+/** Removes one entry by its id, for a tab that is dropped while it holds a queued job. */
+export const removeQueuedGuideJobById = (queue: GuideQueueState, id: number): GuideQueueState => {
+  const entries = queue.entries.filter((job) => job.id !== id)
+  return entries.length === queue.entries.length
+    ? queue
+    : { ...queue, entries, selectedIndex: Math.min(queue.selectedIndex, Math.max(0, entries.length - 1)) }
+}
+
+/**
+ * Rewrites one entry in place, keeping its id and its position. A tab and its
+ * queued job are one thing, so re-finishing a tab must update its job rather
+ * than add a second one.
+ */
+export const replaceQueuedGuideJob = (
+  queue: GuideQueueState,
+  id: number,
+  profile: SelectedProfile,
+  prompt: string,
+  placement: JobPlacement,
+): GuideQueueState => {
+  const index = queue.entries.findIndex((job) => job.id === id)
+  return index < 0
+    ? queue
+    : {
+        ...queue,
+        entries: queue.entries.map((job) => (job.id === id ? createQueuedGuideJob(id, profile, prompt, placement) : job)),
+        selectedIndex: index,
+      }
+}
+
 /** One dense line naming where a queued job will run, for the queue review screen. */
 export const describeJobPlacement = (placement: JobPlacement): string => {
   if (placement.kind === "current-workspace-pane") return `pane here (split ${placement.direction})`
+  if (placement.kind === "new-tab") return "new tab in this Herdr worktree"
   if (placement.kind === "new-worktree") return `new worktree ${placement.branch} from ${placement.baseRef}`
   return `existing worktree ${placement.path}`
 }
@@ -193,6 +237,26 @@ const validateQueuedJob = (job: QueuedGuideJob): string | undefined => {
   }
   return undefined
 }
+
+const allocationDetail = (placement: JobPlacement): string => {
+  if (placement.kind === "current-workspace-pane") return `Splitting a pane (${placement.direction})`
+  if (placement.kind === "new-tab") return "Creating a new tab"
+  if (placement.kind === "new-worktree") return `Creating worktree ${placement.branch}`
+  return `Opening worktree ${placement.path}`
+}
+
+const launchPhaseDetail: Record<HerdrLaunchPhase, string> = {
+  starting: "Starting the profile",
+  waiting: "Waiting for the agent to be ready",
+  prompting: "Delivering the prompt",
+}
+
+const report = (
+  services: GuideBatchExecutionServices,
+  jobId: number,
+  phase: GuideBatchPhase,
+  detail: string,
+): void => services.onProgress?.({ jobId, phase, detail })
 
 interface LaunchableJob {
   readonly index: number
@@ -241,6 +305,10 @@ const allocateJob = async (
     })
     return { paneId, cwd: context.cwd, workspaceId: context.workspaceId }
   }
+  if (placement.kind === "new-tab") {
+    const paneId = await createHerdrTab(runner, { workspaceId: context.workspaceId, cwd: context.cwd })
+    return { paneId, cwd: context.cwd, workspaceId: context.workspaceId }
+  }
   const handle =
     placement.kind === "new-worktree"
       ? await createHerdrWorktree(runner, {
@@ -253,7 +321,7 @@ const allocateJob = async (
 }
 
 const allocationFailure = (job: QueuedGuideJob, message: string): GuideBatchEntryResult =>
-  job.placement.kind === "current-workspace-pane"
+  job.placement.kind === "current-workspace-pane" || job.placement.kind === "new-tab"
     ? { job, status: "allocation-failed", stage: "pane-allocation", message }
     : { job, status: "workspace-create-failed", stage: "worktree-create", message }
 
@@ -270,10 +338,13 @@ const allocateJobs = async (
 ): Promise<ReadonlyArray<AllocatedJob>> => {
   const allocated: Array<AllocatedJob> = []
   for (const item of launchable) {
+    report(services, item.job.id, "allocating", allocationDetail(item.job.placement))
     try {
       allocated.push({ ...item, ...(await allocateJob(services.runner, context, item.job.placement)) })
     } catch (error) {
-      entries[item.index] = allocationFailure(item.job, describeError(error))
+      const message = describeError(error)
+      entries[item.index] = allocationFailure(item.job, message)
+      report(services, item.job.id, "failed", message)
     }
   }
   return allocated
@@ -287,6 +358,7 @@ const checkReadiness = async (
 ): Promise<ReadonlyArray<LaunchableJob>> => {
   const checked = await Promise.all(
     structurallyValid.map(async (item) => {
+      report(services, item.job.id, "checking", "Checking profile readiness")
       try {
         return { item, result: await checkSelectedProfileReadiness(services.runner, item.job.profile, context.cwd) }
       } catch (error) {
@@ -303,24 +375,34 @@ const checkReadiness = async (
           ? `${outcome.result.summary}. ${outcome.result.diagnostic}`
           : undefined
     if (message === undefined) launchable.push(outcome.item)
-    else entries[outcome.item.index] = { job: outcome.item.job, status: "not-ready", stage: "readiness", message }
+    else {
+      entries[outcome.item.index] = { job: outcome.item.job, status: "not-ready", stage: "readiness", message }
+      report(services, outcome.item.job.id, "failed", message)
+    }
   }
   return launchable
 }
 
-const writeSummary = (services: GuideBatchExecutionServices, result: GuideBatchExecutionResult): void => {
-  services.write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}\n`)
+/** Prints the per-entry outcome. The interactive guide prints this after Ink exits. */
+export const writeGuideBatchSummary = (
+  result: GuideBatchExecutionResult,
+  write: (text: string) => void,
+): void => {
+  write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}\n`)
   for (const entry of result.entries) {
     const identity = `${entry.job.id}. ${entry.job.profile.profile}`
     if (entry.status === "launched") {
-      services.write(`${identity}: launched in pane ${entry.paneId} · ${entry.cwd}\n`)
+      write(`${identity}: launched in pane ${entry.paneId} · ${entry.cwd}\n`)
     } else {
-      services.write(
+      write(
         `${identity} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}\nSelected prompt:\n\n${entry.job.prompt}\n`,
       )
     }
   }
 }
+
+export const guideBatchExitCode = (result: GuideBatchExecutionResult): number =>
+  result.entries.every((entry) => entry.status === "launched") ? 0 : 1
 
 export const executeGuideBatch = async (
   batch: GuideBatch,
@@ -339,7 +421,10 @@ export const executeGuideBatch = async (
     const message = collidingEntryMessage(job, seenIds, seenBranches) ?? validateQueuedJob(job)
     rememberEntry(job, seenIds, seenBranches)
     if (message === undefined) structurallyValid.push({ index, job })
-    else entries[index] = { job, status: "invalid", stage: "validation", message }
+    else {
+      entries[index] = { job, status: "invalid", stage: "validation", message }
+      report(services, job.id, "failed", message)
+    }
   })
 
   const launchable = await checkReadiness(services, batch.context, structurallyValid, entries)
@@ -355,22 +440,27 @@ export const executeGuideBatch = async (
         promptDelivery: item.job.promptDelivery,
         timeoutMs: startupTimeoutMs,
         promptTimeoutMs,
+        onPhase: (phase) => report(services, item.job.id, phase, launchPhaseDetail[phase]),
       }),
     ),
   )
   launches.forEach((launch, launchIndex) => {
     const item = allocated[launchIndex]
     if (item === undefined) return
-    entries[item.index] =
-      launch.status === "fulfilled"
-        ? { job: item.job, status: "launched", paneId: item.paneId, workspaceId: item.workspaceId, cwd: item.cwd }
-        : {
-            job: item.job,
-            status: "launch-failed",
-            stage: "launch",
-            paneId: item.paneId,
-            message: describeError(launch.reason),
-          }
+    if (launch.status === "fulfilled") {
+      entries[item.index] = {
+        job: item.job,
+        status: "launched",
+        paneId: item.paneId,
+        workspaceId: item.workspaceId,
+        cwd: item.cwd,
+      }
+      report(services, item.job.id, "done", `Launched in pane ${item.paneId}`)
+      return
+    }
+    const message = describeError(launch.reason)
+    entries[item.index] = { job: item.job, status: "launch-failed", stage: "launch", paneId: item.paneId, message }
+    report(services, item.job.id, "failed", message)
   })
 
   const result: GuideBatchExecutionResult = {
@@ -381,6 +471,6 @@ export const executeGuideBatch = async (
       return { job, status: "invalid", stage: "validation", message: "Batch entry was not processed." }
     }),
   }
-  writeSummary(services, result)
-  return { exitCode: result.entries.every((entry) => entry.status === "launched") ? 0 : 1, result }
+  writeGuideBatchSummary(result, services.write)
+  return { exitCode: guideBatchExitCode(result), result }
 }

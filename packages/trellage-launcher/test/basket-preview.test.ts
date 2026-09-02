@@ -7,11 +7,8 @@ import {
   BasketPreviewView,
   activeViewText,
   assembleStagedPrompt,
-  basketBlockPreview,
   basketPreviewCommandForKey,
   basketPreviewReducer,
-  basketVisibleRange,
-  countTextLines,
   destinationSummaryLines,
   initialBasketPreviewState,
   isChunkEdited,
@@ -22,6 +19,7 @@ import {
   type BasketPreviewAction,
   type BasketPreviewState,
 } from "../src/basket-preview.js"
+import { basketBlockPreview, basketVisibleRange, countTextLines } from "../src/basket.js"
 
 const emptyKey = {
   upArrow: false,
@@ -187,7 +185,7 @@ describe("basketPreviewReducer editor", () => {
       { type: BasketPreviewActionType.EditSave },
     )
     const changed = saved.chunks[0]
-    expect(changed === undefined ? false : isChunkEdited(changed)).toBe(true)
+    expect(changed === undefined ? false : isChunkEdited(changed, previewChunks[0]?.text)).toBe(true)
     const reverted = basketPreviewReducer(saved, { type: BasketPreviewActionType.RevertChunk })
     expect(reverted.chunks[0]?.text).toBe(previewChunks[0]?.text)
     expect(basketPreviewReducer(reverted, { type: BasketPreviewActionType.RevertChunk })).toBe(reverted)

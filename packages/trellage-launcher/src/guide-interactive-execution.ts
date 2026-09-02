@@ -3,13 +3,14 @@ import {
   GuideLaunchError,
   createHerdrWorktreeAndHandoff,
   handoffToCurrentHerdrWorkspace,
+  handoffToNewHerdrTab,
   openHerdrWorktreeAndHandoff,
   runInteractiveCommand,
   type CommandRunner,
   type CommandSpec,
 } from "./guide-launch.js"
-import { executeGuideBatch } from "./guide-batch.js"
 import type { GuideUiResult } from "./guide-ui.js"
+import { guideBatchExitCode, writeGuideBatchSummary } from "./guide-batch.js"
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000
@@ -52,6 +53,17 @@ const executeHerdrResult = async (
           callerPaneId: result.callerPaneId,
           cwd: result.cwd,
           direction: result.direction,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs,
+          promptTimeoutMs,
+        })
+        return
+      case "new-herdr-tab":
+        await handoffToNewHerdrTab(services.runner, {
+          workspaceId: result.workspaceId,
+          cwd: result.cwd,
           command: result.command,
           prompt: result.prompt,
           promptDelivery: result.promptDelivery,
@@ -122,12 +134,14 @@ export const executeGuideUiResult = async (
         throw error
       }
     case "current-herdr-workspace":
+    case "new-herdr-tab":
     case "herdr-worktree-create":
     case "herdr-worktree-open":
       await executeHerdrResult(result, services)
       return 0
     case "batch":
-      return (await executeGuideBatch(result.batch, services)).exitCode
+      writeGuideBatchSummary(result.result, services.write)
+      return guideBatchExitCode(result.result)
     default:
       return unexpectedGuideResult(result)
   }

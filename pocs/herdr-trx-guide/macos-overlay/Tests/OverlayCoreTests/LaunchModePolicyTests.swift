@@ -30,7 +30,8 @@ import Testing
             startupReady: true,
             actionUnresolved: false,
             permissionsGranted: true,
-            contextAvailable: false
+            contextAvailable: false,
+            copyOnSelectEnabled: true
         ))
         #expect(CaptureMonitoringEligibility.shouldStart(
             launchPolicy: policy,
@@ -38,7 +39,52 @@ import Testing
             startupReady: true,
             actionUnresolved: false,
             permissionsGranted: true,
-            contextAvailable: true
+            contextAvailable: true,
+            copyOnSelectEnabled: true
+        ))
+    }
+
+    @Test func copyOnSelectMustBeExplicitlyEnabledForClipboardAccess() {
+        #expect(CopyOnSelectPolicy.parse("""
+        [ui]
+        copy_on_select = true
+        """) == .enabled)
+        #expect(CopyOnSelectPolicy.parse("""
+        [ui]
+        copy_on_select = false
+        """) == .disabled)
+        #expect(CopyOnSelectPolicy.parse(nil) == .unknown)
+        #expect(CopyOnSelectPolicy.parse("[ui]\n# copy_on_select = true") == .unknown)
+        #expect(CopyOnSelectPolicy.parse("""
+        [ui]
+        copy_on_select = true
+        copy_on_select = false
+        """) == .unknown)
+        #expect(CopyOnSelectPolicy.parse("[ui]\ncopy_on_select = maybe") == .unknown)
+
+        #expect(!CapturePrivacyPolicy.mayReadPasteboardText(
+            monitoringActive: true,
+            detectorAwaitingText: true,
+            copyOnSelect: .disabled
+        ))
+        #expect(!CapturePrivacyPolicy.mayReadPasteboardText(
+            monitoringActive: true,
+            detectorAwaitingText: true,
+            copyOnSelect: .unknown
+        ))
+        #expect(CapturePrivacyPolicy.mayReadPasteboardText(
+            monitoringActive: true,
+            detectorAwaitingText: true,
+            copyOnSelect: .enabled
+        ))
+        #expect(!CaptureMonitoringEligibility.shouldStart(
+            launchPolicy: OverlayLaunchPolicy(arguments: ["TRXGuideOverlayApp"]),
+            captureEnabled: true,
+            startupReady: true,
+            actionUnresolved: false,
+            permissionsGranted: true,
+            contextAvailable: true,
+            copyOnSelectEnabled: false
         ))
     }
 }

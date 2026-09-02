@@ -47,10 +47,12 @@ const profile = (headlessPrompt: boolean): SelectedProfile => ({
   profile: "hve-core",
   headlessPrompt,
 })
+// jcode is the one harness with no argv prompt at all, so jcx is the only
+// launcher still on Herdr's paste path.
 const agentPromptProfile: SelectedProfile = {
   surface: "native",
-  launcher: "grx",
-  commandPath: "/opt/trellage/bin/grx",
+  launcher: "jcx",
+  commandPath: "/opt/trellage/bin/jcx",
   profile: "reviewer",
   headlessPrompt: false,
 }
@@ -66,16 +68,8 @@ const services = (
 })
 
 describe("interactive guide result execution", () => {
-  it("returns the batch exit code and prints its ordered summary", async () => {
-    const runner = new RecordingRunner([
-      {
-        stdout: JSON.stringify({ schemaVersion: 1, launcher: "cpx", profile: "hve-core", readiness: "healthy" }),
-        stderr: "",
-        exitCode: 0,
-      },
-      { stdout: '{"result":{"pane":{"pane_id":"2-3"}}}', stderr: "", exitCode: 0 },
-      { stdout: "", stderr: "", exitCode: 0 },
-    ])
+  it("prints the summary of a batch the guide already launched", async () => {
+    const runner = new RecordingRunner()
     const writes: string[] = []
     const job = createQueuedGuideJob(1, profile(false), "Draft the post.", {
       kind: "current-workspace-pane",
@@ -86,19 +80,14 @@ describe("interactive guide result execution", () => {
       executeGuideUiResult(
         {
           action: "batch",
-          batch: {
-            jobs: [job],
-            context: {
-              workspaceId: "2",
-              cwd: "/repo",
-              callerPaneId: "2-1",
-              primaryCheckoutPath: "/repo",
-            },
+          result: {
+            entries: [{ job, status: "launched", paneId: "2-3", workspaceId: "2", cwd: "/repo" }],
           },
         },
         services(runner, writes),
       ),
     ).resolves.toBe(0)
+    expect(runner.calls).toHaveLength(0)
     expect(writes.join("")).toContain("Batch launch summary: 1 job")
     expect(writes.join("")).toContain("1. hve-core: launched in pane 2-3")
   })
@@ -392,7 +381,7 @@ describe("interactive guide result execution", () => {
     await expect(executeGuideUiResult(result, services(runner, writes))).rejects.toThrow("pane launch failed")
     expect(runner.calls[2]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "3-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/grx reviewer"],
+      args: ["pane", "run", "3-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/jcx reviewer"],
       options: { cwd: "/actual/path" },
     })
     expect(writes).toEqual(["Profile launch did not complete. Selected prompt:\n\nDraft the post.\n"])
@@ -425,7 +414,7 @@ describe("interactive guide result execution", () => {
     })
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "4-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/grx reviewer"],
+      args: ["pane", "run", "4-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/jcx reviewer"],
       options: { cwd: "/returned/path" },
     })
     expect(writes).toHaveLength(0)

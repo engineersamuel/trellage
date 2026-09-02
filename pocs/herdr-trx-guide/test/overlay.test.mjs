@@ -20,6 +20,7 @@ import { promisify } from "node:util"
 
 import { main as runQueueEditor } from "../custom-popup.mjs"
 import {
+  main as runOverlayActionMain,
   openOverlayQueueEditor,
   queueEditorOpenTimeoutMs,
   runOverlayAction,
@@ -110,6 +111,47 @@ const ttyPair = () => {
   output.columns = 88
   output.rows = 20
   return { input, output }
+}
+
+const outputCollector = () => {
+  let value = ""
+  return {
+    stream: {
+      write: (chunk) => {
+        value += chunk
+        return true
+      },
+    },
+    value: () => value,
+  }
+}
+
+const runAmbiguousAppend = async (queueReader) => {
+  const env = {
+    HOME: "/private/home",
+    HERDR_PLUGIN_STATE_DIR: "/private/state",
+    HERDR_PLUGIN_ACTION_ID: "queue-add-selection-open",
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify(contextValue()),
+  }
+  const output = outputCollector()
+  const errorOutput = outputCollector()
+  const status = await runOverlayActionMain(env, {
+    output: output.stream,
+    errorOutput: errorOutput.stream,
+    actionRunner: () =>
+      runOverlayAction({
+        env,
+        requestConsumer: async () => requestValue(),
+        queueAppender: async () => {
+          throw new Error("append failed after an unknown commit point")
+        },
+        queueReader,
+        queueEditorOpener: async () => {
+          throw new Error("queue editor must not open after an ambiguous append")
+        },
+      }),
+  })
+  return { status, stdout: output.value(), stderr: errorOutput.value() }
 }
 
 test("overlay tokens and request paths are fixed and private", async (t) => {
@@ -286,7 +328,51 @@ test("add and add-and-open actions return the safe result shape", async () => {
   assert.deepEqual(openedSource, requestValue().source)
 })
 
-test("queue editor opening targets the captured pane", async () => {
+test("reports queued true when an append throws after the request id was committed", async () => {
+  const result = await runAmbiguousAppend(async () => ({
+    schemaVersion: 1,
+    entries: [{ id: requestId, answer: requestValue().selection }],
+  }))
+  assert.equal(result.status, 1)
+  assert.deepEqual(JSON.parse(result.stdout), {
+    schemaVersion: 1,
+    requestId,
+    queued: true,
+    opened: false,
+    queueCount: 1,
+  })
+  assert.match(result.stderr, /append did not complete cleanly/u)
+  assert.equal(result.stdout.includes(requestValue().selection), false)
+  assert.equal(result.stderr.includes(requestValue().selection), false)
+})
+
+test("reports queued false when a readable queue proves an append was not committed", async () => {
+  const result = await runAmbiguousAppend(async () => ({
+    schemaVersion: 1,
+    entries: [{ id: "other", answer: "Other capture" }],
+  }))
+  assert.equal(result.status, 1)
+  assert.deepEqual(JSON.parse(result.stdout), {
+    schemaVersion: 1,
+    requestId,
+    queued: false,
+    opened: false,
+    queueCount: 1,
+  })
+  assert.match(result.stderr, /append did not complete cleanly/u)
+})
+
+test("emits no safe result when append completion cannot be proven", async () => {
+  const result = await runAmbiguousAppend(async () => {
+    throw new Error("queue state is unreadable")
+  })
+  assert.equal(result.status, 1)
+  assert.equal(result.stdout, "")
+  assert.match(result.stderr, /append completion could not be proven/u)
+  assert.equal(result.stderr.includes(requestValue().selection), false)
+})
+
+test("queue editor opens as a popup on the active captured pane", async () => {
   let args
   let options
   await openOverlayQueueEditor(requestValue().source, async (value, runOptions) => {
@@ -301,10 +387,6 @@ test("queue editor opening targets the captured pane", async () => {
     "trellage.guide-handoff",
     "--entrypoint",
     "queue-editor",
-    "--workspace",
-    "w1",
-    "--target-pane",
-    "w1:p1",
     "--focus",
   ])
   assert.deepEqual(options, { timeoutMs: queueEditorOpenTimeoutMs })

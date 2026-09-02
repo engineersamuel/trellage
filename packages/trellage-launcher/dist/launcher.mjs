@@ -9630,14 +9630,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React14 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -10427,10 +10427,10 @@ var require_react_reconciler_development = __commonJS({
           fiber = fiber.next, id--;
         return fiber;
       }
-      function copyWithSetImpl(obj, path7, index, value) {
-        if (index >= path7.length) return value;
-        var key = path7[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        updated[key] = copyWithSetImpl(obj[key], path7, index + 1, value);
+      function copyWithSetImpl(obj, path8, index, value) {
+        if (index >= path8.length) return value;
+        var key = path8[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        updated[key] = copyWithSetImpl(obj[key], path8, index + 1, value);
         return updated;
       }
       function copyWithRename(obj, oldPath, newPath) {
@@ -10457,11 +10457,11 @@ var require_react_reconciler_development = __commonJS({
         );
         return updated;
       }
-      function copyWithDeleteImpl(obj, path7, index) {
-        var key = path7[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        if (index + 1 === path7.length)
+      function copyWithDeleteImpl(obj, path8, index) {
+        var key = path8[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        if (index + 1 === path8.length)
           return isArrayImpl(updated) ? updated.splice(key, 1) : delete updated[key], updated;
-        updated[key] = copyWithDeleteImpl(obj[key], path7, index + 1);
+        updated[key] = copyWithDeleteImpl(obj[key], path8, index + 1);
         return updated;
       }
       function shouldSuspendImpl() {
@@ -22230,14 +22230,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React14 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -23738,29 +23738,29 @@ var require_react_reconciler_development = __commonJS({
       var didWarnAboutNestedUpdates = false;
       var didWarnAboutFindNodeInStrictMode = {};
       var overrideHookState = null, overrideHookStateDeletePath = null, overrideHookStateRenamePath = null, overrideProps = null, overridePropsDeletePath = null, overridePropsRenamePath = null, scheduleUpdate = null, scheduleRetry = null, setErrorHandler = null, setSuspenseHandler = null;
-      overrideHookState = function(fiber, id, path7, value) {
+      overrideHookState = function(fiber, id, path8, value) {
         id = findHook(fiber, id);
-        null !== id && (path7 = copyWithSetImpl(id.memoizedState, path7, 0, value), id.memoizedState = path7, id.baseState = path7, fiber.memoizedProps = assign({}, fiber.memoizedProps), path7 = enqueueConcurrentRenderForLane(fiber, 2), null !== path7 && scheduleUpdateOnFiber(path7, fiber, 2));
+        null !== id && (path8 = copyWithSetImpl(id.memoizedState, path8, 0, value), id.memoizedState = path8, id.baseState = path8, fiber.memoizedProps = assign({}, fiber.memoizedProps), path8 = enqueueConcurrentRenderForLane(fiber, 2), null !== path8 && scheduleUpdateOnFiber(path8, fiber, 2));
       };
-      overrideHookStateDeletePath = function(fiber, id, path7) {
+      overrideHookStateDeletePath = function(fiber, id, path8) {
         id = findHook(fiber, id);
-        null !== id && (path7 = copyWithDeleteImpl(id.memoizedState, path7, 0), id.memoizedState = path7, id.baseState = path7, fiber.memoizedProps = assign({}, fiber.memoizedProps), path7 = enqueueConcurrentRenderForLane(fiber, 2), null !== path7 && scheduleUpdateOnFiber(path7, fiber, 2));
+        null !== id && (path8 = copyWithDeleteImpl(id.memoizedState, path8, 0), id.memoizedState = path8, id.baseState = path8, fiber.memoizedProps = assign({}, fiber.memoizedProps), path8 = enqueueConcurrentRenderForLane(fiber, 2), null !== path8 && scheduleUpdateOnFiber(path8, fiber, 2));
       };
       overrideHookStateRenamePath = function(fiber, id, oldPath, newPath) {
         id = findHook(fiber, id);
         null !== id && (oldPath = copyWithRename(id.memoizedState, oldPath, newPath), id.memoizedState = oldPath, id.baseState = oldPath, fiber.memoizedProps = assign({}, fiber.memoizedProps), oldPath = enqueueConcurrentRenderForLane(fiber, 2), null !== oldPath && scheduleUpdateOnFiber(oldPath, fiber, 2));
       };
-      overrideProps = function(fiber, path7, value) {
-        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path7, 0, value);
+      overrideProps = function(fiber, path8, value) {
+        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path8, 0, value);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path7 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path7 && scheduleUpdateOnFiber(path7, fiber, 2);
+        path8 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path8 && scheduleUpdateOnFiber(path8, fiber, 2);
       };
-      overridePropsDeletePath = function(fiber, path7) {
-        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path7, 0);
+      overridePropsDeletePath = function(fiber, path8) {
+        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path8, 0);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path7 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path7 && scheduleUpdateOnFiber(path7, fiber, 2);
+        path8 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path8 && scheduleUpdateOnFiber(path8, fiber, 2);
       };
       overridePropsRenamePath = function(fiber, oldPath, newPath) {
         fiber.pendingProps = copyWithRename(
@@ -27982,7 +27982,7 @@ var require_backend = __commonJS({
                     return o2 && "function" == typeof Symbol && o2.constructor === Symbol && o2 !== Symbol.prototype ? "symbol" : typeof o2;
                   }, _typeof(o);
                 }
-                var ErrorStackParser = __webpack_require__2(206), React14 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
+                var ErrorStackParser = __webpack_require__2(206), React15 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
                 function getPrimitiveStackCache() {
                   if (null === primitiveStackCache) {
                     var cache3 = /* @__PURE__ */ new Map();
@@ -28132,7 +28132,7 @@ var require_backend = __commonJS({
                     });
                     return callback;
                   },
-                  useContext: function useContext13(context) {
+                  useContext: function useContext14(context) {
                     var value = readContext(context);
                     hookLog.push({
                       displayName: context.displayName || null,
@@ -28203,7 +28203,7 @@ var require_backend = __commonJS({
                     });
                     return nextCreate;
                   },
-                  useReducer: function useReducer3(reducer, initialArg, init) {
+                  useReducer: function useReducer4(reducer, initialArg, init) {
                     reducer = nextHook();
                     initialArg = null !== reducer ? reducer.memoizedState : void 0 !== init ? init(initialArg) : initialArg;
                     hookLog.push({
@@ -31575,8 +31575,8 @@ var require_backend = __commonJS({
               }
               return false;
             }
-            function utils_getInObject(object, path7) {
-              return path7.reduce(function(reduced, attr) {
+            function utils_getInObject(object, path8) {
+              return path8.reduce(function(reduced, attr) {
                 if (reduced) {
                   if (utils_hasOwnProperty.call(reduced, attr)) {
                     return reduced[attr];
@@ -31588,11 +31588,11 @@ var require_backend = __commonJS({
                 return null;
               }, object);
             }
-            function deletePathInObject(object, path7) {
-              var length = path7.length;
-              var last = path7[length - 1];
+            function deletePathInObject(object, path8) {
+              var length = path8.length;
+              var last = path8[length - 1];
               if (object != null) {
-                var parent = utils_getInObject(object, path7.slice(0, length - 1));
+                var parent = utils_getInObject(object, path8.slice(0, length - 1));
                 if (parent) {
                   if (src_isArray(parent)) {
                     parent.splice(last, 1);
@@ -31618,11 +31618,11 @@ var require_backend = __commonJS({
                 }
               }
             }
-            function utils_setInObject(object, path7, value) {
-              var length = path7.length;
-              var last = path7[length - 1];
+            function utils_setInObject(object, path8, value) {
+              var length = path8.length;
+              var last = path8[length - 1];
               if (object != null) {
-                var parent = utils_getInObject(object, path7.slice(0, length - 1));
+                var parent = utils_getInObject(object, path8.slice(0, length - 1));
                 if (parent) {
                   parent[last] = value;
                 }
@@ -32155,8 +32155,8 @@ var require_backend = __commonJS({
               unserializable: Symbol("unserializable")
             };
             var LEVEL_THRESHOLD = 2;
-            function createDehydrated(type, inspectable, data, cleaned, path7) {
-              cleaned.push(path7);
+            function createDehydrated(type, inspectable, data, cleaned, path8) {
+              cleaned.push(path8);
               var dehydrated = {
                 inspectable,
                 type,
@@ -32174,13 +32174,13 @@ var require_backend = __commonJS({
               }
               return dehydrated;
             }
-            function dehydrate(data, cleaned, unserializable, path7, isPathAllowed) {
+            function dehydrate(data, cleaned, unserializable, path8, isPathAllowed) {
               var level = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : 0;
               var type = getDataType(data);
               var isPathAllowedCheck;
               switch (type) {
                 case "html_element":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32189,7 +32189,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "function":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32198,14 +32198,14 @@ var require_backend = __commonJS({
                     type
                   };
                 case "string":
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (isPathAllowedCheck) {
                     return data;
                   } else {
                     return data.length <= 500 ? data : data.slice(0, 500) + "...";
                   }
                 case "bigint":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32214,7 +32214,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "symbol":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32223,9 +32223,9 @@ var require_backend = __commonJS({
                     type
                   };
                 case "react_element": {
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path7);
+                    cleaned.push(path8);
                     return {
                       inspectable: true,
                       preview_short: formatDataForPreview(data, false),
@@ -32242,19 +32242,19 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: getDisplayNameForReactElement(data) || "Unknown"
                   };
-                  unserializableValue.key = dehydrate(data.key, cleaned, unserializable, path7.concat(["key"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializableValue.key = dehydrate(data.key, cleaned, unserializable, path8.concat(["key"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   if (data.$$typeof === REACT_LEGACY_ELEMENT_TYPE) {
-                    unserializableValue.ref = dehydrate(data.ref, cleaned, unserializable, path7.concat(["ref"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    unserializableValue.ref = dehydrate(data.ref, cleaned, unserializable, path8.concat(["ref"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
-                  unserializableValue.props = dehydrate(data.props, cleaned, unserializable, path7.concat(["props"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  unserializable.push(path7);
+                  unserializableValue.props = dehydrate(data.props, cleaned, unserializable, path8.concat(["props"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializable.push(path8);
                   return unserializableValue;
                 }
                 case "react_lazy": {
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   var payload = data._payload;
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path7);
+                    cleaned.push(path8);
                     var inspectable = payload !== null && hydration_typeof(payload) === "object" && (payload._status === 1 || payload._status === 2 || payload.status === "fulfilled" || payload.status === "rejected");
                     return {
                       inspectable,
@@ -32271,13 +32271,13 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: "lazy()"
                   };
-                  _unserializableValue._payload = dehydrate(payload, cleaned, unserializable, path7.concat(["_payload"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  unserializable.push(path7);
+                  _unserializableValue._payload = dehydrate(payload, cleaned, unserializable, path8.concat(["_payload"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializable.push(path8);
                   return _unserializableValue;
                 }
                 case "array_buffer":
                 case "data_view":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32287,21 +32287,21 @@ var require_backend = __commonJS({
                     type
                   };
                 case "array":
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path7);
+                    return createDehydrated(type, true, data, cleaned, path8);
                   }
                   var arr = [];
                   for (var i = 0; i < data.length; i++) {
-                    arr[i] = dehydrateKey(data, i, cleaned, unserializable, path7.concat([i]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    arr[i] = dehydrateKey(data, i, cleaned, unserializable, path8.concat([i]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
                   return arr;
                 case "html_all_collection":
                 case "typed_array":
                 case "iterator":
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path7);
+                    return createDehydrated(type, true, data, cleaned, path8);
                   } else {
                     var _unserializableValue2 = {
                       unserializable: true,
@@ -32313,13 +32313,13 @@ var require_backend = __commonJS({
                       name: typeof data.constructor !== "function" || typeof data.constructor.name !== "string" || data.constructor.name === "Object" ? "" : data.constructor.name
                     };
                     Array.from(data).forEach(function(item, i2) {
-                      return _unserializableValue2[i2] = dehydrate(item, cleaned, unserializable, path7.concat([i2]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      return _unserializableValue2[i2] = dehydrate(item, cleaned, unserializable, path8.concat([i2]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                     });
-                    unserializable.push(path7);
+                    unserializable.push(path8);
                     return _unserializableValue2;
                   }
                 case "opaque_iterator":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32328,7 +32328,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "date":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32337,7 +32337,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "regexp":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32346,9 +32346,9 @@ var require_backend = __commonJS({
                     type
                   };
                 case "thenable":
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path7);
+                    cleaned.push(path8);
                     return {
                       inspectable: data.status === "fulfilled" || data.status === "rejected",
                       preview_short: formatDataForPreview(data, false),
@@ -32369,8 +32369,8 @@ var require_backend = __commonJS({
                         preview_long: formatDataForPreview(data, true),
                         name: "fulfilled Thenable"
                       };
-                      _unserializableValue3.value = dehydrate(data.value, cleaned, unserializable, path7.concat(["value"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                      unserializable.push(path7);
+                      _unserializableValue3.value = dehydrate(data.value, cleaned, unserializable, path8.concat(["value"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      unserializable.push(path8);
                       return _unserializableValue3;
                     }
                     case "rejected": {
@@ -32381,12 +32381,12 @@ var require_backend = __commonJS({
                         preview_long: formatDataForPreview(data, true),
                         name: "rejected Thenable"
                       };
-                      _unserializableValue4.reason = dehydrate(data.reason, cleaned, unserializable, path7.concat(["reason"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                      unserializable.push(path7);
+                      _unserializableValue4.reason = dehydrate(data.reason, cleaned, unserializable, path8.concat(["reason"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      unserializable.push(path8);
                       return _unserializableValue4;
                     }
                     default:
-                      cleaned.push(path7);
+                      cleaned.push(path8);
                       return {
                         inspectable: false,
                         preview_short: formatDataForPreview(data, false),
@@ -32396,21 +32396,21 @@ var require_backend = __commonJS({
                       };
                   }
                 case "object":
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path7);
+                    return createDehydrated(type, true, data, cleaned, path8);
                   } else {
                     var object = {};
                     getAllEnumerableKeys(data).forEach(function(key) {
                       var name = key.toString();
-                      object[name] = dehydrateKey(data, key, cleaned, unserializable, path7.concat([name]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      object[name] = dehydrateKey(data, key, cleaned, unserializable, path8.concat([name]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                     });
                     return object;
                   }
                 case "class_instance": {
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path7);
+                    return createDehydrated(type, true, data, cleaned, path8);
                   }
                   var value = {
                     unserializable: true,
@@ -32422,15 +32422,15 @@ var require_backend = __commonJS({
                   };
                   getAllEnumerableKeys(data).forEach(function(key) {
                     var keyAsString = key.toString();
-                    value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path7.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path8.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   });
-                  unserializable.push(path7);
+                  unserializable.push(path8);
                   return value;
                 }
                 case "error": {
-                  isPathAllowedCheck = isPathAllowed(path7);
+                  isPathAllowedCheck = isPathAllowed(path8);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path7);
+                    return createDehydrated(type, true, data, cleaned, path8);
                   }
                   var _value = {
                     unserializable: true,
@@ -32440,22 +32440,22 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: data.name
                   };
-                  _value.message = dehydrate(data.message, cleaned, unserializable, path7.concat(["message"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  _value.stack = dehydrate(data.stack, cleaned, unserializable, path7.concat(["stack"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  _value.message = dehydrate(data.message, cleaned, unserializable, path8.concat(["message"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  _value.stack = dehydrate(data.stack, cleaned, unserializable, path8.concat(["stack"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   if ("cause" in data) {
-                    _value.cause = dehydrate(data.cause, cleaned, unserializable, path7.concat(["cause"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    _value.cause = dehydrate(data.cause, cleaned, unserializable, path8.concat(["cause"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
                   getAllEnumerableKeys(data).forEach(function(key) {
                     var keyAsString = key.toString();
-                    _value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path7.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    _value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path8.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   });
-                  unserializable.push(path7);
+                  unserializable.push(path8);
                   return _value;
                 }
                 case "infinity":
                 case "nan":
                 case "undefined":
-                  cleaned.push(path7);
+                  cleaned.push(path8);
                   return {
                     type
                   };
@@ -32463,10 +32463,10 @@ var require_backend = __commonJS({
                   return data;
               }
             }
-            function dehydrateKey(parent, key, cleaned, unserializable, path7, isPathAllowed) {
+            function dehydrateKey(parent, key, cleaned, unserializable, path8, isPathAllowed) {
               var level = arguments.length > 6 && arguments[6] !== void 0 ? arguments[6] : 0;
               try {
-                return dehydrate(parent[key], cleaned, unserializable, path7, isPathAllowed, level);
+                return dehydrate(parent[key], cleaned, unserializable, path8, isPathAllowed, level);
               } catch (error) {
                 var preview = "";
                 if (hydration_typeof(error) === "object" && error !== null && typeof error.stack === "string") {
@@ -32474,7 +32474,7 @@ var require_backend = __commonJS({
                 } else if (typeof error === "string") {
                   preview = error;
                 }
-                cleaned.push(path7);
+                cleaned.push(path8);
                 return {
                   inspectable: false,
                   preview_short: "[Exception]",
@@ -32484,8 +32484,8 @@ var require_backend = __commonJS({
                 };
               }
             }
-            function fillInPath(object, data, path7, value) {
-              var target = getInObject(object, path7);
+            function fillInPath(object, data, path8, value) {
+              var target = getInObject(object, path8);
               if (target != null) {
                 if (!target[meta.unserializable]) {
                   delete target[meta.inspectable];
@@ -32500,9 +32500,9 @@ var require_backend = __commonJS({
               }
               if (value !== null && data.unserializable.length > 0) {
                 var unserializablePath = data.unserializable[0];
-                var isMatch = unserializablePath.length === path7.length;
-                for (var i = 0; i < path7.length; i++) {
-                  if (path7[i] !== unserializablePath[i]) {
+                var isMatch = unserializablePath.length === path8.length;
+                for (var i = 0; i < path8.length; i++) {
+                  if (path8[i] !== unserializablePath[i]) {
                     isMatch = false;
                     break;
                   }
@@ -32511,13 +32511,13 @@ var require_backend = __commonJS({
                   upgradeUnserializable(value, value);
                 }
               }
-              setInObject(object, path7, value);
+              setInObject(object, path8, value);
             }
             function hydrate(object, cleaned, unserializable) {
-              cleaned.forEach(function(path7) {
-                var length = path7.length;
-                var last = path7[length - 1];
-                var parent = getInObject(object, path7.slice(0, length - 1));
+              cleaned.forEach(function(path8) {
+                var length = path8.length;
+                var last = path8[length - 1];
+                var parent = getInObject(object, path8.slice(0, length - 1));
                 if (!parent || !parent.hasOwnProperty(last)) {
                   return;
                 }
@@ -32543,10 +32543,10 @@ var require_backend = __commonJS({
                   parent[last] = replaced;
                 }
               });
-              unserializable.forEach(function(path7) {
-                var length = path7.length;
-                var last = path7[length - 1];
-                var parent = getInObject(object, path7.slice(0, length - 1));
+              unserializable.forEach(function(path8) {
+                var length = path8.length;
+                var last = path8[length - 1];
+                var parent = getInObject(object, path8.slice(0, length - 1));
                 if (!parent || !parent.hasOwnProperty(last)) {
                   return;
                 }
@@ -32667,11 +32667,11 @@ var require_backend = __commonJS({
               return gte(version2, FIRST_DEVTOOLS_BACKEND_LOCKSTEP_VER);
             }
             function cleanForBridge(data, isPathAllowed) {
-              var path7 = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
+              var path8 = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
               if (data !== null) {
                 var cleanedPaths = [];
                 var unserializablePaths = [];
-                var cleanedData = dehydrate(data, cleanedPaths, unserializablePaths, path7, isPathAllowed);
+                var cleanedData = dehydrate(data, cleanedPaths, unserializablePaths, path8, isPathAllowed);
                 return {
                   data: cleanedData,
                   cleaned: cleanedPaths,
@@ -32681,18 +32681,18 @@ var require_backend = __commonJS({
                 return null;
               }
             }
-            function copyWithDelete(obj, path7) {
+            function copyWithDelete(obj, path8) {
               var index = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 0;
-              var key = path7[index];
+              var key = path8[index];
               var updated = shared_isArray(obj) ? obj.slice() : utils_objectSpread({}, obj);
-              if (index + 1 === path7.length) {
+              if (index + 1 === path8.length) {
                 if (shared_isArray(updated)) {
                   updated.splice(key, 1);
                 } else {
                   delete updated[key];
                 }
               } else {
-                updated[key] = copyWithDelete(obj[key], path7, index + 1);
+                updated[key] = copyWithDelete(obj[key], path8, index + 1);
               }
               return updated;
             }
@@ -32713,14 +32713,14 @@ var require_backend = __commonJS({
               }
               return updated;
             }
-            function copyWithSet(obj, path7, value) {
+            function copyWithSet(obj, path8, value) {
               var index = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : 0;
-              if (index >= path7.length) {
+              if (index >= path8.length) {
                 return value;
               }
-              var key = path7[index];
+              var key = path8[index];
               var updated = shared_isArray(obj) ? obj.slice() : utils_objectSpread({}, obj);
-              updated[key] = copyWithSet(obj[key], path7, value, index + 1);
+              updated[key] = copyWithSet(obj[key], path8, value, index + 1);
               return updated;
             }
             function getEffectDurations(root) {
@@ -33996,12 +33996,12 @@ var require_backend = __commonJS({
                   }
                 });
                 bridge_defineProperty(_this, "overrideValueAtPath", function(_ref) {
-                  var id = _ref.id, path7 = _ref.path, rendererID = _ref.rendererID, type = _ref.type, value = _ref.value;
+                  var id = _ref.id, path8 = _ref.path, rendererID = _ref.rendererID, type = _ref.type, value = _ref.value;
                   switch (type) {
                     case "context":
                       _this.send("overrideContext", {
                         id,
-                        path: path7,
+                        path: path8,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34010,7 +34010,7 @@ var require_backend = __commonJS({
                     case "hooks":
                       _this.send("overrideHookState", {
                         id,
-                        path: path7,
+                        path: path8,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34019,7 +34019,7 @@ var require_backend = __commonJS({
                     case "props":
                       _this.send("overrideProps", {
                         id,
-                        path: path7,
+                        path: path8,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34028,7 +34028,7 @@ var require_backend = __commonJS({
                     case "state":
                       _this.send("overrideState", {
                         id,
-                        path: path7,
+                        path: path8,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34366,12 +34366,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "copyElementPath", function(_ref5) {
-                  var id = _ref5.id, path7 = _ref5.path, rendererID = _ref5.rendererID;
+                  var id = _ref5.id, path8 = _ref5.path, rendererID = _ref5.rendererID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    var value = renderer2.getSerializedElementValueByPath(id, path7);
+                    var value = renderer2.getSerializedElementValueByPath(id, path8);
                     if (value != null) {
                       _this._bridge.send("saveToClipboard", value);
                     } else {
@@ -34380,12 +34380,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "deletePath", function(_ref6) {
-                  var hookID = _ref6.hookID, id = _ref6.id, path7 = _ref6.path, rendererID = _ref6.rendererID, type = _ref6.type;
+                  var hookID = _ref6.hookID, id = _ref6.id, path8 = _ref6.path, rendererID = _ref6.rendererID, type = _ref6.type;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.deletePath(type, id, hookID, path7);
+                    renderer2.deletePath(type, id, hookID, path8);
                   }
                 });
                 agent_defineProperty(_this, "getBackendVersion", function() {
@@ -34422,12 +34422,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "inspectElement", function(_ref9) {
-                  var forceFullData = _ref9.forceFullData, id = _ref9.id, path7 = _ref9.path, rendererID = _ref9.rendererID, requestID = _ref9.requestID;
+                  var forceFullData = _ref9.forceFullData, id = _ref9.id, path8 = _ref9.path, rendererID = _ref9.rendererID, requestID = _ref9.requestID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    _this._bridge.send("inspectedElement", renderer2.inspectElement(requestID, id, path7, forceFullData));
+                    _this._bridge.send("inspectedElement", renderer2.inspectElement(requestID, id, path8, forceFullData));
                     if (_this._persistedSelectionMatch === null || _this._persistedSelectionMatch.id !== id) {
                       _this._persistedSelection = null;
                       _this._persistedSelectionMatch = null;
@@ -34461,15 +34461,15 @@ var require_backend = __commonJS({
                   }
                   for (var rendererID in _this._rendererInterfaces) {
                     var renderer2 = _this._rendererInterfaces[rendererID];
-                    var path7 = null;
+                    var path8 = null;
                     if (suspendedByPathIndex !== null && rendererPath !== null) {
                       var suspendedByPathRendererIndex = suspendedByPathIndex - suspendedByOffset;
                       var rendererHasRequestedSuspendedByPath = renderer2.getElementAttributeByPath(id, ["suspendedBy", suspendedByPathRendererIndex]) !== void 0;
                       if (rendererHasRequestedSuspendedByPath) {
-                        path7 = ["suspendedBy", suspendedByPathRendererIndex].concat(rendererPath);
+                        path8 = ["suspendedBy", suspendedByPathRendererIndex].concat(rendererPath);
                       }
                     }
-                    var inspectedRootsPayload = renderer2.inspectElement(requestID, id, path7, forceFullData);
+                    var inspectedRootsPayload = renderer2.inspectElement(requestID, id, path8, forceFullData);
                     switch (inspectedRootsPayload.type) {
                       case "hydrated-path":
                         inspectedRootsPayload.path[1] += suspendedByOffset;
@@ -34563,20 +34563,20 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideValueAtPath", function(_ref15) {
-                  var hookID = _ref15.hookID, id = _ref15.id, path7 = _ref15.path, rendererID = _ref15.rendererID, type = _ref15.type, value = _ref15.value;
+                  var hookID = _ref15.hookID, id = _ref15.id, path8 = _ref15.path, rendererID = _ref15.rendererID, type = _ref15.type, value = _ref15.value;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.overrideValueAtPath(type, id, hookID, path7, value);
+                    renderer2.overrideValueAtPath(type, id, hookID, path8, value);
                   }
                 });
                 agent_defineProperty(_this, "overrideContext", function(_ref16) {
-                  var id = _ref16.id, path7 = _ref16.path, rendererID = _ref16.rendererID, wasForwarded = _ref16.wasForwarded, value = _ref16.value;
+                  var id = _ref16.id, path8 = _ref16.path, rendererID = _ref16.rendererID, wasForwarded = _ref16.wasForwarded, value = _ref16.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path7,
+                      path: path8,
                       rendererID,
                       type: "context",
                       value
@@ -34584,11 +34584,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideHookState", function(_ref17) {
-                  var id = _ref17.id, hookID = _ref17.hookID, path7 = _ref17.path, rendererID = _ref17.rendererID, wasForwarded = _ref17.wasForwarded, value = _ref17.value;
+                  var id = _ref17.id, hookID = _ref17.hookID, path8 = _ref17.path, rendererID = _ref17.rendererID, wasForwarded = _ref17.wasForwarded, value = _ref17.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path7,
+                      path: path8,
                       rendererID,
                       type: "hooks",
                       value
@@ -34596,11 +34596,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideProps", function(_ref18) {
-                  var id = _ref18.id, path7 = _ref18.path, rendererID = _ref18.rendererID, wasForwarded = _ref18.wasForwarded, value = _ref18.value;
+                  var id = _ref18.id, path8 = _ref18.path, rendererID = _ref18.rendererID, wasForwarded = _ref18.wasForwarded, value = _ref18.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path7,
+                      path: path8,
                       rendererID,
                       type: "props",
                       value
@@ -34608,11 +34608,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideState", function(_ref19) {
-                  var id = _ref19.id, path7 = _ref19.path, rendererID = _ref19.rendererID, wasForwarded = _ref19.wasForwarded, value = _ref19.value;
+                  var id = _ref19.id, path8 = _ref19.path, rendererID = _ref19.rendererID, wasForwarded = _ref19.wasForwarded, value = _ref19.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path7,
+                      path: path8,
                       rendererID,
                       type: "state",
                       value
@@ -34679,12 +34679,12 @@ var require_backend = __commonJS({
                   _this._bridge.send("stopInspectingHost", selected);
                 });
                 agent_defineProperty(_this, "storeAsGlobal", function(_ref23) {
-                  var count = _ref23.count, id = _ref23.id, path7 = _ref23.path, rendererID = _ref23.rendererID;
+                  var count = _ref23.count, id = _ref23.id, path8 = _ref23.path, rendererID = _ref23.rendererID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.storeAsGlobal(id, path7, count);
+                    renderer2.storeAsGlobal(id, path8, count);
                   }
                 });
                 agent_defineProperty(_this, "updateHookSettings", function(settings) {
@@ -34701,12 +34701,12 @@ var require_backend = __commonJS({
                     var rendererID = +rendererIDString;
                     var renderer2 = _this._rendererInterfaces[rendererID];
                     if (_this._lastSelectedRendererID === rendererID) {
-                      var path7 = renderer2.getPathForElement(_this._lastSelectedElementID);
-                      if (path7 !== null) {
-                        renderer2.setTrackedPath(path7);
+                      var path8 = renderer2.getPathForElement(_this._lastSelectedElementID);
+                      if (path8 !== null) {
+                        renderer2.setTrackedPath(path8);
                         _this._persistedSelection = {
                           rendererID,
-                          path: path7
+                          path: path8
                         };
                       }
                     }
@@ -34781,11 +34781,11 @@ var require_backend = __commonJS({
                   var rendererID = _this._lastSelectedRendererID;
                   var id = _this._lastSelectedElementID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
-                  var path7 = renderer2 != null ? renderer2.getPathForElement(id) : null;
-                  if (path7 !== null) {
+                  var path8 = renderer2 != null ? renderer2.getPathForElement(id) : null;
+                  if (path8 !== null) {
                     storage_sessionStorageSetItem(SESSION_STORAGE_LAST_SELECTION_KEY, JSON.stringify({
                       rendererID,
-                      path: path7
+                      path: path8
                     }));
                   } else {
                     storage_sessionStorageRemoveItem(SESSION_STORAGE_LAST_SELECTION_KEY);
@@ -35494,7 +35494,7 @@ var require_backend = __commonJS({
                 hasElementWithId: function hasElementWithId() {
                   return false;
                 },
-                inspectElement: function inspectElement(requestID, id, path7) {
+                inspectElement: function inspectElement(requestID, id, path8) {
                   return {
                     id,
                     responseID: requestID,
@@ -37581,7 +37581,7 @@ var require_backend = __commonJS({
                 var symbolOrNumber = renderer_typeof(type) === "object" && type !== null ? type.$$typeof : type;
                 return renderer_typeof(symbolOrNumber) === "symbol" ? symbolOrNumber.toString() : symbolOrNumber;
               }
-              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment3 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
+              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment4 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
               function resolveFiberType(type) {
                 var typeSymbol = getTypeSymbol(type);
                 switch (typeSymbol) {
@@ -37637,7 +37637,7 @@ var require_backend = __commonJS({
                   case HostPortal:
                   case HostText:
                     return null;
-                  case Fragment3:
+                  case Fragment4:
                     return "Fragment";
                   case LazyComponent:
                     return "Lazy";
@@ -37792,7 +37792,7 @@ var require_backend = __commonJS({
             function renderer_attach(hook, rendererID, renderer2, global2, shouldStartProfilingNow, profilingSettings) {
               var version2 = renderer2.reconcilerVersion || renderer2.version;
               var _getInternalReactCons = getInternalReactConstants(version2), getDisplayNameForFiber = _getInternalReactCons.getDisplayNameForFiber, getTypeSymbol = _getInternalReactCons.getTypeSymbol, ReactPriorityLevels = _getInternalReactCons.ReactPriorityLevels, ReactTypeOfWork = _getInternalReactCons.ReactTypeOfWork, StrictModeBits = _getInternalReactCons.StrictModeBits, SuspenseyImagesMode = _getInternalReactCons.SuspenseyImagesMode;
-              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment3 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
+              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment4 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
               var ImmediatePriority = ReactPriorityLevels.ImmediatePriority, UserBlockingPriority = ReactPriorityLevels.UserBlockingPriority, NormalPriority = ReactPriorityLevels.NormalPriority, LowPriority = ReactPriorityLevels.LowPriority, IdlePriority = ReactPriorityLevels.IdlePriority, NoPriority = ReactPriorityLevels.NoPriority;
               var getLaneLabelMap = renderer2.getLaneLabelMap, injectProfilingHooks = renderer2.injectProfilingHooks, overrideHookState = renderer2.overrideHookState, overrideHookStateDeletePath = renderer2.overrideHookStateDeletePath, overrideHookStateRenamePath = renderer2.overrideHookStateRenamePath, overrideProps = renderer2.overrideProps, overridePropsDeletePath = renderer2.overridePropsDeletePath, overridePropsRenamePath = renderer2.overridePropsRenamePath, scheduleRefresh = renderer2.scheduleRefresh, setErrorHandler = renderer2.setErrorHandler, setSuspenseHandler = renderer2.setSuspenseHandler, scheduleUpdate = renderer2.scheduleUpdate, scheduleRetry = renderer2.scheduleRetry, getCurrentFiber = renderer2.getCurrentFiber;
               var supportsTogglingError = typeof setErrorHandler === "function" && typeof scheduleUpdate === "function";
@@ -38153,7 +38153,7 @@ var require_backend = __commonJS({
                     return true;
                   case HostRoot:
                     return false;
-                  case Fragment3:
+                  case Fragment4:
                     return key === null;
                   default:
                     var typeSymbol = getTypeSymbol(type);
@@ -38227,7 +38227,7 @@ var require_backend = __commonJS({
                     return ElementTypeHostComponent;
                   case HostPortal:
                   case HostText:
-                  case Fragment3:
+                  case Fragment4:
                     return ElementTypeOtherOrUnknown;
                   case MemoComponent:
                   case SimpleMemoComponent:
@@ -40745,9 +40745,9 @@ var require_backend = __commonJS({
                 }
                 return null;
               }
-              function getElementAttributeByPath(id, path7) {
+              function getElementAttributeByPath(id, path8) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  return utils_getInObject(mostRecentlyInspectedElement, path7);
+                  return utils_getInObject(mostRecentlyInspectedElement, path8);
                 }
                 return void 0;
               }
@@ -41454,9 +41454,9 @@ var require_backend = __commonJS({
               function isMostRecentlyInspectedElementCurrent(id) {
                 return isMostRecentlyInspectedElement(id) && !hasElementUpdatedSinceLastInspected;
               }
-              function mergeInspectedPaths(path7) {
+              function mergeInspectedPaths(path8) {
                 var current = currentlyInspectedPaths;
-                path7.forEach(function(key) {
+                path8.forEach(function(key) {
                   if (!current[key]) {
                     current[key] = {};
                   }
@@ -41464,21 +41464,21 @@ var require_backend = __commonJS({
                 });
               }
               function createIsPathAllowed(key, secondaryCategory) {
-                return function isPathAllowed(path7) {
+                return function isPathAllowed(path8) {
                   switch (secondaryCategory) {
                     case "hooks":
-                      if (path7.length === 1) {
+                      if (path8.length === 1) {
                         return true;
                       }
-                      if (path7[path7.length - 2] === "hookSource" && path7[path7.length - 1] === "fileName") {
+                      if (path8[path8.length - 2] === "hookSource" && path8[path8.length - 1] === "fileName") {
                         return true;
                       }
-                      if (path7[path7.length - 1] === "subHooks" || path7[path7.length - 2] === "subHooks") {
+                      if (path8[path8.length - 1] === "subHooks" || path8[path8.length - 2] === "subHooks") {
                         return true;
                       }
                       break;
                     case "suspendedBy":
-                      if (path7.length < 5) {
+                      if (path8.length < 5) {
                         return true;
                       }
                       break;
@@ -41489,8 +41489,8 @@ var require_backend = __commonJS({
                   if (!current) {
                     return false;
                   }
-                  for (var i = 0; i < path7.length; i++) {
-                    current = current[path7[i]];
+                  for (var i = 0; i < path8.length; i++) {
+                    current = current[path8[i]];
                     if (!current) {
                       return false;
                     }
@@ -41544,38 +41544,38 @@ var require_backend = __commonJS({
                     break;
                 }
               }
-              function storeAsGlobal(id, path7, count) {
+              function storeAsGlobal(id, path8, count) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  var value = utils_getInObject(mostRecentlyInspectedElement, path7);
+                  var value = utils_getInObject(mostRecentlyInspectedElement, path8);
                   var key = "$reactTemp".concat(count);
                   window[key] = value;
                   console.log(key);
                   console.log(value);
                 }
               }
-              function getSerializedElementValueByPath(id, path7) {
+              function getSerializedElementValueByPath(id, path8) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  var valueToCopy = utils_getInObject(mostRecentlyInspectedElement, path7);
+                  var valueToCopy = utils_getInObject(mostRecentlyInspectedElement, path8);
                   return serializeToString(valueToCopy);
                 }
               }
-              function inspectElement(requestID, id, path7, forceFullData) {
-                if (path7 !== null) {
-                  mergeInspectedPaths(path7);
+              function inspectElement(requestID, id, path8, forceFullData) {
+                if (path8 !== null) {
+                  mergeInspectedPaths(path8);
                 }
                 if (isMostRecentlyInspectedElement(id) && !forceFullData) {
                   if (!hasElementUpdatedSinceLastInspected) {
-                    if (path7 !== null) {
+                    if (path8 !== null) {
                       var secondaryCategory = null;
-                      if (path7[0] === "hooks" || path7[0] === "suspendedBy") {
-                        secondaryCategory = path7[0];
+                      if (path8[0] === "hooks" || path8[0] === "suspendedBy") {
+                        secondaryCategory = path8[0];
                       }
                       return {
                         id,
                         responseID: requestID,
                         type: "hydrated-path",
-                        path: path7,
-                        value: cleanForBridge(utils_getInObject(mostRecentlyInspectedElement, path7), createIsPathAllowed(null, secondaryCategory), path7)
+                        path: path8,
+                        value: cleanForBridge(utils_getInObject(mostRecentlyInspectedElement, path8), createIsPathAllowed(null, secondaryCategory), path8)
                       };
                     } else {
                       return {
@@ -41764,7 +41764,7 @@ var require_backend = __commonJS({
                   console.groupEnd();
                 }
               }
-              function deletePath(type, id, hookID, path7) {
+              function deletePath(type, id, hookID, path8) {
                 var devtoolsInstance = idToDevToolsInstanceMap.get(id);
                 if (devtoolsInstance === void 0) {
                   console.warn('Could not find DevToolsInstance with id "'.concat(id, '"'));
@@ -41778,12 +41778,12 @@ var require_backend = __commonJS({
                   var instance = fiber.stateNode;
                   switch (type) {
                     case "context":
-                      path7 = path7.slice(1);
+                      path8 = path8.slice(1);
                       switch (fiber.tag) {
                         case ClassComponent:
-                          if (path7.length === 0) {
+                          if (path8.length === 0) {
                           } else {
-                            deletePathInObject(instance.context, path7);
+                            deletePathInObject(instance.context, path8);
                           }
                           instance.forceUpdate();
                           break;
@@ -41793,21 +41793,21 @@ var require_backend = __commonJS({
                       break;
                     case "hooks":
                       if (typeof overrideHookStateDeletePath === "function") {
-                        overrideHookStateDeletePath(fiber, hookID, path7);
+                        overrideHookStateDeletePath(fiber, hookID, path8);
                       }
                       break;
                     case "props":
                       if (instance === null) {
                         if (typeof overridePropsDeletePath === "function") {
-                          overridePropsDeletePath(fiber, path7);
+                          overridePropsDeletePath(fiber, path8);
                         }
                       } else {
-                        fiber.pendingProps = copyWithDelete(instance.props, path7);
+                        fiber.pendingProps = copyWithDelete(instance.props, path8);
                         instance.forceUpdate();
                       }
                       break;
                     case "state":
-                      deletePathInObject(instance.state, path7);
+                      deletePathInObject(instance.state, path8);
                       instance.forceUpdate();
                       break;
                   }
@@ -41863,7 +41863,7 @@ var require_backend = __commonJS({
                   }
                 }
               }
-              function overrideValueAtPath(type, id, hookID, path7, value) {
+              function overrideValueAtPath(type, id, hookID, path8, value) {
                 var devtoolsInstance = idToDevToolsInstanceMap.get(id);
                 if (devtoolsInstance === void 0) {
                   console.warn('Could not find DevToolsInstance with id "'.concat(id, '"'));
@@ -41877,13 +41877,13 @@ var require_backend = __commonJS({
                   var instance = fiber.stateNode;
                   switch (type) {
                     case "context":
-                      path7 = path7.slice(1);
+                      path8 = path8.slice(1);
                       switch (fiber.tag) {
                         case ClassComponent:
-                          if (path7.length === 0) {
+                          if (path8.length === 0) {
                             instance.context = value;
                           } else {
-                            utils_setInObject(instance.context, path7, value);
+                            utils_setInObject(instance.context, path8, value);
                           }
                           instance.forceUpdate();
                           break;
@@ -41893,18 +41893,18 @@ var require_backend = __commonJS({
                       break;
                     case "hooks":
                       if (typeof overrideHookState === "function") {
-                        overrideHookState(fiber, hookID, path7, value);
+                        overrideHookState(fiber, hookID, path8, value);
                       }
                       break;
                     case "props":
                       switch (fiber.tag) {
                         case ClassComponent:
-                          fiber.pendingProps = copyWithSet(instance.props, path7, value);
+                          fiber.pendingProps = copyWithSet(instance.props, path8, value);
                           instance.forceUpdate();
                           break;
                         default:
                           if (typeof overrideProps === "function") {
-                            overrideProps(fiber, path7, value);
+                            overrideProps(fiber, path8, value);
                           }
                           break;
                       }
@@ -41912,7 +41912,7 @@ var require_backend = __commonJS({
                     case "state":
                       switch (fiber.tag) {
                         case ClassComponent:
-                          utils_setInObject(instance.state, path7, value);
+                          utils_setInObject(instance.state, path8, value);
                           instance.forceUpdate();
                           break;
                       }
@@ -42198,14 +42198,14 @@ var require_backend = __commonJS({
               var trackedPathMatchInstance = null;
               var trackedPathMatchDepth = -1;
               var mightBeOnTrackedPath = false;
-              function setTrackedPath(path7) {
-                if (path7 === null) {
+              function setTrackedPath(path8) {
+                if (path8 === null) {
                   trackedPathMatchFiber = null;
                   trackedPathMatchInstance = null;
                   trackedPathMatchDepth = -1;
                   mightBeOnTrackedPath = false;
                 }
-                trackedPath = path7;
+                trackedPath = path8;
               }
               function updateTrackedPathStateBeforeMount(fiber, fiberInstance) {
                 if (trackedPath === null || !mightBeOnTrackedPath) {
@@ -42973,9 +42973,9 @@ var require_backend = __commonJS({
               }
               var currentlyInspectedElementID = null;
               var currentlyInspectedPaths = {};
-              function mergeInspectedPaths(path7) {
+              function mergeInspectedPaths(path8) {
                 var current = currentlyInspectedPaths;
-                path7.forEach(function(key) {
+                path8.forEach(function(key) {
                   if (!current[key]) {
                     current[key] = {};
                   }
@@ -42983,13 +42983,13 @@ var require_backend = __commonJS({
                 });
               }
               function createIsPathAllowed(key) {
-                return function isPathAllowed(path7) {
+                return function isPathAllowed(path8) {
                   var current = currentlyInspectedPaths[key];
                   if (!current) {
                     return false;
                   }
-                  for (var i = 0; i < path7.length; i++) {
-                    current = current[path7[i]];
+                  for (var i = 0; i < path8.length; i++) {
+                    current = current[path8[i]];
                     if (!current) {
                       return false;
                     }
@@ -43039,24 +43039,24 @@ var require_backend = __commonJS({
                     break;
                 }
               }
-              function storeAsGlobal(id, path7, count) {
+              function storeAsGlobal(id, path8, count) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  var value = utils_getInObject(inspectedElement, path7);
+                  var value = utils_getInObject(inspectedElement, path8);
                   var key = "$reactTemp".concat(count);
                   window[key] = value;
                   console.log(key);
                   console.log(value);
                 }
               }
-              function getSerializedElementValueByPath(id, path7) {
+              function getSerializedElementValueByPath(id, path8) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  var valueToCopy = utils_getInObject(inspectedElement, path7);
+                  var valueToCopy = utils_getInObject(inspectedElement, path8);
                   return serializeToString(valueToCopy);
                 }
               }
-              function inspectElement(requestID, id, path7, forceFullData) {
+              function inspectElement(requestID, id, path8, forceFullData) {
                 if (forceFullData || currentlyInspectedElementID !== id) {
                   currentlyInspectedElementID = id;
                   currentlyInspectedPaths = {};
@@ -43069,8 +43069,8 @@ var require_backend = __commonJS({
                     type: "not-found"
                   };
                 }
-                if (path7 !== null) {
-                  mergeInspectedPaths(path7);
+                if (path8 !== null) {
+                  mergeInspectedPaths(path8);
                 }
                 updateSelectedElement(id);
                 inspectedElement.context = cleanForBridge(inspectedElement.context, createIsPathAllowed("context"));
@@ -43273,10 +43273,10 @@ var require_backend = __commonJS({
                   console.groupEnd();
                 }
               }
-              function getElementAttributeByPath(id, path7) {
+              function getElementAttributeByPath(id, path8) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  return utils_getInObject(inspectedElement, path7);
+                  return utils_getInObject(inspectedElement, path8);
                 }
                 return void 0;
               }
@@ -43293,14 +43293,14 @@ var require_backend = __commonJS({
                 }
                 return element.type;
               }
-              function deletePath(type, id, hookID, path7) {
+              function deletePath(type, id, hookID, path8) {
                 var internalInstance = idToInternalInstanceMap.get(id);
                 if (internalInstance != null) {
                   var publicInstance = internalInstance._instance;
                   if (publicInstance != null) {
                     switch (type) {
                       case "context":
-                        deletePathInObject(publicInstance.context, path7);
+                        deletePathInObject(publicInstance.context, path8);
                         forceUpdate(publicInstance);
                         break;
                       case "hooks":
@@ -43308,12 +43308,12 @@ var require_backend = __commonJS({
                       case "props":
                         var element = internalInstance._currentElement;
                         internalInstance._currentElement = legacy_renderer_objectSpread(legacy_renderer_objectSpread({}, element), {}, {
-                          props: copyWithDelete(element.props, path7)
+                          props: copyWithDelete(element.props, path8)
                         });
                         forceUpdate(publicInstance);
                         break;
                       case "state":
-                        deletePathInObject(publicInstance.state, path7);
+                        deletePathInObject(publicInstance.state, path8);
                         forceUpdate(publicInstance);
                         break;
                     }
@@ -43347,14 +43347,14 @@ var require_backend = __commonJS({
                   }
                 }
               }
-              function overrideValueAtPath(type, id, hookID, path7, value) {
+              function overrideValueAtPath(type, id, hookID, path8, value) {
                 var internalInstance = idToInternalInstanceMap.get(id);
                 if (internalInstance != null) {
                   var publicInstance = internalInstance._instance;
                   if (publicInstance != null) {
                     switch (type) {
                       case "context":
-                        utils_setInObject(publicInstance.context, path7, value);
+                        utils_setInObject(publicInstance.context, path8, value);
                         forceUpdate(publicInstance);
                         break;
                       case "hooks":
@@ -43362,12 +43362,12 @@ var require_backend = __commonJS({
                       case "props":
                         var element = internalInstance._currentElement;
                         internalInstance._currentElement = legacy_renderer_objectSpread(legacy_renderer_objectSpread({}, element), {}, {
-                          props: copyWithSet(element.props, path7, value)
+                          props: copyWithSet(element.props, path8, value)
                         });
                         forceUpdate(publicInstance);
                         break;
                       case "state":
-                        utils_setInObject(publicInstance.state, path7, value);
+                        utils_setInObject(publicInstance.state, path8, value);
                         forceUpdate(publicInstance);
                         break;
                     }
@@ -43412,7 +43412,7 @@ var require_backend = __commonJS({
               }
               function setTraceUpdatesEnabled(enabled) {
               }
-              function setTrackedPath(path7) {
+              function setTrackedPath(path8) {
               }
               function getOwnersList(id) {
                 return null;
@@ -45085,17 +45085,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path7) {
-      const ctrl = callVisitor(key, node, visitor, path7);
+    function visit_(key, node, visitor, path8) {
+      const ctrl = callVisitor(key, node, visitor, path8);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path7, ctrl);
-        return visit_(key, ctrl, visitor, path7);
+        replaceNode(key, path8, ctrl);
+        return visit_(key, ctrl, visitor, path8);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path7 = Object.freeze(path7.concat(node));
+          path8 = Object.freeze(path8.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path7);
+            const ci = visit_(i, node.items[i], visitor, path8);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -45106,13 +45106,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path7 = Object.freeze(path7.concat(node));
-          const ck = visit_("key", node.key, visitor, path7);
+          path8 = Object.freeze(path8.concat(node));
+          const ck = visit_("key", node.key, visitor, path8);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path7);
+          const cv = visit_("value", node.value, visitor, path8);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -45133,17 +45133,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path7) {
-      const ctrl = await callVisitor(key, node, visitor, path7);
+    async function visitAsync_(key, node, visitor, path8) {
+      const ctrl = await callVisitor(key, node, visitor, path8);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path7, ctrl);
-        return visitAsync_(key, ctrl, visitor, path7);
+        replaceNode(key, path8, ctrl);
+        return visitAsync_(key, ctrl, visitor, path8);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path7 = Object.freeze(path7.concat(node));
+          path8 = Object.freeze(path8.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path7);
+            const ci = await visitAsync_(i, node.items[i], visitor, path8);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -45154,13 +45154,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path7 = Object.freeze(path7.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path7);
+          path8 = Object.freeze(path8.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path8);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path7);
+          const cv = await visitAsync_("value", node.value, visitor, path8);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -45187,23 +45187,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path7) {
+    function callVisitor(key, node, visitor, path8) {
       if (typeof visitor === "function")
-        return visitor(key, node, path7);
+        return visitor(key, node, path8);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path7);
+        return visitor.Map?.(key, node, path8);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path7);
+        return visitor.Seq?.(key, node, path8);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path7);
+        return visitor.Pair?.(key, node, path8);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path7);
+        return visitor.Scalar?.(key, node, path8);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path7);
+        return visitor.Alias?.(key, node, path8);
       return void 0;
     }
-    function replaceNode(key, path7, node) {
-      const parent = path7[path7.length - 1];
+    function replaceNode(key, path8, node) {
+      const parent = path8[path8.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -45813,10 +45813,10 @@ var require_Collection = __commonJS({
     var createNode2 = require_createNode();
     var identity = require_identity();
     var Node2 = require_Node();
-    function collectionFromPath(schema, path7, value) {
+    function collectionFromPath(schema, path8, value) {
       let v = value;
-      for (let i = path7.length - 1; i >= 0; --i) {
-        const k = path7[i];
+      for (let i = path8.length - 1; i >= 0; --i) {
+        const k = path8[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -45835,7 +45835,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path7) => path7 == null || typeof path7 === "object" && !!path7[Symbol.iterator]().next().done;
+    var isEmptyPath = (path8) => path8 == null || typeof path8 === "object" && !!path8[Symbol.iterator]().next().done;
     var Collection = class extends Node2.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -45865,11 +45865,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path7, value) {
-        if (isEmptyPath(path7))
+      addIn(path8, value) {
+        if (isEmptyPath(path8))
           this.add(value);
         else {
-          const [key, ...rest] = path7;
+          const [key, ...rest] = path8;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -45883,8 +45883,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path7) {
-        const [key, ...rest] = path7;
+      deleteIn(path8) {
+        const [key, ...rest] = path8;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -45898,8 +45898,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path7, keepScalar) {
-        const [key, ...rest] = path7;
+      getIn(path8, keepScalar) {
+        const [key, ...rest] = path8;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -45917,8 +45917,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path7) {
-        const [key, ...rest] = path7;
+      hasIn(path8) {
+        const [key, ...rest] = path8;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -45928,8 +45928,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path7, value) {
-        const [key, ...rest] = path7;
+      setIn(path8, value) {
+        const [key, ...rest] = path8;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -48444,9 +48444,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path7, value) {
+      addIn(path8, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path7, value);
+          this.contents.addIn(path8, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -48521,14 +48521,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path7) {
-        if (Collection.isEmptyPath(path7)) {
+      deleteIn(path8) {
+        if (Collection.isEmptyPath(path8)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path7) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path8) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -48543,10 +48543,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path7, keepScalar) {
-        if (Collection.isEmptyPath(path7))
+      getIn(path8, keepScalar) {
+        if (Collection.isEmptyPath(path8))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path7, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path8, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -48557,10 +48557,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path7) {
-        if (Collection.isEmptyPath(path7))
+      hasIn(path8) {
+        if (Collection.isEmptyPath(path8))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path7) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path8) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -48577,13 +48577,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path7, value) {
-        if (Collection.isEmptyPath(path7)) {
+      setIn(path8, value) {
+        if (Collection.isEmptyPath(path8)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path7), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path8), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path7, value);
+          this.contents.setIn(path8, value);
         }
       }
       /**
@@ -50543,9 +50543,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path7) => {
+    visit.itemAtPath = (cst, path8) => {
       let item = cst;
-      for (const [field, index] of path7) {
+      for (const [field, index] of path8) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -50554,23 +50554,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path7) => {
-      const parent = visit.itemAtPath(cst, path7.slice(0, -1));
-      const field = path7[path7.length - 1][0];
+    visit.parentCollection = (cst, path8) => {
+      const parent = visit.itemAtPath(cst, path8.slice(0, -1));
+      const field = path8[path8.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path7, item, visitor) {
-      let ctrl = visitor(item, path7);
+    function _visit(path8, item, visitor) {
+      let ctrl = visitor(item, path8);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path7.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path8.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -50581,10 +50581,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path7);
+            ctrl = ctrl(item, path8);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path7) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path8) : ctrl;
     }
     exports.visit = visit;
   }
@@ -55347,7 +55347,7 @@ var require_main = __commonJS({
     exports.createMessageConnection = exports.createServerSocketTransport = exports.createClientSocketTransport = exports.createServerPipeTransport = exports.createClientPipeTransport = exports.generateRandomPipeName = exports.StreamMessageWriter = exports.StreamMessageReader = exports.SocketMessageWriter = exports.SocketMessageReader = exports.PortMessageWriter = exports.PortMessageReader = exports.IPCMessageWriter = exports.IPCMessageReader = void 0;
     var ril_1 = require_ril();
     ril_1.default.install();
-    var path7 = __require("path");
+    var path8 = __require("path");
     var os5 = __require("os");
     var crypto_1 = __require("crypto");
     var net_1 = __require("net");
@@ -55483,9 +55483,9 @@ var require_main = __commonJS({
       }
       let result;
       if (XDG_RUNTIME_DIR) {
-        result = path7.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
+        result = path8.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
       } else {
-        result = path7.join(os5.tmpdir(), `vscode-${randomSuffix}.sock`);
+        result = path8.join(os5.tmpdir(), `vscode-${randomSuffix}.sock`);
       }
       const limit = safeIpcPathLengths.get(process.platform);
       if (limit !== void 0 && result.length > limit) {
@@ -56540,18 +56540,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React14 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React14.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React15 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React14 = {
+      React15 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React14.react_stack_bottom_frame.bind(
-        React14,
+      var unknownOwnerDebugStack = React15.react_stack_bottom_frame.bind(
+        React15,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -56596,7 +56596,7 @@ var require_jsx_runtime = __commonJS({
 });
 
 // src/cli.tsx
-var import_react36 = __toESM(require_react(), 1);
+var import_react37 = __toESM(require_react(), 1);
 import { constants as constants4, openSync } from "node:fs";
 import { readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
 import tty3 from "node:tty";
@@ -63687,8 +63687,8 @@ function Text({ color, backgroundColor, dimColor = false, bold = false, italic =
 }
 
 // node_modules/ink/build/components/ErrorOverview.js
-var cleanupPath = (path7) => {
-  return path7?.replace(`file://${cwd()}/`, "");
+var cleanupPath = (path8) => {
+  return path8?.replace(`file://${cwd()}/`, "");
 };
 var stackUtils = new import_stack_utils.default({
   cwd: cwd(),
@@ -66171,80 +66171,84 @@ var tableColumns = (entries, terminalWidth) => {
   };
 };
 
+// src/native-guide-list.ts
+import { lstat as lstat2 } from "node:fs/promises";
+import path2 from "node:path";
+
 // ../trellage-guide-core/dist/index.js
 var import_yaml = __toESM(require_dist(), 1);
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 var ProfileGuideValidationError = class extends Error {
   path;
-  constructor(path7, message) {
-    super(`${path7}: ${message}`);
+  constructor(path8, message) {
+    super(`${path8}: ${message}`);
     this.name = "ProfileGuideValidationError";
-    this.path = path7;
+    this.path = path8;
   }
 };
 var identityPart = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 var skillIdentifier = /^[a-z0-9][a-z0-9._:/-]*$/u;
 var controls2 = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 var singleLineControls = /[\u0000-\u001f\u007f-\u009f]/u;
-var fail = (path7, message) => {
-  throw new ProfileGuideValidationError(path7, message);
+var fail = (path8, message) => {
+  throw new ProfileGuideValidationError(path8, message);
 };
-var record2 = (value, path7) => {
+var record2 = (value, path8) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail(path7, "must be an object");
+    return fail(path8, "must be an object");
   }
   return value;
 };
-var exactKeys = (value, path7, required, optional = []) => {
+var exactKeys = (value, path8, required, optional = []) => {
   const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
   const missing = required.filter((key) => !(key in value));
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
   if (missing.length > 0)
-    fail(path7, `missing required keys: ${missing.join(", ")}`);
+    fail(path8, `missing required keys: ${missing.join(", ")}`);
   if (unexpected.length > 0)
-    fail(path7, `contains unsupported keys: ${unexpected.join(", ")}`);
+    fail(path8, `contains unsupported keys: ${unexpected.join(", ")}`);
 };
-var text2 = (value, path7, maximum, options = {}) => {
+var text2 = (value, path8, maximum, options = {}) => {
   if (typeof value !== "string")
-    return fail(path7, "must be a string");
+    return fail(path8, "must be a string");
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ");
   if (normalized.length === 0)
-    return fail(path7, "must not be empty");
+    return fail(path8, "must not be empty");
   if (normalized.length > maximum)
-    return fail(path7, `must contain at most ${maximum} characters`);
+    return fail(path8, `must contain at most ${maximum} characters`);
   if ((options.multiline ? controls2 : singleLineControls).test(normalized)) {
-    return fail(path7, "must not contain control characters");
+    return fail(path8, "must not contain control characters");
   }
   return normalized;
 };
-var identifier = (value, path7) => {
-  const result = text2(value, path7, 128);
+var identifier = (value, path8) => {
+  const result = text2(value, path8, 128);
   if (!identityPart.test(result))
-    return fail(path7, "must be a lowercase kebab-case identifier");
+    return fail(path8, "must be a lowercase kebab-case identifier");
   return result;
 };
-var stringArray2 = (value, path7, options = {}) => {
+var stringArray2 = (value, path8, options = {}) => {
   if (!Array.isArray(value))
-    return fail(path7, "must be an array");
+    return fail(path8, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximumItems = options.maximumItems ?? 64;
   if (value.length < minimum)
-    return fail(path7, `must contain at least ${minimum} entries`);
+    return fail(path8, `must contain at least ${minimum} entries`);
   if (value.length > maximumItems)
-    return fail(path7, `must contain at most ${maximumItems} entries`);
-  const result = value.map((item, index) => options.identifiers ? identifier(item, `${path7}[${index}]`) : text2(item, `${path7}[${index}]`, options.itemMaximum ?? 1e3));
+    return fail(path8, `must contain at most ${maximumItems} entries`);
+  const result = value.map((item, index) => options.identifiers ? identifier(item, `${path8}[${index}]`) : text2(item, `${path8}[${index}]`, options.itemMaximum ?? 1e3));
   if (new Set(result).size !== result.length)
-    return fail(path7, "must contain unique entries");
+    return fail(path8, "must contain unique entries");
   return result;
 };
-var prerequisites = (value, path7) => {
+var prerequisites = (value, path8) => {
   if (!Array.isArray(value))
-    return fail(path7, "must be an array");
+    return fail(path8, "must be an array");
   if (value.length > 32)
-    return fail(path7, "must contain at most 32 entries");
+    return fail(path8, "must contain at most 32 entries");
   const result = value.map((item, index) => {
-    const itemPath = `${path7}[${index}]`;
+    const itemPath = `${path8}[${index}]`;
     const fields = record2(item, itemPath);
     exactKeys(fields, itemPath, ["id", "description"]);
     return {
@@ -66253,19 +66257,19 @@ var prerequisites = (value, path7) => {
     };
   });
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
-    return fail(path7, "must contain unique prerequisite IDs");
+    return fail(path8, "must contain unique prerequisite IDs");
   }
   return result;
 };
-var workflows = (value, path7) => {
+var workflows = (value, path8) => {
   if (!Array.isArray(value))
-    return fail(path7, "must be an array");
+    return fail(path8, "must be an array");
   if (value.length === 0)
-    return fail(path7, "must contain at least one workflow");
+    return fail(path8, "must contain at least one workflow");
   if (value.length > 32)
-    return fail(path7, "must contain at most 32 workflows");
+    return fail(path8, "must contain at most 32 workflows");
   const result = value.map((item, index) => {
-    const itemPath = `${path7}[${index}]`;
+    const itemPath = `${path8}[${index}]`;
     const fields = record2(item, itemPath);
     exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill"]);
     const skill = fields.skill === void 0 ? void 0 : text2(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en");
@@ -66300,23 +66304,23 @@ var workflows = (value, path7) => {
     };
   });
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
-    return fail(path7, "must contain unique workflow IDs");
+    return fail(path8, "must contain unique workflow IDs");
   }
   return result;
 };
-var parseFrontmatter = (path7, source) => {
+var parseFrontmatter = (path8, source) => {
   if (source.length > 128e3)
-    fail(path7, "must contain at most 128000 characters");
+    fail(path8, "must contain at most 128000 characters");
   const normalized = source.replace(/\r\n?/gu, "\n");
   if (!normalized.startsWith("---\n"))
-    fail(path7, "must start with YAML frontmatter");
+    fail(path8, "must start with YAML frontmatter");
   const closing = normalized.indexOf("\n---\n", 4);
   if (closing === -1)
-    fail(path7, "must close YAML frontmatter with ---");
+    fail(path8, "must close YAML frontmatter with ---");
   const frontmatter = normalized.slice(4, closing);
   const body = normalized.slice(closing + 5).trim();
   if (body.length === 0)
-    fail(path7, "must contain a Markdown body");
+    fail(path8, "must contain a Markdown body");
   try {
     return {
       value: (0, import_yaml.parse)(frontmatter, { merge: false, uniqueKeys: true }),
@@ -66324,13 +66328,13 @@ var parseFrontmatter = (path7, source) => {
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return fail(path7, `contains invalid YAML: ${message}`);
+    return fail(path8, `contains invalid YAML: ${message}`);
   }
 };
-var parseProfileGuide = (path7, source) => {
-  const parsed = parseFrontmatter(path7, source);
-  const fields = record2(parsed.value, `${path7} frontmatter`);
-  exactKeys(fields, `${path7} frontmatter`, [
+var parseProfileGuide = (path8, source) => {
+  const parsed = parseFrontmatter(path8, source);
+  const fields = record2(parsed.value, `${path8} frontmatter`);
+  exactKeys(fields, `${path8} frontmatter`, [
     "schemaVersion",
     "capabilities",
     "bestFor",
@@ -66339,27 +66343,27 @@ var parseProfileGuide = (path7, source) => {
     "workflows"
   ]);
   if (fields.schemaVersion !== 1)
-    fail(`${path7} frontmatter.schemaVersion`, "must equal 1");
+    fail(`${path8} frontmatter.schemaVersion`, "must equal 1");
   return {
     guide: {
       schemaVersion: 1,
-      capabilities: stringArray2(fields.capabilities, `${path7} frontmatter.capabilities`, {
+      capabilities: stringArray2(fields.capabilities, `${path8} frontmatter.capabilities`, {
         minimum: 1,
         maximumItems: 64,
         identifiers: true
       }),
-      bestFor: stringArray2(fields.bestFor, `${path7} frontmatter.bestFor`, {
+      bestFor: stringArray2(fields.bestFor, `${path8} frontmatter.bestFor`, {
         minimum: 2,
         maximumItems: 32,
         itemMaximum: 2e3
       }),
-      avoidFor: stringArray2(fields.avoidFor, `${path7} frontmatter.avoidFor`, {
+      avoidFor: stringArray2(fields.avoidFor, `${path8} frontmatter.avoidFor`, {
         minimum: 2,
         maximumItems: 32,
         itemMaximum: 2e3
       }),
-      prerequisites: prerequisites(fields.prerequisites, `${path7} frontmatter.prerequisites`),
-      workflows: workflows(fields.workflows, `${path7} frontmatter.workflows`)
+      prerequisites: prerequisites(fields.prerequisites, `${path8} frontmatter.prerequisites`),
+      workflows: workflows(fields.workflows, `${path8} frontmatter.workflows`)
     },
     body: parsed.body
   };
@@ -66470,18 +66474,38 @@ var parseNativeProfileList = (source) => {
   if (new Set(keys).size !== keys.length) throw new Error("native profile identities must be unique");
   return { schemaVersion: 1, profiles };
 };
+var guidePresent = async (guideRoot, identity) => {
+  try {
+    await lstat2(path2.join(guideRoot, profileGuideRelativePath(identity)));
+    return true;
+  } catch (cause) {
+    if (cause.code !== "ENOENT") throw cause;
+    return false;
+  }
+};
 var enrichNativeProfileList = async (source, guideRoot) => {
   const parsed = parseNativeProfileList(source);
-  const identities = parsed.profiles.map(({ launcher, name }) => ({
-    surface: "native",
-    launcher,
-    profile: name
+  const candidates = parsed.profiles.map((profile) => ({
+    profile,
+    identity: { surface: "native", launcher: profile.launcher, profile: profile.name }
   }));
-  const registry = await loadProfileGuideRegistry(guideRoot, identities);
+  const kept = [];
+  for (const candidate of candidates) {
+    if (await guidePresent(guideRoot, candidate.identity)) kept.push(candidate);
+    else {
+      process.stderr.write(
+        `trellage-launcher: warning: skipping ${profileGuideIdentityKey(candidate.identity)}: no guide at ${profileGuideRelativePath(candidate.identity)} in ${guideRoot}
+`
+      );
+    }
+  }
+  const registry = await loadProfileGuideRegistry(
+    guideRoot,
+    kept.map((candidate) => candidate.identity)
+  );
   return JSON.stringify({
     ...parsed,
-    profiles: parsed.profiles.map((profile, index) => {
-      const identity = identities[index];
+    profiles: kept.map(({ profile, identity }) => {
       const loaded = registry.get(profileGuideIdentityKey(identity));
       if (loaded === void 0) throw new Error(`profile guide registry omitted ${profileGuideIdentityKey(identity)}`);
       return { ...profile, guide: loaded.guide };
@@ -66498,159 +66522,159 @@ var singleLineControls2 = /[\u0000-\u001f\u007f-\u009f]/u;
 var portableIdentifierPattern = /^[a-z0-9][a-z0-9._:/-]*$/u;
 var GuideValidationError = class extends Error {
   path;
-  constructor(path7, message) {
-    super(`${path7}: ${message}`);
+  constructor(path8, message) {
+    super(`${path8}: ${message}`);
     this.name = "GuideValidationError";
-    this.path = path7;
+    this.path = path8;
   }
 };
-var fail2 = (path7, message) => {
-  throw new GuideValidationError(path7, message);
+var fail2 = (path8, message) => {
+  throw new GuideValidationError(path8, message);
 };
-var record4 = (value, path7) => {
+var record4 = (value, path8) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail2(path7, "must be an object");
+    return fail2(path8, "must be an object");
   }
   return value;
 };
-var exactKeys2 = (value, path7, required, optional = []) => {
+var exactKeys2 = (value, path8, required, optional = []) => {
   const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
   const missing = required.filter((key) => !(key in value));
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
-  if (missing.length > 0) fail2(path7, `missing required keys: ${missing.join(", ")}`);
-  if (unexpected.length > 0) fail2(path7, `contains unsupported keys: ${unexpected.join(", ")}`);
+  if (missing.length > 0) fail2(path8, `missing required keys: ${missing.join(", ")}`);
+  if (unexpected.length > 0) fail2(path8, `contains unsupported keys: ${unexpected.join(", ")}`);
 };
-var text3 = (value, path7, maximum, options = {}) => {
-  if (typeof value !== "string") return fail2(path7, "must be a string");
+var text3 = (value, path8, maximum, options = {}) => {
+  if (typeof value !== "string") return fail2(path8, "must be a string");
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ");
-  if (normalized.length === 0) return fail2(path7, "must not be empty");
-  if ([...normalized].length > maximum) return fail2(path7, `must contain at most ${maximum} characters`);
+  if (normalized.length === 0) return fail2(path8, "must not be empty");
+  if ([...normalized].length > maximum) return fail2(path8, `must contain at most ${maximum} characters`);
   if ((options.multiline ? multilineControls : singleLineControls2).test(normalized)) {
-    return fail2(path7, "must not contain control characters");
+    return fail2(path8, "must not contain control characters");
   }
   return normalized;
 };
-var boolean = (value, path7) => {
-  if (typeof value !== "boolean") return fail2(path7, "must be a boolean");
+var boolean = (value, path8) => {
+  if (typeof value !== "boolean") return fail2(path8, "must be a boolean");
   return value;
 };
-var literal = (value, path7, allowed) => {
+var literal = (value, path8, allowed) => {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    return fail2(path7, `must be one of: ${allowed.join(", ")}`);
+    return fail2(path8, `must be one of: ${allowed.join(", ")}`);
   }
   return value;
 };
-var boundedNumber = (value, path7, minimum, maximum) => {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fail2(path7, "must be a finite number");
-  if (value < minimum || value > maximum) return fail2(path7, `must be between ${minimum} and ${maximum}`);
+var boundedNumber = (value, path8, minimum, maximum) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fail2(path8, "must be a finite number");
+  if (value < minimum || value > maximum) return fail2(path8, `must be between ${minimum} and ${maximum}`);
   return value;
 };
-var stringArray3 = (value, path7, options = {}) => {
-  if (!Array.isArray(value)) return fail2(path7, "must be an array");
+var stringArray3 = (value, path8, options = {}) => {
+  if (!Array.isArray(value)) return fail2(path8, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximumItems = options.maximumItems ?? 256;
-  if (value.length < minimum) return fail2(path7, `must contain at least ${minimum} entries`);
-  if (value.length > maximumItems) return fail2(path7, `must contain at most ${maximumItems} entries`);
-  return value.map((item, index) => text3(item, `${path7}[${index}]`, options.itemMaximum ?? 2e3));
+  if (value.length < minimum) return fail2(path8, `must contain at least ${minimum} entries`);
+  if (value.length > maximumItems) return fail2(path8, `must contain at most ${maximumItems} entries`);
+  return value.map((item, index) => text3(item, `${path8}[${index}]`, options.itemMaximum ?? 2e3));
 };
-var uniqueArray = (values, path7, label) => {
-  if (new Set(values).size !== values.length) fail2(path7, `must contain unique ${label}`);
+var uniqueArray = (values, path8, label) => {
+  if (new Set(values).size !== values.length) fail2(path8, `must contain unique ${label}`);
   return values;
 };
-var array = (value, path7, options = {}) => {
-  if (!Array.isArray(value)) return fail2(path7, "must be an array");
+var array = (value, path8, options = {}) => {
+  if (!Array.isArray(value)) return fail2(path8, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximum = options.maximum ?? 256;
-  if (value.length < minimum) return fail2(path7, `must contain at least ${minimum} entries`);
-  if (value.length > maximum) return fail2(path7, `must contain at most ${maximum} entries`);
+  if (value.length < minimum) return fail2(path8, `must contain at least ${minimum} entries`);
+  if (value.length > maximum) return fail2(path8, `must contain at most ${maximum} entries`);
   return value;
 };
 
 // src/guide-catalog.ts
 var identifierPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-var identifier3 = (value, path7) => {
-  const result = text3(value, path7, 128);
-  if (!identifierPattern.test(result)) fail2(path7, "must be a lowercase kebab-case identifier");
+var identifier3 = (value, path8) => {
+  const result = text3(value, path8, 128);
+  if (!identifierPattern.test(result)) fail2(path8, "must be a lowercase kebab-case identifier");
   return result;
 };
-var identifierArray = (value, path7, options) => {
-  const items = array(value, path7, {
+var identifierArray = (value, path8, options) => {
+  const items = array(value, path8, {
     ...options.minimum === void 0 ? {} : { minimum: options.minimum },
     maximum: options.maximumItems ?? 64
-  }).map((item, index) => identifier3(item, `${path7}[${index}]`));
-  return uniqueArray(items, path7, "entries");
+  }).map((item, index) => identifier3(item, `${path8}[${index}]`));
+  return uniqueArray(items, path8, "entries");
 };
-var nullableText = (value, path7, maximum) => {
+var nullableText = (value, path8, maximum) => {
   if (value === null) return null;
-  return text3(value, path7, maximum);
+  return text3(value, path8, maximum);
 };
 var absolutePath = (value, fieldPath, maximum) => {
   const result = text3(value, fieldPath, maximum);
   if (!nodePath.isAbsolute(result)) fail2(fieldPath, "must be an absolute path");
   return result;
 };
-var validatePrerequisite = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, ["id", "description"]);
+var validatePrerequisite = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, ["id", "description"]);
   return {
-    id: identifier3(fields.id, `${path7}.id`),
-    description: text3(fields.description, `${path7}.description`, 1e3)
+    id: identifier3(fields.id, `${path8}.id`),
+    description: text3(fields.description, `${path8}.description`, 1e3)
   };
 };
 var placeholderPattern = /\{\{([^{}]+)\}\}/gu;
-var validateWorkflow = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, ["id", "description", "examples", "promptTemplate"], ["skill"]);
-  const skill = fields.skill === void 0 ? void 0 : text3(fields.skill, `${path7}.skill`, 256).toLocaleLowerCase("en");
+var validateWorkflow = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, ["id", "description", "examples", "promptTemplate"], ["skill"]);
+  const skill = fields.skill === void 0 ? void 0 : text3(fields.skill, `${path8}.skill`, 256).toLocaleLowerCase("en");
   if (skill !== void 0 && !portableIdentifierPattern.test(skill)) {
-    fail2(`${path7}.skill`, "must be a portable skill or command identifier");
+    fail2(`${path8}.skill`, "must be a portable skill or command identifier");
   }
-  const promptTemplate = text3(fields.promptTemplate, `${path7}.promptTemplate`, 16e3, { multiline: true });
+  const promptTemplate = text3(fields.promptTemplate, `${path8}.promptTemplate`, 16e3, { multiline: true });
   const intentPlaceholderCount = promptTemplate.split("{{intent}}").length - 1;
   if (intentPlaceholderCount === 0) {
-    fail2(`${path7}.promptTemplate`, "must contain the {{intent}} placeholder");
+    fail2(`${path8}.promptTemplate`, "must contain the {{intent}} placeholder");
   }
   if (intentPlaceholderCount > 1) {
-    fail2(`${path7}.promptTemplate`, "must contain exactly one {{intent}} placeholder");
+    fail2(`${path8}.promptTemplate`, "must contain exactly one {{intent}} placeholder");
   }
   for (const match of promptTemplate.matchAll(placeholderPattern)) {
     if (match[1] !== "intent") {
-      fail2(`${path7}.promptTemplate`, `contains unsupported placeholder: {{${match[1]}}}`);
+      fail2(`${path8}.promptTemplate`, `contains unsupported placeholder: {{${match[1]}}}`);
     }
   }
   return {
-    id: identifier3(fields.id, `${path7}.id`),
-    description: text3(fields.description, `${path7}.description`, 2e3),
+    id: identifier3(fields.id, `${path8}.id`),
+    description: text3(fields.description, `${path8}.description`, 2e3),
     ...skill === void 0 ? {} : { skill },
-    examples: stringArray3(fields.examples, `${path7}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
+    examples: stringArray3(fields.examples, `${path8}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
     promptTemplate
   };
 };
-var validateProfileGuideV1 = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"]);
-  if (fields.schemaVersion !== 1) fail2(`${path7}.schemaVersion`, "must equal 1");
-  const prerequisites2 = array(fields.prerequisites, `${path7}.prerequisites`, { maximum: 32 }).map(
-    (item, index) => validatePrerequisite(item, `${path7}.prerequisites[${index}]`)
+var validateProfileGuideV1 = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"]);
+  if (fields.schemaVersion !== 1) fail2(`${path8}.schemaVersion`, "must equal 1");
+  const prerequisites2 = array(fields.prerequisites, `${path8}.prerequisites`, { maximum: 32 }).map(
+    (item, index) => validatePrerequisite(item, `${path8}.prerequisites[${index}]`)
   );
   uniqueArray(
     prerequisites2.map(({ id }) => id),
-    `${path7}.prerequisites`,
+    `${path8}.prerequisites`,
     "prerequisite IDs"
   );
-  const workflows2 = array(fields.workflows, `${path7}.workflows`, { minimum: 1, maximum: 32 }).map(
-    (item, index) => validateWorkflow(item, `${path7}.workflows[${index}]`)
+  const workflows2 = array(fields.workflows, `${path8}.workflows`, { minimum: 1, maximum: 32 }).map(
+    (item, index) => validateWorkflow(item, `${path8}.workflows[${index}]`)
   );
   uniqueArray(
     workflows2.map(({ id }) => id),
-    `${path7}.workflows`,
+    `${path8}.workflows`,
     "workflow IDs"
   );
   return {
     schemaVersion: 1,
-    capabilities: identifierArray(fields.capabilities, `${path7}.capabilities`, { minimum: 1, maximumItems: 64 }),
-    bestFor: stringArray3(fields.bestFor, `${path7}.bestFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
-    avoidFor: stringArray3(fields.avoidFor, `${path7}.avoidFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
+    capabilities: identifierArray(fields.capabilities, `${path8}.capabilities`, { minimum: 1, maximumItems: 64 }),
+    bestFor: stringArray3(fields.bestFor, `${path8}.bestFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
+    avoidFor: stringArray3(fields.avoidFor, `${path8}.avoidFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
     prerequisites: prerequisites2,
     workflows: workflows2
   };
@@ -66672,47 +66696,47 @@ var headlessKeys = [
   "trellageEventContract",
   "usage"
 ];
-var validateHeadlessCapabilitiesV1 = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, headlessKeys);
-  if (fields.schemaVersion !== 1) fail2(`${path7}.schemaVersion`, "must equal 1");
+var validateHeadlessCapabilitiesV1 = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, headlessKeys);
+  if (fields.schemaVersion !== 1) fail2(`${path8}.schemaVersion`, "must equal 1");
   const outputFormats = uniqueArray(
-    array(fields.outputFormats, `${path7}.outputFormats`, { maximum: 3 }).map(
-      (item, index) => literal(item, `${path7}.outputFormats[${index}]`, ["text", "json", "jsonl"])
+    array(fields.outputFormats, `${path8}.outputFormats`, { maximum: 3 }).map(
+      (item, index) => literal(item, `${path8}.outputFormats[${index}]`, ["text", "json", "jsonl"])
     ),
-    `${path7}.outputFormats`,
+    `${path8}.outputFormats`,
     "output formats"
   );
   return {
     schemaVersion: 1,
-    prompt: boolean(fields.prompt, `${path7}.prompt`),
+    prompt: boolean(fields.prompt, `${path8}.prompt`),
     outputFormats,
-    eventContract: nullableText(fields.eventContract, `${path7}.eventContract`, 256),
-    trellageEventContract: fields.trellageEventContract === null ? null : literal(fields.trellageEventContract, `${path7}.trellageEventContract`, ["trellage-headless-v1"]),
-    sessionId: literal(fields.sessionId, `${path7}.sessionId`, ["native", "trellage", "none"]),
-    resume: boolean(fields.resume, `${path7}.resume`),
-    resumeWithPrompt: boolean(fields.resumeWithPrompt, `${path7}.resumeWithPrompt`),
-    questionToolControl: literal(fields.questionToolControl, `${path7}.questionToolControl`, [
+    eventContract: nullableText(fields.eventContract, `${path8}.eventContract`, 256),
+    trellageEventContract: fields.trellageEventContract === null ? null : literal(fields.trellageEventContract, `${path8}.trellageEventContract`, ["trellage-headless-v1"]),
+    sessionId: literal(fields.sessionId, `${path8}.sessionId`, ["native", "trellage", "none"]),
+    resume: boolean(fields.resume, `${path8}.resume`),
+    resumeWithPrompt: boolean(fields.resumeWithPrompt, `${path8}.resumeWithPrompt`),
+    questionToolControl: literal(fields.questionToolControl, `${path8}.questionToolControl`, [
       "hard-deny",
       "prompt-only",
       "none"
     ]),
-    changedFiles: literal(fields.changedFiles, `${path7}.changedFiles`, ["native", "git-diff", "none"]),
-    usage: boolean(fields.usage, `${path7}.usage`),
-    cost: boolean(fields.cost, `${path7}.cost`),
-    modelOverride: boolean(fields.modelOverride, `${path7}.modelOverride`),
-    effortOverride: boolean(fields.effortOverride, `${path7}.effortOverride`),
-    testedHarnessVersion: nullableText(fields.testedHarnessVersion, `${path7}.testedHarnessVersion`, 128)
+    changedFiles: literal(fields.changedFiles, `${path8}.changedFiles`, ["native", "git-diff", "none"]),
+    usage: boolean(fields.usage, `${path8}.usage`),
+    cost: boolean(fields.cost, `${path8}.cost`),
+    modelOverride: boolean(fields.modelOverride, `${path8}.modelOverride`),
+    effortOverride: boolean(fields.effortOverride, `${path8}.effortOverride`),
+    testedHarnessVersion: nullableText(fields.testedHarnessVersion, `${path8}.testedHarnessVersion`, 128)
   };
 };
-var validateHerdrCompatibility = (value, path7) => {
-  const fields = record4(value, path7);
-  text3(fields.status, `${path7}.status`, 64);
+var validateHerdrCompatibility = (value, path8) => {
+  const fields = record4(value, path8);
+  text3(fields.status, `${path8}.status`, 64);
   return fields;
 };
-var validateNativeEntry = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, [
+var validateNativeEntry = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, [
     "launcher",
     "harness",
     "name",
@@ -66724,20 +66748,20 @@ var validateNativeEntry = (value, path7) => {
     "commandPath"
   ]);
   return {
-    launcher: identifier3(fields.launcher, `${path7}.launcher`),
-    harness: identifier3(fields.harness, `${path7}.harness`),
-    name: identifier3(fields.name, `${path7}.name`),
-    description: text3(fields.description, `${path7}.description`, 2e3),
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path7}.headless`),
-    sandbox: boolean(fields.sandbox, `${path7}.sandbox`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path7}.herdrCompatibility`),
-    guide: validateProfileGuideV1(fields.guide, `${path7}.guide`),
-    commandPath: absolutePath(fields.commandPath, `${path7}.commandPath`, 4096)
+    launcher: identifier3(fields.launcher, `${path8}.launcher`),
+    harness: identifier3(fields.harness, `${path8}.harness`),
+    name: identifier3(fields.name, `${path8}.name`),
+    description: text3(fields.description, `${path8}.description`, 2e3),
+    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path8}.headless`),
+    sandbox: boolean(fields.sandbox, `${path8}.sandbox`),
+    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path8}.herdrCompatibility`),
+    guide: validateProfileGuideV1(fields.guide, `${path8}.guide`),
+    commandPath: absolutePath(fields.commandPath, `${path8}.commandPath`, 4096)
   };
 };
-var validateSandboxEntry = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, [
+var validateSandboxEntry = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, [
     "name",
     "description",
     "guide",
@@ -66758,43 +66782,43 @@ var validateSandboxEntry = (value, path7) => {
     "locked",
     "herdrCompatibility"
   ]);
-  if (fields.sandbox !== true) fail2(`${path7}.sandbox`, "must equal true");
-  const harness = record4(fields.harness, `${path7}.harness`);
-  exactKeys2(harness, `${path7}.harness`, ["kind", "version"], ["model"]);
+  if (fields.sandbox !== true) fail2(`${path8}.sandbox`, "must equal true");
+  const harness = record4(fields.harness, `${path8}.harness`);
+  exactKeys2(harness, `${path8}.harness`, ["kind", "version"], ["model"]);
   return {
-    name: identifier3(fields.name, `${path7}.name`),
-    description: text3(fields.description, `${path7}.description`, 2e3),
-    guide: validateProfileGuideV1(fields.guide, `${path7}.guide`),
-    path: absolutePath(fields.path, `${path7}.path`, 4096),
-    supportedPlatforms: stringArray3(fields.supportedPlatforms, `${path7}.supportedPlatforms`, {
+    name: identifier3(fields.name, `${path8}.name`),
+    description: text3(fields.description, `${path8}.description`, 2e3),
+    guide: validateProfileGuideV1(fields.guide, `${path8}.guide`),
+    path: absolutePath(fields.path, `${path8}.path`, 4096),
+    supportedPlatforms: stringArray3(fields.supportedPlatforms, `${path8}.supportedPlatforms`, {
       minimum: 1,
       maximumItems: 16,
       itemMaximum: 64
     }),
     harness: {
-      kind: identifier3(harness.kind, `${path7}.harness.kind`),
-      version: text3(harness.version, `${path7}.harness.version`, 128),
-      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path7}.harness.model`, 128) }
+      kind: identifier3(harness.kind, `${path8}.harness.kind`),
+      version: text3(harness.version, `${path8}.harness.version`, 128),
+      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path8}.harness.model`, 128) }
     },
-    resolutionPolicy: literal(fields.resolutionPolicy, `${path7}.resolutionPolicy`, ["floating"]),
-    locallyResolved: boolean(fields.locallyResolved, `${path7}.locallyResolved`),
-    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path7}.releaseLockAvailable`),
-    skillBundles: stringArray3(fields.skillBundles, `${path7}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
-    skillsMode: literal(fields.skillsMode, `${path7}.skillsMode`, ["floating", "locked"]),
-    finalDigestLocked: boolean(fields.finalDigestLocked, `${path7}.finalDigestLocked`),
-    skills: array(fields.skills, `${path7}.skills`, { maximum: 256 }).map(
-      (item, index) => record4(item, `${path7}.skills[${index}]`)
+    resolutionPolicy: literal(fields.resolutionPolicy, `${path8}.resolutionPolicy`, ["floating"]),
+    locallyResolved: boolean(fields.locallyResolved, `${path8}.locallyResolved`),
+    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path8}.releaseLockAvailable`),
+    skillBundles: stringArray3(fields.skillBundles, `${path8}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
+    skillsMode: literal(fields.skillsMode, `${path8}.skillsMode`, ["floating", "locked"]),
+    finalDigestLocked: boolean(fields.finalDigestLocked, `${path8}.finalDigestLocked`),
+    skills: array(fields.skills, `${path8}.skills`, { maximum: 256 }).map(
+      (item, index) => record4(item, `${path8}.skills[${index}]`)
     ),
-    plugins: array(fields.plugins, `${path7}.plugins`, { maximum: 64 }).map(
-      (item, index) => record4(item, `${path7}.plugins[${index}]`)
+    plugins: array(fields.plugins, `${path8}.plugins`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path8}.plugins[${index}]`)
     ),
-    mcps: array(fields.mcps, `${path7}.mcps`, { maximum: 64 }).map(
-      (item, index) => record4(item, `${path7}.mcps[${index}]`)
+    mcps: array(fields.mcps, `${path8}.mcps`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path8}.mcps[${index}]`)
     ),
     sandbox: true,
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path7}.headless`),
-    locked: boolean(fields.locked, `${path7}.locked`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path7}.herdrCompatibility`)
+    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path8}.headless`),
+    locked: boolean(fields.locked, `${path8}.locked`),
+    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path8}.herdrCompatibility`)
   };
 };
 var parseGuideCatalog = (source) => {
@@ -66874,7 +66898,7 @@ var toGuideMatchCatalogEntry = (entry) => ({
 var guideMatchCatalogEntries = (catalog) => guideCatalogEntries(catalog).map(toGuideMatchCatalogEntry);
 
 // src/guide-launch.ts
-import path2 from "node:path";
+import path3 from "node:path";
 import { spawn } from "node:child_process";
 var controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u;
 var safeLauncherAlias = /^[a-z][a-z0-9-]{0,63}$/u;
@@ -66972,7 +66996,7 @@ var validateCommandPath = (value) => {
   if (controlCharacters.test(commandPath)) {
     throw new Error("selected profile commandPath must not contain control characters");
   }
-  if (!path2.isAbsolute(commandPath)) {
+  if (!path3.isAbsolute(commandPath)) {
     throw new Error("selected profile commandPath must be an absolute path");
   }
   return commandPath;
@@ -67058,7 +67082,7 @@ var resolveGitRoot = async (runner, cwd2) => {
   const result = await runGit(runner, cwd2, ["rev-parse", "--show-toplevel"]);
   const root = result.stdout.trim();
   if (!hasNonEmptyText(root)) throw new Error("git rev-parse returned an empty root");
-  return path2.resolve(root);
+  return path3.resolve(root);
 };
 var validateGitBranchName = async (runner, cwd2, branch) => {
   try {
@@ -67179,24 +67203,28 @@ var buildGuideLaunchCommand = (selectedProfile, delivery) => {
     promptHandling: "none"
   };
 };
+var nativeArgvPromptSeparator = {
+  cpx: ["-i"],
+  cdx: ["--"],
+  cldx: ["--"],
+  grx: ["--"],
+  omp: ["--"],
+  picx: [],
+  prx: []
+};
 var buildHerdrGuideLaunch = (selectedProfile, prompt) => {
-  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cpx") {
-    const baseCommand = buildGuideLaunchCommand(selectedProfile).command;
+  if (selectedProfile.surface === "sandbox") {
     return {
-      command: { executable: baseCommand.executable, args: [...baseCommand.args, "-i", prompt] },
+      command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }).command,
       promptDelivery: "command"
     };
   }
-  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cdx") {
-    const baseCommand = buildGuideLaunchCommand(selectedProfile).command;
-    return {
-      command: { executable: baseCommand.executable, args: [...baseCommand.args, "--", prompt] },
-      promptDelivery: "command"
-    };
-  }
+  const separator = nativeArgvPromptSeparator[selectedProfile.launcher];
+  const baseCommand = buildGuideLaunchCommand(selectedProfile).command;
+  if (separator === void 0) return { command: baseCommand, promptDelivery: "agent" };
   return {
-    command: buildGuideLaunchCommand(selectedProfile).command,
-    promptDelivery: "agent"
+    command: { executable: baseCommand.executable, args: [...baseCommand.args, ...separator, prompt] },
+    promptDelivery: "command"
   };
 };
 var posixShellEscape = (value) => {
@@ -67525,7 +67553,7 @@ var parsePopupHerdrContext = (source) => {
   const workspaceId = getString(fields.workspaceId, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.workspaceId");
   const paneId = getString(fields.paneId, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.paneId");
   const cwd2 = getString(fields.cwd, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.cwd");
-  if (controlCharacters.test(workspaceId) || controlCharacters.test(paneId) || controlCharacters.test(cwd2) || workspaceId.length > 256 || paneId.length > 256 || cwd2.length > 4096 || !path2.isAbsolute(cwd2)) {
+  if (controlCharacters.test(workspaceId) || controlCharacters.test(paneId) || controlCharacters.test(cwd2) || workspaceId.length > 256 || paneId.length > 256 || cwd2.length > 4096 || !path3.isAbsolute(cwd2)) {
     throw new GuideLaunchError({
       kind: "invalid-output",
       message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON contains invalid source pane metadata"
@@ -67562,6 +67590,12 @@ var parseHerdrSplitPaneId = (source) => {
   const pane = getRecord(result.pane, "Herdr pane split result.pane");
   return getString(pane.pane_id, "Herdr pane split result.pane.pane_id");
 };
+var parseHerdrTabRootPaneId = (source) => {
+  const root = parseJsonRecord(source, "Herdr tab create");
+  const result = getRecord(root.result, "Herdr tab create result");
+  const pane = getRecord(result.root_pane, "Herdr tab create result.root_pane");
+  return getString(pane.pane_id, "Herdr tab create result.root_pane.pane_id");
+};
 var parseHerdrWorktreeHandle = (source, commandName) => {
   const root = parseJsonRecord(source, commandName);
   const result = getRecord(root.result, `${commandName} result`);
@@ -67569,7 +67603,7 @@ var parseHerdrWorktreeHandle = (source, commandName) => {
   const rootPane = getRecord(result.root_pane, `${commandName} result.root_pane`);
   const worktree = getRecord(result.worktree, `${commandName} result.worktree`);
   const checkoutPath = getString(worktree.path, `${commandName} result.worktree.path`);
-  if (controlCharacters.test(checkoutPath) || !path2.isAbsolute(checkoutPath)) {
+  if (controlCharacters.test(checkoutPath) || !path3.isAbsolute(checkoutPath)) {
     throw new GuideLaunchError({
       kind: "invalid-output",
       message: `${commandName} result.worktree.path must be an absolute path`
@@ -67638,6 +67672,7 @@ var waitForHerdrAgentIdle = async (runner, paneId, options) => {
 };
 var launchInHerdrPaneAndPrompt = async (runner, options) => {
   const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`;
+  options.onPhase?.("starting");
   await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
     cwd: options.cwd
   });
@@ -67647,7 +67682,9 @@ var launchInHerdrPaneAndPrompt = async (runner, options) => {
       commandPreview
     };
   }
+  options.onPhase?.("waiting");
   await waitForHerdrAgentIdle(runner, options.paneId, options);
+  options.onPhase?.("prompting");
   try {
     await runner.run(
       "herdr",
@@ -67702,10 +67739,32 @@ var handoffToCurrentHerdrWorkspace = async (runner, options) => {
     ...options.time === void 0 ? {} : { time: options.time }
   });
 };
+var createHerdrTab = async (runner, options) => {
+  const created = await runner.run(
+    "herdr",
+    ["tab", "create", "--workspace", options.workspaceId, "--cwd", options.cwd, "--no-focus"],
+    { cwd: options.cwd }
+  );
+  return parseHerdrTabRootPaneId(created.stdout);
+};
+var handoffToNewHerdrTab = async (runner, options) => {
+  const paneId = await createHerdrTab(runner, { workspaceId: options.workspaceId, cwd: options.cwd });
+  return launchInHerdrPaneAndPrompt(runner, {
+    paneId,
+    cwd: options.cwd,
+    command: options.command,
+    prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
+    promptTimeoutMs: options.promptTimeoutMs,
+    ...options.timeoutMs === void 0 ? {} : { timeoutMs: options.timeoutMs },
+    ...options.pollIntervalMs === void 0 ? {} : { pollIntervalMs: options.pollIntervalMs },
+    ...options.time === void 0 ? {} : { time: options.time }
+  });
+};
 var intentToSlug = (intent) => {
   const normalized = intent.normalize("NFKD").replaceAll(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("en").replaceAll(/[^a-z0-9]+/gu, "-").replaceAll(/^-+|-+$/gu, "").replaceAll(/-{2,}/gu, "-");
-  const slug = normalized.slice(0, 48).replace(/-+$/u, "");
-  return slug.length > 0 ? slug : "worktree";
+  const slug2 = normalized.slice(0, 48).replace(/-+$/u, "");
+  return slug2.length > 0 ? slug2 : "worktree";
 };
 var defaultWorktreeBranch = (intent) => `worktree/${intentToSlug(intent)}`;
 var parseGitWorktreeList = (source) => {
@@ -67719,7 +67778,7 @@ var parseGitWorktreeList = (source) => {
     const branchLine = lines.find((line) => line.startsWith("branch "));
     const headLine = lines.find((line) => line.startsWith("HEAD "));
     return {
-      path: path2.resolve(pathLine.slice("worktree ".length)),
+      path: path3.resolve(pathLine.slice("worktree ".length)),
       branch: branchLine === void 0 ? null : branchLine.slice("branch ".length),
       head: headLine === void 0 ? null : headLine.slice("HEAD ".length)
     };
@@ -67741,7 +67800,7 @@ var resolveGitInspectionBase = async (runner, options) => {
   if (primaryCheckoutPath === void 0) throw new Error("git worktree list did not return a primary checkout");
   const currentWorktree = worktrees.find((entry) => entry.path === currentCheckoutRoot) ?? null;
   if (currentWorktree === null) throw new Error("git worktree list did not include the current checkout");
-  const resolvedTargetPath = options.targetPath === void 0 ? void 0 : path2.resolve(options.targetPath);
+  const resolvedTargetPath = options.targetPath === void 0 ? void 0 : path3.resolve(options.targetPath);
   return {
     currentCheckoutRoot,
     primaryCheckoutPath,
@@ -67887,7 +67946,7 @@ var defaultGuideModelRouting = {
 };
 
 // src/guide-selected.ts
-import path3 from "node:path";
+import path4 from "node:path";
 var controls3 = /[\u0000-\u001f\u007f-\u009f]/u;
 var SelectedGuideError = class extends Error {
   constructor(message, options) {
@@ -67896,15 +67955,15 @@ var SelectedGuideError = class extends Error {
   }
 };
 var sandboxGuideRootFromProfilePath = (profilePath, profile) => {
-  if (!path3.isAbsolute(profilePath) || controls3.test(profilePath)) {
+  if (!path4.isAbsolute(profilePath) || controls3.test(profilePath)) {
     throw new SelectedGuideError("Sandbox profile path must be an absolute path without control characters");
   }
-  const profileDirectory = path3.dirname(profilePath);
-  const profilesDirectory = path3.dirname(profileDirectory);
-  if (path3.basename(profilePath) !== "profile.toml" || path3.basename(profileDirectory) !== profile || path3.basename(profilesDirectory) !== "profiles") {
+  const profileDirectory = path4.dirname(profilePath);
+  const profilesDirectory = path4.dirname(profileDirectory);
+  if (path4.basename(profilePath) !== "profile.toml" || path4.basename(profileDirectory) !== profile || path4.basename(profilesDirectory) !== "profiles") {
     throw new SelectedGuideError(`Sandbox profile path does not match profiles/${profile}/profile.toml`);
   }
-  return path3.join(path3.dirname(profilesDirectory), "profile-guides");
+  return path4.join(path4.dirname(profilesDirectory), "profile-guides");
 };
 var nativeSource = (entry, guideRoot) => ({
   identity: {
@@ -68672,16 +68731,16 @@ var guideEffortFromLiteral = (raw) => {
       return "max" /* Max */;
   }
 };
-var parseGuideEffort = (value, path7) => guideEffortFromLiteral(literal(value, path7, guideEffortLiterals));
+var parseGuideEffort = (value, path8) => guideEffortFromLiteral(literal(value, path8, guideEffortLiterals));
 var guideIntentMaximumLength = 6e4;
 var profileRefMaximumLength = 256;
 var modelIdentifierMaximumLength = 128;
 var modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u;
-var validateGuideIntent = (value, path7) => text3(value, path7, guideIntentMaximumLength, { multiline: true });
-var validateProfileRef = (value, path7) => text3(value, path7, profileRefMaximumLength);
-var validateModelId = (value, path7) => {
-  const trimmed = text3(value, path7, modelIdentifierMaximumLength);
-  if (!modelIdentifierPattern.test(trimmed)) fail2(path7, "must be a safe lowercase model identifier");
+var validateGuideIntent = (value, path8) => text3(value, path8, guideIntentMaximumLength, { multiline: true });
+var validateProfileRef = (value, path8) => text3(value, path8, profileRefMaximumLength);
+var validateModelId = (value, path8) => {
+  const trimmed = text3(value, path8, modelIdentifierMaximumLength);
+  if (!modelIdentifierPattern.test(trimmed)) fail2(path8, "must be a safe lowercase model identifier");
   return trimmed;
 };
 var tokenize2 = (value) => new Set(
@@ -69326,7 +69385,7 @@ import { fstatSync, readFileSync as readFileSync2 } from "node:fs";
 // src/copilot-guide-provider.ts
 import { accessSync, constants as constants2, lstatSync } from "node:fs";
 import os3 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 
 // node_modules/@github/copilot-sdk/dist/client.js
 var import_node2 = __toESM(require_node(), 1);
@@ -71784,24 +71843,24 @@ function registerClientSessionApiHandlers(connection, getHandlers) {
     return handler.invoke(params);
   });
 }
-function registerClientGlobalApiHandlers(connection, handlers) {
+function registerClientGlobalApiHandlers(connection, handlers2) {
   connection.onRequest("extensionLaunchProvider.resolve", async (params) => {
-    const handler = handlers.extensionLaunchProvider;
+    const handler = handlers2.extensionLaunchProvider;
     if (!handler) throw new Error("No extensionLaunchProvider client-global handler registered");
     return handler.resolve(params);
   });
   connection.onRequest("llmInference.httpRequestStart", async (params) => {
-    const handler = handlers.llmInference;
+    const handler = handlers2.llmInference;
     if (!handler) throw new Error("No llmInference client-global handler registered");
     return handler.httpRequestStart(params);
   });
   connection.onRequest("llmInference.httpRequestChunk", async (params) => {
-    const handler = handlers.llmInference;
+    const handler = handlers2.llmInference;
     if (!handler) throw new Error("No llmInference client-global handler registered");
     return handler.httpRequestChunk(params);
   });
   connection.onNotification("gitHubTelemetry.event", async (params) => {
-    const handler = handlers.gitHubTelemetry;
+    const handler = handlers2.gitHubTelemetry;
     if (!handler) return;
     await handler.event(params);
   });
@@ -71868,40 +71927,40 @@ function normalizeSqliteParams(params) {
 }
 function createSessionFsAdapter(provider) {
   return {
-    readFile: async ({ path: path7 }) => {
+    readFile: async ({ path: path8 }) => {
       try {
-        const content = await provider.readFile(path7);
+        const content = await provider.readFile(path8);
         return { content };
       } catch (err) {
         return { content: "", error: toSessionFsError(err) };
       }
     },
-    writeFile: async ({ path: path7, content, mode }) => {
+    writeFile: async ({ path: path8, content, mode }) => {
       try {
-        await provider.writeFile(path7, content, mode);
+        await provider.writeFile(path8, content, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    appendFile: async ({ path: path7, content, mode }) => {
+    appendFile: async ({ path: path8, content, mode }) => {
       try {
-        await provider.appendFile(path7, content, mode);
+        await provider.appendFile(path8, content, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    exists: async ({ path: path7 }) => {
+    exists: async ({ path: path8 }) => {
       try {
-        return { exists: await provider.exists(path7) };
+        return { exists: await provider.exists(path8) };
       } catch {
         return { exists: false };
       }
     },
-    stat: async ({ path: path7 }) => {
+    stat: async ({ path: path8 }) => {
       try {
-        return await provider.stat(path7);
+        return await provider.stat(path8);
       } catch (err) {
         return {
           isFile: false,
@@ -71913,33 +71972,33 @@ function createSessionFsAdapter(provider) {
         };
       }
     },
-    mkdir: async ({ path: path7, recursive, mode }) => {
+    mkdir: async ({ path: path8, recursive, mode }) => {
       try {
-        await provider.mkdir(path7, recursive ?? false, mode);
+        await provider.mkdir(path8, recursive ?? false, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    readdir: async ({ path: path7 }) => {
+    readdir: async ({ path: path8 }) => {
       try {
-        const entries = await provider.readdir(path7);
+        const entries = await provider.readdir(path8);
         return { entries };
       } catch (err) {
         return { entries: [], error: toSessionFsError(err) };
       }
     },
-    readdirWithTypes: async ({ path: path7 }) => {
+    readdirWithTypes: async ({ path: path8 }) => {
       try {
-        const entries = await provider.readdirWithTypes(path7);
+        const entries = await provider.readdirWithTypes(path8);
         return { entries };
       } catch (err) {
         return { entries: [], error: toSessionFsError(err) };
       }
     },
-    rm: async ({ path: path7, recursive, force }) => {
+    rm: async ({ path: path8, recursive, force }) => {
       try {
-        await provider.rm(path7, recursive ?? false, force ?? false);
+        await provider.rm(path8, recursive ?? false, force ?? false);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
@@ -73216,9 +73275,9 @@ var CopilotSession = class {
       const storedHandler = handler;
       this.typedEventHandlers.get(eventType).add(storedHandler);
       return () => {
-        const handlers = this.typedEventHandlers.get(eventType);
-        if (handlers) {
-          handlers.delete(storedHandler);
+        const handlers2 = this.typedEventHandlers.get(eventType);
+        if (handlers2) {
+          handlers2.delete(storedHandler);
         }
       };
     }
@@ -74252,16 +74311,16 @@ function toCanvasRpcError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return new import_node.ResponseError(import_node.ErrorCodes.InternalError, message, { code, message });
 }
-function strictJsonValidationError(context, category, message, path7) {
+function strictJsonValidationError(context, category, message, path8) {
   return new import_node.ResponseError(import_node.ErrorCodes.InternalError, message, {
     code: context.code,
     category,
-    path: path7
+    path: path8
   });
 }
 function assertStrictJson(value, context) {
   const ancestors = /* @__PURE__ */ new Set();
-  const visit = (current, path7, allowUndefined) => {
+  const visit = (current, path8, allowUndefined) => {
     if (current === void 0) {
       if (allowUndefined) {
         return;
@@ -74269,8 +74328,8 @@ function assertStrictJson(value, context) {
       throw strictJsonValidationError(
         context,
         "nested_undefined",
-        `${context.label} contains nested undefined at ${path7}`,
-        path7
+        `${context.label} contains nested undefined at ${path8}`,
+        path8
       );
     }
     if (current === null || typeof current === "boolean" || typeof current === "string") {
@@ -74281,16 +74340,16 @@ function assertStrictJson(value, context) {
         throw strictJsonValidationError(
           context,
           "non_finite_number",
-          `${context.label} contains a non-finite number at ${path7}`,
-          path7
+          `${context.label} contains a non-finite number at ${path8}`,
+          path8
         );
       }
       if (Object.is(current, -0)) {
         throw strictJsonValidationError(
           context,
           "negative_zero",
-          `${context.label} contains negative zero at ${path7}; normalize it to 0`,
-          path7
+          `${context.label} contains negative zero at ${path8}; normalize it to 0`,
+          path8
         );
       }
       return;
@@ -74299,24 +74358,24 @@ function assertStrictJson(value, context) {
       throw strictJsonValidationError(
         context,
         "unsupported_type",
-        `${context.label} contains a function, symbol, or BigInt at ${path7}`,
-        path7
+        `${context.label} contains a function, symbol, or BigInt at ${path8}`,
+        path8
       );
     }
     if (typeof current !== "object") {
       throw strictJsonValidationError(
         context,
         "unsupported_type",
-        `${context.label} contains a function, symbol, or BigInt at ${path7}`,
-        path7
+        `${context.label} contains a function, symbol, or BigInt at ${path8}`,
+        path8
       );
     }
     if (ancestors.has(current)) {
       throw strictJsonValidationError(
         context,
         "cyclic_value",
-        `${context.label} contains a cyclic reference at ${path7}`,
-        path7
+        `${context.label} contains a cyclic reference at ${path8}`,
+        path8
       );
     }
     ancestors.add(current);
@@ -74329,8 +74388,8 @@ function assertStrictJson(value, context) {
           throw strictJsonValidationError(
             context,
             "unsupported_object",
-            `${context.label} contains a non-JSON array property at ${path7}`,
-            path7
+            `${context.label} contains a non-JSON array property at ${path8}`,
+            path8
           );
         }
         for (let index = 0; index < current.length; index++) {
@@ -74339,11 +74398,11 @@ function assertStrictJson(value, context) {
             throw strictJsonValidationError(
               context,
               "unsupported_object",
-              `${context.label} contains a non-JSON array property at ${path7}[${index}]`,
-              `${path7}[${index}]`
+              `${context.label} contains a non-JSON array property at ${path8}[${index}]`,
+              `${path8}[${index}]`
             );
           }
-          visit(descriptor.value, `${path7}[${index}]`, false);
+          visit(descriptor.value, `${path8}[${index}]`, false);
         }
         return;
       }
@@ -74352,8 +74411,8 @@ function assertStrictJson(value, context) {
         throw strictJsonValidationError(
           context,
           "unsupported_object",
-          `${context.label} contains a non-JSON object at ${path7}`,
-          path7
+          `${context.label} contains a non-JSON object at ${path8}`,
+          path8
         );
       }
       for (const key of Reflect.ownKeys(current)) {
@@ -74361,11 +74420,11 @@ function assertStrictJson(value, context) {
           throw strictJsonValidationError(
             context,
             "unsupported_type",
-            `${context.label} contains a function, symbol, or BigInt at ${path7}`,
-            path7
+            `${context.label} contains a function, symbol, or BigInt at ${path8}`,
+            path8
           );
         }
-        const propertyPath = /^[A-Za-z_$][\w$]*$/.test(key) ? `${path7}.${key}` : `${path7}[${JSON.stringify(key)}]`;
+        const propertyPath = /^[A-Za-z_$][\w$]*$/.test(key) ? `${path8}.${key}` : `${path8}[${JSON.stringify(key)}]`;
         const descriptor = Object.getOwnPropertyDescriptor(current, key);
         if (descriptor === void 0 || !descriptor.enumerable || !("value" in descriptor)) {
           throw strictJsonValidationError(
@@ -74827,10 +74886,10 @@ var CopilotClient = class _CopilotClient {
       this.validateSessionFsConfig(options.sessionFs);
     }
     if (options.builtinPluginDirectories) {
-      for (const path7 of options.builtinPluginDirectories) {
-        if (!isAbsolute(path7)) {
+      for (const path8 of options.builtinPluginDirectories) {
+        if (!isAbsolute(path8)) {
           throw new Error(
-            `builtinPluginDirectories must contain only absolute paths: ${path7}`
+            `builtinPluginDirectories must contain only absolute paths: ${path8}`
           );
         }
       }
@@ -74936,9 +74995,9 @@ var CopilotClient = class _CopilotClient {
     session.clientSessionApis.sessionFs = createSessionFsAdapter(provider);
   }
   setupClientGlobalHandlers() {
-    const handlers = {};
+    const handlers2 = {};
     if (this.requestHandler) {
-      handlers.llmInference = createCopilotRequestAdapter(this.requestHandler, () => {
+      handlers2.llmInference = createCopilotRequestAdapter(this.requestHandler, () => {
         if (!this.connection) {
           return void 0;
         }
@@ -74948,7 +75007,7 @@ var CopilotClient = class _CopilotClient {
     }
     if (this.onGitHubTelemetry) {
       const onGitHubTelemetry = this.onGitHubTelemetry;
-      handlers.gitHubTelemetry = {
+      handlers2.gitHubTelemetry = {
         event: async (notification) => {
           try {
             await onGitHubTelemetry(notification);
@@ -74957,7 +75016,7 @@ var CopilotClient = class _CopilotClient {
         }
       };
     }
-    this.clientGlobalHandlers = handlers;
+    this.clientGlobalHandlers = handlers2;
   }
   /**
    * Starts the CLI server and establishes a connection.
@@ -76137,9 +76196,9 @@ var CopilotClient = class _CopilotClient {
       const storedHandler = handler;
       this.typedLifecycleHandlers.get(eventType).add(storedHandler);
       return () => {
-        const handlers = this.typedLifecycleHandlers.get(eventType);
-        if (handlers) {
-          handlers.delete(storedHandler);
+        const handlers2 = this.typedLifecycleHandlers.get(eventType);
+        if (handlers2) {
+          handlers2.delete(storedHandler);
         }
       };
     }
@@ -76434,8 +76493,8 @@ stderr: ${stderrOutput}`
     if (entrypoint.includes(`copilot-linux-${process.arch}`)) {
       return false;
     }
-    const report = process.report?.getReport();
-    const header = report && "header" in report ? report.header : void 0;
+    const report2 = process.report?.getReport();
+    const header = report2 && "header" in report2 ? report2.header : void 0;
     return header !== void 0 && header.glibcVersionRuntime === void 0;
   }
   /**
@@ -76702,28 +76761,28 @@ var assertGuideOptimizeInput = (input) => {
   return input;
 };
 var fixedFrameControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
-var validateFixedFrameText = (value, path7) => {
-  if (typeof value !== "string") return fail2(path7, "must be a string");
-  if ([...value].length > 16e3) return fail2(path7, "must contain at most 16000 characters");
-  if (fixedFrameControls.test(value)) return fail2(path7, "must not contain control characters");
+var validateFixedFrameText = (value, path8) => {
+  if (typeof value !== "string") return fail2(path8, "must be a string");
+  if ([...value].length > 16e3) return fail2(path8, "must contain at most 16000 characters");
+  if (fixedFrameControls.test(value)) return fail2(path8, "must not contain control characters");
   return value;
 };
-var validateMatchCandidate = (value, path7, workflowIndex2) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
-  const profileRef = text3(fields.profileRef, `${path7}.profileRef`, 256);
+var validateMatchCandidate = (value, path8, workflowIndex2) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
+  const profileRef = text3(fields.profileRef, `${path8}.profileRef`, 256);
   const workflowIds = workflowIndex2.get(profileRef);
-  if (workflowIds === void 0) return fail2(`${path7}.profileRef`, `must reference a known profile: ${profileRef}`);
-  const workflowId = text3(fields.workflowId, `${path7}.workflowId`, 128);
+  if (workflowIds === void 0) return fail2(`${path8}.profileRef`, `must reference a known profile: ${profileRef}`);
+  const workflowId = text3(fields.workflowId, `${path8}.workflowId`, 128);
   if (!workflowIds.has(workflowId)) {
-    fail2(`${path7}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`);
+    fail2(`${path8}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`);
   }
   return {
     profileRef,
     workflowId,
-    confidence: boundedNumber(fields.confidence, `${path7}.confidence`, 0, 1),
-    reason: text3(fields.reason, `${path7}.reason`, 500),
-    tradeoff: text3(fields.tradeoff, `${path7}.tradeoff`, 500)
+    confidence: boundedNumber(fields.confidence, `${path8}.confidence`, 0, 1),
+    reason: text3(fields.reason, `${path8}.reason`, 500),
+    tradeoff: text3(fields.tradeoff, `${path8}.tradeoff`, 500)
   };
 };
 var validateGuideMatchResult = (value, workflowIndex2) => {
@@ -76747,13 +76806,13 @@ var validateGuideMatchResult = (value, workflowIndex2) => {
   }
   return { candidates };
 };
-var validateGenerateCandidate = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, ["title", "prompt", "notes"]);
+var validateGenerateCandidate = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, ["title", "prompt", "notes"]);
   return {
-    title: text3(fields.title, `${path7}.title`, 200),
-    prompt: text3(fields.prompt, `${path7}.prompt`, 8e3, { multiline: true }),
-    notes: text3(fields.notes, `${path7}.notes`, 1e3, { multiline: true })
+    title: text3(fields.title, `${path8}.title`, 200),
+    prompt: text3(fields.prompt, `${path8}.prompt`, 8e3, { multiline: true }),
+    notes: text3(fields.notes, `${path8}.notes`, 1e3, { multiline: true })
   };
 };
 var validateGuideGenerateResult = (value) => {
@@ -76832,9 +76891,9 @@ var resolveProviderRouting = (options) => {
 };
 var findExecutableOnPath = (name, searchPath = process.env.PATH) => {
   if (searchPath === void 0) return void 0;
-  for (const directory of searchPath.split(path4.delimiter)) {
+  for (const directory of searchPath.split(path5.delimiter)) {
     if (directory.length === 0) continue;
-    const candidate = path4.resolve(directory, name);
+    const candidate = path5.resolve(directory, name);
     try {
       accessSync(candidate, constants2.X_OK);
       return candidate;
@@ -76911,7 +76970,7 @@ var CopilotGuideProvider = class {
   constructor(options) {
     this.routing = resolveProviderRouting(options);
     this.prompts = options.prompts;
-    this.baseDirectory = options.baseDirectory ?? path4.join(os3.homedir(), ".copilot", "trx-guide");
+    this.baseDirectory = options.baseDirectory ?? path5.join(os3.homedir(), ".copilot", "trx-guide");
     this.workingDirectory = options.workingDirectory ?? os3.tmpdir();
     this.clientName = options.clientName ?? "trellage-trx-guide";
     this.copilotCliPath = options.copilotCliPath ?? findExecutableOnPath("copilot");
@@ -76952,7 +77011,7 @@ var CopilotGuideProvider = class {
     }
     let status;
     try {
-      status = lstatSync(path4.join(skillDirectory, "SKILL.md"));
+      status = lstatSync(path5.join(skillDirectory, "SKILL.md"));
     } catch (cause) {
       throw new GuideModelCapabilityError(`Prompt Master skill is unavailable: ${skillDirectory}`, { cause });
     }
@@ -77059,7 +77118,7 @@ var CopilotGuideProvider = class {
 import { createHash, randomUUID as randomUUID2 } from "node:crypto";
 import { mkdir, readFile as readFile2, rename, unlink, writeFile } from "node:fs/promises";
 import os4 from "node:os";
-import path5 from "node:path";
+import path6 from "node:path";
 var maximumCacheBytes = 256 * 1024;
 var maximumCacheEntries = 16;
 var sha256 = (value) => createHash("sha256").update(value, "utf8").digest("hex");
@@ -77104,15 +77163,15 @@ var optimizeCacheKey = (input, options) => {
 };
 var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
 var workflowIndex = (input) => new Map(input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]));
-var parseCacheEntry = (value, path7) => {
-  const fields = record4(value, path7);
-  exactKeys2(fields, path7, ["phase", "key", "result"]);
+var parseCacheEntry = (value, path8) => {
+  const fields = record4(value, path8);
+  exactKeys2(fields, path8, ["phase", "key", "result"]);
   if (fields.phase !== "match" && fields.phase !== "generate" && fields.phase !== "optimize") {
-    throw new Error(`${path7}.phase must be match, generate, or optimize`);
+    throw new Error(`${path8}.phase must be match, generate, or optimize`);
   }
   return {
     phase: fields.phase,
-    key: text3(fields.key, `${path7}.key`, 64),
+    key: text3(fields.key, `${path8}.key`, 64),
     result: fields.result
   };
 };
@@ -77161,7 +77220,7 @@ var removeTemporaryCache = async (temporaryPath) => {
   }
 };
 var writeCacheRecord = async (cachePath, value) => {
-  await mkdir(path5.dirname(cachePath), { recursive: true, mode: 448 });
+  await mkdir(path6.dirname(cachePath), { recursive: true, mode: 448 });
   const temporaryPath = `${cachePath}.${process.pid}.${randomUUID2()}.tmp`;
   const source = `${JSON.stringify(value)}
 `;
@@ -77177,8 +77236,8 @@ var writeCacheRecord = async (cachePath, value) => {
   }
 };
 var defaultGuideMatchCachePath = (env3 = process.env) => {
-  const cacheRoot = env3.XDG_CACHE_HOME ?? path5.join(os4.homedir(), ".cache");
-  return path5.join(cacheRoot, "trellage", "trx-guide", "last-match.json");
+  const cacheRoot = env3.XDG_CACHE_HOME ?? path6.join(os4.homedir(), ".cache");
+  return path6.join(cacheRoot, "trellage", "trx-guide", "last-match.json");
 };
 var CachedGuideProvider = class {
   constructor(provider, options) {
@@ -77349,8 +77408,8 @@ var runGuideJsonCommand = async (options) => {
 
 // src/guide-interactive-intent.ts
 import { constants as constants3 } from "node:fs";
-import { lstat as lstat2, open, realpath as realpath2, unlink as unlink2 } from "node:fs/promises";
-import path6 from "node:path";
+import { lstat as lstat3, open, realpath as realpath2, unlink as unlink2 } from "node:fs/promises";
+import path7 from "node:path";
 var popupGuideIntentFileEnvironmentVariable = "TRELLAGE_GUIDE_HERDR_INTENT_FILE";
 var guideIntentDirectoryName = "guide-intents";
 var guideIntentFilename = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/u;
@@ -77361,12 +77420,12 @@ var currentUserId = () => {
   return process.getuid();
 };
 var guideIntentLocation = (stateDirectory, intentPath) => {
-  if (!path6.isAbsolute(stateDirectory)) throw invalidIntentFile("state directory must be absolute");
-  if (!path6.isAbsolute(intentPath)) throw invalidIntentFile("path must be absolute");
-  const resolvedStateDirectory = path6.resolve(stateDirectory);
-  const intentDirectory = path6.join(resolvedStateDirectory, guideIntentDirectoryName);
-  const resolvedIntentPath = path6.resolve(intentPath);
-  if (path6.dirname(resolvedIntentPath) !== intentDirectory || !guideIntentFilename.test(path6.basename(resolvedIntentPath))) {
+  if (!path7.isAbsolute(stateDirectory)) throw invalidIntentFile("state directory must be absolute");
+  if (!path7.isAbsolute(intentPath)) throw invalidIntentFile("path must be absolute");
+  const resolvedStateDirectory = path7.resolve(stateDirectory);
+  const intentDirectory = path7.join(resolvedStateDirectory, guideIntentDirectoryName);
+  const resolvedIntentPath = path7.resolve(intentPath);
+  if (path7.dirname(resolvedIntentPath) !== intentDirectory || !guideIntentFilename.test(path7.basename(resolvedIntentPath))) {
     throw invalidIntentFile("path is outside the private plugin state directory");
   }
   return {
@@ -77376,7 +77435,7 @@ var guideIntentLocation = (stateDirectory, intentPath) => {
   };
 };
 var validateIntentDirectory = async (location, uid) => {
-  const status = await lstat2(location.intentDirectory);
+  const status = await lstat3(location.intentDirectory);
   if (!status.isDirectory() || status.uid !== uid || (status.mode & 511) !== 448) {
     throw invalidIntentFile("directory must be an owned mode-0700 directory");
   }
@@ -77384,12 +77443,12 @@ var validateIntentDirectory = async (location, uid) => {
     realpath2(location.stateDirectory),
     realpath2(location.intentDirectory)
   ]);
-  if (path6.relative(stateRealPath, intentRealPath) !== guideIntentDirectoryName) {
+  if (path7.relative(stateRealPath, intentRealPath) !== guideIntentDirectoryName) {
     throw invalidIntentFile("directory escapes the private plugin state directory");
   }
 };
 var validateOpenedIntent = async (handle, location, uid) => {
-  const [openedStatus, pathStatus] = await Promise.all([handle.stat(), lstat2(location.intentPath)]);
+  const [openedStatus, pathStatus] = await Promise.all([handle.stat(), lstat3(location.intentPath)]);
   if (!openedStatus.isFile() || openedStatus.uid !== uid || (openedStatus.mode & 511) !== 384 || openedStatus.nlink !== 1 || openedStatus.size > maximumGuideIntentBytes) {
     throw invalidIntentFile("must be an owned, single-link, mode-0600 regular file within the size limit");
   }
@@ -77620,8 +77679,21 @@ var removeSelectedQueuedGuideJob = (queue) => {
   const entries = queue.entries.filter((_, index) => index !== queue.selectedIndex);
   return { entries, nextId: queue.nextId, selectedIndex: Math.min(queue.selectedIndex, Math.max(0, entries.length - 1)) };
 };
+var removeQueuedGuideJobById = (queue, id) => {
+  const entries = queue.entries.filter((job) => job.id !== id);
+  return entries.length === queue.entries.length ? queue : { ...queue, entries, selectedIndex: Math.min(queue.selectedIndex, Math.max(0, entries.length - 1)) };
+};
+var replaceQueuedGuideJob = (queue, id, profile, prompt, placement) => {
+  const index = queue.entries.findIndex((job) => job.id === id);
+  return index < 0 ? queue : {
+    ...queue,
+    entries: queue.entries.map((job) => job.id === id ? createQueuedGuideJob(id, profile, prompt, placement) : job),
+    selectedIndex: index
+  };
+};
 var describeJobPlacement = (placement) => {
   if (placement.kind === "current-workspace-pane") return `pane here (split ${placement.direction})`;
+  if (placement.kind === "new-tab") return "new tab in this Herdr worktree";
   if (placement.kind === "new-worktree") return `new worktree ${placement.branch} from ${placement.baseRef}`;
   return `existing worktree ${placement.path}`;
 };
@@ -77653,6 +77725,18 @@ var validateQueuedJob = (job) => {
   }
   return void 0;
 };
+var allocationDetail = (placement) => {
+  if (placement.kind === "current-workspace-pane") return `Splitting a pane (${placement.direction})`;
+  if (placement.kind === "new-tab") return "Creating a new tab";
+  if (placement.kind === "new-worktree") return `Creating worktree ${placement.branch}`;
+  return `Opening worktree ${placement.path}`;
+};
+var launchPhaseDetail = {
+  starting: "Starting the profile",
+  waiting: "Waiting for the agent to be ready",
+  prompting: "Delivering the prompt"
+};
+var report = (services, jobId, phase, detail) => services.onProgress?.({ jobId, phase, detail });
 var collidingEntryMessage = (job, seenIds, seenBranches) => {
   if (seenIds.has(job.id)) return `Queue entry ID ${job.id} is duplicated.`;
   if (job.placement.kind !== "new-worktree") return void 0;
@@ -77672,6 +77756,10 @@ var allocateJob = async (runner, context, placement) => {
     });
     return { paneId, cwd: context.cwd, workspaceId: context.workspaceId };
   }
+  if (placement.kind === "new-tab") {
+    const paneId = await createHerdrTab(runner, { workspaceId: context.workspaceId, cwd: context.cwd });
+    return { paneId, cwd: context.cwd, workspaceId: context.workspaceId };
+  }
   const handle = placement.kind === "new-worktree" ? await createHerdrWorktree(runner, {
     primaryCheckoutPath: context.primaryCheckoutPath,
     branch: placement.branch,
@@ -77679,14 +77767,17 @@ var allocateJob = async (runner, context, placement) => {
   }) : await openHerdrWorktree(runner, { primaryCheckoutPath: context.primaryCheckoutPath, path: placement.path });
   return { paneId: handle.rootPaneId, cwd: handle.checkoutPath, workspaceId: handle.workspaceId };
 };
-var allocationFailure = (job, message) => job.placement.kind === "current-workspace-pane" ? { job, status: "allocation-failed", stage: "pane-allocation", message } : { job, status: "workspace-create-failed", stage: "worktree-create", message };
+var allocationFailure = (job, message) => job.placement.kind === "current-workspace-pane" || job.placement.kind === "new-tab" ? { job, status: "allocation-failed", stage: "pane-allocation", message } : { job, status: "workspace-create-failed", stage: "worktree-create", message };
 var allocateJobs = async (services, context, launchable, entries) => {
   const allocated = [];
   for (const item of launchable) {
+    report(services, item.job.id, "allocating", allocationDetail(item.job.placement));
     try {
       allocated.push({ ...item, ...await allocateJob(services.runner, context, item.job.placement) });
     } catch (error) {
-      entries[item.index] = allocationFailure(item.job, describeError(error));
+      const message = describeError(error);
+      entries[item.index] = allocationFailure(item.job, message);
+      report(services, item.job.id, "failed", message);
     }
   }
   return allocated;
@@ -77694,6 +77785,7 @@ var allocateJobs = async (services, context, launchable, entries) => {
 var checkReadiness = async (services, context, structurallyValid, entries) => {
   const checked = await Promise.all(
     structurallyValid.map(async (item) => {
+      report(services, item.job.id, "checking", "Checking profile readiness");
       try {
         return { item, result: await checkSelectedProfileReadiness(services.runner, item.job.profile, context.cwd) };
       } catch (error) {
@@ -77705,20 +77797,23 @@ var checkReadiness = async (services, context, structurallyValid, entries) => {
   for (const outcome of checked) {
     const message = "error" in outcome ? describeError(outcome.error) : outcome.result.kind === "blocked" /* Blocked */ ? `${outcome.result.summary}. ${outcome.result.diagnostic}` : void 0;
     if (message === void 0) launchable.push(outcome.item);
-    else entries[outcome.item.index] = { job: outcome.item.job, status: "not-ready", stage: "readiness", message };
+    else {
+      entries[outcome.item.index] = { job: outcome.item.job, status: "not-ready", stage: "readiness", message };
+      report(services, outcome.item.job.id, "failed", message);
+    }
   }
   return launchable;
 };
-var writeSummary = (services, result) => {
-  services.write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}
+var writeGuideBatchSummary = (result, write) => {
+  write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}
 `);
   for (const entry of result.entries) {
     const identity = `${entry.job.id}. ${entry.job.profile.profile}`;
     if (entry.status === "launched") {
-      services.write(`${identity}: launched in pane ${entry.paneId} \xB7 ${entry.cwd}
+      write(`${identity}: launched in pane ${entry.paneId} \xB7 ${entry.cwd}
 `);
     } else {
-      services.write(
+      write(
         `${identity} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}
 Selected prompt:
 
@@ -77728,6 +77823,7 @@ ${entry.job.prompt}
     }
   }
 };
+var guideBatchExitCode = (result) => result.entries.every((entry) => entry.status === "launched") ? 0 : 1;
 var executeGuideBatch = async (batch, services) => {
   if (batch.jobs.length === 0) {
     services.write("Batch queue is empty.\n");
@@ -77741,7 +77837,10 @@ var executeGuideBatch = async (batch, services) => {
     const message = collidingEntryMessage(job, seenIds, seenBranches) ?? validateQueuedJob(job);
     rememberEntry(job, seenIds, seenBranches);
     if (message === void 0) structurallyValid.push({ index, job });
-    else entries[index] = { job, status: "invalid", stage: "validation", message };
+    else {
+      entries[index] = { job, status: "invalid", stage: "validation", message };
+      report(services, job.id, "failed", message);
+    }
   });
   const launchable = await checkReadiness(services, batch.context, structurallyValid, entries);
   const allocated = await allocateJobs(services, batch.context, launchable, entries);
@@ -77754,20 +77853,28 @@ var executeGuideBatch = async (batch, services) => {
         prompt: item.job.prompt,
         promptDelivery: item.job.promptDelivery,
         timeoutMs: startupTimeoutMs,
-        promptTimeoutMs
+        promptTimeoutMs,
+        onPhase: (phase) => report(services, item.job.id, phase, launchPhaseDetail[phase])
       })
     )
   );
   launches.forEach((launch, launchIndex) => {
     const item = allocated[launchIndex];
     if (item === void 0) return;
-    entries[item.index] = launch.status === "fulfilled" ? { job: item.job, status: "launched", paneId: item.paneId, workspaceId: item.workspaceId, cwd: item.cwd } : {
-      job: item.job,
-      status: "launch-failed",
-      stage: "launch",
-      paneId: item.paneId,
-      message: describeError(launch.reason)
-    };
+    if (launch.status === "fulfilled") {
+      entries[item.index] = {
+        job: item.job,
+        status: "launched",
+        paneId: item.paneId,
+        workspaceId: item.workspaceId,
+        cwd: item.cwd
+      };
+      report(services, item.job.id, "done", `Launched in pane ${item.paneId}`);
+      return;
+    }
+    const message = describeError(launch.reason);
+    entries[item.index] = { job: item.job, status: "launch-failed", stage: "launch", paneId: item.paneId, message };
+    report(services, item.job.id, "failed", message);
   });
   const result = {
     entries: entries.map((entry, index) => {
@@ -77777,8 +77884,8 @@ var executeGuideBatch = async (batch, services) => {
       return { job, status: "invalid", stage: "validation", message: "Batch entry was not processed." };
     })
   };
-  writeSummary(services, result);
-  return { exitCode: result.entries.every((entry) => entry.status === "launched") ? 0 : 1, result };
+  writeGuideBatchSummary(result, services.write);
+  return { exitCode: guideBatchExitCode(result), result };
 };
 
 // src/guide-interactive-execution.ts
@@ -77804,6 +77911,17 @@ var executeHerdrResult = async (result, services) => {
           callerPaneId: result.callerPaneId,
           cwd: result.cwd,
           direction: result.direction,
+          command: result.command,
+          prompt: result.prompt,
+          promptDelivery: result.promptDelivery,
+          timeoutMs: startupTimeoutMs2,
+          promptTimeoutMs: promptTimeoutMs2
+        });
+        return;
+      case "new-herdr-tab":
+        await handoffToNewHerdrTab(services.runner, {
+          workspaceId: result.workspaceId,
+          cwd: result.cwd,
           command: result.command,
           prompt: result.prompt,
           promptDelivery: result.promptDelivery,
@@ -77870,12 +77988,14 @@ var executeGuideUiResult = async (result, services) => {
         throw error;
       }
     case "current-herdr-workspace":
+    case "new-herdr-tab":
     case "herdr-worktree-create":
     case "herdr-worktree-open":
       await executeHerdrResult(result, services);
       return 0;
     case "batch":
-      return (await executeGuideBatch(result.batch, services)).exitCode;
+      writeGuideBatchSummary(result.result, services.write);
+      return guideBatchExitCode(result.result);
     default:
       return unexpectedGuideResult(result);
   }
@@ -77894,6 +78014,41 @@ var createInitialGuideRenderHandler = (write, enabled) => {
 
 // src/guide-ui.tsx
 var import_react34 = __toESM(require_react(), 1);
+
+// src/basket.ts
+var countLabel = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+var countTextLines = (text4) => text4.length === 0 ? 0 : text4.split("\n").length;
+var previewBlockLines = 2;
+var clipLine = (line, width) => {
+  const limit = Math.max(1, width);
+  return line.length <= limit ? line : `${line.slice(0, limit - 1).trimEnd()}\u2026`;
+};
+var basketBlockPreview = (text4, width, limit = previewBlockLines) => {
+  const source = text4.split("\n").filter((line) => line.trim().length > 0);
+  const kept = source.slice(0, Math.max(1, limit));
+  return {
+    lines: kept.map((line) => clipLine(line, width)),
+    truncated: source.length > kept.length || kept.some((line) => line.length > Math.max(1, width))
+  };
+};
+var basketVisibleRange = (heights, cursor, capacity) => {
+  if (heights.length === 0) return { start: 0, end: 0 };
+  const index = Math.max(0, Math.min(cursor, heights.length - 1));
+  let start = index;
+  let end = index + 1;
+  let used = heights[index] ?? 0;
+  while (start > 0 && used + (heights[start - 1] ?? 0) <= capacity) {
+    start -= 1;
+    used += heights[start] ?? 0;
+  }
+  while (end < heights.length && used + (heights[end] ?? 0) <= capacity) {
+    used += heights[end] ?? 0;
+    end += 1;
+  }
+  return { start, end };
+};
+
+// src/guide-ui.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
 var feedbackMaxLength = 2e3;
 var branchMaxLength = 200;
@@ -77938,6 +78093,12 @@ var editingStages = /* @__PURE__ */ new Set([
   "worktree-branch-editor" /* WorktreeBranchEditor */,
   "queue-prompt-editor" /* QueuePromptEditor */
 ]);
+var destinationLabels = {
+  ["current-terminal" /* CurrentTerminal */]: "This terminal",
+  ["current-herdr-workspace" /* CurrentHerdrWorkspace */]: "New pane in this Herdr workspace",
+  ["new-herdr-tab" /* NewHerdrTab */]: "New tab in this Herdr worktree",
+  ["new-herdr-worktree" /* NewHerdrWorktree */]: "New Herdr worktree"
+};
 var wizardStepByStage = {
   ["intent" /* Intent */]: void 0,
   ["matching" /* Matching */]: "profile" /* Profile */,
@@ -77959,13 +78120,16 @@ var wizardStepByStage = {
   ["worktree-collision" /* WorktreeCollision */]: "destination" /* Destination */,
   ["worktree-ready" /* WorktreeReady */]: "destination" /* Destination */,
   ["queue" /* Queue */]: "prompt-candidates" /* PromptCandidates */,
+  ["queue-entry" /* QueueEntry */]: "prompt-candidates" /* PromptCandidates */,
   ["queue-prompt-editor" /* QueuePromptEditor */]: "prompt-candidates" /* PromptCandidates */,
-  ["queue-placement" /* QueuePlacement */]: "destination" /* Destination */
+  ["queue-placement" /* QueuePlacement */]: "destination" /* Destination */,
+  ["launching" /* Launching */]: "destination" /* Destination */
 };
 var wizardStepForStage = (stage) => wizardStepByStage[stage];
-var destinationOptions = (herdrEnabled, surface = "pane") => herdrEnabled ? surface === "popup" ? ["current-herdr-workspace" /* CurrentHerdrWorkspace */, "new-herdr-worktree" /* NewHerdrWorktree */] : [
+var destinationOptions = (herdrEnabled, surface = "pane") => herdrEnabled ? surface === "popup" ? ["current-herdr-workspace" /* CurrentHerdrWorkspace */, "new-herdr-tab" /* NewHerdrTab */, "new-herdr-worktree" /* NewHerdrWorktree */] : [
   "current-terminal" /* CurrentTerminal */,
   "current-herdr-workspace" /* CurrentHerdrWorkspace */,
+  "new-herdr-tab" /* NewHerdrTab */,
   "new-herdr-worktree" /* NewHerdrWorktree */
 ] : ["current-terminal" /* CurrentTerminal */];
 var emptyState = {
@@ -77993,8 +78157,13 @@ var emptyState = {
   promptReviewReturnStage: void 0,
   promptReviewEditing: false,
   queue: emptyGuideQueue(),
-  worktreePurpose: "single",
-  primaryCheckoutPath: void 0
+  worktreeReturnStage: "destination" /* Destination */,
+  primaryCheckoutPath: void 0,
+  launchBatch: void 0,
+  launchProgress: [],
+  forks: [],
+  activeForkId: void 0,
+  nextForkId: 1
 };
 var createInitialGuideUiState = (initialIntent) => {
   const trimmed = initialIntent?.trim();
@@ -78012,6 +78181,89 @@ var requiredWorktreeConfirmations = (dirty) => dirty ? 2 : 1;
 var isWorktreeConfirmed = (confirmations, dirty) => confirmations >= requiredWorktreeConfirmations(dirty);
 var worktreeDirtyWarningMessage = "Uncommitted changes in the current working tree will not be included in the new worktree.";
 var worktreeDirtyWarning = (dirty) => dirty ? worktreeDirtyWarningMessage : void 0;
+var forkSlice = ({
+  intent: _intent,
+  matchPhase: _matchPhase,
+  recommendations: _recommendations,
+  recommendationIndex: _recommendationIndex,
+  usedLiteralFallback: _usedLiteralFallback,
+  queue: _queue,
+  primaryCheckoutPath: _primaryCheckoutPath,
+  launchBatch: _launchBatch,
+  launchProgress: _launchProgress,
+  forks: _forks,
+  activeForkId: _activeForkId,
+  nextForkId: _nextForkId,
+  ...slice
+}) => slice;
+var mainForkSlice = forkSlice({ ...emptyState, stage: "recommendations" /* Recommendations */ });
+var parkActiveFork = (state) => state.activeForkId === void 0 ? state : {
+  ...state,
+  forks: state.forks.map(
+    (fork) => fork.id === state.activeForkId ? { ...fork, slice: forkSlice(state) } : fork
+  )
+};
+var enterMainScreen = (state) => ({
+  ...parkActiveFork(state),
+  ...mainForkSlice,
+  activeForkId: void 0
+});
+var enterFork = (state, id) => {
+  const parked = parkActiveFork(state);
+  const target = parked.forks.find((fork) => fork.id === id);
+  return target === void 0 ? state : { ...parked, ...target.slice, activeForkId: id };
+};
+var openFork = (state, slice) => {
+  const parked = parkActiveFork(state);
+  return {
+    ...parked,
+    ...slice,
+    forks: [...parked.forks, { id: parked.nextForkId, slice, jobId: void 0 }],
+    activeForkId: parked.nextForkId,
+    nextForkId: parked.nextForkId + 1
+  };
+};
+var bindActiveForkToJob = (state, jobId) => {
+  const parked = parkActiveFork(state);
+  return {
+    ...parked,
+    ...mainForkSlice,
+    forks: parked.forks.map((fork) => fork.id === state.activeForkId ? { ...fork, jobId } : fork),
+    activeForkId: void 0
+  };
+};
+var dropActiveFork = (state) => {
+  const dropped = state.forks.find((fork) => fork.id === state.activeForkId);
+  if (dropped === void 0) return state;
+  const main2 = enterMainScreen(state);
+  return {
+    ...main2,
+    forks: main2.forks.filter((fork) => fork.id !== dropped.id),
+    queue: dropped.jobId === void 0 ? main2.queue : removeQueuedGuideJobById(main2.queue, dropped.jobId)
+  };
+};
+var hydrateFork = (state, slice) => ({ ...state, ...slice });
+var forkState = (state, id) => {
+  if (state.activeForkId === id) return state;
+  const target = state.forks.find((fork) => fork.id === id);
+  return target === void 0 ? void 0 : hydrateFork(state, target.slice);
+};
+var busyStages = /* @__PURE__ */ new Set([
+  "matching" /* Matching */,
+  "generating" /* Generating */,
+  "refining" /* Refining */,
+  "checking-readiness" /* CheckingReadiness */,
+  "inspecting-worktree" /* InspectingWorktree */
+]);
+var forkIsBusy = (state, id) => {
+  const target = forkState(state, id);
+  return target !== void 0 && busyStages.has(target.stage);
+};
+var cycleFork = (state, delta) => {
+  const ids = [void 0, ...state.forks.map((fork) => fork.id)];
+  const next = ids[(ids.indexOf(state.activeForkId) + delta + ids.length) % ids.length];
+  return next === void 0 ? enterMainScreen(state) : enterFork(state, next);
+};
 var reduceIntent = (state, action) => {
   switch (action.type) {
     case "intent/change" /* IntentChange */:
@@ -78141,8 +78393,8 @@ var reduceRecommendations = (state, action) => {
       } : state;
     case "recommendations/confirm" /* RecommendationsConfirm */: {
       if (state.stage !== "recommendations" /* Recommendations */ || state.recommendations === void 0) return state;
-      return {
-        ...state,
+      const slice = {
+        ...forkSlice(state),
         stage: "generating" /* Generating */,
         selectedRecommendation: action.recommendation ?? recommendationAt(state.recommendations, state.recommendationIndex),
         selectedProfile: action.selectedProfile,
@@ -78152,6 +78404,7 @@ var reduceRecommendations = (state, action) => {
         usedTemplateFallback: false,
         errorMessage: void 0
       };
+      return state.activeForkId === void 0 ? openFork(state, slice) : { ...state, ...slice };
     }
     default:
       return state;
@@ -78232,16 +78485,14 @@ var reduceCandidateNavigation = (state, action) => {
       } : state;
     case "candidates/enqueue" /* CandidatesEnqueue */:
       return state.stage === "candidates" /* Candidates */ && state.candidates !== void 0 && state.selectedProfile !== void 0 ? { ...state, stage: "queue-placement" /* QueuePlacement */, destinationIndex: 0, errorMessage: void 0 } : state;
+    // The queue belongs to the main screen, so viewing it parks whatever tab is open.
     case "candidates/view-queue" /* CandidatesViewQueue */:
-      return state.stage === "candidates" /* Candidates */ && state.queue.entries.length > 0 ? { ...state, stage: "queue" /* Queue */, errorMessage: void 0 } : state;
+      return state.queue.entries.length > 0 ? { ...enterMainScreen(state), stage: "queue" /* Queue */, errorMessage: void 0 } : state;
     default:
       return state;
   }
 };
-var candidateEditingWorkflow = (state) => state.guideDocument === void 0 || state.selectedRecommendation === void 0 ? void 0 : selectedGuideWorkflow(
-  state.guideDocument.guide,
-  state.selectedRecommendation.workflowId
-);
+var candidateEditingWorkflow = (state) => state.guideDocument === void 0 || state.selectedRecommendation === void 0 ? void 0 : selectedGuideWorkflow(state.guideDocument.guide, state.selectedRecommendation.workflowId);
 var candidateDirectEditDraft = (state) => {
   if (state.candidates === void 0) throw new Error("Direct editing requires prompt candidates");
   const current = tripleAt(state.candidates, state.candidateIndex);
@@ -78277,11 +78528,7 @@ var reduceDirectEdit = (state, action) => {
       return state.stage === "direct-editor" /* DirectEditor */ && state.candidates !== void 0 && state.textDraft.trim().length > 0 ? {
         ...state,
         stage: "candidates" /* Candidates */,
-        candidates: replaceCandidateAt(
-          state.candidates,
-          state.candidateIndex,
-          directlyEditedCandidate(state)
-        )
+        candidates: replaceCandidateAt(state.candidates, state.candidateIndex, directlyEditedCandidate(state))
       } : state;
     case "direct-edit/back" /* DirectEditBack */:
       return state.stage === "direct-editor" /* DirectEditor */ ? { ...state, stage: "candidates" /* Candidates */ } : state;
@@ -78366,16 +78613,38 @@ var reduceDestination = (state, action) => {
         stage: "worktree-branch-editor" /* WorktreeBranchEditor */,
         textDraft: defaultWorktreeBranch(state.intent ?? ""),
         worktreeInspection: void 0,
+        errorMessage: void 0,
+        worktreeReturnStage: "destination" /* Destination */
+      } : state;
+    case "destination/enqueue" /* DestinationEnqueue */:
+      return state.stage === "destination" /* Destination */ ? enqueueSelectedCandidate(state, action.placement) : state;
+    default:
+      return state;
+  }
+};
+var reduceQueueNavigation = (state, action) => {
+  switch (action.type) {
+    case "queue/move" /* QueueMove */:
+      return state.stage === "queue" /* Queue */ ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state;
+    case "queue/open-entry" /* QueueOpenEntry */:
+      return state.stage === "queue" /* Queue */ && state.queue.entries[state.queue.selectedIndex] !== void 0 ? { ...state, stage: "queue-entry" /* QueueEntry */ } : state;
+    case "queue/back" /* QueueBack */:
+      if (state.stage === "queue-entry" /* QueueEntry */) return { ...state, stage: "queue" /* Queue */ };
+      if (state.stage === "queue-prompt-editor" /* QueuePromptEditor */) {
+        const { editingId: _, ...queue } = state.queue;
+        return { ...state, stage: "queue" /* Queue */, queue, errorMessage: void 0 };
+      }
+      return state.stage === "queue" /* Queue */ ? {
+        ...state,
+        stage: state.candidates === void 0 ? "recommendations" /* Recommendations */ : "candidates" /* Candidates */,
         errorMessage: void 0
       } : state;
     default:
       return state;
   }
 };
-var reduceQueue = (state, action) => {
+var reduceQueueEditing = (state, action) => {
   switch (action.type) {
-    case "queue/move" /* QueueMove */:
-      return state.stage === "queue" /* Queue */ ? { ...state, queue: selectQueuedGuideJob(state.queue, action.delta) } : state;
     case "queue/edit-start" /* QueueEditStart */: {
       if (state.stage !== "queue" /* Queue */) return state;
       const queue = startQueuedGuidePromptEdit(state.queue);
@@ -78384,36 +78653,59 @@ var reduceQueue = (state, action) => {
     }
     case "queue/edit-submit" /* QueueEditSubmit */:
       return state.stage === "queue-prompt-editor" /* QueuePromptEditor */ && state.textDraft.trim().length > 0 ? { ...state, stage: "queue" /* Queue */, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) } : state;
-    case "queue/remove" /* QueueRemove */:
-      return state.stage === "queue" /* Queue */ ? { ...state, queue: removeSelectedQueuedGuideJob(state.queue), errorMessage: void 0 } : state;
+    default:
+      return state;
+  }
+};
+var reduceQueueContents = (state, action) => {
+  switch (action.type) {
+    case "queue/remove" /* QueueRemove */: {
+      const removed = state.stage === "queue" /* Queue */ ? state.queue.entries[state.queue.selectedIndex] : void 0;
+      return removed === void 0 ? state : {
+        ...state,
+        queue: removeSelectedQueuedGuideJob(state.queue),
+        forks: state.forks.filter((fork) => fork.jobId !== removed.id),
+        errorMessage: void 0
+      };
+    }
     case "queue/add-another" /* QueueAddAnother */:
-      return state.stage === "queue" /* Queue */ ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath } : state;
-    case "queue/back" /* QueueBack */:
-      if (state.stage === "queue-prompt-editor" /* QueuePromptEditor */) {
-        const { editingId: _, ...queue } = state.queue;
-        return { ...state, stage: "queue" /* Queue */, queue, errorMessage: void 0 };
-      }
-      return state.stage === "queue" /* Queue */ ? { ...state, stage: "candidates" /* Candidates */, errorMessage: void 0 } : state;
+      if (state.stage !== "queue" /* Queue */) return state;
+      return state.recommendations === void 0 ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath } : enterMainScreen(state);
     case "queue/execute-blocked" /* QueueExecuteBlocked */:
       return state.stage === "queue" /* Queue */ ? { ...state, errorMessage: action.message } : state;
     default:
       return state;
   }
 };
-var enqueueSelectedCandidate = (state, placement, primaryCheckoutPath) => state.candidates === void 0 || state.selectedProfile === void 0 ? state : {
-  ...state,
-  stage: "queue" /* Queue */,
-  queue: enqueueGuideJob(
-    state.queue,
-    state.selectedProfile,
-    tripleAt(state.candidates, state.candidateIndex).prompt,
-    placement
-  ),
-  worktreePurpose: "single",
-  worktreeInspection: void 0,
-  worktreeConfirmations: 0,
-  ...primaryCheckoutPath === void 0 ? {} : { primaryCheckoutPath },
-  errorMessage: void 0
+var reduceQueue = (state, action) => reduceQueueContents(reduceQueueEditing(reduceQueueNavigation(state, action), action), action);
+var reduceLaunch = (state, action) => {
+  if (action.type === "launch/start" /* LaunchStart */) {
+    return {
+      ...enterMainScreen(state),
+      stage: "launching" /* Launching */,
+      launchBatch: action.batch,
+      launchProgress: []
+    };
+  }
+  if (action.type !== "launch/progress" /* LaunchProgress */) return state;
+  const known = state.launchProgress.some((event) => event.jobId === action.event.jobId);
+  return {
+    ...state,
+    launchProgress: known ? state.launchProgress.map((event) => event.jobId === action.event.jobId ? action.event : event) : [...state.launchProgress, action.event]
+  };
+};
+var enqueueSelectedCandidate = (state, placement, primaryCheckoutPath) => {
+  const profile = state.selectedProfile;
+  if (state.candidates === void 0 || profile === void 0) return state;
+  const prompt = tripleAt(state.candidates, state.candidateIndex).prompt;
+  const held = state.forks.find((fork) => fork.id === state.activeForkId)?.jobId;
+  return {
+    ...bindActiveForkToJob(state, held ?? state.queue.nextId),
+    stage: "queue" /* Queue */,
+    queue: held === void 0 ? enqueueGuideJob(state.queue, profile, prompt, placement) : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement),
+    ...primaryCheckoutPath === void 0 ? {} : { primaryCheckoutPath },
+    errorMessage: void 0
+  };
 };
 var reduceQueuePlacement = (state, action) => {
   switch (action.type) {
@@ -78431,7 +78723,7 @@ var reduceQueuePlacement = (state, action) => {
         stage: "worktree-branch-editor" /* WorktreeBranchEditor */,
         textDraft: defaultWorktreeBranch(state.intent ?? "queue"),
         worktreeInspection: void 0,
-        worktreePurpose: "queue",
+        worktreeReturnStage: "queue-placement" /* QueuePlacement */,
         errorMessage: void 0
       } : state;
     case "queue-placement/worktree" /* QueuePlacementWorktree */:
@@ -78496,10 +78788,42 @@ var reduceWorktreeResolution = (state, action) => {
     case "worktree/back" /* WorktreeBack */:
       return state.stage === "worktree-branch-editor" /* WorktreeBranchEditor */ || state.stage === "worktree-collision" /* WorktreeCollision */ || state.stage === "worktree-ready" /* WorktreeReady */ ? {
         ...state,
-        stage: state.worktreePurpose === "queue" ? "queue-placement" /* QueuePlacement */ : "destination" /* Destination */,
+        stage: state.worktreeReturnStage,
         worktreeInspection: void 0,
         worktreeConfirmations: 0
       } : state;
+    default:
+      return state;
+  }
+};
+var deliverToFork = (state, forkId, action) => {
+  if (action.type === "fork/deliver" /* ForkDeliver */) return state;
+  if (state.activeForkId === forkId) return guideUiReducer(state, action);
+  const target = state.forks.find((fork) => fork.id === forkId);
+  if (target === void 0) return state;
+  const applied = guideUiReducer(hydrateFork(state, target.slice), action);
+  return {
+    ...applied,
+    ...forkSlice(state),
+    forks: applied.forks.map((fork) => fork.id === forkId ? { ...fork, slice: forkSlice(applied) } : fork)
+  };
+};
+var reduceFork = (state, action) => {
+  switch (action.type) {
+    case "fork/next" /* ForkNext */:
+      return cycleFork(state, 1);
+    case "fork/previous" /* ForkPrevious */:
+      return cycleFork(state, -1);
+    case "fork/main" /* ForkMain */:
+      return state.stage === "recommendations" /* Recommendations */ && state.activeForkId === void 0 ? state : enterMainScreen(state);
+    case "fork/select" /* ForkSelect */: {
+      const target = state.forks[action.index];
+      return target === void 0 ? state : enterFork(state, target.id);
+    }
+    case "fork/drop" /* ForkDrop */:
+      return dropActiveFork(state);
+    case "fork/deliver" /* ForkDeliver */:
+      return deliverToFork(state, action.forkId, action.action);
     default:
       return state;
   }
@@ -78553,6 +78877,7 @@ var domainReducerByActionType = {
   ["destination/move" /* DestinationMove */]: reduceDestination,
   ["destination/back" /* DestinationBack */]: reduceDestination,
   ["destination/start-worktree" /* DestinationStartWorktree */]: reduceDestination,
+  ["destination/enqueue" /* DestinationEnqueue */]: reduceDestination,
   ["worktree/submit-branch" /* WorktreeSubmitBranch */]: reduceWorktreeBranch,
   ["worktree/invalid-branch" /* WorktreeInvalidBranch */]: reduceWorktreeBranch,
   ["worktree/inspect-failed" /* WorktreeInspectFailed */]: reduceWorktreeBranch,
@@ -78562,18 +78887,27 @@ var domainReducerByActionType = {
   ["worktree/edit-branch" /* WorktreeEditBranch */]: reduceWorktreeResolution,
   ["worktree/back" /* WorktreeBack */]: reduceWorktreeResolution,
   ["queue/move" /* QueueMove */]: reduceQueue,
+  ["queue/open-entry" /* QueueOpenEntry */]: reduceQueue,
   ["queue/edit-start" /* QueueEditStart */]: reduceQueue,
   ["queue/edit-submit" /* QueueEditSubmit */]: reduceQueue,
   ["queue/remove" /* QueueRemove */]: reduceQueue,
   ["queue/add-another" /* QueueAddAnother */]: reduceQueue,
   ["queue/back" /* QueueBack */]: reduceQueue,
   ["queue/execute-blocked" /* QueueExecuteBlocked */]: reduceQueue,
+  ["launch/start" /* LaunchStart */]: reduceLaunch,
+  ["launch/progress" /* LaunchProgress */]: reduceLaunch,
   ["queue-placement/move" /* QueuePlacementMove */]: reduceQueuePlacement,
   ["queue-placement/back" /* QueuePlacementBack */]: reduceQueuePlacement,
   ["queue-placement/unavailable" /* QueuePlacementUnavailable */]: reduceQueuePlacement,
   ["queue-placement/here" /* QueuePlacementHere */]: reduceQueuePlacement,
   ["queue-placement/start-worktree" /* QueuePlacementStartWorktree */]: reduceQueuePlacement,
-  ["queue-placement/worktree" /* QueuePlacementWorktree */]: reduceQueuePlacement
+  ["queue-placement/worktree" /* QueuePlacementWorktree */]: reduceQueuePlacement,
+  ["fork/next" /* ForkNext */]: reduceFork,
+  ["fork/previous" /* ForkPrevious */]: reduceFork,
+  ["fork/main" /* ForkMain */]: reduceFork,
+  ["fork/select" /* ForkSelect */]: reduceFork,
+  ["fork/drop" /* ForkDrop */]: reduceFork,
+  ["fork/deliver" /* ForkDeliver */]: reduceFork
 };
 var guideUiReducer = (state, action) => {
   const domainReducer = domainReducerByActionType[action.type];
@@ -78724,30 +79058,15 @@ var runGuideGenerationStep = async (catalog, guideRoot, provider, intent, recomm
     [
       renderWorkflowBodyCandidate(
         workflow,
-        resolveWorkflowBodyCandidate(
-          guideDocument.guide,
-          workflow,
-          bodyCandidates[0],
-          optimizedFirst
-        )
+        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[0], optimizedFirst)
       ),
       renderWorkflowBodyCandidate(
         workflow,
-        resolveWorkflowBodyCandidate(
-          guideDocument.guide,
-          workflow,
-          bodyCandidates[1],
-          optimizedSecond
-        )
+        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[1], optimizedSecond)
       ),
       renderWorkflowBodyCandidate(
         workflow,
-        resolveWorkflowBodyCandidate(
-          guideDocument.guide,
-          workflow,
-          bodyCandidates[2],
-          optimizedThird
-        )
+        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[2], optimizedThird)
       )
     ],
     "optimization resolution and exact rendering" /* FinalRendering */
@@ -78810,12 +79129,7 @@ var runGuideRefinementStep = async (catalog, provider, intent, recommendation, g
   if (optimizedCandidate === void 0) throw new Error("Prompt Master must return one refined prompt candidate");
   const renderedCandidate = renderWorkflowBodyCandidate(
     workflow,
-    resolveWorkflowBodyCandidate(
-      guideDocument.guide,
-      workflow,
-      refinedBodyCandidate,
-      optimizedCandidate
-    )
+    resolveWorkflowBodyCandidate(guideDocument.guide, workflow, refinedBodyCandidate, optimizedCandidate)
   );
   const finalCandidate = applyRequiredProfilePromptTemplate(
     recommendation.profileRef,
@@ -78840,44 +79154,6 @@ var buildCurrentTerminalResult = (profile, prompt, cwd2) => {
     promptHandling: built.promptHandling,
     prompt,
     cwd: cwd2
-  };
-};
-var buildCurrentHerdrWorkspaceResult = (profile, prompt, cwd2, herdrContext, direction = "right") => {
-  const built = buildHerdrGuideLaunch(profile, prompt);
-  return {
-    action: "current-herdr-workspace",
-    profile,
-    command: built.command,
-    prompt,
-    promptDelivery: built.promptDelivery,
-    cwd: cwd2,
-    callerPaneId: herdrContext.paneId,
-    direction
-  };
-};
-var buildNewHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, branch, baseRef) => {
-  const built = buildHerdrGuideLaunch(profile, prompt);
-  return {
-    action: "herdr-worktree-create",
-    profile,
-    command: built.command,
-    prompt,
-    promptDelivery: built.promptDelivery,
-    primaryCheckoutPath,
-    branch,
-    baseRef
-  };
-};
-var buildExistingHerdrWorktreeResult = (profile, prompt, primaryCheckoutPath, path7) => {
-  const built = buildHerdrGuideLaunch(profile, prompt);
-  return {
-    action: "herdr-worktree-open",
-    profile,
-    command: built.command,
-    prompt,
-    promptDelivery: built.promptDelivery,
-    primaryCheckoutPath,
-    path: path7
   };
 };
 var captureSourcePresentation = (capture) => {
@@ -79494,7 +79770,7 @@ var PromptReview = ({
   variant,
   editing
 }) => {
-  const { rows, columns } = use_window_size_default();
+  const { rows, columns } = useGuideWindowSize();
   const props = { textDraft, rows, columns, editing };
   switch (variant) {
     case "pager" /* Pager */:
@@ -79510,7 +79786,7 @@ var PromptReview = ({
   }
 };
 var IntentEditor = ({ textDraft }) => {
-  const { rows, columns } = use_window_size_default();
+  const { rows, columns } = useGuideWindowSize();
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(3, rows - 1), overflowY: "hidden", paddingX: 1, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "What do you want to do?" }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -79680,6 +79956,42 @@ var RecommendationsView = ({
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 generate \xB7 p view prompt \xB7 c council \xB7 r research \xB7 h HVE RPI \xB7 q cancel" })
   ] });
 };
+var forkTabBarRows = 2;
+var ChromeRowsContext = (0, import_react34.createContext)(0);
+var useGuideWindowSize = () => {
+  const { rows, columns } = use_window_size_default();
+  return { rows: Math.max(6, rows - (0, import_react34.useContext)(ChromeRowsContext)), columns };
+};
+var forkTabLabel = (fork) => fork.slice.selectedRecommendation === void 0 ? "fork" : recommendationLabel(fork.slice.selectedRecommendation);
+var forkTabMarker = (state, fork, tick) => {
+  if (forkIsBusy(state, fork.id)) return spinnerFrameAt(tick);
+  return fork.jobId === void 0 ? "\u25CB" : "\u25CF";
+};
+var ForkTabBar = ({ state }) => {
+  const [tick, setTick] = (0, import_react34.useState)(0);
+  (0, import_react34.useEffect)(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80);
+    return () => clearInterval(timer);
+  }, []);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { inverse: state.activeForkId === void 0, children: " main " }),
+      state.forks.map((fork, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: " \u2502 " }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { inverse: fork.id === state.activeForkId, color: fork.jobId === void 0 ? "yellow" : "green", children: [
+          " ",
+          index + 1,
+          " ",
+          forkTabLabel(fork),
+          " ",
+          forkTabMarker(state, fork, tick),
+          " "
+        ] })
+      ] }, fork.id))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "Tab/Shift-Tab switch tab \xB7 ` main \xB7 1-9 jump \xB7 v queue \xB7 x drop tab" })
+  ] });
+};
 var candidatePaneHeight = (terminalRows) => Math.max(6, terminalRows - 8);
 var candidateRailWidth = (terminalColumns) => Math.min(30, Math.max(20, Math.floor(terminalColumns * 0.3)));
 var compactCommandPreview = (preview) => preview.replace(/\s+/gu, " ").trim();
@@ -79740,7 +80052,7 @@ var CandidatesView = ({
   usedTemplateFallback,
   command
 }) => {
-  const { rows, columns: terminalColumns } = use_window_size_default();
+  const { rows, columns: terminalColumns } = useGuideWindowSize();
   const paneHeight = candidatePaneHeight(rows);
   const railWidth = candidateRailWidth(terminalColumns);
   const candidate = tripleAt(candidates, index);
@@ -79771,7 +80083,7 @@ var TextEditor = ({
   textDraft,
   keys
 }) => {
-  const { rows, columns } = use_window_size_default();
+  const { rows, columns } = useGuideWindowSize();
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(3, rows - 3), overflowY: "hidden", paddingX: 1, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: title }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -79798,41 +80110,119 @@ var DestinationView = ({
   /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "cyan", children: "Choose a destination" }),
   options.map((option, itemIndex) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: itemIndex === index, ...itemIndex === index ? { color: "green" } : {}, children: [
     itemIndex === index ? "\u276F " : "  ",
-    option
+    destinationLabels[option]
   ] }, option)),
   /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "wrap", children: [
     "Command: ",
     commandPreview
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 confirm \xB7 c print prompt \xB7 b back" })
+  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k select \xB7 \u21B5 queue it \xB7 L launch all \xB7 c print prompt \xB7 b back" })
 ] });
-var QueueView = ({ queue, errorMessage }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", children: [
-    "Batch queue. ",
-    queue.entries.length,
-    " jobs"
-  ] }),
-  queue.entries.map((job, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: index === queue.selectedIndex, ...index === queue.selectedIndex ? { color: "green" } : {}, children: [
-      index === queue.selectedIndex ? "\u276F " : "  ",
+var describeJobRunner = (profile) => profile.surface === "native" ? `${profile.launcher} \xB7 ${profile.profile}${profile.agent === void 0 ? "" : ` \xB7 ${profile.agent}`}` : `sandbox \xB7 ${profile.profile}`;
+var QueuedJobBlock = ({
+  job,
+  selected,
+  preview
+}) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", marginBottom: 1, flexShrink: 0, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { inverse: selected, children: [
+      " ",
       job.id,
-      ". ",
-      job.profile.profile,
-      " \xB7 ",
-      job.prompt.replaceAll(/\s+/gu, " ").slice(0, 80)
+      " "
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
-      "   \u2192 ",
-      describeJobPlacement(job.placement)
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: "cyan", children: [
+      " ",
+      describeJobRunner(job.profile)
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
-      "   ",
-      renderCommandPreview(job.command)
-    ] })
-  ] }, job.id)),
-  errorMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: errorMessage }),
-  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "j/k select \xB7 e edit prompt \xB7 x remove \xB7 a add another \xB7 \u21B5 launch all \xB7 b current candidate \xB7 q cancel" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+      " ",
+      "\xB7 ",
+      job.prompt.length,
+      "c \xB7 ",
+      countLabel(countTextLines(job.prompt), "line")
+    ] }),
+    preview.truncated ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "cyan", children: " \xB7 o opens" }) : null
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { ...selected ? { color: "green" } : { dimColor: true }, wrap: "truncate-end", children: [
+    "  \u2192 ",
+    describeJobPlacement(job.placement)
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+    "  ",
+    renderCommandPreview(job.command)
+  ] }),
+  preview.lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: !selected, wrap: "truncate-end", children: line.length === 0 ? " " : line }, `${job.id}:${index}`))
 ] });
+var queueFooterLines = [
+  "j/k select \xB7 o open prompt \xB7 e edit prompt \xB7 x remove job and its tab \xB7 a add another",
+  "\u21B5 or L launch all \xB7 ` main \xB7 Tab or 1-9 reopen a job \xB7 q cancel"
+];
+var QueueView = ({ queue, errorMessage }) => {
+  const { rows, columns } = useGuideWindowSize();
+  const width = Math.max(20, columns - 6);
+  const previews = queue.entries.map((job) => basketBlockPreview(job.prompt, width));
+  const heights = previews.map((preview) => preview.lines.length + 4);
+  const { start, end } = basketVisibleRange(heights, queue.selectedIndex, Math.max(4, rows - 8));
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(6, rows - 2), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", children: [
+      "Batch queue. ",
+      countLabel(queue.entries.length, "job"),
+      " launch together"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, marginTop: 1, overflowY: "hidden", children: queue.entries.slice(start, end).map((job, offset) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      QueuedJobBlock,
+      {
+        job,
+        selected: start + offset === queue.selectedIndex,
+        preview: previews[start + offset] ?? { lines: [], truncated: false }
+      },
+      job.id
+    )) }),
+    end - start < queue.entries.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "showing jobs ",
+      start + 1,
+      "\u2013",
+      end,
+      " of ",
+      queue.entries.length
+    ] }) : null,
+    errorMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: "yellow", children: errorMessage }),
+    queueFooterLines.map((line) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: line }, line))
+  ] });
+};
+var QueueEntryView = ({ queue }) => {
+  const { rows, columns } = useGuideWindowSize();
+  const job = queue.entries[queue.selectedIndex];
+  if (job === void 0) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", height: Math.max(4, rows - 2), overflowY: "hidden", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, color: "cyan", wrap: "truncate-end", children: [
+      "Queued prompt ",
+      job.id,
+      " \xB7 ",
+      describeJobRunner(job.profile)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+      "\u2192 ",
+      describeJobPlacement(job.placement),
+      " \xB7 ",
+      job.prompt.length,
+      "c \xB7",
+      " ",
+      countLabel(countTextLines(job.prompt), "line")
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      ScrollableTextViewport,
+      {
+        value: job.prompt,
+        width: Math.max(1, columns - 2),
+        height: Math.max(1, rows - 6),
+        startAtEnd: false,
+        resetKey: `${job.id}`
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "PgUp/PgDn scroll \xB7 o/b/Esc back \xB7 q cancel" })
+  ] });
+};
 var QueuePlacementView = ({ index, errorMessage }) => {
   const options = ["Pane in this Herdr workspace", "Herdr worktree"];
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
@@ -80051,6 +80441,41 @@ var useGuideWorktreeEffect = (props, state, dispatch) => {
     };
   }, [state.stage, state.worktreeBranch]);
 };
+var useGuideLaunchEffect = (props, state, dispatch, complete) => {
+  (0, import_react34.useEffect)(() => {
+    if (state.stage !== "launching" /* Launching */ || state.launchBatch === void 0) return void 0;
+    let cancelled = false;
+    const batch = state.launchBatch;
+    void (async () => {
+      const executed = await executeGuideBatch(batch, {
+        runner: props.runner,
+        write: () => {
+        },
+        onProgress: (event) => {
+          if (!cancelled) dispatch({ type: "launch/progress" /* LaunchProgress */, event });
+        }
+      });
+      if (!cancelled) complete({ action: "batch", result: executed.result });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.stage]);
+};
+var ForkWorker = ({
+  props,
+  state,
+  forkId,
+  dispatch
+}) => {
+  const deliver = (action) => dispatch({ type: "fork/deliver" /* ForkDeliver */, forkId, action });
+  useGuideMatchEffect(props, state, deliver);
+  useGuideGenerationEffect(props, state, deliver);
+  useGuideRefinementEffect(props, state, deliver);
+  useGuideReadinessEffect(props, state, deliver);
+  useGuideWorktreeEffect(props, state, deliver);
+  return null;
+};
 var handleNoInput = () => void 0;
 var handleMatchingInput = ({ dispatch, cancel }, input) => {
   if (input === "p") dispatch({ type: "prompt-review/open" /* PromptReviewOpen */ });
@@ -80158,7 +80583,7 @@ var candidateCommandAction = (state, input) => {
   if (input === "e") return { type: "candidates/direct-edit-start" /* CandidatesDirectEditStart */ };
   return void 0;
 };
-var launchQueue = ({ state, dispatch, complete, herdrContext, herdrEnabled, props }) => {
+var launchQueue = ({ state, dispatch, herdrContext, herdrEnabled, props }) => {
   if (state.queue.entries.length === 0) {
     dispatch({ type: "queue/execute-blocked" /* QueueExecuteBlocked */, message: "Batch queue is empty." });
     return;
@@ -80171,8 +80596,8 @@ var launchQueue = ({ state, dispatch, complete, herdrContext, herdrEnabled, prop
     return;
   }
   const cwd2 = herdrContext.cwd ?? props.cwd;
-  complete({
-    action: "batch",
+  dispatch({
+    type: "launch/start" /* LaunchStart */,
     batch: {
       jobs: state.queue.entries,
       context: {
@@ -80184,10 +80609,15 @@ var launchQueue = ({ state, dispatch, complete, herdrContext, herdrEnabled, prop
     }
   });
 };
+var handleQueueEntryInput = ({ dispatch, cancel }, input, key) => {
+  if (input === "b" || input === "o" || key.escape) dispatch({ type: "queue/back" /* QueueBack */ });
+  else if (input === "q") cancel();
+};
 var handleQueueInput = (context, input, key) => {
   const { dispatch, cancel } = context;
   if (key.upArrow || input === "k") dispatch({ type: "queue/move" /* QueueMove */, delta: -1 });
   else if (key.downArrow || input === "j") dispatch({ type: "queue/move" /* QueueMove */, delta: 1 });
+  else if (input === "o") dispatch({ type: "queue/open-entry" /* QueueOpenEntry */ });
   else if (input === "e") dispatch({ type: "queue/edit-start" /* QueueEditStart */ });
   else if (input === "x") dispatch({ type: "queue/remove" /* QueueRemove */ });
   else if (input === "a") dispatch({ type: "queue/add-another" /* QueueAddAnother */ });
@@ -80257,13 +80687,20 @@ var handleReadinessBlockedInput = ({ dispatch, cancel }, input) => {
 var completeDestination = (context, option) => {
   const { state, props, herdrContext, dispatch, complete } = context;
   if (state.selectedProfile === void 0 || state.selectedCandidate === void 0) return;
-  const prompt = state.selectedCandidate.prompt;
   if (option === "current-terminal" /* CurrentTerminal */) {
-    complete(buildCurrentTerminalResult(state.selectedProfile, prompt, props.cwd));
+    complete(buildCurrentTerminalResult(state.selectedProfile, state.selectedCandidate.prompt, props.cwd));
     return;
   }
-  if (option === "current-herdr-workspace" /* CurrentHerdrWorkspace */ && herdrContext !== null) {
-    complete(buildCurrentHerdrWorkspaceResult(state.selectedProfile, prompt, props.cwd, herdrContext));
+  if (herdrContext === null) return;
+  if (option === "current-herdr-workspace" /* CurrentHerdrWorkspace */) {
+    dispatch({
+      type: "destination/enqueue" /* DestinationEnqueue */,
+      placement: { kind: "current-workspace-pane", direction: "right" }
+    });
+    return;
+  }
+  if (option === "new-herdr-tab" /* NewHerdrTab */) {
+    dispatch({ type: "destination/enqueue" /* DestinationEnqueue */, placement: { kind: "new-tab" } });
     return;
   }
   if (option === "new-herdr-worktree" /* NewHerdrWorktree */) {
@@ -80295,7 +80732,7 @@ var handleQueuePlacementInput = ({ state, dispatch, herdrContext, herdrEnabled }
     else dispatch({ type: "queue-placement/start-worktree" /* QueuePlacementStartWorktree */ });
   }
 };
-var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input, key) => {
+var handleWorktreeCollisionInput = ({ state, dispatch, cancel }, input, key) => {
   if (input === "e") {
     dispatch({ type: "worktree/edit-branch" /* WorktreeEditBranch */ });
     return;
@@ -80309,36 +80746,11 @@ var handleWorktreeCollisionInput = ({ state, dispatch, complete, cancel }, input
     if (input === "b" || key.escape) dispatch({ type: "worktree/back" /* WorktreeBack */ });
     return;
   }
-  if (state.worktreePurpose === "queue") {
-    dispatch({
-      type: "queue-placement/worktree" /* QueuePlacementWorktree */,
-      placement: { kind: "existing-worktree", path: inspection.collision.path },
-      primaryCheckoutPath: inspection.primaryCheckoutPath
-    });
-    return;
-  }
-  if (state.selectedCandidate === void 0) return;
-  complete(
-    buildExistingHerdrWorktreeResult(
-      state.selectedProfile,
-      state.selectedCandidate.prompt,
-      inspection.primaryCheckoutPath,
-      inspection.collision.path
-    )
-  );
-};
-var confirmedWorktreeResult = (state) => {
-  const inspection = state.worktreeInspection;
-  if (inspection === void 0 || "collision" in inspection || !isWorktreeConfirmed(state.worktreeConfirmations + 1, inspection.dirty) || state.selectedProfile === void 0 || state.selectedCandidate === void 0) {
-    return void 0;
-  }
-  return buildNewHerdrWorktreeResult(
-    state.selectedProfile,
-    state.selectedCandidate.prompt,
-    inspection.primaryCheckoutPath,
-    inspection.branch,
-    inspection.baseRef
-  );
+  dispatch({
+    type: "queue-placement/worktree" /* QueuePlacementWorktree */,
+    placement: { kind: "existing-worktree", path: inspection.collision.path },
+    primaryCheckoutPath: inspection.primaryCheckoutPath
+  });
 };
 var confirmedQueueWorktree = (state) => {
   const inspection = state.worktreeInspection;
@@ -80350,21 +80762,15 @@ var confirmedQueueWorktree = (state) => {
     primaryCheckoutPath: inspection.primaryCheckoutPath
   };
 };
-var handleWorktreeReadyInput = ({ state, dispatch, complete }, input, key) => {
+var handleWorktreeReadyInput = ({ state, dispatch }, input, key) => {
   if (key.escape) {
     dispatch({ type: "worktree/back" /* WorktreeBack */ });
     return;
   }
   if (!key.return && input !== "y") return;
-  if (state.worktreePurpose === "queue") {
-    const confirmed = confirmedQueueWorktree(state);
-    if (confirmed === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
-    else dispatch({ type: "queue-placement/worktree" /* QueuePlacementWorktree */, ...confirmed });
-    return;
-  }
-  const result = confirmedWorktreeResult(state);
-  if (result === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
-  else complete(result);
+  const confirmed = confirmedQueueWorktree(state);
+  if (confirmed === void 0) dispatch({ type: "worktree/confirm" /* WorktreeConfirm */ });
+  else dispatch({ type: "queue-placement/worktree" /* QueuePlacementWorktree */, ...confirmed });
 };
 var inputHandlerByStage = {
   ["intent" /* Intent */]: handleIntentInput,
@@ -80387,12 +80793,43 @@ var inputHandlerByStage = {
   ["worktree-collision" /* WorktreeCollision */]: handleWorktreeCollisionInput,
   ["worktree-ready" /* WorktreeReady */]: handleWorktreeReadyInput,
   ["queue" /* Queue */]: handleQueueInput,
+  ["queue-entry" /* QueueEntry */]: handleQueueEntryInput,
   ["queue-prompt-editor" /* QueuePromptEditor */]: handleQueuePromptEditorInput,
-  ["queue-placement" /* QueuePlacement */]: handleQueuePlacementInput
+  ["queue-placement" /* QueuePlacement */]: handleQueuePlacementInput,
+  ["launching" /* Launching */]: handleNoInput
+};
+var acceptsGlobalKeys = (state) => state.stage !== "intent" /* Intent */ && state.stage !== "launching" /* Launching */ && !editingStages.has(state.stage) && !(state.stage === "prompt-review" /* PromptReview */ && state.promptReviewEditing);
+var canSwitchForks = (state) => state.forks.length > 0 && acceptsGlobalKeys(state);
+var globalCommand = (state, input) => {
+  if (input === "`") return { type: "fork/main" /* ForkMain */ };
+  if (input === "x" && state.activeForkId !== void 0) return { type: "fork/drop" /* ForkDrop */ };
+  if (input === "v" && state.queue.entries.length > 0) return { type: "candidates/view-queue" /* CandidatesViewQueue */ };
+  return void 0;
+};
+var forkCommand = (input, key) => {
+  if (key.tab) return { type: key.shift ? "fork/previous" /* ForkPrevious */ : "fork/next" /* ForkNext */ };
+  const digit = Number.parseInt(input, 10);
+  return Number.isInteger(digit) && digit >= 1 && digit <= 9 ? { type: "fork/select" /* ForkSelect */, index: digit - 1 } : void 0;
 };
 var handleGuideInput = (context, input, key) => {
   if (key.ctrl && input === "c") {
     context.cancel();
+    return;
+  }
+  if (acceptsGlobalKeys(context.state)) {
+    if (input === "L" && context.state.queue.entries.length > 0) {
+      launchQueue(context, input, key);
+      return;
+    }
+    const global2 = globalCommand(context.state, input);
+    if (global2 !== void 0) {
+      context.dispatch(global2);
+      return;
+    }
+  }
+  const fork = canSwitchForks(context.state) ? forkCommand(input, key) : void 0;
+  if (fork !== void 0) {
+    context.dispatch(fork);
     return;
   }
   inputHandlerByStage[context.state.stage](context, input, key);
@@ -80500,6 +80937,56 @@ var renderWorktreeReady = ({ state }) => state.worktreeInspection === void 0 || 
     messages: ["Checking branch and path collisions", "Preparing worktree confirmation"]
   }
 ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorktreeReadyView, { inspection: state.worktreeInspection, confirmations: state.worktreeConfirmations });
+var launchRowDetail = (event) => event === void 0 ? "Waiting to start" : event.detail;
+var launchRowMarker = (event, tick) => {
+  if (event === void 0) return "\u25CB";
+  if (event.phase === "done") return "\u2714";
+  if (event.phase === "failed") return "\u2716";
+  return spinnerFrameAt(tick);
+};
+var launchRowColor = (event) => {
+  if (event === void 0) return "gray";
+  if (event.phase === "done") return "green";
+  if (event.phase === "failed") return "red";
+  return "cyan";
+};
+var LaunchProgress = ({ state }) => {
+  const [tick, setTick] = (0, import_react34.useState)(0);
+  (0, import_react34.useEffect)(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80);
+    return () => clearInterval(timer);
+  }, []);
+  const jobs = state.launchBatch?.jobs ?? [];
+  const finished = state.launchProgress.filter((event) => event.phase === "done" || event.phase === "failed").length;
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { bold: true, children: [
+      "Launching ",
+      jobs.length,
+      " job",
+      jobs.length === 1 ? "" : "s",
+      " \xB7 ",
+      finished,
+      "/",
+      jobs.length,
+      " finished"
+    ] }),
+    jobs.map((job) => {
+      const event = state.launchProgress.find((entry) => entry.jobId === job.id);
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { wrap: "truncate-end", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: launchRowColor(event), children: launchRowMarker(event, tick) }),
+        " ",
+        job.id,
+        ". ",
+        job.profile.profile,
+        " \xB7 ",
+        describeJobPlacement(job.placement),
+        " \u2014 ",
+        launchRowDetail(event)
+      ] }, job.id);
+    }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "Every job runs in its own pane. The summary prints when all of them finish." })
+  ] });
+};
 var stageRenderer = {
   ["intent" /* Intent */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IntentEditor, { textDraft: state.textDraft }),
   ["matching" /* Matching */]: matchingProgress,
@@ -80579,8 +81066,16 @@ var stageRenderer = {
   ),
   ["worktree-collision" /* WorktreeCollision */]: renderWorktreeCollision,
   ["worktree-ready" /* WorktreeReady */]: renderWorktreeReady,
-  ["queue" /* Queue */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(QueueView, { queue: state.queue, ...state.errorMessage === void 0 ? {} : { errorMessage: state.errorMessage } }),
+  ["queue" /* Queue */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    QueueView,
+    {
+      queue: state.queue,
+      ...state.errorMessage === void 0 ? {} : { errorMessage: state.errorMessage }
+    }
+  ),
+  ["queue-entry" /* QueueEntry */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(QueueEntryView, { queue: state.queue }),
   ["queue-prompt-editor" /* QueuePromptEditor */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TextEditor, { title: "Edit queued prompt", textDraft: state.textDraft, keys: "\u21B5 save \xB7 Esc back" }),
+  ["launching" /* Launching */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LaunchProgress, { state }),
   ["queue-placement" /* QueuePlacement */]: ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
     QueuePlacementView,
     {
@@ -80596,11 +81091,13 @@ var GuideApp = (props) => {
   const herdrEnabled = herdrContext !== null && props.herdrAvailabilityProbe;
   const complete = (result) => exit(result);
   const cancel = () => complete(buildCancelResult());
-  useGuideMatchEffect(props, state, dispatch);
-  useGuideGenerationEffect(props, state, dispatch);
-  useGuideRefinementEffect(props, state, dispatch);
-  useGuideReadinessEffect(props, state, dispatch);
-  useGuideWorktreeEffect(props, state, dispatch);
+  const mainState = state.activeForkId === void 0 ? state : { ...state, ...mainForkSlice };
+  useGuideMatchEffect(props, mainState, dispatch);
+  useGuideGenerationEffect(props, mainState, dispatch);
+  useGuideRefinementEffect(props, mainState, dispatch);
+  useGuideReadinessEffect(props, mainState, dispatch);
+  useGuideWorktreeEffect(props, mainState, dispatch);
+  useGuideLaunchEffect(props, mainState, dispatch, complete);
   const inputContext = {
     props,
     state,
@@ -80617,8 +81114,15 @@ var GuideApp = (props) => {
   const activeWizardStep = wizardStepForStage(state.stage);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", children: [
     herdrContext?.capture === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CaptureSourceBanner, { capture: herdrContext.capture }),
-    activeWizardStep === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WizardBreadcrumbs, { activeStep: activeWizardStep }),
-    stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })
+    state.forks.map((fork) => {
+      const slice = forkState(state, fork.id);
+      return slice === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ForkWorker, { props, state: slice, forkId: fork.id, dispatch }, fork.id);
+    }),
+    state.forks.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ForkTabBar, { state }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(ChromeRowsContext.Provider, { value: state.forks.length === 0 ? 0 : forkTabBarRows, children: [
+      activeWizardStep === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WizardBreadcrumbs, { activeStep: activeWizardStep }),
+      stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })
+    ] })
   ] });
 };
 
@@ -80888,38 +81392,7 @@ var basketPreviewReducer = (state, action) => reduceSelection(state, action) ?? 
 var assembleStagedPrompt = (chunks) => chunks.map((chunk) => `## from ${chunk.pane} \xB7 ${chunk.capturedAt}
 ${chunk.text}`).join("\n\n");
 var stagedCharacterCount = (chunks) => chunks.reduce((total, chunk) => total + chunk.text.length, 0);
-var countTextLines = (text4) => text4.length === 0 ? 0 : text4.split("\n").length;
-var countLabel = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-var isChunkEdited = (chunk) => capturedText(chunk.id) !== chunk.text;
-var previewBlockLines = 2;
-var clipLine = (line, width) => {
-  const limit = Math.max(1, width);
-  return line.length <= limit ? line : `${line.slice(0, limit - 1).trimEnd()}\u2026`;
-};
-var basketBlockPreview = (text4, width, limit = previewBlockLines) => {
-  const source = text4.split("\n").filter((line) => line.trim().length > 0);
-  const kept = source.slice(0, Math.max(1, limit));
-  return {
-    lines: kept.map((line) => clipLine(line, width)),
-    truncated: source.length > kept.length || kept.some((line) => line.length > Math.max(1, width))
-  };
-};
-var basketVisibleRange = (heights, cursor, capacity) => {
-  if (heights.length === 0) return { start: 0, end: 0 };
-  const index = Math.max(0, Math.min(cursor, heights.length - 1));
-  let start = index;
-  let end = index + 1;
-  let used = heights[index] ?? 0;
-  while (start > 0 && used + (heights[start - 1] ?? 0) <= capacity) {
-    start -= 1;
-    used += heights[start] ?? 0;
-  }
-  while (end < heights.length && used + (heights[end] ?? 0) <= capacity) {
-    used += heights[end] ?? 0;
-    end += 1;
-  }
-  return { start, end };
-};
+var isChunkEdited = (chunk, captured) => captured !== chunk.text;
 var destinationSummaryLines = (destination) => [
   `${destination.launcher} \xB7 ${destination.harness}/${destination.profile} \xB7 ${destination.model} \xB7 effort ${destination.effort} \xB7 sandbox ${destination.sandbox ? "on" : "off"}`,
   `${destination.cwd} \xB7 herdr pane ${destination.herdrPane} \xB7 session ${destination.session}`
@@ -81023,7 +81496,7 @@ var StagedBlock = ({
       "c \xB7 ",
       countLabel(countTextLines(chunk.text), "line")
     ] }),
-    isChunkEdited(chunk) ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "yellow", children: " \xB7 edited" }) : null,
+    isChunkEdited(chunk, capturedText(chunk.id)) ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "yellow", children: " \xB7 edited" }) : null,
     preview.truncated ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, color: "cyan", children: [
       " ",
       "\xB7 o opens"
@@ -81141,7 +81614,7 @@ var viewerScreenBody = (state, lines, height) => {
   const from = Math.min(state.scroll, maximum);
   const block = state.view === "block" /* Block */ ? selectedChunk(state) : void 0;
   const title = block === void 0 ? `FINAL PROMPT \xB7 ${countLabel(state.chunks.length, "block")} \xB7 ${stagedCharacterCount(state.chunks)} chars` : `BLOCK ${state.cursor + 1} of ${state.chunks.length} \xB7 ## from ${block.pane} \xB7 ${block.capturedAt}`;
-  const subtitle = block === void 0 ? "exactly what is sent, block headers included" : `captured from ${block.pane} \xB7 ${block.harness}${isChunkEdited(block) ? " \xB7 edited" : ""}`;
+  const subtitle = block === void 0 ? "exactly what is sent, block headers included" : `captured from ${block.pane} \xB7 ${block.harness}${isChunkEdited(block, capturedText(block.id)) ? " \xB7 edited" : ""}`;
   return {
     node: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ViewerView, { title, subtitle, lines, from, capacity, height }),
     footer: [
@@ -81204,8 +81677,743 @@ var BasketPreviewApp = () => {
   ] });
 };
 
-// src/cli.tsx
+// src/fork-preview.tsx
+var import_react36 = __toESM(require_react(), 1);
 var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
+var ForkPreviewArgsError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ForkPreviewArgsError";
+  }
+};
+var forkPreviewVariants = ["tabs", "inline"];
+var forksFlag = "--forks";
+var helpFlags2 = /* @__PURE__ */ new Set(["--help", "-h"]);
+var isForkPreviewVariant = (value) => forkPreviewVariants.some((variant) => variant === value);
+var forkPreviewHelpText = [
+  "Usage:",
+  `  trx guide ${forksFlag} [${forkPreviewVariants.join("|")}]`,
+  "",
+  "Renders two ways to fork the guide into parallel subflows, on the real",
+  "recommendations screen, from fixture data. It never calls a model, reads the",
+  "profile catalog, or launches anything.",
+  "",
+  "Everywhere:",
+  "  ] [            next or previous variant",
+  "  c r h          fork a pinned lens (council, research, HVE RPI)",
+  "  L              launch: print every fork and exit",
+  "  q              quit",
+  "",
+  "tabs      a tab bar holds the forks and each fork gets the whole screen;",
+  "          Tab and Shift-Tab cycle, ` returns to main, 1-9 jump to one fork.",
+  "          Inside a fork: j/k choice, Enter take it, b back, x drop",
+  "inline    one rail; a fork and its open choices are rows under the",
+  "          recommendations and the detail pane follows the cursor.",
+  "          j/k row, Enter acts on the row, x drops the fork under the cursor",
+  "",
+  "Under 70 columns both variants drop the detail pane and show the rail alone."
+].join("\n");
+var parseForkPreviewArgv = (argv) => {
+  let seenFlag = false;
+  let variant;
+  for (const argument of argv) {
+    if (helpFlags2.has(argument)) return { help: true, variant: variant ?? "tabs" };
+    if (argument === forksFlag) {
+      if (seenFlag) throw new ForkPreviewArgsError(`Duplicate flag: ${forksFlag}`);
+      seenFlag = true;
+    } else if (!isForkPreviewVariant(argument)) {
+      throw new ForkPreviewArgsError(`Unknown variant: ${argument}. Expected one of ${forkPreviewVariants.join(", ")}.`);
+    } else if (variant !== void 0) {
+      throw new ForkPreviewArgsError(`Only one variant is allowed: ${variant} and ${argument}.`);
+    } else {
+      variant = argument;
+    }
+  }
+  if (!seenFlag) throw new ForkPreviewArgsError(`Fork preview requires ${forksFlag}.`);
+  return { help: false, variant: variant ?? "tabs" };
+};
+var previewIntentCharacters = 301;
+var previewIntentWords = 59;
+var previewModel = "gpt-5.6-sol";
+var previewEffort = "medium";
+var previewLenses = [
+  {
+    key: "c",
+    emoji: "\u{1F9E0}",
+    label: "Council",
+    description: "Pressure-test the idea and its implementation.",
+    origin: {
+      key: "council",
+      label: "Council",
+      profileRef: "native:cpx/council",
+      harness: "Copilot",
+      workflowId: "three-positions-one-verdict",
+      score: 0,
+      reason: "Three independent positions argue the change, then one verdict decides it.",
+      why: "Runs the same question through three opposed reviewers before any code is written.",
+      tradeoff: "Three passes cost three times the tokens of a direct implementation loop.",
+      skill: "none",
+      sandbox: false,
+      headlessPrompt: true,
+      herdr: "known-issue",
+      prerequisites: "none"
+    }
+  },
+  {
+    key: "r",
+    emoji: "\u{1F50D}",
+    label: "Research",
+    description: "Gather evidence before implementation.",
+    origin: {
+      key: "research",
+      label: "Research",
+      profileRef: "native:cdx/research",
+      harness: "Codex",
+      workflowId: "read-before-write",
+      score: 0,
+      reason: "Reads the prior work and the surrounding code before it proposes an edit.",
+      why: "Front-loads a survey pass, so the first edit lands with the constraints already known.",
+      tradeoff: "The survey pass delays the first visible change.",
+      skill: "none",
+      sandbox: true,
+      headlessPrompt: true,
+      herdr: "untested",
+      prerequisites: "none"
+    }
+  },
+  {
+    key: "h",
+    emoji: "\u{1F9ED}",
+    label: "HVE RPI",
+    description: "Run the dedicated HVE Core RPI agent.",
+    origin: {
+      key: "hve-rpi",
+      label: "HVE RPI",
+      profileRef: "native:cldx/hve-rpi",
+      harness: "Claude",
+      workflowId: "risk-plan-implement",
+      score: 0,
+      reason: "Names the risk, writes the plan, and only then implements, in that order.",
+      why: "Blocks implementation behind an explicit risk register and an approved plan.",
+      tradeoff: "Two gates before any code makes small changes feel heavy.",
+      skill: "hve-core",
+      sandbox: false,
+      headlessPrompt: true,
+      herdr: "verified",
+      prerequisites: "hve-core-all plugin"
+    }
+  }
+];
+var previewRecommendations = [
+  {
+    key: "graph-of-loops",
+    label: "Claude Graph Of Loops",
+    profileRef: "sandbox:claude-graph-of-loops",
+    harness: "Claude",
+    workflowId: "start-isolated-feature-branch",
+    score: 96,
+    reason: "Its isolated worktrees, retryable orchestration nodes, and research fan-out closely match implementing a queued current-workspace-or-new-worktree launch flow.",
+    why: "Start a new coding task in an isolated git worktree, staffed with a curated specialist agent role.",
+    tradeoff: "Its persistent graph and review gates add more machinery than a direct host-native implementation loop.",
+    skill: "none",
+    sandbox: true,
+    headlessPrompt: true,
+    herdr: "untested",
+    prerequisites: "none"
+  },
+  {
+    key: "poteto-mode",
+    label: "Poteto Mode",
+    profileRef: "native:cdx/pstack",
+    harness: "Codex",
+    workflowId: "poteto-mode-entry-point",
+    score: 92,
+    reason: "Small steps, each one verified against a test before the next one starts.",
+    why: "Forces a failing test in front of every change, so nothing lands unverified.",
+    tradeoff: "The per-step gate is slow on wide mechanical edits that need no proof.",
+    skill: "none",
+    sandbox: true,
+    headlessPrompt: true,
+    herdr: "untested",
+    prerequisites: "none"
+  },
+  {
+    key: "copilot",
+    label: "Copilot",
+    profileRef: "native:omp/copilot",
+    harness: "OpenCode",
+    workflowId: "pstack-orchestrate-omp",
+    score: 88,
+    reason: "Fast on well-shaped edits where the target files are already known.",
+    why: "Skips the survey pass and edits directly, which suits a scoped, well-described change.",
+    tradeoff: "It assumes the scope is right, so a wrong premise is discovered late.",
+    skill: "none",
+    sandbox: false,
+    headlessPrompt: true,
+    herdr: "verified",
+    prerequisites: "none"
+  },
+  {
+    key: "default",
+    label: "Default",
+    profileRef: "native:picx/default",
+    harness: "Pi",
+    workflowId: "subagent-and-workflow-fan-out",
+    score: 84,
+    reason: "No profile bias, so the harness behaves the way its vendor shipped it.",
+    why: "Adds no workflow of its own, which keeps the comparison against the other profiles honest.",
+    tradeoff: "Nothing guides it, so quality tracks the prompt alone.",
+    skill: "none",
+    sandbox: false,
+    headlessPrompt: true,
+    herdr: "untested",
+    prerequisites: "none"
+  },
+  {
+    key: "headlong",
+    label: "Headlong",
+    profileRef: "native:cdx/headlong",
+    harness: "Headlong",
+    workflowId: "start-persistent-exploration",
+    score: 76,
+    reason: "Writes first and asks later, which suits a throwaway spike.",
+    why: "Removes the planning gates entirely to reach running code as fast as possible.",
+    tradeoff: "It produces code you must review closely, because nothing reviewed it first.",
+    skill: "none",
+    sandbox: true,
+    headlessPrompt: true,
+    herdr: "untested",
+    prerequisites: "none"
+  }
+];
+var slug = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+var previewCandidates = (label) => [
+  {
+    name: "direct",
+    text: `Work as ${label}. Name the single change that makes the staged basket send one combined prompt, then make it.`
+  },
+  {
+    name: "structured",
+    text: [
+      `Work as ${label}.`,
+      "",
+      "1. Read the composer state model and say what it already holds.",
+      "2. Name the one field that must move from the batch onto the entry.",
+      "3. Write the failing test first, then the change that makes it pass.",
+      "",
+      "Report each step with the command you ran and its result."
+    ].join("\n")
+  },
+  {
+    name: "exploratory",
+    text: [
+      `Work as ${label}.`,
+      "",
+      "Before you write code, lay out the options for holding several unfinished",
+      "flows in one terminal application. For each option give the state it must",
+      "keep, the keys it costs, and the case where it reads badly.",
+      "",
+      "Assume the intent and the profile recommendations are computed once and",
+      "shared by every flow. Assume each flow ends by putting exactly one job in",
+      "a queue, and that no flow may take over this terminal.",
+      "",
+      "Rank the options, say which one you would build, and say why the runner",
+      "up loses. Only then write the smallest change that proves the winner."
+    ].join("\n")
+  }
+];
+var previewPlacements = (label) => [
+  { name: "pane here", text: "pane in this Herdr workspace (split right)" },
+  { name: "new worktree", text: `new worktree worktree/${slug(label)} from main` },
+  { name: "existing worktree", text: "existing worktree /repo/.worktrees/review" }
+];
+var initialForkPreviewState = (variant) => ({
+  variant,
+  forks: [],
+  activeId: void 0,
+  mainCursor: 0,
+  nextId: 1
+});
+var activeFork = (state) => state.forks.find((fork) => fork.id === state.activeId);
+var forkChoices = (fork) => fork.step === "placement" /* Placement */ ? previewPlacements(fork.origin.label) : previewCandidates(fork.origin.label);
+var forkChoiceIndex = (fork) => fork.step === "placement" /* Placement */ ? fork.placementIndex : fork.candidateIndex;
+var forkPrompt = (fork) => previewCandidates(fork.origin.label)[fork.candidateIndex]?.text ?? "";
+var forkPlacement = (fork) => previewPlacements(fork.origin.label)[fork.placementIndex]?.text ?? "";
+var readyForks = (state) => state.forks.filter((fork) => fork.step === "ready" /* Ready */);
+var launchSummaryLines = (state) => {
+  const ready = readyForks(state);
+  if (ready.length === 0) return ["No fork is ready. Nothing was launched."];
+  const skipped = state.forks.length - ready.length;
+  return [
+    `Launching ${countLabel(ready.length, "fork")}.`,
+    ...ready.map((fork) => `${fork.id}. ${fork.origin.profileRef} \u2192 ${forkPlacement(fork)}`),
+    ...skipped === 0 ? [] : [`Skipped ${countLabel(skipped, "unfinished fork")}.`]
+  ];
+};
+var recommendationRows = previewRecommendations.map((origin) => ({
+  kind: "recommendation",
+  origin
+}));
+var inlineRows = (state) => [
+  ...recommendationRows,
+  ...state.forks.flatMap((fork) => [
+    { kind: "fork", fork },
+    ...fork.step === "ready" /* Ready */ ? [] : forkChoices(fork).map((choice, index) => ({ kind: "choice", fork, index, choice }))
+  ])
+];
+var previewRows = (state) => state.variant === "inline" ? inlineRows(state) : recommendationRows;
+var rowAt = (state) => previewRows(state)[state.mainCursor];
+var rowFork = (row) => row === void 0 || row.kind === "recommendation" ? void 0 : row.fork;
+var wizardStepLabels = ["Profile", "Prompt candidates", "Destination"];
+var stepIndexes = {
+  ["candidate" /* Candidate */]: 1,
+  ["placement" /* Placement */]: 2,
+  ["ready" /* Ready */]: 2
+};
+var wizardStepIndex = (state) => {
+  const fork = state.variant === "inline" ? rowFork(rowAt(state)) : activeFork(state);
+  return fork === void 0 ? 0 : stepIndexes[fork.step];
+};
+var wrapIndex = (index, length) => length === 0 ? 0 : (index % length + length) % length;
+var withFork = (state, change) => ({
+  ...state,
+  forks: state.forks.map((fork) => fork.id === state.activeId ? change(fork) : fork)
+});
+var cursorOnFork = (state, id) => {
+  if (state.variant !== "inline") return state.mainCursor;
+  const rows = inlineRows(state);
+  const choice = rows.findIndex((row) => row.kind === "choice" && row.fork.id === id);
+  return choice >= 0 ? choice : Math.max(0, rows.findIndex((row) => row.kind === "fork" && row.fork.id === id));
+};
+var openFork2 = (state, origin) => {
+  const fork = {
+    id: state.nextId,
+    origin,
+    step: "candidate" /* Candidate */,
+    candidateIndex: 0,
+    placementIndex: 0
+  };
+  const opened = { ...state, forks: [...state.forks, fork], activeId: fork.id, nextId: state.nextId + 1 };
+  return { ...opened, mainCursor: cursorOnFork(opened, fork.id) };
+};
+var nextStep = (step) => step === "candidate" /* Candidate */ ? "placement" /* Placement */ : "ready" /* Ready */;
+var previousStep = (step) => step === "ready" /* Ready */ ? "placement" /* Placement */ : "candidate" /* Candidate */;
+var cycleVariant = (state, delta) => ({
+  ...state,
+  variant: forkPreviewVariants[wrapIndex(forkPreviewVariants.indexOf(state.variant) + delta, forkPreviewVariants.length)] ?? state.variant
+});
+var selectForkAt = (state, index) => {
+  const fork = state.forks[index];
+  return fork === void 0 ? state : { ...state, activeId: fork.id, mainCursor: cursorOnFork(state, fork.id) };
+};
+var activateRow = (state) => {
+  const row = rowAt(state);
+  if (row === void 0) return state;
+  if (row.kind === "recommendation") return openFork2(state, row.origin);
+  return stepFork({ ...state, activeId: row.fork.id }, 1);
+};
+var forkFromLens = (state, index) => {
+  const lens = previewLenses[index];
+  return lens === void 0 ? state : openFork2(state, lens.origin);
+};
+function stepFork(state, direction) {
+  const fork = activeFork(state);
+  if (fork === void 0) return state;
+  if (direction === -1 && fork.step === "candidate" /* Candidate */) return { ...state, activeId: void 0 };
+  const stepped = withFork(state, (current) => ({
+    ...current,
+    step: direction === 1 ? nextStep(current.step) : previousStep(current.step)
+  }));
+  return { ...stepped, mainCursor: cursorOnFork(stepped, fork.id) };
+}
+var targetFork = (state) => state.variant === "inline" ? rowFork(rowAt(state)) : activeFork(state);
+var moveChoice = (state, delta) => {
+  const fork = targetFork(state);
+  if (fork === void 0 || fork.step === "ready" /* Ready */) return state;
+  const length = forkChoices(fork).length;
+  return {
+    ...state,
+    forks: state.forks.map(
+      (current) => current.id !== fork.id ? current : current.step === "placement" /* Placement */ ? { ...current, placementIndex: wrapIndex(current.placementIndex + delta, length) } : { ...current, candidateIndex: wrapIndex(current.candidateIndex + delta, length) }
+    )
+  };
+};
+var dropFork = (state) => {
+  const fork = targetFork(state);
+  if (fork === void 0) return state;
+  return { ...state, forks: state.forks.filter((current) => current.id !== fork.id), activeId: void 0 };
+};
+var cycleFork2 = (state, delta) => {
+  if (state.forks.length === 0) return state;
+  const current = state.forks.findIndex((fork) => fork.id === state.activeId);
+  return selectForkAt(state, wrapIndex((current < 0 ? -1 : current) + delta, state.forks.length));
+};
+var moveCursor = (state, delta) => ({
+  ...state,
+  mainCursor: wrapIndex(state.mainCursor + delta, Math.max(1, previewRows(state).length))
+});
+var clampCursor = (state) => {
+  const last = Math.max(0, previewRows(state).length - 1);
+  return state.mainCursor <= last ? state : { ...state, mainCursor: last };
+};
+var handlers = {
+  ["variant/next" /* NextVariant */]: (state) => cycleVariant(state, 1),
+  ["variant/previous" /* PreviousVariant */]: (state) => cycleVariant(state, -1),
+  ["main/next" /* MainNext */]: (state) => moveCursor(state, 1),
+  ["main/previous" /* MainPrevious */]: (state) => moveCursor(state, -1),
+  ["main/activate" /* MainActivate */]: (state) => activateRow(state),
+  ["fork/lens" /* ForkLens */]: (state, action) => forkFromLens(state, action.type === "fork/lens" /* ForkLens */ ? action.index : 0),
+  ["fork/go-main" /* GoMain */]: (state) => ({ ...state, activeId: void 0 }),
+  ["fork/next" /* NextFork */]: (state) => cycleFork2(state, 1),
+  ["fork/previous" /* PreviousFork */]: (state) => cycleFork2(state, -1),
+  ["fork/select" /* SelectFork */]: (state, action) => action.type === "fork/select" /* SelectFork */ ? selectForkAt(state, action.index) : state,
+  ["choice/next" /* ChoiceNext */]: (state) => moveChoice(state, 1),
+  ["choice/previous" /* ChoicePrevious */]: (state) => moveChoice(state, -1),
+  ["fork/advance" /* Advance */]: (state) => stepFork(state, 1),
+  ["fork/retreat" /* Retreat */]: (state) => stepFork(state, -1),
+  ["fork/drop" /* DropFork */]: (state) => dropFork(state)
+};
+var forkPreviewReducer = (state, action) => clampCursor(handlers[action.type](state, action));
+var lensKeys = previewLenses.map((lens) => lens.key);
+var sharedCommand = (input) => {
+  if (input === "]") return { type: "variant/next" /* NextVariant */ };
+  if (input === "[") return { type: "variant/previous" /* PreviousVariant */ };
+  if (input === "q") return { type: "quit" };
+  if (input === "L") return { type: "launch" };
+  const lens = lensKeys.indexOf(input);
+  return lens < 0 ? void 0 : { type: "fork/lens" /* ForkLens */, index: lens };
+};
+var downKey = (input, key) => key.downArrow || input === "j";
+var upKey = (input, key) => key.upArrow || input === "k";
+var stepCommand = (input, key) => {
+  if (downKey(input, key)) return { type: "choice/next" /* ChoiceNext */ };
+  if (upKey(input, key)) return { type: "choice/previous" /* ChoicePrevious */ };
+  if (key.return) return { type: "fork/advance" /* Advance */ };
+  if (input === "b") return { type: "fork/retreat" /* Retreat */ };
+  if (input === "x") return { type: "fork/drop" /* DropFork */ };
+  return void 0;
+};
+var railCommand = (input, key) => {
+  if (downKey(input, key)) return { type: "main/next" /* MainNext */ };
+  if (upKey(input, key)) return { type: "main/previous" /* MainPrevious */ };
+  if (key.return) return { type: "main/activate" /* MainActivate */ };
+  return void 0;
+};
+var digitCommand = (input) => {
+  const digit = Number.parseInt(input, 10);
+  return Number.isInteger(digit) && digit >= 1 && digit <= 9 ? { type: "fork/select" /* SelectFork */, index: digit - 1 } : void 0;
+};
+var tabsCommand = (state, input, key) => {
+  if (key.tab) return { type: key.shift ? "fork/previous" /* PreviousFork */ : "fork/next" /* NextFork */ };
+  if (input === "`" || key.escape) return { type: "fork/go-main" /* GoMain */ };
+  return digitCommand(input) ?? (state.activeId === void 0 ? railCommand(input, key) : stepCommand(input, key));
+};
+var inlineCommand = (state, input, key) => {
+  if (downKey(input, key)) return { type: "main/next" /* MainNext */ };
+  if (upKey(input, key)) return { type: "main/previous" /* MainPrevious */ };
+  if (key.return) return { type: "main/activate" /* MainActivate */ };
+  if (input === "b") return rowFork(rowAt(state)) === void 0 ? void 0 : { type: "fork/retreat" /* Retreat */ };
+  if (input === "x") return { type: "fork/drop" /* DropFork */ };
+  return void 0;
+};
+var variantCommands = { tabs: tabsCommand, inline: inlineCommand };
+var showsDetailPane = (columns) => columns >= 70;
+var forkPreviewCommandForKey = (state, input, key) => sharedCommand(input) ?? variantCommands[state.variant](state, input, key);
+var variantFooters = {
+  tabs: (state) => state.activeId === void 0 ? "\u2191/\u2193 or j/k select \xB7 \u21B5 fork it \xB7 Tab next fork \xB7 1-9 jump to a fork" : "\u2191/\u2193 or j/k choice \xB7 \u21B5 take it \xB7 b back \xB7 x drop \xB7 Tab next fork \xB7 ` main",
+  inline: (state) => rowFork(rowAt(state)) === void 0 ? "\u2191/\u2193 or j/k row \xB7 \u21B5 fork it \xB7 everything stays on one rail" : "\u2191/\u2193 or j/k row \xB7 \u21B5 take this choice \xB7 b back \xB7 x drop this fork"
+};
+var forkPreviewFooterLines = (state) => [
+  variantFooters[state.variant](state),
+  `] [ variant (${state.variant}) \xB7 c council \xB7 r research \xB7 h HVE RPI \xB7 L launch \xB7 q cancel`
+];
+var stepLabels = {
+  ["candidate" /* Candidate */]: "Prompt",
+  ["placement" /* Placement */]: "Destination",
+  ["ready" /* Ready */]: "Ready"
+};
+var WizardBreadcrumbs2 = ({ activeIndex }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginBottom: 1, children: wizardStepLabels.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_react36.default.Fragment, { children: [
+  index === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: " \u203A " }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: index === activeIndex, color: index === activeIndex ? "cyan" : index < activeIndex ? "green" : "gray", children: [
+    index < activeIndex ? "\u2713 " : "",
+    "Step ",
+    index + 1,
+    ": ",
+    label
+  ] })
+] }, label)) });
+var PinnedLenses2 = () => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: "PINNED LENSES" }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { gap: 3, children: previewLenses.map((lens) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "truncate-end", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: "magenta", children: [
+      lens.emoji,
+      " ",
+      lens.key,
+      " ",
+      lens.label
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+      " \u2014 ",
+      lens.description
+    ] })
+  ] }, lens.key)) })
+] });
+var ForkBadge = ({ fork }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: fork.step === "ready" /* Ready */ ? "green" : "yellow", children: [
+  fork.step === "ready" /* Ready */ ? "\u25CF" : "\u25CB",
+  " fork ",
+  fork.id
+] });
+var RailRow = ({ row, active }) => {
+  if (row.kind === "recommendation") {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: active, ...active ? { color: "green" } : {}, wrap: "truncate-end", children: [
+        active ? "\u276F " : "  ",
+        row.origin.label
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+        row.origin.harness,
+        " | ",
+        row.origin.score,
+        "%"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: row.origin.workflowId })
+    ] });
+  }
+  if (row.kind === "fork") {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: active, ...active ? { color: "green" } : {}, wrap: "truncate-end", children: [
+        active ? "\u276F " : "  ",
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ForkBadge, { fork: row.fork }),
+        " ",
+        row.fork.origin.label
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+        "  ",
+        stepLabels[row.fork.step].toLowerCase()
+      ] })
+    ] });
+  }
+  const taken = row.index === forkChoiceIndex(row.fork);
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: active, ...active ? { color: "green" } : {}, wrap: "truncate-end", children: [
+    active ? "\u276F " : "  ",
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { ...taken ? { color: "green" } : { dimColor: true }, children: taken ? "\u25C9" : "\u25CB" }),
+    "  ",
+    row.choice.name
+  ] });
+};
+var Rail = ({
+  title,
+  cursor,
+  rows
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", width: 30, flexShrink: 0, borderStyle: "single", borderColor: "gray", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: title }),
+  rows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+    RailRow,
+    {
+      row,
+      active: index === cursor
+    },
+    row.kind === "recommendation" ? row.origin.key : row.kind === "fork" ? `f${row.fork.id}` : `c${row.fork.id}:${row.index}`
+  ))
+] });
+var OriginDetail = ({ origin }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, paddingLeft: 2, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: origin.label }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    origin.profileRef,
+    " | ",
+    origin.harness,
+    origin.score === 0 ? " | pinned lens" : ` | ${origin.score}%`
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { wrap: "wrap", children: origin.reason }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: "green", children: [
+      "WHY THIS PROFILE OVER PLAIN ",
+      origin.harness.toUpperCase()
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
+      "\u2022 ",
+      origin.why
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
+      "\u2022 Adds the ",
+      origin.workflowId,
+      " workflow, profile guidance, constraints, and prerequisites."
+    ] })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: "COST OF THIS CHOICE" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { wrap: "wrap", children: origin.tradeoff })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    "Skill: ",
+    origin.skill,
+    " | Sandbox: ",
+    origin.sandbox ? "Docker" : "host",
+    " | Headless prompt:",
+    " ",
+    origin.headlessPrompt ? "yes" : "no",
+    " | Herdr: ",
+    origin.herdr
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    "Prerequisites: ",
+    origin.prerequisites
+  ] })
+] });
+var ChoiceDetail = ({
+  fork,
+  choice,
+  index,
+  width
+}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, paddingLeft: 2, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: "cyan", children: [
+    stepLabels[fork.step],
+    ": ",
+    choice.name
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    "fork ",
+    fork.id,
+    " \xB7 ",
+    fork.origin.profileRef,
+    " \xB7 ",
+    choice.text.length,
+    " chars",
+    index === forkChoiceIndex(fork) ? " \xB7 taken" : ""
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: basketBlockPreview(choice.text, width, 14).lines.map((line, lineIndex) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { wrap: "truncate-end", children: line }, `${choice.name}:${lineIndex}`)) })
+] });
+var ForkDetail = ({ fork, width }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, paddingLeft: 2, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: fork.step === "ready" /* Ready */ ? "green" : "yellow", children: [
+    "Fork ",
+    fork.id,
+    ": ",
+    fork.origin.label,
+    " \xB7 ",
+    stepLabels[fork.step].toLowerCase()
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: fork.origin.profileRef }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: "DESTINATION" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
+      "\u2192 ",
+      forkPlacement(fork)
+    ] })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: "PROMPT" }),
+    basketBlockPreview(forkPrompt(fork), width, 10).lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: line }, `prompt:${index}`))
+  ] })
+] });
+var DetailPane = ({ row, width }) => {
+  if (row === void 0) return null;
+  if (row.kind === "recommendation") return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(OriginDetail, { origin: row.origin });
+  if (row.kind === "fork") return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ForkDetail, { fork: row.fork, width });
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ChoiceDetail, { fork: row.fork, choice: row.choice, index: row.index, width });
+};
+var ScreenHeading = ({ forks }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: "Profile recommendations" }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
+    "Prompt: ",
+    previewIntentCharacters,
+    " chars \xB7 ",
+    previewIntentWords,
+    " words \xB7 Model: ",
+    previewModel,
+    " \xB7 Effort:",
+    " ",
+    previewEffort,
+    " \xB7 ",
+    countLabel(forks, "fork"),
+    " open \xB7 fixtures only"
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PinnedLenses2, {})
+] });
+var TabBar2 = ({ state }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "truncate-end", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { inverse: state.activeId === void 0, children: " main " }),
+  state.forks.map((fork) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: " \u2502 " }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { inverse: fork.id === state.activeId, color: fork.step === "ready" /* Ready */ ? "green" : "yellow", children: [
+      " ",
+      fork.id,
+      " ",
+      fork.origin.label,
+      " ",
+      fork.step === "ready" /* Ready */ ? "\u25CF" : "\u25CB",
+      " "
+    ] })
+  ] }, fork.id))
+] });
+var ForkScreen = ({
+  fork,
+  width,
+  detail
+}) => {
+  if (fork.step === "ready" /* Ready */) {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ForkDetail, { fork, width }) });
+  }
+  const chosen = forkChoiceIndex(fork);
+  const choices = forkChoices(fork);
+  const rows = choices.map((choice, index) => ({
+    kind: "choice",
+    fork,
+    index,
+    choice
+  }));
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Rail, { title: stepLabels[fork.step].toUpperCase(), cursor: chosen, rows }),
+    detail ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(DetailPane, { row: rows[chosen], width: width - 34 }) : null
+  ] });
+};
+var MainScreen = ({
+  state,
+  width,
+  detail
+}) => {
+  const rows = previewRows(state);
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      Rail,
+      {
+        title: state.variant === "inline" ? "RECOMMENDATIONS & FORKS" : "RECOMMENDATIONS",
+        cursor: state.mainCursor,
+        rows
+      }
+    ),
+    detail ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(DetailPane, { row: rows[state.mainCursor], width: width - 34 }) : null
+  ] });
+};
+var ForkPreviewApp = ({ variant }) => {
+  const { exit } = use_app_default();
+  const { rows, columns } = use_window_size_default();
+  const [state, dispatch] = (0, import_react36.useReducer)(forkPreviewReducer, variant, initialForkPreviewState);
+  const width = Math.max(20, columns - 4);
+  const detail = showsDetailPane(columns);
+  use_input_default((input, key) => {
+    const command = forkPreviewCommandForKey(state, input, key);
+    if (command === void 0) return;
+    if (command.type === "quit") {
+      exit({ kind: "quit" });
+      return;
+    }
+    if (command.type === "launch") {
+      exit({ kind: "launched", lines: launchSummaryLines(state) });
+      return;
+    }
+    dispatch(command);
+  });
+  const fork = state.variant === "tabs" ? activeFork(state) : void 0;
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", height: Math.max(12, rows - 1), overflowY: "hidden", paddingX: 1, children: [
+    state.variant === "tabs" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(TabBar2, { state }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(WizardBreadcrumbs2, { activeIndex: wizardStepIndex(state) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ScreenHeading, { forks: state.forks.length }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", flexGrow: 1, overflowY: "hidden", children: fork === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(MainScreen, { state, width, detail }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ForkScreen, { fork, width, detail }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: forkPreviewFooterLines(state).map((line) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: line }, line)) })
+  ] });
+};
+
+// src/cli.tsx
+var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
   if (filename !== void 0) return readFile3(filename, "utf8");
   const chunks = [];
@@ -81232,8 +82440,8 @@ var detailColors = {
   Sandbox: "green",
   Status: "gray"
 };
-var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
-  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
+var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
+  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
     row.label,
     ":",
     " "
@@ -81246,10 +82454,10 @@ var DetailsView = ({
   visibleDetails,
   detailOffset,
   detailCapacity
-}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
       detailOffset + 1,
       "\u2013",
       Math.min(expandedDetails.length, detailOffset + detailCapacity),
@@ -81257,40 +82465,40 @@ var DetailsView = ({
       expandedDetails.length
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
 ] });
 var ProfileTable = ({
   shown,
   state,
   widths
-}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " " }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " " }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
   ] }),
-  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
+  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
     const active = entry.id === state.selectedId;
     const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
     const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
     const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
     ] }, entry.id);
   })
 ] });
@@ -81298,37 +82506,37 @@ var SelectionSummary = ({
   selected,
   summaryRows,
   summaryTruncated
-}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
-  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
+  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
+  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
 ] }) });
 var ModelChooser = ({
   selected,
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: "Select model" }),
-  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: "Select model" }),
+  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
     index === modelIndex ? "\u276F " : "  ",
     candidate,
     candidate === selected.defaultModel ? " (default)" : ""
   ] }, candidate)),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
     modelIndex === selected.models.length ? "\u276F " : "  ",
     "Custom\u2026"
   ] }),
-  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
+  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
     "Model ID: ",
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: "yellow", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
       customModel,
       "\u2588"
     ] })
@@ -81338,7 +82546,7 @@ var ShortcutHelp = ({
   searching,
   herdrAvailable,
   remoteAvailable
-}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
 var SelectionView = ({
   catalog,
   state,
@@ -81354,10 +82562,10 @@ var SelectionView = ({
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
       "Sort: ",
       state.sort,
       " \xB7 Herdr: ",
@@ -81367,21 +82575,21 @@ var SelectionView = ({
       remoteAvailable ? "available" : "unavailable"
     ] })
   ] }),
-  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { wrap: "wrap", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { bold: true, color: "blue", children: [
+  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "blue", children: [
       "Context:",
       " "
     ] }),
     catalog.description
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
     "Search: ",
     state.query,
     searching ? "\u2588" : ""
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ProfileTable, { shown, state, widths }),
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
-  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ProfileTable, { shown, state, widths }),
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
+  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
     ModelChooser,
     {
       selected,
@@ -81390,7 +82598,7 @@ var SelectionView = ({
       customModel
     }
   ) : null,
-  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
 ] });
 var Launcher = ({
   catalog,
@@ -81399,20 +82607,20 @@ var Launcher = ({
 }) => {
   const { exit } = use_app_default();
   const { columns, rows } = use_window_size_default();
-  const [state, updateState] = (0, import_react36.useState)(() => createLauncherState(catalog.entries));
-  const [searching, setSearching] = (0, import_react36.useState)(true);
-  const [choosingModel, setChoosingModel] = (0, import_react36.useState)(false);
-  const [modelIndex, setModelIndex] = (0, import_react36.useState)(0);
-  const [editingCustomModel, setEditingCustomModel] = (0, import_react36.useState)(false);
-  const [customModel, setCustomModel] = (0, import_react36.useState)("");
-  const [showingDetails, setShowingDetails] = (0, import_react36.useState)(false);
-  const [detailOffset, setDetailOffset] = (0, import_react36.useState)(0);
-  const visible = (0, import_react36.useMemo)(() => visibleEntries(state), [state]);
+  const [state, updateState] = (0, import_react37.useState)(() => createLauncherState(catalog.entries));
+  const [searching, setSearching] = (0, import_react37.useState)(true);
+  const [choosingModel, setChoosingModel] = (0, import_react37.useState)(false);
+  const [modelIndex, setModelIndex] = (0, import_react37.useState)(0);
+  const [editingCustomModel, setEditingCustomModel] = (0, import_react37.useState)(false);
+  const [customModel, setCustomModel] = (0, import_react37.useState)("");
+  const [showingDetails, setShowingDetails] = (0, import_react37.useState)(false);
+  const [detailOffset, setDetailOffset] = (0, import_react37.useState)(0);
+  const visible = (0, import_react37.useMemo)(() => visibleEntries(state), [state]);
   const selected = selectedEntry(state);
   const selectedModel = selected === void 0 ? void 0 : state.modelByEntry[selected.id];
   const model = selected === void 0 ? void 0 : selectedModel ?? selected.defaultModel;
   const forwardedModel = selectedModel === void 0 || selectedModel === selected?.defaultModel ? void 0 : selectedModel;
-  const expandedDetails = (0, import_react36.useMemo)(
+  const expandedDetails = (0, import_react37.useMemo)(
     () => selected === void 0 ? [] : detailRows(selected, model, Math.max(16, columns - 4), forwardedModel),
     [selected, model, columns, forwardedModel]
   );
@@ -81493,11 +82701,11 @@ var Launcher = ({
   );
   const start = Math.max(0, Math.min(selectedIndex - Math.floor(capacity / 2), visible.length - capacity));
   const shown = visible.slice(start, start + capacity);
-  const widths = (0, import_react36.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
+  const widths = (0, import_react37.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
   const detailCapacity = Math.max(1, rows - 4);
   const visibleDetails = expandedDetails.slice(detailOffset, detailOffset + detailCapacity);
   if (showingDetails && selected !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
       DetailsView,
       {
         selected,
@@ -81508,7 +82716,7 @@ var Launcher = ({
       }
     );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
     SelectionView,
     {
       catalog,
@@ -81632,7 +82840,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
   let result;
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         GuideApp,
         {
           catalog,
@@ -81700,7 +82908,7 @@ var runGuidePreviewMode = async () => {
   const terminal = openInteractiveTerminalStreams();
   let result;
   try {
-    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime3.jsx)(BasketPreviewApp, {}), {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime4.jsx)(BasketPreviewApp, {}), {
       stdin: terminal.input,
       stdout: terminal.output,
       interactive: true,
@@ -81721,6 +82929,37 @@ var runGuidePreviewMode = async () => {
   if (result.kind === "submitted") process.stdout.write(`${result.prompt}
 `);
 };
+var runForkPreviewMode = async () => {
+  const args = parseForkPreviewArgv(process.argv.slice(3));
+  if (args.help) {
+    process.stdout.write(`${forkPreviewHelpText}
+`);
+    return;
+  }
+  const terminal = openInteractiveTerminalStreams();
+  let result;
+  try {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ForkPreviewApp, { variant: args.variant }), {
+      stdin: terminal.input,
+      stdout: terminal.output,
+      interactive: true,
+      exitOnCtrlC: false,
+      kittyKeyboard: { mode: "disabled" },
+      alternateScreen: true,
+      maxFps: 30
+    });
+    const resolved = await instance.waitUntilExit();
+    if (resolved === void 0) {
+      process.exitCode = 130;
+      return;
+    }
+    result = resolved;
+  } finally {
+    terminal.close();
+  }
+  if (result.kind === "launched") process.stdout.write(`${result.lines.join("\n")}
+`);
+};
 var main = async () => {
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList();
@@ -81728,6 +82967,10 @@ var main = async () => {
   }
   if (process.argv[2] === "guide-preview") {
     await runGuidePreviewMode();
+    return;
+  }
+  if (process.argv[2] === "guide-forks") {
+    await runForkPreviewMode();
     return;
   }
   if (process.argv[2] === "guide") {
@@ -81746,7 +82989,7 @@ var main = async () => {
   }
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         Launcher,
         {
           catalog,

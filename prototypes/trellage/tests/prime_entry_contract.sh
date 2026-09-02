@@ -133,7 +133,7 @@ prompt='literal $(touch /tmp/not-executed) --resume prompt'
 ANTHROPIC_API_KEY=poison-anthropic ANTHROPIC_AUTH_TOKEN=poison-auth CLAUDE_CODE_OAUTH_TOKEN=poison-claude \
 OPENAI_API_KEY=poison-openai COPILOT_GITHUB_TOKEN=poison-copilot GH_TOKEN=poison-gh GITHUB_TOKEN=poison-github \
   run_entry prompt --dangerous-arg -- "$prompt"
-expected_prompt_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--dangerous-arg\n-p\n--\nliteral $(touch /tmp/not-executed) --resume prompt'
+expected_prompt_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--dangerous-arg\n-p\nliteral $(touch /tmp/not-executed) --resume prompt'
 [[ "$(cat "$root/output/argv")" == "$expected_prompt_argv" ]] \
   || fail 'prompt mode did not preserve literal prompt and fixed provider/model argv'
 for name in ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN; do
@@ -176,7 +176,7 @@ mutate_home 'jq -e '\''[.providers["copilot-proxy-rs"].models[].id] == ["claude-
   || fail 'custom model was not materialized in managed Prime configuration'
 
 run_entry new --unsafe -- 'new prompt'
-expected_new_prompt_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--unsafe\n--\nnew prompt'
+expected_new_prompt_argv=$'--provider\ncopilot-proxy-rs\n--model\nclaude-opus-5\n--offline\n--unsafe\nnew prompt'
 [[ "$(cat "$root/output/argv")" == "$expected_new_prompt_argv" ]] || fail 'new prompt mode changed Prime argv'
 
 TRELLAGE_RESUME_SESSION_ID='session-123' run_entry resume --unsafe

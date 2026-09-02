@@ -13,7 +13,8 @@ model = "claude-opus-5"
 gateway = "http://copilot-proxy-rs:8080"
 
 [runtime]
-tmpfs_size = "2g"
+memory_size = "4g"
+tmpfs_size = "4g"
 
 [image]
 base = "node:bookworm-slim"

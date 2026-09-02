@@ -17,8 +17,9 @@ The bundle identifier is `dev.trellage.trx-guide-overlay`. The app is an
 - Swift command-line tools for a source build.
 - Local Kitty with the official bundle identifier `net.kovidgoyal.kitty`.
 - A local, compatible Herdr server.
-- Herdr `[ui] copy_on_select = true`. This is the default. The overlay cannot
-  infer a selection if Herdr does not copy it.
+- Herdr must explicitly contain `[ui] copy_on_select = true`. A missing file,
+  commented default, missing key, malformed value, or explicit `false` keeps
+  capture monitoring off.
 - Accessibility and Input Monitoring permission for the installed app.
 
 Remote Herdr sessions are not supported. A remote selection does not use the
@@ -42,13 +43,12 @@ local macOS pasteboard.
 - It actively proves the configured Herdr socket owns the foreground Kitty
   client. The app sets a unique short title marker through
   `client.window_title.set`, waits briefly, requires the frontmost Kitty AX
-  window title to equal that marker, and clears it only while that exact window
-  remains frontmost with the exact marker. If focus changes, the marker and
-  source window identity are tracked. A later clear occurs only when that
-  window returns with the marker; changed titles discard the tracking without
-  clearing another client. If the set request may have been sent but its
-  response is lost, the app retains tracking and polls for the full bounded
-  render window before it can conclude that no marker appeared. It obtains
+  window title to equal that marker. An acknowledged set is cancelled on the
+  exact source window even if the marker has not rendered after 300 ms. If
+  focus changed, that acknowledged lease is retained and cleared only when the
+  exact source window returns. If the set response is lost, the stricter rule
+  applies: tracking is retained and polled for the full render window, and
+  clear occurs only after the marker appears on the exact window. It obtains
   `session.snapshot` only after proof.
 - The snapshot must contain one focused workspace, tab, pane, and absolute
   working directory. A snapshot is taken before and after the active window
@@ -121,8 +121,10 @@ The release app is assembled at:
 build/TRX Guide Overlay.app
 ```
 
-The build script validates `Info.plist`, applies an ad-hoc signature, and runs
-strict `codesign` verification. No Xcode project or `xcodebuild` is used.
+The build script validates `Info.plist`, applies an ad-hoc signature with a
+stable local designated requirement, and runs strict `codesign` verification.
+The stable requirement prevents each rebuild from invalidating the app's
+macOS privacy approvals. No Xcode project or `xcodebuild` is used.
 
 ## Demo
 
@@ -161,16 +163,18 @@ The installer writes only these owned locations:
 The app-support configuration is mode `0600`; its directory is mode `0700`.
 The LaunchAgent runs only the installed app executable.
 
-After the first install, use the menu-bar item:
+On first launch, the app requests both required permissions and opens the first
+required Privacy & Security page. If you previously declined, use the menu-bar
+item and select **Request permissions and open settings**. You can also open
+the Accessibility and Input Monitoring pages separately from that menu.
 
-1. Select **Request permissions**.
-2. Enable the installed app in **System Settings → Privacy & Security →
+1. Enable the installed app in **System Settings → Privacy & Security →
    Accessibility**.
-3. Enable it in **Input Monitoring**.
-4. Start the app again if macOS requests it.
+2. Enable it in **Input Monitoring**.
+3. Start the app again if macOS requests it.
 
-Ad-hoc signing is suitable for this local prototype. Rebuilding the binary can
-cause macOS to ask for permission again.
+Ad-hoc signing is suitable for this local prototype. The explicit designated
+requirement keeps local rebuilds on one macOS privacy identity.
 
 ## Use
 
@@ -198,7 +202,8 @@ The menu reports:
 If no panel appears:
 
 1. Confirm both permissions.
-2. Confirm `copy_on_select` is not false in `~/.config/herdr/config.toml`.
+2. Confirm `~/.config/herdr/config.toml` explicitly contains
+   `[ui] copy_on_select = true`.
 3. Confirm `herdr status --json` reports a running compatible server.
 4. Confirm Kitty is frontmost.
 5. Confirm Herdr has a foreground Kitty client. The app must be able to set,

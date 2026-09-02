@@ -44,12 +44,17 @@ rm -rf -- "$APP_TARGET"
 /usr/bin/ditto "$APP_SOURCE" "$APP_TARGET"
 
 rm -f -- "$CONFIG"
-plutil -create json "$CONFIG"
-plutil -insert herdrBinary -string "$HERDR_BINARY" "$CONFIG"
-if [[ -n "$SESSION" ]]; then
-  plutil -insert session -string "$SESSION" "$CONFIG"
-fi
+CONFIG_TEMP="$SUPPORT/.config.json.$$.tmp"
+trap 'rm -f -- "$CONFIG_TEMP"' EXIT
+node -e '
+  const fs = require("node:fs")
+  const [target, herdrBinary, session] = process.argv.slice(1)
+  const config = { herdrBinary, ...(session.length === 0 ? {} : { session }) }
+  fs.writeFileSync(target, `${JSON.stringify(config)}\n`, { flag: "wx", mode: 0o600 })
+' "$CONFIG_TEMP" "$HERDR_BINARY" "$SESSION"
+mv -f -- "$CONFIG_TEMP" "$CONFIG"
 chmod 0600 "$CONFIG"
+trap - EXIT
 
 rm -f -- "$AGENT"
 plutil -create xml1 "$AGENT"

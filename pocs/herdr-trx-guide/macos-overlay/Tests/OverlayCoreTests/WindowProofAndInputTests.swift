@@ -58,9 +58,10 @@ private final class ProofWindowStub: ForegroundWindowReading {
         #expect(herdr.calls.first?.1["title"] as? String == marker)
     }
 
-    @Test func markerMismatchOnSameWindowFailsClosedWithoutClearing() {
+    @Test func acknowledgedDelayedRenderCancelsOverrideOnSameWindow() {
         let herdr = ProofHerdrStub([
             .success(["type": "client_window_title", "changed": true, "reason": "set"]),
+            .success(["type": "client_window_title", "changed": true, "reason": "cleared"]),
         ])
         let tracker = DeferredWindowMarkerTracker()
         var times = [
@@ -82,7 +83,10 @@ private final class ProofWindowStub: ForegroundWindowReading {
                 renderTimeout: 0.3
             ).prove()
         }
-        #expect(herdr.calls.map(\.0) == ["client.window_title.set"])
+        #expect(herdr.calls.map(\.0) == [
+            "client.window_title.set",
+            "client.window_title.clear",
+        ])
         #expect(tracker.pending == nil)
     }
 
@@ -104,11 +108,15 @@ private final class ProofWindowStub: ForegroundWindowReading {
                 marker: { marker }
             ).prove()
         }
-        #expect(tracker.pending == DeferredWindowMarker(identity: source, marker: marker))
+        #expect(tracker.pending == DeferredWindowMarker(
+            identity: source,
+            marker: marker,
+            kind: .acknowledged
+        ))
         let reconciliation = ForegroundClientProof(
             herdr: herdr,
             windowReader: ProofWindowStub([
-                .success(.init(identity: source, title: marker)),
+                .success(.init(identity: source, title: "old title")),
             ]),
             tracker: tracker,
             marker: { marker }

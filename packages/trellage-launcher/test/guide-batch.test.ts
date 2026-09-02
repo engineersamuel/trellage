@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   createQueuedGuideJob,
+  describeJobPlacement,
   emptyGuideQueue,
   enqueueGuideJob,
   executeGuideBatch,
@@ -12,14 +13,26 @@ import {
   type GuideBatch,
   type JobPlacement,
 } from "../src/guide-batch.js"
-import { CommandRunnerError, type CommandRunOptions, type CommandRunResult, type CommandRunner, type SelectedProfile } from "../src/guide-launch.js"
+import {
+  CommandRunnerError,
+  type CommandRunOptions,
+  type CommandRunResult,
+  type CommandRunner,
+  type SelectedProfile,
+} from "../src/guide-launch.js"
 
 class BatchRunner implements CommandRunner {
-  readonly calls: Array<{ readonly executable: string; readonly args: ReadonlyArray<string>; readonly options?: CommandRunOptions }> = []
+  readonly calls: Array<{
+    readonly executable: string
+    readonly args: ReadonlyArray<string>
+    readonly options?: CommandRunOptions
+  }> = []
   private split = 0
   private workspace = 11
 
-  constructor(private readonly fail: (executable: string, args: ReadonlyArray<string>) => Error | undefined = () => undefined) {}
+  constructor(
+    private readonly fail: (executable: string, args: ReadonlyArray<string>) => Error | undefined = () => undefined,
+  ) {}
 
   private worktree(name: string): CommandRunResult {
     this.workspace += 1
@@ -36,35 +49,65 @@ class BatchRunner implements CommandRunner {
     }
   }
 
-  async run(executable: string, args: ReadonlyArray<string>, options?: CommandRunOptions): Promise<CommandRunResult> {
-    this.calls.push({ executable, args: [...args], ...(options === undefined ? {} : { options }) })
-    const error = this.fail(executable, args)
-    if (error !== undefined) throw error
+  private launcherResponse(executable: string, args: ReadonlyArray<string>): CommandRunResult | undefined {
     if (args[0] === "doctor") {
       return {
-        stdout: [`profile: ${args[2]} (sandbox)`, "development resolution: true", "image: trellage/sandbox (available)"].join("\n"),
+        stdout: [
+          `profile: ${args[2]} (sandbox)`,
+          "development resolution: true",
+          "image: trellage/sandbox (available)",
+        ].join("\n"),
         stderr: "",
         exitCode: 0,
       }
     }
     if (args[0] === "inventory") {
       return {
-        stdout: JSON.stringify({ schemaVersion: 1, launcher: executable.split("/").at(-1), profile: args[1], readiness: "healthy" }),
+        stdout: JSON.stringify({
+          schemaVersion: 1,
+          launcher: executable.split("/").at(-1),
+          profile: args[1],
+          readiness: "healthy",
+        }),
         stderr: "",
         exitCode: 0,
       }
     }
+    return undefined
+  }
+
+  private herdrResponse(args: ReadonlyArray<string>): CommandRunResult | undefined {
     if (args[0] === "pane" && args[1] === "split") {
       this.split += 1
       return { stdout: JSON.stringify({ result: { pane: { pane_id: `9-${this.split}` } } }), stderr: "", exitCode: 0 }
     }
-    if (args[0] === "worktree" && args[1] === "create") return this.worktree(args[args.indexOf("--branch") + 1] ?? "batch")
+    if (args[0] === "tab" && args[1] === "create") {
+      this.split += 1
+      return {
+        stdout: JSON.stringify({ result: { root_pane: { pane_id: `9-t${this.split}` } } }),
+        stderr: "",
+        exitCode: 0,
+      }
+    }
+    if (args[0] === "worktree" && args[1] === "create")
+      return this.worktree(args[args.indexOf("--branch") + 1] ?? "batch")
     if (args[0] === "worktree" && args[1] === "open") {
-      return this.worktree((args[args.indexOf("--path") + 1] ?? "/repo/.worktrees/opened").split("/").at(-1) ?? "opened")
+      return this.worktree(
+        (args[args.indexOf("--path") + 1] ?? "/repo/.worktrees/opened").split("/").at(-1) ?? "opened",
+      )
     }
     if (args[0] === "agent" && args[1] === "get") {
       return { stdout: JSON.stringify({ result: { agent: { agent_status: "idle" } } }), stderr: "", exitCode: 0 }
     }
+    return undefined
+  }
+
+  async run(executable: string, args: ReadonlyArray<string>, options?: CommandRunOptions): Promise<CommandRunResult> {
+    this.calls.push({ executable, args: [...args], ...(options === undefined ? {} : { options }) })
+    const error = this.fail(executable, args)
+    if (error !== undefined) throw error
+    const response = this.launcherResponse(executable, args) ?? this.herdrResponse(args)
+    if (response !== undefined) return response
     return { stdout: "", stderr: "", exitCode: 0 }
   }
 }
@@ -94,6 +137,7 @@ const context: GuideBatch["context"] = {
 
 const here: JobPlacement = { kind: "current-workspace-pane", direction: "right" }
 const fresh = (branch: string): JobPlacement => ({ kind: "new-worktree", branch, baseRef: "main" })
+const newTab: JobPlacement = { kind: "new-tab" }
 
 const failure = (message: string): CommandRunnerError =>
   new CommandRunnerError({ kind: "exited", executable: "herdr", args: [], message, exitCode: 1 })
@@ -111,7 +155,13 @@ describe("guide batch queue", () => {
 
     expect(queue.entries.map((job) => job.id)).toEqual([1, 2])
     expect(queue.entries.map((job) => job.placement)).toEqual([here, fresh("worktree/research")])
-    expect(queue.entries[0]?.command.args).toEqual(["council", "--agent", "claude-council", "-i", "/council First proposal"])
+    expect(queue.entries[0]?.command.args).toEqual([
+      "council",
+      "--agent",
+      "claude-council",
+      "-i",
+      "/council First proposal",
+    ])
     expect(queue.entries[1]?.command.args).toEqual(["research", "--", "Research prior work"])
     expect(queue.entries.map((job) => job.promptDelivery)).toEqual(["command", "command"])
 
@@ -125,6 +175,29 @@ describe("guide batch queue", () => {
     queue = removeSelectedQueuedGuideJob(queue)
     expect(queue.entries.map((job) => job.id)).toEqual([2])
     expect(queue.selectedIndex).toBe(0)
+  })
+
+  it("creates one unfocused tab per queued new-tab entry and runs it there", async () => {
+    const runner = new BatchRunner()
+    const jobs = [
+      createQueuedGuideJob(1, sandbox("claude-council"), "/council Compare the designs", newTab),
+      createQueuedGuideJob(2, sandbox("claude-research"), "Research the prior art", newTab),
+    ]
+    const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
+
+    expect(outcome.exitCode).toBe(0)
+    expect(outcome.result.entries.map((entry) => entry.status)).toEqual(["launched", "launched"])
+    expect(runner.calls.filter((call) => call.args[0] === "tab").map((call) => call.args)).toEqual([
+      ["tab", "create", "--workspace", "9", "--cwd", "/repo", "--no-focus"],
+      ["tab", "create", "--workspace", "9", "--cwd", "/repo", "--no-focus"],
+    ])
+    expect(
+      runner.calls.filter((call) => call.args[0] === "pane" && call.args[1] === "run").map((call) => call.args[2]),
+    ).toEqual(["9-t1", "9-t2"])
+  })
+
+  it("names a queued new tab on the review screen", () => {
+    expect(describeJobPlacement(newTab)).toBe("new tab in this Herdr worktree")
   })
 
   it("rejects an empty queue without side effects", async () => {
@@ -151,9 +224,15 @@ describe("guide batch queue", () => {
       ["claude-council", "launched"],
       ["claude-research", "launched"],
     ])
-    expect(runner.calls.filter((call) => call.args[0] === "pane" && call.args[1] === "split").map((call) => call.args[3])).toEqual(["9-0", "9-0"])
-    expect(runner.calls.some((call) => call.args.includes("/council Compare the designs"))).toBe(true)
-    expect(runner.calls.some((call) => call.args.includes("Research the prior art"))).toBe(true)
+    expect(
+      runner.calls.filter((call) => call.args[0] === "pane" && call.args[1] === "split").map((call) => call.args[3]),
+    ).toEqual(["9-0", "9-0"])
+    const runCommands = runner.calls
+      .filter((call) => call.args[0] === "pane" && call.args[1] === "run")
+      .map((call) => call.args[3] ?? "")
+    expect(runCommands.some((command) => command.includes("/council Compare the designs"))).toBe(true)
+    expect(runCommands.some((command) => command.includes("Research the prior art"))).toBe(true)
+    expect(runner.calls.some((call) => call.args[0] === "agent" && call.args[1] === "prompt")).toBe(false)
   })
 
   it("routes each entry to its own placement in one batch", async () => {
@@ -161,7 +240,10 @@ describe("guide batch queue", () => {
     const jobs = [
       createQueuedGuideJob(1, native("cpx", "council"), "Council prompt", here),
       createQueuedGuideJob(2, native("cdx", "research"), "Research prompt", fresh("worktree/research")),
-      createQueuedGuideJob(3, native("cpx", "review"), "Review prompt", { kind: "existing-worktree", path: "/repo/.worktrees/review" }),
+      createQueuedGuideJob(3, native("cpx", "review"), "Review prompt", {
+        kind: "existing-worktree",
+        path: "/repo/.worktrees/review",
+      }),
     ]
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
@@ -172,7 +254,11 @@ describe("guide batch queue", () => {
       "/repo/.worktrees/worktree/research",
       "/repo/.worktrees/review",
     ])
-    expect(outcome.result.entries.map((entry) => (entry.status === "launched" ? entry.workspaceId : ""))).toEqual(["9", "12", "13"])
+    expect(outcome.result.entries.map((entry) => (entry.status === "launched" ? entry.workspaceId : ""))).toEqual([
+      "9",
+      "12",
+      "13",
+    ])
     expect(runner.calls.filter((call) => call.args[0] === "pane" && call.args[1] === "split")).toHaveLength(1)
     expect(worktreeCreates(runner)).toEqual(["worktree/research"])
     expect(runner.calls.filter((call) => call.args[0] === "worktree" && call.args[1] === "open")).toHaveLength(1)
@@ -207,7 +293,9 @@ describe("guide batch queue", () => {
 
     expect(outcome.exitCode).toBe(1)
     expect(outcome.result.entries.map((entry) => entry.status)).toEqual(["launched", "invalid"])
-    expect(outcome.result.entries[1]).toMatchObject({ message: "Two queued jobs would both create branch worktree/shared." })
+    expect(outcome.result.entries[1]).toMatchObject({
+      message: "Two queued jobs would both create branch worktree/shared.",
+    })
     expect(worktreeCreates(runner)).toEqual(["worktree/shared"])
   })
 
@@ -216,14 +304,20 @@ describe("guide batch queue", () => {
     const jobs = [createQueuedGuideJob(1, native("cpx", "worker"), "Prompt", fresh("   "))]
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
-    expect(outcome.result.entries[0]).toMatchObject({ status: "invalid", message: "Queued worktree branch must not be empty." })
+    expect(outcome.result.entries[0]).toMatchObject({
+      status: "invalid",
+      message: "Queued worktree branch must not be empty.",
+    })
     expect(runner.calls).toEqual([])
   })
 
   it("reports invalid entries and continues with valid peers", async () => {
     const runner = new BatchRunner()
     const valid = createQueuedGuideJob(2, native("cpx", "worker"), "Keep going", here)
-    const invalid = { ...createQueuedGuideJob(1, native("cdx", "reviewer"), "Review", here), command: { executable: "/tmp/model-command", args: [] } }
+    const invalid = {
+      ...createQueuedGuideJob(1, native("cdx", "reviewer"), "Review", here),
+      command: { executable: "/tmp/model-command", args: [] },
+    }
     const outcome = await executeGuideBatch({ jobs: [invalid, valid], context }, { runner, write: () => undefined })
 
     expect(outcome.exitCode).toBe(1)
@@ -268,9 +362,20 @@ describe("guide batch queue", () => {
       executable === "herdr" && args[0] === "worktree" ? failure("create refused") : undefined,
     )
     const creationPeer = createQueuedGuideJob(2, native("cdx", "peer"), "Peer recovery prompt", fresh("worktree/peer"))
-    const creation = await executeGuideBatch({ jobs: [job, creationPeer], context }, { runner: creationRunner, write: () => undefined })
-    expect(creation.result.entries[0]).toMatchObject({ status: "workspace-create-failed", stage: "worktree-create", job })
-    expect(creation.result.entries[1]).toMatchObject({ status: "workspace-create-failed", stage: "worktree-create", job: creationPeer })
+    const creation = await executeGuideBatch(
+      { jobs: [job, creationPeer], context },
+      { runner: creationRunner, write: () => undefined },
+    )
+    expect(creation.result.entries[0]).toMatchObject({
+      status: "workspace-create-failed",
+      stage: "worktree-create",
+      job,
+    })
+    expect(creation.result.entries[1]).toMatchObject({
+      status: "workspace-create-failed",
+      stage: "worktree-create",
+      job: creationPeer,
+    })
 
     const writes: string[] = []
     const launchJob = createQueuedGuideJob(1, native("cpx", "worker"), "Recovery prompt", here)
@@ -281,7 +386,10 @@ describe("guide batch queue", () => {
         ? failure("launch refused")
         : undefined,
     )
-    const launch = await executeGuideBatch({ jobs: [launchJob, peer], context }, { runner: launchRunner, write: (text) => writes.push(text) })
+    const launch = await executeGuideBatch(
+      { jobs: [launchJob, peer], context },
+      { runner: launchRunner, write: (text) => writes.push(text) },
+    )
     expect(launch.result.entries[0]).toMatchObject({ status: "launch-failed", stage: "launch", job: launchJob })
     expect(launch.result.entries[1]).toMatchObject({ status: "launched", job: peer })
     expect(writes.join("")).toContain("Recovery prompt")

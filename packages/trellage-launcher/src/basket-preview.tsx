@@ -20,6 +20,14 @@
  */
 import React, { useMemo, useReducer } from "react"
 import { Box, Text, useApp, useInput, useWindowSize, type Key } from "ink"
+import {
+  basketBlockPreview,
+  basketVisibleRange,
+  countLabel,
+  countTextLines,
+  previewBlockLines,
+  type BasketBlockPreview,
+} from "./basket.js"
 import { wrapGuideText } from "./guide-ui.js"
 
 // ---------------------------------------------------------------------------
@@ -420,71 +428,8 @@ export const assembleStagedPrompt = (chunks: ReadonlyArray<BasketChunk>): string
 export const stagedCharacterCount = (chunks: ReadonlyArray<BasketChunk>): number =>
   chunks.reduce((total, chunk) => total + chunk.text.length, 0)
 
-export const countTextLines = (text: string): number => (text.length === 0 ? 0 : text.split("\n").length)
-
-/** `3 lines`, but `1 line`. */
-export const countLabel = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
-
 /** True when the held text no longer matches what was captured from the pane. */
-export const isChunkEdited = (chunk: BasketChunk): boolean => capturedText(chunk.id) !== chunk.text
-
-/** How many source lines of each block the list shows before it truncates. */
-export const previewBlockLines = 2
-
-export interface BasketBlockPreview {
-  readonly lines: ReadonlyArray<string>
-  readonly truncated: boolean
-}
-
-/** Cuts one line to the list width, marking the cut with an ellipsis. */
-const clipLine = (line: string, width: number): string => {
-  const limit = Math.max(1, width)
-  return line.length <= limit ? line : `${line.slice(0, limit - 1).trimEnd()}…`
-}
-
-/**
- * Summarizes a held block with its first few non-blank source lines, each cut
- * to the list width. The summary never wraps: wrapping breaks a word in half
- * and destroys the column alignment of a pasted table, and the whole block is
- * one keystroke away in the viewer.
- */
-export const basketBlockPreview = (
-  text: string,
-  width: number,
-  limit: number = previewBlockLines,
-): BasketBlockPreview => {
-  const source = text.split("\n").filter((line) => line.trim().length > 0)
-  const kept = source.slice(0, Math.max(1, limit))
-  return {
-    lines: kept.map((line) => clipLine(line, width)),
-    truncated: source.length > kept.length || kept.some((line) => line.length > Math.max(1, width)),
-  }
-}
-
-/**
- * Picks the run of blocks to show so the selected one is always on screen.
- * The list scrolls by whole blocks, so a block never appears half-drawn.
- */
-export const basketVisibleRange = (
-  heights: ReadonlyArray<number>,
-  cursor: number,
-  capacity: number,
-): { readonly start: number; readonly end: number } => {
-  if (heights.length === 0) return { start: 0, end: 0 }
-  const index = Math.max(0, Math.min(cursor, heights.length - 1))
-  let start = index
-  let end = index + 1
-  let used = heights[index] ?? 0
-  while (start > 0 && used + (heights[start - 1] ?? 0) <= capacity) {
-    start -= 1
-    used += heights[start] ?? 0
-  }
-  while (end < heights.length && used + (heights[end] ?? 0) <= capacity) {
-    used += heights[end] ?? 0
-    end += 1
-  }
-  return { start, end }
-}
+export const isChunkEdited = (chunk: BasketChunk, captured: string | undefined): boolean => captured !== chunk.text
 
 /** The two dense lines that say what will run the assembled prompt, and where. */
 export const destinationSummaryLines = (destination: BasketDestination): ReadonlyArray<string> => [
@@ -646,7 +591,7 @@ const StagedBlock = ({
         {" "}
         · {chunk.harness} · {chunk.capturedAt} · {chunk.text.length}c · {countLabel(countTextLines(chunk.text), "line")}
       </Text>
-      {isChunkEdited(chunk) ? <Text color="yellow"> · edited</Text> : null}
+      {isChunkEdited(chunk, capturedText(chunk.id)) ? <Text color="yellow"> · edited</Text> : null}
       {preview.truncated ? (
         <Text dimColor color="cyan">
           {" "}
@@ -837,7 +782,7 @@ const viewerScreenBody = (state: BasketPreviewState, lines: ReadonlyArray<string
   const subtitle =
     block === undefined
       ? "exactly what is sent, block headers included"
-      : `captured from ${block.pane} · ${block.harness}${isChunkEdited(block) ? " · edited" : ""}`
+      : `captured from ${block.pane} · ${block.harness}${isChunkEdited(block, capturedText(block.id)) ? " · edited" : ""}`
   return {
     node: (
       <ViewerView title={title} subtitle={subtitle} lines={lines} from={from} capacity={capacity} height={height} />

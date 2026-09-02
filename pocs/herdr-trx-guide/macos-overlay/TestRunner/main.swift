@@ -194,7 +194,11 @@ private func runWindowProofChecks(_ suite: TestSuite) throws {
         "window proof does not clear another client"
     )
     try suite.check(
-        deferredTracker.pending == .init(identity: source, marker: marker),
+        deferredTracker.pending == .init(
+            identity: source,
+            marker: marker,
+            kind: .acknowledged
+        ),
         "window proof tracks deferred marker"
     )
     let deferredClearHerdr = HerdrStub([
@@ -203,13 +207,44 @@ private func runWindowProofChecks(_ suite: TestSuite) throws {
     let reconciled = ForegroundClientProof(
         herdr: deferredClearHerdr,
         windowReader: WindowStub([
-            .init(identity: source, title: marker),
+            .init(identity: source, title: "old title"),
         ]),
         tracker: deferredTracker,
         marker: { marker }
     ).reconcileDeferredMarker()
     try suite.check(reconciled == .cleared, "deferred exact-window marker clear")
     try suite.check(deferredTracker.pending == nil, "deferred marker tracking cleanup")
+
+    let acknowledgedDelayHerdr = HerdrStub([
+        ["type": "client_window_title", "changed": true, "reason": "set"],
+        ["type": "client_window_title", "changed": true, "reason": "cleared"],
+    ])
+    var acknowledgedTimes = [
+        Date(timeIntervalSince1970: 0),
+        Date(timeIntervalSince1970: 1),
+    ]
+    try suite.rejects("acknowledged title render delay") {
+        _ = try ForegroundClientProof(
+            herdr: acknowledgedDelayHerdr,
+            windowReader: WindowStub([
+                .init(identity: source, title: "original"),
+                .init(identity: source, title: "old title"),
+                .init(identity: source, title: "old title"),
+            ]),
+            tracker: DeferredWindowMarkerTracker(),
+            now: { acknowledgedTimes.removeFirst() },
+            sleep: { _ in },
+            marker: { marker },
+            renderTimeout: 0.3
+        ).prove()
+    }
+    try suite.check(
+        acknowledgedDelayHerdr.calls.map(\.0) == [
+            "client.window_title.set",
+            "client.window_title.clear",
+        ],
+        "acknowledged delayed override cancellation"
+    )
 
     let delayedTracker = DeferredWindowMarkerTracker()
     let delayedHerdr = ResultHerdrStub([
@@ -296,9 +331,31 @@ private func runInputAndProcessChecks(_ suite: TestSuite) throws {
             startupReady: true,
             actionUnresolved: false,
             permissionsGranted: true,
-            contextAvailable: false
+            contextAvailable: false,
+            copyOnSelectEnabled: true
         ),
         "capture monitoring requires configured context"
+    )
+    try suite.check(
+        CopyOnSelectPolicy.parse("[ui]\ncopy_on_select = true") == .enabled,
+        "explicit copy-on-select enablement"
+    )
+    try suite.check(
+        CopyOnSelectPolicy.parse(nil) == .unknown
+            && !CapturePrivacyPolicy.mayReadPasteboardText(
+                monitoringActive: true,
+                detectorAwaitingText: true,
+                copyOnSelect: .unknown
+            ),
+        "unknown copy-on-select blocks clipboard reads"
+    )
+    try suite.check(
+        !CapturePrivacyPolicy.mayReadPasteboardText(
+            monitoringActive: true,
+            detectorAwaitingText: true,
+            copyOnSelect: .disabled
+        ),
+        "disabled copy-on-select blocks clipboard reads"
     )
 
     let loading = ActionStateTransition.start(.add, from: .actions)

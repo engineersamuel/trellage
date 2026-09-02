@@ -1797,11 +1797,22 @@ test_stopped_and_collision_behavior() {
 test_stale_container_preserves_active_sessions() {
   local worktree="$test_root/stale-active-worktree"
   local docker_log="$test_root/stale-active.docker.log"
-  local state_volume output
+  local state_volume output session_pid session_ready session_release
   mkdir -p "$worktree"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
+  session_ready="$test_root/stale-active.ready"
+  session_release="$test_root/stale-active.release"
   : >"$docker_log"
 
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_ACTIVE_SESSION=1 \
+    FAKE_DOCKER_BLOCK_ANY_EXEC=1 FAKE_DOCKER_EXEC_READY_FILE="$session_ready" \
+    FAKE_DOCKER_EXEC_RELEASE_FILE="$session_release" \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage" &
+  session_pid=$!
+  wait_for_file "$session_ready"
+
+  : >"$docker_log"
   if output="$(
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
       FAKE_DOCKER_CONTAINER_STATE=matching-running \
@@ -1815,14 +1826,17 @@ test_stale_container_preserves_active_sessions() {
   grep -Fq 'profile container is stale but has an active session; exit it and retry' <<<"$output" \
     || fail 'stale active session did not produce a clear diagnostic'
   ! grep -Fqx $'ARG\trm' "$docker_log" || fail 'stale active container was removed'
+  : >"$session_release"
+  wait "$session_pid"
 
   : >"$docker_log"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
     FAKE_DOCKER_CONTAINER_RUNTIME_HASH=sha256:stale \
+    FAKE_DOCKER_ACTIVE_SESSION=1 \
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       "$prototype_dir/trellage" -p test
-  grep -Fqx $'ARG\trm' "$docker_log" || fail 'idle stale container was not replaced'
+  grep -Fqx $'ARG\trm' "$docker_log" || fail 'orphaned stale container was not replaced'
 
   : >"$docker_log"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
@@ -2086,6 +2100,27 @@ test_invalid_tmpfs_metadata_precedes_mutation() {
     || fail 'invalid tmpfs metadata diagnostic is missing'
   assert_no_mutation "$docker_log"
   printf 'Trellage host test: PASS: invalid tmpfs metadata precedes mutation\n'
+}
+
+test_invalid_memory_metadata_precedes_mutation() {
+  local worktree="$test_root/invalid-memory-metadata"
+  local docker_log="$test_root/invalid-memory-metadata.docker.log"
+  local invalid_variant="$test_root/invalid-memory-metadata.json"
+  local output
+  mkdir -p "$worktree"
+  : >"$docker_log"
+  jq '.memory_size = "4g,swap"' "$copilot_metadata" >"$invalid_variant"
+
+  if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$invalid_variant" \
+    FAKE_DOCKER_CONTAINER_STATE=absent \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile copilot-hve 2>&1)"; then
+    fail 'invalid memory metadata was accepted'
+  fi
+  grep -Fqx 'trellage: profile metadata has an invalid memory size' <<<"$output" \
+    || fail 'invalid memory metadata diagnostic is missing'
+  assert_no_mutation "$docker_log"
+  printf 'Trellage host test: PASS: invalid memory metadata precedes mutation\n'
 }
 
 test_false_tmpfs_metadata_precedes_mutation() {
@@ -5822,6 +5857,7 @@ test_shell_and_stop_modes
 test_terminal_environment_and_agent_tagging
 test_validation_precedes_mutation
 test_invalid_tmpfs_metadata_precedes_mutation
+test_invalid_memory_metadata_precedes_mutation
 test_false_tmpfs_metadata_precedes_mutation
 test_null_tmpfs_metadata_precedes_mutation
 test_legacy_tmpfs_metadata_defaults_at_launch

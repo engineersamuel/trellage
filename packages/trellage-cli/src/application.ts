@@ -2140,6 +2140,7 @@ const assembleProfileMetadata = (
     profile_path: document.path,
     profile_name: document.profile.name,
     profile_hash: hash,
+    memory_size: document.profile.runtime.memory_size,
     tmpfs_size: document.profile.runtime.tmpfs_size,
     runtime_hash: runtimeHash,
     platform,

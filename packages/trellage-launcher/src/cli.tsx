@@ -42,6 +42,12 @@ import {
   parseBasketPreviewArgv,
   type BasketPreviewResult,
 } from "./basket-preview.js"
+import {
+  ForkPreviewApp,
+  forkPreviewHelpText,
+  parseForkPreviewArgv,
+  type ForkPreviewResult,
+} from "./fork-preview.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -725,6 +731,36 @@ const runGuidePreviewMode = async (): Promise<void> => {
   if (result.kind === "submitted") process.stdout.write(`${result.prompt}\n`)
 }
 
+const runForkPreviewMode = async (): Promise<void> => {
+  const args = parseForkPreviewArgv(process.argv.slice(3))
+  if (args.help) {
+    process.stdout.write(`${forkPreviewHelpText}\n`)
+    return
+  }
+  const terminal = openInteractiveTerminalStreams()
+  let result: ForkPreviewResult
+  try {
+    const instance = render(<ForkPreviewApp variant={args.variant} />, {
+      stdin: terminal.input,
+      stdout: terminal.output,
+      interactive: true,
+      exitOnCtrlC: false,
+      kittyKeyboard: { mode: "disabled" },
+      alternateScreen: true,
+      maxFps: 30,
+    })
+    const resolved = await instance.waitUntilExit()
+    if (resolved === undefined) {
+      process.exitCode = 130
+      return
+    }
+    result = resolved as ForkPreviewResult
+  } finally {
+    terminal.close()
+  }
+  if (result.kind === "launched") process.stdout.write(`${result.lines.join("\n")}\n`)
+}
+
 const main = async () => {
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList()
@@ -732,6 +768,10 @@ const main = async () => {
   }
   if (process.argv[2] === "guide-preview") {
     await runGuidePreviewMode()
+    return
+  }
+  if (process.argv[2] === "guide-forks") {
+    await runForkPreviewMode()
     return
   }
   if (process.argv[2] === "guide") {

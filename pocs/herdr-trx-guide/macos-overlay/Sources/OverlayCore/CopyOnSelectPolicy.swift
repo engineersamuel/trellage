@@ -10,6 +10,7 @@ public enum CopyOnSelectPolicy {
     public static func parse(_ content: String?) -> CopyOnSelectState {
         guard let content else { return .unknown }
         var inUI = false
+        var observed: CopyOnSelectState?
         for rawLine in content.components(separatedBy: .newlines) {
             let line = rawLine.split(separator: "#", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -18,15 +19,37 @@ public enum CopyOnSelectPolicy {
                 continue
             }
             guard inUI else { continue }
-            let compact = line.replacingOccurrences(of: " ", with: "").lowercased()
-            if compact == "copy_on_select=true" {
-                return .enabled
-            }
-            if compact == "copy_on_select=false" {
-                return .disabled
+            switch setting(in: line) {
+            case .none:
+                continue
+            case .some(.invalid):
+                return .unknown
+            case .some(.value(let state)):
+                guard observed == nil else { return .unknown }
+                observed = state
             }
         }
-        return .unknown
+        return observed ?? .unknown
+    }
+
+    private enum ParsedSetting {
+        case value(CopyOnSelectState)
+        case invalid
+    }
+
+    private static func setting(in line: String) -> ParsedSetting? {
+        let parts = line.split(separator: "=", maxSplits: 1).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        guard parts.first == "copy_on_select" else { return nil }
+        guard parts.count == 2 else { return .invalid }
+        if parts[1] == "true" {
+            return .value(.enabled)
+        }
+        if parts[1] == "false" {
+            return .value(.disabled)
+        }
+        return .invalid
     }
 }
 

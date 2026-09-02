@@ -9,6 +9,7 @@ import {
   getHerdrContext,
   GuideLaunchError,
   handoffToCurrentHerdrWorkspace,
+  handoffToNewHerdrTab,
   inspectGitWorktreeIntent,
   isHerdrAvailable,
   launchInHerdrPaneAndPrompt,
@@ -16,6 +17,7 @@ import {
   openHerdrWorktreeAndHandoff,
   parseHerdrAgentInfo,
   parseHerdrSplitPaneId,
+  parseHerdrTabRootPaneId,
   parseHerdrWorktreeHandle,
   parseSelectedProfile,
   parseGitWorktreeList,
@@ -150,14 +152,17 @@ describe("guide launch command building", () => {
     })
   })
 
-  it("builds trusted Herdr prompt delivery for embedded and agent-delivered profiles", () => {
+  it("builds trusted Herdr prompt delivery for embedded and Sandbox profiles", () => {
     expect(buildHerdrGuideLaunch(nativeProfile, "Run /council now")).toEqual({
       command: { executable: "/opt/trellage/bin/cpx", args: ["hve-core", "-i", "Run /council now"] },
       promptDelivery: "command",
     })
     expect(buildHerdrGuideLaunch(sandboxProfile, "Research this")).toEqual({
-      command: { executable: "/opt/trellage/bin/trellage", args: ["--profile", "prime-agent"] },
-      promptDelivery: "agent",
+      command: {
+        executable: "/opt/trellage/bin/trellage",
+        args: ["--profile", "prime-agent", "Research this"],
+      },
+      promptDelivery: "command",
     })
   })
 
@@ -192,6 +197,32 @@ describe("guide launch command building", () => {
         args: ["pstack", "--", prompt],
       },
       promptDelivery: "command",
+    })
+  })
+
+  it("chooses each launcher's own argv prompt shape, and keeps jcode on the paste path", () => {
+    const prompt = "Compare the designs"
+    const launch = (launcher: string, commandPath: string) =>
+      buildHerdrGuideLaunch(
+        parseSelectedProfile({ surface: "native", launcher, commandPath, profile: "default", headlessPrompt: true }),
+        prompt,
+      )
+
+    for (const launcher of ["cldx", "grx", "omp"]) {
+      expect(launch(launcher, `/opt/trellage/bin/${launcher}`)).toEqual({
+        command: { executable: `/opt/trellage/bin/${launcher}`, args: ["default", "--", prompt] },
+        promptDelivery: "command",
+      })
+    }
+    for (const launcher of ["picx", "prx"]) {
+      expect(launch(launcher, `/opt/trellage/bin/${launcher}`)).toEqual({
+        command: { executable: `/opt/trellage/bin/${launcher}`, args: ["default", prompt] },
+        promptDelivery: "command",
+      })
+    }
+    expect(launch("jcx", "/opt/trellage/bin/jcx")).toEqual({
+      command: { executable: "/opt/trellage/bin/jcx", args: ["default"] },
+      promptDelivery: "agent",
     })
   })
 
@@ -381,6 +412,7 @@ describe("Herdr parsing helpers", () => {
       rootPaneId: "wD1:p1",
       checkoutPath: "/repo/.worktrees/fix-add-json-guide",
     })
+    expect(parseHerdrTabRootPaneId('{"result":{"root_pane":{"pane_id":"w40:p7"}}}')).toBe("w40:p7")
     expect(parseHerdrAgentInfo('{"result":{"agent":{"agent_status":"idle"}}}')).toBe("idle")
   })
 
@@ -562,6 +594,33 @@ describe("current workspace handoff", () => {
     })
     expect(runner.calls[4]?.options?.timeoutMs).toBe(6_000)
     expect(runner.calls.map((call) => call.args.join(" ")).join("\n")).not.toMatch(/close|--force/)
+    runner.expectComplete()
+  })
+
+  it("creates an unfocused tab in this workspace and runs the profile in its root pane", async () => {
+    const runner = new FakeRunner([
+      {
+        executable: "herdr",
+        args: ["tab", "create", "--workspace", "w40", "--cwd", "/repo", "--no-focus"],
+        result: ok('{"result":{"root_pane":{"pane_id":"w40:p7"}}}'),
+      },
+      {
+        executable: "herdr",
+        args: ["pane", "run", "w40:p7", automatedBareCommandPreview],
+        result: ok(),
+      },
+    ])
+
+    const result = await handoffToNewHerdrTab(runner, {
+      workspaceId: "w40",
+      cwd: "/repo",
+      command: bareCommand,
+      prompt: "queued in the command",
+      promptDelivery: "command",
+      promptTimeoutMs: 5_000,
+    })
+
+    expect(result).toEqual({ paneId: "w40:p7", commandPreview: automatedBareCommandPreview })
     runner.expectComplete()
   })
 

@@ -3,7 +3,18 @@ import ApplicationServices
 import Foundation
 import OverlayCore
 
+@_silgen_name("_AXUIElementGetWindow")
+private func AXUIElementGetWindow(
+    _ element: AXUIElement,
+    _ windowId: UnsafeMutablePointer<CGWindowID>
+) -> AXError
+
 enum PermissionStatus {
+    private static let accessibilitySettingsURL =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    private static let inputMonitoringSettingsURL =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+
     static var accessibilityGranted: Bool {
         AXIsProcessTrusted()
     }
@@ -16,39 +27,39 @@ enum PermissionStatus {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
         _ = CGRequestListenEventAccess()
+        openRequiredSettings()
+    }
+
+    static func openAccessibilitySettings() {
+        openSettings(accessibilitySettingsURL)
+    }
+
+    static func openInputMonitoringSettings() {
+        openSettings(inputMonitoringSettingsURL)
+    }
+
+    private static func openRequiredSettings() {
+        if !accessibilityGranted {
+            openAccessibilitySettings()
+        } else if !inputMonitoringGranted {
+            openInputMonitoringSettings()
+        }
+    }
+
+    private static func openSettings(_ value: String) {
+        guard let url = URL(string: value) else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
-enum CopyOnSelectStatus: String {
-    case enabled = "Enabled"
-    case disabled = "Disabled"
-    case unknown = "Unknown"
-
-    static func inspect() -> CopyOnSelectStatus {
+enum CopyOnSelectInspection {
+    static func inspect() -> CopyOnSelectState {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/herdr/config.toml")
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return .enabled
+            return .unknown
         }
-
-        var inUI = false
-        for rawLine in content.components(separatedBy: .newlines) {
-            let line = rawLine.split(separator: "#", maxSplits: 1).first?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if line.hasPrefix("[") {
-                inUI = line == "[ui]"
-                continue
-            }
-            guard inUI else { continue }
-            let compact = line.replacingOccurrences(of: " ", with: "").lowercased()
-            if compact == "copy_on_select=false" {
-                return .disabled
-            }
-            if compact == "copy_on_select=true" {
-                return .enabled
-            }
-        }
-        return .enabled
+        return CopyOnSelectPolicy.parse(content)
     }
 }
 
@@ -91,21 +102,17 @@ enum KittyAccessibility {
         else {
             throw OverlayError.invalidContext("Kitty focused window title is unavailable")
         }
-        var numberValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            window,
-            "AXWindowNumber" as CFString,
-            &numberValue
-        ) == .success,
-              let windowNumber = numberValue as? NSNumber
-        else {
+        var windowId = CGWindowID(0)
+        let windowError = AXUIElementGetWindow(window, &windowId)
+        guard windowError == .success, windowId != 0 else {
             throw OverlayError.invalidContext("Kitty focused window identity is unavailable")
         }
+
         return FocusedKittyWindow(
             title: title,
             identity: SourceWindowIdentity(
                 processId: application.processIdentifier,
-                windowNumber: windowNumber.intValue
+                windowNumber: Int(windowId)
             )
         )
     }

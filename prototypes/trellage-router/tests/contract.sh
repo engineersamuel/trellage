@@ -503,6 +503,7 @@ assert_contains 'INTENT can contain line breaks and accepts up to 60,000 charact
 assert_contains 'Interactive prompt viewers: pager, split, focus, bookends, dashboard.' \
   "$fixture_root/guide-help.out"
 assert_contains 'trx guide --preview' "$fixture_root/guide-help.out"
+assert_contains 'trx guide --forks' "$fixture_root/guide-help.out"
 assert_contains 'It reads' "$fixture_root/guide-help.out"
 
 # The fixture-only basket preview must short-circuit before the Sandbox catalog.
@@ -515,6 +516,16 @@ preview_status=0
 assert_contains 'an interactive terminal is required' "$fixture_root/preview.out"
 if grep -Fq 'trellage command not found' "$fixture_root/preview.out"; then
   fail 'preview mode required the Sandbox catalog'
+fi
+
+# The fork preview short-circuits on the same path, so it gets the same guard.
+forks_status=0
+"$fixture_bin/trx" guide --forks </dev/null >"$fixture_root/forks.out" 2>&1 \
+  || forks_status=$?
+((forks_status != 0)) || fail 'fork preview ran without a terminal'
+assert_contains 'an interactive terminal is required' "$fixture_root/forks.out"
+if grep -Fq 'trellage command not found' "$fixture_root/forks.out"; then
+  fail 'fork preview required the Sandbox catalog'
 fi
 
 mv "$fixture_bin/cpx" "$fixture_root/cpx-link"
