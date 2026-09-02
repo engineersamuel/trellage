@@ -2,53 +2,79 @@
 schemaVersion: 1
 capabilities:
 - multi-node-coding-orchestration
+- dependency-aware-planning
 - git-worktree-isolation
 - specialist-agent-roles
 - research-fan-out-with-code-gate
 - persistent-task-memory
 - tdd-workflow
+- resumable-fail-closed-execution
+- rebase-fast-forward-integration
 - structured-codex-review-gate
 bestFor:
-- Reversible multi-node coding that needs isolated worktrees, persistent memory, and the ability to take
-  'done' back
-- Long-running feature work that benefits from curated specialist agent roles and a fail-closed Codex review
-  gate
+- Complex repository changes that divide into dependency-aware implementation, test, research, debug, or validation nodes
+- Long-running work that must survive interruption and resume from durable run, Beads, review, and gate state
+- Behavior changes that require real red-green-final TDD evidence, isolated worktrees, Codex review, and rebase-first fast-forward-only integration
+- Cross-cutting fixes where independent nodes can run in parallel but overlapping write ownership must remain serialized
+- High-assurance delivery that must fail closed on weak discovery, invalid plans, missing gates, unresolved findings, or incomplete proof
 avoidFor:
 - One-shot Q&A
 - Content-only profiles (blogs, social posts) — use claude-blog or claude-social-media instead
 - Small, single-file edits that don't need worktree isolation or memory
+- Work that is already complete when the request requires new pre-implementation red-gate evidence
+- Tasks that require pushing, opening a pull request, deploying, or merging
 - Conventional structured feature delivery that does not need a graph, isolated worktrees, or retryable
   nodes
-prerequisites: []
+prerequisites:
+- id: git-worktree
+  description: Start Trellage from a valid Git worktree with a named branch and a clean tracked worktree.
+- id: testable-objective
+  description: State a concrete repository outcome with deterministic validation commands or discoverable project checks.
 workflows:
-- id: start-graph-run
-  description: Start a `/graph-of-loops` run for a coding objective. The trellage-graph controller plans
-    the graph, creates isolated worktrees through Bernstein, and staffs curated specialist roles from
-    wshobson/agents, backed by beads memory.
+- id: implement-complex-change
+  description: Start a dependency-aware implementation run with explicit behavior, compatibility, test,
+    review, integration, and completion constraints.
+  skill: graph-of-loops
   examples:
-  - Run /graph-of-loops to implement the rate-limiter service with OBJECTIVE and CONSTRAINTS arguments
-  - Build the billing migration as retryable implementation nodes, keeping each risky change in an isolated
-    worktree
+  - Implement idempotent webhook delivery across storage, handlers, retries, and tests without changing the public API
+  - Add a scalar and SIMD parser with differential tests, cross-target compilation, benchmarks, and review
   promptTemplate: |
-    {{intent}}
-- id: fan-out-research-with-gate
-  description: Run the insane-research fan-out across candidate approaches, gated by deterministic
-    claim-ledger validation (validate_ledger.py) before committing to one.
+    /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Inspect the existing design before planning. Divide the work into dependency-aware nodes with exact read, write, test, and repair ownership. Preserve public APIs, persisted formats, and unrelated behavior. Require deterministic red-green-final gates for every behavior-changing node, all relevant repository checks, Codex review with no unresolved findings, rebase-first fast-forward-only integration, cleanup of generated worktrees, and root Bead closure. Do not push, create a pull request, deploy, or merge."
+- id: debug-cross-cutting-failure
+  description: Reproduce and repair a non-obvious failure across multiple modules while preserving exact
+    evidence, regression tests, review, and integration state.
+  skill: graph-of-loops
   examples:
-  - Research three approaches to our webhook retry problem and gate them with claim-ledger validation
-  - Compare queue designs for this ingest service, then prove the preferred option with a small working
-    implementation
+  - Diagnose why concurrent retries create duplicate rows and fix every contributing race
+  - Find why the cross-target build passes locally but fails in the locked profile
   promptTemplate: |
-    {{intent}}
-- id: resume-with-review-gate
-  description: Resume a paused `/graph-of-loops` run from persistent Beads state and pass it through the
-    Codex review gate before the root Bead can close.
+    /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Reproduce the failure before changing code. Use repository evidence to separate symptoms from root causes. Create dependency-aware debug, repair, regression-test, and validation nodes with non-overlapping ownership where possible. Require the original failure to be captured by a deterministic red gate, the identical gate to pass green, all final checks to pass, Codex findings to be resolved, and integration to use rebase plus fast-forward only. Do not weaken tests or bypass a failed gate."
+- id: research-then-implement
+  description: Use validated research fan-out only when an implementation decision needs competing
+    approaches, then gate the chosen approach through normal TDD and review nodes.
+  skill: graph-of-loops
   examples:
-  - Resume the auth-refactor graph run and report its status before closing it out
-  - Continue the paused authorization migration, retry the failed node, and challenge the completed work
-    before marking it done
+  - Compare durable queue designs, select one against repository constraints, then implement it
+  - Research safe portable SIMD strategies for the supported targets before coding the selected design
   promptTemplate: |
-    {{intent}}
+    /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Use a research node only for unresolved design evidence. Fan out credible alternatives, preserve sources and claims, and require deterministic claim-ledger validation before any dependent implementation node starts. The final plan must still include exact code ownership, behavior-level TDD gates, repository validation, Codex review, rebase-first fast-forward-only integration, and root Bead closure. Do not treat research prose as implementation proof."
+- id: validate-existing-implementation
+  description: Audit and repair an existing multi-part implementation when validation, portability, review,
+    or integration may still be incomplete.
+  skill: graph-of-loops
+  examples:
+  - Validate the existing authentication migration across unit, integration, and upgrade paths and repair all failures
+  - Audit the current SIMD implementation on every supported target without claiming performance that was not measured
+  promptTemplate: |
+    /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="First determine which requested behavior already exists and which work remains. Do not invent a behavior-changing node only to manufacture red-gate history. Use validation or repair nodes for existing code, and use TDD nodes only for newly required behavior that can honestly demonstrate red then green. Run all applicable format, lint, type-check, build, test, portability, and benchmark gates. Resolve Codex findings and close the root Bead only when the repository state proves the objective."
+- id: inspect-or-resume-run
+  description: Inspect or continue a known 12-character Graph run ID without replacing its durable state.
+  skill: graph-of-loops
+  examples:
+  - Check status for run 475441f36c6c and resume it if the recorded blocker is now fixed
+  - Resume run b45a718d0e42 from its current reviewed plan without replanning
+  promptTemplate: |
+    /graph-of-loops {{intent}}. Start with a direct trellage-graph status command for the named 12-character run ID. If continuation is requested, use plain resume to preserve the current reviewed plan. Use resume --replan only when the current generation is stale or semantically blocked and the controller confirms supersession is safe. Report the exact durable blocker if the run still cannot advance.
 ---
 
 # claude-graph-of-loops
@@ -59,6 +85,10 @@ workflows:
 - You want curated specialist agent roles (`team-implementer`, `tdd-workflows-tdd-orchestrator`, `team-debugger`, `conductor-validator`, plus the Trellage-owned planner and `insane-research`) staffed instead of a single generalist agent.
 - You need a research fan-out that is gated by deterministic claim-ledger
   validation (`validate_ledger.py`), not just competing write-ups.
+- You need deterministic ownership, gates, review, and integration to be the
+  completion authority instead of an agent saying the task is done.
+- You expect interruption or repair cycles and need the same run to retain its
+  plan generations, Beads, findings, and evidence.
 - You specifically need the Sandbox graph, isolated worktrees, and retryable nodes; a conventional structured
   engineering workflow is less suitable when those controls are unnecessary.
 
@@ -66,6 +96,78 @@ workflows:
 
 - The request is a one-shot question or a single small edit — the worktree/memory/gate machinery is unnecessary overhead.
 - The deliverable is content, not code — use claude-blog or claude-social-media instead.
+- The requested change is already complete but the prompt demands a new
+  historical red gate. Use a validation request that permits `validate` and
+  `repair` nodes instead of asking Graph to fabricate pre-implementation
+  evidence.
+- You need the agent to push, create a pull request, deploy, or merge. This
+  profile blocks those actions.
+
+## Use with `trx guide`
+
+Select this profile when you already know Graph is appropriate:
+
+```bash
+trx guide \
+  --profile sandbox:claude-graph-of-loops \
+  --intent "Validate and repair the existing SIMD implementation across every supported architecture"
+```
+
+Omit `--profile` when you want `trx guide` to compare all available profiles
+first. Add `--json` when another tool will consume the recommendation and
+generated prompt candidates.
+
+Write `--intent` as the outcome you need. The selected workflow expands it
+into the explicit `/graph-of-loops` entrypoint and adds the correct planning,
+gate, review, integration, and delivery constraints. Useful intent shapes
+include:
+
+- `Implement <complex behavior> while preserving <public contract>.`
+- `Reproduce and repair <cross-cutting failure>.`
+- `Research <design choice>, select an approach, and implement it.`
+- `Validate and repair the existing <multi-part implementation>.`
+- `Check or resume Graph run <12-character run ID>.`
+
+## Prompt Design for Best Results
+
+Give Graph a destination and constraints, not a proposed node list. The
+planner must discover the repository and choose grounded module seams itself.
+
+Put these elements in `OBJECTIVE`:
+
+- The user-visible or repository-visible outcome.
+- The behavior that must change or remain stable.
+- The concrete subsystem when known.
+
+Put these elements in `CONSTRAINTS`:
+
+- Public API, storage, compatibility, architecture, and dependency limits.
+- Required edge cases and failure modes.
+- Required format, lint, type-check, build, test, benchmark, or target checks.
+- Review, proof, integration, and delivery restrictions.
+
+Do not prescribe invented file paths, symbols, test commands, or node IDs.
+Graph discovery and plan audit will reject unsupported details. Do not require
+fresh red-gate evidence for behavior that is already present at the selected
+Git base; ask Graph to validate and repair the existing implementation instead.
+
+### Strong implementation prompt
+
+```text
+/graph-of-loops OBJECTIVE="Make webhook delivery idempotent so concurrent duplicate events cannot create duplicate records" CONSTRAINTS="Preserve the public API and storage format. Inspect existing transaction and retry behavior before planning. Test concurrent duplicates, partial-failure retries, malformed event IDs, and normal unique events. Run all relevant format, lint, type-check, build, and test commands. Require deterministic red-green-final gates, Codex review, rebase-first fast-forward-only integration, and root Bead closure. Do not push, create a pull request, deploy, or merge."
+```
+
+### Strong validation prompt for existing code
+
+```text
+/graph-of-loops OBJECTIVE="Validate and repair the existing portable parenthesis matcher across scalar, AVX2, and NEON backends" CONSTRAINTS="Do not manufacture pre-implementation red history for code already present. Use validation or repair nodes for existing behavior. Compare supported SIMD implementations with the scalar reference, compile and link all configured targets, run native tests only where supported, benchmark sparse and dense inputs, and make no performance claim without measurements. Resolve all Codex findings and close the root Bead only after every applicable gate passes."
+```
+
+### Resume an existing run
+
+```text
+/graph-of-loops Check status for run 475441f36c6c, resume it from the current reviewed plan if safe, and report the exact persisted blocker if it cannot advance.
+```
 
 ## Workflow Notes
 

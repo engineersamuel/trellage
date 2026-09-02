@@ -787,4 +787,49 @@ for (const phrase of [
   }
 }
 
+const graphGuide = registry.get("sandbox:claude-graph-of-loops")
+if (graphGuide === undefined) throw new Error("claude-graph-of-loops guide is missing")
+const graphWorkflowIds = new Set(graphGuide.guide.workflows.map(({ id }) => id))
+for (const workflow of [
+  "implement-complex-change",
+  "debug-cross-cutting-failure",
+  "research-then-implement",
+  "validate-existing-implementation",
+  "inspect-or-resume-run",
+]) {
+  if (!graphWorkflowIds.has(workflow)) {
+    throw new Error(`claude-graph-of-loops guide is missing workflow: ${workflow}`)
+  }
+}
+for (const workflow of graphGuide.guide.workflows) {
+  if (workflow.skill !== "graph-of-loops") {
+    throw new Error(`claude-graph-of-loops workflow must select graph-of-loops: ${workflow.id}`)
+  }
+  if (!workflow.promptTemplate.includes("/graph-of-loops")) {
+    throw new Error(`claude-graph-of-loops workflow must invoke the explicit entrypoint: ${workflow.id}`)
+  }
+}
+const implementationWorkflow = graphGuide.guide.workflows.find(
+  ({ id }) => id === "implement-complex-change",
+)
+if (
+  implementationWorkflow === undefined
+  || !implementationWorkflow.promptTemplate.includes('OBJECTIVE="{{intent}}"')
+  || !implementationWorkflow.promptTemplate.includes("red-green-final")
+  || !implementationWorkflow.promptTemplate.includes("fast-forward-only")
+) {
+  throw new Error("claude-graph-of-loops implementation workflow must preserve the full execution contract")
+}
+const validationWorkflow = graphGuide.guide.workflows.find(
+  ({ id }) => id === "validate-existing-implementation",
+)
+if (
+  validationWorkflow === undefined
+  || !validationWorkflow.promptTemplate.includes("Do not invent a behavior-changing node")
+) {
+  throw new Error("claude-graph-of-loops validation workflow must prevent fabricated TDD history")
+}
+if (!graphGuide.guide.prerequisites.some(({ id }) => id === "git-worktree")) {
+  throw new Error("claude-graph-of-loops guide must declare the git-worktree prerequisite")
+}
 process.stdout.write(`profile guides: PASS (${expected.length} profiles)\n`)
