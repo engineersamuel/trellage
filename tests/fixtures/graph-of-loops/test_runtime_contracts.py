@@ -5274,6 +5274,28 @@ class TestRedaction(unittest.TestCase):
 
 
 class TestSchemaValidation(unittest.TestCase):
+    def test_planner_requires_requested_host_clippy_and_minimal_repairs(self) -> None:
+        planner_role = (
+            ASSETS_DIR / "roles" / "trellage-graph-planner.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "aarch64-unknown-linux-gnu -- -D warnings",
+            planner_role,
+        )
+        self.assertIn(
+            "The GNU host restriction applies to commands that",
+            planner_role,
+        )
+        self.assertIn(
+            "Keep `repair_write_set` minimal.",
+            planner_role,
+        )
+        self.assertIn(
+            "Do not add unchanged preservation paths",
+            planner_role,
+        )
+
     def test_research_ledger_names_a_session_directory(self) -> None:
         errors = _check_research_write_rules([{
             "id": "research",

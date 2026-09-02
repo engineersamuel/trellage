@@ -88,6 +88,16 @@ target-evidence path must exist in the repository.
 - A behavior-changing node's `repair_write_set` MUST cover every path in its
   `write_set` and `test_write_set`. Review and gate repairs must not be left
   without an owning node.
+- Keep `repair_write_set` minimal. It SHOULD equal the node's `write_set` plus
+  `test_write_set`. Add another path only when a node acceptance criterion can
+  expose a defect in that exact existing seam and the node is explicitly
+  allowed to repair it. Do not add unchanged preservation paths, neighboring
+  modules, public entrypoints, or broad fallback scope merely so a specialist
+  can edit them after a gate or review failure.
+- When the request says an existing behavior or public seam must remain
+  unchanged, do not include that seam in `repair_write_set` unless the plan
+  also gives the node explicit implementation ownership and an acceptance
+  criterion that permits changing it.
 - Every non-research node with a non-empty `write_set` or `test_write_set`
   MUST give one node repair ownership for those paths, including
   benchmark-only nodes. A node may own its own repair paths. Do not leave a
@@ -137,6 +147,12 @@ target-evidence path must exist in the repository.
   --all-targets --target <target> -- -D warnings` gates for both
   `x86_64-unknown-linux-musl` and `i686-unknown-linux-musl`; do not claim an
   AArch64 Clippy gate covers the AVX2 module.
+- When the request requires both host and target-specific Clippy, also include
+  `cargo clippy --locked --all-targets --target
+  aarch64-unknown-linux-gnu -- -D warnings` as a node final gate and a
+  plan-level graph gate. The GNU host restriction applies to commands that
+  link or execute artifacts; it does not make this non-linking Clippy check
+  optional.
 - Do not create a redundant research node for toolchain facts already grounded
   by committed profile locks, materializer source, guide text, and installed
   image probes. Use implementation-node compile and test-build gates for
