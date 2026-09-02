@@ -83383,7 +83383,7 @@ var ForkPreviewApp = ({ variant }) => {
 var import_react37 = __toESM(require_react(), 1);
 
 // src/admin-model.ts
-var launchersWithoutDoctorSupport = /* @__PURE__ */ new Set(["cdx"]);
+var launchersWithoutDoctorSupport = /* @__PURE__ */ new Set([]);
 var nativeLauncherCapabilities = (launcher) => {
   const supported = !launchersWithoutDoctorSupport.has(launcher);
   return { doctorSupported: supported, inventorySupported: supported };

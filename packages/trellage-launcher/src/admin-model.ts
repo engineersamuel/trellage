@@ -6,10 +6,14 @@
  * — no subprocess execution happens here (see `admin-run-manager.ts`).
  *
  * Doctor/inventory support is a static, per-launcher fact derived from the
- * concrete native launcher contracts (`prototypes/trellage-*-profiles/bin/*`):
- * every native launcher except `cdx` (Codex) implements `doctor PROFILE` and
- * `inventory PROFILE --json`. `cdx` implements neither, so it must never be
- * shown with a fabricated healthy/unhealthy status.
+ * concrete native launcher contracts (`prototypes/trellage-*-profiles/bin/*`
+ * and the shared implementations they source, e.g.
+ * `prototypes/trellage-codex-common/native-codex`). Every native launcher,
+ * including `cdx` (Codex, which delegates its `doctor`/`inventory --json`/
+ * `repair` dispatch to `native-codex`), implements `doctor PROFILE` and
+ * `inventory PROFILE --json`. If a future native launcher genuinely lacks
+ * doctor support, add it to `launchersWithoutDoctorSupport` below so it is
+ * never shown with a fabricated healthy/unhealthy status.
  */
 import {
   loadProfileGuide,
@@ -35,12 +39,15 @@ const allNativeLaunchers: ReadonlyArray<NativeLauncherAlias> = [
 ]
 
 /**
- * Static capability table. `cdx` has no `doctor`/`inventory --json` support
- * (confirmed absent from `prototypes/trellage-codex-profiles/bin/cdx`); every
- * other native launcher supports both (confirmed present in each launcher's
- * `bin/*` usage text and command dispatch).
+ * Static capability table. Every current native launcher supports both
+ * `doctor PROFILE` and `inventory PROFILE --json` (confirmed present in each
+ * launcher's `bin/*` usage text and command dispatch, including `cdx`'s
+ * shared `native-codex` implementation's `doctor)`/`inventory)`/`repair)`
+ * cases). Kept as an explicit set — rather than assuming universal support
+ * — so a future native launcher that genuinely lacks doctor support can be
+ * added here without fabricating a healthy/unhealthy status for it.
  */
-const launchersWithoutDoctorSupport: ReadonlySet<NativeLauncherAlias> = new Set(["cdx"])
+const launchersWithoutDoctorSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
 
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean

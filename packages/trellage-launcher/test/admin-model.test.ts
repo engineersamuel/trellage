@@ -69,7 +69,7 @@ const fixtureCatalog = () =>
           launcher: "cdx",
           harness: "codex",
           name: "pstack",
-          description: "Codex native launcher (no doctor support).",
+          description: "Codex native launcher.",
           headless,
           sandbox: false,
           herdrCompatibility: { status: "supported" },
@@ -104,12 +104,8 @@ const fixtureCatalog = () =>
   )
 
 describe("nativeLauncherCapabilities", () => {
-  it("marks cdx as not supporting doctor/inventory", () => {
-    expect(nativeLauncherCapabilities("cdx")).toEqual({ doctorSupported: false, inventorySupported: false })
-  })
-
-  it("marks every other native launcher as supporting doctor/inventory", () => {
-    for (const launcher of ["cpx", "cldx", "grx", "jcx", "omp", "picx", "prx"]) {
+  it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
+    for (const launcher of ["cpx", "cdx", "cldx", "grx", "jcx", "omp", "picx", "prx"]) {
       expect(nativeLauncherCapabilities(launcher)).toEqual({ doctorSupported: true, inventorySupported: true })
     }
   })
@@ -122,10 +118,10 @@ describe("aggregateAdminProfiles", () => {
     expect(entries.map((entry) => entry.ref)).toEqual(["native:cpx/hve", "native:cdx/pstack", "sandbox:prime-agent"])
   })
 
-  it("marks cdx as unsupported rather than healthy/unhealthy", () => {
+  it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const cdx = entries.find((entry) => entry.ref === "native:cdx/pstack")
-    expect(cdx).toMatchObject({ health: "unsupported", install: "unsupported", doctorSupported: false })
+    expect(cdx).toMatchObject({ health: "unknown", install: "unknown", doctorSupported: true, stale: true })
   })
 
   it("marks profiles with no readiness input yet as unknown and stale", () => {
@@ -162,7 +158,7 @@ describe("aggregateAdminProfiles", () => {
     const cdx = entries.find((entry) => entry.ref === "native:cdx/pstack")
     expect(cpx).toMatchObject({ health: "malformed-output", install: "malformed-output" })
     expect(sandbox).toMatchObject({ health: "healthy", install: "installed" })
-    expect(cdx).toMatchObject({ health: "unsupported" })
+    expect(cdx).toMatchObject({ health: "unknown", install: "unknown" })
   })
 
   it("marks a blocked native result as not-installed when its diagnostic mentions not-setup", () => {

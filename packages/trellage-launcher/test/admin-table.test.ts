@@ -22,7 +22,14 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
 
 const fixture: ReadonlyArray<AdminProfileEntry> = [
   entry({ ref: "native:cpx/hve", name: "hve", launcher: "cpx", health: "healthy" }),
-  entry({ ref: "native:cdx/pstack", name: "pstack", launcher: "cdx", harness: "codex", health: "unsupported" }),
+  entry({
+    ref: "native:example-unsupported/pstack",
+    name: "pstack",
+    launcher: "example-unsupported",
+    harness: "example",
+    doctorSupported: false,
+    health: "unsupported",
+  }),
   entry({
     ref: "sandbox:prime-agent",
     surface: "sandbox",
@@ -36,7 +43,7 @@ const fixture: ReadonlyArray<AdminProfileEntry> = [
 describe("filterAdminProfiles", () => {
   it("is a pure, case-insensitive substring match with no false positives or negatives", () => {
     expect(filterAdminProfiles(fixture, "hve").map((e) => e.ref)).toEqual(["native:cpx/hve"])
-    expect(filterAdminProfiles(fixture, "PSTACK").map((e) => e.ref)).toEqual(["native:cdx/pstack"])
+    expect(filterAdminProfiles(fixture, "PSTACK").map((e) => e.ref)).toEqual(["native:example-unsupported/pstack"])
     expect(filterAdminProfiles(fixture, "sandbox").map((e) => e.ref)).toEqual(["sandbox:prime-agent"])
     expect(filterAdminProfiles(fixture, "nonexistent")).toEqual([])
   })

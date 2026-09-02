@@ -71,7 +71,7 @@ const fixtureCatalog = () =>
           launcher: "cdx",
           harness: "codex",
           name: "pstack",
-          description: "Codex native launcher (no doctor support).",
+          description: "Codex native launcher.",
           headless,
           sandbox: false,
           herdrCompatibility: { status: "supported" },
@@ -83,7 +83,7 @@ const fixtureCatalog = () =>
     }),
   )
 
-/** Routes each call by executable path so cpx/cldx get distinct canned outcomes. */
+/** Routes each call by executable path so cpx/cldx/cdx get distinct canned outcomes. */
 class RoutingRunner implements CommandRunner {
   readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []
 
@@ -95,17 +95,20 @@ class RoutingRunner implements CommandRunner {
     if (executable.includes("cldx")) {
       return { stdout: "not json at all", stderr: "", exitCode: 0 }
     }
+    if (executable.includes("cdx")) {
+      return { stdout: '{"schemaVersion":1,"launcher":"cdx","profile":"pstack","readiness":"healthy"}', stderr: "", exitCode: 0 }
+    }
     throw new Error(`unexpected executable: ${executable}`)
   }
 }
 
 describe("refreshAdminEntries", () => {
-  it("checks only doctor-supporting profiles, isolating a malformed result from a healthy one", async () => {
+  it("checks every native profile, including cdx, isolating a malformed result from healthy ones", async () => {
     const runner = new RoutingRunner()
     const entries = await refreshAdminEntries(runner, fixtureCatalog(), "/work")
 
-    expect(runner.calls).toHaveLength(2) // cpx + cldx checked; cdx skipped entirely.
-    expect(runner.calls.some((call) => call.executable.includes("cdx/bin/cdx"))).toBe(false)
+    expect(runner.calls).toHaveLength(3) // cpx + cldx + cdx all checked; cdx supports doctor/inventory via native-codex.
+    expect(runner.calls.some((call) => call.executable.includes("cdx/bin/cdx"))).toBe(true)
 
     const cpx = entries.find((entry) => entry.ref.includes("hve"))
     const cldx = entries.find((entry) => entry.ref.includes("broken"))
@@ -113,6 +116,6 @@ describe("refreshAdminEntries", () => {
 
     expect(cpx).toMatchObject({ health: "healthy", install: "installed", stale: false })
     expect(cldx).toMatchObject({ health: "malformed-output", install: "malformed-output", stale: false })
-    expect(cdx).toMatchObject({ health: "unsupported", install: "unsupported" })
+    expect(cdx).toMatchObject({ health: "healthy", install: "installed", stale: false })
   })
 })

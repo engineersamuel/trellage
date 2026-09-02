@@ -1,10 +1,11 @@
 /**
  * Async, fail-closed readiness refresh: probes health/install for every
- * catalog entry that supports it (skipping unsupported launchers like
- * `cdx` entirely) and merges results back into `AdminProfileEntry` rows.
- * Each profile's check is isolated — one profile's rejected/thrown check
- * never blocks or corrupts another profile's result (`Promise.allSettled`).
- * This is the "initial discovery" data flow; `admin-run-manager.ts` is the
+ * catalog entry whose launcher supports it (`entry.doctorSupported`,
+ * skipping only a genuinely doctor-unsupported native launcher — currently
+ * none) and merges results back into `AdminProfileEntry` rows. Each
+ * profile's check is isolated — one profile's rejected/thrown check never
+ * blocks or corrupts another profile's result (`Promise.allSettled`). This
+ * is the "initial discovery" data flow; `admin-run-manager.ts` is the
  * separate, user-triggered doctor-run orchestration.
  */
 import { toSelectedProfile } from "./admin-launch.js"
