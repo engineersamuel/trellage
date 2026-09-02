@@ -175,6 +175,16 @@
       "excludedProfiles": []
     },
     {
+      "id": "agency-read-only-azure-inventory",
+      "intent": "Use Agency-managed Copilot in this Trellage worktree to inspect Azure subscriptions, resource groups, registries, storage accounts, and resource health without changing anything.",
+      "expectedProfiles": ["native:agx/trellage-azure"],
+      "expectedWorkflows": {
+        "native:agx/trellage-azure": "inspect-azure-inventory"
+      },
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
       "id": "omp-copilot-model-catalog",
       "intent": "Use OMP with native GitHub Copilot authentication, choose from its full model catalog, and fan this refactor out to typed subagents with debugger support.",
       "expectedProfiles": ["native:omp/copilot"],

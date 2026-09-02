@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "trellage-azure": {
+      "description": "Agency-managed GitHub Copilot CLI with isolated Copilot state, Microsoft Learn, and a pinned read-only Azure inventory MCP tool set for Trellage worktrees.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "agencyProfile": "trellage-azure",
+      "configFile": "agency.toml",
+      "azureMcpVersion": "2.0.5",
+      "mcps": [
+        "msft-learn",
+        "azure"
+      ],
+      "tools": [
+        "subscription_list",
+        "group_list",
+        "group_resource_list",
+        "acr_registry_list",
+        "acr_registry_repository_list",
+        "storage_account_get",
+        "storage_blob_container_get",
+        "storage_blob_get",
+        "storage_table_list",
+        "resourcehealth_availability-status_get",
+        "resourcehealth_health-events_list"
+      ],
+      "authenticationMethods": [
+        "EnvironmentCredential",
+        "AzureCliCredential"
+      ],
+      "plugin": null,
+      "standaloneMcps": [
+        {
+          "name": "msft-learn",
+          "transport": "built-in"
+        },
+        {
+          "name": "azure",
+          "transport": "stdio"
+        }
+      ]
+    }
+  }
+}

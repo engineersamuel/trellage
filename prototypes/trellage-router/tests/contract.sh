@@ -50,6 +50,10 @@ create_native_launcher() {
   local standalone_mcps='[]'
   local profile_name="${launcher}-p"
 
+  if [[ "$launcher" == agx ]]; then
+    profile_name='trellage-azure'
+  fi
+
   if [[ "$launcher" == cpx ]]; then
     printf -v description '%1200s' ''
     description="${description// /x}$description_suffix"
@@ -358,6 +362,7 @@ create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jc
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2
 create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
+create_native_launcher agx agency .managed-by-trellage-agency-profiles trellage-agency-profiles-v1
 
 write_fixture_guide() {
   local launcher="$1"
@@ -484,7 +489,8 @@ for pair in \
   omp:copilot \
   omp:local \
   picx:default \
-  prx:prx-p; do
+  prx:prx-p \
+  agx:trellage-azure; do
   write_fixture_guide "${pair%%:*}" "${pair#*:}"
 done
 export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
@@ -492,11 +498,44 @@ export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
 assert_contains 'trx run LAUNCHER PROFILE [-- ARGS...]' "$fixture_root/help.out"
+assert_contains 'trx --profile agency [COPILOT_ARGS...]' "$fixture_root/help.out"
 assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
 assert_contains 'trx guide --preview' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
+
+: >"$argument_log"
+TRX_ARGUMENT_LOG="$argument_log" \
+  "$fixture_bin/trx" --profile agency 'space value' '' '*' \
+  || fail 'direct Agency profile launch failed'
+python3 - "$argument_log" <<'PY' || fail 'direct Agency profile arguments differ'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"agx", b"trellage-azure", b"space value", b"", b"*", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+: >"$argument_log"
+TRX_ARGUMENT_LOG="$argument_log" \
+  "$fixture_bin/trx" --profile=agency --model gpt-5.6-sol \
+  || fail 'equals-form Agency profile launch failed'
+python3 - "$argument_log" <<'PY' || fail 'equals-form Agency arguments differ'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"agx", b"trellage-azure", b"--model", b"gpt-5.6-sol", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+status=0
+"$fixture_bin/trx" --profile unknown >"$fixture_root/profile-unknown.out" \
+  2>"$fixture_root/profile-unknown.err" || status=$?
+[[ "$status" == 1 ]] || fail "unknown profile alias exited $status instead of 1"
+assert_contains 'unknown profile alias: unknown' "$fixture_root/profile-unknown.err"
 
 "$fixture_bin/trx" guide --help >"$fixture_root/guide-help.out"
 assert_contains 'native:<launcher>/<profile> or sandbox:<profile>' \
@@ -598,6 +637,7 @@ assert_contains $'picx/default\tOrdered Pi extension profile' "$fixture_root/lis
 assert_contains $'cdx/pstack\tAqua-123 pstack for Codex' "$fixture_root/list.out"
 assert_contains $'cdx/youtube\tYouTube transcript research with youtube-full' "$fixture_root/list.out"
 assert_contains $'prx/prx-p\tprx' "$fixture_root/list.out"
+assert_contains $'agx/trellage-azure\tagx' "$fixture_root/list.out"
 
 "$fixture_bin/trx" list --json >"$fixture_root/list.json" \
   || fail 'JSON list failed'
@@ -623,7 +663,8 @@ jq -e '
     "omp/copilot",
     "omp/local",
     "picx/default",
-    "prx/prx-p"
+    "prx/prx-p",
+    "agx/trellage-azure"
   ]
   and [.profiles[] | .harness] == [
     "copilot",
@@ -638,7 +679,8 @@ jq -e '
     "oh-my-pi",
     "oh-my-pi",
     "pi",
-    "prime"
+    "prime",
+    "agency"
   ]
   and [.profiles[] | .sandbox] == [
     false,
@@ -653,6 +695,7 @@ jq -e '
     false,
     false,
     false,
+    false,
     false
   ]
   and all(.profiles[]; .herdrCompatibility.status | . == "untested" or . == "verified" or . == "known-issue")
@@ -663,6 +706,7 @@ jq -e '
   and (.profiles[] | select(.launcher == "cdx" and .name == "youtube") | .herdrCompatibility.status) == "verified"
   and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .herdrCompatibility.status) == "verified"
   and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "agx" and .name == "trellage-azure") | .herdrCompatibility.status) == "untested"
   and all(.profiles[] | select(.launcher == "fmx"); .headless.prompt == false and .headless.modelOverride == false)
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
@@ -815,7 +859,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath
     and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 13)
+    and (.catalog.native | length == 14)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -989,8 +1033,13 @@ jq -e '
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted prime profile'
 jq -e '
-  ([.choices[] | select(.id == "omp:local" or .id == "picx:default" or .commandAlias == "fmx") | .modelOverrideSupported] | all(. == false))
-  and ([.choices[] | select(.id != "omp:local" and .id != "picx:default" and .commandAlias != "fmx") | .modelOverrideSupported] | all)
+  [.choices[] | select(.label == "agency / trellage-azure")]
+  | length == 1
+' "$fixture_root/picker-input.json" >/dev/null \
+  || fail 'router choices omitted Agency profile'
+jq -e '
+  ([.choices[] | select(.id == "omp:local" or .id == "picx:default" or .commandAlias == "fmx" or .id == "agx:trellage-azure") | .modelOverrideSupported] | all(. == false))
+  and ([.choices[] | select(.id != "omp:local" and .id != "picx:default" and .commandAlias != "fmx" and .id != "agx:trellage-azure") | .modelOverrideSupported] | all)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not enable model overrides for every launcher except local Qwen'
 jq -e '
@@ -998,7 +1047,7 @@ jq -e '
   and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [true])
   and ([.choices[] | select(.id == "cdx:youtube") | .sandbox] == [true])
-  and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "fmx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
+  and ([.choices[] | select(.commandAlias == "agx" or .commandAlias == "cldx" or .commandAlias == "fmx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'
 [[ ! -e "$inventory_log" ]] \
@@ -1322,6 +1371,15 @@ python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-prx.out" \
 assert_contains 'required launcher not found on PATH: prx' "$fixture_root/missing-prx.out"
 mv "$fixture_bin/prx.absent" "$fixture_bin/prx"
 
+mv "$fixture_bin/agx" "$fixture_bin/agx.absent"
+status=0
+"$fixture_bin/trx" list >"$fixture_root/list-missing-agx.out" \
+  2>"$fixture_root/list-missing-agx.err" || status=$?
+[[ "$status" == 1 ]] || fail "missing agx list exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: agx' \
+  "$fixture_root/list-missing-agx.err"
+mv "$fixture_bin/agx.absent" "$fixture_bin/agx"
+
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.catalog"
 printf '{not-json}\n' >"$runtime_parent/cdx/catalog.json"
 status=0
@@ -1448,6 +1506,7 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
+  && -x "$runtime_parent/agx/bin/agx" \
   && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/fmx/bin/fmx" \
   && -x "$runtime_parent/grx/bin/grx" \
   && -x "$runtime_parent/jcx/bin/jcx" \

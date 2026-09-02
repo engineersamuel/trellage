@@ -30,6 +30,7 @@ readonly ownership_value='trellage-router-v2'
 # this repository's working tree. KEEP THIS IN SYNC with the native entries in
 # docs/herdr-compatibility.json.
 readonly trx_herdr_ledger='[
+  { "launcher": "agx", "profile": "trellage-azure", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
   { "launcher": "cldx", "profile": "default", "status": "verified" },
   { "launcher": "fmx", "profile": "default", "status": "verified", "notes": "Verified in a real Herdr captain-and-scout round trip: consent-managed prerequisites installed, the scout used an isolated Treehouse worktree and worker home, all locked tools resolved, and teardown completed." },
   { "launcher": "fmx", "profile": "pstack-workers", "status": "untested", "notes": "The shared Firstmate runtime passed the fmx/default Herdr fleet round trip, and static worker-policy contracts pass. Awaiting a profile-specific pstack-workers fleet round trip." },
@@ -63,6 +64,7 @@ usage() {
   cat <<'EOF'
 Usage:
   trx
+  trx --profile agency [COPILOT_ARGS...]
   trx list [--json]
   trx run LAUNCHER PROFILE [-- ARGS...]
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
@@ -73,7 +75,8 @@ Usage:
   trx skills update
 
 Select an installed native harness/profile interactively, or list available
-profiles. Bare trx opens the launcher. `trx run` validates an exact installed
+profiles. Bare trx opens the launcher. `--profile agency` directly launches
+`agx/trellage-azure`. `trx run` validates an exact installed
 launcher/profile pair and executes it without the picker. `trx guide`
 recommends a profile and builds prompt candidates; its JSON mode is
 non-interactive and has no launch or Herdr side effects. `trx inventory`
@@ -337,16 +340,18 @@ build_choices() {
     --argjson picxCatalog "$7" \
     --argjson prxCatalog "$8" \
     --argjson fmxCatalog "$9" \
-    --arg cpxPath "${10}" \
-    --arg cdxPath "${11}" \
-    --arg cldxPath "${12}" \
-    --arg grxPath "${13}" \
-    --arg jcxPath "${14}" \
-    --arg ompPath "${15}" \
-    --arg picxPath "${16}" \
-    --arg prxPath "${17}" \
-    --arg fmxPath "${18}" \
-    --argjson passthroughArgs "${19}" '
+    --argjson agxCatalog "${10}" \
+    --arg cpxPath "${11}" \
+    --arg cdxPath "${12}" \
+    --arg cldxPath "${13}" \
+    --arg grxPath "${14}" \
+    --arg jcxPath "${15}" \
+    --arg ompPath "${16}" \
+    --arg picxPath "${17}" \
+    --arg prxPath "${18}" \
+    --arg fmxPath "${19}" \
+    --arg agxPath "${20}" \
+    --argjson passthroughArgs "${21}" '
     def models($catalog; $profile):
       if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
@@ -380,6 +385,7 @@ build_choices() {
       elif $catalog.launcher == "omp" then $ompPath
       elif $catalog.launcher == "picx" then $picxPath
       elif $catalog.launcher == "prx" then $prxPath
+      elif $catalog.launcher == "agx" then $agxPath
       else error("unknown launcher path") end;
     def pair($catalog):
       $catalog.profiles[] as $profile
@@ -414,6 +420,7 @@ build_choices() {
         pair($ompCatalog),
         pair($picxCatalog),
         pair($prxCatalog)
+        ,pair($agxCatalog)
       ]
     }
   '
@@ -430,6 +437,7 @@ build_profile_list() {
     --argjson picxCatalog "$7" \
     --argjson prxCatalog "$8" \
     --argjson fmxCatalog "$9" \
+    --argjson agxCatalog "${10}" \
     --argjson herdrLedger "$trx_herdr_ledger" '
     def herdrCompatibility($launcher; $name):
       ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
@@ -458,6 +466,7 @@ build_profile_list() {
         profiles($ompCatalog),
         profiles($picxCatalog),
         profiles($prxCatalog)
+        ,profiles($agxCatalog)
       ]
     }
   '
@@ -518,6 +527,33 @@ case "${1-}" in
     fi
     [[ "$run_launcher" =~ ^[a-z0-9]+$ ]] || die "invalid launcher: $run_launcher"
     [[ "$run_profile" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "invalid profile: $run_profile"
+    run_args=("$@")
+    ;;
+  --profile)
+    mode='run'
+    shift
+    [[ "$#" -ge 1 ]] || die '--profile requires a profile name'
+    case "$1" in
+      agency)
+        run_launcher='agx'
+        run_profile='trellage-azure'
+        ;;
+      *) die "unknown profile alias: $1" ;;
+    esac
+    shift
+    run_args=("$@")
+    ;;
+  --profile=*)
+    mode='run'
+    case "${1#--profile=}" in
+      agency)
+        run_launcher='agx'
+        run_profile='trellage-azure'
+        ;;
+      '') die '--profile requires a profile name' ;;
+      *) die "unknown profile alias: ${1#--profile=}" ;;
+    esac
+    shift
     run_args=("$@")
     ;;
   skills)
@@ -628,7 +664,7 @@ if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
     if [[ "$guide_arg" == --preview || "$guide_arg" == --preview=* \
       || "$guide_arg" == --forks || "$guide_arg" == --forks=* ]]; then
       # Fixture-only previews: they read no catalog, so short-circuit
-      # before launcher discovery, the eight catalog reads, the Sandbox list,
+      # before launcher discovery, the ten catalog reads, the Sandbox list,
       # and the floating-skills fetch below. None of them apply to fixtures.
       command -v node >/dev/null 2>&1 || die 'required command not found: node'
       [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
@@ -651,6 +687,7 @@ jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 '' trellage-omp-profiles)"
 picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1 '' trellage-picx-profiles)"
 prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1 '' trellage-prime-profiles)"
+agx="$(discover_launcher agx .managed-by-trellage-agency-profiles trellage-agency-profiles-v1 '' trellage-agency-profiles)"
 
 if [[ "$mode" == inventory ]]; then
   case "$inventory_launcher" in
@@ -663,6 +700,7 @@ if [[ "$mode" == inventory ]]; then
     omp) inventory_executable="$omp" ;;
     picx) inventory_executable="$picx" ;;
     prx) inventory_executable="$prx" ;;
+    agx) inventory_executable="$agx" ;;
     *) die "unknown launcher: $inventory_launcher" ;;
   esac
   output="$("$inventory_executable" inventory "$inventory_profile_arg" --json)" \
@@ -700,15 +738,18 @@ read_catalog picx pi "$picx" >"$catalog_tmp/picx" 2>"$catalog_tmp/picx.err" &
 picx_catalog_pid=$!
 read_catalog prx prime "$prx" >"$catalog_tmp/prx" 2>"$catalog_tmp/prx.err" &
 prx_catalog_pid=$!
+read_catalog agx agency "$agx" >"$catalog_tmp/agx" 2>"$catalog_tmp/agx.err" &
+agx_catalog_pid=$!
 
 catalog_status=0
 for catalog_pid in \
   "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" "$grx_catalog_pid" \
-  "$fmx_catalog_pid" "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" "$prx_catalog_pid"; do
+  "$fmx_catalog_pid" "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" \
+  "$prx_catalog_pid" "$agx_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
 if ((catalog_status != 0)); then
-  for launcher in cpx cdx cldx fmx grx jcx omp picx prx; do
+  for launcher in cpx cdx cldx fmx grx jcx omp picx prx agx; do
     while IFS= read -r diagnostic; do
       printf '%s\n' "$diagnostic" >&2
     done <"$catalog_tmp/$launcher.err"
@@ -725,6 +766,7 @@ jcx_catalog="$(<"$catalog_tmp/jcx")"
 omp_catalog="$(<"$catalog_tmp/omp")"
 picx_catalog="$(<"$catalog_tmp/picx")"
 prx_catalog="$(<"$catalog_tmp/prx")"
+agx_catalog="$(<"$catalog_tmp/agx")"
 cleanup_catalog_tmp
 trap - EXIT HUP INT TERM
 
@@ -739,6 +781,7 @@ if [[ "$mode" == run ]]; then
     omp) run_executable="$omp"; run_catalog="$omp_catalog" ;;
     picx) run_executable="$picx"; run_catalog="$picx_catalog" ;;
     prx) run_executable="$prx"; run_catalog="$prx_catalog" ;;
+    agx) run_executable="$agx"; run_catalog="$agx_catalog" ;;
     *) die "unknown launcher: $run_launcher" ;;
   esac
   jq -e --arg profile "$run_profile" \
@@ -755,7 +798,7 @@ fi
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
     "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog")" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
     command -v node >/dev/null 2>&1 || die 'required command not found: node'
@@ -782,7 +825,7 @@ if [[ "$mode" == guide ]]; then
 
   profile_list="$(build_profile_list \
     "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog")" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
     || die 'could not build native profile list'
 
   if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
@@ -831,7 +874,8 @@ if [[ "$mode" == guide ]]; then
     --arg jcxPath "$jcx" \
     --arg ompPath "$omp" \
     --arg picxPath "$picx" \
-    --arg prxPath "$prx" '
+    --arg prxPath "$prx" \
+    --arg agxPath "$agx" '
       .profiles |= map(
         . + {
           commandPath:
@@ -844,6 +888,7 @@ if [[ "$mode" == guide ]]; then
              elif .launcher == "omp" then $ompPath
              elif .launcher == "picx" then $picxPath
              elif .launcher == "prx" then $prxPath
+             elif .launcher == "agx" then $agxPath
              else error("unknown native launcher")
              end)
         }
@@ -883,8 +928,8 @@ command -v node >/dev/null 2>&1 || die 'required command not found: node'
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" \
-  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$picx" "$prx" "$fmx" "$passthrough_args")" \
+  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog" \
+  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$picx" "$prx" "$fmx" "$agx" "$passthrough_args")" \
   || die 'could not build profile choices'
 
 choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
@@ -944,6 +989,10 @@ case "$launcher" in
   prx)
     selected_launcher="$prx"
     selected_catalog="$prx_catalog"
+    ;;
+  agx)
+    selected_launcher="$agx"
+    selected_catalog="$agx_catalog"
     ;;
   *) die 'terminal picker returned an invalid launcher' ;;
 esac

@@ -79,6 +79,7 @@ TRELLAGE_HOST_HEADLESS_ONLY=1 bash "$repository_root/prototypes/trellage/tests/h
 
 printf 'verify-headless-contracts: Native adapter and router cases\n'
 bash "$repository_root/prototypes/trellage-copilot-profiles/tests/contract.sh"
+bash "$repository_root/prototypes/trellage-agency-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-claude-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-firstmate-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-omp-profiles/tests/contract.sh"

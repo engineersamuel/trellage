@@ -118,6 +118,7 @@ fi
 known_native_packages=(
   trellage-codex-profiles
   trellage-copilot-profiles
+  trellage-agency-profiles
   trellage-claude-profiles
   trellage-firstmate-profiles
   trellage-grok-profiles
@@ -202,7 +203,7 @@ install_native_stack() {
 
   printf 'rebuild-profile-images: verifying native commands on PATH\n' >&2
   local cmd resolved runtime
-  for cmd in cdx cpx cldx fmx grx jcx omp picx prx trx; do
+  for cmd in cdx cpx agx cldx fmx grx jcx omp picx prx trx; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       printf 'rebuild-profile-images: missing required command on PATH: %s\n' "$cmd" >&2
       status=1

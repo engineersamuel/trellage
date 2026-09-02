@@ -1,0 +1,584 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+resolve_file() {
+  local path="$1" directory target links=0
+
+  [[ "$path" == /* ]] || {
+    directory="$(canonical_directory "$(dirname "$path")")" || return 1
+    path="$directory/$(basename "$path")"
+  }
+  while [[ -L "$path" ]]; do
+    ((links += 1))
+    ((links <= 40)) || return 1
+    directory="$(canonical_directory "$(dirname "$path")")" || return 1
+    target="$(readlink "$path")" || return 1
+    if [[ "$target" == /* ]]; then
+      path="$target"
+    else
+      path="$directory/$target"
+    fi
+  done
+  directory="$(canonical_directory "$(dirname "$path")")" || return 1
+  printf '%s/%s\n' "$directory" "$(basename "$path")"
+}
+
+die() {
+  printf 'agx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  agx setup PROFILE
+  agx PROFILE [COPILOT_ARGS...]
+  agx list
+  agx list --json
+  agx inventory PROFILE --json
+  agx doctor PROFILE
+  agx repair PROFILE
+
+Launcher updates are installed by re-running install.sh or the Trellage native
+rebuild. Agency and Azure MCP never auto-update during an agx launch.
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
+runtime_root="$(canonical_directory "$script_dir/..")" || die 'could not resolve runtime root'
+catalog="${AGX_CATALOG:-$runtime_root/catalog.json}"
+profiles_root="$HOME/.local/share/trellage/profiles/agency"
+profile_marker_value='trellage-agency-profile-v1'
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+if [[ ! -f "$floating_skills_manager" ]]; then
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$runtime_root/../../skills.json"
+fi
+
+validate_catalog() {
+  [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
+    || die "invalid catalog: $catalog"
+  jq -e '
+    def validHeadless:
+      type == "object"
+      and keys == [
+        "changedFiles",
+        "cost",
+        "effortOverride",
+        "eventContract",
+        "modelOverride",
+        "outputFormats",
+        "prompt",
+        "questionToolControl",
+        "resume",
+        "resumeWithPrompt",
+        "schemaVersion",
+        "sessionId",
+        "testedHarnessVersion",
+        "trellageEventContract",
+        "usage"
+      ]
+      and .schemaVersion == 1
+      and .prompt == false
+      and .outputFormats == ["text"]
+      and .eventContract == null
+      and .trellageEventContract == null
+      and .sessionId == "none"
+      and .resume == false
+      and .resumeWithPrompt == false
+      and .questionToolControl == "none"
+      and .changedFiles == "none"
+      and .usage == false
+      and .cost == false
+      and .modelOverride == false
+      and .effortOverride == false
+      and .testedHarnessVersion == null;
+    type == "object"
+    and keys == ["profiles", "schemaVersion"]
+    and .schemaVersion == 1
+    and (.profiles | keys) == ["trellage-azure"]
+    and (.profiles["trellage-azure"] | keys) == [
+      "agencyProfile",
+      "authenticationMethods",
+      "azureMcpVersion",
+      "configFile",
+      "description",
+      "headless",
+      "mcps",
+      "plugin",
+      "standaloneMcps",
+      "tools"
+    ]
+    and (.profiles["trellage-azure"].description | type == "string" and length > 0)
+    and (.profiles["trellage-azure"].headless | validHeadless)
+    and .profiles["trellage-azure"].agencyProfile == "trellage-azure"
+    and .profiles["trellage-azure"].configFile == "agency.toml"
+    and (.profiles["trellage-azure"].azureMcpVersion | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    and .profiles["trellage-azure"].mcps == ["msft-learn", "azure"]
+    and (.profiles["trellage-azure"].tools | type == "array" and length > 0 and length == (unique | length))
+    and all(.profiles["trellage-azure"].tools[];
+      type == "string"
+      and test("^[a-z0-9_-]+$")
+      and (test("create|delete|update|upload|set|send|deploy") | not))
+    and .profiles["trellage-azure"].authenticationMethods
+      == ["EnvironmentCredential", "AzureCliCredential"]
+    and .profiles["trellage-azure"].plugin == null
+    and .profiles["trellage-azure"].standaloneMcps == [
+      {"name":"msft-learn","transport":"built-in"},
+      {"name":"azure","transport":"stdio"}
+    ]
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+}
+
+profile_exists() {
+  jq -e --arg profile "$1" '.profiles | has($profile)' "$catalog" >/dev/null
+}
+
+profile_name_is_safe() {
+  [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]
+}
+
+require_profile() {
+  profile_name_is_safe "$1" || die "unsafe profile name: $1"
+  profile_exists "$1" || die "unknown profile: $1"
+}
+
+profile_value() {
+  jq -r --arg profile "$1" --arg field "$2" '.profiles[$profile][$field]' "$catalog"
+}
+
+profile_root() {
+  printf '%s/%s\n' "$profiles_root" "$1"
+}
+
+profile_home() {
+  printf '%s/home\n' "$(profile_root "$1")"
+}
+
+profile_marker() {
+  printf '%s/.managed-by-trellage-agency-profiles\n' "$(profile_root "$1")"
+}
+
+profile_path_is_safe() {
+  local profile="$1"
+
+  case "$HOME" in
+    /|'') return 1 ;;
+    /*) ;;
+    *) return 1 ;;
+  esac
+  case "$HOME/" in
+    */../*) return 1 ;;
+  esac
+  [[ -d "$HOME" && ! -L "$HOME" ]] || return 1
+
+  (
+    local canonical_home='' canonical_profiles_root='' canonical_path=''
+    local path="$HOME" component=''
+
+    cd -P "$HOME" >/dev/null 2>&1 || exit 1
+    canonical_home="$PWD"
+    [[ "$canonical_home" != / ]] || exit 1
+    profile_name_is_safe "$profile" || exit 1
+
+    for component in .local share trellage profiles agency; do
+      path="$path/$component"
+      [[ ! -L "$path" ]] || exit 1
+      if [[ -e "$path" ]]; then
+        [[ -d "$path" ]] || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_home"|"$canonical_home"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+
+    if [[ -e "$profiles_root" ]]; then
+      cd -P "$profiles_root" >/dev/null 2>&1 || exit 1
+      canonical_profiles_root="$PWD"
+      [[ "$canonical_profiles_root" == "$canonical_home/.local/share/trellage/profiles/agency" ]] \
+        || exit 1
+    else
+      canonical_profiles_root="$canonical_home/.local/share/trellage/profiles/agency"
+    fi
+
+    for component in "$profile" home; do
+      path="$path/$component"
+      [[ ! -L "$path" ]] || exit 1
+      if [[ -e "$path" ]]; then
+        [[ -d "$path" ]] || exit 1
+        cd -P "$path" >/dev/null 2>&1 || exit 1
+        canonical_path="$PWD"
+        case "$canonical_path" in
+          "$canonical_profiles_root"/*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+    done
+  )
+}
+
+require_safe_profile_path() {
+  local profile="$1"
+  profile_path_is_safe "$profile" \
+    || die "unsafe profile home path: $(profile_home "$profile")"
+}
+
+verify_profile_marker() {
+  local profile="$1" marker
+  marker="$(profile_marker "$profile")"
+  [[ -f "$marker" && ! -L "$marker" && -r "$marker" ]] \
+    || die "profile is not set up: $profile"
+  [[ "$(<"$marker")" == "$profile_marker_value" ]] \
+    || die "invalid profile ownership marker: $profile"
+}
+
+prepare_profile_home() {
+  local profile="$1" path="$HOME" component marker staged
+
+  require_safe_profile_path "$profile"
+  for component in .local share trellage profiles agency; do
+    path="$path/$component"
+    if [[ ! -e "$path" ]]; then
+      mkdir "$path" || die "failed to create profile path: $path"
+    fi
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+
+  path="$(profile_root "$profile")"
+  if [[ ! -e "$path" ]]; then
+    mkdir "$path" || die "failed to create profile root: $path"
+  fi
+  [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile root: $path"
+  marker="$(profile_marker "$profile")"
+  if [[ ! -e "$marker" && ! -L "$marker" ]]; then
+    if find "$path" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+      die "refusing unowned non-empty profile root: $path"
+    fi
+    staged="$(mktemp "$path/.ownership.XXXXXX")" \
+      || die "failed to stage profile ownership: $profile"
+    printf '%s\n' "$profile_marker_value" >"$staged"
+    chmod 0600 "$staged"
+    mv -f "$staged" "$marker"
+  fi
+  verify_profile_marker "$profile"
+
+  path="$(profile_home "$profile")"
+  if [[ ! -e "$path" ]]; then
+    mkdir "$path" || die "failed to create profile home: $path"
+  fi
+  [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile home: $path"
+  chmod 0700 "$(profile_root "$profile")" "$path"
+  require_safe_profile_path "$profile"
+}
+
+ensure_floating_skills() {
+  local profile="$1"
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  require_command node
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
+    --target "$(profile_home "$profile")/skills" \
+    || die "failed to install floating skills: $profile"
+}
+
+verify_floating_skills() {
+  local profile="$1"
+  require_command node
+  node "$floating_skills_manager" verify \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
+    --target "$(profile_home "$profile")/skills" \
+    || die "floating skills are unhealthy: $profile"
+}
+
+agency_executable() {
+  local discovered='' resolved standard_path
+  standard_path="$HOME/.config/agency/CurrentVersion/agency"
+  discovered="$(command -v agency 2>/dev/null || true)"
+  if [[ -z "$discovered" && -e "$standard_path" ]]; then
+    discovered="$standard_path"
+  fi
+  [[ -n "$discovered" ]] \
+    || die 'Agency is not installed; run: curl -sSfL https://aka.ms/InstallTool.sh | sh -s agency'
+  [[ "$discovered" == */* ]] || die "unsafe Agency executable on PATH: $discovered"
+  resolved="$(resolve_file "$discovered")" || die "cannot resolve Agency executable: $discovered"
+  [[ -f "$resolved" && -x "$resolved" && ! -L "$resolved" ]] \
+    || die "unsafe Agency executable: $resolved"
+  printf '%s\n' "$resolved"
+}
+
+worktree_config() {
+  local root config canonical_root
+  require_command git
+  root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" \
+    || die 'Agency profile launch requires a Git worktree'
+  [[ "$root" == /* && -d "$root" && ! -L "$root" ]] \
+    || die "unsafe Git worktree root: $root"
+  canonical_root="$(canonical_directory "$root")" || die "cannot resolve Git worktree root: $root"
+  config="$canonical_root/$(profile_value "$1" configFile)"
+  [[ -f "$config" && -r "$config" && ! -L "$config" ]] \
+    || die "repository Agency config is missing or unsafe: $config"
+  printf '%s\n' "$config"
+}
+
+validate_agency_config() {
+  local profile="$1" executable="$2" config="$3" output agency_profile
+
+  "$executable" config check --skip-remotes >/dev/null 2>&1 \
+    || die "Agency config validation failed: $config"
+  output="$("$executable" config list --show-source 2>/dev/null)" \
+    || die "Agency config source inspection failed: $config"
+  agency_profile="$(profile_value "$profile" agencyProfile)"
+  awk -v profile="$agency_profile" -v config="$config" \
+    'index($0, profile) && index($0, config) { found = 1 } END { exit !found }' \
+    <<<"$output" \
+    || die "Agency profile is not sourced from the repository config: $config"
+}
+
+environment_credentials_ready() {
+  [[ -n "${AZURE_CLIENT_ID-}" && -n "${AZURE_CLIENT_SECRET-}" && -n "${AZURE_TENANT_ID-}" ]]
+}
+
+azure_cli_credentials_ready() {
+  command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1
+}
+
+authentication_method() {
+  case "${AZURE_TOKEN_CREDENTIALS-}" in
+    '')
+      if environment_credentials_ready; then
+        printf 'EnvironmentCredential\n'
+      elif azure_cli_credentials_ready; then
+        printf 'AzureCliCredential\n'
+      else
+        die 'Azure authentication is unavailable; set environment credentials or run az login'
+      fi
+      ;;
+    EnvironmentCredential)
+      environment_credentials_ready \
+        || die 'AZURE_TOKEN_CREDENTIALS requires complete environment credentials'
+      printf 'EnvironmentCredential\n'
+      ;;
+    AzureCliCredential)
+      azure_cli_credentials_ready \
+        || die 'AZURE_TOKEN_CREDENTIALS requires an authenticated Azure CLI'
+      printf 'AzureCliCredential\n'
+      ;;
+    *)
+      die "unsupported AZURE_TOKEN_CREDENTIALS for this profile: $AZURE_TOKEN_CREDENTIALS"
+      ;;
+  esac
+}
+
+ready_executable=''
+ready_config=''
+ready_auth=''
+
+resolve_profile_readiness() {
+  local profile="$1"
+  require_profile "$profile"
+  require_safe_profile_path "$profile"
+  verify_profile_marker "$profile"
+  [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  verify_floating_skills "$profile"
+  require_command npm
+  require_command npx
+  ready_executable="$(agency_executable)"
+  ready_config="$(worktree_config "$profile")"
+  validate_agency_config "$profile" "$ready_executable" "$ready_config"
+  ready_auth="$(authentication_method)"
+}
+
+doctor_profile() {
+  local profile="$1"
+  resolve_profile_readiness "$profile"
+  printf '%s: healthy (Agency profile %s, Azure MCP %s, auth %s)\n' \
+    "$profile" "$(profile_value "$profile" agencyProfile)" \
+    "$(profile_value "$profile" azureMcpVersion)" "$ready_auth"
+}
+
+setup_profile() {
+  local profile="$1"
+  require_profile "$profile"
+  prepare_profile_home "$profile"
+  ensure_floating_skills "$profile"
+  doctor_profile "$profile"
+}
+
+repair_profile() {
+  local profile="$1"
+  require_profile "$profile"
+  prepare_profile_home "$profile"
+  ensure_floating_skills "$profile"
+  doctor_profile "$profile"
+  printf '%s: repaired\n' "$profile"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries[] | [.key, .value.agencyProfile] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "agx",
+      harness: "agency",
+      sandbox: false,
+      profiles: [
+        .profiles
+        | to_entries[]
+        | {
+            name: .key,
+            description: .value.description,
+            headless: .value.headless,
+            plugin: .value.plugin,
+            source: "repository agency.toml",
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+inventory_json() {
+  local profile="$1" readiness="$2" executable="${3-}" config="${4-}" auth="${5-}"
+  local executable_json config_json auth_json
+
+  if [[ -n "$executable" ]]; then executable_json="$(jq -Rn --arg value "$executable" '$value')"; else executable_json=null; fi
+  if [[ -n "$config" ]]; then config_json="$(jq -Rn --arg value "$config" '$value')"; else config_json=null; fi
+  if [[ -n "$auth" ]]; then auth_json="$(jq -Rn --arg value "$auth" '$value')"; else auth_json=null; fi
+
+  jq -cn \
+    --arg profile "$profile" \
+    --arg readiness "$readiness" \
+    --arg agencyProfile "$(profile_value "$profile" agencyProfile)" \
+    --arg copilotHome "$(profile_home "$profile")" \
+    --arg azureMcpVersion "$(profile_value "$profile" azureMcpVersion)" \
+    --argjson agencyExecutable "$executable_json" \
+    --argjson configFile "$config_json" \
+    --argjson authenticationMethod "$auth_json" \
+    --argjson mcps "$(jq -c --arg profile "$profile" '.profiles[$profile].mcps' "$catalog")" \
+    --argjson tools "$(jq -c --arg profile "$profile" '.profiles[$profile].tools' "$catalog")" '
+    {
+      schemaVersion: 1,
+      launcher: "agx",
+      harness: "agency",
+      profile: $profile,
+      readiness: $readiness,
+      agencyProfile: $agencyProfile,
+      agencyExecutable: $agencyExecutable,
+      configFile: $configFile,
+      copilotHome: $copilotHome,
+      azureMcpVersion: $azureMcpVersion,
+      authenticationMethod: $authenticationMethod,
+      plugins: [],
+      skills: {packageCount: null, visibleCount: null},
+      mcps: $mcps,
+      tools: $tools
+    }'
+}
+
+inventory_profile() {
+  local profile="$1"
+  require_profile "$profile"
+  require_safe_profile_path "$profile"
+  if [[ ! -f "$(profile_marker "$profile")" || ! -d "$(profile_home "$profile")" ]]; then
+    inventory_json "$profile" not-setup
+    return
+  fi
+  if ! resolve_profile_readiness "$profile" >/dev/null 2>&1; then
+    inventory_json "$profile" unhealthy
+    return
+  fi
+  inventory_json "$profile" healthy "$ready_executable" "$ready_config" "$ready_auth"
+}
+
+launch_profile() {
+  local profile="$1"
+  shift
+  prepare_profile_home "$profile"
+  ensure_floating_skills "$profile"
+  resolve_profile_readiness "$profile"
+  exec env \
+    COPILOT_HOME="$(profile_home "$profile")" \
+    AZURE_TOKEN_CREDENTIALS="$ready_auth" \
+    "$ready_executable" copilot --profile-only "$(profile_value "$profile" agencyProfile)" -- "$@"
+}
+
+require_command jq
+validate_catalog
+
+command_name="${1-}"
+[[ -n "$command_name" ]] || {
+  usage >&2
+  exit 2
+}
+shift
+
+case "$command_name" in
+  list)
+    if [[ "$#" -eq 0 ]]; then
+      list_profiles
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory)
+    [[ "$#" -eq 2 && "$2" == --json ]] || die 'inventory requires PROFILE --json'
+    inventory_profile "$1"
+    ;;
+  setup)
+    [[ "$#" -eq 1 ]] || die 'setup requires PROFILE'
+    setup_profile "$1"
+    ;;
+  doctor)
+    [[ "$#" -eq 1 ]] || die 'doctor requires PROFILE'
+    doctor_profile "$1"
+    ;;
+  repair)
+    [[ "$#" -eq 1 ]] || die 'repair requires PROFILE'
+    repair_profile "$1"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    require_profile "$command_name"
+    launch_profile "$command_name" "$@"
+    ;;
+esac
