@@ -75,13 +75,11 @@ docker run --rm --init \
 # Consistent Rust toolchain and portable musl linkers
 # ---------------------------------------------------------------------------
 
-# The Rust toolchain floats with the stable channel, so the probe requires a
-# single consistent rustc/cargo release rather than one pinned version.
-rust_version="$(run 'rustc --version' | sed -n 's/^rustc \([0-9][0-9.]*\).*/\1/p')"
-[[ -n "$rust_version" ]] || fail 'rustc did not report a release version'
+run 'rustc --version | grep -Eq "^rustc 1\\.96\\.0 "' \
+  || fail 'rustc is not the locked 1.96.0 release'
 
-run "cargo --version | grep -Fq \"cargo $rust_version\"" \
-  || fail "cargo does not match the installed rustc release $rust_version"
+run 'cargo --version | grep -Eq "^cargo 1\\.96\\.0 "' \
+  || fail 'cargo is not the locked 1.96.0 release'
 
 run 'rustfmt --version >/dev/null && cargo clippy --version >/dev/null' \
   || fail 'rustfmt or Clippy is missing'

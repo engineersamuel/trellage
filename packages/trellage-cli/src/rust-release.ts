@@ -75,27 +75,30 @@ const artifactSize = (cacheHome: string, url: string, integrity: string): Effect
     ),
   )
 
-const stableRustManifest = (): Effect.Effect<unknown, RustReleaseError> =>
+const rustManifest = (channel: string, description: string): Effect.Effect<unknown, RustReleaseError> =>
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: (signal) =>
-        fetch("https://static.rust-lang.org/dist/channel-rust-stable.toml", { redirect: "error", signal }),
-      catch: (cause) => new RustReleaseError({ message: "cannot resolve stable Rust toolchain", cause }),
+        fetch(`https://static.rust-lang.org/dist/channel-rust-${channel}.toml`, { redirect: "error", signal }),
+      catch: (cause) => new RustReleaseError({ message: `cannot resolve ${description}`, cause }),
     })
     if (!response.ok) {
       return yield* Effect.fail(
-        new RustReleaseError({ message: `cannot resolve stable Rust toolchain: HTTP ${response.status}` }),
+        new RustReleaseError({ message: `cannot resolve ${description}: HTTP ${response.status}` }),
       )
     }
     const source = yield* Effect.tryPromise({
       try: () => response.text(),
-      catch: (cause) => new RustReleaseError({ message: "cannot read stable Rust manifest", cause }),
+      catch: (cause) => new RustReleaseError({ message: `cannot read ${description} manifest`, cause }),
     })
     return yield* Effect.try({
       try: () => parse(source) as unknown,
-      catch: (cause) => new RustReleaseError({ message: "stable Rust manifest is invalid", cause }),
+      catch: (cause) => new RustReleaseError({ message: `${description} manifest is invalid`, cause }),
     })
   })
+
+const stableRustManifest = (): Effect.Effect<unknown, RustReleaseError> =>
+  rustManifest("stable", "stable Rust toolchain")
 
 export const resolveRustToolchain = (
   cacheHome: string,
@@ -156,6 +159,7 @@ const graphRustPackages = [
   { name: "rust-std-i686-musl", packageName: "rust-std", target: "i686-unknown-linux-musl", stem: "rust-std" },
 ] as const
 
+export const graphRustVersion = "1.96.0"
 export const graphRustArtifactNames: ReadonlyArray<string> = graphRustPackages.map((entry) => entry.name)
 
 export const graphRustArtifactUrl = (name: string, version: string, date: string): string | undefined => {
@@ -187,28 +191,34 @@ export const resolveGraphRustToolchain = (
     if (platform !== "linux/arm64") {
       return yield* Effect.fail(new RustReleaseError({ message: `Rust toolchain is unavailable for ${platform}` }))
     }
-    const manifest = yield* stableRustManifest()
+    const manifest = yield* rustManifest(graphRustVersion, `Rust ${graphRustVersion} toolchain`)
     const packages = record(record(manifest)?.pkg)
     const version = /^(\d+\.\d+\.\d+)/.exec(text(record(packages?.rust)?.version) ?? "")?.[1]
-    if (version === undefined)
-      return yield* Effect.fail(new RustReleaseError({ message: "stable Rust version is missing" }))
+    if (version !== graphRustVersion)
+      return yield* Effect.fail(new RustReleaseError({ message: `Rust ${graphRustVersion} version is missing` }))
     const selected = graphRustPackages.map((entry) => ({
       entry,
       artifact: targetArtifact(packages, entry.packageName, entry.target),
     }))
     for (const { entry, artifact } of selected) {
       if (artifact.url === undefined || !/^[0-9a-f]{64}$/.test(artifact.hash ?? "")) {
-        return yield* Effect.fail(new RustReleaseError({ message: `stable Rust artifact is missing: ${entry.name}` }))
+        return yield* Effect.fail(
+          new RustReleaseError({ message: `Rust ${graphRustVersion} artifact is missing: ${entry.name}` }),
+        )
       }
     }
     const dates = new Set(
       selected.map(({ entry, artifact }) => graphRustUrlIdentity(entry.name, artifact.url!)?.date ?? ""),
     )
     if (dates.size !== 1 || dates.has("")) {
-      return yield* Effect.fail(new RustReleaseError({ message: "stable Rust artifact set is inconsistent" }))
+      return yield* Effect.fail(
+        new RustReleaseError({ message: `Rust ${graphRustVersion} artifact set is inconsistent` }),
+      )
     }
     if (selected.some(({ entry, artifact }) => graphRustUrlIdentity(entry.name, artifact.url!)?.version !== version)) {
-      return yield* Effect.fail(new RustReleaseError({ message: "stable Rust artifact set is inconsistent" }))
+      return yield* Effect.fail(
+        new RustReleaseError({ message: `Rust ${graphRustVersion} artifact set is inconsistent` }),
+      )
     }
     const sizes = yield* Effect.all(
       selected.map(({ artifact }) => artifactSize(cacheHome, artifact.url!, `sha256:${artifact.hash!}`)),

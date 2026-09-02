@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { resolveNodeRelease } from "../src/node-release.js"
 import { resolvePythonRelease } from "../src/python-release.js"
-import { resolveRustToolchain } from "../src/rust-release.js"
+import { graphRustVersion, resolveGraphRustToolchain, resolveRustToolchain } from "../src/rust-release.js"
 import { resolveUvRelease } from "../src/uv-release.js"
 
 const originalFetch = globalThis.fetch
@@ -150,5 +150,43 @@ hash = "${"b".repeat(64)}"
     await expect(Effect.runPromise(resolveRustToolchain("cache", "linux/arm64"))).rejects.toThrow(
       /artifact pair is inconsistent/,
     )
+  })
+
+  it("pins the Graph toolchain and cross-target components to Rust 1.96.0", async () => {
+    const date = "2026-05-28"
+    const packages = [
+      ["rust", "rust", "aarch64-unknown-linux-gnu"],
+      ["rustfmt-preview", "rustfmt", "aarch64-unknown-linux-gnu"],
+      ["clippy-preview", "clippy", "aarch64-unknown-linux-gnu"],
+      ["rust-std", "rust-std", "aarch64-unknown-linux-musl"],
+      ["rust-std", "rust-std", "x86_64-unknown-linux-musl"],
+      ["rust-std", "rust-std", "i686-unknown-linux-musl"],
+    ] as const
+    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input)
+      if (init?.method === "HEAD") return new Response(null, { headers: { "content-length": "123" } })
+      if (!url.endsWith(`channel-rust-${graphRustVersion}.toml`)) return new Response("missing", { status: 404 })
+      return new Response(`
+[pkg.rust]
+version = "${graphRustVersion} (abcdef ${date})"
+${packages
+  .map(
+    ([packageName, stem, target], index) => `
+[pkg.${packageName}.target.${target}]
+url = "https://static.rust-lang.org/dist/${date}/${stem}-${graphRustVersion}-${target}.tar.gz"
+hash = "${String(index + 1).repeat(64)}"`,
+  )
+  .join("\n")}
+`)
+    }) as typeof fetch
+
+    const artifacts = await Effect.runPromise(resolveGraphRustToolchain("cache", "linux/arm64"))
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      `https://static.rust-lang.org/dist/channel-rust-${graphRustVersion}.toml`,
+      expect.objectContaining({ redirect: "error" }),
+    )
+    expect(artifacts).toHaveLength(6)
+    expect(new Set(artifacts.map(({ version }) => version))).toEqual(new Set([graphRustVersion]))
   })
 })
