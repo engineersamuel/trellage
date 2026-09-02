@@ -3700,4 +3700,38 @@ if [[ -f "$repo_root/prototypes/trellage-claude-common/native-claude" ]]; then
     || fail 'the repository install did not stage the shared Claude helper'
 fi
 
+# ===========================================================================
+# 15. Running $launcher directly from the checked-out repository, uninstalled.
+#
+# `mise run trx admin` (and trx generally, via TRELLAGE_TRX_SOURCE_ROOT) runs
+# every native launcher's bin/ script directly against the repository source
+# tree, never through install.sh. A merged-but-never-locally-installed
+# profile must still resolve its shared helpers from repository-sibling
+# source locations instead of dying as if the launcher package were broken.
+# ===========================================================================
+
+uninstalled_home="$fixture_root/uninstalled-home"
+mkdir -p "$uninstalled_home"
+status=0
+env -i HOME="$uninstalled_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
+  GH_CONFIG_DIR="$uninstalled_home/.config/gh" \
+  FAKE_GH_STATUS=1 \
+  GH_TOKEN=fixture-gh-token GITHUB_TOKEN=fixture-github-token \
+  COPILOT_GITHUB_TOKEN=fixture-copilot-token \
+  COPILOT_PROXY_GITHUB_TOKEN=fixture-proxy-token \
+  GH_ENTERPRISE_TOKEN=fixture-enterprise-token \
+  GITHUB_ENTERPRISE_TOKEN=fixture-github-enterprise-token \
+  COPILOT_TOKEN=fixture-copilot-only-token \
+  "$launcher" setup default \
+  >"$logs/uninstalled-setup.out" 2>"$logs/uninstalled-setup.err" || status=$?
+[[ "$status" == 1 ]] \
+  || fail "uninstalled setup exited $status instead of 1 (unauthenticated gh)"
+if grep -q 'missing shared native Claude helper' "$logs/uninstalled-setup.err"; then
+  fail 'uninstalled setup could not resolve the shared native Claude helper from the repository'
+fi
+if grep -q 'missing fmx prerequisite manifest' "$logs/uninstalled-setup.err"; then
+  fail 'uninstalled setup could not resolve the prerequisite manifest from the repository'
+fi
+assert_contains 'GitHub CLI' "$logs/uninstalled-setup.err"
+
 printf 'fmx contract: PASS\n'

@@ -102,9 +102,26 @@ readonly overlay_root="$runtime_root/overlay"
 readonly policy_source_root="$runtime_root/policies"
 readonly overlay_tool="$runtime_root/lib/fmx-overlay.py"
 readonly worker_launcher="$runtime_root/lib/fmx-worker"
-readonly native_claude="$runtime_root/lib/native-claude"
+# An installed runtime stages the shared helper at lib/native-claude. A
+# checked-out source tree (no install.sh run yet) has no lib/native-claude,
+# so fall back to the sibling trellage-claude-common source, matching cldx's
+# resolution so fmx works uninstalled immediately after a merge/rebase.
+native_claude="$runtime_root/lib/native-claude"
+if [[ ! -f "$native_claude" ]]; then
+  native_claude="$runtime_root/../trellage-claude-common/native-claude"
+fi
+readonly native_claude
 readonly prerequisite_helper="$runtime_root/lib/fmx-prerequisites"
-readonly prerequisite_manifest="$runtime_root/prerequisite-lock/manifest.json"
+# install.sh pins prerequisite-lock/manifest.json from the live
+# prerequisites/manifest.json at install time. A checked-out source tree has
+# no prerequisite-lock yet, so fall back to the live source manifest (the
+# same file install.sh would have staged verbatim) rather than failing
+# doctor/setup/repair outright.
+prerequisite_manifest="$runtime_root/prerequisite-lock/manifest.json"
+if [[ ! -f "$prerequisite_manifest" ]]; then
+  prerequisite_manifest="$runtime_root/prerequisites/manifest.json"
+fi
+readonly prerequisite_manifest
 readonly managed_prerequisite_tools='no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi treehouse'
 
 profile_key=''
