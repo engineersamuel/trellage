@@ -164,7 +164,7 @@ describe("runBatchedVersionChecks", () => {
 
     expect(results).toHaveLength(1)
     expect(results[0]!.ref).toBe("native:prx/default")
-    expect(results[0]!.entry.result).toEqual({ current: true })
+    expect(results[0]!.entry.result).toEqual({ current: true, installed: "0.8.1" })
   })
 
   it("resolves immediately when nothing is scheduled", async () => {
@@ -191,7 +191,7 @@ describe("versionCheckResultForEntry", () => {
     runner.resolveNext(current())
     await batch
 
-    expect(versionCheckResultForEntry(target, manager)).toEqual({ current: true })
+    expect(versionCheckResultForEntry(target, manager)).toEqual({ current: true, installed: "0.8.1" })
   })
 
   it("returns a malformed result when the run itself fails", async () => {

@@ -125,6 +125,12 @@ describe("aggregateAdminProfiles", () => {
     expect(entries.map((entry) => entry.ref)).toEqual(["native:cpx/hve", "native:cdx/pstack", "sandbox:prime-agent"])
   })
 
+  it("marks a sandbox profile as not supporting inventory (the sandbox launcher has no `inventory` subcommand)", () => {
+    const entries = aggregateAdminProfiles(fixtureCatalog())
+    const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
+    expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false })
+  })
+
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const cdx = entries.find((entry) => entry.ref === "native:cdx/pstack")

@@ -122,11 +122,16 @@ export interface AdminReadinessInput {
   readonly checkedAt?: number
 }
 
-/** The outcome of a single `update --check` parse (see `admin-version-check.ts`). */
+/**
+ * The outcome of a single `update --check` parse (see `admin-version-check.ts`).
+ * `installed` is populated only when the launcher's own output text names the
+ * currently-installed version/commit/pin (every known family does); it is
+ * never fabricated when the output doesn't contain one.
+ */
 export type AdminUpdateCheckResult =
   | { readonly malformed: true; readonly diagnostic: string }
-  | { readonly current: true }
-  | { readonly current: false; readonly latest: string }
+  | { readonly current: true; readonly installed?: string }
+  | { readonly current: false; readonly installed?: string; readonly latest: string }
 
 /** Per-profile update-check input, keyed by the same `ref` used in `AdminProfileEntry`. */
 export interface AdminUpdateCheckInput {
@@ -213,7 +218,11 @@ export const aggregateAdminProfiles = (
     const capabilities =
       entry.surface === "native"
         ? nativeLauncherCapabilities(entry.launcher ?? "")
-        : { doctorSupported: true, inventorySupported: true, updateCheckSupported: false }
+        : // The sandbox `trellage` launcher exposes `validate PROFILE` (doctor-equivalent) but has no
+          // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
+          // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
+          // "an interactive terminal is required" guard for any unrecognized mode.
+          { doctorSupported: true, inventorySupported: false, updateCheckSupported: false }
     const derived =
       entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
     const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))

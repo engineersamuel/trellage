@@ -167,12 +167,12 @@ describe("setupRefFor", () => {
 
 /** A scriptable fake runner: resolves/rejects per invocation based on a queued outcome list, in call order. */
 class ScriptedRunner implements CommandRunner {
-  readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []
+  readonly calls: Array<{ executable: string; args: ReadonlyArray<string>; options?: CommandRunOptions }> = []
   constructor(private readonly outcomes: ReadonlyArray<{ ok: boolean; stdout?: string; stderr?: string }>) {}
 
-  async run(executable: string, args: ReadonlyArray<string>, _options?: CommandRunOptions): Promise<CommandRunResult> {
+  async run(executable: string, args: ReadonlyArray<string>, options?: CommandRunOptions): Promise<CommandRunResult> {
     const index = this.calls.length
-    this.calls.push({ executable, args })
+    this.calls.push({ executable, args, ...(options === undefined ? {} : { options }) })
     const outcome = this.outcomes[index]
     if (outcome === undefined) throw new Error(`no scripted outcome for call ${index}`)
     if (outcome.ok) return { stdout: outcome.stdout ?? "", stderr: "", exitCode: 0 }
@@ -193,7 +193,7 @@ describe("repairThenRecheckDoctor", () => {
     const manager = new AdminRunManager({ runner })
     const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
     expect(outcome).toEqual({ repairState: "success", doctorState: "success" })
-    expect(runner.calls).toEqual([
+    expect(runner.calls.map(({ executable, args }) => ({ executable, args }))).toEqual([
       { executable: "/usr/local/bin/cpx", args: ["repair", "default"] },
       { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
     ])
@@ -227,7 +227,7 @@ describe("repairThenRecheckDoctor", () => {
     const manager = new AdminRunManager({ runner })
     const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
     expect(outcome).toEqual({ repairState: "success", setupState: "success", doctorState: "success" })
-    expect(runner.calls).toEqual([
+    expect(runner.calls.map(({ executable, args }) => ({ executable, args }))).toEqual([
       { executable: "/usr/local/bin/cpx", args: ["repair", "default"] },
       { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
       { executable: "/usr/local/bin/cpx", args: ["setup", "default"] },
@@ -257,5 +257,22 @@ describe("repairThenRecheckDoctor", () => {
     expect(manager.status(repairRefFor(nativeEntry)).history).toHaveLength(1)
     expect(manager.status(setupRefFor(nativeEntry)).history).toHaveLength(1)
     expect(manager.status(nativeEntry.ref).history).toHaveLength(2)
+  })
+
+  it("gives repair and setup a wider timeout than the manager's default, since both can perform real installs", async () => {
+    const runner = new ScriptedRunner([
+      { ok: true, stdout: "repaired" },
+      { ok: false, stderr: "still broken" },
+      { ok: true, stdout: "set up" },
+      { ok: true, stdout: "healthy" },
+    ])
+    const manager = new AdminRunManager({ runner })
+    await repairThenRecheckDoctor(nativeEntry, manager)
+    const [repairCall, doctorRecheckAfterRepair, setupCall, doctorRecheckAfterSetup] = runner.calls
+    expect(repairCall!.options?.timeoutMs).toBe(180_000)
+    expect(setupCall!.options?.timeoutMs).toBe(180_000)
+    // Doctor rechecks keep the manager's own default (30s), unaffected by the repair/setup override.
+    expect(doctorRecheckAfterRepair!.options?.timeoutMs).toBe(30_000)
+    expect(doctorRecheckAfterSetup!.options?.timeoutMs).toBe(30_000)
   })
 })

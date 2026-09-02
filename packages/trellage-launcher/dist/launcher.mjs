@@ -83428,7 +83428,13 @@ var deriveSandboxStatus = (readiness) => {
 };
 var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs = []) => guideCatalogEntries(catalog).map((entry) => {
   const readiness = readinessFor(entry.ref, readinessInputs);
-  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : { doctorSupported: true, inventorySupported: true, updateCheckSupported: false };
+  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : (
+    // The sandbox `trellage` launcher exposes `validate PROFILE` (doctor-equivalent) but has no
+    // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
+    // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
+    // "an interactive terminal is required" guard for any unrecognized mode.
+    { doctorSupported: true, inventorySupported: false, updateCheckSupported: false }
+  );
   const derived = entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness);
   const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs));
   return {
@@ -83495,18 +83501,23 @@ var buildSetupCommand = (entry) => ({
   executable: entry.commandPath,
   args: ["setup", entry.name]
 });
+var repairOrSetupTimeoutMs = 18e4;
 var repairRefFor = (entry) => `${entry.ref}::repair`;
 var setupRefFor = (entry) => `${entry.ref}::setup`;
 var repairThenRecheckDoctor = async (entry, runManager) => {
   const repairCommand = buildRepairCommand(entry);
-  await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args);
+  await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args, {
+    timeoutMs: repairOrSetupTimeoutMs
+  });
   const repairState = runManager.status(repairRefFor(entry)).state;
   const doctorCommand = buildDiagnosticCommand(entry);
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
   const doctorStateAfterRepair = runManager.status(entry.ref).state;
   if (doctorStateAfterRepair === "success") return { repairState, doctorState: doctorStateAfterRepair };
   const setupCommand = buildSetupCommand(entry);
-  await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args);
+  await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args, {
+    timeoutMs: repairOrSetupTimeoutMs
+  });
   const setupState = runManager.status(setupRefFor(entry)).state;
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
   const doctorState = runManager.status(entry.ref).state;
@@ -83574,25 +83585,25 @@ var AdminRunManager = class {
     };
   }
   /** Triggers a run for the profile. If one is already in flight, this attaches to it instead of spawning a second process. */
-  trigger(ref, executable, args) {
+  trigger(ref, executable, args, options) {
     const existing = this.inFlight.get(ref);
     if (existing !== void 0) return existing.promise;
-    return this.startRun(ref, executable, args);
+    return this.startRun(ref, executable, args, options?.timeoutMs);
   }
   /** Re-issues a fresh, independent run for the profile, regardless of its previous terminal state. */
-  retry(ref, executable, args) {
+  retry(ref, executable, args, options) {
     if (this.inFlight.has(ref)) return this.inFlight.get(ref).promise;
-    return this.startRun(ref, executable, args);
+    return this.startRun(ref, executable, args, options?.timeoutMs);
   }
   /** Cancels the in-flight run for the profile, if any. No-ops when nothing is running. */
   cancel(ref) {
     this.inFlight.get(ref)?.controller.abort();
   }
-  startRun(ref, executable, args) {
+  startRun(ref, executable, args, timeoutMsOverride) {
     const controller = new AbortController();
     const startedAt = this.now();
     this.states.set(ref, "running");
-    const promise = this.runner.run(executable, args, { timeoutMs: this.timeoutMs, signal: controller.signal }).then((result) => {
+    const promise = this.runner.run(executable, args, { timeoutMs: timeoutMsOverride ?? this.timeoutMs, signal: controller.signal }).then((result) => {
       this.record(ref, { state: "success", stdout: result.stdout, stderr: result.stderr, startedAt, endedAt: this.now() });
     }).catch((error) => {
       const terminal = this.classifyFailure(error, controller.signal.aborted);
@@ -83800,11 +83811,11 @@ var buildUpdateCheckCommand = (entry) => ({
   args: ["update", "--check", entry.name]
 });
 var currentPatterns = [
-  // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
-  /\bis current\b/i,
   // fmx: "fmx update: default is current (abc123def456)"
   // cpx/grx: "default: current (1.2.3)"
-  /\bcurrent\b\s*\(/i
+  /\bcurrent\s*\(([^)]+)\)/i,
+  // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
+  /\b(\S+)\s+is current\b/i
 ];
 var updateAvailablePatterns = [
   // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
@@ -83820,10 +83831,9 @@ var notInstalledPatterns = [
 ];
 var formatVersionCell = (installedVersion, supported, result) => {
   if (!supported) return installedVersion ?? "\u2014";
-  if (result !== void 0 && !("malformed" in result) && !result.current) {
-    return `${installedVersion ?? "?"} \u2192 ${result.latest}`;
-  }
-  return installedVersion ?? "\u2014";
+  if (result === void 0 || "malformed" in result) return installedVersion ?? "\u2014";
+  const installed = result.installed ?? installedVersion;
+  return result.current ? installed ?? "\u2014" : `${installed ?? "?"} \u2192 ${result.latest}`;
 };
 var parseUpdateCheckOutput = (stdout, installedVersion) => {
   const trimmed = stdout.trim();
@@ -83833,10 +83843,17 @@ var parseUpdateCheckOutput = (stdout, installedVersion) => {
   }
   for (const pattern of updateAvailablePatterns) {
     const match = pattern.exec(trimmed);
-    if (match?.[2] !== void 0) return { current: false, latest: match[2] };
+    if (match?.[2] !== void 0) {
+      const installed = match[1] ?? installedVersion;
+      return { current: false, latest: match[2], ...installed === void 0 ? {} : { installed } };
+    }
   }
   for (const pattern of currentPatterns) {
-    if (pattern.test(trimmed)) return { current: true };
+    const match = pattern.exec(trimmed);
+    if (match !== null) {
+      const installed = match[1] ?? installedVersion;
+      return { current: true, ...installed === void 0 ? {} : { installed } };
+    }
   }
   return {
     malformed: true,

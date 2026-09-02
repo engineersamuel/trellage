@@ -32,23 +32,25 @@ describe("buildUpdateCheckCommand", () => {
 
 describe("parseUpdateCheckOutput", () => {
   it("parses the prx/jcx/omp/picx 'is current' message family", () => {
-    expect(parseUpdateCheckOutput("prx update: 0.8.1 is current", "0.8.1")).toEqual({ current: true })
+    expect(parseUpdateCheckOutput("prx update: 0.8.1 is current", "0.8.1")).toEqual({ current: true, installed: "0.8.1" })
   })
 
   it("parses the prx/jcx/omp/picx '-> available' message family", () => {
     expect(parseUpdateCheckOutput("prx update: 0.8.1 -> 0.9.0 available", "0.8.1")).toEqual({
       current: false,
+      installed: "0.8.1",
       latest: "0.9.0",
     })
   })
 
   it("parses the cpx/grx 'current (X)' message family", () => {
-    expect(parseUpdateCheckOutput("default: current (1.2.3)", "1.2.3")).toEqual({ current: true })
+    expect(parseUpdateCheckOutput("default: current (1.2.3)", "1.2.3")).toEqual({ current: true, installed: "1.2.3" })
   })
 
   it("parses the cpx/grx 'update available (X -> Y)' message family", () => {
     expect(parseUpdateCheckOutput("default: update available (1.2.3 -> 1.3.0)", "1.2.3")).toEqual({
       current: false,
+      installed: "1.2.3",
       latest: "1.3.0",
     })
   })
@@ -61,6 +63,7 @@ describe("parseUpdateCheckOutput", () => {
   it("parses the fmx 'is current (COMMIT)' message family", () => {
     expect(parseUpdateCheckOutput("fmx update: default is current (abc123def456)", "abc123def456")).toEqual({
       current: true,
+      installed: "abc123def456",
     })
   })
 
@@ -70,7 +73,7 @@ describe("parseUpdateCheckOutput", () => {
         "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)",
         "abc123def456",
       ),
-    ).toEqual({ current: false, latest: "789abc012def" })
+    ).toEqual({ current: false, installed: "abc123def456", latest: "789abc012def" })
   })
 
   it("parses the fmx 'is not set up' message as malformed rather than a version result", () => {

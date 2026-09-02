@@ -91,6 +91,17 @@ export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec => ({
   args: ["setup", entry.name],
 })
 
+/**
+ * `repair`/`setup` can perform real installs (e.g. `mise install`, `npm ci`,
+ * downloading a pinned release) that legitimately take much longer than a
+ * read-only `doctor` check. The shared `AdminRunManager`'s default timeout
+ * (30s, sized for fast diagnostic checks) is too short for these and was
+ * observed truncating a real `prx setup` mid-install ("setup timed out").
+ * This override only widens the budget for `repair`/`setup`; `doctor`
+ * rechecks keep the manager's own default.
+ */
+const repairOrSetupTimeoutMs = 180_000
+
 /** The distinct `AdminRunManager` ref used to track a profile's repair runs, kept separate from its own doctor history. */
 export const repairRefFor = (entry: AdminProfileEntry): string => `${entry.ref}::repair`
 
@@ -125,7 +136,9 @@ export const repairThenRecheckDoctor = async (
   runManager: AdminRunManager,
 ): Promise<RepairAndRecheckOutcome> => {
   const repairCommand = buildRepairCommand(entry)
-  await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args)
+  await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args, {
+    timeoutMs: repairOrSetupTimeoutMs,
+  })
   const repairState = runManager.status(repairRefFor(entry)).state
   const doctorCommand = buildDiagnosticCommand(entry)
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
@@ -133,7 +146,9 @@ export const repairThenRecheckDoctor = async (
   if (doctorStateAfterRepair === "success") return { repairState, doctorState: doctorStateAfterRepair }
 
   const setupCommand = buildSetupCommand(entry)
-  await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args)
+  await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args, {
+    timeoutMs: repairOrSetupTimeoutMs,
+  })
   const setupState = runManager.status(setupRefFor(entry)).state
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
   const doctorState = runManager.status(entry.ref).state

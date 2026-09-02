@@ -70,6 +70,37 @@ describe("AdminRunManager", () => {
     })
   })
 
+  it("uses the manager's own default timeout when no per-call override is given", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const promise = manager.trigger("native:cpx/hve", "/bin/cpx", ["doctor", "hve"])
+    expect(runner.calls[0]!.options?.timeoutMs).toBe(30_000)
+    runner.resolveNext(ok("all good"))
+    await promise
+  })
+
+  it("honors a per-call timeoutMs override on trigger, without affecting the manager's own default for other calls", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const promise = manager.trigger("native:cpx/hve::setup", "/bin/cpx", ["setup", "hve"], { timeoutMs: 180_000 })
+    expect(runner.calls[0]!.options?.timeoutMs).toBe(180_000)
+    runner.resolveNext(ok("set up"))
+    await promise
+    const secondPromise = manager.trigger("native:cpx/hve", "/bin/cpx", ["doctor", "hve"])
+    expect(runner.calls[1]!.options?.timeoutMs).toBe(30_000)
+    runner.resolveNext(ok("all good"))
+    await secondPromise
+  })
+
+  it("honors a per-call timeoutMs override on retry", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const promise = manager.retry("native:cpx/hve::repair", "/bin/cpx", ["repair", "hve"], { timeoutMs: 180_000 })
+    expect(runner.calls[0]!.options?.timeoutMs).toBe(180_000)
+    runner.resolveNext(ok("repaired"))
+    await promise
+  })
+
   it("transitions pending -> running -> failure on a non-zero exit", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
