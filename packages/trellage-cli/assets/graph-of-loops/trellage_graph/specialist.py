@@ -980,37 +980,50 @@ class SpecialistLauncher:
         *,
         discovery: dict[str, Any],
     ) -> dict[str, Any]:
-        for key in (
-            "target_evidence",
-            "plan",
-            "graph_plan",
-            "target_status",
-            "reconciliation",
-            "grounding",
-        ):
-            decision.pop(key, None)
-        if not decision.get("summary"):
-            decision["summary"] = str(
+        summary = decision.get("summary")
+        if not summary:
+            summary = str(
                 discovery.get("summary", "Planning is blocked.")
             )
-        if not isinstance(decision.get("constraint_conflicts"), list):
-            decision["constraint_conflicts"] = []
-        if not isinstance(decision.get("evidence"), list):
+        conflicts = decision.get("constraint_conflicts")
+        normalized_conflicts = [
+            SpecialistLauncher._planning_conflict_text(value)
+            for value in conflicts
+        ] if isinstance(conflicts, list) else []
+        evidence = decision.get("evidence")
+        if not isinstance(evidence, list):
             evidence = discovery.get("repository_evidence")
-            decision["evidence"] = (
-                evidence if isinstance(evidence, list) else []
-            )
-        if decision.get("reason_code") not in {
+        reason_code = decision.get("reason_code")
+        if reason_code not in {
             "target-not-found",
             "constraint-conflict",
             "insufficient-evidence",
         }:
-            decision["reason_code"] = (
+            reason_code = (
                 "target-not-found"
                 if discovery.get("target_status") == "target-not-found"
                 else "insufficient-evidence"
             )
-        return decision
+        return {
+            "status": "blocked",
+            "objective": str(decision["objective"]),
+            "constraints": list(decision["constraints"]),
+            "reason_code": reason_code,
+            "summary": str(summary),
+            "evidence": evidence if isinstance(evidence, list) else [],
+            "constraint_conflicts": normalized_conflicts,
+        }
+
+    @staticmethod
+    def _planning_conflict_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            for key in ("summary", "detail", "conflict", "constraint"):
+                text = value.get(key)
+                if isinstance(text, str) and text:
+                    return text
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
     @staticmethod
     def _normalize_plan_prompt_digests(

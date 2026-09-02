@@ -2339,6 +2339,51 @@ class TestSpecialist(unittest.TestCase):
             },
         )
 
+    def test_blocked_decision_normalizes_extra_fields_and_conflicts(self) -> None:
+        decision = {
+            "status": "blocked",
+            "objective": "wrong",
+            "constraints": ["wrong"],
+            "reason_code": "constraint-conflict",
+            "summary": "conflict",
+            "evidence": [],
+            "constraint_conflicts": [
+                {"constraint": "Rust 1.96 is required"},
+                {"detail": "The target cannot execute here"},
+            ],
+            "base_revision": "abc123",
+            "discovery_limits_acknowledged": True,
+            "unblock_paths": ["change the request"],
+            "delivery_authorization_requested": False,
+        }
+
+        normalized = SpecialistLauncher._normalize_planning_decision(
+            decision,
+            objective="build it",
+            constraints=["use Rust 1.96"],
+            discovery={
+                "target_status": "grounded",
+                "repository_evidence": [],
+                "summary": "grounded",
+            },
+        )
+
+        self.assertEqual(
+            normalized,
+            {
+                "status": "blocked",
+                "objective": "build it",
+                "constraints": ["use Rust 1.96"],
+                "reason_code": "constraint-conflict",
+                "summary": "conflict",
+                "evidence": [],
+                "constraint_conflicts": [
+                    "Rust 1.96 is required",
+                    "The target cannot execute here",
+                ],
+            },
+        )
+
     def test_planner_requires_serena_or_explicit_fallback(self) -> None:
         runner = FakeSubprocessRunner()
         runner.set_result(
