@@ -9630,14 +9630,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -22230,14 +22230,14 @@ var require_react_reconciler_development = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React15 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -27982,7 +27982,7 @@ var require_backend = __commonJS({
                     return o2 && "function" == typeof Symbol && o2.constructor === Symbol && o2 !== Symbol.prototype ? "symbol" : typeof o2;
                   }, _typeof(o);
                 }
-                var ErrorStackParser = __webpack_require__2(206), React15 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
+                var ErrorStackParser = __webpack_require__2(206), React16 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
                 function getPrimitiveStackCache() {
                   if (null === primitiveStackCache) {
                     var cache3 = /* @__PURE__ */ new Map();
@@ -28144,7 +28144,7 @@ var require_backend = __commonJS({
                     });
                     return value;
                   },
-                  useEffect: function useEffect8(create3) {
+                  useEffect: function useEffect9(create3) {
                     nextHook();
                     hookLog.push({
                       displayName: null,
@@ -28190,7 +28190,7 @@ var require_backend = __commonJS({
                       dispatcherHookName: "InsertionEffect"
                     });
                   },
-                  useMemo: function useMemo7(nextCreate) {
+                  useMemo: function useMemo8(nextCreate) {
                     var hook = nextHook();
                     nextCreate = null !== hook ? hook.memoizedState[0] : nextCreate();
                     hookLog.push({
@@ -28217,7 +28217,7 @@ var require_backend = __commonJS({
                     return [initialArg, function() {
                     }];
                   },
-                  useRef: function useRef5(initialValue) {
+                  useRef: function useRef6(initialValue) {
                     var hook = nextHook();
                     initialValue = null !== hook ? hook.memoizedState : {
                       current: initialValue
@@ -28232,7 +28232,7 @@ var require_backend = __commonJS({
                     });
                     return initialValue;
                   },
-                  useState: function useState8(initialState) {
+                  useState: function useState9(initialState) {
                     var hook = nextHook();
                     initialState = null !== hook ? hook.memoizedState : "function" === typeof initialState ? initialState() : initialState;
                     hookLog.push({
@@ -36585,8 +36585,8 @@ var require_backend = __commonJS({
                   }
                 }
                 if (laneToLabelMap != null) {
-                  var labels = Array.from(laneToLabelMap.values()).join(",");
-                  markAndClear("--react-lane-labels-".concat(labels));
+                  var labels2 = Array.from(laneToLabelMap.values()).join(",");
+                  markAndClear("--react-lane-labels-".concat(labels2));
                 }
               }
               function markAndClear(markName) {
@@ -56547,18 +56547,18 @@ var require_react_jsx_runtime_development = __commonJS({
       function isValidElement(object) {
         return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
       }
-      var React15 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React15.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
+      var React16 = require_react(), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, hasOwnProperty = Object.prototype.hasOwnProperty, isArrayImpl = Array.isArray, createTask = console.createTask ? console.createTask : function() {
         return null;
       };
-      React15 = {
+      React16 = {
         react_stack_bottom_frame: function(callStackForError) {
           return callStackForError();
         }
       };
       var specialPropKeyWarningShown;
       var didWarnAboutElementRef = {};
-      var unknownOwnerDebugStack = React15.react_stack_bottom_frame.bind(
-        React15,
+      var unknownOwnerDebugStack = React16.react_stack_bottom_frame.bind(
+        React16,
         UnknownOwner
       )();
       var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
@@ -56603,7 +56603,7 @@ var require_jsx_runtime = __commonJS({
 });
 
 // src/cli.tsx
-var import_react37 = __toESM(require_react(), 1);
+var import_react38 = __toESM(require_react(), 1);
 import { constants as constants5, openSync } from "node:fs";
 import { readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
 import tty3 from "node:tty";
@@ -65895,7 +65895,7 @@ var parseLaunchCatalog = (source) => {
     const commandPath = optionalText(item.commandPath, `choice ${index} commandPath`);
     const profileArgument = optionalText(item.profileArgument, `choice ${index} profileArgument`);
     const passthroughArgs = argumentArray(item.passthroughArgs, `choice ${index} passthroughArgs`);
-    const defaultModel = optionalText(item.defaultModel, `choice ${index} defaultModel`);
+    const defaultModel2 = optionalText(item.defaultModel, `choice ${index} defaultModel`);
     const models = stringArray(item.models, `choice ${index} models`);
     const modelOverrideSupported = item.modelOverrideSupported === true;
     if (item.sandbox !== void 0 && typeof item.sandbox !== "boolean") {
@@ -65905,7 +65905,7 @@ var parseLaunchCatalog = (source) => {
     if (modelOverrideSupported && models.length === 0) {
       throw new Error(`choice ${index} must advertise models when overrides are supported`);
     }
-    if (defaultModel !== void 0 && models.length > 0 && !models.includes(defaultModel)) {
+    if (defaultModel2 !== void 0 && models.length > 0 && !models.includes(defaultModel2)) {
       throw new Error(`choice ${index} default model must be advertised`);
     }
     return {
@@ -65923,7 +65923,7 @@ var parseLaunchCatalog = (source) => {
       ...profileArgument === void 0 ? {} : { profileArgument },
       passthroughArgs,
       ...item.details === void 0 ? {} : { details: text(item.details, `choice ${index} details`) },
-      ...defaultModel === void 0 ? {} : { defaultModel },
+      ...defaultModel2 === void 0 ? {} : { defaultModel: defaultModel2 },
       models,
       modelOverrideSupported,
       ...sandbox === void 0 ? {} : { sandbox }
@@ -83379,8 +83379,943 @@ var ForkPreviewApp = ({ variant }) => {
   ] });
 };
 
-// src/cli.tsx
+// src/admin-ui.tsx
+var import_react37 = __toESM(require_react(), 1);
+
+// src/admin-model.ts
+var launchersWithoutDoctorSupport = /* @__PURE__ */ new Set(["cdx"]);
+var nativeLauncherCapabilities = (launcher) => {
+  const supported = !launchersWithoutDoctorSupport.has(launcher);
+  return { doctorSupported: supported, inventorySupported: supported };
+};
+var commandPathFor = (entry, catalog) => entry.surface === "sandbox" ? catalog.sandboxCommandPath : catalog.native.find((native2) => native2.launcher === entry.launcher && native2.name === entry.name)?.commandPath ?? "";
+var readinessFor = (ref, inputs) => inputs.find((input) => input.ref === ref);
+var deriveNativeStatus = (capabilities, readiness) => {
+  if (!capabilities.doctorSupported) return { health: "unsupported", install: "unsupported" };
+  if (readiness?.result === void 0) return { health: "unknown", install: "unknown" };
+  if ("malformed" in readiness.result) {
+    return { health: "malformed-output", install: "malformed-output", diagnostic: readiness.result.diagnostic };
+  }
+  if (readiness.result.kind === "ready" /* Ready */) {
+    return { health: "healthy", install: "installed" };
+  }
+  return {
+    health: "unhealthy",
+    install: readiness.result.summary.includes("not-setup") ? "not-installed" : "installed",
+    diagnostic: readiness.result.diagnostic
+  };
+};
+var deriveSandboxStatus = (readiness) => {
+  if (readiness?.result === void 0) return { health: "unknown", install: "unknown" };
+  if ("malformed" in readiness.result) {
+    return { health: "malformed-output", install: "malformed-output", diagnostic: readiness.result.diagnostic };
+  }
+  return readiness.result.kind === "ready" /* Ready */ ? { health: "healthy", install: "installed" } : { health: "unhealthy", install: "not-installed", diagnostic: readiness.result.diagnostic };
+};
+var aggregateAdminProfiles = (catalog, readinessInputs = []) => guideCatalogEntries(catalog).map((entry) => {
+  const readiness = readinessFor(entry.ref, readinessInputs);
+  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : { doctorSupported: true, inventorySupported: true };
+  const derived = entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness);
+  return {
+    ref: entry.ref,
+    surface: entry.surface,
+    ...entry.launcher === void 0 ? {} : { launcher: entry.launcher },
+    ...entry.harness === void 0 ? {} : { harness: entry.harness },
+    name: entry.name,
+    description: entry.description,
+    commandPath: commandPathFor(entry, catalog),
+    doctorSupported: capabilities.doctorSupported,
+    inventorySupported: capabilities.inventorySupported,
+    health: derived.health,
+    ...derived.diagnostic === void 0 ? {} : { healthDiagnostic: derived.diagnostic },
+    install: derived.install,
+    ...readiness?.version === void 0 ? {} : { version: readiness.version },
+    stale: readiness?.result === void 0,
+    ...readiness?.checkedAt === void 0 ? {} : { lastCheckedAt: readiness.checkedAt }
+  };
+});
+var toProfileGuideIdentity = (entry) => entry.surface === "native" ? { surface: "native", launcher: entry.launcher ?? "", profile: entry.name } : { surface: "sandbox", profile: entry.name };
+var loadAdminProfileGuideBody = async (profileGuidesRoot, identity) => {
+  try {
+    const loaded = await loadProfileGuide(profileGuidesRoot, identity);
+    return { available: true, body: loaded.body };
+  } catch (cause) {
+    return {
+      available: false,
+      reason: `guide unavailable for ${profileGuideIdentityKey(identity)}: ${cause instanceof Error ? cause.message : String(cause)}`
+    };
+  }
+};
+
+// src/admin-launch.ts
+var toSelectedProfile = (entry) => entry.surface === "native" ? {
+  surface: "native",
+  launcher: entry.launcher ?? "",
+  commandPath: entry.commandPath,
+  profile: entry.name,
+  headlessPrompt: false
+} : {
+  surface: "sandbox",
+  commandPath: entry.commandPath,
+  profile: entry.name,
+  headlessPrompt: false
+};
+var buildAdminLaunchCommand = (entry) => buildGuideLaunchCommand(toSelectedProfile(entry)).command;
+var buildDiagnosticCommand = (entry) => ({
+  executable: entry.commandPath,
+  args: entry.surface === "native" ? ["doctor", entry.name] : ["validate", entry.name]
+});
+var isRepairSupported = (entry) => entry.surface === "native" && entry.doctorSupported;
+var buildRepairCommand = (entry) => ({
+  executable: entry.commandPath,
+  args: ["repair", entry.name]
+});
+var LaunchNotConfirmedError = class extends Error {
+  constructor(profile) {
+    super(`terminal launch for ${profile} requires explicit confirmation`);
+    this.name = "LaunchNotConfirmedError";
+  }
+};
+var launchAdminProfile = async (entry, confirmed, run = runInteractiveCommand) => {
+  if (!confirmed) throw new LaunchNotConfirmedError(entry.name);
+  await run(buildAdminLaunchCommand(entry));
+};
+
+// src/admin-refresh.ts
+var refreshAdminEntries = async (runner, catalog, cwd2, now = () => Date.now()) => {
+  const initial = aggregateAdminProfiles(catalog);
+  const settled = await Promise.allSettled(
+    initial.filter((entry) => entry.doctorSupported).map(async (entry) => {
+      const result = await checkSelectedProfileReadiness(runner, toSelectedProfile(entry), cwd2);
+      return { ref: entry.ref, result, checkedAt: now() };
+    })
+  );
+  const readinessInputs = settled.map((outcome, index) => {
+    const entry = initial.filter((candidate) => candidate.doctorSupported)[index];
+    return outcome.status === "fulfilled" ? outcome.value : {
+      ref: entry.ref,
+      result: {
+        malformed: true,
+        diagnostic: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+      },
+      checkedAt: now()
+    };
+  });
+  return aggregateAdminProfiles(catalog, readinessInputs);
+};
+
+// src/admin-status.ts
+var labels = {
+  idle: "Not yet checked",
+  running: "Running\u2026",
+  success: "Healthy",
+  failure: "Failed \u2014 see output",
+  cancelled: "Cancelled",
+  "timed-out": "Timed out",
+  unsupported: "Doctor not supported for this launcher",
+  "malformed-output": "Malformed output \u2014 could not determine health"
+};
+var statusLabel = (status) => labels[status];
+var controlsForStatus = (status) => {
+  if (status === "unsupported") return { canTrigger: false, canCancel: false, canRetry: false };
+  if (status === "running") return { canTrigger: false, canCancel: true, canRetry: false };
+  if (status === "idle") return { canTrigger: true, canCancel: false, canRetry: false };
+  return { canTrigger: false, canCancel: false, canRetry: true };
+};
+var historyScopeLabel = "History for this session only \u2014 not saved between runs.";
+
+// src/admin-table.ts
+var normalize = (value) => value.toLocaleLowerCase("en");
+var filterAdminProfiles = (entries, query) => {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return entries;
+  const needle = normalize(trimmed);
+  return entries.filter(
+    (entry) => [entry.name, entry.description, entry.launcher ?? "", entry.harness ?? "", entry.surface].some(
+      (field) => normalize(field).includes(needle)
+    )
+  );
+};
+var compareBy = (key) => (a, b) => {
+  const left = key === "launcher" ? a.launcher ?? a.surface : a[key];
+  const right = key === "launcher" ? b.launcher ?? b.surface : b[key];
+  return normalize(String(left)).localeCompare(normalize(String(right)));
+};
+var sortAdminProfiles = (entries, sortKey, direction) => {
+  const indexed = entries.map((entry, index) => ({ entry, index }));
+  const compare = compareBy(sortKey);
+  indexed.sort((left, right) => {
+    const primary = compare(left.entry, right.entry);
+    const oriented = direction === "asc" ? primary : -primary;
+    return oriented !== 0 ? oriented : left.index - right.index;
+  });
+  return indexed.map(({ entry }) => entry);
+};
+var resolveAdminViewState = (entries, filtered, loading) => {
+  if (loading) return "discovering";
+  if (entries.length === 0) return "empty-no-profiles";
+  if (filtered.length === 0) return "empty-no-match";
+  return "ready";
+};
+
+// src/admin-batch-scheduler.ts
+var defaultMaxConcurrent = 4;
+var runBatchedDoctorChecks = async (entries, runManager, options = {}) => {
+  const maxConcurrent = options.maxConcurrent ?? defaultMaxConcurrent;
+  const queue = entries.filter((entry) => entry.doctorSupported).slice();
+  if (queue.length === 0) return;
+  const worker = async () => {
+    for (; ; ) {
+      const entry = queue.shift();
+      if (entry === void 0) return;
+      const command = buildDiagnosticCommand(entry);
+      await runManager.trigger(entry.ref, command.executable, command.args);
+    }
+  };
+  const workerCount = Math.max(1, Math.min(maxConcurrent, queue.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+};
+
+// src/admin-diagnosis-dispatch.ts
+var shouldStartBatch = (refs, alreadyStartedForRefs) => {
+  if (refs.length === 0) return false;
+  if (alreadyStartedForRefs === void 0) return true;
+  if (alreadyStartedForRefs.size !== refs.length) return true;
+  return refs.some((ref) => !alreadyStartedForRefs.has(ref));
+};
+var selectPendingDiagnosisTargets = (statusesByRef, alreadyDiagnosedRefs) => {
+  const targets = [];
+  for (const [ref, status] of statusesByRef) {
+    if (status.state !== "failure" && status.state !== "timed-out") continue;
+    if (alreadyDiagnosedRefs.has(ref)) continue;
+    targets.push(ref);
+  }
+  return targets;
+};
+
+// src/admin-herdr-fork.ts
+var isForkToHerdrAvailable = async (runner, env3, cwd2) => {
+  if (getHerdrContext(env3) === null) return false;
+  try {
+    return await probeHerdrAvailability(runner, { cwd: cwd2, timeoutMs: 5e3 });
+  } catch {
+    return false;
+  }
+};
+var buildForkPrompt = (request) => {
+  const lines = [
+    `Fix the failing Trellage doctor check for profile ${request.name} (${request.ref}).`,
+    "",
+    "<untrusted-data>",
+    request.capturedOutput,
+    "</untrusted-data>"
+  ];
+  if (request.diagnosis !== void 0) {
+    lines.push(
+      "",
+      "A Copilot-suggested diagnosis is available (verify before applying):",
+      `Summary: ${request.diagnosis.summary}`,
+      `Suggested fix: ${request.diagnosis.suggestedFix}`,
+      ...request.diagnosis.rationale === void 0 ? [] : [`Rationale: ${request.diagnosis.rationale}`]
+    );
+  }
+  return lines.join("\n");
+};
+var forkFailureToHerdrWorktree = async (runner, request, options) => {
+  const branch = defaultWorktreeBranch(`fix ${request.name} doctor failure`);
+  try {
+    const inspection = await inspectGitWorktreeIntent(runner, { cwd: options.cwd, branch });
+    if (inspection.kind !== "ready") return { kind: "not-ready", inspection };
+    const result = await createHerdrWorktreeAndHandoff(runner, {
+      primaryCheckoutPath: inspection.primaryCheckoutPath,
+      branch,
+      baseRef: inspection.baseRef,
+      command: options.command,
+      prompt: buildForkPrompt(request),
+      promptDelivery: options.promptDelivery,
+      promptTimeoutMs: options.promptTimeoutMs ?? 6e4,
+      ...options.timeoutMs === void 0 ? {} : { timeoutMs: options.timeoutMs }
+    });
+    return { kind: "launched", result };
+  } catch (error) {
+    return { kind: "failed", error };
+  }
+};
+
+// src/admin-ui.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var sortCycle = ["name", "health", "install", "surface"];
+var runStatusOf = (entry, snapshot) => {
+  if (!entry.doctorSupported) return "unsupported";
+  if (snapshot.state === "idle" && entry.health === "malformed-output") return "malformed-output";
+  return snapshot.state;
+};
+var AdminDetailPanel = ({
+  entry,
+  runManager,
+  guideRoot,
+  diagnosis,
+  herdrAvailable,
+  onForkToFix
+}) => {
+  const [, forceRender] = (0, import_react37.useState)(0);
+  const [guideBody, setGuideBody] = (0, import_react37.useState)(void 0);
+  const [guideNote, setGuideNote] = (0, import_react37.useState)(void 0);
+  const [launchConfirming, setLaunchConfirming] = (0, import_react37.useState)(false);
+  const [launchMessage, setLaunchMessage] = (0, import_react37.useState)(void 0);
+  const [forkConfirming, setForkConfirming] = (0, import_react37.useState)(false);
+  const [forkMessage, setForkMessage] = (0, import_react37.useState)(void 0);
+  const [repairConfirming, setRepairConfirming] = (0, import_react37.useState)(false);
+  const [repairMessage3, setRepairMessage] = (0, import_react37.useState)(void 0);
+  (0, import_react37.useEffect)(() => {
+    setGuideBody(void 0);
+    setGuideNote(void 0);
+    setLaunchConfirming(false);
+    setLaunchMessage(void 0);
+    setForkConfirming(false);
+    setForkMessage(void 0);
+    setRepairConfirming(false);
+    setRepairMessage(void 0);
+  }, [entry.ref]);
+  const snapshot = runManager.status(entry.ref);
+  const status = runStatusOf(entry, snapshot);
+  const controls4 = controlsForStatus(status);
+  const repairRef = `${entry.ref}::repair`;
+  const repairSnapshot = runManager.status(repairRef);
+  const canRepair = isRepairSupported(entry) && controls4.canRetry && repairSnapshot.state !== "running";
+  const openGuide = () => {
+    loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
+      if (result.available) setGuideBody(result.body);
+      else setGuideNote(result.reason);
+    }).catch((error) => setGuideNote(error instanceof Error ? error.message : String(error)));
+  };
+  const runOrRetryDoctor = () => {
+    const command = buildDiagnosticCommand(entry);
+    const action = controls4.canRetry ? runManager.retry(entry.ref, command.executable, command.args) : runManager.trigger(entry.ref, command.executable, command.args);
+    void action.finally(() => forceRender((value) => value + 1));
+    forceRender((value) => value + 1);
+  };
+  const cancelDoctor = () => {
+    runManager.cancel(entry.ref);
+    forceRender((value) => value + 1);
+  };
+  const confirmRepair = () => {
+    setRepairConfirming(false);
+    setRepairMessage(`Running ${entry.name}'s repair\u2026`);
+    const repairCommand = buildRepairCommand(entry);
+    runManager.trigger(repairRef, repairCommand.executable, repairCommand.args).then(() => {
+      const repairResult = runManager.status(repairRef).latest;
+      setRepairMessage(`Repair ${repairResult?.state ?? "finished"}. Rechecking doctor\u2026`);
+      forceRender((value) => value + 1);
+      const doctorCommand = buildDiagnosticCommand(entry);
+      return runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
+    }).then(() => {
+      const doctorResult = runManager.status(entry.ref).latest;
+      setRepairMessage(`Repair attempted; doctor recheck: ${doctorResult?.state ?? "unknown"}.`);
+    }).catch((error) => setRepairMessage(error instanceof Error ? error.message : String(error))).finally(() => forceRender((value) => value + 1));
+  };
+  const confirmLaunch = () => {
+    launchAdminProfile(entry, true).then(() => setLaunchMessage(`Handed the terminal to ${entry.name}.`)).catch((error) => setLaunchMessage(error instanceof Error ? error.message : String(error)));
+    setLaunchConfirming(false);
+  };
+  const canFork = diagnosis?.status === "done" && herdrAvailable === true;
+  const confirmFork = () => {
+    setForkConfirming(false);
+    setForkMessage(`Creating a Herdr worktree to fix ${entry.name}\u2026`);
+    onForkToFix(entry, diagnosis?.status === "done" ? diagnosis.result : void 0).then((outcome) => {
+      if (outcome.kind === "launched") setForkMessage(`Forked to a new Herdr worktree: ${outcome.result.checkoutPath}`);
+      else if (outcome.kind === "unavailable") setForkMessage("Herdr is not available in this session.");
+      else if (outcome.kind === "not-ready") setForkMessage(`Worktree is not ready to create (${outcome.inspection.kind}).`);
+      else setForkMessage(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+    }).catch((error) => setForkMessage(error instanceof Error ? error.message : String(error)));
+  };
+  use_input_default((input) => {
+    if (launchConfirming) {
+      if (input === "y") confirmLaunch();
+      else setLaunchConfirming(false);
+      return;
+    }
+    if (forkConfirming) {
+      if (input === "y") confirmFork();
+      else setForkConfirming(false);
+      return;
+    }
+    if (repairConfirming) {
+      if (input === "y") confirmRepair();
+      else setRepairConfirming(false);
+      return;
+    }
+    if (input === "g") openGuide();
+    else if ((input === "d" || input === "r") && (controls4.canTrigger || controls4.canRetry)) runOrRetryDoctor();
+    else if (input === "c" && controls4.canCancel) cancelDoctor();
+    else if (input === "l") setLaunchConfirming(true);
+    else if (input === "f" && canFork) setForkConfirming(true);
+    else if (input === "p" && canRepair) setRepairConfirming(true);
+  });
+  const latest = snapshot.latest;
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1, marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+      entry.name,
+      " ",
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+        "\xB7 ",
+        entry.surface,
+        entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: entry.description }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+      "Health: ",
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.health }),
+      " \xB7 Install: ",
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install }),
+      entry.version === void 0 ? "" : ` \xB7 Version: ${entry.version}`
+    ] }),
+    entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+        "Doctor status: ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: statusLabel(status) })
+      ] }),
+      latest === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: (latest.stdout || latest.stderr || "").slice(0, 4e3) }),
+      snapshot.history.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+        historyScopeLabel,
+        " (",
+        snapshot.history.length,
+        " run",
+        snapshot.history.length === 1 ? "" : "s",
+        " recorded)"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+        controls4.canTrigger ? "[d] run doctor  " : "",
+        controls4.canCancel ? "[c] cancel  " : "",
+        controls4.canRetry ? "[r] retry  " : "",
+        "[g] view guide [l] launch in terminal",
+        canFork ? " [f] fork to fix" : "",
+        canRepair ? " [p] repair profile" : ""
+      ] })
+    ] }),
+    diagnosis === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", borderStyle: "round", borderColor: "magenta", paddingX: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "Copilot diagnosis" }),
+      diagnosis.status === "diagnosing" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "Diagnosing failure\u2026" }) : null,
+      diagnosis.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", wrap: "wrap", children: [
+        "Diagnosis unavailable: ",
+        diagnosis.message
+      ] }) : null,
+      diagnosis.status === "done" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: diagnosis.result.summary }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", dimColor: true, children: [
+          "Suggested fix: ",
+          diagnosis.result.suggestedFix
+        ] }),
+        herdrAvailable === false ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Herdr is unavailable in this session; fork to fix is disabled." }) : null
+      ] }) : null
+    ] }),
+    guideNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: guideNote }),
+    guideBody === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: guideBody.slice(0, 4e3) }) }),
+    launchConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
+      "Press [y] to hand this terminal to ",
+      entry.name,
+      " now, or any other key to cancel."
+    ] }) : null,
+    launchMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: launchMessage }),
+    forkConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
+      "Press [y] to create a new Herdr worktree and hand it ",
+      entry.name,
+      "'s suggested fix now, or any other key to cancel."
+    ] }) : null,
+    forkMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: forkMessage }),
+    repairConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
+      "Press [y] to run ",
+      entry.name,
+      "'s repair now and recheck doctor afterward, or any other key to cancel."
+    ] }) : null,
+    repairMessage3 === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairMessage3 }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "[j/k] move selection  [q] quit" })
+  ] });
+};
+var AdminApp = ({
+  entries,
+  runManager,
+  guideRoot,
+  runner,
+  diagnosisProvider,
+  herdrEnv,
+  cwd: cwd2
+}) => {
+  const { exit } = use_app_default();
+  const { rows } = use_window_size_default();
+  const [query, setQuery2] = (0, import_react37.useState)("");
+  const [searching, setSearching] = (0, import_react37.useState)(false);
+  const [sortIndex, setSortIndex] = (0, import_react37.useState)(0);
+  const [sortDescending, setSortDescending] = (0, import_react37.useState)(false);
+  const [selectedIndex, setSelectedIndex] = (0, import_react37.useState)(0);
+  const [, setTick] = (0, import_react37.useState)(0);
+  const [diagnosisByRef, setDiagnosisByRef] = (0, import_react37.useState)(/* @__PURE__ */ new Map());
+  const [herdrAvailable, setHerdrAvailable] = (0, import_react37.useState)(void 0);
+  const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const diagnosedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  (0, import_react37.useEffect)(() => {
+    const interval = setInterval(() => setTick((value) => value + 1), 500);
+    return () => clearInterval(interval);
+  }, []);
+  (0, import_react37.useEffect)(() => {
+    const doctorRefs = entries.filter((entry) => entry.doctorSupported).map((entry) => entry.ref);
+    if (!shouldStartBatch(doctorRefs, batchStartedRefs.current)) return;
+    batchStartedRefs.current = new Set(doctorRefs);
+    void runBatchedDoctorChecks(entries, runManager);
+  }, [entries, runManager]);
+  (0, import_react37.useEffect)(() => {
+    let cancelled = false;
+    isForkToHerdrAvailable(runner, herdrEnv, cwd2).then((available) => {
+      if (!cancelled) setHerdrAvailable(available);
+    }).catch(() => {
+      if (!cancelled) setHerdrAvailable(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  (0, import_react37.useEffect)(() => {
+    const statusesByRef = new Map(
+      entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
+    );
+    const targets = selectPendingDiagnosisTargets(statusesByRef, diagnosedRefs.current);
+    if (targets.length === 0) return;
+    diagnosedRefs.current = /* @__PURE__ */ new Set([...diagnosedRefs.current, ...targets]);
+    setDiagnosisByRef((previous) => {
+      const next = new Map(previous);
+      for (const ref of targets) next.set(ref, { status: "diagnosing" });
+      return next;
+    });
+    for (const ref of targets) {
+      const entry = entries.find((candidate) => candidate.ref === ref);
+      if (entry === void 0) continue;
+      const snapshot = statusesByRef.get(ref);
+      const capturedOutput = `${snapshot?.latest?.stdout ?? ""}
+${snapshot?.latest?.stderr ?? ""}`.trim();
+      diagnosisProvider.diagnose({ ref, name: entry.name, capturedOutput }).then((result) => {
+        setDiagnosisByRef((previous) => new Map(previous).set(ref, { status: "done", result }));
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setDiagnosisByRef((previous) => new Map(previous).set(ref, { status: "error", message }));
+      });
+    }
+  });
+  const onForkToFix = (entry, diagnosis) => {
+    if (herdrAvailable !== true) return Promise.resolve({ kind: "unavailable" });
+    const snapshot = runManager.status(entry.ref);
+    const capturedOutput = `${snapshot.latest?.stdout ?? ""}
+${snapshot.latest?.stderr ?? ""}`.trim();
+    return forkFailureToHerdrWorktree(
+      runner,
+      { ref: entry.ref, name: entry.name, capturedOutput, ...diagnosis === void 0 ? {} : { diagnosis } },
+      { cwd: cwd2, command: buildAdminLaunchCommand(entry), promptDelivery: "agent" }
+    );
+  };
+  const filtered = (0, import_react37.useMemo)(() => filterAdminProfiles(entries, query), [entries, query]);
+  const sorted = (0, import_react37.useMemo)(
+    () => sortAdminProfiles(filtered, sortCycle[sortIndex] ?? "name", sortDescending ? "desc" : "asc"),
+    [filtered, sortIndex, sortDescending]
+  );
+  const viewState = resolveAdminViewState(entries, sorted, false);
+  const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1);
+  const selected = sorted[boundedIndex];
+  use_input_default((char, key) => {
+    if (key.ctrl && char === "c") {
+      exit();
+      return;
+    }
+    if (searching) {
+      if (key.return || key.escape) {
+        setSearching(false);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setQuery2((value) => value.slice(0, -1));
+        return;
+      }
+      if (char.length === 1) setQuery2((value) => value + char);
+      return;
+    }
+    if (char === "/") {
+      setSearching(true);
+      return;
+    }
+    if (char === "q" || key.escape) {
+      exit();
+      return;
+    }
+    if (char === "j" || key.downArrow) {
+      setSelectedIndex((value) => Math.min(sorted.length - 1, value + 1));
+      return;
+    }
+    if (char === "k" || key.upArrow) {
+      setSelectedIndex((value) => Math.max(0, value - 1));
+      return;
+    }
+    if (char === "s") {
+      setSortIndex((value) => (value + 1) % sortCycle.length);
+      return;
+    }
+    if (char === "S") {
+      setSortDescending((value) => !value);
+      return;
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+        "Trellage Admin \u2014 ",
+        entries.length,
+        " profiles"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+        "sort: ",
+        sortCycle[sortIndex],
+        sortDescending ? " \u2193" : " \u2191"
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: searching ? `Search: ${query}\u2588` : "[/] search  [s] sort  [S] reverse  [j/k] move  [q] quit" }),
+    viewState === "discovering" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "Discovering profiles\u2026" }) : null,
+    viewState === "empty-no-profiles" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "No profiles were discovered." }) : null,
+    viewState === "empty-no-match" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
+      'No profiles match "',
+      query,
+      '".'
+    ] }) : null,
+    viewState === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
+      const active = index === boundedIndex;
+      const status = runStatusOf(entry, runManager.status(entry.ref));
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: active, ...active ? { color: "green" } : {}, wrap: "truncate-end", children: [
+          active ? "\u203A " : "  ",
+          entry.name,
+          " (",
+          entry.surface,
+          entry.launcher === void 0 ? "" : `/${entry.launcher}`,
+          ")"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: !active, children: statusLabel(status) })
+      ] }, entry.ref);
+    }) }) : null,
+    selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      AdminDetailPanel,
+      {
+        entry: selected,
+        runManager,
+        guideRoot,
+        diagnosis: diagnosisByRef.get(selected.ref),
+        herdrAvailable,
+        onForkToFix
+      }
+    ) : null
+  ] });
+};
+var AdminRoot = ({
+  catalog,
+  runner,
+  runManager,
+  guideRoot,
+  cwd: cwd2,
+  diagnosisProvider,
+  herdrEnv
+}) => {
+  const [entries, setEntries] = (0, import_react37.useState)(() => aggregateAdminProfiles(catalog));
+  const [refreshError, setRefreshError] = (0, import_react37.useState)(void 0);
+  (0, import_react37.useEffect)(() => {
+    let cancelled = false;
+    refreshAdminEntries(runner, catalog, cwd2).then((refreshed) => {
+      if (!cancelled) setEntries(refreshed);
+    }).catch((error) => {
+      if (!cancelled) setRefreshError(error instanceof Error ? error.message : String(error));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
+    refreshError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "red", wrap: "wrap", children: [
+      "Health/install refresh failed: ",
+      refreshError,
+      ". Showing last-known status."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      AdminApp,
+      {
+        entries,
+        runManager,
+        guideRoot,
+        runner,
+        diagnosisProvider,
+        herdrEnv,
+        cwd: cwd2
+      }
+    )
+  ] });
+};
+
+// src/admin-run-manager.ts
+var defaultHistoryCap = 5;
+var defaultTimeoutMs = 3e4;
+var isCommandRunnerError = (error) => error instanceof Error && error.name === "CommandRunnerError";
+var AdminRunManager = class {
+  runner;
+  timeoutMs;
+  historyCap;
+  now;
+  inFlight = /* @__PURE__ */ new Map();
+  history = /* @__PURE__ */ new Map();
+  states = /* @__PURE__ */ new Map();
+  constructor(options) {
+    this.runner = options.runner;
+    this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+    this.historyCap = options.historyCap ?? defaultHistoryCap;
+    this.now = options.now ?? (() => Date.now());
+  }
+  status(ref) {
+    const history = this.history.get(ref) ?? [];
+    return {
+      ref,
+      state: this.states.get(ref) ?? "idle",
+      ...history.length > 0 ? { latest: history[history.length - 1] } : {},
+      history
+    };
+  }
+  /** Triggers a run for the profile. If one is already in flight, this attaches to it instead of spawning a second process. */
+  trigger(ref, executable, args) {
+    const existing = this.inFlight.get(ref);
+    if (existing !== void 0) return existing.promise;
+    return this.startRun(ref, executable, args);
+  }
+  /** Re-issues a fresh, independent run for the profile, regardless of its previous terminal state. */
+  retry(ref, executable, args) {
+    if (this.inFlight.has(ref)) return this.inFlight.get(ref).promise;
+    return this.startRun(ref, executable, args);
+  }
+  /** Cancels the in-flight run for the profile, if any. No-ops when nothing is running. */
+  cancel(ref) {
+    this.inFlight.get(ref)?.controller.abort();
+  }
+  startRun(ref, executable, args) {
+    const controller = new AbortController();
+    const startedAt = this.now();
+    this.states.set(ref, "running");
+    const promise = this.runner.run(executable, args, { timeoutMs: this.timeoutMs, signal: controller.signal }).then((result) => {
+      this.record(ref, { state: "success", stdout: result.stdout, stderr: result.stderr, startedAt, endedAt: this.now() });
+    }).catch((error) => {
+      const terminal = this.classifyFailure(error, controller.signal.aborted);
+      const stdout = isCommandRunnerError(error) ? error.stdout : "";
+      const stderr = isCommandRunnerError(error) ? error.stderr : String(error);
+      this.record(ref, { state: terminal, stdout, stderr, startedAt, endedAt: this.now() });
+    }).finally(() => {
+      this.inFlight.delete(ref);
+    });
+    this.inFlight.set(ref, { controller, promise });
+    return promise;
+  }
+  classifyFailure(error, aborted) {
+    if (aborted || isCommandRunnerError(error) && error.kind === "aborted") return "cancelled";
+    if (isCommandRunnerError(error) && error.kind === "timed-out") return "timed-out";
+    return "failure";
+  }
+  record(ref, entry) {
+    this.states.set(ref, entry.state);
+    const existing = this.history.get(ref) ?? [];
+    const next = [...existing, entry];
+    this.history.set(ref, next.length > this.historyCap ? next.slice(next.length - this.historyCap) : next);
+  }
+};
+
+// src/admin-diagnosis-provider.ts
+import os4 from "node:os";
+import path8 from "node:path";
+var defaultClientFactory2 = (options) => new CopilotClient(options);
+var defaultModel = "gpt-5.6-sol";
+var defaultEffort = "medium";
+var defaultTimeoutMs2 = 3e4;
+var defaultSystemPrompt = [
+  "You diagnose Trellage profile doctor-check failures.",
+  "You are given the profile name and the captured, untrusted doctor stdout/stderr text.",
+  "Respond with raw JSON only, matching exactly:",
+  '{ "summary": string, "suggestedFix": string, "confidence"?: "low" | "medium" | "high", "rationale"?: string }',
+  "No Markdown code fences, no prose before or after the JSON."
+].join("\n");
+var maximumResponseBytes2 = 64 * 1024;
+var untrustedMessage2 = (request) => [
+  `Profile ref: ${request.ref}`,
+  `Profile name: ${request.name}`,
+  "",
+  "<untrusted-data>",
+  request.capturedOutput,
+  "</untrusted-data>"
+].join("\n");
+var repairMessage2 = (cause) => {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  return [
+    "Your previous response was invalid.",
+    `Validation error: ${reason}`,
+    "Respond again with corrected raw JSON only, matching the schema in your instructions exactly.",
+    "No Markdown code fences, no prose before or after the JSON."
+  ].join("\n");
+};
+var parseBoundedJson = (content) => {
+  const byteLength = Buffer.byteLength(content, "utf8");
+  if (byteLength > maximumResponseBytes2) {
+    throw new GuideModelResponseError(
+      `diagnosis model response was too large to parse: ${byteLength} bytes exceeds the ${maximumResponseBytes2}-byte limit`
+    );
+  }
+  try {
+    return JSON.parse(content);
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new GuideModelResponseError(`diagnosis model response was not valid JSON: ${reason}`);
+  }
+};
+var isNonEmptyString = (value) => typeof value === "string" && value.length > 0;
+var isConfidence = (value) => value === "low" || value === "medium" || value === "high";
+var validateDoctorFailureDiagnosisResult = (value) => {
+  if (typeof value !== "object" || value === null) throw new GuideModelResponseError("diagnosis response was not an object");
+  const record5 = value;
+  if (!isNonEmptyString(record5.summary)) throw new GuideModelResponseError("diagnosis response is missing a non-empty summary");
+  if (!isNonEmptyString(record5.suggestedFix))
+    throw new GuideModelResponseError("diagnosis response is missing a non-empty suggestedFix");
+  if (record5.confidence !== void 0 && !isConfidence(record5.confidence))
+    throw new GuideModelResponseError(`diagnosis response has an invalid confidence: ${String(record5.confidence)}`);
+  if (record5.rationale !== void 0 && typeof record5.rationale !== "string")
+    throw new GuideModelResponseError("diagnosis response has a non-string rationale");
+  return {
+    summary: record5.summary,
+    suggestedFix: record5.suggestedFix,
+    ...record5.confidence === void 0 ? {} : { confidence: record5.confidence },
+    ...record5.rationale === void 0 ? {} : { rationale: record5.rationale }
+  };
+};
+var runCleanupStep2 = async (errors, step) => {
+  try {
+    await step();
+  } catch (error) {
+    errors.push(error);
+  }
+};
+var collectClientStopErrors2 = async (client, cleanupErrors) => {
+  try {
+    cleanupErrors.push(...await client.stop());
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+};
+var DoctorFailureDiagnosisProvider = class {
+  model;
+  effort;
+  systemPrompt;
+  baseDirectory;
+  workingDirectory;
+  clientName;
+  copilotCliPath;
+  timeoutMs;
+  clientFactory;
+  constructor(options = {}) {
+    this.model = options.model ?? defaultModel;
+    this.effort = options.effort ?? defaultEffort;
+    this.systemPrompt = options.systemPrompt ?? defaultSystemPrompt;
+    this.baseDirectory = options.baseDirectory ?? path8.join(os4.homedir(), ".copilot", "trx-admin-diagnosis");
+    this.workingDirectory = options.workingDirectory ?? os4.tmpdir();
+    this.clientName = options.clientName ?? "trellage-trx-admin-diagnosis";
+    this.copilotCliPath = options.copilotCliPath;
+    this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs2;
+    this.clientFactory = options.clientFactory ?? defaultClientFactory2;
+  }
+  async diagnose(request) {
+    const client = this.clientFactory({
+      mode: "empty",
+      ...this.copilotCliPath === void 0 ? {} : { connection: RuntimeConnection.forStdio({ path: this.copilotCliPath }) },
+      baseDirectory: this.baseDirectory,
+      workingDirectory: this.workingDirectory
+    });
+    let session;
+    let outcome;
+    try {
+      await client.start();
+      const models = await client.listModels();
+      const modelInfo = models.find((candidate) => candidate.id === this.model);
+      if (modelInfo === void 0) {
+        throw new GuideModelCapabilityError(`model is not available: ${this.model}`);
+      }
+      if (!modelInfo.capabilities.supports.reasoningEffort) {
+        throw new GuideModelCapabilityError(`model does not support reasoning effort: ${this.model}`);
+      }
+      const supportedEfforts = modelInfo.supportedReasoningEfforts ?? [];
+      if (!supportedEfforts.includes(this.effort)) {
+        throw new GuideModelCapabilityError(
+          `model does not support effort "${this.effort}": ${this.model} supports: ${supportedEfforts.join(", ") || "(none)"}`
+        );
+      }
+      const sessionConfig = {
+        clientName: this.clientName,
+        model: this.model,
+        reasoningEffort: this.effort,
+        workingDirectory: this.workingDirectory,
+        enableConfigDiscovery: false,
+        tools: [],
+        availableTools: [],
+        mcpServers: {},
+        customAgents: [],
+        enableSkills: false,
+        skillDirectories: [],
+        pluginDirectories: [],
+        instructionDirectories: [],
+        requestExtensions: false,
+        requestCanvasRenderer: false,
+        manageScheduleEnabled: false,
+        skipCustomInstructions: true,
+        enableOnDemandInstructionDiscovery: false,
+        enableFileHooks: false,
+        enableHostGitOperations: false,
+        enableSessionStore: false,
+        infiniteSessions: { enabled: false },
+        memory: { enabled: false },
+        skipEmbeddingRetrieval: true,
+        embeddingCacheStorage: "in-memory",
+        enableFileChangeTracking: false,
+        enableSessionTelemetry: false,
+        remoteSession: "off",
+        onPermissionRequest: () => ({ kind: "reject" }),
+        systemMessage: { mode: "append", content: this.systemPrompt }
+      };
+      session = await client.createSession(sessionConfig);
+      const first = await session.sendAndWait({ prompt: untrustedMessage2(request) }, this.timeoutMs);
+      if (first === void 0) {
+        throw new GuideModelResponseError("diagnosis model did not return an assistant message");
+      }
+      try {
+        outcome = { ok: true, value: validateDoctorFailureDiagnosisResult(parseBoundedJson(first.data.content)) };
+      } catch (validationError) {
+        const repaired = await session.sendAndWait({ prompt: repairMessage2(validationError) }, this.timeoutMs);
+        if (repaired === void 0) {
+          throw new GuideModelResponseError("diagnosis model did not return an assistant message after repair request");
+        }
+        outcome = { ok: true, value: validateDoctorFailureDiagnosisResult(parseBoundedJson(repaired.data.content)) };
+      }
+    } catch (error) {
+      outcome = { ok: false, error };
+    }
+    const cleanupErrors = [];
+    if (session !== void 0) {
+      const activeSession = session;
+      await runCleanupStep2(cleanupErrors, () => activeSession.disconnect());
+      await runCleanupStep2(cleanupErrors, () => client.deleteSession(activeSession.sessionId));
+    }
+    await collectClientStopErrors2(client, cleanupErrors);
+    if (!outcome.ok) throw outcome.error;
+    if (cleanupErrors.length > 0) throw new GuideModelCleanupError(cleanupErrors);
+    return outcome.value;
+  }
+};
+
+// src/cli.tsx
+var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
   if (filename !== void 0) return readFile3(filename, "utf8");
   const chunks = [];
@@ -83408,8 +84343,8 @@ var detailColors = {
   Sandbox: "green",
   Status: "gray"
 };
-var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
-  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
+var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { wrap: "wrap", children: [
+  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
     row.label,
     ":",
     " "
@@ -83422,10 +84357,10 @@ var DetailsView = ({
   visibleDetails,
   detailOffset,
   detailCapacity
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       detailOffset + 1,
       "\u2013",
       Math.min(expandedDetails.length, detailOffset + detailCapacity),
@@ -83433,40 +84368,40 @@ var DetailsView = ({
       expandedDetails.length
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
 ] });
 var ProfileTable = ({
   shown,
   state,
   widths
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " " }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: " " }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
   ] }),
-  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
+  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
     const active = entry.id === state.selectedId;
     const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
     const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
     const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
     ] }, entry.id);
   })
 ] });
@@ -83474,37 +84409,37 @@ var SelectionSummary = ({
   selected,
   summaryRows,
   summaryTruncated
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
-  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
+  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
+  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
 ] }) });
 var ModelChooser = ({
   selected,
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: "Select model" }),
-  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: "Select model" }),
+  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
     index === modelIndex ? "\u276F " : "  ",
     candidate,
     candidate === selected.defaultModel ? " (default)" : ""
   ] }, candidate)),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
     modelIndex === selected.models.length ? "\u276F " : "  ",
     "Custom\u2026"
   ] }),
-  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
     "Model ID: ",
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", children: [
       customModel,
       "\u2588"
     ] })
@@ -83514,7 +84449,7 @@ var ShortcutHelp = ({
   searching,
   herdrAvailable,
   remoteAvailable
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
 var SelectionView = ({
   catalog,
   state,
@@ -83530,10 +84465,10 @@ var SelectionView = ({
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "Sort: ",
       state.sort,
       " \xB7 Herdr: ",
@@ -83543,21 +84478,21 @@ var SelectionView = ({
       remoteAvailable ? "available" : "unavailable"
     ] })
   ] }),
-  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "blue", children: [
+  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { wrap: "wrap", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "blue", children: [
       "Context:",
       " "
     ] }),
     catalog.description
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
     "Search: ",
     state.query,
     searching ? "\u2588" : ""
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ProfileTable, { shown, state, widths }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
-  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ProfileTable, { shown, state, widths }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
+  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
     ModelChooser,
     {
       selected,
@@ -83566,7 +84501,7 @@ var SelectionView = ({
       customModel
     }
   ) : null,
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
 ] });
 var Launcher = ({
   catalog,
@@ -83575,20 +84510,20 @@ var Launcher = ({
 }) => {
   const { exit } = use_app_default();
   const { columns, rows } = use_window_size_default();
-  const [state, updateState] = (0, import_react37.useState)(() => createLauncherState(catalog.entries));
-  const [searching, setSearching] = (0, import_react37.useState)(true);
-  const [choosingModel, setChoosingModel] = (0, import_react37.useState)(false);
-  const [modelIndex, setModelIndex] = (0, import_react37.useState)(0);
-  const [editingCustomModel, setEditingCustomModel] = (0, import_react37.useState)(false);
-  const [customModel, setCustomModel] = (0, import_react37.useState)("");
-  const [showingDetails, setShowingDetails] = (0, import_react37.useState)(false);
-  const [detailOffset, setDetailOffset] = (0, import_react37.useState)(0);
-  const visible = (0, import_react37.useMemo)(() => visibleEntries(state), [state]);
+  const [state, updateState] = (0, import_react38.useState)(() => createLauncherState(catalog.entries));
+  const [searching, setSearching] = (0, import_react38.useState)(true);
+  const [choosingModel, setChoosingModel] = (0, import_react38.useState)(false);
+  const [modelIndex, setModelIndex] = (0, import_react38.useState)(0);
+  const [editingCustomModel, setEditingCustomModel] = (0, import_react38.useState)(false);
+  const [customModel, setCustomModel] = (0, import_react38.useState)("");
+  const [showingDetails, setShowingDetails] = (0, import_react38.useState)(false);
+  const [detailOffset, setDetailOffset] = (0, import_react38.useState)(0);
+  const visible = (0, import_react38.useMemo)(() => visibleEntries(state), [state]);
   const selected = selectedEntry(state);
   const selectedModel = selected === void 0 ? void 0 : state.modelByEntry[selected.id];
   const model = selected === void 0 ? void 0 : selectedModel ?? selected.defaultModel;
   const forwardedModel = selectedModel === void 0 || selectedModel === selected?.defaultModel ? void 0 : selectedModel;
-  const expandedDetails = (0, import_react37.useMemo)(
+  const expandedDetails = (0, import_react38.useMemo)(
     () => selected === void 0 ? [] : detailRows(selected, model, Math.max(16, columns - 4), forwardedModel),
     [selected, model, columns, forwardedModel]
   );
@@ -83669,11 +84604,11 @@ var Launcher = ({
   );
   const start = Math.max(0, Math.min(selectedIndex - Math.floor(capacity / 2), visible.length - capacity));
   const shown = visible.slice(start, start + capacity);
-  const widths = (0, import_react37.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
+  const widths = (0, import_react38.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
   const detailCapacity = Math.max(1, rows - 4);
   const visibleDetails = expandedDetails.slice(detailOffset, detailOffset + detailCapacity);
   if (showingDetails && selected !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       DetailsView,
       {
         selected,
@@ -83684,7 +84619,7 @@ var Launcher = ({
       }
     );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
     SelectionView,
     {
       catalog,
@@ -83794,7 +84729,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
   let result;
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         GuideApp,
         {
           catalog,
@@ -83863,7 +84798,7 @@ var runGuidePreviewMode = async () => {
   const terminal = openInteractiveTerminalStreams();
   let result;
   try {
-    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime4.jsx)(BasketPreviewApp, {}), {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime5.jsx)(BasketPreviewApp, {}), {
       stdin: terminal.input,
       stdout: terminal.output,
       interactive: true,
@@ -83894,7 +84829,7 @@ var runForkPreviewMode = async () => {
   const terminal = openInteractiveTerminalStreams();
   let result;
   try {
-    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ForkPreviewApp, { variant: args.variant }), {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ForkPreviewApp, { variant: args.variant }), {
       stdin: terminal.input,
       stdout: terminal.output,
       interactive: true,
@@ -83915,6 +84850,44 @@ var runForkPreviewMode = async () => {
   if (result.kind === "launched") process.stdout.write(`${result.lines.join("\n")}
 `);
 };
+var runAdminMode = async () => {
+  const guideRoot = process.argv[3];
+  if (guideRoot === void 0) throw new Error("admin requires GUIDE_ROOT");
+  const catalog = readGuideCatalog();
+  const runner = createNodeCommandRunner();
+  const runManager = new AdminRunManager({ runner });
+  const diagnosisProvider = new DoctorFailureDiagnosisProvider();
+  const terminal = openInteractiveTerminalStreams();
+  const { input, output } = terminal;
+  try {
+    const instance = render_default(
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        AdminRoot,
+        {
+          catalog,
+          runner,
+          runManager,
+          guideRoot,
+          cwd: process.cwd(),
+          diagnosisProvider,
+          herdrEnv: herdrEnvironment()
+        }
+      ),
+      {
+        stdin: input,
+        stdout: output,
+        interactive: true,
+        exitOnCtrlC: false,
+        kittyKeyboard: { mode: "disabled" },
+        alternateScreen: true,
+        maxFps: 30
+      }
+    );
+    await instance.waitUntilExit();
+  } finally {
+    terminal.close();
+  }
+};
 var main = async () => {
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList();
@@ -83932,6 +84905,10 @@ var main = async () => {
     await runGuideMode();
     return;
   }
+  if (process.argv[2] === "admin") {
+    await runAdminMode();
+    return;
+  }
   const catalog = parseLaunchCatalog(await readInput(process.argv[2]));
   let outputFd;
   let input;
@@ -83944,7 +84921,7 @@ var main = async () => {
   }
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         Launcher,
         {
           catalog,

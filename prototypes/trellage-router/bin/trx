@@ -71,6 +71,7 @@ Usage:
   trx guide --preview
   trx guide --forks [VARIANT]
   trx inventory LAUNCHER PROFILE --json
+  trx admin
   trx skills status
   trx skills update
 
@@ -85,6 +86,10 @@ non-interactive and has no launch or Herdr side effects. `trx inventory`
 reports the live readiness (`healthy`, `unhealthy`, `not-setup`, or `busy`) of
 a single profile by delegating to that launcher's own `inventory` command. It
 is not called during `list` or interactive selection, so those stay fast.
+`trx admin` opens a read-mostly command center listing every native and
+Sandbox profile with health, install state, and diagnostics; it requires an
+interactive terminal and never launches a profile without an explicit,
+separately confirmed terminal-launch action.
 EOF
 }
 
@@ -474,6 +479,80 @@ build_profile_list() {
   '
 }
 
+# Builds the combined native+Sandbox profile-guide catalog shared by `guide`
+# and `admin` mode, writing it to "$1/combined.json". Requires guide_root,
+# runtime, picker_path, cpx/cdx/cldx/grx/jcx/omp/picx/prx (validated launcher
+# paths), and the per-launcher *_catalog variables to already be in scope.
+build_combined_guide_catalog() {
+  local out_dir="$1"
+  local profile_list
+  profile_list="$(build_profile_list \
+    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
+    || die 'could not build native profile list'
+
+  local sandbox_cli
+  if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
+    sandbox_cli="$runtime/../trellage/trellage"
+  else
+    sandbox_cli="$(command -v trellage || true)"
+  fi
+  [[ -n "$sandbox_cli" && -x "$sandbox_cli" ]] \
+    || die 'trellage command not found; this mode requires the Sandbox catalog'
+  sandbox_cli="$(resolve_file "$sandbox_cli")" \
+    || die "cannot resolve trellage command: $sandbox_cli"
+  [[ -f "$sandbox_cli" && -x "$sandbox_cli" ]] \
+    || die "trellage command is not an executable regular file: $sandbox_cli"
+
+  printf '%s\n' "$profile_list" \
+    | node "$picker_path" enrich-native-list "$guide_root" \
+      >"$out_dir/native-public.json" \
+    || die 'could not enrich native profile list with guides'
+  jq \
+    --arg cpxPath "$cpx" \
+    --arg cdxPath "$cdx" \
+    --arg cldxPath "$cldx" \
+    --arg fmxPath "$fmx" \
+    --arg grxPath "$grx" \
+    --arg jcxPath "$jcx" \
+    --arg ompPath "$omp" \
+    --arg picxPath "$picx" \
+    --arg prxPath "$prx" \
+    --arg agxPath "$agx" '
+      .profiles |= map(
+        . + {
+          commandPath:
+            (if .launcher == "cpx" then $cpxPath
+             elif .launcher == "cdx" then $cdxPath
+             elif .launcher == "cldx" then $cldxPath
+             elif .launcher == "fmx" then $fmxPath
+             elif .launcher == "grx" then $grxPath
+             elif .launcher == "jcx" then $jcxPath
+             elif .launcher == "omp" then $ompPath
+             elif .launcher == "picx" then $picxPath
+             elif .launcher == "prx" then $prxPath
+             elif .launcher == "agx" then $agxPath
+             else error("unknown native launcher")
+             end)
+        }
+      )
+    ' "$out_dir/native-public.json" >"$out_dir/native.json" \
+    || die 'could not add validated native launcher paths to the guide catalog'
+  "$sandbox_cli" list --json-full >"$out_dir/sandbox.json" \
+    || die 'could not load the Sandbox profile guide catalog'
+  jq -n \
+    --arg sandboxCommandPath "$sandbox_cli" \
+    --slurpfile native "$out_dir/native.json" \
+    --slurpfile sandbox "$out_dir/sandbox.json" \
+    '{
+      schemaVersion: 1,
+      sandboxCommandPath: $sandboxCommandPath,
+      native: $native[0].profiles,
+      sandbox: $sandbox[0].profiles
+    }' >"$out_dir/combined.json" \
+    || die 'could not combine profile guide catalogs'
+}
+
 mode=''
 list_json=0
 inventory_launcher=''
@@ -557,6 +636,11 @@ case "${1-}" in
     esac
     shift
     run_args=("$@")
+    ;;
+  admin)
+    mode='admin'
+    shift
+    [[ "$#" -eq 0 ]] || die 'admin accepts no arguments'
     ;;
   skills)
     mode='skills'
@@ -825,23 +909,6 @@ if [[ "$mode" == guide ]]; then
   [[ -d "$guide_root" && ! -L "$guide_root" ]] \
     || die 'profile guide registry is missing or unsafe'
 
-  profile_list="$(build_profile_list \
-    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
-    || die 'could not build native profile list'
-
-  if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
-    sandbox_cli="$runtime/../trellage/trellage"
-  else
-    sandbox_cli="$(command -v trellage || true)"
-  fi
-  [[ -n "$sandbox_cli" && -x "$sandbox_cli" ]] \
-    || die 'trellage command not found; guide mode requires the Sandbox catalog'
-  sandbox_cli="$(resolve_file "$sandbox_cli")" \
-    || die "cannot resolve trellage command: $sandbox_cli"
-  [[ -f "$sandbox_cli" && -x "$sandbox_cli" ]] \
-    || die "trellage command is not an executable regular file: $sandbox_cli"
-
   guide_catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx-guide.XXXXXX")" \
     || die 'cannot create guide catalog workspace'
   cleanup_guide_catalog_tmp() {
@@ -863,53 +930,7 @@ if [[ "$mode" == guide ]]; then
       && ! -L "$guide_catalog_tmp/skills/prompt-master/SKILL.md" ]] \
     || die 'guide Prompt Master skill is missing or unsafe'
 
-  printf '%s\n' "$profile_list" \
-    | node "$picker_path" enrich-native-list "$guide_root" \
-      >"$guide_catalog_tmp/native-public.json" \
-    || die 'could not enrich native profile list with guides'
-  jq \
-    --arg cpxPath "$cpx" \
-    --arg cdxPath "$cdx" \
-    --arg cldxPath "$cldx" \
-    --arg fmxPath "$fmx" \
-    --arg grxPath "$grx" \
-    --arg jcxPath "$jcx" \
-    --arg ompPath "$omp" \
-    --arg picxPath "$picx" \
-    --arg prxPath "$prx" \
-    --arg agxPath "$agx" '
-      .profiles |= map(
-        . + {
-          commandPath:
-            (if .launcher == "cpx" then $cpxPath
-             elif .launcher == "cdx" then $cdxPath
-             elif .launcher == "cldx" then $cldxPath
-             elif .launcher == "fmx" then $fmxPath
-             elif .launcher == "grx" then $grxPath
-             elif .launcher == "jcx" then $jcxPath
-             elif .launcher == "omp" then $ompPath
-             elif .launcher == "picx" then $picxPath
-             elif .launcher == "prx" then $prxPath
-             elif .launcher == "agx" then $agxPath
-             else error("unknown native launcher")
-             end)
-        }
-      )
-    ' "$guide_catalog_tmp/native-public.json" >"$guide_catalog_tmp/native.json" \
-    || die 'could not add validated native launcher paths to the guide catalog'
-  "$sandbox_cli" list --json-full >"$guide_catalog_tmp/sandbox.json" \
-    || die 'could not load the Sandbox profile guide catalog'
-  jq -n \
-    --arg sandboxCommandPath "$sandbox_cli" \
-    --slurpfile native "$guide_catalog_tmp/native.json" \
-    --slurpfile sandbox "$guide_catalog_tmp/sandbox.json" \
-    '{
-      schemaVersion: 1,
-      sandboxCommandPath: $sandboxCommandPath,
-      native: $native[0].profiles,
-      sandbox: $sandbox[0].profiles
-    }' >"$guide_catalog_tmp/combined.json" \
-    || die 'could not combine profile guide catalogs'
+  build_combined_guide_catalog "$guide_catalog_tmp"
 
   guide_command=(node "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master")
   if ((${#guide_args[@]} > 0)); then
@@ -920,6 +941,31 @@ if [[ "$mode" == guide ]]; then
   cleanup_guide_catalog_tmp
   trap - EXIT HUP INT TERM
   exit "$guide_status"
+fi
+
+if [[ "$mode" == admin ]]; then
+  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
+  [[ -f "$picker_path" && ! -L "$picker_path" ]] \
+    || die 'Ink launcher is missing or unsafe'
+  [[ -d "$guide_root" && ! -L "$guide_root" ]] \
+    || die 'profile guide registry is missing or unsafe'
+
+  admin_catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx-admin.XXXXXX")" \
+    || die 'cannot create admin catalog workspace'
+  cleanup_admin_catalog_tmp() {
+    rm -rf -- "$admin_catalog_tmp"
+  }
+  trap cleanup_admin_catalog_tmp EXIT HUP INT TERM
+
+  build_combined_guide_catalog "$admin_catalog_tmp"
+
+  admin_status=0
+  node "$picker_path" admin "$guide_root" 3<"$admin_catalog_tmp/combined.json" \
+    || admin_status=$?
+  cleanup_admin_catalog_tmp
+  trap - EXIT HUP INT TERM
+  exit "$admin_status"
 fi
 
 command -v node >/dev/null 2>&1 || die 'required command not found: node'

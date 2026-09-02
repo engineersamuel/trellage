@@ -39,6 +39,9 @@ import {
   type BasketPreviewResult,
 } from "./basket-preview.js"
 import { ForkPreviewApp, forkPreviewHelpText, parseForkPreviewArgv, type ForkPreviewResult } from "./fork-preview.js"
+import { AdminRoot } from "./admin-ui.js"
+import { AdminRunManager } from "./admin-run-manager.js"
+import { DoctorFailureDiagnosisProvider } from "./admin-diagnosis-provider.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -738,6 +741,42 @@ const runForkPreviewMode = async (): Promise<void> => {
   if (result.kind === "launched") process.stdout.write(`${result.lines.join("\n")}\n`)
 }
 
+const runAdminMode = async (): Promise<void> => {
+  const guideRoot = process.argv[3]
+  if (guideRoot === undefined) throw new Error("admin requires GUIDE_ROOT")
+  const catalog = readGuideCatalog()
+  const runner = createNodeCommandRunner()
+  const runManager = new AdminRunManager({ runner })
+  const diagnosisProvider = new DoctorFailureDiagnosisProvider()
+  const terminal = openInteractiveTerminalStreams()
+  const { input, output } = terminal
+  try {
+    const instance = render(
+      <AdminRoot
+        catalog={catalog}
+        runner={runner}
+        runManager={runManager}
+        guideRoot={guideRoot}
+        cwd={process.cwd()}
+        diagnosisProvider={diagnosisProvider}
+        herdrEnv={herdrEnvironment()}
+      />,
+      {
+        stdin: input,
+        stdout: output,
+        interactive: true,
+        exitOnCtrlC: false,
+        kittyKeyboard: { mode: "disabled" },
+        alternateScreen: true,
+        maxFps: 30,
+      },
+    )
+    await instance.waitUntilExit()
+  } finally {
+    terminal.close()
+  }
+}
+
 const main = async () => {
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList()
@@ -753,6 +792,10 @@ const main = async () => {
   }
   if (process.argv[2] === "guide") {
     await runGuideMode()
+    return
+  }
+  if (process.argv[2] === "admin") {
+    await runAdminMode()
     return
   }
   const catalog = parseLaunchCatalog(await readInput(process.argv[2]))

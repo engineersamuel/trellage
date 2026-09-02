@@ -1,0 +1,88 @@
+import { describe, expect, it } from "vitest"
+
+import type { AdminProfileEntry } from "../src/admin-model.js"
+import { filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "../src/admin-table.js"
+
+const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
+  ref: overrides.ref ?? "native:cpx/hve",
+  surface: "native",
+  launcher: "cpx",
+  harness: "copilot",
+  name: "hve",
+  description: "Copilot native launcher.",
+  commandPath: "/opt/trellage/cpx/bin/cpx",
+  doctorSupported: true,
+  inventorySupported: true,
+  health: "healthy",
+  install: "installed",
+  stale: false,
+  ...overrides,
+})
+
+const fixture: ReadonlyArray<AdminProfileEntry> = [
+  entry({ ref: "native:cpx/hve", name: "hve", launcher: "cpx", health: "healthy" }),
+  entry({ ref: "native:cdx/pstack", name: "pstack", launcher: "cdx", harness: "codex", health: "unsupported" }),
+  entry({
+    ref: "sandbox:prime-agent",
+    surface: "sandbox",
+    harness: "copilot",
+    name: "prime-agent",
+    description: "Sandboxed prime agent.",
+    health: "unhealthy",
+  }),
+]
+
+describe("filterAdminProfiles", () => {
+  it("is a pure, case-insensitive substring match with no false positives or negatives", () => {
+    expect(filterAdminProfiles(fixture, "hve").map((e) => e.ref)).toEqual(["native:cpx/hve"])
+    expect(filterAdminProfiles(fixture, "PSTACK").map((e) => e.ref)).toEqual(["native:cdx/pstack"])
+    expect(filterAdminProfiles(fixture, "sandbox").map((e) => e.ref)).toEqual(["sandbox:prime-agent"])
+    expect(filterAdminProfiles(fixture, "nonexistent")).toEqual([])
+  })
+
+  it("returns all entries unchanged for an empty query", () => {
+    expect(filterAdminProfiles(fixture, "  ")).toEqual(fixture)
+  })
+
+  it("matches on description as well as name", () => {
+    expect(filterAdminProfiles(fixture, "sandboxed prime").map((e) => e.ref)).toEqual(["sandbox:prime-agent"])
+  })
+})
+
+describe("sortAdminProfiles", () => {
+  it("sorts stably by name, ascending and descending, without mutating the input", () => {
+    const copy = [...fixture]
+    const ascending = sortAdminProfiles(fixture, "name", "asc")
+    expect(ascending.map((e) => e.name)).toEqual(["hve", "prime-agent", "pstack"])
+    const descending = sortAdminProfiles(fixture, "name", "desc")
+    expect(descending.map((e) => e.name)).toEqual(["pstack", "prime-agent", "hve"])
+    expect(fixture).toEqual(copy)
+  })
+
+  it("preserves relative order for equal sort keys (stability)", () => {
+    const tied: ReadonlyArray<AdminProfileEntry> = [
+      entry({ ref: "a", health: "healthy" }),
+      entry({ ref: "b", health: "healthy" }),
+    ]
+    expect(sortAdminProfiles(tied, "health", "asc").map((e) => e.ref)).toEqual(["a", "b"])
+  })
+})
+
+describe("resolveAdminViewState", () => {
+  it("returns discovering while loading regardless of entry counts", () => {
+    expect(resolveAdminViewState([], [], true)).toBe("discovering")
+    expect(resolveAdminViewState(fixture, fixture, true)).toBe("discovering")
+  })
+
+  it("returns empty-no-profiles when discovery found nothing", () => {
+    expect(resolveAdminViewState([], [], false)).toBe("empty-no-profiles")
+  })
+
+  it("returns empty-no-match when profiles exist but the filter matched none", () => {
+    expect(resolveAdminViewState(fixture, [], false)).toBe("empty-no-match")
+  })
+
+  it("returns ready when profiles exist and at least one matches", () => {
+    expect(resolveAdminViewState(fixture, fixture, false)).toBe("ready")
+  })
+})

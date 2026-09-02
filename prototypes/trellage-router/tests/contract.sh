@@ -505,6 +505,7 @@ assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
 assert_contains 'trx guide --preview' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
+assert_contains 'trx admin' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 assert_contains 'trx run cpx tufte-vdqi' "$fixture_root/help.out"
 
@@ -845,6 +846,12 @@ if (process.argv[2] === "enrich-native-list") {
     args: process.argv.slice(5),
     catalog: JSON.parse(readFileSync(3, "utf8")),
   })}\n`)
+} else if (process.argv[2] === "admin") {
+  process.stdout.write(`${JSON.stringify({
+    guideRoot: process.argv[3],
+    args: process.argv.slice(4),
+    catalog: JSON.parse(readFileSync(3, "utf8")),
+  })}\n`)
 } else {
   process.exitCode = 64
 }
@@ -883,6 +890,38 @@ jq -e \
   || fail 'guide mode rejected an omitted interactive intent'
 jq -e '.args == []' "$fixture_root/guide-no-args.json" >/dev/null \
   || fail 'guide mode added arguments when the interactive intent was omitted'
+
+status=0
+"$fixture_bin/trx" admin extra-arg >"$fixture_root/admin-invalid.out" \
+  2>"$fixture_root/admin-invalid.err" || status=$?
+[[ "$status" == 1 ]] || fail "invalid admin arguments exited $status instead of 1"
+assert_contains 'admin accepts no arguments' "$fixture_root/admin-invalid.err"
+
+status=0
+"$fixture_bin/trx" admin >"$fixture_root/admin-non-tty.out" \
+  2>"$fixture_root/admin-non-tty.err" || status=$?
+[[ "$status" == 1 ]] || fail "non-TTY admin invocation exited $status instead of 1"
+assert_contains 'an interactive terminal is required' "$fixture_root/admin-non-tty.err"
+
+python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/admin-catalog.out" \
+  '' '' "$fixture_bin/trx" admin \
+  || fail 'admin mode exited with a non-zero status'
+jq -e \
+  --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
+  --arg sandboxCommandPath "$fixture_bin/trellage" \
+  --arg runtimeParent "$runtime_parent" '
+    .guideRoot == $guideRoot
+    and .args == []
+    and .catalog.schemaVersion == 1
+    and .catalog.sandboxCommandPath == $sandboxCommandPath
+    and .catalog.sandbox[0].name == "sandbox-fixture"
+    and (.catalog.native | length == 13)
+    and all(.catalog.native[];
+      (.commandPath | startswith($runtimeParent + "/"))
+      and (.harness | type == "string" and length > 0)
+      and .guide.schemaVersion == 1)
+  ' "$fixture_root/admin-catalog.out" >/dev/null \
+  || fail 'admin mode combined catalog differs from guide mode'
 mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
 
 TRX_ARGUMENT_LOG="$argument_log" \
