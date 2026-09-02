@@ -126,7 +126,7 @@ class GraphController:
         with self._state_lock:
             self._persist("state.json", self._state)
 
-    def _restore_state(self) -> bool:
+    def _restore_state(self, *, allow_policy_mismatch: bool = False) -> bool:
         state = self._load_persisted("state.json")
         if state is None:
             return False
@@ -138,7 +138,7 @@ class GraphController:
         self._run_id = str(state["run_id"])
         expected = state.get("policy_digest")
         actual = content_digest(json.dumps(self._policy, sort_keys=True))
-        if expected != actual:
+        if expected != actual and not allow_policy_mismatch:
             raise ControllerError("runtime policy changed since the run was created")
         for node in state.get("nodes", {}).values():
             if node.get("worktree") and node.get("session_id"):
@@ -1655,6 +1655,10 @@ class GraphController:
     def resume(self, run_id: str) -> bool:
         self._run_dir = self._repo_root / ".sdd" / "graph-of-loops" / "runs" / run_id
         return self._restore_state()
+
+    def resume_for_replan(self, run_id: str) -> bool:
+        self._run_dir = self._repo_root / ".sdd" / "graph-of-loops" / "runs" / run_id
+        return self._restore_state(allow_policy_mismatch=True)
 
     def status(self) -> dict[str, Any]:
         can_close, blockers = self.can_close_root() if self._plan else (False, ["no plan"])

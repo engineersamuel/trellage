@@ -67,6 +67,7 @@ class Controller(Protocol):
         self, plan: dict[str, Any], *, run_id: str, plan_generation: int = 1,
     ) -> str: ...
     def resume(self, run_id: str) -> bool: ...
+    def resume_for_replan(self, run_id: str) -> bool: ...
     def prepare_replan(self, run_id: str) -> int: ...
     def run(self) -> dict[str, Any]: ...
     def status(self) -> dict[str, Any]: ...
@@ -346,10 +347,15 @@ class RunLifecycle:
             self._write_json(path, expected)
         return expected
 
-    def _request_for_resume(self, run_id: str) -> dict[str, Any]:
+    def _request_for_resume(
+        self, run_id: str, *, allow_policy_mismatch: bool = False,
+    ) -> dict[str, Any]:
         request = self._load_json(self._run_dir(run_id) / "request.json")
         if request is not None:
-            if request.get("policy_digest") != self._policy_digest():
+            if (
+                not allow_policy_mismatch
+                and request.get("policy_digest") != self._policy_digest()
+            ):
                 raise RunLifecycleError(
                     "runtime policy changed since the run was created"
                 )
@@ -767,6 +773,7 @@ class RunLifecycle:
             return
         staging.mkdir(parents=True, exist_ok=True)
         for name in (
+            "request.json",
             "plan.json",
             "planning-decision.json",
             "planning-evidence.json",
@@ -807,7 +814,7 @@ class RunLifecycle:
         generation = int(record.get("generation", 1)) if record else 1
         if (run_dir / "state.json").is_file():
             controller = self._controller_factory(run_id)
-            if not controller.resume(run_id):
+            if not controller.resume_for_replan(run_id):
                 raise RunLifecycleError(
                     f"cannot restore accepted run {run_id}"
                 )
@@ -830,12 +837,22 @@ class RunLifecycle:
     ) -> dict[str, Any]:
         self._validate_run_id(run_id)
         with self._exclusive(run_id):
-            request = self._request_for_resume(run_id)
+            request = self._request_for_resume(
+                run_id, allow_policy_mismatch=replan,
+            )
             generation = (
                 self._prepare_replan(run_id)
                 if replan
                 else self._current_generation(run_id)
             )
+            if replan:
+                request = self._ensure_request(
+                    run_id,
+                    objective=str(request["objective"]),
+                    constraints=[
+                        str(value) for value in request["constraints"]
+                    ],
+                )
             return self._run_and_record(
                 run_id,
                 request,

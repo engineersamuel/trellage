@@ -15,6 +15,7 @@ Fakes match exact pinned API shapes:
 """
 from __future__ import annotations
 
+import copy
 import json
 import multiprocessing
 import os
@@ -4672,6 +4673,9 @@ class FakeLifecycleController:
     def resume(self, _run_id: str) -> bool:
         return self.restored
 
+    def resume_for_replan(self, _run_id: str) -> bool:
+        return self.restored
+
     def accept_plan(
         self,
         _plan: dict[str, Any],
@@ -5003,11 +5007,72 @@ class TestRunLifecycle(unittest.TestCase):
             self.assertTrue(
                 (run_dir / "history" / "generation-1" / "plan.json").is_file()
             )
+            self.assertTrue(
+                (
+                    run_dir / "history" / "generation-1" / "request.json"
+                ).is_file()
+            )
             record = json.loads(
                 (run_dir / "plan-record.json").read_text(encoding="utf-8")
             )
             self.assertEqual(record["generation"], 2)
             self.assertEqual(second_planner.calls, 1)
+
+    def test_explicit_replan_refreshes_changed_runtime_policy(self) -> None:
+        from trellage_graph.run_lifecycle import (
+            RunLifecycle,
+            RunLifecycleError,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            old_policy = _load("test-policy.json")
+            first = RunLifecycle(
+                repo_root=Path(td),
+                policy=old_policy,
+                planner=FakePlanner(_load("valid-plan.json")),
+                controller_factory=lambda _run_id: FakeLifecycleController(
+                    accept_error=ControllerError("beads unavailable"),
+                ),
+                announce=lambda _run_id: None,
+            )
+            with self.assertRaises(RunLifecycleError):
+                first.start(
+                    objective="build it",
+                    constraints=[],
+                    requested_run_id="policy-replan",
+                )
+
+            new_policy = copy.deepcopy(old_policy)
+            new_policy["runtime_integrity"] = "sha256:changed"
+            second = RunLifecycle(
+                repo_root=Path(td),
+                policy=new_policy,
+                planner=FakePlanner(_load("valid-plan.json")),
+                controller_factory=lambda _run_id: FakeLifecycleController(),
+                announce=lambda _run_id: None,
+            )
+            result = second.resume("policy-replan", replan=True)
+
+            self.assertEqual(result["status"], "closed")
+            run_dir = second._run_dir("policy-replan")
+            archived_request = json.loads(
+                (
+                    run_dir / "history" / "generation-1" / "request.json"
+                ).read_text(encoding="utf-8")
+            )
+            current_request = json.loads(
+                (run_dir / "request.json").read_text(encoding="utf-8")
+            )
+            self.assertNotEqual(
+                archived_request["policy_digest"],
+                current_request["policy_digest"],
+            )
+            self.assertEqual(
+                archived_request["objective"], current_request["objective"]
+            )
+            self.assertEqual(
+                archived_request["constraints"], current_request["constraints"]
+            )
 
     def test_repeated_preaccept_replan_uses_candidate_generation(self) -> None:
         from trellage_graph.run_lifecycle import (
