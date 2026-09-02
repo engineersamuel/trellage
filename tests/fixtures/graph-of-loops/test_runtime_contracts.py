@@ -2531,6 +2531,61 @@ class TestSpecialist(unittest.TestCase):
                 ["crate/Cargo.toml", "crate/Cargo.lock"],
             )
 
+    def test_discovery_expands_comma_delimited_crate_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for relative in (
+                "prototypes/simd/src/arch/mod.rs",
+                "prototypes/simd/src/arch/x86_64.rs",
+                "prototypes/simd/src/arch/aarch64.rs",
+                "prototypes/simd/src/search.rs",
+                "prototypes/simd/src/lib.rs",
+                "prototypes/simd/tests/cli.rs",
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+            discovery = {
+                "repository_evidence": [{
+                    "path": (
+                        "prototypes/simd/src/arch/mod.rs, "
+                        "src/arch/x86_64.rs, src/arch/aarch64.rs"
+                    ),
+                    "detail": "architecture seams",
+                }],
+                "relevant_paths": [
+                    (
+                        "prototypes/simd/src/search.rs, "
+                        "src/lib.rs, tests/cli.rs"
+                    ),
+                ],
+            }
+
+            normalized = SpecialistLauncher._normalize_discovery_paths(
+                discovery,
+                repo_root=str(root),
+            )
+
+            self.assertEqual(
+                [
+                    entry["path"]
+                    for entry in normalized["repository_evidence"]
+                ],
+                [
+                    "prototypes/simd/src/arch/mod.rs",
+                    "prototypes/simd/src/arch/x86_64.rs",
+                    "prototypes/simd/src/arch/aarch64.rs",
+                ],
+            )
+            self.assertEqual(
+                normalized["relevant_paths"],
+                [
+                    "prototypes/simd/src/search.rs",
+                    "prototypes/simd/src/lib.rs",
+                    "prototypes/simd/tests/cli.rs",
+                ],
+            )
+
     def test_planner_accepts_locally_validated_discovery_json_text(self) -> None:
         runner = FakeSubprocessRunner()
         discovery = json.loads(

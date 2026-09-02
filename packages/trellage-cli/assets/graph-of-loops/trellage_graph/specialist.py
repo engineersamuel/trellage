@@ -643,7 +643,7 @@ class SpecialistLauncher:
             if (root / normalized_value).resolve().exists():
                 return [normalized_value]
             stripped = re.sub(r"\s+\([^()]+\)$", "", normalized_value)
-            parts = stripped.split(" / ")
+            parts = re.split(r"\s+/\s+|,\s*", stripped)
             if len(parts) < 2:
                 return [normalized_value]
             first = Path(parts[0])
@@ -651,7 +651,10 @@ class SpecialistLauncher:
             for index, part in enumerate(parts):
                 candidates = [Path(part)]
                 if index > 0:
-                    candidates.append(first.parent / part)
+                    candidates = [
+                        ancestor / part
+                        for ancestor in first.parents
+                    ] + candidates
                 existing = next(
                     (
                         candidate
