@@ -34,6 +34,9 @@ seed='/usr/local/share/trellage/claude-seed'
 runtime='/opt/trellage/graph-of-loops'
 policy='/usr/local/share/trellage/graph-of-loops-policy.json'
 
+run 'command -v make >/dev/null' \
+  || fail "make is not installed in the locked Graph image"
+
 # ---------------------------------------------------------------------------
 # CLI entrypoint
 #

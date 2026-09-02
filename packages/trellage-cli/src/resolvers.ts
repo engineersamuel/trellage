@@ -68,6 +68,7 @@ const supportedRuntimePackages = new Set([
   "libxfixes3",
   "libxkbcommon0",
   "libxrandr2",
+  "make",
   "ripgrep",
   "zsh",
 ])
