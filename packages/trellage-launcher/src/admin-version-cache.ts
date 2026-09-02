@@ -6,6 +6,15 @@
  * or oversized cache file is treated as "no cache yet" (fail-open to a
  * fresh check) rather than blocking startup — the cache is a pure
  * optimization, never a source of truth for whether a profile is healthy.
+ *
+ * `schemaVersion` bumped 1 -> 2: an earlier release's on-disk cache could
+ * contain `current: true` entries with no `installed` field (from a load-side
+ * bug that has since been fixed) or terminal `malformed` results recorded
+ * before `versionCheckResultForEntry` learned to reparse a non-zero-exit
+ * launcher's stdout. Neither shape self-identifies as stale, so they would
+ * otherwise sit unrefreshed for the full TTL. Bumping the schema discards
+ * every pre-fix cache file on next load, forcing one fresh check per profile
+ * that immediately repopulates in the current, fully-populated format.
  */
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import os from "node:os"
@@ -25,11 +34,11 @@ export interface AdminVersionCacheEntry {
 }
 
 export interface AdminVersionCacheRecord {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly entries: Readonly<Record<string, AdminVersionCacheEntry>>
 }
 
-const emptyRecord: AdminVersionCacheRecord = { schemaVersion: 1, entries: {} }
+const emptyRecord: AdminVersionCacheRecord = { schemaVersion: 2, entries: {} }
 
 const isMissingFile = (error: unknown): boolean => error instanceof Error && "code" in error && error.code === "ENOENT"
 
@@ -63,13 +72,13 @@ export const parseVersionCacheRecord = (source: string): AdminVersionCacheRecord
   } catch {
     return emptyRecord
   }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 1 || !isPlainObject(payload.entries)) return emptyRecord
+  if (!isPlainObject(payload) || payload.schemaVersion !== 2 || !isPlainObject(payload.entries)) return emptyRecord
   const entries: Record<string, AdminVersionCacheEntry> = {}
   for (const [ref, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
     const entry = parseEntry(value)
     if (entry !== undefined) entries[ref] = entry
   }
-  return { schemaVersion: 1, entries }
+  return { schemaVersion: 2, entries }
 }
 
 /** Loads the cache from disk. A missing or corrupt file resolves to an empty record; only an unexpected read error (not ENOENT) propagates. */

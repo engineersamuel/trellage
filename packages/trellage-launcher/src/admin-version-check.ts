@@ -35,6 +35,9 @@ const currentPatterns: ReadonlyArray<RegExp> = [
   /\bcurrent\s*\(([^)]+)\)/i,
   // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
   /\b(\S+)\s+is current\b/i,
+  // cdx skill-only profiles with no marketplace version to name, e.g.
+  // "youtube: current" (native-codex's `update_check_skill_profile`).
+  /:\s*current\s*$/i,
 ]
 
 /** Each pattern's capture group 1 is the installed version/commit/pin and group 2 is the latest available one. */
@@ -46,6 +49,9 @@ const updateAvailablePatterns: ReadonlyArray<RegExp> = [
   // fmx: "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)"
   /is stale\s*\(installed\s+([^\s,]+),\s*catalog pin\s+([^\s)]+)\)/i,
 ]
+
+/** No capture groups: cdx skill-only profiles report an update with no version to name at all, e.g. "youtube: update available". */
+const bareUpdateAvailablePatterns: ReadonlyArray<RegExp> = [/:\s*update available\s*$/i]
 
 const notInstalledPatterns: ReadonlyArray<RegExp> = [
   /:\s*not installed\b/i,
@@ -120,6 +126,11 @@ export const parseUpdateCheckOutput = (stdout: string, installedVersion: string 
     if (match !== null) {
       const installed = match[1] ?? installedVersion
       return { current: true, ...(installed === undefined ? {} : { installed }) }
+    }
+  }
+  for (const pattern of bareUpdateAvailablePatterns) {
+    if (pattern.test(trimmed)) {
+      return { current: false, latest: "—", ...(installedVersion === undefined ? {} : { installed: installedVersion }) }
     }
   }
   return {

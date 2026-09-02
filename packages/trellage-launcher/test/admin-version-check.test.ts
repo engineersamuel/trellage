@@ -90,6 +90,14 @@ describe("parseUpdateCheckOutput", () => {
     expect(result).toMatchObject({ malformed: true })
     if ("malformed" in result) expect(result.diagnostic).toContain("unrecognized")
   })
+
+  it("parses cdx's skill-only 'PROFILE: current' message with no version to name (e.g. youtube)", () => {
+    expect(parseUpdateCheckOutput("youtube: current", undefined)).toEqual({ current: true })
+  })
+
+  it("parses cdx's skill-only 'PROFILE: update available' message with no version to name", () => {
+    expect(parseUpdateCheckOutput("youtube: update available", undefined)).toEqual({ current: false, latest: "—" })
+  })
 })
 
 describe("versionColumnsFor", () => {

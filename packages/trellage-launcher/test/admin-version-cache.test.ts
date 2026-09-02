@@ -31,7 +31,7 @@ describe("loadVersionCache / saveVersionCache", () => {
   it("round-trips a saved record", async () => {
     const cachePath = await temporaryCachePath()
     const record = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       entries: {
         "native:prx:default": { result: { current: true }, checkedAt: 1000 },
         "native:jcx:default": { result: { current: false, latest: "2.0.0" }, checkedAt: 2000 },
@@ -44,61 +44,73 @@ describe("loadVersionCache / saveVersionCache", () => {
 
   it("resolves to an empty record when the cache file does not exist", async () => {
     const cachePath = await temporaryCachePath()
-    expect(await loadVersionCache(cachePath)).toEqual({ schemaVersion: 1, entries: {} })
+    expect(await loadVersionCache(cachePath)).toEqual({ schemaVersion: 2, entries: {} })
   })
 
   it("resolves to an empty record for a corrupt cache file rather than throwing", async () => {
     const cachePath = await temporaryCachePath()
     await writeFile(cachePath, "{not valid json", "utf8")
-    expect(await loadVersionCache(cachePath)).toEqual({ schemaVersion: 1, entries: {} })
+    expect(await loadVersionCache(cachePath)).toEqual({ schemaVersion: 2, entries: {} })
   })
 
   it("creates parent directories on save", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-version-cache-test-"))
     temporaryRoots.push(root)
     const cachePath = path.join(root, "nested", "deeper", "version-cache.json")
-    await saveVersionCache(cachePath, { schemaVersion: 1, entries: {} })
-    expect(await loadVersionCache(cachePath)).toEqual({ schemaVersion: 1, entries: {} })
+    await saveVersionCache(cachePath, { schemaVersion: 2, entries: {} })
+    expect(await loadVersionCache(cachePath)).toEqual({ schemaVersion: 2, entries: {} })
   })
 })
 
 describe("parseVersionCacheRecord", () => {
   it("drops an entry with a malformed result rather than failing the whole record", () => {
     const source = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: {
         good: { result: { current: true }, checkedAt: 1000 },
         bad: { result: { nonsense: true }, checkedAt: 1000 },
       },
     })
     expect(parseVersionCacheRecord(source)).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: { good: { result: { current: true }, checkedAt: 1000 } },
     })
   })
 
   it("returns the empty record for an unrecognized schema version", () => {
-    expect(parseVersionCacheRecord(JSON.stringify({ schemaVersion: 2, entries: {} }))).toEqual({
-      schemaVersion: 1,
+    expect(parseVersionCacheRecord(JSON.stringify({ schemaVersion: 1, entries: {} }))).toEqual({
+      schemaVersion: 2,
       entries: {},
     })
   })
 
+  it("returns the empty record for a pre-fix schemaVersion-1 cache, forcing a fresh check for every profile", () => {
+    // Regression: schemaVersion 1 could hold `current: true` entries missing
+    // `installed` (a since-fixed load-side bug) or terminal `malformed`
+    // results predating the non-zero-exit reparse fix. Neither shape
+    // self-identifies as stale, so the schema bump is what forces a refresh.
+    const source = JSON.stringify({
+      schemaVersion: 1,
+      entries: { "native:cpx:hve": { result: { current: true }, checkedAt: 1000 } },
+    })
+    expect(parseVersionCacheRecord(source)).toEqual({ schemaVersion: 2, entries: {} })
+  })
+
   it("returns the empty record for a cache file over the size limit", () => {
-    const bloated = JSON.stringify({ schemaVersion: 1, entries: {}, padding: "x".repeat(300 * 1024) })
-    expect(parseVersionCacheRecord(bloated)).toEqual({ schemaVersion: 1, entries: {} })
+    const bloated = JSON.stringify({ schemaVersion: 2, entries: {}, padding: "x".repeat(300 * 1024) })
+    expect(parseVersionCacheRecord(bloated)).toEqual({ schemaVersion: 2, entries: {} })
   })
 
   it("preserves the installed version through a save/load round trip for both current and mismatched results", () => {
     const source = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: {
         current: { result: { current: true, installed: "0.8.1" }, checkedAt: 1000 },
         stale: { result: { current: false, installed: "0.8.1", latest: "0.9.0" }, checkedAt: 2000 },
       },
     })
     expect(parseVersionCacheRecord(source)).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: {
         current: { result: { current: true, installed: "0.8.1" }, checkedAt: 1000 },
         stale: { result: { current: false, installed: "0.8.1", latest: "0.9.0" }, checkedAt: 2000 },

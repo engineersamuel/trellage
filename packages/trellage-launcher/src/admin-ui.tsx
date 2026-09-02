@@ -579,7 +579,7 @@ export const AdminApp = ({
   const versionBatchStartedRefs = useRef<Set<string>>(new Set())
   /** Refs already given one automatic retry after a malformed `update --check` result this session — bounds automatic retries to exactly one per profile so a persistently-failing check never loops silently; the user's `[u]` resync remains available afterward. */
   const versionAutoRetriedRefs = useRef<Set<string>>(new Set())
-  const [versionCache, setVersionCache] = useState<AdminVersionCacheRecord>({ schemaVersion: 1, entries: {} })
+  const [versionCache, setVersionCache] = useState<AdminVersionCacheRecord>({ schemaVersion: 2, entries: {} })
   const [versionCacheLoaded, setVersionCacheLoaded] = useState(false)
   const versionCachePath = useMemo(() => defaultAdminVersionCachePath(), [])
 
@@ -689,7 +689,7 @@ export const AdminApp = ({
    */
   const persistVersionResult = (ref: string, cacheEntry: AdminVersionCacheEntry): void => {
     setVersionCache((previous) => {
-      const next: AdminVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } }
+      const next: AdminVersionCacheRecord = { schemaVersion: 2, entries: { ...previous.entries, [ref]: cacheEntry } }
       void saveVersionCache(versionCachePath, next).catch(() => undefined)
       return next
     })

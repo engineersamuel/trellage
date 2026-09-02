@@ -83817,7 +83817,10 @@ var currentPatterns = [
   // cpx/grx: "default: current (1.2.3)"
   /\bcurrent\s*\(([^)]+)\)/i,
   // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
-  /\b(\S+)\s+is current\b/i
+  /\b(\S+)\s+is current\b/i,
+  // cdx skill-only profiles with no marketplace version to name, e.g.
+  // "youtube: current" (native-codex's `update_check_skill_profile`).
+  /:\s*current\s*$/i
 ];
 var updateAvailablePatterns = [
   // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
@@ -83827,6 +83830,7 @@ var updateAvailablePatterns = [
   // fmx: "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)"
   /is stale\s*\(installed\s+([^\s,]+),\s*catalog pin\s+([^\s)]+)\)/i
 ];
+var bareUpdateAvailablePatterns = [/:\s*update available\s*$/i];
 var notInstalledPatterns = [
   /:\s*not installed\b/i,
   /\bis not set up\b/i
@@ -83860,6 +83864,11 @@ var parseUpdateCheckOutput = (stdout, installedVersion) => {
       return { current: true, ...installed === void 0 ? {} : { installed } };
     }
   }
+  for (const pattern of bareUpdateAvailablePatterns) {
+    if (pattern.test(trimmed)) {
+      return { current: false, latest: "\u2014", ...installedVersion === void 0 ? {} : { installed: installedVersion } };
+    }
+  }
   return {
     malformed: true,
     diagnostic: `unrecognized update --check output${installedVersion === void 0 ? "" : ` (installed ${installedVersion})`}: ${trimmed.split("\n")[0] ?? trimmed}`
@@ -83874,7 +83883,7 @@ import { randomUUID as randomUUID3 } from "node:crypto";
 var maximumCacheBytes = 256 * 1024;
 var maximumCacheEntries = 512;
 var versionCacheTtlMs = 24 * 60 * 60 * 1e3;
-var emptyRecord = { schemaVersion: 1, entries: {} };
+var emptyRecord = { schemaVersion: 2, entries: {} };
 var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
 var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var parseResult = (value) => {
@@ -83901,13 +83910,13 @@ var parseVersionCacheRecord = (source) => {
   } catch {
     return emptyRecord;
   }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 1 || !isPlainObject(payload.entries)) return emptyRecord;
+  if (!isPlainObject(payload) || payload.schemaVersion !== 2 || !isPlainObject(payload.entries)) return emptyRecord;
   const entries = {};
   for (const [ref, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
     const entry = parseEntry(value);
     if (entry !== void 0) entries[ref] = entry;
   }
-  return { schemaVersion: 1, entries };
+  return { schemaVersion: 2, entries };
 };
 var loadVersionCache = async (cachePath) => {
   let source;
@@ -83958,6 +83967,10 @@ var versionCheckResultForEntry = (entry, runManager) => {
   const latest = status.latest;
   if (latest === void 0) return void 0;
   if (latest.state === "success") return parseUpdateCheckOutput(latest.stdout, entry.version);
+  if (latest.state === "failure") {
+    const parsed = parseUpdateCheckOutput(latest.stdout, entry.version);
+    if (!("malformed" in parsed)) return parsed;
+  }
   const reason = latest.stderr.trim() || latest.stdout.trim() || latest.state;
   return { malformed: true, diagnostic: `update --check ${latest.state}: ${reason.split("\n")[0] ?? reason}` };
 };
@@ -84369,7 +84382,7 @@ var AdminApp = ({
   const versionRunManager = versionRunManagerRef.current;
   const versionBatchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const versionAutoRetriedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 1, entries: {} });
+  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 2, entries: {} });
   const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react37.useState)(false);
   const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminVersionCachePath(), []);
   const openGuideOverlay = (entry) => {
@@ -84423,7 +84436,7 @@ var AdminApp = ({
   }, []);
   const persistVersionResult = (ref, cacheEntry) => {
     setVersionCache((previous) => {
-      const next = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } };
+      const next = { schemaVersion: 2, entries: { ...previous.entries, [ref]: cacheEntry } };
       void saveVersionCache(versionCachePath, next).catch(() => void 0);
       return next;
     });

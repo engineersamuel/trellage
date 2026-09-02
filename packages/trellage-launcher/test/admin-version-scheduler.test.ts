@@ -4,7 +4,7 @@ import type { AdminProfileEntry } from "../src/admin-model.js"
 import { AdminRunManager } from "../src/admin-run-manager.js"
 import type { AdminVersionCacheRecord } from "../src/admin-version-cache.js"
 import { runBatchedVersionChecks, shouldAutoRetryMalformedVersion, updateCheckRefFor, versionCheckResultForEntry } from "../src/admin-version-scheduler.js"
-import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
+import { CommandRunnerError, type CommandRunOptions, type CommandRunner, type CommandRunResult } from "../src/guide-launch.js"
 
 /** A controllable fake runner: each `run()` call gets its own deferred resolve/reject, released manually by the test. */
 class DeferredRunner implements CommandRunner {
@@ -55,7 +55,7 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
 })
 
 const current = (): CommandRunResult => ({ stdout: "prx update: 0.8.1 is current", stderr: "", exitCode: 0 })
-const emptyCache: AdminVersionCacheRecord = { schemaVersion: 1, entries: {} }
+const emptyCache: AdminVersionCacheRecord = { schemaVersion: 2, entries: {} }
 
 const flush = async (): Promise<void> => {
   for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
@@ -67,7 +67,7 @@ describe("runBatchedVersionChecks", () => {
     const manager = new AdminRunManager({ runner })
     const entries = [entry({})]
     const freshCache: AdminVersionCacheRecord = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: { "native:prx/default": { result: { current: true }, checkedAt: Date.now() } },
     }
 
@@ -95,7 +95,7 @@ describe("runBatchedVersionChecks", () => {
     const manager = new AdminRunManager({ runner })
     const entries = [entry({})]
     const staleCache: AdminVersionCacheRecord = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: { "native:prx/default": { result: { current: true }, checkedAt: Date.now() - 25 * 60 * 60 * 1000 } },
     }
 
@@ -137,7 +137,7 @@ describe("runBatchedVersionChecks", () => {
     const manager = new AdminRunManager({ runner })
     const entries = [entry({})]
     const freshCache: AdminVersionCacheRecord = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       entries: { "native:prx/default": { result: { current: true }, checkedAt: Date.now() } },
     }
 
@@ -204,6 +204,53 @@ describe("versionCheckResultForEntry", () => {
     await batch
 
     expect(versionCheckResultForEntry(target, manager)).toMatchObject({ malformed: true })
+  })
+
+  it("still parses a non-zero-exit result as a normal update-available outcome (cpx/grx/cdx exit non-zero to signal this)", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const target = entry({})
+    const batch = runBatchedVersionChecks([target], manager, emptyCache)
+    await flush()
+    runner.rejectNext(
+      new CommandRunnerError({
+        kind: "exited",
+        executable: "/opt/trellage/prx/bin/prx",
+        args: ["update", "--check", "default"],
+        stdout: "superpowers: update available (6.2.0 -> 6.3.0)",
+        stderr: "",
+        exitCode: 1,
+        message: "command exited with status 1",
+      }),
+    )
+    await batch
+
+    expect(versionCheckResultForEntry(target, manager)).toEqual({ current: false, installed: "6.2.0", latest: "6.3.0" })
+  })
+
+  it("falls back to a malformed result with the real diagnostic when a non-zero exit's stdout truly doesn't parse", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const target = entry({})
+    const batch = runBatchedVersionChecks([target], manager, emptyCache)
+    await flush()
+    runner.rejectNext(
+      new CommandRunnerError({
+        kind: "exited",
+        executable: "/opt/trellage/prx/bin/prx",
+        args: ["update", "--check", "default"],
+        stdout: "",
+        stderr: "prx: failed to fetch or parse official manifest for default",
+        exitCode: 2,
+        message: "command exited with status 2",
+      }),
+    )
+    await batch
+
+    expect(versionCheckResultForEntry(target, manager)).toEqual({
+      malformed: true,
+      diagnostic: "update --check failure: prx: failed to fetch or parse official manifest for default",
+    })
   })
 })
 
