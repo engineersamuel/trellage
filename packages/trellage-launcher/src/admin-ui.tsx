@@ -75,25 +75,21 @@ const ShortcutHints = ({ items }: { readonly items: ReadonlyArray<{ readonly key
 const AdminDetailPanel = ({
   entry,
   runManager,
-  guideRoot,
   diagnosis,
   herdrAvailable,
   onForkToFix,
-  columns,
+  onOpenGuide,
   tick,
 }: {
   readonly entry: AdminProfileEntry
   readonly runManager: AdminRunManager
-  readonly guideRoot: string
   readonly diagnosis: DiagnosisState | undefined
   readonly herdrAvailable: boolean | undefined
   readonly onForkToFix: (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined) => Promise<HerdrForkOutcome>
-  readonly columns: number
+  readonly onOpenGuide: (entry: AdminProfileEntry) => void
   readonly tick: number
 }) => {
   const [, forceRender] = useState(0)
-  const [guideBody, setGuideBody] = useState<string | undefined>(undefined)
-  const [guideNote, setGuideNote] = useState<string | undefined>(undefined)
   const [launchConfirming, setLaunchConfirming] = useState(false)
   const [launchMessage, setLaunchMessage] = useState<string | undefined>(undefined)
   const [forkConfirming, setForkConfirming] = useState(false)
@@ -102,8 +98,6 @@ const AdminDetailPanel = ({
   const [repairMessage, setRepairMessage] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    setGuideBody(undefined)
-    setGuideNote(undefined)
     setLaunchConfirming(false)
     setLaunchMessage(undefined)
     setForkConfirming(false)
@@ -122,15 +116,6 @@ const AdminDetailPanel = ({
     (repairSnapshot.state === "idle"
       ? undefined
       : `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`)
-
-  const openGuide = () => {
-    loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry))
-      .then((result) => {
-        if (result.available) setGuideBody(result.body)
-        else setGuideNote(result.reason)
-      })
-      .catch((error: unknown) => setGuideNote(error instanceof Error ? error.message : String(error)))
-  }
 
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry)
@@ -206,7 +191,7 @@ const AdminDetailPanel = ({
       else setRepairConfirming(false)
       return
     }
-    if (input === "g") openGuide()
+    if (input === "g") onOpenGuide(entry)
     else if ((input === "d" || input === "r") && (controls.canTrigger || controls.canRetry)) runOrRetryDoctor()
     else if (input === "c" && controls.canCancel) cancelDoctor()
     else if (input === "l") setLaunchConfirming(true)
@@ -283,17 +268,6 @@ const AdminDetailPanel = ({
           ) : null}
         </Box>
       )}
-      {guideNote === undefined ? null : (
-        <Text color="yellow" wrap="wrap">
-          {guideNote}
-        </Text>
-      )}
-      {guideBody === undefined ? null : (
-        <Box flexDirection="column" marginTop={1}>
-          <MarkdownTextViewport value={guideBody} width={Math.max(20, columns - 6)} height={18} resetKey={entry.ref} />
-          <ShortcutHints items={[{ key: "PageUp/PageDown", label: "scroll guide" }]} />
-        </Box>
-      )}
       {launchConfirming ? (
         <Text color="yellow">Press [y] to hand this terminal to {entry.name} now, or any other key to cancel.</Text>
       ) : null}
@@ -325,6 +299,54 @@ const AdminDetailPanel = ({
   )
 }
 
+/**
+ * Renders a profile's Markdown guide as a dedicated full-screen overlay that
+ * replaces the table/detail view entirely rather than a small inline
+ * scrollbox, so long guides get the whole terminal to read. `[q]`/Escape are
+ * handled one level up in `AdminApp` (not here) so they close the overlay
+ * back to the main list instead of exiting the whole app; PageUp/PageDown
+ * scrolling is handled internally by `MarkdownTextViewport`.
+ */
+const GuideOverlay = ({
+  entry,
+  body,
+  note,
+  columns,
+  rows,
+}: {
+  readonly entry: AdminProfileEntry
+  readonly body: string | undefined
+  readonly note: string | undefined
+  readonly columns: number
+  readonly rows: number
+}) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Box borderStyle="round" borderColor="cyan" paddingX={1} justifyContent="space-between">
+      <Text bold color="cyan">
+        {entry.name} guide{" "}
+        <Text dimColor>
+          · {entry.surface}
+          {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
+        </Text>
+      </Text>
+    </Box>
+    {note === undefined ? null : (
+      <Text color="yellow" wrap="wrap">
+        {note}
+      </Text>
+    )}
+    {note === undefined && body === undefined ? <Text dimColor>Loading guide…</Text> : null}
+    {body === undefined ? null : (
+      <Box marginTop={1}>
+        <MarkdownTextViewport value={body} width={Math.max(20, columns - 4)} height={Math.max(6, rows - 6)} resetKey={entry.ref} />
+      </Box>
+    )}
+    <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray">
+      <ShortcutHints items={[{ key: "PageUp/PageDown", label: "scroll" }, { key: "q/Esc", label: "back to list" }]} />
+    </Box>
+  </Box>
+)
+
 export const AdminApp = ({
   entries,
   runManager,
@@ -352,9 +374,36 @@ export const AdminApp = ({
   const [tick, setTick] = useState(0)
   const [diagnosisByRef, setDiagnosisByRef] = useState<ReadonlyMap<string, DiagnosisState>>(new Map())
   const [herdrAvailable, setHerdrAvailable] = useState<boolean | undefined>(undefined)
+  const [guideOverlay, setGuideOverlay] = useState<
+    { readonly entry: AdminProfileEntry; readonly body: string | undefined; readonly note: string | undefined } | undefined
+  >(undefined)
   const batchStartedRefs = useRef<Set<string>>(new Set())
   const diagnosedRefs = useRef<Set<string>>(new Set())
   const repairAttemptedRefs = useRef<Set<string>>(new Set())
+
+  /**
+   * Opens the full-screen guide overlay immediately (showing a loading
+   * state) and asynchronously fills in its body/note once
+   * `loadAdminProfileGuideBody` resolves. Guards every update against the
+   * overlay having since been closed or switched to a different profile, so
+   * a slow load for one entry can never clobber a newer overlay.
+   */
+  const openGuideOverlay = (entry: AdminProfileEntry) => {
+    setGuideOverlay({ entry, body: undefined, note: undefined })
+    loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry))
+      .then((result) => {
+        setGuideOverlay((current) => {
+          if (current === undefined || current.entry.ref !== entry.ref) return current
+          return result.available ? { entry, body: result.body, note: undefined } : { entry, body: undefined, note: result.reason }
+        })
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error)
+        setGuideOverlay((current) => (current === undefined || current.entry.ref !== entry.ref ? current : { entry, body: undefined, note: message }))
+      })
+  }
+
+  const closeGuideOverlay = () => setGuideOverlay(undefined)
 
   // Live-updates the table/detail pane to reflect `AdminRunManager` and
   // diagnosis-provider state that changes outside of React (async runs
@@ -479,6 +528,15 @@ export const AdminApp = ({
       exit()
       return
     }
+    if (guideOverlay !== undefined) {
+      // The guide overlay owns the whole screen while open, so `q`/Escape
+      // return to the main list instead of falling through to the normal
+      // quit-the-app handling below (or search/sort/movement, which don't
+      // apply while a guide is showing). PageUp/PageDown scrolling is
+      // handled by `MarkdownTextViewport` itself, which stays mounted.
+      if (char === "q" || key.escape) closeGuideOverlay()
+      return
+    }
     if (searching) {
       if (key.return || key.escape) {
         setSearching(false)
@@ -516,6 +574,10 @@ export const AdminApp = ({
       return
     }
   })
+
+  if (guideOverlay !== undefined) {
+    return <GuideOverlay entry={guideOverlay.entry} body={guideOverlay.body} note={guideOverlay.note} columns={columns} rows={rows} />
+  }
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -608,11 +670,10 @@ export const AdminApp = ({
         <AdminDetailPanel
           entry={selected}
           runManager={runManager}
-          guideRoot={guideRoot}
           diagnosis={diagnosisByRef.get(selected.ref)}
           herdrAvailable={herdrAvailable}
           onForkToFix={onForkToFix}
-          columns={columns}
+          onOpenGuide={openGuideOverlay}
           tick={tick}
         />
       ) : null}

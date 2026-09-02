@@ -83716,16 +83716,13 @@ var ShortcutHints = ({ items }) => items.length === 0 ? null : /* @__PURE__ */ (
 var AdminDetailPanel = ({
   entry,
   runManager,
-  guideRoot,
   diagnosis,
   herdrAvailable,
   onForkToFix,
-  columns,
+  onOpenGuide,
   tick
 }) => {
   const [, forceRender] = (0, import_react37.useState)(0);
-  const [guideBody, setGuideBody] = (0, import_react37.useState)(void 0);
-  const [guideNote, setGuideNote] = (0, import_react37.useState)(void 0);
   const [launchConfirming, setLaunchConfirming] = (0, import_react37.useState)(false);
   const [launchMessage, setLaunchMessage] = (0, import_react37.useState)(void 0);
   const [forkConfirming, setForkConfirming] = (0, import_react37.useState)(false);
@@ -83733,8 +83730,6 @@ var AdminDetailPanel = ({
   const [repairConfirming, setRepairConfirming] = (0, import_react37.useState)(false);
   const [repairMessage3, setRepairMessage] = (0, import_react37.useState)(void 0);
   (0, import_react37.useEffect)(() => {
-    setGuideBody(void 0);
-    setGuideNote(void 0);
     setLaunchConfirming(false);
     setLaunchMessage(void 0);
     setForkConfirming(false);
@@ -83748,12 +83743,6 @@ var AdminDetailPanel = ({
   const repairSnapshot = runManager.status(repairRefFor(entry));
   const canRepair = isRepairSupported(entry) && controls4.canRetry && repairSnapshot.state !== "running";
   const repairNote = repairMessage3 ?? (repairSnapshot.state === "idle" ? void 0 : `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`);
-  const openGuide = () => {
-    loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
-      if (result.available) setGuideBody(result.body);
-      else setGuideNote(result.reason);
-    }).catch((error) => setGuideNote(error instanceof Error ? error.message : String(error)));
-  };
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry);
     const action = controls4.canRetry ? runManager.retry(entry.ref, command.executable, command.args) : runManager.trigger(entry.ref, command.executable, command.args);
@@ -83802,7 +83791,7 @@ var AdminDetailPanel = ({
       else setRepairConfirming(false);
       return;
     }
-    if (input === "g") openGuide();
+    if (input === "g") onOpenGuide(entry);
     else if ((input === "d" || input === "r") && (controls4.canTrigger || controls4.canRetry)) runOrRetryDoctor();
     else if (input === "c" && controls4.canCancel) cancelDoctor();
     else if (input === "l") setLaunchConfirming(true);
@@ -83874,11 +83863,6 @@ var AdminDetailPanel = ({
         herdrAvailable === false ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Herdr is unavailable in this session; fork to fix is disabled." }) : null
       ] }) : null
     ] }),
-    guideNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: guideNote }),
-    guideBody === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: guideBody, width: Math.max(20, columns - 6), height: 18, resetKey: entry.ref }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "PageUp/PageDown", label: "scroll guide" }] })
-    ] }),
     launchConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
       "Press [y] to hand this terminal to ",
       entry.name,
@@ -83900,6 +83884,28 @@ var AdminDetailPanel = ({
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }] }) })
   ] });
 };
+var GuideOverlay = ({
+  entry,
+  body,
+  note,
+  columns,
+  rows
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { borderStyle: "round", borderColor: "cyan", paddingX: 1, justifyContent: "space-between", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+    entry.name,
+    " guide",
+    " ",
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+      "\xB7 ",
+      entry.surface,
+      entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
+    ] })
+  ] }) }),
+  note === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: note }),
+  note === void 0 && body === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Loading guide\u2026" }) : null,
+  body === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: body, width: Math.max(20, columns - 4), height: Math.max(6, rows - 6), resetKey: entry.ref }) }),
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "PageUp/PageDown", label: "scroll" }, { key: "q/Esc", label: "back to list" }] }) })
+] });
 var AdminApp = ({
   entries,
   runManager,
@@ -83919,9 +83925,23 @@ var AdminApp = ({
   const [tick, setTick] = (0, import_react37.useState)(0);
   const [diagnosisByRef, setDiagnosisByRef] = (0, import_react37.useState)(/* @__PURE__ */ new Map());
   const [herdrAvailable, setHerdrAvailable] = (0, import_react37.useState)(void 0);
+  const [guideOverlay, setGuideOverlay] = (0, import_react37.useState)(void 0);
   const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const diagnosedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const repairAttemptedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const openGuideOverlay = (entry) => {
+    setGuideOverlay({ entry, body: void 0, note: void 0 });
+    loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
+      setGuideOverlay((current) => {
+        if (current === void 0 || current.entry.ref !== entry.ref) return current;
+        return result.available ? { entry, body: result.body, note: void 0 } : { entry, body: void 0, note: result.reason };
+      });
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setGuideOverlay((current) => current === void 0 || current.entry.ref !== entry.ref ? current : { entry, body: void 0, note: message });
+    });
+  };
+  const closeGuideOverlay = () => setGuideOverlay(void 0);
   (0, import_react37.useEffect)(() => {
     const interval = setInterval(() => setTick((value) => value + 1), 500);
     return () => clearInterval(interval);
@@ -84013,6 +84033,10 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       exit();
       return;
     }
+    if (guideOverlay !== void 0) {
+      if (char === "q" || key.escape) closeGuideOverlay();
+      return;
+    }
     if (searching) {
       if (key.return || key.escape) {
         setSearching(false);
@@ -84050,6 +84074,9 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       return;
     }
   });
+  if (guideOverlay !== void 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(GuideOverlay, { entry: guideOverlay.entry, body: guideOverlay.body, note: guideOverlay.note, columns, rows });
+  }
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
@@ -84111,11 +84138,10 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       {
         entry: selected,
         runManager,
-        guideRoot,
         diagnosis: diagnosisByRef.get(selected.ref),
         herdrAvailable,
         onForkToFix,
-        columns,
+        onOpenGuide: openGuideOverlay,
         tick
       }
     ) : null
