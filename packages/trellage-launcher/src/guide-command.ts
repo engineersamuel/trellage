@@ -11,7 +11,7 @@ import {
 } from "./guide-api.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
-import { CachedGuideProvider, defaultGuideMatchCachePath } from "./guide-match-cache.js"
+import { GuideArtifactCache } from "./guide-match-cache.js"
 import { loadDefaultGuidePrompts } from "./guide-prompts.js"
 
 const maximumCatalogBytes = 8 * 1024 * 1024
@@ -69,33 +69,42 @@ export const runGuideJsonCommand = async (options: {
   readonly promptMasterSkillDirectory: string
   readonly stdinRequest?: string
   readonly env: Readonly<Record<string, string | undefined>>
+  readonly cwd: string
 }): Promise<unknown> => {
   const args = parseGuideHeadlessArgv(options.argv)
   if (!args.json) throw new Error("guide JSON command requires --json")
   const resolved = resolveGuideRequest(args, options.stdinRequest, options.env)
   const prompts = await loadDefaultGuidePrompts()
-  const provider = new CachedGuideProvider(
-    new CopilotGuideProvider({
-      routing: resolved.routing,
-      prompts,
-      promptMasterSkillDirectory: options.promptMasterSkillDirectory,
-    }),
-    {
-      cachePath: defaultGuideMatchCachePath(options.env),
-      routing: resolved.routing,
-      matchPrompt: prompts.match,
-      generatePrompt: prompts.generate,
-      optimizePrompt: prompts.optimize,
-    },
-  )
+  const provider = new CopilotGuideProvider({
+    routing: resolved.routing,
+    prompts,
+    promptMasterSkillDirectory: options.promptMasterSkillDirectory,
+  })
+  const cache = new GuideArtifactCache({
+    cwd: options.cwd,
+    routing: resolved.routing,
+    prompts,
+    promptMasterSkillDirectory: options.promptMasterSkillDirectory,
+  })
   return resolved.request.profile === undefined
-    ? runGuideMatch(provider, options.catalog, {
-        intent: resolved.request.intent,
-        ...resolved.routing.match,
-      })
-    : runGuideGenerate(provider, options.catalog, options.guideRoot, {
-        intent: resolved.request.intent,
-        ...resolved.routing.generate,
-        profileRef: resolved.request.profile,
-      })
+    ? runGuideMatch(
+        provider,
+        options.catalog,
+        {
+          intent: resolved.request.intent,
+          ...resolved.routing.match,
+        },
+        cache,
+      )
+    : runGuideGenerate(
+        provider,
+        options.catalog,
+        options.guideRoot,
+        {
+          intent: resolved.request.intent,
+          ...resolved.routing.generate,
+          profileRef: resolved.request.profile,
+        },
+        cache,
+      )
 }

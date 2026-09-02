@@ -1,289 +1,465 @@
 import { createHash, randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
-import os from "node:os"
+import { constants } from "node:fs"
+import { lstat, mkdir, open, readdir, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
+import type { GuideModelRouting } from "./guide-model-routing.js"
+import type { GuideModelPrompts } from "./guide-prompts.js"
 import type {
-  GuideGenerateInput,
+  GuideGenerateCandidate,
   GuideGenerateResult,
-  GuideMatchInput,
   GuideMatchResult,
-  GuideOptimizeInput,
-  GuideOptimizeResult,
-  GuideProvider,
-  GuideRefineInput,
   GuideRefineResult,
 } from "./guide-provider.js"
-import {
-  validateGuideGenerateResult,
-  validateGuideMatchResult,
-  validateGuideOptimizeResult,
-} from "./guide-provider.js"
-import type { GuideModelRouting } from "./guide-model-routing.js"
-import { array, exactKeys, record, text } from "./guide-text.js"
+import { validateGuideGenerateResult, validateGuideMatchResult, validateGuideRefineResult } from "./guide-provider.js"
 
-const maximumCacheBytes = 256 * 1024
-const maximumCacheEntries = 16
+const maximumArtifactBytes = 256 * 1024
+const maximumOptimizationSkillBytes = 1024 * 1024
+const artifactHeader = /^<!-- trx-guide-artifact:v1:([A-Za-z0-9_-]+) -->$/u
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
-type GuideCachePhase = "match" | "generate" | "optimize"
+const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex")
+const keyFor = (value: unknown): string => sha256(JSON.stringify(value))
 
-interface GuideCacheEntry {
-  readonly phase: GuideCachePhase
+export const guidePromptSlug = (intent: string): string => {
+  const ascii = intent
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+  const words = ascii.match(/[a-z0-9]+/gu) ?? []
+  const joined = words.join("-").slice(0, 7).replace(/-+$/u, "")
+  return joined.length > 0 ? joined : sha256(intent).slice(0, 7)
+}
+
+const filenameSlug = (value: string, fallback: string): string => {
+  const normalized = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "")
+  return (normalized.length > 0 ? normalized : fallback).slice(0, 48).replace(/-+$/u, "")
+}
+
+type ArtifactKind = "match" | "generation" | "refinement"
+
+interface ArtifactEnvelope {
+  readonly schemaVersion: 1
+  readonly kind: ArtifactKind
   readonly key: string
   readonly result: unknown
 }
 
-interface GuideCacheRecord {
-  readonly schemaVersion: 2
-  readonly entries: ReadonlyArray<GuideCacheEntry>
+interface ArtifactSpec<Result> {
+  readonly kind: ArtifactKind
+  readonly intent: string
+  readonly key: string
+  readonly filename: string
+  readonly render: (result: Result) => string
+  readonly validate: (value: unknown) => Result
 }
 
-export interface CachedGuideProviderOptions {
-  readonly cachePath: string
+export interface GuideArtifactCacheOptions {
+  readonly cwd: string
   readonly routing: GuideModelRouting
-  readonly matchPrompt: string
-  readonly generatePrompt: string
-  readonly optimizePrompt: string
+  readonly prompts: GuideModelPrompts
+  readonly promptMasterSkillDirectory?: string
   readonly onWarning?: (message: string) => void
 }
 
-const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex")
-
-const matchCacheKey = (input: GuideMatchInput, options: CachedGuideProviderOptions): string =>
-  sha256(
-    JSON.stringify({
-      schemaVersion: 1,
-      intentDigest: sha256(input.intent),
-      model: options.routing.match.model,
-      effort: options.routing.match.effort,
-      matchPromptDigest: sha256(options.matchPrompt),
-      catalogDigest: sha256(JSON.stringify(input.entries)),
-    }),
-  )
-
-const generateCacheKey = (input: GuideGenerateInput, options: CachedGuideProviderOptions): string =>
-  sha256(
-    JSON.stringify({
-      schemaVersion: 1,
-      intentDigest: sha256(input.intent),
-      profileRef: input.profileRef,
-      workflowId: input.workflowId,
-      guideDigest: sha256(JSON.stringify(input.guide)),
-      guideBodyDigest: sha256(input.guideBody),
-      model: options.routing.generate.model,
-      effort: options.routing.generate.effort,
-      generatePromptDigest: sha256(options.generatePrompt),
-    }),
-  )
-
-const optimizeCacheKey = (input: GuideOptimizeInput, options: CachedGuideProviderOptions): string => {
-  const base = {
-    schemaVersion: 1,
-    targetTool: input.targetTool,
-    profileRef: input.profileRef,
-    candidatesDigest: sha256(JSON.stringify(input.candidates)),
-    model: options.routing.optimize.model,
-    effort: options.routing.optimize.effort,
-    optimizePromptDigest: sha256(options.optimizePrompt),
-  }
-  return sha256(
-    JSON.stringify(
-      input.fixedFrame === undefined
-        ? base
-        : { ...base, fixedFrameDigest: sha256(JSON.stringify(input.fixedFrame)) },
-    ),
-  )
+interface MatchCacheInput {
+  readonly intent: string
+  readonly entries: ReadonlyArray<{
+    readonly ref: string
+    readonly guide: { readonly workflows: ReadonlyArray<{ readonly id: string }> }
+  }>
 }
 
-const isMissingFile = (error: unknown): boolean =>
-  error instanceof Error && "code" in error && error.code === "ENOENT"
-
-const workflowIndex = (input: GuideMatchInput): ReadonlyMap<string, ReadonlySet<string>> =>
-  new Map(input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]))
-
-const parseCacheEntry = (value: unknown, path: string): GuideCacheEntry => {
-  const fields = record(value, path)
-  exactKeys(fields, path, ["phase", "key", "result"])
-  if (fields.phase !== "match" && fields.phase !== "generate" && fields.phase !== "optimize") {
-    throw new Error(`${path}.phase must be match, generate, or optimize`)
-  }
-  return {
-    phase: fields.phase,
-    key: text(fields.key, `${path}.key`, 64),
-    result: fields.result,
-  }
+interface GenerationCacheInput {
+  readonly intent: string
+  readonly profileRef: string
+  readonly workflowId: string
+  readonly guide: unknown
+  readonly guideBody: string
+  readonly targetTool: string
+  readonly fixedFrame?: unknown
 }
 
-const parseCacheRecord = (source: string): GuideCacheRecord => {
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`guide match cache exceeds ${maximumCacheBytes} bytes`)
-  }
-  let payload: unknown
-  try {
-    payload = JSON.parse(source)
-  } catch (cause) {
-    throw new Error("guide match cache contains invalid JSON", { cause })
-  }
-  const fields = record(payload, "guide match cache")
-  if (fields.schemaVersion === 1) {
-    exactKeys(fields, "guide match cache", ["schemaVersion", "key", "result"])
-    return {
-      schemaVersion: 2,
-      entries: [{ phase: "match", key: text(fields.key, "guide match cache.key", 64), result: fields.result }],
-    }
-  }
-  exactKeys(fields, "guide cache", ["schemaVersion", "entries"])
-  if (fields.schemaVersion !== 2) throw new Error("guide cache schemaVersion must equal 1 or 2")
-  return {
-    schemaVersion: 2,
-    entries: array(fields.entries, "guide cache.entries", { maximum: maximumCacheEntries }).map((entry, index) =>
-      parseCacheEntry(entry, `guide cache.entries[${index}]`),
-    ),
-  }
+interface RefinementCacheInput extends GenerationCacheInput {
+  readonly candidates: ReadonlyArray<GuideGenerateCandidate>
+  readonly candidateIndex: number
+  readonly feedback: string
 }
 
-const readCacheRecord = async (cachePath: string): Promise<GuideCacheRecord | undefined> => {
-  let source: string
-  try {
-    source = await readFile(cachePath, "utf8")
-  } catch (error) {
-    if (isMissingFile(error)) return undefined
-    throw new Error(`could not read guide match cache: ${cachePath}`, { cause: error })
-  }
-  return parseCacheRecord(source)
+const isMissing = (error: unknown): boolean => error instanceof Error && "code" in error && error.code === "ENOENT"
+
+const requireDirectory = (metadata: Awaited<ReturnType<typeof lstat>>, directory: string): void => {
+  if (!metadata.isDirectory()) throw new Error(`guide artifact root is not a directory: ${directory}`)
 }
 
-const removeTemporaryCache = async (temporaryPath: string): Promise<void> => {
+const removeTemporary = async (temporaryPath: string): Promise<void> => {
   try {
     await unlink(temporaryPath)
   } catch (error) {
-    if (!isMissingFile(error)) throw error
+    if (!isMissing(error)) throw error
   }
 }
 
-const writeCacheRecord = async (cachePath: string, value: GuideCacheRecord): Promise<void> => {
-  await mkdir(path.dirname(cachePath), { recursive: true, mode: 0o700 })
-  const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`
-  const source = `${JSON.stringify(value)}\n`
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`guide cache exceeds ${maximumCacheBytes} bytes`)
+const readBoundedRegularFile = async (filePath: string, maximumBytes: number, label: string): Promise<string> => {
+  let handle
+  try {
+    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ELOOP") {
+      throw new Error(`${label} is not a regular file`, { cause: error })
+    }
+    throw error
   }
   try {
-    await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 0o600 })
-    await rename(temporaryPath, cachePath)
-  } catch (error) {
-    await removeTemporaryCache(temporaryPath)
-    throw new Error(`could not write guide match cache: ${cachePath}`, { cause: error })
+    const metadata = await handle.stat()
+    if (!metadata.isFile()) throw new Error(`${label} is not a regular file`)
+    if (metadata.size > maximumBytes) throw new Error(`${label} exceeds ${maximumBytes} bytes`)
+    const chunks: Buffer[] = []
+    let position = 0
+    while (position <= maximumBytes) {
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, maximumBytes + 1 - position))
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
+      if (bytesRead === 0) break
+      chunks.push(buffer.subarray(0, bytesRead))
+      position += bytesRead
+    }
+    if (position > maximumBytes) throw new Error(`${label} exceeds ${maximumBytes} bytes`)
+    return Buffer.concat(chunks, position).toString("utf8")
+  } finally {
+    await handle.close()
   }
 }
 
-export const defaultGuideMatchCachePath = (
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string => {
-  const cacheRoot = env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache")
-  return path.join(cacheRoot, "trellage", "trx-guide", "last-match.json")
+const parseArtifactEnvelope = (source: string, expectedKind: ArtifactKind): ArtifactEnvelope => {
+  const firstLine = source.split("\n", 1)[0] ?? ""
+  const encoded = artifactHeader.exec(firstLine)?.[1]
+  if (encoded === undefined) throw new Error("artifact has a malformed machine header")
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"))
+  } catch (cause) {
+    throw new Error("artifact has a malformed machine header", { cause })
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("artifact schema is invalid")
+  }
+  const fields = parsed as Record<string, unknown>
+  const exactShape = Object.keys(fields).sort().join(",") === "key,kind,result,schemaVersion"
+  if (!exactShape || fields.schemaVersion !== 1 || fields.kind !== expectedKind || typeof fields.key !== "string") {
+    throw new Error("artifact schema is invalid")
+  }
+  return fields as unknown as ArtifactEnvelope
 }
 
-export class CachedGuideProvider implements GuideProvider {
-  constructor(
-    private readonly provider: GuideProvider,
-    private readonly options: CachedGuideProviderOptions,
-  ) {}
+const renderMatch = (intent: string, routing: GuideModelRouting, result: GuideMatchResult): string =>
+  [
+    "# Profile recommendations",
+    "",
+    `Intent: ${intent}`,
+    `Routing: ${routing.match.model} (${routing.match.effort})`,
+    "",
+    ...result.candidates.flatMap((candidate, index) => [
+      `## ${index + 1}. ${candidate.profileRef} · ${candidate.workflowId}`,
+      "",
+      `Confidence: ${candidate.confidence}`,
+      "",
+      candidate.reason,
+      "",
+      `Tradeoff: ${candidate.tradeoff}`,
+      "",
+    ]),
+  ].join("\n")
+
+const renderCandidates = (
+  heading: string,
+  input: GenerationCacheInput,
+  routing: string,
+  result: GuideGenerateResult,
+  feedback?: string,
+): string =>
+  [
+    `# ${heading}`,
+    "",
+    `Intent: ${input.intent}`,
+    `Profile: ${input.profileRef}`,
+    `Workflow: ${input.workflowId}`,
+    `Target tool: ${input.targetTool}`,
+    `Routing: ${routing}`,
+    ...(feedback === undefined ? [] : [`Feedback: ${feedback}`]),
+    "",
+    ...result.candidates.flatMap((candidate, index) => [
+      `## ${index + 1}. ${candidate.title}`,
+      "",
+      candidate.prompt,
+      "",
+      `Notes: ${candidate.notes}`,
+      "",
+    ]),
+  ].join("\n")
+
+export class GuideArtifactCache {
+  private readonly root: string
+  private readonly activeSessions = new Map<string, string>()
+
+  constructor(private readonly options: GuideArtifactCacheOptions) {
+    this.root = path.join(path.resolve(options.cwd), ".trx-guide")
+  }
 
   private warn(message: string): void {
-    if (this.options.onWarning !== undefined) {
-      this.options.onWarning(message)
-      return
-    }
-    process.stderr.write(`trellage-launcher: warning: ${message}\n`)
+    if (this.options.onWarning !== undefined) this.options.onWarning(message)
+    else process.stderr.write(`trellage-launcher: warning: ${message}\n`)
   }
 
-  private async cachedResult(input: GuideMatchInput, key: string): Promise<GuideMatchResult | undefined> {
+  private async ensureRootDirectory(create: boolean): Promise<boolean> {
     try {
-      const cached = await readCacheRecord(this.options.cachePath)
-      const entry = cached?.entries.find((candidate) => candidate.phase === "match" && candidate.key === key)
-      if (entry === undefined) return undefined
-      return validateGuideMatchResult(entry.result, workflowIndex(input))
+      const metadata = await lstat(this.root)
+      requireDirectory(metadata, this.root)
+      return true
     } catch (error) {
-      this.warn(`ignoring unreadable guide match cache: ${error instanceof Error ? error.message : String(error)}`)
-      return undefined
-    }
-  }
-
-  private async cachedGenerateResult(key: string): Promise<GuideGenerateResult | undefined> {
-    try {
-      const cached = await readCacheRecord(this.options.cachePath)
-      const entry = cached?.entries.find((candidate) => candidate.phase === "generate" && candidate.key === key)
-      return entry === undefined ? undefined : validateGuideGenerateResult(entry.result)
-    } catch (error) {
-      this.warn(`ignoring unreadable guide cache: ${error instanceof Error ? error.message : String(error)}`)
-      return undefined
-    }
-  }
-
-  private async cachedOptimizeResult(input: GuideOptimizeInput, key: string): Promise<GuideOptimizeResult | undefined> {
-    try {
-      const cached = await readCacheRecord(this.options.cachePath)
-      const entry = cached?.entries.find((candidate) => candidate.phase === "optimize" && candidate.key === key)
-      return entry === undefined ? undefined : validateGuideOptimizeResult(entry.result, input.candidates.length)
-    } catch (error) {
-      this.warn(`ignoring unreadable guide cache: ${error instanceof Error ? error.message : String(error)}`)
-      return undefined
-    }
-  }
-
-  private async cacheResult(phase: GuideCachePhase, key: string, result: unknown): Promise<void> {
-    try {
-      let current: GuideCacheRecord
+      if (!isMissing(error)) throw error
+      if (!create) return false
       try {
-        current = (await readCacheRecord(this.options.cachePath)) ?? { schemaVersion: 2, entries: [] }
-      } catch {
-        current = { schemaVersion: 2, entries: [] }
+        await mkdir(this.root, { mode: 0o700 })
+      } catch (mkdirError) {
+        if (!(mkdirError instanceof Error && "code" in mkdirError && mkdirError.code === "EEXIST")) throw mkdirError
       }
-      let entries: ReadonlyArray<GuideCacheEntry> = [
-        ...current.entries.filter((entry) => entry.phase !== phase || entry.key !== key),
-        { phase, key, result },
-      ].slice(-maximumCacheEntries)
-      while (
-        entries.length > 1 &&
-        Buffer.byteLength(JSON.stringify({ schemaVersion: 2, entries }), "utf8") > maximumCacheBytes
-      ) {
-        entries = entries.slice(1)
-      }
-      await writeCacheRecord(this.options.cachePath, { schemaVersion: 2, entries })
-    } catch (error) {
-      this.warn(`could not update guide cache: ${error instanceof Error ? error.message : String(error)}`)
+      const metadata = await lstat(this.root)
+      requireDirectory(metadata, this.root)
+      return true
     }
   }
 
-  async match(input: GuideMatchInput): Promise<GuideMatchResult> {
-    const key = matchCacheKey(input, this.options)
-    const cached = await this.cachedResult(input, key)
-    if (cached !== undefined) return cached
-    const result = await this.provider.match(input)
-    await this.cacheResult("match", key, result)
+  private async sessionDirectories(intent: string): Promise<ReadonlyArray<string>> {
+    const slug = guidePromptSlug(intent)
+    let entries
+    try {
+      if (!(await this.ensureRootDirectory(false))) return []
+      entries = await readdir(this.root, { withFileTypes: true })
+    } catch (error) {
+      if (isMissing(error)) return []
+      this.warn(`could not inspect guide artifacts: ${error instanceof Error ? error.message : String(error)}`)
+      return []
+    }
+    const directories: string[] = []
+    for (const entry of entries) {
+      if (!entry.name.startsWith(`${slug}-`)) continue
+      const uuid = entry.name.slice(slug.length + 1)
+      if (!uuidPattern.test(uuid)) continue
+      const candidate = path.join(this.root, entry.name)
+      if (!entry.isDirectory()) {
+        this.warn(`ignoring unsafe guide artifact session that is not a directory: ${candidate}`)
+        continue
+      }
+      directories.push(candidate)
+    }
+    return directories
+  }
+
+  private async readArtifact<Result>(artifactPath: string, spec: ArtifactSpec<Result>): Promise<Result | undefined> {
+    try {
+      const source = await readBoundedRegularFile(artifactPath, maximumArtifactBytes, "artifact")
+      const envelope = parseArtifactEnvelope(source, spec.kind)
+      return envelope.key === spec.key ? spec.validate(envelope.result) : undefined
+    } catch (error) {
+      if (isMissing(error)) return undefined
+      this.warn(
+        `ignoring unreadable guide artifact ${artifactPath}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return undefined
+    }
+  }
+
+  private async newest<Result>(spec: ArtifactSpec<Result>): Promise<Result | undefined> {
+    const matches: Array<{ readonly directory: string; readonly modified: number }> = []
+    for (const directory of await this.sessionDirectories(spec.intent)) {
+      const artifactPath = path.join(directory, spec.filename)
+      try {
+        const metadata = await lstat(artifactPath)
+        matches.push({ directory, modified: metadata.mtimeMs })
+      } catch (error) {
+        if (!isMissing(error)) this.warn(`could not inspect guide artifact ${artifactPath}: ${String(error)}`)
+      }
+    }
+    matches.sort((left, right) => right.modified - left.modified)
+    for (const match of matches) {
+      const result = await this.readArtifact(path.join(match.directory, spec.filename), spec)
+      if (result !== undefined) {
+        this.activeSessions.set(spec.intent, match.directory)
+        return result
+      }
+    }
+    return undefined
+  }
+
+  private async createSessionDirectory(intent: string): Promise<string> {
+    const slug = guidePromptSlug(intent)
+    const directory = path.join(this.root, `${slug}-${randomUUID()}`)
+    await this.ensureRootDirectory(true)
+    await mkdir(directory, { mode: 0o700 })
+    this.activeSessions.set(intent, directory)
+    return directory
+  }
+
+  private async sessionDirectory(intent: string): Promise<string> {
+    return this.activeSessions.get(intent) ?? this.createSessionDirectory(intent)
+  }
+
+  private async writableDirectory<Result>(spec: ArtifactSpec<Result>): Promise<string> {
+    const directory = await this.sessionDirectory(spec.intent)
+    try {
+      await lstat(path.join(directory, spec.filename))
+      return this.createSessionDirectory(spec.intent)
+    } catch (error) {
+      if (isMissing(error)) return directory
+      throw error
+    }
+  }
+
+  private async writeArtifact<Result>(spec: ArtifactSpec<Result>, result: Result): Promise<void> {
+    try {
+      const directory = await this.writableDirectory(spec)
+      const artifactPath = path.join(directory, spec.filename)
+      const temporaryPath = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`
+      const envelope: ArtifactEnvelope = { schemaVersion: 1, kind: spec.kind, key: spec.key, result }
+      const source = `<!-- trx-guide-artifact:v1:${Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url")} -->\n\n${spec.render(result).trim()}\n`
+      if (Buffer.byteLength(source, "utf8") > maximumArtifactBytes)
+        throw new Error(`artifact exceeds ${maximumArtifactBytes} bytes`)
+      try {
+        await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 0o600 })
+        await rename(temporaryPath, artifactPath)
+      } catch (error) {
+        await removeTemporary(temporaryPath)
+        throw error
+      }
+    } catch (error) {
+      this.warn(`could not write guide artifact: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private async cached<Result>(spec: ArtifactSpec<Result>, produce: () => Promise<Result>): Promise<Result> {
+    const existing = await this.newest(spec)
+    if (existing !== undefined) return existing
+    const result = await produce()
+    await this.writeArtifact(spec, result)
     return result
   }
 
-  async generate(input: GuideGenerateInput): Promise<GuideGenerateResult> {
-    const key = generateCacheKey(input, this.options)
-    const cached = await this.cachedGenerateResult(key)
-    if (cached !== undefined) return cached
-    const result = await this.provider.generate(input)
-    await this.cacheResult("generate", key, result)
-    return result
+  private async optimizationSkillDigest(): Promise<string | null> {
+    const directory = this.options.promptMasterSkillDirectory
+    if (directory === undefined) return null
+    const source = await readBoundedRegularFile(
+      path.join(directory, "SKILL.md"),
+      maximumOptimizationSkillBytes,
+      "Prompt Master SKILL.md",
+    )
+    return sha256(source)
   }
 
-  refine(input: GuideRefineInput): Promise<GuideRefineResult> {
-    return this.provider.refine(input)
+  match(input: MatchCacheInput, produce: () => Promise<GuideMatchResult>): Promise<GuideMatchResult> {
+    const key = keyFor({
+      schemaVersion: 1,
+      intent: input.intent,
+      catalog: input.entries,
+      prompt: this.options.prompts.match,
+      routing: this.options.routing.match,
+    })
+    const workflows = new Map(
+      input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]),
+    )
+    return this.cached(
+      {
+        kind: "match",
+        intent: input.intent,
+        key,
+        filename: "1-profile-recommendations.md",
+        render: (result) => renderMatch(input.intent, this.options.routing, result),
+        validate: (value) => validateGuideMatchResult(value, workflows),
+      },
+      produce,
+    )
   }
 
-  async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
-    const key = optimizeCacheKey(input, this.options)
-    const cached = await this.cachedOptimizeResult(input, key)
-    if (cached !== undefined) return cached
-    const result = await this.provider.optimize(input)
-    await this.cacheResult("optimize", key, result)
-    return result
+  async generation(
+    input: GenerationCacheInput,
+    produce: () => Promise<GuideGenerateResult>,
+  ): Promise<GuideGenerateResult> {
+    const key = keyFor({
+      schemaVersion: 1,
+      intent: input.intent,
+      profileRef: input.profileRef,
+      workflowId: input.workflowId,
+      guide: input.guide,
+      guideBody: input.guideBody,
+      generationPrompt: this.options.prompts.generate,
+      generationRouting: this.options.routing.generate,
+      optimizationPrompt: this.options.prompts.optimize,
+      optimizationRouting: this.options.routing.optimize,
+      optimizationSkillDigest: await this.optimizationSkillDigest(),
+      targetTool: input.targetTool,
+      fixedFrame: input.fixedFrame ?? null,
+    })
+    const label = filenameSlug(`${input.profileRef}-${input.workflowId}`, "profile-workflow")
+    return await this.cached(
+      {
+        kind: "generation",
+        intent: input.intent,
+        key,
+        filename: `2-prompt-candidates-${label}-${key.slice(0, 7)}.md`,
+        render: (result) =>
+          renderCandidates(
+            "Prompt candidates",
+            input,
+            `${this.options.routing.generate.model} (${this.options.routing.generate.effort}) → ${this.options.routing.optimize.model} (${this.options.routing.optimize.effort})`,
+            result,
+          ),
+        validate: validateGuideGenerateResult,
+      },
+      produce,
+    )
+  }
+
+  async refinement(input: RefinementCacheInput, produce: () => Promise<GuideRefineResult>): Promise<GuideRefineResult> {
+    const key = keyFor({
+      schemaVersion: 1,
+      intent: input.intent,
+      profileRef: input.profileRef,
+      workflowId: input.workflowId,
+      candidates: input.candidates,
+      candidateIndex: input.candidateIndex,
+      feedback: input.feedback,
+      guide: input.guide,
+      guideBody: input.guideBody,
+      refinementPrompt: this.options.prompts.refine,
+      refinementRouting: this.options.routing.refine,
+      optimizationPrompt: this.options.prompts.optimize,
+      optimizationRouting: this.options.routing.optimize,
+      optimizationSkillDigest: await this.optimizationSkillDigest(),
+      targetTool: input.targetTool,
+      fixedFrame: input.fixedFrame ?? null,
+    })
+    const feedback = filenameSlug(input.feedback, sha256(input.feedback).slice(0, 7))
+    return await this.cached(
+      {
+        kind: "refinement",
+        intent: input.intent,
+        key,
+        filename: `2-refinement-${input.candidateIndex + 1}-${feedback}-${key.slice(0, 7)}.md`,
+        render: (result) =>
+          renderCandidates(
+            "Refined prompt candidate",
+            input,
+            `${this.options.routing.refine.model} (${this.options.routing.refine.effort}) → ${this.options.routing.optimize.model} (${this.options.routing.optimize.effort})`,
+            { candidates: [result.candidate] },
+            input.feedback,
+          ),
+        validate: validateGuideRefineResult,
+      },
+      produce,
+    )
   }
 }

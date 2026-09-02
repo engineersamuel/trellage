@@ -46,6 +46,7 @@ import {
   type GuideResolvedModelRouting,
   type PublicGuideCommand,
 } from "./guide-api.js"
+import type { GuideArtifactCache } from "./guide-match-cache.js"
 import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.js"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.js"
 import {
@@ -1788,9 +1789,10 @@ export const runGuideMatchingStep = async (
   catalog: CombinedGuideCatalog,
   request: { readonly intent: string; readonly model: string; readonly effort: GuideEffort },
   onProgress?: (phase: GuideMatchPhase) => void,
+  cache?: GuideArtifactCache,
 ): Promise<GuideMatchResponse> => {
   onProgress?.(GuideMatchPhase.ComparingProfiles)
-  const response = await runGuideMatch(provider, catalog, request)
+  const response = await runGuideMatch(provider, catalog, request, cache)
   onProgress?.(GuideMatchPhase.PreparingRecommendations)
   return response
 }
@@ -1815,86 +1817,109 @@ export const runGuideGenerationStep = async (
    */
   onGuideLoaded?: (guideDocument: SelectedGuideDocument) => void,
   onProgress?: (phase: GuideGenerationPhase) => void,
+  cache?: GuideArtifactCache,
 ): Promise<GuideGenerationStepResult> => {
   const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.profileRef)
   onGuideLoaded?.(guideDocument)
-  onProgress?.(GuideGenerationPhase.GeneratingCandidates)
-  const generated = await provider.generate({
-    intent,
-    profileRef: recommendation.profileRef,
-    workflowId: recommendation.workflowId,
-    guide: guideDocument.guide,
-    guideBody: guideDocument.body,
-  })
-  const [first, second, third] = generated.candidates
-  if (first === undefined || second === undefined || third === undefined) {
-    throw new Error("Generation must return exactly three prompt candidates")
-  }
   const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId)
-  onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
-  const bodyCandidates = requireDistinctGuideCandidatePrompts(
-    [
-      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, first),
-      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, second),
-      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, third),
-    ],
-    GuideCandidatePromptStage.GeneratedBodyNormalization,
-  )
-  onProgress?.(GuideGenerationPhase.OptimizingCandidates)
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
-  const optimized = await provider.optimize({
-    targetTool: guideTargetTool(catalog, recommendation.profileRef),
-    profileRef: recommendation.profileRef,
-    candidates: bodyCandidates,
-    ...(fixedFrame === undefined ? {} : { fixedFrame }),
-  })
-  const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates
-  if (optimizedFirst === undefined || optimizedSecond === undefined || optimizedThird === undefined) {
-    throw new Error("Prompt Master must return exactly three prompt candidates")
+  const targetTool = guideTargetTool(catalog, recommendation.profileRef)
+  const produce = async () => {
+    onProgress?.(GuideGenerationPhase.GeneratingCandidates)
+    const generated = await provider.generate({
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+    })
+    const [first, second, third] = generated.candidates
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error("Generation must return exactly three prompt candidates")
+    }
+    onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
+    const bodyCandidates = requireDistinctGuideCandidatePrompts(
+      [
+        resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, first),
+        resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, second),
+        resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, third),
+      ],
+      GuideCandidatePromptStage.GeneratedBodyNormalization,
+    )
+    onProgress?.(GuideGenerationPhase.OptimizingCandidates)
+    const optimized = await provider.optimize({
+      targetTool,
+      profileRef: recommendation.profileRef,
+      candidates: bodyCandidates,
+      ...(fixedFrame === undefined ? {} : { fixedFrame }),
+    })
+    const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates
+    if (optimizedFirst === undefined || optimizedSecond === undefined || optimizedThird === undefined) {
+      throw new Error("Prompt Master must return exactly three prompt candidates")
+    }
+    const renderedCandidates = requireDistinctGuideCandidatePrompts(
+      [
+        renderWorkflowBodyCandidate(
+          workflow,
+          resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[0], optimizedFirst),
+        ),
+        renderWorkflowBodyCandidate(
+          workflow,
+          resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[1], optimizedSecond),
+        ),
+        renderWorkflowBodyCandidate(
+          workflow,
+          resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[2], optimizedThird),
+        ),
+      ],
+      GuideCandidatePromptStage.FinalRendering,
+    )
+    return {
+      candidates: requireDistinctGuideCandidatePrompts(
+        [
+          applyRequiredProfilePromptTemplate(
+            recommendation.profileRef,
+            guideDocument.guide,
+            recommendation.workflowId,
+            renderedCandidates[0],
+          ),
+          applyRequiredProfilePromptTemplate(
+            recommendation.profileRef,
+            guideDocument.guide,
+            recommendation.workflowId,
+            renderedCandidates[1],
+          ),
+          applyRequiredProfilePromptTemplate(
+            recommendation.profileRef,
+            guideDocument.guide,
+            recommendation.workflowId,
+            renderedCandidates[2],
+          ),
+        ],
+        GuideCandidatePromptStage.FinalRendering,
+      ),
+    }
   }
-  const renderedCandidates = requireDistinctGuideCandidatePrompts(
-    [
-      renderWorkflowBodyCandidate(
-        workflow,
-        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[0], optimizedFirst),
-      ),
-      renderWorkflowBodyCandidate(
-        workflow,
-        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[1], optimizedSecond),
-      ),
-      renderWorkflowBodyCandidate(
-        workflow,
-        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[2], optimizedThird),
-      ),
-    ],
-    GuideCandidatePromptStage.FinalRendering,
-  )
-  const candidates = requireDistinctGuideCandidatePrompts(
-    [
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        renderedCandidates[0],
-      ),
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        renderedCandidates[1],
-      ),
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        renderedCandidates[2],
-      ),
-    ],
-    GuideCandidatePromptStage.FinalRendering,
-  )
+  const generated = await (cache === undefined
+    ? produce()
+    : cache.generation(
+        {
+          intent,
+          profileRef: recommendation.profileRef,
+          workflowId: recommendation.workflowId,
+          guide: guideDocument.guide,
+          guideBody: guideDocument.body,
+          targetTool,
+          ...(fixedFrame === undefined ? {} : { fixedFrame }),
+        },
+        produce,
+      ))
+  const [first, second, third] = generated.candidates
+  if (first === undefined || second === undefined || third === undefined)
+    throw new Error("Cached generation must contain three candidates")
   return {
     guideDocument,
-    candidates,
+    candidates: [first, second, third],
   }
 }
 
@@ -1912,44 +1937,68 @@ export const runGuideRefinementStep = async (
   candidates: Triple<GuideGenerateCandidate>,
   candidateIndex: number,
   feedback: string,
+  cache?: GuideArtifactCache,
 ): Promise<GuideGenerateCandidate> => {
   const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId)
   const candidate = tripleAt(candidates, candidateIndex)
   const bodyCandidate = workflowBodyCandidate(workflow, candidate)
-  const refined = await provider.refine({
-    intent,
-    profileRef: recommendation.profileRef,
-    workflowId: recommendation.workflowId,
-    guide: guideDocument.guide,
-    guideBody: guideDocument.body,
-    candidate: bodyCandidate,
-    feedback,
-  })
-  const refinedBodyCandidate = resolveRefinedWorkflowBodyCandidate(
-    guideDocument.guide,
-    workflow,
-    bodyCandidate,
-    refined.candidate,
-  )
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
-  const optimized = await provider.optimize({
-    targetTool: guideTargetTool(catalog, recommendation.profileRef),
-    profileRef: recommendation.profileRef,
-    candidates: [refinedBodyCandidate],
-    ...(fixedFrame === undefined ? {} : { fixedFrame }),
-  })
-  const optimizedCandidate = optimized.candidates[0]
-  if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
-  const renderedCandidate = renderWorkflowBodyCandidate(
-    workflow,
-    resolveWorkflowBodyCandidate(guideDocument.guide, workflow, refinedBodyCandidate, optimizedCandidate),
-  )
-  const finalCandidate = applyRequiredProfilePromptTemplate(
-    recommendation.profileRef,
-    guideDocument.guide,
-    recommendation.workflowId,
-    renderedCandidate,
-  )
+  const targetTool = guideTargetTool(catalog, recommendation.profileRef)
+  const produce = async () => {
+    const refined = await provider.refine({
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+      candidate: bodyCandidate,
+      feedback,
+    })
+    const refinedBodyCandidate = resolveRefinedWorkflowBodyCandidate(
+      guideDocument.guide,
+      workflow,
+      bodyCandidate,
+      refined.candidate,
+    )
+    const optimized = await provider.optimize({
+      targetTool,
+      profileRef: recommendation.profileRef,
+      candidates: [refinedBodyCandidate],
+      ...(fixedFrame === undefined ? {} : { fixedFrame }),
+    })
+    const optimizedCandidate = optimized.candidates[0]
+    if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
+    const renderedCandidate = renderWorkflowBodyCandidate(
+      workflow,
+      resolveWorkflowBodyCandidate(guideDocument.guide, workflow, refinedBodyCandidate, optimizedCandidate),
+    )
+    return {
+      candidate: applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        renderedCandidate,
+      ),
+    }
+  }
+  const refined = await (cache === undefined
+    ? produce()
+    : cache.refinement(
+        {
+          intent,
+          profileRef: recommendation.profileRef,
+          workflowId: recommendation.workflowId,
+          guide: guideDocument.guide,
+          guideBody: guideDocument.body,
+          targetTool,
+          ...(fixedFrame === undefined ? {} : { fixedFrame }),
+          candidates,
+          candidateIndex,
+          feedback,
+        },
+        produce,
+      ))
+  const finalCandidate = refined.candidate
   requireDistinctGuideCandidatePrompts(
     replaceCandidateAt(candidates, candidateIndex, finalCandidate),
     GuideCandidatePromptStage.FinalRendering,
@@ -2148,6 +2197,7 @@ export interface GuideUiProps {
   readonly catalog: CombinedGuideCatalog
   readonly guideRoot: string
   readonly provider: GuideProvider
+  readonly cache?: GuideArtifactCache
   readonly routing: GuideResolvedModelRouting
   readonly runner: CommandRunner
   readonly cwd: string
@@ -3689,6 +3739,7 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
           (phase) => {
             if (!cancelled) dispatch({ type: GuideUiActionType.MatchProgress, phase })
           },
+          props.cache,
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.MatchSucceeded, recommendations: response.recommendations })
       } catch (error) {
@@ -3727,6 +3778,7 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
           (phase) => {
             if (!cancelled) dispatch({ type: GuideUiActionType.GenerateProgress, phase })
           },
+          props.cache,
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.GenerateSucceeded, candidates })
       } catch (error) {
@@ -3768,6 +3820,7 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
           candidates,
           candidateIndex,
           feedback,
+          props.cache,
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.RefineSucceeded, candidate: refinedCandidate })
       } catch (error) {

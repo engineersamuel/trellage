@@ -27390,7 +27390,7 @@ var require_stream = __commonJS({
       };
       duplex._final = function(callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open2() {
+          ws.once("open", function open3() {
             duplex._final(callback);
           });
           return;
@@ -27411,7 +27411,7 @@ var require_stream = __commonJS({
       };
       duplex._write = function(chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open2() {
+          ws.once("open", function open3() {
             duplex._write(chunk, encoding, callback);
           });
           return;
@@ -55348,7 +55348,7 @@ var require_main = __commonJS({
     var ril_1 = require_ril();
     ril_1.default.install();
     var path8 = __require("path");
-    var os5 = __require("os");
+    var os4 = __require("os");
     var crypto_1 = __require("crypto");
     var net_1 = __require("net");
     var api_1 = require_api();
@@ -55485,7 +55485,7 @@ var require_main = __commonJS({
       if (XDG_RUNTIME_DIR) {
         result = path8.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
       } else {
-        result = path8.join(os5.tmpdir(), `vscode-${randomSuffix}.sock`);
+        result = path8.join(os4.tmpdir(), `vscode-${randomSuffix}.sock`);
       }
       const limit = safeIpcPathLengths.get(process.platform);
       if (limit !== void 0 && result.length > limit) {
@@ -56597,8 +56597,8 @@ var require_jsx_runtime = __commonJS({
 
 // src/cli.tsx
 var import_react37 = __toESM(require_react(), 1);
-import { constants as constants4, openSync } from "node:fs";
-import { readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
+import { constants as constants5, openSync } from "node:fs";
+import { readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
 import tty3 from "node:tty";
 
 // node_modules/ink/build/render.js
@@ -62101,18 +62101,18 @@ var proto = Object.defineProperties(() => {
     }
   }
 });
-var createStyler = (open2, close, parent) => {
+var createStyler = (open3, close, parent) => {
   let openAll;
   let closeAll;
   if (parent === void 0) {
-    openAll = open2;
+    openAll = open3;
     closeAll = close;
   } else {
-    openAll = parent.openAll + open2;
+    openAll = parent.openAll + open3;
     closeAll = close + parent.closeAll;
   }
   return {
-    open: open2,
+    open: open3,
     close,
     openAll,
     closeAll,
@@ -69001,9 +69001,10 @@ var enrichRecommendation = (catalog, candidate) => {
     herdrCompatibility: entry.herdrCompatibility
   };
 };
-var runGuideMatch = async (provider, catalog, request) => {
+var runGuideMatch = async (provider, catalog, request, cache3) => {
   const entries = guideMatchCatalogEntries(catalog);
-  const result = await provider.match({ intent: request.intent, entries });
+  const input = { intent: request.intent, entries };
+  const result = await (cache3 === void 0 ? provider.match(input) : cache3.match(input, () => provider.match(input)));
   const recommendations = assertRecommendationSet(
     result.candidates.map((candidate) => enrichRecommendation(catalog, candidate)),
     "match recommendations"
@@ -69122,18 +69123,11 @@ var applyRequiredProfilePromptTemplate = (profileRef, guide, workflowId, candida
     prompt: workflow.promptTemplate.replaceAll("{{intent}}", promptBody)
   };
 };
-var runGuideGenerate = async (provider, catalog, guideRoot, request) => {
+var runGuideGenerate = async (provider, catalog, guideRoot, request, cache3) => {
   const entry = findFullCatalogEntry(catalog, request.profileRef);
   if (entry === void 0) throw new GuideServiceError(`Unknown profile reference: ${request.profileRef}`);
   const workflowId = selectBestWorkflowByTokenOverlap(entry.guide.workflows, request.intent);
   const loaded = await loadSelectedGuide(catalog, guideRoot, request.profileRef);
-  const generated = await provider.generate({
-    intent: request.intent,
-    profileRef: request.profileRef,
-    workflowId,
-    guide: loaded.guide,
-    guideBody: loaded.body
-  });
   const compactWorkflow = compactProfileGuide(entry.guide).workflows.find(({ id }) => id === workflowId);
   if (compactWorkflow === void 0) {
     throw new GuideServiceError(`Selected workflow is unknown for ${request.profileRef}: ${workflowId}`);
@@ -69153,84 +69147,88 @@ var runGuideGenerate = async (provider, catalog, guideRoot, request) => {
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility
   };
-  let bodyCandidates;
-  try {
-    bodyCandidates = requireDistinctGuideCandidatePrompts(
-      assertTriple(
-        generated.candidates.map(
-          (candidate) => resolveGeneratedWorkflowBodyCandidate(
-            loaded.guide,
-            authoredWorkflow,
-            request.intent,
-            candidate
-          )
-        ),
-        "workflow body candidates"
-      ),
-      "generated-body normalization" /* GeneratedBodyNormalization */
-    );
-  } catch (cause) {
-    if (cause instanceof GuideWorkflowBodyError || cause instanceof GuideCandidatePromptCollisionError) {
-      throw new GuideServiceError(cause.message, { cause });
-    }
-    throw cause;
-  }
   const fixedFrame = workflowOptimizeFixedFrame(authoredWorkflow);
-  const optimized = await provider.optimize({
-    targetTool: isNativeEntry(entry) ? entry.harness : entry.harness.kind,
-    profileRef: request.profileRef,
-    candidates: bodyCandidates,
-    ...fixedFrame === void 0 ? {} : { fixedFrame }
-  });
-  const [bodyFirst, bodySecond, bodyThird] = bodyCandidates;
-  const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
-    optimized.candidates,
-    "optimized prompt candidates"
-  );
-  const safeBodyCandidates = [
-    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyFirst, optimizedFirst),
-    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodySecond, optimizedSecond),
-    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyThird, optimizedThird)
-  ];
-  let renderedCandidates;
-  try {
-    const exactRenderedCandidates = requireDistinctGuideCandidatePrompts(
-      [
-        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[0]),
-        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[1]),
-        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[2])
-      ],
-      "optimization resolution and exact rendering" /* FinalRendering */
-    );
-    renderedCandidates = requireDistinctGuideCandidatePrompts(
-      [
-        applyRequiredProfilePromptTemplate(
-          request.profileRef,
-          loaded.guide,
-          workflowId,
-          exactRenderedCandidates[0]
+  const targetTool = isNativeEntry(entry) ? entry.harness : entry.harness.kind;
+  const produce = async () => {
+    const generated2 = await provider.generate({
+      intent: request.intent,
+      profileRef: request.profileRef,
+      workflowId,
+      guide: loaded.guide,
+      guideBody: loaded.body
+    });
+    let bodyCandidates;
+    try {
+      bodyCandidates = requireDistinctGuideCandidatePrompts(
+        assertTriple(
+          generated2.candidates.map(
+            (candidate) => resolveGeneratedWorkflowBodyCandidate(loaded.guide, authoredWorkflow, request.intent, candidate)
+          ),
+          "workflow body candidates"
         ),
-        applyRequiredProfilePromptTemplate(
-          request.profileRef,
-          loaded.guide,
-          workflowId,
-          exactRenderedCandidates[1]
-        ),
-        applyRequiredProfilePromptTemplate(
-          request.profileRef,
-          loaded.guide,
-          workflowId,
-          exactRenderedCandidates[2]
-        )
-      ],
-      "optimization resolution and exact rendering" /* FinalRendering */
-    );
-  } catch (cause) {
-    if (cause instanceof GuideCandidatePromptCollisionError) {
-      throw new GuideServiceError(cause.message, { cause });
+        "generated-body normalization" /* GeneratedBodyNormalization */
+      );
+    } catch (cause) {
+      if (cause instanceof GuideWorkflowBodyError || cause instanceof GuideCandidatePromptCollisionError) {
+        throw new GuideServiceError(cause.message, { cause });
+      }
+      throw cause;
     }
-    throw cause;
-  }
+    const optimized = await provider.optimize({
+      targetTool,
+      profileRef: request.profileRef,
+      candidates: bodyCandidates,
+      ...fixedFrame === void 0 ? {} : { fixedFrame }
+    });
+    const [bodyFirst, bodySecond, bodyThird] = bodyCandidates;
+    const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
+      optimized.candidates,
+      "optimized prompt candidates"
+    );
+    const safeBodyCandidates = [
+      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyFirst, optimizedFirst),
+      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodySecond, optimizedSecond),
+      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyThird, optimizedThird)
+    ];
+    let renderedCandidates2;
+    try {
+      const exactRenderedCandidates = requireDistinctGuideCandidatePrompts(
+        [
+          renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[0]),
+          renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[1]),
+          renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[2])
+        ],
+        "optimization resolution and exact rendering" /* FinalRendering */
+      );
+      renderedCandidates2 = requireDistinctGuideCandidatePrompts(
+        [
+          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[0]),
+          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[1]),
+          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[2])
+        ],
+        "optimization resolution and exact rendering" /* FinalRendering */
+      );
+    } catch (cause) {
+      if (cause instanceof GuideCandidatePromptCollisionError) {
+        throw new GuideServiceError(cause.message, { cause });
+      }
+      throw cause;
+    }
+    return { candidates: renderedCandidates2 };
+  };
+  const generated = await (cache3 === void 0 ? produce() : cache3.generation(
+    {
+      intent: request.intent,
+      profileRef: request.profileRef,
+      workflowId,
+      guide: loaded.guide,
+      guideBody: loaded.body,
+      targetTool,
+      ...fixedFrame === void 0 ? {} : { fixedFrame }
+    },
+    produce
+  ));
+  const renderedCandidates = assertTriple(generated.candidates, "cached generation prompt candidates");
   const candidates = assertTriple(
     renderedCandidates.map(
       (candidate) => ({
@@ -73402,12 +73400,12 @@ var CopilotSession = class {
   }
   removeOpenCanvas(instanceId) {
     this.openCanvasInstances = this.openCanvasInstances.filter(
-      (open2) => open2.instanceId !== instanceId
+      (open3) => open3.instanceId !== instanceId
     );
   }
   upsertOpenCanvas(instance) {
     const index = this.openCanvasInstances.findIndex(
-      (open2) => open2.instanceId === instance.instanceId
+      (open3) => open3.instanceId === instance.instanceId
     );
     if (index >= 0) {
       this.openCanvasInstances[index] = instance;
@@ -76767,11 +76765,11 @@ var validateFixedFrameText = (value, path8) => {
   if (fixedFrameControls.test(value)) return fail2(path8, "must not contain control characters");
   return value;
 };
-var validateMatchCandidate = (value, path8, workflowIndex2) => {
+var validateMatchCandidate = (value, path8, workflowIndex) => {
   const fields = record4(value, path8);
   exactKeys2(fields, path8, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
   const profileRef = text3(fields.profileRef, `${path8}.profileRef`, 256);
-  const workflowIds = workflowIndex2.get(profileRef);
+  const workflowIds = workflowIndex.get(profileRef);
   if (workflowIds === void 0) return fail2(`${path8}.profileRef`, `must reference a known profile: ${profileRef}`);
   const workflowId = text3(fields.workflowId, `${path8}.workflowId`, 128);
   if (!workflowIds.has(workflowId)) {
@@ -76785,12 +76783,12 @@ var validateMatchCandidate = (value, path8, workflowIndex2) => {
     tradeoff: text3(fields.tradeoff, `${path8}.tradeoff`, 500)
   };
 };
-var validateGuideMatchResult = (value, workflowIndex2) => {
+var validateGuideMatchResult = (value, workflowIndex) => {
   const fields = record4(value, "match result");
   exactKeys2(fields, "match result", ["candidates"]);
   const rawCandidates = array(fields.candidates, "match result.candidates", { minimum: 3, maximum: 5 });
   const candidates = rawCandidates.map(
-    (item, index) => validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex2)
+    (item, index) => validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex)
   );
   uniqueArray(
     candidates.map(({ profileRef }) => profileRef),
@@ -76984,7 +76982,7 @@ var CopilotGuideProvider = class {
   }
   async match(input) {
     assertGuideMatchInput(input);
-    const workflowIndex2 = new Map(
+    const workflowIndex = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))])
     );
     return this.run(
@@ -76992,7 +76990,7 @@ var CopilotGuideProvider = class {
       this.prompts.match,
       input,
       this.matchTimeoutMs,
-      (value) => validateGuideMatchResult(value, workflowIndex2)
+      (value) => validateGuideMatchResult(value, workflowIndex)
     );
   }
   async generate(input) {
@@ -77116,219 +77114,365 @@ var CopilotGuideProvider = class {
 
 // src/guide-match-cache.ts
 import { createHash, randomUUID as randomUUID2 } from "node:crypto";
-import { mkdir, readFile as readFile2, rename, unlink, writeFile } from "node:fs/promises";
-import os4 from "node:os";
+import { constants as constants3 } from "node:fs";
+import { lstat as lstat3, mkdir, open, readdir as readdir2, rename, unlink, writeFile } from "node:fs/promises";
 import path6 from "node:path";
-var maximumCacheBytes = 256 * 1024;
-var maximumCacheEntries = 16;
+var maximumArtifactBytes = 256 * 1024;
+var maximumOptimizationSkillBytes = 1024 * 1024;
+var artifactHeader = /^<!-- trx-guide-artifact:v1:([A-Za-z0-9_-]+) -->$/u;
+var uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 var sha256 = (value) => createHash("sha256").update(value, "utf8").digest("hex");
-var matchCacheKey = (input, options) => sha256(
-  JSON.stringify({
-    schemaVersion: 1,
-    intentDigest: sha256(input.intent),
-    model: options.routing.match.model,
-    effort: options.routing.match.effort,
-    matchPromptDigest: sha256(options.matchPrompt),
-    catalogDigest: sha256(JSON.stringify(input.entries))
-  })
-);
-var generateCacheKey = (input, options) => sha256(
-  JSON.stringify({
-    schemaVersion: 1,
-    intentDigest: sha256(input.intent),
-    profileRef: input.profileRef,
-    workflowId: input.workflowId,
-    guideDigest: sha256(JSON.stringify(input.guide)),
-    guideBodyDigest: sha256(input.guideBody),
-    model: options.routing.generate.model,
-    effort: options.routing.generate.effort,
-    generatePromptDigest: sha256(options.generatePrompt)
-  })
-);
-var optimizeCacheKey = (input, options) => {
-  const base = {
-    schemaVersion: 1,
-    targetTool: input.targetTool,
-    profileRef: input.profileRef,
-    candidatesDigest: sha256(JSON.stringify(input.candidates)),
-    model: options.routing.optimize.model,
-    effort: options.routing.optimize.effort,
-    optimizePromptDigest: sha256(options.optimizePrompt)
-  };
-  return sha256(
-    JSON.stringify(
-      input.fixedFrame === void 0 ? base : { ...base, fixedFrameDigest: sha256(JSON.stringify(input.fixedFrame)) }
-    )
-  );
+var keyFor = (value) => sha256(JSON.stringify(value));
+var guidePromptSlug = (intent) => {
+  const ascii = intent.normalize("NFKD").replace(/[\u0300-\u036f]/gu, "").toLowerCase();
+  const words = ascii.match(/[a-z0-9]+/gu) ?? [];
+  const joined = words.join("-").slice(0, 7).replace(/-+$/u, "");
+  return joined.length > 0 ? joined : sha256(intent).slice(0, 7);
 };
-var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
-var workflowIndex = (input) => new Map(input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]));
-var parseCacheEntry = (value, path8) => {
-  const fields = record4(value, path8);
-  exactKeys2(fields, path8, ["phase", "key", "result"]);
-  if (fields.phase !== "match" && fields.phase !== "generate" && fields.phase !== "optimize") {
-    throw new Error(`${path8}.phase must be match, generate, or optimize`);
-  }
-  return {
-    phase: fields.phase,
-    key: text3(fields.key, `${path8}.key`, 64),
-    result: fields.result
-  };
+var filenameSlug = (value, fallback) => {
+  const normalized = value.normalize("NFKD").replace(/[\u0300-\u036f]/gu, "").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+  return (normalized.length > 0 ? normalized : fallback).slice(0, 48).replace(/-+$/u, "");
 };
-var parseCacheRecord = (source) => {
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`guide match cache exceeds ${maximumCacheBytes} bytes`);
-  }
-  let payload;
-  try {
-    payload = JSON.parse(source);
-  } catch (cause) {
-    throw new Error("guide match cache contains invalid JSON", { cause });
-  }
-  const fields = record4(payload, "guide match cache");
-  if (fields.schemaVersion === 1) {
-    exactKeys2(fields, "guide match cache", ["schemaVersion", "key", "result"]);
-    return {
-      schemaVersion: 2,
-      entries: [{ phase: "match", key: text3(fields.key, "guide match cache.key", 64), result: fields.result }]
-    };
-  }
-  exactKeys2(fields, "guide cache", ["schemaVersion", "entries"]);
-  if (fields.schemaVersion !== 2) throw new Error("guide cache schemaVersion must equal 1 or 2");
-  return {
-    schemaVersion: 2,
-    entries: array(fields.entries, "guide cache.entries", { maximum: maximumCacheEntries }).map(
-      (entry, index) => parseCacheEntry(entry, `guide cache.entries[${index}]`)
-    )
-  };
+var isMissing = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
+var requireDirectory = (metadata, directory) => {
+  if (!metadata.isDirectory()) throw new Error(`guide artifact root is not a directory: ${directory}`);
 };
-var readCacheRecord = async (cachePath) => {
-  let source;
-  try {
-    source = await readFile2(cachePath, "utf8");
-  } catch (error) {
-    if (isMissingFile(error)) return void 0;
-    throw new Error(`could not read guide match cache: ${cachePath}`, { cause: error });
-  }
-  return parseCacheRecord(source);
-};
-var removeTemporaryCache = async (temporaryPath) => {
+var removeTemporary = async (temporaryPath) => {
   try {
     await unlink(temporaryPath);
   } catch (error) {
-    if (!isMissingFile(error)) throw error;
+    if (!isMissing(error)) throw error;
   }
 };
-var writeCacheRecord = async (cachePath, value) => {
-  await mkdir(path6.dirname(cachePath), { recursive: true, mode: 448 });
-  const temporaryPath = `${cachePath}.${process.pid}.${randomUUID2()}.tmp`;
-  const source = `${JSON.stringify(value)}
-`;
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`guide cache exceeds ${maximumCacheBytes} bytes`);
+var readBoundedRegularFile = async (filePath, maximumBytes, label) => {
+  let handle;
+  try {
+    handle = await open(filePath, constants3.O_RDONLY | constants3.O_NOFOLLOW);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ELOOP") {
+      throw new Error(`${label} is not a regular file`, { cause: error });
+    }
+    throw error;
   }
   try {
-    await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 384 });
-    await rename(temporaryPath, cachePath);
-  } catch (error) {
-    await removeTemporaryCache(temporaryPath);
-    throw new Error(`could not write guide match cache: ${cachePath}`, { cause: error });
-  }
-};
-var defaultGuideMatchCachePath = (env3 = process.env) => {
-  const cacheRoot = env3.XDG_CACHE_HOME ?? path6.join(os4.homedir(), ".cache");
-  return path6.join(cacheRoot, "trellage", "trx-guide", "last-match.json");
-};
-var CachedGuideProvider = class {
-  constructor(provider, options) {
-    this.provider = provider;
-    this.options = options;
-  }
-  warn(message) {
-    if (this.options.onWarning !== void 0) {
-      this.options.onWarning(message);
-      return;
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) throw new Error(`${label} is not a regular file`);
+    if (metadata.size > maximumBytes) throw new Error(`${label} exceeds ${maximumBytes} bytes`);
+    const chunks = [];
+    let position = 0;
+    while (position <= maximumBytes) {
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, maximumBytes + 1 - position));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      if (bytesRead === 0) break;
+      chunks.push(buffer.subarray(0, bytesRead));
+      position += bytesRead;
     }
-    process.stderr.write(`trellage-launcher: warning: ${message}
+    if (position > maximumBytes) throw new Error(`${label} exceeds ${maximumBytes} bytes`);
+    return Buffer.concat(chunks, position).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+};
+var parseArtifactEnvelope = (source, expectedKind) => {
+  const firstLine = source.split("\n", 1)[0] ?? "";
+  const encoded = artifactHeader.exec(firstLine)?.[1];
+  if (encoded === void 0) throw new Error("artifact has a malformed machine header");
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  } catch (cause) {
+    throw new Error("artifact has a malformed machine header", { cause });
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("artifact schema is invalid");
+  }
+  const fields = parsed;
+  const exactShape = Object.keys(fields).sort().join(",") === "key,kind,result,schemaVersion";
+  if (!exactShape || fields.schemaVersion !== 1 || fields.kind !== expectedKind || typeof fields.key !== "string") {
+    throw new Error("artifact schema is invalid");
+  }
+  return fields;
+};
+var renderMatch = (intent, routing, result) => [
+  "# Profile recommendations",
+  "",
+  `Intent: ${intent}`,
+  `Routing: ${routing.match.model} (${routing.match.effort})`,
+  "",
+  ...result.candidates.flatMap((candidate, index) => [
+    `## ${index + 1}. ${candidate.profileRef} \xB7 ${candidate.workflowId}`,
+    "",
+    `Confidence: ${candidate.confidence}`,
+    "",
+    candidate.reason,
+    "",
+    `Tradeoff: ${candidate.tradeoff}`,
+    ""
+  ])
+].join("\n");
+var renderCandidates = (heading, input, routing, result, feedback) => [
+  `# ${heading}`,
+  "",
+  `Intent: ${input.intent}`,
+  `Profile: ${input.profileRef}`,
+  `Workflow: ${input.workflowId}`,
+  `Target tool: ${input.targetTool}`,
+  `Routing: ${routing}`,
+  ...feedback === void 0 ? [] : [`Feedback: ${feedback}`],
+  "",
+  ...result.candidates.flatMap((candidate, index) => [
+    `## ${index + 1}. ${candidate.title}`,
+    "",
+    candidate.prompt,
+    "",
+    `Notes: ${candidate.notes}`,
+    ""
+  ])
+].join("\n");
+var GuideArtifactCache = class {
+  constructor(options) {
+    this.options = options;
+    this.root = path6.join(path6.resolve(options.cwd), ".trx-guide");
+  }
+  root;
+  activeSessions = /* @__PURE__ */ new Map();
+  warn(message) {
+    if (this.options.onWarning !== void 0) this.options.onWarning(message);
+    else process.stderr.write(`trellage-launcher: warning: ${message}
 `);
   }
-  async cachedResult(input, key) {
+  async ensureRootDirectory(create3) {
     try {
-      const cached = await readCacheRecord(this.options.cachePath);
-      const entry = cached?.entries.find((candidate) => candidate.phase === "match" && candidate.key === key);
-      if (entry === void 0) return void 0;
-      return validateGuideMatchResult(entry.result, workflowIndex(input));
+      const metadata = await lstat3(this.root);
+      requireDirectory(metadata, this.root);
+      return true;
     } catch (error) {
-      this.warn(`ignoring unreadable guide match cache: ${error instanceof Error ? error.message : String(error)}`);
-      return void 0;
-    }
-  }
-  async cachedGenerateResult(key) {
-    try {
-      const cached = await readCacheRecord(this.options.cachePath);
-      const entry = cached?.entries.find((candidate) => candidate.phase === "generate" && candidate.key === key);
-      return entry === void 0 ? void 0 : validateGuideGenerateResult(entry.result);
-    } catch (error) {
-      this.warn(`ignoring unreadable guide cache: ${error instanceof Error ? error.message : String(error)}`);
-      return void 0;
-    }
-  }
-  async cachedOptimizeResult(input, key) {
-    try {
-      const cached = await readCacheRecord(this.options.cachePath);
-      const entry = cached?.entries.find((candidate) => candidate.phase === "optimize" && candidate.key === key);
-      return entry === void 0 ? void 0 : validateGuideOptimizeResult(entry.result, input.candidates.length);
-    } catch (error) {
-      this.warn(`ignoring unreadable guide cache: ${error instanceof Error ? error.message : String(error)}`);
-      return void 0;
-    }
-  }
-  async cacheResult(phase, key, result) {
-    try {
-      let current;
+      if (!isMissing(error)) throw error;
+      if (!create3) return false;
       try {
-        current = await readCacheRecord(this.options.cachePath) ?? { schemaVersion: 2, entries: [] };
-      } catch {
-        current = { schemaVersion: 2, entries: [] };
+        await mkdir(this.root, { mode: 448 });
+      } catch (mkdirError) {
+        if (!(mkdirError instanceof Error && "code" in mkdirError && mkdirError.code === "EEXIST")) throw mkdirError;
       }
-      let entries = [
-        ...current.entries.filter((entry) => entry.phase !== phase || entry.key !== key),
-        { phase, key, result }
-      ].slice(-maximumCacheEntries);
-      while (entries.length > 1 && Buffer.byteLength(JSON.stringify({ schemaVersion: 2, entries }), "utf8") > maximumCacheBytes) {
-        entries = entries.slice(1);
-      }
-      await writeCacheRecord(this.options.cachePath, { schemaVersion: 2, entries });
-    } catch (error) {
-      this.warn(`could not update guide cache: ${error instanceof Error ? error.message : String(error)}`);
+      const metadata = await lstat3(this.root);
+      requireDirectory(metadata, this.root);
+      return true;
     }
   }
-  async match(input) {
-    const key = matchCacheKey(input, this.options);
-    const cached = await this.cachedResult(input, key);
-    if (cached !== void 0) return cached;
-    const result = await this.provider.match(input);
-    await this.cacheResult("match", key, result);
+  async sessionDirectories(intent) {
+    const slug2 = guidePromptSlug(intent);
+    let entries;
+    try {
+      if (!await this.ensureRootDirectory(false)) return [];
+      entries = await readdir2(this.root, { withFileTypes: true });
+    } catch (error) {
+      if (isMissing(error)) return [];
+      this.warn(`could not inspect guide artifacts: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+    const directories = [];
+    for (const entry of entries) {
+      if (!entry.name.startsWith(`${slug2}-`)) continue;
+      const uuid = entry.name.slice(slug2.length + 1);
+      if (!uuidPattern.test(uuid)) continue;
+      const candidate = path6.join(this.root, entry.name);
+      if (!entry.isDirectory()) {
+        this.warn(`ignoring unsafe guide artifact session that is not a directory: ${candidate}`);
+        continue;
+      }
+      directories.push(candidate);
+    }
+    return directories;
+  }
+  async readArtifact(artifactPath, spec) {
+    try {
+      const source = await readBoundedRegularFile(artifactPath, maximumArtifactBytes, "artifact");
+      const envelope = parseArtifactEnvelope(source, spec.kind);
+      return envelope.key === spec.key ? spec.validate(envelope.result) : void 0;
+    } catch (error) {
+      if (isMissing(error)) return void 0;
+      this.warn(
+        `ignoring unreadable guide artifact ${artifactPath}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return void 0;
+    }
+  }
+  async newest(spec) {
+    const matches = [];
+    for (const directory of await this.sessionDirectories(spec.intent)) {
+      const artifactPath = path6.join(directory, spec.filename);
+      try {
+        const metadata = await lstat3(artifactPath);
+        matches.push({ directory, modified: metadata.mtimeMs });
+      } catch (error) {
+        if (!isMissing(error)) this.warn(`could not inspect guide artifact ${artifactPath}: ${String(error)}`);
+      }
+    }
+    matches.sort((left, right) => right.modified - left.modified);
+    for (const match of matches) {
+      const result = await this.readArtifact(path6.join(match.directory, spec.filename), spec);
+      if (result !== void 0) {
+        this.activeSessions.set(spec.intent, match.directory);
+        return result;
+      }
+    }
+    return void 0;
+  }
+  async createSessionDirectory(intent) {
+    const slug2 = guidePromptSlug(intent);
+    const directory = path6.join(this.root, `${slug2}-${randomUUID2()}`);
+    await this.ensureRootDirectory(true);
+    await mkdir(directory, { mode: 448 });
+    this.activeSessions.set(intent, directory);
+    return directory;
+  }
+  async sessionDirectory(intent) {
+    return this.activeSessions.get(intent) ?? this.createSessionDirectory(intent);
+  }
+  async writableDirectory(spec) {
+    const directory = await this.sessionDirectory(spec.intent);
+    try {
+      await lstat3(path6.join(directory, spec.filename));
+      return this.createSessionDirectory(spec.intent);
+    } catch (error) {
+      if (isMissing(error)) return directory;
+      throw error;
+    }
+  }
+  async writeArtifact(spec, result) {
+    try {
+      const directory = await this.writableDirectory(spec);
+      const artifactPath = path6.join(directory, spec.filename);
+      const temporaryPath = `${artifactPath}.${process.pid}.${randomUUID2()}.tmp`;
+      const envelope = { schemaVersion: 1, kind: spec.kind, key: spec.key, result };
+      const source = `<!-- trx-guide-artifact:v1:${Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url")} -->
+
+${spec.render(result).trim()}
+`;
+      if (Buffer.byteLength(source, "utf8") > maximumArtifactBytes)
+        throw new Error(`artifact exceeds ${maximumArtifactBytes} bytes`);
+      try {
+        await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 384 });
+        await rename(temporaryPath, artifactPath);
+      } catch (error) {
+        await removeTemporary(temporaryPath);
+        throw error;
+      }
+    } catch (error) {
+      this.warn(`could not write guide artifact: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async cached(spec, produce) {
+    const existing = await this.newest(spec);
+    if (existing !== void 0) return existing;
+    const result = await produce();
+    await this.writeArtifact(spec, result);
     return result;
   }
-  async generate(input) {
-    const key = generateCacheKey(input, this.options);
-    const cached = await this.cachedGenerateResult(key);
-    if (cached !== void 0) return cached;
-    const result = await this.provider.generate(input);
-    await this.cacheResult("generate", key, result);
-    return result;
+  async optimizationSkillDigest() {
+    const directory = this.options.promptMasterSkillDirectory;
+    if (directory === void 0) return null;
+    const source = await readBoundedRegularFile(
+      path6.join(directory, "SKILL.md"),
+      maximumOptimizationSkillBytes,
+      "Prompt Master SKILL.md"
+    );
+    return sha256(source);
   }
-  refine(input) {
-    return this.provider.refine(input);
+  match(input, produce) {
+    const key = keyFor({
+      schemaVersion: 1,
+      intent: input.intent,
+      catalog: input.entries,
+      prompt: this.options.prompts.match,
+      routing: this.options.routing.match
+    });
+    const workflows2 = new Map(
+      input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))])
+    );
+    return this.cached(
+      {
+        kind: "match",
+        intent: input.intent,
+        key,
+        filename: "1-profile-recommendations.md",
+        render: (result) => renderMatch(input.intent, this.options.routing, result),
+        validate: (value) => validateGuideMatchResult(value, workflows2)
+      },
+      produce
+    );
   }
-  async optimize(input) {
-    const key = optimizeCacheKey(input, this.options);
-    const cached = await this.cachedOptimizeResult(input, key);
-    if (cached !== void 0) return cached;
-    const result = await this.provider.optimize(input);
-    await this.cacheResult("optimize", key, result);
-    return result;
+  async generation(input, produce) {
+    const key = keyFor({
+      schemaVersion: 1,
+      intent: input.intent,
+      profileRef: input.profileRef,
+      workflowId: input.workflowId,
+      guide: input.guide,
+      guideBody: input.guideBody,
+      generationPrompt: this.options.prompts.generate,
+      generationRouting: this.options.routing.generate,
+      optimizationPrompt: this.options.prompts.optimize,
+      optimizationRouting: this.options.routing.optimize,
+      optimizationSkillDigest: await this.optimizationSkillDigest(),
+      targetTool: input.targetTool,
+      fixedFrame: input.fixedFrame ?? null
+    });
+    const label = filenameSlug(`${input.profileRef}-${input.workflowId}`, "profile-workflow");
+    return await this.cached(
+      {
+        kind: "generation",
+        intent: input.intent,
+        key,
+        filename: `2-prompt-candidates-${label}-${key.slice(0, 7)}.md`,
+        render: (result) => renderCandidates(
+          "Prompt candidates",
+          input,
+          `${this.options.routing.generate.model} (${this.options.routing.generate.effort}) \u2192 ${this.options.routing.optimize.model} (${this.options.routing.optimize.effort})`,
+          result
+        ),
+        validate: validateGuideGenerateResult
+      },
+      produce
+    );
+  }
+  async refinement(input, produce) {
+    const key = keyFor({
+      schemaVersion: 1,
+      intent: input.intent,
+      profileRef: input.profileRef,
+      workflowId: input.workflowId,
+      candidates: input.candidates,
+      candidateIndex: input.candidateIndex,
+      feedback: input.feedback,
+      guide: input.guide,
+      guideBody: input.guideBody,
+      refinementPrompt: this.options.prompts.refine,
+      refinementRouting: this.options.routing.refine,
+      optimizationPrompt: this.options.prompts.optimize,
+      optimizationRouting: this.options.routing.optimize,
+      optimizationSkillDigest: await this.optimizationSkillDigest(),
+      targetTool: input.targetTool,
+      fixedFrame: input.fixedFrame ?? null
+    });
+    const feedback = filenameSlug(input.feedback, sha256(input.feedback).slice(0, 7));
+    return await this.cached(
+      {
+        kind: "refinement",
+        intent: input.intent,
+        key,
+        filename: `2-refinement-${input.candidateIndex + 1}-${feedback}-${key.slice(0, 7)}.md`,
+        render: (result) => renderCandidates(
+          "Refined prompt candidate",
+          input,
+          `${this.options.routing.refine.model} (${this.options.routing.refine.effort}) \u2192 ${this.options.routing.optimize.model} (${this.options.routing.optimize.effort})`,
+          { candidates: [result.candidate] },
+          input.feedback
+        ),
+        validate: validateGuideRefineResult
+      },
+      produce
+    );
   }
 };
 
@@ -77382,33 +77526,41 @@ var runGuideJsonCommand = async (options) => {
   if (!args.json) throw new Error("guide JSON command requires --json");
   const resolved = resolveGuideRequest(args, options.stdinRequest, options.env);
   const prompts = await loadDefaultGuidePrompts();
-  const provider = new CachedGuideProvider(
-    new CopilotGuideProvider({
-      routing: resolved.routing,
-      prompts,
-      promptMasterSkillDirectory: options.promptMasterSkillDirectory
-    }),
-    {
-      cachePath: defaultGuideMatchCachePath(options.env),
-      routing: resolved.routing,
-      matchPrompt: prompts.match,
-      generatePrompt: prompts.generate,
-      optimizePrompt: prompts.optimize
-    }
-  );
-  return resolved.request.profile === void 0 ? runGuideMatch(provider, options.catalog, {
-    intent: resolved.request.intent,
-    ...resolved.routing.match
-  }) : runGuideGenerate(provider, options.catalog, options.guideRoot, {
-    intent: resolved.request.intent,
-    ...resolved.routing.generate,
-    profileRef: resolved.request.profile
+  const provider = new CopilotGuideProvider({
+    routing: resolved.routing,
+    prompts,
+    promptMasterSkillDirectory: options.promptMasterSkillDirectory
   });
+  const cache3 = new GuideArtifactCache({
+    cwd: options.cwd,
+    routing: resolved.routing,
+    prompts,
+    promptMasterSkillDirectory: options.promptMasterSkillDirectory
+  });
+  return resolved.request.profile === void 0 ? runGuideMatch(
+    provider,
+    options.catalog,
+    {
+      intent: resolved.request.intent,
+      ...resolved.routing.match
+    },
+    cache3
+  ) : runGuideGenerate(
+    provider,
+    options.catalog,
+    options.guideRoot,
+    {
+      intent: resolved.request.intent,
+      ...resolved.routing.generate,
+      profileRef: resolved.request.profile
+    },
+    cache3
+  );
 };
 
 // src/guide-interactive-intent.ts
-import { constants as constants3 } from "node:fs";
-import { lstat as lstat3, open, realpath as realpath2, unlink as unlink2 } from "node:fs/promises";
+import { constants as constants4 } from "node:fs";
+import { lstat as lstat4, open as open2, realpath as realpath2, unlink as unlink2 } from "node:fs/promises";
 import path7 from "node:path";
 var popupGuideIntentFileEnvironmentVariable = "TRELLAGE_GUIDE_HERDR_INTENT_FILE";
 var guideIntentDirectoryName = "guide-intents";
@@ -77435,7 +77587,7 @@ var guideIntentLocation = (stateDirectory, intentPath) => {
   };
 };
 var validateIntentDirectory = async (location, uid) => {
-  const status = await lstat3(location.intentDirectory);
+  const status = await lstat4(location.intentDirectory);
   if (!status.isDirectory() || status.uid !== uid || (status.mode & 511) !== 448) {
     throw invalidIntentFile("directory must be an owned mode-0700 directory");
   }
@@ -77448,7 +77600,7 @@ var validateIntentDirectory = async (location, uid) => {
   }
 };
 var validateOpenedIntent = async (handle, location, uid) => {
-  const [openedStatus, pathStatus] = await Promise.all([handle.stat(), lstat3(location.intentPath)]);
+  const [openedStatus, pathStatus] = await Promise.all([handle.stat(), lstat4(location.intentPath)]);
   if (!openedStatus.isFile() || openedStatus.uid !== uid || (openedStatus.mode & 511) !== 384 || openedStatus.nlink !== 1 || openedStatus.size > maximumGuideIntentBytes) {
     throw invalidIntentFile("must be an owned, single-link, mode-0600 regular file within the size limit");
   }
@@ -77469,9 +77621,9 @@ var consumePopupGuideIntentFile = async (stateDirectory, intentPath) => {
   await validateIntentDirectory(location, uid);
   let handle;
   try {
-    handle = await open(
+    handle = await open2(
       location.intentPath,
-      constants3.O_RDONLY | constants3.O_NOFOLLOW | constants3.O_NONBLOCK
+      constants4.O_RDONLY | constants4.O_NOFOLLOW | constants4.O_NONBLOCK
     );
   } catch (cause) {
     throw invalidIntentFile("cannot be opened safely", { cause });
@@ -79011,132 +79163,173 @@ var selectedProfileForPinnedLens = (catalog, lens) => {
 };
 var literalGuideRecommendations = (catalog, intent) => literalGuideMatch(catalog, intent).map((candidate) => enrichLiteralCandidate(catalog, candidate));
 var templateGuideCandidates = (guide, workflowId, intent) => templatePromptCandidates(guide, workflowId, intent);
-var runGuideMatchingStep = async (provider, catalog, request, onProgress) => {
+var runGuideMatchingStep = async (provider, catalog, request, onProgress, cache3) => {
   onProgress?.("comparing-profiles" /* ComparingProfiles */);
-  const response = await runGuideMatch(provider, catalog, request);
+  const response = await runGuideMatch(provider, catalog, request, cache3);
   onProgress?.("preparing-recommendations" /* PreparingRecommendations */);
   return response;
 };
-var runGuideGenerationStep = async (catalog, guideRoot, provider, intent, recommendation, onGuideLoaded, onProgress) => {
+var runGuideGenerationStep = async (catalog, guideRoot, provider, intent, recommendation, onGuideLoaded, onProgress, cache3) => {
   const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.profileRef);
   onGuideLoaded?.(guideDocument);
-  onProgress?.("generating-candidates" /* GeneratingCandidates */);
-  const generated = await provider.generate({
-    intent,
-    profileRef: recommendation.profileRef,
-    workflowId: recommendation.workflowId,
-    guide: guideDocument.guide,
-    guideBody: guideDocument.body
-  });
-  const [first, second, third] = generated.candidates;
-  if (first === void 0 || second === void 0 || third === void 0) {
-    throw new Error("Generation must return exactly three prompt candidates");
-  }
   const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId);
-  onProgress?.("applying-workflow" /* ApplyingWorkflow */);
-  const bodyCandidates = requireDistinctGuideCandidatePrompts(
-    [
-      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, first),
-      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, second),
-      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, third)
-    ],
-    "generated-body normalization" /* GeneratedBodyNormalization */
-  );
-  onProgress?.("optimizing-candidates" /* OptimizingCandidates */);
   const fixedFrame = workflowOptimizeFixedFrame(workflow);
-  const optimized = await provider.optimize({
-    targetTool: guideTargetTool(catalog, recommendation.profileRef),
-    profileRef: recommendation.profileRef,
-    candidates: bodyCandidates,
-    ...fixedFrame === void 0 ? {} : { fixedFrame }
-  });
-  const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates;
-  if (optimizedFirst === void 0 || optimizedSecond === void 0 || optimizedThird === void 0) {
-    throw new Error("Prompt Master must return exactly three prompt candidates");
-  }
-  const renderedCandidates = requireDistinctGuideCandidatePrompts(
-    [
-      renderWorkflowBodyCandidate(
-        workflow,
-        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[0], optimizedFirst)
-      ),
-      renderWorkflowBodyCandidate(
-        workflow,
-        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[1], optimizedSecond)
-      ),
-      renderWorkflowBodyCandidate(
-        workflow,
-        resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[2], optimizedThird)
+  const targetTool = guideTargetTool(catalog, recommendation.profileRef);
+  const produce = async () => {
+    onProgress?.("generating-candidates" /* GeneratingCandidates */);
+    const generated2 = await provider.generate({
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body
+    });
+    const [first2, second2, third2] = generated2.candidates;
+    if (first2 === void 0 || second2 === void 0 || third2 === void 0) {
+      throw new Error("Generation must return exactly three prompt candidates");
+    }
+    onProgress?.("applying-workflow" /* ApplyingWorkflow */);
+    const bodyCandidates = requireDistinctGuideCandidatePrompts(
+      [
+        resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, first2),
+        resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, second2),
+        resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, third2)
+      ],
+      "generated-body normalization" /* GeneratedBodyNormalization */
+    );
+    onProgress?.("optimizing-candidates" /* OptimizingCandidates */);
+    const optimized = await provider.optimize({
+      targetTool,
+      profileRef: recommendation.profileRef,
+      candidates: bodyCandidates,
+      ...fixedFrame === void 0 ? {} : { fixedFrame }
+    });
+    const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates;
+    if (optimizedFirst === void 0 || optimizedSecond === void 0 || optimizedThird === void 0) {
+      throw new Error("Prompt Master must return exactly three prompt candidates");
+    }
+    const renderedCandidates = requireDistinctGuideCandidatePrompts(
+      [
+        renderWorkflowBodyCandidate(
+          workflow,
+          resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[0], optimizedFirst)
+        ),
+        renderWorkflowBodyCandidate(
+          workflow,
+          resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[1], optimizedSecond)
+        ),
+        renderWorkflowBodyCandidate(
+          workflow,
+          resolveWorkflowBodyCandidate(guideDocument.guide, workflow, bodyCandidates[2], optimizedThird)
+        )
+      ],
+      "optimization resolution and exact rendering" /* FinalRendering */
+    );
+    return {
+      candidates: requireDistinctGuideCandidatePrompts(
+        [
+          applyRequiredProfilePromptTemplate(
+            recommendation.profileRef,
+            guideDocument.guide,
+            recommendation.workflowId,
+            renderedCandidates[0]
+          ),
+          applyRequiredProfilePromptTemplate(
+            recommendation.profileRef,
+            guideDocument.guide,
+            recommendation.workflowId,
+            renderedCandidates[1]
+          ),
+          applyRequiredProfilePromptTemplate(
+            recommendation.profileRef,
+            guideDocument.guide,
+            recommendation.workflowId,
+            renderedCandidates[2]
+          )
+        ],
+        "optimization resolution and exact rendering" /* FinalRendering */
       )
-    ],
-    "optimization resolution and exact rendering" /* FinalRendering */
-  );
-  const candidates = requireDistinctGuideCandidatePrompts(
-    [
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        renderedCandidates[0]
-      ),
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        renderedCandidates[1]
-      ),
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        renderedCandidates[2]
-      )
-    ],
-    "optimization resolution and exact rendering" /* FinalRendering */
-  );
+    };
+  };
+  const generated = await (cache3 === void 0 ? produce() : cache3.generation(
+    {
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+      targetTool,
+      ...fixedFrame === void 0 ? {} : { fixedFrame }
+    },
+    produce
+  ));
+  const [first, second, third] = generated.candidates;
+  if (first === void 0 || second === void 0 || third === void 0)
+    throw new Error("Cached generation must contain three candidates");
   return {
     guideDocument,
-    candidates
+    candidates: [first, second, third]
   };
 };
-var runGuideRefinementStep = async (catalog, provider, intent, recommendation, guideDocument, candidates, candidateIndex, feedback) => {
+var runGuideRefinementStep = async (catalog, provider, intent, recommendation, guideDocument, candidates, candidateIndex, feedback, cache3) => {
   const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId);
   const candidate = tripleAt(candidates, candidateIndex);
   const bodyCandidate = workflowBodyCandidate(workflow, candidate);
-  const refined = await provider.refine({
-    intent,
-    profileRef: recommendation.profileRef,
-    workflowId: recommendation.workflowId,
-    guide: guideDocument.guide,
-    guideBody: guideDocument.body,
-    candidate: bodyCandidate,
-    feedback
-  });
-  const refinedBodyCandidate = resolveRefinedWorkflowBodyCandidate(
-    guideDocument.guide,
-    workflow,
-    bodyCandidate,
-    refined.candidate
-  );
   const fixedFrame = workflowOptimizeFixedFrame(workflow);
-  const optimized = await provider.optimize({
-    targetTool: guideTargetTool(catalog, recommendation.profileRef),
-    profileRef: recommendation.profileRef,
-    candidates: [refinedBodyCandidate],
-    ...fixedFrame === void 0 ? {} : { fixedFrame }
-  });
-  const optimizedCandidate = optimized.candidates[0];
-  if (optimizedCandidate === void 0) throw new Error("Prompt Master must return one refined prompt candidate");
-  const renderedCandidate = renderWorkflowBodyCandidate(
-    workflow,
-    resolveWorkflowBodyCandidate(guideDocument.guide, workflow, refinedBodyCandidate, optimizedCandidate)
-  );
-  const finalCandidate = applyRequiredProfilePromptTemplate(
-    recommendation.profileRef,
-    guideDocument.guide,
-    recommendation.workflowId,
-    renderedCandidate
-  );
+  const targetTool = guideTargetTool(catalog, recommendation.profileRef);
+  const produce = async () => {
+    const refined2 = await provider.refine({
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+      candidate: bodyCandidate,
+      feedback
+    });
+    const refinedBodyCandidate = resolveRefinedWorkflowBodyCandidate(
+      guideDocument.guide,
+      workflow,
+      bodyCandidate,
+      refined2.candidate
+    );
+    const optimized = await provider.optimize({
+      targetTool,
+      profileRef: recommendation.profileRef,
+      candidates: [refinedBodyCandidate],
+      ...fixedFrame === void 0 ? {} : { fixedFrame }
+    });
+    const optimizedCandidate = optimized.candidates[0];
+    if (optimizedCandidate === void 0) throw new Error("Prompt Master must return one refined prompt candidate");
+    const renderedCandidate = renderWorkflowBodyCandidate(
+      workflow,
+      resolveWorkflowBodyCandidate(guideDocument.guide, workflow, refinedBodyCandidate, optimizedCandidate)
+    );
+    return {
+      candidate: applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        renderedCandidate
+      )
+    };
+  };
+  const refined = await (cache3 === void 0 ? produce() : cache3.refinement(
+    {
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+      targetTool,
+      ...fixedFrame === void 0 ? {} : { fixedFrame },
+      candidates,
+      candidateIndex,
+      feedback
+    },
+    produce
+  ));
+  const finalCandidate = refined.candidate;
   requireDistinctGuideCandidatePrompts(
     replaceCandidateAt(candidates, candidateIndex, finalCandidate),
     "optimization resolution and exact rendering" /* FinalRendering */
@@ -80306,7 +80499,8 @@ var useGuideMatchEffect = (props, state, dispatch) => {
           },
           (phase) => {
             if (!cancelled) dispatch({ type: "match/progress" /* MatchProgress */, phase });
-          }
+          },
+          props.cache
         );
         if (!cancelled) dispatch({ type: "match/succeeded" /* MatchSucceeded */, recommendations: response.recommendations });
       } catch (error) {
@@ -80339,7 +80533,8 @@ var useGuideGenerationEffect = (props, state, dispatch) => {
           },
           (phase) => {
             if (!cancelled) dispatch({ type: "generate/progress" /* GenerateProgress */, phase });
-          }
+          },
+          props.cache
         );
         if (!cancelled) dispatch({ type: "generate/succeeded" /* GenerateSucceeded */, candidates });
       } catch (error) {
@@ -80373,7 +80568,8 @@ var useGuideRefinementEffect = (props, state, dispatch) => {
           guideDocument,
           candidates,
           candidateIndex,
-          feedback
+          feedback,
+          props.cache
         );
         if (!cancelled) dispatch({ type: "refine/succeeded" /* RefineSucceeded */, candidate: refinedCandidate });
       } catch (error) {
@@ -82415,7 +82611,7 @@ var ForkPreviewApp = ({ variant }) => {
 // src/cli.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
-  if (filename !== void 0) return readFile3(filename, "utf8");
+  if (filename !== void 0) return readFile2(filename, "utf8");
   const chunks = [];
   let length = 0;
   for await (const chunk of process.stdin) {
@@ -82752,7 +82948,8 @@ var runGuideJsonMode = async (argv, guideRoot, promptMasterSkillDirectory) => {
     guideRoot,
     promptMasterSkillDirectory,
     ...stdinRequest === void 0 ? {} : { stdinRequest },
-    env: process.env
+    env: process.env,
+    cwd: process.cwd()
   });
   process.stdout.write(`${JSON.stringify(response)}
 `);
@@ -82774,9 +82971,9 @@ var probeInteractiveHerdr = async (runner, env3, cwd2) => {
 var openInteractiveTerminalStreams = () => {
   let input;
   try {
-    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants4.O_RDONLY));
+    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants5.O_RDONLY));
     const openedInput = input;
-    const output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(openSync("/dev/tty", constants4.O_WRONLY));
+    const output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(openSync("/dev/tty", constants5.O_WRONLY));
     return {
       input: openedInput,
       output,
@@ -82809,34 +83006,19 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
     process.env
   );
   const prompts = await loadDefaultGuidePrompts();
-  const provider = new CachedGuideProvider(
-    new CopilotGuideProvider({
-      routing,
-      prompts,
-      promptMasterSkillDirectory
-    }),
-    {
-      cachePath: defaultGuideMatchCachePath(process.env),
-      routing,
-      matchPrompt: prompts.match,
-      generatePrompt: prompts.generate,
-      optimizePrompt: prompts.optimize
-    }
-  );
+  const provider = new CopilotGuideProvider({ routing, prompts, promptMasterSkillDirectory });
   const runner = createNodeCommandRunner();
   const cwd2 = herdrContext?.cwd ?? process.cwd();
+  const cache3 = new GuideArtifactCache({ cwd: cwd2, routing, prompts, promptMasterSkillDirectory });
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd2);
   if (herdrContext?.surface === "popup" && !herdrAvailabilityProbe) {
     throw new Error("Herdr is unavailable for this guide popup");
   }
   const terminal = openInteractiveTerminalStreams();
   const { input, output } = terminal;
-  const redrawInitialFrame = createInitialGuideRenderHandler(
-    (text4) => {
-      output.write(text4);
-    },
-    process.env.INK_SCREEN_READER !== "true"
-  );
+  const redrawInitialFrame = createInitialGuideRenderHandler((text4) => {
+    output.write(text4);
+  }, process.env.INK_SCREEN_READER !== "true");
   let result;
   try {
     const instance = render_default(
@@ -82846,6 +83028,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
           catalog,
           guideRoot,
           provider,
+          cache: cache3,
           routing,
           runner,
           cwd: cwd2,
@@ -82982,8 +83165,8 @@ var main = async () => {
   let input;
   let output;
   try {
-    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants4.O_RDONLY));
-    output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(outputFd = openSync("/dev/tty", constants4.O_WRONLY));
+    input = process.stdin.isTTY ? process.stdin : new tty3.ReadStream(openSync("/dev/tty", constants5.O_RDONLY));
+    output = process.stderr.isTTY ? process.stderr : new tty3.WriteStream(outputFd = openSync("/dev/tty", constants5.O_WRONLY));
   } catch {
     throw new Error("an interactive controlling terminal is required");
   }

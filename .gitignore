@@ -29,3 +29,4 @@ results/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+/.trx-guide/

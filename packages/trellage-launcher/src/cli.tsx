@@ -17,11 +17,7 @@ import {
 import { tableColumns } from "./table-layout.js"
 import { enrichNativeProfileList } from "./native-guide-list.js"
 import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.js"
-import {
-  guideHeadlessHelpText,
-  parseGuideHeadlessArgv,
-  resolveGuideModelRouting,
-} from "./guide-api.js"
+import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.js"
 import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
 import { resolveInteractiveGuideIntent } from "./guide-interactive-intent.js"
@@ -33,7 +29,7 @@ import {
   type HerdrEnvironment,
 } from "./guide-launch.js"
 import { loadDefaultGuidePrompts } from "./guide-prompts.js"
-import { CachedGuideProvider, defaultGuideMatchCachePath } from "./guide-match-cache.js"
+import { GuideArtifactCache } from "./guide-match-cache.js"
 import { createInitialGuideRenderHandler } from "./guide-terminal.js"
 import { GuideApp, type GuideUiResult } from "./guide-ui.js"
 import {
@@ -42,12 +38,7 @@ import {
   parseBasketPreviewArgv,
   type BasketPreviewResult,
 } from "./basket-preview.js"
-import {
-  ForkPreviewApp,
-  forkPreviewHelpText,
-  parseForkPreviewArgv,
-  type ForkPreviewResult,
-} from "./fork-preview.js"
+import { ForkPreviewApp, forkPreviewHelpText, parseForkPreviewArgv, type ForkPreviewResult } from "./fork-preview.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -532,6 +523,7 @@ const runGuideJsonMode = async (
     promptMasterSkillDirectory,
     ...(stdinRequest === undefined ? {} : { stdinRequest }),
     env: process.env,
+    cwd: process.cwd(),
   })
   process.stdout.write(`${JSON.stringify(response)}\n`)
 }
@@ -569,9 +561,7 @@ const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
   try {
     input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
     const openedInput = input
-    const output = process.stderr.isTTY
-      ? process.stderr
-      : new tty.WriteStream(openSync("/dev/tty", constants.O_WRONLY))
+    const output = process.stderr.isTTY ? process.stderr : new tty.WriteStream(openSync("/dev/tty", constants.O_WRONLY))
     return {
       input: openedInput,
       output,
@@ -609,34 +599,19 @@ const runInteractiveGuideMode = async (
     process.env,
   )
   const prompts = await loadDefaultGuidePrompts()
-  const provider = new CachedGuideProvider(
-    new CopilotGuideProvider({
-      routing,
-      prompts,
-      promptMasterSkillDirectory,
-    }),
-    {
-      cachePath: defaultGuideMatchCachePath(process.env),
-      routing,
-      matchPrompt: prompts.match,
-      generatePrompt: prompts.generate,
-      optimizePrompt: prompts.optimize,
-    },
-  )
+  const provider = new CopilotGuideProvider({ routing, prompts, promptMasterSkillDirectory })
   const runner = createNodeCommandRunner()
   const cwd = herdrContext?.cwd ?? process.cwd()
+  const cache = new GuideArtifactCache({ cwd, routing, prompts, promptMasterSkillDirectory })
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd)
   if (herdrContext?.surface === "popup" && !herdrAvailabilityProbe) {
     throw new Error("Herdr is unavailable for this guide popup")
   }
   const terminal = openInteractiveTerminalStreams()
   const { input, output } = terminal
-  const redrawInitialFrame = createInitialGuideRenderHandler(
-    (text) => {
-      output.write(text)
-    },
-    process.env.INK_SCREEN_READER !== "true",
-  )
+  const redrawInitialFrame = createInitialGuideRenderHandler((text) => {
+    output.write(text)
+  }, process.env.INK_SCREEN_READER !== "true")
   let result: GuideUiResult
   try {
     const instance = render(
@@ -644,6 +619,7 @@ const runInteractiveGuideMode = async (
         catalog={catalog}
         guideRoot={guideRoot}
         provider={provider}
+        cache={cache}
         routing={routing}
         runner={runner}
         cwd={cwd}
