@@ -433,6 +433,13 @@ class GraphController:
         state["status"] = "superseded"
 
     def _supersede_root_for_replan(self, run_id: str) -> None:
+        for repair in self._state.get("graph_repair_beads", []):
+            issue = self._beads.show(repair)
+            if issue.get("status") != "closed":
+                self._beads.close(
+                    repair,
+                    reason=f"superseded by replan of {run_id}",
+                )
         if self._root_bead_id is not None:
             root = self._beads.show(self._root_bead_id)
             if root.get("status") != "closed":

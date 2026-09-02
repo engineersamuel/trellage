@@ -3407,6 +3407,7 @@ class TestControllerE2E(unittest.TestCase):
 
     def test_closed_integrated_graph_with_failed_gates_can_be_superseded(self) -> None:
         with tempfile.TemporaryDirectory() as td:
+            beads = FakeSubprocessRunner()
             git = FakeSubprocessRunner()
             git.set_result("branch --show-current", "worktree/test\n")
             git.set_result(
@@ -3414,7 +3415,11 @@ class TestControllerE2E(unittest.TestCase):
                 "",
             )
             git.set_result("merge-base --is-ancestor", "")
-            ctrl = _make_controller(td=td, git_runner=git)
+            ctrl = _make_controller(
+                td=td,
+                beads_runner=beads,
+                git_runner=git,
+            )
             ctrl.accept_plan(
                 _load("valid-plan.json"),
                 run_id="late-gate-replan",
@@ -3437,9 +3442,30 @@ class TestControllerE2E(unittest.TestCase):
                 "graph_review": "pending",
                 "graph_proof": "pending",
             })
+            repair_beads = [
+                ctrl._beads.create(
+                    title=f"repair:graph:{index}",
+                    metadata={"kind": "graph-repair"},
+                    parent=ctrl._root_bead_id,
+                )
+                for index in range(2)
+            ]
+            ctrl._state["graph_repair_beads"] = repair_beads
+            for repair in repair_beads:
+                ctrl._beads.add_dependency(
+                    blocked=ctrl._root_bead_id,
+                    blocker=repair,
+                )
 
             self.assertEqual(ctrl.prepare_replan("late-gate-replan"), 4)
             self.assertEqual(ctrl._state["status"], "superseded")
+            self.assertTrue(all(
+                any(
+                    "close" in call and repair in call
+                    for call in beads.calls
+                )
+                for repair in repair_beads
+            ))
 
     def test_late_graph_replan_rejects_dirty_or_divergent_target(self) -> None:
         for failure in ("dirty", "divergent"):
