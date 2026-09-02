@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "binaries": {
+    "no-mistakes": {
+      "repository": "kunchenguid/no-mistakes",
+      "tag": "v1.60.2",
+      "version": "1.60.2",
+      "maxBytes": 30000000,
+      "assets": {
+        "darwin-amd64": {
+          "archive": "no-mistakes-v1.60.2-darwin-amd64.tar.gz",
+          "sha256": "f99df63ef2f1974932068fce3bb7b4322a72203b4c8bf958e97e2a09bab01930"
+        },
+        "darwin-arm64": {
+          "archive": "no-mistakes-v1.60.2-darwin-arm64.tar.gz",
+          "sha256": "a7c88b1ab2fba96b30ccc64ca3e95676ae3c3d8625a32d3e74cc2461621ab54a"
+        },
+        "linux-amd64": {
+          "archive": "no-mistakes-v1.60.2-linux-amd64.tar.gz",
+          "sha256": "ebf46d1c8107ec51e92b60ddb4d123df53f4bc6f193c024a5a1793eef4850b89"
+        },
+        "linux-arm64": {
+          "archive": "no-mistakes-v1.60.2-linux-arm64.tar.gz",
+          "sha256": "deed694ff48ca243ff197ecfaf05bf6a8673618742ffe379697b0304f42b57e4"
+        }
+      }
+    },
+    "treehouse": {
+      "repository": "kunchenguid/treehouse",
+      "tag": "v2.0.1",
+      "version": "2.0.1",
+      "maxBytes": 15000000,
+      "assets": {
+        "darwin-amd64": {
+          "archive": "treehouse-v2.0.1-darwin-amd64.tar.gz",
+          "sha256": "1cf44580a5837f995e1d3bb74f4fbd3112b642acd20406087d9735a8106112fd"
+        },
+        "darwin-arm64": {
+          "archive": "treehouse-v2.0.1-darwin-arm64.tar.gz",
+          "sha256": "7ee5078f3d1f33c01196548797fce65408e459d53530b77d4ba56e074fa1c1a2"
+        },
+        "linux-amd64": {
+          "archive": "treehouse-v2.0.1-linux-amd64.tar.gz",
+          "sha256": "1d5a32751ab921670103fd201ddb2b91b47338cb13976f45642b827cf8976af2"
+        },
+        "linux-arm64": {
+          "archive": "treehouse-v2.0.1-linux-arm64.tar.gz",
+          "sha256": "eaccc9c5b98125df8bd77425598eeecee66cb0371db4eb1cf75f0d813c18fab9"
+        }
+      }
+    }
+  },
+  "npm": {
+    "minimumNodeMajor": 20,
+    "tools": {
+      "chrome-devtools-axi": "0.1.33",
+      "gh-axi": "0.1.35",
+      "lavish-axi": "0.1.63",
+      "quota-axi": "0.1.34",
+      "tasks-axi": "0.2.5"
+    }
+  }
+}

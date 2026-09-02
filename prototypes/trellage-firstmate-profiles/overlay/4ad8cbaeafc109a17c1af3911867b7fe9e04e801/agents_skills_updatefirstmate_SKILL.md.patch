@@ -1,0 +1,7 @@
+@@ -14 +14,6 @@
++**Trellage `fmx` runtimes:** when this home or code root carries a `.fmx-managed`
++marker, the runtime is pinned to an exact commit and this skill is disabled.
++`bin/fm-update.sh` refuses with that diagnostic. Do not try to work around it:
++tell the captain to run `fmx update <profile>` on the host and relaunch.
++
+ Self-update firstmate in place.

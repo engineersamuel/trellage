@@ -64,6 +64,35 @@ candidate must ask for source-backed evidence, relevant prior art, unresolved
 questions, risks, and implementation options that should inform the work
 before execution.
 
+For `native:fmx/default`, every candidate must make Firstmate the sole fleet
+router and integration authority. Cover the supported fleet lifecycle
+conditionally: verify the target and registration state; resolve project
+source, `direct-PR`/`no-mistakes`/`local-only` delivery posture, and merge
+authority before mutation; record the smallest useful durable task graph and
+worker count; choose scouts only for uncertainty that can change the work and
+ships for implementation; promote an existing scout instead of duplicating
+it; assign non-overlapping ownership in isolated worktrees; confirm spawned
+workers are processing their briefs; supervise durable status, wake, steering,
+blocker, and decision state; serialize only for true semantic dependencies;
+use the selected delivery path; preserve captain merge authority and durable
+holds; and finish with safe teardown plus one integrated report. Do not make
+the user coordinate individual workers.
+
+For `native:fmx/pstack-workers`, preserve all `fmx/default` fleet requirements
+and explicitly use the profile's lean pstack-derived worker policy. Every
+candidate must require the smallest logical change, a stated blast radius,
+conditional `how` and `why` checks, artifact-backed completion, verification
+gaps, and workers that never assume routing, merge, or captain authority. Do
+not invoke Poteto Mode, a pstack plugin, pstack subagents, or a second router.
+
+For both `native:fmx` profiles, the authored operating-contract prefix is
+deterministically applied after optimization. Draft the task-specific content
+that belongs under that prefix. Do not add a second operating-contract section
+or repeat the template's generic fleet rules. Do not force unsupported or
+irrelevant upstream surfaces such as secondmates, Relay, voice, Zellij, Orca,
+or cmux. Browser tools and other optional capabilities belong only in tasks
+that actually require them.
+
 ## Output contract
 
 Respond with raw JSON only: no Markdown code fences, no prose before or

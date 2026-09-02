@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/kunchenguid/firstmate.git",
+    "commit": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801",
+    "overlay": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+  },
+  "profiles": {
+    "default": {
+      "description": "Native fmx/default Firstmate fleet orchestration on a pinned runtime, with an isolated captain home and one Trellage-managed Claude home per worker.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "plugin": null,
+      "standaloneMcps": [],
+      "taskIdPrefix": "fmd",
+      "workerPolicy": null
+    },
+    "pstack-workers": {
+      "description": "Native fmx/pstack-workers Firstmate fleet orchestration with a lean pstack-derived worker policy inserted once into every ship and scout brief.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "plugin": null,
+      "standaloneMcps": [],
+      "taskIdPrefix": "fmp",
+      "workerPolicy": "pstack-workers.md"
+    }
+  }
+}

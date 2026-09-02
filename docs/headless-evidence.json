@@ -469,6 +469,60 @@
           "nonTtyCompletion"
         ]
       }
+    },
+    {
+      "id": "native-pi-0.84.2",
+      "publication": {
+        "surface": "native",
+        "catalog": "prototypes/trellage-picx-profiles/catalog.json",
+        "profiles": [
+          "default"
+        ]
+      },
+      "capabilities": {
+        "schemaVersion": 1,
+        "prompt": true,
+        "outputFormats": [
+          "text"
+        ],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "prompt-only",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": "0.84.2"
+      },
+      "deterministicEvidence": [
+        {
+          "path": "prototypes/trellage-picx-profiles/tests/contract.sh",
+          "cases": [
+            "nonTtyCompletion",
+            "nonZeroExit",
+            "cancellationCleanup",
+            "questionToolControl",
+            "versionGating"
+          ]
+        },
+        {
+          "path": "prototypes/trellage-router/tests/contract.sh",
+          "cases": [
+            "schema"
+          ]
+        }
+      ],
+      "liveEvidence": {
+        "recorded": true,
+        "source": "Trellage Native Pi 0.84.2 validation on 2026-08-25",
+        "cases": [
+          "nonTtyCompletion"
+        ]
+      }
     }
   ]
 }

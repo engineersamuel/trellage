@@ -20,6 +20,7 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 install_root="$home/.local/share/trellage/cldx"
 installed_launcher="$install_root/bin/cldx"
 installed_catalog="$install_root/catalog.json"
+installed_native_claude="$install_root/lib/native-claude"
 ownership_marker="$install_root/.managed-by-trellage-claude-profiles"
 command_path="$home/.local/bin/cldx"
 
@@ -42,6 +43,10 @@ fi
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ -f "$installed_catalog" && ! -L "$installed_catalog" ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+if [[ -e "$installed_native_claude" || -L "$installed_native_claude" ]]; then
+  [[ -f "$installed_native_claude" && ! -L "$installed_native_claude" ]] \
+    || refuse "unsafe managed native Claude runtime: $installed_native_claude"
+fi
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \

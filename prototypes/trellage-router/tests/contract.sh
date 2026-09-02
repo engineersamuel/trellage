@@ -161,6 +161,67 @@ EOF
   ]
 }
 EOF
+  elif [[ "$launcher" == fmx ]]; then
+    cat >"$runtime/catalog.json" <<EOF
+{
+  "schemaVersion": 1,
+  "launcher": "fmx",
+  "harness": "firstmate",
+  "sandbox": false,
+  "profiles": [
+    {
+      "name": "default",
+      "description": "Firstmate fleet orchestration",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "plugin": null,
+      "source": null,
+      "marketplace": null,
+      "standaloneMcps": []
+    },
+    {
+      "name": "pstack-workers",
+      "description": "Firstmate with a lean pstack worker policy",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "plugin": null,
+      "source": null,
+      "marketplace": null,
+      "standaloneMcps": []
+    }
+  ]
+}
+EOF
   else
     cat >"$runtime/catalog.json" <<EOF
 {
@@ -287,6 +348,7 @@ catalog_stage="$fixture_root/cdx-catalog.json"
 ]' "$runtime_parent/cdx/catalog.json" >"$catalog_stage"
 mv "$catalog_stage" "$runtime_parent/cdx/catalog.json"
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
+create_native_launcher fmx firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1
 create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2
@@ -411,6 +473,8 @@ for pair in \
   cdx:pstack \
   cdx:youtube \
   cldx:cldx-p \
+  fmx:default \
+  fmx:pstack-workers \
   grx:grx-p \
   jcx:jcx-p \
   omp:copilot \
@@ -493,6 +557,9 @@ assert_contains 'skills requires status or update' "$fixture_root/skills-invalid
 assert_contains $'cpx/cpx-p\t' "$fixture_root/list.out"
 assert_contains $'cdx/cdx-p\tcdx' "$fixture_root/list.out"
 assert_contains $'cldx/cldx-p\tcldx' "$fixture_root/list.out"
+assert_contains $'fmx/default\tFirstmate fleet orchestration' "$fixture_root/list.out"
+assert_contains $'fmx/pstack-workers\tFirstmate with a lean pstack worker policy' \
+  "$fixture_root/list.out"
 assert_contains $'grx/grx-p\tgrx' "$fixture_root/list.out"
 assert_contains $'jcx/jcx-p\tjcx' "$fixture_root/list.out"
 assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
@@ -519,6 +586,8 @@ jq -e '
     "cdx/pstack",
     "cdx/youtube",
     "cldx/cldx-p",
+    "fmx/default",
+    "fmx/pstack-workers",
     "grx/grx-p",
     "jcx/jcx-p",
     "omp/copilot",
@@ -532,6 +601,8 @@ jq -e '
     "codex",
     "codex",
     "claude",
+    "firstmate",
+    "firstmate",
     "grok",
     "jcode",
     "oh-my-pi",
@@ -544,6 +615,8 @@ jq -e '
     true,
     true,
     true,
+    false,
+    false,
     false,
     true,
     false,
@@ -558,6 +631,9 @@ jq -e '
   and (.profiles[] | select(.launcher == "picx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cdx" and .name == "pstack") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cdx" and .name == "youtube") | .herdrCompatibility.status) == "verified"
+  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .herdrCompatibility.status) == "verified"
+  and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
+  and all(.profiles[] | select(.launcher == "fmx"); .headless.prompt == false and .headless.modelOverride == false)
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
   and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
@@ -632,7 +708,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath
     and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 11)
+    and (.catalog.native | length == 13)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -723,7 +799,7 @@ selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
-  .description == "Trellage Native runs coding-agent launchers directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries."
+  .description == "Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries."
   and (.choices[0]
     | .label == "copilot / cpx-p"
       and (.description | length == 1200)
@@ -745,6 +821,19 @@ jq -e '
       and .[0].label == "claude / cldx-p"
       and .[0].harness == "claude"
       and .[0].profile == "cldx-p")
+  and ([.choices[] | select(.id == "fmx:default")]
+    | length == 1
+      and .[0].label == "firstmate / default"
+      and .[0].harness == "firstmate"
+      and .[0].profile == "default"
+      and .[0].commandAlias == "fmx"
+      and .[0].models == []
+      and .[0].modelOverrideSupported == false)
+  and ([.choices[] | select(.id == "fmx:pstack-workers")]
+    | length == 1
+      and .[0].label == "firstmate / pstack-workers"
+      and .[0].profile == "pstack-workers"
+      and .[0].modelOverrideSupported == false)
   and ([.choices[] | select(.id == "omp:copilot")]
     | length == 1
       and .[0].label == "pi / oh-my-pi"
@@ -793,8 +882,8 @@ jq -e '
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted prime profile'
 jq -e '
-  ([.choices[] | select(.id == "omp:local" or .id == "picx:default") | .modelOverrideSupported] | all(. == false))
-  and ([.choices[] | select(.id != "omp:local" and .id != "picx:default") | .modelOverrideSupported] | all)
+  ([.choices[] | select(.id == "omp:local" or .id == "picx:default" or .commandAlias == "fmx") | .modelOverrideSupported] | all(. == false))
+  and ([.choices[] | select(.id != "omp:local" and .id != "picx:default" and .commandAlias != "fmx") | .modelOverrideSupported] | all)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not enable model overrides for every launcher except local Qwen'
 jq -e '
@@ -802,7 +891,7 @@ jq -e '
   and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [true])
   and ([.choices[] | select(.id == "cdx:youtube") | .sandbox] == [true])
-  and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
+  and ([.choices[] | select(.commandAlias == "cldx" or .commandAlias == "fmx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'
 [[ ! -e "$inventory_log" ]] \
@@ -827,6 +916,16 @@ jq -e '
   and .readiness == "busy"
 ' <<<"$busy_inventory_output" >/dev/null \
   || fail 'trx inventory did not preserve busy readiness'
+
+firstmate_inventory_output="$("$fixture_bin/trx" inventory fmx default --json)" \
+  || fail 'trx inventory failed for Firstmate'
+jq -e '
+  .launcher == "fmx"
+  and .harness == "firstmate"
+  and .profile == "default"
+  and .readiness == "healthy"
+' <<<"$firstmate_inventory_output" >/dev/null \
+  || fail 'trx inventory did not route to Firstmate'
 
 status=0
 "$fixture_bin/trx" inventory bogus cpx-p --json >"$fixture_root/inventory-bad-launcher.out" \
@@ -974,6 +1073,17 @@ raise SystemExit(0 if actual == expected else 1)
 PY
 
 : >"$argument_log"
+TRX_ARGUMENT_LOG="$argument_log" "$fixture_bin/trx" run fmx pstack-workers
+python3 - "$argument_log" <<'PY' || fail 'trx run did not route to Firstmate'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"fmx", b"pstack-workers", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
+
+: >"$argument_log"
 : >"$fixture_root/router-environment.log"
 TRANSCRIPT_API_KEY='router-contract-secret' \
   TRX_ARGUMENT_LOG="$argument_log" \
@@ -1061,6 +1171,15 @@ status=0
 assert_contains 'required launcher not found on PATH: cldx' \
   "$fixture_root/list-missing-cldx.err"
 mv "$fixture_bin/cldx.absent" "$fixture_bin/cldx"
+
+mv "$fixture_bin/fmx" "$fixture_bin/fmx.absent"
+status=0
+"$fixture_bin/trx" list >"$fixture_root/list-missing-fmx.out" \
+  2>"$fixture_root/list-missing-fmx.err" || status=$?
+[[ "$status" == 1 ]] || fail "missing fmx list exited $status instead of 1"
+assert_contains 'required launcher not found on PATH: fmx' \
+  "$fixture_root/list-missing-fmx.err"
+mv "$fixture_bin/fmx.absent" "$fixture_bin/fmx"
 
 mv "$fixture_bin/omp" "$fixture_bin/omp.absent"
 status=0
@@ -1222,7 +1341,8 @@ mv "$runtime_parent/trx/lib/launcher.mjs" \
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
-  && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/grx/bin/grx" \
+  && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/fmx/bin/fmx" \
+  && -x "$runtime_parent/grx/bin/grx" \
   && -x "$runtime_parent/jcx/bin/jcx" \
   && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/picx/bin/picx" \
   && -x "$runtime_parent/prx/bin/prx" ]] \

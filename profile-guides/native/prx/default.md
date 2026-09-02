@@ -76,7 +76,7 @@ extension. See `prototypes/trellage-prime-profiles/README.md`.
   `https://mirrors.aliyun.com/pypi/simple`, but that is the only documented
   fallback.
 - The task needs OS-level sandboxing or containment — `prx` is one of the
-  five native launchers that remain unsandboxed by design (see
+  seven native launchers that remain unsandboxed by design (see
   `docs/native-sandbox-research.md`); Prime Agent gets full host access.
 - One-shot automation is run repeatedly without ever calling `prx shutdown`;
   resident background workers can accumulate on the pinned daemon socket.

@@ -168,6 +168,12 @@ const normalizedTokenOverlapScore = (value: string, intentTokens: ReadonlySet<st
   return tokenOverlapCount(tokens, intentTokens) / Math.sqrt(tokens.size * intentTokens.size)
 }
 
+const normalizeIdentityPhrase = (value: string): string =>
+  value
+    .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/gu, " ")
+    .trim()
+
 // ---------------------------------------------------------------------------
 // Headless argv parsing.
 // ---------------------------------------------------------------------------
@@ -774,6 +780,67 @@ export const applyWorkflowPromptTemplate = (
   }
 }
 
+const requiredProfilePromptTemplateRefs: ReadonlySet<string> = new Set([
+  "native:fmx/default",
+  "native:fmx/pstack-workers",
+])
+
+const firstmateContractHeadings: ReadonlySet<string> = new Set([
+  "firstmate fleet operating contract",
+  "firstmate fleet investigation contract",
+  "firstmate operating contract",
+  "firstmate investigation contract",
+  "firstmate pstack-worker operating contract",
+  "firstmate pstack-worker investigation contract",
+  "firstmate router operating contract",
+  "firstmate router investigation contract",
+  "operating contract",
+  "investigation contract",
+])
+
+const removeLeadingFirstmateContract = (prompt: string): string => {
+  const lines = prompt.trim().split("\n")
+  const firstHeading = lines[0]?.match(/^#{1,6}\s+(.+?)\s*$/u)
+  const heading = firstHeading?.[1]?.trim().toLowerCase()
+  if (heading === undefined || !firstmateContractHeadings.has(heading)) return prompt.trim()
+
+  const nextHeadingIndex = lines.findIndex((line, index) => index > 0 && /^#{1,6}\s+\S/u.test(line))
+  if (nextHeadingIndex < 0) return prompt.trim()
+
+  const nextHeading = normalizeIdentityPhrase(lines[nextHeadingIndex] ?? "")
+  if (nextHeading !== "task" && nextHeading !== "investigation") return prompt.trim()
+  const body = lines
+    .slice(nextHeadingIndex + 1)
+    .join("\n")
+    .trim()
+  return body.length > 0 ? body : prompt.trim()
+}
+
+/**
+ * Reapplies the authored Firstmate operating contract after prompt
+ * optimization. This keeps profile-specific captain and worker rules in every
+ * final candidate even when a model paraphrases or drops the guide template.
+ */
+export const applyRequiredProfilePromptTemplate = (
+  profileRef: string,
+  guide: ProfileGuideV1,
+  workflowId: string,
+  candidate: GuideGenerateCandidate,
+): GuideGenerateCandidate => {
+  if (!requiredProfilePromptTemplateRefs.has(profileRef)) return candidate
+  const workflow = guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
+  if (isCompleteWorkflowPrompt(workflow.promptTemplate, candidate.prompt)) return candidate
+  const promptBody = removePartialTemplateBoundary(
+    workflow.promptTemplate,
+    removeLeadingFirstmateContract(candidate.prompt),
+  )
+  return {
+    ...candidate,
+    prompt: workflow.promptTemplate.replaceAll("{{intent}}", promptBody),
+  }
+}
+
 /**
  * Generates prompts for one exact profile reference. Deterministically
  * selects that profile's best workflow by token overlap with `intent`, using
@@ -831,11 +898,12 @@ export const runGuideGenerate = async (
   })
   const candidates = assertTriple(
     optimized.candidates.map((candidate): GuidePromptCandidate => {
+      const finalCandidate = applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, candidate)
       return {
-        title: candidate.title,
-        prompt: candidate.prompt,
-        notes: candidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt),
+        title: finalCandidate.title,
+        prompt: finalCandidate.prompt,
+        notes: finalCandidate.notes,
+        command: publicGuideLaunchCommand(catalog, request.profileRef, finalCandidate.prompt),
       }
     }),
     "generation prompt candidates",
@@ -864,11 +932,30 @@ export interface LiteralGuideCandidate {
   readonly tradeoff: string
 }
 
-const profileTokenOverlapScore = (entry: GuideCatalogEntryRef, intentTokens: ReadonlySet<string>): number => {
+const profileTokenOverlapScore = (
+  entry: GuideCatalogEntryRef,
+  intentTokens: ReadonlySet<string>,
+  normalizedIntent: string,
+): { readonly score: number; readonly explicitIdentity: boolean; readonly identitySignals: string } => {
+  const identityAliases =
+    entry.launcher === undefined
+      ? [entry.ref, `sandbox/${entry.name}`, `sandbox ${entry.name}`]
+      : [entry.ref, `${entry.launcher}/${entry.name}`, `${entry.launcher} ${entry.name}`]
+  const identitySignals = [...identityAliases, entry.name, entry.launcher ?? "", entry.harness ?? ""].join(" ")
+  const boundedIntent = ` ${normalizedIntent} `
+  const explicitIdentity = identityAliases.some((alias) => {
+    const normalizedAlias = normalizeIdentityPhrase(alias)
+    return normalizedAlias.length > 0 && boundedIntent.includes(` ${normalizedAlias} `)
+  })
   const description = normalizedTokenOverlapScore(entry.description, intentTokens)
   const capabilities = normalizedTokenOverlapScore(entry.guide.capabilities.join(" "), intentTokens)
   const bestFor = normalizedTokenOverlapScore(entry.guide.bestFor.join(" "), intentTokens)
-  return description * 0.15 + capabilities * 0.1 + bestFor * 0.2
+  const identity = normalizedTokenOverlapScore(identitySignals, intentTokens)
+  return {
+    score: identity * 0.25 + (explicitIdentity ? 2 : 0) + description * 0.15 + capabilities * 0.1 + bestFor * 0.2,
+    explicitIdentity,
+    identitySignals,
+  }
 }
 
 const bestWorkflowForEntry = (
@@ -893,9 +980,9 @@ const pinnedGuideProfileRefs: ReadonlySet<string> = new Set([
 /**
  * Deterministic, model-free ranking of up to five known catalog profiles
  * by normalized token overlap between `intent` and each profile's
- * description/capabilities/bestFor and its best-matching workflow's
- * id/description/examples. Stable source-order tie-break; distinct refs;
- * confidence bounded to `[0, 1]`.
+ * identity/description/capabilities/bestFor and its best-matching workflow's
+ * id/description/examples. Explicit profile identities take priority. Stable
+ * source-order tie-break; distinct refs; confidence bounded to `[0, 1]`.
  */
 export const literalGuideMatch = (
   catalog: CombinedGuideCatalog,
@@ -906,14 +993,17 @@ export const literalGuideMatch = (
     throw new GuideServiceError(`Catalog must contain at least 3 profiles to rank literally: got ${entries.length}`)
   }
   const intentTokens = tokenize(intent)
+  const normalizedIntent = normalizeIdentityPhrase(intent)
   const scored = entries.map((entry, index) => {
     const bestWorkflow = bestWorkflowForEntry(entry.guide.workflows, intentTokens)
     const workflow = entry.guide.workflows.find(({ id }) => id === bestWorkflow.id)
     if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${bestWorkflow.id}`)
-    const score = profileTokenOverlapScore(entry, intentTokens) + bestWorkflow.score * 0.55
+    const profileScore = profileTokenOverlapScore(entry, intentTokens, normalizedIntent)
+    const score = profileScore.score + bestWorkflow.score * 0.55
     const matchedTerms = tokenOverlapCount(
       tokenize(
         [
+          profileScore.identitySignals,
           entry.description,
           ...entry.guide.capabilities,
           ...entry.guide.bestFor,
@@ -924,7 +1014,14 @@ export const literalGuideMatch = (
       ),
       intentTokens,
     )
-    return { entry, workflowId: bestWorkflow.id, score, matchedTerms, index }
+    return {
+      entry,
+      workflowId: bestWorkflow.id,
+      score,
+      matchedTerms,
+      explicitIdentity: profileScore.explicitIdentity,
+      index,
+    }
   })
   const ranked = [...scored].sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
   const top = ranked.slice(0, 5)
@@ -934,8 +1031,9 @@ export const literalGuideMatch = (
       profileRef: item.entry.ref,
       workflowId: item.workflowId,
       confidence: item.score / maxScore,
-      reason:
-        item.matchedTerms > 0
+      reason: item.explicitIdentity
+        ? `The intent explicitly names ${item.entry.ref}; its "${item.workflowId}" workflow is the closest fit.`
+        : item.matchedTerms > 0
           ? `Matches ${item.matchedTerms} intent term(s) across normalized profile signals and the "${item.workflowId}" workflow.`
           : `No strong term overlap with "${intent}" was found; offered as a fallback candidate.`,
       tradeoff: item.entry.guide.avoidFor[0] ?? "No specific tradeoffs recorded for this profile.",

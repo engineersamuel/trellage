@@ -8,8 +8,8 @@ usage() {
 Usage: scripts/azure-fresh-install.sh <all|create|bootstrap|accept|ssh|status|down|plan>
 
 Create a fresh Azure ARM64 VM, install Trellage from a Git clone on that VM,
-and run all eight Trellage Native launchers plus one Trellage Sandbox
-acceptance prompt.
+install all nine Trellage Native launchers, live-probe the eight coding-agent
+launchers, verify both Firstmate profiles, and run one Trellage Sandbox prompt.
 
 Commands:
   all        Create, bootstrap, and run acceptance checks
@@ -42,7 +42,10 @@ Authentication:
 
 The automated Native matrix invokes `cpx/hve`, `cdx/pstack`, `cldx/default`,
 `grx/superpowers`, `jcx/default`, `omp/copilot`, `picx/default`, and
-`prx/default` through `trx run`. Bare `trx` is an interactive TTY picker.
+`prx/default` through `trx run`. It verifies `fmx/default` and
+`fmx/pstack-workers` with setup, doctor, inventory, source-pin, and overlay
+evidence without starting a paid fleet.
+Bare `trx` is an interactive TTY picker.
 The Sandbox check invokes `trellage --profile claude-council`.
 EOF
 }
@@ -208,7 +211,8 @@ Git ref:        $git_ref
 proxy repo:     $proxy_repository
 proxy ref:      $proxy_ref
 checkout:       $checkout
-native probes:  all eight launchers through trx run
+agent probes:   eight launchers through trx run
+Firstmate:      setup, doctor, inventory, source pin, and overlay receipts
 sandbox probe:  trellage --profile claude-council
 attempts:       $attempts
 EOF
@@ -265,6 +269,7 @@ packages:
   - jq
   - python3
   - rsync
+  - tmux
 runcmd:
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -398,6 +403,7 @@ export PATH="$HOME/.local/bin:$PATH"
 missing_packages=()
 command -v bwrap >/dev/null 2>&1 || missing_packages+=(bubblewrap)
 command -v fish >/dev/null 2>&1 || missing_packages+=(fish)
+command -v tmux >/dev/null 2>&1 || missing_packages+=(tmux)
 if (( ${#missing_packages[@]} > 0 )); then
   sudo apt-get update
   sudo apt-get install -y "${missing_packages[@]}"
@@ -501,11 +507,17 @@ REMOTE
 
   apply_local_changes="${TRELLAGE_AZURE_APPLY_LOCAL_CHANGES:-${TRELLAGE_AZURE_APPLY_LOCAL_TRX:-0}}"
   if [[ "$apply_local_changes" == 1 ]]; then
+    require_command tar
     local_trx="$repo_root/prototypes/trellage-router/bin/trx"
     local_picx="$repo_root/prototypes/trellage-picx-profiles/bin/picx"
     local_omp="$repo_root/prototypes/trellage-omp-profiles/bin/omp"
     local_omp_catalog="$repo_root/prototypes/trellage-omp-profiles/catalog.json"
     local_prx="$repo_root/prototypes/trellage-prime-profiles/bin/prx"
+    local_claude_common="$repo_root/prototypes/trellage-claude-common"
+    local_claude_profiles="$repo_root/prototypes/trellage-claude-profiles"
+    local_firstmate_profiles="$repo_root/prototypes/trellage-firstmate-profiles"
+    local_firstmate_guides="$repo_root/profile-guides/native/fmx"
+    local_guide_ui="$repo_root/packages/trellage-launcher/src/guide-ui.tsx"
     local_application="$repo_root/packages/trellage-cli/src/application.ts"
     local_materialize="$repo_root/packages/trellage-cli/src/materialize.ts"
     local_headless_capabilities="$repo_root/packages/trellage-cli/src/headless-capabilities.ts"
@@ -520,6 +532,16 @@ REMOTE
       || fail "local omp catalog candidate is missing or unsafe: $local_omp_catalog"
     [[ -f "$local_prx" && -x "$local_prx" && ! -L "$local_prx" ]] \
       || fail "local prx candidate is missing or unsafe: $local_prx"
+    [[ -d "$local_claude_common" && ! -L "$local_claude_common" ]] \
+      || fail "local shared Claude candidate is missing or unsafe: $local_claude_common"
+    [[ -d "$local_claude_profiles" && ! -L "$local_claude_profiles" ]] \
+      || fail "local Claude profile candidate is missing or unsafe: $local_claude_profiles"
+    [[ -d "$local_firstmate_profiles" && ! -L "$local_firstmate_profiles" ]] \
+      || fail "local Firstmate candidate is missing or unsafe: $local_firstmate_profiles"
+    [[ -d "$local_firstmate_guides" && ! -L "$local_firstmate_guides" ]] \
+      || fail "local Firstmate guide candidate is missing or unsafe: $local_firstmate_guides"
+    [[ -f "$local_guide_ui" && ! -L "$local_guide_ui" ]] \
+      || fail "local guide UI candidate is missing or unsafe: $local_guide_ui"
     [[ -f "$local_application" && ! -L "$local_application" ]] \
       || fail "local application candidate is missing or unsafe: $local_application"
     [[ -f "$local_materialize" && ! -L "$local_materialize" ]] \
@@ -547,6 +569,14 @@ REMOTE
       "azureuser@$vm_ip:/tmp/trellage-headless-capabilities-candidate"
     scp "${SSH_ARGUMENTS[@]}" "$local_finalize_claude_seed" \
       "azureuser@$vm_ip:/tmp/trellage-finalize-claude-seed-candidate"
+    tar -C "$repo_root" -czf - \
+      prototypes/trellage-claude-common \
+      prototypes/trellage-claude-profiles \
+      prototypes/trellage-firstmate-profiles \
+      profile-guides/native/fmx \
+      packages/trellage-launcher/src/guide-ui.tsx \
+      | ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" \
+        "tar -xzf - -C '$checkout'"
     ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" \
       "install -m 0755 /tmp/trellage-trx-candidate '$checkout/prototypes/trellage-router/bin/trx' \
         && install -m 0755 /tmp/trellage-picx-candidate '$checkout/prototypes/trellage-picx-profiles/bin/picx' \
@@ -560,6 +590,12 @@ REMOTE
         && rm -f /tmp/trellage-trx-candidate /tmp/trellage-picx-candidate /tmp/trellage-omp-candidate /tmp/trellage-omp-catalog-candidate /tmp/trellage-prx-candidate /tmp/trellage-application-candidate /tmp/trellage-materialize-candidate /tmp/trellage-headless-capabilities-candidate /tmp/trellage-finalize-claude-seed-candidate \
         && cd '$checkout/packages/trellage-cli' \
         && npm run build \
+        && cd '$checkout/packages/trellage-launcher' \
+        && npm run build \
+        && cd '$checkout/prototypes/trellage-claude-profiles' \
+        && ./install.sh \
+        && cd '$checkout/prototypes/trellage-firstmate-profiles' \
+        && ./install.sh \
         && cd '$checkout/prototypes/trellage-picx-profiles' \
         && ./install.sh \
         && cd '$checkout/prototypes/trellage-omp-profiles' \
@@ -616,6 +652,32 @@ proxy_checkout="$HOME/copilot-proxy-rs"
 log_dir="$HOME/.local/state/trellage-azure-acceptance"
 mkdir -p "$log_dir"
 cd "$checkout"
+
+gh_config="/dev/shm/trellage-gh"
+if [[ -e "$gh_config" && ( ! -d "$gh_config" || -L "$gh_config" ) ]]; then
+  printf 'acceptance: unsafe GitHub CLI configuration path: %s\n' "$gh_config" >&2
+  exit 1
+fi
+install -d -m 700 "$gh_config"
+chmod 0700 "$gh_config"
+if [[ -e "$gh_config/hosts.yml" || -L "$gh_config/hosts.yml" ]]; then
+  if [[ ! -f "$gh_config/hosts.yml" || -L "$gh_config/hosts.yml" ]]; then
+    printf 'acceptance: unsafe GitHub CLI hosts path: %s\n' \
+      "$gh_config/hosts.yml" >&2
+    exit 1
+  fi
+  rm -f -- "$gh_config/hosts.yml"
+fi
+cleanup_gh_config() {
+  rm -f -- "$gh_config/hosts.yml"
+  rmdir "$gh_config" 2>/dev/null || true
+}
+trap cleanup_gh_config EXIT
+printf '%s\n' "$COPILOT_GITHUB_TOKEN" \
+  | GH_CONFIG_DIR="$gh_config" gh auth login --hostname github.com --with-token
+[[ -f "$gh_config/hosts.yml" && ! -L "$gh_config/hosts.yml" ]]
+chmod 0600 "$gh_config/hosts.yml"
+export GH_CONFIG_DIR="$gh_config"
 
 proxy_config="/dev/shm/trellage-copilot-proxy"
 proxy_override="$log_dir/copilot-proxy.override.yaml"
@@ -698,6 +760,8 @@ jcx setup
 omp setup copilot
 picx setup
 prx setup
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx setup default
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx setup pstack-workers
 
 printf 'acceptance: checking Native profiles\n'
 cpx doctor hve
@@ -708,6 +772,8 @@ jcx doctor
 omp doctor copilot
 picx doctor
 prx doctor
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx doctor default
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx doctor pstack-workers
 
 trx list --json >"$log_dir/trx-list.json"
 jq -e '
@@ -717,6 +783,8 @@ jq -e '
     ["cpx", "hve"],
     ["cdx", "pstack"],
     ["cldx", "default"],
+    ["fmx", "default"],
+    ["fmx", "pstack-workers"],
     ["grx", "superpowers"],
     ["jcx", "default"],
     ["omp", "copilot"],
@@ -734,6 +802,8 @@ for pair in \
   'cpx hve' \
   'cdx pstack' \
   'cldx default' \
+  'fmx default' \
+  'fmx pstack-workers' \
   'grx superpowers' \
   'jcx default' \
   'omp copilot' \
@@ -742,6 +812,10 @@ for pair in \
   read -r launcher profile <<<"$pair"
   if [[ "$launcher" == grx ]]; then
     GRX_DISABLE_AUTH_CHECK=1 trx inventory "$launcher" "$profile" --json \
+      >"$log_dir/inventory-$launcher-$profile.json"
+  elif [[ "$launcher" == fmx ]]; then
+    env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+      trx inventory "$launcher" "$profile" --json \
       >"$log_dir/inventory-$launcher-$profile.json"
   else
     trx inventory "$launcher" "$profile" --json \
@@ -752,6 +826,20 @@ for pair in \
     and .profile == $profile
     and .readiness == "healthy"
   ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
+  if [[ "$launcher" == fmx ]]; then
+    jq -e '
+      .source.repository == "https://github.com/kunchenguid/firstmate.git"
+      and .source.pinnedCommit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+      and .source.installedCommit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+      and .source.commitMatchesPin == true
+      and .overlay.commit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+      and .overlay.digestAlgorithm == "sha256"
+      and .overlay.manifestDigest == "38e643de4abebbeae177046cc0a6caaec7f27615752fbaf24bc65baafe8c1db6"
+      and .overlay.contentDigest == "4be7288cc1fade834f00cca3e5e17c147e01211ca37db52a1629a95547bfda56"
+      and .overlay.fileCount == 4
+      and .overlay.verified == true
+    ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
+  fi
 done
 
 timeout --signal=TERM --kill-after=30s 15m \

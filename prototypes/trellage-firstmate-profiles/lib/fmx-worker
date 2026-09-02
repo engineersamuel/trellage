@@ -1,0 +1,402 @@
+#!/usr/bin/env bash
+
+# fmx worker launch boundary.
+#
+# The pinned fm-spawn.sh overlay calls this helper with structured task inputs
+# instead of an opaque shell command. Crewmate panes are created by a long-lived
+# tmux or Herdr daemon that inherits nothing useful and may inherit a great deal
+# that is wrong, so every value the worker needs arrives explicitly and every
+# value it must not see is removed here.
+#
+# The harness invocation is built here and handed to the shared Trellage Claude
+# runtime, which resolves and verifies one Claude executable, applies the shared
+# launch flag contract, performs the complete provider scrub, and execs. No
+# opaque harness command string is ever parsed or evaluated here; the backend
+# still executes the safely quoted pane command that invokes this helper.
+#
+# Firstmate semantics preserved as inputs rather than reimplemented: the
+# operational-input launch-brief encoding, the model and effort selection, the
+# trace-context decision, and the project-local turn-end hooks that live in the
+# task worktree.
+
+set -euo pipefail
+
+readonly ownership_value='trellage-firstmate-profiles-v1'
+readonly ownership_basename='.managed-by-trellage-firstmate-profiles'
+readonly managed_gh_host='github.com'
+readonly managed_harness='claude'
+
+die() {
+  printf 'fmx worker: %s\n' "$1" >&2
+  exit 1
+}
+
+validate_worker_path() {
+  local value="$1" remaining component
+
+  [[ -n "$value" ]] || die 'FMX_WORKER_PATH is required'
+  [[ "$value" != *$'\n'* ]] || die 'FMX_WORKER_PATH must not contain a newline'
+  remaining="$value"
+  while :; do
+    component="${remaining%%:*}"
+    [[ -n "$component" && "$component" == /* ]] \
+      || die "every FMX_WORKER_PATH entry must be a non-empty absolute directory: $value"
+    [[ "$remaining" == *:* ]] || break
+    remaining="${remaining#*:}"
+  done
+}
+
+# Re-exec through the shared provider scrub before this worker runs any
+# external helper. The internal marker is positional so an ambient daemon
+# variable cannot bypass the boundary.
+if [[ "${1-}" != --fmx-provider-environment-scrubbed ]]; then
+  worker_source="${BASH_SOURCE[0]}"
+  worker_bash="${FMX_WORKER_BASH-}"
+  worker_path="${FMX_WORKER_PATH-}"
+  validate_worker_path "$worker_path"
+  [[ "$worker_bash" == /* && -f "$worker_bash" && -x "$worker_bash" ]] \
+    || die "FMX_WORKER_BASH must be an absolute executable file: $worker_bash"
+  [[ "$worker_source" == /* && -f "$worker_source" && -x "$worker_source" \
+    && ! -L "$worker_source" ]] \
+    || die "worker launcher is missing or unsafe: $worker_source"
+  worker_lib="${worker_source%/*}"
+  [[ "$worker_lib" == */lib ]] \
+    || die "worker launcher is outside an installed runtime: $worker_source"
+  early_native_claude="$worker_lib/native-claude"
+  early_runtime_root="${worker_lib%/lib}"
+  [[ -f "$early_native_claude" && -x "$early_native_claude" \
+    && ! -L "$early_native_claude" ]] \
+    || die "missing shared native Claude helper: $early_native_claude"
+  export TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx
+  export TRELLAGE_CLAUDE_RUNTIME_ROOT="$early_runtime_root"
+  export PATH="$worker_path"
+  exec "$worker_bash" "$early_native_claude" exec-clean \
+    --interpreter "$worker_bash" -- \
+    "$worker_source" --fmx-provider-environment-scrubbed "$@"
+fi
+shift
+
+usage() {
+  cat <<'EOF'
+Usage:
+  fmx-worker --task ID --kind ship|scout --backend tmux|herdr \
+             --brief PATH --worktree PATH --operational-input PATH \
+             --model VALUE --effort VALUE --traceparent keep|unset
+
+Environment (supplied by the pinned fm-spawn.sh overlay):
+  FMX_PROFILE            fmx profile name
+  FMX_PROFILE_ROOT       absolute fmx profile root
+  FMX_CAPTAIN_PANE_ID    the captain's Herdr pane id, empty outside Herdr
+  FMX_GH_CONFIG_DIR      the captain's resolved GitHub CLI configuration dir
+  FMX_TASK_ID_PREFIX     the profile's task-id namespace
+  FMX_WORKER_HOME        the captain's validated host HOME
+  FMX_WORKER_PATH        the captain's PATH
+  FMX_WORKER_BASH        the captain's absolute Bash interpreter
+EOF
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+task=''
+kind=''
+backend=''
+brief=''
+worktree=''
+operational_input=''
+model=''
+effort=''
+traceparent='keep'
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --help | -h)
+      usage
+      exit 0
+      ;;
+    --task | --kind | --backend | --brief | --worktree | --operational-input \
+      | --model | --effort | --traceparent)
+      [[ "$#" -ge 2 ]] || die "$1 requires a value"
+      case "$1" in
+        --task) task="$2" ;;
+        --kind) kind="$2" ;;
+        --backend) backend="$2" ;;
+        --brief) brief="$2" ;;
+        --worktree) worktree="$2" ;;
+        --operational-input) operational_input="$2" ;;
+        --model) model="$2" ;;
+        --effort) effort="$2" ;;
+        --traceparent) traceparent="$2" ;;
+      esac
+      shift 2
+      ;;
+    *)
+      die "unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ -n "$task" ]] || die '--task is required'
+[[ "$task" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "unsafe task id: $task"
+# Claude-only and crewmate-only, enforced here too so the boundary cannot be
+# reached with any other shape even when it is invoked directly.
+case "$kind" in
+  ship | scout) ;;
+  secondmate) die 'this fmx profile does not manage secondmate homes' ;;
+  *) die "unsupported task kind: $kind" ;;
+esac
+case "$backend" in
+  tmux | herdr) ;;
+  *) die "unsupported backend: $backend" ;;
+esac
+case "$traceparent" in
+  keep | unset) ;;
+  *) die "unsupported trace-context mode: $traceparent" ;;
+esac
+for path in "$brief" "$worktree" "$operational_input"; do
+  [[ "$path" == /* ]] || die "expected an absolute path, got: $path"
+done
+[[ -f "$brief" && -r "$brief" && ! -L "$brief" ]] \
+  || die "the task brief is not a readable regular file: $brief"
+[[ -f "$operational_input" && -x "$operational_input" && ! -L "$operational_input" ]] \
+  || die "the operational-input helper is not an executable file: $operational_input"
+[[ -d "$worktree" && ! -L "$worktree" ]] \
+  || die "the task worktree is not a directory: $worktree"
+
+# Read and apply the environment carriers FIRST, using shell builtins only, so
+# that everything resolved afterwards uses the captain's HOME and PATH rather
+# than whatever the session daemon happened to export.
+worker_home_dir="${FMX_WORKER_HOME-}"
+worker_path="${FMX_WORKER_PATH-}"
+worker_bash="${FMX_WORKER_BASH-}"
+[[ "$worker_home_dir" == /* ]] \
+  || die "FMX_WORKER_HOME must be an absolute path: $worker_home_dir"
+[[ "$worker_home_dir" != / ]] \
+  || die 'FMX_WORKER_HOME must not be the filesystem root'
+[[ -d "$worker_home_dir" && ! -L "$worker_home_dir" ]] \
+  || die "FMX_WORKER_HOME is not an existing real directory: $worker_home_dir"
+validate_worker_path "$worker_path"
+[[ "$worker_bash" == /* && -f "$worker_bash" && -x "$worker_bash" ]] \
+  || die "FMX_WORKER_BASH must be an absolute executable file: $worker_bash"
+export HOME="$worker_home_dir"
+export PATH="$worker_path"
+
+profile="${FMX_PROFILE-}"
+profile_root="${FMX_PROFILE_ROOT-}"
+captain_pane_id="${FMX_CAPTAIN_PANE_ID-}"
+gh_config_dir="${FMX_GH_CONFIG_DIR-}"
+task_id_prefix="${FMX_TASK_ID_PREFIX-}"
+
+# `exec-clean` preserved file-backed GitHub configuration by contract. The
+# explicit fmx carrier below is the only configuration path this worker uses.
+unset GH_CONFIG_DIR
+
+[[ -n "$profile" ]] || die 'FMX_PROFILE is required'
+# The namespace is enforced here too, so a worker home and its fm/<id> branch
+# can never be created outside this profile's namespace.
+[[ "$task_id_prefix" =~ ^[a-z][a-z0-9]{1,7}$ ]] \
+  || die "FMX_TASK_ID_PREFIX must be a short lowercase namespace: $task_id_prefix"
+[[ "$task" == "$task_id_prefix-"* ]] \
+  || die "task id '$task' is outside this profile's namespace '$task_id_prefix-'"
+[[ "$profile_root" == /* && -d "$profile_root" && ! -L "$profile_root" ]] \
+  || die "FMX_PROFILE_ROOT must be an existing absolute directory: $profile_root"
+[[ -f "$profile_root/$ownership_basename" && ! -L "$profile_root/$ownership_basename" ]] \
+  || die "FMX_PROFILE_ROOT is not an fmx profile: $profile_root"
+[[ "$(<"$profile_root/$ownership_basename")" == "$ownership_value" ]] \
+  || die "FMX_PROFILE_ROOT ownership marker differs: $profile_root"
+profile_home="$profile_root/home"
+tasks_axi_data="$profile_home/data"
+[[ -d "$profile_home" && ! -L "$profile_home" ]] \
+  || die "the Firstmate home is missing or unsafe: $profile_home"
+[[ -d "$tasks_axi_data" && ! -L "$tasks_axi_data" ]] \
+  || die "the Firstmate data directory is missing or unsafe: $tasks_axi_data"
+export TASKS_AXI_BACKEND=markdown
+export TASKS_AXI_FILE="$tasks_axi_data/backlog.md"
+
+# GitHub identity is carried explicitly. A pane daemon does not inherit the
+# captain's environment, so an unset or unusable carrier is a hard failure
+# rather than a silent fall back to the ambient default configuration.
+[[ "$gh_config_dir" == /* && -d "$gh_config_dir" && ! -L "$gh_config_dir" ]] \
+  || die "FMX_GH_CONFIG_DIR must be an existing absolute directory: $gh_config_dir"
+[[ -f "$gh_config_dir/hosts.yml" && -r "$gh_config_dir/hosts.yml" \
+  && ! -L "$gh_config_dir/hosts.yml" ]] \
+  || die "FMX_GH_CONFIG_DIR has no readable hosts.yml: $gh_config_dir"
+grep -Eq "^${managed_gh_host//./\\.}:[[:space:]]*$" "$gh_config_dir/hosts.yml" \
+  || die "FMX_GH_CONFIG_DIR has no $managed_gh_host entry: $gh_config_dir/hosts.yml"
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve the helper directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve the fmx runtime root'
+native_claude="$script_dir/native-claude"
+[[ -f "$native_claude" && -x "$native_claude" && ! -L "$native_claude" ]] \
+  || die "missing shared native Claude helper: $native_claude"
+
+worker_root="$profile_root/workers/$task"
+worker_home="$worker_root/claude"
+worker_marker="$worker_root/$ownership_basename"
+
+make_owned_directory() {
+  local path="$1"
+
+  [[ ! -L "$path" ]] || die "unsafe managed directory: $path"
+  [[ -e "$path" ]] || mkdir -p "$path"
+  [[ -d "$path" && ! -L "$path" ]] || die "unsafe managed directory: $path"
+  chmod 0700 "$path"
+}
+
+make_owned_directory "$profile_root/workers"
+make_owned_directory "$worker_root"
+[[ ! -L "$worker_marker" ]] || die "unsafe ownership marker: $worker_marker"
+marker_stage="$(mktemp "$worker_root/.ownership.XXXXXX")" \
+  || die 'could not stage the worker ownership marker'
+printf '%s\n' "$ownership_value" >"$marker_stage"
+chmod 0600 "$marker_stage"
+mv -f "$marker_stage" "$worker_marker"
+
+# Backend identity. A tmux worker must carry no Herdr context at all, not just
+# no pane id: any inherited HERDR_* variable, and the Trellage guide's Herdr
+# context snapshot, describe the captain's pane rather than this worker's. A
+# Herdr worker keeps the Herdr context it was actually started in, but only
+# after its own pane id is validated as present and distinct from the
+# captain's; the guide context snapshot is dropped on both backends.
+scrub_herdr_context() {
+  local name
+
+  for name in $(compgen -e); do
+    case "$name" in
+      HERDR_*) unset "$name" ;;
+    esac
+  done
+}
+
+unset TRELLAGE_GUIDE_HERDR_CONTEXT_JSON
+case "$backend" in
+  tmux)
+    scrub_herdr_context
+    ;;
+  herdr)
+    # The worker's own Herdr context is retained after its pane id is validated.
+    [[ -n "${HERDR_PANE_ID-}" ]] \
+      || die 'a herdr worker requires its own HERDR_PANE_ID; refusing to inherit the captain identity'
+    [[ -z "$captain_pane_id" || "${HERDR_PANE_ID-}" != "$captain_pane_id" ]] \
+      || die "a herdr worker must not run in the captain pane: ${HERDR_PANE_ID-}"
+    ;;
+esac
+
+TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx \
+  TRELLAGE_CLAUDE_RUNTIME_ROOT="$runtime_root" \
+  "$native_claude" prepare \
+  --home "$worker_home" \
+  --marker "$worker_marker" \
+  --marker-value "$ownership_value" \
+  --bridge disabled \
+  --profile "$profile" \
+  || die "could not prepare the worker Claude home: $worker_home"
+
+# Liveness marker. It is written before the worker starts and is never removed
+# by another command: a dead pid is reported as stale, not silently deleted.
+active_stage="$(mktemp "$worker_root/.active.XXXXXX")" \
+  || die 'could not stage the worker liveness marker'
+printf '%s\n' "$$" >"$active_stage"
+chmod 0600 "$active_stage"
+mv -f "$active_stage" "$worker_root/.active"
+
+command -v jq >/dev/null 2>&1 || die 'required command not found: jq'
+meta_stage="$(mktemp "$worker_root/.worker.json.XXXXXX")" \
+  || die 'could not stage the worker record'
+# Built with jq, never string interpolation: a model or effort value carrying a
+# quote must not be able to produce malformed JSON.
+jq -n \
+  --arg profile "$profile" \
+  --arg task "$task" \
+  --arg kind "$kind" \
+  --arg backend "$backend" \
+  --arg harness "$managed_harness" \
+  --arg model "$model" \
+  --arg effort "$effort" '
+  {
+    schemaVersion: 1,
+    profile: $profile,
+    task: $task,
+    kind: $kind,
+    backend: $backend,
+    harness: $harness,
+    model: $model,
+    effort: $effort
+  }
+' >"$meta_stage" || die 'could not create the worker record'
+chmod 0600 "$meta_stage"
+mv -f "$meta_stage" "$worker_root/worker.json"
+
+# Firstmate's launch-brief encoding is preserved exactly: the encoded brief is
+# the harness prompt argument, produced by Firstmate's own helper.
+prompt="$("$operational_input" encode launch-brief <"$brief")" \
+  || die "could not encode the launch brief: $brief"
+
+# Firstmate's model and effort selection is preserved, using the same mapping
+# the pinned fm-spawn.sh applies to its claude adapter.
+claude_arguments=()
+if [[ -n "$model" && "$model" != default ]]; then
+  claude_arguments+=(--model "$model")
+fi
+if [[ -n "$effort" && "$effort" != default ]]; then
+  case "$effort" in
+    low | medium | high | xhigh | max) claude_arguments+=(--effort "$effort") ;;
+  esac
+fi
+claude_arguments+=("$prompt")
+
+# The shared runtime keys its bridge-hook validation on the profile name, so
+# prepare and launch must always name the same fmx profile. It is captured here
+# because the FMX carrier variables are scrubbed below.
+worker_profile="$profile"
+
+# The task worktree holds Firstmate's project-local turn-end hooks, so the
+# worker starts there, exactly where the pane would have been.
+cd "$worktree" || die "could not enter the task worktree: $worktree"
+
+export GH_CONFIG_DIR="$gh_config_dir"
+export FMX_TASK="$task"
+export FMX_BRIEF="$brief"
+export FMX_WORKTREE="$worktree"
+# Upstream sets this on the claude adapter to disable interactive prompt
+# suggestions for a crewmate.
+export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false
+unset CURSOR_AGENT CURSOR_INVOKED_AS
+# Firstmate captain controls describe the captain's home and fleet, not this
+# worker. A pane that inherited them would resolve state against the captain.
+unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE
+unset FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_PUBLIC_FOLLOWUP_PRIMARY_HOME
+unset FM_TRACE_CONTEXT FM_SUPERVISION_MODEL FM_BACKEND
+[[ "$traceparent" == keep ]] || unset TRACEPARENT
+# The FMX carrier variables have been consumed; they must not reach the worker.
+unset FMX_PROFILE FMX_PROFILE_ROOT FMX_WORKER_LAUNCHER FMX_WORKER_POLICY_FILE
+unset FMX_CAPTAIN_PANE_ID FMX_GH_CONFIG_DIR FMX_TASK_ID_PREFIX
+unset FMX_WORKER_HOME FMX_WORKER_PATH FMX_WORKER_BASH
+
+# The shared runtime owns Claude executable resolution and verification, the
+# --dangerously-skip-permissions / --permission-mode bypassPermissions /
+# --disallowedTools AskUserQuestion contract, proxy routing, and the complete
+# provider-credential scrub. None of that is duplicated here.
+exec env \
+  TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx \
+  TRELLAGE_CLAUDE_RUNTIME_ROOT="$runtime_root" \
+  "$native_claude" launch \
+  --home "$worker_home" \
+  --marker "$worker_marker" \
+  --marker-value "$ownership_value" \
+  --bridge disabled \
+  --profile "$worker_profile" \
+  -- "${claude_arguments[@]}"

@@ -1,0 +1,781 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly ownership_value='trellage-firstmate-prerequisites-v1'
+readonly runtime_ownership_value='trellage-firstmate-profiles-v1'
+readonly runtime_operation_lock_owner='trellage-firstmate-install-lock-v1'
+readonly runtime_ownership_basename='.managed-by-trellage-firstmate-profiles'
+readonly toolchain_ownership_basename='.managed-by-trellage-firstmate-prerequisites'
+readonly complete_basename='.complete'
+
+die() {
+  printf 'fmx prerequisites: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  fmx-prerequisites identity
+  fmx-prerequisites destination
+  fmx-prerequisites path
+  fmx-prerequisites verify
+  fmx-prerequisites install
+EOF
+}
+
+canonical_directory() {
+  (CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+sha256_file() {
+  local path="$1"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+    return
+  fi
+  die 'required command not found: sha256sum or shasum'
+}
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve helper directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve fmx runtime root'
+home="${HOME-}"
+[[ "$home" == /* && "$home" != / && -d "$home" && ! -L "$home" ]] \
+  || die "unsafe HOME: $home"
+canonical_home="$(canonical_directory "$home")" || die "cannot resolve HOME: $home"
+lock_root="$runtime_root/prerequisite-lock"
+manifest="$lock_root/manifest.json"
+npm_source="$lock_root/npm"
+npm_package="$npm_source/package.json"
+npm_lock="$npm_source/package-lock.json"
+managed_root="$runtime_root/prerequisites"
+runtime_marker="$runtime_root/$runtime_ownership_basename"
+runtime_parent="$(CDPATH= cd -P -- "$runtime_root/.." && pwd)" \
+  || die 'could not resolve fmx runtime parent'
+runtime_operation_lock="$runtime_parent/.fmx-install.lock"
+
+validate_runtime() {
+  [[ -d "$runtime_root" && ! -L "$runtime_root" ]] \
+    || die "unsafe fmx runtime root: $runtime_root"
+  [[ -f "$runtime_marker" && ! -L "$runtime_marker" ]] \
+    || die "unowned fmx runtime root: $runtime_root"
+  [[ "$(<"$runtime_marker")" == "$runtime_ownership_value" ]] \
+    || die "unowned fmx runtime root: $runtime_root"
+  [[ -d "$lock_root" && ! -L "$lock_root" ]] \
+    || die "missing prerequisite lock: $lock_root"
+  for path in "$manifest" "$npm_package" "$npm_lock"; do
+    [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
+      || die "unsafe prerequisite lock file: $path"
+  done
+}
+
+validate_lock() {
+  jq -e '
+    type == "object"
+    and keys == ["binaries", "npm", "schemaVersion"]
+    and .schemaVersion == 1
+    and (.binaries | keys == ["no-mistakes", "treehouse"])
+    and all(.binaries | to_entries[];
+      (.value | keys == ["assets", "maxBytes", "repository", "tag", "version"])
+      and (.value.repository | test("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"))
+      and (.value.tag | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+      and (.value.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+      and .value.tag == ("v" + .value.version)
+      and (.value.maxBytes | type == "number" and . >= 1000000 and . <= 100000000)
+      and (.value.assets | keys == [
+        "darwin-amd64",
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ])
+      and all(.value.assets[];
+        keys == ["archive", "sha256"]
+        and (.archive | test("^[A-Za-z0-9._-]+\\.tar\\.gz$"))
+        and (.sha256 | test("^[0-9a-f]{64}$"))))
+    and (.npm | keys == ["minimumNodeMajor", "tools"])
+    and (.npm.minimumNodeMajor | type == "number" and . >= 20 and . <= 100)
+    and (.npm.tools | keys == [
+      "chrome-devtools-axi",
+      "gh-axi",
+      "lavish-axi",
+      "quota-axi",
+      "tasks-axi"
+    ])
+    and all(.npm.tools[]; type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+  ' "$manifest" >/dev/null 2>&1 \
+    || die "invalid prerequisite manifest: $manifest"
+
+  jq -e --slurpfile manifest "$manifest" '
+    .name == "trellage-firstmate-prerequisites"
+    and .version == "1.0.0"
+    and .private == true
+    and .dependencies == $manifest[0].npm.tools
+  ' "$npm_package" >/dev/null 2>&1 \
+    || die "prerequisite package metadata does not match $manifest"
+
+  jq -e --slurpfile manifest "$manifest" '
+    .name == "trellage-firstmate-prerequisites"
+    and .version == "1.0.0"
+    and .lockfileVersion == 3
+    and .packages[""].dependencies == $manifest[0].npm.tools
+  ' "$npm_lock" >/dev/null 2>&1 \
+    || die "prerequisite npm lock does not match $manifest"
+}
+
+toolchain_identity() {
+  python3 - "$manifest" "$npm_package" "$npm_lock" <<'PY'
+import hashlib
+import sys
+
+digest = hashlib.sha256()
+for label, path in zip(("manifest", "package", "lock"), sys.argv[1:]):
+    digest.update(label.encode("ascii"))
+    digest.update(b"\0")
+    with open(path, "rb") as handle:
+        digest.update(handle.read())
+    digest.update(b"\0")
+print(digest.hexdigest())
+PY
+}
+
+toolchain_destination() {
+  printf '%s/%s\n' "$managed_root" "$(toolchain_identity)"
+}
+
+platform_key() {
+  local os arch
+
+  case "$(uname -s)" in
+    Darwin) os='darwin' ;;
+    Linux) os='linux' ;;
+    *) die "unsupported operating system: $(uname -s)" ;;
+  esac
+  case "$(uname -m)" in
+    x86_64 | amd64) arch='amd64' ;;
+    arm64 | aarch64) arch='arm64' ;;
+    *) die "unsupported architecture: $(uname -m)" ;;
+  esac
+  printf '%s-%s\n' "$os" "$arch"
+}
+
+version_from_output() {
+  sed -nE \
+    -e 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' \
+    -e 's/.*[^0-9]v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
+    | head -n 1
+}
+
+exact_version_matches() {
+  local executable="$1" expected="$2" output actual
+
+  output="$("$executable" --version 2>&1)" || return 1
+  actual="$(printf '%s\n' "$output" | version_from_output)"
+  [[ "$actual" == "$expected" ]]
+}
+
+require_exact_version() {
+  local executable="$1" expected="$2"
+
+  exact_version_matches "$executable" "$expected" \
+    || die "version mismatch for $executable: expected $expected"
+}
+
+validate_destination_shape() {
+  local destination="$1" identity="$2" path tool expected
+
+  [[ -d "$destination" && ! -L "$destination" ]] || return 1
+  [[ -f "$destination/$toolchain_ownership_basename" \
+    && ! -L "$destination/$toolchain_ownership_basename" ]] || return 1
+  [[ "$(<"$destination/$toolchain_ownership_basename")" == "$ownership_value" ]] \
+    || return 1
+  [[ -f "$destination/$complete_basename" \
+    && ! -L "$destination/$complete_basename" ]] || return 1
+  [[ "$(<"$destination/$complete_basename")" == "$identity" ]] || return 1
+  [[ -f "$destination/receipt.json" && ! -L "$destination/receipt.json" ]] \
+    || return 1
+  jq -e --arg identity "$identity" '
+    .schemaVersion == 1 and .identity == $identity
+  ' "$destination/receipt.json" >/dev/null 2>&1 || return 1
+  for tool in no-mistakes treehouse; do
+    path="$destination/bin/$tool"
+    [[ -f "$path" && -x "$path" && ! -L "$path" ]] || return 1
+  done
+  for tool in chrome-devtools-axi gh-axi lavish-axi quota-axi tasks-axi; do
+    path="$destination/npm/node_modules/.bin/$tool"
+    [[ -x "$path" ]] || return 1
+    expected="$(jq -r --arg tool "$tool" '.npm.tools[$tool]' "$manifest")"
+    [[ -n "$expected" ]] || return 1
+  done
+}
+
+verify_destination() {
+  local destination="$1" identity="$2" tool expected path
+
+  validate_destination_shape "$destination" "$identity" || return 1
+  exact_version_matches "$destination/bin/no-mistakes" \
+    "$(jq -r '.binaries["no-mistakes"].version' "$manifest")" || return 1
+  exact_version_matches "$destination/bin/treehouse" \
+    "$(jq -r '.binaries.treehouse.version' "$manifest")" || return 1
+  for tool in chrome-devtools-axi gh-axi lavish-axi quota-axi tasks-axi; do
+    expected="$(jq -r --arg tool "$tool" '.npm.tools[$tool]' "$manifest")"
+    path="$destination/npm/node_modules/.bin/$tool"
+    exact_version_matches "$path" "$expected" || return 1
+  done
+}
+
+profile_lock_blocks_runtime_change() {
+  local lock="$1"
+  local pid
+
+  [[ -e "$lock" || -L "$lock" ]] || return 1
+  [[ -d "$lock" && ! -L "$lock" \
+    && -f "$lock/owner" && ! -L "$lock/owner" \
+    && "$(<"$lock/owner")" == "$runtime_ownership_value" \
+    && -f "$lock/pid" && ! -L "$lock/pid" ]] \
+    || return 0
+  pid="$(<"$lock/pid")"
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 0
+  kill -0 "$pid" 2>/dev/null
+}
+
+parent_launch_mutation_lock() {
+  local lock="$1" pid
+
+  [[ -d "$lock" && ! -L "$lock" \
+    && -f "$lock/owner" && ! -L "$lock/owner" \
+    && "$(<"$lock/owner")" == "$runtime_ownership_value" \
+    && -f "$lock/action" && ! -L "$lock/action" \
+    && "$(<"$lock/action")" == launch \
+    && -f "$lock/pid" && ! -L "$lock/pid" ]] \
+    || return 1
+  pid="$(<"$lock/pid")"
+  [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" == "$PPID" ]]
+}
+
+mutation_lock_blocks_runtime_change() {
+  local lock="$1"
+
+  parent_launch_mutation_lock "$lock" && return 1
+  profile_lock_blocks_runtime_change "$lock"
+}
+
+active_fmx_fleet_or_mutation() {
+  local profile_root worker_root worker marker pid
+
+  for profile_root in "$canonical_home/.local/share/trellage/profiles/firstmate"/*; do
+    [[ -d "$profile_root" && ! -L "$profile_root" ]] || continue
+    if profile_lock_blocks_runtime_change "$profile_root/locks/session" \
+      || mutation_lock_blocks_runtime_change "$profile_root/locks/mutation"; then
+      printf '%s\n' "$profile_root"
+      return 0
+    fi
+    worker_root="$profile_root/workers"
+    if [[ -e "$worker_root" || -L "$worker_root" ]]; then
+      [[ -d "$worker_root" && ! -L "$worker_root" ]] || {
+        printf '%s\n' "$profile_root"
+        return 0
+      }
+      for worker in "$worker_root"/*; do
+        [[ -d "$worker" && ! -L "$worker" ]] || continue
+        marker="$worker/.active"
+        [[ -e "$marker" || -L "$marker" ]] || continue
+        if [[ ! -f "$marker" || -L "$marker" ]]; then
+          printf '%s\n' "$profile_root"
+          return 0
+        fi
+        pid="$(<"$marker")"
+        if [[ ! "$pid" =~ ^[1-9][0-9]*$ ]] || kill -0 "$pid" 2>/dev/null; then
+          printf '%s\n' "$profile_root"
+          return 0
+        fi
+      done
+    fi
+  done
+  return 1
+}
+
+install_lock=''
+install_lock_acquired=false
+runtime_operation_lock_acquired=false
+stage=''
+backup=''
+published_destination=''
+
+release_runtime_operation_lock() {
+  local path
+
+  [[ "$runtime_operation_lock_acquired" == true ]] || return 0
+  [[ -d "$runtime_operation_lock" && ! -L "$runtime_operation_lock" \
+    && -f "$runtime_operation_lock/owner" && ! -L "$runtime_operation_lock/owner" \
+    && "$(<"$runtime_operation_lock/owner")" == "$runtime_operation_lock_owner" \
+    && -f "$runtime_operation_lock/pid" && ! -L "$runtime_operation_lock/pid" \
+    && "$(<"$runtime_operation_lock/pid")" == "$$" ]] \
+    || return 1
+  while IFS= read -r path; do
+    case "$path" in
+      "$runtime_operation_lock/owner"|"$runtime_operation_lock/pid") ;;
+      *) return 1 ;;
+    esac
+  done < <(find "$runtime_operation_lock" -mindepth 1 -print)
+  rm -- "$runtime_operation_lock/owner" "$runtime_operation_lock/pid" || return 1
+  rmdir "$runtime_operation_lock" || return 1
+  runtime_operation_lock_acquired=false
+}
+
+cleanup() {
+  if [[ -n "$stage" && -e "$stage" ]]; then
+    rm -rf -- "$stage"
+  fi
+  if [[ -n "$backup" && -d "$backup" \
+    && -n "$published_destination" \
+    && -d "$published_destination" \
+    && ! -e "$published_destination/$complete_basename" ]]; then
+    rm -rf -- "$published_destination"
+    if mv "$backup" "$published_destination"; then
+      backup=''
+    fi
+  fi
+  if [[ "$install_lock_acquired" == true \
+    && -n "$install_lock" && -d "$install_lock" ]]; then
+    rm -rf -- "$install_lock"
+    install_lock_acquired=false
+  fi
+  if ! release_runtime_operation_lock; then
+    printf 'fmx prerequisites: could not release runtime operation lock: %s\n' \
+      "$runtime_operation_lock" >&2
+  fi
+}
+
+handle_signal() {
+  trap - EXIT HUP INT TERM
+  cleanup
+  exit 1
+}
+
+acquire_runtime_operation_lock() {
+  local owner=''
+  local pid=''
+  local path
+
+  if ! mkdir -m 0700 "$runtime_operation_lock" 2>/dev/null; then
+    [[ -d "$runtime_operation_lock" && ! -L "$runtime_operation_lock" ]] \
+      || die "unowned runtime operation lock: $runtime_operation_lock"
+    if [[ -f "$runtime_operation_lock/owner" && ! -L "$runtime_operation_lock/owner" ]]; then
+      owner="$(<"$runtime_operation_lock/owner")"
+    fi
+    if [[ -f "$runtime_operation_lock/pid" && ! -L "$runtime_operation_lock/pid" ]]; then
+      pid="$(<"$runtime_operation_lock/pid")"
+    fi
+    [[ "$owner" == "$runtime_operation_lock_owner" ]] \
+      || die "unowned runtime operation lock: $runtime_operation_lock"
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] \
+      || die "incomplete runtime operation lock: $runtime_operation_lock"
+    if kill -0 "$pid" 2>/dev/null; then
+      die "another fmx runtime operation is active with pid $pid"
+    fi
+    while IFS= read -r path; do
+      case "$path" in
+        "$runtime_operation_lock/owner"|"$runtime_operation_lock/pid") ;;
+        *) die "unowned runtime operation lock: $runtime_operation_lock" ;;
+      esac
+    done < <(find "$runtime_operation_lock" -mindepth 1 -print)
+    rm -- "$runtime_operation_lock/owner" "$runtime_operation_lock/pid"
+    rmdir "$runtime_operation_lock"
+    mkdir -m 0700 "$runtime_operation_lock" \
+      || die "could not reclaim stale runtime operation lock: $runtime_operation_lock"
+  fi
+  printf '%s\n' "$runtime_operation_lock_owner" >"$runtime_operation_lock/owner"
+  printf '%s\n' "$$" >"$runtime_operation_lock/pid"
+  chmod 0600 "$runtime_operation_lock/owner" "$runtime_operation_lock/pid"
+  runtime_operation_lock_acquired=true
+}
+
+acquire_install_lock() {
+  local candidate="$managed_root/.install-lock"
+  local state_owner=''
+  local state_pid=''
+  local path
+
+  [[ ! -L "$managed_root" ]] \
+    || die "unsafe managed prerequisite root: $managed_root"
+  mkdir -p "$managed_root"
+  chmod 0700 "$managed_root"
+  if ! mkdir "$candidate" 2>/dev/null; then
+    [[ -d "$candidate" && ! -L "$candidate" ]] \
+      || die "unowned prerequisite installation lock: $candidate"
+    if [[ -f "$candidate/owner" && ! -L "$candidate/owner" ]]; then
+      state_owner="$(<"$candidate/owner")"
+    fi
+    if [[ -f "$candidate/pid" && ! -L "$candidate/pid" ]]; then
+      state_pid="$(<"$candidate/pid")"
+    fi
+    [[ "$state_owner" == "$ownership_value" ]] \
+      || die "unowned prerequisite installation lock: $candidate"
+    [[ "$state_pid" =~ ^[1-9][0-9]*$ ]] \
+      || die "incomplete prerequisite installation lock: $candidate"
+    if kill -0 "$state_pid" 2>/dev/null; then
+      die "another prerequisite installation is active with pid $state_pid"
+    fi
+    while IFS= read -r path; do
+      case "$path" in
+        "$candidate/owner"|"$candidate/pid") ;;
+        *) die "unowned prerequisite installation lock: $candidate" ;;
+      esac
+    done < <(find "$candidate" -mindepth 1 -print)
+    rm -- "$candidate/owner" "$candidate/pid"
+    rmdir "$candidate"
+    mkdir "$candidate" \
+      || die "could not acquire prerequisite installation lock: $candidate"
+  fi
+  install_lock="$candidate"
+  install_lock_acquired=true
+  printf '%s\n' "$ownership_value" >"$install_lock/owner"
+  printf '%s\n' "$$" >"$install_lock/pid"
+  chmod 0600 "$install_lock/owner" "$install_lock/pid"
+}
+
+published_destination_identity() {
+  local destination="$1"
+  local identity="$2"
+
+  [[ -d "$destination" && ! -L "$destination" \
+    && -f "$destination/$toolchain_ownership_basename" \
+    && ! -L "$destination/$toolchain_ownership_basename" \
+    && "$(<"$destination/$toolchain_ownership_basename")" == "$ownership_value" \
+    && -f "$destination/$complete_basename" \
+    && ! -L "$destination/$complete_basename" \
+    && "$(<"$destination/$complete_basename")" == "$identity" \
+    && -f "$destination/receipt.json" && ! -L "$destination/receipt.json" ]] \
+    || return 1
+  jq -e --arg identity "$identity" '
+    .schemaVersion == 1 and .identity == $identity
+  ' "$destination/receipt.json" >/dev/null 2>&1
+}
+
+recover_install_artifacts() {
+  local path name identity destination count existing_owner=''
+
+  while IFS= read -r path; do
+    [[ -d "$path" && ! -L "$path" ]] \
+      || die "unsafe interrupted prerequisite stage: $path"
+    rm -rf -- "$path"
+  done < <(find "$managed_root" -mindepth 1 -maxdepth 1 \
+    -name '.stage.*' -print)
+
+  while IFS= read -r path; do
+    [[ -d "$path" && ! -L "$path" ]] \
+      || die "unsafe interrupted prerequisite retirement: $path"
+    name="$(basename "$path")"
+    [[ "$name" =~ ^\.retired\.([0-9a-f]{64})\..+$ ]] \
+      || die "invalid interrupted prerequisite retirement: $path"
+    identity="${BASH_REMATCH[1]}"
+    count="$(find "$managed_root" -mindepth 1 -maxdepth 1 \
+      -name ".retired.$identity.*" -print | wc -l | tr -d ' ')"
+    [[ "$count" == 1 ]] \
+      || die "multiple interrupted prerequisite retirements require manual recovery for identity $identity"
+    destination="$managed_root/$identity"
+    if published_destination_identity "$destination" "$identity"; then
+      rm -rf -- "$path"
+      continue
+    fi
+    published_destination_identity "$path" "$identity" \
+      || die "interrupted prerequisite retirement is invalid: $path"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      [[ -d "$destination" && ! -L "$destination" ]] \
+        || die "unsafe interrupted prerequisite destination: $destination"
+      if [[ -f "$destination/$toolchain_ownership_basename" \
+        && ! -L "$destination/$toolchain_ownership_basename" ]]; then
+        existing_owner="$(<"$destination/$toolchain_ownership_basename")"
+      fi
+      [[ "$existing_owner" == "$ownership_value" ]] \
+        || die "unowned interrupted prerequisite destination: $destination"
+      rm -rf -- "$destination"
+      existing_owner=''
+    fi
+    mv "$path" "$destination"
+  done < <(find "$managed_root" -mindepth 1 -maxdepth 1 \
+    -name '.retired.*' -print)
+}
+
+extract_release_binary() {
+  local tool="$1" destination="$2" key repository tag archive expected max_bytes
+  local download_dir archive_path actual size url
+
+  key="$(platform_key)"
+  repository="$(jq -r --arg tool "$tool" '.binaries[$tool].repository' "$manifest")"
+  tag="$(jq -r --arg tool "$tool" '.binaries[$tool].tag' "$manifest")"
+  archive="$(jq -r --arg tool "$tool" --arg key "$key" \
+    '.binaries[$tool].assets[$key].archive' "$manifest")"
+  expected="$(jq -r --arg tool "$tool" --arg key "$key" \
+    '.binaries[$tool].assets[$key].sha256' "$manifest")"
+  max_bytes="$(jq -r --arg tool "$tool" '.binaries[$tool].maxBytes' "$manifest")"
+  [[ "$archive" != null && "$expected" != null ]] \
+    || die "no $tool prerequisite asset is locked for $key"
+
+  [[ -n "$stage" && -d "$stage" ]] \
+    || die "cannot stage the $tool download before the toolchain"
+  download_dir="$stage/.download-$tool"
+  [[ ! -e "$download_dir" && ! -L "$download_dir" ]] \
+    || die "unsafe $tool download directory: $download_dir"
+  mkdir "$download_dir" || die "could not stage the $tool download"
+  archive_path="$download_dir/$archive"
+  url="https://github.com/$repository/releases/download/$tag/$archive"
+  printf 'Downloading %s %s from %s\n' \
+    "$tool" "$(jq -r --arg tool "$tool" '.binaries[$tool].version' "$manifest")" \
+    "$url"
+  if ! curl --proto '=https' --tlsv1.2 -fsSL \
+    --max-filesize "$max_bytes" "$url" -o "$archive_path"; then
+    rm -rf -- "$download_dir"
+    die "download failed for $url"
+  fi
+  size="$(wc -c <"$archive_path" | tr -d '[:space:]')"
+  [[ "$size" =~ ^[0-9]+$ && "$size" -le "$max_bytes" ]] || {
+    rm -rf -- "$download_dir"
+    die "$archive exceeded the locked $max_bytes-byte limit"
+  }
+  actual="$(sha256_file "$archive_path")"
+  [[ "$actual" == "$expected" ]] || {
+    rm -rf -- "$download_dir"
+    die "checksum mismatch for $archive (expected $expected, got $actual)"
+  }
+
+  if ! python3 - "$archive_path" "$tool" "$destination" <<'PY'
+import os
+from pathlib import PurePosixPath
+import sys
+import tarfile
+
+archive, tool, destination = sys.argv[1:]
+with tarfile.open(archive, "r:gz") as handle:
+    candidates = []
+    for member in handle.getmembers():
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit(f"unsafe archive path: {member.name}")
+        if member.isreg() and path.name == tool:
+            candidates.append(member)
+    if len(candidates) != 1:
+        raise SystemExit(f"archive must contain exactly one regular {tool} binary")
+    source = handle.extractfile(candidates[0])
+    if source is None:
+        raise SystemExit(f"could not read {tool} from archive")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    descriptor = os.open(destination, flags, 0o755)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+    finally:
+        source.close()
+PY
+  then
+    rm -rf -- "$download_dir"
+    die "could not extract $tool from $archive"
+  fi
+  chmod 0755 "$destination"
+  rm -rf -- "$download_dir"
+}
+
+install_toolchain() {
+  local identity destination minimum_node node_major npm_log receipt_stage
+  local existing_owner=''
+
+  require_command jq
+  require_command python3
+  require_command node
+  require_command npm
+  require_command curl
+  require_command install
+  require_command awk
+  require_command sed
+  require_command head
+  require_command wc
+  require_command tr
+  minimum_node="$(jq -r '.npm.minimumNodeMajor' "$manifest")"
+  node_major="$(node -p 'process.versions.node.split(".")[0]')" \
+    || die 'could not determine Node.js version'
+  [[ "$node_major" =~ ^[0-9]+$ && "$node_major" -ge "$minimum_node" ]] \
+    || die "Node.js $minimum_node+ is required to install the managed prerequisites"
+
+  identity="$(toolchain_identity)"
+  destination="$managed_root/$identity"
+
+  trap cleanup EXIT
+  trap handle_signal HUP INT TERM
+  acquire_runtime_operation_lock
+  validate_runtime
+  validate_lock
+  acquire_install_lock
+  recover_install_artifacts
+  [[ "${FMX_PREREQUISITE_TEST_FAIL_AT-}" != after-artifact-recovery ]] \
+    || die 'injected failure at after-artifact-recovery'
+  if verify_destination "$destination" "$identity" >/dev/null 2>&1; then
+    printf 'Firstmate prerequisites are already installed at %s\n' "$destination"
+    return
+  fi
+  if active_fmx_fleet_or_mutation >/dev/null; then
+    die 'cannot install shared prerequisites while a Firstmate fleet or profile mutation is active or indeterminate'
+  fi
+  [[ "${FMX_PREREQUISITE_TEST_FAIL_AT-}" != after-fleet-guard ]] \
+    || die 'injected failure at after-fleet-guard'
+
+  stage="$(mktemp -d "$managed_root/.stage.$identity.XXXXXX")" \
+    || die 'could not stage the managed prerequisite toolchain'
+  chmod 0700 "$stage"
+  mkdir -p "$stage/bin" "$stage/npm"
+  chmod 0700 "$stage/bin" "$stage/npm"
+  install -m 0644 "$npm_package" "$stage/npm/package.json"
+  install -m 0644 "$npm_lock" "$stage/npm/package-lock.json"
+  npm_log="$stage/npm-install.log"
+  if ! npm ci --prefix "$stage/npm" --ignore-scripts --no-audit --no-fund \
+    --progress=false >"$npm_log" 2>&1; then
+    cat "$npm_log" >&2 || true
+    die 'npm could not install the locked Firstmate prerequisites'
+  fi
+  rm -f -- "$npm_log"
+
+  extract_release_binary no-mistakes "$stage/bin/no-mistakes"
+  extract_release_binary treehouse "$stage/bin/treehouse"
+  printf '%s\n' "$ownership_value" >"$stage/$toolchain_ownership_basename"
+  chmod 0600 "$stage/$toolchain_ownership_basename"
+  receipt_stage="$stage/receipt.json"
+  jq -n \
+    --arg identity "$identity" \
+    --arg noMistakes "$(jq -r '.binaries["no-mistakes"].version' "$manifest")" \
+    --arg treehouse "$(jq -r '.binaries.treehouse.version' "$manifest")" \
+    --argjson npm "$(jq '.npm.tools' "$manifest")" '
+    {
+      schemaVersion: 1,
+      identity: $identity,
+      binaries: {
+        "no-mistakes": $noMistakes,
+        treehouse: $treehouse
+      },
+      npm: $npm
+    }
+  ' >"$receipt_stage"
+  chmod 0600 "$receipt_stage"
+
+  # The complete marker is published only after every installed command has
+  # proved its exact version. Project initialization owns no-mistakes daemon
+  # readiness; a shared binary install must not restart host runtime state.
+  printf '%s\n' "$identity" >"$stage/$complete_basename.pending"
+  chmod 0600 "$stage/$complete_basename.pending"
+  for path in "$stage/bin/no-mistakes" "$stage/bin/treehouse"; do
+    [[ -f "$path" && -x "$path" && ! -L "$path" ]] \
+      || die "installed prerequisite is unsafe: $path"
+  done
+  require_exact_version "$stage/bin/no-mistakes" \
+    "$(jq -r '.binaries["no-mistakes"].version' "$manifest")"
+  require_exact_version "$stage/bin/treehouse" \
+    "$(jq -r '.binaries.treehouse.version' "$manifest")"
+  for tool in chrome-devtools-axi gh-axi lavish-axi quota-axi tasks-axi; do
+    require_exact_version "$stage/npm/node_modules/.bin/$tool" \
+      "$(jq -r --arg tool "$tool" '.npm.tools[$tool]' "$manifest")"
+  done
+
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    [[ -d "$destination" && ! -L "$destination" ]] \
+      || die "unsafe existing prerequisite destination: $destination"
+    if [[ -f "$destination/$toolchain_ownership_basename" \
+      && ! -L "$destination/$toolchain_ownership_basename" ]]; then
+      existing_owner="$(<"$destination/$toolchain_ownership_basename")"
+    fi
+    [[ "$existing_owner" == "$ownership_value" ]] \
+      || die "unowned existing prerequisite destination: $destination"
+    backup="$(mktemp -d "$managed_root/.retired.$identity.XXXXXX")" \
+      || die "could not reserve prerequisite retirement path in: $managed_root"
+    rmdir "$backup"
+    mv "$destination" "$backup"
+  fi
+  if ! mv "$stage" "$destination"; then
+    if [[ -n "$backup" && -d "$backup" ]]; then
+      mv "$backup" "$destination" || true
+    fi
+    die "could not publish managed prerequisites to $destination"
+  fi
+  stage=''
+  published_destination="$destination"
+
+  mv "$destination/$complete_basename.pending" \
+    "$destination/$complete_basename"
+  if [[ -n "$backup" && -d "$backup" ]]; then
+    rm -rf -- "$backup"
+    backup=''
+  fi
+  verify_destination "$destination" "$identity"
+  published_destination=''
+  printf 'Installed Firstmate prerequisites at %s\n' "$destination"
+}
+
+require_command jq
+require_command python3
+validate_runtime
+validate_lock
+
+case "${1-}" in
+  identity)
+    [[ "$#" -eq 1 ]] || die 'identity accepts no arguments'
+    toolchain_identity
+    ;;
+  destination)
+    [[ "$#" -eq 1 ]] || die 'destination accepts no arguments'
+    toolchain_destination
+    ;;
+  path)
+    [[ "$#" -eq 1 ]] || die 'path accepts no arguments'
+    identity="$(toolchain_identity)"
+    destination="$managed_root/$identity"
+    validate_destination_shape "$destination" "$identity" \
+      || die "managed prerequisites are not installed at $destination"
+    printf '%s:%s\n' \
+      "$destination/bin" "$destination/npm/node_modules/.bin"
+    ;;
+  verify)
+    [[ "$#" -eq 1 ]] || die 'verify accepts no arguments'
+    identity="$(toolchain_identity)"
+    destination="$managed_root/$identity"
+    verify_destination "$destination" "$identity" \
+      || die "managed prerequisites are unhealthy at $destination"
+    printf 'Firstmate prerequisites: OK (%s)\n' "$destination"
+    ;;
+  install)
+    [[ "$#" -eq 1 ]] || die 'install accepts no arguments'
+    install_toolchain
+    ;;
+  help | -h | --help | '')
+    usage
+    ;;
+  *)
+    die "unknown command: $1"
+    ;;
+esac

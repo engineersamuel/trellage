@@ -28,6 +28,8 @@ installed_catalog="$install_root/catalog.json"
 installed_assets="$install_root/assets/rundown"
 installed_session_bridge="$install_root/lib/trellage-session-bridge.py"
 session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
+installed_native_claude="$install_root/lib/native-claude"
+native_claude_source="$source_dir/../trellage-claude-common/native-claude"
 ownership_marker="$install_root/.managed-by-trellage-claude-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/cldx"
@@ -66,6 +68,8 @@ fi
 
 [[ -f "$session_bridge_source" && ! -L "$session_bridge_source" ]] \
   || refuse "missing session bridge: $session_bridge_source"
+[[ -f "$native_claude_source" && ! -L "$native_claude_source" ]] \
+  || refuse "missing shared native Claude launcher: $native_claude_source"
 mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/cldx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/cldx/bin" 'runtime bin'
@@ -86,18 +90,24 @@ done
 [[ ! -L "$installed_session_bridge" \
   && ( ! -e "$installed_session_bridge" || -f "$installed_session_bridge" ) ]] \
   || refuse "unsafe managed session bridge: $installed_session_bridge"
+[[ ! -L "$installed_native_claude" \
+  && ( ! -e "$installed_native_claude" || -f "$installed_native_claude" ) ]] \
+  || refuse "unsafe managed native Claude runtime: $installed_native_claude"
 
 launcher_stage="$(mktemp "$install_root/bin/.cldx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 session_bridge_stage="$(mktemp "$install_root/lib/.trellage-session-bridge.py.XXXXXX")"
+native_claude_stage="$(mktemp "$install_root/lib/.native-claude.XXXXXX")"
 install -m 0755 "$source_dir/bin/cldx" "$launcher_stage"
 install -m 0755 "$session_bridge_source" "$session_bridge_stage"
+install -m 0755 "$native_claude_source" "$native_claude_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$session_bridge_stage" "$installed_session_bridge"
+mv -f "$native_claude_stage" "$installed_native_claude"
 mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"
 

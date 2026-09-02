@@ -31,6 +31,8 @@ readonly ownership_value='trellage-router-v2'
 # docs/herdr-compatibility.json.
 readonly trx_herdr_ledger='[
   { "launcher": "cldx", "profile": "default", "status": "verified" },
+  { "launcher": "fmx", "profile": "default", "status": "verified", "notes": "Verified in a real Herdr captain-and-scout round trip: consent-managed prerequisites installed, the scout used an isolated Treehouse worktree and worker home, all locked tools resolved, and teardown completed." },
+  { "launcher": "fmx", "profile": "pstack-workers", "status": "untested", "notes": "The shared Firstmate runtime passed the fmx/default Herdr fleet round trip, and static worker-policy contracts pass. Awaiting a profile-specific pstack-workers fleet round trip." },
   { "launcher": "omp", "profile": "copilot", "status": "verified" },
   { "launcher": "picx", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
   { "launcher": "cdx", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native sandbox contracts pass; awaiting an end-to-end Herdr round trip." },
@@ -297,15 +299,17 @@ build_choices() {
     --argjson ompCatalog "$6" \
     --argjson picxCatalog "$7" \
     --argjson prxCatalog "$8" \
-    --arg cpxPath "${9}" \
-    --arg cdxPath "${10}" \
-    --arg cldxPath "${11}" \
-    --arg grxPath "${12}" \
-    --arg jcxPath "${13}" \
-    --arg ompPath "${14}" \
-    --arg picxPath "${15}" \
-    --arg prxPath "${16}" \
-    --argjson passthroughArgs "${17}" '
+    --argjson fmxCatalog "$9" \
+    --arg cpxPath "${10}" \
+    --arg cdxPath "${11}" \
+    --arg cldxPath "${12}" \
+    --arg grxPath "${13}" \
+    --arg jcxPath "${14}" \
+    --arg ompPath "${15}" \
+    --arg picxPath "${16}" \
+    --arg prxPath "${17}" \
+    --arg fmxPath "${18}" \
+    --argjson passthroughArgs "${19}" '
     def models($catalog; $profile):
       if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
@@ -333,6 +337,7 @@ build_choices() {
       if $catalog.launcher == "cpx" then $cpxPath
       elif $catalog.launcher == "cdx" then $cdxPath
       elif $catalog.launcher == "cldx" then $cldxPath
+      elif $catalog.launcher == "fmx" then $fmxPath
       elif $catalog.launcher == "grx" then $grxPath
       elif $catalog.launcher == "jcx" then $jcxPath
       elif $catalog.launcher == "omp" then $ompPath
@@ -361,11 +366,12 @@ build_choices() {
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Trellage Native runs coding-agent launchers directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries.",
+      description: "Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries.",
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),
         pair($cldxCatalog),
+        pair($fmxCatalog),
         pair($grxCatalog),
         pair($jcxCatalog),
         pair($ompCatalog),
@@ -386,6 +392,7 @@ build_profile_list() {
     --argjson ompCatalog "$6" \
     --argjson picxCatalog "$7" \
     --argjson prxCatalog "$8" \
+    --argjson fmxCatalog "$9" \
     --argjson herdrLedger "$trx_herdr_ledger" '
     def herdrCompatibility($launcher; $name):
       ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
@@ -408,6 +415,7 @@ build_profile_list() {
         profiles($cpxCatalog),
         profiles($cdxCatalog),
         profiles($cldxCatalog),
+        profiles($fmxCatalog),
         profiles($grxCatalog),
         profiles($jcxCatalog),
         profiles($ompCatalog),
@@ -581,6 +589,7 @@ fi
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1)"
 cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1)"
+fmx="$(discover_launcher fmx .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1)"
 grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2)"
@@ -592,6 +601,7 @@ if [[ "$mode" == inventory ]]; then
     cpx) inventory_executable="$cpx" ;;
     cdx) inventory_executable="$cdx" ;;
     cldx) inventory_executable="$cldx" ;;
+    fmx) inventory_executable="$fmx" ;;
     grx) inventory_executable="$grx" ;;
     jcx) inventory_executable="$jcx" ;;
     omp) inventory_executable="$omp" ;;
@@ -622,6 +632,8 @@ read_catalog cdx codex "$cdx" >"$catalog_tmp/cdx" 2>"$catalog_tmp/cdx.err" &
 cdx_catalog_pid=$!
 read_catalog cldx claude "$cldx" >"$catalog_tmp/cldx" 2>"$catalog_tmp/cldx.err" &
 cldx_catalog_pid=$!
+read_catalog fmx firstmate "$fmx" >"$catalog_tmp/fmx" 2>"$catalog_tmp/fmx.err" &
+fmx_catalog_pid=$!
 read_catalog grx grok "$grx" >"$catalog_tmp/grx" 2>"$catalog_tmp/grx.err" &
 grx_catalog_pid=$!
 read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" 2>"$catalog_tmp/jcx.err" &
@@ -636,11 +648,11 @@ prx_catalog_pid=$!
 catalog_status=0
 for catalog_pid in \
   "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" "$grx_catalog_pid" \
-  "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" "$prx_catalog_pid"; do
+  "$fmx_catalog_pid" "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" "$prx_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
 if ((catalog_status != 0)); then
-  for launcher in cpx cdx cldx grx jcx omp picx prx; do
+  for launcher in cpx cdx cldx fmx grx jcx omp picx prx; do
     while IFS= read -r diagnostic; do
       printf '%s\n' "$diagnostic" >&2
     done <"$catalog_tmp/$launcher.err"
@@ -651,6 +663,7 @@ fi
 cpx_catalog="$(<"$catalog_tmp/cpx")"
 cdx_catalog="$(<"$catalog_tmp/cdx")"
 cldx_catalog="$(<"$catalog_tmp/cldx")"
+fmx_catalog="$(<"$catalog_tmp/fmx")"
 grx_catalog="$(<"$catalog_tmp/grx")"
 jcx_catalog="$(<"$catalog_tmp/jcx")"
 omp_catalog="$(<"$catalog_tmp/omp")"
@@ -664,6 +677,7 @@ if [[ "$mode" == run ]]; then
     cpx) run_executable="$cpx"; run_catalog="$cpx_catalog" ;;
     cdx) run_executable="$cdx"; run_catalog="$cdx_catalog" ;;
     cldx) run_executable="$cldx"; run_catalog="$cldx_catalog" ;;
+    fmx) run_executable="$fmx"; run_catalog="$fmx_catalog" ;;
     grx) run_executable="$grx"; run_catalog="$grx_catalog" ;;
     jcx) run_executable="$jcx"; run_catalog="$jcx_catalog" ;;
     omp) run_executable="$omp"; run_catalog="$omp_catalog" ;;
@@ -685,7 +699,7 @@ fi
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
     "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog")" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
     command -v node >/dev/null 2>&1 || die 'required command not found: node'
@@ -712,7 +726,7 @@ if [[ "$mode" == guide ]]; then
 
   profile_list="$(build_profile_list \
     "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog")" \
+    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog")" \
     || die 'could not build native profile list'
 
   if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
@@ -756,6 +770,7 @@ if [[ "$mode" == guide ]]; then
     --arg cpxPath "$cpx" \
     --arg cdxPath "$cdx" \
     --arg cldxPath "$cldx" \
+    --arg fmxPath "$fmx" \
     --arg grxPath "$grx" \
     --arg jcxPath "$jcx" \
     --arg ompPath "$omp" \
@@ -767,6 +782,7 @@ if [[ "$mode" == guide ]]; then
             (if .launcher == "cpx" then $cpxPath
              elif .launcher == "cdx" then $cdxPath
              elif .launcher == "cldx" then $cldxPath
+             elif .launcher == "fmx" then $fmxPath
              elif .launcher == "grx" then $grxPath
              elif .launcher == "jcx" then $jcxPath
              elif .launcher == "omp" then $ompPath
@@ -811,8 +827,8 @@ command -v node >/dev/null 2>&1 || die 'required command not found: node'
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" \
-  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$picx" "$prx" "$passthrough_args")" \
+  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" \
+  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$picx" "$prx" "$fmx" "$passthrough_args")" \
   || die 'could not build profile choices'
 
 choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
@@ -848,6 +864,10 @@ case "$launcher" in
   cldx)
     selected_launcher="$cldx"
     selected_catalog="$cldx_catalog"
+    ;;
+  fmx)
+    selected_launcher="$fmx"
+    selected_catalog="$fmx_catalog"
     ;;
   grx)
     selected_launcher="$grx"

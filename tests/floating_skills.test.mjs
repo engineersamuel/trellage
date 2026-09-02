@@ -43,6 +43,69 @@ const readRegularTextFiles = async (directory) => {
   return contents
 }
 
+const readNativeFamilyRuntime = async (prototypesRoot, family) => {
+  const familyRoot = path.join(prototypesRoot, family)
+  const launchers = (await readdir(path.join(familyRoot, "bin"), { withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+  assert.equal(launchers.length, 1, `${family} must contain one launcher`)
+  const launcher = await readFile(path.join(familyRoot, "bin", launchers[0]), "utf8")
+  const installer = await readFile(path.join(familyRoot, "install.sh"), "utf8")
+  const commonRoot = path.join(prototypesRoot, family.replace(/-profiles$/u, "-common"))
+  const commonStatus = await lstat(commonRoot).catch(() => undefined)
+  const commonSources = commonStatus?.isDirectory() ? await readRegularTextFiles(commonRoot) : []
+  const surfaceSources = [launcher, installer, ...commonSources]
+  const sharedCommonNames = new Set(
+    surfaceSources.join("\n").match(/trellage-[a-z0-9-]+-common/gu) ?? [],
+  )
+  for (const sharedCommonName of sharedCommonNames) {
+    if (sharedCommonName === path.basename(commonRoot)) continue
+    const sharedCommonRoot = path.join(prototypesRoot, sharedCommonName)
+    const sharedCommonStatus = await lstat(sharedCommonRoot).catch(() => undefined)
+    if (sharedCommonStatus?.isDirectory()) {
+      surfaceSources.push(...(await readRegularTextFiles(sharedCommonRoot)))
+    }
+  }
+  return { familyRoot, installer, launcher, runtimeSource: surfaceSources.join("\n") }
+}
+
+const assertNativeFamilyCommonBundle = async (prototypesRoot, family) => {
+  const { familyRoot, installer, launcher, runtimeSource } = await readNativeFamilyRuntime(
+    prototypesRoot,
+    family,
+  )
+  if (family === "trellage-codex-profiles") {
+    const catalog = JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8"))
+    assert.ok(
+      Object.values(catalog.profiles).every(
+        (profile) => Array.isArray(profile.skillBundles) && profile.skillBundles.includes("native-common"),
+      ),
+      `${family} catalog profiles must select native-common`,
+    )
+    assert.match(
+      launcher,
+      /native-environment-runtime/u,
+      `${family} launcher must consume the native environment runtime`,
+    )
+    assert.match(
+      installer,
+      /install-native-environment-runtime\.sh/u,
+      `${family} installer must publish the native environment runtime`,
+    )
+  } else {
+    assert.match(
+      runtimeSource,
+      /--bundle native-common/u,
+      `${family} launcher runtime must select native-common`,
+    )
+  }
+  assert.match(
+    installer,
+    /install-floating-skills-runtime\.sh/u,
+    `${family} installer must publish the floating-skills runtime`,
+  )
+}
+
 const commit = async (repository, message) => {
   await execFilePromise("git", ["-C", repository, "add", "."])
   await execFilePromise("git", [
@@ -266,47 +329,7 @@ test("all launcher and container surfaces consume their common skill bundle", as
   assert.ok(nativeFamilies.length > 0)
 
   for (const family of nativeFamilies) {
-    const familyRoot = path.join(prototypesRoot, family)
-    const launchers = (await readdir(path.join(familyRoot, "bin"), { withFileTypes: true }))
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-    assert.equal(launchers.length, 1, `${family} must contain one launcher`)
-    const launcher = await readFile(path.join(familyRoot, "bin", launchers[0]), "utf8")
-    const installer = await readFile(path.join(familyRoot, "install.sh"), "utf8")
-    const commonRoot = path.join(prototypesRoot, family.replace(/-profiles$/u, "-common"))
-    const commonStatus = await lstat(commonRoot).catch(() => undefined)
-    const commonSources = commonStatus?.isDirectory() ? await readRegularTextFiles(commonRoot) : []
-    const runtimeSource = [launcher, installer, ...commonSources].join("\n")
-    if (family === "trellage-codex-profiles") {
-      const catalog = JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8"))
-      assert.ok(
-        Object.values(catalog.profiles).every(
-          (profile) => Array.isArray(profile.skillBundles) && profile.skillBundles.includes("native-common"),
-        ),
-        `${family} catalog profiles must select native-common`,
-      )
-      assert.match(
-        launcher,
-        /native-environment-runtime/u,
-        `${family} launcher must consume the native environment runtime`,
-      )
-      assert.match(
-        installer,
-        /install-native-environment-runtime\.sh/u,
-        `${family} installer must publish the native environment runtime`,
-      )
-    } else {
-      assert.match(
-        runtimeSource,
-        /--bundle native-common/u,
-        `${family} launcher runtime must select native-common`,
-      )
-    }
-    assert.match(
-      installer,
-      /install-floating-skills-runtime\.sh/u,
-      `${family} installer must publish the floating-skills runtime`,
-    )
+    await assertNativeFamilyCommonBundle(prototypesRoot, family)
   }
 
   const profilesRoot = path.join(repositoryRoot, "profiles")

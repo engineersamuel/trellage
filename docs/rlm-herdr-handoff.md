@@ -133,3 +133,10 @@ Trellage cannot detect Herdr-side bugs automatically. Update it (and the
 duplicated literal in `prototypes/trellage-router/bin/trx`, kept in sync by
 convention) whenever a fresh Herdr-driven verification run changes a
 profile's known status.
+
+New native launchers are entered as `untested` before any live run.
+`fmx/default` and `fmx/pstack-workers` were first added this way and were not
+part of the original 22-profile RLM run. `fmx/default` has since completed a
+real Herdr captain-and-scout round trip and is now `verified`.
+`fmx/pstack-workers` remains `untested` until its profile-specific worker
+policy completes the same round trip.

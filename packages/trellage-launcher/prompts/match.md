@@ -34,6 +34,13 @@ Start with workflow descriptions and examples that closely resemble the
 intent, then use `bestFor` and capabilities as supporting evidence. Treat
 `avoidFor` and unmet prerequisites as negative evidence.
 
+An explicit profile identity has priority. If the intent names an exact
+`profileRef` or a native launcher/profile pair, include that exact entry and
+normally rank it first. Accept normal punctuation, spacing, and
+singular/plural variants. Do not replace `native:fmx/pstack-workers` with
+`native:cdx/pstack` when the user asks for the Firstmate profile. The
+cross-cutting rules below must not displace an explicitly requested profile.
+
 When profiles share skills or broad capabilities, resolve the choice with
 their actual runtime differences: harness behavior, sandbox boundary,
 authentication, model route, tool surface, persistence model, and process

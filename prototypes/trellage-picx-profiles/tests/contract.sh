@@ -122,6 +122,26 @@ jq -e '
 printf '%s\n' \
   "${PI_CODING_AGENT_DIR-}|${COPILOT_MODELS_PATH-}|copilot=${COPILOT_GITHUB_TOKEN+x}|gh=${GH_TOKEN+x}|github=${GITHUB_TOKEN+x}|openai=${OPENAI_API_KEY+x}|openai_base=${OPENAI_BASE_URL+x}|azure=${AZURE_OPENAI_API_KEY+x}|$*" \
   >>"$FAKE_LAUNCH_LOG"
+if [[ -n "${FAKE_PI_READY_FILE-}" ]]; then
+  : >"$FAKE_PI_READY_FILE"
+fi
+if [[ -n "${FAKE_PI_HOLD-}" ]]; then
+  hold_pid=''
+  on_term() {
+    if [[ "$hold_pid" =~ ^[1-9][0-9]*$ ]]; then
+      kill -TERM "$hold_pid" 2>/dev/null || true
+      wait "$hold_pid" 2>/dev/null || true
+    fi
+    if [[ -n "${FAKE_PI_SIGNAL_FILE-}" ]]; then
+      printf 'TERM\n' >"$FAKE_PI_SIGNAL_FILE"
+    fi
+    exit 143
+  }
+  trap on_term TERM
+  sleep "$FAKE_PI_HOLD" &
+  hold_pid=$!
+  wait "$hold_pid"
+fi
 if [[ "$*" == *'what extensions are installed'* ]]; then
   printf '%s\n' \
     'Ponytail' \
@@ -135,6 +155,7 @@ if [[ "$*" == *'what extensions are installed'* ]]; then
     'pi-goal' \
     'pi-dynamic-workflows'
 fi
+exit "${FAKE_PI_EXIT_STATUS:-0}"
 FAKE_PI
 chmod 0755 "$fixture_root/fake-pi-template"
 
@@ -392,6 +413,33 @@ fi
 "$command_path" --headless-policy no-user-input -p 'headless probe' >/dev/null
 grep -Fq -- '--exclude-tools ask_question' "$FAKE_LAUNCH_LOG" \
   || fail 'headless policy did not exclude ask_question'
+status=0
+FAKE_PI_EXIT_STATUS=37 \
+  "$command_path" --headless-policy no-user-input -p 'failing headless probe' \
+  >/dev/null 2>"$fixture_root/headless-nonzero.err" || status=$?
+[[ "$status" == 37 ]] \
+  || fail "headless launch returned $status instead of the Pi exit status 37"
+
+headless_ready="$fixture_root/headless-ready"
+headless_signal="$fixture_root/headless-signal"
+FAKE_PI_READY_FILE="$headless_ready" \
+FAKE_PI_SIGNAL_FILE="$headless_signal" \
+FAKE_PI_HOLD=30 \
+  "$command_path" --headless-policy no-user-input -p 'cancelled headless probe' \
+  >/dev/null 2>"$fixture_root/headless-cancel.err" &
+headless_pid=$!
+for _ in $(seq 1 100); do
+  [[ -f "$headless_ready" ]] && break
+  sleep 0.05
+done
+[[ -f "$headless_ready" ]] || fail 'headless cancellation probe did not start Pi'
+kill -TERM "$headless_pid"
+status=0
+wait "$headless_pid" || status=$?
+[[ "$status" == 143 ]] \
+  || fail "cancelled headless launch returned $status instead of 143"
+grep -Fqx 'TERM' "$headless_signal" \
+  || fail 'headless cancellation did not reach the Pi child'
 "$command_path" update --check >"$fixture_root/update-check.out"
 grep -Fqx 'picx update: 0.84.2 is current' "$fixture_root/update-check.out" \
   || fail 'update check differs'

@@ -1,0 +1,123 @@
+@@ -970 +970,12 @@
+ fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
++# --- Trellage fmx task-id namespace ----------------------------------------
++# Each fmx profile owns a task-id prefix so two profiles cannot silently create
++# the same fm/<id> branch in one remote. Unset means no namespace is enforced.
++if [ -n "${FMX_TASK_ID_PREFIX:-}" ]; then
++  case "$ID" in
++    "$FMX_TASK_ID_PREFIX"-*) ;;
++    *)
++      echo "error: this fmx profile requires task ids to start with '$FMX_TASK_ID_PREFIX-' (got '$ID'); rename the task so its fm/<id> branch cannot collide with another profile's" >&2
++      exit 1 ;;
++  esac
++fi
+@@ -2424 +2435,23 @@
+-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
++  if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++    # Treehouse runs before the fmx worker helper, so resolve it from the
++    # explicit carrier instead of the daemon-created pane's stale PATH.
++    [ -n "${FMX_WORKER_PATH:-}" ] || {
++      echo "error: FMX_WORKER_PATH is required before acquiring an fmx worker worktree" >&2
++      exit 1
++    }
++    case "$FMX_WORKER_PATH" in
++      *$'\n'*) echo "error: FMX_WORKER_PATH must not contain a newline" >&2; exit 1 ;;
++    esac
++    FMX_TREEHOUSE_BIN=$(PATH="$FMX_WORKER_PATH" type -P treehouse 2>/dev/null || true)
++    case "$FMX_TREEHOUSE_BIN" in
++      /*) ;;
++      *) echo "error: treehouse is not available from FMX_WORKER_PATH" >&2; exit 1 ;;
++    esac
++    [ -f "$FMX_TREEHOUSE_BIN" ] && [ -x "$FMX_TREEHOUSE_BIN" ] || {
++      echo "error: treehouse from FMX_WORKER_PATH is not an executable file: $FMX_TREEHOUSE_BIN" >&2
++      exit 1
++    }
++    spawn_send_text_line "$WT_TARGET" "$(shell_quote "$FMX_TREEHOUSE_BIN") get"
++  else
++    spawn_send_text_line "$WT_TARGET" 'treehouse get'
++  fi
+@@ -2985 +3018,5 @@
+-if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
++# Under Trellage fmx the worker store is owned by the fmx worker boundary below,
++# which gives every task its own Claude home, so the captain store is not
++# forwarded in that case.
++if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ] \
++   && [ -z "${FMX_WORKER_LAUNCHER:-}" ]; then
+@@ -3058 +3095,77 @@
+ sleep 0.3
++# --- Trellage fmx worker launch boundary -----------------------------------
++# When an fmx profile owns this fleet, a worker is never started by sending an
++# opaque shell command into a pane. The boundary hands structured task inputs to
++# the fmx worker helper, which builds the harness invocation itself through the
++# shared Trellage Claude runtime: one verified executable, one shared flag
++# contract, one complete provider scrub. Firstmate's operational-input encoding,
++# model and effort selection, turn-end project hooks, and trace-context decision
++# are all preserved as inputs. Upstream behavior is preserved exactly when
++# FMX_WORKER_LAUNCHER is absent.
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++  # Claude-only is enforced BEFORE the invocation is constructed: any other
++  # harness would run outside the boundary entirely.
++  if [ "$HARNESS" != claude ]; then
++    echo "error: this fmx profile manages Claude workers only; harness '$HARNESS' would start outside the fmx worker boundary" >&2
++    exit 1
++  fi
++  if [ "$KIND" = secondmate ]; then
++    echo "error: this fmx profile does not manage secondmate homes; spawn ship or scout crewmates instead" >&2
++    exit 1
++  fi
++  case "$FMX_WORKER_LAUNCHER" in
++    /*) ;;
++    *) echo "error: FMX_WORKER_LAUNCHER must be an absolute path: $FMX_WORKER_LAUNCHER" >&2; exit 1 ;;
++  esac
++  [ -f "$FMX_WORKER_LAUNCHER" ] && [ -x "$FMX_WORKER_LAUNCHER" ] || {
++    echo "error: FMX_WORKER_LAUNCHER is not an executable file: $FMX_WORKER_LAUNCHER" >&2
++    exit 1
++  }
++  # HOME, PATH, and Bash are carried explicitly. A crewmate pane is created by
++  # a long-lived session daemon whose environment is not the captain's, so
++  # none may be inherited from it.
++  [ -n "${FMX_WORKER_HOME:-}" ] || {
++    echo "error: FMX_WORKER_HOME is required by the fmx worker boundary" >&2
++    exit 1
++  }
++  [ -n "${FMX_WORKER_PATH:-}" ] || {
++    echo "error: FMX_WORKER_PATH is required by the fmx worker boundary" >&2
++    exit 1
++  }
++  case "${FMX_WORKER_BASH:-}" in
++    /*) ;;
++    *) echo "error: FMX_WORKER_BASH must be an absolute path: ${FMX_WORKER_BASH:-}" >&2; exit 1 ;;
++  esac
++  [ -f "$FMX_WORKER_BASH" ] && [ -x "$FMX_WORKER_BASH" ] || {
++    echo "error: FMX_WORKER_BASH is not an executable file: $FMX_WORKER_BASH" >&2
++    exit 1
++  }
++  # Carry forward this spawn's trace-context decision. Only the fixed literal
++  # prefix this script itself adds above is inspected; the command is never
++  # parsed or evaluated.
++  FMX_TRACEPARENT_MODE=keep
++  case "$LAUNCH" in
++    'unset TRACEPARENT; '*) FMX_TRACEPARENT_MODE=unset ;;
++  esac
++  # Leading variable assignments followed by the captain's absolute Bash
++  # interpreter: neither interpreter nor helper lookup uses the daemon PATH.
++  LAUNCH="FMX_PROFILE=$(shell_quote "${FMX_PROFILE:-}")\
++ FMX_PROFILE_ROOT=$(shell_quote "${FMX_PROFILE_ROOT:-}")\
++ FMX_CAPTAIN_PANE_ID=$(shell_quote "${FMX_CAPTAIN_PANE_ID:-}")\
++ FMX_GH_CONFIG_DIR=$(shell_quote "${FMX_GH_CONFIG_DIR:-}")\
++ FMX_TASK_ID_PREFIX=$(shell_quote "${FMX_TASK_ID_PREFIX:-}")\
++ FMX_WORKER_HOME=$(shell_quote "${FMX_WORKER_HOME:-}")\
++ FMX_WORKER_PATH=$(shell_quote "${FMX_WORKER_PATH:-}")\
++ FMX_WORKER_BASH=$(shell_quote "${FMX_WORKER_BASH:-}")\
++ $(shell_quote "${FMX_WORKER_BASH:-}")\
++ $(shell_quote "$FMX_WORKER_LAUNCHER")\
++ --task $(shell_quote "$ID")\
++ --kind $(shell_quote "$KIND")\
++ --backend $(shell_quote "$BACKEND")\
++ --brief $sq_brief\
++ --worktree $sq_worktree\
++ --operational-input $sq_opinput\
++ --model $(shell_quote "$MODEL")\
++ --effort $(shell_quote "$EFFORT")\
++ --traceparent $(shell_quote "$FMX_TRACEPARENT_MODE")"
++fi

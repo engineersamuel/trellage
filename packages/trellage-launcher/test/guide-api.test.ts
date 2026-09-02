@@ -16,6 +16,7 @@ import type {
 } from "../src/guide-provider.js"
 import { GuideValidationError } from "../src/guide-text.js"
 import {
+  applyRequiredProfilePromptTemplate,
   applyWorkflowPromptTemplate,
   GuideArgsError,
   GuideEffort,
@@ -236,6 +237,135 @@ describe("applyWorkflowPromptTemplate", () => {
 
   it("leaves workflows without a declared skill unchanged", () => {
     expect(applyWorkflowPromptTemplate(guide, "plain", candidate)).toEqual(candidate)
+  })
+})
+
+describe("applyRequiredProfilePromptTemplate", () => {
+  const candidate = {
+    title: "Fleet delivery",
+    prompt: "Implement the requested repository change.",
+    notes: "Direct implementation.",
+  }
+  const guide: ProfileGuideV1 = {
+    schemaVersion: 1,
+    capabilities: ["fleet-orchestration"],
+    bestFor: ["Parallel repository work"],
+    avoidFor: ["Small edits"],
+    prerequisites: [],
+    workflows: [
+      {
+        id: "fleet",
+        description: "Coordinate a fleet.",
+        examples: ["Coordinate this change"],
+        promptTemplate: "## Firstmate operating contract\nKeep Firstmate as the sole router.\n\n## Task\n{{intent}}",
+      },
+      {
+        id: "investigation",
+        description: "Coordinate an investigation.",
+        examples: ["Investigate this failure"],
+        promptTemplate:
+          "## Firstmate investigation contract\nKeep Firstmate as the sole router.\n\n## Investigation\n{{intent}}",
+      },
+      {
+        id: "pstack-investigation",
+        description: "Coordinate a disciplined investigation.",
+        examples: ["Investigate this failure with disciplined workers"],
+        promptTemplate:
+          "## Firstmate pstack-worker investigation contract\nKeep Firstmate as the sole router.\n\n## Investigation\n{{intent}}",
+      },
+    ],
+  }
+
+  it("wraps optimized fmx prompts with the authored operating contract", () => {
+    expect(applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", candidate).prompt).toBe(
+      "## Firstmate operating contract\nKeep Firstmate as the sole router.\n\n## Task\nImplement the requested repository change.",
+    )
+  })
+
+  it("does not duplicate an already wrapped fmx prompt", () => {
+    const wrapped = applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", candidate)
+
+    expect(applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", wrapped)).toEqual(wrapped)
+  })
+
+  it("replaces a model-authored leading fleet contract instead of duplicating it", () => {
+    const modelCandidate = {
+      ...candidate,
+      prompt:
+        "## Operating contract\nUse Firstmate as the sole fleet router.\n\n## Task\nImplement the requested repository change.",
+    }
+    const wrapped = applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", modelCandidate)
+
+    expect(wrapped.prompt).toBe(
+      "## Firstmate operating contract\nKeep Firstmate as the sole router.\n\n## Task\nImplement the requested repository change.",
+    )
+    expect(wrapped.prompt.match(/operating contract/giu)).toHaveLength(1)
+  })
+
+  it.each([
+    {
+      profileRef: "native:fmx/default",
+      workflowId: "investigation",
+      modelHeading: "Firstmate investigation contract",
+      authoredHeading: "Firstmate investigation contract",
+    },
+    {
+      profileRef: "native:fmx/default",
+      workflowId: "investigation",
+      modelHeading: "Investigation contract",
+      authoredHeading: "Firstmate investigation contract",
+    },
+    {
+      profileRef: "native:fmx/pstack-workers",
+      workflowId: "pstack-investigation",
+      modelHeading: "Firstmate pstack-worker investigation contract",
+      authoredHeading: "Firstmate pstack-worker investigation contract",
+    },
+  ])(
+    "replaces a model-authored $modelHeading instead of duplicating it",
+    ({ profileRef, workflowId, modelHeading, authoredHeading }) => {
+      const modelCandidate = {
+        ...candidate,
+        prompt: [
+          `## ${modelHeading}`,
+          "Use Firstmate as the sole fleet router.",
+          "",
+          "## Investigation",
+          "Find the root cause.",
+        ].join("\n"),
+      }
+      const wrapped = applyRequiredProfilePromptTemplate(profileRef, guide, workflowId, modelCandidate)
+
+      expect(wrapped.prompt).toBe(
+        `## ${authoredHeading}\nKeep Firstmate as the sole router.\n\n## Investigation\nFind the root cause.`,
+      )
+      expect(wrapped.prompt.match(/investigation contract/giu)).toHaveLength(1)
+      expect(wrapped.prompt.match(/^## Investigation$/gmu)).toHaveLength(1)
+    },
+  )
+
+  it("preserves a legitimate task heading that discusses the Firstmate router", () => {
+    const taskCandidate = {
+      ...candidate,
+      prompt: [
+        "# Fix the Firstmate router",
+        "",
+        "Correct the profile selection regression.",
+        "",
+        "## Verification",
+        "",
+        "Run the router contract.",
+      ].join("\n"),
+    }
+
+    const wrapped = applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", taskCandidate)
+
+    expect(wrapped.prompt).toContain(taskCandidate.prompt)
+    expect(wrapped.prompt.match(/Firstmate operating contract/gu)).toHaveLength(1)
+  })
+
+  it("leaves other profiles unchanged", () => {
+    expect(applyRequiredProfilePromptTemplate("native:cdx/pstack", guide, "fleet", candidate)).toEqual(candidate)
   })
 })
 
@@ -506,18 +636,18 @@ describe("parseGuideHeadlessArgv", () => {
   })
 
   it("rejects an intent above the 60000-character limit", () => {
-    expect(() =>
-      parseGuideHeadlessArgv(["--json", "--intent", "a".repeat(guideIntentMaximumLength + 1)]),
-    ).toThrow(GuideValidationError)
+    expect(() => parseGuideHeadlessArgv(["--json", "--intent", "a".repeat(guideIntentMaximumLength + 1)])).toThrow(
+      GuideValidationError,
+    )
   })
 
   it("counts non-BMP Unicode as code points", () => {
     expect(parseGuideHeadlessArgv(["--intent", "😀".repeat(guideIntentMaximumLength)]).intent).toBe(
       "😀".repeat(guideIntentMaximumLength),
     )
-    expect(() =>
-      parseGuideHeadlessArgv(["--intent", "😀".repeat(guideIntentMaximumLength + 1)]),
-    ).toThrow(GuideValidationError)
+    expect(() => parseGuideHeadlessArgv(["--intent", "😀".repeat(guideIntentMaximumLength + 1)])).toThrow(
+      GuideValidationError,
+    )
   })
 
   it("allows JSON mode to read stdin and interactive mode to open its intent editor", () => {
@@ -530,9 +660,7 @@ describe("parseGuideHeadlessArgv", () => {
   it("accepts plain-text stdin only for the interactive guide", () => {
     expect(parseGuideHeadlessArgv(["--intent-stdin"]).intentStdin).toBe(true)
     expect(() => parseGuideHeadlessArgv(["--json", "--intent-stdin"])).toThrow(GuideArgsError)
-    expect(() => parseGuideHeadlessArgv(["--intent-stdin", "--intent", "duplicate"])).toThrow(
-      GuideArgsError,
-    )
+    expect(() => parseGuideHeadlessArgv(["--intent-stdin", "--intent", "duplicate"])).toThrow(GuideArgsError)
     expect(() => parseGuideHeadlessArgv(["--intent-stdin", "duplicate"])).toThrow(GuideArgsError)
   })
 
@@ -1029,6 +1157,13 @@ describe("selectedProfileFromCatalogRef", () => {
 // ---------------------------------------------------------------------------
 
 describe("literalGuideMatch", () => {
+  it("ranks an explicitly named native launcher and profile first", () => {
+    const candidates = literalGuideMatch(buildCatalog("/tmp-unused"), "Use cdx pstack to review this change")
+
+    expect(candidates[0]?.profileRef).toBe("native:cdx/pstack")
+    expect(candidates[0]?.reason).toContain("explicitly names native:cdx/pstack")
+  })
+
   it("ranks known profiles by normalized token overlap, distinct refs, source-order tie-break", () => {
     const catalog = buildCatalog("/tmp-unused")
     const candidates = literalGuideMatch(catalog, "Refactor the payment pipeline carefully")
