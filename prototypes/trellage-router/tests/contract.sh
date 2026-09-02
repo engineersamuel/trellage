@@ -753,6 +753,8 @@ create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-
   "$fixture_root/trellage-picx-profiles"
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1 \
   "$fixture_root/trellage-prime-profiles"
+create_native_launcher agx agency .managed-by-trellage-agency-profiles trellage-agency-profiles-v1 \
+  "$fixture_root/trellage-agency-profiles"
 
 TRELLAGE_TRX_SOURCE_ROOT="$dev_router_root" TRELLAGE_TRX_NATIVE_SOURCE=1 \
   HOME="$fixture_home" PATH="$fixture_bin:$PATH" \
