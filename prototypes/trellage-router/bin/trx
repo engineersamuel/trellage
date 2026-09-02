@@ -152,13 +152,42 @@ discover_launcher() {
   local marker_name="$2"
   local marker_value="$3"
   local legacy_marker_value="${4-}"
+  local package_dir="${5-}"
   local discovered
   local installed_marker_value
   local resolved
+  local dev_candidate
+  local dev_source
+  # Captured before the launcher-scoped `runtime` below shadows the trx
+  # router's own resolved runtime directory (set once, globally, near the
+  # top-level TRELLAGE_TRX_SOURCE_ROOT handling).
+  local trx_root="$runtime"
   local runtime="$canonical_home/.local/share/trellage/$launcher"
   local expected="$runtime/bin/$launcher"
   local catalog="$runtime/catalog.json"
   local marker="$runtime/$marker_name"
+
+  if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" && -n "${TRELLAGE_TRX_NATIVE_SOURCE-}" \
+    && -n "$package_dir" ]]; then
+    # Explicit, opt-in extension of TRELLAGE_TRX_SOURCE_ROOT: a developer who
+    # also sets TRELLAGE_TRX_NATIVE_SOURCE gets every native launcher resolved
+    # from this worktree's own sibling prototypes/trellage-*-profiles package
+    # instead of the shared, installed runtime, so worktree development and
+    # the installed launcher never collide. This is intentionally a second,
+    # separate switch: TRELLAGE_TRX_SOURCE_ROOT alone only affects trx's own
+    # bundled router assets (picker/guide), so router-only dev/test flows that
+    # still want deterministic, installed (or fixture) native launchers keep
+    # working unchanged.
+    dev_source="$trx_root/../$package_dir/bin/$launcher"
+    [[ -f "$dev_source" && ! -L "$dev_source" ]] \
+      || die "unsafe development launcher: $launcher ($dev_source)"
+    dev_candidate="$(resolve_file "$dev_source")" \
+      || die "cannot resolve development launcher: $launcher ($package_dir)"
+    [[ -f "$dev_candidate" && -x "$dev_candidate" ]] \
+      || die "development launcher is not an executable regular file: $launcher ($dev_candidate)"
+    printf '%s\n' "$dev_candidate"
+    return 0
+  fi
 
   discovered="$(command -v "$launcher" 2>/dev/null)" \
     || die "required launcher not found on PATH: $launcher"
@@ -613,15 +642,15 @@ if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
   done
 fi
 
-cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"
-cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1)"
-cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1)"
-fmx="$(discover_launcher fmx .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1)"
-grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1)"
-jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1)"
-omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2)"
-picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1)"
-prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1)"
+cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1 '' trellage-copilot-profiles)"
+cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1 trellage-codex-profiles)"
+cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 '' trellage-claude-profiles)"
+fmx="$(discover_launcher fmx .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 '' trellage-firstmate-profiles)"
+grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1 '' trellage-grok-profiles)"
+jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 '' trellage-jcode-profiles)"
+omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 '' trellage-omp-profiles)"
+picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1 '' trellage-picx-profiles)"
+prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1 '' trellage-prime-profiles)"
 
 if [[ "$mode" == inventory ]]; then
   case "$inventory_launcher" in

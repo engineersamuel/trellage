@@ -11,8 +11,8 @@ description = "Run the repository worktree Trellage command"
 run = "./prototypes/trellage/trellage"
 
 [tasks.trx]
-description = "Run the repository worktree trx router"
-run = "env TRELLAGE_TRX_SOURCE_ROOT=\"$MISE_PROJECT_ROOT/prototypes/trellage-router\" \"$MISE_PROJECT_ROOT/prototypes/trellage-router/bin/trx\""
+description = "Run the repository worktree trx router, including its native launchers"
+run = "env TRELLAGE_TRX_SOURCE_ROOT=\"$MISE_PROJECT_ROOT/prototypes/trellage-router\" TRELLAGE_TRX_NATIVE_SOURCE=1 \"$MISE_PROJECT_ROOT/prototypes/trellage-router/bin/trx\""
 
 [tasks.trx-guide-overlay-build]
 description = "Build the local macOS TRX guide selection overlay"
