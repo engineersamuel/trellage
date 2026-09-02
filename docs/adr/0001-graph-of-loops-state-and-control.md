@@ -35,7 +35,11 @@ fail after the user has already started a run.
   `status` can report planning, planned, accepting, or blocked state without
   querying Beads. `resume` reuses a provenance-current reviewed plan and does
   not call the planner again. Explicit `resume --replan` archives and
-  supersedes a generation.
+  supersedes a generation. A late supersession is permitted only after all
+  nodes are closed, integrated, gate-current, reviewed, and proved, when graph
+  gates have not passed and graph review and proof have not started. The named
+  target worktree must have no tracked changes, and HEAD must be the integrated
+  target revision or its descendant.
 - **Beads is the only durable accepted-graph authority.** The Trellage graph
   controller (`trellage-graph` CLI) is the only component that creates,
   claims, transitions, reopens, or closes Beads issues for a graph run. Every

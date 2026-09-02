@@ -29,7 +29,7 @@ translates this into `trellage-graph` CLI calls:
 | `trellage-graph run --goal "<objective>" [--constraint "<text>"]...` | Print a durable run ID before planning, then plan, validate, accept Beads state, and begin scheduling. |
 | `trellage-graph status --run <run-id>` | Report bootstrap phases before acceptance and node, gate, review, and proof state afterward. |
 | `trellage-graph resume --run <run-id>` | Continue the same interrupted run, reuse its current reviewed plan, or retry only a failed candidate-plan audit when provenance still matches. |
-| `trellage-graph resume --run <run-id> --replan` | Explicitly supersede a blocked or stale generation when no node commit or integration exists and generated worktrees are clean. |
+| `trellage-graph resume --run <run-id> --replan` | Explicitly supersede a blocked or stale generation when no node commit or integration exists and generated worktrees are clean. It can also supersede after every node is closed, integrated, current, reviewed, and proved when graph gates fail before graph review or proof, provided the clean named HEAD is the integrated target or its descendant. |
 | `trellage-graph validate-plan --plan <path>` | Validate a graph plan document without starting execution. |
 | `trellage-graph finding reject <finding-id> --run <run-id> --evidence <path>` | Record an explicit, evidence-backed rejection of one Codex review finding. |
 

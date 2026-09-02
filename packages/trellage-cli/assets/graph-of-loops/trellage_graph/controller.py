@@ -350,6 +350,11 @@ class GraphController:
         return generation
 
     def _replan_blockers(self) -> list[str]:
+        if self._late_graph_gate_replan_ready():
+            return self._late_graph_gate_replan_blockers()
+        return self._preintegration_replan_blockers()
+
+    def _preintegration_replan_blockers(self) -> list[str]:
         blockers: list[str] = []
         for node_id, state in self._state.get("nodes", {}).items():
             if state.get("integrated"):
@@ -365,6 +370,52 @@ class GraphController:
                     blockers.append(
                         f"node '{node_id}' worktree has committed changes"
                     )
+        return blockers
+
+    def _late_graph_gate_replan_ready(self) -> bool:
+        nodes = list(self._state.get("nodes", {}).values())
+        return bool(nodes) and all(
+            state.get("status") == "closed"
+            and state.get("integrated")
+            and state.get("gates_current")
+            and state.get("review") in ("passed", "not-applicable")
+            and state.get("proof") in ("passed", "not-applicable")
+            and not state.get("integration_pending")
+            and not state.get("worktree")
+            and not any(
+                finding.get("status") == "open"
+                for finding in state.get("findings", {}).values()
+            )
+            for state in nodes
+        ) and (
+            self._state.get("graph_gates") != "passed"
+            and self._state.get("graph_review") == "pending"
+            and self._state.get("graph_proof") == "pending"
+            and not self._state.get("graph_findings")
+        )
+
+    def _late_graph_gate_replan_blockers(self) -> list[str]:
+        blockers: list[str] = []
+        if not self._target_branch():
+            blockers.append("repository HEAD is detached")
+        tracked = self._git(
+            ["status", "--porcelain=v1", "--untracked-files=no"],
+            cwd=self._repo_root,
+        ).stdout.strip()
+        if tracked:
+            blockers.append("target worktree has uncommitted tracked changes")
+        expected = str(
+            self._state.get("target_revision", self._state["base_revision"])
+        )
+        try:
+            self._git(
+                ["merge-base", "--is-ancestor", expected, "HEAD"],
+                cwd=self._repo_root,
+            )
+        except ControllerError:
+            blockers.append(
+                "repository HEAD is not a descendant of the integrated graph target"
+            )
         return blockers
 
     def _supersede_node_for_replan(

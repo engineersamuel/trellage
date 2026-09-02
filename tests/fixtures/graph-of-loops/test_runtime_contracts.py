@@ -3404,6 +3404,81 @@ class TestControllerE2E(unittest.TestCase):
                 for node in ctrl._state["nodes"].values()
             ))
 
+    def test_closed_integrated_graph_with_failed_gates_can_be_superseded(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            git = FakeSubprocessRunner()
+            git.set_result("branch --show-current", "worktree/test\n")
+            git.set_result(
+                "status --porcelain=v1 --untracked-files=no",
+                "",
+            )
+            git.set_result("merge-base --is-ancestor", "")
+            ctrl = _make_controller(td=td, git_runner=git)
+            ctrl.accept_plan(
+                _load("valid-plan.json"),
+                run_id="late-gate-replan",
+                plan_generation=4,
+            )
+            for node in ctrl._state["nodes"].values():
+                node.update({
+                    "status": "closed",
+                    "commit": "abc1234",
+                    "integrated": True,
+                    "gates_current": True,
+                    "review": "passed",
+                    "proof": "not-applicable",
+                    "worktree": None,
+                })
+            ctrl._state.update({
+                "status": "blocked",
+                "target_revision": "abc1234",
+                "graph_gates": "pending",
+                "graph_review": "pending",
+                "graph_proof": "pending",
+            })
+
+            self.assertEqual(ctrl.prepare_replan("late-gate-replan"), 4)
+            self.assertEqual(ctrl._state["status"], "superseded")
+
+    def test_late_graph_replan_rejects_dirty_or_divergent_target(self) -> None:
+        for failure in ("dirty", "divergent"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as td:
+                git = FakeSubprocessRunner()
+                git.set_result("branch --show-current", "worktree/test\n")
+                git.set_result(
+                    "status --porcelain=v1 --untracked-files=no",
+                    " M tracked.txt\n" if failure == "dirty" else "",
+                )
+                if failure == "divergent":
+                    git.set_failure("merge-base --is-ancestor")
+                ctrl = _make_controller(td=td, git_runner=git)
+                ctrl.accept_plan(
+                    _load("valid-plan.json"),
+                    run_id=f"late-{failure}",
+                )
+                for node in ctrl._state["nodes"].values():
+                    node.update({
+                        "status": "closed",
+                        "commit": "abc1234",
+                        "integrated": True,
+                        "gates_current": True,
+                        "review": "passed",
+                        "proof": "not-applicable",
+                        "worktree": None,
+                    })
+                ctrl._state.update({
+                    "target_revision": "abc1234",
+                    "graph_gates": "pending",
+                    "graph_review": "pending",
+                    "graph_proof": "pending",
+                })
+
+                with self.assertRaisesRegex(
+                    ControllerError,
+                    "accepted graph cannot be replanned",
+                ):
+                    ctrl.prepare_replan(f"late-{failure}")
+
     def test_ready_wave_execution_is_bounded_and_parallel(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             policy = _load("test-policy.json")
