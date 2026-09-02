@@ -68,7 +68,7 @@ class SpecialistError(Exception):
 
 def _expanded_existing_paths(root: Path, value: str) -> list[str] | None:
     stripped = re.sub(r"\s+\([^()]+\)$", "", value)
-    parts = re.split(r"\s+/\s+|,\s*", stripped)
+    parts = re.split(r"\s+/\s+|,\s*|\s+and\s+", stripped)
     if len(parts) < 2:
         return None
     first = Path(parts[0])

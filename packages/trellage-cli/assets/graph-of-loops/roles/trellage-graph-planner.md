@@ -85,6 +85,11 @@ target-evidence path must exist in the repository.
   scan result, or require an accumulated result that is validated after every
   timed loop. A loop that discards pure scan results is not valid performance
   evidence.
+- Compare semantic result checksums separately from backend instrumentation.
+  Scalar and SIMD index checksums must match. Consume `vector_steps` through a
+  separate black-boxed accumulator; require the scalar accumulator to be zero
+  and the exercised SIMD accumulator to be positive. Never require scalar and
+  SIMD checksums to match when those checksums include `vector_steps`.
 - A node that only adds benchmark or validation artifacts is not a product
   behavior change. Set `behavior_change` to `false` and use final gates only.
   Do not invent red and green gates for a benchmark command. If a benchmark

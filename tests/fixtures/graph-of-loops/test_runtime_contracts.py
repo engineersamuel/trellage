@@ -2618,6 +2618,54 @@ class TestSpecialist(unittest.TestCase):
                 ],
             )
 
+    def test_discovery_expands_and_delimited_sibling_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for relative in (
+                "prototypes/simd/src/arch/mod.rs",
+                "prototypes/simd/src/arch/x86_64.rs",
+                "prototypes/simd/Cargo.toml",
+                "prototypes/simd/Cargo.lock",
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+            discovery = {
+                "repository_evidence": [{
+                    "path": (
+                        "prototypes/simd/src/arch/mod.rs and "
+                        "src/arch/x86_64.rs"
+                    ),
+                    "detail": "architecture seams",
+                }],
+                "relevant_paths": [
+                    "prototypes/simd/Cargo.toml and Cargo.lock",
+                ],
+            }
+
+            normalized = SpecialistLauncher._normalize_discovery_paths(
+                discovery,
+                repo_root=str(root),
+            )
+
+            self.assertEqual(
+                [
+                    entry["path"]
+                    for entry in normalized["repository_evidence"]
+                ],
+                [
+                    "prototypes/simd/src/arch/mod.rs",
+                    "prototypes/simd/src/arch/x86_64.rs",
+                ],
+            )
+            self.assertEqual(
+                normalized["relevant_paths"],
+                [
+                    "prototypes/simd/Cargo.toml",
+                    "prototypes/simd/Cargo.lock",
+                ],
+            )
+
     def test_planner_accepts_locally_validated_discovery_json_text(self) -> None:
         runner = FakeSubprocessRunner()
         discovery = json.loads(
@@ -5359,6 +5407,10 @@ class TestSchemaValidation(unittest.TestCase):
         )
         self.assertIn(
             "Require `std::hint::black_box`",
+            planner_role,
+        )
+        self.assertIn(
+            "Compare semantic result checksums separately",
             planner_role,
         )
 
