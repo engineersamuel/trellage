@@ -43,14 +43,16 @@ create_native_launcher() {
   local harness="$2"
   local marker="$3"
   local marker_value="$4"
-  local runtime="$runtime_parent/$launcher"
-  local description="$launcher"
+  local dest_root="${5:-$runtime_parent/$launcher}"
+  local description_suffix="${6-}"
+  local runtime="$dest_root"
+  local description="$launcher$description_suffix"
   local standalone_mcps='[]'
   local profile_name="${launcher}-p"
 
   if [[ "$launcher" == cpx ]]; then
     printf -v description '%1200s' ''
-    description="${description// /x}"
+    description="${description// /x}$description_suffix"
     standalone_mcps='["docs", {"name":"files","transport":"stdio"}]'
   fi
 
@@ -316,7 +318,9 @@ fi
 exit "${TRX_CHILD_EXIT-0}"
 EOF
   chmod 0755 "$runtime/bin/$launcher"
-  ln -s "$runtime/bin/$launcher" "$fixture_bin/$launcher"
+  if [[ "$dest_root" == "$runtime_parent/$launcher" ]]; then
+    ln -s "$runtime/bin/$launcher" "$fixture_bin/$launcher"
+  fi
 }
 
 create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1
@@ -672,6 +676,83 @@ TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   || fail 'worktree source JSON list failed'
 cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
   || fail 'worktree source list differs from installed router list'
+
+# --- TRELLAGE_TRX_NATIVE_SOURCE: opt-in dev-mode native launcher delegation.
+# Uses a self-contained fixture (a copy of trx plus fixture sibling
+# trellage-*-profiles packages) so it never depends on the real, slower
+# native launcher binaries or mutates the real repository tree. Plain `list`
+# (not `--json`) is used here because `--json` additionally shells out to the
+# real Ink picker/guide catalog, which this isolated fixture does not stage.
+"$fixture_bin/trx" list >"$fixture_root/list.txt" \
+  || fail 'installed router plain list failed'
+
+dev_router_root="$fixture_root/dev-router"
+mkdir -p "$dev_router_root/bin"
+cp "$prototype_root/bin/trx" "$dev_router_root/bin/trx"
+chmod 0755 "$dev_router_root/bin/trx"
+
+create_native_launcher cpx copilot .managed-by-trellage-profiles trellage-profiles-v1 \
+  "$fixture_root/trellage-copilot-profiles"
+create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 \
+  "$fixture_root/trellage-codex-profiles" ' (dev-source)'
+create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 \
+  "$fixture_root/trellage-claude-profiles"
+create_native_launcher fmx firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 \
+  "$fixture_root/trellage-firstmate-profiles"
+create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1 \
+  "$fixture_root/trellage-grok-profiles"
+create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 \
+  "$fixture_root/trellage-jcode-profiles"
+create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 \
+  "$fixture_root/trellage-omp-profiles"
+create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1 \
+  "$fixture_root/trellage-picx-profiles"
+create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1 \
+  "$fixture_root/trellage-prime-profiles"
+
+TRELLAGE_TRX_SOURCE_ROOT="$dev_router_root" TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  HOME="$fixture_home" PATH="$fixture_bin:$PATH" \
+  "$dev_router_root/bin/trx" list >"$fixture_root/dev-native-list.txt" \
+  || fail 'dev-native-source list failed'
+assert_contains '(dev-source)' "$fixture_root/dev-native-list.txt"
+cmp -s "$fixture_root/dev-native-list.txt" "$fixture_root/list.txt" \
+  && fail 'dev-native-source list unexpectedly matched the installed launcher list'
+
+# TRELLAGE_TRX_SOURCE_ROOT alone (no TRELLAGE_TRX_NATIVE_SOURCE) must keep
+# resolving native launchers from the installed/PATH runtime, unchanged.
+TRELLAGE_TRX_SOURCE_ROOT="$dev_router_root" \
+  HOME="$fixture_home" PATH="$fixture_bin:$PATH" \
+  "$dev_router_root/bin/trx" list >"$fixture_root/router-only-list.txt" \
+  || fail 'router-only dev mode list failed'
+cmp -s "$fixture_root/router-only-list.txt" "$fixture_root/list.txt" \
+  || fail 'router-only dev mode unexpectedly used dev-source native launchers'
+
+chmod -x "$fixture_root/trellage-codex-profiles/bin/cdx"
+if TRELLAGE_TRX_SOURCE_ROOT="$dev_router_root" TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  HOME="$fixture_home" PATH="$fixture_bin:$PATH" \
+  "$dev_router_root/bin/trx" list >"$fixture_root/dev-native-error.out" 2>&1; then
+  fail 'dev-native-source list unexpectedly succeeded with a non-executable sibling launcher'
+fi
+assert_contains \
+  'development launcher is not an executable regular file: cdx' \
+  "$fixture_root/dev-native-error.out"
+chmod 0755 "$fixture_root/trellage-codex-profiles/bin/cdx"
+
+mv "$fixture_root/trellage-codex-profiles/bin/cdx" \
+  "$fixture_root/trellage-codex-profiles/bin/cdx.real"
+ln -s "$fixture_root/trellage-codex-profiles/bin/cdx.real" \
+  "$fixture_root/trellage-codex-profiles/bin/cdx"
+if TRELLAGE_TRX_SOURCE_ROOT="$dev_router_root" TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  HOME="$fixture_home" PATH="$fixture_bin:$PATH" \
+  "$dev_router_root/bin/trx" list >"$fixture_root/dev-native-symlink.out" 2>&1; then
+  fail 'dev-native-source list unexpectedly followed a symlinked sibling launcher'
+fi
+assert_contains \
+  'unsafe development launcher: cdx' \
+  "$fixture_root/dev-native-symlink.out"
+rm -f "$fixture_root/trellage-codex-profiles/bin/cdx"
+mv "$fixture_root/trellage-codex-profiles/bin/cdx.real" \
+  "$fixture_root/trellage-codex-profiles/bin/cdx"
 
 cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
 cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
