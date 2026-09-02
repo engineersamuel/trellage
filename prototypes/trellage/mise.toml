@@ -28,6 +28,10 @@ run = "./install-trellage.sh install"
 description = "Refresh native trx/launchers + rebuild all sandbox profile images"
 run = "../../scripts/rebuild-profile-images.sh --install"
 
+[tasks.rebuild-native-profiles]
+description = "Refresh native trx/launchers without replacing the installed Trellage CLI"
+run = "../../scripts/rebuild-profile-images.sh --native-only"
+
 [tasks.uninstall-trellage-dry-run]
 description = "Preview removal of the user-local Trellage command"
 run = "./install-trellage.sh uninstall --dry-run"

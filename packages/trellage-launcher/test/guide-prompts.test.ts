@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest"
 
 describe("default guide prompts", () => {
   it("offers Headlong and integrates workflow requirements without repetition", async () => {
-    const [matchPrompt, generatePrompt, optimizePrompt] = await Promise.all([
+    const [matchPrompt, generatePrompt, optimizePrompt, refinePrompt] = await Promise.all([
       readFile(new URL("../prompts/match.md", import.meta.url), "utf8"),
       readFile(new URL("../prompts/generate.md", import.meta.url), "utf8"),
       readFile(new URL("../prompts/optimize.md", import.meta.url), "utf8"),
+      readFile(new URL("../prompts/refine.md", import.meta.url), "utf8"),
     ])
     const normalizedGeneratePrompt = generatePrompt.replace(/\s+/gu, " ")
 
@@ -29,10 +30,17 @@ describe("default guide prompts", () => {
     expect(matchPrompt).toContain("separately pins `sandbox:claude-council`,")
     expect(matchPrompt).toContain("`sandbox:claude-research`, and `native:cpx/hve`")
     expect(matchPrompt).toContain("do not\ninclude it in the ranked five")
-    expect(generatePrompt).toContain("preserve those requirements naturally in every")
-    expect(generatePrompt).toContain("do not repeat the same")
-    expect(generatePrompt).toContain("pressure-test that idea and its implementation")
-    expect(generatePrompt).toContain("subject of additional research")
+    expect(generatePrompt).toContain("write only the body that belongs in")
+    expect(generatePrompt).toContain("Do not copy its fixed prefix or suffix")
+    expect(generatePrompt).toContain("For a workflow without `skill`, write the complete prompt")
+    expect(generatePrompt).toContain("do not assume the caller will add a")
+    expect(generatePrompt).toContain("substantive authored workflow requirements")
+    expect(generatePrompt).toContain("preserve only the user's idea, question, and stated scope")
+    expect(generatePrompt).toContain("preserve only the user's research subject, question, comparison, and stated")
+    expect(generatePrompt).toMatch(/Do not\s+duplicate the fixed frame's pressure-testing/u)
+    expect(generatePrompt).toMatch(/Do not\s+duplicate the fixed frame's source-evidence/u)
+    expect(generatePrompt).toContain("do not emit\nworkflow commands")
+    expect(generatePrompt).not.toContain("Every candidate must ask")
     expect(generatePrompt).toContain("For `native:fmx/default`")
     expect(normalizedGeneratePrompt).toContain("supported fleet lifecycle")
     expect(normalizedGeneratePrompt).toContain("smallest useful durable task graph and worker count")
@@ -51,6 +59,20 @@ describe("default guide prompts", () => {
     expect(optimizePrompt).toContain("Apply the loaded")
     expect(optimizePrompt).toContain("`prompt-master` skill")
     expect(optimizePrompt).toContain("same number of candidates")
-    expect(optimizePrompt).toContain("Preserve and improve useful Markdown structure")
+    expect(optimizePrompt).toMatch(/Preserve and\s+improve useful\s+Markdown structure/u)
+    expect(optimizePrompt).toContain("When the input includes `fixedFrame`")
+    expect(optimizePrompt).toContain("each candidate `prompt` is body text")
+    expect(optimizePrompt).toContain("When `fixedFrame` is absent")
+    expect(optimizePrompt).toContain("each candidate `prompt` is the complete prompt")
+    expect(optimizePrompt).toContain("do not assume the caller will")
+    expect(optimizePrompt).toContain("preserve supported authored commands")
+    expect(optimizePrompt).toContain("body text when")
+    expect(optimizePrompt).toContain("a complete prompt when it is absent")
+    expect(refinePrompt).toContain("`candidate.prompt` is body text")
+    expect(refinePrompt).toContain("The caller reapplies the exact")
+    expect(refinePrompt).toContain("For a workflow without `skill`, continue to return the")
+    expect(refinePrompt).toContain("substantive authored workflow requirements")
+    expect(refinePrompt).toContain("The caller will not add or restore a frame")
+    expect(refinePrompt).toContain("Never\nadd a new workflow command")
   })
 })

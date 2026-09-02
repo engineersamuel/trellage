@@ -52,6 +52,20 @@ import {
 import type { GuideGenerateCandidate, GuideMatchCandidate, GuideProvider } from "./guide-provider.js"
 import { loadSelectedGuide } from "./guide-selected.js"
 import { exactKeys, fail, literal, record, text } from "./guide-text.js"
+import {
+  GuideCandidatePromptCollisionError,
+  GuideCandidatePromptStage,
+  GuideWorkflowBodyError,
+  renderWorkflowBodyCandidate,
+  requireDistinctGuideCandidatePrompts,
+  resolveGeneratedWorkflowBodyCandidate,
+  resolveWorkflowBodyCandidate,
+  restoreWorkflowCandidateFrame,
+  workflowAuthorizationBody,
+  workflowHasAuthoredCommandSuffix,
+  workflowOptimizeFixedFrame,
+  workflowPromptFrame,
+} from "./guide-workflow-prompt.js"
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -735,6 +749,12 @@ export interface GuideGenerateRequest extends GuideMatchRequest {
   readonly profileRef: string
 }
 
+const findGuideWorkflow = (guide: ProfileGuideV1, workflowId: string): ProfileGuideWorkflow => {
+  const workflow = guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
+  return workflow
+}
+
 const escapeRegularExpression = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
 
 const flexibleWhitespacePattern = (value: string): string =>
@@ -758,27 +778,16 @@ const removePartialTemplateBoundary = (template: string, prompt: string): string
 }
 
 /**
- * Applies the selected workflow's authored skill command or skill-use
- * instruction to a model-generated prompt. Workflows without a declared skill
- * preserve the generated prompt.
+ * Restores the selected skill workflow's exact authored frame once. Exact
+ * frames are first reduced to their body; every other edit is treated as body
+ * text in full. Workflows without a skill stay unchanged.
  */
 export const applyWorkflowPromptTemplate = (
   guide: ProfileGuideV1,
   workflowId: string,
   candidate: GuideGenerateCandidate,
-): GuideGenerateCandidate => {
-  const workflow = guide.workflows.find(({ id }) => id === workflowId)
-  if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
-  if (workflow.skill === undefined) return candidate
-
-  if (isCompleteWorkflowPrompt(workflow.promptTemplate, candidate.prompt)) return candidate
-  const promptBody = removePartialTemplateBoundary(workflow.promptTemplate, candidate.prompt)
-
-  return {
-    ...candidate,
-    prompt: workflow.promptTemplate.replaceAll("{{intent}}", promptBody),
-  }
-}
+): GuideGenerateCandidate =>
+  restoreWorkflowCandidateFrame(findGuideWorkflow(guide, workflowId), candidate)
 
 const requiredProfilePromptTemplateRefs: ReadonlySet<string> = new Set([
   "native:fmx/default",
@@ -868,10 +877,11 @@ export const runGuideGenerate = async (
     guideBody: loaded.body,
   })
 
-  const workflow = compactProfileGuide(entry.guide).workflows.find(({ id }) => id === workflowId)
-  if (workflow === undefined) {
+  const compactWorkflow = compactProfileGuide(entry.guide).workflows.find(({ id }) => id === workflowId)
+  if (compactWorkflow === undefined) {
     throw new GuideServiceError(`Selected workflow is unknown for ${request.profileRef}: ${workflowId}`)
   }
+  const authoredWorkflow = findGuideWorkflow(loaded.guide, workflowId)
 
   const native = isNativeEntry(entry)
   const profile: GuideSelectedProfileSummary = {
@@ -882,30 +892,107 @@ export const runGuideGenerate = async (
     ...(native ? { launcher: entry.launcher } : { harness: entry.harness.kind }),
     description: entry.description,
     sandbox: entry.sandbox,
-    workflow,
+    workflow: compactWorkflow,
     prerequisites: entry.guide.prerequisites,
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
   }
 
-  const workflowCandidates = generated.candidates.map((candidate) =>
-    applyWorkflowPromptTemplate(loaded.guide, workflowId, candidate),
-  )
+  let bodyCandidates: readonly [
+    GuideGenerateCandidate,
+    GuideGenerateCandidate,
+    GuideGenerateCandidate,
+  ]
+  try {
+    bodyCandidates = requireDistinctGuideCandidatePrompts(
+      assertTriple(
+        generated.candidates.map((candidate) =>
+          resolveGeneratedWorkflowBodyCandidate(
+            loaded.guide,
+            authoredWorkflow,
+            request.intent,
+            candidate,
+          ),
+        ),
+        "workflow body candidates",
+      ),
+      GuideCandidatePromptStage.GeneratedBodyNormalization,
+    )
+  } catch (cause) {
+    if (cause instanceof GuideWorkflowBodyError || cause instanceof GuideCandidatePromptCollisionError) {
+      throw new GuideServiceError(cause.message, { cause })
+    }
+    throw cause
+  }
+  const fixedFrame = workflowOptimizeFixedFrame(authoredWorkflow)
   const optimized = await provider.optimize({
     targetTool: isNativeEntry(entry) ? entry.harness : entry.harness.kind,
     profileRef: request.profileRef,
-    candidates: workflowCandidates,
+    candidates: bodyCandidates,
+    ...(fixedFrame === undefined ? {} : { fixedFrame }),
   })
+  const [bodyFirst, bodySecond, bodyThird] = bodyCandidates
+  const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
+    optimized.candidates,
+    "optimized prompt candidates",
+  )
+  const safeBodyCandidates = [
+    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyFirst, optimizedFirst),
+    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodySecond, optimizedSecond),
+    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyThird, optimizedThird),
+  ] as const
+  let renderedCandidates: readonly [
+    GuideGenerateCandidate,
+    GuideGenerateCandidate,
+    GuideGenerateCandidate,
+  ]
+  try {
+    const exactRenderedCandidates = requireDistinctGuideCandidatePrompts(
+      [
+        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[0]),
+        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[1]),
+        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[2]),
+      ],
+      GuideCandidatePromptStage.FinalRendering,
+    )
+    renderedCandidates = requireDistinctGuideCandidatePrompts(
+      [
+        applyRequiredProfilePromptTemplate(
+          request.profileRef,
+          loaded.guide,
+          workflowId,
+          exactRenderedCandidates[0],
+        ),
+        applyRequiredProfilePromptTemplate(
+          request.profileRef,
+          loaded.guide,
+          workflowId,
+          exactRenderedCandidates[1],
+        ),
+        applyRequiredProfilePromptTemplate(
+          request.profileRef,
+          loaded.guide,
+          workflowId,
+          exactRenderedCandidates[2],
+        ),
+      ],
+      GuideCandidatePromptStage.FinalRendering,
+    )
+  } catch (cause) {
+    if (cause instanceof GuideCandidatePromptCollisionError) {
+      throw new GuideServiceError(cause.message, { cause })
+    }
+    throw cause
+  }
   const candidates = assertTriple(
-    optimized.candidates.map((candidate): GuidePromptCandidate => {
-      const finalCandidate = applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, candidate)
-      return {
-        title: finalCandidate.title,
-        prompt: finalCandidate.prompt,
-        notes: finalCandidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, finalCandidate.prompt),
-      }
-    }),
+    renderedCandidates.map(
+      (candidate): GuidePromptCandidate => ({
+        title: candidate.title,
+        prompt: candidate.prompt,
+        notes: candidate.notes,
+        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt),
+      }),
+    ),
     "generation prompt candidates",
   )
 
@@ -1046,9 +1133,10 @@ export const literalGuideMatch = (
  * Deterministic, model-free prompt candidates derived from the profile's
  * authored `promptTemplate` for `workflowId`, with every `{{intent}}`
  * placeholder replaced. Produces exactly three distinct, provider-shaped
- * candidates by adding conservative scope/verification requests to the
- * authored template — never inventing commands or profile features. This is
- * a user-triggered fallback only; it is never called automatically by
+ * candidates without inventing commands or profile features. Structured
+ * sections stay inside bodies for command suffixes and empty suffixes. Prose
+ * suffixes receive concise inline constraints before the exact authored text.
+ * This is a user-triggered fallback only; it is never called automatically by
  * `runGuideGenerate`.
  */
 export const templatePromptCandidates = (
@@ -1058,21 +1146,44 @@ export const templatePromptCandidates = (
 ): readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate] => {
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
-  const base = workflow.promptTemplate.replaceAll("{{intent}}", intent)
+  const frame = workflowPromptFrame(workflow)
+  const authorizedBody = workflowAuthorizationBody(workflow, intent)
+  const renderBody = (body: string): string => `${frame.beforeBody}${body}${frame.afterBody}`
+  const suffixStartsWithPunctuation = /^\s*[\p{P}\p{S}]/u.test(frame.afterBody)
+  const appendInlineConstraint = (body: string, constraint: string): string => {
+    const trimmedBody = body.trimEnd()
+    const trailingWhitespace = body.slice(trimmedBody.length)
+    const startsNewSentence = /[.!?]["')\]]*$/u.test(trimmedBody)
+    const clause = startsNewSentence
+      ? `${constraint.slice(0, 1).toUpperCase()}${constraint.slice(1)}`
+      : constraint
+    const separator = trimmedBody.length === 0 ? "" : startsNewSentence ? " " : "; "
+    const terminator = suffixStartsWithPunctuation ? "" : "."
+    return `${trimmedBody}${separator}${clause}${terminator}${trailingWhitespace}`
+  }
+  const scopeSection = "\n\n## Scope\n\nLimit the change to the smallest reasonable scope."
+  const completionSection =
+    "\n\n## Completion\n\nAfter completing the work, verify it and report the verification evidence."
+  const scopeConstraint = "keep the work within the smallest reasonable scope"
+  const completionConstraint = "after completing the work, verify it and report the verification evidence"
+  const enhancedBody = (body: string, section: string, constraint: string): string =>
+    frame.afterBody.length > 0 && !workflowHasAuthoredCommandSuffix(workflow)
+      ? appendInlineConstraint(body, constraint)
+      : `${body}${section}`
   const candidates: ReadonlyArray<GuideGenerateCandidate> = [
     {
       title: "Direct",
-      prompt: base,
+      prompt: renderBody(authorizedBody),
       notes: "Uses the profile's authored prompt template in a focused Markdown document.",
     },
     {
       title: "Scoped",
-      prompt: `${base}\n\n## Scope\n\nLimit the change to the smallest reasonable scope.`,
+      prompt: renderBody(enhancedBody(authorizedBody, scopeSection, scopeConstraint)),
       notes: "Adds an explicit scope constraint to the authored template.",
     },
     {
       title: "Verified",
-      prompt: `${base}\n\n## Completion\n\nAfter completing the work, verify it and report the verification evidence.`,
+      prompt: renderBody(enhancedBody(authorizedBody, completionSection, completionConstraint)),
       notes: "Adds an explicit verification request to the authored template.",
     },
   ]

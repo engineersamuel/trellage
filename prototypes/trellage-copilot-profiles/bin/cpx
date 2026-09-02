@@ -139,12 +139,14 @@ projected_headless() {
 projected_headless_map_json() {
   jq -cn \
     --argjson awesome "$(projected_headless awesome)" \
+    --argjson compoundEngineering "$(projected_headless compound-engineering)" \
     --argjson hve "$(projected_headless hve)" \
     --argjson plannotator "$(projected_headless plannotator)" \
     --argjson superpowers "$(projected_headless superpowers)" \
     --argjson tufteVdqi "$(projected_headless tufte-vdqi)" '
     {
       awesome: $awesome,
+      "compound-engineering": $compoundEngineering,
       hve: $hve,
       plannotator: $plannotator,
       superpowers: $superpowers,
@@ -183,6 +185,68 @@ validate_catalog() {
           "marketplaceName": "awesome-copilot",
           "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
           "plugin": "awesome-copilot@awesome-copilot",
+          "standaloneMcps": []
+        },
+        "compound-engineering": {
+          "description": "GitHub Copilot CLI for the Compound Engineering loop: create repository-informed plans, ship requirements-ready work hands-off to an open pull request with lfg, and capture verified solutions so each change makes the next easier.",
+          "headless": {
+            "schemaVersion": 1,
+            "prompt": true,
+            "outputFormats": ["text", "json"],
+            "eventContract": null,
+            "trellageEventContract": null,
+            "sessionId": "none",
+            "resume": false,
+            "resumeWithPrompt": false,
+            "questionToolControl": "hard-deny",
+            "changedFiles": "none",
+            "usage": false,
+            "cost": false,
+            "modelOverride": true,
+            "effortOverride": false,
+            "testedHarnessVersion": "1.0.81"
+          },
+          "marketplace": "EveryInc/compound-engineering-plugin",
+          "marketplaceName": "compound-engineering-plugin",
+          "manifestUrl": "https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.claude-plugin/marketplace.json",
+          "versionManifestUrl": "https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.codex-plugin/plugin.json",
+          "installedVersionManifest": ".codex-plugin/plugin.json",
+          "plugin": "compound-engineering@compound-engineering-plugin",
+          "requiredPackageSkills": [
+            "ce-babysit-pr",
+            "ce-brainstorm",
+            "ce-code-review",
+            "ce-commit",
+            "ce-commit-push-pr",
+            "ce-compound",
+            "ce-compound-refresh",
+            "ce-debug",
+            "ce-doc-review",
+            "ce-dogfood",
+            "ce-explain",
+            "ce-handoff",
+            "ce-ideate",
+            "ce-optimize",
+            "ce-plan",
+            "ce-polish",
+            "ce-pov",
+            "ce-product-pulse",
+            "ce-promote",
+            "ce-proof",
+            "ce-prototype",
+            "ce-resolve-pr-feedback",
+            "ce-retune",
+            "ce-riffrec-feedback-analysis",
+            "ce-setup",
+            "ce-simplify-code",
+            "ce-strategy",
+            "ce-sweep",
+            "ce-test-browser",
+            "ce-test-xcode",
+            "ce-work",
+            "ce-worktree",
+            "lfg"
+          ],
           "standaloneMcps": []
         },
         "hve": {
@@ -578,6 +642,7 @@ active_plugin_root() {
   printf '%s\n' "$root"
 }
 
+# Status 3 means the configured path is safe, but the manifest is absent or invalid.
 installed_manifest_version() {
   local profile="$1" plugin="$2"
   local manifest_path root current remaining segment canonical_root canonical_manifest
@@ -595,12 +660,18 @@ installed_manifest_version() {
     segment="${remaining%%/*}"
     [[ -n "$segment" && "$segment" != '.' && "$segment" != '..' ]] || return 2
     current="$current/$segment"
-    [[ -d "$current" && ! -L "$current" ]] || return 2
+    if [[ -L "$current" || ( -e "$current" && ! -d "$current" ) ]]; then
+      return 2
+    fi
+    [[ -d "$current" ]] || return 3
     remaining="${remaining#*/}"
   done
   [[ -n "$remaining" && "$remaining" != '.' && "$remaining" != '..' ]] || return 2
   current="$current/$remaining"
-  [[ -f "$current" && ! -L "$current" ]] || return 2
+  if [[ -L "$current" || ( -e "$current" && ! -f "$current" ) ]]; then
+    return 2
+  fi
+  [[ -f "$current" ]] || return 3
 
   canonical_root="$(cd -P "$root" >/dev/null 2>&1 && pwd)" || return 2
   canonical_manifest="$(cd -P "$(dirname "$current")" >/dev/null 2>&1 && pwd)/$(basename "$current")" \
@@ -616,7 +687,7 @@ installed_manifest_version() {
     then .version
     else empty
     end
-  ' "$current" 2>/dev/null || return 2
+  ' "$current" 2>/dev/null || return 3
 }
 
 plugin_present_in_snapshot() {
@@ -910,6 +981,7 @@ setup_profile() {
     *) die "failed to read installed plugins: $profile" ;;
   esac
   remove_retired_plugins "$profile"
+  verify_required_package_skills "$profile"
   install_session_bridge "$profile"
   printf '%s: ready\n' "$profile"
 }
@@ -1189,6 +1261,131 @@ verify_required_package_skills() {
     '.profiles[$profile].requiredPackageSkills[]? // empty' "$catalog")
 }
 
+required_package_skills_need_repair() {
+  local profile="$1"
+  local plugin installed_root marketplace_name marketplace_root
+  local plugin_root plugin_root_status=0 manifest_path skills_root inventory
+  local skill skill_root canonical_skill_root skill_file inventory_state
+  local manifest_status=0
+  local needs_repair=1
+
+  if ! jq -e --arg profile "$profile" \
+    '(.profiles[$profile].requiredPackageSkills // []) | length > 0' \
+    "$catalog" >/dev/null; then
+    return 1
+  fi
+  plugin="$(profile_value "$profile" plugin)"
+  installed_root="$(profile_home "$profile")/installed-plugins"
+  if [[ -L "$installed_root" || ( -e "$installed_root" && ! -d "$installed_root" ) ]]; then
+    die "cannot safely repair installed plugin path: $profile"
+  fi
+  if [[ ! -d "$installed_root" ]]; then
+    return 0
+  fi
+
+  if [[ "$plugin" == *@* ]]; then
+    marketplace_name="${plugin#*@}"
+    marketplace_root="$installed_root/$marketplace_name"
+    if [[ -L "$marketplace_root" \
+      || ( -e "$marketplace_root" && ! -d "$marketplace_root" ) ]]; then
+      die "cannot safely repair installed plugin path: $profile"
+    fi
+    if [[ ! -d "$marketplace_root" ]]; then
+      return 0
+    fi
+  fi
+
+  plugin_root="$(active_plugin_root "$profile" "$plugin")" || plugin_root_status=$?
+  case "$plugin_root_status" in
+    0) ;;
+    1) return 0 ;;
+    *) die "cannot safely repair installed plugin path: $profile" ;;
+  esac
+
+  manifest_path="$(profile_optional_value "$profile" installedVersionManifest)"
+  if [[ -n "$manifest_path" ]]; then
+    installed_manifest_version "$profile" "$plugin" >/dev/null || manifest_status=$?
+    case "$manifest_status" in
+      0) ;;
+      3) needs_repair=0 ;;
+      *) die "cannot safely repair installed plugin manifest: $profile" ;;
+    esac
+  fi
+
+  skills_root="$plugin_root/skills"
+  if [[ -L "$skills_root" || ( -e "$skills_root" && ! -d "$skills_root" ) ]]; then
+    die "cannot safely repair required package skill root: $profile"
+  fi
+  [[ -d "$skills_root" ]] || needs_repair=0
+
+  inventory="$(skill_inventory_snapshot "$profile")" \
+    || die "failed to read skill inventory: $profile"
+  while IFS= read -r skill; do
+    [[ "$skill" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+      || die "invalid required package skill name: $profile"
+    skill_root="$skills_root/$skill"
+    skill_file="$skill_root/SKILL.md"
+    if [[ -L "$skill_root" || ( -e "$skill_root" && ! -d "$skill_root" ) \
+      || -L "$skill_file" || ( -e "$skill_file" && ! -f "$skill_file" ) ]]; then
+      die "cannot safely repair required package skill path: $profile/$skill"
+    fi
+    if [[ ! -d "$skill_root" || ! -f "$skill_file" ]]; then
+      needs_repair=0
+    fi
+    canonical_skill_root="$skill_root"
+    if [[ -d "$skill_root" ]]; then
+      canonical_skill_root="$(cd -P "$skill_root" 2>/dev/null && pwd -P)" \
+        || die "cannot safely repair required package skill path: $profile/$skill"
+    fi
+
+    inventory_state="$(jq -r \
+      --arg skill "$skill" \
+      --arg path "$skill_root" \
+      --arg canonicalPath "$canonical_skill_root" '
+      [.[] | select(.name == $skill and .source == "plugin")] as $matches
+      | if ($matches | length) == 0 then "repairable"
+        elif ($matches | length) != 1
+          or ($matches[0].path != $path and $matches[0].path != $canonicalPath)
+          then "unsafe"
+        elif $matches[0].enabled then "healthy"
+        else "repairable"
+        end
+    ' <<<"$inventory")" || die "invalid skill inventory for $profile"
+    case "$inventory_state" in
+      healthy) ;;
+      repairable) needs_repair=0 ;;
+      *) die "cannot safely repair required package skill inventory: $profile/$skill" ;;
+    esac
+  done < <(jq -r --arg profile "$profile" \
+    '.profiles[$profile].requiredPackageSkills[]? // empty' "$catalog")
+
+  return "$needs_repair"
+}
+
+repair_required_package_skills() {
+  local profile="$1"
+  local marketplace_name plugin
+
+  if ! required_package_skills_need_repair "$profile"; then
+    return
+  fi
+
+  marketplace_name="$(profile_value "$profile" marketplaceName)"
+  plugin="$(profile_value "$profile" plugin)"
+  run_copilot "$profile" plugin marketplace update "$marketplace_name" \
+    || die "failed to update plugin marketplace: $profile"
+  run_copilot "$profile" plugin update "$plugin" \
+    || die "failed to update required package skills: $profile"
+
+  if required_package_skills_need_repair "$profile"; then
+    run_copilot "$profile" plugin uninstall "$plugin" \
+      || die "failed to uninstall unhealthy plugin: $profile"
+    run_copilot "$profile" plugin install "$plugin" \
+      || die "failed to reinstall unhealthy plugin: $profile"
+  fi
+  verify_required_package_skills "$profile"
+}
+
 doctor_profile() {
   local profile="$1"
   local home
@@ -1338,6 +1535,7 @@ repair_profile() {
     *) die "failed to read installed plugins: $profile" ;;
   esac
   remove_retired_plugins "$profile"
+  repair_required_package_skills "$profile"
   install_session_bridge "$profile"
   doctor_profile "$profile"
   printf '%s: repaired\n' "$profile"

@@ -150,6 +150,112 @@ const guidePrimeAgent: ProfileGuideV1 = {
   ],
 }
 
+const guideCompoundEngineering: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["compound-engineering"],
+  bestFor: ["Capturing verified repository learning", "Autonomous delivery"],
+  avoidFor: ["Unrelated prose", "Read-only research"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "capture-verified-repository-learning",
+      description: "Capture one verified repository learning.",
+      skill: "ce-compound",
+      examples: ["Capture this verified fix", "Record this repository learning"],
+      promptTemplate: "/ce-compound mode:non-interactive {{intent}}",
+    },
+    {
+      id: "autonomous-lfg-plan-to-pr",
+      description: "Deliver a change autonomously.",
+      skill: "lfg",
+      examples: ["Ship this feature", "Open a pull request"],
+      promptTemplate: "/lfg {{intent}}",
+    },
+  ],
+}
+
+const compoundEngineeringGuideMarkdown = `---
+schemaVersion: 1
+capabilities:
+  - compound-engineering
+bestFor:
+  - Capturing verified repository learning
+  - Autonomous delivery
+avoidFor:
+  - Unrelated prose
+  - Read-only research
+prerequisites: []
+workflows:
+  - id: capture-verified-repository-learning
+    description: Capture one verified repository learning.
+    skill: ce-compound
+    examples:
+      - Capture this verified fix
+      - Record this repository learning
+    promptTemplate: |
+      /ce-compound mode:non-interactive {{intent}}
+  - id: autonomous-lfg-plan-to-pr
+    description: Deliver a change autonomously.
+    skill: lfg
+    examples:
+      - Ship this feature
+      - Open a pull request
+    promptTemplate: |
+      /lfg {{intent}}
+---
+# Compound engineering
+
+Use this profile to capture verified repository learning.
+`
+
+const guidePstack: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["review-and-polish"],
+  bestFor: ["Skeptical review", "Prompt cleanup"],
+  avoidFor: ["Unrelated prose", "Read-only research"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "review-and-polish",
+      description: "Review a diff, then remove low-value prose.",
+      skill: "pstack-for-codex:interrogate",
+      examples: ["Review this change", "Polish this diff"],
+      promptTemplate:
+        "$pstack-for-codex:interrogate {{intent}}\n" +
+        "$pstack-for-codex:no-comments\n" +
+        "$pstack-for-codex:unslop",
+    },
+  ],
+}
+
+const pstackGuideMarkdown = `---
+schemaVersion: 1
+capabilities:
+  - review-and-polish
+bestFor:
+  - Skeptical review
+  - Prompt cleanup
+avoidFor:
+  - Unrelated prose
+  - Read-only research
+prerequisites: []
+workflows:
+  - id: review-and-polish
+    description: Review a diff, then remove low-value prose.
+    skill: pstack-for-codex:interrogate
+    examples:
+      - Review this change
+      - Polish this diff
+    promptTemplate: |
+      $pstack-for-codex:interrogate {{intent}}
+      $pstack-for-codex:no-comments
+      $pstack-for-codex:unslop
+---
+# pstack
+
+Use this profile to review and polish a change.
+`
+
 describe("applyWorkflowPromptTemplate", () => {
   const candidate = {
     title: "LinkedIn draft",
@@ -186,52 +292,32 @@ describe("applyWorkflowPromptTemplate", () => {
     ],
   }
 
-  it("wraps a generated prompt with the authored skill invocation", () => {
+  it("renders an unframed body with the exact authored skill frame", () => {
     expect(applyWorkflowPromptTemplate(guide, "post-writer", candidate).prompt).toBe(
       "/social-media-skills:post-writer Write a LinkedIn post about AI agents.",
     )
   })
 
-  it("does not duplicate an existing authored skill invocation", () => {
+  it("does not duplicate an exact authored frame", () => {
     const wrapped = applyWorkflowPromptTemplate(guide, "post-writer", candidate)
-
     expect(applyWorkflowPromptTemplate(guide, "post-writer", wrapped)).toEqual(wrapped)
   })
 
-  it("restores authored suffix commands without duplicating a partial prefix", () => {
+  it("treats a non-exact partial frame as the complete edited body", () => {
     const partial = {
       ...candidate,
       prompt: "$interrogate Review this change.",
     }
-
     expect(applyWorkflowPromptTemplate(guide, "review-stack", partial).prompt).toBe(
-      "$interrogate Review this change.\n$no-comments\n$unslop",
+      "$interrogate $interrogate Review this change.\n$no-comments\n$unslop",
     )
   })
 
-  it("accepts flexible whitespace around a partial template boundary", () => {
-    const partial = {
-      ...candidate,
-      prompt: "$interrogate\nReview this change.",
-    }
-
-    expect(applyWorkflowPromptTemplate(guide, "review-stack", partial).prompt).toBe(
-      "$interrogate Review this change.\n$no-comments\n$unslop",
-    )
-  })
-
-  it("does not duplicate a complete template with authored suffix commands", () => {
+  it("keeps exact authored suffix commands ordered and last", () => {
     const wrapped = applyWorkflowPromptTemplate(guide, "review-stack", candidate)
-
-    expect(applyWorkflowPromptTemplate(guide, "review-stack", wrapped)).toEqual(wrapped)
-  })
-
-  it("accepts flexible whitespace in a complete authored template", () => {
-    const wrapped = {
-      ...candidate,
-      prompt: "$interrogate\nReview this change.\n$no-comments\n$unslop",
-    }
-
+    expect(wrapped.prompt).toBe(
+      "$interrogate Write a LinkedIn post about AI agents.\n$no-comments\n$unslop",
+    )
     expect(applyWorkflowPromptTemplate(guide, "review-stack", wrapped)).toEqual(wrapped)
   })
 
@@ -499,6 +585,21 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
       ],
     }),
   )
+
+const withCdxPstackGuide = (
+  catalog: CombinedGuideCatalog,
+  guide: ProfileGuideV1,
+): CombinedGuideCatalog => ({
+  ...catalog,
+  native: catalog.native.map((entry) =>
+    entry.launcher === "cdx" && entry.name === "pstack" ? { ...entry, guide } : entry,
+  ),
+})
+
+const writeCdxPstackGuide = async (root: string, markdown: string): Promise<void> => {
+  await mkdir(path.join(root, "native", "cdx"), { recursive: true })
+  await writeFile(path.join(root, "native", "cdx", "pstack.md"), markdown)
+}
 
 /** Writes the guide Markdown fixtures matching the catalog's `foo` and `prime-agent` guides under `root`. */
 const writeGuideFixtures = async (root: string): Promise<void> => {
@@ -996,12 +1097,18 @@ describe("runGuideGenerate", () => {
       expect(response.profile.workflowId).toBe("plan")
       expect(response.profile.profileRef).toBe("sandbox:prime-agent")
       expect(response.candidates).toHaveLength(3)
-      expect(response.candidates[0]?.prompt).toBe("Prompt Master: Use the writing-plans skill:\nDo the focused thing.")
+      expect(response.candidates[0]?.prompt).toBe(
+        "Use the writing-plans skill:\nPrompt Master: Do the focused thing.",
+      )
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "copilot",
           profileRef: "sandbox:prime-agent",
-          candidates: expect.any(Array),
+          candidates: genCandidates().candidates,
+          fixedFrame: {
+            beforeBody: "Use the writing-plans skill:\n",
+            afterBody: "",
+          },
         },
       ])
 
@@ -1014,8 +1121,123 @@ describe("runGuideGenerate", () => {
 
       const serialized = JSON.stringify(response)
       expect(serialized).not.toContain("promptTemplate")
+      expect(serialized).not.toContain("fixedFrame")
+      expect(serialized).not.toContain("beforeBody")
+      expect(serialized).not.toContain("afterBody")
       expect(serialized).not.toContain("profile.toml")
       expect(serialized).not.toContain(tmpRoot)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("normalizes generated and optimized exact prose-frame echoes before one final render", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-prose-frame-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const catalog = buildCatalog(tmpRoot)
+      const optimizeCalls: GuideOptimizeInput[] = []
+      const generatedBodies = [
+        {
+          title: "Focused",
+          prompt: "Use the writing-plans skill:\nPlan the milestone in focused phases.",
+          notes: "Uses focused phases.",
+        },
+        {
+          title: "Thorough",
+          prompt: "Use the writing-plans skill:\nPlan the milestone with risks and dependencies.",
+          notes: "Adds risks and dependencies.",
+        },
+        {
+          title: "Cautious",
+          prompt: "Use the writing-plans skill:\nPlan the milestone with rollback points.",
+          notes: "Adds rollback points.",
+        },
+      ] as const
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({ candidates: generatedBodies }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeCalls.push(input)
+          return {
+            candidates: input.candidates.map((candidate) => ({
+              ...candidate,
+              prompt:
+                "Use the writing-plans skill:\n" +
+                `Optimized body: ${candidate.prompt}`,
+            })),
+          }
+        },
+      }
+
+      const response = await runGuideGenerate(provider, catalog, tmpRoot, {
+        intent: "Plan the next milestone",
+        profileRef: "sandbox:prime-agent",
+        model: "test-model",
+        effort: GuideEffort.Medium,
+      })
+
+      expect(optimizeCalls[0]?.candidates.map(({ prompt }) => prompt)).toEqual([
+        "Plan the milestone in focused phases.",
+        "Plan the milestone with risks and dependencies.",
+        "Plan the milestone with rollback points.",
+      ])
+      expect(response.candidates[0]?.prompt).toBe(
+        "Use the writing-plans skill:\n" +
+          "Optimized body: Plan the milestone in focused phases.",
+      )
+      expect(
+        response.candidates[0]?.prompt.match(/Use the writing-plans skill:/gu),
+      ).toHaveLength(1)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fails before optimization when raw candidates collapse after generated-body normalization", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-body-collision-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const catalog = buildCatalog(tmpRoot)
+      const rawCandidates = [
+        {
+          title: "Exact frame",
+          prompt: "Use the writing-plans skill:\nPlan the same milestone.",
+          notes: "Uses the exact frame.",
+        },
+        {
+          title: "Reflowed frame",
+          prompt: "Use  the writing-plans skill:\nPlan the same milestone.",
+          notes: "Reflows the prefix.",
+        },
+        {
+          title: "Reflowed boundary",
+          prompt: "Use the writing-plans skill: \n\tPlan the same milestone.",
+          notes: "Reflows the body boundary.",
+        },
+      ] as const
+      let optimizeCalls = 0
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({ candidates: rawCandidates }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async () => {
+          optimizeCalls += 1
+          throw new Error("optimize must not be called after a body collision")
+        },
+      }
+
+      expect(new Set(rawCandidates.map(({ prompt }) => prompt)).size).toBe(3)
+      await expect(
+        runGuideGenerate(provider, catalog, tmpRoot, {
+          intent: "Plan the next milestone",
+          profileRef: "sandbox:prime-agent",
+          model: "test-model",
+          effort: GuideEffort.Medium,
+        }),
+      ).rejects.toThrow(/no longer distinct after generated-body normalization.*template fallback/u)
+      expect(optimizeCalls).toBe(0)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }
@@ -1065,9 +1287,524 @@ describe("runGuideGenerate", () => {
 
       // "deep-refactor" shares far more tokens with the intent than "quick-fix".
       expect(response.profile.workflowId).toBe("deep-refactor")
+      expect(response.candidates[0]?.prompt).toBe("Prompt Master: Do the focused thing.")
+      expect(provider.optimizeCalls).toEqual([
+        {
+          targetTool: "jules",
+          profileRef: "native:jcx/foo",
+          candidates: genCandidates().candidates,
+        },
+      ])
       expect(provider.generateCalls[0]?.workflowId).toBe("deep-refactor")
       expect(provider.generateCalls[0]?.guideBody).toContain("Use this profile for repository delivery.")
       expect(provider.matchCalls).toHaveLength(0)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps no-skill generated and optimized candidates as complete prompts without a fixed frame", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-complete-prompts-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const catalog = buildCatalog(tmpRoot)
+      const generatedCandidates = [
+        {
+          title: "Focused",
+          prompt: "Carefully refactor: the payment pipeline with focused regression coverage.",
+          notes: "Keeps the refactor focused.",
+        },
+        {
+          title: "Phased",
+          prompt: "Carefully refactor: the payment pipeline in verified phases.",
+          notes: "Uses verified phases.",
+        },
+        {
+          title: "Rollback",
+          prompt: "Carefully refactor: the payment pipeline with explicit rollback points.",
+          notes: "Adds rollback planning.",
+        },
+      ] as const
+      let optimizeInput: GuideOptimizeInput | undefined
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({ candidates: generatedCandidates }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeInput = input
+          return {
+            candidates: input.candidates.map((candidate) => ({
+              ...candidate,
+              prompt: `${candidate.prompt} Preserve the existing public behavior.`,
+            })),
+          }
+        },
+      }
+
+      const response = await runGuideGenerate(provider, catalog, tmpRoot, {
+        intent: "Refactor the payment pipeline safely",
+        profileRef: "native:jcx/foo",
+        model: "test-model",
+        effort: GuideEffort.Medium,
+      })
+
+      expect(optimizeInput).toEqual({
+        targetTool: "jules",
+        profileRef: "native:jcx/foo",
+        candidates: generatedCandidates,
+      })
+      expect(response.candidates[0]?.prompt).toBe(
+        "Carefully refactor: the payment pipeline with focused regression coverage. " +
+          "Preserve the existing public behavior.",
+      )
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fails no-skill generation before optimization when a candidate adds an executable command line", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-no-skill-command-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const catalog = buildCatalog(tmpRoot)
+      let optimizeCalls = 0
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({
+          candidates: [
+            {
+              title: "Unsafe",
+              prompt: "Carefully refactor the payment pipeline.\n/LFG Ship it.",
+              notes: "Adds an executable command.",
+            },
+            {
+              title: "Phased",
+              prompt: "Carefully refactor the payment pipeline in verified phases.",
+              notes: "Uses verified phases.",
+            },
+            {
+              title: "Rollback",
+              prompt: "Carefully refactor the payment pipeline with rollback points.",
+              notes: "Adds rollback planning.",
+            },
+          ],
+        }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeCalls += 1
+          return { candidates: input.candidates }
+        },
+      }
+
+      await expect(
+        runGuideGenerate(provider, catalog, tmpRoot, {
+          intent: "Refactor the payment pipeline safely",
+          profileRef: "native:jcx/foo",
+          model: "test-model",
+          effort: GuideEffort.Medium,
+        }),
+      ).rejects.toThrow(/changed executable workflow commands/u)
+      expect(optimizeCalls).toBe(0)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("retains a no-skill complete candidate when optimization adds an executable command line", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-no-skill-optimize-command-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const catalog = buildCatalog(tmpRoot)
+      const generatedCandidates = [
+        {
+          title: "Focused",
+          prompt: "Carefully refactor the payment pipeline with focused regression coverage.",
+          notes: "Keeps the refactor focused.",
+        },
+        {
+          title: "Phased",
+          prompt: "Carefully refactor the payment pipeline in verified phases.",
+          notes: "Uses verified phases.",
+        },
+        {
+          title: "Rollback",
+          prompt: "Carefully refactor the payment pipeline with explicit rollback points.",
+          notes: "Adds rollback planning.",
+        },
+      ] as const
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({ candidates: generatedCandidates }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async () => ({
+          candidates: [
+            {
+              ...generatedCandidates[0],
+              prompt: `${generatedCandidates[0].prompt}\n/lfg Ship it.`,
+            },
+            generatedCandidates[1],
+            generatedCandidates[2],
+          ],
+        }),
+      }
+
+      const response = await runGuideGenerate(provider, catalog, tmpRoot, {
+        intent: "Refactor the payment pipeline safely",
+        profileRef: "native:jcx/foo",
+        model: "test-model",
+        effort: GuideEffort.Medium,
+      })
+
+      expect(response.candidates[0]).toMatchObject(generatedCandidates[0])
+      expect(response.candidates[0]?.prompt).not.toContain("/lfg")
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fails closed before optimization when generation adds an uncataloged executable command", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-unsafe-command-"))
+    try {
+      await writeCdxPstackGuide(tmpRoot, compoundEngineeringGuideMarkdown)
+      const catalog = withCdxPstackGuide(buildCatalog(tmpRoot), guideCompoundEngineering)
+      let optimizeCalls = 0
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({
+          candidates: [
+            {
+              title: "Unsafe command",
+              prompt: "/ce-commit-push-pr Ship the repository learning.",
+              notes: "Introduces an uncataloged executable command.",
+            },
+            {
+              title: "Detailed",
+              prompt: "Capture the verified retry race.",
+              notes: "Keeps the request bounded.",
+            },
+            {
+              title: "Evidence",
+              prompt: "Capture the evidence for the retry fix.",
+              notes: "Focuses on verification.",
+            },
+          ],
+        }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeCalls += 1
+          return { candidates: input.candidates }
+        },
+      }
+
+      await expect(
+        runGuideGenerate(provider, catalog, tmpRoot, {
+          intent: "Capture this verified repository learning.",
+          profileRef: "native:cdx/pstack",
+          model: "test-model",
+          effort: GuideEffort.Medium,
+        }),
+      ).rejects.toThrow(/changed executable workflow commands/u)
+      expect(optimizeCalls).toBe(0)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fails final generation when optimization fallback and rendering collapse candidates", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-final-collision-"))
+    try {
+      await writeCdxPstackGuide(tmpRoot, compoundEngineeringGuideMarkdown)
+      const catalog = withCdxPstackGuide(buildCatalog(tmpRoot), guideCompoundEngineering)
+      let optimizeCalls = 0
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({
+          candidates: [
+            {
+              title: "First",
+              prompt: "Capture the first verified learning.",
+              notes: "First body.",
+            },
+            {
+              title: "Second",
+              prompt: "Capture the second verified learning.",
+              notes: "Second body.",
+            },
+            {
+              title: "Third",
+              prompt: "Capture the third verified learning.",
+              notes: "Third body.",
+            },
+          ],
+        }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async () => {
+          optimizeCalls += 1
+          return {
+            candidates: [
+              {
+                title: "Safe collision",
+                prompt: "Capture the second verified learning.",
+                notes: "Safely rewrites the first candidate to the second body.",
+              },
+              {
+                title: "Unsafe rewrite",
+                prompt: "/lfg Ship an unrelated change.",
+                notes: "Falls back to the authorized second candidate.",
+              },
+              {
+                title: "Distinct third",
+                prompt: "Capture the third verified learning with evidence.",
+                notes: "Keeps the third candidate distinct.",
+              },
+            ],
+          }
+        },
+      }
+
+      await expect(
+        runGuideGenerate(provider, catalog, tmpRoot, {
+          intent: "Capture this verified repository learning.",
+          profileRef: "native:cdx/pstack",
+          model: "test-model",
+          effort: GuideEffort.Medium,
+        }),
+      ).rejects.toThrow(/no longer distinct after optimization resolution and exact rendering.*template fallback/u)
+      expect(optimizeCalls).toBe(1)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("never sends a 60000-character intent fallback to optimization", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-long-intent-"))
+    try {
+      await writeCdxPstackGuide(tmpRoot, compoundEngineeringGuideMarkdown)
+      const catalog = withCdxPstackGuide(buildCatalog(tmpRoot), guideCompoundEngineering)
+      const intent = `Capture ${"x".repeat(59_992)}`
+      let optimizeInput: GuideOptimizeInput | undefined
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({
+          candidates: [
+            {
+              title: "Unsafe sibling",
+              prompt: "/LFG Ship this change.",
+              notes: "Introduces a sibling workflow.",
+            },
+            {
+              title: "Detailed",
+              prompt: "Capture the bounded generated detail.",
+              notes: "Keeps the candidate bounded.",
+            },
+            {
+              title: "Evidence",
+              prompt: "Capture the bounded verification evidence.",
+              notes: "Keeps the candidate bounded.",
+            },
+          ],
+        }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeInput = input
+          return { candidates: input.candidates }
+        },
+      }
+
+      expect(intent).toHaveLength(60_000)
+      await expect(
+        runGuideGenerate(provider, catalog, tmpRoot, {
+          intent,
+          profileRef: "native:cdx/pstack",
+          model: "test-model",
+          effort: GuideEffort.Medium,
+        }),
+      ).rejects.toThrow(/changed executable workflow commands/u)
+      expect(optimizeInput).toBeUndefined()
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("normalizes a leading command echo before rendering the exact fixed argument once", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-compound-"))
+    try {
+      await writeCdxPstackGuide(tmpRoot, compoundEngineeringGuideMarkdown)
+      const catalog = withCdxPstackGuide(buildCatalog(tmpRoot), guideCompoundEngineering)
+      const optimizeCalls: GuideOptimizeInput[] = []
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => ({
+          candidates: [
+            {
+              title: "Echoed command",
+              prompt: "/ce-compound Capture the bounded generated repository learning.",
+              notes: "Notes for the bounded generated body.",
+            },
+            {
+              title: "Detailed",
+              prompt: "Capture the verified retry race and the database constraint that fixed it.",
+              notes: "Includes the cause and solution.",
+            },
+            {
+              title: "Evidence",
+              prompt: "Capture the evidence that proves the retry fix is correct.",
+              notes: "Emphasizes verification.",
+            },
+          ],
+        }),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeCalls.push(input)
+          return {
+            candidates: [
+              {
+                title: "Normalized optimizer echo",
+                prompt: "/ce-compound Rewrite the repository learning.",
+                notes: "The optimizer omitted the authored fixed argument.",
+              },
+              {
+                title: "Sharper verified learning",
+                prompt:
+                  "Capture the verified retry race, its database constraint fix, and the evidence that proves it.",
+                notes: "Keeps the cause, fix, and verification together.",
+              },
+              input.candidates[2]!,
+            ],
+          }
+        },
+      }
+
+      const response = await runGuideGenerate(provider, catalog, tmpRoot, {
+        intent: "Capture this verified repository learning.",
+        profileRef: "native:cdx/pstack",
+        model: "test-model",
+        effort: GuideEffort.Medium,
+      })
+
+      expect(optimizeCalls).toEqual([
+        {
+          targetTool: "codex",
+          profileRef: "native:cdx/pstack",
+          candidates: [
+            {
+              title: "Echoed command",
+              prompt: "Capture the bounded generated repository learning.",
+              notes: "Notes for the bounded generated body.",
+            },
+            {
+              title: "Detailed",
+              prompt: "Capture the verified retry race and the database constraint that fixed it.",
+              notes: "Includes the cause and solution.",
+            },
+            {
+              title: "Evidence",
+              prompt: "Capture the evidence that proves the retry fix is correct.",
+              notes: "Emphasizes verification.",
+            },
+          ],
+          fixedFrame: {
+            beforeBody: "/ce-compound mode:non-interactive ",
+            afterBody: "",
+          },
+        },
+      ])
+      expect(response.candidates[0]).toMatchObject({
+        title: "Normalized optimizer echo",
+        prompt:
+          "/ce-compound mode:non-interactive " +
+          "Rewrite the repository learning.",
+        notes: "The optimizer omitted the authored fixed argument.",
+      })
+      expect(response.candidates[1]?.prompt).toBe(
+        "/ce-compound mode:non-interactive " +
+          "Capture the verified retry race, its database constraint fix, and the evidence that proves it.",
+      )
+      expect(response.candidates[1]?.title).toBe("Sharper verified learning")
+      expect(response.candidates[0]?.prompt.match(/\/ce-compound/gu)).toHaveLength(1)
+      expect(response.candidates[0]?.prompt.match(/mode:non-interactive/gu)).toHaveLength(1)
+      expect(response.candidates[0]?.command.args).toEqual([
+        "pstack",
+        "-p",
+        "/ce-compound mode:non-interactive Rewrite the repository learning.",
+      ])
+      const serialized = JSON.stringify(response)
+      expect(serialized).not.toContain("promptTemplate")
+      expect(serialized).not.toContain("fixedFrame")
+      expect(serialized).not.toContain("beforeBody")
+      expect(serialized).not.toContain("afterBody")
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps authored pstack suffix commands exact, ordered, unfenced, and last", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-pstack-"))
+    try {
+      await writeCdxPstackGuide(tmpRoot, pstackGuideMarkdown)
+      const catalog = withCdxPstackGuide(buildCatalog(tmpRoot), guidePstack)
+      const optimizeCalls: GuideOptimizeInput[] = []
+      const provider: GuideProvider = {
+        match: () => Promise.reject(new Error("match must not be called during generation")),
+        generate: async () => genCandidates(),
+        refine: () => Promise.reject(new Error("refine must not be called during generation")),
+        optimize: async (input) => {
+          optimizeCalls.push(input)
+          return {
+            candidates: [
+              {
+                title: "Structured review",
+                prompt: [
+                  "## Goal",
+                  "",
+                  "Review the queue for concurrency defects.",
+                  "",
+                  "```text",
+                  "Preserve the observed failure evidence.",
+                  "```",
+                ].join("\n"),
+                notes: "Uses a structured multi-line review body.",
+              },
+              input.candidates[1]!,
+              input.candidates[2]!,
+            ],
+          }
+        },
+      }
+
+      const response = await runGuideGenerate(provider, catalog, tmpRoot, {
+        intent: "Review and polish this queue change",
+        profileRef: "native:cdx/pstack",
+        model: "test-model",
+        effort: GuideEffort.Medium,
+      })
+
+      expect(optimizeCalls[0]).toMatchObject({
+        candidates: genCandidates().candidates,
+        fixedFrame: {
+          beforeBody: "$pstack-for-codex:interrogate ",
+          afterBody: "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop",
+        },
+      })
+      const prompt = response.candidates[0]?.prompt ?? ""
+      const noCommentsIndex = prompt.indexOf("$pstack-for-codex:no-comments")
+      const unslopIndex = prompt.indexOf("$pstack-for-codex:unslop")
+      expect(prompt).toBe(
+        [
+          "$pstack-for-codex:interrogate ## Goal",
+          "",
+          "Review the queue for concurrency defects.",
+          "",
+          "```text",
+          "Preserve the observed failure evidence.",
+          "```",
+          "$pstack-for-codex:no-comments",
+          "$pstack-for-codex:unslop",
+        ].join("\n"),
+      )
+      expect(noCommentsIndex).toBeGreaterThan(prompt.lastIndexOf("```"))
+      expect(unslopIndex).toBeGreaterThan(noCommentsIndex)
+      expect(prompt.endsWith("$pstack-for-codex:unslop")).toBe(true)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }
@@ -1302,5 +2039,332 @@ describe("templatePromptCandidates", () => {
     }
     expect(candidates[1].prompt).toContain("\n\n## Scope\n")
     expect(candidates[2].prompt).toContain("\n\n## Completion\n")
+  })
+
+  it("keeps fallback constraints inside the current HVE plan-and-critique prose frame", () => {
+    const hveGuide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["evidence-backed-rpi-delivery"],
+      bestFor: ["Research, Plan, Implement, and Review workflows"],
+      avoidFor: ["Unrelated prose"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: "rpi-plan-and-critique",
+          description: "Draft and critique an implementation plan.",
+          examples: ["Turn the research into a plan", "Critique this plan"],
+          promptTemplate:
+            "Use the rpi-plan skill to draft a plan for {{intent}}, then use\n" +
+            "rpi-plan-critique to challenge it before implementation begins.",
+        },
+      ],
+    }
+    const candidates = templatePromptCandidates(
+      hveGuide,
+      "rpi-plan-and-critique",
+      "the queue retry change",
+    )
+    expect(candidates[1].prompt).toBe(
+      "Use the rpi-plan skill to draft a plan for the queue retry change; " +
+        "keep the work within the smallest reasonable scope, then use\n" +
+        "rpi-plan-critique to challenge it before implementation begins.",
+    )
+    expect(candidates[2].prompt).toBe(
+      "Use the rpi-plan skill to draft a plan for the queue retry change; " +
+        "after completing the work, verify it and report the verification evidence, then use\n" +
+        "rpi-plan-critique to challenge it before implementation begins.",
+    )
+    expect(candidates[1].prompt).not.toContain("## Scope")
+    expect(candidates[2].prompt).not.toContain("## Completion")
+  })
+
+  it("keeps Superpowers fallback constraints inside the body before its prose suffix", () => {
+    const superpowersGuide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["plan-and-execute"],
+      bestFor: ["Plan-led implementation"],
+      avoidFor: ["Unrelated prose"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: "plan-then-execute-branch",
+          description: "Plan, execute, and finish a development branch.",
+          skill: "writing-plans",
+          examples: ["Plan and implement this feature", "Finish this approved plan"],
+          promptTemplate:
+            "Use the writing-plans skill to draft a plan for {{intent}}, then\n" +
+            "executing-plans to carry it out, and finishing-a-development-branch to\n" +
+            "close it out.",
+        },
+      ],
+    }
+    const candidates = templatePromptCandidates(
+      superpowersGuide,
+      "plan-then-execute-branch",
+      "the upload feature",
+    )
+    expect(candidates[1].prompt).toBe(
+      "Use the writing-plans skill to draft a plan for the upload feature; " +
+        "keep the work within the smallest reasonable scope, then\n" +
+        "executing-plans to carry it out, and finishing-a-development-branch to\n" +
+        "close it out.",
+    )
+    expect(candidates[1].prompt).not.toContain("## Scope")
+
+    const normalizedDirect = templatePromptCandidates(
+      superpowersGuide,
+      "plan-then-execute-branch",
+      "USE THE WRITING PLANS SKILL TO DRAFT A PLAN FOR the upload feature",
+    )[0]
+    expect(normalizedDirect.prompt).toBe(
+      "Use the writing-plans skill to draft a plan for the upload feature, then\n" +
+        "executing-plans to carry it out, and finishing-a-development-branch to\n" +
+        "close it out.",
+    )
+    expect(normalizedDirect.prompt.match(/writing-plans skill to draft a plan/giu)).toHaveLength(1)
+  })
+
+  it("uses inline fallback constraints before Plannotator sentence punctuation", () => {
+    const plannotatorGuide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["visual-artifacts"],
+      bestFor: ["Interactive HTML prototypes"],
+      avoidFor: ["Unrelated prose"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: "wireframe-or-prototype",
+          description: "Create a wireframe or polished prototype.",
+          skill: "html-prototype",
+          examples: ["Create a responsive wireframe", "Build an interactive prototype"],
+          promptTemplate:
+            "Use html-wireframe for a low-fidelity structure or html-prototype for a\n" +
+            "polished interactive result that addresses {{intent}}.",
+        },
+      ],
+    }
+    const candidates = templatePromptCandidates(
+      plannotatorGuide,
+      "wireframe-or-prototype",
+      "the deployment dashboard.",
+    )
+
+    expect(candidates[0].prompt).toBe(
+      "Use html-wireframe for a low-fidelity structure or html-prototype for a\n" +
+        "polished interactive result that addresses the deployment dashboard.",
+    )
+    expect(candidates[1].prompt).toBe(
+      "Use html-wireframe for a low-fidelity structure or html-prototype for a\n" +
+        "polished interactive result that addresses the deployment dashboard; " +
+        "keep the work within the smallest reasonable scope.",
+    )
+    expect(candidates[2].prompt).toBe(
+      "Use html-wireframe for a low-fidelity structure or html-prototype for a\n" +
+        "polished interactive result that addresses the deployment dashboard; " +
+        "after completing the work, verify it and report the verification evidence.",
+    )
+    expect(candidates[1].prompt).not.toContain("## Scope")
+    expect(candidates[2].prompt).not.toContain("## Completion")
+  })
+
+  it.each([
+    ["trailing spaces", "the queue retry race. "],
+    ["trailing newline", "the queue retry race.\n"],
+  ])("renders one final period for a Superpowers-shaped Direct fallback with %s", (_kind, intent) => {
+    const superpowersGuide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["test-driven-development"],
+      bestFor: ["Test-first implementation"],
+      avoidFor: ["Unrelated prose"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: "test-driven-development",
+          description: "Drive an implementation from a failing test.",
+          skill: "test-driven-development",
+          examples: ["Fix this regression test-first"],
+          promptTemplate:
+            "Use the test-driven-development and systematic-debugging skills to\n" +
+            "address {{intent}}.",
+        },
+      ],
+    }
+
+    const candidates = templatePromptCandidates(
+      superpowersGuide,
+      "test-driven-development",
+      intent,
+    )
+
+    expect(candidates[0].prompt).toBe(
+      "Use the test-driven-development and systematic-debugging skills to\n" +
+        "address the queue retry race.",
+    )
+    expect(candidates[0].prompt.endsWith("..")).toBe(false)
+  })
+
+  it("keeps Council fallback constraints inside the body before the authored prose suffix", () => {
+    const suffix =
+      "\n\nChallenge the assumptions, identify risks and failure modes, compare credible alternatives,\n" +
+      "assess feasibility and implementation tradeoffs, and recommend concrete next steps."
+    const councilGuide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["multi-perspective-deliberation"],
+      bestFor: ["Pressure-testing ideas"],
+      avoidFor: ["Quick factual lookups"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: "run-council-deliberation",
+          description: "Pressure-test an idea and its implementation.",
+          skill: "council",
+          examples: ["Challenge this product decision"],
+          promptTemplate:
+            "/council Pressure-test this idea and its implementation: {{intent}}" + suffix,
+        },
+      ],
+    }
+    const candidates = templatePromptCandidates(
+      councilGuide,
+      "run-council-deliberation",
+      "adopting event sourcing for billing",
+    )
+
+    expect(candidates[1].prompt).toBe(
+      "/council Pressure-test this idea and its implementation: " +
+        "adopting event sourcing for billing; keep the work within the smallest reasonable scope." +
+        suffix,
+    )
+    expect(candidates[2].prompt).toBe(
+      "/council Pressure-test this idea and its implementation: " +
+        "adopting event sourcing for billing; after completing the work, verify it and report the verification evidence." +
+        suffix,
+    )
+    expect(candidates[1].prompt).not.toContain("## Scope")
+    expect(candidates[2].prompt).not.toContain("## Completion")
+  })
+
+  it.each([
+    {
+      name: "Council",
+      workflowId: "run-council-deliberation",
+      command: "/council",
+      body: "Should we adopt event sourcing for billing?",
+      prefix: "/council Pressure-test this idea and its implementation: ",
+      suffix:
+        "\n\nChallenge the assumptions, identify risks and failure modes, compare credible alternatives,\n" +
+        "assess feasibility and implementation tradeoffs, and recommend concrete next steps.",
+      skill: "council",
+    },
+    {
+      name: "Hyperresearch",
+      workflowId: "vault-backed-research",
+      command: "/hyperresearch",
+      body: "Compare passkeys with passwords for enterprise support costs.",
+      prefix: "/hyperresearch Research the evidence that should inform this request before implementation: ",
+      suffix:
+        "\n\nFind relevant prior art and source-backed evidence, identify unresolved questions and risks,\n" +
+        "compare implementation options, and explain how the findings should change the approach.",
+      skill: "hyperresearch",
+    },
+  ])("does not duplicate a command-prefixed intent in the $name Direct fallback", (testCase) => {
+    const guide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["framed-workflow"],
+      bestFor: ["Structured work"],
+      avoidFor: ["Unrelated prose"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: testCase.workflowId,
+          description: `Run the ${testCase.name} workflow.`,
+          skill: testCase.skill,
+          examples: [`${testCase.command} example`],
+          promptTemplate: `${testCase.prefix}{{intent}}${testCase.suffix}`,
+        },
+      ],
+    }
+
+    const direct = templatePromptCandidates(
+      guide,
+      testCase.workflowId,
+      `${testCase.command} ${testCase.body}`,
+    )[0]
+
+    expect(direct.prompt).toBe(`${testCase.prefix}${testCase.body}${testCase.suffix}`)
+    expect(direct.prompt.match(new RegExp(testCase.command, "gu"))).toHaveLength(1)
+  })
+
+  it.each([
+    {
+      name: "exact",
+      intent: "Pressure-test this idea and its implementation: adopt event sourcing.",
+    },
+    {
+      name: "whitespace-flexible",
+      intent: "Pressure-test  this idea and its implementation:\n adopt event sourcing.",
+    },
+    {
+      name: "case and punctuation normalized",
+      intent: "PRESSURE test this IDEA and its IMPLEMENTATION - adopt event sourcing.",
+    },
+  ])("normalizes a $name commandless Council prefix in the Direct fallback", ({ intent }) => {
+    const suffix =
+      "\n\nChallenge the assumptions, identify risks and failure modes, compare credible alternatives,\n" +
+      "assess feasibility and implementation tradeoffs, and recommend concrete next steps."
+    const councilGuide: ProfileGuideV1 = {
+      schemaVersion: 1,
+      capabilities: ["multi-perspective-deliberation"],
+      bestFor: ["Pressure-testing ideas"],
+      avoidFor: ["Quick factual lookups"],
+      prerequisites: [],
+      workflows: [
+        {
+          id: "run-council-deliberation",
+          description: "Pressure-test an idea and its implementation.",
+          skill: "council",
+          examples: ["Challenge this product decision"],
+          promptTemplate:
+            "/council Pressure-test this idea and its implementation: {{intent}}" + suffix,
+        },
+      ],
+    }
+
+    const direct = templatePromptCandidates(
+      councilGuide,
+      "run-council-deliberation",
+      intent,
+    )[0]
+
+    expect(direct.prompt).toBe(
+      "/council Pressure-test this idea and its implementation: adopt event sourcing." + suffix,
+    )
+    expect(direct.prompt.match(/Pressure-test this idea and its implementation:/gu)).toHaveLength(1)
+  })
+
+  it("renders fallback Scope and Completion sections inside suffix-command frames", () => {
+    const candidates = templatePromptCandidates(
+      guidePstack,
+      "review-and-polish",
+      "Review the queue change",
+    )
+    const suffix =
+      "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop"
+
+    expect(candidates[0].prompt).toBe(
+      "$pstack-for-codex:interrogate Review the queue change" + suffix,
+    )
+    expect(candidates[1].prompt).toContain(
+      "Review the queue change\n\n## Scope\n\nLimit the change to the smallest reasonable scope." +
+        suffix,
+    )
+    expect(candidates[2].prompt).toContain(
+      "Review the queue change\n\n## Completion\n\n" +
+        "After completing the work, verify it and report the verification evidence." +
+        suffix,
+    )
+    for (const candidate of candidates) {
+      expect(candidate.prompt.endsWith("$pstack-for-codex:unslop")).toBe(true)
+    }
   })
 })

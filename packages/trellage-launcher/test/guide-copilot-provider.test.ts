@@ -236,6 +236,10 @@ const optimizeInput: GuideOptimizeInput = {
   targetTool: "codex",
   profileRef: "native:cdx/hve",
   candidates: JSON.parse(validGenerateResponse).candidates,
+  fixedFrame: {
+    beforeBody: "/ce-compound mode:non-interactive ",
+    afterBody: "",
+  },
 }
 
 describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
@@ -368,6 +372,37 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       })
       expect(client.session?.prompts[0]).toMatch(/^\/prompt-master Optimize these prompts/u)
       expect(client.session?.prompts[0]).toContain('"targetTool":"codex"')
+      expect(client.session?.prompts[0]).toContain(
+        '"fixedFrame":{"beforeBody":"/ce-compound mode:non-interactive ","afterBody":""}',
+      )
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("omits fixedFrame when Prompt Master receives complete prompts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-complete-prompt-master-test-"))
+    const skillDirectory = path.join(root, "prompt-master")
+    try {
+      await mkdir(skillDirectory)
+      await writeFile(path.join(skillDirectory, "SKILL.md"), "---\nname: prompt-master\n---\n")
+      const client = new FakeClient([workingModel], [message(validGenerateResponse)])
+      const provider = new CopilotGuideProvider({
+        prompts,
+        promptMasterSkillDirectory: skillDirectory,
+        clientFactory: () => client,
+      })
+      const completePromptInput: GuideOptimizeInput = {
+        targetTool: "jules",
+        profileRef: "native:jcx/foo",
+        candidates: JSON.parse(validGenerateResponse).candidates,
+      }
+
+      await provider.optimize(completePromptInput)
+
+      expect(client.session?.prompts[0]).toContain('"targetTool":"jules"')
+      expect(client.session?.prompts[0]).toContain('"prompt":"Review this diff for obvious bugs."')
+      expect(client.session?.prompts[0]).not.toContain('"fixedFrame"')
     } finally {
       await rm(root, { recursive: true, force: true })
     }

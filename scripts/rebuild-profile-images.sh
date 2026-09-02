@@ -30,6 +30,7 @@ Default: reinstall native launchers + trx, then development sandbox rebuilds.
 
 Examples:
   mise run rebuild-profiles
+  mise run rebuild-native-profiles
   scripts/rebuild-profile-images.sh --install
   scripts/rebuild-profile-images.sh --native-only
   scripts/rebuild-profile-images.sh --sandbox-only prime-agent

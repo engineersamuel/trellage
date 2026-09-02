@@ -76,18 +76,24 @@ const generateCacheKey = (input: GuideGenerateInput, options: CachedGuideProvide
     }),
   )
 
-const optimizeCacheKey = (input: GuideOptimizeInput, options: CachedGuideProviderOptions): string =>
-  sha256(
-    JSON.stringify({
-      schemaVersion: 1,
-      targetTool: input.targetTool,
-      profileRef: input.profileRef,
-      candidatesDigest: sha256(JSON.stringify(input.candidates)),
-      model: options.routing.optimize.model,
-      effort: options.routing.optimize.effort,
-      optimizePromptDigest: sha256(options.optimizePrompt),
-    }),
+const optimizeCacheKey = (input: GuideOptimizeInput, options: CachedGuideProviderOptions): string => {
+  const base = {
+    schemaVersion: 1,
+    targetTool: input.targetTool,
+    profileRef: input.profileRef,
+    candidatesDigest: sha256(JSON.stringify(input.candidates)),
+    model: options.routing.optimize.model,
+    effort: options.routing.optimize.effort,
+    optimizePromptDigest: sha256(options.optimizePrompt),
+  }
+  return sha256(
+    JSON.stringify(
+      input.fixedFrame === undefined
+        ? base
+        : { ...base, fixedFrameDigest: sha256(JSON.stringify(input.fixedFrame)) },
+    ),
   )
+}
 
 const isMissingFile = (error: unknown): boolean =>
   error instanceof Error && "code" in error && error.code === "ENOENT"

@@ -119,6 +119,91 @@ fi
 
 installed="$COPILOT_HOME/fake-state/plugins"
 marketplaces="$COPILOT_HOME/fake-state/marketplaces"
+
+compound_engineering_skills() {
+  printf '%s\n' \
+    ce-babysit-pr \
+    ce-brainstorm \
+    ce-code-review \
+    ce-commit \
+    ce-commit-push-pr \
+    ce-compound \
+    ce-compound-refresh \
+    ce-debug \
+    ce-doc-review \
+    ce-dogfood \
+    ce-explain \
+    ce-handoff \
+    ce-ideate \
+    ce-optimize \
+    ce-plan \
+    ce-polish \
+    ce-pov \
+    ce-product-pulse \
+    ce-promote \
+    ce-proof \
+    ce-prototype \
+    ce-resolve-pr-feedback \
+    ce-retune \
+    ce-riffrec-feedback-analysis \
+    ce-setup \
+    ce-simplify-code \
+    ce-strategy \
+    ce-sweep \
+    ce-test-browser \
+    ce-test-xcode \
+    ce-work \
+    ce-worktree \
+    lfg
+}
+
+materialize_compound_engineering_plugin() {
+  local plugin_root="$COPILOT_HOME/installed-plugins/compound-engineering-plugin/compound-engineering"
+  local skill
+  local operation="${1:-update}"
+
+  mkdir -p "$plugin_root/.codex-plugin"
+  if [[ "$operation" != 'update' \
+    || ! -f "$COPILOT_HOME/fake-state/preserve-invalid-manifest-on-update" ]]; then
+    printf '%s\n' \
+      '{"name":"compound-engineering","version":"3.23.4","skills":"./skills/"}' \
+      >"$plugin_root/.codex-plugin/plugin.json"
+  fi
+  while IFS= read -r skill; do
+    mkdir -p "$plugin_root/skills/$skill"
+    printf '# %s\n' "$skill" >"$plugin_root/skills/$skill/SKILL.md"
+  done < <(compound_engineering_skills)
+  if [[ "$operation" == 'install' ]]; then
+    rm -f \
+      "$COPILOT_HOME/fake-state/disabled-skill" \
+      "$COPILOT_HOME/fake-state/preserve-invalid-manifest-on-update"
+  fi
+}
+
+materialize_plannotator_plugin() {
+  local plugin_root="$COPILOT_HOME/installed-plugins/effective-html/plannotator-effective-html"
+  local skill
+  local clear_disabled="${1:-0}"
+
+  mkdir -p "$plugin_root/.codex-plugin"
+  printf '%s\n' \
+    '{"name":"plannotator-effective-html","version":"0.4.0","skills":"./skills/"}' \
+    >"$plugin_root/.codex-plugin/plugin.json"
+  for skill in \
+    design-artifact \
+    html \
+    html-diagram \
+    html-plan \
+    html-prototype \
+    html-wireframe; do
+    mkdir -p "$plugin_root/skills/$skill"
+    printf '# %s\n' "$skill" >"$plugin_root/skills/$skill/SKILL.md"
+  done
+  if [[ "$clear_disabled" == '1' ]]; then
+    rm -f "$COPILOT_HOME/fake-state/disabled-skill"
+  fi
+}
+
 if [[ "${1-} ${2-} ${3-} ${4-}" == '--autopilot --allow-all --no-ask-user --fixture-capability-inventory' ]]; then
   if [[ -f "$installed" ]]; then
     while IFS=$'\t' read -r plugin _version; do
@@ -136,6 +221,10 @@ if [[ "${1-} ${2-} ${3-} ${4-}" == '--autopilot --allow-all --no-ask-user --fixt
           'plugin-skill:html-plan' \
           'plugin-skill:html-prototype' \
           'plugin-skill:html-wireframe'
+      elif [[ "$plugin" == 'compound-engineering@compound-engineering-plugin' ]]; then
+        while IFS= read -r skill; do
+          printf 'plugin-skill:%s\n' "$skill"
+        done < <(compound_engineering_skills)
       elif [[ "$plugin" == 'tufte-vdqi@tufte-vdqi-marketplace' ]]; then
         printf '%s\n' \
           'plugin-skill:tufte-chart' \
@@ -214,6 +303,7 @@ case "${1-} ${2-}" in
     version='unknown'
     case "$plugin" in
       awesome-copilot@awesome-copilot) version='1.1.0' ;;
+      compound-engineering@compound-engineering-plugin) version='' ;;
       hve-core@hve-core) version='3.2.2' ;;
       plannotator-effective-html@effective-html) version='' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
@@ -222,21 +312,9 @@ case "${1-} ${2-}" in
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
     if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
-      plugin_root="$COPILOT_HOME/installed-plugins/effective-html/plannotator-effective-html"
-      mkdir -p "$plugin_root/.codex-plugin"
-      printf '%s\n' \
-        '{"name":"plannotator-effective-html","version":"0.4.0","skills":"./skills/"}' \
-        >"$plugin_root/.codex-plugin/plugin.json"
-      for skill in \
-        design-artifact \
-        html \
-        html-diagram \
-        html-plan \
-        html-prototype \
-        html-wireframe; do
-        mkdir -p "$plugin_root/skills/$skill"
-        printf '# %s\n' "$skill" >"$plugin_root/skills/$skill/SKILL.md"
-      done
+      materialize_plannotator_plugin 1
+    elif [[ "$plugin" == 'compound-engineering@compound-engineering-plugin' ]]; then
+      materialize_compound_engineering_plugin install
     elif [[ "$plugin" == 'tufte-vdqi@tufte-vdqi-marketplace' ]]; then
       plugin_root="$COPILOT_HOME/installed-plugins/tufte-vdqi-marketplace/tufte-vdqi"
       mkdir -p "$plugin_root/.claude-plugin"
@@ -254,6 +332,7 @@ case "${1-} ${2-}" in
     version='unknown'
     case "$plugin" in
       awesome-copilot@awesome-copilot) version='1.1.0' ;;
+      compound-engineering@compound-engineering-plugin) version='' ;;
       hve-core@hve-core) version='3.2.2' ;;
       plannotator-effective-html@effective-html) version='' ;;
       superpowers@superpowers-marketplace) version='6.2.0' ;;
@@ -261,6 +340,11 @@ case "${1-} ${2-}" in
     esac
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
+    if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
+      materialize_plannotator_plugin
+    elif [[ "$plugin" == 'compound-engineering@compound-engineering-plugin' ]]; then
+      materialize_compound_engineering_plugin update
+    fi
     ;;
   'plugin uninstall')
     plugin="${3:?plugin required}"
@@ -275,10 +359,14 @@ case "${1-} ${2-}" in
     plugin_name="${plugin%%@*}"
     marketplace_name="${plugin#*@}"
     canonical_copilot_home="$(cd -P "$COPILOT_HOME" && pwd -P)"
+    disabled_skill="${FAKE_COPILOT_DISABLED_SKILL-}"
+    if [[ -z "$disabled_skill" && -f "$COPILOT_HOME/fake-state/disabled-skill" ]]; then
+      IFS= read -r disabled_skill <"$COPILOT_HOME/fake-state/disabled-skill"
+    fi
     if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
       jq -cn \
         --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" \
-        --arg disabled "${FAKE_COPILOT_DISABLED_SKILL-}" \
+        --arg disabled "$disabled_skill" \
         --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '[
         {name:"design-artifact",description:"Design artifact",source:"plugin",path:($root + "skills/design-artifact"),enabled:true},
         {name:"html",description:"HTML",source:"plugin",path:($root + "skills/html"),enabled:true},
@@ -290,10 +378,32 @@ case "${1-} ${2-}" in
       ]
       | map(select(.name != $omitted))
       | map(if .name == $disabled then .enabled = false else . end)'
+    elif [[ "$plugin" == 'compound-engineering@compound-engineering-plugin' ]]; then
+      compound_engineering_skills \
+        | jq -Rn \
+          --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" \
+          --arg disabled "$disabled_skill" \
+          --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '
+            [inputs | {
+              name: .,
+              description: "Compound Engineering skill",
+              source: "plugin",
+              path: ($root + "skills/" + .),
+              enabled: (. != $disabled)
+            }]
+            | map(select(.name != $omitted))
+            + [{
+              name: "builtin-one",
+              description: "Built-in skill",
+              source: "builtin",
+              path: "/fixture/builtin-one",
+              enabled: true
+            }]
+          '
     elif [[ "$plugin" == 'tufte-vdqi@tufte-vdqi-marketplace' ]]; then
       jq -cn \
         --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" \
-        --arg disabled "${FAKE_COPILOT_DISABLED_SKILL-}" \
+        --arg disabled "$disabled_skill" \
         --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '[
         {name:"tufte-chart",description:"Tufte chart",source:"plugin",path:($root + "skills/tufte-chart"),enabled:true},
         {name:"tufte-critique",description:"Tufte critique",source:"plugin",path:($root + "skills/tufte-critique"),enabled:true},
@@ -340,6 +450,12 @@ fi
 case "$url" in
   https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json)
     printf '%s\n' '{"name":"awesome-copilot","plugins":[{"name":"awesome-copilot","version":"1.1.0"}]}'
+    ;;
+  https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.claude-plugin/marketplace.json)
+    printf '%s\n' '{"name":"compound-engineering-plugin","plugins":[{"name":"compound-engineering"}]}'
+    ;;
+  https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.codex-plugin/plugin.json)
+    printf '%s\n' '{"name":"compound-engineering","version":"3.23.4","skills":"./skills/"}'
     ;;
   https://raw.githubusercontent.com/microsoft/hve-core/main/.github/plugin/marketplace.json)
     printf '%s\n' '{"name":"hve-core","plugins":[{"name":"hve-core","version":"3.2.2"}]}'
@@ -403,7 +519,7 @@ printf '%s\n' '{"mcpServers":{"global-mcp-one":{},"global-mcp-two":{},"global-mc
 printf '%s\n' 'host session sentinel' >"$HOME/.copilot/sessions/host-session"
 printf '%s\n' 'host encryption sentinel' >"$HOME/.copilot/encryption_key"
 
-for profile in awesome hve plannotator superpowers tufte-vdqi; do
+for profile in awesome compound-engineering hve plannotator superpowers tufte-vdqi; do
   profile_home="$HOME/.local/share/trellage/profiles/copilot/$profile/home"
   mkdir -p \
     "$profile_home/sessions" \
@@ -425,7 +541,7 @@ readme="$prototype_root/README.md"
 assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.' "$readme"
 jq -e '
   .schemaVersion == 1
-  and (.profiles | keys | sort) == ["awesome", "hve", "plannotator", "superpowers", "tufte-vdqi"]
+  and (.profiles | keys | sort) == ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"]
   and .profiles.awesome.headless == {
     "schemaVersion": 1,
     "prompt": true,
@@ -449,6 +565,52 @@ jq -e '
     "marketplaceName": "awesome-copilot",
     "manifestUrl": "https://raw.githubusercontent.com/github/awesome-copilot/main/.github/plugin/marketplace.json",
     "plugin": "awesome-copilot@awesome-copilot",
+    "standaloneMcps": []
+  }
+  and .profiles["compound-engineering"].headless == .profiles.awesome.headless
+  and (.profiles["compound-engineering"] | del(.headless)) == {
+    "description": "GitHub Copilot CLI for the Compound Engineering loop: create repository-informed plans, ship requirements-ready work hands-off to an open pull request with lfg, and capture verified solutions so each change makes the next easier.",
+    "marketplace": "EveryInc/compound-engineering-plugin",
+    "marketplaceName": "compound-engineering-plugin",
+    "manifestUrl": "https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.claude-plugin/marketplace.json",
+    "versionManifestUrl": "https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.codex-plugin/plugin.json",
+    "installedVersionManifest": ".codex-plugin/plugin.json",
+    "plugin": "compound-engineering@compound-engineering-plugin",
+    "requiredPackageSkills": [
+      "ce-babysit-pr",
+      "ce-brainstorm",
+      "ce-code-review",
+      "ce-commit",
+      "ce-commit-push-pr",
+      "ce-compound",
+      "ce-compound-refresh",
+      "ce-debug",
+      "ce-doc-review",
+      "ce-dogfood",
+      "ce-explain",
+      "ce-handoff",
+      "ce-ideate",
+      "ce-optimize",
+      "ce-plan",
+      "ce-polish",
+      "ce-pov",
+      "ce-product-pulse",
+      "ce-promote",
+      "ce-proof",
+      "ce-prototype",
+      "ce-resolve-pr-feedback",
+      "ce-retune",
+      "ce-riffrec-feedback-analysis",
+      "ce-setup",
+      "ce-simplify-code",
+      "ce-strategy",
+      "ce-sweep",
+      "ce-test-browser",
+      "ce-test-xcode",
+      "ce-work",
+      "ce-worktree",
+      "lfg"
+    ],
     "standaloneMcps": []
   }
   and .profiles.hve.headless == {
@@ -630,6 +792,7 @@ actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
 
 expected_awesome_home="$HOME/.local/share/trellage/profiles/copilot/awesome/home"
+expected_compound_engineering_home="$HOME/.local/share/trellage/profiles/copilot/compound-engineering/home"
 expected_plannotator_home="$HOME/.local/share/trellage/profiles/copilot/plannotator/home"
 expected_tufte_home="$HOME/.local/share/trellage/profiles/copilot/tufte-vdqi/home"
 (
@@ -643,6 +806,19 @@ expected_awesome_launch="$(jq -cn \
 actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" compound-engineering --prompt 'ship and compound this feature'
+) >"$fixture_root/compound-engineering-launch.out"
+expected_compound_engineering_launch="$(jq -cn \
+  --arg home "$expected_compound_engineering_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--prompt", "ship and compound this feature"]}')"
+actual_compound_engineering_launch="$(jq -c --arg home "$expected_compound_engineering_home" \
+  'select(.home == $home and .args[0] == "--autopilot")' "$fake_copilot_argv_log" | tail -n 1)"
+[[ "$actual_compound_engineering_launch" == "$expected_compound_engineering_launch" ]] \
+  || fail 'compound-engineering launch did not preserve the exact ordered argument vector'
 
 (
   cd "$worktree"
@@ -779,7 +955,7 @@ after_unsafe_log_lines="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 rm "$expected_hve_home"
 mv "$safe_hve_home" "$expected_hve_home"
 
-for profile in awesome hve plannotator superpowers tufte-vdqi; do
+for profile in awesome compound-engineering hve plannotator superpowers tufte-vdqi; do
   inventory_output="$fixture_root/$profile-inventory.out"
   (
     cd "$worktree"
@@ -927,6 +1103,7 @@ assert_not_contains 'args=plugin update ' "$fake_copilot_log"
 before_list_calls="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
 list_output="$fixture_root/list.out"
 "$launcher" list >"$list_output"
+assert_contains $'compound-engineering\tcompound-engineering@compound-engineering-plugin' "$list_output"
 assert_contains $'hve\thve-core@hve-core' "$list_output"
 assert_contains $'plannotator\tplannotator-effective-html@effective-html' "$list_output"
 assert_contains $'superpowers\tsuperpowers@superpowers-marketplace' "$list_output"
@@ -939,7 +1116,7 @@ jq -e '
   and .launcher == "cpx"
   and .harness == "copilot"
   and .sandbox == false
-  and [.profiles[].name] == ["awesome", "hve", "plannotator", "superpowers", "tufte-vdqi"]
+  and [.profiles[].name] == ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -962,6 +1139,7 @@ jq -e '
   and .profiles[2].headless == .profiles[0].headless
   and .profiles[3].headless == .profiles[0].headless
   and .profiles[4].headless == .profiles[0].headless
+  and .profiles[5].headless == .profiles[0].headless
   and .profiles[0].plugin == "awesome-copilot@awesome-copilot"
   and .profiles[0].source == null
   and .profiles[0].marketplace == {
@@ -972,22 +1150,30 @@ jq -e '
   }
   and .profiles[0].standaloneMcps == []
   and .profiles[1].marketplace.kind == "git"
-  and .profiles[2].plugin == "plannotator-effective-html@effective-html"
-  and .profiles[2].marketplace == {
+  and .profiles[1].plugin == "compound-engineering@compound-engineering-plugin"
+  and .profiles[1].marketplace == {
+    "kind": "git",
+    "source": "EveryInc/compound-engineering-plugin",
+    "name": "compound-engineering-plugin",
+    "manifestUrl": "https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.claude-plugin/marketplace.json"
+  }
+  and .profiles[3].plugin == "plannotator-effective-html@effective-html"
+  and .profiles[3].marketplace == {
     "kind": "git",
     "source": "plannotator/effective-html",
     "name": "effective-html",
     "manifestUrl": "https://raw.githubusercontent.com/plannotator/effective-html/main/.agents/plugins/marketplace.json"
   }
   and .profiles[3].standaloneMcps == []
-  and .profiles[4].plugin == "tufte-vdqi@tufte-vdqi-marketplace"
-  and .profiles[4].marketplace == {
+  and .profiles[4].standaloneMcps == []
+  and .profiles[5].plugin == "tufte-vdqi@tufte-vdqi-marketplace"
+  and .profiles[5].marketplace == {
     "kind": "git",
     "source": "gnurio/tufte-vdqi-plugin",
     "name": "tufte-vdqi-marketplace",
     "manifestUrl": "https://raw.githubusercontent.com/gnurio/tufte-vdqi-plugin/main/.claude-plugin/marketplace.json"
   }
-  and .profiles[4].standaloneMcps == []
+  and .profiles[5].standaloneMcps == []
 ' "$json_list_output" >/dev/null || fail 'JSON list output differs'
 
 FAKE_COPILOT_VERSION=1.0.81 "$launcher" list --json >"$fixture_root/list-drift.json"
@@ -1121,6 +1307,329 @@ jq -e '
   and .mcps == ["docs","files"]
 ' "$inventory_output" >/dev/null || fail 'healthy inventory output differs'
 
+compound_engineering_plugin_root="$expected_compound_engineering_home/installed-plugins/compound-engineering-plugin/compound-engineering"
+compound_engineering_install_count="$(grep -Fc \
+  'args=plugin install compound-engineering@compound-engineering-plugin ' "$fake_copilot_log")"
+"$launcher" setup compound-engineering >"$fixture_root/compound-engineering-setup.out"
+[[ "$(grep -Fc 'args=plugin install compound-engineering@compound-engineering-plugin ' \
+  "$fake_copilot_log")" == "$compound_engineering_install_count" ]] \
+  || fail 'repeated Compound Engineering setup reinstalled its versionless plugin'
+"$launcher" compound-engineering --prompt 'reuse Compound Engineering plugin' \
+  >"$fixture_root/compound-engineering-reuse.out"
+"$launcher" repair compound-engineering >"$fixture_root/compound-engineering-repair.out"
+[[ "$(grep -Fc 'args=plugin install compound-engineering@compound-engineering-plugin ' \
+  "$fake_copilot_log")" == "$compound_engineering_install_count" ]] \
+  || fail 'Compound Engineering launch or repair reinstalled its versionless plugin'
+"$launcher" doctor compound-engineering >"$fixture_root/compound-engineering-doctor.out"
+assert_contains \
+  'compound-engineering: healthy (plugin compound-engineering@compound-engineering-plugin, version 3.23.4)' \
+  "$fixture_root/compound-engineering-doctor.out"
+"$launcher" inventory compound-engineering --json \
+  >"$fixture_root/compound-engineering-inventory.json"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "cpx"
+  and .harness == "copilot"
+  and .profile == "compound-engineering"
+  and .readiness == "healthy"
+  and .plugins == [{name:"compound-engineering@compound-engineering-plugin",version:"3.23.4"}]
+  and .skills == {packageCount:33,visibleCount:34}
+  and .mcps == ["docs","files"]
+' "$fixture_root/compound-engineering-inventory.json" >/dev/null \
+  || fail 'Compound Engineering inventory output differs'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" compound-engineering --fixture-capability-inventory
+) >"$fixture_root/compound-engineering-capabilities.out"
+assert_line 'plugin:compound-engineering@compound-engineering-plugin' \
+  "$fixture_root/compound-engineering-capabilities.out"
+for skill in \
+  ce-babysit-pr \
+  ce-brainstorm \
+  ce-code-review \
+  ce-commit \
+  ce-commit-push-pr \
+  ce-compound \
+  ce-compound-refresh \
+  ce-debug \
+  ce-doc-review \
+  ce-dogfood \
+  ce-explain \
+  ce-handoff \
+  ce-ideate \
+  ce-optimize \
+  ce-plan \
+  ce-polish \
+  ce-pov \
+  ce-product-pulse \
+  ce-promote \
+  ce-proof \
+  ce-prototype \
+  ce-resolve-pr-feedback \
+  ce-retune \
+  ce-riffrec-feedback-analysis \
+  ce-setup \
+  ce-simplify-code \
+  ce-strategy \
+  ce-sweep \
+  ce-test-browser \
+  ce-test-xcode \
+  ce-work \
+  ce-worktree \
+  lfg; do
+  assert_line "plugin-skill:$skill" "$fixture_root/compound-engineering-capabilities.out"
+done
+[[ "$(grep -c '^plugin-skill:' "$fixture_root/compound-engineering-capabilities.out")" == '33' ]] \
+  || fail 'Compound Engineering capability inventory did not expose exactly 33 runtime skills'
+
+compound_engineering_config_before="$(<"$expected_compound_engineering_home/config.json")"
+compound_engineering_session="$expected_compound_engineering_home/sessions/compound-engineering-session"
+compound_engineering_session_before="$(<"$compound_engineering_session")"
+compound_engineering_auth="$expected_compound_engineering_home/auth.json"
+printf '%s\n' 'compound-engineering auth sentinel' >"$compound_engineering_auth"
+compound_engineering_manifest="$compound_engineering_plugin_root/.codex-plugin/plugin.json"
+compound_engineering_manifest_json='{"name":"compound-engineering","version":"3.23.4","skills":"./skills/"}'
+
+repair_compound_engineering_manifest_case() {
+  local case_name="$1"
+  local corruption="$2"
+  local expect_reinstall="$3"
+  local update_count marketplace_update_count install_count uninstall_count
+
+  update_count="$(awk \
+    'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+    "$fake_copilot_log")"
+  marketplace_update_count="$(awk \
+    'index($0, "args=plugin marketplace update compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+    "$fake_copilot_log")"
+  install_count="$(awk \
+    'index($0, "args=plugin install compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+    "$fake_copilot_log")"
+  uninstall_count="$(awk \
+    'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+    "$fake_copilot_log")"
+
+  case "$corruption" in
+    missing)
+      rm "$compound_engineering_manifest"
+      ;;
+    malformed)
+      printf '%s\n' '{"name":' >"$compound_engineering_manifest"
+      ;;
+    wrong-name)
+      printf '%s\n' \
+        '{"name":"not-compound-engineering","version":"3.23.4","skills":"./skills/"}' \
+        >"$compound_engineering_manifest"
+      ;;
+    *)
+      fail "unknown Compound Engineering manifest corruption: $corruption"
+      ;;
+  esac
+  if [[ "$expect_reinstall" == '1' ]]; then
+    printf '%s\n' 'preserve invalid manifest during update' \
+      >"$expected_compound_engineering_home/fake-state/preserve-invalid-manifest-on-update"
+  fi
+
+  if "$launcher" doctor compound-engineering \
+    >"$fixture_root/compound-engineering-$case_name-manifest-doctor.out" \
+    2>"$fixture_root/compound-engineering-$case_name-manifest-doctor.err"; then
+    fail "doctor accepted the $case_name Compound Engineering manifest"
+  fi
+  assert_contains \
+    'cpx: failed to resolve installed plugin version: compound-engineering@compound-engineering-plugin' \
+    "$fixture_root/compound-engineering-$case_name-manifest-doctor.err"
+
+  "$launcher" repair compound-engineering \
+    >"$fixture_root/compound-engineering-$case_name-manifest-repair.out"
+  assert_line "$compound_engineering_manifest_json" "$compound_engineering_manifest"
+  assert_contains 'compound-engineering: healthy' \
+    "$fixture_root/compound-engineering-$case_name-manifest-repair.out"
+  assert_contains 'compound-engineering: repaired' \
+    "$fixture_root/compound-engineering-$case_name-manifest-repair.out"
+  [[ "$(awk \
+    'index($0, "args=plugin marketplace update compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+    "$fake_copilot_log")" == "$((marketplace_update_count + 1))" ]] \
+    || fail "repair did not refresh the marketplace for the $case_name manifest"
+  [[ "$(awk \
+    'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+    "$fake_copilot_log")" == "$((update_count + 1))" ]] \
+    || fail "repair did not update the plugin for the $case_name manifest"
+  if [[ "$expect_reinstall" == '1' ]]; then
+    [[ "$(awk \
+      'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+      "$fake_copilot_log")" == "$((uninstall_count + 1))" \
+      && "$(awk \
+      'index($0, "args=plugin install compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+      "$fake_copilot_log")" == "$((install_count + 1))" ]] \
+      || fail "repair did not reinstall the plugin for the persistent $case_name manifest"
+  else
+    [[ "$(awk \
+      'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+      "$fake_copilot_log")" == "$uninstall_count" \
+      && "$(awk \
+      'index($0, "args=plugin install compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+      "$fake_copilot_log")" == "$install_count" ]] \
+      || fail "repair reinstalled the plugin for the update-repairable $case_name manifest"
+  fi
+  [[ ! -e "$expected_compound_engineering_home/fake-state/preserve-invalid-manifest-on-update" ]] \
+    || fail "repair retained the $case_name manifest fixture state"
+  [[ "$(<"$expected_compound_engineering_home/config.json")" == "$compound_engineering_config_before" \
+    && "$(<"$compound_engineering_session")" == "$compound_engineering_session_before" \
+    && "$(<"$compound_engineering_auth")" == 'compound-engineering auth sentinel' ]] \
+    || fail "manifest repair changed isolated profile state for $case_name"
+
+  "$launcher" doctor compound-engineering \
+    >"$fixture_root/compound-engineering-$case_name-manifest-post-repair-doctor.out"
+  assert_contains 'compound-engineering: healthy' \
+    "$fixture_root/compound-engineering-$case_name-manifest-post-repair-doctor.out"
+  "$launcher" inventory compound-engineering --json \
+    >"$fixture_root/compound-engineering-$case_name-manifest-post-repair-inventory.json"
+  jq -e '
+    .profile == "compound-engineering"
+    and .readiness == "healthy"
+    and .plugins == [{name:"compound-engineering@compound-engineering-plugin",version:"3.23.4"}]
+    and .skills == {packageCount:33,visibleCount:34}
+    and .mcps == ["docs","files"]
+  ' "$fixture_root/compound-engineering-$case_name-manifest-post-repair-inventory.json" \
+    >/dev/null || fail "inventory was not healthy after $case_name manifest repair"
+}
+
+repair_compound_engineering_manifest_case missing missing 0
+repair_compound_engineering_manifest_case malformed malformed 0
+repair_compound_engineering_manifest_case wrong-name wrong-name 1
+
+compound_engineering_update_count="$(awk \
+  'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+compound_engineering_marketplace_update_count="$(awk \
+  'index($0, "args=plugin marketplace update compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+compound_engineering_uninstall_count="$(awk \
+  'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+rm "$compound_engineering_plugin_root/skills/lfg/SKILL.md"
+if "$launcher" setup compound-engineering \
+  >"$fixture_root/compound-engineering-missing-skill-setup.out" \
+  2>"$fixture_root/compound-engineering-missing-skill-setup.err"; then
+  fail 'setup accepted a missing required Compound Engineering skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: compound-engineering/lfg' \
+  "$fixture_root/compound-engineering-missing-skill-setup.err"
+if "$launcher" doctor compound-engineering \
+  >"$fixture_root/compound-engineering-missing-skill.out" \
+  2>"$fixture_root/compound-engineering-missing-skill.err"; then
+  fail 'doctor accepted a missing required Compound Engineering skill'
+fi
+assert_contains \
+  'cpx: required package skill is missing or unsafe: compound-engineering/lfg' \
+  "$fixture_root/compound-engineering-missing-skill.err"
+"$launcher" repair compound-engineering \
+  >"$fixture_root/compound-engineering-missing-skill-repair.out"
+assert_line '# lfg' "$compound_engineering_plugin_root/skills/lfg/SKILL.md"
+assert_contains 'compound-engineering: healthy' \
+  "$fixture_root/compound-engineering-missing-skill-repair.out"
+assert_contains 'compound-engineering: repaired' \
+  "$fixture_root/compound-engineering-missing-skill-repair.out"
+[[ "$(awk \
+  'index($0, "args=plugin marketplace update compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$((compound_engineering_marketplace_update_count + 1))" ]] \
+  || fail 'Compound Engineering repair did not refresh its marketplace'
+[[ "$(awk \
+  'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$((compound_engineering_update_count + 1))" ]] \
+  || fail 'Compound Engineering repair did not update its corrupt installed plugin'
+[[ "$(awk \
+  'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$compound_engineering_uninstall_count" ]] \
+  || fail 'Compound Engineering repair reinstalled a plugin fixed by update'
+[[ "$(<"$expected_compound_engineering_home/config.json")" == "$compound_engineering_config_before" \
+  && "$(<"$compound_engineering_session")" == "$compound_engineering_session_before" \
+  && "$(<"$compound_engineering_auth")" == 'compound-engineering auth sentinel' ]] \
+  || fail 'Compound Engineering skill repair changed isolated profile state'
+"$launcher" doctor compound-engineering \
+  >"$fixture_root/compound-engineering-post-repair-doctor.out"
+assert_contains 'compound-engineering: healthy' \
+  "$fixture_root/compound-engineering-post-repair-doctor.out"
+"$launcher" inventory compound-engineering --json \
+  >"$fixture_root/compound-engineering-post-repair-inventory.json"
+jq -e '
+  .profile == "compound-engineering"
+  and .readiness == "healthy"
+  and .plugins == [{name:"compound-engineering@compound-engineering-plugin",version:"3.23.4"}]
+  and .skills == {packageCount:33,visibleCount:34}
+' "$fixture_root/compound-engineering-post-repair-inventory.json" >/dev/null \
+  || fail 'Compound Engineering inventory was not healthy after skill repair'
+
+printf '%s\n' 'lfg' >"$expected_compound_engineering_home/fake-state/disabled-skill"
+if "$launcher" doctor compound-engineering \
+  >"$fixture_root/compound-engineering-disabled-skill.out" \
+  2>"$fixture_root/compound-engineering-disabled-skill.err"; then
+  fail 'doctor accepted a disabled required Compound Engineering skill'
+fi
+assert_contains \
+  'cpx: required package skill is not enabled by Copilot: compound-engineering/lfg' \
+  "$fixture_root/compound-engineering-disabled-skill.err"
+compound_engineering_update_count="$(awk \
+  'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+compound_engineering_install_count="$(awk \
+  'index($0, "args=plugin install compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+compound_engineering_uninstall_count="$(awk \
+  'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+"$launcher" repair compound-engineering \
+  >"$fixture_root/compound-engineering-disabled-skill-repair.out"
+[[ ! -e "$expected_compound_engineering_home/fake-state/disabled-skill" ]] \
+  || fail 'Compound Engineering repair did not clear disabled plugin skill state'
+[[ "$(awk \
+  'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$((compound_engineering_update_count + 1))" ]] \
+  || fail 'Compound Engineering disabled-skill repair did not try plugin update'
+[[ "$(awk \
+  'index($0, "args=plugin uninstall compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$((compound_engineering_uninstall_count + 1))" ]] \
+  || fail 'Compound Engineering disabled-skill repair did not uninstall the unhealthy plugin'
+[[ "$(awk \
+  'index($0, "args=plugin install compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$((compound_engineering_install_count + 1))" ]] \
+  || fail 'Compound Engineering disabled-skill repair did not reinstall the unhealthy plugin'
+[[ "$(<"$expected_compound_engineering_home/config.json")" == "$compound_engineering_config_before" \
+  && "$(<"$compound_engineering_session")" == "$compound_engineering_session_before" \
+  && "$(<"$compound_engineering_auth")" == 'compound-engineering auth sentinel' ]] \
+  || fail 'Compound Engineering reinstall changed isolated profile state'
+"$launcher" doctor compound-engineering \
+  >"$fixture_root/compound-engineering-disabled-skill-post-repair-doctor.out"
+assert_contains 'compound-engineering: healthy' \
+  "$fixture_root/compound-engineering-disabled-skill-post-repair-doctor.out"
+
+before_compound_engineering_check_hash="$(profile_tree_hash "$expected_compound_engineering_home")"
+export FAKE_FORBID_PROFILE_MUTATION=1
+"$launcher" update --check compound-engineering \
+  >"$fixture_root/compound-engineering-check.out"
+unset FAKE_FORBID_PROFILE_MUTATION
+assert_contains 'compound-engineering: current (3.23.4)' \
+  "$fixture_root/compound-engineering-check.out"
+assert_contains \
+  'https://raw.githubusercontent.com/EveryInc/compound-engineering-plugin/main/.codex-plugin/plugin.json' \
+  "$fake_curl_log"
+[[ "$(profile_tree_hash "$expected_compound_engineering_home")" == "$before_compound_engineering_check_hash" ]] \
+  || fail 'Compound Engineering update --check mutated the profile home tree'
+"$launcher" update compound-engineering \
+  >"$fixture_root/compound-engineering-update.out"
+assert_contains 'compound-engineering: updated' \
+  "$fixture_root/compound-engineering-update.out"
+assert_contains 'args=plugin marketplace update compound-engineering-plugin ' \
+  "$fake_copilot_log"
+assert_contains 'args=plugin update compound-engineering@compound-engineering-plugin ' \
+  "$fake_copilot_log"
+"$launcher" doctor compound-engineering \
+  >"$fixture_root/compound-engineering-post-update-doctor.out"
+assert_contains 'compound-engineering: healthy' \
+  "$fixture_root/compound-engineering-post-update-doctor.out"
+
 plannotator_plugin_root="$expected_plannotator_home/installed-plugins/effective-html/plannotator-effective-html"
 plannotator_install_count="$(grep -Fc \
   'args=plugin install plannotator-effective-html@effective-html ' "$fake_copilot_log")"
@@ -1187,8 +1696,21 @@ fi
 assert_contains \
   'cpx: required package skill is missing or unsafe: plannotator/html-plan' \
   "$fixture_root/plannotator-missing-skill-launch.err"
-mv "$plannotator_plugin_root/skills/html-plan/SKILL.md.safe" \
-  "$plannotator_plugin_root/skills/html-plan/SKILL.md"
+plannotator_update_count="$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+"$launcher" repair plannotator \
+  >"$fixture_root/plannotator-missing-skill-repair.out"
+assert_line '# html-plan' "$plannotator_plugin_root/skills/html-plan/SKILL.md"
+[[ "$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$((plannotator_update_count + 1))" ]] \
+  || fail 'Plannotator repair did not update its corrupt installed plugin'
+rm "$plannotator_plugin_root/skills/html-plan/SKILL.md.safe"
+"$launcher" doctor plannotator \
+  >"$fixture_root/plannotator-missing-skill-post-repair-doctor.out"
+assert_contains 'plannotator: healthy' \
+  "$fixture_root/plannotator-missing-skill-post-repair-doctor.out"
 
 if FAKE_COPILOT_DISABLED_SKILL=html-plan "$launcher" doctor plannotator \
   >"$fixture_root/plannotator-disabled-skill.out" \
@@ -1212,6 +1734,16 @@ mv "$plannotator_plugin_root/skills/html-diagram" \
   "$plannotator_plugin_root/skills/html-diagram.safe"
 ln -s "$plannotator_plugin_root/skills/html" \
   "$plannotator_plugin_root/skills/html-diagram"
+plannotator_redirect_target_before="$(<"$plannotator_plugin_root/skills/html/SKILL.md")"
+plannotator_update_count="$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+plannotator_install_count="$(awk \
+  'index($0, "args=plugin install plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+plannotator_uninstall_count="$(awk \
+  'index($0, "args=plugin uninstall plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
 if "$launcher" doctor plannotator \
   >"$fixture_root/plannotator-symlink-skill.out" \
   2>"$fixture_root/plannotator-symlink-skill.err"; then
@@ -1220,6 +1752,27 @@ fi
 assert_contains \
   'cpx: required package skill is missing or unsafe: plannotator/html-diagram' \
   "$fixture_root/plannotator-symlink-skill.err"
+if "$launcher" repair plannotator \
+  >"$fixture_root/plannotator-symlink-skill-repair.out" \
+  2>"$fixture_root/plannotator-symlink-skill-repair.err"; then
+  fail 'repair mutated a redirected Plannotator skill'
+fi
+assert_contains \
+  'cpx: cannot safely repair required package skill path: plannotator/html-diagram' \
+  "$fixture_root/plannotator-symlink-skill-repair.err"
+[[ -L "$plannotator_plugin_root/skills/html-diagram" \
+  && "$(<"$plannotator_plugin_root/skills/html/SKILL.md")" == "$plannotator_redirect_target_before" ]] \
+  || fail 'failed Plannotator repair changed a redirected skill or its target'
+[[ "$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$plannotator_update_count" \
+  && "$(awk \
+  'index($0, "args=plugin uninstall plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$plannotator_uninstall_count" \
+  && "$(awk \
+  'index($0, "args=plugin install plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$plannotator_install_count" ]] \
+  || fail 'failed Plannotator repair invoked plugin mutation for a redirected skill'
 rm "$plannotator_plugin_root/skills/html-diagram"
 mv "$plannotator_plugin_root/skills/html-diagram.safe" \
   "$plannotator_plugin_root/skills/html-diagram"
@@ -1228,6 +1781,9 @@ mv "$plannotator_plugin_root/.codex-plugin/plugin.json" \
   "$plannotator_plugin_root/.codex-plugin/plugin.json.safe"
 ln -s "$plannotator_plugin_root/.codex-plugin/plugin.json.safe" \
   "$plannotator_plugin_root/.codex-plugin/plugin.json"
+plannotator_update_count="$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
 if "$launcher" doctor plannotator \
   >"$fixture_root/plannotator-symlink-version.out" \
   2>"$fixture_root/plannotator-symlink-version.err"; then
@@ -1236,9 +1792,73 @@ fi
 assert_contains \
   'cpx: failed to resolve installed plugin version: plannotator-effective-html@effective-html' \
   "$fixture_root/plannotator-symlink-version.err"
+if "$launcher" repair plannotator \
+  >"$fixture_root/plannotator-symlink-version-repair.out" \
+  2>"$fixture_root/plannotator-symlink-version-repair.err"; then
+  fail 'repair accepted a redirected Plannotator version manifest'
+fi
+assert_contains \
+  'cpx: cannot safely repair installed plugin manifest: plannotator' \
+  "$fixture_root/plannotator-symlink-version-repair.err"
+[[ -L "$plannotator_plugin_root/.codex-plugin/plugin.json" ]] \
+  || fail 'failed Plannotator repair changed a redirected version manifest'
+[[ "$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$plannotator_update_count" ]] \
+  || fail 'failed Plannotator repair updated a plugin with an unsafe manifest'
 rm "$plannotator_plugin_root/.codex-plugin/plugin.json"
 mv "$plannotator_plugin_root/.codex-plugin/plugin.json.safe" \
   "$plannotator_plugin_root/.codex-plugin/plugin.json"
+
+mv "$plannotator_plugin_root/.codex-plugin/plugin.json" \
+  "$plannotator_plugin_root/.codex-plugin/plugin.json.safe"
+mkdir "$plannotator_plugin_root/.codex-plugin/plugin.json"
+plannotator_update_count="$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+if "$launcher" repair plannotator \
+  >"$fixture_root/plannotator-nonregular-version-repair.out" \
+  2>"$fixture_root/plannotator-nonregular-version-repair.err"; then
+  fail 'repair accepted a non-regular Plannotator version manifest'
+fi
+assert_contains \
+  'cpx: cannot safely repair installed plugin manifest: plannotator' \
+  "$fixture_root/plannotator-nonregular-version-repair.err"
+[[ -d "$plannotator_plugin_root/.codex-plugin/plugin.json" \
+  && ! -L "$plannotator_plugin_root/.codex-plugin/plugin.json" ]] \
+  || fail 'failed Plannotator repair changed a non-regular version manifest'
+[[ "$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$plannotator_update_count" ]] \
+  || fail 'failed Plannotator repair updated a plugin with a non-regular manifest'
+rmdir "$plannotator_plugin_root/.codex-plugin/plugin.json"
+mv "$plannotator_plugin_root/.codex-plugin/plugin.json.safe" \
+  "$plannotator_plugin_root/.codex-plugin/plugin.json"
+
+mv "$plannotator_plugin_root/.codex-plugin" \
+  "$plannotator_plugin_root/.codex-plugin.safe"
+ln -s "$plannotator_plugin_root/.codex-plugin.safe" \
+  "$plannotator_plugin_root/.codex-plugin"
+plannotator_update_count="$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")"
+if "$launcher" repair plannotator \
+  >"$fixture_root/plannotator-unsafe-version-path-repair.out" \
+  2>"$fixture_root/plannotator-unsafe-version-path-repair.err"; then
+  fail 'repair accepted an unsafe Plannotator version manifest path'
+fi
+assert_contains \
+  'cpx: cannot safely repair installed plugin manifest: plannotator' \
+  "$fixture_root/plannotator-unsafe-version-path-repair.err"
+[[ -L "$plannotator_plugin_root/.codex-plugin" ]] \
+  || fail 'failed Plannotator repair changed an unsafe version manifest path'
+[[ "$(awk \
+  'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
+  "$fake_copilot_log")" == "$plannotator_update_count" ]] \
+  || fail 'failed Plannotator repair updated a plugin through an unsafe manifest path'
+rm "$plannotator_plugin_root/.codex-plugin"
+mv "$plannotator_plugin_root/.codex-plugin.safe" \
+  "$plannotator_plugin_root/.codex-plugin"
 
 before_plannotator_check_hash="$(profile_tree_hash "$expected_plannotator_home")"
 export FAKE_FORBID_PROFILE_MUTATION=1
@@ -1499,6 +2119,9 @@ next_awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace ad
   || fail 'awesome setup registered a missing built-in marketplace'
 
 "$launcher" setup --all
+assert_contains 'args=plugin marketplace add EveryInc/compound-engineering-plugin ' "$fake_copilot_log"
+assert_contains 'args=plugin install compound-engineering@compound-engineering-plugin ' \
+  "$fake_copilot_log"
 assert_contains 'args=plugin marketplace add obra/superpowers-marketplace ' "$fake_copilot_log"
 assert_contains 'args=plugin install superpowers@superpowers-marketplace ' "$fake_copilot_log"
 assert_contains 'args=plugin marketplace add plannotator/effective-html ' "$fake_copilot_log"
@@ -1509,6 +2132,8 @@ assert_contains 'args=plugin install tufte-vdqi@tufte-vdqi-marketplace ' \
   "$fake_copilot_log"
 [[ -f "$expected_superpowers_home/fake-state/plugins" ]] \
   || fail 'setup --all did not provision superpowers'
+[[ -f "$expected_compound_engineering_home/fake-state/plugins" ]] \
+  || fail 'setup --all did not provision Compound Engineering'
 [[ -f "$expected_plannotator_home/fake-state/plugins" ]] \
   || fail 'setup --all did not provision Plannotator'
 [[ -f "$expected_tufte_home/fake-state/plugins" ]] \
@@ -1551,7 +2176,7 @@ assert_contains $'hve-core@hve-core\t3.2.2' \
 [[ "$(grep -Fvc 'args=plugin list ' "$fake_copilot_log")" -gt "$launch_calls_before" ]] \
   || fail 'self-healed launch did not start the underlying Copilot agent'
 
-for profile in awesome hve plannotator superpowers tufte-vdqi; do
+for profile in awesome compound-engineering hve plannotator superpowers tufte-vdqi; do
   "$launcher" doctor "$profile" >"$fixture_root/$profile-native-auth-doctor.out"
   assert_contains "$profile: healthy" "$fixture_root/$profile-native-auth-doctor.out"
 done
@@ -1692,6 +2317,8 @@ for asset in rundown.instructions.md NOTICE.md; do
     || fail "installed asset differs: $asset"
 done
 "$installed" list >"$fixture_root/installed-list.out"
+assert_contains $'compound-engineering\tcompound-engineering@compound-engineering-plugin' \
+  "$fixture_root/installed-list.out"
 assert_contains $'hve\thve-core@hve-core' "$fixture_root/installed-list.out"
 assert_contains $'plannotator\tplannotator-effective-html@effective-html' \
   "$fixture_root/installed-list.out"

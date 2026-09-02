@@ -114,6 +114,53 @@
       "excludedProfiles": ["native:grx/superpowers"]
     },
     {
+      "id": "copilot-implement-only-no-publish",
+      "intent": "Use GitHub Copilot CLI to implement the approved migration plan test-first, verify it locally, and stop before committing or pushing anything.",
+      "expectedProfiles": ["native:cpx/superpowers"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/compound-engineering"]
+    },
+    {
+      "id": "copilot-compound-autonomous-lfg-delivery",
+      "intent": "The approved requirements are in docs/plans/tenant-api-keys-plan.md. Implement them without check-ins, simplify the code, review and fix it, browser test it, commit, push, open the pull request, watch CI, and stop before merge.",
+      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedWorkflows": {
+        "native:cpx/compound-engineering": "autonomous-lfg-plan-to-pr"
+      },
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/superpowers"]
+    },
+    {
+      "id": "copilot-compound-repository-learning",
+      "intent": "Capture one verified root cause/prevention pattern as repository-local solution knowledge so future plans can reuse the learning.",
+      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedWorkflows": {
+        "native:cpx/compound-engineering": "capture-verified-repository-learning"
+      },
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/hve", "native:cpx/superpowers"]
+    },
+    {
+      "id": "copilot-compound-earlier-solutions-plan",
+      "intent": "Turn the requirements-only plan at docs/plans/webhook-retries-plan.md into an implementation-ready plan by reusing relevant solutions from earlier work in this codebase.",
+      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedWorkflows": {
+        "native:cpx/compound-engineering": "plan-with-compound-knowledge"
+      },
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/hve", "native:cpx/superpowers"]
+    },
+    {
+      "id": "copilot-compound-past-bugs-plan",
+      "intent": "Use what we learned from past bugs to plan this change.",
+      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedWorkflows": {
+        "native:cpx/compound-engineering": "plan-with-compound-knowledge"
+      },
+      "maxRank": 3,
+      "excludedProfiles": ["native:cpx/hve", "native:cpx/superpowers"]
+    },
+    {
       "id": "isolated-claude-rundown",
       "intent": "Use an isolated host-native Claude Opus session for this code review, then give me a concise Rundown-style status summary with a checklist.",
       "expectedProfiles": ["native:cldx/default"],

@@ -16,11 +16,14 @@ import React, { useEffect, useReducer, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 import stringWidth from "string-width"
 
-import { profileGuideIdentityKey, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
+import {
+  profileGuideIdentityKey,
+  type ProfileGuideV1,
+  type ProfileGuideWorkflow,
+} from "../../trellage-guide-core/dist/index.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
   applyRequiredProfilePromptTemplate,
-  applyWorkflowPromptTemplate,
   guideIntentMaximumLength,
   guideTargetTool,
   GuideLongPromptVariant,
@@ -38,6 +41,17 @@ import {
 } from "./guide-api.js"
 import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.js"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.js"
+import {
+  GuideCandidatePromptCollisionError,
+  GuideCandidatePromptStage,
+  renderWorkflowBodyCandidate,
+  requireDistinctGuideCandidatePrompts,
+  resolveGeneratedWorkflowBodyCandidate,
+  resolveRefinedWorkflowBodyCandidate,
+  resolveWorkflowBodyCandidate,
+  workflowBodyCandidate,
+  workflowOptimizeFixedFrame,
+} from "./guide-workflow-prompt.js"
 import {
   buildGuideLaunchCommand,
   buildHerdrGuideLaunch,
@@ -114,6 +128,15 @@ const replaceCandidateAt = <T,>(items: Triple<T>, index: number, value: T): Trip
   if (index === 1) return [first, value, third]
   if (index === 2) return [first, second, value]
   return [value, second, third]
+}
+
+const selectedGuideWorkflow = (
+  guide: ProfileGuideV1,
+  workflowId: string,
+): ProfileGuideWorkflow => {
+  const workflow = guide.workflows.find(({ id }) => id === workflowId)
+  if (workflow === undefined) throw new Error(`Unknown workflow reference: ${workflowId}`)
+  return workflow
 }
 
 // ---------------------------------------------------------------------------
@@ -731,6 +754,21 @@ const reduceCandidateNavigation = (state: GuideUiState, action: GuideUiAction): 
   }
 }
 
+const candidateEditingWorkflow = (state: GuideUiState): ProfileGuideWorkflow | undefined =>
+  state.guideDocument === undefined || state.selectedRecommendation === undefined
+    ? undefined
+    : selectedGuideWorkflow(
+        state.guideDocument.guide,
+        state.selectedRecommendation.workflowId,
+      )
+
+const candidateDirectEditDraft = (state: GuideUiState): string => {
+  if (state.candidates === undefined) throw new Error("Direct editing requires prompt candidates")
+  const current = tripleAt(state.candidates, state.candidateIndex)
+  const workflow = candidateEditingWorkflow(state)
+  return workflow === undefined ? current.prompt : workflowBodyCandidate(workflow, current).prompt
+}
+
 const reduceCandidateEditing = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.CandidatesRefineStart:
@@ -743,7 +781,7 @@ const reduceCandidateEditing = (state: GuideUiState, action: GuideUiAction): Gui
         ? {
             ...state,
             stage: GuideUiStage.DirectEditor,
-            textDraft: tripleAt(state.candidates, state.candidateIndex).prompt,
+            textDraft: candidateDirectEditDraft(state),
             errorMessage: undefined,
           }
         : state
@@ -756,6 +794,14 @@ const reduceCandidateEditing = (state: GuideUiState, action: GuideUiAction): Gui
 const reduceCandidateSelection = (state: GuideUiState, action: GuideUiAction): GuideUiState =>
   reduceCandidateEditing(reduceCandidateNavigation(state, action), action)
 
+const directlyEditedCandidate = (state: GuideUiState): GuideGenerateCandidate => {
+  if (state.candidates === undefined) throw new Error("Direct editing requires prompt candidates")
+  const current = tripleAt(state.candidates, state.candidateIndex)
+  const edited = { ...current, prompt: state.textDraft }
+  const workflow = candidateEditingWorkflow(state)
+  return workflow === undefined ? edited : renderWorkflowBodyCandidate(workflow, edited)
+}
+
 const reduceDirectEdit = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.DirectEditSubmit:
@@ -765,10 +811,11 @@ const reduceDirectEdit = (state: GuideUiState, action: GuideUiAction): GuideUiSt
         ? {
             ...state,
             stage: GuideUiStage.Candidates,
-            candidates: replaceCandidateAt(state.candidates, state.candidateIndex, {
-              ...tripleAt(state.candidates, state.candidateIndex),
-              prompt: state.textDraft,
-            }),
+            candidates: replaceCandidateAt(
+              state.candidates,
+              state.candidateIndex,
+              directlyEditedCandidate(state),
+            ),
           }
         : state
 
@@ -793,6 +840,31 @@ const reduceEditor = (state: GuideUiState, action: GuideUiAction): GuideUiState 
   }
 }
 
+const refineSucceededState = (
+  state: GuideUiState,
+  candidate: GuideGenerateCandidate,
+): GuideUiState => {
+  if (state.stage !== GuideUiStage.Refining || state.candidates === undefined) return state
+  try {
+    return {
+      ...state,
+      stage: GuideUiStage.Candidates,
+      candidates: requireDistinctGuideCandidatePrompts(
+        replaceCandidateAt(state.candidates, state.candidateIndex, candidate),
+        GuideCandidatePromptStage.FinalRendering,
+      ),
+      errorMessage: undefined,
+    }
+  } catch (cause) {
+    if (!(cause instanceof GuideCandidatePromptCollisionError)) throw cause
+    return {
+      ...state,
+      stage: GuideUiStage.RefineFailed,
+      errorMessage: cause.message,
+    }
+  }
+}
+
 const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.RefineSubmit:
@@ -801,14 +873,7 @@ const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState 
         : state
 
     case GuideUiActionType.RefineSucceeded:
-      return state.stage === GuideUiStage.Refining && state.candidates !== undefined
-        ? {
-            ...state,
-            stage: GuideUiStage.Candidates,
-            candidates: replaceCandidateAt(state.candidates, state.candidateIndex, action.candidate),
-            errorMessage: undefined,
-          }
-        : state
+      return refineSucceededState(state, action.candidate)
 
     case GuideUiActionType.RefineFailed:
       return state.stage === GuideUiStage.Refining
@@ -1270,44 +1335,86 @@ export const runGuideGenerationStep = async (
   if (first === undefined || second === undefined || third === undefined) {
     throw new Error("Generation must return exactly three prompt candidates")
   }
+  const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId)
   onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
-  const workflowCandidates = [
-    applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, first),
-    applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, second),
-    applyWorkflowPromptTemplate(guideDocument.guide, recommendation.workflowId, third),
-  ] as const
+  const bodyCandidates = requireDistinctGuideCandidatePrompts(
+    [
+      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, first),
+      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, second),
+      resolveGeneratedWorkflowBodyCandidate(guideDocument.guide, workflow, intent, third),
+    ],
+    GuideCandidatePromptStage.GeneratedBodyNormalization,
+  )
   onProgress?.(GuideGenerationPhase.OptimizingCandidates)
+  const fixedFrame = workflowOptimizeFixedFrame(workflow)
   const optimized = await provider.optimize({
     targetTool: guideTargetTool(catalog, recommendation.profileRef),
     profileRef: recommendation.profileRef,
-    candidates: workflowCandidates,
+    candidates: bodyCandidates,
+    ...(fixedFrame === undefined ? {} : { fixedFrame }),
   })
   const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates
   if (optimizedFirst === undefined || optimizedSecond === undefined || optimizedThird === undefined) {
     throw new Error("Prompt Master must return exactly three prompt candidates")
   }
-  return {
-    guideDocument,
-    candidates: [
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        optimizedFirst,
+  const renderedCandidates = requireDistinctGuideCandidatePrompts(
+    [
+      renderWorkflowBodyCandidate(
+        workflow,
+        resolveWorkflowBodyCandidate(
+          guideDocument.guide,
+          workflow,
+          bodyCandidates[0],
+          optimizedFirst,
+        ),
       ),
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        optimizedSecond,
+      renderWorkflowBodyCandidate(
+        workflow,
+        resolveWorkflowBodyCandidate(
+          guideDocument.guide,
+          workflow,
+          bodyCandidates[1],
+          optimizedSecond,
+        ),
       ),
-      applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        guideDocument.guide,
-        recommendation.workflowId,
-        optimizedThird,
+      renderWorkflowBodyCandidate(
+        workflow,
+        resolveWorkflowBodyCandidate(
+          guideDocument.guide,
+          workflow,
+          bodyCandidates[2],
+          optimizedThird,
+        ),
       ),
     ],
+    GuideCandidatePromptStage.FinalRendering,
+  )
+  const candidates = requireDistinctGuideCandidatePrompts(
+    [
+      applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        renderedCandidates[0],
+      ),
+      applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        renderedCandidates[1],
+      ),
+      applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        renderedCandidates[2],
+      ),
+    ],
+    GuideCandidatePromptStage.FinalRendering,
+  )
+  return {
+    guideDocument,
+    candidates,
   }
 }
 
@@ -1322,36 +1429,57 @@ export const runGuideRefinementStep = async (
   intent: string,
   recommendation: GuideRecommendation,
   guideDocument: SelectedGuideDocument,
-  candidate: GuideGenerateCandidate,
+  candidates: Triple<GuideGenerateCandidate>,
+  candidateIndex: number,
   feedback: string,
 ): Promise<GuideGenerateCandidate> => {
+  const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId)
+  const candidate = tripleAt(candidates, candidateIndex)
+  const bodyCandidate = workflowBodyCandidate(workflow, candidate)
   const refined = await provider.refine({
     intent,
     profileRef: recommendation.profileRef,
     workflowId: recommendation.workflowId,
     guide: guideDocument.guide,
     guideBody: guideDocument.body,
-    candidate,
+    candidate: bodyCandidate,
     feedback,
   })
-  const workflowCandidate = applyWorkflowPromptTemplate(
+  const refinedBodyCandidate = resolveRefinedWorkflowBodyCandidate(
     guideDocument.guide,
-    recommendation.workflowId,
+    workflow,
+    bodyCandidate,
     refined.candidate,
   )
+  const fixedFrame = workflowOptimizeFixedFrame(workflow)
   const optimized = await provider.optimize({
     targetTool: guideTargetTool(catalog, recommendation.profileRef),
     profileRef: recommendation.profileRef,
-    candidates: [workflowCandidate],
+    candidates: [refinedBodyCandidate],
+    ...(fixedFrame === undefined ? {} : { fixedFrame }),
   })
   const optimizedCandidate = optimized.candidates[0]
   if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
-  return applyRequiredProfilePromptTemplate(
+  const renderedCandidate = renderWorkflowBodyCandidate(
+    workflow,
+    resolveWorkflowBodyCandidate(
+      guideDocument.guide,
+      workflow,
+      refinedBodyCandidate,
+      optimizedCandidate,
+    ),
+  )
+  const finalCandidate = applyRequiredProfilePromptTemplate(
     recommendation.profileRef,
     guideDocument.guide,
     recommendation.workflowId,
-    optimizedCandidate,
+    renderedCandidate,
   )
+  requireDistinctGuideCandidatePrompts(
+    replaceCandidateAt(candidates, candidateIndex, finalCandidate),
+    GuideCandidatePromptStage.FinalRendering,
+  )
+  return finalCandidate
 }
 
 // ---------------------------------------------------------------------------
@@ -1638,7 +1766,7 @@ export const generationProgressItems = (
   },
   {
     phase: GuideGenerationPhase.ApplyingWorkflow,
-    label: `Apply the ${recommendation.workflow.id} workflow`,
+    label: `Prepare the ${recommendation.workflow.id} workflow body`,
   },
   {
     phase: GuideGenerationPhase.OptimizingCandidates,
@@ -2932,7 +3060,8 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
     const intent = state.intent
     const recommendation = state.selectedRecommendation
     const guideDocument = state.guideDocument
-    const candidate = tripleAt(state.candidates, state.candidateIndex)
+    const candidates = state.candidates
+    const candidateIndex = state.candidateIndex
     const feedback = state.textDraft
     void (async () => {
       try {
@@ -2942,7 +3071,8 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
           intent,
           recommendation,
           guideDocument,
-          candidate,
+          candidates,
+          candidateIndex,
           feedback,
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.RefineSucceeded, candidate: refinedCandidate })
