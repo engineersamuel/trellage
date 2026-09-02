@@ -1,10 +1,12 @@
 /**
  * Pure decision helpers for P05 wiring: which profile refs need a batch
- * doctor run kicked off, and which refs need a Copilot diagnosis dispatched,
- * given the current `AdminRunStatus` snapshot for each ref. Contains no
- * subprocess, Copilot, or Ink logic of its own — callers (an Ink effect)
- * only call these functions and update their own bookkeeping `Set`s with
- * the returned refs. Fully unit-testable without any Ink rendering.
+ * doctor run kicked off, which refs need a Copilot diagnosis dispatched,
+ * and which repair-capable refs need an automatic repair-then-recheck
+ * attempt, given the current `AdminRunStatus` snapshot for each ref.
+ * Contains no subprocess, Copilot, or Ink logic of its own — callers (an
+ * Ink effect) only call these functions and update their own bookkeeping
+ * `Set`s with the returned refs. Fully unit-testable without any Ink
+ * rendering.
  */
 import type { AdminRunStatus } from "./admin-run-manager.js"
 
@@ -39,6 +41,32 @@ export const selectPendingDiagnosisTargets = (
   for (const [ref, status] of statusesByRef) {
     if (status.state !== "failure" && status.state !== "timed-out") continue
     if (alreadyDiagnosedRefs.has(ref)) continue
+    targets.push(ref)
+  }
+  return targets
+}
+
+/**
+ * Selects exactly the repair-capable refs (present in `repairSupportedRefs`)
+ * whose latest known doctor status is a terminal failure (`failure` or
+ * `timed-out`) and that are not already recorded in
+ * `alreadyAttemptedRefs`. Never returns a ref more than once across
+ * repeated calls with an unchanged snapshot plus an updated
+ * `alreadyAttemptedRefs` (the caller is expected to add every returned ref
+ * to `alreadyAttemptedRefs` before the next call), and a ref outside
+ * `repairSupportedRefs` (e.g. a sandbox profile, or a native launcher with
+ * no repair subcommand) is never selected regardless of its doctor status.
+ */
+export const selectPendingRepairTargets = (
+  statusesByRef: ReadonlyMap<string, AdminRunStatus>,
+  repairSupportedRefs: ReadonlySet<string>,
+  alreadyAttemptedRefs: ReadonlySet<string>,
+): ReadonlyArray<string> => {
+  const targets: Array<string> = []
+  for (const [ref, status] of statusesByRef) {
+    if (status.state !== "failure" && status.state !== "timed-out") continue
+    if (!repairSupportedRefs.has(ref)) continue
+    if (alreadyAttemptedRefs.has(ref)) continue
     targets.push(ref)
   }
   return targets

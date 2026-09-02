@@ -83470,6 +83470,16 @@ var buildRepairCommand = (entry) => ({
   executable: entry.commandPath,
   args: ["repair", entry.name]
 });
+var repairRefFor = (entry) => `${entry.ref}::repair`;
+var repairThenRecheckDoctor = async (entry, runManager) => {
+  const repairCommand = buildRepairCommand(entry);
+  await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args);
+  const repairState = runManager.status(repairRefFor(entry)).state;
+  const doctorCommand = buildDiagnosticCommand(entry);
+  await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
+  const doctorState = runManager.status(entry.ref).state;
+  return { repairState, doctorState };
+};
 var LaunchNotConfirmedError = class extends Error {
   constructor(profile) {
     super(`terminal launch for ${profile} requires explicit confirmation`);
@@ -83592,6 +83602,16 @@ var selectPendingDiagnosisTargets = (statusesByRef, alreadyDiagnosedRefs) => {
   }
   return targets;
 };
+var selectPendingRepairTargets = (statusesByRef, repairSupportedRefs, alreadyAttemptedRefs) => {
+  const targets = [];
+  for (const [ref, status] of statusesByRef) {
+    if (status.state !== "failure" && status.state !== "timed-out") continue;
+    if (!repairSupportedRefs.has(ref)) continue;
+    if (alreadyAttemptedRefs.has(ref)) continue;
+    targets.push(ref);
+  }
+  return targets;
+};
 
 // src/admin-herdr-fork.ts
 var isForkToHerdrAvailable = async (runner, env3, cwd2) => {
@@ -83680,9 +83700,9 @@ var AdminDetailPanel = ({
   const snapshot = runManager.status(entry.ref);
   const status = runStatusOf(entry, snapshot);
   const controls4 = controlsForStatus(status);
-  const repairRef = `${entry.ref}::repair`;
-  const repairSnapshot = runManager.status(repairRef);
+  const repairSnapshot = runManager.status(repairRefFor(entry));
   const canRepair = isRepairSupported(entry) && controls4.canRetry && repairSnapshot.state !== "running";
+  const repairNote = repairMessage3 ?? (repairSnapshot.state === "idle" ? void 0 : `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`);
   const openGuide = () => {
     loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
       if (result.available) setGuideBody(result.body);
@@ -83702,16 +83722,8 @@ var AdminDetailPanel = ({
   const confirmRepair = () => {
     setRepairConfirming(false);
     setRepairMessage(`Running ${entry.name}'s repair\u2026`);
-    const repairCommand = buildRepairCommand(entry);
-    runManager.trigger(repairRef, repairCommand.executable, repairCommand.args).then(() => {
-      const repairResult = runManager.status(repairRef).latest;
-      setRepairMessage(`Repair ${repairResult?.state ?? "finished"}. Rechecking doctor\u2026`);
-      forceRender((value) => value + 1);
-      const doctorCommand = buildDiagnosticCommand(entry);
-      return runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
-    }).then(() => {
-      const doctorResult = runManager.status(entry.ref).latest;
-      setRepairMessage(`Repair attempted; doctor recheck: ${doctorResult?.state ?? "unknown"}.`);
+    repairThenRecheckDoctor(entry, runManager).then((outcome) => {
+      setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.`);
     }).catch((error) => setRepairMessage(error instanceof Error ? error.message : String(error))).finally(() => forceRender((value) => value + 1));
   };
   const confirmLaunch = () => {
@@ -83830,7 +83842,7 @@ var AdminDetailPanel = ({
       entry.name,
       "'s repair now and recheck doctor afterward, or any other key to cancel."
     ] }) : null,
-    repairMessage3 === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairMessage3 }),
+    repairNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairNote }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "[j/k] move selection  [q] quit" })
   ] });
 };
@@ -83855,6 +83867,7 @@ var AdminApp = ({
   const [herdrAvailable, setHerdrAvailable] = (0, import_react37.useState)(void 0);
   const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const diagnosedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const repairAttemptedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   (0, import_react37.useEffect)(() => {
     const interval = setInterval(() => setTick((value) => value + 1), 500);
     return () => clearInterval(interval);
@@ -83865,6 +83878,20 @@ var AdminApp = ({
     batchStartedRefs.current = new Set(doctorRefs);
     void runBatchedDoctorChecks(entries, runManager);
   }, [entries, runManager]);
+  (0, import_react37.useEffect)(() => {
+    const statusesByRef = new Map(
+      entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
+    );
+    const repairSupportedRefs = new Set(entries.filter(isRepairSupported).map((entry) => entry.ref));
+    const targets = selectPendingRepairTargets(statusesByRef, repairSupportedRefs, repairAttemptedRefs.current);
+    if (targets.length === 0) return;
+    repairAttemptedRefs.current = /* @__PURE__ */ new Set([...repairAttemptedRefs.current, ...targets]);
+    for (const ref of targets) {
+      const entry = entries.find((candidate) => candidate.ref === ref);
+      if (entry === void 0) continue;
+      void repairThenRecheckDoctor(entry, runManager).finally(() => setTick((value) => value + 1));
+    }
+  });
   (0, import_react37.useEffect)(() => {
     let cancelled = false;
     isForkToHerdrAvailable(runner, herdrEnv, cwd2).then((available) => {

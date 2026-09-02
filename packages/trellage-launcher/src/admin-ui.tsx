@@ -12,12 +12,12 @@ import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry } from "./admin-model.js"
 import { refreshAdminEntries } from "./admin-refresh.js"
 import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.js"
-import { buildAdminLaunchCommand, buildDiagnosticCommand, buildRepairCommand, isRepairSupported, launchAdminProfile } from "./admin-launch.js"
+import { buildAdminLaunchCommand, buildDiagnosticCommand, isRepairSupported, launchAdminProfile, repairRefFor, repairThenRecheckDoctor } from "./admin-launch.js"
 import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.js"
 import type { AdminSortKey } from "./admin-table.js"
 import { filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.js"
 import { runBatchedDoctorChecks } from "./admin-batch-scheduler.js"
-import { selectPendingDiagnosisTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.js"
+import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.js"
 import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.js"
 import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.js"
 import type { CombinedGuideCatalog } from "./guide-catalog.js"
@@ -75,9 +75,13 @@ const AdminDetailPanel = ({
   const snapshot = runManager.status(entry.ref)
   const status = runStatusOf(entry, snapshot)
   const controls = controlsForStatus(status)
-  const repairRef = `${entry.ref}::repair`
-  const repairSnapshot = runManager.status(repairRef)
+  const repairSnapshot = runManager.status(repairRefFor(entry))
   const canRepair = isRepairSupported(entry) && controls.canRetry && repairSnapshot.state !== "running"
+  const repairNote =
+    repairMessage ??
+    (repairSnapshot.state === "idle"
+      ? undefined
+      : `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`)
 
   const openGuide = () => {
     loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry))
@@ -105,30 +109,21 @@ const AdminDetailPanel = ({
   /**
    * Runs the profile's existing `repair PROFILE` subcommand exactly once
    * (the same real, documented action `omp repair`/`cldx repair`/etc.
-   * already expose), tracked under a distinct `<ref>::repair` key so it
-   * never overwrites the profile's own doctor history. Once the repair
-   * attempt reaches a terminal state (success or failure), automatically
+   * already expose), tracked under `repairRefFor(entry)` so it never
+   * overwrites the profile's own doctor history, then automatically
    * re-triggers the doctor check to recheck — regardless of the repair
-   * outcome, per the requested "run once, then recheck" behavior. Never
-   * parses or executes the Copilot-suggested-fix text itself; this always
-   * runs the same fixed, safe command for the profile.
+   * outcome, per the requested "run once, then recheck" behavior. Shares
+   * `repairThenRecheckDoctor` with the on-load auto-repair dispatch in
+   * `AdminRoot` so a manual `[p]` press and an automatic repair behave
+   * identically. Never parses or executes the Copilot-suggested-fix text
+   * itself; this always runs the same fixed, safe command for the profile.
    */
   const confirmRepair = () => {
     setRepairConfirming(false)
     setRepairMessage(`Running ${entry.name}'s repair…`)
-    const repairCommand = buildRepairCommand(entry)
-    runManager
-      .trigger(repairRef, repairCommand.executable, repairCommand.args)
-      .then(() => {
-        const repairResult = runManager.status(repairRef).latest
-        setRepairMessage(`Repair ${repairResult?.state ?? "finished"}. Rechecking doctor…`)
-        forceRender((value) => value + 1)
-        const doctorCommand = buildDiagnosticCommand(entry)
-        return runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
-      })
-      .then(() => {
-        const doctorResult = runManager.status(entry.ref).latest
-        setRepairMessage(`Repair attempted; doctor recheck: ${doctorResult?.state ?? "unknown"}.`)
+    repairThenRecheckDoctor(entry, runManager)
+      .then((outcome) => {
+        setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.`)
       })
       .catch((error: unknown) => setRepairMessage(error instanceof Error ? error.message : String(error)))
       .finally(() => forceRender((value) => value + 1))
@@ -273,9 +268,9 @@ const AdminDetailPanel = ({
           Press [y] to run {entry.name}&apos;s repair now and recheck doctor afterward, or any other key to cancel.
         </Text>
       ) : null}
-      {repairMessage === undefined ? null : (
+      {repairNote === undefined ? null : (
         <Text dimColor wrap="wrap">
-          {repairMessage}
+          {repairNote}
         </Text>
       )}
       <Text dimColor>[j/k] move selection  [q] quit</Text>
@@ -312,6 +307,7 @@ export const AdminApp = ({
   const [herdrAvailable, setHerdrAvailable] = useState<boolean | undefined>(undefined)
   const batchStartedRefs = useRef<Set<string>>(new Set())
   const diagnosedRefs = useRef<Set<string>>(new Set())
+  const repairAttemptedRefs = useRef<Set<string>>(new Set())
 
   // Live-updates the table/detail pane to reflect `AdminRunManager` and
   // diagnosis-provider state that changes outside of React (async runs
@@ -327,6 +323,35 @@ export const AdminApp = ({
     batchStartedRefs.current = new Set(doctorRefs)
     void runBatchedDoctorChecks(entries, runManager)
   }, [entries, runManager])
+
+  /**
+   * Attempts one automatic `repair` for every repair-capable profile that
+   * finishes the startup doctor batch (or any later retry) in a failed
+   * state, then rechecks doctor — the same "run once, then recheck" action
+   * as the manual `[p]` key, just triggered without waiting for the user to
+   * select the profile first. `selectPendingRepairTargets` guarantees each
+   * ref is auto-repaired at most once per session; a later manual `[p]`
+   * retry remains available and independent. Runs on every poll tick (no
+   * dependency array) to observe newly terminal-failed refs as the batch
+   * settles in the background, exactly like the diagnosis-dispatch effect
+   * above it.
+   */
+  useEffect(() => {
+    const statusesByRef = new Map<string, AdminRunStatus>(
+      entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)]),
+    )
+    const repairSupportedRefs = new Set(entries.filter(isRepairSupported).map((entry) => entry.ref))
+    const targets = selectPendingRepairTargets(statusesByRef, repairSupportedRefs, repairAttemptedRefs.current)
+    if (targets.length === 0) return
+    repairAttemptedRefs.current = new Set([...repairAttemptedRefs.current, ...targets])
+    for (const ref of targets) {
+      const entry = entries.find((candidate) => candidate.ref === ref)
+      if (entry === undefined) continue
+      void repairThenRecheckDoctor(entry, runManager).finally(() => setTick((value) => value + 1))
+    }
+    // Runs each poll tick to observe newly terminal-failed refs from `AdminRunManager`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
 
   useEffect(() => {
     let cancelled = false

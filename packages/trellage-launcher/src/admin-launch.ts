@@ -7,6 +7,7 @@
  * never launches as a side effect of selection/navigation.
  */
 import type { AdminProfileEntry } from "./admin-model.js"
+import type { AdminRunManager, AdminRunState } from "./admin-run-manager.js"
 import {
   buildGuideLaunchCommand,
   runInteractiveCommand,
@@ -69,6 +70,37 @@ export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
   args: ["repair", entry.name],
 })
+
+/** The distinct `AdminRunManager` ref used to track a profile's repair runs, kept separate from its own doctor history. */
+export const repairRefFor = (entry: AdminProfileEntry): string => `${entry.ref}::repair`
+
+export interface RepairAndRecheckOutcome {
+  readonly repairState: AdminRunState
+  readonly doctorState: AdminRunState
+}
+
+/**
+ * Runs the profile's existing `repair PROFILE` subcommand exactly once (the
+ * same real, documented action `omp repair`/`cldx repair`/etc. already
+ * expose), tracked under `repairRefFor(entry)` so it never overwrites the
+ * profile's own doctor history, then re-triggers the doctor check to
+ * recheck — regardless of the repair outcome. Never parses or executes any
+ * Copilot-suggested-fix text; this always runs the same fixed, safe
+ * command. Shared by the manual `[p]` action and the on-load auto-repair
+ * dispatch so both paths behave identically.
+ */
+export const repairThenRecheckDoctor = async (
+  entry: AdminProfileEntry,
+  runManager: AdminRunManager,
+): Promise<RepairAndRecheckOutcome> => {
+  const repairCommand = buildRepairCommand(entry)
+  await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args)
+  const repairState = runManager.status(repairRefFor(entry)).state
+  const doctorCommand = buildDiagnosticCommand(entry)
+  await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
+  const doctorState = runManager.status(entry.ref).state
+  return { repairState, doctorState }
+}
 
 export class LaunchNotConfirmedError extends Error {
   constructor(profile: string) {

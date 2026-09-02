@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 
 import type { AdminProfileEntry } from "../src/admin-model.js"
+import { AdminRunManager } from "../src/admin-run-manager.js"
+import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
+import { CommandRunnerError } from "../src/guide-launch.js"
 import {
   buildAdminLaunchCommand,
   buildDiagnosticCommand,
@@ -8,6 +11,8 @@ import {
   isRepairSupported,
   launchAdminProfile,
   LaunchNotConfirmedError,
+  repairRefFor,
+  repairThenRecheckDoctor,
   toSelectedProfile,
 } from "../src/admin-launch.js"
 
@@ -128,5 +133,64 @@ describe("launchAdminProfile", () => {
     const run = vi.fn().mockResolvedValue(undefined)
     await launchAdminProfile(nativeEntry, true, run)
     expect(run).toHaveBeenCalledWith({ executable: "/usr/local/bin/cpx", args: ["default"] })
+  })
+})
+
+describe("repairRefFor", () => {
+  it("builds a distinct ref namespaced under the profile's own ref", () => {
+    expect(repairRefFor(nativeEntry)).toBe("native:cpx:default::repair")
+  })
+})
+
+/** A scriptable fake runner: resolves/rejects per invocation based on a queued outcome list, in call order. */
+class ScriptedRunner implements CommandRunner {
+  readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []
+  constructor(private readonly outcomes: ReadonlyArray<{ ok: boolean; stdout?: string; stderr?: string }>) {}
+
+  async run(executable: string, args: ReadonlyArray<string>, _options?: CommandRunOptions): Promise<CommandRunResult> {
+    const index = this.calls.length
+    this.calls.push({ executable, args })
+    const outcome = this.outcomes[index]
+    if (outcome === undefined) throw new Error(`no scripted outcome for call ${index}`)
+    if (outcome.ok) return { stdout: outcome.stdout ?? "", stderr: "", exitCode: 0 }
+    throw new CommandRunnerError({
+      kind: "exited",
+      executable,
+      args,
+      exitCode: 1,
+      message: outcome.stderr ?? "failed",
+      stderr: outcome.stderr ?? "",
+    })
+  }
+}
+
+describe("repairThenRecheckDoctor", () => {
+  it("runs repair then rechecks doctor, recording both under distinct refs, and reports success/success", async () => {
+    const runner = new ScriptedRunner([{ ok: true, stdout: "repaired" }, { ok: true, stdout: "healthy" }])
+    const manager = new AdminRunManager({ runner })
+    const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
+    expect(outcome).toEqual({ repairState: "success", doctorState: "success" })
+    expect(runner.calls).toEqual([
+      { executable: "/usr/local/bin/cpx", args: ["repair", "default"] },
+      { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
+    ])
+    expect(manager.status(repairRefFor(nativeEntry)).state).toBe("success")
+    expect(manager.status(nativeEntry.ref).state).toBe("success")
+  })
+
+  it("still rechecks doctor and reports a failure state when the repair command itself fails", async () => {
+    const runner = new ScriptedRunner([{ ok: false, stderr: "repair failed" }, { ok: true, stdout: "still broken but doctor ran" }])
+    const manager = new AdminRunManager({ runner })
+    const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
+    expect(outcome).toEqual({ repairState: "failure", doctorState: "success" })
+    expect(runner.calls).toHaveLength(2)
+  })
+
+  it("never overwrites the profile's own doctor history with the repair run", async () => {
+    const runner = new ScriptedRunner([{ ok: true }, { ok: true }])
+    const manager = new AdminRunManager({ runner })
+    await repairThenRecheckDoctor(nativeEntry, manager)
+    expect(manager.status(nativeEntry.ref).history).toHaveLength(1)
+    expect(manager.status(repairRefFor(nativeEntry)).history).toHaveLength(1)
   })
 })
