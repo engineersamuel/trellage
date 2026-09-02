@@ -181,12 +181,7 @@ const ImageGithubReleaseTool = Schema.Struct({
   name: NonEmpty,
 })
 
-const ImageWorktreeCliTool = Schema.Struct({
-  kind: Schema.Literal("worktree-cli"),
-  name: NonEmpty,
-})
-
-const ImageTool = Schema.Union(ImagePypiTool, ImageGithubReleaseTool, ImageWorktreeCliTool)
+const ImageTool = Schema.Union(ImagePypiTool, ImageGithubReleaseTool)
 
 const Image = Schema.Struct({
   base: NonEmpty,
@@ -204,6 +199,76 @@ const Secrets = Schema.Struct({
 const Runtime = Schema.Struct({
   memory_size: Schema.optional(RuntimeSize),
   tmpfs_size: Schema.optional(RuntimeSize),
+})
+
+export enum OrchestrationKind {
+  GraphOfLoops = "graph-of-loops",
+}
+
+enum GraphTrackerKind {
+  Beads = "beads",
+}
+
+enum GraphSchedulerKind {
+  Bernstein = "bernstein",
+}
+
+enum GraphNodeRuntimeKind {
+  Waku = "waku",
+}
+
+enum GraphReviewKind {
+  CodexReviewer = "codex",
+}
+
+enum GraphProofKind {
+  Raindrop = "raindrop",
+}
+
+const GraphRoles = Schema.Struct({
+  planner: NonEmpty,
+  research: NonEmpty,
+  implement: NonEmpty,
+  tdd: NonEmpty,
+  debug: NonEmpty,
+  validate: NonEmpty,
+})
+
+const GraphReview = Schema.Struct({
+  kind: Schema.Literal(GraphReviewKind.CodexReviewer),
+  required: Schema.Literal(true),
+  model: NonEmpty,
+  reasoning_effort: Schema.Literal("minimal", "low", "medium", "high", "xhigh"),
+})
+
+const GraphProof = Schema.Struct({
+  kind: Schema.Literal(GraphProofKind.Raindrop),
+  mode: Schema.Literal("repository-opt-in"),
+})
+
+const GraphAuthorization = Schema.Struct({
+  allow_push: Schema.Literal(false),
+  allow_pull_request: Schema.Literal(false),
+  allow_deploy: Schema.Literal(false),
+})
+
+const GraphOfLoopsOrchestration = Schema.Struct({
+  kind: Schema.Literal(OrchestrationKind.GraphOfLoops),
+  tracker: Schema.Literal(GraphTrackerKind.Beads),
+  scheduler: Schema.Literal(GraphSchedulerKind.Bernstein),
+  worktree_backend: Schema.Literal(GraphSchedulerKind.Bernstein),
+  node_runtime: Schema.Literal(GraphNodeRuntimeKind.Waku),
+  supervisor_model: NonEmpty,
+  max_parallel_nodes: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  max_node_iterations: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  max_specialist_attempts: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  max_gate_calls: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  max_supervisor_tokens: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  node_timeout_seconds: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  roles: GraphRoles,
+  review: GraphReview,
+  proof: GraphProof,
+  authorization: GraphAuthorization,
 })
 
 const CommonProfile = {
@@ -233,6 +298,7 @@ const CopilotProfileSchema = Schema.Struct({
 const ClaudeProfileSchema = Schema.Struct({
   ...CommonProfile,
   harness: ClaudeHarness,
+  orchestration: Schema.optional(GraphOfLoopsOrchestration),
   plugins: Schema.optional(Schema.Array(Schema.Union(HyperresearchPlugin, ClaudeMarketplacePlugin))),
 })
 
@@ -285,6 +351,7 @@ type NormalizedProfile<T extends DecodedProfile> = Omit<
 
 export type Mcp = NonNullable<DecodedProfile["mcps"]>[number]
 export type ImageTool = NonNullable<DecodedProfile["image"]["tools"]>[number]
+export type GraphOfLoopsOrchestration = Schema.Schema.Type<typeof GraphOfLoopsOrchestration>
 export type CodexProfile = NormalizedProfile<DecodedCodexProfile>
 export type CopilotProfile = NormalizedProfile<DecodedCopilotProfile>
 export type ClaudeProfile = NormalizedProfile<DecodedClaudeProfile>
@@ -303,6 +370,13 @@ export const isCopilotProfile = (profile: Profile): profile is CopilotProfile =>
 
 export const isClaudeProfile = (profile: Profile): profile is ClaudeProfile => profile.harness.kind === "claude"
 
+export type GraphOfLoopsProfile = ClaudeProfile & {
+  readonly orchestration: GraphOfLoopsOrchestration
+}
+
+export const isGraphOfLoopsProfile = (profile: Profile): profile is GraphOfLoopsProfile =>
+  isClaudeProfile(profile) && profile.orchestration?.kind === OrchestrationKind.GraphOfLoops
+
 export const claudePypiToolNames = (profile: ClaudeProfile): ReadonlyArray<string> =>
   (profile.image.tools ?? []).flatMap((tool) => (tool.kind === "pypi" ? [tool.name] : []))
 
@@ -314,7 +388,8 @@ export const claudeGithubReleaseTools = (
 const claudeHasGithubReleaseTool = (profile: ClaudeProfile, name: string): boolean =>
   claudeGithubReleaseTools(profile).some((tool) => tool.name === name)
 
-export const claudeHasCodexReviewer = (profile: ClaudeProfile): boolean => claudeHasGithubReleaseTool(profile, "codex")
+export const claudeHasCodexReviewer = (profile: ClaudeProfile): boolean =>
+  profile.orchestration?.review.kind === GraphReviewKind.CodexReviewer
 
 export const claudeHasBeads = (profile: ClaudeProfile): boolean => claudeHasGithubReleaseTool(profile, "bd")
 
@@ -323,9 +398,6 @@ export const claudeHasLefthook = (profile: ClaudeProfile): boolean =>
 
 export const claudeHasSerena = (profile: ClaudeProfile): boolean =>
   claudePypiToolNames(profile).includes("serena-agent") || profile.mcps.some((mcp) => mcp.name === "serena")
-
-export const claudeHasWorktreeCli = (profile: ClaudeProfile): boolean =>
-  (profile.image.tools ?? []).some((tool) => tool.kind === "worktree-cli")
 
 export const isPiProfile = (profile: Profile): profile is PiProfile => profile.harness.kind === "pi"
 
@@ -507,7 +579,7 @@ const claudeGithubTools: Readonly<Record<string, string>> = {
   codex: "openai/codex",
   "lefthook-linux-arm64": "evilmartians/lefthook",
 }
-const claudePypiTools = new Set(["bernstein", "serena-agent", "waku-agent"])
+const claudePypiTools = new Set(["bernstein", "pyright", "serena-agent", "waku-agent"])
 
 const validateClaudeImageTools = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
   Effect.gen(function* () {
@@ -517,9 +589,6 @@ const validateClaudeImageTools = (profile: ClaudeProfile): Effect.Effect<void, P
       }
       if (tool.kind === "pypi" && !claudePypiTools.has(tool.name)) {
         return yield* fail(`unsupported PyPI image tool: ${tool.name}`)
-      }
-      if (tool.kind === "worktree-cli" && tool.name !== "wt") {
-        return yield* fail(`unsupported worktree image tool: ${tool.name}`)
       }
     }
   })
@@ -578,10 +647,65 @@ const validateClaudeMarketplacePlugin = (plugin: ClaudeMarketplaceProfilePlugin)
     yield* validateClaudeMarketplaceConfig(plugin)
   })
 
+const requiredGraphPypiTools = ["bernstein", "serena-agent", "waku-agent"] as const
+const requiredGraphGithubTools = ["bd", "codex", "raindrop"] as const
+
+const graphToolError = (profile: ClaudeProfile): string | undefined => {
+  const pypiTools = new Set(claudePypiToolNames(profile))
+  for (const tool of requiredGraphPypiTools) {
+    if (!pypiTools.has(tool)) return `Graph of Loops requires image tool: ${tool}`
+  }
+  const githubTools = new Set(claudeGithubReleaseTools(profile).map((tool) => tool.name))
+  for (const tool of requiredGraphGithubTools) {
+    if (!githubTools.has(tool)) return `Graph of Loops requires image tool: ${tool}`
+  }
+}
+
+const graphSerenaError = (profile: ClaudeProfile): string | undefined => {
+  const serena = profile.mcps.find((mcp) => mcp.name === "serena")
+  return serena?.transport === "stdio" && serena.command === "serena" && serena.args?.includes("--project-from-cwd")
+    ? undefined
+    : "Graph of Loops requires Serena MCP with --project-from-cwd"
+}
+
+const graphCeilingError = (orchestration: GraphOfLoopsOrchestration): string | undefined => {
+  const ceilings: ReadonlyArray<readonly [string, number, number]> = [
+    ["max_parallel_nodes", orchestration.max_parallel_nodes, 16],
+    ["max_node_iterations", orchestration.max_node_iterations, 20],
+    ["max_specialist_attempts", orchestration.max_specialist_attempts, 10],
+    ["max_gate_calls", orchestration.max_gate_calls, 64],
+    ["max_supervisor_tokens", orchestration.max_supervisor_tokens, 16_384],
+    ["node_timeout_seconds", orchestration.node_timeout_seconds, 7_200],
+  ]
+  for (const [name, value, maximum] of ceilings) {
+    if (value > maximum) return `Graph of Loops ${name} exceeds maximum ${maximum}`
+  }
+}
+
+const validateGraphOfLoops = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
+  Effect.gen(function* () {
+    const orchestration = profile.orchestration
+    if (orchestration === undefined) return
+    if (profile.harness.claude.gateway !== "http://copilot-proxy-rs:8080") {
+      return yield* fail("Graph of Loops requires the local copilot-proxy-rs gateway")
+    }
+    const toolError = graphToolError(profile)
+    if (toolError !== undefined) return yield* fail(toolError)
+    const serenaError = graphSerenaError(profile)
+    if (serenaError !== undefined) return yield* fail(serenaError)
+    for (const role of Object.values(orchestration.roles)) {
+      if (!safeName.test(role)) return yield* fail(`Graph of Loops role is unsafe: ${role}`)
+    }
+    yield* unique(Object.values(orchestration.roles), "Graph of Loops role")
+    const ceilingError = graphCeilingError(orchestration)
+    if (ceilingError !== undefined) return yield* fail(ceilingError)
+  })
+
 const validateClaudeProfile = (profile: ClaudeProfile): Effect.Effect<void, ProfileError> =>
   Effect.gen(function* () {
     yield* validateHarnessVersion("Claude", profile.harness.version)
     yield* validateClaudeExtras(profile)
+    yield* validateGraphOfLoops(profile)
     if (hasDeclaredSecrets(profile)) return yield* fail("Claude credentials are selected at launch")
     if (profile.plugins.length === 0 && profile.harness.claude.mode !== "core") {
       return yield* fail("Claude profiles require at least one plugin")

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trellage.dev/schemas/planning-discovery.schema.json",
+  "title": "Planning Discovery",
+  "type": "object",
+  "required": [
+    "target_status",
+    "summary",
+    "repository_evidence",
+    "relevant_symbols",
+    "relevant_paths",
+    "coverage_limits"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "target_status": {
+      "type": "string",
+      "enum": ["grounded", "target-not-found", "insufficient-evidence"]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "repository_evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "detail": { "type": "string", "minLength": 1 },
+          "symbols": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "relevant_symbols": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "relevant_paths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "coverage_limits": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "serena_fallback": { "type": ["string", "null"] }
+  }
+}

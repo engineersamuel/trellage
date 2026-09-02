@@ -120,6 +120,72 @@ select = ["social-media-skills"]
 ${extra}
 `
 
+const graphOfLoopsExtra = `
+[[image.tools]]
+kind = "pypi"
+name = "bernstein"
+[[image.tools]]
+kind = "pypi"
+name = "serena-agent"
+[[image.tools]]
+kind = "pypi"
+name = "waku-agent"
+[[image.tools]]
+kind = "github-release"
+repository = "gastownhall/beads"
+name = "bd"
+[[image.tools]]
+kind = "github-release"
+repository = "raindrop-ai/workshop"
+name = "raindrop"
+[[image.tools]]
+kind = "github-release"
+repository = "openai/codex"
+name = "codex"
+[[mcps]]
+name = "serena"
+transport = "stdio"
+command = "serena"
+args = ["start-mcp-server", "--context", "claude-code", "--project-from-cwd"]
+
+[orchestration]
+kind = "graph-of-loops"
+tracker = "beads"
+scheduler = "bernstein"
+worktree_backend = "bernstein"
+node_runtime = "waku"
+supervisor_model = "claude-haiku-4.5"
+max_parallel_nodes = 3
+max_node_iterations = 10
+max_specialist_attempts = 3
+max_gate_calls = 12
+max_supervisor_tokens = 2048
+node_timeout_seconds = 1800
+
+[orchestration.roles]
+planner = "trellage-graph-planner"
+research = "insane-research"
+implement = "team-implementer"
+tdd = "tdd-workflows-tdd-orchestrator"
+debug = "team-debugger"
+validate = "conductor-validator"
+
+[orchestration.review]
+kind = "codex"
+required = true
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+
+[orchestration.proof]
+kind = "raindrop"
+mode = "repository-opt-in"
+
+[orchestration.authorization]
+allow_push = false
+allow_pull_request = false
+allow_deploy = false
+`
+
 const primeProfile = (extra = "") => `
 schema = 1
 name = "prime-agent"
@@ -349,9 +415,6 @@ name = "bernstein"
 kind = "github-release"
 repository = "gastownhall/beads"
 name = "bd"
-[[image.tools]]
-kind = "worktree-cli"
-name = "wt"
 [[mcps]]
 name = "serena"
 transport = "stdio"
@@ -365,7 +428,6 @@ args = ["start-mcp-server", "--context", "claude-code"]
     expect(result.profile.image.tools).toEqual([
       { kind: "pypi", name: "bernstein" },
       { kind: "github-release", repository: "gastownhall/beads", name: "bd" },
-      { kind: "worktree-cli", name: "wt" },
     ])
     expect(result.profile.mcps).toEqual([
       expect.objectContaining({
@@ -374,6 +436,77 @@ args = ["start-mcp-server", "--context", "claude-code"]
         command: "serena",
       }),
     ])
+  })
+
+  it("rejects the removed custom worktree image tool", async () => {
+    await expect(
+      decode(
+        claudeMarketplaceProfile(`
+[[image.tools]]
+kind = "worktree-cli"
+name = "wt"
+`),
+      ),
+    ).rejects.toThrow(/worktree-cli/)
+  })
+
+  it("decodes a typed Graph of Loops orchestration policy", async () => {
+    const result = await decode(claudeMarketplaceProfile(graphOfLoopsExtra))
+
+    expect(isClaudeProfile(result.profile)).toBe(true)
+    if (!isClaudeProfile(result.profile)) throw new Error("expected Claude profile")
+    expect(result.profile.orchestration).toEqual(
+      expect.objectContaining({
+        kind: "graph-of-loops",
+        tracker: "beads",
+        scheduler: "bernstein",
+        node_runtime: "waku",
+        max_parallel_nodes: 3,
+        roles: expect.objectContaining({ implement: "team-implementer" }),
+        review: expect.objectContaining({ kind: "codex", required: true }),
+        proof: expect.objectContaining({ kind: "raindrop", mode: "repository-opt-in" }),
+      }),
+    )
+  })
+
+  it.each([
+    [
+      "a required runtime tool is absent",
+      graphOfLoopsExtra.replace('[[image.tools]]\nkind = "pypi"\nname = "waku-agent"\n', ""),
+      /requires image tool: waku-agent/i,
+    ],
+    [
+      "Serena is not project-scoped",
+      graphOfLoopsExtra.replace(', "--project-from-cwd"', ""),
+      /requires Serena MCP with --project-from-cwd/i,
+    ],
+    [
+      "specialist roles collide",
+      graphOfLoopsExtra.replace('debug = "team-debugger"', 'debug = "team-implementer"'),
+      /duplicate Graph of Loops role/i,
+    ],
+    [
+      "a specialist role is unsafe",
+      graphOfLoopsExtra.replace('debug = "team-debugger"', 'debug = "../team-debugger"'),
+      /Graph of Loops role is unsafe/i,
+    ],
+    [
+      "the Codex review gate is optional",
+      graphOfLoopsExtra.replace("required = true", "required = false"),
+      /readonly required: true/i,
+    ],
+    [
+      "delivery authorization is raised",
+      graphOfLoopsExtra.replace("allow_push = false", "allow_push = true"),
+      /readonly allow_push: false/i,
+    ],
+    [
+      "an execution ceiling is excessive",
+      graphOfLoopsExtra.replace("max_node_iterations = 10", "max_node_iterations = 21"),
+      /max_node_iterations exceeds maximum 20/i,
+    ],
+  ])("rejects Graph of Loops when %s", async (_condition, extra, error) => {
+    await expect(decode(claudeMarketplaceProfile(extra))).rejects.toThrow(error)
   })
 
   it("rejects extra MCPs and image tools on Hyperresearch Claude profiles", async () => {

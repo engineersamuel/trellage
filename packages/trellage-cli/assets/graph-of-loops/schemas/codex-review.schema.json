@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trellage.dev/schemas/codex-review.schema.json",
+  "title": "Codex Review Result",
+  "description": "Schema for structured Codex review output.",
+  "type": "object",
+  "required": ["findings", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" },
+      "description": "High-confidence correctness findings."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief review summary."
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["id", "severity", "file", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "description": "Stable finding identifier."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high"],
+          "description": "Finding severity level."
+        },
+        "file": {
+          "type": "string",
+          "description": "Affected file path."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Optional line number."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Finding description."
+        },
+        "suggestion": {
+          "type": "string",
+          "description": "Optional fix suggestion."
+        }
+      }
+    }
+  }
+}

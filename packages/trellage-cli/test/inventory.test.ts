@@ -103,6 +103,15 @@ describe("verified inventories", () => {
     await expect(Effect.runPromise(verifyInventory(root, inventory))).rejects.toThrow(/executable/)
   })
 
+  it("can skip executable-bit verification", async () => {
+    const { root, inventory } = await fixture()
+    await chmod(path.join(root, "nested", "asset.txt"), 0o755)
+
+    await expect(
+      Effect.runPromise(verifyInventory(root, inventory, { verifyExecutableBits: false })),
+    ).resolves.toBeUndefined()
+  })
+
   it.each(["missing", "extra", "renamed", "hash-mismatched"])("rejects a %s file", async (kind) => {
     const { root, inventory } = await fixture()
     if (kind === "missing") await rm(path.join(root, "nested", "asset.txt"))

@@ -4,9 +4,16 @@ import path from "node:path"
 import { Data, Effect } from "effect"
 
 import type { InventoryEntry } from "./inventory.js"
-import { claudeHasSerena, claudePypiToolNames, isClaudeProfile, type ProfileDocument } from "./profile.js"
+import {
+  claudeHasSerena,
+  claudePypiToolNames,
+  isClaudeProfile,
+  isGraphOfLoopsProfile,
+  type ProfileDocument,
+} from "./profile.js"
 import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.js"
 import { extraClaudeMarketplaceArtifactNames, lockedArtifactError } from "./artifact-catalog.js"
+import { graphOfLoopsRuntimeAssetPath, graphOfLoopsRuntimeIntegrity } from "./graph-runtime.js"
 import {
   createPythonConstraintsSidecar,
   resolutionSidecarReference,
@@ -122,6 +129,7 @@ export interface PackageLock {
   readonly runtime_closure_integrity?: string
   readonly artifacts?: ReadonlyArray<ArtifactLock>
   readonly python_lock_integrity?: string
+  readonly graph_runtime_integrity?: string
   readonly [packagePythonConstraints]?: string
 }
 
@@ -251,6 +259,7 @@ export interface LockResolvers {
     readonly claudeAdapter?: "claude-marketplace" | "hyperresearch"
     readonly extraArtifactNames?: ReadonlyArray<string>
     readonly needsPython?: boolean
+    readonly needsGraphRustToolchain?: boolean
     readonly pythonRequirements?: ReadonlyArray<string>
     readonly pythonProject?: Pick<SourceLock, "repository" | "ref" | "commit">
     readonly headlongSource?: Pick<SourceLock, "commit" | "integrity">
@@ -529,6 +538,15 @@ const missingArtifact = (names: ReadonlySet<string>, required: ReadonlyArray<str
 
 const validateClaudePythonIntegrity = (integrity: string | undefined): string | undefined => {
   if (!sha256Pattern.test(integrity ?? "")) return "Python dependency lock integrity is missing or invalid"
+}
+
+const validateGraphRuntimeIntegrity = (document: ProfileDocument, current: ProfileLock): string | undefined => {
+  const integrity = current.packages.graph_runtime_integrity
+  if (!isGraphOfLoopsProfile(document.profile)) {
+    return integrity === undefined ? undefined : "Graph of Loops runtime requires Graph of Loops orchestration"
+  }
+  if (!sha256Pattern.test(integrity ?? "")) return "Graph of Loops runtime integrity is missing or invalid"
+  return undefined
 }
 
 const validateClaudeMarketplaceArtifacts = (
@@ -872,6 +890,46 @@ const validateSources = (document: ProfileDocument, current: ProfileLock): strin
   return undefined
 }
 
+const graphRoleMatchCount = (sources: ReadonlyArray<SourceLock>, role: string): number =>
+  sources.reduce((count, source) => {
+    if (source.kind !== "plugin" || source.adapter !== "claude-marketplace") return count
+    return (
+      count +
+      source.select.reduce((selectedCount, selected) => {
+        const agentNames = role.startsWith(`${selected}-`) ? [role, role.slice(selected.length + 1)] : [role]
+        return (
+          selectedCount +
+          source.files.filter(
+            (file) =>
+              file.kind === "file" &&
+              agentNames.some((agentName) => file.path === `plugins/${selected}/agents/${agentName}.md`),
+          ).length
+        )
+      }, 0)
+    )
+  }, 0)
+
+const graphResearchRoleMatchCount = (sources: ReadonlyArray<SourceLock>, role: string): number =>
+  sources.reduce((count, source) => {
+    if (source.kind !== "plugin" || source.adapter !== "claude-marketplace" || !source.select.includes(role)) {
+      return count
+    }
+    return count + source.files.filter((file) => file.kind === "file" && file.path === `commands/${role}.md`).length
+  }, 0)
+
+const validateGraphRoles = (document: ProfileDocument, sources: ReadonlyArray<SourceLock>): string | undefined => {
+  if (!isGraphOfLoopsProfile(document.profile)) return undefined
+  const roles = document.profile.orchestration.roles
+  for (const role of [roles.implement, roles.tdd, roles.debug, roles.validate]) {
+    const matches = graphRoleMatchCount(sources, role)
+    if (matches !== 1) return `Graph of Loops role ${role} must resolve exactly once; found ${matches}`
+  }
+  const researchMatches = graphResearchRoleMatchCount(sources, roles.research)
+  return researchMatches === 1
+    ? undefined
+    : `Graph of Loops research role ${roles.research} must resolve exactly once; found ${researchMatches}`
+}
+
 const lockSemanticError = (
   document: ProfileDocument,
   current: ProfileLock,
@@ -894,8 +952,12 @@ const lockSemanticError = (
   if (otherArtifactError !== undefined) return otherArtifactError
   const runtimeError = validateRuntimePackages(current)
   if (runtimeError !== undefined) return runtimeError
+  const graphRuntimeError = validateGraphRuntimeIntegrity(document, current)
+  if (graphRuntimeError !== undefined) return graphRuntimeError
   const sourceError = validateSources(document, current)
   if (sourceError !== undefined) return sourceError
+  const graphRoleError = validateGraphRoles(document, current.sources)
+  if (graphRoleError !== undefined) return graphRoleError
   return isPersistedLock(current) ? lockedArtifactError(document, current, platform) : undefined
 }
 
@@ -1027,13 +1089,15 @@ const claudeLockAdapter = (document: ProfileDocument): PackageRequest["claudeAda
 
 const extraPackageFields = (
   document: ProfileDocument,
-): Pick<PackageRequest, "extraArtifactNames" | "needsPython" | "pythonRequirements"> => {
+): Pick<PackageRequest, "extraArtifactNames" | "needsPython" | "needsGraphRustToolchain" | "pythonRequirements"> => {
   const extraArtifactNames = extraClaudeMarketplaceArtifactNames(document)
   const pythonRequirements = isClaudeProfile(document.profile) ? claudePypiToolNames(document.profile) : []
   const needsPython = pythonRequirements.length > 0
-  if (extraArtifactNames.length === 0 && !needsPython) return {}
+  const needsGraphRustToolchain = isGraphOfLoopsProfile(document.profile)
+  if (extraArtifactNames.length === 0 && !needsPython && !needsGraphRustToolchain) return {}
   return {
     ...(extraArtifactNames.length === 0 ? {} : { extraArtifactNames }),
+    ...(needsGraphRustToolchain ? { needsGraphRustToolchain: true } : {}),
     ...(needsPython
       ? {
           needsPython: true,
@@ -1178,6 +1242,8 @@ export const compileLock = (
     const sameProfile = validCurrent !== undefined && lockMatchesProfile(document, validCurrent)
     if (validCurrent?.build !== undefined && sameProfile && !update) return validCurrent
     const sources = yield* resolveSources(document, validCurrent, update, resolvers)
+    const graphRoleError = validateGraphRoles(document, sources)
+    if (graphRoleError !== undefined) return yield* Effect.fail(new LockError({ message: graphRoleError }))
     const base =
       reusableBase(document, validCurrent, update, platform) ??
       (yield* resolvers
@@ -1186,11 +1252,27 @@ export const compileLock = (
           platform,
         })
         .pipe(Effect.mapError((cause) => new LockError({ message: "base image resolution failed", cause }))))
-    const packages =
+    const resolvedPackages =
       reusablePackages(document, validCurrent, update, platform) ??
       (yield* resolvers
         .resolvePackages(packageResolutionRequest(document, platform, sources, base))
         .pipe(Effect.mapError((cause) => new LockError({ message: "package resolution failed", cause }))))
+    const graphRuntimeIntegrity = isGraphOfLoopsProfile(document.profile)
+      ? yield* graphOfLoopsRuntimeIntegrity(graphOfLoopsRuntimeAssetPath).pipe(
+          Effect.mapError((cause) => new LockError({ message: "Graph of Loops runtime inventory failed", cause })),
+        )
+      : undefined
+    // The generated Python constraints ride on a non-enumerable symbol, so the
+    // Graph runtime digest is attached in place instead of through a spread.
+    const packages =
+      graphRuntimeIntegrity === undefined
+        ? resolvedPackages
+        : (Object.defineProperty(resolvedPackages, "graph_runtime_integrity", {
+            value: graphRuntimeIntegrity,
+            enumerable: true,
+            configurable: true,
+            writable: false,
+          }) as PackageLock)
     const build =
       validCurrent?.build !== undefined && !update
         ? validCurrent.build

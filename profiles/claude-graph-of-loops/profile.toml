@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-graph-of-loops"
-description = "Claude Code (Opus via proxy) Sandbox graph for reversible multi-node coding, with isolated worktrees, persistent task memory, code-gated research, and review gates. Choose it when a complex change must be resumed, retried, and challenged before completion."
+description = "Claude Code (Opus via proxy) with an explicit Graph of Loops control plane: Beads state, Bernstein DAG worktrees, bounded Waku node supervision, curated specialist roles, Serena discovery, enforced TDD gates, structured Codex review, and repository-opt-in Raindrop replay. Best for multi-node coding work that must be able to take 'done' back. Skip for one-shot Q&A or content-only profiles."
 skill_bundles = ["sandbox-common"]
 
 # Source article: Granite, "A Graph of Loops"
@@ -21,7 +21,20 @@ tmpfs_size = "2g"
 [image]
 base = "node:bookworm-slim"
 shell = "fish"
-packages = ["bash", "ca-certificates", "curl", "fish", "gh", "git", "jq", "zsh"]
+packages = [
+  "bash",
+  "bubblewrap",
+  "ca-certificates",
+  "curl",
+  "fish",
+  "gh",
+  "git",
+  "jq",
+  "libnss-wrapper",
+  "make",
+  "ripgrep",
+  "zsh",
+]
 
 [[image.tools]]
 kind = "pypi"
@@ -34,6 +47,11 @@ name = "serena-agent"
 [[image.tools]]
 kind = "pypi"
 name = "waku-agent"
+
+# Serena resolves Python symbols through `python -m pyright.langserver`.
+[[image.tools]]
+kind = "pypi"
+name = "pyright"
 
 [[image.tools]]
 kind = "github-release"
@@ -60,15 +78,48 @@ kind = "github-release"
 repository = "evilmartians/lefthook"
 name = "lefthook-linux-arm64"
 
-[[image.tools]]
-kind = "worktree-cli"
-name = "wt"
-
 [[mcps]]
 name = "serena"
 transport = "stdio"
 command = "serena"
-args = ["start-mcp-server", "--context", "claude-code"]
+args = ["start-mcp-server", "--context", "agent", "--project-from-cwd"]
+
+[orchestration]
+kind = "graph-of-loops"
+tracker = "beads"
+scheduler = "bernstein"
+worktree_backend = "bernstein"
+node_runtime = "waku"
+supervisor_model = "claude-haiku-4.5"
+max_parallel_nodes = 3
+max_node_iterations = 10
+max_specialist_attempts = 3
+max_gate_calls = 12
+max_supervisor_tokens = 2048
+node_timeout_seconds = 1800
+
+[orchestration.roles]
+planner = "trellage-graph-planner"
+research = "insane-research"
+implement = "team-implementer"
+tdd = "tdd-workflows-tdd-orchestrator"
+debug = "team-debugger"
+validate = "conductor-validator"
+
+[orchestration.review]
+kind = "codex"
+required = true
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+
+[orchestration.proof]
+kind = "raindrop"
+mode = "repository-opt-in"
+
+[orchestration.authorization]
+allow_push = false
+allow_pull_request = false
+allow_deploy = false
 
 # Upstream project: https://github.com/JuliusBrussee/caveman
 [[plugins]]
@@ -105,17 +156,7 @@ ref = "main"
 marketplace = "beads-marketplace"
 select = ["beads"]
 
-# L5 · Stop-hook review gate. Upstream has no LICENSE file; marketplace metadata claims MIT.
-# Fail-open if Codex is absent. Do not copy the source into this repository.
-# Upstream project: https://github.com/hamelsmu/claude-review-loop
-[[plugins]]
-adapter = "claude-marketplace"
-repository = "https://github.com/hamelsmu/claude-review-loop.git"
-ref = "main"
-marketplace = "hamel-review"
-select = ["review-loop"]
-
-# G3 · Specialist roles. Curated set only — staffing all 93 plugins burns the L3 window.
+# G3 · Specialist roles. Curated set only — loading the full upstream catalog burns the L3 window.
 # Upstream project: https://github.com/wshobson/agents
 [[plugins]]
 adapter = "claude-marketplace"
@@ -123,10 +164,7 @@ repository = "https://github.com/wshobson/agents.git"
 ref = "main"
 marketplace = "claude-code-workflows"
 select = [
-  "full-stack-orchestration",
-  "agent-orchestration",
   "agent-teams",
-  "comprehensive-review",
   "tdd-workflows",
   "conductor",
 ]

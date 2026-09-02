@@ -1,0 +1,16 @@
+{
+  "objective": "Research only",
+  "base_revision": "abc1234567890def1234567890abcdef12345678",
+  "nodes": [
+    {
+      "id": "research-node", "type": "research", "role": "insane-research",
+      "prompt": "Research the failure",
+      "prompt_digest": "sha256:b5f493c9587f011e60cf7e0158eb9bcbcde43f0091d8408028648d6dda31dfa9",
+      "dependencies": [], "read_set": ["**"],
+      "write_set": ["docs/evidence.md"],
+      "evidence_write_set": [".sdd/graph-of-loops/research/**"],
+      "research_ledger": ".sdd/graph-of-loops/research/claims.jsonl",
+      "behavior_change": false, "gates": []
+    }
+  ]
+}

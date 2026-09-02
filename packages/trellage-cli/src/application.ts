@@ -30,7 +30,13 @@ import {
   type ProfileLock,
 } from "./lock.js"
 import { createBuildContext, type PluginGenerator, type RuntimeSupport } from "./materialize.js"
-import { claudePypiToolNames, isClaudeProfile, parseProfile, type ProfileDocument } from "./profile.js"
+import {
+  claudePypiToolNames,
+  isClaudeProfile,
+  isGraphOfLoopsProfile,
+  parseProfile,
+  type ProfileDocument,
+} from "./profile.js"
 import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
 import { productionResolvers } from "./resolvers.js"
 import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
@@ -58,6 +64,7 @@ export {
   sanitizePypiIndex,
   type CommandOutputRunner,
 } from "./package-feeds.js"
+import { graphRustArtifactNames } from "./rust-release.js"
 
 const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -217,6 +224,59 @@ const headlongBuilderScript = (
     `rm -f ${shellQuote(archive)} ${shellQuote(standardLibraryArchive)}`,
     build,
   ].join("; ")
+}
+
+const resolveGraphRustArtifacts = (lock: ProfileLock): ReadonlyArray<ArtifactLock> => {
+  const artifacts = graphRustArtifactNames.map((name) => {
+    const artifact = lock.packages.artifacts?.find((candidate) => candidate.name === name)
+    return artifact !== undefined && sha256Pattern.test(artifact.integrity)
+      ? artifact
+      : impossibleBuilderInput(`Graph of Loops requires the exact locked Rust artifact: ${name}`)
+  })
+  const versions = new Set(artifacts.map((artifact) => artifact.version))
+  if (versions.size !== 1) {
+    return impossibleBuilderInput("Graph of Loops requires a single locked Rust toolchain version")
+  }
+  return artifacts
+}
+
+const graphRustBuilderCommands = (lock: ProfileLock): ReadonlyArray<string> => {
+  const artifacts = resolveGraphRustArtifacts(lock)
+  const rustVersion = artifacts[0]!.version
+  const staging = "/tmp/trellage-graph-rust"
+  const toolchain = "/src/rust-toolchain"
+  const commands = [
+    `rm -rf ${shellQuote(staging)} ${shellQuote(toolchain)}`,
+    `mkdir -p ${shellQuote(staging)} ${shellQuote(toolchain)}`,
+  ]
+  for (const artifact of artifacts) {
+    const filename = path.posix.basename(new URL(artifact.url).pathname)
+    const archive = `${staging}/${filename}`
+    const extract = `${staging}/${artifact.name}`
+    const directory = filename.replace(/\.tar\.gz$/, "")
+    commands.push(
+      `curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output ${shellQuote(archive)} ${shellQuote(artifact.url)}`,
+      ...(artifact.size === undefined ? [] : [`[ "$(wc -c < ${shellQuote(archive)})" -eq ${artifact.size} ]`]),
+      `printf '%s  %s\\n' ${shellQuote(artifact.integrity.slice("sha256:".length))} ${shellQuote(archive)} | sha256sum --check --strict -`,
+      `mkdir -p ${shellQuote(extract)}`,
+      `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(archive)} -C ${shellQuote(extract)}`,
+      `${shellQuote(`${extract}/${directory}/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig${
+        artifact.name === "rust" ? " --without=rust-docs" : ""
+      }`,
+    )
+  }
+  commands.push(
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH rustc --version | grep -Eq ${shellQuote(`^rustc ${rustVersion.replaceAll(".", "\\.")} `)}`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH cargo --version | grep -Eq ${shellQuote(`^cargo ${rustVersion.replaceAll(".", "\\.")} `)}`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH rustfmt --version >/dev/null`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH cargo clippy --version >/dev/null`,
+    `test -x ${shellQuote(`${toolchain}/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld`)}`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH rustc --print target-libdir --target aarch64-unknown-linux-musl >/dev/null`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH rustc --print target-libdir --target x86_64-unknown-linux-musl >/dev/null`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH rustc --print target-libdir --target i686-unknown-linux-musl >/dev/null`,
+    `rm -rf ${shellQuote(staging)}`,
+  )
+  return commands
 }
 
 const codexBuilderScript = (lock: ProfileLock, tool: string, build: string): string => {
@@ -392,6 +452,7 @@ const claudeMarketplaceBuilderScript = (
   harnessVersion: string,
   claudeDirectory: string,
   normalizeClaudeMetadata: string,
+  graphRust: ReadonlyArray<string>,
 ): string => {
   const node = requiredArtifact(lock, "node")
   const nativeEnvironment =
@@ -419,6 +480,7 @@ const claudeMarketplaceBuilderScript = (
           `mise x --locked uv@${uv!.version} -- uv pip install --target /src/graph-tools-site --python-version ${pythonVersion} --python-platform aarch64-manylinux_2_28 --require-hashes --no-deps -r /src/graph-of-loops-requirements.lock`,
         ]
       : []),
+    ...graphRust,
     build,
   ].join("; ")
 }
@@ -426,6 +488,7 @@ const claudeMarketplaceBuilderScript = (
 const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool: string, build: string): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "claude") return impossibleBuilderInput("Claude builder requires a Claude package")
+  const graphRust = isGraphOfLoopsProfile(document.profile) ? graphRustBuilderCommands(lock) : []
   const claudeDirectory = `claude_dir="$(mise where ${tool})"`
   const normalizeClaudeMetadata = [
     'claude_metadata="$claude_dir/metadata.json"',
@@ -440,7 +503,13 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
       document.profile.harness.kind === "claude" && document.profile.harness.claude.mode === "core"
         ? "rm -f /mise/config.toml; "
         : ""
-    return `${isolateCoreTools}mise install --locked; ${claudeDirectory}; ${normalizeClaudeMetadata}; ${build}`
+    return [
+      `${isolateCoreTools}mise install --locked`,
+      claudeDirectory,
+      normalizeClaudeMetadata,
+      ...graphRust,
+      build,
+    ].join("; ")
   }
   const plugin = document.profile.plugins[0]
   const source = lock.sources[0]
@@ -460,6 +529,7 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
     harness.version,
     claudeDirectory,
     normalizeClaudeMetadata,
+    graphRust,
   )
 }
 

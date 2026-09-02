@@ -76,6 +76,7 @@ printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
 printf 'keep unrelated\n' >"$runtime/unrelated/file"
 printf 'skills/hyperresearch/SKILL.md\n' >"$runtime/.trellage-hyperresearch-managed"
 mkdir "$runtime/.trellage-claude-transaction.stale"
+printf '[build]\ntarget = "aarch64-unknown-linux-musl"\n' >"$root/graph-rust-cargo-config.toml"
 
 cat >"$fake_bin/claude" <<'SH'
 #!/usr/bin/env bash
@@ -112,10 +113,14 @@ PATH="$fake_bin:$PATH" \
 TRELLAGE_CLAUDE_SEED_HOME="$seed" \
 TRELLAGE_CLAUDE_HOME="$runtime" \
 TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+TRELLAGE_GRAPH_RUST_CARGO_CONFIG="$root/graph-rust-cargo-config.toml" \
+CARGO_HOME="$root/home/.cargo" \
 PLAYWRIGHT_MCP_EXTENSION_TOKEN=browser-secret \
 ANTHROPIC_AUTH_TOKEN=proxy-sentinel \
 CLAUDE_ARGS_OUT="$args_out" CLAUDE_CONFIG_OUT="$config_out" CLAUDE_CONFIG_PATH_OUT="$root/config-path" CLAUDE_ENV_OUT="$env_out" \
   "$entry" new claude -- --print hello
+
+cmp -s "$root/graph-rust-cargo-config.toml" "$root/home/.cargo/config.toml"
 
 grep -Fqx 'new skill' "$runtime/skills/hyperresearch/SKILL.md"
 grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/skills/caveman/SKILL.md"

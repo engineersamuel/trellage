@@ -560,6 +560,7 @@ const writeManagedPathsManifest = async (seed, managed) => {
 }
 
 const allowedSeedEntries = new Set([
+  "adopt-paths.txt",
   "default-onboarding.json",
   "default-settings.json",
   "default-user-settings.json",

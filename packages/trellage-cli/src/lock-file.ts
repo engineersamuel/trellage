@@ -179,6 +179,9 @@ export const renderLock = (lock: ProfileLock): string => {
     ...(lock.packages.python_lock_integrity === undefined
       ? []
       : [`python_lock_integrity = ${quote(lock.packages.python_lock_integrity)}`]),
+    ...(lock.packages.graph_runtime_integrity === undefined
+      ? []
+      : [`graph_runtime_integrity = ${quote(lock.packages.graph_runtime_integrity)}`]),
     ...(lock.packages.runtime_direct === undefined
       ? []
       : [`runtime_direct = ${strings(lock.packages.runtime_direct)}`]),
@@ -307,6 +310,7 @@ const LegacyPackageSchema = Schema.Struct({
 const PackageSchema = Schema.Struct({
   harness: HarnessPackageSchema,
   python_lock_integrity: Schema.optional(Text),
+  graph_runtime_integrity: Schema.optional(Text),
   runtime_direct: Schema.optional(Schema.Array(Text)),
   runtime_closure_integrity: Schema.optional(Text),
   runtime: Schema.Array(RuntimeSchema),

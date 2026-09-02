@@ -10,10 +10,14 @@ import { Data, Effect } from "effect"
 import { verifyInventory } from "./inventory.js"
 import type { ArtifactLock, ProfileLock } from "./lock.js"
 import type { ClaudeMaterializeRequest } from "./materialize.js"
-import { claudeGithubReleaseTools, claudeHasWorktreeCli, claudePypiToolNames, type ClaudeProfile } from "./profile.js"
+import { renderGraphOfLoopsPolicy } from "./graph-of-loops.js"
+import { graphOfLoopsRuntimeIntegrity, isGeneratedPythonRuntimePath } from "./graph-runtime.js"
+import { claudeGithubReleaseTools, claudePypiToolNames, isGraphOfLoopsProfile, type ClaudeProfile } from "./profile.js"
 import { claudePluginRootForSource, isSafeClaudePluginSource } from "./claude-plugin.js"
 import { cachedArtifactPath } from "./artifact-cache.js"
 import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
+
+export { graphOfLoopsRuntimeIntegrity } from "./graph-runtime.js"
 
 const execFilePromise = promisify(execFile)
 
@@ -42,6 +46,39 @@ export const claudeDefaultSettings = {
 
 export const claudeDefaultUserSettings = {
   outputStyle: "Rundown",
+} as const
+
+const graphEntrypointHookCommand = "python /opt/trellage/graph-of-loops/trellage_graph/hooks/graph_entrypoint.py"
+
+const graphOfLoopsSettings = {
+  ...claudeDefaultSettings,
+  hooks: {
+    UserPromptSubmit: [
+      {
+        hooks: [{ type: "command", command: graphEntrypointHookCommand }],
+      },
+    ],
+    PreToolUse: [
+      {
+        hooks: [{ type: "command", command: graphEntrypointHookCommand }],
+      },
+    ],
+    PostToolUse: [
+      {
+        hooks: [{ type: "command", command: graphEntrypointHookCommand }],
+      },
+    ],
+    PostToolUseFailure: [
+      {
+        hooks: [{ type: "command", command: graphEntrypointHookCommand }],
+      },
+    ],
+    SessionEnd: [
+      {
+        hooks: [{ type: "command", command: graphEntrypointHookCommand }],
+      },
+    ],
+  },
 } as const
 
 export const claudeDefaultOnboarding = (version: string) => ({
@@ -1099,49 +1136,32 @@ esac
 exec python -m "$name" "$@"
 `
 
-const worktreeCliScript = `#!/bin/sh
+const graphOfLoopsWrapperScript = `#!/bin/sh
 set -eu
-cmd="\${1:-help}"
-[ "$#" -gt 0 ] && shift
-case "$cmd" in
-  new)
-    branch="\${1:-wt-$(date +%s)}"
-    root="\${AGENT_WORKTREE_DIR:-$HOME/.agent-worktree}"
-    mkdir -p "$root"
-    git worktree add -b "$branch" "$root/$branch"
-    ;;
-  ls)
-    git worktree list --porcelain
-    ;;
-  merge)
-    if [ "$#" -ne 1 ]; then
-      printf 'usage: wt merge <source-branch>\\n' >&2
-      exit 2
-    fi
-    source_branch="$1"
-    if ! git rev-parse --verify --quiet "$source_branch^{commit}" >/dev/null; then
-      printf 'wt: unknown source branch: %s\\n' "$source_branch" >&2
-      exit 2
-    fi
-    if git merge --no-edit "$source_branch"; then
-      exit 0
-    else
-      status=$?
-      if git rev-parse --verify --quiet MERGE_HEAD >/dev/null; then
-        git merge --abort
-      fi
-      printf 'wt: merge aborted due to conflicts\\n' >&2
-      exit "$status"
-    fi
-    ;;
-  --help|help)
-    printf 'wt new [branch]\\nwt ls\\nwt merge <source-branch>\\n'
-    ;;
-  *)
-    printf 'wt: unknown command %s\\n' "$cmd" >&2
-    exit 2
-    ;;
-esac
+export TMPDIR="\${TMPDIR:-/home/agent/.cache/trellage-tmp}"
+mkdir -p "$TMPDIR"
+exec python -m trellage_graph.cli "$@"
+`
+
+const graphRustWrapperScript = `#!/bin/sh
+set -eu
+name=\${0##*/}
+export CARGO_HOME="\${CARGO_HOME:-/home/agent/.cargo}"
+export PATH="/opt/trellage/rust/bin:$PATH"
+exec "/opt/trellage/rust/bin/$name" "$@"
+`
+
+const graphRustCargoConfig = `[build]
+target = "aarch64-unknown-linux-musl"
+
+[target.aarch64-unknown-linux-musl]
+linker = "/opt/trellage/rust/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld"
+
+[target.x86_64-unknown-linux-musl]
+linker = "/opt/trellage/rust/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld"
+
+[target.i686-unknown-linux-musl]
+linker = "/opt/trellage/rust/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld"
 `
 
 const claudeMcpConfig = (profile: ClaudeProfile): string =>
@@ -1327,11 +1347,6 @@ const materializeClaudeExtraSidecars = (
   context: string,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
   Effect.gen(function* () {
-    if (claudeHasWorktreeCli(profile)) {
-      yield* attempt("cannot write worktree CLI wrapper", () =>
-        writeFile(path.join(context, "wt-wrapper.sh"), worktreeCliScript, { mode: 0o755 }),
-      )
-    }
     if (profile.mcps.length > 0) {
       yield* attempt("cannot write Claude extra MCP config", () =>
         writeFile(path.join(context, "claude-mcp.json"), claudeMcpConfig(profile), { mode: 0o644 }),
@@ -1339,11 +1354,74 @@ const materializeClaudeExtraSidecars = (
     }
   })
 
+const materializeGraphOfLoopsRuntime = (
+  profile: ClaudeProfile,
+  lock: ProfileLock,
+  context: string,
+  graphRuntimePath?: string,
+): Effect.Effect<void, ClaudeMaterializeError> =>
+  Effect.gen(function* () {
+    if (!isGraphOfLoopsProfile(profile)) return
+    if (graphRuntimePath === undefined) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "Graph of Loops runtime asset path is missing" }))
+    }
+    const expectedIntegrity = lock.packages.graph_runtime_integrity
+    const actualIntegrity = yield* graphOfLoopsRuntimeIntegrity(graphRuntimePath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ClaudeMaterializeError({
+            message: `cannot inventory Graph of Loops runtime: ${cause.message}`,
+            cause,
+          }),
+      ),
+    )
+    if (expectedIntegrity === undefined || actualIntegrity !== expectedIntegrity) {
+      return yield* Effect.fail(
+        new ClaudeMaterializeError({
+          message: `Graph of Loops runtime integrity mismatch; expected ${expectedIntegrity ?? "missing"}, actual ${actualIntegrity}`,
+        }),
+      )
+    }
+    const policy = renderGraphOfLoopsPolicy(profile, expectedIntegrity)
+    if (policy === undefined) {
+      return yield* Effect.fail(new ClaudeMaterializeError({ message: "Graph of Loops policy is missing" }))
+    }
+    yield* attempt("cannot copy Graph of Loops runtime", () =>
+      cp(graphRuntimePath, path.join(context, "graph-of-loops-runtime"), {
+        recursive: true,
+        filter: (source) => {
+          const relative = path.relative(graphRuntimePath, source).split(path.sep).join("/")
+          return !isGeneratedPythonRuntimePath(relative)
+        },
+      }),
+    )
+    yield* attempt("cannot write Graph of Loops Claude hooks", () =>
+      writeFile(
+        path.join(context, "claude-seed", "default-settings.json"),
+        `${JSON.stringify(graphOfLoopsSettings, null, 2)}\n`,
+        { mode: 0o644 },
+      ),
+    )
+    yield* attempt("cannot write Graph of Loops policy", () =>
+      writeFile(path.join(context, "graph-of-loops-policy.json"), policy, { mode: 0o644 }),
+    )
+    yield* attempt("cannot write Graph of Loops launcher", () =>
+      writeFile(path.join(context, "trellage-graph-wrapper.sh"), graphOfLoopsWrapperScript, { mode: 0o755 }),
+    )
+    yield* attempt("cannot write Graph Rust launcher", () =>
+      writeFile(path.join(context, "graph-rust-wrapper.sh"), graphRustWrapperScript, { mode: 0o755 }),
+    )
+    yield* attempt("cannot write Graph Rust Cargo config", () =>
+      writeFile(path.join(context, "graph-rust-cargo-config.toml"), graphRustCargoConfig, { mode: 0o644 }),
+    )
+  })
+
 export const materializeClaudeExtraRuntime = (
   profile: ClaudeProfile,
   lock: ProfileLock,
   context: string,
   pythonRequirementsPath?: string,
+  graphRuntimePath?: string,
 ): Effect.Effect<void, ClaudeMaterializeError> =>
   Effect.acquireUseRelease(
     attempt("cannot create Claude extra-tool staging", () => mkdtemp(path.join(os.tmpdir(), "trellage-claude-tools-"))),
@@ -1351,6 +1429,7 @@ export const materializeClaudeExtraRuntime = (
       Effect.gen(function* () {
         yield* materializeClaudePypiRuntime(profile, lock, context, pythonRequirementsPath)
         yield* materializeClaudeExtraSidecars(profile, context)
+        yield* materializeGraphOfLoopsRuntime(profile, lock, context, graphRuntimePath)
         yield* materializeClaudeGithubBinaries(profile, lock, context, staging)
       }),
     (staging) =>

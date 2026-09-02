@@ -32,7 +32,7 @@ import { compilePythonConstraints, type PythonConstraintInput } from "./python-c
 import { resolveUvRelease } from "./uv-release.js"
 import { resolveDebianPackages } from "./debian-packages.js"
 import { resolveToolArtifacts } from "./tool-artifacts.js"
-import { resolveRustToolchain } from "./rust-release.js"
+import { resolveGraphRustToolchain, resolveRustToolchain } from "./rust-release.js"
 import { resolvePlaywrightRelease } from "./playwright-release.js"
 import type { Platform } from "./platform.js"
 
@@ -41,6 +41,7 @@ export const developmentImporterImage = "quay.io/skopeo/stable:latest"
 const supportedBaseImage = /^node:(?:bookworm-slim|\d+\.\d+\.\d+-bookworm-slim)$/
 const supportedRuntimePackages = new Set([
   "bash",
+  "bubblewrap",
   "ca-certificates",
   "curl",
   "fish",
@@ -56,6 +57,7 @@ const supportedRuntimePackages = new Set([
   "libgbm1",
   "libglib2.0-0",
   "libnspr4",
+  "libnss-wrapper",
   "libnss3",
   "libpango-1.0-0",
   "libx11-6",
@@ -66,6 +68,7 @@ const supportedRuntimePackages = new Set([
   "libxfixes3",
   "libxkbcommon0",
   "libxrandr2",
+  "make",
   "ripgrep",
   "zsh",
 ])
@@ -215,6 +218,7 @@ const resolveClaudePackages = (
   needsPython = false,
   pythonRequirements: ReadonlyArray<string> = [],
   pythonProjectPath?: string,
+  needsGraphRustToolchain = false,
 ) =>
   Effect.gen(function* () {
     const managedTools = yield* resolveManagedTools(platform)
@@ -228,6 +232,7 @@ const resolveClaudePackages = (
             ...(yield* resolveToolArtifacts(cacheHome, platform, ["obscura"])),
           ]
         : yield* resolveToolArtifacts(cacheHome, platform, extraArtifactNames ?? [])
+    const graphRustArtifacts = needsGraphRustToolchain ? yield* resolveGraphRustToolchain(cacheHome, platform) : []
     const python = claudeAdapter === "hyperresearch" || needsPython ? yield* resolvePythonRelease(platform) : undefined
     const constraints = yield* resolveGeneratedConstraints({
       cacheHome,
@@ -242,6 +247,7 @@ const resolveClaudePackages = (
       artifacts: [
         ...managedTools,
         ...selectedExtraArtifacts.filter((artifact) => artifact.name !== "python"),
+        ...graphRustArtifacts,
         ...(python === undefined ? [] : [python]),
       ],
       ...(constraints === undefined ? {} : { python_lock_integrity: sha256Text(constraints) }),
@@ -261,6 +267,7 @@ const resolveHarnessPackages = (
   pythonRequirements: ReadonlyArray<string> = [],
   pythonProjectPath?: string,
   headlongSource?: { readonly commit: string; readonly integrity: string },
+  needsGraphRustToolchain = false,
 ) => {
   return Effect.gen(function* () {
     if (kind === "codex") {
@@ -290,6 +297,7 @@ const resolveHarnessPackages = (
       needsPython,
       pythonRequirements,
       pythonProjectPath,
+      needsGraphRustToolchain,
     )
   })
 }
@@ -351,6 +359,7 @@ export const productionResolvers = (
       claudeAdapter,
       extraArtifactNames,
       needsPython,
+      needsGraphRustToolchain,
       pythonRequirements,
       pythonProject,
       headlongSource,
@@ -389,6 +398,7 @@ export const productionResolvers = (
           pythonRequirements,
           pythonProjectPath,
           headlongSource,
+          needsGraphRustToolchain,
         )
         const packageLock = {
           ...resolved,

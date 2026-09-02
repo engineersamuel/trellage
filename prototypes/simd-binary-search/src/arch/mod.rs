@@ -1,4 +1,7 @@
-use crate::search::{Backend, lower_bound_scalar, lower_bound_scalar_in_range};
+use crate::search::{Backend, lower_bound_scalar};
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use crate::search::lower_bound_scalar_in_range;
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
@@ -47,6 +50,7 @@ fn scalar_kernel(values: &[i32], target: i32) -> KernelResult {
     }
 }
 
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 fn multiway_lower_bound<const LANES: usize>(
     values: &[i32],
     target: i32,

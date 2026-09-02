@@ -6,8 +6,10 @@ import {
   claudeHasSerena,
   claudePypiToolNames,
   isClaudeProfile,
+  isGraphOfLoopsProfile,
   type ProfileDocument,
 } from "./profile.js"
+import { graphRustArtifactNames, graphRustUrlIdentity } from "./rust-release.js"
 
 export const extraClaudeMarketplaceArtifactNames = (document: ProfileDocument): ReadonlyArray<string> => {
   if (!isClaudeProfile(document.profile) || document.profile.plugins[0]?.adapter === "hyperresearch") return []
@@ -58,8 +60,12 @@ const dynamicClaudeArtifactNames = (document: ProfileDocument): ReadonlyArray<st
     return ["playwright-mcp", "playwright", "playwright-core", "chromium", "chromium-headless-shell", "obscura"]
   }
   const names = extraClaudeMarketplaceArtifactNames(document)
-  return names.includes("codex") ? [...names, "codex-code-mode-host"] : names
+  const withCodex = names.includes("codex") ? [...names, "codex-code-mode-host"] : names
+  return isGraphOfLoopsProfile(document.profile) ? [...withCodex, ...graphRustArtifactNames] : withCodex
 }
+
+const graphRustArtifactUrlValid = (artifact: ArtifactLock): boolean =>
+  graphRustUrlIdentity(artifact.name, artifact.url)?.version === artifact.version
 
 const playwrightArtifactUrlValid = (artifact: ArtifactLock): boolean => {
   if (artifact.name === "playwright-mcp") {
@@ -132,6 +138,7 @@ const dynamicArtifactUrlError = (
   for (const name of expectedNames) {
     const artifact = actual.find((candidate) => candidate.name === name)
     if (artifact !== undefined && playwrightArtifactUrlValid(artifact)) continue
+    if (artifact !== undefined && graphRustArtifactUrlValid(artifact)) continue
     if (artifact === undefined || !githubToolArtifactUrlValid(artifact)) return `artifact URL is invalid: ${name}`
   }
 }
@@ -147,9 +154,22 @@ const dynamicArtifactRelationshipError = (actual: ReadonlyArray<ArtifactLock>): 
   }
   const chromium = actual.find((artifact) => artifact.name === "chromium")
   const headless = actual.find((artifact) => artifact.name === "chromium-headless-shell")
-  return chromium !== undefined && headless?.version !== chromium.version
-    ? "Playwright browser revisions do not match"
-    : undefined
+  if (chromium !== undefined && headless?.version !== chromium.version) {
+    return "Playwright browser revisions do not match"
+  }
+  return graphRustRelationshipError(actual)
+}
+
+const graphRustRelationshipError = (actual: ReadonlyArray<ArtifactLock>): string | undefined => {
+  const rust = actual.filter((artifact) => graphRustArtifactNames.includes(artifact.name))
+  if (rust.length === 0) return undefined
+  if (rust.length !== graphRustArtifactNames.length) return "Graph of Loops Rust artifact set is incomplete"
+  const identities = rust.map((artifact) => graphRustUrlIdentity(artifact.name, artifact.url))
+  const dates = new Set(identities.map((identity) => identity?.date))
+  const versions = new Set(rust.map((artifact) => artifact.version))
+  return dates.size === 1 && !dates.has(undefined) && versions.size === 1
+    ? undefined
+    : "Graph of Loops Rust artifact set is inconsistent"
 }
 
 const dynamicClaudeArtifactError = (document: ProfileDocument, lock: ProfileLock): string | undefined => {

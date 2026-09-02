@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trellage.dev/schemas/node-envelope.schema.json",
+  "title": "Node Envelope",
+  "type": "object",
+  "required": [
+    "run_id", "plan_generation", "root_bead_id", "node_bead_id", "node_id",
+    "node_type", "role", "phase", "base_revision",
+    "prompt", "read_set", "write_set", "gates",
+    "review_policy", "proof_policy",
+    "authorization", "execution_ceilings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "plan_generation": { "type": "integer", "minimum": 1 },
+    "root_bead_id": { "type": "string", "minLength": 1 },
+    "node_bead_id": { "type": "string", "minLength": 1 },
+    "node_id": { "type": "string", "minLength": 1 },
+    "node_type": {
+      "type": "string",
+      "enum": ["implement", "tdd", "research", "debug", "validate"]
+    },
+    "behavior_change": { "type": "boolean" },
+    "role": { "type": "string", "minLength": 1 },
+    "prompt": { "type": "string", "minLength": 1 },
+    "phase": {
+      "type": "string",
+      "enum": ["red", "green", "implement", "validate", "research"]
+    },
+    "base_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "dependency_revisions": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "read_set": { "type": "array", "items": { "type": "string" } },
+    "test_write_set": { "type": "array", "items": { "type": "string" } },
+    "evidence_write_set": { "type": "array", "items": { "type": "string" } },
+    "research_ledger": { "type": "string", "minLength": 1 },
+    "write_set": { "type": "array", "items": { "type": "string" } },
+    "repair_write_set": { "type": "array", "items": { "type": "string" } },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "argv"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "argv": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "phase": { "type": "string", "enum": ["red", "green", "final"] }
+        }
+      }
+    },
+    "review_policy": {
+      "type": "object",
+      "required": ["required"],
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "model": { "type": "string" },
+        "reasoning_effort": { "type": "string" }
+      }
+    },
+    "proof_policy": {
+      "type": "object",
+      "required": ["required"],
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["repository-opt-in", "required", "disabled"] }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow_push": { "type": "boolean" },
+        "allow_pull_request": { "type": "boolean" },
+        "allow_deploy": { "type": "boolean" }
+      }
+    },
+    "execution_ceilings": {
+      "type": "object",
+      "required": [
+        "max_iterations", "max_specialist_attempts",
+        "max_gate_calls", "max_supervisor_tokens",
+        "node_timeout_seconds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": { "type": "integer", "minimum": 1 },
+        "max_specialist_attempts": { "type": "integer", "minimum": 1 },
+        "max_gate_calls": { "type": "integer", "minimum": 1 },
+        "max_supervisor_tokens": { "type": "integer", "minimum": 1 },
+        "node_timeout_seconds": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
