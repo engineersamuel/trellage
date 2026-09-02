@@ -88,6 +88,11 @@ target-evidence path must exist in the repository.
 - A behavior-changing node's `repair_write_set` MUST cover every path in its
   `write_set` and `test_write_set`. Review and gate repairs must not be left
   without an owning node.
+- Every non-research node with a non-empty `write_set` or `test_write_set`
+  MUST give one node repair ownership for those paths, including
+  benchmark-only nodes. A node may own its own repair paths. Do not leave a
+  newly added benchmark, test, module declaration, or evidence artifact
+  unrepairable after a gate or review finding.
 - Validate nodes are read-only and cannot claim their own future integration,
   review, proof, cleanup, or root-Bead closure
 - Validate nodes may execute only their declared node-local gates. They must
@@ -121,10 +126,17 @@ target-evidence path must exist in the repository.
   `target_arch = "x86_64"`, plan one backend seam compiled under
   `cfg(any(target_arch = "x86", target_arch = "x86_64"))`. The implementation
   must select `std::arch::x86` or `std::arch::x86_64` imports with matching
-  `cfg` attributes. Do not route 32-bit x86 to the scalar fallback. Include an
-  `i686-unknown-linux-musl` `cargo test --no-run` gate whose compiled tests
-  directly reference the private AVX2 seam, in addition to equivalent
-  x86_64 coverage.
+  `cfg` attributes. Do not route all 32-bit x86 builds to scalar merely
+  because `target_arch = "x86"`; use runtime AVX2 detection and select the
+  AVX2 seam when available, with scalar fallback when the CPU lacks AVX2.
+  Include an `i686-unknown-linux-musl` `cargo test --no-run` gate whose
+  compiled tests directly reference the private AVX2 seam, in addition to
+  equivalent x86_64 coverage.
+- Host-architecture Clippy cannot lint source excluded by `cfg`. When a plan
+  adds x86/x86_64-only production code, include `cargo clippy --locked
+  --all-targets --target <target> -- -D warnings` gates for both
+  `x86_64-unknown-linux-musl` and `i686-unknown-linux-musl`; do not claim an
+  AArch64 Clippy gate covers the AVX2 module.
 - Do not create a redundant research node for toolchain facts already grounded
   by committed profile locks, materializer source, guide text, and installed
   image probes. Use implementation-node compile and test-build gates for
