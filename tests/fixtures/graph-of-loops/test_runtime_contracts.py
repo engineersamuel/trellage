@@ -2605,6 +2605,31 @@ class TestSpecialist(unittest.TestCase):
                 ["src", "missing (pattern search)"],
             )
 
+    def test_discovery_drops_git_history_pseudo_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            normalized = SpecialistLauncher._normalize_discovery_paths(
+                {
+                    "repository_evidence": [
+                        {
+                            "path": "git history at bc5d2cc91d8d618",
+                            "detail": "commit observation",
+                        },
+                        {"path": ".", "detail": "repository root"},
+                    ],
+                    "relevant_paths": [
+                        "git history at bc5d2cc91d8d618",
+                        ".",
+                    ],
+                },
+                repo_root=td,
+            )
+
+            self.assertEqual(
+                normalized["repository_evidence"],
+                [{"path": ".", "detail": "repository root"}],
+            )
+            self.assertEqual(normalized["relevant_paths"], ["."])
+
     def test_discovery_expands_existing_sibling_path_annotation(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

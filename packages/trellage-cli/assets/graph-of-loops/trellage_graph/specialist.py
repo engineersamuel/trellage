@@ -667,6 +667,8 @@ class SpecialistLauncher:
         def normalized_path(value: Any) -> Any:
             if not isinstance(value, str):
                 return value
+            if re.fullmatch(r"git history at [0-9a-f]{7,40}", value):
+                return None
             candidate = (root / value).resolve()
             if candidate.exists():
                 return value
@@ -677,6 +679,8 @@ class SpecialistLauncher:
 
         def normalized_paths(value: Any) -> list[Any]:
             normalized_value = normalized_path(value)
+            if normalized_value is None:
+                return []
             if not isinstance(normalized_value, str):
                 return [normalized_value]
             if (root / normalized_value).resolve().exists():
