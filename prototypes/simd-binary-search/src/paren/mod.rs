@@ -8,6 +8,8 @@ mod scalar;
 
 #[cfg(test)]
 mod backend_tests;
+#[cfg(test)]
+mod bench_tests;
 
 /// Outcome of a single backend scan for a matching close parenthesis.
 pub(crate) struct ParenScan {
