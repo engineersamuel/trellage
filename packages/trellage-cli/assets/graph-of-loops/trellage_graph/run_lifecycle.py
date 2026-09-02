@@ -596,6 +596,11 @@ class RunLifecycle:
                 if isinstance(self._policy.get("authorization"), dict)
                 else None
             ),
+            max_gate_calls=(
+                int(limits["max_gate_calls"])
+                if "max_gate_calls" in limits
+                else None
+            ),
         )
         planning_evidence = {
             "schema": 1,

@@ -105,6 +105,10 @@ target-evidence path must exist in the repository.
   behavior-changing implementation node and make the benchmark node depend on
   it.
 - Every behavior-changing node MUST declare red, green, and final gates
+- The locked profile allows at most 12 `run_gate` calls per node. Keep each
+  node at or below 12 declared gates. Consolidate overlapping checks or move
+  repository-wide checks to `graph_gates`; do not produce a plan that relies on
+  resume to finish excess gates.
 - Every behavior-changing node MUST declare every production path it may need
   to repair in `repair_write_set`
 - A behavior-changing node's `repair_write_set` MUST cover every path in its
@@ -130,6 +134,11 @@ target-evidence path must exist in the repository.
 - Validate nodes may execute only their declared node-local gates. They must
   not claim to execute or report plan-level graph gates, which remain
   controller-owned after node completion.
+- Raindrop proof is repository opt-in. Set `proof_required` to `true` only when
+  both `.raindrop/agents.yaml` and
+  `.trellage/graph-of-loops-proof.json` exist and are grounded in discovery.
+  Otherwise omit it or set it to `false`; never make an absent proof policy a
+  deterministic node blocker.
 - Research nodes MUST have empty write sets
 - A research node's `research_ledger` MUST name a repository-relative session
   directory, not a file. Its `evidence_write_set` must cover that directory's

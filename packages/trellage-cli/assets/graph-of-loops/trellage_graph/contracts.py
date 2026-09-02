@@ -511,6 +511,7 @@ def validate_planning_decision(
     repo_root: Path,
     known_roles: set[str] | None = None,
     profile_authorization: dict[str, bool] | None = None,
+    max_gate_calls: int | None = None,
 ) -> None:
     errors = validate_json_schema(decision, planning_decision_schema())
     errors.extend(_planning_decision_shape_errors(decision))
@@ -524,7 +525,11 @@ def validate_planning_decision(
             known_roles=known_roles,
             profile_authorization=profile_authorization,
         )
-        planning_errors = _planning_contract_errors(decision["plan"])
+        planning_errors = _planning_contract_errors(
+            decision["plan"],
+            repo_root=repo_root,
+            max_gate_calls=max_gate_calls,
+        )
         if planning_errors:
             raise PlanValidationError(planning_errors)
 
@@ -558,9 +563,19 @@ def _planning_decision_shape_errors(
     return errors
 
 
-def _planning_contract_errors(plan: dict[str, Any]) -> list[str]:
+def _planning_contract_errors(
+    plan: dict[str, Any],
+    *,
+    repo_root: Path,
+    max_gate_calls: int | None,
+) -> list[str]:
     errors: list[str] = []
     for node in plan["nodes"]:
+        errors.extend(_node_runtime_contract_errors(
+            node,
+            repo_root=repo_root,
+            max_gate_calls=max_gate_calls,
+        ))
         if node.get("behavior_change") and not node.get("repair_write_set"):
             errors.append(
                 f"behavior-change node '{node['id']}' requires repair_write_set"
@@ -577,6 +592,34 @@ def _planning_contract_errors(plan: dict[str, Any]) -> list[str]:
                 f"validate node '{node['id']}' must be non-behavioral and read-only"
             )
     errors.extend(_validation_matrix_errors(plan))
+    return errors
+
+
+def _node_runtime_contract_errors(
+    node: dict[str, Any],
+    *,
+    repo_root: Path,
+    max_gate_calls: int | None,
+) -> list[str]:
+    errors: list[str] = []
+    if max_gate_calls is not None and len(node["gates"]) > max_gate_calls:
+        errors.append(
+            f"node '{node['id']}' declares {len(node['gates'])} gates, "
+            f"exceeding runtime max_gate_calls={max_gate_calls}"
+        )
+    proof_available = (
+        (repo_root / ".raindrop" / "agents.yaml").is_file()
+        and (
+            repo_root
+            / ".trellage"
+            / "graph-of-loops-proof.json"
+        ).is_file()
+    )
+    if node.get("proof_required") and not proof_available:
+        errors.append(
+            f"node '{node['id']}' requires proof without repository "
+            "Raindrop agents and Graph proof policy"
+        )
     return errors
 
 

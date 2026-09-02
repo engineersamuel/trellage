@@ -5557,6 +5557,33 @@ class TestSchemaValidation(unittest.TestCase):
         )
         self.assertIn("validation matrix is missing", detail)
 
+    def test_planning_rejects_unavailable_proof_and_excess_node_gates(self) -> None:
+        plan = _load("valid-plan.json")
+        plan["nodes"][0]["proof_required"] = True
+        decision = {
+            "status": "planned",
+            "objective": plan["objective"],
+            "constraints": [],
+            "target_evidence": [{
+                "path": ".",
+                "detail": "fixture root",
+            }],
+            "plan": plan,
+        }
+
+        with self.assertRaises(PlanValidationError) as ctx:
+            validate_planning_decision(
+                decision,
+                objective=plan["objective"],
+                constraints=[],
+                repo_root=FIXTURES,
+                max_gate_calls=1,
+            )
+
+        detail = str(ctx.exception)
+        self.assertIn("exceeding runtime max_gate_calls=1", detail)
+        self.assertIn("requires proof without repository Raindrop", detail)
+
     def test_clean_review(self) -> None:
         validate_codex_review(_load("codex-review-clean.json"))
 
