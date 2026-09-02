@@ -18,6 +18,14 @@ assert_line() {
   grep -Fxq -- "$1" "$2" || fail "missing exact line '$1' in $2"
 }
 
+file_mode() {
+  case "$(uname -s)" in
+    Darwin) stat -f '%Lp' "$1" ;;
+    Linux) stat -c '%a' "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
 fixture_root="$prototype_root/.contract-fixture.$$"
 fixture_home="$fixture_root/home"
 fixture_bin="$fixture_root/bin"
@@ -143,7 +151,7 @@ jq -e '
 assert_contains 'trellage-azure: healthy' "$fixture_root/setup.out"
 expected_home="$fixture_home/.local/share/trellage/profiles/agency/trellage-azure/home"
 [[ -d "$expected_home" && ! -L "$expected_home" ]] || fail 'profile home was not created safely'
-[[ "$(stat -f '%Lp' "$expected_home" 2>/dev/null || stat -c '%a' "$expected_home")" == 700 ]] \
+[[ "$(file_mode "$expected_home")" == 700 ]] \
   || fail 'profile home mode differs'
 assert_line 'trellage-agency-profile-v1' \
   "$fixture_home/.local/share/trellage/profiles/agency/trellage-azure/.managed-by-trellage-agency-profiles"
