@@ -982,6 +982,26 @@ rm -f "$profile_home/models.json"
 "$command_path" repair >"$fixture_root/repair-after-symlink.out" \
   || fail 'repair after removing symlink failed'
 
+# A daemon started by a different runtime_root (another worktree, or the
+# canonical installed copy) still listens on the shared $HOME-based socket.
+# stop_profile_daemon_socket must fall back to the canonical installed
+# runtime's daemon-launch.js when this runtime's own copy is missing, rather
+# than dying with "prime-agent daemon-launch module missing".
+other_runtime="$HOME/.local/share/trellage/other-worktree-prx"
+cp -R "$runtime_root" "$other_runtime"
+rm -f "$other_runtime/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
+: >"$FAKE_DAEMON_MARKER"
+fallback_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
+"$other_runtime/bin/prx" repair >"$fixture_root/fallback-launch-js.out" 2>&1 \
+  || fail 'repair from a runtime without its own daemon-launch module failed'
+grep -Fq 'prime-agent daemon-launch module missing' "$fixture_root/fallback-launch-js.out" \
+  && fail 'repair incorrectly reported a missing daemon-launch module'
+[[ "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" -gt "$fallback_stops_before" ]] \
+  || fail 'canonical installed daemon-launch module was not used to stop the shared daemon'
+[[ ! -e "$FAKE_DAEMON_MARKER" ]] \
+  || fail 'fallback daemon stop left the shared profile daemon marker in place'
+rm -rf "$other_runtime"
+
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'
