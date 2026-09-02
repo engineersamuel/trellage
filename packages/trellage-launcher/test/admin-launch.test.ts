@@ -8,11 +8,13 @@ import {
   buildAdminLaunchCommand,
   buildDiagnosticCommand,
   buildRepairCommand,
+  buildSetupCommand,
   isRepairSupported,
   launchAdminProfile,
   LaunchNotConfirmedError,
   repairRefFor,
   repairThenRecheckDoctor,
+  setupRefFor,
   toSelectedProfile,
 } from "../src/admin-launch.js"
 
@@ -137,9 +139,25 @@ describe("launchAdminProfile", () => {
   })
 })
 
+describe("buildSetupCommand", () => {
+  it("builds a native `setup PROFILE` command using the same shape as buildRepairCommand", () => {
+    expect(buildSetupCommand(nativeEntry)).toEqual({
+      executable: "/usr/local/bin/cpx",
+      args: ["setup", "default"],
+    })
+  })
+})
+
 describe("repairRefFor", () => {
   it("builds a distinct ref namespaced under the profile's own ref", () => {
     expect(repairRefFor(nativeEntry)).toBe("native:cpx:default::repair")
+  })
+})
+
+describe("setupRefFor", () => {
+  it("builds a distinct ref namespaced under the profile's own ref, separate from repairRefFor", () => {
+    expect(setupRefFor(nativeEntry)).toBe("native:cpx:default::setup")
+    expect(setupRefFor(nativeEntry)).not.toBe(repairRefFor(nativeEntry))
   })
 })
 
@@ -193,5 +211,47 @@ describe("repairThenRecheckDoctor", () => {
     await repairThenRecheckDoctor(nativeEntry, manager)
     expect(manager.status(nativeEntry.ref).history).toHaveLength(1)
     expect(manager.status(repairRefFor(nativeEntry)).history).toHaveLength(1)
+  })
+
+  it("escalates to setup and rechecks doctor again when repair alone does not resolve the failure", async () => {
+    const runner = new ScriptedRunner([
+      { ok: true, stdout: "repaired" },
+      { ok: false, stderr: "OMP installed version receipt is missing; run omp setup default" },
+      { ok: true, stdout: "omp setup default: ready" },
+      { ok: true, stdout: "healthy" },
+    ])
+    const manager = new AdminRunManager({ runner })
+    const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
+    expect(outcome).toEqual({ repairState: "success", setupState: "success", doctorState: "success" })
+    expect(runner.calls).toEqual([
+      { executable: "/usr/local/bin/cpx", args: ["repair", "default"] },
+      { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
+      { executable: "/usr/local/bin/cpx", args: ["setup", "default"] },
+      { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
+    ])
+    expect(manager.status(setupRefFor(nativeEntry)).state).toBe("success")
+    expect(manager.status(nativeEntry.ref).state).toBe("success")
+  })
+
+  it("reports the final failure state when neither repair nor setup resolve the failure", async () => {
+    const runner = new ScriptedRunner([
+      { ok: true, stdout: "repaired" },
+      { ok: false, stderr: "still broken" },
+      { ok: false, stderr: "setup also failed" },
+      { ok: false, stderr: "still broken" },
+    ])
+    const manager = new AdminRunManager({ runner })
+    const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
+    expect(outcome).toEqual({ repairState: "success", setupState: "failure", doctorState: "failure" })
+    expect(runner.calls).toHaveLength(4)
+  })
+
+  it("does not overwrite repair or doctor history with the setup escalation run", async () => {
+    const runner = new ScriptedRunner([{ ok: true }, { ok: false, stderr: "still broken" }, { ok: true }, { ok: true }])
+    const manager = new AdminRunManager({ runner })
+    await repairThenRecheckDoctor(nativeEntry, manager)
+    expect(manager.status(repairRefFor(nativeEntry)).history).toHaveLength(1)
+    expect(manager.status(setupRefFor(nativeEntry)).history).toHaveLength(1)
+    expect(manager.status(nativeEntry.ref).history).toHaveLength(2)
   })
 })

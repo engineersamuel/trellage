@@ -83470,15 +83470,26 @@ var buildRepairCommand = (entry) => ({
   executable: entry.commandPath,
   args: ["repair", entry.name]
 });
+var buildSetupCommand = (entry) => ({
+  executable: entry.commandPath,
+  args: ["setup", entry.name]
+});
 var repairRefFor = (entry) => `${entry.ref}::repair`;
+var setupRefFor = (entry) => `${entry.ref}::setup`;
 var repairThenRecheckDoctor = async (entry, runManager) => {
   const repairCommand = buildRepairCommand(entry);
   await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args);
   const repairState = runManager.status(repairRefFor(entry)).state;
   const doctorCommand = buildDiagnosticCommand(entry);
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
+  const doctorStateAfterRepair = runManager.status(entry.ref).state;
+  if (doctorStateAfterRepair === "success") return { repairState, doctorState: doctorStateAfterRepair };
+  const setupCommand = buildSetupCommand(entry);
+  await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args);
+  const setupState = runManager.status(setupRefFor(entry)).state;
+  await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args);
   const doctorState = runManager.status(entry.ref).state;
-  return { repairState, doctorState };
+  return { repairState, setupState, doctorState };
 };
 var LaunchNotConfirmedError = class extends Error {
   constructor(profile) {
@@ -83741,8 +83752,9 @@ var AdminDetailPanel = ({
   const status = runStatusOf(entry, snapshot);
   const controls4 = controlsForStatus(status);
   const repairSnapshot = runManager.status(repairRefFor(entry));
-  const canRepair = isRepairSupported(entry) && controls4.canRetry && repairSnapshot.state !== "running";
-  const repairNote = repairMessage3 ?? (repairSnapshot.state === "idle" ? void 0 : `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`);
+  const setupSnapshot = runManager.status(setupRefFor(entry));
+  const canRepair = isRepairSupported(entry) && controls4.canRetry && repairSnapshot.state !== "running" && setupSnapshot.state !== "running";
+  const repairNote = repairMessage3 ?? (repairSnapshot.state === "idle" ? void 0 : setupSnapshot.state === "idle" ? `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).` : `Repair ${repairSnapshot.state}, setup ${setupSnapshot.state} (recheck: ${statusLabel(status)}).`);
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry);
     const action = controls4.canRetry ? runManager.retry(entry.ref, command.executable, command.args) : runManager.trigger(entry.ref, command.executable, command.args);
@@ -83757,7 +83769,8 @@ var AdminDetailPanel = ({
     setRepairConfirming(false);
     setRepairMessage(`Running ${entry.name}'s repair\u2026`);
     repairThenRecheckDoctor(entry, runManager).then((outcome) => {
-      setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.`);
+      const setupNote = outcome.setupState === void 0 ? "" : ` Setup also attempted (${outcome.setupState}).`;
+      setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.${setupNote}`);
     }).catch((error) => setRepairMessage(error instanceof Error ? error.message : String(error))).finally(() => forceRender((value) => value + 1));
   };
   const confirmLaunch = () => {
@@ -83878,7 +83891,7 @@ var AdminDetailPanel = ({
     repairConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
       "Press [y] to run ",
       entry.name,
-      "'s repair now and recheck doctor afterward, or any other key to cancel."
+      "'s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to cancel."
     ] }) : null,
     repairNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairNote }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }] }) })

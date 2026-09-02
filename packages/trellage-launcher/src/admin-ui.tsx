@@ -12,7 +12,15 @@ import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry } from "./admin-model.js"
 import { refreshAdminEntries } from "./admin-refresh.js"
 import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.js"
-import { buildAdminLaunchCommand, buildDiagnosticCommand, isRepairSupported, launchAdminProfile, repairRefFor, repairThenRecheckDoctor } from "./admin-launch.js"
+import {
+  buildAdminLaunchCommand,
+  buildDiagnosticCommand,
+  isRepairSupported,
+  launchAdminProfile,
+  repairRefFor,
+  repairThenRecheckDoctor,
+  setupRefFor,
+} from "./admin-launch.js"
 import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.js"
 import type { AdminSortKey } from "./admin-table.js"
 import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.js"
@@ -110,12 +118,15 @@ const AdminDetailPanel = ({
   const status = runStatusOf(entry, snapshot)
   const controls = controlsForStatus(status)
   const repairSnapshot = runManager.status(repairRefFor(entry))
-  const canRepair = isRepairSupported(entry) && controls.canRetry && repairSnapshot.state !== "running"
+  const setupSnapshot = runManager.status(setupRefFor(entry))
+  const canRepair = isRepairSupported(entry) && controls.canRetry && repairSnapshot.state !== "running" && setupSnapshot.state !== "running"
   const repairNote =
     repairMessage ??
     (repairSnapshot.state === "idle"
       ? undefined
-      : `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`)
+      : setupSnapshot.state === "idle"
+        ? `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`
+        : `Repair ${repairSnapshot.state}, setup ${setupSnapshot.state} (recheck: ${statusLabel(status)}).`)
 
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry)
@@ -136,19 +147,23 @@ const AdminDetailPanel = ({
    * (the same real, documented action `omp repair`/`cldx repair`/etc.
    * already expose), tracked under `repairRefFor(entry)` so it never
    * overwrites the profile's own doctor history, then automatically
-   * re-triggers the doctor check to recheck — regardless of the repair
-   * outcome, per the requested "run once, then recheck" behavior. Shares
-   * `repairThenRecheckDoctor` with the on-load auto-repair dispatch in
-   * `AdminRoot` so a manual `[p]` press and an automatic repair behave
-   * identically. Never parses or executes the Copilot-suggested-fix text
-   * itself; this always runs the same fixed, safe command for the profile.
+   * re-triggers the doctor check to recheck. If that recheck is still not
+   * healthy, `repairThenRecheckDoctor` automatically escalates to the
+   * profile's `setup PROFILE` subcommand once as well (e.g. `omp`'s
+   * "installed version receipt is missing" case, which only `setup` can
+   * create) and rechecks doctor again. Shares `repairThenRecheckDoctor`
+   * with the on-load auto-repair dispatch in `AdminRoot` so a manual `[p]`
+   * press and an automatic repair behave identically. Never parses or
+   * executes the Copilot-suggested-fix text itself; this always runs the
+   * same fixed, safe commands the profile's own launcher already exposes.
    */
   const confirmRepair = () => {
     setRepairConfirming(false)
     setRepairMessage(`Running ${entry.name}'s repair…`)
     repairThenRecheckDoctor(entry, runManager)
       .then((outcome) => {
-        setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.`)
+        const setupNote = outcome.setupState === undefined ? "" : ` Setup also attempted (${outcome.setupState}).`
+        setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.${setupNote}`)
       })
       .catch((error: unknown) => setRepairMessage(error instanceof Error ? error.message : String(error)))
       .finally(() => forceRender((value) => value + 1))
@@ -284,7 +299,8 @@ const AdminDetailPanel = ({
       )}
       {repairConfirming ? (
         <Text color="yellow">
-          Press [y] to run {entry.name}&apos;s repair now and recheck doctor afterward, or any other key to cancel.
+          Press [y] to run {entry.name}&apos;s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to
+          cancel.
         </Text>
       ) : null}
       {repairNote === undefined ? null : (
