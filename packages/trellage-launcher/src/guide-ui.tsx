@@ -19,6 +19,7 @@ import stringWidth from "string-width"
 import { profileGuideIdentityKey, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
+  applyRequiredProfilePromptTemplate,
   applyWorkflowPromptTemplate,
   guideIntentMaximumLength,
   guideTargetTool,
@@ -76,8 +77,7 @@ const pastedControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\
 const textCharacterLength = (value: string): number => [...value].length
 const takeTextCharacters = (value: string, maximum: number): string =>
   [...value].slice(0, Math.max(0, maximum)).join("")
-const removeLastTextCharacter = (value: string): string =>
-  takeTextCharacters(value, textCharacterLength(value) - 1)
+const removeLastTextCharacter = (value: string): string => takeTextCharacters(value, textCharacterLength(value) - 1)
 
 /** True when appending `addition` to `current` would stay within `maxLength`. Shared by every bounded text editor. */
 export const isWithinTextBound = (current: string, addition: string, maxLength: number): boolean =>
@@ -240,7 +240,11 @@ export interface GuideUiState {
   readonly worktreeBranch: string | undefined
   readonly worktreeInspection: GitInspectionReady | WorktreeCollisionResult | undefined
   readonly worktreeConfirmations: number
-  readonly promptReviewReturnStage: GuideUiStage.Matching | GuideUiStage.MatchFailed | GuideUiStage.Recommendations | undefined
+  readonly promptReviewReturnStage:
+    | GuideUiStage.Matching
+    | GuideUiStage.MatchFailed
+    | GuideUiStage.Recommendations
+    | undefined
   readonly promptReviewEditing: boolean
 }
 
@@ -534,9 +538,7 @@ const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUi
     case GuideUiActionType.PromptReviewChange:
       return state.promptReviewEditing ? { ...state, textDraft: action.text } : state
     case GuideUiActionType.PromptReviewBackspace:
-      return state.promptReviewEditing
-        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) }
-        : state
+      return state.promptReviewEditing ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) } : state
     case GuideUiActionType.PromptReviewBack:
       return closePromptReview(state)
     case GuideUiActionType.PromptReviewSubmit:
@@ -608,7 +610,8 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
       return {
         ...state,
         stage: GuideUiStage.Generating,
-        selectedRecommendation: action.recommendation ?? recommendationAt(state.recommendations, state.recommendationIndex),
+        selectedRecommendation:
+          action.recommendation ?? recommendationAt(state.recommendations, state.recommendationIndex),
         selectedProfile: action.selectedProfile,
         guideDocument: undefined,
         generationPhase: GuideGenerationPhase.LoadingProfile,
@@ -783,9 +786,7 @@ const reduceEditor = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       return editingStages.has(state.stage) ? { ...state, textDraft: action.text } : state
 
     case GuideUiActionType.EditorBackspace:
-      return editingStages.has(state.stage)
-        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) }
-        : state
+      return editingStages.has(state.stage) ? { ...state, textDraft: removeLastTextCharacter(state.textDraft) } : state
 
     default:
       return state
@@ -1124,12 +1125,14 @@ export interface GuidePinnedLens {
   readonly recommendation: GuideRecommendation
 }
 
-const pinnedLensDefinitions: ReadonlyArray<Omit<GuidePinnedLens, "recommendation"> & {
-  readonly profileRef: string
-  readonly workflowId: string
-  readonly reason: string
-  readonly tradeoff: string
-}> = [
+const pinnedLensDefinitions: ReadonlyArray<
+  Omit<GuidePinnedLens, "recommendation"> & {
+    readonly profileRef: string
+    readonly workflowId: string
+    readonly reason: string
+    readonly tradeoff: string
+  }
+> = [
   {
     kind: GuidePinnedLensKind.Council,
     key: "c",
@@ -1161,7 +1164,8 @@ const pinnedLensDefinitions: ReadonlyArray<Omit<GuidePinnedLens, "recommendation
     profileRef: "native:cpx/hve",
     workflowId: "rpi-agent-cycle",
     agent: "hve-core:rpi-agent",
-    reason: "Use HVE Core's dedicated agent to carry the request through research, planning, implementation, and review.",
+    reason:
+      "Use HVE Core's dedicated agent to carry the request through research, planning, implementation, and review.",
     tradeoff: "Adds a structured multi-stage process that is unnecessary for small changes.",
   },
 ]
@@ -1184,10 +1188,7 @@ export const pinnedGuideLenses = (catalog: CombinedGuideCatalog): ReadonlyArray<
     ]
   })
 
-export const selectedProfileForPinnedLens = (
-  catalog: CombinedGuideCatalog,
-  lens: GuidePinnedLens,
-): SelectedProfile => {
+export const selectedProfileForPinnedLens = (catalog: CombinedGuideCatalog, lens: GuidePinnedLens): SelectedProfile => {
   const selectedProfile = selectedProfileFromCatalogRef(catalog, lens.recommendation.profileRef)
   if (lens.agent === undefined) return selectedProfile
   if (selectedProfile.surface !== "native") {
@@ -1287,7 +1288,26 @@ export const runGuideGenerationStep = async (
   }
   return {
     guideDocument,
-    candidates: [optimizedFirst, optimizedSecond, optimizedThird],
+    candidates: [
+      applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        optimizedFirst,
+      ),
+      applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        optimizedSecond,
+      ),
+      applyRequiredProfilePromptTemplate(
+        recommendation.profileRef,
+        guideDocument.guide,
+        recommendation.workflowId,
+        optimizedThird,
+      ),
+    ],
   }
 }
 
@@ -1326,7 +1346,12 @@ export const runGuideRefinementStep = async (
   })
   const optimizedCandidate = optimized.candidates[0]
   if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
-  return optimizedCandidate
+  return applyRequiredProfilePromptTemplate(
+    recommendation.profileRef,
+    guideDocument.guide,
+    recommendation.workflowId,
+    optimizedCandidate,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1724,8 +1749,7 @@ const ScrollableTextViewport = ({
 
   useInput((_input, key) => {
     if (key.pageUp) setRequestedStartLine(Math.max(0, viewport.startLine - pageSize))
-    else if (key.pageDown)
-      setRequestedStartLine(Math.min(viewport.maximumStartLine, viewport.startLine + pageSize))
+    else if (key.pageDown) setRequestedStartLine(Math.min(viewport.maximumStartLine, viewport.startLine + pageSize))
   })
 
   return (
@@ -1823,19 +1847,18 @@ const appendMarkdownToken = (
   token: string,
   lineWidth: number,
 ): void => {
-  const tokenWidth = stringWidth(markdownInlineSegments(token).map(({ text }) => text).join(""))
+  const tokenWidth = stringWidth(
+    markdownInlineSegments(token)
+      .map(({ text }) => text)
+      .join(""),
+  )
   if (state.line.length > 0 && state.displayWidth + tokenWidth > lineWidth) pushMarkdownWrapLine(lines, state)
   state.line += token
   state.displayWidth += tokenWidth
   if (state.displayWidth >= lineWidth) pushMarkdownWrapLine(lines, state)
 }
 
-const appendMarkdownText = (
-  lines: Array<string>,
-  state: MarkdownWrapState,
-  text: string,
-  lineWidth: number,
-): void => {
+const appendMarkdownText = (lines: Array<string>, state: MarkdownWrapState, text: string, lineWidth: number): void => {
   for (const { segment } of guideTextSegmenter.segment(text)) {
     const segmentWidth = stringWidth(segment)
     if (state.line.length > 0 && state.displayWidth + segmentWidth > lineWidth) {
@@ -2033,14 +2056,7 @@ const PromptDocumentViewport = ({
   readonly editing: boolean
 }) =>
   editing ? (
-    <ScrollableTextViewport
-      value={textDraft}
-      width={width}
-      height={height}
-      startAtEnd={false}
-      cursor
-      followChanges
-    />
+    <ScrollableTextViewport value={textDraft} width={width} height={height} startAtEnd={false} cursor followChanges />
   ) : (
     <MarkdownTextViewport value={textDraft} width={width} height={height} />
   )
@@ -2450,6 +2466,7 @@ const launcherHarnessLabels: Readonly<Record<string, string>> = {
   cdx: "Codex",
   cpx: "Copilot",
   cldx: "Claude",
+  fmx: "Firstmate",
   grx: "Grok",
   jcx: "Junie",
   omp: "OpenCode",
@@ -2747,9 +2764,7 @@ const TextEditor = ({
         startAtEnd
         cursor
       />
-      <Text dimColor>
-        {keys} · PgUp/PgDn scroll
-      </Text>
+      <Text dimColor>{keys} · PgUp/PgDn scroll</Text>
     </Box>
   )
 }
@@ -3139,9 +3154,7 @@ const handleCandidatesInput: GuideInputHandler = (context, input, key) => {
     return
   }
   if (input === "c" && context.state.candidates !== undefined) {
-    context.complete(
-      buildPrintResult(tripleAt(context.state.candidates, context.state.candidateIndex).prompt),
-    )
+    context.complete(buildPrintResult(tripleAt(context.state.candidates, context.state.candidateIndex).prompt))
     return
   }
   if (input === "q") context.cancel()
@@ -3463,7 +3476,11 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
   [GuideUiStage.Matching]: matchingProgress,
   [GuideUiStage.MatchFailed]: ({ state }) => (
-    <ErrorPanel title="Match failed" message={state.errorMessage} keys="r retry · l literal match · p view prompt · q cancel" />
+    <ErrorPanel
+      title="Match failed"
+      message={state.errorMessage}
+      keys="r retry · l literal match · p view prompt · q cancel"
+    />
   ),
   [GuideUiStage.Recommendations]: renderRecommendations,
   [GuideUiStage.PromptReview]: ({ props, state }) => (

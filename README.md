@@ -88,19 +88,24 @@ SSH is key-only and the network security group permits port 22 only from the
 detected public IPv4 address. Set `TRELLAGE_AZURE_SSH_SOURCE` to an explicit
 CIDR when automatic address detection is unsuitable.
 
-The acceptance workflow requires an Azure CLI login and a GitHub token with
-Copilot Requests access. It uses `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or
-`gh auth token`, in that order. The token is streamed to the remote process
-and written only to a mode-0600 file under VM `/dev/shm`. The proxy mounts that
-tmpfs path read-only, binds its host port to `127.0.0.1`, and disables failed
+The acceptance workflow requires an Azure CLI login,
+`COPILOT_GITHUB_TOKEN` (or `GH_TOKEN` / `gh auth token`) for Native Copilot
+and Firstmate GitHub access, and `COPILOT_PROXY_GITHUB_TOKEN` (or the safe
+mode-0600 `~/.config/copilot-proxy-rs/github_token`) for
+`copilot-proxy-rs`. It streams the tokens to the remote process and writes
+them only to mode-0600 files under VM `/dev/shm`. The temporary GitHub CLI
+file is removed when acceptance exits. The proxy mounts its separate tmpfs
+path read-only, binds its host port to `127.0.0.1`, and disables failed
 request-body logging. No host credential file is copied.
 
 The workflow verifies one exact `OK` response from each Native pair through
 `trx run`: `cpx/hve`, `cdx/pstack`, `cldx/default`, `grx/superpowers`,
 `jcx/default`, `omp/copilot`, `picx/default`, and `prx/default`. It then builds
-and verifies `trellage --profile claude-council`. `trx run` performs the same
-owned-runtime and catalog validation as the interactive picker before it
-executes the selected launcher.
+and verifies `trellage --profile claude-council`. For `fmx`, it avoids a
+vacuous paid fleet prompt and instead verifies setup, doctor, healthy routed
+inventory, the exact Firstmate source pin, and the managed overlay for both
+profiles. `trx run` performs the same owned-runtime and catalog validation as
+the interactive picker before it executes the selected launcher.
 
 On Linux, installing a tool with `mise use -g` is not enough for non-login SSH
 commands. The shell must also evaluate `mise activate bash` (or use the
@@ -603,12 +608,20 @@ machine:
    - `prx` (Prime Agent) needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
      `uv`** (`mise use -g uv` if it is not already on `PATH`) to bootstrap its
      Python kernel venv.
-3. **`trx` requires every one of the eight launchers to be installed** before
+   - `fmx` (Firstmate) needs the `claude` CLI (`npm install -g
+     @anthropic-ai/claude-code`), `git`, `gh`, `jq`, `python3`, authenticated
+     host `gh` configuration, and either a Herdr pane or `tmux` for its
+     backend. On first launch it detects the remaining Firstmate-specific
+     tools, shows their exact versions and managed destination, and asks for
+     consent before installing them under
+     `~/.local/share/trellage/fmx/prerequisites/`. It does not install global
+     npm packages or global agent hooks.
+3. **`trx` requires every one of the nine launchers to be installed** before
    it will list or launch anything — it errors with `required launcher not
    found on PATH: <name>` otherwise. If you only use a subset of harnesses,
    skip `trx` and run that launcher's binary (`cpx`, `grx`, …) directly
    instead of installing agent CLIs you don't need.
-4. Several profiles (`cldx`, `jcx`, `prx`, and `omp`'s `copilot` profile) talk
+4. Several profiles (`cldx`, `fmx`, `jcx`, `prx`, and `omp`'s `copilot` profile) talk
    to a keyless `copilot-proxy-rs` service at `http://127.0.0.1:8080`. Start
    that proxy and make sure it has a valid GitHub Copilot device-flow login
    before using those launchers. A `401` or `GitHub OAuth device flow is not
@@ -645,6 +658,7 @@ repository root:
 (cd prototypes/trellage-codex-profiles && ./install.sh)
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
 (cd prototypes/trellage-claude-profiles && ./install.sh)
+(cd prototypes/trellage-firstmate-profiles && ./install.sh)
 (cd prototypes/trellage-grok-profiles && ./install.sh)
 (cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
@@ -664,16 +678,17 @@ omp setup
 picx setup
 cdx setup pstack
 prx setup
+fmx setup default
 cpx doctor awesome
 trx list
 ```
 
-An explicit `setup` step is not strictly required: every native launcher
-(`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, `prx`) self-heals on first launch,
-automatically running the equivalent of `setup` for a profile the first time
-it's launched. Running `setup`/`doctor` ahead of time is still recommended so
-you can catch missing prerequisites (proxy auth, host CLIs, etc.) before
-diving into a session, rather than mid-launch.
+An explicit `setup` step is not strictly required for `cdx`, `cpx`, `cldx`,
+`grx`, `jcx`, `omp`, `picx`, or `prx`; those launchers self-heal on first
+launch. `fmx` is intentionally different: run `fmx setup PROFILE` first so
+the pinned Firstmate source and overlay are installed as an explicit,
+reviewable step. Running `setup`/`doctor` ahead of time is recommended for
+every launcher so missing prerequisites are reported before a session starts.
 
 The first native setup or launch fetches `native-common` from the approved
 default branches and publishes one shared cache. Later launches use that cache
@@ -697,6 +712,7 @@ The installers publish these commands and managed runtimes:
 - `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
 - `picx`: `~/.local/bin/picx` and `~/.local/share/trellage/picx/`
 - `prx`: `~/.local/bin/prx` and `~/.local/share/trellage/prx/`
+- `fmx`: `~/.local/bin/fmx` and `~/.local/share/trellage/fmx/`
 - `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
 
 Their isolated profile homes are rooted at:
@@ -710,6 +726,7 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/prime/default/home/
 ~/.omp/profiles/trellage-qwen-local/
 ~/.local/share/trellage/profiles/pi/picx-default/
+~/.local/share/trellage/profiles/firstmate/<profile>/home/
 ```
 
 The native `omp` launcher is independent of the Docker `pi-oh-my-pi` profile.
@@ -774,6 +791,42 @@ No host model credentials are copied. Launch scrubs ambient provider and token
 variables before setting only the local proxy environment. See the
 [native Claude guide](prototypes/trellage-claude-profiles/README.md).
 
+The native `fmx` launcher runs [Firstmate](https://github.com/kunchenguid/firstmate)
+fleet orchestration directly on the host, pinned to a fixed upstream commit
+(`4ad8cbaeafc109a17c1af3911867b7fe9e04e801`); ordinary launches never update
+that pin, and only `fmx update` installs a newer catalog pin. The integration
+is experimental while Firstmate has no immutable tagged release. v1 uses
+Claude Code for the captain and every worker, with tmux and Herdr as its two
+backends (Herdr when launched inside a valid Herdr pane, tmux otherwise).
+Firstmate owns one isolated Claude home for the captain and separate isolated
+Claude homes for each worker; only the captain gets the Trellage session
+bridge. The first captain launch detects Firstmate's additional toolchain and,
+when anything is missing, shows the locked versions and install destination
+before asking for consent. Accepted installs stay under the fmx runtime rather
+than using global npm. Two profiles are available:
+
+```bash
+fmx setup default
+fmx doctor default
+fmx default
+fmx setup pstack-workers
+fmx pstack-workers
+fmx update --check default
+fmx update default
+```
+
+`default` keeps Firstmate's standard ship/scout brief behavior within the v1
+limits above. `pstack-workers` adds only a concise pstack-derived worker
+inner-loop policy (smallest-change discipline, blast-radius naming,
+conditional architecture/history checks, real-artifact proof); it does not
+invoke Poteto Mode, install the pstack plugin, create pstack subagents, add a
+second router, or require mandatory multi-frontier review. v1 refuses all
+secondmate spawns. Both profiles report `sandbox: false` — Firstmate's
+autonomous workers run directly on the host and are not a container or
+OS-level security boundary. See
+[`docs/herdr-compatibility.json`](docs/herdr-compatibility.json) for their
+current Herdr round-trip status.
+
 The native `cdx pstack` profile runs Codex with
 [pstack for Codex](https://github.com/Aqua-123/pstack-for-codex), created and
 maintained by Aqua-123. It installs only the upstream marketplace plugin in
@@ -814,7 +867,7 @@ cdx update --check youtube
 cdx youtube
 ```
 
-After the eight native profile launchers and `trx` are installed, list the
+After the nine native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
 
 ```bash
@@ -999,7 +1052,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `cldx` and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `cldx`, `fmx`, and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 

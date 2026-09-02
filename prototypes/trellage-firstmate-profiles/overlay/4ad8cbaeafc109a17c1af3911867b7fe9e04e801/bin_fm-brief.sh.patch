@@ -1,0 +1,52 @@
+@@ -83 +83,30 @@
+ PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
++
++# --- Trellage fmx worker policy --------------------------------------------
++# An fmx profile may supply one small, bounded worker-policy file. It is read
++# once here and inserted into ship and scout briefs only; a secondmate charter
++# is a standing job description, not a task brief, so it never receives it.
++# Upstream behavior is unchanged when FMX_WORKER_POLICY_FILE is absent or empty.
++# The bound is fixed by this overlay. It is deliberately not configurable from
++# the environment: a worker brief must never be widened by ambient state.
++readonly FMX_WORKER_POLICY_MAX_BYTES=16384
++FMX_WORKER_POLICY_SECTION=""
++if [ -n "${FMX_WORKER_POLICY_FILE:-}" ]; then
++  case "$FMX_WORKER_POLICY_FILE" in
++    /*) ;;
++    *) echo "error: FMX_WORKER_POLICY_FILE must be an absolute path: $FMX_WORKER_POLICY_FILE" >&2; exit 1 ;;
++  esac
++  if [ -L "$FMX_WORKER_POLICY_FILE" ] || [ ! -f "$FMX_WORKER_POLICY_FILE" ] \
++     || [ ! -r "$FMX_WORKER_POLICY_FILE" ]; then
++    echo "error: FMX_WORKER_POLICY_FILE is not a readable regular file: $FMX_WORKER_POLICY_FILE" >&2
++    exit 1
++  fi
++  fmx_policy_bytes=$(wc -c < "$FMX_WORKER_POLICY_FILE" | tr -d ' ')
++  if [ "$fmx_policy_bytes" -eq 0 ] || [ "$fmx_policy_bytes" -gt "$FMX_WORKER_POLICY_MAX_BYTES" ]; then
++    echo "error: FMX_WORKER_POLICY_FILE must be between 1 and $FMX_WORKER_POLICY_MAX_BYTES bytes: $FMX_WORKER_POLICY_FILE" >&2
++    exit 1
++  fi
++  FMX_WORKER_POLICY_SECTION="
++$(cat "$FMX_WORKER_POLICY_FILE")
++"
++fi
+@@ -162 +191,14 @@
+ ID=${POS[0]}
++
++# --- Trellage fmx task-id namespace ----------------------------------------
++# Two fmx profiles can target the same remote, so each profile owns a task-id
++# prefix. Refusing here keeps `fm/<id>` branches from two profiles distinct
++# instead of silently colliding. Unset means no namespace is enforced.
++if [ -n "${FMX_TASK_ID_PREFIX:-}" ]; then
++  case "$ID" in
++    "$FMX_TASK_ID_PREFIX"-*) ;;
++    *)
++      echo "error: this fmx profile requires task ids to start with '$FMX_TASK_ID_PREFIX-' (got '$ID'); rename the task so its fm/<id> branch cannot collide with another profile's" >&2
++      exit 1 ;;
++  esac
++fi
+@@ -363 +405 @@
+-
++$FMX_WORKER_POLICY_SECTION
+@@ -442 +484 @@
+-
++$FMX_WORKER_POLICY_SECTION

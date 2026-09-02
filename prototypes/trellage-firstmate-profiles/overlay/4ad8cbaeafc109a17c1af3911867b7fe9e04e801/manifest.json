@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "commit": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801",
+  "files": [
+    {
+      "path": "bin/fm-brief.sh",
+      "patch": "bin_fm-brief.sh.patch",
+      "base": "515f6c9270f0a5d8376cfb4f9d3b3b094e82171cea5c2748e973e682e181d76b",
+      "result": "f4624dbde83df4e561698407dd3ef8dfea42bf945a3bbd6365cb06bc108da518"
+    },
+    {
+      "path": "bin/fm-spawn.sh",
+      "patch": "bin_fm-spawn.sh.patch",
+      "base": "d2597e5b1a59665231e3437a1720e91697e5fbca75a8015fc6069bc4174d695a",
+      "result": "21e06a9617136100ca42d96ff0e7ec60f114e9d0b3334081e305e2ab06c63c2a"
+    },
+    {
+      "path": "bin/fm-update.sh",
+      "patch": "bin_fm-update.sh.patch",
+      "base": "91331fd915bfa89bee266acb0b930e468bf8798f4f0f9c110514c530c9853f47",
+      "result": "f0030f47c4589949a3ea8318e9fbf25b1e2fb350c53fa93702437fd70bb33609"
+    },
+    {
+      "path": ".agents/skills/updatefirstmate/SKILL.md",
+      "patch": "agents_skills_updatefirstmate_SKILL.md.patch",
+      "base": "f0ef8bda095e754db0e6427ea8651d1188e6422f4268f09c6fe12570af4a0b52",
+      "result": "d71e3553cf0f124070e969ea25a9eb03c27ebd35e7e7a4d4a2c14ddd1a06acf3"
+    }
+  ]
+}

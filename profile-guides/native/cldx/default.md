@@ -66,7 +66,7 @@ authoritative operational reference.
 - You need native Anthropic/Bedrock/Vertex authentication — launch removes
   those credential variables before starting Claude.
 - You need a real OS-level sandbox or container boundary. `cldx` is one of
-  the five native launchers that remain unsandboxed by design (see
+  the seven native launchers that remain unsandboxed by design (see
   `docs/native-sandbox-research.md`); Claude runs with full host access.
 - The task genuinely needs a human-in-the-loop question; the profile cannot
   pause for `AskUserQuestion`.

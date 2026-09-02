@@ -2,7 +2,7 @@
 
 **Trellage Sandbox** compiles locked agent profiles and runs them in isolated
 Docker containers. **Trellage Native** runs profile launchers directly on the
-host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`,
+host. Examples: `trx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`,
 and `prx`.
 
 ## Project overview
@@ -10,7 +10,7 @@ and `prx`.
 - Trellage Sandbox profiles describe reproducible container environments.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries, **except** `cdx` (Codex) and `grx` (Grok), which enable each harness's native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). Interactive `cdx` sessions allow on-request sandbox escalation so approved Git metadata writes can complete; non-interactive launches do not prompt. See `docs/native-sandbox-research.md`.
-- The `trx` router presents Trellage Native profiles. Examples: `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, and `prx` launchers.
+- The `trx` router presents Trellage Native profiles. Examples: `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`, and `prx` launchers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
@@ -29,7 +29,7 @@ and `prx`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
   `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
-  launchers (`cdx`/`cpx`/`cldx`/`grx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
+  launchers (`cdx`/`cpx`/`cldx`/`fmx`/`grx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
   runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
   or `--sandbox-only` on the underlying script when you only need one side.
   Installed `post-merge` and `post-rewrite` hooks rebuild the compiler and
@@ -57,7 +57,8 @@ and `prx`.
 - A successful run must save evidence under
   `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
   `OK` results for all eight Native launchers and Sandbox `claude-council`,
-  and delete its owned Azure resource group.
+  verify both `fmx` profiles through setup, doctor, healthy inventory,
+  source-pin, and overlay evidence, and delete its owned Azure resource group.
 - A failed run intentionally retains the resource group. Use
   `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
   Always finish an abandoned run with `mise run azure-fresh-install -- down`.
@@ -86,7 +87,7 @@ and `prx`.
 
 - `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.
 - `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
-- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`cdx`, `cpx`, `cldx`, `grx`, `jcx`, `omp`, `picx`, `prx`).
+- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`cdx`, `cpx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`, `prx`).
 - `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.

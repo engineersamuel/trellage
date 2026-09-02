@@ -189,6 +189,34 @@
       "expectedProfiles": ["native:cdx/pstack"],
       "maxRank": 3,
       "excludedProfiles": []
+    },
+    {
+      "id": "firstmate-fleet-delivery",
+      "intent": "Coordinate several related engineering tasks across isolated Git worktrees, supervise the workers, and return the integrated delivery outcome without making me manage each agent.",
+      "expectedProfiles": ["native:fmx/default"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:fmx/pstack-workers"]
+    },
+    {
+      "id": "firstmate-default-explicit",
+      "intent": "Use fmx default to orchestrate work in my named Firstmate project.",
+      "expectedProfiles": ["native:fmx/default"],
+      "maxRank": 1,
+      "excludedProfiles": ["native:fmx/pstack-workers", "native:cdx/pstack"]
+    },
+    {
+      "id": "firstmate-lean-pstack-workers",
+      "intent": "Run a Firstmate fleet for a risky refactor and require every worker to make the smallest safe change, name its blast radius, and prove the result with real artifacts without starting a second router.",
+      "expectedProfiles": ["native:fmx/pstack-workers"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cdx/pstack"]
+    },
+    {
+      "id": "firstmate-pstack-worker-explicit-singular",
+      "intent": "Use fmx pstack-worker to orchestrate one measured repository optimization with explicit blast radius and verification evidence.",
+      "expectedProfiles": ["native:fmx/pstack-workers"],
+      "maxRank": 1,
+      "excludedProfiles": ["native:fmx/default", "native:cdx/pstack"]
     }
   ]
 }

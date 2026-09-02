@@ -266,6 +266,102 @@ if (
   throw new Error("cpx tufte-vdqi critique-and-rebuild prompt must invoke both skills")
 }
 
+const firstmateGuide = registry.get("native:fmx/default")
+if (firstmateGuide === undefined) throw new Error("fmx default guide is missing")
+const firstmateFleet = firstmateGuide.guide.workflows.find(({ id }) => id === "coordinate-fleet-delivery")
+if (firstmateFleet === undefined) throw new Error("fmx default fleet workflow is missing")
+const normalizedPrompt = (prompt) => prompt.replace(/\s+/gu, " ")
+for (const phrase of [
+  "Firstmate operating contract",
+  "sole router and integration authority",
+  "conservative unregistered posture: `no-mistakes` delivery with `yolo` off",
+  "standing registration defaults `no-mistakes-prod-only` and `yolo` off",
+  "smallest useful durable task graph and worker count",
+  "Ships are the default for implementation",
+  "promote an existing scout instead of creating duplicate implementation work",
+  "non-overlapping work to isolated worktrees",
+  "Confirm each spawned worker is processing its brief",
+  "durable status and wake events",
+  "Serialize only for a true semantic dependency",
+  "Resolve each task to `direct-PR`, `no-mistakes`, or `local-only`",
+  "do not offer a false binary",
+  "`direct-PR` for confirmed internal-only work",
+  "hold green work durably while approval is pending",
+  "safe teardown only after required artifacts and delivery state are secured",
+  "final report covering the task graph",
+]) {
+  if (!normalizedPrompt(firstmateFleet.promptTemplate).includes(phrase)) {
+    throw new Error(`fmx default prompt is missing: ${phrase}`)
+  }
+}
+const firstmateInvestigation = firstmateGuide.guide.workflows.find(({ id }) => id === "run-fleet-investigation")
+if (firstmateInvestigation === undefined) throw new Error("fmx default investigation workflow is missing")
+for (const phrase of [
+  "sole router and decision authority",
+  "Consult existing reports before dispatch",
+  "durable task graph",
+  "non-overlapping hypotheses",
+  "promote the existing scout",
+  "safe teardown only after their artifacts are secured",
+]) {
+  if (!normalizedPrompt(firstmateInvestigation.promptTemplate).includes(phrase)) {
+    throw new Error(`fmx default investigation prompt is missing: ${phrase}`)
+  }
+}
+
+const firstmatePstackGuide = registry.get("native:fmx/pstack-workers")
+if (firstmatePstackGuide === undefined) throw new Error("fmx pstack-workers guide is missing")
+const disciplinedFleet = firstmatePstackGuide.guide.workflows.find(
+  ({ id }) => id === "disciplined-fleet-delivery",
+)
+if (disciplinedFleet === undefined) throw new Error("fmx pstack-workers fleet workflow is missing")
+for (const phrase of [
+  "sole router and integration authority",
+  "lean pstack-derived inner loop",
+  "worker brief",
+  "smallest logical change",
+  "expected blast radius",
+  "`how` walk",
+  "`why` history check",
+  "real artifact",
+  "verification gaps",
+  "must not route, merge, or assume captain authority",
+  "smallest useful durable task graph and worker count",
+  "promote an existing scout",
+  "Confirm each spawned worker is processing its brief",
+  "do not duplicate its policy section in worker briefs",
+  "Resolve each task to `direct-PR`, `no-mistakes`, or `local-only`",
+  "hold green work durably while approval is pending",
+  "safe teardown only after required artifacts and delivery state are secured",
+]) {
+  if (!normalizedPrompt(disciplinedFleet.promptTemplate).includes(phrase)) {
+    throw new Error(`fmx pstack-workers prompt is missing: ${phrase}`)
+  }
+}
+const disciplinedInvestigation = firstmatePstackGuide.guide.workflows.find(
+  ({ id }) => id === "disciplined-parallel-debugging",
+)
+if (disciplinedInvestigation === undefined) throw new Error("fmx pstack-workers investigation workflow is missing")
+for (const phrase of [
+  "concrete evidence first",
+  "falsified alternatives",
+  "evidence-backed final decision",
+  "durable status and wake events",
+  "promote the existing scout",
+  "safe teardown",
+]) {
+  if (!normalizedPrompt(disciplinedInvestigation.promptTemplate).includes(phrase)) {
+    throw new Error(`fmx pstack-workers investigation prompt is missing: ${phrase}`)
+  }
+}
+for (const workflow of [disciplinedFleet, disciplinedInvestigation]) {
+  for (const forbidden of ["$poteto-mode", "$pstack-for-codex:", "multi-frontier"]) {
+    if (workflow.promptTemplate.includes(forbidden)) {
+      throw new Error(`fmx pstack-workers prompt includes forbidden full-pstack behavior: ${forbidden}`)
+    }
+  }
+}
+
 const youtubeGuide = registry.get("native:cdx/youtube")
 if (youtubeGuide === undefined) throw new Error("cdx youtube guide is missing")
 for (const workflowId of ["transcript-analysis", "youtube-topic-research", "channel-playlist-review"]) {

@@ -105,6 +105,7 @@ jq -e '
     "native-claude-2.1.233",
     "native-copilot-1.0.81",
     "native-omp-copilot-18.0.10",
+    "native-pi-0.84.2",
     "sandbox-claude-core-2.1.229",
     "sandbox-claude-hyperresearch-2.1.229",
     "sandbox-claude-marketplace-2.1.251"
@@ -153,5 +154,8 @@ grep -Fq 'docs/headless-evidence.json' scripts/verify-headless-contracts \
   || fail 'deterministic verifier does not load the evidence ledger'
 grep -Fq 'scripts/verify-headless-live-contracts' scripts/verify-headless-contracts \
   || fail 'live verifier is not isolated behind the opt-in branch'
+grep -Fq 'prototypes/trellage-firstmate-profiles/tests/contract.sh' \
+  scripts/verify-headless-contracts \
+  || fail 'deterministic verifier does not run the Firstmate headless contract'
 
 printf 'headless contract matrix: PASS\n'

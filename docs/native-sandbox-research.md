@@ -1,18 +1,18 @@
 # Native launcher sandboxing — research and decisions
 
-Status: **`cdx`/`grx` sandboxed natively; `cldx`/`cpx`/`jcx`/`omp`/`prx` remain
-unsandboxed; clawk evaluated and not adopted.** Recorded so the finding is not
-re-discovered.
+Status: **`cdx`/`grx` sandboxed natively;
+`cldx`/`cpx`/`fmx`/`jcx`/`omp`/`picx`/`prx` remain unsandboxed; clawk
+evaluated and not adopted.** Recorded so the finding is not re-discovered.
 
 Background: Trellage Sandbox profiles (compiled by `packages/trellage-cli`,
 built and run via `trellage build`) always execute inside a resolved, built
 Docker container, so they are implicitly sandboxed regardless of harness kind.
-Trellage Native launchers (`cdx`, `cpx`, `cldx`, `grx`, `jcx`,
-`omp`, `prx`) run the underlying harness CLI directly on the host. This repo's own
-guidance previously stated flatly that "Trellage Native profiles isolate
+Trellage Native launchers (`cdx`, `cpx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`,
+`picx`, `prx`) run the underlying harness CLI directly on the host. This
+repo's own guidance previously stated flatly that "Trellage Native profiles isolate
 agent state but are not containers or security boundaries" — this document
 records why that statement now has two exceptions (`cdx`, `grx`) and why the
-other five remain unsandboxed by design rather than by oversight.
+other seven remain unsandboxed by design rather than by oversight.
 
 `trellage list --json-full` (Trellage Sandbox) and every native launcher's
 `list --json` now carry a `sandbox: boolean` field reflecting this reality.
@@ -31,7 +31,7 @@ proved unreliable for some of the Grok config claims below.
 | Grok (`grx`) | **Yes** — `--sandbox <PROFILE>` (`workspace`, `devbox`, `read-only`, `strict`), enforced by Landlock (Linux, network) / Seatbelt (macOS, filesystem). Confirmed via installed `grok 1.0.0 (stable) --help` and https://docs.x.ai/build/features/sandbox. | `grx` passed no sandbox-related flag at all | **Now sandboxed** (this change) |
 | Claude Code (`cldx`) | **Partial** — `/sandbox` mode exists (bubblewrap/Seatbelt-backed Bash sandboxing), but requires enabling per-session and doesn't compose with `--dangerously-skip-permissions` the way `cldx` invokes Claude today | `cldx` invokes `claude --dangerously-skip-permissions --permission-mode bypassPermissions` (full bypass) | Not flipped — see §3 |
 | Copilot CLI (`cpx`) | **No** — no built-in OS-level sandbox (seatbelt/seccomp/landlock/container); only a trust-directory + tool-approval prompt layer. Real isolation requires an external container. | No sandbox flags exist to pass | Not flippable natively — see §3 |
-| jcode (`jcx`), oh-my-pi (`omp`), Pi (`picx`), Prime (`prx`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
+| jcode (`jcx`), oh-my-pi (`omp`), Pi (`picx`), Prime (`prx`), Firstmate (`fmx`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
 
 ## 2. Codex and Grok: what changed
 
@@ -58,7 +58,7 @@ command must cross that boundary, while unattended launches never prompt.
 
 Both sandboxed launchers' `list --json` report `sandbox: true`.
 
-## 3. clawk fit-check for the remaining five launchers
+## 3. clawk fit-check for the remaining unsandboxed launchers
 
 Evaluated [clawk](https://github.com/clawkwork/clawk): a per-project
 disposable **microVM** (Apple Virtualization.framework on macOS; firecracker
@@ -81,6 +81,9 @@ not the process flags.
   are). Integration would go through the generic `shell` runner, losing
   clawk's auth/state auto-wiring for these harnesses and effectively
   hand-rolling per-harness support.
+- **`fmx` (Firstmate)** depends on host worktrees plus tmux or Herdr pane
+  control. Moving that orchestration into a microVM would be a separate
+  contained harness design, not a drop-in Native launcher wrapper.
 - Costs that don't fit well here: clawk is **pre-1.0** ("expect breaking
   changes... things can and will break" — its own README), macOS-Apple-
   Silicon-first with Linux support explicitly experimental (this repo's CI
@@ -90,10 +93,12 @@ not the process flags.
   doesn't even have first-class support.
 
 **Decision: forego clawk for now.** It only cleanly fits one harness
-(`cldx`), lacks first-class support for the other four, and is
+(`cldx`), lacks first-class support for the other five single-agent
+launchers, does not preserve Firstmate's host orchestration model, and is
 pre-1.0/platform-limited. Rely on the existing **Trellage Sandbox (Docker
-container) harness** for real isolation when `cldx`/`cpx`/`jcx`/`omp`/`prx`
-need it — `sandbox: false` is reported for all five in native `list --json`.
+container) harness** for real isolation when
+`cldx`/`cpx`/`fmx`/`jcx`/`omp`/`picx`/`prx` need it — `sandbox: false` is
+reported for all seven in native `list --json`.
 A future revisit of clawk-for-`cldx` is reasonable once clawk reaches 1.0 and
 gets non-experimental Linux support, but is not scheduled work today.
 
@@ -102,5 +107,5 @@ gets non-experimental Linux support, but is not scheduled work today.
 The statement "Trellage Native profiles isolate agent state but are not
 containers or security boundaries" (previously universal) now has two
 exceptions: `cdx` and `grx` enable a real native OS-level sandbox as
-described above. `cldx`, `cpx`, `jcx`, `omp`, `picx`, and `prx` remain exactly as
-that statement describes.
+described above. `cldx`, `cpx`, `jcx`, `omp`, `picx`, `prx`, and `fmx` remain
+exactly as that statement describes.

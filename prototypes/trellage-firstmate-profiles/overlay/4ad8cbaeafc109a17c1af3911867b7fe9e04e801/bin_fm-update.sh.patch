@@ -1,0 +1,13 @@
+@@ -51 +51,12 @@
++# --- Trellage fmx managed runtime ------------------------------------------
++# This checkout is published by the Trellage `fmx` launcher at an exact pinned
++# commit with a verified overlay. A self-update would silently move the runtime
++# off that pin, so it is refused whenever the fmx ownership marker is present.
++# Unmanaged firstmate clones carry no marker and are unaffected.
++for fmx_marker in "$FM_HOME/.fmx-managed" "$FM_ROOT/.fmx-managed"; do
++  [ -f "$fmx_marker" ] || continue
++  echo "error: firstmate self-update is disabled here: this runtime is managed by Trellage fmx and pinned to an exact commit (marker: $fmx_marker). Run 'fmx update <profile>' on the host to move the pin, then relaunch the profile." >&2
++  exit 1
++done
++
+ # --- main firstmate repo ---------------------------------------------------

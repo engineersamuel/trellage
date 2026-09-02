@@ -1,0 +1,919 @@
+#!/usr/bin/env bash
+# Shared implementation for Trellage's native Claude Code runtime.
+#
+# Stable internal API (see README.md for details):
+#   native-claude prepare --home ABS --marker ABS --marker-value VALUE \
+#     --bridge enabled|disabled [--profile NAME] [--require-existing]
+#   native-claude doctor  --home ABS --marker ABS --marker-value VALUE \
+#     --bridge enabled|disabled [--profile NAME]
+#   native-claude launch  --home ABS --marker ABS --marker-value VALUE \
+#     --bridge enabled|disabled [--profile NAME] -- [CLAUDE_ARGS...]
+#   native-claude version
+#   native-claude model-id
+#   native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
+#
+# Callers select their own launcher identity via TRELLAGE_CLAUDE_LAUNCHER_NAME
+# and their own installed runtime root via TRELLAGE_CLAUDE_RUNTIME_ROOT
+# (mirroring the TRELLAGE_CODEX_LAUNCHER_NAME / TRELLAGE_CODEX_RUNTIME_ROOT
+# convention used by the shared native Codex runtime).
+
+set -euo pipefail
+
+die() {
+  printf '%s: %s\n' "$launcher_name" "$1" >&2
+  exit 1
+}
+
+launcher_name="${TRELLAGE_CLAUDE_LAUNCHER_NAME:-native-claude}"
+case "$launcher_name" in
+  ''|*[!A-Za-z0-9_-]*)
+    printf 'native-claude: invalid launcher identity\n' >&2
+    exit 1
+    ;;
+esac
+
+runtime_root="${TRELLAGE_CLAUDE_RUNTIME_ROOT-}"
+[[ "$runtime_root" == /* && -d "$runtime_root" && ! -L "$runtime_root" ]] \
+  || die "invalid runtime root: $runtime_root"
+resolved_runtime_root="$(CDPATH= cd -P -- "$runtime_root" && pwd)" \
+  || die "could not resolve runtime root: $runtime_root"
+[[ "$resolved_runtime_root" == "$runtime_root" ]] \
+  || die "redirected runtime root: $runtime_root"
+
+readonly model_id='claude-opus-5'
+readonly sonnet_model_id='claude-sonnet-5'
+readonly haiku_model_id='claude-haiku-4.5'
+readonly proxy_origin='http://127.0.0.1:8080'
+readonly proxy_token='trellage-local-proxy'
+
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+if [[ ! -f "$floating_skills_manager" ]]; then
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_catalog="$runtime_root/../../skills.json"
+fi
+session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
+if [[ ! -f "$session_bridge_source" ]]; then
+  session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
+fi
+
+usage() {
+  cat <<EOF
+Usage:
+  $launcher_name prepare --home ABS --marker ABS --marker-value VALUE \\
+      --bridge enabled|disabled [--profile NAME] [--require-existing]
+  $launcher_name doctor --home ABS --marker ABS --marker-value VALUE \\
+      --bridge enabled|disabled [--profile NAME]
+  $launcher_name launch --home ABS --marker ABS --marker-value VALUE \\
+      --bridge enabled|disabled [--profile NAME] -- [CLAUDE_ARGS...]
+  $launcher_name version
+  $launcher_name model-id
+  $launcher_name exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+resolve_file() {
+  local path="$1" directory target links=0
+
+  [[ "$path" == /* ]] || {
+    directory="$(canonical_directory "$(dirname "$path")")" || return 1
+    path="$directory/$(basename "$path")"
+  }
+  while [[ -L "$path" ]]; do
+    ((links += 1))
+    ((links <= 40)) || return 1
+    directory="$(canonical_directory "$(dirname "$path")")" || return 1
+    target="$(readlink "$path")" || return 1
+    if [[ "$target" == /* ]]; then
+      path="$target"
+    else
+      path="$directory/$target"
+    fi
+  done
+  directory="$(canonical_directory "$(dirname "$path")")" || return 1
+  printf '%s/%s\n' "$directory" "$(basename "$path")"
+}
+
+require_safe_home() {
+  local canonical_home
+
+  [[ "$HOME" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die "unsafe HOME: $HOME"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+}
+
+# Validates every path component from $HOME down to (and including) $1.
+# Every existing component, including the final one, must be a real
+# directory: no symlinks, no redirection outside $HOME.
+require_safe_directory_path() {
+  local target="$1" label="$2"
+  local canonical_home relative_path path component canonical_path
+
+  require_safe_home
+  [[ "$target" == /* ]] || die "unsafe $label: $target"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  # require_safe_home already fully validated $HOME itself, so a target that
+  # equals $HOME exactly needs no further chain walk.
+  [[ "$target" != "$HOME" ]] || return 0
+  case "$target" in
+    "$HOME"/*) ;;
+    *) die "unsafe $label: $target" ;;
+  esac
+  relative_path="${target#"$HOME"/}"
+  path="$HOME"
+  while [[ -n "$relative_path" ]]; do
+    component="${relative_path%%/*}"
+    if [[ "$component" == "$relative_path" ]]; then
+      relative_path=""
+    else
+      relative_path="${relative_path#*/}"
+    fi
+    [[ -n "$component" ]] || die "unsafe $label: $target"
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe $label: $path"
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || die "unsafe $label: $path"
+      canonical_path="$(canonical_directory "$path")" || die "cannot resolve $label: $path"
+      case "$canonical_path" in
+        "$canonical_home"/*) ;;
+        *) die "redirected $label: $path" ;;
+      esac
+    fi
+  done
+}
+
+# Validates the parent directory chain of $1 (a leaf file, not a directory)
+# and requires the leaf itself to be a regular file if it exists.
+require_safe_leaf_path() {
+  local target="$1" label="$2" parent
+
+  parent="$(dirname -- "$target")"
+  require_safe_directory_path "$parent" "$label parent"
+  [[ ! -L "$target" ]] || die "unsafe $label: $target"
+  if [[ -e "$target" ]]; then
+    [[ -f "$target" ]] || die "unsafe $label: $target"
+  fi
+}
+
+# Creates every missing directory component from $HOME down to (and
+# including) $1. Assumes require_safe_directory_path already validated any
+# pre-existing components.
+ensure_directory_chain() {
+  local target="$1" relative_path path component
+
+  relative_path="${target#"$HOME"/}"
+  path="$HOME"
+  while [[ -n "$relative_path" ]]; do
+    component="${relative_path%%/*}"
+    if [[ "$component" == "$relative_path" ]]; then
+      relative_path=""
+    else
+      relative_path="${relative_path#*/}"
+    fi
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+}
+
+profile_is_owned_or_empty() {
+  local profile_root="$1" marker="$2" marker_value="$3" existing
+
+  if [[ -e "$marker" || -L "$marker" ]]; then
+    [[ -f "$marker" && ! -L "$marker" ]] || return 1
+    [[ "$(<"$marker")" == "$marker_value" ]] || return 1
+    return 0
+  fi
+  [[ ! -e "$profile_root" ]] && return 0
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  [[ -z "$existing" ]]
+}
+
+prepare_profile_dirs() {
+  local home="$1" marker="$2" marker_value="$3"
+  local profile_root marker_stage
+
+  profile_root="$(dirname -- "$home")"
+  profile_is_owned_or_empty "$profile_root" "$marker" "$marker_value" \
+    || die "refusing unrelated existing profile files: $profile_root"
+  ensure_directory_chain "$home"
+  chmod 0700 "$profile_root" "$home"
+  marker_stage="$(mktemp "$profile_root/.ownership.XXXXXX")" \
+    || die 'could not stage profile ownership'
+  printf '%s\n' "$marker_value" >"$marker_stage"
+  chmod 0600 "$marker_stage"
+  mv -f "$marker_stage" "$marker"
+}
+
+# Requires --home/--marker to already have been validated by
+# validate_common_arguments. Additionally requires --home to already exist
+# (an owned profile is only ever recorded after --home was created), so a
+# marker left behind after --home was removed or replaced with a symlink is
+# refused here rather than followed by a later read/write.
+require_owned_profile() {
+  local home="$1" marker="$2" marker_value="$3"
+
+  [[ -d "$home" && ! -L "$home" ]] \
+    || die "profile is not managed; run: $launcher_name prepare"
+  [[ -f "$marker" && ! -L "$marker" ]] \
+    || die "profile is not managed; run: $launcher_name prepare"
+  [[ "$(<"$marker")" == "$marker_value" ]] \
+    || die "profile ownership marker differs: $marker"
+}
+
+claude_executable() {
+  local executable resolved
+
+  executable="$(command -v claude 2>/dev/null)" || die 'required command not found: claude'
+  [[ "$executable" == */* ]] || die "unsafe claude executable: $executable"
+  resolved="$(resolve_file "$executable")" || die "cannot resolve claude executable: $executable"
+  [[ -f "$resolved" && -x "$resolved" && ! -L "$resolved" ]] \
+    || die "unsafe claude executable: $resolved"
+  printf '%s\n' "$resolved"
+}
+
+claude_version() {
+  local executable="$1" output version
+
+  output="$("$executable" --version)" || die 'could not run Claude Code'
+  version="$(sed -nE 's/.*(^|[^0-9])([0-9]+\.[0-9]+\.[0-9]+)([^0-9]|$).*/\2/p' <<<"$output" | head -n 1)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || die "could not determine Claude Code version: $output"
+  printf '%s\n' "$version"
+}
+
+claude_version_if_available() {
+  local executable output version
+
+  executable="$(command -v claude 2>/dev/null || :)"
+  [[ "$executable" == */* && -x "$executable" ]] || return 0
+  output="$("$executable" --version 2>/dev/null || :)"
+  version="$(sed -nE 's/.*(^|[^0-9])([0-9]+\.[0-9]+\.[0-9]+)([^0-9]|$).*/\2/p' <<<"$output" | head -n 1)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  printf '%s\n' "$version"
+}
+
+ensure_floating_skills() {
+  local home="$1"
+
+  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+    || die "invalid floating-skills manager: $floating_skills_manager"
+  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+    || die "invalid floating-skills catalog: $floating_skills_catalog"
+  require_command node
+  node "$floating_skills_manager" ensure \
+    --catalog "$floating_skills_catalog" \
+    --bundle native-common \
+    --target "$home/skills" \
+    || die 'failed to install floating skills'
+}
+
+ensure_onboarding() {
+  local home="$1" version="$2" onboarding="$home/.claude.json" staged
+
+  [[ ! -L "$onboarding" && ( ! -e "$onboarding" || -f "$onboarding" ) ]] \
+    || die "unsafe Claude onboarding state: $onboarding"
+  staged="$(mktemp "$home/.claude.json.XXXXXX")" \
+    || die 'could not stage Claude onboarding state'
+  if [[ -e "$onboarding" ]]; then
+    jq --arg version "$version" '
+      if type != "object" then error("onboarding state must be an object") else . end
+      | .hasCompletedOnboarding = true
+      | .lastOnboardingVersion = $version
+      | .shiftEnterKeyBindingInstalled = true
+      | .theme = (.theme // "dark")
+    ' "$onboarding" >"$staged" || die "invalid Claude onboarding state: $onboarding"
+  else
+    jq -n --arg version "$version" '{
+      hasCompletedOnboarding: true,
+      lastOnboardingVersion: $version,
+      shiftEnterKeyBindingInstalled: true,
+      theme: "dark"
+    }' >"$staged"
+  fi
+  chmod 0600 "$staged"
+  mv -f "$staged" "$onboarding"
+}
+
+verify_onboarding() {
+  local home="$1" onboarding="$home/.claude.json"
+
+  [[ -f "$onboarding" && ! -L "$onboarding" ]] \
+    || die "Claude onboarding state is missing; run: $launcher_name repair"
+  jq -e '
+    type == "object"
+    and .hasCompletedOnboarding == true
+    and (.lastOnboardingVersion | type == "string"
+      and test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+    and .shiftEnterKeyBindingInstalled == true
+    and (.theme | type == "string" and length > 0)
+  ' "$onboarding" >/dev/null \
+    || die "Claude onboarding state differs; run: $launcher_name repair"
+}
+
+ensure_trust() {
+  local home="$1" onboarding="$home/.claude.json" workspace staged
+
+  workspace="$(pwd -P)" || die 'could not resolve current directory'
+  [[ -f "$onboarding" && ! -L "$onboarding" ]] \
+    || die "unsafe Claude onboarding state: $onboarding"
+  staged="$(mktemp "$home/.claude.json.XXXXXX")" \
+    || die 'could not stage Claude onboarding state'
+  jq --arg workspace "$workspace" '
+    .projects = (
+      (.projects // {})
+      | .[$workspace] = ((.[$workspace] // {}) + {"hasTrustDialogAccepted": true})
+    )
+  ' "$onboarding" >"$staged" || die "invalid Claude onboarding state: $onboarding"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$onboarding"
+}
+
+ensure_settings() {
+  local home="$1" settings="$home/settings.json" staged
+
+  [[ ! -L "$settings" && ( ! -e "$settings" || -f "$settings" ) ]] \
+    || die "unsafe Claude settings: $settings"
+  staged="$(mktemp "$home/.settings.json.XXXXXX")" \
+    || die 'could not stage Claude settings'
+  if [[ -e "$settings" ]]; then
+    if ! jq -s '
+      if length != 1 or (.[0] | type) != "object"
+      then error("settings must contain exactly one object")
+      else .[0]
+      end
+      | .outputStyle = (.outputStyle // "Rundown")
+    ' "$settings" >"$staged"; then
+      rm -f -- "$staged"
+      die "invalid Claude settings: $settings"
+    fi
+  else
+    jq -n '{outputStyle: "Rundown"}' >"$staged" \
+      || die 'could not create Claude settings'
+  fi
+  chmod 0600 "$staged"
+  mv -f "$staged" "$settings"
+}
+
+squeeze_slashes() {
+  local value="$1" slash='/'
+
+  while [[ "$value" == *"$slash$slash"* ]]; do
+    value="${value//$slash$slash/$slash}"
+  done
+  printf '%s' "$value"
+}
+
+# Reimplements Python's shlex.quote() so a token round-trips through a POSIX
+# shell exactly as shlex.quote() would render it: the safe charset passes
+# through unquoted, everything else is wrapped in single quotes with each
+# embedded single quote escaped as '"'"'.
+shlex_quote() {
+  local value="$1" sq="'" dq='"' replacement
+
+  if [[ -z "$value" ]]; then
+    printf "''"
+    return
+  fi
+  if [[ "$value" =~ ^[A-Za-z0-9_@%+=:,./-]+$ ]]; then
+    printf '%s' "$value"
+    return
+  fi
+  replacement="${sq}${dq}${sq}${dq}${sq}"
+  printf "'%s'" "${value//$sq/$replacement}"
+}
+
+session_bridge_hook_command() {
+  # The installed hook's .command is produced by Python's
+  # shlex.join([str(hook_path), "native-hook", "--agent", "claude",
+  # "--profile", profile]) in scripts/trellage-session-bridge.py. Squeeze
+  # redundant slashes first (pathlib.Path normalizes those before joining),
+  # then shell-quote bridge_path/profile exactly like shlex.quote() so this
+  # matches byte-for-byte even when either value contains spaces or quotes.
+  local bridge_path profile
+  bridge_path="$(squeeze_slashes "$1")"
+  profile="$2"
+
+  printf '%s native-hook --agent claude --profile %s' \
+    "$(shlex_quote "$bridge_path")" "$(shlex_quote "$profile")"
+}
+
+# A hook .command belongs to this runtime's managed bridge for $1 (any
+# profile) iff it starts with this exact prefix: the shlex-quoted bridge
+# path followed by ` native-hook --agent claude --profile `. Used to find
+# and prune a stale hook left behind for a different, previously active
+# profile, without touching unrelated user/tool hooks.
+session_bridge_hook_prefix() {
+  local bridge_path
+  bridge_path="$(squeeze_slashes "$1")"
+
+  printf '%s native-hook --agent claude --profile ' "$(shlex_quote "$bridge_path")"
+}
+
+# Removes every SessionStart hook whose .command matches $prefix (this
+# runtime's managed-hook prefix for one bridge_path/agent, any profile),
+# except an exact $keep_command (pass '' to remove every matching hook).
+# A non-string .command, or a command that does not match the prefix, is
+# left untouched, so unrelated user/tool hooks are always preserved.
+prune_managed_hooks() {
+  local settings="$1" prefix="$2" keep_command="$3" staged
+
+  [[ -f "$settings" && ! -L "$settings" ]] || return 0
+  staged="$(mktemp "$(dirname -- "$settings")/.settings.json.XXXXXX")" \
+    || die 'could not stage Claude settings'
+  if ! jq --arg prefix "$prefix" --arg keep "$keep_command" '
+    if type != "object" then error("settings must be an object") else . end
+    | .hooks.SessionStart = (
+      (.hooks.SessionStart // [])
+      | map(.hooks = ((.hooks // []) | map(select(
+          .command == $keep
+          or (.command | type) != "string"
+          or ((.command | startswith($prefix)) | not)
+        ))))
+      | map(select((.hooks // []) | length > 0))
+    )
+  ' "$settings" >"$staged"; then
+    rm -f -- "$staged"
+    die "invalid Claude settings: $settings"
+  fi
+  chmod 0600 "$staged"
+  mv -f "$staged" "$settings"
+}
+
+# Counts SessionStart hooks currently matching this runtime's managed-hook
+# prefix for one bridge_path/agent (any profile). 0 means the bridge is
+# fully absent from settings.json; >1 alongside an exact current-profile
+# match means a stale other-profile hook is still installed. Assumes the
+# caller already validated $settings with require_valid_bridge_settings;
+# a jq/parse failure here propagates (die) rather than becoming 0.
+managed_hook_count() {
+  local settings="$1" prefix="$2"
+
+  jq -r --arg prefix "$prefix" '
+    [ (.hooks.SessionStart // [])[]?.hooks[]?
+      | select((.command | type) == "string")
+      | select(.command | startswith($prefix)) ] | length
+  ' "$settings" || die "invalid Claude settings: $settings"
+}
+
+# Requires settings.json to be a regular, non-symlink file containing a
+# JSON object with a well-formed (possibly absent) hooks.SessionStart
+# array, before any hook-presence/count check is allowed to trust it. An
+# owned profile always has a settings.json from ensure_settings (prepare
+# runs it unconditionally), so a missing file here signals a broken
+# profile rather than "bridge trivially absent" and gets the normal
+# repair hint instead of being silently treated as zero hooks installed.
+# Uses explicit `== null` checks rather than `//`, because `//` treats a
+# present `false` the same as null/absent and would let `hooks: false`,
+# `hooks.SessionStart: false`, or an entry's `hooks: false` slip through
+# as if the field were simply missing. Every SessionStart entry's nested
+# hooks array elements are also required to be objects, so the later
+# `.command` lookups in bridge_hook_present/managed_hook_count can never
+# error on a scalar array element.
+require_valid_bridge_settings() {
+  local settings="$1"
+
+  [[ -e "$settings" ]] || die "Claude settings are missing; run: $launcher_name repair"
+  [[ -f "$settings" && ! -L "$settings" ]] || die "unsafe Claude settings: $settings"
+  jq -e '
+    def optional_typed(expected):
+      if . == null then null
+      elif type == expected then .
+      else error("wrong type") end;
+
+    if type != "object" then error("settings must be an object") end
+    | (.hooks | optional_typed("object")) as $hooks_raw
+    | ($hooks_raw // {}) as $hooks
+    | ($hooks.SessionStart | optional_typed("array")) as $entries_raw
+    | ($entries_raw // []) as $entries
+    | $entries | all(
+        type == "object"
+        and ((.hooks | optional_typed("array")) as $entry_hooks_raw
+             | ($entry_hooks_raw // []) | all(type == "object"))
+      ) or error("hooks.SessionStart entries must be objects with an array hooks field of objects")
+  ' "$settings" >/dev/null 2>&1 \
+    || die "invalid Claude settings: $settings"
+}
+
+install_session_bridge() {
+  local home="$1" profile="$2"
+  local bridge_root="$home/.trellage"
+  local bridge_path="$bridge_root/trellage-session-bridge.py"
+  local settings="$home/settings.json"
+  local staged
+
+  require_command python3
+  [[ -f "$session_bridge_source" && -r "$session_bridge_source" \
+    && ! -L "$session_bridge_source" ]] \
+    || die "missing session bridge: $session_bridge_source"
+  [[ ! -L "$bridge_root" ]] || die "unsafe session bridge directory: $bridge_root"
+  [[ -e "$bridge_root" ]] || mkdir "$bridge_root"
+  [[ -d "$bridge_root" && ! -L "$bridge_root" ]] \
+    || die "unsafe session bridge directory: $bridge_root"
+  chmod 0700 "$bridge_root"
+  [[ ! -L "$bridge_path" && ( ! -e "$bridge_path" || -f "$bridge_path" ) ]] \
+    || die "unsafe session bridge path: $bridge_path"
+  staged="$(mktemp "$bridge_root/.trellage-session-bridge.py.XXXXXX")" \
+    || die 'could not stage the session bridge'
+  cat -- "$session_bridge_source" >"$staged" \
+    || die 'could not stage the session bridge'
+  chmod 0700 "$staged"
+  mv -f "$staged" "$bridge_path"
+  "$bridge_path" install-hook \
+    --mode native \
+    --agent claude \
+    --profile "$profile" \
+    --config-dir "$home" \
+    --hook-path "$bridge_path" \
+    || die 'could not install the session bridge hook'
+  # The bridge's own install-hook only dedupes an exact command match for
+  # the current profile; it never removes a stale hook it previously
+  # installed for a different profile at this same bridge_path. Prune any
+  # such stale managed hook here so an enabled bridge always ends up with
+  # exactly one managed SessionStart entry.
+  prune_managed_hooks "$settings" "$(session_bridge_hook_prefix "$bridge_path")" \
+    "$(session_bridge_hook_command "$bridge_path" "$profile")"
+  ensure_settings "$home"
+}
+
+# bridge=disabled ensures the home has no Trellage session-bridge hook or
+# executable managed by this runtime. It never touches unrelated hooks: only
+# SessionStart entries matching this runtime's managed-hook prefix for
+# $bridge_path are removed from settings.json, regardless of which profile
+# they were installed for, so a hook stale from a previously active profile
+# can never be left behind.
+remove_session_bridge() {
+  local home="$1" profile="$2"
+  local bridge_root="$home/.trellage"
+  local bridge_path="$bridge_root/trellage-session-bridge.py"
+  local settings="$home/settings.json"
+
+  if [[ -e "$bridge_path" || -L "$bridge_path" ]]; then
+    [[ -f "$bridge_path" && ! -L "$bridge_path" ]] \
+      || die "unsafe session bridge path: $bridge_path"
+    rm -f -- "$bridge_path"
+  fi
+  if [[ -d "$bridge_root" && ! -L "$bridge_root" ]]; then
+    rmdir -- "$bridge_root" 2>/dev/null || true
+  fi
+  prune_managed_hooks "$settings" "$(session_bridge_hook_prefix "$bridge_path")" ''
+  ensure_settings "$home"
+}
+
+bridge_hook_present() {
+  local settings="$1" command="$2" result
+
+  result="$(jq -r --arg command "$command" '
+    (.hooks.SessionStart // []) | any(.[].hooks[]?; .command == $command)
+  ' "$settings")" || die "invalid Claude settings: $settings"
+  [[ "$result" == true ]]
+}
+
+doctor_bridge_state() {
+  local home="$1" profile="$2" bridge="$3"
+  local bridge_path="$home/.trellage/trellage-session-bridge.py"
+  local settings="$home/settings.json"
+  local command prefix hook_present=false managed_count
+
+  require_valid_bridge_settings "$settings"
+  command="$(session_bridge_hook_command "$bridge_path" "$profile")"
+  prefix="$(session_bridge_hook_prefix "$bridge_path")"
+  bridge_hook_present "$settings" "$command" && hook_present=true
+  managed_count="$(managed_hook_count "$settings" "$prefix")"
+
+  if [[ "$bridge" == enabled ]]; then
+    [[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
+      || die "session bridge is missing; run: $launcher_name repair"
+    [[ "$hook_present" == true ]] \
+      || die "session bridge hook is missing; run: $launcher_name repair"
+    [[ "$managed_count" == 1 ]] \
+      || die "stale session bridge hook for another profile is installed; run: $launcher_name repair"
+  else
+    [[ ! -e "$bridge_path" && ! -L "$bridge_path" ]] \
+      || die "session bridge is still installed; run: $launcher_name repair"
+    [[ "$managed_count" == 0 ]] \
+      || die "session bridge hook is still installed; run: $launcher_name repair"
+  fi
+}
+
+check_proxy() {
+  local health models
+
+  require_command curl
+  health="$(curl -fsS --max-time 5 "$proxy_origin/health")" \
+    || die 'copilot-proxy-rs health check failed'
+  jq -e '.status == "ok" or .status == "healthy"' <<<"$health" >/dev/null \
+    || die 'copilot-proxy-rs health response is invalid'
+  models="$(curl -fsS --max-time 5 "$proxy_origin/v1/models")" \
+    || die 'copilot-proxy-rs model discovery failed'
+  jq -e --arg model "$model_id" '
+    (.data // .models // []) | any((.id // .slug) == $model)
+  ' <<<"$models" >/dev/null || die "copilot-proxy-rs model is missing: $model_id"
+}
+
+validate_common_arguments() {
+  local home="$1" marker="$2" marker_value="$3" bridge="$4"
+
+  [[ -n "$home" ]] || die 'missing required option: --home'
+  [[ -n "$marker" ]] || die 'missing required option: --marker'
+  [[ -n "$marker_value" ]] || die 'missing required option: --marker-value'
+  [[ "$bridge" == enabled || "$bridge" == disabled ]] \
+    || die "invalid --bridge (expected enabled or disabled): $bridge"
+  # Validate the entire $HOME-rooted directory chain down to (and
+  # including, if it already exists) --home itself, and require --marker to
+  # sit beside it. This is centralized here so every command (prepare,
+  # doctor, launch) refuses a symlinked --home/--marker before any read or
+  # write, instead of relying on each command to remember its own checks.
+  require_safe_directory_path "$home" 'profile home'
+  [[ "$(dirname -- "$marker")" == "$(dirname -- "$home")" ]] \
+    || die "profile marker must share the profile home's parent directory: $marker"
+  require_safe_leaf_path "$marker" 'profile marker'
+}
+
+# Explicit provider/token scrub covering the supported provider/token
+# override paths, so a stale tmux/Herdr daemon environment (the fmx
+# worker threat model) can never leak into any child process this runtime
+# spawns: claude --version, the floating-skills ensure (node), the
+# copilot-proxy-rs health/model probes (curl), session-bridge hook
+# installation (python3), or the final launched Claude process. Called as
+# early as possible in prepare/doctor/launch/version, before any such
+# external process, and reused (never duplicated) so launch's final exec
+# inherits the same clean environment established here. model-id starts
+# no child process and needs no scrub. Never wildcard this list; each
+# variable is named so removals are auditable. GH_CONFIG_DIR is
+# preserved, because fmx workers deliberately use file-backed gh auth.
+scrub_provider_environment() {
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
+  unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+  unset ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL
+  unset CLAUDE_CODE_USE_FOUNDRY ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_BASE_URL
+  unset ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL
+  unset CLAUDE_CODE_USE_BEDROCK AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  unset AWS_PROFILE AWS_BEARER_TOKEN_BEDROCK AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN
+  unset AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+  unset CLAUDE_CODE_USE_VERTEX GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID
+  unset CLOUD_ML_REGION GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_QUOTA_PROJECT GOOGLE_CLOUD_REGION
+  unset VERTEX_PROJECT VERTEX_REGION
+  unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID OPENAI_API_KEY AZURE_API_KEY
+  unset AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT OPENAI_BASE_URL
+  unset COPILOT_GITHUB_TOKEN COPILOT_PROXY_GITHUB_TOKEN COPILOT_TOKEN
+  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+}
+
+exec_clean_command() {
+  local command_path resolved_command interpreter='' resolved_interpreter=''
+
+  if [[ "${1-}" == --interpreter ]]; then
+    [[ "$#" -ge 2 ]] || die 'exec-clean --interpreter requires a value'
+    interpreter="$2"
+    shift 2
+  fi
+  [[ "${1-}" == -- ]] || die 'exec-clean requires -- before the command'
+  shift
+  [[ "$#" -gt 0 ]] || die 'exec-clean requires an absolute command'
+  command_path="$1"
+  scrub_provider_environment
+  if [[ -n "$interpreter" ]]; then
+    [[ "$interpreter" == /* && -f "$interpreter" && -x "$interpreter" ]] \
+      || die "exec-clean interpreter is missing or unsafe: $interpreter"
+    resolved_interpreter="$(resolve_file "$interpreter")" \
+      || die "could not resolve exec-clean interpreter: $interpreter"
+    [[ -f "$resolved_interpreter" && -x "$resolved_interpreter" \
+      && ! -L "$resolved_interpreter" ]] \
+      || die "resolved exec-clean interpreter is unsafe: $resolved_interpreter"
+  fi
+  [[ "$command_path" == /* && -f "$command_path" && -x "$command_path" \
+    && ! -L "$command_path" ]] \
+    || die "exec-clean command is missing or unsafe: $command_path"
+  resolved_command="$(resolve_file "$command_path")" \
+    || die "could not resolve exec-clean command: $command_path"
+  [[ "$resolved_command" == "$command_path" ]] \
+    || die "redirected exec-clean command: $command_path"
+  case "$resolved_command" in
+    "$runtime_root"/*) ;;
+    *) die "exec-clean command is outside the runtime root: $command_path" ;;
+  esac
+  if [[ -n "$resolved_interpreter" ]]; then
+    exec "$resolved_interpreter" "$resolved_command" "${@:2}"
+  fi
+  exec "$resolved_command" "${@:2}"
+}
+
+prepare_command() {
+  local home='' marker='' marker_value='' bridge='' profile=default require_existing=false
+  local executable version
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --home)
+        [[ "$#" -ge 2 ]] || die 'missing value for --home'
+        home="$2"; shift 2 ;;
+      --marker)
+        [[ "$#" -ge 2 ]] || die 'missing value for --marker'
+        marker="$2"; shift 2 ;;
+      --marker-value)
+        [[ "$#" -ge 2 ]] || die 'missing value for --marker-value'
+        marker_value="$2"; shift 2 ;;
+      --bridge)
+        [[ "$#" -ge 2 ]] || die 'missing value for --bridge'
+        bridge="$2"; shift 2 ;;
+      --profile)
+        [[ "$#" -ge 2 ]] || die 'missing value for --profile'
+        profile="$2"; shift 2 ;;
+      --require-existing)
+        require_existing=true; shift ;;
+      *)
+        die "unknown option: $1" ;;
+    esac
+  done
+  validate_common_arguments "$home" "$marker" "$marker_value" "$bridge"
+  [[ -n "$profile" ]] || die 'invalid --profile: value must not be empty'
+
+  if [[ "$require_existing" == true ]]; then
+    require_owned_profile "$home" "$marker" "$marker_value"
+  else
+    prepare_profile_dirs "$home" "$marker" "$marker_value"
+  fi
+  scrub_provider_environment
+  [[ "$bridge" != enabled ]] || require_command python3
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  ensure_floating_skills "$home"
+  ensure_onboarding "$home" "$version"
+  ensure_settings "$home"
+  if [[ "$bridge" == enabled ]]; then
+    install_session_bridge "$home" "$profile"
+  else
+    remove_session_bridge "$home" "$profile"
+  fi
+  check_proxy
+}
+
+doctor_command() {
+  local home='' marker='' marker_value='' bridge='' profile=default
+  local executable version
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --home)
+        [[ "$#" -ge 2 ]] || die 'missing value for --home'
+        home="$2"; shift 2 ;;
+      --marker)
+        [[ "$#" -ge 2 ]] || die 'missing value for --marker'
+        marker="$2"; shift 2 ;;
+      --marker-value)
+        [[ "$#" -ge 2 ]] || die 'missing value for --marker-value'
+        marker_value="$2"; shift 2 ;;
+      --bridge)
+        [[ "$#" -ge 2 ]] || die 'missing value for --bridge'
+        bridge="$2"; shift 2 ;;
+      --profile)
+        [[ "$#" -ge 2 ]] || die 'missing value for --profile'
+        profile="$2"; shift 2 ;;
+      *)
+        die "unknown option: $1" ;;
+    esac
+  done
+  validate_common_arguments "$home" "$marker" "$marker_value" "$bridge"
+  [[ -n "$profile" ]] || die 'invalid --profile: value must not be empty'
+
+  scrub_provider_environment
+  [[ "$bridge" != enabled ]] || require_command python3
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  require_owned_profile "$home" "$marker" "$marker_value"
+  verify_onboarding "$home"
+  doctor_bridge_state "$home" "$profile" "$bridge"
+  check_proxy
+}
+
+launch_command() {
+  local home='' marker='' marker_value='' bridge='' profile=default saw_separator=false
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --home)
+        [[ "$#" -ge 2 ]] || die 'missing value for --home'
+        home="$2"; shift 2 ;;
+      --marker)
+        [[ "$#" -ge 2 ]] || die 'missing value for --marker'
+        marker="$2"; shift 2 ;;
+      --marker-value)
+        [[ "$#" -ge 2 ]] || die 'missing value for --marker-value'
+        marker_value="$2"; shift 2 ;;
+      --bridge)
+        [[ "$#" -ge 2 ]] || die 'missing value for --bridge'
+        bridge="$2"; shift 2 ;;
+      --profile)
+        [[ "$#" -ge 2 ]] || die 'missing value for --profile'
+        profile="$2"; shift 2 ;;
+      --)
+        saw_separator=true
+        shift
+        break
+        ;;
+      *)
+        die "unknown option: $1" ;;
+    esac
+  done
+  [[ "$saw_separator" == true ]] || die 'missing -- separator before Claude arguments'
+  validate_common_arguments "$home" "$marker" "$marker_value" "$bridge"
+  [[ -n "$profile" ]] || die 'invalid --profile: value must not be empty'
+  cmd_launch "$home" "$marker" "$marker_value" "$bridge" "$profile" "$@"
+}
+
+cmd_launch() {
+  local home="$1" marker="$2" marker_value="$3" bridge="$4" profile="$5"
+  local executable version arg has_model=false
+  shift 5
+
+  scrub_provider_environment
+  require_owned_profile "$home" "$marker" "$marker_value"
+  executable="$(claude_executable)"
+  version="$(claude_version "$executable")"
+  [[ "$bridge" != enabled ]] || require_command python3
+  doctor_bridge_state "$home" "$profile" "$bridge"
+  ensure_trust "$home"
+  check_proxy
+
+  for arg in "$@"; do
+    if [[ "$arg" == --model || "$arg" == --model=* ]]; then
+      has_model=true
+      break
+    fi
+  done
+
+  if [[ "$has_model" == true ]]; then
+    exec env \
+      CLAUDE_CONFIG_DIR="$home" \
+      ANTHROPIC_AUTH_TOKEN="$proxy_token" \
+      ANTHROPIC_BASE_URL="$proxy_origin" \
+      ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
+      ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
+      ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
+      "$executable" --dangerously-skip-permissions \
+      --permission-mode bypassPermissions \
+      --disallowedTools AskUserQuestion "$@"
+  fi
+  exec env \
+    CLAUDE_CONFIG_DIR="$home" \
+    ANTHROPIC_AUTH_TOKEN="$proxy_token" \
+    ANTHROPIC_BASE_URL="$proxy_origin" \
+    ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
+    ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
+    "$executable" --dangerously-skip-permissions \
+    --permission-mode bypassPermissions \
+    --disallowedTools AskUserQuestion \
+    --model "$model_id" "$@"
+}
+
+require_command jq
+
+case "${1-}" in
+  help|-h|--help)
+    usage
+    ;;
+  prepare)
+    shift
+    prepare_command "$@"
+    ;;
+  doctor)
+    shift
+    doctor_command "$@"
+    ;;
+  launch)
+    shift
+    launch_command "$@"
+    ;;
+  version)
+    shift
+    [[ "$#" -eq 0 ]] || die 'version accepts no arguments'
+    scrub_provider_environment
+    claude_version_if_available
+    ;;
+  model-id)
+    shift
+    [[ "$#" -eq 0 ]] || die 'model-id accepts no arguments'
+    printf '%s\n' "$model_id"
+    ;;
+  exec-clean)
+    shift
+    exec_clean_command "$@"
+    ;;
+  '')
+    die 'missing command'
+    ;;
+  *)
+    die "unknown command: $1"
+    ;;
+esac

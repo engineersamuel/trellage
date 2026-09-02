@@ -34,8 +34,15 @@ cat >"$fake_bin/claude" <<'FAKE_CLAUDE'
 set -euo pipefail
 
 if [[ "${1-}" == --version ]]; then
+  if [[ -n "${FAKE_CLAUDE_ENV_DUMP-}" ]]; then
+    env >"$FAKE_CLAUDE_ENV_DUMP"
+  fi
   printf '%s (Claude Code)\n' "${FAKE_CLAUDE_VERSION:-2.1.233}"
   exit 0
+fi
+
+if [[ -n "${FAKE_CLAUDE_ENV_DUMP-}" ]]; then
+  env >"$FAKE_CLAUDE_ENV_DUMP"
 fi
 
 jq -cn \
@@ -125,6 +132,13 @@ cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
 cmp -s "$runtime_root/lib/trellage-session-bridge.py" \
   "$root/../../scripts/trellage-session-bridge.py" \
   || fail 'installed runtime session bridge differs'
+[[ -f "$runtime_root/lib/native-claude" \
+  && ! -L "$runtime_root/lib/native-claude" \
+  && -x "$runtime_root/lib/native-claude" ]] \
+  || fail 'installer did not publish the shared native Claude runtime'
+cmp -s "$runtime_root/lib/native-claude" \
+  "$root/../trellage-claude-common/native-claude" \
+  || fail 'installed shared native Claude runtime differs'
 for asset in rundown.md NOTICE.md; do
   [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \
     || fail "installer did not publish asset: $asset"
@@ -311,6 +325,61 @@ jq -s -e --arg home "$profile_home" '
   and .[-1].gh == "unset"
   and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "-p", "two words", "", "--literal=*"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
+
+# --- provider/token scrub must cover the supported provider/token override
+# paths, so a stale tmux/Herdr daemon environment (fmx worker threat
+# model) can never leak into the launched process. GH_CONFIG_DIR must
+# survive since fmx workers deliberately use file-backed gh auth.
+poison_env_assignments=(
+  ANTHROPIC_CUSTOM_HEADERS=poison ANTHROPIC_MODEL=poison ANTHROPIC_SMALL_FAST_MODEL=poison
+  CLAUDE_CODE_USE_FOUNDRY=poison ANTHROPIC_FOUNDRY_API_KEY=poison ANTHROPIC_FOUNDRY_BASE_URL=poison
+  ANTHROPIC_FOUNDRY_RESOURCE=poison ANTHROPIC_BEDROCK_BASE_URL=poison ANTHROPIC_VERTEX_BASE_URL=poison
+  CLAUDE_CODE_USE_BEDROCK=poison AWS_ACCESS_KEY_ID=poison AWS_SECRET_ACCESS_KEY=poison
+  AWS_SESSION_TOKEN=poison AWS_PROFILE=poison AWS_BEARER_TOKEN_BEDROCK=poison AWS_REGION=poison
+  AWS_DEFAULT_REGION=poison AWS_ROLE_ARN=poison AWS_WEB_IDENTITY_TOKEN_FILE=poison
+  AWS_SHARED_CREDENTIALS_FILE=poison AWS_CONFIG_FILE=poison
+  CLAUDE_CODE_USE_VERTEX=poison GOOGLE_APPLICATION_CREDENTIALS=poison ANTHROPIC_VERTEX_PROJECT_ID=poison
+  CLOUD_ML_REGION=poison GOOGLE_CLOUD_PROJECT=poison GOOGLE_CLOUD_QUOTA_PROJECT=poison
+  GOOGLE_CLOUD_REGION=poison VERTEX_PROJECT=poison VERTEX_REGION=poison
+  AZURE_CLIENT_ID=poison AZURE_CLIENT_SECRET=poison AZURE_TENANT_ID=poison OPENAI_API_KEY=poison
+  AZURE_API_KEY=poison AZURE_OPENAI_API_KEY=poison AZURE_OPENAI_ENDPOINT=poison OPENAI_BASE_URL=poison
+  COPILOT_GITHUB_TOKEN=poison COPILOT_PROXY_GITHUB_TOKEN=poison COPILOT_TOKEN=poison
+  GH_TOKEN=poison GITHUB_TOKEN=poison GH_ENTERPRISE_TOKEN=poison
+  GITHUB_ENTERPRISE_TOKEN=poison
+)
+scrubbed_var_names=(
+  ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL
+  CLAUDE_CODE_USE_FOUNDRY ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_BASE_URL
+  ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL
+  CLAUDE_CODE_USE_BEDROCK AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  AWS_PROFILE AWS_BEARER_TOKEN_BEDROCK AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN
+  AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+  CLAUDE_CODE_USE_VERTEX GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID
+  CLOUD_ML_REGION GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_QUOTA_PROJECT GOOGLE_CLOUD_REGION
+  VERTEX_PROJECT VERTEX_REGION
+  AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID OPENAI_API_KEY
+  AZURE_API_KEY AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT OPENAI_BASE_URL
+  COPILOT_GITHUB_TOKEN COPILOT_PROXY_GITHUB_TOKEN COPILOT_TOKEN
+  GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+)
+
+env_dump="$fixture_root/launch-env-dump.txt"
+env "${poison_env_assignments[@]}" \
+  GH_CONFIG_DIR=/fixture/gh-config-marker \
+  FAKE_CLAUDE_ENV_DUMP="$env_dump" \
+  "$command_path" default -p 'scrub check' \
+  || fail 'scrub-check launch failed'
+
+for scrubbed_var in "${scrubbed_var_names[@]}"; do
+  grep -q "^${scrubbed_var}=" "$env_dump" \
+    && fail "launch did not scrub $scrubbed_var"
+done
+grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$env_dump" \
+  || fail 'launch scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+grep -Fqx 'ANTHROPIC_AUTH_TOKEN=trellage-local-proxy' "$env_dump" \
+  || fail 'launch did not set the managed ANTHROPIC_AUTH_TOKEN'
+grep -Fqx 'ANTHROPIC_BASE_URL=http://127.0.0.1:8080' "$env_dump" \
+  || fail 'launch did not set the managed ANTHROPIC_BASE_URL'
 
 "$command_path" --model claude-sonnet-5 -p override \
   || fail 'model override launch failed'
@@ -516,6 +585,415 @@ HOME="$unrelated_home" "$installer" >"$fixture_root/unrelated.out" 2>&1 \
   && fail 'installer replaced unrelated command'
 grep -Fq 'unrelated command' "$fixture_root/unrelated.out" \
   || fail 'unrelated command error differs'
+
+# --- delegation: cldx must actually call the shared native Claude runtime,
+# not reimplement its logic. Swap the installed shared runtime for a stub
+# and confirm cldx's own output changes accordingly.
+native_claude="$runtime_root/lib/native-claude"
+export TRELLAGE_CLAUDE_LAUNCHER_NAME=cldx
+export TRELLAGE_CLAUDE_RUNTIME_ROOT="$(CDPATH= cd -P -- "$runtime_root" && pwd)"
+cp "$native_claude" "$fixture_root/native-claude.real"
+cat >"$native_claude" <<'STUB'
+#!/usr/bin/env bash
+printf 'STUB-INVOKED:%s\n' "$*"
+exit 0
+STUB
+chmod 0755 "$native_claude"
+"$command_path" doctor >"$fixture_root/delegation.out" || fail 'delegation stub doctor failed'
+grep -Fq 'STUB-INVOKED:doctor --home' "$fixture_root/delegation.out" \
+  || fail 'cldx did not delegate doctor to the shared native Claude runtime'
+grep -Fq -- '--bridge enabled --profile default' "$fixture_root/delegation.out" \
+  || fail 'cldx did not pass --bridge/--profile through to the shared runtime'
+cp "$fixture_root/native-claude.real" "$native_claude"
+chmod 0755 "$native_claude"
+"$command_path" doctor >"$fixture_root/delegation-restored.out" \
+  || fail 'doctor failed after restoring the shared native Claude runtime'
+grep -Fq 'cldx doctor: OK (2.1.233, claude-opus-5)' "$fixture_root/delegation-restored.out" \
+  || fail 'doctor output differs after restoring the shared native Claude runtime'
+
+# --- prepare/doctor must scrub the provider/token environment before
+# probing `claude --version`, not only before launch's final exec, since a
+# stale tmux/Herdr daemon environment could otherwise leak into that
+# earlier child process too. Invoke native-claude directly (not the cldx
+# wrapper) so the dump captures exactly prepare's/doctor's own --version
+# probe, with no risk of being overwritten by an unrelated later call.
+prepare_scrub_dump="$fixture_root/prepare-scrub-dump.txt"
+env "${poison_env_assignments[@]}" \
+  GH_CONFIG_DIR=/fixture/gh-config-marker \
+  FAKE_CLAUDE_ENV_DUMP="$prepare_scrub_dump" \
+  "$native_claude" prepare --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  --require-existing >"$fixture_root/prepare-scrub-check.out" \
+  || fail 'scrub-check prepare failed'
+for scrubbed_var in "${scrubbed_var_names[@]}"; do
+  grep -q "^${scrubbed_var}=" "$prepare_scrub_dump" \
+    && fail "prepare did not scrub $scrubbed_var before probing claude --version"
+done
+grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$prepare_scrub_dump" \
+  || fail 'prepare scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+
+doctor_scrub_dump="$fixture_root/doctor-scrub-dump.txt"
+env "${poison_env_assignments[@]}" \
+  GH_CONFIG_DIR=/fixture/gh-config-marker \
+  FAKE_CLAUDE_ENV_DUMP="$doctor_scrub_dump" \
+  "$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  >"$fixture_root/doctor-scrub-check.out" \
+  || fail 'scrub-check doctor failed'
+for scrubbed_var in "${scrubbed_var_names[@]}"; do
+  grep -q "^${scrubbed_var}=" "$doctor_scrub_dump" \
+    && fail "doctor did not scrub $scrubbed_var before probing claude --version"
+done
+grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$doctor_scrub_dump" \
+  || fail 'doctor scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+
+# --- the standalone `version` verb must scrub too: `cldx setup`/`doctor`
+# call it after the main operation (via cldx's setup_profile/doctor_profile
+# wrappers), so its own `claude --version` child must not inherit a
+# poisoned environment either, even though `version` starts no bridge or
+# proxy work of its own. `cldx doctor` runs `native-claude doctor` and then
+# `native-claude version`, so the dump (last write wins) reflects the
+# version verb's own probe specifically.
+version_scrub_dump="$fixture_root/version-scrub-dump.txt"
+env "${poison_env_assignments[@]}" \
+  GH_CONFIG_DIR=/fixture/gh-config-marker \
+  FAKE_CLAUDE_ENV_DUMP="$version_scrub_dump" \
+  "$command_path" doctor >"$fixture_root/version-scrub-check.out" \
+  || fail 'scrub-check cldx doctor (version verb) failed'
+for scrubbed_var in "${scrubbed_var_names[@]}"; do
+  grep -q "^${scrubbed_var}=" "$version_scrub_dump" \
+    && fail "version did not scrub $scrubbed_var before probing claude --version"
+done
+grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$version_scrub_dump" \
+  || fail 'version scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+
+# --- bridge separation: prepare --bridge disabled must remove exactly the
+# Trellage-managed hook and executable, and must never touch unrelated
+# SessionStart hook entries.
+"$command_path" repair >"$fixture_root/bridge-repair.out" || fail 'repair failed'
+bridge_path="$profile_home/.trellage/trellage-session-bridge.py"
+jq '.hooks.SessionStart += [
+  {"matcher": "*", "hooks": [{"type": "command", "command": "unrelated-user-hook"}]}
+]' "$settings" >"$fixture_root/settings-with-unrelated.json"
+mv "$fixture_root/settings-with-unrelated.json" "$settings"
+[[ -f "$bridge_path" && ! -L "$bridge_path" ]] \
+  || fail 'bridge fixture setup: bridge executable missing'
+jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))' \
+  "$settings" >/dev/null || fail 'bridge fixture setup: unrelated hook missing'
+
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  >"$fixture_root/bridge-doctor-mismatch.out" 2>&1 \
+  && fail 'doctor accepted --bridge disabled while the bridge was installed'
+grep -Fq 'session bridge is still installed' "$fixture_root/bridge-doctor-mismatch.out" \
+  || fail 'bridge-still-installed diagnostic differs'
+
+"$native_claude" prepare --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  --require-existing >"$fixture_root/bridge-disable.out" \
+  || fail 'prepare --bridge disabled failed'
+[[ ! -e "$bridge_path" && ! -L "$bridge_path" ]] \
+  || fail 'prepare --bridge disabled left the session bridge executable'
+jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))' \
+  "$settings" >/dev/null \
+  || fail 'prepare --bridge disabled removed an unrelated hook'
+jq -e '[.hooks.SessionStart[]?.hooks[]?
+  | select((.command | contains("native-hook --agent claude --profile default")))]
+  | length == 0' "$settings" >/dev/null \
+  || fail 'prepare --bridge disabled left the managed session bridge hook'
+
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  >"$fixture_root/bridge-doctor-disabled.out" \
+  || fail 'doctor rejected a correctly disabled bridge'
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  >"$fixture_root/bridge-doctor-enabled.out" 2>&1 \
+  && fail 'doctor accepted --bridge enabled while the bridge was absent'
+grep -Fq 'session bridge is missing' "$fixture_root/bridge-doctor-enabled.out" \
+  || fail 'bridge-missing diagnostic differs'
+
+"$command_path" repair >"$fixture_root/bridge-restore.out" || fail 'repair failed to reinstall the bridge'
+[[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
+  || fail 'repair did not reinstall the session bridge executable'
+jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))
+  and ([.hooks.SessionStart[]?.hooks[]?
+    | select((.command | contains("native-hook --agent claude --profile default")))]
+    | length) == 1
+' "$settings" >/dev/null \
+  || fail 'repair did not restore the session bridge hook alongside the unrelated hook'
+
+# --- stale other-profile isolation: a bridge-enabled home must contain
+# exactly the current managed hook and no stale managed hook left behind
+# for a previously active profile at the same bridge path; a
+# bridge-disabled home must contain no managed hook at all, even one that
+# records a different stale profile name. Unrelated hooks must survive
+# both directions.
+# Derive the stale-profile variant from the real installed hook command
+# (rather than hand-reconstructing native-claude's shlex-quoting rules
+# here), so this stays correct however the bridge_path happens to quote.
+current_hook_command="$(jq -r --arg needle 'native-hook --agent claude --profile default' \
+  '[.hooks.SessionStart[]?.hooks[]? | select(.command | contains($needle))][0].command' \
+  "$settings")"
+[[ -n "$current_hook_command" && "$current_hook_command" != null ]] \
+  || fail 'stale-profile fixture setup: could not read the current managed hook command'
+stale_hook_command="${current_hook_command%default}stale-profile"
+jq --arg cmd "$stale_hook_command" '.hooks.SessionStart += [
+  {"matcher": "*", "hooks": [{"type": "command", "command": $cmd}]}
+]' "$settings" >"$fixture_root/settings-with-stale-profile.json"
+mv "$fixture_root/settings-with-stale-profile.json" "$settings"
+
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  >"$fixture_root/stale-profile-doctor.out" 2>&1 \
+  && fail 'doctor accepted a stale managed hook for another profile'
+grep -Fq 'stale session bridge hook for another profile is installed' \
+  "$fixture_root/stale-profile-doctor.out" \
+  || fail 'stale-other-profile doctor diagnostic differs'
+
+"$native_claude" launch --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  -- --version >"$fixture_root/stale-profile-launch.out" 2>"$fixture_root/stale-profile-launch.err" \
+  && fail 'launch accepted a stale managed hook for another profile'
+grep -Fq 'stale session bridge hook for another profile is installed' \
+  "$fixture_root/stale-profile-launch.err" \
+  || fail 'stale-other-profile launch diagnostic differs'
+
+"$command_path" repair >"$fixture_root/stale-profile-repair.out" \
+  || fail 'repair failed to prune the stale other-profile hook'
+jq -e --arg cmd "$stale_hook_command" \
+  '[.hooks.SessionStart[]?.hooks[]? | select(.command == $cmd)] | length == 0' \
+  "$settings" >/dev/null \
+  || fail 'repair left the stale other-profile hook installed'
+jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))' \
+  "$settings" >/dev/null \
+  || fail 'pruning the stale other-profile hook removed an unrelated hook'
+jq -e '[.hooks.SessionStart[]?.hooks[]?
+  | select((.command | contains("native-hook --agent claude --profile default")))]
+  | length == 1' "$settings" >/dev/null \
+  || fail 'repair did not leave exactly one current managed hook'
+
+jq --arg cmd "$stale_hook_command" '.hooks.SessionStart += [
+  {"matcher": "*", "hooks": [{"type": "command", "command": $cmd}]}
+]' "$settings" >"$fixture_root/settings-with-stale-profile-2.json"
+mv "$fixture_root/settings-with-stale-profile-2.json" "$settings"
+"$native_claude" prepare --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  --require-existing >"$fixture_root/stale-profile-disable.out" \
+  || fail 'prepare --bridge disabled failed with a stale other-profile hook present'
+jq -e '[.hooks.SessionStart[]?.hooks[]?
+  | select(.command | contains("native-hook --agent claude --profile"))]
+  | length == 0' "$settings" >/dev/null \
+  || fail 'prepare --bridge disabled left a managed hook for another profile installed'
+jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))' \
+  "$settings" >/dev/null \
+  || fail 'prepare --bridge disabled removed an unrelated hook while pruning a stale profile'
+
+"$command_path" repair >"$fixture_root/bridge-restore-3.out" || fail 'repair failed to reinstall the bridge'
+
+# --- launch must assert the *full* bridge state (hook presence, not just
+# executable presence). A "captain" launch (--bridge enabled) must fail if
+# the exact SessionStart hook is missing even though the executable is
+# still installed; a "worker" launch (--bridge disabled) must fail if a
+# stale matching hook remains even though the executable is gone.
+managed_hook_command="$(jq -r --arg needle 'native-hook --agent claude --profile default' \
+  '[.hooks.SessionStart[]?.hooks[]? | select(.command | contains($needle))][0].command' \
+  "$settings")"
+[[ -n "$managed_hook_command" && "$managed_hook_command" != null ]] \
+  || fail 'bridge fixture setup: could not read the managed hook command'
+
+cp "$settings" "$fixture_root/settings-before-launch-checks.json"
+jq --arg cmd "$managed_hook_command" \
+  '.hooks.SessionStart = [.hooks.SessionStart[] | .hooks |= map(select(.command != $cmd))]
+   | .hooks.SessionStart |= map(select((.hooks | length) > 0))' \
+  "$settings" >"$fixture_root/settings-missing-hook.json"
+mv "$fixture_root/settings-missing-hook.json" "$settings"
+"$native_claude" launch --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  -- --version >"$fixture_root/launch-missing-hook.out" 2>"$fixture_root/launch-missing-hook.err" \
+  && fail 'launch accepted a bridge-enabled profile whose SessionStart hook is missing'
+grep -Fq 'session bridge hook is missing' "$fixture_root/launch-missing-hook.err" \
+  || fail 'launch missing-hook diagnostic differs'
+cp "$fixture_root/settings-before-launch-checks.json" "$settings"
+
+rm -f "$bridge_path"
+"$native_claude" launch --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  -- --version >"$fixture_root/launch-stale-hook.out" 2>"$fixture_root/launch-stale-hook.err" \
+  && fail 'launch accepted a bridge-disabled profile with a stale SessionStart hook'
+grep -Fq 'session bridge hook is still installed' "$fixture_root/launch-stale-hook.err" \
+  || fail 'launch stale-hook diagnostic differs'
+
+"$command_path" repair >"$fixture_root/bridge-restore-2.out" || fail 'repair failed to reinstall the bridge'
+[[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
+  || fail 'repair did not reinstall the session bridge executable after launch checks'
+
+# --- doctor_bridge_state must not silently treat a malformed, missing, or
+# symlinked settings.json as "zero managed hooks" in --bridge disabled
+# mode. An owned profile always has a settings.json from prepare's
+# ensure_settings, so these are fail-closed hardening cases, not normal
+# states a well-formed profile can reach.
+"$native_claude" prepare --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  --require-existing >"$fixture_root/settings-safety-disable.out" \
+  || fail 'prepare --bridge disabled failed ahead of settings-safety checks'
+cp "$settings" "$fixture_root/settings-before-safety-checks.json"
+
+printf '{invalid json\n' >"$settings"
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  >"$fixture_root/settings-malformed-json.out" 2>"$fixture_root/settings-malformed-json.err" \
+  && fail 'doctor accepted malformed JSON settings as zero managed hooks'
+grep -Fq 'invalid Claude settings' "$fixture_root/settings-malformed-json.err" \
+  || fail 'malformed-JSON settings diagnostic differs'
+grep -Fqx '{invalid json' "$settings" \
+  || fail 'malformed-JSON settings check mutated the settings file'
+cp "$fixture_root/settings-before-safety-checks.json" "$settings"
+
+jq '.hooks.SessionStart = "not-an-array"' "$settings" \
+  >"$fixture_root/settings-malformed-hook-shape.json"
+mv "$fixture_root/settings-malformed-hook-shape.json" "$settings"
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  >"$fixture_root/settings-malformed-shape.out" 2>"$fixture_root/settings-malformed-shape.err" \
+  && fail 'doctor accepted a non-array hooks.SessionStart as zero managed hooks'
+grep -Fq 'invalid Claude settings' "$fixture_root/settings-malformed-shape.err" \
+  || fail 'malformed-hook-shape settings diagnostic differs'
+cp "$fixture_root/settings-before-safety-checks.json" "$settings"
+
+# `//` treats a present `false` the same as null/absent, so boolean-false
+# shapes at each nesting level must be rejected explicitly rather than
+# silently tolerated as "hooks absent".
+for false_shape_jq in \
+  '.hooks = false' \
+  '.hooks.SessionStart = false' \
+  '.hooks.SessionStart = [{"matcher": "*", "hooks": false}]'; do
+  jq "$false_shape_jq" "$settings" >"$fixture_root/settings-false-shape.json"
+  mv "$fixture_root/settings-false-shape.json" "$settings"
+  "$native_claude" doctor --home "$profile_home" \
+    --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+    --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+    >"$fixture_root/settings-false-shape.out" 2>"$fixture_root/settings-false-shape.err" \
+    && fail "doctor accepted a boolean-false shape ($false_shape_jq) as zero managed hooks"
+  grep -Fq 'invalid Claude settings' "$fixture_root/settings-false-shape.err" \
+    || fail "boolean-false shape ($false_shape_jq) diagnostic differs"
+  cp "$fixture_root/settings-before-safety-checks.json" "$settings"
+done
+
+rm -f "$settings"
+"$native_claude" launch --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  -- --version >"$fixture_root/settings-missing.out" 2>"$fixture_root/settings-missing.err" \
+  && fail 'launch accepted a missing settings.json as zero managed hooks'
+grep -Fq 'Claude settings are missing; run: cldx repair' "$fixture_root/settings-missing.err" \
+  || fail 'missing-settings diagnostic differs'
+cp "$fixture_root/settings-before-safety-checks.json" "$settings"
+
+mv "$settings" "$fixture_root/settings-before-symlink-safety.json"
+ln -s /dev/null "$settings"
+"$native_claude" doctor --home "$profile_home" \
+  --marker "$profile_root/.managed-by-trellage-claude-profiles" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  >"$fixture_root/settings-symlink-safety.out" 2>"$fixture_root/settings-symlink-safety.err" \
+  && fail 'doctor accepted a symlinked settings.json as zero managed hooks'
+grep -Fq 'unsafe Claude settings' "$fixture_root/settings-symlink-safety.err" \
+  || fail 'symlinked-settings safety diagnostic differs'
+rm -f "$settings"
+mv "$fixture_root/settings-before-symlink-safety.json" "$settings"
+
+"$command_path" repair >"$fixture_root/bridge-restore-4.out" \
+  || fail 'repair failed to reinstall the bridge after settings-safety checks'
+[[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
+  || fail 'repair did not reinstall the session bridge executable after settings-safety checks'
+
+# --- --home itself must be validated, not only the marker's parent chain.
+# Replacing the profile home with a symlink must be refused before any
+# read/write, for prepare/doctor/launch alike.
+symlink_target="$home/symlink-target"
+mkdir -p "$symlink_target"
+symlinked_home="$home/symlinked-profile-home"
+ln -s "$symlink_target" "$symlinked_home"
+symlinked_marker="$home/.managed-by-symlinked-profile"
+printf 'trellage-claude-profile-v1\n' >"$symlinked_marker"
+"$native_claude" doctor --home "$symlinked_home" --marker "$symlinked_marker" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled \
+  >"$fixture_root/symlinked-home-doctor.out" 2>"$fixture_root/symlinked-home-doctor.err" \
+  && fail 'doctor accepted a symlinked --home'
+grep -Fq 'unsafe profile home' "$fixture_root/symlinked-home-doctor.err" \
+  || fail 'symlinked --home diagnostic differs'
+"$native_claude" launch --home "$symlinked_home" --marker "$symlinked_marker" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled \
+  -- --version >"$fixture_root/symlinked-home-launch.out" 2>"$fixture_root/symlinked-home-launch.err" \
+  && fail 'launch accepted a symlinked --home'
+grep -Fq 'unsafe profile home' "$fixture_root/symlinked-home-launch.err" \
+  || fail 'symlinked --home launch diagnostic differs'
+
+# --- spaced paths: the installed hook .command must shell-quote the bridge
+# path/profile exactly like Python's shlex.join/shlex.quote, and disabling
+# the bridge must remove only that exact hook, never an unrelated one.
+spaced_root="$home/spaced-root"
+spaced_home="$spaced_root/spaced profile"
+spaced_marker="$spaced_root/.managed-by-spaced-profile"
+"$native_claude" prepare --home "$spaced_home" --marker "$spaced_marker" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  >"$fixture_root/spaced-prepare.out" || fail 'prepare with a spaced home path failed'
+spaced_settings="$spaced_home/settings.json"
+spaced_bridge="$spaced_home/.trellage/trellage-session-bridge.py"
+[[ -f "$spaced_bridge" && ! -L "$spaced_bridge" && -x "$spaced_bridge" ]] \
+  || fail 'spaced-path prepare did not install the session bridge executable'
+# native-claude squeezes redundant slashes out of the hook path before
+# quoting it (matching Python's pathlib.Path normalization), so the
+# expected command must be squeezed the same way to compare exactly even
+# when $TMPDIR itself contains a trailing/doubled slash.
+squeezed_spaced_bridge="$spaced_bridge"
+squeeze_slash='/'
+while [[ "$squeezed_spaced_bridge" == *"$squeeze_slash$squeeze_slash"* ]]; do
+  squeezed_spaced_bridge="${squeezed_spaced_bridge//$squeeze_slash$squeeze_slash/$squeeze_slash}"
+done
+expected_spaced_hook_command="'$squeezed_spaced_bridge' native-hook --agent claude --profile default"
+jq -e --arg cmd "$expected_spaced_hook_command" \
+  '[.hooks.SessionStart[]?.hooks[]? | select(.command == $cmd)] | length == 1' \
+  "$spaced_settings" >/dev/null \
+  || fail 'spaced-path prepare did not record the shlex-quoted hook command'
+
+jq '.hooks.SessionStart += [
+  {"matcher": "*", "hooks": [{"type": "command", "command": "unrelated-spaced-hook"}]}
+]' "$spaced_settings" >"$fixture_root/spaced-settings-with-unrelated.json"
+mv "$fixture_root/spaced-settings-with-unrelated.json" "$spaced_settings"
+
+"$native_claude" doctor --home "$spaced_home" --marker "$spaced_marker" \
+  --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
+  >"$fixture_root/spaced-doctor.out" \
+  || fail 'doctor rejected a correctly enabled bridge at a spaced-path home'
+
+"$native_claude" prepare --home "$spaced_home" --marker "$spaced_marker" \
+  --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
+  --require-existing >"$fixture_root/spaced-disable.out" \
+  || fail 'prepare --bridge disabled failed at a spaced-path home'
+[[ ! -e "$spaced_bridge" && ! -L "$spaced_bridge" ]] \
+  || fail 'prepare --bridge disabled left the session bridge executable at a spaced-path home'
+jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-spaced-hook"))' \
+  "$spaced_settings" >/dev/null \
+  || fail 'prepare --bridge disabled removed an unrelated hook at a spaced-path home'
+jq -e --arg cmd "$expected_spaced_hook_command" \
+  '[.hooks.SessionStart[]?.hooks[]? | select(.command == $cmd)] | length == 0' \
+  "$spaced_settings" >/dev/null \
+  || fail 'prepare --bridge disabled left the managed session bridge hook at a spaced-path home'
 
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'

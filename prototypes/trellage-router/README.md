@@ -1,14 +1,14 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-discovers the installed launchers `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`,
-`picx`, and `prx`,
+discovers the installed launchers `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
+`omp`, `picx`, and `prx`,
 validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
 
 ## Install
 
-Install the eight native launchers first. Their commands must resolve from
+Install the nine native launchers first. Their commands must resolve from
 `PATH` to their owned runtimes under `~/.local/share/trellage/`.
 
 Prerequisites: Bash, Node.js, and `jq`.
@@ -17,6 +17,7 @@ Prerequisites: Bash, Node.js, and `jq`.
 (cd ../trellage-codex-profiles && ./install.sh)
 (cd ../trellage-copilot-profiles && ./install.sh)
 (cd ../trellage-claude-profiles && ./install.sh)
+(cd ../trellage-firstmate-profiles && ./install.sh)
 (cd ../trellage-grok-profiles && ./install.sh)
 (cd ../trellage-jcode-profiles && ./install.sh)
 (cd ../trellage-omp-profiles && ./install.sh)
@@ -76,7 +77,7 @@ and `herdrCompatibility`. The nested guide is projected from the installed
 Markdown registry; Markdown remains the authored source. `trx` copies each
 launcher's `headless` object unchanged;
 it does not infer headless support from launcher names. Both forms are
-non-interactive and work without a TTY. They validate all eight owned launchers
+non-interactive and work without a TTY. They validate all nine owned launchers
 and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
 
@@ -167,12 +168,10 @@ launchers that support `inventory PROFILE --json`; `trx` does not collect it on
 the launch path. Inventory can report `busy` while a launcher owns its mutation
 lock. `doctor` remains the full runtime health diagnostic.
 
-`trx` adds no containment. `cpx`, `cdx`, `cldx`, `grx`, `jcx`, `omp`, `picx`,
-and `prx`
-still run
-their selected agents directly on the host with the permissions and safety
-behavior documented by each launcher. Use only trusted repositories, profiles,
-plugins, and arguments.
+`trx` adds no containment. `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`,
+`picx`, and `prx` still run their selected agents directly on the host with
+the permissions and safety behavior documented by each launcher. Use only
+trusted repositories, profiles, plugins, and arguments.
 
 ### Package feeds (Microsoft-managed hosts)
 

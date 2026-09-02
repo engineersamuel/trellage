@@ -1,0 +1,2171 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly launcher_name='fmx'
+readonly harness_name='firstmate'
+readonly ownership_value='trellage-firstmate-profiles-v1'
+readonly ownership_basename='.managed-by-trellage-firstmate-profiles'
+readonly managed_runtime_marker='.fmx-managed'
+# v1 supports exactly one worker harness. The fmx worker boundary only wraps
+# Claude launches, so any other crew harness would escape it entirely.
+readonly managed_crew_harness='claude'
+readonly managed_gh_host='github.com'
+readonly proxy_origin='http://127.0.0.1:8080'
+readonly proxy_token='trellage-local-proxy'
+readonly model_id='claude-opus-5'
+readonly sonnet_model_id='claude-sonnet-5'
+readonly haiku_model_id='claude-haiku-4.5'
+
+die() {
+  printf 'fmx: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  fmx PROFILE [FIRSTMATE_ARGS...]
+  fmx list [--json]
+  fmx inventory PROFILE --json
+  fmx setup PROFILE|--all
+  fmx doctor PROFILE
+  fmx repair PROFILE
+  fmx update [--check] PROFILE|--all
+
+Profiles: default, pstack-workers.
+
+fmx runs a Firstmate captain from a pinned, overlaid runtime.
+
+Network use:
+  setup                always fetches the pinned Firstmate source.
+  update PROFILE       fetches whenever the runtime must change or be
+                       reinstalled; it reports "is current" without fetching
+                       when the installed runtime already matches the pin.
+  update --check       always offline: it compares the installed receipt to
+                       the catalog pin and never fetches.
+  repair               fetches only when it must restage the runtime.
+  doctor               never fetch Firstmate source, but does run the GitHub
+                       identity check, Firstmate prerequisite detection, and
+                       the shared Claude health checks.
+  PROFILE              prompts before a first managed prerequisite install.
+                       Accepted installs use the configured npm registry and
+                       locked GitHub release assets.
+  list, list --json    a pure projection of the catalog; probe nothing.
+EOF
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}" source_dir link_target
+
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(CDPATH= cd -P -- "$(dirname "$source_path")" && pwd)"
+    link_target="$(readlink "$source_path")"
+    if [[ "$link_target" == /* ]]; then
+      source_path="$link_target"
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+  CDPATH= cd -P -- "$(dirname "$source_path")" && pwd
+}
+
+canonical_directory() {
+  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+}
+
+recover_inaccessible_working_directory() {
+  local recovered
+
+  builtin pwd -P >/dev/null 2>&1 && return
+  [[ "${HOME-}" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die 'current working directory no longer exists and HOME is not a safe recovery directory; change directory and retry'
+  builtin cd -P -- "$HOME" >/dev/null 2>&1 \
+    || die "current working directory no longer exists and fmx could not enter HOME: $HOME"
+  recovered="$(builtin pwd -P)" \
+    || die "current working directory no longer exists and fmx could not resolve HOME: $HOME"
+  printf 'fmx: current working directory no longer exists; continuing from %s\n' \
+    "$recovered" >&2
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+recover_inaccessible_working_directory
+
+script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
+runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve runtime root'
+readonly catalog="$runtime_root/catalog.json"
+readonly overlay_root="$runtime_root/overlay"
+readonly policy_source_root="$runtime_root/policies"
+readonly overlay_tool="$runtime_root/lib/fmx-overlay.py"
+readonly worker_launcher="$runtime_root/lib/fmx-worker"
+readonly native_claude="$runtime_root/lib/native-claude"
+readonly prerequisite_helper="$runtime_root/lib/fmx-prerequisites"
+readonly prerequisite_manifest="$runtime_root/prerequisite-lock/manifest.json"
+readonly managed_prerequisite_tools='no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi treehouse'
+
+profile_key=''
+profile_root=''
+profile_marker=''
+fm_runtime=''
+fm_home=''
+captain_root=''
+captain_home=''
+captain_marker=''
+worker_root=''
+receipt_file=''
+policy_file=''
+session_lock=''
+staging_root=''
+previous_runtime=''
+previous_receipt=''
+mutation_lock=''
+mutation_lock_held=''
+task_id_prefix=''
+prerequisite_path=''
+prerequisite_diagnostics=''
+prerequisite_managed_missing=''
+prerequisite_host_missing=''
+
+# ---------------------------------------------------------------------------
+# Catalog. `list --json` is a pure projection of this file: it never probes the
+# host, the profile roots, or the network.
+# ---------------------------------------------------------------------------
+
+validate_catalog() {
+  [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
+    || die "invalid catalog: $catalog"
+  jq -e '
+    def validHeadless:
+      type == "object"
+      and keys == [
+        "changedFiles",
+        "cost",
+        "effortOverride",
+        "eventContract",
+        "modelOverride",
+        "outputFormats",
+        "prompt",
+        "questionToolControl",
+        "resume",
+        "resumeWithPrompt",
+        "schemaVersion",
+        "sessionId",
+        "testedHarnessVersion",
+        "trellageEventContract",
+        "usage"
+      ]
+      and .schemaVersion == 1
+      and .prompt == false
+      and .outputFormats == ["text"]
+      and .eventContract == null
+      and .trellageEventContract == null
+      and .sessionId == "none"
+      and .resume == false
+      and .resumeWithPrompt == false
+      and .questionToolControl == "none"
+      and .changedFiles == "none"
+      and .usage == false
+      and .cost == false
+      and .modelOverride == false
+      and .effortOverride == false
+      and .testedHarnessVersion == null;
+    type == "object"
+    and keys == ["profiles", "schemaVersion", "source"]
+    and .schemaVersion == 1
+    and (.source | type == "object" and keys == ["commit", "overlay", "repository"])
+    and (.source.repository | type == "string" and test("^https://[A-Za-z0-9._~:/-]+\\.git$"))
+    and (.source.commit | type == "string" and test("^[0-9a-f]{40}$"))
+    and (.source.overlay | type == "string" and test("^[0-9a-f]{40}$"))
+    and (.profiles | type == "object" and keys == ["default", "pstack-workers"])
+    and all(.profiles | to_entries[];
+      (.key | test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+      and (.value | type == "object")
+      and (.value | keys == [
+        "description",
+        "headless",
+        "plugin",
+        "standaloneMcps",
+        "taskIdPrefix",
+        "workerPolicy"
+      ])
+      and (.value.description
+        | type == "string"
+        and length > 0
+        and (test("[\u0000-\u001f\u007f-\u009f]") | not))
+      and (.value.headless | validHeadless)
+      and .value.plugin == null
+      and .value.standaloneMcps == []
+      and (.value.taskIdPrefix | type == "string" and test("^[a-z][a-z0-9]{1,7}$"))
+      and (.value.workerPolicy == null
+        or (.value.workerPolicy | type == "string" and test("^[a-z0-9][a-z0-9.-]*\\.md$"))))
+    and ([.profiles | to_entries[] | .value.taskIdPrefix] | length == (unique | length))
+  ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
+}
+
+catalog_commit() {
+  jq -r '.source.commit' "$catalog"
+}
+
+catalog_repository() {
+  jq -r '.source.repository' "$catalog"
+}
+
+catalog_overlay() {
+  jq -r '.source.overlay' "$catalog"
+}
+
+profile_names() {
+  jq -r '.profiles | keys_unsorted[]' "$catalog"
+}
+
+list_profiles() {
+  jq -r '.profiles | to_entries[] | [.key, .value.description] | @tsv' "$catalog"
+}
+
+list_profiles_json() {
+  jq -S '
+    {
+      schemaVersion: 1,
+      launcher: "fmx",
+      harness: "firstmate",
+      # fmx runs Firstmate and its Claude workers directly on the host. No
+      # native OS-level sandbox is enabled; the isolation is state isolation
+      # plus disposable Git worktrees, not a security boundary.
+      sandbox: false,
+      profiles: [
+        .profiles
+        | to_entries[]
+        | {
+            name: .key,
+            description: .value.description,
+            headless: .value.headless,
+            plugin: .value.plugin,
+            source: "kunchenguid/firstmate",
+            marketplace: null,
+            standaloneMcps: .value.standaloneMcps
+          }
+      ]
+    }
+  ' "$catalog"
+}
+
+# ---------------------------------------------------------------------------
+# Profile paths and ownership.
+# ---------------------------------------------------------------------------
+
+require_safe_home() {
+  local canonical_home
+
+  [[ "${HOME-}" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
+    || die "unsafe HOME: ${HOME-}"
+  canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
+  [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+}
+
+require_safe_profile_path() {
+  local path="$HOME" component canonical_home canonical_path
+
+  canonical_home="$(canonical_directory "$HOME")"
+  for component in .local share trellage profiles firstmate "$profile_key"; do
+    path="$path/$component"
+    [[ ! -L "$path" ]] || die "unsafe profile path: $path"
+    if [[ -e "$path" ]]; then
+      [[ -d "$path" ]] || die "unsafe profile path: $path"
+      canonical_path="$(canonical_directory "$path")" \
+        || die "cannot resolve profile path: $path"
+      case "$canonical_path" in
+        "$canonical_home"/*) ;;
+        *) die "redirected profile path: $path" ;;
+      esac
+    fi
+  done
+}
+
+select_profile() {
+  local name="$1"
+
+  jq -e --arg name "$name" '.profiles | has($name)' "$catalog" >/dev/null 2>&1 \
+    || die "unknown profile: $name"
+  profile_key="$name"
+  profile_root="$HOME/.local/share/trellage/profiles/firstmate/$name"
+  profile_marker="$profile_root/$ownership_basename"
+  fm_runtime="$profile_root/runtime"
+  fm_home="$profile_root/home"
+  captain_root="$profile_root/captain"
+  captain_home="$captain_root/claude"
+  captain_marker="$captain_root/$ownership_basename"
+  worker_root="$profile_root/workers"
+  receipt_file="$profile_root/receipts/source.json"
+  session_lock="$profile_root/locks/session"
+  staging_root="$profile_root/staging"
+  previous_runtime="$profile_root/runtime.previous"
+  previous_receipt="$profile_root/receipts.previous.json"
+  mutation_lock="$profile_root/locks/mutation"
+  mutation_generation="$profile_root/locks/generation"
+  task_id_prefix="$(jq -r --arg name "$name" '.profiles[$name].taskIdPrefix' "$catalog")"
+  policy_file=''
+  if [[ "$(jq -r --arg name "$name" '.profiles[$name].workerPolicy // ""' "$catalog")" != '' ]]; then
+    policy_file="$profile_root/policy/worker-policy.md"
+  fi
+}
+
+profile_is_owned_or_empty() {
+  local existing
+
+  if [[ -e "$profile_marker" || -L "$profile_marker" ]]; then
+    [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+    [[ "$(<"$profile_marker")" == "$ownership_value" ]] || return 1
+    return 0
+  fi
+  [[ ! -e "$profile_root" ]] && return 0
+  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
+  [[ -z "$existing" ]]
+}
+
+make_owned_directory() {
+  local path="$1"
+
+  [[ ! -L "$path" ]] || die "unsafe managed directory: $path"
+  [[ -e "$path" ]] || mkdir -p "$path"
+  [[ -d "$path" && ! -L "$path" ]] || die "unsafe managed directory: $path"
+  chmod 0700 "$path"
+}
+
+write_marker() {
+  local path="$1" staged
+
+  [[ ! -L "$path" ]] || die "unsafe ownership marker: $path"
+  staged="$(mktemp "$(dirname "$path")/.ownership.XXXXXX")" \
+    || die "could not stage ownership marker: $path"
+  printf '%s\n' "$ownership_value" >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$path"
+}
+
+prepare_profile_tree() {
+  local path="$HOME" component
+
+  require_safe_profile_path
+  profile_is_owned_or_empty \
+    || die "refusing unrelated existing profile files: $profile_root"
+  for component in .local share trellage profiles firstmate "$profile_key"; do
+    path="$path/$component"
+    [[ -e "$path" ]] || mkdir "$path"
+    [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
+  done
+  chmod 0700 "$profile_root"
+  write_marker "$profile_marker"
+  make_owned_directory "$fm_home"
+  make_owned_directory "$captain_root"
+  make_owned_directory "$worker_root"
+  make_owned_directory "$profile_root/receipts"
+  make_owned_directory "$profile_root/locks"
+  write_marker "$captain_marker"
+}
+
+# Every fmx-owned subdirectory a read path traverses, so a redirected `home`,
+# `receipts`, `locks`, `captain`, `policy`, or `workers` cannot make a check
+# read somewhere else. Only directories that already exist are validated; a
+# missing one is reported by the specific check that needs it.
+managed_profile_subdirectories() {
+  printf '%s\n' \
+    "$fm_home" \
+    "$fm_home/config" \
+    "$fm_home/data" \
+    "$fm_home/state" \
+    "$fm_home/projects" \
+    "$captain_root" \
+    "$captain_home" \
+    "$worker_root" \
+    "$profile_root/receipts" \
+    "$profile_root/locks" \
+    "$profile_root/policy" \
+    "$fm_runtime"
+}
+
+require_safe_managed_paths() {
+  local canonical_profile path canonical_path
+  local -a paths=()
+
+  require_safe_profile_path
+  # A profile that does not exist yet has nothing to validate.
+  [[ -d "$profile_root" && ! -L "$profile_root" ]] || return 0
+  canonical_profile="$(canonical_directory "$profile_root")" \
+    || die "cannot resolve profile root: $profile_root"
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    paths+=("$path")
+  done < <(managed_profile_subdirectories)
+  for path in "${paths[@]}"; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    [[ ! -L "$path" ]] || die "unsafe managed path (symlink): $path"
+    [[ -d "$path" ]] || die "unsafe managed path (not a directory): $path"
+    canonical_path="$(canonical_directory "$path")" \
+      || die "cannot resolve managed path: $path"
+    case "$canonical_path" in
+      "$canonical_profile" | "$canonical_profile"/*) ;;
+      *) die "redirected managed path: $path" ;;
+    esac
+  done
+}
+
+require_owned_profile() {
+  require_safe_managed_paths
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
+    || die "profile is not set up; run fmx setup $profile_key"
+  [[ "$(<"$profile_marker")" == "$ownership_value" ]] \
+    || die "profile ownership marker differs: $profile_marker"
+}
+
+profile_is_set_up() {
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+  [[ "$(<"$profile_marker")" == "$ownership_value" ]] || return 1
+  [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] || return 1
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] || return 1
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Owned-path removal. Only exact fmx-owned staged/runtime paths are removed,
+# and only after the prefix and ownership marker have been validated.
+# ---------------------------------------------------------------------------
+
+remove_owned_path() {
+  local path="$1" canonical_profile canonical_parent
+
+  [[ -e "$path" || -L "$path" ]] || return 0
+  case "$path" in
+    "$profile_root"/*) ;;
+    *) die "refusing to remove a path outside the profile root: $path" ;;
+  esac
+  case "$path" in
+    "$staging_root" | "$previous_runtime" | "$previous_receipt" | "$fm_runtime") ;;
+    *) die "refusing to remove an unmanaged path: $path" ;;
+  esac
+  [[ -f "$profile_marker" && ! -L "$profile_marker" \
+    && "$(<"$profile_marker")" == "$ownership_value" ]] \
+    || die "refusing to remove a path in an unowned profile: $path"
+  [[ ! -L "$path" ]] || die "refusing to remove a symlink: $path"
+  canonical_profile="$(canonical_directory "$profile_root")" \
+    || die "cannot resolve profile root: $profile_root"
+  canonical_parent="$(canonical_directory "$(dirname "$path")")" \
+    || die "cannot resolve parent of $path"
+  [[ "$canonical_parent" == "$canonical_profile" ]] \
+    || die "refusing to remove a redirected path: $path"
+  rm -rf -- "$path"
+}
+
+# ---------------------------------------------------------------------------
+# Fleet activity. Nothing here deletes anything; it only reports.
+# ---------------------------------------------------------------------------
+
+pid_alive() {
+  local pid="$1"
+
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+read_pid_file() {
+  local path="$1" value
+
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  value="$(head -c 32 -- "$path" 2>/dev/null | tr -d '[:space:]')" || return 1
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "$value"
+}
+
+# One classifier for both fmx lock directories.
+#
+#   none        no lock directory
+#   incomplete  a lock directory whose owner or pid is missing or malformed;
+#               this is what a competitor mid-acquisition looks like, so it is
+#               NEVER auto-reclaimed
+#   unowned     a complete-looking lock some other tool owns
+#   stale       exactly ours, with a valid pid that is dead
+#   active      exactly ours, with a valid live pid
+lock_state() {
+  local lock="$1" pid
+
+  [[ -e "$lock" || -L "$lock" ]] || { printf 'none\n'; return; }
+  [[ -d "$lock" && ! -L "$lock" ]] || { printf 'incomplete\n'; return; }
+  [[ -f "$lock/owner" && ! -L "$lock/owner" ]] || { printf 'incomplete\n'; return; }
+  [[ "$(<"$lock/owner")" == "$ownership_value" ]] || { printf 'unowned\n'; return; }
+  pid="$(read_pid_file "$lock/pid")" || { printf 'incomplete\n'; return; }
+  if pid_alive "$pid"; then
+    printf 'active\n'
+  else
+    printf 'stale\n'
+  fi
+}
+
+session_state() {
+  lock_state "$session_lock"
+}
+
+# Emits "<task-id> <active|stale|orphaned>" for every worker home fmx knows
+# about. Orphaned means an fmx worker home with no live marker and no Firstmate
+# task record; it is reported, never removed.
+worker_states() {
+  local entry task pid state
+
+  [[ -d "$worker_root" && ! -L "$worker_root" ]] || return 0
+  for entry in "$worker_root"/*; do
+    [[ -d "$entry" && ! -L "$entry" ]] || continue
+    task="$(basename "$entry")"
+    if pid="$(read_pid_file "$entry/.active")" && pid_alive "$pid"; then
+      state=active
+    elif [[ -f "$entry/.active" && ! -L "$entry/.active" ]]; then
+      state=stale
+    elif [[ -f "$fm_home/state/$task.meta" ]]; then
+      state=stale
+    else
+      state=orphaned
+    fi
+    printf '%s %s\n' "$task" "$state"
+  done
+}
+
+fleet_is_active() {
+  local line
+
+  [[ "$(session_state)" != active ]] || return 0
+  while read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "${line##* }" != active ]] || return 0
+  done < <(worker_states)
+  return 1
+}
+
+# Lock acquisition primitive.
+#
+# mkdir is the exclusive-creation arbiter: it fails if the path exists at all,
+# and it never replaces anything. rename(2) is deliberately NOT used to claim a
+# lock, because it silently replaces an empty destination directory - which is
+# precisely what a competitor looks like between its own mkdir and publishing
+# its pid.
+#
+# The unavoidable consequence is a brief window in which the winner's lock is
+# incomplete. That window is handled by classification, not by racing: an
+# incomplete lock is NEVER auto-reclaimed. Only a lock with an exact owner and
+# a valid, dead pid is reclaimable, and that reclaim is arbitrated by rename(2).
+#
+# mv is deliberately not used either: for directories it means "move inside"
+# when the destination exists, which is not the semantics required here.
+atomic_rename() {
+  python3 -c '
+import os, sys
+
+try:
+    os.rename(sys.argv[1], sys.argv[2])
+except OSError:
+    sys.exit(1)
+' "$1" "$2"
+}
+
+# Writes a lock directory's contents. The pid is written LAST, so a reader can
+# never see a lock that claims a pid it has not committed to.
+populate_lock_directory() {
+  local lock="$1"
+  shift
+  local entry name value
+
+  chmod 0700 "$lock"
+  for entry in "$@"; do
+    name="${entry%%=*}"
+    value="${entry#*=}"
+    printf '%s\n' "$value" >"$lock/$name" \
+      || die "could not write the lock entry: $lock/$name"
+    chmod 0600 "$lock/$name"
+  done
+}
+
+remove_lock_stage() {
+  local stage="$1"
+
+  case "$stage" in
+    "$profile_root/locks/."*) ;;
+    *) die "refusing to remove an unmanaged lock stage: $stage" ;;
+  esac
+  [[ ! -L "$stage" ]] || die "refusing to remove a symlinked lock stage: $stage"
+  rm -rf -- "$stage"
+}
+
+# Per-profile mutation lock. It guards the runtime and profile state only;
+# fleet state is never touched here.
+mutation_state() {
+  lock_state "$mutation_lock"
+}
+
+mutation_reader_blocked() {
+  case "$(mutation_state)" in
+    active | incomplete | unowned) return 0 ;;
+    none | stale) return 1 ;;
+    *) die "the mutation lock at $mutation_lock is in an unexpected state" ;;
+  esac
+}
+
+mutation_generation_value() {
+  local value
+
+  if [[ ! -e "$mutation_generation" && ! -L "$mutation_generation" ]]; then
+    printf '0\n'
+    return
+  fi
+  [[ -f "$mutation_generation" && ! -L "$mutation_generation" ]] \
+    || die "unsafe mutation generation: $mutation_generation"
+  value="$(<"$mutation_generation")"
+  [[ "$value" =~ ^[0-9]{1,17}$ ]] \
+    || die "invalid mutation generation: $mutation_generation"
+  printf '%s\n' "$value"
+}
+
+advance_mutation_generation() {
+  local current next staged
+
+  [[ "$mutation_lock_held" == "$mutation_lock" ]] \
+    || die 'cannot advance the mutation generation without holding the lock'
+  current="$(mutation_generation_value)"
+  next=$((10#$current + 1))
+  staged="$(mktemp "$profile_root/locks/.generation.XXXXXX")" \
+    || die 'could not stage the mutation generation'
+  printf '%s\n' "$next" >"$staged"
+  chmod 0600 "$staged"
+  mv -f -- "$staged" "$mutation_generation" \
+    || die 'could not publish the mutation generation'
+}
+
+release_mutation_lock() {
+  local held="$mutation_lock_held"
+
+  [[ -n "$held" ]] || return 0
+  mutation_lock_held=''
+  # Exact owned path only, and never a symlink.
+  [[ "$held" == "$profile_root/locks/mutation" && ! -L "$held" ]] || return 0
+  rm -rf -- "$held" 2>/dev/null || true
+}
+
+exit_after_mutation_signal() {
+  local status="$1"
+
+  trap - HUP INT TERM
+  release_mutation_lock
+  exit "$status"
+}
+
+# Only an unambiguously stale lock is reclaimed: exact owner, valid pid, and
+# that pid dead. Anything else fails closed and is left in place.
+reclaim_stale_mutation_lock() {
+  local action="$1" stage="$profile_root/locks/.mutation-stale.$$"
+
+  [[ "$(mutation_state)" == stale ]] \
+    || die "$action refused: the mutation lock at $mutation_lock is not reclaimable"
+  [[ ! -e "$stage" && ! -L "$stage" ]] \
+    || die "$action refused: unsafe lock staging path: $stage"
+  atomic_rename "$mutation_lock" "$stage" \
+    || die "$action refused: another fmx mutation is running for $profile_key"
+  remove_lock_stage "$stage"
+}
+
+acquire_mutation_lock() {
+  local action="$1" state
+
+  make_owned_directory "$profile_root/locks"
+  if ! mkdir "$mutation_lock" 2>/dev/null; then
+    state="$(mutation_state)"
+    case "$state" in
+      active)
+        die "$action refused: another fmx mutation is already running for $profile_key" ;;
+      incomplete)
+        die "$action refused: an incomplete mutation lock exists at $mutation_lock; another fmx process may be acquiring it right now. Confirm no fmx mutation is running, then remove it by hand" ;;
+      unowned)
+        die "$action refused: an unowned lock directory exists at $mutation_lock; remove it by hand after confirming no fmx mutation is running" ;;
+      stale)
+        reclaim_stale_mutation_lock "$action" ;;
+      none) ;;
+      *)
+        die "$action refused: the mutation lock at $mutation_lock is in an unexpected state: $state" ;;
+    esac
+    mkdir "$mutation_lock" 2>/dev/null \
+      || die "$action refused: another fmx mutation is already running for $profile_key"
+  fi
+  # Held from this point on, so a failure while publishing still releases it.
+  mutation_lock_held="$mutation_lock"
+  trap release_mutation_lock EXIT
+  trap 'exit_after_mutation_signal 129' HUP
+  trap 'exit_after_mutation_signal 130' INT
+  trap 'exit_after_mutation_signal 143' TERM
+  populate_lock_directory "$mutation_lock" \
+    "owner=$ownership_value" "action=$action" "pid=$$"
+  case "$action" in
+    setup | repair | update) advance_mutation_generation ;;
+  esac
+}
+
+# A profile is busy when the fleet is running, when a mutation holds the lock,
+# or when either lock is in an incomplete state that must not be reclaimed.
+profile_is_busy() {
+  local mutation session
+
+  fleet_is_active && return 0
+  mutation="$(mutation_state)"
+  session="$(session_state)"
+  [[ "$mutation" != active && "$mutation" != incomplete && "$mutation" != unowned ]] \
+    || return 0
+  [[ "$session" != active && "$session" != incomplete && "$session" != unowned ]] \
+    || return 0
+  return 1
+}
+
+require_idle_fleet() {
+  local action="$1" state
+
+  state="$(session_state)"
+  case "$state" in
+    active)
+      die "$action refused: the $profile_key fleet is active; stop the captain session and its workers first (fmx inventory $profile_key --json reports what is running)" ;;
+    incomplete | unowned)
+      die "$action refused: the captain session lock at $session_lock is $state; confirm no captain is running, then remove it by hand" ;;
+    none | stale) ;;
+    *)
+      die "$action refused: the captain session lock at $session_lock is in an unexpected state: $state" ;;
+  esac
+
+  if fleet_is_active; then
+    die "$action refused: the $profile_key fleet is active; stop the captain session and its workers first (fmx inventory $profile_key --json reports what is running)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Pinned source staging, overlay, and atomic publication.
+# ---------------------------------------------------------------------------
+
+overlay_directory() {
+  local commit="$1" directory="$overlay_root/$commit"
+
+  [[ -d "$directory" && ! -L "$directory" ]] \
+    || die "no checked-in overlay for commit $commit"
+  [[ -f "$directory/manifest.json" && ! -L "$directory/manifest.json" ]] \
+    || die "overlay manifest is missing for commit $commit"
+  printf '%s\n' "$directory"
+}
+
+verify_runtime_overlay() {
+  local commit="$1" directory
+
+  directory="$(overlay_directory "$commit")"
+  python3 "$overlay_tool" \
+    --manifest "$directory/manifest.json" \
+    --root "$fm_runtime" \
+    --commit "$commit" \
+    --verify-only >/dev/null \
+    || die "the installed runtime does not match the pinned overlay for $commit; run fmx repair $profile_key"
+}
+
+# Full-checkout integrity. Offline: rev-parse, status, and diff read only the
+# local object store and worktree. The published runtime must sit exactly at
+# the pinned commit and differ from it by exactly the manifest's managed paths,
+# with unchanged file modes, nothing staged, and nothing untracked.
+runtime_checkout_report() {
+  local commit="$1" root="${2:-$fm_runtime}"
+  local head status expected actual raw old_mode new_mode
+
+  [[ -d "$root" && ! -L "$root" ]] \
+    || { printf 'the installed runtime is missing\n'; return 1; }
+  [[ -d "$root/.git" && ! -L "$root/.git" ]] \
+    || { printf 'the installed runtime is not a Git checkout\n'; return 1; }
+  head="$(git -C "$root" rev-parse HEAD 2>/dev/null)" \
+    || { printf 'the installed runtime HEAD could not be read\n'; return 1; }
+  if [[ "$head" != "$commit" ]]; then
+    printf 'the installed runtime is at %s, not the pinned commit %s\n' "$head" "$commit"
+    return 1
+  fi
+  # --ignored=matching is required: without it an ignored .env, config/, or
+  # executable could sit in the runtime unseen.
+  status="$(git -C "$root" status --porcelain --untracked-files=all \
+    --ignored=matching 2>/dev/null)" \
+    || { printf 'the installed runtime status could not be read\n'; return 1; }
+  expected="$(jq -r '.files[].path' "$overlay_root/$commit/manifest.json" \
+    | sed 's/^/ M /' | LC_ALL=C sort)"
+  actual="$(printf '%s\n' "$status" | sed '/^$/d' | LC_ALL=C sort)"
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'the installed runtime has unexpected Git changes (expected only the %s managed overlay paths); git status reported:\n%s\n' \
+      "$(printf '%s\n' "$expected" | wc -l | tr -d '[:space:]')" "$actual"
+    return 1
+  fi
+  raw="$(git -C "$root" diff --raw HEAD 2>/dev/null)" \
+    || { printf 'the installed runtime diff could not be read\n'; return 1; }
+  while read -r old_mode new_mode _rest; do
+    [[ -n "$old_mode" ]] || continue
+    old_mode="${old_mode#:}"
+    if [[ "$old_mode" != "$new_mode" ]]; then
+      printf 'the installed runtime changed a file mode (%s -> %s)\n' "$old_mode" "$new_mode"
+      return 1
+    fi
+  done <<<"$raw"
+  return 0
+}
+
+verify_runtime_checkout() {
+  local commit="$1" report
+
+  require_command git
+  if ! report="$(runtime_checkout_report "$commit")"; then
+    die "$report; run fmx repair $profile_key"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Overlay evidence. Every helper below reads and hashes local files only: no
+# network, no gh, and no proxy. Overall inventory READINESS is separate and is
+# not offline, because reaching `healthy` runs the full doctor path.
+# ---------------------------------------------------------------------------
+
+sha256_file() {
+  python3 -c '
+import hashlib, sys
+with open(sys.argv[1], "rb") as handle:
+    print(hashlib.sha256(handle.read()).hexdigest())
+' "$1" 2>/dev/null
+}
+
+# Identity of the overlaid runtime the manifest describes: a sha256 over the
+# sorted "<path>:<result digest>" lines. It changes whenever any managed file's
+# post-overlay content changes, and is independent of manifest formatting.
+overlay_content_digest() {
+  local manifest="$1"
+
+  jq -r '.files | sort_by(.path)[] | "\(.path):\(.result)"' "$manifest" 2>/dev/null \
+    | python3 -c '
+import hashlib, sys
+print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())
+' 2>/dev/null
+}
+
+overlay_evidence_json() {
+  local commit manifest manifest_digest content_digest file_count verified=false
+
+  commit="$(catalog_overlay)"
+  manifest="$overlay_root/$commit/manifest.json"
+  manifest_digest=''
+  content_digest=''
+  file_count=''
+  if [[ -f "$manifest" && ! -L "$manifest" ]]; then
+    manifest_digest="$(sha256_file "$manifest" || printf '')"
+    content_digest="$(overlay_content_digest "$manifest" || printf '')"
+    file_count="$(jq -r '.files | length' "$manifest" 2>/dev/null || printf '')"
+    if [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
+      && python3 "$overlay_tool" \
+        --manifest "$manifest" \
+        --root "$fm_runtime" \
+        --commit "$commit" \
+        --verify-only >/dev/null 2>&1; then
+      verified=true
+    fi
+  fi
+  jq -cn \
+    --arg commit "$commit" \
+    --arg manifestDigest "$manifest_digest" \
+    --arg contentDigest "$content_digest" \
+    --arg fileCount "$file_count" \
+    --argjson verified "$verified" '
+    {
+      commit: $commit,
+      digestAlgorithm: "sha256",
+      manifestDigest: (if $manifestDigest == "" then null else $manifestDigest end),
+      contentDigest: (if $contentDigest == "" then null else $contentDigest end),
+      fileCount: (if $fileCount == "" then null else ($fileCount | tonumber) end),
+      verified: $verified
+    }
+  '
+}
+
+stage_pinned_source() {
+  local commit="$1" repository="$2" overlay_commit="$3"
+  local directory checkout head report
+
+  directory="$(overlay_directory "$overlay_commit")"
+  remove_owned_path "$staging_root"
+  make_owned_directory "$staging_root"
+  checkout="$staging_root/firstmate"
+  mkdir "$checkout" || die "could not create the staging checkout: $checkout"
+
+  git init --quiet "$checkout" >/dev/null \
+    || die 'could not initialize the staging checkout'
+  git -C "$checkout" remote add origin "$repository" >/dev/null \
+    || die 'could not register the pinned Firstmate remote'
+  git -C "$checkout" fetch --quiet --depth 1 origin "$commit" >/dev/null \
+    || die "the pinned Firstmate commit is not available from $repository: $commit"
+  git -C "$checkout" checkout --quiet --detach FETCH_HEAD >/dev/null \
+    || die "could not check out the pinned commit: $commit"
+  head="$(git -C "$checkout" rev-parse HEAD)" \
+    || die 'could not read the staged HEAD'
+  [[ "$head" == "$commit" ]] \
+    || die "staged HEAD $head does not match the pinned commit $commit"
+
+  python3 "$overlay_tool" \
+    --manifest "$directory/manifest.json" \
+    --root "$checkout" \
+    --commit "$overlay_commit" >/dev/null \
+    || die "the pinned Firstmate source does not match the checked-in overlay for $overlay_commit"
+
+  # The staged checkout is verified BEFORE it can become the live runtime, so
+  # a bad stage is never published and then reported.
+  if ! report="$(runtime_checkout_report "$commit" "$checkout")"; then
+    die "the staged Firstmate checkout is not clean at the pinned commit: $report"
+  fi
+
+  printf '%s\n' "$checkout"
+}
+
+# Runtime and receipt are published as ONE transaction. A staged receipt is
+# written first, then both are moved into place; if either move fails, the
+# previous runtime and the previous receipt are restored before the failure is
+# reported. A previously retired runtime is never discarded while the live
+# runtime is absent, so the only good copy cannot be lost.
+recover_interrupted_publication() {
+  local live_runtime=false live_receipt=false
+  local saved_runtime=false saved_receipt=false
+
+  require_safe_managed_paths
+  if [[ -e "$fm_runtime" || -L "$fm_runtime" ]]; then
+    [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
+      || die "unsafe installed runtime: $fm_runtime"
+    live_runtime=true
+  fi
+  if [[ -e "$receipt_file" || -L "$receipt_file" ]]; then
+    [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+      || die "unsafe source receipt: $receipt_file"
+    live_receipt=true
+  fi
+  if [[ -e "$previous_runtime" || -L "$previous_runtime" ]]; then
+    [[ -d "$previous_runtime" && ! -L "$previous_runtime" ]] \
+      || die "unsafe retired runtime: $previous_runtime"
+    saved_runtime=true
+  fi
+  if [[ -e "$previous_receipt" || -L "$previous_receipt" ]]; then
+    [[ -f "$previous_receipt" && ! -L "$previous_receipt" ]] \
+      || die "unsafe retired source receipt: $previous_receipt"
+    saved_receipt=true
+  fi
+
+  [[ "$saved_runtime" == true || "$saved_receipt" == true ]] || return 0
+  # A complete live pair is usable. The preserved paths can be retired by the
+  # next successful publication; deleting them before the live pair is fully
+  # verified would discard the only fallback for unrelated corruption.
+  if [[ "$live_runtime" == true && "$live_receipt" == true ]]; then
+    return 0
+  fi
+  # The first publication step retires only the receipt. In that exact state,
+  # restoring it is enough to recover the old live pair.
+  if [[ "$live_runtime" == true && "$live_receipt" == false \
+    && "$saved_runtime" == false && "$saved_receipt" == true ]]; then
+    mv -- "$previous_receipt" "$receipt_file" \
+      || die "interrupted publication recovery failed; the source receipt remains at $previous_receipt"
+    remove_owned_path "$staging_root"
+    return 0
+  fi
+  if [[ "$live_runtime" == false && "$live_receipt" == true \
+    && "$saved_runtime" == true && "$saved_receipt" == false ]]; then
+    mv -- "$previous_runtime" "$fm_runtime" \
+      || die "interrupted publication recovery failed; the runtime remains at $previous_runtime"
+    remove_owned_path "$staging_root"
+    return 0
+  fi
+  if [[ "$live_runtime" == false && "$live_receipt" == false \
+    && "$saved_runtime" == true && "$saved_receipt" == false ]]; then
+    mv -- "$previous_runtime" "$fm_runtime" \
+      || die "interrupted publication recovery failed; the runtime remains at $previous_runtime"
+    remove_owned_path "$staging_root"
+    return 0
+  fi
+  if [[ "$live_runtime" == false && "$live_receipt" == false \
+    && "$saved_runtime" == false && "$saved_receipt" == true ]]; then
+    mv -- "$previous_receipt" "$receipt_file" \
+      || die "interrupted publication recovery failed; the source receipt remains at $previous_receipt"
+    remove_owned_path "$staging_root"
+    return 0
+  fi
+  # Once the old runtime is retired, both old items exist. A live runtime or
+  # receipt at this point is an incompletely published new pair and is removed
+  # before the preserved old pair is restored.
+  if [[ "$saved_runtime" == true && "$saved_receipt" == true ]]; then
+    if [[ "$live_runtime" == true ]]; then
+      remove_owned_path "$fm_runtime"
+    fi
+    if [[ "$live_receipt" == true ]]; then
+      rm -f -- "$receipt_file"
+    fi
+    mv -- "$previous_runtime" "$fm_runtime" \
+      || die "interrupted publication recovery failed; the runtime remains at $previous_runtime"
+    mv -- "$previous_receipt" "$receipt_file" \
+      || die "interrupted publication recovery restored the runtime, but the source receipt remains at $previous_receipt"
+    remove_owned_path "$staging_root"
+    return 0
+  fi
+
+  die "interrupted publication cannot be recovered automatically; inspect $fm_runtime, $receipt_file, $previous_runtime, and $previous_receipt"
+}
+
+publish_runtime_and_receipt() {
+  local checkout="$1" staged_receipt="$2"
+  local retired=false receipt_retired=false
+
+  if [[ -e "$fm_runtime" || -L "$fm_runtime" ]]; then
+    [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
+      || die "unsafe installed runtime: $fm_runtime"
+  fi
+  if [[ -e "$previous_runtime" || -L "$previous_runtime" ]]; then
+    [[ -d "$previous_runtime" && ! -L "$previous_runtime" ]] \
+      || die "unsafe retired runtime: $previous_runtime"
+  fi
+  if [[ -e "$receipt_file" || -L "$receipt_file" ]]; then
+    [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+      || die "unsafe source receipt: $receipt_file"
+  fi
+  if [[ -e "$previous_receipt" || -L "$previous_receipt" ]]; then
+    [[ -f "$previous_receipt" && ! -L "$previous_receipt" ]] \
+      || die "unsafe retired source receipt: $previous_receipt"
+  fi
+
+  if [[ -e "$previous_runtime" || -L "$previous_runtime" ]]; then
+    if [[ -e "$fm_runtime" || -L "$fm_runtime" ]]; then
+      remove_owned_path "$previous_runtime"
+    else
+      # The live runtime is gone and a retired one survives: restore it rather
+      # than delete the only good copy.
+      mv -- "$previous_runtime" "$fm_runtime" \
+        || die "a previously installed runtime is preserved at $previous_runtime but could not be restored; move it to $fm_runtime by hand before retrying"
+    fi
+  fi
+  if [[ -e "$previous_receipt" || -L "$previous_receipt" ]]; then
+    if [[ -e "$receipt_file" || -L "$receipt_file" ]]; then
+      remove_owned_path "$previous_receipt"
+    else
+      mv -- "$previous_receipt" "$receipt_file" \
+        || die "a previously installed source receipt is preserved at $previous_receipt but could not be restored; move it to $receipt_file by hand before retrying"
+    fi
+  fi
+  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
+    mv -- "$receipt_file" "$previous_receipt" \
+      || die 'could not retire the previous receipt; the runtime and receipt were left unchanged'
+    receipt_retired=true
+  fi
+  if [[ -e "$fm_runtime" || -L "$fm_runtime" ]]; then
+    if ! mv -- "$fm_runtime" "$previous_runtime"; then
+      if [[ "$receipt_retired" == true ]] \
+        && mv -- "$previous_receipt" "$receipt_file"; then
+        die 'could not retire the previous runtime; the runtime and receipt were left unchanged'
+      fi
+      die "could not retire the previous runtime, and the previous receipt could not be restored automatically; the runtime remains at $fm_runtime and the receipt is preserved at $previous_receipt"
+    fi
+    retired=true
+  fi
+
+  if ! mv -- "$checkout" "$fm_runtime"; then
+    rollback_publication "$retired" "$receipt_retired" 'the staged runtime'
+  fi
+  if ! mv -- "$staged_receipt" "$receipt_file"; then
+    rm -rf -- "$fm_runtime" 2>/dev/null || true
+    rollback_publication "$retired" "$receipt_retired" 'the staged receipt'
+  fi
+
+  remove_owned_path "$previous_runtime"
+  remove_owned_path "$previous_receipt"
+  remove_owned_path "$staging_root"
+}
+
+rollback_publication() {
+  local retired="$1" receipt_retired="$2" what="$3" restored=true
+
+  if [[ "$retired" == true ]]; then
+    mv -- "$previous_runtime" "$fm_runtime" || restored=false
+  fi
+  if [[ "$receipt_retired" == true ]]; then
+    mv -- "$previous_receipt" "$receipt_file" || restored=false
+  fi
+  if [[ "$restored" == true ]]; then
+    die "could not publish $what; the previously installed runtime and receipt were restored"
+  fi
+  die "could not publish $what, and the previous state could not be restored automatically; it is preserved at $previous_runtime and $previous_receipt"
+}
+
+# Stages the receipt and prints its path. Publication is the caller's job, so
+# runtime and receipt land together.
+stage_receipt() {
+  local commit="$1" repository="$2" overlay_commit="$3" staged
+
+  make_owned_directory "$profile_root/receipts"
+  if [[ -e "$receipt_file" || -L "$receipt_file" ]]; then
+    [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
+      || die "unsafe receipt: $receipt_file"
+  fi
+  staged="$(mktemp "$profile_root/receipts/.source.json.XXXXXX")" \
+    || die 'could not stage the source receipt'
+  jq -n \
+    --arg profile "$profile_key" \
+    --arg repository "$repository" \
+    --arg commit "$commit" \
+    --arg overlay "$overlay_commit" '
+    {
+      schemaVersion: 1,
+      profile: $profile,
+      repository: $repository,
+      commit: $commit,
+      overlay: $overlay
+    }
+  ' >"$staged" || die 'could not create the source receipt'
+  chmod 0600 "$staged"
+  printf '%s\n' "$staged"
+}
+
+# The receipt is evidence, so its whole schema is checked, not just the commit.
+verify_receipt() {
+  local commit="$1" repository="$2" overlay_commit="$3"
+
+  [[ -f "$receipt_file" && -r "$receipt_file" && ! -L "$receipt_file" ]] \
+    || die "the source receipt is missing; run fmx repair $profile_key"
+  jq -e \
+    --arg profile "$profile_key" \
+    --arg repository "$repository" \
+    --arg commit "$commit" \
+    --arg overlay "$overlay_commit" '
+    type == "object"
+    and keys == ["commit", "overlay", "profile", "repository", "schemaVersion"]
+    and .schemaVersion == 1
+    and .profile == $profile
+    and .repository == $repository
+    and .commit == $commit
+    and .overlay == $overlay
+  ' "$receipt_file" >/dev/null 2>&1 \
+    || die "the source receipt does not match the catalog pin schema; run fmx repair $profile_key"
+}
+
+installed_commit() {
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] || return 1
+  jq -er '.commit' "$receipt_file" 2>/dev/null
+}
+
+tasks_axi_config_content() {
+  cat <<'EOF'
+backend = "markdown"
+
+[markdown]
+path = "data/backlog.md"
+archive = "data/done-archive.md"
+done_keep = 10
+EOF
+}
+
+ensure_tasks_axi_config() {
+  local config="$fm_home/.tasks.toml"
+  local legacy_backlog="$fm_home/backlog.md"
+  local managed_backlog="$fm_home/data/backlog.md"
+  local staged
+
+  [[ ! -L "$legacy_backlog" && ! -L "$managed_backlog" ]] \
+    || die "unsafe Firstmate backlog path under $fm_home"
+  if [[ -e "$legacy_backlog" ]]; then
+    [[ -f "$legacy_backlog" ]] \
+      || die "the legacy Firstmate backlog is not a regular file: $legacy_backlog"
+    [[ ! -e "$managed_backlog" ]] \
+      || die "both $legacy_backlog and $managed_backlog exist; merge them before running fmx repair $profile_key"
+    mv -- "$legacy_backlog" "$managed_backlog" \
+      || die "could not migrate the legacy Firstmate backlog to $managed_backlog"
+  fi
+
+  [[ ! -L "$config" ]] || die "unsafe managed tasks-axi config: $config"
+  [[ ! -e "$config" || -f "$config" ]] \
+    || die "unsafe managed tasks-axi config: $config"
+  staged="$(mktemp "$fm_home/.tasks.toml.XXXXXX")" \
+    || die "could not stage the managed tasks-axi config: $config"
+  tasks_axi_config_content >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$config"
+}
+
+verify_tasks_axi_config() {
+  local config="$fm_home/.tasks.toml"
+  local legacy_backlog="$fm_home/backlog.md"
+
+  [[ ! -e "$legacy_backlog" && ! -L "$legacy_backlog" ]] \
+    || die "a legacy Firstmate backlog remains at $legacy_backlog; run fmx repair $profile_key"
+  [[ -f "$config" && -r "$config" && ! -L "$config" ]] \
+    || die "the managed tasks-axi config is missing: $config; run fmx repair $profile_key"
+  cmp -s -- "$config" <(tasks_axi_config_content) \
+    || die "the managed tasks-axi config differs: $config; run fmx repair $profile_key"
+}
+
+# The marker is evidence, not a flag: its exact two lines are what doctor and
+# launch verify.
+managed_runtime_marker_content() {
+  printf 'managed-by=%s\nprofile=%s\n' "$ownership_value" "$profile_key"
+}
+
+verify_managed_runtime_marker() {
+  local path="$fm_home/$managed_runtime_marker"
+
+  [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
+    || die "the managed-runtime marker is missing; run fmx repair $profile_key"
+  cmp -s -- "$path" <(managed_runtime_marker_content) \
+    || die "the managed-runtime marker content differs; run fmx repair $profile_key"
+}
+
+ensure_managed_home() {
+  local component staged
+
+  make_owned_directory "$fm_home"
+  for component in data state config projects; do
+    make_owned_directory "$fm_home/$component"
+  done
+  ensure_tasks_axi_config
+  [[ ! -L "$fm_home/$managed_runtime_marker" ]] \
+    || die "unsafe managed-runtime marker: $fm_home/$managed_runtime_marker"
+  staged="$(mktemp "$fm_home/.fmx-managed.XXXXXX")" \
+    || die 'could not stage the managed-runtime marker'
+  managed_runtime_marker_content >"$staged"
+  chmod 0600 "$staged"
+  mv -f "$staged" "$fm_home/$managed_runtime_marker"
+}
+
+# v1 manages the tasks-axi root and exactly two worker-harness files in FM_HOME.
+# The harness files must read exactly "claude", because the fmx worker boundary
+# only wraps Claude launches. config/crew-dispatch.json can select a different
+# harness per task, which would bypass that boundary entirely, so its mere
+# presence fails closed.
+readonly managed_harness_files=(crew-harness secondmate-harness)
+
+crew_dispatch_path() {
+  printf '%s/config/crew-dispatch.json\n' "$fm_home"
+}
+
+ensure_crew_harness_config() {
+  local config="$fm_home/config" name path staged
+
+  make_owned_directory "$config"
+  for name in "${managed_harness_files[@]}"; do
+    path="$config/$name"
+    [[ ! -L "$path" ]] || die "unsafe managed Firstmate config: $path"
+    [[ ! -e "$path" || -f "$path" ]] || die "unsafe managed Firstmate config: $path"
+    staged="$(mktemp "$config/.$name.XXXXXX")" \
+      || die "could not stage the managed Firstmate config: $path"
+    printf '%s\n' "$managed_crew_harness" >"$staged"
+    chmod 0600 "$staged"
+    mv -f "$staged" "$path"
+  done
+}
+
+verify_crew_harness_config() {
+  local config="$fm_home/config" name path dispatch expected_bytes actual_bytes
+
+  dispatch="$(crew_dispatch_path)"
+  [[ ! -e "$dispatch" && ! -L "$dispatch" ]] \
+    || die "refusing to run with a crew dispatch profile: $dispatch selects per-task harnesses and can bypass the fmx worker boundary; remove it, then run fmx doctor $profile_key"
+  expected_bytes=$((${#managed_crew_harness} + 1))
+  for name in "${managed_harness_files[@]}"; do
+    path="$config/$name"
+    [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
+      || die "the managed Firstmate worker harness file is missing: $path; run fmx repair $profile_key"
+    actual_bytes="$(wc -c <"$path" | tr -d '[:space:]')"
+    [[ "$actual_bytes" == "$expected_bytes" && "$(<"$path")" == "$managed_crew_harness" ]] \
+      || die "the managed Firstmate worker harness file must contain exactly '$managed_crew_harness': $path; run fmx repair $profile_key"
+  done
+}
+
+readonly worker_policy_max_bytes=16384
+
+# The name of this profile's Trellage-owned policy source, empty when the
+# profile has none.
+worker_policy_source() {
+  local name
+
+  name="$(jq -r --arg name "$profile_key" '.profiles[$name].workerPolicy // ""' "$catalog")"
+  [[ -n "$name" ]] || return 1
+  printf '%s/%s\n' "$policy_source_root" "$name"
+}
+
+# The installed policy must be byte-identical to the Trellage-owned source and
+# within the same fixed bound the pinned fm-brief.sh overlay enforces.
+verify_worker_policy() {
+  local source bytes
+
+  [[ -n "$policy_file" ]] || return 0
+  source="$(worker_policy_source)" \
+    || die "the catalog no longer declares a worker policy for $profile_key"
+  [[ -f "$source" && -r "$source" && ! -L "$source" ]] \
+    || die "missing managed worker policy source: $source"
+  [[ -f "$policy_file" && -r "$policy_file" && ! -L "$policy_file" ]] \
+    || die "the managed worker policy is missing; run fmx repair $profile_key"
+  bytes="$(wc -c <"$policy_file" | tr -d '[:space:]')"
+  [[ "$bytes" -ge 1 && "$bytes" -le "$worker_policy_max_bytes" ]] \
+    || die "the managed worker policy must be between 1 and $worker_policy_max_bytes bytes; run fmx repair $profile_key"
+  cmp -s -- "$source" "$policy_file" \
+    || die "the managed worker policy differs from the Trellage-owned source; run fmx repair $profile_key"
+}
+
+ensure_worker_policy() {
+  local source name staged
+
+  name="$(jq -r --arg name "$profile_key" '.profiles[$name].workerPolicy // ""' "$catalog")"
+  if [[ -z "$name" ]]; then
+    return 0
+  fi
+  source="$policy_source_root/$name"
+  [[ -f "$source" && -r "$source" && ! -L "$source" ]] \
+    || die "missing managed worker policy source: $source"
+  [[ "$(wc -c <"$source" | tr -d '[:space:]')" -le "$worker_policy_max_bytes" ]] \
+    || die "the managed worker policy source exceeds $worker_policy_max_bytes bytes: $source"
+  make_owned_directory "$profile_root/policy"
+  [[ ! -L "$policy_file" ]] || die "unsafe managed worker policy: $policy_file"
+  staged="$(mktemp "$profile_root/policy/.worker-policy.md.XXXXXX")" \
+    || die 'could not stage the managed worker policy'
+  cat -- "$source" >"$staged" || die 'could not stage the managed worker policy'
+  chmod 0600 "$staged"
+  mv -f "$staged" "$policy_file"
+}
+
+# ---------------------------------------------------------------------------
+# Host prerequisites.
+# ---------------------------------------------------------------------------
+
+require_native_claude() {
+  [[ -f "$native_claude" && -x "$native_claude" && ! -L "$native_claude" ]] \
+    || die "missing shared native Claude helper: $native_claude"
+}
+
+require_prerequisite_helper() {
+  [[ -f "$prerequisite_helper" && -x "$prerequisite_helper" \
+    && ! -L "$prerequisite_helper" ]] \
+    || die "missing fmx prerequisite helper: $prerequisite_helper"
+  [[ -f "$prerequisite_manifest" && -r "$prerequisite_manifest" \
+    && ! -L "$prerequisite_manifest" ]] \
+    || die "missing fmx prerequisite manifest: $prerequisite_manifest"
+}
+
+# The shared helper resolves the session bridge and the floating-skills runtime
+# from the caller's installed runtime root, and reports diagnostics under the
+# caller's launcher identity.
+native_claude() {
+  TRELLAGE_CLAUDE_LAUNCHER_NAME="$launcher_name" \
+    TRELLAGE_CLAUDE_RUNTIME_ROOT="$runtime_root" \
+    "$native_claude" "$@"
+}
+
+require_worker_launcher() {
+  [[ -f "$worker_launcher" && -x "$worker_launcher" && ! -L "$worker_launcher" ]] \
+    || die "missing fmx worker helper: $worker_launcher"
+}
+
+# The host gh configuration is the only accepted GitHub identity. Token
+# environment variables are never forwarded into Firstmate or its workers, so
+# they are removed from the probe too.
+# Resolved the way gh itself resolves it: GH_CONFIG_DIR, then
+# XDG_CONFIG_HOME/gh, then $HOME/.config/gh. The result is validated and
+# absolute so it can be handed to a pane that inherits nothing.
+gh_config_directory() {
+  local directory
+
+  if [[ -n "${GH_CONFIG_DIR-}" ]]; then
+    directory="$GH_CONFIG_DIR"
+  elif [[ -n "${XDG_CONFIG_HOME-}" ]]; then
+    directory="$XDG_CONFIG_HOME/gh"
+  else
+    directory="$HOME/.config/gh"
+  fi
+  [[ "$directory" == /* ]] \
+    || die "the GitHub CLI configuration directory must be absolute: $directory"
+  [[ -d "$directory" && ! -L "$directory" ]] \
+    || die "the GitHub CLI configuration directory is missing or unsafe: $directory (run gh auth login --hostname $managed_gh_host)"
+  canonical_directory "$directory" \
+    || die "cannot resolve the GitHub CLI configuration directory: $directory"
+}
+
+gh_config_path() {
+  printf '%s/hosts.yml\n' "$(gh_config_directory)"
+}
+
+require_gh_config() {
+  local path
+
+  path="$(gh_config_path)"
+  [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
+    || die "GitHub CLI host configuration is missing: $path (run gh auth login; GH_TOKEN and GITHUB_TOKEN are not forwarded)"
+  grep -Eq "^${managed_gh_host//./\\.}:[[:space:]]*\$" "$path" \
+    || die "GitHub CLI host configuration has no $managed_gh_host entry: $path (run gh auth login --hostname $managed_gh_host)"
+}
+
+# Explicit and daemon-independent: the configuration directory is resolved here
+# and passed on, never inherited from a tmux or Herdr server environment.
+require_gh_authenticated() {
+  require_command gh
+  require_gh_config
+  env -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
+    -u COPILOT_PROXY_GITHUB_TOKEN \
+    -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u COPILOT_TOKEN \
+    GH_CONFIG_DIR="$(gh_config_directory)" \
+    gh auth status --hostname "$managed_gh_host" >/dev/null 2>&1 \
+    || die "gh is not authenticated for $managed_gh_host through $(gh_config_path) (run gh auth login --hostname $managed_gh_host; GH_TOKEN and GITHUB_TOKEN are not forwarded)"
+}
+
+# Herdr is selected only from a real Herdr pane identity. Everything else
+# selects tmux; the source-of-truth bootstrap check below reports a missing
+# backend before a session lock or captain process exists.
+resolve_backend() {
+  if [[ "${HERDR_ENV-}" == 1 && -n "${HERDR_PANE_ID-}" ]]; then
+    printf 'herdr\n'
+    return
+  fi
+  printf 'tmux\n'
+}
+
+is_managed_prerequisite() {
+  case " $managed_prerequisite_tools " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+append_missing_tool() {
+  local destination_name="$1" tool="$2" current
+
+  case "$destination_name" in
+    managed)
+      current="$prerequisite_managed_missing"
+      case " $current " in
+        *" $tool "*) ;;
+        *) prerequisite_managed_missing="${current:+$current }$tool" ;;
+      esac
+      ;;
+    host)
+      current="$prerequisite_host_missing"
+      case " $current " in
+        *" $tool "*) ;;
+        *) prerequisite_host_missing="${current:+$current }$tool" ;;
+      esac
+      ;;
+    *)
+      die "unknown prerequisite destination: $destination_name" ;;
+  esac
+}
+
+managed_prerequisite_path() {
+  require_prerequisite_helper
+  "$prerequisite_helper" path 2>/dev/null
+}
+
+effective_prerequisite_path() {
+  local managed_path=''
+
+  if managed_path="$(managed_prerequisite_path)"; then
+    printf '%s:%s\n' "$managed_path" "$PATH"
+  else
+    printf '%s\n' "$PATH"
+  fi
+}
+
+detect_firstmate_prerequisites() {
+  local backend="$1" effective_path="$2" line tool status=0
+
+  prerequisite_managed_missing=''
+  prerequisite_host_missing=''
+  prerequisite_diagnostics=''
+  [[ -f "$fm_runtime/bin/fm-bootstrap.sh" \
+    && -x "$fm_runtime/bin/fm-bootstrap.sh" \
+    && ! -L "$fm_runtime/bin/fm-bootstrap.sh" ]] \
+    || die "installed runtime has no safe prerequisite detector; run fmx repair $profile_key"
+  prerequisite_diagnostics="$(
+    env -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
+      -u COPILOT_PROXY_GITHUB_TOKEN \
+      -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u COPILOT_TOKEN \
+      -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN -u OPENAI_API_KEY \
+      HOME="$HOME" \
+      PATH="$effective_path" \
+      FM_HOME="$fm_home" \
+      FM_ROOT_OVERRIDE="$fm_runtime" \
+      FM_BACKEND="$backend" \
+      FM_BOOTSTRAP_DETECT_ONLY=1 \
+      FM_BOOTSTRAP_NETWORK=skip \
+      "$fm_runtime/bin/fm-bootstrap.sh" 2>&1
+  )" || status=$?
+  [[ "$status" -eq 0 ]] || {
+    [[ -z "$prerequisite_diagnostics" ]] \
+      || printf '%s\n' "$prerequisite_diagnostics" >&2
+    die "Firstmate prerequisite detection failed with status $status"
+  }
+
+  while IFS= read -r line; do
+    case "$line" in
+      'MISSING: '*)
+        tool="${line#MISSING: }"
+        tool="${tool%% *}"
+        if is_managed_prerequisite "$tool"; then
+          append_missing_tool managed "$tool"
+        else
+          append_missing_tool host "$tool"
+        fi
+        ;;
+      'MISSING_MANUAL: '*)
+        tool="${line#MISSING_MANUAL: }"
+        tool="${tool%% *}"
+        append_missing_tool host "$tool"
+        ;;
+      'BACKEND_INVALID: '*)
+        append_missing_tool host backend
+        ;;
+    esac
+  done <<<"$prerequisite_diagnostics"
+}
+
+require_prerequisite_install_host() {
+  local minimum_node node_major=''
+
+  for tool in npm curl; do
+    command -v "$tool" >/dev/null 2>&1 \
+      || append_missing_tool host "$tool"
+  done
+  if ! command -v sha256sum >/dev/null 2>&1 \
+    && ! command -v shasum >/dev/null 2>&1; then
+    append_missing_tool host sha256
+  fi
+  minimum_node="$(jq -r '.npm.minimumNodeMajor' "$prerequisite_manifest")"
+  if command -v node >/dev/null 2>&1; then
+    node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || printf '')"
+    if [[ ! "$node_major" =~ ^[0-9]+$ || "$node_major" -lt "$minimum_node" ]]; then
+      append_missing_tool host "node-$minimum_node+"
+    fi
+  fi
+}
+
+print_prerequisite_diagnostics() {
+  local line
+
+  while IFS= read -r line; do
+    case "$line" in
+      'MISSING: '* | 'MISSING_MANUAL: '* | 'BACKEND_INVALID: '*)
+        printf '  %s\n' "$line" >&2 ;;
+    esac
+  done <<<"$prerequisite_diagnostics"
+}
+
+confirm_prerequisite_install() {
+  local destination="$1" answer='' tool version
+
+  printf '\nFirstmate needs managed tools before it can dispatch workers:\n' >&2
+  for tool in $prerequisite_managed_missing; do
+    printf '  - %s\n' "$tool" >&2
+  done
+  printf '\nTrellage can install a complete version-locked toolchain.\n' >&2
+  printf 'Install location:\n  %s\n' "$destination" >&2
+  printf 'Installed tools:\n' >&2
+  while IFS=$'\t' read -r tool version; do
+    printf '  - %s %s\n' "$tool" "$version" >&2
+  done < <(
+    jq -r '
+      (.binaries | to_entries[] | [.key, .value.version]),
+      (.npm.tools | to_entries[] | [.key, .value])
+      | @tsv
+    ' "$prerequisite_manifest" | sort
+  )
+  cat >&2 <<EOF
+Network sources:
+  - the npm registry configured on this host
+  - locked, checksum-verified GitHub release assets for no-mistakes and treehouse
+Other state:
+  - no-mistakes can create daemon state under $HOME/.no-mistakes
+  - no global npm packages or global agent hooks will be installed
+EOF
+  printf '\nInstall these prerequisites now? [y/N] ' >&2
+  IFS= read -r answer || answer=''
+  case "$answer" in
+    y | Y | yes | YES | Yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_managed_prerequisites() {
+  local worker_bash="$1"
+
+  native_claude exec-clean \
+    --interpreter "$worker_bash" \
+    -- "$prerequisite_helper" install
+}
+
+ensure_launch_prerequisites() {
+  local backend="$1" worker_bash="$2" destination
+
+  require_prerequisite_helper
+  prerequisite_path="$(effective_prerequisite_path)"
+  detect_firstmate_prerequisites "$backend" "$prerequisite_path"
+  if [[ -n "$prerequisite_managed_missing" ]]; then
+    require_prerequisite_install_host
+    if [[ -n "$prerequisite_host_missing" ]]; then
+      printf 'fmx: managed prerequisites cannot be installed until these host requirements are ready:\n' >&2
+      print_prerequisite_diagnostics
+      for tool in $prerequisite_host_missing; do
+        case "$tool" in
+          npm | curl | sha256 | node-*)
+            printf '  MISSING_MANUAL: %s (required by the managed installer)\n' \
+              "$tool" >&2 ;;
+        esac
+      done
+      die 'install the host requirements above, then launch again'
+    fi
+    destination="$("$prerequisite_helper" destination)"
+    if ! confirm_prerequisite_install "$destination"; then
+      die 'prerequisite installation declined; no prerequisite files were changed'
+    fi
+    install_managed_prerequisites "$worker_bash"
+    prerequisite_path="$(effective_prerequisite_path)"
+    detect_firstmate_prerequisites "$backend" "$prerequisite_path"
+  fi
+  if [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
+    printf 'fmx: Firstmate prerequisites are still incomplete:\n' >&2
+    print_prerequisite_diagnostics
+    die 'Firstmate cannot dispatch workers until every required prerequisite is ready'
+  fi
+}
+
+report_doctor_prerequisites() {
+  local backend effective_path
+
+  require_prerequisite_helper
+  backend="$(resolve_backend)"
+  effective_path="$(effective_prerequisite_path)"
+  detect_firstmate_prerequisites "$backend" "$effective_path"
+  if [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
+    printf 'fmx doctor %s: fleet prerequisites incomplete; the next launch will offer managed installation where possible\n' \
+      "$profile_key" >&2
+    if [[ -n "$prerequisite_managed_missing" ]]; then
+      printf '  managed by fmx after consent: %s\n' \
+        "$prerequisite_managed_missing" >&2
+    fi
+    if [[ -n "$prerequisite_host_missing" ]]; then
+      printf '  host requirements: %s\n' "$prerequisite_host_missing" >&2
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Commands.
+# ---------------------------------------------------------------------------
+
+setup_profile() {
+  local commit repository overlay_commit checkout staged_receipt
+
+  require_command jq
+  require_command git
+  require_command python3
+  require_native_claude
+  require_prerequisite_helper
+  require_worker_launcher
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  overlay_commit="$(catalog_overlay)"
+
+  require_safe_profile_path
+  profile_is_owned_or_empty \
+    || die "refusing unrelated existing profile files: $profile_root"
+  make_owned_directory "$profile_root"
+  # Claim ownership before creating any managed file, so the lock directory the
+  # next step writes is never mistaken for unrelated pre-existing state.
+  write_marker "$profile_marker"
+  acquire_mutation_lock 'setup'
+  # Unconditional: a missing or unreadable receipt must never be a licence to
+  # replace a runtime out from under a live captain or worker.
+  require_idle_fleet 'setup'
+  recover_interrupted_publication
+  require_gh_authenticated
+  prepare_profile_tree
+  checkout="$(stage_pinned_source "$commit" "$repository" "$overlay_commit")"
+  staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
+  publish_runtime_and_receipt "$checkout" "$staged_receipt"
+  ensure_managed_home
+  ensure_crew_harness_config
+  ensure_worker_policy
+  native_claude prepare \
+    --home "$captain_home" \
+    --marker "$captain_marker" \
+    --marker-value "$ownership_value" \
+    --bridge enabled \
+    --profile "$profile_key" \
+    || die "could not prepare the captain Claude home: $captain_home"
+  printf 'fmx setup %s: ready (firstmate %s, %s)\n' \
+    "$profile_key" "${commit:0:12}" "$model_id"
+}
+
+repair_profile() {
+  local commit repository overlay_commit checkout installed staged_receipt
+
+  require_command jq
+  require_command git
+  require_command python3
+  require_native_claude
+  require_worker_launcher
+  require_owned_profile
+  acquire_mutation_lock 'repair'
+  require_idle_fleet 'repair'
+  recover_interrupted_publication
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  overlay_commit="$(catalog_overlay)"
+  prepare_profile_tree
+  installed="$(installed_commit || printf '')"
+  # Restaging needs the network. Everything else in repair is local.
+  if [[ "$installed" != "$commit" ]] \
+    || ! python3 "$overlay_tool" \
+      --manifest "$(overlay_directory "$overlay_commit")/manifest.json" \
+      --root "$fm_runtime" \
+      --commit "$overlay_commit" \
+      --verify-only >/dev/null 2>&1 \
+    || ! runtime_checkout_report "$commit" >/dev/null 2>&1; then
+    require_gh_authenticated
+    checkout="$(stage_pinned_source "$commit" "$repository" "$overlay_commit")"
+    staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
+    publish_runtime_and_receipt "$checkout" "$staged_receipt"
+  else
+    staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
+    mv -f "$staged_receipt" "$receipt_file" \
+      || die 'could not refresh the source receipt'
+  fi
+  ensure_managed_home
+  ensure_crew_harness_config
+  ensure_worker_policy
+  native_claude prepare \
+    --home "$captain_home" \
+    --marker "$captain_marker" \
+    --marker-value "$ownership_value" \
+    --bridge enabled \
+    --profile "$profile_key" \
+    || die "could not repair the captain Claude home: $captain_home"
+  printf 'fmx repair %s: restored (firstmate %s, %s)\n' \
+    "$profile_key" "${commit:0:12}" "$model_id"
+}
+
+doctor_profile() {
+  local commit repository overlay_commit installed
+
+  require_command jq
+  require_command git
+  require_command python3
+  require_native_claude
+  require_worker_launcher
+  require_owned_profile
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  overlay_commit="$(catalog_overlay)"
+  installed="$(installed_commit)" \
+    || die "profile is not set up; run fmx setup $profile_key"
+  [[ "$installed" == "$commit" ]] \
+    || die "installed Firstmate commit $installed does not match the catalog pin $commit; run fmx update $profile_key"
+  verify_receipt "$commit" "$repository" "$overlay_commit"
+  [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
+    || die "installed runtime is missing; run fmx repair $profile_key"
+  [[ -f "$fm_runtime/bin/fm-spawn.sh" ]] \
+    || die "installed runtime is incomplete; run fmx repair $profile_key"
+  verify_runtime_overlay "$overlay_commit"
+  verify_runtime_checkout "$commit"
+  verify_managed_runtime_marker
+  verify_tasks_axi_config
+  verify_crew_harness_config
+  verify_worker_policy
+  require_gh_authenticated
+  resolve_backend >/dev/null
+  native_claude doctor \
+    --home "$captain_home" \
+    --marker "$captain_marker" \
+    --marker-value "$ownership_value" \
+    --bridge enabled \
+    --profile "$profile_key" \
+    || die "the captain Claude home is unhealthy; run fmx repair $profile_key"
+  report_doctor_prerequisites
+  printf 'fmx doctor %s: OK (firstmate %s, %s)\n' \
+    "$profile_key" "${commit:0:12}" "$model_id"
+}
+
+doctor_profile_with_lifecycle_gate() {
+  require_owned_profile
+  acquire_mutation_lock 'doctor'
+  if ! fleet_is_active; then
+    recover_interrupted_publication
+  fi
+  doctor_profile
+}
+
+check_update() {
+  local commit installed before after
+
+  commit="$(catalog_commit)"
+  before="$(mutation_generation_value)"
+  mutation_reader_blocked \
+    && die "update --check refused: a mutation is in progress for $profile_key"
+  installed="$(installed_commit || printf '')"
+  after="$(mutation_generation_value)"
+  if [[ "$before" != "$after" ]] || mutation_reader_blocked; then
+    die "update --check could not get a stable snapshot for $profile_key; retry after the current mutation"
+  fi
+  if [[ -z "$installed" ]]; then
+    printf 'fmx update: %s is not set up (catalog pin %s)\n' "$profile_key" "${commit:0:12}"
+    return
+  fi
+  if [[ "$installed" == "$commit" ]]; then
+    printf 'fmx update: %s is current (%s)\n' "$profile_key" "${commit:0:12}"
+  else
+    printf 'fmx update: %s is stale (installed %s, catalog pin %s)\n' \
+      "$profile_key" "${installed:0:12}" "${commit:0:12}"
+  fi
+}
+
+update_profile() {
+  local commit repository overlay_commit installed checkout staged_receipt
+
+  require_command jq
+  require_command git
+  require_command python3
+  require_native_claude
+  require_worker_launcher
+  require_owned_profile
+  acquire_mutation_lock 'update'
+  require_idle_fleet 'update'
+  recover_interrupted_publication
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  overlay_commit="$(catalog_overlay)"
+  installed="$(installed_commit)" \
+    || die "profile is not set up; run fmx setup $profile_key"
+  if [[ "$installed" == "$commit" ]] \
+    && python3 "$overlay_tool" \
+      --manifest "$(overlay_directory "$overlay_commit")/manifest.json" \
+      --root "$fm_runtime" \
+      --commit "$overlay_commit" \
+      --verify-only >/dev/null 2>&1 \
+    && runtime_checkout_report "$commit" >/dev/null 2>&1; then
+    printf 'fmx update: %s is current (%s)\n' "$profile_key" "${commit:0:12}"
+    return
+  fi
+  require_gh_authenticated
+  checkout="$(stage_pinned_source "$commit" "$repository" "$overlay_commit")"
+  staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
+  publish_runtime_and_receipt "$checkout" "$staged_receipt"
+  ensure_managed_home
+  ensure_crew_harness_config
+  ensure_worker_policy
+  printf 'fmx update: %s %s -> %s installed\n' \
+    "$profile_key" "${installed:0:12}" "${commit:0:12}"
+}
+
+inventory_json() {
+  local readiness="$1" commit repository installed workers session overlay mutation
+
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  installed="$(installed_commit || printf '')"
+  session="$(session_state)"
+  mutation="$(mutation_state)"
+  overlay="$(overlay_evidence_json)"
+  workers="$(worker_states | jq -Rn '
+    [inputs | select(length > 0) | split(" ") | {task: .[0], state: .[1]}]
+  ')"
+  jq -cn \
+    --arg profile "$profile_key" \
+    --arg readiness "$readiness" \
+    --arg session "$session" \
+    --arg mutation "$mutation" \
+    --arg repository "$repository" \
+    --arg pinned "$commit" \
+    --arg installed "$installed" \
+    --argjson overlay "$overlay" \
+    --argjson workers "$workers" '
+    {
+      schemaVersion: 1,
+      launcher: "fmx",
+      harness: "firstmate",
+      profile: $profile,
+      readiness: $readiness,
+      source: {
+        repository: $repository,
+        pinnedCommit: $pinned,
+        installedCommit: (if $installed == "" then null else $installed end),
+        commitMatchesPin: ($installed != "" and $installed == $pinned)
+      },
+      overlay: $overlay,
+      session: $session,
+      mutation: $mutation,
+      workers: $workers,
+      plugins: [],
+      skills: {packageCount: null, visibleCount: null},
+      mcps: []
+    }
+  '
+}
+
+inventory_profile() {
+  local attempt before after readiness output
+
+  require_safe_managed_paths
+  for attempt in 1 2 3; do
+    before="$(mutation_generation_value)"
+    # Checked BEFORE not-setup: a first setup in progress is busy, not missing.
+    if profile_is_busy; then
+      inventory_json 'busy'
+      return
+    fi
+    if ! profile_is_set_up; then
+      readiness='not-setup'
+    elif ! (doctor_profile >/dev/null 2>&1); then
+      readiness='unhealthy'
+    else
+      readiness='healthy'
+    fi
+    if ! output="$(inventory_json "$readiness")"; then
+      output=''
+    fi
+    after="$(mutation_generation_value)"
+    if [[ -n "$output" && "$before" == "$after" ]] \
+      && ! mutation_reader_blocked; then
+      printf '%s\n' "$output"
+      return
+    fi
+  done
+  inventory_json 'busy'
+}
+
+# Captain-session acquisition uses the same mkdir claim, so two concurrent
+# launches can never both start a captain. A stale owned lock is reclaimed
+# atomically; an unowned lock directory is refused, never removed.
+acquire_session_lock() {
+  local backend="$1" state stale="$profile_root/locks/.session-stale.$$"
+
+  make_owned_directory "$profile_root/locks"
+  if ! mkdir "$session_lock" 2>/dev/null; then
+    state="$(session_state)"
+    case "$state" in
+      active)
+        die "the $profile_key captain session is already running; attach to it instead of starting a second one" ;;
+      incomplete)
+        # A contender must never take a session directory that has been created
+        # but whose pid is not published yet.
+        die "an incomplete captain session lock exists at $session_lock; another fmx launch may be acquiring it right now. Confirm no captain is running, then remove it by hand" ;;
+      unowned)
+        die "an unowned captain session lock exists at $session_lock; remove it by hand after confirming no captain is running" ;;
+      stale)
+        [[ ! -e "$stale" && ! -L "$stale" ]] \
+          || die "unsafe session lock staging path: $stale"
+        atomic_rename "$session_lock" "$stale" \
+          || die "the $profile_key captain session is already running; attach to it instead of starting a second one"
+        remove_lock_stage "$stale" ;;
+      none) ;;
+      *)
+        die "the captain session lock at $session_lock is in an unexpected state: $state" ;;
+    esac
+    mkdir "$session_lock" 2>/dev/null \
+      || die "the $profile_key captain session is already running; attach to it instead of starting a second one"
+  fi
+  populate_lock_directory "$session_lock" \
+    "owner=$ownership_value" "backend=$backend" "pid=$$"
+}
+
+launch_profile() {
+  local commit overlay_commit repository backend gh_config worker_bash
+
+  require_command jq
+  require_command git
+  require_command python3
+  worker_bash="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' \
+    "${BASH-}")" \
+    || die "could not resolve the current Bash interpreter: ${BASH-}"
+  [[ "$worker_bash" == /* && -f "$worker_bash" && -x "$worker_bash" \
+    && ! -L "$worker_bash" ]] \
+    || die "the current Bash interpreter is not an absolute executable file: $worker_bash"
+  require_native_claude
+  require_worker_launcher
+  require_owned_profile
+  require_safe_managed_paths
+  acquire_mutation_lock 'launch'
+  require_idle_fleet 'launch'
+  recover_interrupted_publication
+  profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  overlay_commit="$(catalog_overlay)"
+  [[ "$(installed_commit)" == "$commit" ]] \
+    || die "installed Firstmate commit differs from the catalog pin; run fmx update $profile_key"
+  verify_receipt "$commit" "$repository" "$overlay_commit"
+  [[ -f "$fm_runtime/bin/fm-spawn.sh" ]] \
+    || die "installed runtime is incomplete; run fmx repair $profile_key"
+  verify_runtime_overlay "$overlay_commit"
+  verify_runtime_checkout "$commit"
+  verify_managed_runtime_marker
+  verify_tasks_axi_config
+  verify_crew_harness_config
+  verify_worker_policy
+  require_gh_authenticated
+  gh_config="$(gh_config_directory)"
+
+  backend="$(resolve_backend)"
+  ensure_launch_prerequisites "$backend" "$worker_bash"
+  acquire_session_lock "$backend"
+  release_mutation_lock
+  [[ ! -e "$mutation_lock" && ! -L "$mutation_lock" ]] \
+    || die "launch refused: the mutation lock at $mutation_lock could not be released"
+
+  cd "$fm_runtime" || die "could not enter the installed runtime: $fm_runtime"
+
+  local -a environment=(
+    "FM_HOME=$fm_home"
+    "FM_ROOT_OVERRIDE=$fm_runtime"
+    "FM_BACKEND=$backend"
+    "FMX_PROFILE=$profile_key"
+    "FMX_PROFILE_ROOT=$profile_root"
+    "FMX_WORKER_LAUNCHER=$worker_launcher"
+    "FMX_CAPTAIN_PANE_ID=${HERDR_PANE_ID-}"
+    "FMX_TASK_ID_PREFIX=$task_id_prefix"
+    # HOME and PATH are captured from the validated captain process here and
+    # carried explicitly into every worker pane, because a session daemon's
+    # environment is not the captain's.
+    "FMX_WORKER_HOME=$HOME"
+    "FMX_WORKER_PATH=$prerequisite_path"
+    "FMX_WORKER_BASH=$worker_bash"
+    "TASKS_AXI_BACKEND=markdown"
+    "TASKS_AXI_FILE=$fm_home/data/backlog.md"
+    "GH_CONFIG_DIR=$gh_config"
+    "FMX_GH_CONFIG_DIR=$gh_config"
+    "ANTHROPIC_AUTH_TOKEN=$proxy_token"
+    "ANTHROPIC_BASE_URL=$proxy_origin"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL=$model_id"
+    "ANTHROPIC_DEFAULT_SONNET_MODEL=$sonnet_model_id"
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL=$haiku_model_id"
+  )
+  if [[ -n "$policy_file" ]]; then
+    environment+=("FMX_WORKER_POLICY_FILE=$policy_file")
+  else
+    environment+=("FMX_WORKER_POLICY_FILE=")
+  fi
+
+  exec env \
+    -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
+    -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN -u OPENAI_API_KEY \
+    -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX \
+    "TRELLAGE_CLAUDE_LAUNCHER_NAME=$launcher_name" \
+    "TRELLAGE_CLAUDE_RUNTIME_ROOT=$runtime_root" \
+    "PATH=$prerequisite_path" \
+    "${environment[@]}" \
+    "$native_claude" launch \
+    --home "$captain_home" \
+    --marker "$captain_marker" \
+    --marker-value "$ownership_value" \
+    --bridge enabled \
+    --profile "$profile_key" \
+    -- "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Argument handling.
+# ---------------------------------------------------------------------------
+
+resolve_selection() {
+  local selection="$1"
+
+  if [[ "$selection" == --all ]]; then
+    profile_names
+    return
+  fi
+  printf '%s\n' "$selection"
+}
+
+# The selection is materialized BEFORE the loop runs. A per-profile command
+# invokes helpers that may read standard input, and a loop fed by a process
+# substitution would lose the remaining profiles to the first such reader.
+run_over_selection() {
+  local command_name="$1" selection="$2" name
+  local -a selected=()
+
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    selected+=("$name")
+  done < <(resolve_selection "$selection")
+  [[ "${#selected[@]}" -gt 0 ]] || die "no profile matched the selection: $selection"
+  # Each command is invoked directly, never as the left side of ||, so errexit
+  # stays active for the whole profile operation and a bare failing command can
+  # never continue on to report success. The EXIT trap still releases the lock
+  # on failure.
+  for name in "${selected[@]}"; do
+    select_profile "$name"
+    "$command_name"
+    # Release between profiles so one selection never holds several locks.
+    release_mutation_lock
+  done
+}
+
+require_command jq
+validate_catalog
+
+case "${1-}" in
+  help | -h | --help | '')
+    usage
+    ;;
+  list)
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      list_profiles
+    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
+      list_profiles_json
+    else
+      die 'list accepts only --json'
+    fi
+    ;;
+  inventory)
+    shift
+    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    require_safe_home
+    select_profile "$1"
+    inventory_profile
+    ;;
+  setup)
+    shift
+    [[ "$#" -eq 1 ]] || die 'usage: fmx setup PROFILE|--all'
+    require_safe_home
+    run_over_selection setup_profile "$1"
+    ;;
+  doctor)
+    shift
+    [[ "$#" -eq 1 ]] || die 'usage: fmx doctor PROFILE'
+    [[ "$1" != --all ]] || die 'usage: fmx doctor PROFILE'
+    require_safe_home
+    select_profile "$1"
+    doctor_profile_with_lifecycle_gate
+    ;;
+  repair)
+    shift
+    [[ "$#" -eq 1 ]] || die 'usage: fmx repair PROFILE'
+    [[ "$1" != --all ]] || die 'usage: fmx repair PROFILE'
+    require_safe_home
+    select_profile "$1"
+    repair_profile
+    ;;
+  update)
+    shift
+    check_only=false
+    if [[ "${1-}" == --check ]]; then
+      check_only=true
+      shift
+    fi
+    [[ "$#" -eq 1 ]] || die 'usage: fmx update [--check] PROFILE|--all'
+    require_safe_home
+    if [[ "$check_only" == true ]]; then
+      run_over_selection check_update "$1"
+    else
+      run_over_selection update_profile "$1"
+    fi
+    ;;
+  *)
+    profile_argument="$1"
+    shift
+    require_safe_home
+    select_profile "$profile_argument"
+    launch_profile "$@"
+    ;;
+esac

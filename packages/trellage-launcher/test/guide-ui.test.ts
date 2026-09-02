@@ -83,7 +83,7 @@ import {
 // fixture conventions in test/guide-api.test.ts.
 // ---------------------------------------------------------------------------
 
-const headless = (overrides: { readonly prompt: boolean }) => ({
+const headless = (overrides: { readonly prompt: boolean }): CombinedGuideCatalog["native"][number]["headless"] => ({
   schemaVersion: 1,
   prompt: overrides.prompt,
   outputFormats: ["json"],
@@ -117,6 +117,31 @@ const guideReviewer: ProfileGuideV1 = {
   ],
 }
 
+const firstmateGuide = (pstackWorkers: boolean): ProfileGuideV1 => ({
+  schemaVersion: 1,
+  capabilities: ["fleet-orchestration"],
+  bestFor: ["Parallel repository work", "Captain-owned delivery"],
+  avoidFor: ["One-line edits", "Untrusted repositories"],
+  prerequisites: [{ id: "git-repo", description: "A git repository checkout." }],
+  workflows: [
+    {
+      id: "orchestrate",
+      description: "Coordinate a Firstmate fleet.",
+      examples: ["Coordinate parallel implementation", "Dispatch isolated workers"],
+      promptTemplate: [
+        pstackWorkers ? "## Firstmate pstack-worker operating contract" : "## Firstmate operating contract",
+        "Keep Firstmate as the sole router.",
+        ...(pstackWorkers
+          ? ["", "### Worker inner-loop contract", "Keep each worker brief bounded and evidence-driven."]
+          : []),
+        "",
+        "## Task",
+        "{{intent}}",
+      ].join("\n"),
+    },
+  ],
+})
+
 const reviewerGuideMarkdown = `---
 schemaVersion: 1
 capabilities:
@@ -143,6 +168,71 @@ workflows:
 # Reviewer
 
 Use this profile to review diffs.
+`
+
+const firstmateDefaultGuideMarkdown = `---
+schemaVersion: 1
+capabilities:
+  - fleet-orchestration
+bestFor:
+  - Parallel repository work
+  - Captain-owned delivery
+avoidFor:
+  - One-line edits
+  - Untrusted repositories
+prerequisites:
+  - id: git-repo
+    description: A git repository checkout.
+workflows:
+  - id: orchestrate
+    description: Coordinate a Firstmate fleet.
+    examples:
+      - Coordinate parallel implementation
+      - Dispatch isolated workers
+    promptTemplate: |
+      ## Firstmate operating contract
+      Keep Firstmate as the sole router.
+
+      ## Task
+      {{intent}}
+---
+# Firstmate
+
+Use this profile for fleet orchestration.
+`
+
+const firstmatePstackGuideMarkdown = `---
+schemaVersion: 1
+capabilities:
+  - fleet-orchestration
+bestFor:
+  - Parallel repository work
+  - Captain-owned delivery
+avoidFor:
+  - One-line edits
+  - Untrusted repositories
+prerequisites:
+  - id: git-repo
+    description: A git repository checkout.
+workflows:
+  - id: orchestrate
+    description: Coordinate a Firstmate fleet.
+    examples:
+      - Coordinate parallel implementation
+      - Dispatch isolated workers
+    promptTemplate: |
+      ## Firstmate pstack-worker operating contract
+      Keep Firstmate as the sole router.
+
+      ### Worker inner-loop contract
+      Keep each worker brief bounded and evidence-driven.
+
+      ## Task
+      {{intent}}
+---
+# Firstmate
+
+Use this profile for fleet orchestration.
 `
 
 const guideWriter: ProfileGuideV1 = {
@@ -213,9 +303,7 @@ const guideResearch: ProfileGuideV1 = {
 
 describe("capture source presentation", () => {
   it("labels exact and terminal sources without relying on color alone", () => {
-    expect(
-      captureSourcePresentation({ source: "capture-queue", confidence: "user-curated" }),
-    ).toEqual({
+    expect(captureSourcePresentation({ source: "capture-queue", confidence: "user-curated" })).toEqual({
       label: "Curated capture queue",
       detail: "The guide is using the highlighted text and agent results you queued.",
       color: "cyan",
@@ -331,6 +419,25 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
     }),
   )
 
+const buildFirstmateCatalog = (tmpRoot: string): CombinedGuideCatalog => {
+  const catalog = buildCatalog(tmpRoot)
+  const firstmateEntry = (name: "default" | "pstack-workers"): CombinedGuideCatalog["native"][number] => ({
+    launcher: "fmx",
+    harness: "firstmate",
+    name,
+    description: `Firstmate ${name} profile.`,
+    headless: headless({ prompt: false }),
+    sandbox: false,
+    herdrCompatibility: { status: "supported" },
+    guide: firstmateGuide(name === "pstack-workers"),
+    commandPath: "/opt/trellage/fmx/bin/fmx",
+  })
+  return {
+    ...catalog,
+    native: [...catalog.native, firstmateEntry("default"), firstmateEntry("pstack-workers")],
+  }
+}
+
 const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => {
   const catalog = buildCatalog(tmpRoot)
   const sandboxEntry = (
@@ -402,6 +509,14 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
 const writeGuideFixtures = async (root: string): Promise<void> => {
   await mkdir(path.join(root, "native", "cdx"), { recursive: true })
   await writeFile(path.join(root, "native", "cdx", "reviewer.md"), reviewerGuideMarkdown)
+}
+
+const writeFirstmateGuideFixture = async (root: string, profile: "default" | "pstack-workers"): Promise<void> => {
+  await mkdir(path.join(root, "native", "fmx"), { recursive: true })
+  await writeFile(
+    path.join(root, "native", "fmx", `${profile}.md`),
+    profile === "pstack-workers" ? firstmatePstackGuideMarkdown : firstmateDefaultGuideMarkdown,
+  )
 }
 
 const nativeSelectedProfile = (headlessPrompt: boolean): SelectedProfile => ({
@@ -620,7 +735,9 @@ describe("guideUiReducer: intent and match", () => {
         recommendations: recommendationTriple(),
       })
       state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewOpen })
-      expect(guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack }).stage).toBe(GuideUiStage.Recommendations)
+      expect(guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack }).stage).toBe(
+        GuideUiStage.Recommendations,
+      )
 
       state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewEdit, editing: true })
       state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewChange, text: "Review this carefully" })
@@ -1161,6 +1278,43 @@ describe("runGuideGenerationStep", () => {
     }
   })
 
+  it.each([
+    ["default", "## Firstmate operating contract", false],
+    ["pstack-workers", "## Firstmate pstack-worker operating contract", true],
+  ] as const)(
+    "reapplies the canonical Firstmate contract after interactive generation for %s",
+    async (profile, expectedHeading, expectsWorkerContract) => {
+      const tmpRoot = await mkdtemp(path.join(tmpdir(), `guide-ui-generate-fmx-${profile}-`))
+      try {
+        const catalog = buildFirstmateCatalog(tmpRoot)
+        await writeFirstmateGuideFixture(tmpRoot, profile)
+        const provider = new FakeGuideProvider()
+        const chosen = recommendation({
+          profileRef: `native:fmx/${profile}`,
+          workflowId: "orchestrate",
+          launcher: "fmx",
+          name: profile,
+        })
+
+        const result = await runGuideGenerationStep(
+          catalog,
+          tmpRoot,
+          provider,
+          "Implement the feature with isolated workers.",
+          chosen,
+        )
+
+        for (const generatedCandidate of result.candidates) {
+          expect(generatedCandidate.prompt).toContain(expectedHeading)
+          expect(generatedCandidate.prompt).toContain("Do the ")
+          expect(generatedCandidate.prompt.includes("### Worker inner-loop contract")).toBe(expectsWorkerContract)
+        }
+      } finally {
+        await rm(tmpRoot, { recursive: true, force: true })
+      }
+    },
+  )
+
   it("invokes onGuideLoaded with the loaded guide before calling provider.generate, even when generation itself fails (regression: template fallback must stay available)", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-loaded-"))
     try {
@@ -1268,6 +1422,42 @@ describe("runGuideRefinementStep", () => {
 
     expect(refined.prompt).toBe("/social-media-skills:post-writer Do the focused thing.")
   })
+
+  it.each([
+    ["default", "## Firstmate operating contract", false],
+    ["pstack-workers", "## Firstmate pstack-worker operating contract", true],
+  ] as const)(
+    "reapplies the canonical Firstmate contract after interactive refinement for %s",
+    async (profile, expectedHeading, expectsWorkerContract) => {
+      const chosen = recommendation({
+        profileRef: `native:fmx/${profile}`,
+        workflowId: "orchestrate",
+        launcher: "fmx",
+        name: profile,
+      })
+      const guide = firstmateGuide(profile === "pstack-workers")
+      const guideDocument: SelectedGuideDocument = {
+        ref: `native:fmx/${profile}`,
+        guide,
+        body: "guide body",
+      }
+      const provider = new FakeGuideProvider()
+
+      const refined = await runGuideRefinementStep(
+        buildFirstmateCatalog("/tmp-unused"),
+        provider,
+        "Implement the feature with isolated workers.",
+        chosen,
+        guideDocument,
+        candidate(),
+        "Make the worker boundaries explicit.",
+      )
+
+      expect(refined.prompt).toContain(expectedHeading)
+      expect(refined.prompt).toContain("Do the focused thing.")
+      expect(refined.prompt.includes("### Worker inner-loop contract")).toBe(expectsWorkerContract)
+    },
+  )
 })
 
 // ---------------------------------------------------------------------------
@@ -1422,16 +1612,8 @@ describe("isWithinTextBound", () => {
   })
 
   it("counts astral symbols as one character", () => {
-    expect(
-      isWithinTextBound(
-        "😀".repeat(guideIntentMaximumLength - 1),
-        "😀",
-        guideIntentMaximumLength,
-      ),
-    ).toBe(true)
-    expect(
-      isWithinTextBound("😀".repeat(guideIntentMaximumLength), "😀", guideIntentMaximumLength),
-    ).toBe(false)
+    expect(isWithinTextBound("😀".repeat(guideIntentMaximumLength - 1), "😀", guideIntentMaximumLength)).toBe(true)
+    expect(isWithinTextBound("😀".repeat(guideIntentMaximumLength), "😀", guideIntentMaximumLength)).toBe(false)
   })
 })
 
@@ -1458,7 +1640,9 @@ describe("promptReviewMetrics", () => {
 
 describe("markdownPromptLines", () => {
   it("styles common Markdown structures without exposing markup prefixes", () => {
-    expect(markdownPromptLines("# Goal\nIntro\n## Work\n- first\n1. second\n- [x] done\n> note\n```\nconst x = 1\n```", 80)).toEqual([
+    expect(
+      markdownPromptLines("# Goal\nIntro\n## Work\n- first\n1. second\n- [x] done\n> note\n```\nconst x = 1\n```", 80),
+    ).toEqual([
       { text: "Goal", kind: "heading" },
       { text: "", kind: "body" },
       { text: "Intro", kind: "body" },
@@ -1484,7 +1668,9 @@ describe("markdownPromptLines", () => {
   })
 
   it("parses safe inline Markdown without evaluating MDX or HTML", () => {
-    expect(markdownInlineSegments("Use **bold**, *italics*, `code`, ~~old~~, and [docs](https://example.com).")).toEqual([
+    expect(
+      markdownInlineSegments("Use **bold**, *italics*, `code`, ~~old~~, and [docs](https://example.com)."),
+    ).toEqual([
       { text: "Use ", kind: "text" },
       { text: "bold", kind: "bold" },
       { text: ", ", kind: "text" },
@@ -1728,13 +1914,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "/repo",
       herdrContext,
     )
-    expect(result.command.args).toEqual([
-      "hve",
-      "--agent",
-      "hve-core:rpi-agent",
-      "-i",
-      "Run the complete RPI cycle.",
-    ])
+    expect(result.command.args).toEqual(["hve", "--agent", "hve-core:rpi-agent", "-i", "Run the complete RPI cycle."])
     expect(result.promptDelivery).toBe("command")
   })
 

@@ -66,7 +66,7 @@ routed through keyless `copilot-proxy-rs` and defaulting to `gpt-5.6-sol` with
 ## Avoid This Profile When
 
 - The task needs OS-level sandboxing or containment — `jcx` is one of the
-  five native launchers that remain unsandboxed by design (see
+  seven native launchers that remain unsandboxed by design (see
   `docs/native-sandbox-research.md`); jcode gets full host access.
 - You need to update jcode mid-session — ordinary launches never update the
   pinned version; use `jcx update` explicitly instead.

@@ -47,6 +47,16 @@ while IFS= read -r pin; do
   [[ ! -e "$pin" ]] || fail "Native development profile contains external pin $pin"
 done < <(git ls-files 'prototypes/trellage-*-profiles/**/PIN.txt')
 
+# Firstmate is the deliberate exception to floating Native source resolution:
+# its managed overlay is valid only for one reviewed upstream tree.
+jq -e '
+  .schemaVersion == 1
+  and .source.repository == "https://github.com/kunchenguid/firstmate.git"
+  and .source.commit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+  and .source.overlay == .source.commit
+' prototypes/trellage-firstmate-profiles/catalog.json >/dev/null \
+  || fail 'Native Firstmate catalog does not retain its reviewed source and overlay pin'
+
 for lock in \
   packages/trellage-cli/assets/graph-of-loops-requirements.lock \
   packages/trellage-cli/assets/hyperresearch-requirements.lock; do
