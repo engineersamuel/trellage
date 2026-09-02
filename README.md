@@ -294,13 +294,20 @@ ECC's plugin-discovered engineering skills, commands, agents, and hooks for
 broad planning, implementation, debugging, review, and verification work.
 
 ```bash
+trellage validate claude-ecc
+trellage build claude-ecc
 trellage --profile claude-ecc
+make claude-ecc-image-probe
 ```
 
 ECC hooks are enabled with the `minimal` profile. This preserves essential
 lifecycle and safety behavior without the automatic tmux, formatting,
 type-checking, and strict reminder hooks. The image therefore does not add
 `tmux`.
+
+Large plugin seeds are synchronized into persistent Claude state as one
+rollback-safe transaction. The launcher reports progress when at least 1,000
+managed files must be updated.
 
 The profile installs the Claude plugin surface only. It does not import ECC's
 repository `rules/` or `contexts/`, and `include_mcp = false` excludes the

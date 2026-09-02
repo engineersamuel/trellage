@@ -267,12 +267,37 @@ copilot_profile="$test_root/copilot-profile.toml"
 copilot_node_log="$test_root/copilot-node.log"
 copilot_gh_log="$test_root/copilot-gh.log"
 sandbox_metadata_node_environment="$test_root/sandbox-metadata-node.env"
+sandbox_metadata_socket_attempts="$test_root/sandbox-metadata-socket.attempts"
+sandbox_metadata_socket_preload="$test_root/sandbox-metadata-socket-preload.cjs"
+sandbox_metadata_socket_swap="$test_root/sandbox-metadata-socket-swap"
+cat >"$sandbox_metadata_socket_preload" <<'NODE'
+const fs = require('node:fs')
+const net = require('node:net')
+
+const attempts = process.env.TRELLAGE_TEST_ENOTSOCK_ATTEMPTS
+net.createConnection = () => {
+  fs.appendFileSync(attempts, 'attempt\n')
+  const connection = new net.Socket()
+  connection.once('error', (error) => {
+    fs.appendFileSync(attempts, `error:${error.code}\n`)
+  })
+  process.nextTick(() => {
+    const error = Object.assign(new Error('injected ENOTSOCK'), { code: 'ENOTSOCK' })
+    connection.destroy(error)
+  })
+  return connection
+}
+NODE
 mkdir -p "$copilot_fake_bin"
 ln -s "$prototype_dir/tests/fakes/host-gh" "$copilot_fake_bin/gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
   "if [[ \"\${1:-}\" == --input-type=module && \"\${2:-}\" == - && -z \"\${FAKE_NODE_LOG:-}\" ]]; then" \
+  "  if [[ -f \"$sandbox_metadata_socket_swap\" ]]; then" \
+  "    export NODE_OPTIONS=\"--require=$sandbox_metadata_socket_preload\"" \
+  "    export TRELLAGE_TEST_ENOTSOCK_ATTEMPTS=\"$sandbox_metadata_socket_attempts\"" \
+  '  fi' \
   "  /usr/bin/env >\"$sandbox_metadata_node_environment\"" \
   "  exec \"$real_node\" \"\$@\"" \
   'fi' \
@@ -294,7 +319,7 @@ printf '%s\n' \
 chmod +x "$copilot_fake_bin/node"
 no_gh_bin="$test_root/no-gh-bin"
 mkdir -p "$no_gh_bin"
-for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv od \
+for utility in bash jq awk sed tr shasum dirname basename readlink head grep cat cut sleep mv od ps \
   mkdir chmod rm rmdir id; do
   ln -s "$(command -v "$utility")" "$no_gh_bin/$utility"
 done
@@ -1798,6 +1823,16 @@ test_stale_container_preserves_active_sessions() {
     run_non_tty "$worktree" "$docker_log" "$worktree" \
       "$prototype_dir/trellage" -p test
   grep -Fqx $'ARG\trm' "$docker_log" || fail 'idle stale container was not replaced'
+
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_CONTAINER_RUNTIME_HASH=sha256:stale \
+    FAKE_DOCKER_INIT_WRAPPER=1 \
+    run_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" -p test
+  grep -Fqx $'ARG\trm' "$docker_log" \
+    || fail 'Docker init baseline was mistaken for an active stale-container session'
   printf 'Trellage host test: PASS: stale containers preserve active sessions\n'
 }
 
@@ -2302,7 +2337,8 @@ test_pending_launch_is_serialized_with_cleanup() {
 test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
   local worktree="$test_root/lease-guards-worktree"
   local docker_log="$test_root/lease-guards.docker.log"
-  local state_volume shell_ready shell_release harness_ready harness_release shell_pid harness_pid leases_dir
+  local state_volume shell_ready shell_release harness_ready harness_release shell_pid harness_pid
+  local leases_dir resource_dir
   mkdir -p "$worktree"
   state_volume="$(resource_names "$worktree" | tail -n 1)"
   shell_ready="$test_root/shell.ready"
@@ -2338,6 +2374,26 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
 
   leases_dir="$(ls -td "$runtime_dir"/trellage-*/*/leases 2>/dev/null | sed -n '1p')"
   [[ -n "$leases_dir" ]] || fail 'lifecycle leases directory was not created'
+  printf '%s\n' "$$" >"$leases_dir/legacy-live"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  ! grep -Fqx $'ARG\tstop' "$docker_log" || fail 'live legacy lease did not prevent shutdown'
+  [[ -e "$leases_dir/legacy-live" ]] || fail 'live legacy lease was pruned'
+  rm -f -- "$leases_dir/legacy-live"
+
+  printf '%s\n' "$$" >"$leases_dir/legacy-reused-pid"
+  touch -t 200001010000 "$leases_dir/legacy-reused-pid"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'legacy reused PID lease prevented automatic shutdown'
+  [[ ! -e "$leases_dir/legacy-reused-pid" ]] \
+    || fail 'legacy reused PID lease was not pruned'
+
   printf '99999999\n' >"$leases_dir/99999999"
   : >"$docker_log"
   FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
@@ -2345,7 +2401,37 @@ test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop() {
     run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
   grep -Fqx $'ARG\tstop' "$docker_log" || fail 'dead lease prevented automatic shutdown'
   [[ ! -e "$leases_dir/99999999" ]] || fail 'dead lease was not pruned'
-  printf 'Trellage host test: PASS: shell leases, processes, and dead leases guard shutdown\n'
+
+  printf '%s\n%s\n' "$$" "$(printf '0%.0s' {1..64})" >"$leases_dir/reused-pid"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'reused PID lease prevented automatic shutdown'
+  [[ ! -e "$leases_dir/reused-pid" ]] || fail 'reused PID lease was not pruned'
+
+  resource_dir="$(dirname "$leases_dir")"
+  mkdir "$resource_dir/mutex"
+  printf '%s\n%s\n' "$$" "$(printf '0%.0s' {1..64})" >"$resource_dir/mutex/owner"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" || fail 'reused PID mutex owner blocked launch cleanup'
+  [[ ! -e "$resource_dir/mutex" ]] || fail 'reused PID mutex owner was not replaced and released'
+
+  mkdir "$resource_dir/mutex"
+  printf '%s\n' "$$" >"$resource_dir/mutex/owner"
+  touch -t 200001010000 "$resource_dir/mutex/owner"
+  : >"$docker_log"
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    run_tty "$worktree" "$docker_log" "$worktree" "$prototype_dir/trellage"
+  grep -Fqx $'ARG\tstop' "$docker_log" \
+    || fail 'legacy reused PID mutex owner blocked launch cleanup'
+  [[ ! -e "$resource_dir/mutex" ]] \
+    || fail 'legacy reused PID mutex owner was not replaced and released'
+  printf 'Trellage host test: PASS: lifecycle records reject reused PIDs and guard shutdown\n'
 }
 
 test_cleanup_status_signals_secrets_and_validation() {
@@ -2451,7 +2537,7 @@ send -- "/status\r"
 expect "PTY:slash:/status"
 send -- "\003"
 expect "PTY:interrupt"
-expect eof
+close
 set result [wait]
 set status [lindex $result 3]
 if {$status != 130} {
@@ -2468,6 +2554,43 @@ EXPECT
   grep -Fq 'PTY:interrupt' "$transcript" || fail 'foreground Docker exec lost Ctrl-C'
   grep -Fqx $'ARG\tstop' "$docker_log" || fail 'Ctrl-C cleanup did not stop the idle container'
   printf 'Trellage host test: PASS: foreground wrapper preserves direct PTY behavior\n'
+}
+
+test_claude_attachment_prepares_and_restores_tty() {
+  local worktree="$test_root/claude-tty-worktree"
+  local docker_log="$test_root/claude-tty.docker.log"
+  local transcript="$test_root/claude-tty.transcript"
+  local tty_before="$test_root/claude-tty.before"
+  local tty_after="$test_root/claude-tty.after"
+  local state_volume status=0
+  mkdir -p "$worktree/.git"
+  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
+  : >"$docker_log"
+
+  FAKE_HARNESS_METADATA_OVERRIDE="$claude_metadata" \
+  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=claude-headless-test FAKE_DOCKER_PROTOTYPE=trellage-claude \
+    run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+      env FAKE_DOCKER_REQUIRE_PREPARED_TTY=1 FAKE_DOCKER_AGENT_EXEC_EXIT=23 \
+      TRELLAGE_TEST_TTY_BEFORE="$tty_before" TRELLAGE_TEST_TTY_AFTER="$tty_after" \
+      bash -c '
+        stty -g 2>/dev/null </dev/tty >"$TRELLAGE_TEST_TTY_BEFORE"
+        "$@"
+        status=$?
+        # script(1) queues EOF; consume it so Darwin clears its transient PENDIN flag.
+        IFS= read -r -t 1 _ </dev/tty || true
+        stty -g 2>/dev/null </dev/tty >"$TRELLAGE_TEST_TTY_AFTER"
+        exit "$status"
+      ' trellage-tty-wrapper "$prototype_dir/trellage" --profile claude-headless-test \
+      >"$transcript" 2>&1 || status=$?
+
+  [[ "$status" -eq 23 ]] || fail "Claude TTY preparation changed agent status 23 to $status"
+  grep -Fqx $'AGENT_TTY\tprepared' "$docker_log" \
+    || fail 'Claude Docker attachment did not receive a prepared terminal'
+  [[ -s "$tty_before" && -s "$tty_after" ]] || fail 'Claude TTY state capture is incomplete'
+  cmp -s "$tty_before" "$tty_after" || fail 'Claude attachment did not restore the exact terminal state'
+  printf 'Trellage host test: PASS: Claude attachment prepares and restores its PTY\n'
 }
 
 test_doctor_reports_status_without_mutation_or_secrets() {
@@ -5209,7 +5332,8 @@ test_sandbox_session_bridge_attachment_contract() {
   local metadata_socket="$test_root/h.sock"
   local metadata_ready="$test_root/h.ready"
   local metadata_request="$test_root/h.json"
-  local state_volume server_pid invocation
+  local state_volume server_pid invocation failure_elapsed failure_started
+  local replacement_ready replacement_server_pid replacement_socket
   mkdir -p "$metadata_worktree"
   : >"$metadata_log"
   rm -f -- "$sandbox_metadata_node_environment"
@@ -5341,6 +5465,7 @@ PY
   local failure_log="$test_root/sandbox-bridge-metadata-failure.log"
   local failure_stderr="$test_root/sandbox-bridge-metadata-failure.stderr"
   : >"$failure_log"
+  failure_started="$(date +%s)"
   FAKE_GH_STATE=failure \
     FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
     FAKE_DOCKER_CONTAINER_STATE=matching-running \
@@ -5350,10 +5475,60 @@ PY
       HERDR_SOCKET_PATH="$test_root/missing-herdr.sock" \
       TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p metadata-failure \
       2>"$failure_stderr"
+  failure_elapsed="$(( $(date +%s) - failure_started ))"
+  (( failure_elapsed < 10 )) \
+    || fail "permanent Herdr socket failure delayed command exit by ${failure_elapsed}s"
   grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
     || fail 'Sandbox metadata failure was not visible'
   ! grep -Eq '(^|[[:space:]])Error:|\\[eval[0-9]*\\]' "$failure_stderr" \
     || fail 'Sandbox metadata failure leaked an internal Node stack trace'
+
+  replacement_socket="$test_root/r.sock"
+  replacement_ready="$test_root/r.ready"
+  rm -f -- \
+    "$replacement_socket" "$replacement_ready" "$sandbox_metadata_socket_attempts"
+  python3 - "$replacement_socket" "$replacement_ready" <<'PY' &
+import socket
+import sys
+import time
+from pathlib import Path
+
+socket_path, ready_path = sys.argv[1:]
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+    listener.bind(socket_path)
+    listener.listen(1)
+    Path(ready_path).write_text("ready\n", encoding="utf-8")
+    time.sleep(30)
+PY
+  replacement_server_pid=$!
+  for _attempt in {1..200}; do
+    [[ -f "$replacement_ready" ]] && break
+    sleep 0.01
+  done
+  [[ -f "$replacement_ready" ]] || fail 'replacement socket fixture did not start'
+  : >"$sandbox_metadata_socket_swap"
+  : >"$failure_log"
+  FAKE_GH_STATE=failure \
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+    FAKE_DOCKER_CONTAINER_STATE=matching-running \
+    FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+    run_copilot_non_tty "$metadata_worktree" "$failure_log" "$metadata_worktree" \
+      env HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH="$replacement_socket" \
+      TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" \
+      -p metadata-replaced-socket 2>"$failure_stderr"
+  rm -f -- "$sandbox_metadata_socket_swap"
+  kill "$replacement_server_pid" 2>/dev/null || true
+  wait "$replacement_server_pid" 2>/dev/null || true
+  [[ -S "$replacement_socket" ]] \
+    || fail 'ENOTSOCK fixture did not preserve the validated socket'
+  [[ "$(grep -Fxc attempt "$sandbox_metadata_socket_attempts")" -eq 1 ]] \
+    || fail 'ENOTSOCK metadata failure was retried'
+  grep -Fqx 'error:ENOTSOCK' "$sandbox_metadata_socket_attempts" \
+    || fail 'metadata fixture did not produce ENOTSOCK'
+  grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
+    || fail 'ENOTSOCK metadata failure was not visible'
+  ! grep -Eq '(^|[[:space:]])Error:|Unhandled .error. event|\\[eval[0-9]*\\]' "$failure_stderr" \
+    || fail 'ENOTSOCK metadata failure leaked an internal Node stack trace'
 
   printf 'Trellage host test: PASS: Sandbox attachment metadata and invocation isolation\n'
 }
@@ -5479,11 +5654,17 @@ if [[ "${TRELLAGE_HOST_VALIDATION_ONLY:-}" == 1 ]]; then
 fi
 
 if [[ "${TRELLAGE_HOST_LIFECYCLE_ONLY:-}" == 1 ]]; then
+  test_stale_container_preserves_active_sessions
   test_last_harness_exit_stops_idle_container
   test_concurrent_harnesses_stop_after_last_exit
   test_pending_launch_is_serialized_with_cleanup
   test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
   test_cleanup_status_signals_secrets_and_validation
+  exit 0
+fi
+
+if [[ "${TRELLAGE_HOST_LEASE_ONLY:-}" == 1 ]]; then
+  test_shell_leases_processes_and_dead_leases_prevent_or_allow_stop
   exit 0
 fi
 
@@ -5497,7 +5678,13 @@ if [[ "${TRELLAGE_HOST_CLEANUP_ONLY:-}" == 1 ]]; then
   exit 0
 fi
 
+if [[ "${TRELLAGE_HOST_CLAUDE_TTY_ONLY:-}" == 1 ]]; then
+  test_claude_attachment_prepares_and_restores_tty
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_PTY_ONLY:-}" == 1 ]]; then
+  test_claude_attachment_prepares_and_restores_tty
   test_foreground_wrapper_preserves_pty_contract
   exit 0
 fi
