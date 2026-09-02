@@ -1,14 +1,14 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-discovers the installed launchers `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
-`omp`, `picx`, and `prx`,
+discovers the installed launchers `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`,
+`jcx`, `omp`, `picx`, and `prx`,
 validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
 
 ## Install
 
-Install the nine native launchers first. Their commands must resolve from
+Install the ten native launchers first. Their commands must resolve from
 `PATH` to their owned runtimes under `~/.local/share/trellage/`.
 
 Prerequisites: Bash, Node.js, and `jq`.
@@ -16,6 +16,7 @@ Prerequisites: Bash, Node.js, and `jq`.
 ```sh
 (cd ../trellage-codex-profiles && ./install.sh)
 (cd ../trellage-copilot-profiles && ./install.sh)
+(cd ../trellage-agency-profiles && ./install.sh)
 (cd ../trellage-claude-profiles && ./install.sh)
 (cd ../trellage-firstmate-profiles && ./install.sh)
 (cd ../trellage-grok-profiles && ./install.sh)
@@ -48,6 +49,7 @@ or unrelated paths instead of replacing them.
 
 ```sh
 trx
+trx --profile agency
 trx run cpx hve -- --prompt "Reply exactly OK"
 trx --model gpt-5.6-terra
 trx list
@@ -64,11 +66,16 @@ installed `trx`:
 
 ```sh
 mise run trx
+mise run trx -- --profile agency
 mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
 mise run trx -- guide --intent "Write a technical LinkedIn post"
 mise run trx -- guide "$(cat /tmp/large-prompt.md)" --ui-variant split
 ```
+
+`mise run trx -- --profile agency` directly launches
+`agx/trellage-azure` without opening the picker. Remaining arguments are
+forwarded to Agency's managed Copilot CLI.
 
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
@@ -77,7 +84,7 @@ and `herdrCompatibility`. The nested guide is projected from the installed
 Markdown registry; Markdown remains the authored source. `trx` copies each
 launcher's `headless` object unchanged;
 it does not infer headless support from launcher names. Both forms are
-non-interactive and work without a TTY. They validate all nine owned launchers
+non-interactive and work without a TTY. They validate all ten owned launchers
 and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
 

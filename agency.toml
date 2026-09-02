@@ -1,0 +1,51 @@
+[profiles.trellage-azure.mcps.builtins]
+msft-learn = true
+
+[profiles.trellage-azure.mcps.servers.azure]
+type = "stdio"
+command = "npx"
+args = [
+  "-y",
+  "@azure/mcp@2.0.5",
+  "server",
+  "start",
+  "--read-only",
+  "--tool",
+  "subscription_list",
+  "--tool",
+  "group_list",
+  "--tool",
+  "group_resource_list",
+  "--tool",
+  "acr_registry_list",
+  "--tool",
+  "acr_registry_repository_list",
+  "--tool",
+  "storage_account_get",
+  "--tool",
+  "storage_blob_container_get",
+  "--tool",
+  "storage_blob_get",
+  "--tool",
+  "storage_table_list",
+  "--tool",
+  "resourcehealth_availability-status_get",
+  "--tool",
+  "resourcehealth_health-events_list",
+]
+tools = [
+  "subscription_list",
+  "group_list",
+  "group_resource_list",
+  "acr_registry_list",
+  "acr_registry_repository_list",
+  "storage_account_get",
+  "storage_blob_container_get",
+  "storage_blob_get",
+  "storage_table_list",
+  "resourcehealth_availability-status_get",
+  "resourcehealth_health-events_list",
+]
+
+[profiles.trellage-azure.plugins]
+default = []

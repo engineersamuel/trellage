@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
-  "lastUpdated": "2026-09-01",
+  "lastUpdated": "2026-09-02",
   "description": "Hand-maintained ledger of whether each Trellage profile has been observed to work end-to-end when driven as a Herdr agent (launched, detected, and able to complete a one-line task). This is a curated signal refreshed by manual verification runs, not a live probe: Trellage cannot detect Herdr-side bugs (agent detection, consent-dialog handling, etc.) automatically. Status values: 'verified' (completed an end-to-end round trip), 'known-issue' (observed to fail, see issue/notes), 'untested' (no verification run recorded). See docs/rlm-herdr-handoff.md for the source report and category definitions (A-G).",
   "entries": [
+    { "kind": "native", "launcher": "agx", "profile": "trellage-azure", "harness": "agency", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
     { "kind": "native", "launcher": "cldx", "profile": "default", "harness": "claude", "status": "verified" },
     { "kind": "native", "launcher": "fmx", "profile": "default", "harness": "firstmate", "status": "verified", "notes": "Verified in a real Herdr captain-and-scout round trip: consent-managed prerequisites installed, the scout used an isolated Treehouse worktree and worker home, all locked tools resolved, and teardown completed." },
     { "kind": "native", "launcher": "fmx", "profile": "pstack-workers", "harness": "firstmate", "status": "untested", "notes": "The shared Firstmate runtime passed the fmx/default Herdr fleet round trip, and static worker-policy contracts pass. Awaiting a profile-specific pstack-workers fleet round trip." },

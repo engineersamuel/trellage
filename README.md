@@ -598,6 +598,9 @@ machine:
    - `cpx` (GitHub Copilot) needs `copilot` (`gh extension install
      github/gh-copilot` or the standalone Copilot CLI) already authenticated,
      plus `jq` and `python3`.
+   - `agx` (Agency) needs Microsoft Agency on `PATH` or at
+     `~/.config/agency/CurrentVersion/agency`, Node.js, npm, npx, and either
+     complete Azure environment credentials or an existing `az login`.
    - `cldx` (Claude Code) needs the `claude` CLI (`npm install -g
      @anthropic-ai/claude-code`) and `python3`.
    - `grx` (Grok) needs the `grok` CLI already logged in
@@ -616,7 +619,7 @@ machine:
      consent before installing them under
      `~/.local/share/trellage/fmx/prerequisites/`. It does not install global
      npm packages or global agent hooks.
-3. **`trx` requires every one of the nine launchers to be installed** before
+3. **`trx` requires every one of the ten launchers to be installed** before
    it will list or launch anything — it errors with `required launcher not
    found on PATH: <name>` otherwise. If you only use a subset of harnesses,
    skip `trx` and run that launcher's binary (`cpx`, `grx`, …) directly
@@ -657,6 +660,7 @@ repository root:
 ```bash
 (cd prototypes/trellage-codex-profiles && ./install.sh)
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
+(cd prototypes/trellage-agency-profiles && ./install.sh)
 (cd prototypes/trellage-claude-profiles && ./install.sh)
 (cd prototypes/trellage-firstmate-profiles && ./install.sh)
 (cd prototypes/trellage-grok-profiles && ./install.sh)
@@ -672,6 +676,7 @@ launching, for example:
 
 ```bash
 cpx setup --all
+agx setup trellage-azure
 grx setup --all
 jcx setup
 omp setup
@@ -683,7 +688,7 @@ cpx doctor awesome
 trx list
 ```
 
-An explicit `setup` step is not strictly required for `cdx`, `cpx`, `cldx`,
+An explicit `setup` step is not strictly required for `agx`, `cdx`, `cpx`, `cldx`,
 `grx`, `jcx`, `omp`, `picx`, or `prx`; those launchers self-heal on first
 launch. `fmx` is intentionally different: run `fmx setup PROFILE` first so
 the pinned Firstmate source and overlay are installed as an explicit,
@@ -706,6 +711,7 @@ The installers publish these commands and managed runtimes:
 
 - `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
 - `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
+- `agx`: `~/.local/bin/agx` and `~/.local/share/trellage/agx/`
 - `cldx`: `~/.local/bin/cldx` and `~/.local/share/trellage/cldx/`
 - `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
 - `jcx`: `~/.local/bin/jcx` and `~/.local/share/trellage/jcx/`
@@ -720,6 +726,7 @@ Their isolated profile homes are rooted at:
 ```text
 ~/.local/share/trellage/profiles/codex/<profile>/home/
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
+~/.local/share/trellage/profiles/agency/<profile>/home/
 ~/.local/share/trellage/profiles/claude/default/home/
 ~/.local/share/trellage/profiles/grok/<profile>/home/
 ~/.local/share/trellage/profiles/jcode/default/home/
@@ -867,7 +874,7 @@ cdx update --check youtube
 cdx youtube
 ```
 
-After the nine native profile launchers and `trx` are installed, list the
+After the ten native profile launchers and `trx` are installed, list the
 available launcher/profile pairs or use one flat picker:
 
 ```bash
@@ -884,10 +891,15 @@ replacing the installed native command:
 
 ```bash
 mise run trx
+mise run trx -- --profile agency
 mise run trx -- list
 mise run trx -- list --json
 mise run trx -- guide "Write a LinkedIn post about AI agents"
 ```
+
+`mise run trx -- --profile agency` bypasses the picker and launches
+`agx/trellage-azure`. Arguments after `agency` pass unchanged to the
+Agency-managed Copilot CLI.
 
 `trx list` prints `launcher/profile` plus the catalog description; `--json`
 returns the same discovery data with launcher and harness identity plus a
@@ -1012,6 +1024,36 @@ prx repair
 the managed `models.json` provider and selected model so persisted edits cannot
 redirect the endpoint. No host model credentials are copied.
 
+The native `agx` launcher runs Microsoft Agency's managed Copilot CLI with the
+repository-local `trellage-azure` Agency profile:
+
+```bash
+agx setup trellage-azure
+agx doctor trellage-azure
+agx inventory trellage-azure --json
+agx trellage-azure
+```
+
+It preserves the real `HOME` and current worktree, but sets
+`COPILOT_HOME=~/.local/share/trellage/profiles/agency/trellage-azure/home`.
+Agency receives `--profile-only trellage-azure`; Copilot arguments follow the
+required `--` separator. The committed `agency.toml` enables Microsoft Learn
+and Azure MCP `2.0.5` with eleven exact read-only subscription, resource-group,
+ACR, storage, and resource-health tools. It contains no credentials and does
+not enable deployment or write tools. This first release works only from this
+repository because Agency discovers the named profile from the worktree-root
+configuration.
+
+Live Agency and Azure checks are never part of `make test`. Run the explicit
+interactive proof only after recording the exact installed versions:
+
+```bash
+TRELLAGE_AGENCY_LIVE=1 \
+TRELLAGE_AGENCY_VERSION='<exact Agency version>' \
+TRELLAGE_AGENCY_COPILOT_VERSION='<exact managed Copilot version>' \
+  prototypes/trellage-agency-profiles/tests/live.sh
+```
+
 Native profiles run directly on the host and are state-isolation conveniences,
 not security boundaries.
 
@@ -1070,7 +1112,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `cldx`, `fmx`, and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `agx`, `cldx`, `fmx`, and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 
