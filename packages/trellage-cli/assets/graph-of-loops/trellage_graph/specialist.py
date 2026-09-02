@@ -22,6 +22,10 @@ _DISCOVERY_ROLE = "trellage-graph-discovery"
 _DISCOVERY_NORMALIZER_ROLE = "trellage-graph-discovery-normalizer"
 _RUNTIME_ROLES = Path(__file__).resolve().parent.parent / "roles"
 _SERENA_CONFIG = Path(__file__).resolve().parent.parent / "serena_config.yml"
+_SPECIALIST_WORKTREE_HOOK = (
+    "python /opt/trellage/graph-of-loops/"
+    "trellage_graph/hooks/specialist_worktree.py"
+)
 _SERENA_READ_ONLY_TOOLS = (
     "mcp__serena__get_symbols_overview",
     "mcp__serena__find_symbol",
@@ -109,7 +113,9 @@ class SpecialistLauncher:
             None,
         )
 
-    def _sanitized_env(self, config_dir: str) -> dict[str, str]:
+    def _sanitized_env(
+        self, config_dir: str, *, worktree: str | None = None,
+    ) -> dict[str, str]:
         env = {
             key: value for key, value in os.environ.items()
             if key in _ENV_ALLOWLIST
@@ -125,6 +131,8 @@ class SpecialistLauncher:
             "SERENA_HOME": str(Path(config_dir) / ".serena"),
         })
         env.update(self._nss_identity_env(config_dir))
+        if worktree is not None:
+            env["TRELLAGE_SPECIALIST_WORKTREE"] = str(Path(worktree).resolve())
         return env
 
     def _nss_identity_env(self, config_dir: str) -> dict[str, str]:
@@ -252,6 +260,31 @@ class SpecialistLauncher:
         shutil.copy2(_SERENA_CONFIG, serena_home / "serena_config.yml")
         return settings
 
+    @staticmethod
+    def _install_worktree_hook(settings_path: Path) -> None:
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SpecialistError("managed Claude settings are invalid") from exc
+        if not isinstance(settings, dict):
+            raise SpecialistError("managed Claude settings must be an object")
+        hooks = settings.setdefault("hooks", {})
+        if not isinstance(hooks, dict):
+            raise SpecialistError("managed Claude hooks must be an object")
+        pre_tool = hooks.setdefault("PreToolUse", [])
+        if not isinstance(pre_tool, list):
+            raise SpecialistError("managed Claude PreToolUse hooks must be an array")
+        pre_tool.append({
+            "hooks": [{
+                "type": "command",
+                "command": _SPECIALIST_WORKTREE_HOOK,
+            }],
+        })
+        settings_path.write_text(
+            json.dumps(settings, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
     def _role_candidates(self, role: str) -> list[Path]:
         candidates: list[Path] = []
         owned = self._runtime_roles / f"{role}.md"
@@ -341,7 +374,7 @@ class SpecialistLauncher:
             result = self._runner.run(
                 command,
                 cwd=cwd,
-                env=self._sanitized_env(config_dir),
+                env=self._sanitized_env(config_dir, worktree=cwd),
                 capture_output=True,
                 text=True,
                 check=True,
@@ -674,7 +707,14 @@ class SpecialistLauncher:
         self._validate_worktree(worktree_path, expected_worktree)
         settings = self._seed_config_dir(config_dir)
         if settings_path is not None:
-            settings = Path(settings_path)
+            source = Path(settings_path)
+            if not source.is_file():
+                raise SpecialistError(
+                    f"managed Claude settings are missing: {source}"
+                )
+            settings = Path(config_dir) / "specialist-settings.json"
+            shutil.copy2(source, settings)
+        self._install_worktree_hook(settings)
         command = self._base_command(
             role=role,
             settings=settings,

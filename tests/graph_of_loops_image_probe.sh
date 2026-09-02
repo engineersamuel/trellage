@@ -136,8 +136,11 @@ with tempfile.TemporaryDirectory() as temporary:
     config = Path(temporary) / "config"
     settings = launcher._seed_config_dir(str(config))
     assert settings == config / "default-settings.json"
-    env = launcher._sanitized_env(str(config))
+    worktree = Path(temporary) / "worktree"
+    worktree.mkdir()
+    env = launcher._sanitized_env(str(config), worktree=str(worktree))
     assert env["LD_PRELOAD"].endswith("/libnss_wrapper.so")
+    assert env["TRELLAGE_SPECIALIST_WORKTREE"] == str(worktree.resolve())
     identity = subprocess.run(
         ["getent", "passwd", "10001"],
         env={**os.environ, **env},
@@ -165,6 +168,39 @@ with tempfile.TemporaryDirectory() as temporary:
     assert "--verbose" in command
     assert command.index("--verbose") < command.index("--output-format")
     assert "--tools" not in command
+PY
+
+run_py 15 <<'PY' \
+  || fail 'specialist worktree confinement hook is broken'
+import tempfile
+from pathlib import Path
+
+from trellage_graph.hooks.specialist_worktree import handle
+
+with tempfile.TemporaryDirectory() as temporary:
+    parent = Path(temporary).resolve()
+    worktree = parent / ".sdd" / "worktrees" / "node"
+    worktree.mkdir(parents=True)
+    allowed = handle(
+        {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(worktree),
+            "tool_name": "Write",
+            "tool_input": {"file_path": "src/owned.rs"},
+        },
+        expected_worktree=worktree,
+    )
+    assert allowed is None
+    denied = handle(
+        {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(worktree),
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(parent / "src" / "leaked.rs")},
+        },
+        expected_worktree=worktree,
+    )
+    assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
 PY
 
 run_py 15 <<'PY' \

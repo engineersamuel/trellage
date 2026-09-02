@@ -64,6 +64,9 @@ from trellage_graph.specialist import (
     SpecialistError,
 )
 from trellage_graph.hooks.graph_entrypoint import handle as entrypoint_hook
+from trellage_graph.hooks.specialist_worktree import (
+    handle as specialist_worktree_hook,
+)
 
 
 # ===== Fakes matching exact pinned API shapes =====
@@ -1974,15 +1977,18 @@ class TestSpecialist(unittest.TestCase):
             '{"type":"result","subtype":"success","result":"ok"}',
         )
         with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
             launcher, wt, cfg = _specialist_fixture(
-                Path(td), runner, "team-implementer",
+                root, runner, "team-implementer",
             )
+            managed_settings = root / "managed-settings.json"
+            managed_settings.write_text("{}\n", encoding="utf-8")
             launcher.launch(
                 role="team-implementer", agent_name="test-agent",
                 prompt="do it", worktree_path=str(wt),
                 expected_worktree=str(wt), config_dir=str(cfg),
                 authorized_roles={"team-implementer"},
-                settings_path="/usr/local/share/trellage/settings.json",
+                settings_path=str(managed_settings),
                 allowed_tools=["Read", "Write"],
                 disallowed_tools=["Bash"],
             )
@@ -1991,13 +1997,20 @@ class TestSpecialist(unittest.TestCase):
             self.assertIn("--output-format stream-json", cmd)
             self.assertIn("--no-session-persistence", cmd)
             self.assertIn("--strict-mcp-config", cmd)
-            self.assertIn("--settings /usr/local/share/trellage/settings.json", cmd)
+            self.assertIn(
+                f"--settings {cfg / 'specialist-settings.json'}",
+                cmd,
+            )
             self.assertIn("--tools Read,Write", cmd)
             self.assertIn("--allowed-tools Read,Write", cmd)
             self.assertIn("--disallowed-tools Bash", cmd)
             self.assertIn("--agent team-implementer", cmd)
             self.assertNotIn("do it", runner.calls[-1])
             self.assertEqual(runner.call_kwargs[-1]["input"], "do it")
+            self.assertEqual(
+                runner.call_kwargs[-1]["env"]["TRELLAGE_SPECIALIST_WORKTREE"],
+                str(wt.resolve()),
+            )
 
     def test_managed_seed_default_settings_are_used(self) -> None:
         runner = FakeSubprocessRunner()
@@ -3570,6 +3583,68 @@ class TestControllerE2E(unittest.TestCase):
                     td,
                 )
 
+    def test_specialist_parent_worktree_leak_fails_at_source(self) -> None:
+        class LeakingSpecialist:
+            def __init__(self, parent: Path) -> None:
+                self.parent = parent
+
+            def launch(self, **_kwargs: Any) -> dict[str, Any]:
+                (self.parent / "owned.txt").write_text(
+                    "leaked\n",
+                    encoding="utf-8",
+                )
+                return {
+                    "serena_success": True,
+                    "serena_fallback": False,
+                    "output_digest": "sha256:leak",
+                }
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "probe@trellage"],
+                cwd=root,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "probe"],
+                cwd=root,
+                check=True,
+            )
+            (root / "owned.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "base"],
+                cwd=root,
+                check=True,
+            )
+            worktree = root / ".sdd" / "worktrees" / "node"
+            worktree.mkdir(parents=True)
+            controller = _make_controller(td=td)
+            controller._repo_root = root
+            controller._runner = RealSubprocessRunner()
+            controller._specialist = LeakingSpecialist(root)  # type: ignore[assignment]
+            node = {
+                "id": "node",
+                "prompt": "Edit owned.txt.",
+                "role": "team-implementer",
+                "type": "behavior",
+                "write_set": ["owned.txt"],
+                "repair_write_set": [],
+                "test_write_set": [],
+                "evidence_write_set": [],
+            }
+            state = {"worktree": str(worktree)}
+            with self.assertRaisesRegex(
+                SpecialistError,
+                "modified the target worktree",
+            ):
+                controller._specialist_callback(node, state)(
+                    phase="green",
+                    role="team-implementer",
+                )
+
     def test_policy_limits(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             ctrl = _make_controller(td=td, policy=_load("test-policy.json"))
@@ -4117,6 +4192,105 @@ class TestGraphEntrypointHook(unittest.TestCase):
                         config_dir=config,
                     ))
             self.assertIsNone(entrypoint_hook(run_payload, config_dir=config))
+
+
+class TestSpecialistWorktreeHook(unittest.TestCase):
+    @staticmethod
+    def _payload(
+        root: Path,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        *,
+        cwd: Path | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(cwd or root),
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+        }
+
+    def test_denies_write_to_parent_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            parent = Path(td)
+            worktree = parent / ".sdd" / "worktrees" / "node"
+            worktree.mkdir(parents=True)
+            denied = specialist_worktree_hook(
+                self._payload(
+                    worktree,
+                    "Write",
+                    {"file_path": str(parent / "src" / "leaked.rs")},
+                ),
+                expected_worktree=worktree,
+            )
+            self.assertEqual(
+                denied["hookSpecificOutput"]["permissionDecision"],
+                "deny",
+            )
+
+    def test_allows_write_inside_generated_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            worktree = Path(td).resolve()
+            self.assertIsNone(specialist_worktree_hook(
+                self._payload(
+                    worktree,
+                    "Edit",
+                    {"file_path": "src/owned.rs"},
+                ),
+                expected_worktree=worktree,
+            ))
+
+    def test_denies_shell_with_parent_cwd_or_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            parent = Path(td).resolve()
+            worktree = parent / ".sdd" / "worktrees" / "node"
+            worktree.mkdir(parents=True)
+            for payload in (
+                self._payload(
+                    worktree,
+                    "Bash",
+                    {"command": "cargo test"},
+                    cwd=parent,
+                ),
+                self._payload(
+                    worktree,
+                    "Bash",
+                    {"command": f"cp src/lib.rs {parent}/src/lib.rs"},
+                ),
+            ):
+                with self.subTest(payload=payload):
+                    denied = specialist_worktree_hook(
+                        payload,
+                        expected_worktree=worktree,
+                    )
+                    self.assertEqual(
+                        denied["hookSpecificOutput"]["permissionDecision"],
+                        "deny",
+                    )
+
+    def test_denies_mutating_serena_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            worktree = Path(td).resolve()
+            denied = specialist_worktree_hook(
+                self._payload(
+                    worktree,
+                    "mcp__serena__replace_content",
+                    {"relative_path": "src/lib.rs"},
+                ),
+                expected_worktree=worktree,
+            )
+            self.assertEqual(
+                denied["hookSpecificOutput"]["permissionDecision"],
+                "deny",
+            )
+            self.assertIsNone(specialist_worktree_hook(
+                self._payload(
+                    worktree,
+                    "mcp__serena__find_symbol",
+                    {"name_path": "scan"},
+                ),
+                expected_worktree=worktree,
+            ))
 
 
 class FakePlanner:

@@ -848,8 +848,12 @@ class GraphController:
     ) -> Callable[..., dict[str, Any]]:
         def launch(*, phase: str, role: str) -> dict[str, Any]:
             worktree = str(state["worktree"])
+            target_status = self._target_worktree_status()
             prompt = (
                 f"Node {node['id']} phase {phase}.\n{node['prompt']}\n"
+                f"Generated worktree root: {worktree}\n"
+                "Use only this generated worktree for every file and shell tool. "
+                f"Never write to target worktree {self._repo_root}.\n"
                 f"Allowed writes: {json.dumps(self._allowed_patterns(node, phase))}\n"
                 "Use Serena symbol/reference discovery before ordinary text search. "
                 "If Serena fails or the language is unsupported, include "
@@ -887,6 +891,11 @@ class GraphController:
                 ],
                 timeout=self._ceilings_from_policy()["node_timeout_seconds"],
             )
+            if self._target_worktree_status() != target_status:
+                raise SpecialistError(
+                    "specialist modified the target worktree outside its "
+                    f"generated worktree during node {node['id']} phase {phase}"
+                )
             if node["type"] != "research" and not (
                 result["serena_success"] or result["serena_fallback"]
             ):
@@ -900,6 +909,33 @@ class GraphController:
             return result
 
         return launch
+
+    def _target_worktree_status(self) -> bytes:
+        try:
+            result = self._runner.run(
+                [
+                    "git",
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                    "--",
+                    ".",
+                    ":(exclude).sdd",
+                ],
+                cwd=str(self._repo_root),
+                capture_output=True,
+                check=True,
+                timeout=30,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise ControllerError(
+                f"cannot inspect target worktree status: {exc.stderr}"
+            ) from exc
+        output = result.stdout
+        if isinstance(output, bytes):
+            return output
+        return str(output or "").encode()
 
     def _gate_callback(
         self,
