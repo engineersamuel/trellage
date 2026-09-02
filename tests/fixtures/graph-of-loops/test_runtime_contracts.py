@@ -733,6 +733,17 @@ class TestPlanValidation(unittest.TestCase):
         ):
             validate_plan(plan)
 
+    def test_node_cannot_claim_gate_evidence_is_proof(self) -> None:
+        plan = _load("valid-plan.json")
+        plan["nodes"][0]["acceptance_criteria"] = [
+            "The red and green transcripts are recorded as the proof",
+        ]
+        with self.assertRaisesRegex(
+            PlanValidationError,
+            "controller-owned state",
+        ):
+            validate_plan(plan)
+
     def test_node_can_disclaim_controller_owned_completion(self) -> None:
         plan = _load("valid-plan.json")
         plan["nodes"][0]["acceptance_criteria"] = [
@@ -5440,7 +5451,8 @@ class TestSchemaValidation(unittest.TestCase):
             planner_role,
         )
         self.assertIn(
-            "inspect its actual\ncross-target `cargo build` probe",
+            "Treat script contents as configured feasibility, not execution\n"
+            "evidence.",
             discovery_role,
         )
 

@@ -363,7 +363,7 @@ def _check_controller_owned_acceptance(
         r"rebase[ds]?|fast[- ]forward(?:ed)?|integrat(?:e|ed|ion)|"
         r"codex review|graph review|root bead|close[ds]? the bead|"
         r"worktree cleanup|clean(?:ed)? up (?:the )?worktree|"
-        r"graph proof|raindrop proof"
+        r"proof"
         r")\b",
         re.IGNORECASE,
     )

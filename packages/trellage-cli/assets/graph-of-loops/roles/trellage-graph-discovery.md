@@ -22,12 +22,14 @@ planner. Inspect repository-root instructions and validation entrypoints such
 as `AGENTS.md` and `Makefile` when they exist. If the objective depends on a
 locked toolchain, target architecture, cross target, linker, or runtime
 capability, inspect the profile lock and the materializer or runtime
-configuration that proves the capability. A future research node cannot replace
+configuration that grounds the capability. A future research node cannot replace
 this planner-time feasibility evidence. When cross-target link gates are
-requested and `tests/graph_of_loops_image_probe.sh` exists, inspect its actual
-cross-target `cargo build` probe before claiming that link behavior was not
-executed or remains ungrounded. Record the exact target triples proved by that
-probe and the locked linker configuration that it exercises. Use no more than
+requested and `tests/graph_of_loops_image_probe.sh` exists, inspect its
+cross-target `cargo build` commands and the locked linker configuration they
+exercise. Treat script contents as configured feasibility, not execution
+evidence. Record successful execution only when discovery has direct command
+output from the current tree; otherwise require the plan's own cross-link gates.
+Use no more than
 twelve Serena tool
 calls and stop when the target and
 relevant seams have sufficient evidence. Return exactly one JSON object with no

@@ -131,6 +131,10 @@ target-evidence path must exist in the repository.
   unrepairable after a gate or review finding.
 - Validate nodes are read-only and cannot claim their own future integration,
   review, proof, cleanup, or root-Bead closure
+- Node acceptance criteria may call gate transcripts or artifacts `evidence`,
+  but must not call them `proof`. All proof determination is controller-owned,
+  regardless of whether the wording says `graph proof`, `Raindrop proof`, or
+  simply `the proof`.
 - Validate nodes may execute only their declared node-local gates. They must
   not claim to execute or report plan-level graph gates, which remain
   controller-owned after node completion.
