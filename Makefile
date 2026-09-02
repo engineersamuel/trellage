@@ -1,19 +1,19 @@
-.PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean
+.PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime trellage-host-headless trellage-host-headless-test azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 HEADLESS_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime azure-fresh-install-contract agent-harness claude-entry copilot-entry headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-jcode-profile native-omp-profile native-picx-profile native-prime-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-test graph-of-loops-runtime-contract
+PARALLEL_TEST_TARGETS := trellage-host-runtime native-copilot-profiles native-firstmate-profile native-prime-profile claude-entry copilot-entry native-claude-profile native-omp-profile launcher dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-agency-profile native-jcode-profile native-picx-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract
 TIMING_SENSITIVE_TEST_TARGETS := native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles
-SERIAL_TEST_TARGETS := native-profile-router headless-matrix
+FINAL_TEST_TARGETS := native-profile-router trellage-host-headless-test
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 TRELLAGE_GRAPH_OF_LOOPS_IMAGE ?= trellage-profile-claude-graph-of-loops-linux-arm64:locked
 
 test:
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(PARALLEL_TEST_TARGETS)
-	$(MAKE) --no-print-directory $(TIMING_SENSITIVE_TEST_TARGETS)
-	$(MAKE) --no-print-directory $(SERIAL_TEST_TARGETS)
+	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(TIMING_SENSITIVE_TEST_TARGETS)
+	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
 
 dependency-bootstrap:
 	bash tests/dependency_bootstrap_contract.sh
@@ -69,6 +69,12 @@ trellage-host-runtime: profile-compiler
 	HERDR_ENV=0 TRELLAGE_HOST_SESSION_BRIDGE_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
 	HERDR_ENV=0 TRELLAGE_HOST_LIFECYCLE_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
 	HERDR_ENV=0 TRELLAGE_HOST_CLAUDE_TTY_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
+
+trellage-host-headless: profile-compiler
+	TRELLAGE_HOST_HEADLESS_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
+
+trellage-host-headless-test:
+	TRELLAGE_HOST_HEADLESS_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
 
 azure-fresh-install-contract:
 	bash tests/azure_fresh_install_contract.sh
@@ -212,6 +218,9 @@ graph-of-loops-image:
 # and probing a real container is too slow/heavy for the default suite.
 graph-of-loops-image-probe:
 	TRELLAGE_GRAPH_OF_LOOPS_IMAGE=$(TRELLAGE_GRAPH_OF_LOOPS_IMAGE) bash tests/graph_of_loops_image_probe.sh
+
+headless-matrix-static-test:
+	TRELLAGE_HEADLESS_SKIP_PUBLICATION_TEST=1 bash tests/headless_contract_matrix.sh
 
 build:
 	@skills_stage="$$(mktemp -d "$${TMPDIR:-/tmp}/trellage-make-skills.XXXXXX")"; \

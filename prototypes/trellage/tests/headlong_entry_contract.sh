@@ -6,6 +6,7 @@ repo_root="$(cd "$prototype_dir/../.." && pwd -P)"
 entry="$prototype_dir/runtime-headlong-entry.sh"
 root="$repo_root/.agent_work/headlong-entry-contract-$$"
 fixture_ref='mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af'
+home_volume=''
 
 cleanup() {
   local status=$?
@@ -15,6 +16,7 @@ cleanup() {
       --mount "type=bind,src=$root,dst=/cleanup" \
       "$fixture_ref" -R a+rwX /cleanup >/dev/null 2>&1 || true
   fi
+  [[ -z "$home_volume" ]] || docker volume rm -f "$home_volume" >/dev/null 2>&1 || true
   rm -rf -- "$root"
   exit "$status"
 }
@@ -41,6 +43,16 @@ mkdir -p \
   "$skill_seed/skills/always-on" "$skill_seed/skills/on-demand" \
   "$home" "$output" "$fake_bin" "$control"
 chmod 777 "$home" "$output" "$control"
+home_mount="type=bind,src=$home,dst=/home/agent"
+if [[ "$(uname -s)" == Darwin ]]; then
+  home_volume="trellage-headlong-entry-contract-$$"
+  docker volume create "$home_volume" >/dev/null
+  docker run --rm --network none --user '0:0' \
+    --entrypoint /bin/chmod \
+    --mount "type=volume,src=$home_volume,dst=/home/agent" \
+    "$fixture_ref" 0777 /home/agent
+  home_mount="type=volume,src=$home_volume,dst=/home/agent"
+fi
 printf '#!/usr/bin/env bash\nprintf "headlong tui\\n"\n' >"$tui_binary"
 chmod 755 "$tui_binary"
 printf 'seed one\n' >"$seed/README.md"
@@ -192,7 +204,7 @@ run_entry() {
     --mount "type=bind,src=$seed_commit,dst=/usr/local/share/trellage/headlong-seed.commit,readonly" \
     --mount "type=bind,src=$skill_seed,dst=/usr/local/share/trellage/headlong-skills,readonly" \
     --mount "type=bind,src=$tui_binary,dst=/usr/local/share/trellage/headlong-tui,readonly" \
-    --mount "type=bind,src=$home,dst=/home/agent" \
+    --mount "$home_mount" \
     --mount "type=bind,src=$output,dst=/test-output" \
     --mount "type=bind,src=$fake_bin,dst=/test-bin,readonly" \
     --mount "type=bind,src=$control,dst=/test-control" \
@@ -221,7 +233,7 @@ run_service_for() {
     --mount "type=bind,src=$seed_commit,dst=/usr/local/share/trellage/headlong-seed.commit,readonly" \
     --mount "type=bind,src=$skill_seed,dst=/usr/local/share/trellage/headlong-skills,readonly" \
     --mount "type=bind,src=$tui_binary,dst=/usr/local/share/trellage/headlong-tui,readonly" \
-    --mount "type=bind,src=$home,dst=/home/agent" \
+    --mount "$home_mount" \
     --mount "type=bind,src=$output,dst=/test-output" \
     --mount "type=bind,src=$fake_bin,dst=/test-bin,readonly" \
     --mount "type=bind,src=$control,dst=/test-control" \
@@ -235,7 +247,7 @@ run_service_for() {
 in_fixture() {
   docker run --rm --network none --user '10001:10001' \
     --entrypoint /bin/bash \
-    --mount "type=bind,src=$home,dst=/home/agent" \
+    --mount "$home_mount" \
     --mount "type=bind,src=$output,dst=/test-output" \
     --mount "type=bind,src=$seed,dst=/usr/local/share/trellage/headlong-seed" \
     --mount "type=bind,src=$seed_commit,dst=/usr/local/share/trellage/headlong-seed.commit" \
@@ -347,7 +359,7 @@ run_entry attach
 
 # A slow service restore must not hold the state lock and block an initialized
 # user attachment from reaching its login shell.
-: >"$control/block-restore"
+in_fixture ': >/test-control/block-restore'
 rm -f "$output/restore.started"
 run_service_for 5 &
 service_runner=$!
@@ -361,7 +373,8 @@ SECONDS=0
 run_entry attach
 attach_seconds=$SECONDS
 wait "$service_runner"
-rm -f "$control/block-restore" "$output/restore.started"
+in_fixture 'rm -f /test-control/block-restore'
+rm -f "$output/restore.started"
 [[ "$attach_seconds" -lt 3 ]] \
   || fail 'slow service restore held the state lock and blocked an initialized attachment'
 
@@ -413,7 +426,7 @@ in_fixture '
 # The post-initializer mode check must also fail closed: if the invoked
 # entry point itself leaves .env broader than mode 600, the runtime must
 # reject it rather than silently chmod it back to 600.
-: >"$control/env-mode-wrong"
+in_fixture ': >/test-control/env-mode-wrong'
 status=0
 run_service_for 2 || status=$?
 [[ "$status" -ne 0 ]] || fail 'a restore initializer that loosened .env mode was not rejected'
@@ -421,7 +434,7 @@ in_fixture '
   test "$(stat -c %a /home/agent/.headlong/.env)" = 644
   grep -Fqx "ANTHROPIC_API_KEY=trellage-local-proxy" /home/agent/.headlong/.env
 ' || fail 'a rejected initializer-drifted .env mode was silently repaired or its content was modified'
-rm -f "$control/env-mode-wrong"
+in_fixture 'rm -f /test-control/env-mode-wrong'
 in_fixture 'chmod 600 /home/agent/.headlong/.env'
 run_service_for 2
 
@@ -578,7 +591,7 @@ in_fixture '
   printf "seed rollback-attempt\n" >/usr/local/share/trellage/headlong-seed/README.md
   printf "2222222222222222222222222222222222222222\n" >/usr/local/share/trellage/headlong-seed.commit
 '
-: >"$control/fail-install"
+in_fixture ': >/test-control/fail-install'
 status=0
 run_entry attach || status=$?
 [[ "$status" -ne 0 ]] || fail 'a failed checkout installer run did not fail the attach'
@@ -592,9 +605,10 @@ in_fixture "
   test \"\$(cat /home/agent/.headlong/.trellage/source.commit)\" = '$before_source_marker'
   test -z \"\$(find /home/agent/.headlong/.trellage -maxdepth 1 \( -name 'app.stage.*' -o -name 'app.backup.*' -o -name 'markers.backup.*' \) -print -quit)\"
 " || fail 'a failed checkout installer run left the application or its markers inconsistently paired'
-rm -f "$control/fail-install"
+in_fixture 'rm -f /test-control/fail-install'
 in_fixture 'printf "2222222222222222222222222222222222222222\n" >/usr/local/share/trellage/headlong-seed.commit'
-run_entry attach
+run_entry attach \
+  || { cat "$output/stderr.log" >&2; fail 'a retried upgrade after a fixed installer failed'; }
 in_fixture '
   test "$(cat /home/agent/.headlong/app/README.md)" = "seed rollback-attempt"
   test "$(cat /home/agent/.headlong/.trellage/source.commit)" = 2222222222222222222222222222222222222222
