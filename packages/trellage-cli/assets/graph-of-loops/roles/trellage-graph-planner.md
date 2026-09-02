@@ -76,6 +76,10 @@ target-evidence path must exist in the repository.
   and cannot call `pub(crate)` backends, use a crate-internal ignored release
   test or another grounded internal seam when the contract permits only one
   public dispatcher.
+- Benchmark measurements belong in gate output, execution evidence, and the
+  final response. Do not invent a persistent benchmark report, documentation
+  page, results file, or other repository artifact unless the request
+  explicitly requires that artifact.
 - A node that only adds benchmark or validation artifacts is not a product
   behavior change. Set `behavior_change` to `false` and use final gates only.
   Do not invent red and green gates for a benchmark command. If a benchmark

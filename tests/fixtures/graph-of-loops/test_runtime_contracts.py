@@ -5295,6 +5295,10 @@ class TestSchemaValidation(unittest.TestCase):
             "Do not add unchanged preservation paths",
             planner_role,
         )
+        self.assertIn(
+            "Do not invent a persistent benchmark report",
+            planner_role,
+        )
 
     def test_research_ledger_names_a_session_directory(self) -> None:
         errors = _check_research_write_rules([{
