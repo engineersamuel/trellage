@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { AdminProfileEntry } from "../src/admin-model.js"
 import { AdminRunManager } from "../src/admin-run-manager.js"
 import type { AdminVersionCacheRecord } from "../src/admin-version-cache.js"
-import { runBatchedVersionChecks, updateCheckRefFor, versionCheckResultForEntry } from "../src/admin-version-scheduler.js"
+import { runBatchedVersionChecks, shouldAutoRetryMalformedVersion, updateCheckRefFor, versionCheckResultForEntry } from "../src/admin-version-scheduler.js"
 import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
 
 /** A controllable fake runner: each `run()` call gets its own deferred resolve/reject, released manually by the test. */
@@ -204,5 +204,26 @@ describe("versionCheckResultForEntry", () => {
     await batch
 
     expect(versionCheckResultForEntry(target, manager)).toMatchObject({ malformed: true })
+  })
+})
+
+describe("shouldAutoRetryMalformedVersion", () => {
+  it("retries a malformed result not yet auto-retried this session", () => {
+    expect(shouldAutoRetryMalformedVersion({ malformed: true, diagnostic: "boom" }, "native:prx:default", new Set())).toBe(true)
+  })
+
+  it("never retries a non-malformed (current/mismatched) result", () => {
+    expect(shouldAutoRetryMalformedVersion({ current: true }, "native:prx:default", new Set())).toBe(false)
+    expect(shouldAutoRetryMalformedVersion({ current: false, latest: "0.9.0" }, "native:prx:default", new Set())).toBe(false)
+  })
+
+  it("never retries a ref that already received its one automatic retry this session", () => {
+    expect(
+      shouldAutoRetryMalformedVersion(
+        { malformed: true, diagnostic: "boom" },
+        "native:prx:default",
+        new Set(["native:prx:default"]),
+      ),
+    ).toBe(false)
   })
 })

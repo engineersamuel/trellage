@@ -83946,12 +83946,13 @@ var defaultAdminVersionCachePath = (env3 = process.env) => {
   const cacheRoot = env3.XDG_CACHE_HOME ?? path9.join(os5.homedir(), ".cache");
   return path9.join(cacheRoot, "trellage", "trx-admin", "version-cache.json");
 };
-var isVersionCacheStale = (entry, now) => entry === void 0 || now - entry.checkedAt >= versionCacheTtlMs;
+var isVersionCacheStale = (entry, now) => entry === void 0 || now - entry.checkedAt >= versionCacheTtlMs || "malformed" in entry.result;
 
 // src/admin-version-scheduler.ts
 var defaultMaxConcurrent2 = 4;
 var runManagerRefFor = (ref) => `${ref}::update-check`;
 var updateCheckRefFor = runManagerRefFor;
+var shouldAutoRetryMalformedVersion = (result, ref, alreadyAutoRetriedRefs) => "malformed" in result && !alreadyAutoRetriedRefs.has(ref);
 var versionCheckResultForEntry = (entry, runManager) => {
   const status = runManager.status(updateCheckRefFor(entry.ref));
   const latest = status.latest;
@@ -84367,6 +84368,7 @@ var AdminApp = ({
   if (versionRunManagerRef.current === void 0) versionRunManagerRef.current = new AdminRunManager({ runner });
   const versionRunManager = versionRunManagerRef.current;
   const versionBatchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const versionAutoRetriedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 1, entries: {} });
   const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react37.useState)(false);
   const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminVersionCachePath(), []);
@@ -84419,6 +84421,21 @@ var AdminApp = ({
       cancelled = true;
     };
   }, []);
+  const persistVersionResult = (ref, cacheEntry) => {
+    setVersionCache((previous) => {
+      const next = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } };
+      void saveVersionCache(versionCachePath, next).catch(() => void 0);
+      return next;
+    });
+  };
+  const autoRetryMalformedVersion = (entry, cacheEntry) => {
+    if (!shouldAutoRetryMalformedVersion(cacheEntry.result, entry.ref, versionAutoRetriedRefs.current)) return;
+    versionAutoRetriedRefs.current.add(entry.ref);
+    void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
+      forceResync: true,
+      onResult: persistVersionResult
+    });
+  };
   (0, import_react37.useEffect)(() => {
     if (!versionCacheLoaded) return;
     const supportedRefs = entries.filter((entry) => entry.updateCheckSupported).map((entry) => entry.ref);
@@ -84426,24 +84443,17 @@ var AdminApp = ({
     versionBatchStartedRefs.current = new Set(supportedRefs);
     void runBatchedVersionChecks(entries, versionRunManager, versionCache, {
       onResult: (ref, cacheEntry) => {
-        setVersionCache((previous) => {
-          const next = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } };
-          void saveVersionCache(versionCachePath, next).catch(() => void 0);
-          return next;
-        });
+        persistVersionResult(ref, cacheEntry);
+        const entry = entries.find((candidate) => candidate.ref === ref);
+        if (entry !== void 0) autoRetryMalformedVersion(entry, cacheEntry);
       }
     });
   }, [entries, versionRunManager, versionCacheLoaded, versionCachePath]);
   const forceResyncVersion = (entry) => {
+    versionAutoRetriedRefs.current.delete(entry.ref);
     void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
       forceResync: true,
-      onResult: (ref, cacheEntry) => {
-        setVersionCache((previous) => {
-          const next = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } };
-          void saveVersionCache(versionCachePath, next).catch(() => void 0);
-          return next;
-        });
-      }
+      onResult: persistVersionResult
     }).finally(() => setTick((value) => value + 1));
     setTick((value) => value + 1);
   };

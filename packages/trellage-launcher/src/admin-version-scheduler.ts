@@ -32,6 +32,22 @@ const runManagerRefFor = (ref: string): string => `${ref}::update-check`
 export const updateCheckRefFor = runManagerRefFor
 
 /**
+ * Decides whether one profile's just-settled `update --check` result should
+ * receive one automatic, cache-bypassing retry: only when the result is
+ * malformed (unparseable output, an unknown-profile error, a transient
+ * failure, etc. — never a real version, so leaving it cached would strand
+ * the VERSION/LATEST VERSION columns on "—" for a full day) and this ref
+ * has not already received its one automatic retry this session. Pure and
+ * exported so the bound-to-one-retry-per-session policy is independently
+ * testable without an Ink render.
+ */
+export const shouldAutoRetryMalformedVersion = (
+  result: AdminUpdateCheckResult,
+  ref: string,
+  alreadyAutoRetriedRefs: ReadonlySet<string>,
+): boolean => "malformed" in result && !alreadyAutoRetriedRefs.has(ref)
+
+/**
  * Reads the current in-session update-check result for a profile directly
  * from `AdminRunManager`, or `undefined` when no check has run yet this
  * session (the caller should then fall back to the on-disk cache — see

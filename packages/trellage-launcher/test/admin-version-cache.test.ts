@@ -129,4 +129,9 @@ describe("isVersionCacheStale", () => {
     const entry: AdminVersionCacheEntry = { result: { current: true }, checkedAt: 1000 }
     expect(isVersionCacheStale(entry, 1000 + versionCacheTtlMs)).toBe(true)
   })
+
+  it("treats a malformed result as stale even well within the TTL, so it is retried automatically", () => {
+    const entry: AdminVersionCacheEntry = { result: { malformed: true, diagnostic: "boom" }, checkedAt: 1000 }
+    expect(isVersionCacheStale(entry, 1000 + 1)).toBe(true)
+  })
 })

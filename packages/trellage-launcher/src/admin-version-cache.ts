@@ -114,6 +114,15 @@ export const defaultAdminVersionCachePath = (env: Readonly<Record<string, string
   return path.join(cacheRoot, "trellage", "trx-admin", "version-cache.json")
 }
 
-/** A cache entry is stale once `versionCacheTtlMs` has elapsed since it was recorded, or if it was never recorded. */
+/**
+ * A cache entry is stale once `versionCacheTtlMs` has elapsed since it was
+ * recorded, if it was never recorded, or if the recorded result itself was
+ * malformed. A malformed result (unparseable `update --check` output, an
+ * unknown-profile error, etc.) never reflects a real installed/latest
+ * version, so honoring it as "fresh" for a full day would strand the
+ * VERSION/LATEST VERSION columns on "—" until a manual force-resync —
+ * treating it as stale instead lets the next startup batch retry it
+ * automatically, exactly like every other missing result.
+ */
 export const isVersionCacheStale = (entry: AdminVersionCacheEntry | undefined, now: number): boolean =>
-  entry === undefined || now - entry.checkedAt >= versionCacheTtlMs
+  entry === undefined || now - entry.checkedAt >= versionCacheTtlMs || "malformed" in entry.result

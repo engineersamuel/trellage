@@ -40,7 +40,12 @@ import {
   type AdminVersionCacheEntry,
   type AdminVersionCacheRecord,
 } from "./admin-version-cache.js"
-import { runBatchedVersionChecks, updateCheckRefFor, versionCheckResultForEntry } from "./admin-version-scheduler.js"
+import {
+  runBatchedVersionChecks,
+  shouldAutoRetryMalformedVersion,
+  updateCheckRefFor,
+  versionCheckResultForEntry,
+} from "./admin-version-scheduler.js"
 import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.js"
 
 type DiagnosisState =
@@ -572,6 +577,8 @@ export const AdminApp = ({
   if (versionRunManagerRef.current === undefined) versionRunManagerRef.current = new AdminRunManager({ runner })
   const versionRunManager = versionRunManagerRef.current
   const versionBatchStartedRefs = useRef<Set<string>>(new Set())
+  /** Refs already given one automatic retry after a malformed `update --check` result this session — bounds automatic retries to exactly one per profile so a persistently-failing check never loops silently; the user's `[u]` resync remains available afterward. */
+  const versionAutoRetriedRefs = useRef<Set<string>>(new Set())
   const [versionCache, setVersionCache] = useState<AdminVersionCacheRecord>({ schemaVersion: 1, entries: {} })
   const [versionCacheLoaded, setVersionCacheLoaded] = useState(false)
   const versionCachePath = useMemo(() => defaultAdminVersionCachePath(), [])
@@ -675,13 +682,47 @@ export const AdminApp = ({
   }, [])
 
   /**
+   * Persists one profile's settled `update --check` result to the in-memory
+   * cache state and, best-effort, to disk. Shared by the startup batch, the
+   * automatic malformed-result retry, and the manual `[u]` resync so all
+   * three paths keep the on-disk cache consistent identically.
+   */
+  const persistVersionResult = (ref: string, cacheEntry: AdminVersionCacheEntry): void => {
+    setVersionCache((previous) => {
+      const next: AdminVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } }
+      void saveVersionCache(versionCachePath, next).catch(() => undefined)
+      return next
+    })
+  }
+
+  /**
+   * Automatically retries exactly once, bypassing the cache, any profile
+   * whose `update --check` came back malformed (unparseable output, an
+   * unknown-profile error, a transient failure, etc.) — a malformed result
+   * never reflects a real version, so leaving it to sit as "—" for a full
+   * day (or until the user manually presses `[u]`) would strand the
+   * VERSION/LATEST VERSION columns unnecessarily. Bounded to one retry per
+   * ref per session via `versionAutoRetriedRefs` so a persistently-failing
+   * check never loops; the user's manual `[u]` resync remains available
+   * beyond that.
+   */
+  const autoRetryMalformedVersion = (entry: AdminProfileEntry, cacheEntry: AdminVersionCacheEntry): void => {
+    if (!shouldAutoRetryMalformedVersion(cacheEntry.result, entry.ref, versionAutoRetriedRefs.current)) return
+    versionAutoRetriedRefs.current.add(entry.ref)
+    void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
+      forceResync: true,
+      onResult: persistVersionResult,
+    })
+  }
+
+  /**
    * Once the on-disk cache has loaded, runs the bounded-concurrency
    * `update --check` batch (see `admin-version-scheduler.ts`) for every
-   * update-check-supporting profile whose cached result is stale or
-   * missing. Persists each result to disk as soon as it settles
-   * (`onResult`) so a crash mid-batch never loses earlier profiles'
-   * results, mirroring the doctor batch's one-shot-per-session dispatch via
-   * `shouldStartBatch`.
+   * update-check-supporting profile whose cached result is stale, missing,
+   * or malformed (see `isVersionCacheStale`). Persists each result to disk
+   * as soon as it settles (`onResult`) so a crash mid-batch never loses
+   * earlier profiles' results, mirroring the doctor batch's
+   * one-shot-per-session dispatch via `shouldStartBatch`.
    */
   useEffect(() => {
     if (!versionCacheLoaded) return
@@ -690,11 +731,9 @@ export const AdminApp = ({
     versionBatchStartedRefs.current = new Set(supportedRefs)
     void runBatchedVersionChecks(entries, versionRunManager, versionCache, {
       onResult: (ref, cacheEntry) => {
-        setVersionCache((previous) => {
-          const next: AdminVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } }
-          void saveVersionCache(versionCachePath, next).catch(() => undefined)
-          return next
-        })
+        persistVersionResult(ref, cacheEntry)
+        const entry = entries.find((candidate) => candidate.ref === ref)
+        if (entry !== undefined) autoRetryMalformedVersion(entry, cacheEntry)
       },
     })
     // Re-runs only when the cache finishes loading or the profile set changes; `versionCache`
@@ -706,18 +745,15 @@ export const AdminApp = ({
    * Forces an immediate re-check of one profile's version, bypassing the
    * 24h cache entirely (the manual `[u]` resync action). Reuses the same
    * batch scheduler with a single-entry list so the isolation and
-   * cache-persistence behavior stay identical to the startup batch.
+   * cache-persistence behavior stay identical to the startup batch. Clears
+   * the automatic-retry guard for this profile so a future malformed result
+   * (e.g. after a later reload) can still trigger one more automatic retry.
    */
   const forceResyncVersion = (entry: AdminProfileEntry) => {
+    versionAutoRetriedRefs.current.delete(entry.ref)
     void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
       forceResync: true,
-      onResult: (ref, cacheEntry) => {
-        setVersionCache((previous) => {
-          const next: AdminVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } }
-          void saveVersionCache(versionCachePath, next).catch(() => undefined)
-          return next
-        })
-      },
+      onResult: persistVersionResult,
     }).finally(() => setTick((value) => value + 1))
     setTick((value) => value + 1)
   }
