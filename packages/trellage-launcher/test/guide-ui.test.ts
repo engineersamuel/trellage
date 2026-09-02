@@ -25,6 +25,7 @@ import type {
   GuideRefineResult,
 } from "../src/guide-provider.js"
 import type { SelectedGuideDocument } from "../src/guide-selected.js"
+import { GuideArtifactCache } from "../src/guide-match-cache.js"
 import type { GitInspectionReady, HerdrContext, SelectedProfile, WorktreeCollisionResult } from "../src/guide-launch.js"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "../src/guide-preflight.js"
 import {
@@ -431,9 +432,7 @@ const councilFallbackGuide: ProfileGuideV1 = {
       description: "Pressure-test an idea and its implementation.",
       skill: "council",
       examples: ["Challenge this product decision"],
-      promptTemplate:
-        "/council Pressure-test this idea and its implementation: {{intent}}" +
-        councilFallbackSuffix,
+      promptTemplate: "/council Pressure-test this idea and its implementation: {{intent}}" + councilFallbackSuffix,
     },
   ],
 }
@@ -469,9 +468,7 @@ const pstackFallbackGuide: ProfileGuideV1 = {
       skill: "pstack-for-codex:interrogate",
       examples: ["Review this change"],
       promptTemplate:
-        "$pstack-for-codex:interrogate {{intent}}\n" +
-        "$pstack-for-codex:no-comments\n" +
-        "$pstack-for-codex:unslop",
+        "$pstack-for-codex:interrogate {{intent}}\n" + "$pstack-for-codex:no-comments\n" + "$pstack-for-codex:unslop",
     },
   ],
 }
@@ -492,8 +489,7 @@ const fallbackRoundTripCases: ReadonlyArray<FallbackRoundTripCase> = [
     workflowId: "run-council-deliberation",
     intent: "adopting event sourcing for billing",
     candidateIndex: 1,
-    expectedDraft:
-      "adopting event sourcing for billing; keep the work within the smallest reasonable scope.",
+    expectedDraft: "adopting event sourcing for billing; keep the work within the smallest reasonable scope.",
   },
   {
     name: "Verified Council prose-suffix",
@@ -532,8 +528,7 @@ const fallbackRoundTripCases: ReadonlyArray<FallbackRoundTripCase> = [
     workflowId: "review-and-polish",
     intent: "Review the queue change",
     candidateIndex: 1,
-    expectedDraft:
-      "Review the queue change\n\n## Scope\n\nLimit the change to the smallest reasonable scope.",
+    expectedDraft: "Review the queue change\n\n## Scope\n\nLimit the change to the smallest reasonable scope.",
   },
   {
     name: "Verified pstack command-suffix",
@@ -700,10 +695,7 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
 }
 
 /** Writes the selected native "cdx/reviewer" guide Markdown fixture under `root`. */
-const writeGuideFixtures = async (
-  root: string,
-  reviewerMarkdown: string = reviewerGuideMarkdown,
-): Promise<void> => {
+const writeGuideFixtures = async (root: string, reviewerMarkdown: string = reviewerGuideMarkdown): Promise<void> => {
   await mkdir(path.join(root, "native", "cdx"), { recursive: true })
   await writeFile(path.join(root, "native", "cdx", "reviewer.md"), reviewerMarkdown)
 }
@@ -1353,9 +1345,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
       text: "A user-edited body without the frame.",
     })
     state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
-    expect(state.candidates?.[0]?.prompt).toBe(
-      "/review-diff A user-edited body without the frame.",
-    )
+    expect(state.candidates?.[0]?.prompt).toBe("/review-diff A user-edited body without the frame.")
 
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
     state = guideUiReducer(state, {
@@ -1363,24 +1353,16 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
       text: "/different-command Keep this full user edit.",
     })
     state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
-    expect(state.candidates?.[0]?.prompt).toBe(
-      "/review-diff /different-command Keep this full user edit.",
-    )
+    expect(state.candidates?.[0]?.prompt).toBe("/review-diff /different-command Keep this full user edit.")
 
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
-    expect(state.selectedCandidate?.prompt).toBe(
-      "/review-diff /different-command Keep this full user edit.",
-    )
+    expect(state.selectedCandidate?.prompt).toBe("/review-diff /different-command Keep this full user edit.")
     const result = buildCurrentTerminalResult(
       nativeSelectedProfile(true),
       state.selectedCandidate?.prompt ?? "",
       "/repo",
     )
-    expect(result.command.args).toEqual([
-      "reviewer",
-      "--",
-      "/review-diff /different-command Keep this full user edit.",
-    ])
+    expect(result.command.args).toEqual(["reviewer", "--", "/review-diff /different-command Keep this full user edit."])
     const serialized = JSON.stringify(result)
     expect(serialized).not.toContain("promptTemplate")
     expect(serialized).not.toContain("fixedFrame")
@@ -1404,8 +1386,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
         },
       ],
     }
-    const suffix =
-      "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop"
+    const suffix = "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop"
     let state = createInitialGuideUiState("Review my PR")
     state = guideUiReducer(state, {
       type: GuideUiActionType.MatchSucceeded,
@@ -1448,9 +1429,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
 
     const editedPrompt = state.candidates?.[0]?.prompt
     expect(editedPrompt).toBe(
-      "$pstack-for-codex:interrogate Review the queue race.\n" +
-        "Also verify rollback evidence." +
-        suffix,
+      "$pstack-for-codex:interrogate Review the queue race.\n" + "Also verify rollback evidence." + suffix,
     )
     expect(editedPrompt?.match(/\$pstack-for-codex:interrogate/gu)).toHaveLength(1)
     expect(editedPrompt?.match(/\$pstack-for-codex:no-comments/gu)).toHaveLength(1)
@@ -1522,11 +1501,11 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
           examples: guide.workflows[0]?.examples ?? [],
         },
       })
-      const recommendations: readonly [
-        GuideRecommendation,
-        GuideRecommendation,
-        GuideRecommendation,
-      ] = [chosen, recommendationTriple()[1], recommendationTriple()[2]]
+      const recommendations: readonly [GuideRecommendation, GuideRecommendation, GuideRecommendation] = [
+        chosen,
+        recommendationTriple()[1],
+        recommendationTriple()[2],
+      ]
       let state = createInitialGuideUiState(intent)
       state = guideUiReducer(state, {
         type: GuideUiActionType.MatchSucceeded,
@@ -1613,9 +1592,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
 
     expect(state.stage).toBe(GuideUiStage.RefineFailed)
     expect(state.candidates).toBe(priorCandidates)
-    expect(state.errorMessage).toMatch(
-      /no longer distinct after optimization resolution and exact rendering/u,
-    )
+    expect(state.errorMessage).toMatch(/no longer distinct after optimization resolution and exact rendering/u)
   })
 
   it("refine/failed preserves the prior candidates and supports retry/back without losing them", () => {
@@ -1686,6 +1663,49 @@ describe("runGuideMatchingStep", () => {
     expect(response.recommendations).toHaveLength(3)
     expect(phases).toEqual([GuideMatchPhase.ComparingProfiles, GuideMatchPhase.PreparingRecommendations])
   })
+
+  it("reuses final matching results through the workflow artifact cache", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "guide-ui-match-cache-"))
+    try {
+      const catalog = buildCatalog("/tmp-unused")
+      let matchCalls = 0
+      const provider: GuideProvider = {
+        match: async () => {
+          matchCalls += 1
+          return {
+            candidates: recommendationTriple().map(({ profileRef, workflowId, confidence, reason, tradeoff }) => ({
+              profileRef,
+              workflowId,
+              confidence,
+              reason,
+              tradeoff,
+            })),
+          }
+        },
+        generate: () => Promise.reject(new Error("generate must not be called")),
+        refine: () => Promise.reject(new Error("refine must not be called")),
+        optimize: () => Promise.reject(new Error("optimize must not be called")),
+      }
+      const cache = new GuideArtifactCache({
+        cwd,
+        routing: {
+          match: { model: "test-model", effort: GuideEffort.Medium },
+          generate: { model: "test-model", effort: GuideEffort.Medium },
+          optimize: { model: "test-model", effort: GuideEffort.Medium },
+          refine: { model: "test-model", effort: GuideEffort.Medium },
+        },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+      })
+      const request = { intent: "Review my PR", model: "test-model", effort: GuideEffort.Medium }
+
+      await runGuideMatchingStep(provider, catalog, request, undefined, cache)
+      await runGuideMatchingStep(provider, catalog, request, undefined, cache)
+
+      expect(matchCalls).toBe(1)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("runGuideGenerationStep", () => {
@@ -1736,6 +1756,34 @@ describe("runGuideGenerationStep", () => {
     }
   })
 
+  it("reuses fully rendered candidates and skips generation plus optimization calls", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-cache-"))
+    try {
+      const catalog = buildCatalog(tmpRoot)
+      await writeGuideFixtures(tmpRoot)
+      const provider = new FakeGuideProvider()
+      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const cache = new GuideArtifactCache({
+        cwd: tmpRoot,
+        routing: {
+          match: { model: "test", effort: GuideEffort.Medium },
+          generate: { model: "test", effort: GuideEffort.Medium },
+          optimize: { model: "test", effort: GuideEffort.Medium },
+          refine: { model: "test", effort: GuideEffort.Medium },
+        },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+      })
+
+      await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen, undefined, undefined, cache)
+      await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen, undefined, undefined, cache)
+
+      expect(provider.generateCalls).toHaveLength(1)
+      expect(provider.optimizeCalls).toHaveLength(1)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
   it("optimizes skill bodies before rendering the exact workflow frame once", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-skill-"))
     try {
@@ -1752,13 +1800,7 @@ describe("runGuideGenerationStep", () => {
       })
       const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
 
-      const result = await runGuideGenerationStep(
-        catalog,
-        tmpRoot,
-        provider,
-        "Review my PR",
-        chosen,
-      )
+      const result = await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)
 
       expect(provider.optimizeCalls[0]).toEqual({
         targetTool: "codex",
@@ -1810,9 +1852,9 @@ describe("runGuideGenerationStep", () => {
       const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
 
       expect(new Set(rawCandidates.map(({ prompt }) => prompt)).size).toBe(3)
-      await expect(
-        runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen),
-      ).rejects.toThrow(/no longer distinct after generated-body normalization.*template fallback/u)
+      await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
+        /no longer distinct after generated-body normalization.*template fallback/u,
+      )
       expect(provider.optimizeCalls).toHaveLength(0)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
@@ -1847,9 +1889,9 @@ describe("runGuideGenerationStep", () => {
       })
       const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
 
-      await expect(
-        runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen),
-      ).rejects.toThrow(/no longer distinct after optimization resolution and exact rendering.*template fallback/u)
+      await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
+        /no longer distinct after optimization resolution and exact rendering.*template fallback/u,
+      )
       expect(provider.optimizeCalls).toHaveLength(1)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
@@ -1984,6 +2026,47 @@ describe("runGuideRefinementStep", () => {
     expect(refined).toEqual({ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." })
   })
 
+  it("reuses a refined final candidate and skips refinement plus optimization calls", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "guide-ui-refine-cache-"))
+    try {
+      const provider = new FakeGuideProvider()
+      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const guideDocument: SelectedGuideDocument = { ref: chosen.profileRef, guide: guideReviewer, body: "guide body" }
+      const prior = refinementCandidateTriple(
+        candidate({ title: "Focused", prompt: "Do the focused thing.", notes: "Quick pass." }),
+      )
+      const cache = new GuideArtifactCache({
+        cwd,
+        routing: {
+          match: { model: "test", effort: GuideEffort.Medium },
+          generate: { model: "test", effort: GuideEffort.Medium },
+          optimize: { model: "test", effort: GuideEffort.Medium },
+          refine: { model: "test", effort: GuideEffort.Medium },
+        },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+      })
+      const args = [
+        buildCatalog("/tmp-unused"),
+        provider,
+        "Review my PR",
+        chosen,
+        guideDocument,
+        prior,
+        0,
+        "Make it shorter.",
+        cache,
+      ] as const
+
+      await runGuideRefinementStep(...args)
+      await runGuideRefinementStep(...args)
+
+      expect(provider.refineCalls).toHaveLength(1)
+      expect(provider.optimizeCalls).toHaveLength(1)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
   it("fails no-skill refinement before optimization when the model adds an executable command line", async () => {
     const provider = new FakeGuideProvider({
       refineResult: {
@@ -2113,9 +2196,7 @@ describe("runGuideRefinementStep", () => {
     })
     expect(refined).toEqual({
       title: "Optimized refinement",
-      prompt:
-        "/social-media-skills:post-writer " +
-        "Prompt Master: Use a concrete lesson about AI agents.",
+      prompt: "/social-media-skills:post-writer " + "Prompt Master: Use a concrete lesson about AI agents.",
       notes: "Prompt Master kept the concise framing.",
     })
   })
@@ -2137,9 +2218,7 @@ describe("runGuideRefinementStep", () => {
       refineResult: {
         candidate: {
           title: "Rollback plan",
-          prompt:
-            "Use the writing-plans skill:\n" +
-            "Plan the retry migration with rollback steps.",
+          prompt: "Use the writing-plans skill:\n" + "Plan the retry migration with rollback steps.",
           notes: "Adds rollback steps.",
         },
       },
@@ -2166,9 +2245,7 @@ describe("runGuideRefinementStep", () => {
     )
 
     expect(provider.refineCalls[0]?.candidate.prompt).toBe("Plan the retry migration.")
-    expect(provider.optimizeCalls[0]?.candidates[0]?.prompt).toBe(
-      "Plan the retry migration with rollback steps.",
-    )
+    expect(provider.optimizeCalls[0]?.candidates[0]?.prompt).toBe("Plan the retry migration with rollback steps.")
     expect(refined).toEqual({
       title: "Rollback plan",
       prompt: "Use the writing-plans skill:\nPlan the retry migration with rollback steps.",
@@ -2301,8 +2378,7 @@ describe("runGuideRefinementStep", () => {
     ])
     expect(refined).toEqual({
       title: "Echoed command",
-      prompt:
-        "/ce-compound mode:non-interactive Capture more detail about the retry fix.",
+      prompt: "/ce-compound mode:non-interactive Capture more detail about the retry fix.",
       notes: "Adds detail to the verified learning.",
     })
     expect(refined.prompt.match(/\/ce-compound/gu)).toHaveLength(1)
@@ -2315,8 +2391,7 @@ describe("runGuideRefinementStep", () => {
       const prior = templatePromptCandidates(guide, workflowId, intent)[candidateIndex]
       const workflow = guide.workflows[0]
       if (workflow === undefined) throw new Error("Fallback workflow is required")
-      const refinementCandidate =
-        workflow.skill === undefined ? prior : { ...prior, prompt: expectedDraft }
+      const refinementCandidate = workflow.skill === undefined ? prior : { ...prior, prompt: expectedDraft }
       const provider = new FakeGuideProvider({
         refineResult: { candidate: refinementCandidate },
         optimizeResult: (input) => ({ candidates: input.candidates }),
@@ -2387,9 +2462,7 @@ describe("runGuideRefinementStep", () => {
     expect(provider.optimizeCalls[0]?.candidates[0]?.prompt).toBe(
       "/different-command Keep the user's changed frame text and add tests.",
     )
-    expect(refined.prompt).toBe(
-      "/review-diff /different-command Keep the user's changed frame text and add tests.",
-    )
+    expect(refined.prompt).toBe("/review-diff /different-command Keep the user's changed frame text and add tests.")
     expect(refined.prompt.match(/\/review-diff/gu)).toHaveLength(1)
   })
 
@@ -3453,10 +3526,9 @@ describe("guideUiReducer: batch queue", () => {
   })
 
   it("does not open a viewer on an empty queue", () => {
-    const empty = guideUiReducer(
-      guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueRemove }),
-      { type: GuideUiActionType.QueueOpenEntry },
-    )
+    const empty = guideUiReducer(guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueRemove }), {
+      type: GuideUiActionType.QueueOpenEntry,
+    })
     expect(empty.stage).toBe(GuideUiStage.Queue)
   })
 
@@ -3611,7 +3683,9 @@ describe("guideUiReducer: batch queue", () => {
       expect(launchRowDetail(undefined)).toBe("Waiting to start")
       expect(launchRowMarker({ jobId: 1, phase: "done", detail: "Launched in pane 2-3" }, 0)).toBe("\u2714")
       expect(launchRowMarker({ jobId: 1, phase: "failed", detail: "Nope" }, 0)).toBe("\u2716")
-      expect(launchRowMarker({ jobId: 1, phase: "starting", detail: "Starting the profile" }, 0)).toBe(spinnerFrameAt(0))
+      expect(launchRowMarker({ jobId: 1, phase: "starting", detail: "Starting the profile" }, 0)).toBe(
+        spinnerFrameAt(0),
+      )
     })
   })
 })

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -15,6 +15,7 @@ import type {
   GuideProvider,
 } from "../src/guide-provider.js"
 import { GuideValidationError } from "../src/guide-text.js"
+import { GuideArtifactCache } from "../src/guide-match-cache.js"
 import {
   applyRequiredProfilePromptTemplate,
   applyWorkflowPromptTemplate,
@@ -221,9 +222,7 @@ const guidePstack: ProfileGuideV1 = {
       skill: "pstack-for-codex:interrogate",
       examples: ["Review this change", "Polish this diff"],
       promptTemplate:
-        "$pstack-for-codex:interrogate {{intent}}\n" +
-        "$pstack-for-codex:no-comments\n" +
-        "$pstack-for-codex:unslop",
+        "$pstack-for-codex:interrogate {{intent}}\n" + "$pstack-for-codex:no-comments\n" + "$pstack-for-codex:unslop",
     },
   ],
 }
@@ -315,9 +314,7 @@ describe("applyWorkflowPromptTemplate", () => {
 
   it("keeps exact authored suffix commands ordered and last", () => {
     const wrapped = applyWorkflowPromptTemplate(guide, "review-stack", candidate)
-    expect(wrapped.prompt).toBe(
-      "$interrogate Write a LinkedIn post about AI agents.\n$no-comments\n$unslop",
-    )
+    expect(wrapped.prompt).toBe("$interrogate Write a LinkedIn post about AI agents.\n$no-comments\n$unslop")
     expect(applyWorkflowPromptTemplate(guide, "review-stack", wrapped)).toEqual(wrapped)
   })
 
@@ -586,10 +583,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
     }),
   )
 
-const withCdxPstackGuide = (
-  catalog: CombinedGuideCatalog,
-  guide: ProfileGuideV1,
-): CombinedGuideCatalog => ({
+const withCdxPstackGuide = (catalog: CombinedGuideCatalog, guide: ProfileGuideV1): CombinedGuideCatalog => ({
   ...catalog,
   native: catalog.native.map((entry) =>
     entry.launcher === "cdx" && entry.name === "pstack" ? { ...entry, guide } : entry,
@@ -1097,9 +1091,7 @@ describe("runGuideGenerate", () => {
       expect(response.profile.workflowId).toBe("plan")
       expect(response.profile.profileRef).toBe("sandbox:prime-agent")
       expect(response.candidates).toHaveLength(3)
-      expect(response.candidates[0]?.prompt).toBe(
-        "Use the writing-plans skill:\nPrompt Master: Do the focused thing.",
-      )
+      expect(response.candidates[0]?.prompt).toBe("Use the writing-plans skill:\nPrompt Master: Do the focused thing.")
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "copilot",
@@ -1126,6 +1118,36 @@ describe("runGuideGenerate", () => {
       expect(serialized).not.toContain("afterBody")
       expect(serialized).not.toContain("profile.toml")
       expect(serialized).not.toContain(tmpRoot)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("reuses headless generation artifacts rooted at the supplied effective cwd", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-cache-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const catalog = buildCatalog(tmpRoot)
+      const provider = new FakeGuideProvider({ candidates: [] }, genCandidates())
+      const cache = new GuideArtifactCache({
+        cwd: tmpRoot,
+        routing: defaultGuideModelRouting,
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+      })
+      const request = {
+        intent: "Plan the next milestone",
+        profileRef: "sandbox:prime-agent",
+        model: defaultGuideModelRouting.generate.model,
+        effort: defaultGuideModelRouting.generate.effort,
+      }
+
+      const first = await runGuideGenerate(provider, catalog, tmpRoot, request, cache)
+      const second = await runGuideGenerate(provider, catalog, tmpRoot, request, cache)
+
+      expect(second).toEqual(first)
+      expect(provider.generateCalls).toHaveLength(1)
+      expect(provider.optimizeCalls).toHaveLength(1)
+      expect(await readdir(path.join(tmpRoot, ".trx-guide"))).toHaveLength(1)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }
@@ -1163,9 +1185,7 @@ describe("runGuideGenerate", () => {
           return {
             candidates: input.candidates.map((candidate) => ({
               ...candidate,
-              prompt:
-                "Use the writing-plans skill:\n" +
-                `Optimized body: ${candidate.prompt}`,
+              prompt: "Use the writing-plans skill:\n" + `Optimized body: ${candidate.prompt}`,
             })),
           }
         },
@@ -1184,12 +1204,9 @@ describe("runGuideGenerate", () => {
         "Plan the milestone with rollback points.",
       ])
       expect(response.candidates[0]?.prompt).toBe(
-        "Use the writing-plans skill:\n" +
-          "Optimized body: Plan the milestone in focused phases.",
+        "Use the writing-plans skill:\n" + "Optimized body: Plan the milestone in focused phases.",
       )
-      expect(
-        response.candidates[0]?.prompt.match(/Use the writing-plans skill:/gu),
-      ).toHaveLength(1)
+      expect(response.candidates[0]?.prompt.match(/Use the writing-plans skill:/gu)).toHaveLength(1)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }
@@ -1711,9 +1728,7 @@ describe("runGuideGenerate", () => {
       ])
       expect(response.candidates[0]).toMatchObject({
         title: "Normalized optimizer echo",
-        prompt:
-          "/ce-compound mode:non-interactive " +
-          "Rewrite the repository learning.",
+        prompt: "/ce-compound mode:non-interactive " + "Rewrite the repository learning.",
         notes: "The optimizer omitted the authored fixed argument.",
       })
       expect(response.candidates[1]?.prompt).toBe(
@@ -2059,11 +2074,7 @@ describe("templatePromptCandidates", () => {
         },
       ],
     }
-    const candidates = templatePromptCandidates(
-      hveGuide,
-      "rpi-plan-and-critique",
-      "the queue retry change",
-    )
+    const candidates = templatePromptCandidates(hveGuide, "rpi-plan-and-critique", "the queue retry change")
     expect(candidates[1].prompt).toBe(
       "Use the rpi-plan skill to draft a plan for the queue retry change; " +
         "keep the work within the smallest reasonable scope, then use\n" +
@@ -2098,11 +2109,7 @@ describe("templatePromptCandidates", () => {
         },
       ],
     }
-    const candidates = templatePromptCandidates(
-      superpowersGuide,
-      "plan-then-execute-branch",
-      "the upload feature",
-    )
+    const candidates = templatePromptCandidates(superpowersGuide, "plan-then-execute-branch", "the upload feature")
     expect(candidates[1].prompt).toBe(
       "Use the writing-plans skill to draft a plan for the upload feature; " +
         "keep the work within the smallest reasonable scope, then\n" +
@@ -2143,11 +2150,7 @@ describe("templatePromptCandidates", () => {
         },
       ],
     }
-    const candidates = templatePromptCandidates(
-      plannotatorGuide,
-      "wireframe-or-prototype",
-      "the deployment dashboard.",
-    )
+    const candidates = templatePromptCandidates(plannotatorGuide, "wireframe-or-prototype", "the deployment dashboard.")
 
     expect(candidates[0].prompt).toBe(
       "Use html-wireframe for a low-fidelity structure or html-prototype for a\n" +
@@ -2184,21 +2187,15 @@ describe("templatePromptCandidates", () => {
           skill: "test-driven-development",
           examples: ["Fix this regression test-first"],
           promptTemplate:
-            "Use the test-driven-development and systematic-debugging skills to\n" +
-            "address {{intent}}.",
+            "Use the test-driven-development and systematic-debugging skills to\n" + "address {{intent}}.",
         },
       ],
     }
 
-    const candidates = templatePromptCandidates(
-      superpowersGuide,
-      "test-driven-development",
-      intent,
-    )
+    const candidates = templatePromptCandidates(superpowersGuide, "test-driven-development", intent)
 
     expect(candidates[0].prompt).toBe(
-      "Use the test-driven-development and systematic-debugging skills to\n" +
-        "address the queue retry race.",
+      "Use the test-driven-development and systematic-debugging skills to\n" + "address the queue retry race.",
     )
     expect(candidates[0].prompt.endsWith("..")).toBe(false)
   })
@@ -2219,8 +2216,7 @@ describe("templatePromptCandidates", () => {
           description: "Pressure-test an idea and its implementation.",
           skill: "council",
           examples: ["Challenge this product decision"],
-          promptTemplate:
-            "/council Pressure-test this idea and its implementation: {{intent}}" + suffix,
+          promptTemplate: "/council Pressure-test this idea and its implementation: {{intent}}" + suffix,
         },
       ],
     }
@@ -2285,11 +2281,7 @@ describe("templatePromptCandidates", () => {
       ],
     }
 
-    const direct = templatePromptCandidates(
-      guide,
-      testCase.workflowId,
-      `${testCase.command} ${testCase.body}`,
-    )[0]
+    const direct = templatePromptCandidates(guide, testCase.workflowId, `${testCase.command} ${testCase.body}`)[0]
 
     expect(direct.prompt).toBe(`${testCase.prefix}${testCase.body}${testCase.suffix}`)
     expect(direct.prompt.match(new RegExp(testCase.command, "gu"))).toHaveLength(1)
@@ -2324,17 +2316,12 @@ describe("templatePromptCandidates", () => {
           description: "Pressure-test an idea and its implementation.",
           skill: "council",
           examples: ["Challenge this product decision"],
-          promptTemplate:
-            "/council Pressure-test this idea and its implementation: {{intent}}" + suffix,
+          promptTemplate: "/council Pressure-test this idea and its implementation: {{intent}}" + suffix,
         },
       ],
     }
 
-    const direct = templatePromptCandidates(
-      councilGuide,
-      "run-council-deliberation",
-      intent,
-    )[0]
+    const direct = templatePromptCandidates(councilGuide, "run-council-deliberation", intent)[0]
 
     expect(direct.prompt).toBe(
       "/council Pressure-test this idea and its implementation: adopt event sourcing." + suffix,
@@ -2343,20 +2330,12 @@ describe("templatePromptCandidates", () => {
   })
 
   it("renders fallback Scope and Completion sections inside suffix-command frames", () => {
-    const candidates = templatePromptCandidates(
-      guidePstack,
-      "review-and-polish",
-      "Review the queue change",
-    )
-    const suffix =
-      "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop"
+    const candidates = templatePromptCandidates(guidePstack, "review-and-polish", "Review the queue change")
+    const suffix = "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop"
 
-    expect(candidates[0].prompt).toBe(
-      "$pstack-for-codex:interrogate Review the queue change" + suffix,
-    )
+    expect(candidates[0].prompt).toBe("$pstack-for-codex:interrogate Review the queue change" + suffix)
     expect(candidates[1].prompt).toContain(
-      "Review the queue change\n\n## Scope\n\nLimit the change to the smallest reasonable scope." +
-        suffix,
+      "Review the queue change\n\n## Scope\n\nLimit the change to the smallest reasonable scope." + suffix,
     )
     expect(candidates[2].prompt).toContain(
       "Review the queue change\n\n## Completion\n\n" +

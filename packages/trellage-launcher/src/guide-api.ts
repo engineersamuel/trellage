@@ -49,6 +49,7 @@ import {
   type GuideModelConfig as BaseGuideModelConfig,
   type GuideModelRouting,
 } from "./guide-model-routing.js"
+import type { GuideArtifactCache } from "./guide-match-cache.js"
 import type { GuideGenerateCandidate, GuideMatchCandidate, GuideProvider } from "./guide-provider.js"
 import { loadSelectedGuide } from "./guide-selected.js"
 import { exactKeys, fail, literal, record, text } from "./guide-text.js"
@@ -601,9 +602,11 @@ export const runGuideMatch = async (
   provider: GuideProvider,
   catalog: CombinedGuideCatalog,
   request: GuideMatchRequest,
+  cache?: GuideArtifactCache,
 ): Promise<GuideMatchResponse> => {
   const entries = guideMatchCatalogEntries(catalog)
-  const result = await provider.match({ intent: request.intent, entries })
+  const input = { intent: request.intent, entries }
+  const result = await (cache === undefined ? provider.match(input) : cache.match(input, () => provider.match(input)))
   const recommendations = assertRecommendationSet(
     result.candidates.map((candidate) => enrichRecommendation(catalog, candidate)),
     "match recommendations",
@@ -786,8 +789,7 @@ export const applyWorkflowPromptTemplate = (
   guide: ProfileGuideV1,
   workflowId: string,
   candidate: GuideGenerateCandidate,
-): GuideGenerateCandidate =>
-  restoreWorkflowCandidateFrame(findGuideWorkflow(guide, workflowId), candidate)
+): GuideGenerateCandidate => restoreWorkflowCandidateFrame(findGuideWorkflow(guide, workflowId), candidate)
 
 const requiredProfilePromptTemplateRefs: ReadonlySet<string> = new Set([
   "native:fmx/default",
@@ -862,6 +864,7 @@ export const runGuideGenerate = async (
   catalog: CombinedGuideCatalog,
   guideRoot: string,
   request: GuideGenerateRequest,
+  cache?: GuideArtifactCache,
 ): Promise<GuideGenerationResponse> => {
   const entry = findFullCatalogEntry(catalog, request.profileRef)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${request.profileRef}`)
@@ -869,13 +872,6 @@ export const runGuideGenerate = async (
   const workflowId = selectBestWorkflowByTokenOverlap(entry.guide.workflows, request.intent)
 
   const loaded = await loadSelectedGuide(catalog, guideRoot, request.profileRef)
-  const generated = await provider.generate({
-    intent: request.intent,
-    profileRef: request.profileRef,
-    workflowId,
-    guide: loaded.guide,
-    guideBody: loaded.body,
-  })
 
   const compactWorkflow = compactProfileGuide(entry.guide).workflows.find(({ id }) => id === workflowId)
   if (compactWorkflow === undefined) {
@@ -898,92 +894,90 @@ export const runGuideGenerate = async (
     herdrCompatibility: entry.herdrCompatibility,
   }
 
-  let bodyCandidates: readonly [
-    GuideGenerateCandidate,
-    GuideGenerateCandidate,
-    GuideGenerateCandidate,
-  ]
-  try {
-    bodyCandidates = requireDistinctGuideCandidatePrompts(
-      assertTriple(
-        generated.candidates.map((candidate) =>
-          resolveGeneratedWorkflowBodyCandidate(
-            loaded.guide,
-            authoredWorkflow,
-            request.intent,
-            candidate,
-          ),
-        ),
-        "workflow body candidates",
-      ),
-      GuideCandidatePromptStage.GeneratedBodyNormalization,
-    )
-  } catch (cause) {
-    if (cause instanceof GuideWorkflowBodyError || cause instanceof GuideCandidatePromptCollisionError) {
-      throw new GuideServiceError(cause.message, { cause })
-    }
-    throw cause
-  }
   const fixedFrame = workflowOptimizeFixedFrame(authoredWorkflow)
-  const optimized = await provider.optimize({
-    targetTool: isNativeEntry(entry) ? entry.harness : entry.harness.kind,
-    profileRef: request.profileRef,
-    candidates: bodyCandidates,
-    ...(fixedFrame === undefined ? {} : { fixedFrame }),
-  })
-  const [bodyFirst, bodySecond, bodyThird] = bodyCandidates
-  const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
-    optimized.candidates,
-    "optimized prompt candidates",
-  )
-  const safeBodyCandidates = [
-    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyFirst, optimizedFirst),
-    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodySecond, optimizedSecond),
-    resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyThird, optimizedThird),
-  ] as const
-  let renderedCandidates: readonly [
-    GuideGenerateCandidate,
-    GuideGenerateCandidate,
-    GuideGenerateCandidate,
-  ]
-  try {
-    const exactRenderedCandidates = requireDistinctGuideCandidatePrompts(
-      [
-        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[0]),
-        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[1]),
-        renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[2]),
-      ],
-      GuideCandidatePromptStage.FinalRendering,
-    )
-    renderedCandidates = requireDistinctGuideCandidatePrompts(
-      [
-        applyRequiredProfilePromptTemplate(
-          request.profileRef,
-          loaded.guide,
-          workflowId,
-          exactRenderedCandidates[0],
+  const targetTool = isNativeEntry(entry) ? entry.harness : entry.harness.kind
+  const produce = async () => {
+    const generated = await provider.generate({
+      intent: request.intent,
+      profileRef: request.profileRef,
+      workflowId,
+      guide: loaded.guide,
+      guideBody: loaded.body,
+    })
+    let bodyCandidates: readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate]
+    try {
+      bodyCandidates = requireDistinctGuideCandidatePrompts(
+        assertTriple(
+          generated.candidates.map((candidate) =>
+            resolveGeneratedWorkflowBodyCandidate(loaded.guide, authoredWorkflow, request.intent, candidate),
+          ),
+          "workflow body candidates",
         ),
-        applyRequiredProfilePromptTemplate(
-          request.profileRef,
-          loaded.guide,
-          workflowId,
-          exactRenderedCandidates[1],
-        ),
-        applyRequiredProfilePromptTemplate(
-          request.profileRef,
-          loaded.guide,
-          workflowId,
-          exactRenderedCandidates[2],
-        ),
-      ],
-      GuideCandidatePromptStage.FinalRendering,
-    )
-  } catch (cause) {
-    if (cause instanceof GuideCandidatePromptCollisionError) {
-      throw new GuideServiceError(cause.message, { cause })
+        GuideCandidatePromptStage.GeneratedBodyNormalization,
+      )
+    } catch (cause) {
+      if (cause instanceof GuideWorkflowBodyError || cause instanceof GuideCandidatePromptCollisionError) {
+        throw new GuideServiceError(cause.message, { cause })
+      }
+      throw cause
     }
-    throw cause
+    const optimized = await provider.optimize({
+      targetTool,
+      profileRef: request.profileRef,
+      candidates: bodyCandidates,
+      ...(fixedFrame === undefined ? {} : { fixedFrame }),
+    })
+    const [bodyFirst, bodySecond, bodyThird] = bodyCandidates
+    const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
+      optimized.candidates,
+      "optimized prompt candidates",
+    )
+    const safeBodyCandidates = [
+      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyFirst, optimizedFirst),
+      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodySecond, optimizedSecond),
+      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyThird, optimizedThird),
+    ] as const
+    let renderedCandidates: readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate]
+    try {
+      const exactRenderedCandidates = requireDistinctGuideCandidatePrompts(
+        [
+          renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[0]),
+          renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[1]),
+          renderWorkflowBodyCandidate(authoredWorkflow, safeBodyCandidates[2]),
+        ],
+        GuideCandidatePromptStage.FinalRendering,
+      )
+      renderedCandidates = requireDistinctGuideCandidatePrompts(
+        [
+          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[0]),
+          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[1]),
+          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[2]),
+        ],
+        GuideCandidatePromptStage.FinalRendering,
+      )
+    } catch (cause) {
+      if (cause instanceof GuideCandidatePromptCollisionError) {
+        throw new GuideServiceError(cause.message, { cause })
+      }
+      throw cause
+    }
+    return { candidates: renderedCandidates }
   }
+  const generated = await (cache === undefined
+    ? produce()
+    : cache.generation(
+        {
+          intent: request.intent,
+          profileRef: request.profileRef,
+          workflowId,
+          guide: loaded.guide,
+          guideBody: loaded.body,
+          targetTool,
+          ...(fixedFrame === undefined ? {} : { fixedFrame }),
+        },
+        produce,
+      ))
+  const renderedCandidates = assertTriple(generated.candidates, "cached generation prompt candidates")
   const candidates = assertTriple(
     renderedCandidates.map(
       (candidate): GuidePromptCandidate => ({
@@ -1154,9 +1148,7 @@ export const templatePromptCandidates = (
     const trimmedBody = body.trimEnd()
     const trailingWhitespace = body.slice(trimmedBody.length)
     const startsNewSentence = /[.!?]["')\]]*$/u.test(trimmedBody)
-    const clause = startsNewSentence
-      ? `${constraint.slice(0, 1).toUpperCase()}${constraint.slice(1)}`
-      : constraint
+    const clause = startsNewSentence ? `${constraint.slice(0, 1).toUpperCase()}${constraint.slice(1)}` : constraint
     const separator = trimmedBody.length === 0 ? "" : startsNewSentence ? " " : "; "
     const terminator = suffixStartsWithPunctuation ? "" : "."
     return `${trimmedBody}${separator}${clause}${terminator}${trailingWhitespace}`

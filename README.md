@@ -959,13 +959,36 @@ edits the selected block, `u` reverts it to the captured text, `x` drops one,
 `X` clears the basket, and `r` restores the fixtures. Enter prints the assembled
 prompt to stdout and exits; `q` or Esc quits.
 
-The last successful profile match is cached under
-`${XDG_CACHE_HOME:-~/.cache}/trellage/trx-guide/last-match.json`. Repeating the
-same intent with the same model, effort, profile catalog, and authored match
-prompt reuses that result without a model call. Changing any key input replaces
-the one-entry cache. The cache file uses mode `0600`; recommendation reasons
-can contain model-written wording derived from the intent. Prompt generation
-and refinement are not cached.
+Successful model-backed guide steps are stored as readable Markdown under the
+effective working directory:
+
+```text
+.trx-guide/<prompt-slug>-<uuid>/
+  1-profile-recommendations.md
+  2-prompt-candidates-<profile-workflow>-<key7>.md
+  2-refinement-<candidate>-<feedback-slug>-<key7>.md
+```
+
+The prompt slug is a deterministic, safe hint of at most seven characters;
+the UUID keeps separate prompt sessions distinct. Each artifact shows the
+original intent, routing, selected profile/workflow, feedback when applicable,
+and final model-derived output. A versioned base64url JSON header preserves the
+exact structured result used by the launcher. Directories use mode `0700` and
+files use mode `0600`, with atomic writes and bounded, regular-file-only reads.
+
+Repeating an identical step reuses the newest valid matching artifact and its
+UUID directory, avoiding the corresponding generation, optimization, or
+refinement model calls. Changes to relevant prompts, routing, catalog, guide,
+profile/workflow, target tool, Prompt Master skill content, candidates, or
+feedback miss independently and leave earlier artifacts available for review.
+Deterministic fallbacks and direct manual edits are not cached because they do
+not avoid model work.
+
+`.trx-guide` is intentionally project-local and is not added to ignore rules
+automatically. Its files contain the original intent and model-derived output;
+review them before committing, sharing, or otherwise exposing the working
+directory. The former XDG `trellage/trx-guide/last-match.json` cache is no
+longer read or written.
 
 When the selected workflow declares a skill, the guide applies that workflow's
 authored Markdown prompt template to generated and refined content. The final
