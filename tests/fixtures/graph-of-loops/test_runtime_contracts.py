@@ -5384,6 +5384,9 @@ class TestSchemaValidation(unittest.TestCase):
         planner_role = (
             ASSETS_DIR / "roles" / "trellage-graph-planner.md"
         ).read_text(encoding="utf-8")
+        discovery_role = (
+            ASSETS_DIR / "roles" / "trellage-graph-discovery.md"
+        ).read_text(encoding="utf-8")
 
         self.assertIn(
             "aarch64-unknown-linux-gnu -- -D warnings",
@@ -5412,6 +5415,14 @@ class TestSchemaValidation(unittest.TestCase):
         self.assertIn(
             "Compare semantic result checksums separately",
             planner_role,
+        )
+        self.assertIn(
+            "does not by itself prove which",
+            planner_role,
+        )
+        self.assertIn(
+            "inspect its actual\ncross-target `cargo build` probe",
+            discovery_role,
         )
 
     def test_research_ledger_names_a_session_directory(self) -> None:
