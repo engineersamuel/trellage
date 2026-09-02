@@ -31698,7 +31698,7 @@ var require_backend = __commonJS({
                       return "html_all_collection";
                     }
                   }
-                  if (!isPlainObject2(data)) {
+                  if (!isPlainObject3(data)) {
                     return "class_instance";
                   }
                   return "object";
@@ -31957,7 +31957,7 @@ var require_backend = __commonJS({
                   }
                 case "thenable":
                   var displayName;
-                  if (isPlainObject2(data)) {
+                  if (isPlainObject3(data)) {
                     displayName = "Thenable";
                   } else {
                     var _resolvedConstructorName = data.constructor.name;
@@ -32025,7 +32025,7 @@ var require_backend = __commonJS({
                   }
               }
             }
-            var isPlainObject2 = function isPlainObject3(object) {
+            var isPlainObject3 = function isPlainObject4(object) {
               var objectPrototype = Object.getPrototypeOf(object);
               if (!objectPrototype) return true;
               var objectParentPrototype = Object.getPrototypeOf(objectPrototype);
@@ -83960,6 +83960,53 @@ var runBatchedVersionChecks = async (entries, runManager, cache3, options = {}) 
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 };
 
+// src/admin-inventory.ts
+var buildInventoryCommand = (entry) => ({
+  executable: entry.commandPath,
+  args: ["inventory", entry.name, "--json"]
+});
+var isPlainObject2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isReadiness = (value) => value === "healthy" || value === "unhealthy" || value === "not-setup" || value === "busy";
+var parsePlugins = (value) => {
+  if (!Array.isArray(value)) return void 0;
+  const plugins = [];
+  for (const item of value) {
+    if (!isPlainObject2(item) || typeof item.name !== "string") return void 0;
+    plugins.push({ name: item.name, version: typeof item.version === "string" ? item.version : void 0 });
+  }
+  return plugins;
+};
+var parseSkills = (value) => {
+  if (!isPlainObject2(value)) return void 0;
+  const packageCount = typeof value.packageCount === "number" ? value.packageCount : void 0;
+  const visibleCount = typeof value.visibleCount === "number" ? value.visibleCount : void 0;
+  return { packageCount, visibleCount };
+};
+var parseMcps = (value) => {
+  if (!Array.isArray(value)) return void 0;
+  return value.every((item) => typeof item === "string") ? value : void 0;
+};
+var parseInventoryOutput = (stdout) => {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return { malformed: true, diagnostic: "inventory --json produced no output" };
+  let value;
+  try {
+    value = JSON.parse(trimmed);
+  } catch {
+    return { malformed: true, diagnostic: "inventory --json did not return valid JSON" };
+  }
+  if (!isPlainObject2(value)) return { malformed: true, diagnostic: "inventory --json must return a JSON object" };
+  if (value.schemaVersion !== 1) return { malformed: true, diagnostic: "inventory --json returned an unsupported schema version" };
+  if (!isReadiness(value.readiness)) return { malformed: true, diagnostic: "inventory --json returned an unsupported readiness value" };
+  const plugins = parsePlugins(value.plugins);
+  const skills = parseSkills(value.skills);
+  const mcps = parseMcps(value.mcps);
+  if (plugins === void 0 || skills === void 0 || mcps === void 0) {
+    return { malformed: true, diagnostic: "inventory --json returned an unrecognized plugins/skills/mcps shape" };
+  }
+  return { readiness: value.readiness, plugins, skills, mcps };
+};
+
 // src/admin-ui.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
 var sortCycle = ["name", "health", "install", "surface"];
@@ -83992,6 +84039,7 @@ var AdminDetailPanel = ({
   herdrAvailable,
   onForkToFix,
   onOpenGuide,
+  onOpenInventory,
   tick,
   versionResult,
   versionRunning,
@@ -84069,6 +84117,7 @@ var AdminDetailPanel = ({
       return;
     }
     if (input === "g") onOpenGuide(entry);
+    else if (input === "i" && entry.inventorySupported) onOpenInventory(entry);
     else if ((input === "d" || input === "r") && (controls4.canTrigger || controls4.canRetry)) runOrRetryDoctor();
     else if (input === "c" && controls4.canCancel) cancelDoctor();
     else if (input === "l") setLaunchConfirming(true);
@@ -84129,6 +84178,7 @@ var AdminDetailPanel = ({
             controls4.canCancel ? { key: "c", label: "cancel" } : void 0,
             controls4.canRetry ? { key: "r", label: "retry" } : void 0,
             { key: "g", label: "view guide" },
+            entry.inventorySupported ? { key: "i", label: "view inventory" } : void 0,
             { key: "l", label: "launch in terminal" },
             canFork ? { key: "f", label: "fork to fix" } : void 0,
             canRepair ? { key: "p", label: "repair profile" } : void 0,
@@ -84196,6 +84246,65 @@ var GuideOverlay = ({
   body === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: body, width: Math.max(20, columns - 4), height: Math.max(6, rows - 6), resetKey: entry.ref }) }),
   /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "PageUp/PageDown", label: "scroll" }, { key: "q/Esc", label: "back to list" }] }) })
 ] });
+var InventoryOverlay = ({
+  entry,
+  status,
+  outcome,
+  message
+}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { borderStyle: "round", borderColor: "blue", paddingX: 1, justifyContent: "space-between", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "blue", children: [
+    entry.name,
+    " inventory",
+    " ",
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+      "\xB7 ",
+      entry.surface,
+      entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
+    ] })
+  ] }) }),
+  status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Loading inventory\u2026" }) : null,
+  status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: message ?? "Inventory is unavailable." }) : null,
+  status === "done" && outcome !== void 0 && outcome.malformed === true ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: outcome.diagnostic }) : null,
+  status === "done" && outcome !== void 0 && outcome.malformed !== true ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+      "Readiness: ",
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: outcome.readiness })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+        "Plugins (",
+        outcome.plugins.length,
+        ")"
+      ] }),
+      outcome.plugins.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "None reported." }) : outcome.plugins.map((plugin) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+        "\xB7 ",
+        plugin.name,
+        plugin.version === void 0 ? "" : ` (${plugin.version})`
+      ] }, plugin.name))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "Skills" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+        outcome.skills.visibleCount === void 0 ? "visible: unknown" : `visible: ${outcome.skills.visibleCount}`,
+        " \xB7 ",
+        outcome.skills.packageCount === void 0 ? "packages: unknown" : `packages: ${outcome.skills.packageCount}`
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: "Skills are managed as one shared bundle pinned to a single commit per profile, not individually versioned, so only counts are available." })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+        "MCP servers (",
+        outcome.mcps.length,
+        ")"
+      ] }),
+      outcome.mcps.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "None reported." }) : outcome.mcps.map((name) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+        "\xB7 ",
+        name
+      ] }, name))
+    ] })
+  ] }) : null,
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "q/Esc", label: "back to list" }] }) })
+] });
 var AdminApp = ({
   entries,
   runManager,
@@ -84216,6 +84325,7 @@ var AdminApp = ({
   const [diagnosisByRef, setDiagnosisByRef] = (0, import_react37.useState)(/* @__PURE__ */ new Map());
   const [herdrAvailable, setHerdrAvailable] = (0, import_react37.useState)(void 0);
   const [guideOverlay, setGuideOverlay] = (0, import_react37.useState)(void 0);
+  const [inventoryOverlay, setInventoryOverlay] = (0, import_react37.useState)(void 0);
   const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const diagnosedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const repairAttemptedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
@@ -84239,6 +84349,21 @@ var AdminApp = ({
     });
   };
   const closeGuideOverlay = () => setGuideOverlay(void 0);
+  const openInventoryOverlay = (entry) => {
+    setInventoryOverlay({ entry, status: "loading", outcome: void 0, message: void 0 });
+    const command = buildInventoryCommand(entry);
+    runner.run(command.executable, command.args, { cwd: cwd2 }).then((result) => {
+      setInventoryOverlay(
+        (current) => current === void 0 || current.entry.ref !== entry.ref ? current : { entry, status: "done", outcome: parseInventoryOutput(result.stdout), message: void 0 }
+      );
+    }).catch((error) => {
+      const message = error instanceof CommandRunnerError ? error.stderr.trim() || error.stdout.trim() || error.message : error instanceof Error ? error.message : String(error);
+      setInventoryOverlay(
+        (current) => current === void 0 || current.entry.ref !== entry.ref ? current : { entry, status: "error", outcome: void 0, message }
+      );
+    });
+  };
+  const closeInventoryOverlay = () => setInventoryOverlay(void 0);
   (0, import_react37.useEffect)(() => {
     const interval = setInterval(() => setTick((value) => value + 1), 500);
     return () => clearInterval(interval);
@@ -84384,6 +84509,10 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       if (char === "q" || key.escape) closeGuideOverlay();
       return;
     }
+    if (inventoryOverlay !== void 0) {
+      if (char === "q" || key.escape) closeInventoryOverlay();
+      return;
+    }
     if (searching) {
       if (key.return || key.escape) {
         setSearching(false);
@@ -84423,6 +84552,17 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   });
   if (guideOverlay !== void 0) {
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(GuideOverlay, { entry: guideOverlay.entry, body: guideOverlay.body, note: guideOverlay.note, columns, rows });
+  }
+  if (inventoryOverlay !== void 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      InventoryOverlay,
+      {
+        entry: inventoryOverlay.entry,
+        status: inventoryOverlay.status,
+        outcome: inventoryOverlay.outcome,
+        message: inventoryOverlay.message
+      }
+    );
   }
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
@@ -84498,6 +84638,7 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         herdrAvailable,
         onForkToFix,
         onOpenGuide: openGuideOverlay,
+        onOpenInventory: openInventoryOverlay,
         tick,
         versionResult: versionResultFor(selected),
         versionRunning: versionRunning(selected),

@@ -30,6 +30,7 @@ import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } fro
 import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.js"
 import type { CombinedGuideCatalog } from "./guide-catalog.js"
 import type { CommandRunner, HerdrEnvironment } from "./guide-launch.js"
+import { CommandRunnerError } from "./guide-launch.js"
 import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
 import { formatVersionCell } from "./admin-version-check.js"
 import {
@@ -40,6 +41,7 @@ import {
   type AdminVersionCacheRecord,
 } from "./admin-version-cache.js"
 import { runBatchedVersionChecks, updateCheckRefFor, versionCheckResultForEntry } from "./admin-version-scheduler.js"
+import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.js"
 
 type DiagnosisState =
   | { readonly status: "diagnosing" }
@@ -96,6 +98,7 @@ const AdminDetailPanel = ({
   herdrAvailable,
   onForkToFix,
   onOpenGuide,
+  onOpenInventory,
   tick,
   versionResult,
   versionRunning,
@@ -107,6 +110,7 @@ const AdminDetailPanel = ({
   readonly herdrAvailable: boolean | undefined
   readonly onForkToFix: (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined) => Promise<HerdrForkOutcome>
   readonly onOpenGuide: (entry: AdminProfileEntry) => void
+  readonly onOpenInventory: (entry: AdminProfileEntry) => void
   readonly tick: number
   readonly versionResult: AdminUpdateCheckResult | undefined
   readonly versionRunning: boolean
@@ -222,6 +226,7 @@ const AdminDetailPanel = ({
       return
     }
     if (input === "g") onOpenGuide(entry)
+    else if (input === "i" && entry.inventorySupported) onOpenInventory(entry)
     else if ((input === "d" || input === "r") && (controls.canTrigger || controls.canRetry)) runOrRetryDoctor()
     else if (input === "c" && controls.canCancel) cancelDoctor()
     else if (input === "l") setLaunchConfirming(true)
@@ -292,6 +297,7 @@ const AdminDetailPanel = ({
               controls.canCancel ? { key: "c", label: "cancel" } : undefined,
               controls.canRetry ? { key: "r", label: "retry" } : undefined,
               { key: "g", label: "view guide" },
+              entry.inventorySupported ? { key: "i", label: "view inventory" } : undefined,
               { key: "l", label: "launch in terminal" },
               canFork ? { key: "f", label: "fork to fix" } : undefined,
               canRepair ? { key: "p", label: "repair profile" } : undefined,
@@ -402,6 +408,101 @@ const GuideOverlay = ({
   </Box>
 )
 
+/**
+ * Renders a profile's install detail — plugins, skill counts, and MCP
+ * servers — from the existing `inventory PROFILE --json` command (already
+ * used read-only by `guide-preflight.ts`'s readiness check) as a
+ * full-screen overlay, mirroring `GuideOverlay` exactly: `[q]`/Escape are
+ * handled one level up in `AdminApp` so they return to the main list
+ * rather than exiting the app. Skills are reported only as counts because
+ * this architecture pins skills to one shared git commit per profile
+ * rather than versioning them individually (see `admin-inventory.ts`) —
+ * this view never fabricates a per-skill version it cannot know.
+ */
+const InventoryOverlay = ({
+  entry,
+  status,
+  outcome,
+  message,
+}: {
+  readonly entry: AdminProfileEntry
+  readonly status: "loading" | "done" | "error"
+  readonly outcome: AdminInventoryOutcome | undefined
+  readonly message: string | undefined
+}) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Box borderStyle="round" borderColor="blue" paddingX={1} justifyContent="space-between">
+      <Text bold color="blue">
+        {entry.name} inventory{" "}
+        <Text dimColor>
+          · {entry.surface}
+          {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
+        </Text>
+      </Text>
+    </Box>
+    {status === "loading" ? <Text dimColor>Loading inventory…</Text> : null}
+    {status === "error" ? (
+      <Text color="yellow" wrap="wrap">
+        {message ?? "Inventory is unavailable."}
+      </Text>
+    ) : null}
+    {status === "done" && outcome !== undefined && outcome.malformed === true ? (
+      <Text color="yellow" wrap="wrap">
+        {outcome.diagnostic}
+      </Text>
+    ) : null}
+    {status === "done" && outcome !== undefined && outcome.malformed !== true ? (
+      <Box marginTop={1} flexDirection="column">
+        <Text>
+          Readiness: <Text bold>{outcome.readiness}</Text>
+        </Text>
+        <Box marginTop={1} flexDirection="column">
+          <Text bold color="cyan">
+            Plugins ({outcome.plugins.length})
+          </Text>
+          {outcome.plugins.length === 0 ? (
+            <Text dimColor>None reported.</Text>
+          ) : (
+            outcome.plugins.map((plugin) => (
+              <Text key={plugin.name}>
+                · {plugin.name}
+                {plugin.version === undefined ? "" : ` (${plugin.version})`}
+              </Text>
+            ))
+          )}
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text bold color="cyan">
+            Skills
+          </Text>
+          <Text>
+            {outcome.skills.visibleCount === undefined ? "visible: unknown" : `visible: ${outcome.skills.visibleCount}`}
+            {" · "}
+            {outcome.skills.packageCount === undefined ? "packages: unknown" : `packages: ${outcome.skills.packageCount}`}
+          </Text>
+          <Text dimColor wrap="wrap">
+            Skills are managed as one shared bundle pinned to a single commit per profile, not individually versioned, so only counts
+            are available.
+          </Text>
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text bold color="cyan">
+            MCP servers ({outcome.mcps.length})
+          </Text>
+          {outcome.mcps.length === 0 ? (
+            <Text dimColor>None reported.</Text>
+          ) : (
+            outcome.mcps.map((name) => <Text key={name}>· {name}</Text>)
+          )}
+        </Box>
+      </Box>
+    ) : null}
+    <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray">
+      <ShortcutHints items={[{ key: "q/Esc", label: "back to list" }]} />
+    </Box>
+  </Box>
+)
+
 export const AdminApp = ({
   entries,
   runManager,
@@ -431,6 +532,15 @@ export const AdminApp = ({
   const [herdrAvailable, setHerdrAvailable] = useState<boolean | undefined>(undefined)
   const [guideOverlay, setGuideOverlay] = useState<
     { readonly entry: AdminProfileEntry; readonly body: string | undefined; readonly note: string | undefined } | undefined
+  >(undefined)
+  const [inventoryOverlay, setInventoryOverlay] = useState<
+    | {
+        readonly entry: AdminProfileEntry
+        readonly status: "loading" | "done" | "error"
+        readonly outcome: AdminInventoryOutcome | undefined
+        readonly message: string | undefined
+      }
+    | undefined
   >(undefined)
   const batchStartedRefs = useRef<Set<string>>(new Set())
   const diagnosedRefs = useRef<Set<string>>(new Set())
@@ -466,6 +576,42 @@ export const AdminApp = ({
   }
 
   const closeGuideOverlay = () => setGuideOverlay(undefined)
+
+  /**
+   * Opens the full-screen inventory overlay immediately (showing a loading
+   * state) and runs the profile's existing `inventory PROFILE --json`
+   * command once, asynchronously filling in the parsed result. This is a
+   * one-shot, on-demand fetch (not tracked in either `AdminRunManager`
+   * instance and not cached) since it is only ever needed while the
+   * overlay is open, mirroring `openGuideOverlay`'s guard against a slow
+   * result clobbering a newer overlay or a closed one.
+   */
+  const openInventoryOverlay = (entry: AdminProfileEntry) => {
+    setInventoryOverlay({ entry, status: "loading", outcome: undefined, message: undefined })
+    const command = buildInventoryCommand(entry)
+    runner
+      .run(command.executable, command.args, { cwd })
+      .then((result) => {
+        setInventoryOverlay((current) =>
+          current === undefined || current.entry.ref !== entry.ref
+            ? current
+            : { entry, status: "done", outcome: parseInventoryOutput(result.stdout), message: undefined },
+        )
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof CommandRunnerError
+            ? error.stderr.trim() || error.stdout.trim() || error.message
+            : error instanceof Error
+              ? error.message
+              : String(error)
+        setInventoryOverlay((current) =>
+          current === undefined || current.entry.ref !== entry.ref ? current : { entry, status: "error", outcome: undefined, message },
+        )
+      })
+  }
+
+  const closeInventoryOverlay = () => setInventoryOverlay(undefined)
 
   // Live-updates the table/detail pane to reflect `AdminRunManager` and
   // diagnosis-provider state that changes outside of React (async runs
@@ -684,6 +830,12 @@ export const AdminApp = ({
       if (char === "q" || key.escape) closeGuideOverlay()
       return
     }
+    if (inventoryOverlay !== undefined) {
+      // Same full-screen-overlay behavior as the guide overlay above:
+      // `q`/Escape return to the main list rather than exiting the app.
+      if (char === "q" || key.escape) closeInventoryOverlay()
+      return
+    }
     if (searching) {
       if (key.return || key.escape) {
         setSearching(false)
@@ -724,6 +876,17 @@ export const AdminApp = ({
 
   if (guideOverlay !== undefined) {
     return <GuideOverlay entry={guideOverlay.entry} body={guideOverlay.body} note={guideOverlay.note} columns={columns} rows={rows} />
+  }
+
+  if (inventoryOverlay !== undefined) {
+    return (
+      <InventoryOverlay
+        entry={inventoryOverlay.entry}
+        status={inventoryOverlay.status}
+        outcome={inventoryOverlay.outcome}
+        message={inventoryOverlay.message}
+      />
+    )
   }
 
   return (
@@ -833,6 +996,7 @@ export const AdminApp = ({
           herdrAvailable={herdrAvailable}
           onForkToFix={onForkToFix}
           onOpenGuide={openGuideOverlay}
+          onOpenInventory={openInventoryOverlay}
           tick={tick}
           versionResult={versionResultFor(selected)}
           versionRunning={versionRunning(selected)}
