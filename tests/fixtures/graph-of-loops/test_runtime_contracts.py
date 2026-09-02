@@ -5100,6 +5100,68 @@ class TestRunLifecycle(unittest.TestCase):
                 archived_request["constraints"], current_request["constraints"]
             )
 
+    def test_resume_keeps_generation_after_planner_failure(self) -> None:
+        from trellage_graph.run_lifecycle import (
+            RunLifecycle,
+            RunLifecycleError,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            first = RunLifecycle(
+                repo_root=Path(td),
+                policy=_load("test-policy.json"),
+                planner=FakePlanner(_load("valid-plan.json")),
+                controller_factory=lambda _run_id: FakeLifecycleController(
+                    accept_error=ControllerError("beads unavailable"),
+                ),
+                announce=lambda _run_id: None,
+            )
+            with self.assertRaises(RunLifecycleError):
+                first.start(
+                    objective="build it",
+                    constraints=[],
+                    requested_run_id="failed-generation",
+                )
+
+            failing = RunLifecycle(
+                repo_root=Path(td),
+                policy=_load("test-policy.json"),
+                planner=FakePlanner(
+                    _load("valid-plan.json"),
+                    error=SpecialistError("planner timed out"),
+                ),
+                controller_factory=lambda _run_id: FakeLifecycleController(),
+                announce=lambda _run_id: None,
+            )
+            with self.assertRaises(RunLifecycleError):
+                failing.resume("failed-generation", replan=True)
+
+            lifecycle = json.loads(
+                (
+                    failing._run_dir("failed-generation")
+                    / "lifecycle.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(lifecycle["plan_generation"], 2)
+
+            resumed = RunLifecycle(
+                repo_root=Path(td),
+                policy=_load("test-policy.json"),
+                planner=FakePlanner(_load("valid-plan.json")),
+                controller_factory=lambda _run_id: FakeLifecycleController(),
+                announce=lambda _run_id: None,
+            )
+            result = resumed.resume("failed-generation")
+
+            self.assertEqual(result["status"], "closed")
+            record = json.loads(
+                (
+                    resumed._run_dir("failed-generation")
+                    / "plan-record.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(record["generation"], 2)
+
     def test_repeated_preaccept_replan_uses_candidate_generation(self) -> None:
         from trellage_graph.run_lifecycle import (
             RunLifecycle,

@@ -312,6 +312,7 @@ class RunLifecycle:
         phase: str,
         *,
         error: str | None = None,
+        generation: int | None = None,
     ) -> None:
         value: dict[str, Any] = {
             "schema": 1,
@@ -319,6 +320,8 @@ class RunLifecycle:
             "status": phase,
             "policy_digest": self._policy_digest(),
         }
+        if generation is not None:
+            value["plan_generation"] = generation
         if error:
             value["error"] = redact_sensitive(error)[:2000]
         self._write_json(self._run_dir(run_id) / "lifecycle.json", value)
@@ -512,7 +515,7 @@ class RunLifecycle:
             "planning-review-failure.json",
         ):
             (run_dir / name).unlink(missing_ok=True)
-        self._set_phase(run_id, "planned")
+        self._set_phase(run_id, "planned", generation=generation)
         return plan
 
     def _retry_candidate_review(
@@ -550,7 +553,9 @@ class RunLifecycle:
                 "candidate plan base revision changed; "
                 "explicit replan is required"
             )
-        self._set_phase(run_id, "reviewing-plan")
+        self._set_phase(
+            run_id, "reviewing-plan", generation=generation,
+        )
         return self._review_and_finalize_candidate(
             run_id=run_id,
             request=request,
@@ -571,7 +576,7 @@ class RunLifecycle:
         plan_path = run_dir / "plan.json"
         decision_path = run_dir / "planning-decision.json"
         evidence_path = run_dir / "planning-evidence.json"
-        self._set_phase(run_id, "planning")
+        self._set_phase(run_id, "planning", generation=generation)
         limits = self._policy.get("limits")
         roles = self._policy.get("roles")
         if not isinstance(limits, dict) or not isinstance(roles, dict):
@@ -705,17 +710,18 @@ class RunLifecycle:
         )
         controller = self._controller_factory(run_id)
         if not controller.resume(run_id):
-            self._set_phase(run_id, "accepting")
+            self._set_phase(run_id, "accepting", generation=generation)
             controller.accept_plan(
                 plan,
                 run_id=run_id,
                 plan_generation=generation,
             )
-        self._set_phase(run_id, "running")
+        self._set_phase(run_id, "running", generation=generation)
         result = controller.run()
         self._set_phase(
             run_id,
             str(result.get("status", "complete")),
+            generation=generation,
         )
         return {"run_id": run_id, **result}
 
@@ -741,7 +747,12 @@ class RunLifecycle:
             SpecialistError,
         ) as exc:
             message = redact_sensitive(str(exc))[:2000]
-            self._set_phase(run_id, "blocked", error=message)
+            self._set_phase(
+                run_id,
+                "blocked",
+                error=message,
+                generation=generation,
+            )
             raise RunLifecycleError(
                 f"run {run_id} blocked: {message}",
                 run_id=run_id,
@@ -812,6 +823,7 @@ class RunLifecycle:
         if record is None:
             record = self._load_json(run_dir / "candidate-record.json")
         generation = int(record.get("generation", 1)) if record else 1
+        generation = max(generation, self._next_history_generation(run_dir))
         if (run_dir / "state.json").is_file():
             controller = self._controller_factory(run_id)
             if not controller.resume_for_replan(run_id):
@@ -822,15 +834,32 @@ class RunLifecycle:
         self._archive_generation(run_id, generation)
         return generation + 1
 
+    @staticmethod
+    def _next_history_generation(run_dir: Path) -> int:
+        history = run_dir / "history"
+        generations = [
+            int(path.name.removeprefix("generation-"))
+            for path in history.glob("generation-*")
+            if path.is_dir()
+            and path.name.removeprefix("generation-").isdigit()
+        ]
+        return max(generations, default=0) + 1
+
     def _current_generation(self, run_id: str) -> int:
         run_dir = self._run_dir(run_id)
         record = self._load_json(run_dir / "plan-record.json")
         if record is None:
             record = self._load_json(run_dir / "candidate-record.json")
         if record is not None:
-            return int(record.get("generation", 1))
+            return max(
+                int(record.get("generation", 1)),
+                self._next_history_generation(run_dir),
+            )
         state = self._load_json(run_dir / "state.json")
-        return int(state.get("plan_generation", 1)) if state else 1
+        if state:
+            return int(state.get("plan_generation", 1))
+        lifecycle = self._load_json(run_dir / "lifecycle.json")
+        return int(lifecycle.get("plan_generation", 1)) if lifecycle else 1
 
     def resume(
         self, run_id: str, *, replan: bool = False,
