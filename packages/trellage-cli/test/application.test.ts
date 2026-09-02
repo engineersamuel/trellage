@@ -925,20 +925,21 @@ describe("profile metadata", () => {
     expect.soft(metadata.release_build_command).toContain("trellage build --locked")
     expect.soft(metadata.refresh_command).toContain("trellage upgrade ")
     expect.soft(metadata.runtime_entry).toBe("trellage-copilot-entry")
+    expect.soft(metadata.memory_size).toBe("2g")
     expect.soft(metadata.tmpfs_size).toBe("256m")
     const applicationSource = await readFile(fileURLToPath(new URL("../src/application.ts", import.meta.url)), "utf8")
     expect.soft(applicationSource).toContain('path.join(xdgCacheHome, "trellage",')
     expect.soft(applicationSource).not.toContain('path.join(xdgCacheHome, "harness",')
   })
 
-  it("reports configured tmpfs size", async () => {
+  it("reports configured runtime resource sizes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-metadata-tmpfs-size-"))
     const profilePath = path.join(root, "profile.toml")
     const source = copilotSource
       .replace('name = "copilot"', 'name = "copilot-tmpfs-size"')
       .replace(
         'description = "Copilot application profile"',
-        'description = "Copilot application profile"\n[runtime]\ntmpfs_size = "2g"',
+        'description = "Copilot application profile"\n[runtime]\nmemory_size = "4g"\ntmpfs_size = "2g"',
       )
     await writeFile(profilePath, source)
     const document = await Effect.runPromise(parseProfile(source, profilePath))
@@ -954,6 +955,7 @@ describe("profile metadata", () => {
     await writeFile(path.join(root, "profile.linux-arm64.lock.toml"), renderLock(lock))
 
     const metadata = await Effect.runPromise(profileMetadata(profilePath, "linux/arm64", root))
+    expect(metadata.memory_size).toBe("4g")
     expect(metadata.tmpfs_size).toBe("2g")
   })
 

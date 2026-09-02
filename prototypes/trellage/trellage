@@ -734,6 +734,10 @@ published_ports="$(jq -ce '.published_ports // []' <<<"$profile_metadata")" \
 optional_secrets="$(jq -ce '.optional_secrets // []' <<<"$profile_metadata")" \
   || fail 'profile metadata has invalid optional secrets'
 resolved_version="$(jq -r '.resolved_version // empty' <<<"$profile_metadata")"
+memory_size="$(jq -r 'if has("memory_size") then .memory_size else "2g" end' <<<"$profile_metadata")" \
+  || fail 'profile metadata has no memory size'
+[[ "$memory_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
+  || fail 'profile metadata has an invalid memory size'
 tmpfs_size="$(jq -r 'if has("tmpfs_size") then .tmpfs_size else "256m" end' <<<"$profile_metadata")" \
   || fail 'profile metadata has no tmpfs size'
 [[ "$tmpfs_size" =~ ^[1-9][0-9]*(k|m|g)$ ]] \
@@ -1549,7 +1553,7 @@ report_sandbox_metadata() {
   [[ -S "$socket_path" ]] || return 1
   node_executable="$(command -v node)" || return 1
   env -i "$node_executable" --input-type=module - \
-    "$socket_path" "$pane_id" "$agent" "$profile_name" "$full_container_id" "$invocation_id" <<'NODE'
+    "$socket_path" "$pane_id" "$agent" "$profile_name" "$full_container_id" "$invocation_id" 2>/dev/null <<'NODE'
 import net from "node:net"
 
 const [socketPath, paneId, agent, profile, containerId, invocationId] = process.argv.slice(2)
@@ -1618,7 +1622,7 @@ const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mil
 try {
   let stateChangeSeq
   let processGroup
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
       const agentResult = await requestHerdr({
         id: `${source}:agent-get:${invocationId}:${attempt}`,
@@ -1637,7 +1641,7 @@ try {
       if (
         agentInfo?.pane_id === paneId &&
         agentInfo?.agent === agent &&
-        agentInfo?.agent_status === "working" &&
+        (agentInfo?.agent_status === "working" || agentInfo?.agent_status === "idle") &&
         processInfo?.pane_id === paneId &&
         Number.isSafeInteger(candidateSequence) &&
         candidateSequence >= 0 &&
@@ -1867,17 +1871,17 @@ remove_stale_container() {
   [[ "$running" == true || "$running" == false ]] \
     || fail "Docker container has an invalid running state: $container_name"
   if [[ "$running" == true ]]; then
-    if [[ "$container_lifecycle" == persistent ]]; then
-      prune_lifecycle_leases
-      shopt -s nullglob
-      for lease in "$lifecycle_resource_dir"/leases/*; do
-        [[ "$lease" == "$lifecycle_lease" ]] && continue
-        shopt -u nullglob
-        fail "profile container is stale but has an active session; exit it and retry: $container_name"
-      done
+    prune_lifecycle_leases
+    shopt -s nullglob
+    for lease in "$lifecycle_resource_dir"/leases/*; do
+      [[ "$lease" == "$lifecycle_lease" ]] && continue
       shopt -u nullglob
-    elif container_has_active_ephemeral_process; then
       fail "profile container is stale but has an active session; exit it and retry: $container_name"
+    done
+    shopt -u nullglob
+    if [[ "$container_lifecycle" != persistent ]] && container_has_active_ephemeral_process; then
+      printf 'trellage: removing stale container with orphaned session processes: %s\n' \
+        "$container_name" >&2
     fi
   fi
   verify_docker_server
@@ -2607,7 +2611,7 @@ if [[ "$reuse_container" != true ]]; then
     --security-opt no-new-privileges \
     --init \
     --pids-limit 256 \
-    --memory 2g \
+    --memory "$memory_size" \
     --cpus 2 \
     --tmpfs "/tmp:rw,noexec,nosuid,nodev,size=${tmpfs_size},uid=10001,gid=10001" \
     --tmpfs "$container_runtime_dir:$container_runtime_tmpfs" \

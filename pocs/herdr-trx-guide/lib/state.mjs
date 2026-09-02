@@ -2,11 +2,23 @@ import { constants, rmSync } from "node:fs"
 import { chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import path from "node:path"
+import properLockfile from "proper-lockfile"
 
 const maximumStateFileBytes = 512 * 1024
 const staleGuideIntentAgeMs = 24 * 60 * 60 * 1000
+const staleCaptureQueueLockAgeMs = 5 * 60 * 1000
+const captureQueueLockUpdateMs = 30 * 1000
+const captureQueueLockRetries = {
+  retries: 100,
+  factor: 1,
+  minTimeout: 25,
+  maxTimeout: 50,
+  randomize: true,
+}
 const maximumCaptureQueueCharacters = 60_000
 const pluginId = "trellage.guide-handoff"
+const identifierControls = /[\u0000-\u001f\u007f-\u009f]/u
+const sourceIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u
 const choiceTokenPrefix = "trellage-guide-choice:v1:"
 const choiceTokenPattern =
   /^trellage-guide-choice:v1:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u
@@ -73,15 +85,126 @@ const readPrivateJson = async (target, missingIsNull) => {
 const paneKey = (paneId) => createHash("sha256").update(paneId).digest("hex")
 
 const captureQueuePath = (stateDir) => path.join(stateRoot(stateDir), "capture-queue.json")
+const captureQueueLockPath = (stateDir) => path.join(stateRoot(stateDir), "capture-queue.lock")
 
 const emptyCaptureQueue = () => ({ schemaVersion: 1, entries: [] })
+
+const queueOrigin = (value) => {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Capture queue origin is invalid")
+  }
+  const string = (key, maximum, required = true) => {
+    const field = value[key]
+    if (!required && field === undefined) return undefined
+    if (
+      typeof field !== "string" ||
+      field.length === 0 ||
+      field.length > maximum ||
+      identifierControls.test(field)
+    ) {
+      throw new Error("Capture queue origin is invalid")
+    }
+    return field
+  }
+  const surface = string("surface", 64)
+  const workspaceId = string("workspaceId", 256)
+  const tabId = string("tabId", 256)
+  const paneId = string("paneId", 256)
+  const cwd = string("cwd", 4096)
+  const capturedAt = string("capturedAt", 64)
+  const agent = string("agent", 256, false)
+  const paneTitle = string("paneTitle", 512, false)
+  if (
+    !sourceIdentifierPattern.test(workspaceId) ||
+    !sourceIdentifierPattern.test(tabId) ||
+    !sourceIdentifierPattern.test(paneId) ||
+    !path.isAbsolute(cwd) ||
+    !Number.isFinite(Date.parse(capturedAt))
+  ) {
+    throw new Error("Capture queue origin is invalid")
+  }
+  return {
+    surface,
+    workspaceId,
+    tabId,
+    paneId,
+    cwd,
+    capturedAt,
+    ...(agent === undefined ? {} : { agent }),
+    ...(paneTitle === undefined ? {} : { paneTitle }),
+  }
+}
 
 const validatedCaptureQueue = (value) => {
   if (value === null) return emptyCaptureQueue()
   if (value?.schemaVersion !== 1 || !Array.isArray(value.entries)) {
     throw new Error("Capture queue is invalid")
   }
-  return value
+  return {
+    schemaVersion: 1,
+    entries: value.entries.map((entry) => {
+      if (
+        entry === null ||
+        typeof entry !== "object" ||
+        Array.isArray(entry) ||
+        typeof entry.id !== "string" ||
+        entry.id.length === 0 ||
+        entry.id.length > 256 ||
+        identifierControls.test(entry.id) ||
+        typeof entry.answer !== "string"
+      ) {
+        throw new Error("Capture queue is invalid")
+      }
+      const origin = queueOrigin(entry.origin)
+      return { ...entry, ...(origin === undefined ? {} : { origin }) }
+    }),
+  }
+}
+
+const captureQueueLockOptions = (stateDir, options, onCompromised) => ({
+  stale: options?.stale ?? staleCaptureQueueLockAgeMs,
+  update: options?.update ?? captureQueueLockUpdateMs,
+  retries: options?.retries ?? captureQueueLockRetries,
+  realpath: false,
+  lockfilePath: captureQueueLockPath(stateDir),
+  onCompromised,
+})
+
+export const withCaptureQueueLock = async (stateDir, operation, options) => {
+  const root = stateRoot(stateDir)
+  await ensurePrivateDirectory(root)
+  let compromised
+  const release = await properLockfile.lock(
+    captureQueuePath(root),
+    captureQueueLockOptions(root, options, (error) => {
+      compromised = error
+    }),
+  )
+  const assertHealthy = () => {
+    if (compromised !== undefined) {
+      throw new Error("Capture queue lock was compromised", { cause: compromised })
+    }
+  }
+  let result
+  let operationError
+  try {
+    assertHealthy()
+    result = await operation(assertHealthy)
+    assertHealthy()
+  } catch (error) {
+    operationError = error
+  }
+  let releaseError
+  try {
+    await release()
+  } catch (error) {
+    releaseError = error
+  }
+  assertHealthy()
+  if (operationError !== undefined) throw operationError
+  if (releaseError !== undefined) throw releaseError
+  return result
 }
 
 const completionPath = (stateDir, paneId) =>
@@ -140,34 +263,91 @@ export const captureQueueIntent = (queue) => {
   const validated = validatedCaptureQueue(queue)
   if (validated.entries.length === 0) throw new Error("Capture queue is empty")
   return validated.entries
-    .map((entry, index) => `## Captured item ${index + 1}\n\n${entry.answer}`)
+    .map((entry, index) => {
+      if (entry.origin === undefined) return `## Captured item ${index + 1}\n\n${entry.answer}`
+      const label = entry.origin.paneTitle ?? entry.origin.agent ?? entry.origin.paneId
+      const source = [
+        entry.origin.workspaceId,
+        entry.origin.tabId,
+        entry.origin.paneId,
+        entry.origin.cwd,
+        entry.origin.capturedAt,
+      ].join(" · ")
+      return `## Captured item ${index + 1} — ${label}\n\n_Source: ${source}_\n\n${entry.answer}`
+    })
     .join("\n\n---\n\n")
 }
 
-export const appendCaptureQueue = async (stateDir, entry) => {
-  const queue = await readCaptureQueue(stateDir)
-  const next = {
-    schemaVersion: 1,
-    entries: [...queue.entries, { id: randomUUID(), ...entry }],
-  }
-  if ([...captureQueueIntent(next)].length > maximumCaptureQueueCharacters) {
-    throw new Error(`Capture queue exceeds trx guide's ${maximumCaptureQueueCharacters}-character intent limit`)
-  }
-  await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
-  return next
-}
+export const appendCaptureQueue = async (stateDir, entry, lockOptions) =>
+  withCaptureQueueLock(
+    stateDir,
+    async (assertLockOwned) => {
+      const queue = await readCaptureQueue(stateDir)
+      const id = entry.id ?? randomUUID()
+      if (queue.entries.some((candidate) => candidate.id === id)) return queue
+      const next = {
+        schemaVersion: 1,
+        entries: [...queue.entries, { ...entry, id }],
+      }
+      if ([...captureQueueIntent(next)].length > maximumCaptureQueueCharacters) {
+        throw new Error(`Capture queue exceeds trx guide's ${maximumCaptureQueueCharacters}-character intent limit`)
+      }
+      await assertLockOwned()
+      await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
+      return next
+    },
+    lockOptions,
+  )
 
-export const clearCaptureQueue = async (stateDir) => {
-  await rm(captureQueuePath(stateDir), { force: true })
-}
+export const clearCaptureQueue = async (stateDir, lockOptions) =>
+  withCaptureQueueLock(
+    stateDir,
+    async (assertLockOwned) => {
+      await assertLockOwned()
+      await rm(captureQueuePath(stateDir), { force: true })
+    },
+    lockOptions,
+  )
 
-export const removeCaptureQueueEntry = async (stateDir, id) => {
-  const queue = await readCaptureQueue(stateDir)
-  const next = { schemaVersion: 1, entries: queue.entries.filter((entry) => entry.id !== id) }
-  if (next.entries.length === queue.entries.length) throw new Error("Queued capture was not found")
-  if (next.entries.length === 0) await clearCaptureQueue(stateDir)
-  else await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
-  return next
+export const removeCaptureQueueEntry = async (stateDir, id, lockOptions) =>
+  withCaptureQueueLock(
+    stateDir,
+    async (assertLockOwned) => {
+      const queue = await readCaptureQueue(stateDir)
+      const next = { schemaVersion: 1, entries: queue.entries.filter((entry) => entry.id !== id) }
+      if (next.entries.length === queue.entries.length) throw new Error("Queued capture was not found")
+      await assertLockOwned()
+      if (next.entries.length === 0) await rm(captureQueuePath(stateDir), { force: true })
+      else await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
+      return next
+    },
+    lockOptions,
+  )
+
+export const removeCaptureQueueEntries = async (stateDir, ids, lockOptions) => {
+  const removedIds = new Set(ids)
+  if (
+    removedIds.size === 0 ||
+    [...removedIds].some((id) => typeof id !== "string" || id.length === 0)
+  ) {
+    throw new Error("Queued capture ids are invalid")
+  }
+  return withCaptureQueueLock(
+    stateDir,
+    async (assertLockHealthy) => {
+      const queue = await readCaptureQueue(stateDir)
+      const next = {
+        schemaVersion: 1,
+        entries: queue.entries.filter((entry) => !removedIds.has(entry.id)),
+      }
+      if (next.entries.length === queue.entries.length) return queue
+      assertLockHealthy()
+      if (next.entries.length === 0) await rm(captureQueuePath(stateDir), { force: true })
+      else await writePrivateJson(stateRoot(stateDir), "capture-queue.json", next)
+      return next
+    },
+    lockOptions,
+  )
 }
 
 export const writeInvocation = async (stateDir, invocation) =>

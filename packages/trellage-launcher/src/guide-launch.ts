@@ -18,6 +18,24 @@ const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
 ]
 const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = ["user-selected", "exact", "snapshot", "user-curated"]
 
+const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLength: number): number => {
+  target.push(buffer)
+  let boundedLength = currentLength + buffer.length
+  while (boundedLength > commandOutputLimitBytes) {
+    const first = target[0]
+    if (first === undefined) return 0
+    const excess = boundedLength - commandOutputLimitBytes
+    if (first.length <= excess) {
+      target.shift()
+      boundedLength -= first.length
+    } else {
+      target[0] = first.subarray(excess)
+      boundedLength -= excess
+    }
+  }
+  return boundedLength
+}
+
 export type GuideSurface = "native" | "sandbox"
 export type PromptDeliveryMode = "none" | "argv"
 export type PromptHandlingMode = "none" | "argv" | "manual-paste"
@@ -80,6 +98,7 @@ export interface CommandRunOptions {
   readonly env?: NodeJS.ProcessEnv
   readonly timeoutMs?: number
   readonly signal?: AbortSignal
+  readonly outputOverflow?: "terminate" | "truncate"
 }
 
 export interface CommandRunResult {
@@ -127,6 +146,9 @@ export interface WaitForIdleOptions {
   readonly time?: TimeController
 }
 
+/** The steps a pane launch passes through, so a caller can narrate them live. */
+export type HerdrLaunchPhase = "starting" | "waiting" | "prompting"
+
 export interface LaunchInHerdrPaneOptions extends WaitForIdleOptions {
   readonly paneId: string
   readonly cwd: string
@@ -134,11 +156,16 @@ export interface LaunchInHerdrPaneOptions extends WaitForIdleOptions {
   readonly prompt: string
   readonly promptDelivery: HerdrPromptDeliveryMode
   readonly promptTimeoutMs: number
+  readonly onPhase?: (phase: HerdrLaunchPhase) => void
 }
 
 export interface CurrentWorkspaceHandoffOptions extends Omit<LaunchInHerdrPaneOptions, "paneId"> {
   readonly callerPaneId: string
   readonly direction: HerdrSplitDirection
+}
+
+export interface NewTabHandoffOptions extends Omit<LaunchInHerdrPaneOptions, "paneId"> {
+  readonly workspaceId: string
 }
 
 export interface HerdrWorktreeHandle {
@@ -556,27 +583,49 @@ export const buildGuideLaunchCommand = (
   }
 }
 
+/**
+ * What each native launcher must put in front of an interactive prompt in argv.
+ * An empty list means the prompt must stay a bare positional: `pi` and
+ * `prime-agent` have no end-of-options guard, and their parser reads `--` as an
+ * unknown flag that then consumes the prompt as its value and discards it. A
+ * launcher absent from this table takes no argv prompt at all — `jcode` has
+ * neither a positional prompt nor an initial-message flag — so it keeps the
+ * paste path.
+ */
+const nativeArgvPromptSeparator: Record<string, ReadonlyArray<string>> = {
+  cpx: ["-i"],
+  cdx: ["--"],
+  cldx: ["--"],
+  grx: ["--"],
+  omp: ["--"],
+  picx: [],
+  prx: [],
+}
+
+/**
+ * Prefers argv prompt delivery wherever the harness accepts one. Herdr's paste
+ * path encodes bracketed paste and Enter against the pane's recorded terminal
+ * mode, which a harness TUI has not yet adopted while it still negotiates, so a
+ * pasted prompt can land as literal escape text and never submit. An argv
+ * prompt has no such handshake. Only launchers with no known prompt flag fall
+ * back to the paste path.
+ */
 export const buildHerdrGuideLaunch = (
   selectedProfile: SelectedProfile,
   prompt: string,
 ): BuiltHerdrGuideLaunch => {
-  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cpx") {
-    const baseCommand = buildGuideLaunchCommand(selectedProfile).command
+  if (selectedProfile.surface === "sandbox") {
     return {
-      command: { executable: baseCommand.executable, args: [...baseCommand.args, "-i", prompt] },
+      command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }).command,
       promptDelivery: "command",
     }
   }
-  if (selectedProfile.surface === "native" && selectedProfile.launcher === "cdx") {
-    const baseCommand = buildGuideLaunchCommand(selectedProfile).command
-    return {
-      command: { executable: baseCommand.executable, args: [...baseCommand.args, "--", prompt] },
-      promptDelivery: "command",
-    }
-  }
+  const separator = nativeArgvPromptSeparator[selectedProfile.launcher]
+  const baseCommand = buildGuideLaunchCommand(selectedProfile).command
+  if (separator === undefined) return { command: baseCommand, promptDelivery: "agent" }
   return {
-    command: buildGuideLaunchCommand(selectedProfile).command,
-    promptDelivery: "agent",
+    command: { executable: baseCommand.executable, args: [...baseCommand.args, ...separator, prompt] },
+    promptDelivery: "command",
   }
 }
 
@@ -653,7 +702,17 @@ export const createNodeCommandRunner = (): CommandRunner => ({
         const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk
         const nextLength = (stream === "stdout" ? stdoutLength : stderrLength) + buffer.length
         if (nextLength > commandOutputLimitBytes) {
-          requestTermination("output-limit", stream)
+          if (options?.outputOverflow !== "truncate") {
+            requestTermination("output-limit", stream)
+            return
+          }
+          const boundedLength = appendTruncatedChunk(
+            target,
+            buffer,
+            stream === "stdout" ? stdoutLength : stderrLength,
+          )
+          if (stream === "stdout") stdoutLength = boundedLength
+          else stderrLength = boundedLength
           return
         }
         target.push(buffer)
@@ -990,6 +1049,13 @@ export const parseHerdrSplitPaneId = (source: string): string => {
   return getString(pane.pane_id, "Herdr pane split result.pane.pane_id")
 }
 
+export const parseHerdrTabRootPaneId = (source: string): string => {
+  const root = parseJsonRecord(source, "Herdr tab create")
+  const result = getRecord(root.result, "Herdr tab create result")
+  const pane = getRecord(result.root_pane, "Herdr tab create result.root_pane")
+  return getString(pane.pane_id, "Herdr tab create result.root_pane.pane_id")
+}
+
 export const parseHerdrWorktreeHandle = (source: string, commandName: string): HerdrWorktreeHandle => {
   const root = parseJsonRecord(source, commandName)
   const result = getRecord(root.result, `${commandName} result`)
@@ -1089,6 +1155,7 @@ export const launchInHerdrPaneAndPrompt = async (
   options: LaunchInHerdrPaneOptions,
 ): Promise<HerdrPaneLaunchResult> => {
   const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`
+  options.onPhase?.("starting")
   await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
     cwd: options.cwd,
   })
@@ -1098,7 +1165,9 @@ export const launchInHerdrPaneAndPrompt = async (
       commandPreview,
     }
   }
+  options.onPhase?.("waiting")
   await waitForHerdrAgentIdle(runner, options.paneId, options)
+  options.onPhase?.("prompting")
   try {
     await runner.run(
       "herdr",
@@ -1153,6 +1222,40 @@ export const handoffToCurrentHerdrWorkspace = async (
     cwd: options.cwd,
     direction: options.direction,
   })
+  return launchInHerdrPaneAndPrompt(runner, {
+    paneId,
+    cwd: options.cwd,
+    command: options.command,
+    prompt: options.prompt,
+    promptDelivery: options.promptDelivery,
+    promptTimeoutMs: options.promptTimeoutMs,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
+    ...(options.time === undefined ? {} : { time: options.time }),
+  })
+}
+
+/**
+ * A new tab in the workspace this guide runs in, on the same checkout. The tab
+ * does not take focus, so the guide keeps the terminal and can queue more work.
+ */
+export const createHerdrTab = async (
+  runner: CommandRunner,
+  options: { readonly workspaceId: string; readonly cwd: string },
+): Promise<string> => {
+  const created = await runner.run(
+    "herdr",
+    ["tab", "create", "--workspace", options.workspaceId, "--cwd", options.cwd, "--no-focus"],
+    { cwd: options.cwd },
+  )
+  return parseHerdrTabRootPaneId(created.stdout)
+}
+
+export const handoffToNewHerdrTab = async (
+  runner: CommandRunner,
+  options: NewTabHandoffOptions,
+): Promise<HerdrPaneLaunchResult> => {
+  const paneId = await createHerdrTab(runner, { workspaceId: options.workspaceId, cwd: options.cwd })
   return launchInHerdrPaneAndPrompt(runner, {
     paneId,
     cwd: options.cwd,

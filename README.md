@@ -929,6 +929,24 @@ or `dashboard` to select another layout. Each viewer supports Page Up/Page
 Down. Press `e` to edit the raw prompt, then Enter to re-run matching when the
 prompt changed.
 
+`trx guide --preview` renders the staged prompt basket composer overlay from
+fixture data. The preview is fixture-only: it makes no model call, reads no
+profile catalog, and launches nothing, so it opens with Docker stopped and with
+no Copilot credentials.
+
+The composer always shows the destination that will run the assembled prompt:
+launcher, harness, profile, model, effort, sandbox flag, working directory,
+target Herdr pane, and session name. Each staged block is truncated to two
+wrapped lines with an ellipsis, and its header carries the source pane, harness,
+capture time, character count, and line count.
+
+Inside it, `↑/↓` (or `j`/`k`) cycle the staged blocks and `J`/`K` reorder them.
+`o` opens the selected block in full and `f` opens the assembled final prompt;
+both page with `j`/`k` and PgDn/PgUp, and `q` or Esc returns to the list. `e`
+edits the selected block, `u` reverts it to the captured text, `x` drops one,
+`X` clears the basket, and `r` restores the fixtures. Enter prints the assembled
+prompt to stdout and exits; `q` or Esc quits.
+
 The last successful profile match is cached under
 `${XDG_CACHE_HOME:-~/.cache}/trellage/trx-guide/last-match.json`. Repeating the
 same intent with the same model, effort, profile catalog, and authored match

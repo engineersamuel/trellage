@@ -325,15 +325,18 @@ base_args=(
   --offline
 )
 
+# prime-agent has no end-of-options guard: its parser reads `--` as an unknown
+# flag and then consumes the prompt behind it as that flag's value, so the
+# prompt is silently discarded. The prompt must stay a bare positional.
 case "$mode" in
   new)
     if [[ -n "$prompt" ]]; then
-      exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -- "$prompt"
+      exec prime-agent "${base_args[@]}" "${runtime_args[@]}" "$prompt"
     fi
     exec prime-agent "${base_args[@]}" "${runtime_args[@]}"
     ;;
   prompt)
-    exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -p -- "$prompt"
+    exec prime-agent "${base_args[@]}" "${runtime_args[@]}" -p "$prompt"
     ;;
   resume)
     if [[ -n "${TRELLAGE_RESUME_SESSION_ID:-}" ]]; then

@@ -1,0 +1,12 @@
+{
+  "name": "@trellage/herdr-trx-guide-poc",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "proper-lockfile": "4.1.2"
+  }
+}

@@ -117,8 +117,17 @@ export const getProcessInfo = async (paneId, options) => {
   return result.process_info
 }
 
-export const runHerdr = (args, { binary = process.env.HERDR_BIN_PATH ?? "herdr" } = {}) =>
-  new Promise((resolve, reject) => {
+export const runHerdr = (
+  args,
+  { binary = process.env.HERDR_BIN_PATH ?? "herdr", timeoutMs } = {},
+) => {
+  if (
+    timeoutMs !== undefined &&
+    (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)
+  ) {
+    return Promise.reject(new Error("Herdr command timeout must be a positive integer"))
+  }
+  return new Promise((resolve, reject) => {
     const child = spawn(binary, [...args], {
       shell: false,
       windowsHide: true,
@@ -126,6 +135,13 @@ export const runHerdr = (args, { binary = process.env.HERDR_BIN_PATH ?? "herdr" 
     })
     let stderr = ""
     let settled = false
+    let timedOut = false
+    let timeout
+    let forceKillTimeout
+    const clearTimers = () => {
+      if (timeout !== undefined) clearTimeout(timeout)
+      if (forceKillTimeout !== undefined) clearTimeout(forceKillTimeout)
+    }
     child.stderr.setEncoding("utf8")
     child.stderr.on("data", (chunk) => {
       if (stderr.length < 1024 * 1024) stderr += chunk
@@ -133,15 +149,29 @@ export const runHerdr = (args, { binary = process.env.HERDR_BIN_PATH ?? "herdr" 
     child.once("error", (error) => {
       if (settled) return
       settled = true
+      clearTimers()
       reject(error)
     })
     child.once("close", (status) => {
       if (settled) return
       settled = true
-      if (status === 0) resolve()
+      clearTimers()
+      if (timedOut) reject(new Error(`Herdr command timed out after ${timeoutMs}ms`))
+      else if (status === 0) resolve()
       else reject(new Error(stderr.trim() || `Herdr exited with status ${status ?? "unknown"}`))
     })
+    if (timeoutMs !== undefined) {
+      timeout = setTimeout(() => {
+        if (settled) return
+        timedOut = true
+        child.kill("SIGTERM")
+        forceKillTimeout = setTimeout(() => {
+          if (!settled) child.kill("SIGKILL")
+        }, 1000)
+      }, timeoutMs)
+    }
   })
+}
 
 export const notify = async (title, body) => {
   try {

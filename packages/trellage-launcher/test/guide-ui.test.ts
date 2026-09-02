@@ -37,6 +37,7 @@ import {
   GuideWizardStep,
   buildCancelResult,
   buildCurrentHerdrWorkspaceResult,
+  buildNewHerdrTabResult,
   buildCurrentTerminalResult,
   buildExistingHerdrWorktreeResult,
   buildNewHerdrWorktreeResult,
@@ -48,9 +49,12 @@ import {
   compactCommandPreview,
   createInitialGuideUiState,
   describeGuideUiError,
+  destinationLabels,
   destinationOptions,
   guideTextViewport,
   enrichLiteralCandidate,
+  forkIsBusy,
+  forkState,
   generationProgressItems,
   guideUiReducer,
   isWithinTextBound,
@@ -66,6 +70,8 @@ import {
   runGuideMatchingStep,
   runGuideRefinementStep,
   selectedProfileForPinnedLens,
+  launchRowDetail,
+  launchRowMarker,
   spinnerFrameAt,
   spinnerMessageAt,
   summarizeGenerationIntent,
@@ -2770,10 +2776,11 @@ describe("destinationOptions", () => {
     })
   })
 
-  it("offers all three destinations, in order, when Herdr is enabled", () => {
+  it("offers every destination, in order, when Herdr is enabled", () => {
     expect(destinationOptions(true)).toEqual([
       GuideUiDestination.CurrentTerminal,
       GuideUiDestination.CurrentHerdrWorkspace,
+      GuideUiDestination.NewHerdrTab,
       GuideUiDestination.NewHerdrWorktree,
     ])
   })
@@ -2781,8 +2788,14 @@ describe("destinationOptions", () => {
   it("omits the temporary current terminal in a Herdr popup", () => {
     expect(destinationOptions(true, "popup")).toEqual([
       GuideUiDestination.CurrentHerdrWorkspace,
+      GuideUiDestination.NewHerdrTab,
       GuideUiDestination.NewHerdrWorktree,
     ])
+  })
+
+  it("names every destination on screen", () => {
+    expect(destinationLabels[GuideUiDestination.NewHerdrTab]).toBe("New tab in this Herdr worktree")
+    expect(Object.values(destinationLabels).every((label) => label.length > 0)).toBe(true)
   })
 })
 
@@ -2893,6 +2906,15 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
     expect(result.promptDelivery).toBe("command")
     expect(result.callerPaneId).toBe("pane-1")
     expect(result.direction).toBe("right")
+  })
+
+  it("buildNewHerdrTabResult carries the workspace and this checkout", () => {
+    const result = buildNewHerdrTabResult(nativeSelectedProfile(true), "Do the thing.", "/repo", herdrContext)
+    expect(result.action).toBe("new-herdr-tab")
+    expect(result.workspaceId).toBe("workspace-1")
+    expect(result.cwd).toBe("/repo")
+    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.promptDelivery).toBe("command")
   })
 
   it("buildNewHerdrWorktreeResult previews the base interactive command and carries branch/base/checkout", () => {
@@ -3265,5 +3287,331 @@ describe("guideUiReducer: stage-guarded no-ops", () => {
     const state = createInitialGuideUiState()
     const result = guideUiReducer(state, { type: "not-a-real-action" } as unknown as GuideUiAction)
     expect(result).toBe(state)
+  })
+})
+
+describe("guideUiReducer: fork tabs", () => {
+  const matched = (): GuideUiState =>
+    guideUiReducer(createInitialGuideUiState("Review my PR"), {
+      type: GuideUiActionType.MatchSucceeded,
+      recommendations: recommendationTriple(),
+    })
+
+  const fork = (state: GuideUiState): GuideUiState =>
+    guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+
+  it("opens a fork from the recommendations screen", () => {
+    const state = fork(matched())
+    expect(state.stage).toBe(GuideUiStage.Generating)
+    expect(state.forks).toHaveLength(1)
+    expect(state.activeForkId).toBe(1)
+  })
+
+  it("keeps a fork's progress when the main screen is visited and it is re-entered", () => {
+    const parked = guideUiReducer(fork(matched()), { type: GuideUiActionType.ForkMain })
+    expect(parked.stage).toBe(GuideUiStage.Recommendations)
+    expect(parked.activeForkId).toBeUndefined()
+    expect(parked.forks).toHaveLength(1)
+
+    const resumed = guideUiReducer(parked, { type: GuideUiActionType.ForkSelect, index: 0 })
+    expect(resumed.stage).toBe(GuideUiStage.Generating)
+    expect(resumed.activeForkId).toBe(1)
+  })
+
+  it("gives each fork its own draft and shares the intent, recommendations and queue", () => {
+    const two = fork(guideUiReducer(fork(matched()), { type: GuideUiActionType.ForkMain }))
+    expect(two.forks.map((entry) => entry.id)).toEqual([1, 2])
+    expect(two.activeForkId).toBe(2)
+    expect(two.intent).toBe("Review my PR")
+    expect(two.recommendations).toHaveLength(3)
+  })
+
+  it("cycles main, then every fork, and wraps", () => {
+    const two = fork(guideUiReducer(fork(matched()), { type: GuideUiActionType.ForkMain }))
+    const next = guideUiReducer(two, { type: GuideUiActionType.ForkNext })
+    expect(next.activeForkId).toBeUndefined()
+    expect(guideUiReducer(next, { type: GuideUiActionType.ForkNext }).activeForkId).toBe(1)
+    expect(guideUiReducer(two, { type: GuideUiActionType.ForkPrevious }).activeForkId).toBe(1)
+  })
+
+  it("ignores a jump past the last fork", () => {
+    const state = fork(matched())
+    expect(guideUiReducer(state, { type: GuideUiActionType.ForkSelect, index: 8 })).toBe(state)
+  })
+
+  it("delivers a parked fork's own result into it without disturbing the tab on screen", () => {
+    const two = fork(guideUiReducer(fork(matched()), { type: GuideUiActionType.ForkMain }))
+    const delivered = guideUiReducer(two, {
+      type: GuideUiActionType.ForkDeliver,
+      forkId: 1,
+      action: {
+        type: GuideUiActionType.GenerateGuideLoaded,
+        guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      },
+    })
+    expect(delivered.activeForkId).toBe(2)
+    expect(delivered.stage).toBe(GuideUiStage.Generating)
+    expect(delivered.guideDocument).toBeUndefined()
+    expect(forkState(delivered, 1)?.guideDocument?.ref).toBe("native:cdx/reviewer")
+  })
+
+  it("reports a fork as busy until its own work lands", () => {
+    const parked = guideUiReducer(fork(matched()), { type: GuideUiActionType.ForkMain })
+    expect(forkIsBusy(parked, 1)).toBe(true)
+    const done = guideUiReducer(parked, {
+      type: GuideUiActionType.ForkDeliver,
+      forkId: 1,
+      action: { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() },
+    })
+    expect(forkIsBusy(done, 1)).toBe(false)
+    expect(forkState(done, 1)?.stage).toBe(GuideUiStage.Candidates)
+  })
+})
+
+describe("guideUiReducer: batch queue", () => {
+  /** One fork opened from the recommendations screen, walked to its candidates. */
+  const candidatesFrom = (base: GuideUiState): GuideUiState => {
+    let state = guideUiReducer(base, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+    })
+    return guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
+  }
+
+  const candidatesState = (): GuideUiState =>
+    candidatesFrom(
+      guideUiReducer(createInitialGuideUiState("Review my PR"), {
+        type: GuideUiActionType.MatchSucceeded,
+        recommendations: recommendationTriple(),
+      }),
+    )
+
+  const destinationState = (): GuideUiState =>
+    guideUiReducer(guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesConfirm }), {
+      type: GuideUiActionType.ReadinessReady,
+      result: { kind: ProfileReadinessKind.Ready, summary: "ok" },
+    })
+
+  it("reaches the destination step with nothing queued yet", () => {
+    const state = destinationState()
+    expect(state.stage).toBe(GuideUiStage.Destination)
+    expect(state.queue.entries).toEqual([])
+  })
+
+  it("queues the destination instead of launching it, and shows the queue", () => {
+    const tab = guideUiReducer(destinationState(), {
+      type: GuideUiActionType.DestinationEnqueue,
+      placement: { kind: "new-tab" },
+    })
+    expect(tab.stage).toBe(GuideUiStage.Queue)
+    expect(tab.queue.entries.map((job) => job.placement)).toEqual([{ kind: "new-tab" }])
+
+    const pane = guideUiReducer(destinationState(), {
+      type: GuideUiActionType.DestinationEnqueue,
+      placement: { kind: "current-workspace-pane", direction: "right" },
+    })
+    expect(pane.queue.entries[0]?.placement).toEqual({ kind: "current-workspace-pane", direction: "right" })
+  })
+
+  it("returns to the profile list from the queue after the last fork closed", () => {
+    const queued = guideUiReducer(destinationState(), {
+      type: GuideUiActionType.DestinationEnqueue,
+      placement: { kind: "new-tab" },
+    })
+    expect(queued.activeForkId).toBeUndefined()
+    const main = guideUiReducer(queued, { type: GuideUiActionType.ForkMain })
+    expect(main.stage).toBe(GuideUiStage.Recommendations)
+    expect(main.queue.entries).toHaveLength(1)
+  })
+
+  it("returns to the destination step from a worktree it started", () => {
+    const editing = guideUiReducer(destinationState(), { type: GuideUiActionType.DestinationStartWorktree })
+    expect(editing.stage).toBe(GuideUiStage.WorktreeBranchEditor)
+    expect(editing.worktreeReturnStage).toBe(GuideUiStage.Destination)
+    expect(guideUiReducer(editing, { type: GuideUiActionType.WorktreeBack }).stage).toBe(GuideUiStage.Destination)
+  })
+
+  const enqueuedHere = (): GuideUiState => {
+    const placing = guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesEnqueue })
+    expect(placing.stage).toBe(GuideUiStage.QueuePlacement)
+    return guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementHere })
+  }
+
+  it("opens the selected queued prompt and comes back to the queue", () => {
+    const queued = enqueuedHere()
+    const opened = guideUiReducer(queued, { type: GuideUiActionType.QueueOpenEntry })
+    expect(opened.stage).toBe(GuideUiStage.QueueEntry)
+    expect(opened.queue.entries).toEqual(queued.queue.entries)
+    expect(guideUiReducer(opened, { type: GuideUiActionType.QueueBack }).stage).toBe(GuideUiStage.Queue)
+  })
+
+  it("does not open a viewer on an empty queue", () => {
+    const empty = guideUiReducer(
+      guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueRemove }),
+      { type: GuideUiActionType.QueueOpenEntry },
+    )
+    expect(empty.stage).toBe(GuideUiStage.Queue)
+  })
+
+  it("gives each queued entry its own placement", () => {
+    const here = enqueuedHere()
+    expect(here.stage).toBe(GuideUiStage.Queue)
+    expect(here.queue.entries[0]?.placement).toEqual({ kind: "current-workspace-pane", direction: "right" })
+
+    const second = candidatesFrom(guideUiReducer(here, { type: GuideUiActionType.QueueAddAnother }))
+    const routed = guideUiReducer(second, {
+      type: GuideUiActionType.QueuePlacementWorktree,
+      placement: { kind: "new-worktree", branch: "worktree/research", baseRef: "main" },
+      primaryCheckoutPath: "/repo",
+    })
+    expect(routed.queue.entries.map((job) => job.placement)).toEqual([
+      { kind: "current-workspace-pane", direction: "right" },
+      { kind: "new-worktree", branch: "worktree/research", baseRef: "main" },
+    ])
+    expect(routed.primaryCheckoutPath).toBe("/repo")
+    expect(guideUiReducer(routed, { type: GuideUiActionType.QueueAddAnother }).primaryCheckoutPath).toBe("/repo")
+  })
+
+  it("starts the branch editor for a queued worktree and comes back to the placement picker", () => {
+    const placing = guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesEnqueue })
+    const moved = guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementMove, delta: 1 })
+    expect(moved.destinationIndex).toBe(1)
+    const editing = guideUiReducer(moved, { type: GuideUiActionType.QueuePlacementStartWorktree })
+    expect(editing.stage).toBe(GuideUiStage.WorktreeBranchEditor)
+    expect(editing.worktreeReturnStage).toBe(GuideUiStage.QueuePlacement)
+    expect(guideUiReducer(editing, { type: GuideUiActionType.WorktreeBack }).stage).toBe(GuideUiStage.QueuePlacement)
+    expect(guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementBack }).stage).toBe(GuideUiStage.Candidates)
+  })
+
+  it("enqueues, views, edits, removes, and starts another normal pass", () => {
+    let state = enqueuedHere()
+    expect(state.stage).toBe(GuideUiStage.Queue)
+    expect(state.queue.entries).toHaveLength(1)
+
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueEditStart })
+    state = guideUiReducer(state, { type: GuideUiActionType.EditorChange, text: "Edited queued prompt" })
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueEditSubmit })
+    expect(state.queue.entries[0]?.prompt).toBe("Edited queued prompt")
+    expect(state.queue.entries[0]?.command.args.at(-1)).toBe("Edited queued prompt")
+
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueRemove })
+    expect(state.queue.entries).toEqual([])
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueExecuteBlocked, message: "Batch queue is empty." })
+    expect(state.stage).toBe(GuideUiStage.Queue)
+    expect(state.errorMessage).toBe("Batch queue is empty.")
+
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueAddAnother })
+    expect(state.stage).toBe(GuideUiStage.Recommendations)
+    expect(state.queue.entries).toEqual([])
+  })
+
+  it("keeps the tab and binds it to the entry it joined the queue with", () => {
+    const queued = enqueuedHere()
+    expect(queued.forks).toHaveLength(1)
+    expect(queued.forks[0]?.jobId).toBe(queued.queue.entries[0]?.id)
+    expect(queued.activeForkId).toBeUndefined()
+    expect(guideUiReducer(queued, { type: GuideUiActionType.QueueBack }).stage).toBe(GuideUiStage.Recommendations)
+  })
+
+  it("removes the tab with the queue entry it holds", () => {
+    const removed = guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueRemove })
+    expect(removed.queue.entries).toEqual([])
+    expect(removed.forks).toEqual([])
+  })
+
+  it("removes the queue entry with the tab that holds it", () => {
+    const queued = enqueuedHere()
+    const reopened = guideUiReducer(queued, { type: GuideUiActionType.ForkSelect, index: 0 })
+    const dropped = guideUiReducer(reopened, { type: GuideUiActionType.ForkDrop })
+    expect(dropped.forks).toEqual([])
+    expect(dropped.queue.entries).toEqual([])
+    expect(dropped.stage).toBe(GuideUiStage.Recommendations)
+  })
+
+  it("rewrites the same entry when a queued tab is finished again", () => {
+    const queued = guideUiReducer(destinationState(), {
+      type: GuideUiActionType.DestinationEnqueue,
+      placement: { kind: "new-tab" },
+    })
+    const reopened = guideUiReducer(queued, { type: GuideUiActionType.ForkSelect, index: 0 })
+    expect(reopened.stage).toBe(GuideUiStage.Destination)
+    const again = guideUiReducer(reopened, {
+      type: GuideUiActionType.DestinationEnqueue,
+      placement: { kind: "current-workspace-pane", direction: "right" },
+    })
+    expect(again.queue.entries).toHaveLength(1)
+    expect(again.queue.entries[0]?.id).toBe(queued.queue.entries[0]?.id)
+    expect(again.queue.entries[0]?.placement).toEqual({ kind: "current-workspace-pane", direction: "right" })
+    expect(again.forks).toHaveLength(1)
+  })
+
+  it("opens an existing non-empty queue from a later fork's candidates", () => {
+    const state = candidatesFrom(guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueAddAnother }))
+    expect(state.stage).toBe(GuideUiStage.Candidates)
+    expect(guideUiReducer(state, { type: GuideUiActionType.CandidatesViewQueue }).stage).toBe(GuideUiStage.Queue)
+  })
+
+  it("preserves the queue when a later intent is edited and rematched", () => {
+    let state = guideUiReducer(enqueuedHere(), { type: GuideUiActionType.QueueAddAnother })
+    state = guideUiReducer(state, { type: GuideUiActionType.IntentChange, text: "Research the queue design" })
+    state = guideUiReducer(state, { type: GuideUiActionType.IntentSubmit })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewOpen })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.PromptReviewChange,
+      text: "Research the queue design carefully",
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewSubmit })
+
+    expect(state.stage).toBe(GuideUiStage.Matching)
+    expect(state.queue.entries).toHaveLength(1)
+  })
+
+  describe("launch progress", () => {
+    const launching = (): GuideUiState => {
+      const placing = guideUiReducer(candidatesState(), { type: GuideUiActionType.CandidatesEnqueue })
+      const queued = guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementHere })
+      return guideUiReducer(queued, {
+        type: GuideUiActionType.LaunchStart,
+        batch: {
+          jobs: queued.queue.entries,
+          context: { workspaceId: "2", cwd: "/repo", callerPaneId: "2-1", primaryCheckoutPath: "/repo" },
+        },
+      })
+    }
+
+    it("opens the launch screen with the queued jobs and no progress yet", () => {
+      const state = launching()
+      expect(state.stage).toBe(GuideUiStage.Launching)
+      expect(state.launchBatch?.jobs).toHaveLength(1)
+      expect(state.launchProgress).toEqual([])
+    })
+
+    it("keeps only the newest step for each job", () => {
+      let state = guideUiReducer(launching(), {
+        type: GuideUiActionType.LaunchProgress,
+        event: { jobId: 1, phase: "allocating", detail: "Splitting a pane (right)" },
+      })
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.LaunchProgress,
+        event: { jobId: 1, phase: "prompting", detail: "Delivering the prompt" },
+      })
+      expect(state.launchProgress).toEqual([{ jobId: 1, phase: "prompting", detail: "Delivering the prompt" }])
+    })
+
+    it("marks a job by its newest step", () => {
+      expect(launchRowMarker(undefined, 0)).toBe("\u25cb")
+      expect(launchRowDetail(undefined)).toBe("Waiting to start")
+      expect(launchRowMarker({ jobId: 1, phase: "done", detail: "Launched in pane 2-3" }, 0)).toBe("\u2714")
+      expect(launchRowMarker({ jobId: 1, phase: "failed", detail: "Nope" }, 0)).toBe("\u2716")
+      expect(launchRowMarker({ jobId: 1, phase: "starting", detail: "Starting the profile" }, 0)).toBe(spinnerFrameAt(0))
+    })
   })
 })

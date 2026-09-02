@@ -8,7 +8,7 @@ import { Data, Effect, ParseResult, Schema } from "effect"
 import { githubRepositoryError } from "./github-repository.js"
 
 const NonEmpty = Schema.String.pipe(Schema.minLength(1))
-const TmpfsSize = Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*(?:k|m|g)$/))
+const RuntimeSize = Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*(?:k|m|g)$/))
 const StringMap = Schema.Record({ key: NonEmpty, value: Schema.String })
 const SecretMap = Schema.Record({ key: NonEmpty, value: NonEmpty })
 const safeName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -202,7 +202,8 @@ const Secrets = Schema.Struct({
 })
 
 const Runtime = Schema.Struct({
-  tmpfs_size: Schema.optional(TmpfsSize),
+  memory_size: Schema.optional(RuntimeSize),
+  tmpfs_size: Schema.optional(RuntimeSize),
 })
 
 const CommonProfile = {
@@ -275,7 +276,7 @@ type NormalizedProfile<T extends DecodedProfile> = Omit<
   "resolution" | "runtime" | "skill_bundles" | "plugins" | "mcps" | "secrets"
 > & {
   readonly resolution: "floating"
-  readonly runtime: { readonly tmpfs_size: string }
+  readonly runtime: { readonly memory_size: string; readonly tmpfs_size: string }
   readonly skill_bundles: NonNullable<T["skill_bundles"]>
   readonly plugins: NonNullable<T["plugins"]>
   readonly mcps: NonNullable<T["mcps"]>
@@ -437,7 +438,10 @@ const normalizeCommon = <T extends DecodedProfile>(profile: T): NormalizedProfil
   ({
     ...profile,
     resolution: profile.resolution ?? "floating",
-    runtime: { tmpfs_size: profile.runtime?.tmpfs_size ?? "256m" },
+    runtime: {
+      memory_size: profile.runtime?.memory_size ?? "2g",
+      tmpfs_size: profile.runtime?.tmpfs_size ?? "256m",
+    },
     skill_bundles: profile.skill_bundles ?? [],
     plugins: profile.plugins ?? [],
     mcps: profile.mcps ?? [],

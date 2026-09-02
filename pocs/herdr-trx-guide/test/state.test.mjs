@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, readdir, stat, utimes } from "node:fs/promises"
+import { execFile } from "node:child_process"
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
+import { promisify } from "node:util"
 
 import {
   appendCaptureQueue,
@@ -16,6 +18,7 @@ import {
   removeChoice,
   removeCompletionMarker,
   removeCaptureQueueEntry,
+  removeCaptureQueueEntries,
   removeGuideIntent,
   removeGuideIntentSync,
   resolvePluginStateDirectory,
@@ -23,8 +26,12 @@ import {
   writeCompletionMarker,
   writeGuideIntent,
   writeInvocation,
+  withCaptureQueueLock,
 } from "../lib/state.mjs"
 import { guideIntentMaximumLength } from "../lib/context.mjs"
+
+const execFileAsync = promisify(execFile)
+const stateModuleUrl = new URL("../lib/state.mjs", import.meta.url).href
 
 test("completion markers and invocations are private and one-use", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-state-"))
@@ -151,6 +158,168 @@ test("capture queue persists ordered snippets until explicitly cleared", async (
   assert.deepEqual(reduced.entries.map((entry) => entry.answer), ["First highlighted section"])
   await clearCaptureQueue(root)
   assert.deepEqual(await readCaptureQueue(root), { schemaVersion: 1, entries: [] })
+})
+
+test("serializes concurrent cross-process queue appends and removals", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-concurrent-queue-"))
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises")
+    await rm(root, { recursive: true, force: true })
+  })
+  await appendCaptureQueue(root, { id: "keep", answer: "Keep" })
+  for (let index = 0; index < 6; index += 1) {
+    await appendCaptureQueue(root, { id: `remove-${index}`, answer: `Remove ${index}` })
+  }
+  const appendScript = `
+import { appendCaptureQueue } from ${JSON.stringify(stateModuleUrl)}
+await appendCaptureQueue(process.argv[1], { id: process.argv[2], answer: process.argv[3] })
+`
+  const removeScript = `
+import { removeCaptureQueueEntry } from ${JSON.stringify(stateModuleUrl)}
+await removeCaptureQueueEntry(process.argv[1], process.argv[2])
+`
+  await Promise.all([
+    ...Array.from({ length: 12 }, (_, index) =>
+      execFileAsync(process.execPath, [
+        "--input-type=module",
+        "--eval",
+        appendScript,
+        root,
+        `add-${index}`,
+        `Added ${index}`,
+      ]),
+    ),
+    ...Array.from({ length: 6 }, (_, index) =>
+      execFileAsync(process.execPath, [
+        "--input-type=module",
+        "--eval",
+        removeScript,
+        root,
+        `remove-${index}`,
+      ]),
+    ),
+  ])
+
+  const queue = await readCaptureQueue(root)
+  assert.deepEqual(
+    new Set(queue.entries.map((entry) => entry.id)),
+    new Set(["keep", ...Array.from({ length: 12 }, (_, index) => `add-${index}`)]),
+  )
+  assert.equal((await stat(path.join(root, "capture-queue.json"))).mode & 0o777, 0o600)
+})
+
+test("serializes concurrent clear and append without restoring cleared entries", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-concurrent-clear-"))
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises")
+    await rm(root, { recursive: true, force: true })
+  })
+  await appendCaptureQueue(root, { id: "old", answer: "Old capture" })
+  const appendScript = `
+import { appendCaptureQueue } from ${JSON.stringify(stateModuleUrl)}
+await appendCaptureQueue(process.argv[1], { id: "new", answer: "New capture" })
+`
+  const clearScript = `
+import { clearCaptureQueue } from ${JSON.stringify(stateModuleUrl)}
+await clearCaptureQueue(process.argv[1])
+`
+  await Promise.all([
+    execFileAsync(process.execPath, ["--input-type=module", "--eval", appendScript, root]),
+    execFileAsync(process.execPath, ["--input-type=module", "--eval", clearScript, root]),
+  ])
+
+  const ids = (await readCaptureQueue(root)).entries.map((entry) => entry.id)
+  assert.ok(
+    ids.length === 0 || (ids.length === 1 && ids[0] === "new"),
+    `unexpected serialized result: ${JSON.stringify(ids)}`,
+  )
+})
+
+test("recovers safe stale queue locks and fails closed on unsafe or live locks", async (t) => {
+  const staleRoot = await mkdtemp(path.join(tmpdir(), "herdr-guide-stale-lock-"))
+  const unsafeRoot = await mkdtemp(path.join(tmpdir(), "herdr-guide-unsafe-lock-"))
+  const liveRoot = await mkdtemp(path.join(tmpdir(), "herdr-guide-live-lock-"))
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises")
+    await Promise.all([
+      rm(staleRoot, { recursive: true, force: true }),
+      rm(unsafeRoot, { recursive: true, force: true }),
+      rm(liveRoot, { recursive: true, force: true }),
+    ])
+  })
+
+  const staleLock = path.join(staleRoot, "capture-queue.lock")
+  await mkdir(staleLock, { mode: 0o700 })
+  const old = new Date(Date.now() - 10_000)
+  await utimes(staleLock, old, old)
+  await appendCaptureQueue(
+    staleRoot,
+    { id: "recovered", answer: "Recovered" },
+    { stale: 2000, update: 1000, retries: 0 },
+  )
+  assert.deepEqual((await readCaptureQueue(staleRoot)).entries.map((entry) => entry.id), ["recovered"])
+
+  const unsafeLock = path.join(unsafeRoot, "capture-queue.lock")
+  await writeFile(unsafeLock, "not a directory", { mode: 0o600 })
+  await assert.rejects(
+    appendCaptureQueue(
+      unsafeRoot,
+      { id: "blocked", answer: "Blocked" },
+      { stale: 2000, update: 1000, retries: 0 },
+    ),
+    /Lock file is already being held/u,
+  )
+  assert.deepEqual(await readCaptureQueue(unsafeRoot), { schemaVersion: 1, entries: [] })
+  assert.equal(await readFile(unsafeLock, "utf8"), "not a directory")
+
+  const liveLock = path.join(liveRoot, "capture-queue.lock")
+  await mkdir(liveLock, { mode: 0o700 })
+  await assert.rejects(
+    appendCaptureQueue(
+      liveRoot,
+      { id: "timed-out", answer: "Timed out" },
+      {
+        stale: 60_000,
+        update: 1000,
+        retries: { retries: 2, factor: 1, minTimeout: 5, maxTimeout: 5 },
+      },
+    ),
+    /Lock file is already being held/u,
+  )
+  assert.deepEqual(await readCaptureQueue(liveRoot), { schemaVersion: 1, entries: [] })
+})
+
+test("fails a queue mutation when proper-lockfile reports compromise", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-compromised-lock-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+
+  await assert.rejects(
+    withCaptureQueueLock(
+      root,
+      async (assertLockHealthy) => {
+        await rm(path.join(root, "capture-queue.lock"), { recursive: true, force: true })
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          assertLockHealthy()
+        }
+      },
+      { stale: 2000, update: 1000, retries: 0 },
+    ),
+    /lock was compromised/u,
+  )
+})
+
+test("removes only captured snapshot ids under the queue lock", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-snapshot-remove-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await appendCaptureQueue(root, { id: "snapshot-1", answer: "First snapshot item" })
+  await appendCaptureQueue(root, { id: "snapshot-2", answer: "Second snapshot item" })
+  await appendCaptureQueue(root, { id: "later", answer: "Later item" })
+
+  const queue = await removeCaptureQueueEntries(root, ["snapshot-1", "snapshot-2"])
+
+  assert.deepEqual(queue.entries.map((entry) => entry.id), ["later"])
+  assert.deepEqual((await readCaptureQueue(root)).entries.map((entry) => entry.id), ["later"])
 })
 
 test("removes stale guide intents and keeps current files", async (t) => {

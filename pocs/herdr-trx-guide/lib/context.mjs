@@ -196,6 +196,13 @@ const captureOptionalString = (record, key, maximum = 4096) => {
   return value === undefined || value.length === 0 ? undefined : value
 }
 
+const expectedCaptureConfidence = (source) => {
+  if (source === "selection") return "user-selected"
+  if (source === "terminal") return "snapshot"
+  if (source === "capture-queue") return "user-curated"
+  return "exact"
+}
+
 export const parseCaptureProvenance = (value) => {
   if (!isRecord(value)) throw new Error("The guide invocation capture is invalid")
   const source = requiredString(value, "source", "capture source", 64)
@@ -203,13 +210,7 @@ export const parseCaptureProvenance = (value) => {
   if (!captureSources.has(source) || !captureConfidences.has(confidence)) {
     throw new Error("The guide invocation capture is invalid")
   }
-  const expectedConfidence = source === "selection"
-    ? "user-selected"
-    : source === "terminal"
-      ? "snapshot"
-      : source === "capture-queue"
-        ? "user-curated"
-        : "exact"
+  const expectedConfidence = expectedCaptureConfidence(source)
   if (confidence !== expectedConfidence) throw new Error("The guide invocation capture is invalid")
   const agent = captureOptionalString(value, "agent", 128)
   const sessionId = captureOptionalString(value, "sessionId", 128)

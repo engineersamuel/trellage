@@ -66,6 +66,8 @@ Usage:
   trx list [--json]
   trx run LAUNCHER PROFILE [-- ARGS...]
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
+  trx guide --preview
+  trx guide --forks [VARIANT]
   trx inventory LAUNCHER PROFILE --json
   trx skills status
   trx skills update
@@ -87,6 +89,8 @@ Usage:
   trx guide [INTENT]
   trx guide --intent INTENT [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
+  trx guide --preview
+  trx guide --forks [tabs|inline]
 
 PROFILE_REF is native:<launcher>/<profile> or sandbox:<profile>. JSON mode
 uses schemaVersion 1, has no launch or Herdr side effects, and accepts a JSON
@@ -95,6 +99,9 @@ INTENT can contain line breaks and accepts up to 60,000 characters.
 Press p during matching or recommendations to view the prompt as Markdown.
 Press e in the prompt viewer to edit; Enter rematches a changed prompt.
 Interactive prompt viewers: pager, split, focus, bookends, dashboard.
+--preview renders the staged prompt basket composer overlay from fixture data.
+--forks renders two ways to fork the guide into parallel subflows.
+It reads no profile catalog, calls no model, and launches nothing.
 EOF
 }
 
@@ -585,6 +592,25 @@ if [[ "$mode" == skills ]]; then
   exec node "$floating_skills_manager" "$skills_action" \
     --catalog "$floating_skills_catalog" \
     --bundle native-common
+fi
+
+if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
+  for guide_arg in "${guide_args[@]}"; do
+    if [[ "$guide_arg" == --preview || "$guide_arg" == --preview=* \
+      || "$guide_arg" == --forks || "$guide_arg" == --forks=* ]]; then
+      # Fixture-only previews: they read no catalog, so short-circuit
+      # before launcher discovery, the eight catalog reads, the Sandbox list,
+      # and the floating-skills fetch below. None of them apply to fixtures.
+      command -v node >/dev/null 2>&1 || die 'required command not found: node'
+      [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
+      [[ -f "$picker_path" && ! -L "$picker_path" ]] \
+        || die 'Ink launcher is missing or unsafe'
+      if [[ "$guide_arg" == --forks* ]]; then
+        exec node "$picker_path" guide-forks "${guide_args[@]}"
+      fi
+      exec node "$picker_path" guide-preview "${guide_args[@]}"
+    fi
+  done
 fi
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1)"

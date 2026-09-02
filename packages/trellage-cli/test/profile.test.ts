@@ -182,7 +182,7 @@ describe("parseProfile", () => {
   it("defaults the runtime tmpfs size", async () => {
     const result = await decode(profile())
 
-    expect(result.profile.runtime).toEqual({ tmpfs_size: "256m" })
+    expect(result.profile.runtime).toEqual({ memory_size: "2g", tmpfs_size: "256m" })
   })
 
   it("defaults and accepts the floating development resolution policy", async () => {
@@ -198,18 +198,21 @@ describe("parseProfile", () => {
     expect(explicit.profile.resolution).toBe("floating")
   })
 
-  it("decodes an explicit runtime tmpfs size", async () => {
-    const result = await decode(claudeProfile('[runtime]\ntmpfs_size = "2g"'))
+  it("decodes explicit runtime memory and tmpfs sizes", async () => {
+    const result = await decode(claudeProfile('[runtime]\nmemory_size = "4g"\ntmpfs_size = "4g"'))
 
-    expect(result.profile.runtime).toEqual({ tmpfs_size: "2g" })
+    expect(result.profile.runtime).toEqual({ memory_size: "4g", tmpfs_size: "4g" })
   })
 
-  it.each(["0m", "256", "2G", "1.5g", "2g,exec", "-1g"])("rejects invalid runtime tmpfs size %s", async (tmpfsSize) => {
-    await expect(decode(profile(`[runtime]\ntmpfs_size = "${tmpfsSize}"`))).rejects.toThrow(/tmpfs_size|pattern/i)
+  it.each(["0m", "256", "2G", "1.5g", "2g,exec", "-1g"])("rejects invalid runtime size %s", async (size) => {
+    await expect(decode(profile(`[runtime]\nmemory_size = "${size}"`))).rejects.toThrow(/memory_size|pattern/i)
+    await expect(decode(profile(`[runtime]\ntmpfs_size = "${size}"`))).rejects.toThrow(/tmpfs_size|pattern/i)
   })
 
   it("rejects unknown runtime fields", async () => {
-    await expect(decode(profile('[runtime]\ntmpfs_size = "256m"\nunexpected = true'))).rejects.toThrow(/unexpected/)
+    await expect(
+      decode(profile('[runtime]\nmemory_size = "2g"\ntmpfs_size = "256m"\nunexpected = true')),
+    ).rejects.toThrow(/unexpected/)
   })
 
   it("decodes the Copilot HVE profile", async () => {
