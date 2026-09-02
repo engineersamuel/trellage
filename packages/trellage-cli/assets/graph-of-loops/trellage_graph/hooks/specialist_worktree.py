@@ -1,6 +1,7 @@
 """Confine headless Graph specialists to their generated worktree."""
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import shlex
@@ -63,13 +64,28 @@ def _bash_mentions_outside_path(command: str, root: Path, cwd: Path) -> bool:
 
 
 def _validate_file_tool(
-    tool_input: dict[str, Any], *, root: Path, cwd: Path,
+    tool_input: dict[str, Any],
+    *,
+    root: Path,
+    cwd: Path,
+    allowed_write_patterns: list[str] | None,
 ) -> dict[str, Any] | None:
     path = _tool_path(tool_input, cwd)
-    if path is not None and _inside(path, root):
+    if path is None or not _inside(path, root):
+        return _deny(
+            f"Graph specialist writes must stay inside generated worktree {root}."
+        )
+    if allowed_write_patterns is None:
+        return None
+    relative_path = path.resolve().relative_to(root).as_posix()
+    if any(
+        fnmatch.fnmatch(relative_path, pattern)
+        for pattern in allowed_write_patterns
+    ):
         return None
     return _deny(
-        f"Graph specialist writes must stay inside generated worktree {root}."
+        "Graph specialist write is outside the node's allowed paths: "
+        f"{relative_path}."
     )
 
 
@@ -90,7 +106,10 @@ def _validate_bash(
 
 
 def handle(
-    payload: dict[str, Any], *, expected_worktree: Path,
+    payload: dict[str, Any],
+    *,
+    expected_worktree: Path,
+    allowed_write_patterns: list[str] | None = None,
 ) -> dict[str, Any] | None:
     if payload.get("hook_event_name") != "PreToolUse":
         return None
@@ -108,7 +127,12 @@ def handle(
             return _deny("Graph specialists may use Serena only for read-only discovery.")
         return None
     if tool_name in _FILE_TOOLS:
-        return _validate_file_tool(tool_input, root=root, cwd=cwd)
+        return _validate_file_tool(
+            tool_input,
+            root=root,
+            cwd=cwd,
+            allowed_write_patterns=allowed_write_patterns,
+        )
     if tool_name == "Bash":
         return _validate_bash(tool_input, root=root, cwd=cwd)
     return None
@@ -122,7 +146,27 @@ def main() -> int:
     worktree = os.environ.get("TRELLAGE_SPECIALIST_WORKTREE")
     if not worktree:
         return 1
-    result = handle(payload, expected_worktree=Path(worktree))
+    allowed_write_patterns_value = os.environ.get(
+        "TRELLAGE_SPECIALIST_ALLOWED_WRITES"
+    )
+    try:
+        allowed_write_patterns = (
+            json.loads(allowed_write_patterns_value)
+            if allowed_write_patterns_value is not None
+            else None
+        )
+    except json.JSONDecodeError:
+        return 1
+    if allowed_write_patterns is not None and (
+        not isinstance(allowed_write_patterns, list)
+        or not all(isinstance(value, str) for value in allowed_write_patterns)
+    ):
+        return 1
+    result = handle(
+        payload,
+        expected_worktree=Path(worktree),
+        allowed_write_patterns=allowed_write_patterns,
+    )
     if result is not None:
         print(json.dumps(result, sort_keys=True))
     return 0

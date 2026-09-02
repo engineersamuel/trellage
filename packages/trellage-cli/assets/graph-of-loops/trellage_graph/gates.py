@@ -29,7 +29,7 @@ class GateRunner:
     ) -> None:
         self._runner = runner or RealSubprocessRunner()
         self._timeout_seconds = timeout_seconds
-        self._red_argv: list[str] | None = None
+        self._red_argv: list[list[str]] = []
         self._red_digest: str | None = None
         self._green_passed: bool = False
 
@@ -68,17 +68,26 @@ class GateRunner:
 
     def _prepare_phase(self, name: str, argv: list[str], phase: str) -> None:
         if phase == "red":
-            self._red_argv = list(argv)
+            self._red_argv.append(list(argv))
             return
         if phase != "green":
             return
-        if self._red_argv is None:
+        if not self._red_argv:
             raise GateError(f"green gate '{name}' has no preceding red gate")
-        if argv != self._red_argv:
+        matching = next(
+            (
+                index
+                for index, red_argv in enumerate(self._red_argv)
+                if argv == red_argv
+            ),
+            None,
+        )
+        if matching is None:
             raise GateError(
                 f"green gate '{name}' argv differs from red: "
                 f"red={self._red_argv}, green={argv}"
             )
+        self._red_argv.pop(matching)
 
     def _execute(
         self, name: str, argv: list[str], cwd: str | None,

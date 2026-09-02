@@ -1114,6 +1114,30 @@ class TestGates(unittest.TestCase):
             gate.run_gate(name="t", argv=["pytest", "tests/", "-v"], phase="green")
         self.assertIn("differs from red", str(ctx.exception))
 
+    def test_multiple_green_gates_match_any_unconsumed_red_gate(self) -> None:
+        runner = FakeSubprocessRunner()
+        runner.set_failure("x86_64-unknown-linux-musl", rc=1)
+        runner.set_failure("i686-unknown-linux-musl", rc=1)
+        gate = GateRunner(runner=runner)
+        x86_64 = ["cargo", "test", "--target", "x86_64-unknown-linux-musl"]
+        i686 = ["cargo", "test", "--target", "i686-unknown-linux-musl"]
+
+        gate.run_gate(name="red-x86-64", argv=x86_64, phase="red")
+        gate.run_gate(name="red-i686", argv=i686, phase="red")
+        runner.failures.clear()
+        runner.set_default("pass")
+
+        self.assertTrue(
+            gate.run_gate(name="green-x86-64", argv=x86_64, phase="green")[
+                "passed"
+            ]
+        )
+        self.assertTrue(
+            gate.run_gate(name="green-i686", argv=i686, phase="green")[
+                "passed"
+            ]
+        )
+
     def test_red_green_final(self) -> None:
         runner = FakeSubprocessRunner()
         runner.set_failure("pytest", rc=1)
@@ -1991,6 +2015,7 @@ class TestSpecialist(unittest.TestCase):
                 settings_path=str(managed_settings),
                 allowed_tools=["Read", "Write"],
                 disallowed_tools=["Bash"],
+                allowed_write_patterns=["src/owned.rs"],
             )
             cmd = " ".join(runner.calls[-1])
             self.assertIn("--print --verbose", cmd)
@@ -2010,6 +2035,12 @@ class TestSpecialist(unittest.TestCase):
             self.assertEqual(
                 runner.call_kwargs[-1]["env"]["TRELLAGE_SPECIALIST_WORKTREE"],
                 str(wt.resolve()),
+            )
+            self.assertEqual(
+                runner.call_kwargs[-1]["env"][
+                    "TRELLAGE_SPECIALIST_ALLOWED_WRITES"
+                ],
+                '["src/owned.rs"]',
             )
 
     def test_managed_seed_default_settings_are_used(self) -> None:
@@ -4295,6 +4326,33 @@ class TestSpecialistWorktreeHook(unittest.TestCase):
                 ),
                 expected_worktree=worktree,
             ))
+
+    def test_denies_write_outside_node_owned_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            worktree = Path(td).resolve()
+            allowed = ["src/paren/*.rs"]
+            self.assertIsNone(specialist_worktree_hook(
+                self._payload(
+                    worktree,
+                    "Edit",
+                    {"file_path": "src/paren/avx2.rs"},
+                ),
+                expected_worktree=worktree,
+                allowed_write_patterns=allowed,
+            ))
+            denied = specialist_worktree_hook(
+                self._payload(
+                    worktree,
+                    "Edit",
+                    {"file_path": "src/arch/mod.rs"},
+                ),
+                expected_worktree=worktree,
+                allowed_write_patterns=allowed,
+            )
+            self.assertEqual(
+                denied["hookSpecificOutput"]["permissionDecision"],
+                "deny",
+            )
 
     def test_denies_shell_with_parent_cwd_or_path(self) -> None:
         with tempfile.TemporaryDirectory() as td:

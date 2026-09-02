@@ -889,6 +889,7 @@ class GraphController:
                     "Bash(bd:*)",
                     "Bash(raindrop:*)",
                 ],
+                allowed_write_patterns=self._allowed_patterns(node, phase),
                 timeout=self._ceilings_from_policy()["node_timeout_seconds"],
             )
             if self._target_worktree_status() != target_status:

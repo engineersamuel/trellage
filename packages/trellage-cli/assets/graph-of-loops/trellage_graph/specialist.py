@@ -139,7 +139,11 @@ class SpecialistLauncher:
         )
 
     def _sanitized_env(
-        self, config_dir: str, *, worktree: str | None = None,
+        self,
+        config_dir: str,
+        *,
+        worktree: str | None = None,
+        allowed_write_patterns: list[str] | None = None,
     ) -> dict[str, str]:
         env = {
             key: value for key, value in os.environ.items()
@@ -158,6 +162,11 @@ class SpecialistLauncher:
         env.update(self._nss_identity_env(config_dir))
         if worktree is not None:
             env["TRELLAGE_SPECIALIST_WORKTREE"] = str(Path(worktree).resolve())
+        if allowed_write_patterns is not None:
+            env["TRELLAGE_SPECIALIST_ALLOWED_WRITES"] = json.dumps(
+                allowed_write_patterns,
+                separators=(",", ":"),
+            )
         return env
 
     def _nss_identity_env(self, config_dir: str) -> dict[str, str]:
@@ -394,12 +403,17 @@ class SpecialistLauncher:
         label: str,
         prompt: str,
         timeout: int,
+        allowed_write_patterns: list[str] | None = None,
     ) -> dict[str, Any]:
         try:
             result = self._runner.run(
                 command,
                 cwd=cwd,
-                env=self._sanitized_env(config_dir, worktree=cwd),
+                env=self._sanitized_env(
+                    config_dir,
+                    worktree=cwd,
+                    allowed_write_patterns=allowed_write_patterns,
+                ),
                 capture_output=True,
                 text=True,
                 check=True,
@@ -707,6 +721,7 @@ class SpecialistLauncher:
         allowed_tools: list[str] | None = None,
         disallowed_tools: list[str] | None = None,
         json_schema_path: str | None = None,
+        allowed_write_patterns: list[str] | None = None,
         timeout: int = 1800,
     ) -> dict[str, Any]:
         del agent_name
@@ -740,6 +755,7 @@ class SpecialistLauncher:
             label=f"specialist '{role}'",
             prompt=prompt,
             timeout=timeout,
+            allowed_write_patterns=allowed_write_patterns,
         )
 
     def plan(
