@@ -64,6 +64,7 @@ printf '%s\n' '99999999' >"$state_root/dependency-bootstrap.lock/pid"
 started_at="$(date +%s)"
 env \
   PATH="$fixture_bin:/usr/bin:/bin" \
+  MISE_PROJECT_ROOT="$repository_root" \
   TRELLAGE_BOOTSTRAP_STATE_DIR="$state_root" \
   TRELLAGE_TEST_MISE_CALL_LOG="$call_log" \
   "$bootstrap" --background

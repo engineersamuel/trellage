@@ -82,8 +82,21 @@ if git grep -n -I -E '/Users/smendenhall|/private/var/folders|/var/folders|/Volu
   fail 'forbidden personal or private absolute path'
 fi
 
-if git grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . ':!tests/publication_contract.sh' ':!tests/publication_contract_self_test.sh'; then
+if git grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . ':!tests/publication_contract.sh' ':!tests/publication_contract_self_test.sh' ':!tests/fixtures/graph-of-loops/test_runtime_contracts.py'; then
   fail 'obvious secret material is tracked'
+fi
+
+# The redaction contract intentionally contains token-shaped fixtures. Ignore
+# only those two test methods, then scan the rest of that file normally.
+graph_contract='tests/fixtures/graph-of-loops/test_runtime_contracts.py'
+if [[ -f "$graph_contract" ]]; then
+  if sed \
+    -e '/^    def test_redaction(/,/^    def test_normalized_strips_ts(/d' \
+    -e '/^    def test_gh_token(/,/^    def test_safe(/d' \
+    "$graph_contract" \
+    | grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'; then
+    fail 'obvious secret material is tracked in Graph runtime contracts'
+  fi
 fi
 
 if [[ "$mode" == 'sanitized-history' ]]; then

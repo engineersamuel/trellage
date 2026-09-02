@@ -32,6 +32,7 @@ packages = [
   "jq",
   "libnss-wrapper",
   "make",
+  "ripgrep",
   "zsh",
 ]
 

@@ -36,6 +36,14 @@ policy='/usr/local/share/trellage/graph-of-loops-policy.json'
 
 run 'command -v make >/dev/null' \
   || fail "make is not installed in the locked Graph image"
+run_bash '
+  grep -Fq "export TMPDIR=" /usr/local/bin/trellage-graph
+  dir=/home/agent/.cache/trellage-tmp
+  mkdir -p "$dir"
+  printf "#!/bin/sh\nexit 0\n" >"$dir/exec-probe"
+  chmod 0700 "$dir/exec-probe"
+  "$dir/exec-probe"
+' || fail "Graph launcher TMPDIR is not executable"
 
 # ---------------------------------------------------------------------------
 # CLI entrypoint

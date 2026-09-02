@@ -1138,6 +1138,8 @@ exec python -m "$name" "$@"
 
 const graphOfLoopsWrapperScript = `#!/bin/sh
 set -eu
+export TMPDIR="\${TMPDIR:-/home/agent/.cache/trellage-tmp}"
+mkdir -p "$TMPDIR"
 exec python -m trellage_graph.cli "$@"
 `
 
