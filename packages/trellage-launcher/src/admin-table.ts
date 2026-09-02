@@ -5,6 +5,8 @@
  * doctor commands (see plan Functional Requirements).
  */
 import type { AdminProfileEntry } from "./admin-model.js"
+import type { AdminStatus } from "./admin-status.js"
+import { statusLabel } from "./admin-status.js"
 
 export type AdminSortKey = "name" | "launcher" | "surface" | "health" | "install"
 export type AdminSortDirection = "asc" | "desc"
@@ -64,4 +66,60 @@ export const resolveAdminViewState = (
   if (entries.length === 0) return "empty-no-profiles"
   if (filtered.length === 0) return "empty-no-match"
   return "ready"
+}
+
+/** The user-facing profile "Type" column value: every profile is either an isolated container (Sandbox) or a native host process. */
+export type AdminProfileType = "Native" | "Container"
+
+export const adminProfileType = (entry: AdminProfileEntry): AdminProfileType =>
+  entry.surface === "native" ? "Native" : "Container"
+
+export interface AdminTableColumnWidths {
+  readonly harness: number
+  readonly name: number
+  readonly type: number
+  readonly status: number
+}
+
+const longest = (values: ReadonlyArray<string>, heading: string): number =>
+  Math.max(heading.length, ...values.map((value) => value.length))
+
+const bounded = (value: number, minimum: number, maximum: number): number => Math.max(minimum, Math.min(value, maximum))
+
+/**
+ * Computes fixed column widths for the `Harness | Profile Name | Type |
+ * Status` table, bounded to the terminal width using the same
+ * longest-value-plus-heading, percentage-capped approach as the
+ * single-profile picker's `table-layout.ts:tableColumns` (kept separate
+ * since the Admin table has a different, fixed column set). Every column
+ * reserves at least enough width for its own header. The status column
+ * additionally reserves two characters so a `[running]` row's spinner
+ * glyph never shifts the column boundary.
+ */
+export const adminTableColumnWidths = (
+  entries: ReadonlyArray<AdminProfileEntry>,
+  statusesByRef: ReadonlyMap<string, AdminStatus>,
+  terminalWidth: number,
+): AdminTableColumnWidths => {
+  const available = Math.max(40, terminalWidth - 4)
+  const harness = bounded(
+    longest(
+      entries.map((entry) => entry.harness ?? "—"),
+      "HARNESS",
+    ) + 2,
+    8,
+    Math.max(8, Math.floor(available * 0.18)),
+  )
+  const type = bounded(
+    longest(
+      entries.map((entry) => adminProfileType(entry)),
+      "TYPE",
+    ) + 2,
+    8,
+    11,
+  )
+  const statusLabels = entries.map((entry) => statusLabel(statusesByRef.get(entry.ref) ?? "idle"))
+  const status = bounded(longest(statusLabels, "STATUS") + 4, 14, Math.max(14, Math.floor(available * 0.42)))
+  const name = Math.max(10, available - harness - type - status)
+  return { harness, name, type, status }
 }

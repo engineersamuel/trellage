@@ -83567,6 +83567,32 @@ var resolveAdminViewState = (entries, filtered, loading) => {
   if (filtered.length === 0) return "empty-no-match";
   return "ready";
 };
+var adminProfileType = (entry) => entry.surface === "native" ? "Native" : "Container";
+var longest2 = (values, heading) => Math.max(heading.length, ...values.map((value) => value.length));
+var bounded2 = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
+var adminTableColumnWidths = (entries, statusesByRef, terminalWidth) => {
+  const available = Math.max(40, terminalWidth - 4);
+  const harness = bounded2(
+    longest2(
+      entries.map((entry) => entry.harness ?? "\u2014"),
+      "HARNESS"
+    ) + 2,
+    8,
+    Math.max(8, Math.floor(available * 0.18))
+  );
+  const type = bounded2(
+    longest2(
+      entries.map((entry) => adminProfileType(entry)),
+      "TYPE"
+    ) + 2,
+    8,
+    11
+  );
+  const statusLabels = entries.map((entry) => statusLabel(statusesByRef.get(entry.ref) ?? "idle"));
+  const status = bounded2(longest2(statusLabels, "STATUS") + 4, 14, Math.max(14, Math.floor(available * 0.42)));
+  const name = Math.max(10, available - harness - type - status);
+  return { harness, name, type, status };
+};
 
 // src/admin-batch-scheduler.ts
 var defaultMaxConcurrent = 4;
@@ -83670,6 +83696,23 @@ var runStatusOf = (entry, snapshot) => {
   if (snapshot.state === "idle" && entry.health === "malformed-output") return "malformed-output";
   return snapshot.state;
 };
+var StatusText = ({ status, tick, bold = false, dimColor = false }) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold, dimColor, children: [
+  status === "running" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+    spinnerFrameAt(tick),
+    " "
+  ] }) : null,
+  statusLabel(status)
+] });
+var ShortcutHints = ({ items }) => items.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: items.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+  index > 0 ? "   " : "",
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+    "[",
+    item.key,
+    "]"
+  ] }),
+  " ",
+  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: item.label })
+] }, item.key)) });
 var AdminDetailPanel = ({
   entry,
   runManager,
@@ -83677,7 +83720,8 @@ var AdminDetailPanel = ({
   diagnosis,
   herdrAvailable,
   onForkToFix,
-  columns
+  columns,
+  tick
 }) => {
   const [, forceRender] = (0, import_react37.useState)(0);
   const [guideBody, setGuideBody] = (0, import_react37.useState)(void 0);
@@ -83788,7 +83832,7 @@ var AdminDetailPanel = ({
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
         "Doctor status: ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: statusLabel(status) })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: true })
       ] }),
       latest === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: (latest.stdout || latest.stderr || "").slice(0, 4e3) }),
       snapshot.history.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
@@ -83799,14 +83843,20 @@ var AdminDetailPanel = ({
         snapshot.history.length === 1 ? "" : "s",
         " recorded)"
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
-        controls4.canTrigger ? "[d] run doctor  " : "",
-        controls4.canCancel ? "[c] cancel  " : "",
-        controls4.canRetry ? "[r] retry  " : "",
-        "[g] view guide [l] launch in terminal",
-        canFork ? " [f] fork to fix" : "",
-        canRepair ? " [p] repair profile" : ""
-      ] })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", flexDirection: "column", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        ShortcutHints,
+        {
+          items: [
+            controls4.canTrigger ? { key: "d", label: "run doctor" } : void 0,
+            controls4.canCancel ? { key: "c", label: "cancel" } : void 0,
+            controls4.canRetry ? { key: "r", label: "retry" } : void 0,
+            { key: "g", label: "view guide" },
+            { key: "l", label: "launch in terminal" },
+            canFork ? { key: "f", label: "fork to fix" } : void 0,
+            canRepair ? { key: "p", label: "repair profile" } : void 0
+          ].filter((item) => item !== void 0)
+        }
+      ) })
     ] }),
     diagnosis === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", borderStyle: "round", borderColor: "magenta", paddingX: 1, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "Copilot diagnosis" }),
@@ -83827,7 +83877,7 @@ var AdminDetailPanel = ({
     guideNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: guideNote }),
     guideBody === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: guideBody, width: Math.max(20, columns - 6), height: 18, resetKey: entry.ref }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "[PageUp/PageDown] scroll guide" })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "PageUp/PageDown", label: "scroll guide" }] })
     ] }),
     launchConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
       "Press [y] to hand this terminal to ",
@@ -83847,7 +83897,7 @@ var AdminDetailPanel = ({
       "'s repair now and recheck doctor afterward, or any other key to cancel."
     ] }) : null,
     repairNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairNote }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "[j/k] move selection  [q] quit" })
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }] }) })
   ] });
 };
 var AdminApp = ({
@@ -83866,7 +83916,7 @@ var AdminApp = ({
   const [sortIndex, setSortIndex] = (0, import_react37.useState)(0);
   const [sortDescending, setSortDescending] = (0, import_react37.useState)(false);
   const [selectedIndex, setSelectedIndex] = (0, import_react37.useState)(0);
-  const [, setTick] = (0, import_react37.useState)(0);
+  const [tick, setTick] = (0, import_react37.useState)(0);
   const [diagnosisByRef, setDiagnosisByRef] = (0, import_react37.useState)(/* @__PURE__ */ new Map());
   const [herdrAvailable, setHerdrAvailable] = (0, import_react37.useState)(void 0);
   const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
@@ -83883,11 +83933,11 @@ var AdminApp = ({
     void runBatchedDoctorChecks(entries, runManager);
   }, [entries, runManager]);
   (0, import_react37.useEffect)(() => {
-    const statusesByRef = new Map(
+    const statusesByRef2 = new Map(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
     );
     const repairSupportedRefs = new Set(entries.filter(isRepairSupported).map((entry) => entry.ref));
-    const targets = selectPendingRepairTargets(statusesByRef, repairSupportedRefs, repairAttemptedRefs.current);
+    const targets = selectPendingRepairTargets(statusesByRef2, repairSupportedRefs, repairAttemptedRefs.current);
     if (targets.length === 0) return;
     repairAttemptedRefs.current = /* @__PURE__ */ new Set([...repairAttemptedRefs.current, ...targets]);
     for (const ref of targets) {
@@ -83908,10 +83958,10 @@ var AdminApp = ({
     };
   }, []);
   (0, import_react37.useEffect)(() => {
-    const statusesByRef = new Map(
+    const statusesByRef2 = new Map(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
     );
-    const targets = selectPendingDiagnosisTargets(statusesByRef, diagnosedRefs.current);
+    const targets = selectPendingDiagnosisTargets(statusesByRef2, diagnosedRefs.current);
     if (targets.length === 0) return;
     diagnosedRefs.current = /* @__PURE__ */ new Set([...diagnosedRefs.current, ...targets]);
     setDiagnosisByRef((previous) => {
@@ -83922,7 +83972,7 @@ var AdminApp = ({
     for (const ref of targets) {
       const entry = entries.find((candidate) => candidate.ref === ref);
       if (entry === void 0) continue;
-      const snapshot = statusesByRef.get(ref);
+      const snapshot = statusesByRef2.get(ref);
       const capturedOutput = `${snapshot?.latest?.stdout ?? ""}
 ${snapshot?.latest?.stderr ?? ""}`.trim();
       diagnosisProvider.diagnose({ ref, name: entry.name, capturedOutput }).then((result) => {
@@ -83952,6 +84002,12 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   const viewState = resolveAdminViewState(entries, sorted, false);
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1);
   const selected = sorted[boundedIndex];
+  const statusesByRef = (0, import_react37.useMemo)(() => {
+    const map = /* @__PURE__ */ new Map();
+    for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)));
+    return map;
+  }, [sorted, runManager, tick]);
+  const widths = (0, import_react37.useMemo)(() => adminTableColumnWidths(sorted, statusesByRef, columns), [sorted, statusesByRef, columns]);
   use_input_default((char, key) => {
     if (key.ctrl && char === "c") {
       exit();
@@ -84007,7 +84063,22 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         sortDescending ? " \u2193" : " \u2191"
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: searching ? `Search: ${query}\u2588` : "[/] search  [s] sort  [S] reverse  [j/k] move  [q] quit" }),
+    searching ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+      "Search: ",
+      query,
+      "\u2588"
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      ShortcutHints,
+      {
+        items: [
+          { key: "/", label: "search" },
+          { key: "s", label: "sort" },
+          { key: "S", label: "reverse" },
+          { key: "j/k", label: "move" },
+          { key: "q", label: "quit" }
+        ]
+      }
+    ),
     viewState === "discovering" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "Discovering profiles\u2026" }) : null,
     viewState === "empty-no-profiles" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "No profiles were discovered." }) : null,
     viewState === "empty-no-match" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
@@ -84015,21 +84086,26 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       query,
       '".'
     ] }) : null,
-    viewState === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
-      const active = index === boundedIndex;
-      const status = runStatusOf(entry, runManager.status(entry.ref));
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: active, ...active ? { color: "green" } : {}, wrap: "truncate-end", children: [
-          active ? "\u203A " : "  ",
-          entry.name,
-          " (",
-          entry.surface,
-          entry.launcher === void 0 ? "" : `/${entry.launcher}`,
-          ")"
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: !active, children: statusLabel(status) })
-      ] }, entry.ref);
-    }) }) : null,
+    viewState === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " " }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE NAME" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "TYPE" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "STATUS" }) })
+      ] }),
+      sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
+        const active = index === boundedIndex;
+        const status = runStatusOf(entry, runManager.status(entry.ref));
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u203A " : "  " }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness ?? "\u2014" }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.name }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: adminProfileType(entry) }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: active, dimColor: !active }) })
+        ] }, entry.ref);
+      })
+    ] }) : null,
     selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
       AdminDetailPanel,
       {
@@ -84039,7 +84115,8 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         diagnosis: diagnosisByRef.get(selected.ref),
         herdrAvailable,
         onForkToFix,
-        columns
+        columns,
+        tick
       }
     ) : null
   ] });

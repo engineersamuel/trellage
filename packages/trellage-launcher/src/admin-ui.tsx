@@ -15,14 +15,14 @@ import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.js"
 import { buildAdminLaunchCommand, buildDiagnosticCommand, isRepairSupported, launchAdminProfile, repairRefFor, repairThenRecheckDoctor } from "./admin-launch.js"
 import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.js"
 import type { AdminSortKey } from "./admin-table.js"
-import { filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.js"
+import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.js"
 import { runBatchedDoctorChecks } from "./admin-batch-scheduler.js"
 import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.js"
 import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.js"
 import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.js"
 import type { CombinedGuideCatalog } from "./guide-catalog.js"
 import type { CommandRunner, HerdrEnvironment } from "./guide-launch.js"
-import { MarkdownTextViewport } from "./guide-ui.js"
+import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
 
 type DiagnosisState =
   | { readonly status: "diagnosing" }
@@ -37,6 +37,41 @@ const runStatusOf = (entry: AdminProfileEntry, snapshot: AdminRunStatus): AdminS
   return snapshot.state
 }
 
+/**
+ * Renders a status's required plain-text label (see `admin-status.ts`) and,
+ * only while `running`, an additional animated spinner glyph in front of
+ * it. The glyph is always paired with the unchanged plain-text label so
+ * status is never communicated by color/animation alone — it is a visual
+ * accent, not a replacement for the text.
+ */
+const StatusText = ({ status, tick, bold = false, dimColor = false }: { readonly status: AdminStatus; readonly tick: number; readonly bold?: boolean; readonly dimColor?: boolean }) => (
+  <Text bold={bold} dimColor={dimColor}>
+    {status === "running" ? <Text color="cyan">{spinnerFrameAt(tick)} </Text> : null}
+    {statusLabel(status)}
+  </Text>
+)
+
+/**
+ * Renders `[key] label` shortcut hints with the bracketed key highlighted
+ * in bold cyan so it visually pops out from the surrounding text, while
+ * keeping every label as ordinary plain text — color is always an accent
+ * on top of readable text, never the only way meaning is conveyed.
+ */
+const ShortcutHints = ({ items }: { readonly items: ReadonlyArray<{ readonly key: string; readonly label: string }> }) =>
+  items.length === 0 ? null : (
+    <Text>
+      {items.map((item, index) => (
+        <Text key={item.key}>
+          {index > 0 ? "   " : ""}
+          <Text bold color="cyan">
+            [{item.key}]
+          </Text>{" "}
+          <Text dimColor>{item.label}</Text>
+        </Text>
+      ))}
+    </Text>
+  )
+
 const AdminDetailPanel = ({
   entry,
   runManager,
@@ -45,6 +80,7 @@ const AdminDetailPanel = ({
   herdrAvailable,
   onForkToFix,
   columns,
+  tick,
 }: {
   readonly entry: AdminProfileEntry
   readonly runManager: AdminRunManager
@@ -53,6 +89,7 @@ const AdminDetailPanel = ({
   readonly herdrAvailable: boolean | undefined
   readonly onForkToFix: (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined) => Promise<HerdrForkOutcome>
   readonly columns: number
+  readonly tick: number
 }) => {
   const [, forceRender] = useState(0)
   const [guideBody, setGuideBody] = useState<string | undefined>(undefined)
@@ -199,8 +236,7 @@ const AdminDetailPanel = ({
       )}
       <Box marginTop={1} flexDirection="column">
         <Text>
-          Doctor status: <Text bold>{statusLabel(status)}</Text>
-        </Text>
+          Doctor status: <StatusText status={status} tick={tick} bold /></Text>
         {latest === undefined ? null : (
           <Text dimColor wrap="wrap">
             {(latest.stdout || latest.stderr || "").slice(0, 4000)}
@@ -211,14 +247,19 @@ const AdminDetailPanel = ({
             {historyScopeLabel} ({snapshot.history.length} run{snapshot.history.length === 1 ? "" : "s"} recorded)
           </Text>
         )}
-        <Text dimColor>
-          {controls.canTrigger ? "[d] run doctor  " : ""}
-          {controls.canCancel ? "[c] cancel  " : ""}
-          {controls.canRetry ? "[r] retry  " : ""}
-          [g] view guide [l] launch in terminal
-          {canFork ? " [f] fork to fix" : ""}
-          {canRepair ? " [p] repair profile" : ""}
-        </Text>
+        <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray" flexDirection="column">
+          <ShortcutHints
+            items={[
+              controls.canTrigger ? { key: "d", label: "run doctor" } : undefined,
+              controls.canCancel ? { key: "c", label: "cancel" } : undefined,
+              controls.canRetry ? { key: "r", label: "retry" } : undefined,
+              { key: "g", label: "view guide" },
+              { key: "l", label: "launch in terminal" },
+              canFork ? { key: "f", label: "fork to fix" } : undefined,
+              canRepair ? { key: "p", label: "repair profile" } : undefined,
+            ].filter((item): item is { readonly key: string; readonly label: string } => item !== undefined)}
+          />
+        </Box>
       </Box>
       {diagnosis === undefined ? null : (
         <Box marginTop={1} flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
@@ -250,7 +291,7 @@ const AdminDetailPanel = ({
       {guideBody === undefined ? null : (
         <Box flexDirection="column" marginTop={1}>
           <MarkdownTextViewport value={guideBody} width={Math.max(20, columns - 6)} height={18} resetKey={entry.ref} />
-          <Text dimColor>[PageUp/PageDown] scroll guide</Text>
+          <ShortcutHints items={[{ key: "PageUp/PageDown", label: "scroll guide" }]} />
         </Box>
       )}
       {launchConfirming ? (
@@ -277,7 +318,9 @@ const AdminDetailPanel = ({
           {repairNote}
         </Text>
       )}
-      <Text dimColor>[j/k] move selection  [q] quit</Text>
+      <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray">
+        <ShortcutHints items={[{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }]} />
+      </Box>
     </Box>
   )
 }
@@ -306,7 +349,7 @@ export const AdminApp = ({
   const [sortIndex, setSortIndex] = useState(0)
   const [sortDescending, setSortDescending] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [, setTick] = useState(0)
+  const [tick, setTick] = useState(0)
   const [diagnosisByRef, setDiagnosisByRef] = useState<ReadonlyMap<string, DiagnosisState>>(new Map())
   const [herdrAvailable, setHerdrAvailable] = useState<boolean | undefined>(undefined)
   const batchStartedRefs = useRef<Set<string>>(new Set())
@@ -423,6 +466,13 @@ export const AdminApp = ({
   const viewState = resolveAdminViewState(entries, sorted, false)
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1)
   const selected = sorted[boundedIndex]
+  const statusesByRef = useMemo(() => {
+    const map = new Map<string, AdminStatus>()
+    for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)))
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed on every tick so live status changes are reflected
+  }, [sorted, runManager, tick])
+  const widths = useMemo(() => adminTableColumnWidths(sorted, statusesByRef, columns), [sorted, statusesByRef, columns])
 
   useInput((char, key) => {
     if (key.ctrl && char === "c") {
@@ -478,25 +528,77 @@ export const AdminApp = ({
           {sortDescending ? " ↓" : " ↑"}
         </Text>
       </Box>
-      <Text dimColor>
-        {searching ? `Search: ${query}█` : "[/] search  [s] sort  [S] reverse  [j/k] move  [q] quit"}
-      </Text>
+      {searching ? (
+        <Text dimColor>Search: {query}█</Text>
+      ) : (
+        <ShortcutHints
+          items={[
+            { key: "/", label: "search" },
+            { key: "s", label: "sort" },
+            { key: "S", label: "reverse" },
+            { key: "j/k", label: "move" },
+            { key: "q", label: "quit" },
+          ]}
+        />
+      )}
       {viewState === "discovering" ? <Text color="yellow">Discovering profiles…</Text> : null}
       {viewState === "empty-no-profiles" ? <Text color="yellow">No profiles were discovered.</Text> : null}
       {viewState === "empty-no-match" ? <Text color="yellow">No profiles match &quot;{query}&quot;.</Text> : null}
       {viewState === "ready" ? (
         <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Box width={2}>
+              <Text> </Text>
+            </Box>
+            <Box width={widths.harness}>
+              <Text bold color="yellow">
+                HARNESS
+              </Text>
+            </Box>
+            <Box width={widths.name}>
+              <Text bold color="cyan">
+                PROFILE NAME
+              </Text>
+            </Box>
+            <Box width={widths.type}>
+              <Text bold color="green">
+                TYPE
+              </Text>
+            </Box>
+            <Box width={widths.status}>
+              <Text bold color="magenta">
+                STATUS
+              </Text>
+            </Box>
+          </Box>
           {sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
             const active = index === boundedIndex
             const status = runStatusOf(entry, runManager.status(entry.ref))
             return (
-              <Box key={entry.ref} justifyContent="space-between">
-                <Text bold={active} {...(active ? { color: "green" as const } : {})} wrap="truncate-end">
-                  {active ? "› " : "  "}
-                  {entry.name} ({entry.surface}
-                  {entry.launcher === undefined ? "" : `/${entry.launcher}`})
-                </Text>
-                <Text dimColor={!active}>{statusLabel(status)}</Text>
+              <Box key={entry.ref}>
+                <Box width={2}>
+                  <Text bold={active} {...(active ? { color: "green" as const } : {})}>
+                    {active ? "› " : "  "}
+                  </Text>
+                </Box>
+                <Box width={widths.harness}>
+                  <Text bold={active} color="yellow" dimColor={!active} wrap="truncate-end">
+                    {entry.harness ?? "—"}
+                  </Text>
+                </Box>
+                <Box width={widths.name}>
+                  <Text bold={active} color="cyan" dimColor={!active} wrap="truncate-end">
+                    {entry.name}
+                  </Text>
+                </Box>
+                <Box width={widths.type}>
+                  <Text bold={active} color="green" dimColor={!active} wrap="truncate-end">
+                    {adminProfileType(entry)}
+                  </Text>
+                </Box>
+                <Box width={widths.status}>
+                  <StatusText status={status} tick={tick} bold={active} dimColor={!active} />
+                </Box>
               </Box>
             )
           })}
@@ -511,6 +613,7 @@ export const AdminApp = ({
           herdrAvailable={herdrAvailable}
           onForkToFix={onForkToFix}
           columns={columns}
+          tick={tick}
         />
       ) : null}
     </Box>

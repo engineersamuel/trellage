@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import type { AdminProfileEntry } from "../src/admin-model.js"
-import { filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "../src/admin-table.js"
+import type { AdminStatus } from "../src/admin-status.js"
+import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "../src/admin-table.js"
 
 const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   ref: overrides.ref ?? "native:cpx/hve",
@@ -84,5 +85,47 @@ describe("resolveAdminViewState", () => {
 
   it("returns ready when profiles exist and at least one matches", () => {
     expect(resolveAdminViewState(fixture, fixture, false)).toBe("ready")
+  })
+})
+
+describe("adminProfileType", () => {
+  it("maps native surfaces to Native and sandbox surfaces to Container", () => {
+    expect(adminProfileType(entry({ surface: "native" }))).toBe("Native")
+    expect(adminProfileType(entry({ surface: "sandbox" }))).toBe("Container")
+  })
+})
+
+describe("adminTableColumnWidths", () => {
+  const statuses = (pairs: ReadonlyArray<readonly [string, AdminStatus]>): ReadonlyMap<string, AdminStatus> => new Map(pairs)
+
+  it("reserves at least enough width for each column header", () => {
+    const widths = adminTableColumnWidths([], new Map(), 120)
+    expect(widths.harness).toBeGreaterThanOrEqual("HARNESS".length)
+    expect(widths.name).toBeGreaterThanOrEqual("PROFILE NAME".length)
+    expect(widths.type).toBeGreaterThanOrEqual("TYPE".length)
+    expect(widths.status).toBeGreaterThanOrEqual("STATUS".length)
+  })
+
+  it("widens a column to fit its longest value plus the header", () => {
+    const wide = entry({ ref: "native:cpx/very-long-harness-name", harness: "an-unusually-long-harness-name" })
+    const widths = adminTableColumnWidths([wide], statuses([[wide.ref, "idle"]]), 200)
+    expect(widths.harness).toBeGreaterThan("an-unusually-long-harness-name".length)
+  })
+
+  it("sums to at most the available width bounded by the terminal width", () => {
+    const widths = adminTableColumnWidths(fixture, statuses(fixture.map((e) => [e.ref, "idle"] as const)), 100)
+    expect(widths.harness + widths.name + widths.type + widths.status).toBeLessThanOrEqual(100)
+  })
+
+  it("never collapses the name column even for a very narrow terminal", () => {
+    const widths = adminTableColumnWidths(fixture, statuses(fixture.map((e) => [e.ref, "idle"] as const)), 10)
+    expect(widths.name).toBeGreaterThanOrEqual(10)
+  })
+
+  it("bounds status column width even for a long malformed-output/unsupported-style label", () => {
+    const withUnsupported = entry({ ref: "native:x/y", doctorSupported: false })
+    const widths = adminTableColumnWidths([withUnsupported], statuses([[withUnsupported.ref, "unsupported"]]), 60)
+    expect(widths.status).toBeGreaterThanOrEqual("STATUS".length)
+    expect(widths.status).toBeLessThanOrEqual(60)
   })
 })
