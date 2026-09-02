@@ -40,10 +40,17 @@ export interface GuideRefineResult {
   readonly candidate: GuideGenerateCandidate
 }
 
+export interface GuideOptimizeFixedFrame {
+  readonly beforeBody: string
+  readonly afterBody: string
+}
+
 export interface GuideOptimizeInput {
   readonly targetTool: string
   readonly profileRef: string
   readonly candidates: ReadonlyArray<GuideGenerateCandidate>
+  /** Present for body-only skill prompts; absent when candidates are complete prompts. Never returned publicly. */
+  readonly fixedFrame?: GuideOptimizeFixedFrame
 }
 
 export interface GuideOptimizeResult {
@@ -111,7 +118,25 @@ export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimi
     fail("optimize input.candidates", `must contain 1 to 3 entries: got ${input.candidates.length}`)
   }
   input.candidates.forEach((candidate, index) => validateGenerateCandidate(candidate, `optimize input.candidates[${index}]`))
+  if (input.fixedFrame !== undefined) {
+    const fields = record(input.fixedFrame, "optimize input.fixedFrame")
+    exactKeys(fields, "optimize input.fixedFrame", ["beforeBody", "afterBody"])
+    const beforeBody = validateFixedFrameText(fields.beforeBody, "optimize input.fixedFrame.beforeBody")
+    const afterBody = validateFixedFrameText(fields.afterBody, "optimize input.fixedFrame.afterBody")
+    if ([...beforeBody, ...afterBody].length > 16_000) {
+      fail("optimize input.fixedFrame", "must contain at most 16000 characters in total")
+    }
+  }
   return input
+}
+
+const fixedFrameControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u
+
+const validateFixedFrameText = (value: unknown, path: string): string => {
+  if (typeof value !== "string") return fail(path, "must be a string")
+  if ([...value].length > 16_000) return fail(path, "must contain at most 16000 characters")
+  if (fixedFrameControls.test(value)) return fail(path, "must not contain control characters")
+  return value
 }
 
 const validateMatchCandidate = (

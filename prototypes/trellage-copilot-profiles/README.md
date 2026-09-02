@@ -33,8 +33,8 @@ Profile homes use this layout:
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
 ```
 
-The checked-in profiles are `awesome`, `hve`, `plannotator`, `superpowers`,
-and `tufte-vdqi`.
+The checked-in profiles are `awesome`, `compound-engineering`, `hve`,
+`plannotator`, `superpowers`, and `tufte-vdqi`.
 
 ## Commands
 
@@ -42,29 +42,37 @@ and `tufte-vdqi`.
 cpx list
 cpx inventory hve --json
 cpx setup awesome
+cpx setup compound-engineering
 cpx setup hve
 cpx setup plannotator
 cpx setup tufte-vdqi
 cpx setup --all
 cpx awesome --prompt "Suggest useful repository skills"
+cpx compound-engineering
+cpx compound-engineering --prompt "/ce-plan Design resumable uploads"
 cpx hve
 cpx plannotator --prompt "Create an implementation plan as a self-contained HTML artifact"
 cpx superpowers --prompt "Review this repository"
 cpx tufte-vdqi --prompt "Critique this chart, then rebuild it as a static SVG"
 cpx doctor awesome
+cpx doctor compound-engineering
 cpx doctor hve
 cpx doctor plannotator
 cpx doctor tufte-vdqi
+cpx inventory compound-engineering --json
 cpx inventory plannotator --json
 cpx inventory tufte-vdqi --json
 cpx update --check awesome
+cpx update --check compound-engineering
 cpx update --check hve
 cpx update --check plannotator
 cpx update --check tufte-vdqi
 cpx update --check --all
+cpx update compound-engineering
 cpx update hve
 cpx update tufte-vdqi
 cpx update --all
+cpx repair compound-engineering
 cpx repair hve
 cpx repair tufte-vdqi
 ```
@@ -108,6 +116,21 @@ Its health check requires the six Effective HTML package skills:
 so `cpx` reads its validated installed `.codex-plugin/plugin.json` for local
 version state and uses the matching upstream manifest for update checks.
 
+The opt-in `compound-engineering` profile installs
+`compound-engineering@compound-engineering-plugin` from
+[`EveryInc/compound-engineering-plugin`](https://github.com/EveryInc/compound-engineering-plugin).
+It supplies the 33-skill brainstorm-plan-work-simplify-review-compound loop:
+create repository-informed plans, ship requirements-ready work hands-off to an
+open pull request with `/lfg`, and capture verified solutions so each change
+makes the next easier. For best results, run `/ce-setup` once per repository,
+brainstorm vague product work interactively, and give `/lfg` approved
+requirements or an implementation-ready plan instead of a one-line idea.
+Version checks read the validated installed `.codex-plugin/plugin.json`.
+Health requires all 33 upstream runtime skills to be present and enabled. The
+profile does not provision optional MCP integrations. It uses the existing
+`cpx` launcher and shared `native-common` skills, but the plugin itself is
+opt-in and is not part of `native-common`.
+
 The `tufte-vdqi` profile installs
 `tufte-vdqi@tufte-vdqi-marketplace` from
 [`gnurio/tufte-vdqi-plugin`](https://github.com/gnurio/tufte-vdqi-plugin).
@@ -130,7 +153,9 @@ plugin-contributed, and repository-scoped capabilities remain available.
 Profile homes isolate Copilot state, not host access. Selected agents and
 plugins run with the host permissions available to Copilot and can read or
 change the current repository and other reachable resources. Use trusted
-repositories and plugins.
+repositories and plugins. In particular, `compound-engineering` has full host
+access, and `/lfg` can commit, push, and open a pull request without an
+approval pause.
 
 ## Test
 

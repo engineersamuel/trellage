@@ -240,6 +240,31 @@ describe("CachedGuideProvider", () => {
         candidates: generated.candidates,
       }),
     ).resolves.toEqual({ candidates: generated.candidates })
+    const framedInput = {
+      targetTool: "copilot",
+      profileRef: generationInput.profileRef,
+      candidates: generated.candidates,
+      fixedFrame: {
+        beforeBody: "/ce-compound mode:non-interactive ",
+        afterBody: "",
+      },
+    }
+    await expect(provider.optimize(framedInput)).resolves.toEqual({ candidates: generated.candidates })
+    await expect(
+      new CachedGuideProvider(
+        fake.provider,
+        cacheOptions(cachePath, { routing: routingFor("model-a") }),
+      ).optimize(framedInput),
+    ).resolves.toEqual({ candidates: generated.candidates })
+    await expect(
+      provider.optimize({
+        ...framedInput,
+        fixedFrame: {
+          beforeBody: "/lfg ",
+          afterBody: "",
+        },
+      }),
+    ).resolves.toEqual({ candidates: generated.candidates })
     await expect(
       provider.refine({
         ...generationInput,
@@ -248,8 +273,9 @@ describe("CachedGuideProvider", () => {
       }),
     ).resolves.toEqual(refined)
     expect(fake.generateCalls()).toBe(2)
-    expect(fake.optimizeCalls()).toBe(2)
+    expect(fake.optimizeCalls()).toBe(4)
     expect(await readFile(cachePath, "utf8")).not.toContain("Write a post")
+    expect(await readFile(cachePath, "utf8")).not.toContain("ce-compound")
   })
 
   it("uses XDG_CACHE_HOME for the default cache location", () => {

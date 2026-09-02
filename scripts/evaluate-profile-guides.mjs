@@ -7,15 +7,8 @@ import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const args = process.argv.slice(2)
 const maximumOutputBytes = 2 * 1024 * 1024
 const commandTimeoutMs = 5 * 60 * 1000
-
-if (args.length !== 1 || args[0] !== "--live") {
-  process.stderr.write("Usage: node scripts/evaluate-profile-guides.mjs --live\n")
-  process.stderr.write("The --live flag is required because this command can consume paid model quota.\n")
-  process.exit(2)
-}
 
 const record = (value, name) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -51,20 +44,40 @@ const rank = (value, name) => {
   return value
 }
 
-const loadScenarios = async () => {
-  const rootValue = record(
-    JSON.parse(
-      await readFile(path.join(root, "tests", "fixtures", "profile-guide-scenarios.json"), "utf8"),
-    ),
-    "profile guide scenarios",
-  )
+const expectedWorkflowMap = (value, name, expectedProfiles) => {
+  if (value === undefined) return undefined
+  const expectedProfileSet = new Set(expectedProfiles)
+  const entries = Object.entries(record(value, name)).map(([profileRef, workflowId]) => {
+    text(profileRef, `${name} profile key`)
+    if (!expectedProfileSet.has(profileRef)) {
+      throw new Error(`${name} key ${profileRef} must also appear in expectedProfiles`)
+    }
+    return [profileRef, text(workflowId, `${name}.${profileRef}`)]
+  })
+  return Object.fromEntries(entries)
+}
+
+export const parseProfileGuideScenarios = (value) => {
+  const rootValue = record(value, "profile guide scenarios")
+  exactKeys(rootValue, "profile guide scenarios", ["schemaVersion", "scenarios"])
   if (rootValue.schemaVersion !== 1 || !Array.isArray(rootValue.scenarios)) {
     throw new Error("profile guide scenarios must use schemaVersion 1")
   }
   const scenarios = rootValue.scenarios.map((rawScenario, index) => {
     const scenario = record(rawScenario, `scenario ${index}`)
+    exactKeys(
+      scenario,
+      `scenario ${index}`,
+      ["id", "intent", "expectedProfiles", "maxRank", "excludedProfiles"],
+      ["expectedWorkflows"],
+    )
     const expectedProfiles = stringArray(scenario.expectedProfiles, `scenario ${index}.expectedProfiles`)
     if (expectedProfiles.length === 0) throw new Error(`scenario ${index}.expectedProfiles must not be empty`)
+    const expectedWorkflows = expectedWorkflowMap(
+      scenario.expectedWorkflows,
+      `scenario ${index}.expectedWorkflows`,
+      expectedProfiles,
+    )
     const excludedProfiles = stringArray(scenario.excludedProfiles, `scenario ${index}.excludedProfiles`)
     const excluded = new Set(excludedProfiles)
     const overlap = expectedProfiles.find((profileRef) => excluded.has(profileRef))
@@ -73,6 +86,7 @@ const loadScenarios = async () => {
       id: text(scenario.id, `scenario ${index}.id`),
       intent: text(scenario.intent, `scenario ${index}.intent`),
       expectedProfiles,
+      ...(expectedWorkflows === undefined ? {} : { expectedWorkflows }),
       maxRank: rank(scenario.maxRank, `scenario ${index}.maxRank`),
       excludedProfiles,
     }
@@ -81,6 +95,13 @@ const loadScenarios = async () => {
   if (new Set(ids).size !== ids.length) throw new Error("profile guide scenario IDs must be unique")
   return scenarios
 }
+
+const loadScenarios = async () =>
+  parseProfileGuideScenarios(
+    JSON.parse(
+      await readFile(path.join(root, "tests", "fixtures", "profile-guide-scenarios.json"), "utf8"),
+    ),
+  )
 
 const runCommand = (executable, commandArgs, options = {}) =>
   new Promise((resolve, reject) => {
@@ -263,18 +284,32 @@ const validateNativeCatalogSync = (nativeList, sourceDescriptions) => {
     const profileRef = `native:${text(entry.launcher, "native launcher")}/${text(entry.name, "native profile")}`
     installedProfiles.add(profileRef)
     const sourceDescription = sourceDescriptions.get(profileRef)
-    if (sourceDescription === undefined) throw new Error(`installed Native catalog has unexpected profile: ${profileRef}`)
+    if (sourceDescription === undefined) {
+      throw new Error(
+        `installed Native catalog has unexpected profile: ${profileRef}; run mise run rebuild-native-profiles before live evaluation`,
+      )
+    }
     if (entry.description !== sourceDescription) {
       throw new Error(
-        `${profileRef} installed description differs from this worktree; run mise run rebuild-profiles -- --native-only before live evaluation`,
+        `${profileRef} installed description differs from this worktree; run mise run rebuild-native-profiles before live evaluation`,
       )
     }
   }
   const missingProfiles = [...sourceDescriptions.keys()].filter((profileRef) => !installedProfiles.has(profileRef))
   if (missingProfiles.length > 0) {
     throw new Error(
-      `installed Native catalog is missing worktree profiles: ${missingProfiles.join(", ")}; run mise run rebuild-profiles -- --native-only before live evaluation`,
+      `installed Native catalog is missing worktree profiles: ${missingProfiles.join(", ")}; run mise run rebuild-native-profiles before live evaluation`,
     )
+  }
+}
+
+const validateExpectedWorkflowProfiles = (scenarios, profiles) => {
+  for (const scenario of scenarios) {
+    for (const profileRef of Object.keys(scenario.expectedWorkflows ?? {})) {
+      if (!profiles.has(profileRef)) {
+        throw new Error(`${scenario.id}.expectedWorkflows references unknown profile ${profileRef}`)
+      }
+    }
   }
 }
 
@@ -363,15 +398,15 @@ const validateRecommendation = (rawRecommendation, index, scenario, profiles, pr
   text(recommendation.reason, `${scenario.id}.reason`)
   text(recommendation.tradeoff, `${scenario.id}.tradeoff`)
   validateRecommendationEnrichment(recommendation, profile, workflow, scenario, profileRef)
-  return { profileRef, confidence }
+  return { profileRef, workflowId, confidence }
 }
 
 const validateRecommendations = (response, scenario, profiles) => {
   validateResponseEnvelope(response, scenario)
-  const refs = []
+  const recommendations = []
   let previousConfidence = 1
   for (const [index, rawRecommendation] of response.recommendations.entries()) {
-    const { profileRef, confidence } = validateRecommendation(
+    const { profileRef, workflowId, confidence } = validateRecommendation(
       rawRecommendation,
       index,
       scenario,
@@ -379,10 +414,11 @@ const validateRecommendations = (response, scenario, profiles) => {
       previousConfidence,
     )
     previousConfidence = confidence
-    refs.push(profileRef)
+    recommendations.push({ profileRef, workflowId })
   }
+  const refs = recommendations.map(({ profileRef }) => profileRef)
   if (new Set(refs).size !== refs.length) throw new Error(`${scenario.id}: recommendations contain duplicate profiles`)
-  return refs
+  return recommendations
 }
 
 const evaluate = async () => {
@@ -404,6 +440,7 @@ const evaluate = async () => {
     }
     validateNativeCatalogSync(nativeList, sourceDescriptions)
     const profiles = profileCatalogIndex(nativeList, sandboxList)
+    validateExpectedWorkflowProfiles(scenarios, profiles)
 
     let failures = 0
     for (const scenario of scenarios) {
@@ -419,7 +456,8 @@ const evaluate = async () => {
       } catch {
         throw new Error(`${scenario.id}: trx guide returned malformed JSON`)
       }
-      const refs = validateRecommendations(response, scenario, profiles)
+      const recommendations = validateRecommendations(response, scenario, profiles)
+      const refs = recommendations.map(({ profileRef }) => profileRef)
       const missing = scenario.expectedProfiles.filter((profileRef) => {
         const profileRank = refs.indexOf(profileRef) + 1
         return profileRank === 0 || profileRank > scenario.maxRank
@@ -429,10 +467,22 @@ const evaluate = async () => {
         const alternativeRank = refs.indexOf(profileRef) + 1
         return alternativeRank > 0 && alternativeRank <= expectedRank
       })
-      if (missing.length > 0 || unexpected.length > 0) {
+      const workflowMismatches = Object.entries(scenario.expectedWorkflows ?? {}).flatMap(
+        ([profileRef, expectedWorkflowId]) => {
+          const actualWorkflowId = recommendations.find(
+            (recommendation) => recommendation.profileRef === profileRef,
+          )?.workflowId
+          return actualWorkflowId === expectedWorkflowId
+            ? []
+            : [
+                `${profileRef}: expected=${expectedWorkflowId}, actual=${actualWorkflowId ?? "<not-recommended>"}`,
+              ]
+        },
+      )
+      if (missing.length > 0 || unexpected.length > 0 || workflowMismatches.length > 0) {
         failures += 1
         process.stdout.write(
-          `FAIL ${scenario.id}: ranked=[${refs.join(", ")}] missing-top-${scenario.maxRank}=[${missing.join(", ")}] excluded=[${unexpected.join(", ")}]\n`,
+          `FAIL ${scenario.id}: ranked=[${refs.join(", ")}] missing-top-${scenario.maxRank}=[${missing.join(", ")}] excluded=[${unexpected.join(", ")}] workflow-mismatches=[${workflowMismatches.join("; ")}]\n`,
         )
       } else {
         process.stdout.write(`PASS ${scenario.id}: ${refs.join(", ")}\n`)
@@ -445,4 +495,13 @@ const evaluate = async () => {
   }
 }
 
-await evaluate()
+const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isMain) {
+  const args = process.argv.slice(2)
+  if (args.length !== 1 || args[0] !== "--live") {
+    process.stderr.write("Usage: node scripts/evaluate-profile-guides.mjs --live\n")
+    process.stderr.write("The --live flag is required because this command can consume paid model quota.\n")
+    process.exit(2)
+  }
+  await evaluate()
+}

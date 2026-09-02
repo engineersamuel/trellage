@@ -39,6 +39,14 @@ Produce one revised candidate that keeps what worked about `candidate` and
 addresses `feedback`, still pursuing the stated `intent` with the selected
 workflow.
 
+For a workflow with `skill`, `candidate.prompt` is body text from the
+`{{intent}}` slot. Return body text only. The caller reapplies the exact
+authored workflow frame after all model stages. Do not emit workflow commands
+or copy the fixed frame. For a workflow without `skill`, continue to return the
+complete prompt. Preserve its substantive authored workflow requirements and
+supported authored commands. The caller will not add or restore a frame. Never
+add a new workflow command.
+
 Write the revised `prompt` as a well-structured Markdown document. Preserve
 useful Markdown structure from the prior candidate and improve it when that
 makes the prompt easier to scan. Do not wrap the complete prompt in a code
@@ -54,7 +62,7 @@ single JSON object parseable by `JSON.parse`, matching exactly:
 {
   "candidate": {
     "title": "<short label for the revised candidate, a few words>",
-    "prompt": "<the full revised prompt text to send to the agent>",
+    "prompt": "<revised body or complete prompt text>",
     "notes": "<short plain-text note on how this addresses the feedback>"
   }
 }
@@ -65,9 +73,11 @@ Requirements:
 - The response has exactly one top-level key, `candidate`, holding exactly
   one object (never an array).
 - `title` is a short label, not a full sentence.
-- `prompt` is the complete Markdown-formatted instruction the user would send
-  to the target profile's agent, not a description about the prompt.
+- `prompt` is the Markdown-formatted body for a workflow with `skill`, or the
+  complete instruction for a workflow without `skill`. It is not a description
+  about the prompt.
 - `notes` is a short plain-text sentence, not Markdown.
 - Do not add, rename, or omit any key shown above. Do not include a
-  `command`, `commandPath`, `args`, or any other field — commands are never
-  produced by this step; `prompt` is conversational text only.
+  `command`, `commandPath`, `args`, or any other field. A no-skill `prompt`
+  may preserve a supported command already present in the candidate, but this
+  step never invents a command.

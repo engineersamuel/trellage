@@ -110,11 +110,20 @@ describe("profile guide parser", () => {
     expect(() => parseProfileGuide("social.md", source)).toThrow("must contain unique entries")
   })
 
-  it("requires the shared intent placeholder and rejects custom placeholders", () => {
+  it("requires exactly one shared intent placeholder", () => {
     const missing = validGuide.replace("{{intent}}", "Write a post")
-    const custom = validGuide.replace("{{intent}}", "{{intent}} {{topic}}")
+    const duplicate = validGuide.replace("{{intent}}", "{{intent}} {{intent}}")
 
     expect(() => parseProfileGuide("social.md", missing)).toThrow("must contain the {{intent}} placeholder")
+    expect(() => parseProfileGuide("social.md", duplicate)).toThrow(
+      "must contain exactly one {{intent}} placeholder",
+    )
+    expect(() => parseProfileGuide("social.md", validGuide)).not.toThrow()
+  })
+
+  it("rejects unsupported placeholders alongside the shared intent placeholder", () => {
+    const custom = validGuide.replace("{{intent}}", "{{intent}} {{topic}}")
+
     expect(() => parseProfileGuide("social.md", custom)).toThrow("unsupported placeholder: {{topic}}")
   })
 })

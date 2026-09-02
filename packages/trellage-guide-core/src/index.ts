@@ -170,8 +170,12 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
     const promptTemplate = text(fields.promptTemplate, `${itemPath}.promptTemplate`, 16000, {
       multiline: true,
     })
-    if (!promptTemplate.includes("{{intent}}")) {
+    const intentPlaceholderCount = promptTemplate.split("{{intent}}").length - 1
+    if (intentPlaceholderCount === 0) {
       fail(`${itemPath}.promptTemplate`, "must contain the {{intent}} placeholder")
+    }
+    if (intentPlaceholderCount > 1) {
+      fail(`${itemPath}.promptTemplate`, "must contain exactly one {{intent}} placeholder")
     }
     for (const match of promptTemplate.matchAll(/\{\{([^{}]+)\}\}/gu)) {
       if (match[1] !== "intent") {

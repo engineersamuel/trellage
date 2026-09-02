@@ -210,6 +210,390 @@ for (const phrase of ["before implementation", "source-backed evidence", "unreso
   }
 }
 
+const compoundGuide = registry.get("native:cpx/compound-engineering")
+if (compoundGuide === undefined) throw new Error("cpx compound-engineering guide is missing")
+const expectedCompoundPrompts = new Map([
+  ["ce-plan", "/ce-plan {{intent}}"],
+  ["lfg", "/lfg {{intent}}"],
+  ["ce-compound", "/ce-compound mode:non-interactive {{intent}}"],
+])
+const compoundSkills = compoundGuide.guide.workflows.map(({ skill }) => skill)
+const expectedCompoundSkills = [...expectedCompoundPrompts.keys()]
+if (
+  compoundSkills.length !== expectedCompoundSkills.length ||
+  new Set(compoundSkills).size !== expectedCompoundSkills.length ||
+  compoundSkills.some((skill) => !expectedCompoundPrompts.has(skill))
+) {
+  throw new Error(
+    `cpx compound-engineering one-shot skills must be exactly: ${expectedCompoundSkills.join(", ")}`,
+  )
+}
+for (const prohibitedSkill of ["ce-brainstorm", "ce-code-review"]) {
+  if (
+    compoundGuide.guide.workflows.some(
+      ({ skill, promptTemplate }) =>
+        skill === prohibitedSkill || promptTemplate.includes(`/${prohibitedSkill}`),
+    )
+  ) {
+    throw new Error(`cpx compound-engineering must not expose ${prohibitedSkill} as a one-shot workflow`)
+  }
+}
+for (const [skill, promptTemplate] of expectedCompoundPrompts) {
+  const workflow = compoundGuide.guide.workflows.find((candidate) => candidate.skill === skill)
+  if (workflow === undefined) throw new Error(`cpx compound-engineering is missing the ${skill} workflow`)
+  if (workflow.promptTemplate !== promptTemplate) {
+    throw new Error(`cpx compound-engineering ${skill} must use one direct prompt`)
+  }
+}
+
+const normalizeSemanticText = (value) =>
+  value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+const workflowSemanticText = ({ description, examples }) =>
+  normalizeSemanticText([description, ...examples].join(" "))
+const hasSemanticGroupsNear = (
+  value,
+  anchor,
+  groups,
+  radius = 260,
+) => {
+  const semanticText = normalizeSemanticText(value)
+  let offset = semanticText.indexOf(anchor)
+  while (offset >= 0) {
+    const window = semanticText.slice(
+      Math.max(0, offset - radius),
+      Math.min(semanticText.length, offset + anchor.length + radius),
+    )
+    if (groups.every((alternatives) => alternatives.some((pattern) => pattern.test(window)))) {
+      return true
+    }
+    offset = semanticText.indexOf(anchor, offset + anchor.length)
+  }
+  return false
+}
+const requireWorkflowSemanticGroups = (skill, facts) => {
+  const workflow = compoundGuide.guide.workflows.find((candidate) => candidate.skill === skill)
+  if (workflow === undefined) throw new Error(`cpx compound-engineering is missing the ${skill} workflow`)
+  const semanticText = workflowSemanticText(workflow)
+  for (const [fact, groups] of facts) {
+    if (!groups.every((alternatives) => alternatives.some((pattern) => pattern.test(semanticText)))) {
+      throw new Error(`cpx compound-engineering ${skill} description/examples must document ${fact}`)
+    }
+  }
+}
+const requireWorkflowSemanticContext = (skill, fact, anchor, groups) => {
+  const workflow = compoundGuide.guide.workflows.find((candidate) => candidate.skill === skill)
+  if (workflow === undefined) throw new Error(`cpx compound-engineering is missing the ${skill} workflow`)
+  if (!hasSemanticGroupsNear(workflowSemanticText(workflow), anchor, groups)) {
+    throw new Error(`cpx compound-engineering ${skill} description/examples must document ${fact}`)
+  }
+}
+
+requireWorkflowSemanticGroups("ce-plan", [
+  [
+    "reuse of repository learning",
+    [
+      [/\breus(?:e|es|ing)\b/u, /\bappl(?:y|ies|ying)\b/u, /\binform(?:ed|ing)\b/u],
+      [/\brepositor(?:y|ies)\b/u],
+      [/\blearnings?\b/u, /\blessons?\b/u, /\bsolutions?\b/u, /\bknowledge\b/u],
+    ],
+  ],
+])
+requireWorkflowSemanticContext(
+  "ce-plan",
+  "the generated headless Durable path for accepted input, implementation-ready planning, and document review",
+  "durable",
+  [
+    [/\bgenerated\b/u],
+    [/\bheadless\b/u],
+    [/\braw\b/u],
+    [/\bintent\b/u],
+    [/\brequirements?\b/u],
+    [/\bupstream\b/u],
+    [/\bpath\b/u, /\bcontract\b/u, /\bmode\b/u],
+    [/\bimplementation ready\b/u],
+    [/\bunified\b/u],
+    [/\bplans?\b/u],
+    [/\bdocuments?\b/u],
+    [/\breviews?\b/u],
+  ],
+)
+requireWorkflowSemanticGroups("lfg", [
+  [
+    "requirements-ready input",
+    [
+      [
+        /\brequirements ready\b/u,
+        /\bsettled requirements?\b/u,
+        /\bapproved plans?\b/u,
+        /\bexisting plans?\b/u,
+      ],
+    ],
+  ],
+  [
+    "hands-off execution",
+    [[/\bhands off\b/u, /\bautonomous\b/u, /\bwithout check ins?\b/u, /\bno check ins?\b/u]],
+  ],
+  [
+    "planning, implementation, and simplification",
+    [[/\bplans?\b/u, /\bplanning\b/u], [/\bimplements?\b/u, /\bimplementation\b/u], [/\bsimplif(?:y|ies|ication)\b/u]],
+  ],
+  [
+    "review/fix and browser testing",
+    [[/\breviews?\b/u], [/\bfix(?:es|ing)?\b/u], [/\bbrowser\b/u], [/\btests?\b/u, /\btesting\b/u]],
+  ],
+  [
+    "commit, push, open-PR, and CI-watching delivery",
+    [
+      [/\bcommits?\b/u],
+      [/\bpush(?:es|ing)?\b/u],
+      [/\bopen\b/u],
+      [/\bpr\b/u, /\bpull requests?\b/u],
+      [/\bwatch(?:es|ing)?\b/u],
+      [/\bci\b/u, /\bcontinuous integration\b/u],
+    ],
+  ],
+  [
+    "the default open-PR stop boundary",
+    [
+      [/\bdefault\b/u],
+      [/\bstops?\b/u],
+      [/\bopen\b/u],
+      [/\bpr\b/u, /\bpull requests?\b/u],
+      [/\bdoes not\b/u, /\bdoesn t\b/u, /\bwithout\b/u],
+      [/\bmerg(?:e|es|ing)\b/u],
+    ],
+  ],
+  [
+    "the explicit stack-land merge exception",
+    [
+      [/\bexplicit\b/u],
+      [/\bstack land\b/u],
+      [/\bauthoriz(?:e|es|ing)\b/u],
+      [/\b(?:land|lands|landing|merge|merges|merging)\b/u],
+    ],
+  ],
+  [
+    "local commits when no remote exists",
+    [
+      [/\bwithout a remote\b/u, /\bno remote\b/u],
+      [/\blocal\b/u],
+      [/\bcommits?\b/u],
+    ],
+  ],
+])
+requireWorkflowSemanticGroups("ce-compound", [
+  [
+    "one learning per run",
+    [[/\bone\b/u], [/\bper run\b/u]],
+  ],
+  [
+    "one verified non-trivial solved problem",
+    [
+      [/\bone\b/u],
+      [/\bverified\b/u, /\bvalidated\b/u],
+      [/\bnon trivial\b/u, /\bsubstantive\b/u],
+      [/\bsolved\b/u, /\bresolved\b/u],
+      [/\bproblems?\b/u, /\bissues?\b/u],
+    ],
+  ],
+  [
+    "future-work learning",
+    [
+      [/\bfuture\b/u, /\blater\b/u],
+      [/\bwork\b/u, /\bplans?\b/u],
+      [/\blearnings?\b/u, /\bknowledge\b/u, /\bsolutions?\b/u],
+    ],
+  ],
+  [
+    "skipping when no valid learning exists",
+    [[/\bskip(?:s|ping)?\b/u], [/\bno\b/u], [/\bvalid\b/u], [/\blearnings?\b/u]],
+  ],
+])
+
+const compoundBody = compoundGuide.body.replace(/\s+/gu, " ").toLowerCase()
+const hasCompoundBodyTermsNear = (
+  anchor,
+  terms,
+  radius = 220,
+) => {
+  let offset = compoundBody.indexOf(anchor)
+  while (offset >= 0) {
+    const window = compoundBody.slice(
+      Math.max(0, offset - radius),
+      Math.min(compoundBody.length, offset + anchor.length + radius),
+    )
+    if (terms.every((term) => term.test(window))) return true
+    offset = compoundBody.indexOf(anchor, offset + anchor.length)
+  }
+  return false
+}
+const compoundBodyFacts = [
+  [
+    "a bare interactive cpx compound-engineering launch",
+    hasCompoundBodyTermsNear("cpx compound-engineering", [
+      /\binteractive\b/u,
+      /\b(?:bare|without (?:a )?`?-p`?)\b/u,
+    ]),
+  ],
+  [
+    "manual first-use ce-setup",
+    hasCompoundBodyTermsNear("/ce-setup", [
+      /\b(?:first|once)\b/u,
+      /\brepositor(?:y|ies)\b/u,
+      /\bmanual(?:ly)?\b/u,
+    ], 320),
+  ],
+  ["interactive /ce-brainstorm <intent>", /\/ce-brainstorm\s+<intent>/u.test(compoundBody)],
+  [
+    "a same-session handoff to ce-plan or lfg",
+    hasCompoundBodyTermsNear("same-session", [
+      /\bhandoff\b/u,
+      /\bce-plan\b/u,
+      /\blfg\b/u,
+    ]),
+  ],
+  [
+    "one-skill one-shot guide generation",
+    hasCompoundBodyTermsNear("one-shot", [
+      /\b(?:one|single)[ -]skill\b/u,
+      /\b(?:generat(?:e|ed|ion)|emit(?:s|ted)?|produc(?:e|es|ed)|command|prompt)\b/u,
+    ]),
+  ],
+  [
+    "interactive ce-plan right-sizing outside headless mode",
+    hasCompoundBodyTermsNear("/ce-plan", [
+      /\binteractive\b/u,
+      /\boutside\b/u,
+      /\bheadless\b/u,
+      /\bright-size\b/u,
+      /\bdirect\b/u,
+      /\bchat brief\b/u,
+    ], 320),
+  ],
+  [
+    "the generated headless Durable planning contract",
+    hasCompoundBodyTermsNear("durable", [
+      /\bgenerated\b/u,
+      /\bheadless\b/u,
+      /\bno synchronous user\b/u,
+      /\bimplementation-ready\b/u,
+      /\bunified plan\b/u,
+      /\bdocument review\b/u,
+    ], 440),
+  ],
+  [
+    "the promise that each completed unit helps the next",
+    hasCompoundBodyTermsNear("completed", [
+      /\beach\b/u,
+      /\bunit\b/u,
+      /\b(?:help|helps|make|makes|improve|improves)\b/u,
+      /\bnext\b/u,
+    ], 180),
+  ],
+  [
+    "repository-local solution knowledge",
+    hasCompoundBodyTermsNear("repository-local", [
+      /\bsolutions?\b/u,
+      /\bknowledge\b/u,
+    ], 180),
+  ],
+  [
+    "the default lfg stop-before-merge boundary",
+    hasCompoundBodyTermsNear("/lfg", [
+      /\bdefault\b/u,
+      /\b(?:does not|doesn't|will not|never|stops? before)\b/u,
+      /\bmerg(?:e|es|ing)\b/u,
+    ]),
+  ],
+  [
+    "the explicit stack-land merge exception",
+    hasCompoundBodyTermsNear("stack-land", [
+      /\bexplicit\b/u,
+      /\bauthoriz(?:e|es|ing)\b/u,
+      /\b(?:land|lands|landing|merge|merges|merging)\b/u,
+    ], 320),
+  ],
+  [
+    "requirements-ready lfg after brainstorming",
+    hasCompoundBodyTermsNear("/lfg", [
+      /\bce-brainstorm\b/u,
+      /\brequirements?\b/u,
+      /\b(?:ready|settled|approved)\b/u,
+    ], 520),
+  ],
+  [
+    "chat fallback without the blocking question tool",
+    hasCompoundBodyTermsNear("numbered choices", [
+      /\bchat\b/u,
+      /\bblocking question tool\b/u,
+      /\bnext\b/u,
+      /\bturn\b/u,
+    ], 360),
+  ],
+  [
+    "fresh ce-compound one-shot context",
+    hasCompoundBodyTermsNear("/ce-compound mode:non-interactive", [
+      /\bdoes not inherit\b/u,
+      /\bcpx\b/u,
+      /\bconversation\b/u,
+      /\broot cause\b/u,
+      /\bproof\b/u,
+      /\bcurrent tree\b/u,
+    ], 520),
+  ],
+  [
+    "implement-only no-publish boundary",
+    hasCompoundBodyTermsNear("implementation-only", [
+      /\bstop\b/u,
+      /\bcommit\b/u,
+      /\bpush\b/u,
+      /\bmode:return-to-caller\b/u,
+      /\bce-work\b/u,
+    ], 420),
+  ],
+  [
+    "standalone ce-work shipping tail",
+    hasCompoundBodyTermsNear("/ce-work", [
+      /\bstandalone\b/u,
+      /\bsimplif(?:y|ies|ication)\b/u,
+      /\bcode-review\b/u,
+      /\bcommit\b/u,
+      /\bpush\b/u,
+      /\bopen-pr\b/u,
+    ], 420),
+  ],
+  [
+    "strong trx guide intent ingredients",
+    hasCompoundBodyTermsNear("strong intent", [
+      /\boutcome\b/u,
+      /\bconstraints?\b/u,
+      /\bacceptance criteria\b/u,
+      /\b(?:plans?|learnings?)\b/u,
+      /\bdelivery boundary\b/u,
+    ], 520),
+  ],
+  [
+    "cross-model review risk",
+    hasCompoundBodyTermsNear("cross-model", [
+      /\breview\b/u,
+      /\bexternal\b/u,
+      /\b(?:egress|send|transfer)\b/u,
+      /\bplan_model\b/u,
+      /\bbrainstorm_model\b/u,
+      /\bcross_model_review_mode\b/u,
+      /\boff\b/u,
+    ], 760),
+  ],
+]
+for (const [fact, present] of compoundBodyFacts) {
+  if (!present) throw new Error(`cpx compound-engineering guide must document ${fact}`)
+}
+
 const pstackGuide = registry.get("native:cdx/pstack")
 if (pstackGuide === undefined) throw new Error("cdx pstack guide is missing")
 const expectedPstackWorkflows = new Map([

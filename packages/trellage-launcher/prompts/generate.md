@@ -46,23 +46,30 @@ and fenced code blocks when they make the work easier to scan. Do not add
 markup only for decoration, do not wrap the complete prompt in a code fence,
 and do not emit MDX, JSX, HTML, or executable expressions.
 
-If the selected workflow's `promptTemplate` adds substantive requirements
-before or after `{{intent}}`, preserve those requirements naturally in every
-candidate. Integrate them into one coherent prompt; do not repeat the same
-requirement in both model-authored text and a copied template suffix.
+If the selected workflow declares `skill`, write only the body that belongs in
+its `{{intent}}` slot. The caller applies the exact authored `promptTemplate`
+after all model stages. Do not copy its fixed prefix or suffix, and do not emit
+workflow commands.
+
+For a workflow without `skill`, write the complete prompt. Preserve the
+substantive authored workflow requirements from its `promptTemplate`, integrate
+them once into a coherent instruction, and do not assume the caller will add a
+prefix, suffix, command, or other frame later.
+
+For a workflow with `skill`, let fixed template text supply its own substantive
+requirements. Keep the body focused on the user's subject, question, and stated
+scope without copying or paraphrasing the authored frame.
 
 For `sandbox:claude-council` with the `run-council-deliberation` workflow,
-preserve the user's intent as the idea under review. Every candidate must ask
-the council to pressure-test that idea and its implementation: challenge
-assumptions, identify risks and failure modes, compare credible alternatives,
-assess feasibility and implementation tradeoffs, and recommend concrete next
-steps.
+preserve only the user's idea, question, and stated scope in the body. Do not
+duplicate the fixed frame's pressure-testing, risk, alternative, feasibility,
+implementation-tradeoff, recommendation, or next-step requirements.
 
 For `sandbox:claude-research` with the `vault-backed-research` workflow,
-preserve the user's intent as the subject of additional research. Every
-candidate must ask for source-backed evidence, relevant prior art, unresolved
-questions, risks, and implementation options that should inform the work
-before execution.
+preserve only the user's research subject, question, comparison, and stated
+scope in the body. Do not duplicate the fixed frame's source-evidence, prior
+art, unresolved-question, risk, implementation-option, or approach-change
+requirements.
 
 For `native:fmx/default`, every candidate must make Firstmate the sole fleet
 router and integration authority. Cover the supported fleet lifecycle
@@ -104,7 +111,7 @@ single JSON object parseable by `JSON.parse`, matching exactly:
   "candidates": [
     {
       "title": "<short label for this candidate, a few words>",
-      "prompt": "<the full candidate prompt text to send to the agent>",
+      "prompt": "<candidate body or complete prompt text>",
       "notes": "<short plain-text note on when to prefer this candidate>"
     }
   ]
@@ -115,10 +122,10 @@ Requirements:
 
 - `candidates` must contain exactly three entries.
 - `title` is a short label, not a full sentence.
-- `prompt` is the complete Markdown-formatted instruction the user would send
-  to the target profile's agent, not a description about the prompt. Every
-  candidate's `prompt` must be distinct text (not near-duplicates or copies of
-  one another).
+- `prompt` is the Markdown-formatted body for a workflow with `skill`, or the
+  complete instruction for a workflow without `skill`. It is not a description
+  about the prompt. Every candidate's `prompt` must be distinct text (not
+  near-duplicates or copies of one another).
 - `notes` is a short plain-text sentence, not Markdown.
 - Do not add, rename, or omit any key shown above. Do not include a
   `command`, `commandPath`, `args`, or any other field — commands are never

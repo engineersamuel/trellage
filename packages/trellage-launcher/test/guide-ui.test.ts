@@ -142,6 +142,23 @@ const firstmateGuide = (pstackWorkers: boolean): ProfileGuideV1 => ({
   ],
 })
 
+const guideSkillReviewer: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["code-review"],
+  bestFor: ["Reviewing pull requests", "Focused diff analysis"],
+  avoidFor: ["Long-running background jobs", "Unrelated content work"],
+  prerequisites: [{ id: "git-repo", description: "A git repository checkout." }],
+  workflows: [
+    {
+      id: "review",
+      description: "Review a diff.",
+      skill: "review-diff",
+      examples: ["Review my last commit", "Check this diff", "Review this PR"],
+      promptTemplate: "/review-diff {{intent}}",
+    },
+  ],
+}
+
 const reviewerGuideMarkdown = `---
 schemaVersion: 1
 capabilities:
@@ -164,6 +181,35 @@ workflows:
       - Review this PR
     promptTemplate: |
       Review the diff for: {{intent}}
+---
+# Reviewer
+
+Use this profile to review diffs.
+`
+
+const skillReviewerGuideMarkdown = `---
+schemaVersion: 1
+capabilities:
+  - code-review
+bestFor:
+  - Reviewing pull requests
+  - Focused diff analysis
+avoidFor:
+  - Long-running background jobs
+  - Unrelated content work
+prerequisites:
+  - id: git-repo
+    description: A git repository checkout.
+workflows:
+  - id: review
+    description: Review a diff.
+    skill: review-diff
+    examples:
+      - Review my last commit
+      - Check this diff
+      - Review this PR
+    promptTemplate: |
+      /review-diff {{intent}}
 ---
 # Reviewer
 
@@ -363,6 +409,138 @@ const guideHve: ProfileGuideV1 = {
   ],
 }
 
+const councilFallbackSuffix =
+  "\n\nChallenge the assumptions, identify risks and failure modes, compare credible alternatives,\n" +
+  "assess feasibility and implementation tradeoffs, and recommend concrete next steps."
+
+const councilFallbackGuide: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["multi-perspective-deliberation"],
+  bestFor: ["Pressure-testing ideas"],
+  avoidFor: ["Quick factual lookups"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "run-council-deliberation",
+      description: "Pressure-test an idea and its implementation.",
+      skill: "council",
+      examples: ["Challenge this product decision"],
+      promptTemplate:
+        "/council Pressure-test this idea and its implementation: {{intent}}" +
+        councilFallbackSuffix,
+    },
+  ],
+}
+
+const hveFallbackGuide: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["evidence-backed-rpi-delivery"],
+  bestFor: ["Research, Plan, Implement, and Review workflows"],
+  avoidFor: ["Unrelated prose"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "rpi-plan-and-critique",
+      description: "Draft and critique an implementation plan.",
+      examples: ["Turn the research into a plan"],
+      promptTemplate:
+        "Use the rpi-plan skill to draft a plan for {{intent}}, then use\n" +
+        "rpi-plan-critique to challenge it before implementation begins.",
+    },
+  ],
+}
+
+const pstackFallbackGuide: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["review-and-polish"],
+  bestFor: ["Skeptical review"],
+  avoidFor: ["Unrelated prose"],
+  prerequisites: [],
+  workflows: [
+    {
+      id: "review-and-polish",
+      description: "Review a diff, then remove low-value prose.",
+      skill: "pstack-for-codex:interrogate",
+      examples: ["Review this change"],
+      promptTemplate:
+        "$pstack-for-codex:interrogate {{intent}}\n" +
+        "$pstack-for-codex:no-comments\n" +
+        "$pstack-for-codex:unslop",
+    },
+  ],
+}
+
+interface FallbackRoundTripCase {
+  readonly name: string
+  readonly guide: ProfileGuideV1
+  readonly workflowId: string
+  readonly intent: string
+  readonly candidateIndex: 1 | 2
+  readonly expectedDraft: string
+}
+
+const fallbackRoundTripCases: ReadonlyArray<FallbackRoundTripCase> = [
+  {
+    name: "Scoped Council prose-suffix",
+    guide: councilFallbackGuide,
+    workflowId: "run-council-deliberation",
+    intent: "adopting event sourcing for billing",
+    candidateIndex: 1,
+    expectedDraft:
+      "adopting event sourcing for billing; keep the work within the smallest reasonable scope.",
+  },
+  {
+    name: "Verified Council prose-suffix",
+    guide: councilFallbackGuide,
+    workflowId: "run-council-deliberation",
+    intent: "adopting event sourcing for billing",
+    candidateIndex: 2,
+    expectedDraft:
+      "adopting event sourcing for billing; after completing the work, verify it and report the verification evidence.",
+  },
+  {
+    name: "Scoped HVE prose-suffix",
+    guide: hveFallbackGuide,
+    workflowId: "rpi-plan-and-critique",
+    intent: "the queue retry change",
+    candidateIndex: 1,
+    expectedDraft:
+      "Use the rpi-plan skill to draft a plan for the queue retry change; " +
+      "keep the work within the smallest reasonable scope, then use\n" +
+      "rpi-plan-critique to challenge it before implementation begins.",
+  },
+  {
+    name: "Verified HVE prose-suffix",
+    guide: hveFallbackGuide,
+    workflowId: "rpi-plan-and-critique",
+    intent: "the queue retry change",
+    candidateIndex: 2,
+    expectedDraft:
+      "Use the rpi-plan skill to draft a plan for the queue retry change; " +
+      "after completing the work, verify it and report the verification evidence, then use\n" +
+      "rpi-plan-critique to challenge it before implementation begins.",
+  },
+  {
+    name: "Scoped pstack command-suffix",
+    guide: pstackFallbackGuide,
+    workflowId: "review-and-polish",
+    intent: "Review the queue change",
+    candidateIndex: 1,
+    expectedDraft:
+      "Review the queue change\n\n## Scope\n\nLimit the change to the smallest reasonable scope.",
+  },
+  {
+    name: "Verified pstack command-suffix",
+    guide: pstackFallbackGuide,
+    workflowId: "review-and-polish",
+    intent: "Review the queue change",
+    candidateIndex: 2,
+    expectedDraft:
+      "Review the queue change\n\n## Completion\n\n" +
+      "After completing the work, verify it and report the verification evidence.",
+  },
+]
+
 /** Builds a 3-entry catalog (2 native, 1 sandbox), rooted at `tmpRoot` for the sandbox profile path. */
 const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
   parseGuideCatalog(
@@ -438,6 +616,16 @@ const buildFirstmateCatalog = (tmpRoot: string): CombinedGuideCatalog => {
   }
 }
 
+const buildCatalogWithSkillReviewer = (tmpRoot: string): CombinedGuideCatalog => {
+  const catalog = buildCatalog(tmpRoot)
+  return {
+    ...catalog,
+    native: catalog.native.map((entry) =>
+      entry.launcher === "cdx" && entry.name === "reviewer" ? { ...entry, guide: guideSkillReviewer } : entry,
+    ),
+  }
+}
+
 const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => {
   const catalog = buildCatalog(tmpRoot)
   const sandboxEntry = (
@@ -505,10 +693,13 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
   }
 }
 
-/** Writes the native "cdx/reviewer" guide Markdown fixture under `root`, matching `guideReviewer`. */
-const writeGuideFixtures = async (root: string): Promise<void> => {
+/** Writes the selected native "cdx/reviewer" guide Markdown fixture under `root`. */
+const writeGuideFixtures = async (
+  root: string,
+  reviewerMarkdown: string = reviewerGuideMarkdown,
+): Promise<void> => {
   await mkdir(path.join(root, "native", "cdx"), { recursive: true })
-  await writeFile(path.join(root, "native", "cdx", "reviewer.md"), reviewerGuideMarkdown)
+  await writeFile(path.join(root, "native", "cdx", "reviewer.md"), reviewerMarkdown)
 }
 
 const writeFirstmateGuideFixture = async (root: string, profile: "default" | "pstack-workers"): Promise<void> => {
@@ -538,6 +729,14 @@ const candidateTriple = (): readonly [GuideGenerateCandidate, GuideGenerateCandi
   candidate({ title: "Focused", prompt: "Do the focused thing.", notes: "Quick pass." }),
   candidate({ title: "Thorough", prompt: "Do the thorough thing.", notes: "Deep pass." }),
   candidate({ title: "Cautious", prompt: "Do the cautious thing.", notes: "Careful pass." }),
+]
+
+const refinementCandidateTriple = (
+  selected: GuideGenerateCandidate,
+): readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate] => [
+  selected,
+  candidate({ title: "Alternate B", prompt: "Keep alternate candidate B.", notes: "Alternate B." }),
+  candidate({ title: "Alternate C", prompt: "Keep alternate candidate C.", notes: "Alternate C." }),
 ]
 
 const recommendation = (overrides: Partial<GuideRecommendation> = {}): GuideRecommendation => ({
@@ -611,16 +810,26 @@ const collisionInspection = (
 // that generation/refinement never re-run matching.
 // ---------------------------------------------------------------------------
 
+interface FakeGuideProviderOptions {
+  readonly generateResult?: GuideGenerateResult
+  readonly refineResult?: GuideRefineResult
+  readonly optimizeResult?: (input: GuideOptimizeInput) => GuideOptimizeResult
+}
+
 class FakeGuideProvider implements GuideProvider {
   readonly matchCalls: Array<GuideMatchInput> = []
   readonly generateCalls: Array<GuideGenerateInput> = []
   readonly refineCalls: Array<GuideRefineInput> = []
   readonly optimizeCalls: Array<GuideOptimizeInput> = []
+  private readonly generateResult: GuideGenerateResult
+  private readonly refineResult: GuideRefineResult
+  private readonly optimizeResult: (input: GuideOptimizeInput) => GuideOptimizeResult
 
-  constructor(
-    private readonly generateResult: GuideGenerateResult = { candidates: candidateTriple() },
-    private readonly refineResult: GuideRefineResult = { candidate: candidate({ title: "Refined" }) },
-  ) {}
+  constructor(options: FakeGuideProviderOptions = {}) {
+    this.generateResult = options.generateResult ?? { candidates: candidateTriple() }
+    this.refineResult = options.refineResult ?? { candidate: candidate({ title: "Refined" }) }
+    this.optimizeResult = options.optimizeResult ?? ((input) => ({ candidates: input.candidates }))
+  }
 
   async match(input: GuideMatchInput): Promise<GuideMatchResult> {
     this.matchCalls.push(input)
@@ -639,7 +848,7 @@ class FakeGuideProvider implements GuideProvider {
 
   async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
     this.optimizeCalls.push(input)
-    return { candidates: input.candidates }
+    return this.optimizeResult(input)
   }
 }
 
@@ -1070,7 +1279,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     expect(state.selectedCandidate).toEqual(candidateTriple()[1])
   })
 
-  it("candidates/direct-edit-start seeds the editor with the current candidate's prompt", () => {
+  it("candidates/direct-edit-start keeps the full prompt for a no-skill workflow", () => {
     let state = candidatesState()
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesMove, delta: 1 })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
@@ -1104,6 +1313,248 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
       candidates[2],
     ])
   })
+
+  it("direct editing cannot remove or replace the selected skill workflow frame", () => {
+    let state = createInitialGuideUiState("Review my PR")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchSucceeded,
+      recommendations: recommendationTriple(),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: {
+        ref: "native:cdx/reviewer",
+        guide: guideSkillReviewer,
+        body: "guide body",
+      },
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateSucceeded,
+      candidates: [
+        candidate({ prompt: "/review-diff Do the focused thing." }),
+        candidate({ prompt: "/review-diff Do the thorough thing." }),
+        candidate({ prompt: "/review-diff Do the cautious thing." }),
+      ],
+    })
+
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.EditorChange,
+      text: "A user-edited body without the frame.",
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
+    expect(state.candidates?.[0]?.prompt).toBe(
+      "/review-diff A user-edited body without the frame.",
+    )
+
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.EditorChange,
+      text: "/different-command Keep this full user edit.",
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
+    expect(state.candidates?.[0]?.prompt).toBe(
+      "/review-diff /different-command Keep this full user edit.",
+    )
+
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
+    expect(state.selectedCandidate?.prompt).toBe(
+      "/review-diff /different-command Keep this full user edit.",
+    )
+    const result = buildCurrentTerminalResult(
+      nativeSelectedProfile(true),
+      state.selectedCandidate?.prompt ?? "",
+      "/repo",
+    )
+    expect(result.command.args).toEqual([
+      "reviewer",
+      "--",
+      "/review-diff /different-command Keep this full user edit.",
+    ])
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain("promptTemplate")
+    expect(serialized).not.toContain("fixedFrame")
+    expect(serialized).not.toContain("beforeBody")
+    expect(serialized).not.toContain("afterBody")
+  })
+
+  it("edits only the body of a suffix-framed pstack prompt before rendering once", () => {
+    const pstackGuide: ProfileGuideV1 = {
+      ...guideSkillReviewer,
+      workflows: [
+        {
+          id: "review",
+          description: "Review and polish a diff.",
+          skill: "pstack-for-codex:interrogate",
+          examples: ["Review this diff", "Polish this change"],
+          promptTemplate:
+            "$pstack-for-codex:interrogate {{intent}}\n" +
+            "$pstack-for-codex:no-comments\n" +
+            "$pstack-for-codex:unslop",
+        },
+      ],
+    }
+    const suffix =
+      "\n$pstack-for-codex:no-comments\n$pstack-for-codex:unslop"
+    let state = createInitialGuideUiState("Review my PR")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchSucceeded,
+      recommendations: recommendationTriple(),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: {
+        ref: "native:cdx/reviewer",
+        guide: pstackGuide,
+        body: "guide body",
+      },
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateSucceeded,
+      candidates: [
+        candidate({
+          prompt: "$pstack-for-codex:interrogate Review the queue race." + suffix,
+        }),
+        candidate({
+          prompt: "$pstack-for-codex:interrogate Review the retry path." + suffix,
+        }),
+        candidate({
+          prompt: "$pstack-for-codex:interrogate Review the migration." + suffix,
+        }),
+      ],
+    })
+
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
+    expect(state.textDraft).toBe("Review the queue race.")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.EditorChange,
+      text: `${state.textDraft}\nAlso verify rollback evidence.`,
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
+
+    const editedPrompt = state.candidates?.[0]?.prompt
+    expect(editedPrompt).toBe(
+      "$pstack-for-codex:interrogate Review the queue race.\n" +
+        "Also verify rollback evidence." +
+        suffix,
+    )
+    expect(editedPrompt?.match(/\$pstack-for-codex:interrogate/gu)).toHaveLength(1)
+    expect(editedPrompt?.match(/\$pstack-for-codex:no-comments/gu)).toHaveLength(1)
+    expect(editedPrompt?.match(/\$pstack-for-codex:unslop/gu)).toHaveLength(1)
+    expect(editedPrompt?.endsWith("$pstack-for-codex:unslop")).toBe(true)
+  })
+
+  it.each([
+    ["trailing spaces", "Fix it. "],
+    ["trailing newline", "Fix it.\n"],
+  ])("deduplicates punctuation suffixes from direct edits with %s", (_kind, editedBody) => {
+    const punctuationGuide: ProfileGuideV1 = {
+      ...guideSkillReviewer,
+      workflows: [
+        {
+          id: "review",
+          description: "Create a concise visual explanation.",
+          skill: "html",
+          examples: ["Explain this visually"],
+          promptTemplate: "Use html for {{intent}}.",
+        },
+      ],
+    }
+    let state = createInitialGuideUiState("Fix it")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchSucceeded,
+      recommendations: recommendationTriple(),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: {
+        ref: "native:cdx/reviewer",
+        guide: punctuationGuide,
+        body: "guide body",
+      },
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateSucceeded,
+      candidates: [
+        candidate({ prompt: "Use html for Fix it." }),
+        candidate({ prompt: "Use html for Explain it." }),
+        candidate({ prompt: "Use html for Show it." }),
+      ],
+    })
+
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.EditorChange,
+      text: editedBody,
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
+
+    expect(state.candidates?.[0]?.prompt).toBe("Use html for Fix it.")
+  })
+
+  it.each(fallbackRoundTripCases)(
+    "keeps an unchanged $name template fallback exact through direct edit",
+    ({ guide, workflowId, intent, candidateIndex, expectedDraft }) => {
+      const candidates = templatePromptCandidates(guide, workflowId, intent)
+      const chosen = recommendation({
+        workflowId,
+        workflow: {
+          id: workflowId,
+          description: guide.workflows[0]?.description ?? "Fallback workflow.",
+          examples: guide.workflows[0]?.examples ?? [],
+        },
+      })
+      const recommendations: readonly [
+        GuideRecommendation,
+        GuideRecommendation,
+        GuideRecommendation,
+      ] = [chosen, recommendationTriple()[1], recommendationTriple()[2]]
+      let state = createInitialGuideUiState(intent)
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.MatchSucceeded,
+        recommendations,
+      })
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.RecommendationsConfirm,
+        selectedProfile: nativeSelectedProfile(true),
+      })
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.GenerateGuideLoaded,
+        guideDocument: {
+          ref: chosen.profileRef,
+          guide,
+          body: "guide body",
+        },
+      })
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.GenerateSucceeded,
+        candidates,
+      })
+      for (let index = 0; index < candidateIndex; index += 1) {
+        state = guideUiReducer(state, {
+          type: GuideUiActionType.CandidatesMove,
+          delta: 1,
+        })
+      }
+      state = guideUiReducer(state, { type: GuideUiActionType.CandidatesDirectEditStart })
+
+      expect(state.textDraft).toBe(expectedDraft)
+      state = guideUiReducer(state, { type: GuideUiActionType.DirectEditSubmit })
+      expect(state.candidates?.[candidateIndex]).toEqual(candidates[candidateIndex])
+    },
+  )
 
   it("direct-edit/back discards the draft and returns to Candidates unchanged", () => {
     let state = candidatesState()
@@ -1142,6 +1593,23 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     expect(state.stage).toBe(GuideUiStage.Candidates)
     const candidates = candidateTriple()
     expect(state.candidates).toEqual([candidates[0], refined, candidates[2]])
+  })
+
+  it("refine/succeeded rejects a replacement that would duplicate another candidate", () => {
+    let state = candidatesState()
+    const priorCandidates = state.candidates
+    const duplicate = priorCandidates?.[1]
+    if (duplicate === undefined) throw new Error("Candidate fixture is required")
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesRefineStart })
+    state = guideUiReducer(state, { type: GuideUiActionType.EditorChange, text: "Match candidate B." })
+    state = guideUiReducer(state, { type: GuideUiActionType.RefineSubmit })
+    state = guideUiReducer(state, { type: GuideUiActionType.RefineSucceeded, candidate: duplicate })
+
+    expect(state.stage).toBe(GuideUiStage.RefineFailed)
+    expect(state.candidates).toBe(priorCandidates)
+    expect(state.errorMessage).toMatch(
+      /no longer distinct after optimization resolution and exact rendering/u,
+    )
   })
 
   it("refine/failed preserves the prior candidates and supports retry/back without losing them", () => {
@@ -1262,12 +1730,132 @@ describe("runGuideGenerationStep", () => {
     }
   })
 
+  it("optimizes skill bodies before rendering the exact workflow frame once", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-skill-"))
+    try {
+      const catalog = buildCatalogWithSkillReviewer(tmpRoot)
+      await writeGuideFixtures(tmpRoot, skillReviewerGuideMarkdown)
+      const provider = new FakeGuideProvider({
+        optimizeResult: (input) => ({
+          candidates: input.candidates.map((item) => ({
+            title: `Optimized ${item.title}`,
+            prompt: `Prompt Master: ${item.prompt}`,
+            notes: `${item.notes} Optimized.`,
+          })),
+        }),
+      })
+      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+
+      const result = await runGuideGenerationStep(
+        catalog,
+        tmpRoot,
+        provider,
+        "Review my PR",
+        chosen,
+      )
+
+      expect(provider.optimizeCalls[0]).toEqual({
+        targetTool: "codex",
+        profileRef: "native:cdx/reviewer",
+        candidates: candidateTriple(),
+        fixedFrame: {
+          beforeBody: "/review-diff ",
+          afterBody: "",
+        },
+      })
+      expect(result.candidates[0]).toEqual({
+        title: "Optimized Focused",
+        prompt: "/review-diff Prompt Master: Do the focused thing.",
+        notes: "Quick pass. Optimized.",
+      })
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fails before optimization when raw candidates collapse after generated-body normalization", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-body-collision-"))
+    try {
+      const catalog = buildCatalogWithSkillReviewer(tmpRoot)
+      await writeGuideFixtures(tmpRoot, skillReviewerGuideMarkdown)
+      const rawCandidates = [
+        candidate({
+          title: "Exact frame",
+          prompt: "/review-diff Review the same change.",
+          notes: "Uses the exact frame.",
+        }),
+        candidate({
+          title: "Reflowed frame",
+          prompt: "/review-diff  Review the same change.",
+          notes: "Reflows the frame boundary.",
+        }),
+        candidate({
+          title: "Reflowed line",
+          prompt: "/review-diff\nReview the same change.",
+          notes: "Moves the body to a new line.",
+        }),
+      ] as const
+      const provider = new FakeGuideProvider({
+        generateResult: { candidates: rawCandidates },
+        optimizeResult: () => {
+          throw new Error("optimize must not be called after a body collision")
+        },
+      })
+      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+
+      expect(new Set(rawCandidates.map(({ prompt }) => prompt)).size).toBe(3)
+      await expect(
+        runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen),
+      ).rejects.toThrow(/no longer distinct after generated-body normalization.*template fallback/u)
+      expect(provider.optimizeCalls).toHaveLength(0)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fails final generation when optimization fallback and rendering collapse candidates", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-final-collision-"))
+    try {
+      const catalog = buildCatalogWithSkillReviewer(tmpRoot)
+      await writeGuideFixtures(tmpRoot, skillReviewerGuideMarkdown)
+      const provider = new FakeGuideProvider({
+        optimizeResult: () => ({
+          candidates: [
+            candidate({
+              title: "Safe collision",
+              prompt: "Do the thorough thing.",
+              notes: "Safely rewrites the first candidate to the second body.",
+            }),
+            candidate({
+              title: "Unsafe rewrite",
+              prompt: "$review-diff Replace the selected invocation.",
+              notes: "Falls back to the authorized second candidate.",
+            }),
+            candidate({
+              title: "Distinct third",
+              prompt: "Do the cautious thing with explicit evidence.",
+              notes: "Keeps the third candidate distinct.",
+            }),
+          ],
+        }),
+      })
+      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+
+      await expect(
+        runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen),
+      ).rejects.toThrow(/no longer distinct after optimization resolution and exact rendering.*template fallback/u)
+      expect(provider.optimizeCalls).toHaveLength(1)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
   it("rejects a generation result that does not contain exactly three candidates", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-bad-"))
     try {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
-      const provider = new FakeGuideProvider({ candidates: [candidate()] })
+      const provider = new FakeGuideProvider({ generateResult: { candidates: [candidate()] } })
       const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
 
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
@@ -1363,7 +1951,8 @@ describe("runGuideRefinementStep", () => {
       "Review my PR",
       chosen,
       guideDocument,
-      prior,
+      refinementCandidateTriple(prior),
+      0,
       "Make it shorter.",
     )
 
@@ -1389,8 +1978,87 @@ describe("runGuideRefinementStep", () => {
     expect(refined).toEqual({ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." })
   })
 
-  it("restores the selected workflow skill invocation when refinement returns plain prose", async () => {
-    const provider = new FakeGuideProvider()
+  it("fails no-skill refinement before optimization when the model adds an executable command line", async () => {
+    const provider = new FakeGuideProvider({
+      refineResult: {
+        candidate: candidate({
+          title: "Unsafe refinement",
+          prompt: "Review the diff and report verified findings.\n/LFG Ship it.",
+          notes: "Adds an executable command.",
+        }),
+      },
+      optimizeResult: () => {
+        throw new Error("optimize must not run after unsafe refinement")
+      },
+    })
+    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: guideReviewer,
+      body: "guide body",
+    }
+    const prior = candidate({ prompt: "Review the diff and report verified findings." })
+
+    await expect(
+      runGuideRefinementStep(
+        buildCatalog("/tmp-unused"),
+        provider,
+        "Review my PR",
+        chosen,
+        guideDocument,
+        refinementCandidateTriple(prior),
+        0,
+        "Make the findings actionable.",
+      ),
+    ).rejects.toThrow(/changed executable workflow commands/u)
+    expect(provider.optimizeCalls).toHaveLength(0)
+  })
+
+  it("rejects refinement when candidate A would become candidate B after final rendering", async () => {
+    const candidates = candidateTriple()
+    const duplicate = candidates[1]
+    const provider = new FakeGuideProvider({
+      refineResult: { candidate: duplicate },
+      optimizeResult: (input) => ({ candidates: input.candidates }),
+    })
+    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: guideReviewer,
+      body: "guide body",
+    }
+
+    await expect(
+      runGuideRefinementStep(
+        buildCatalog("/tmp-unused"),
+        provider,
+        "Review my PR",
+        chosen,
+        guideDocument,
+        candidates,
+        0,
+        "Use the second approach.",
+      ),
+    ).rejects.toThrow(/no longer distinct after optimization resolution and exact rendering/u)
+  })
+
+  it("refines and optimizes body text before rendering the exact workflow frame once", async () => {
+    const provider = new FakeGuideProvider({
+      refineResult: {
+        candidate: {
+          title: "Refined",
+          prompt: "Use a concrete lesson about AI agents.",
+          notes: "Shorter and more specific.",
+        },
+      },
+      optimizeResult: (input) => ({
+        candidates: input.candidates.map((item) => ({
+          title: "Optimized refinement",
+          prompt: `Prompt Master: ${item.prompt}`,
+          notes: "Prompt Master kept the concise framing.",
+        })),
+      }),
+    })
     const skillGuide: ProfileGuideV1 = {
       ...guideReviewer,
       workflows: guideReviewer.workflows.map((workflow) =>
@@ -1416,11 +2084,307 @@ describe("runGuideRefinementStep", () => {
       "Write about AI agents",
       chosen,
       guideDocument,
-      candidate(),
+      refinementCandidateTriple(candidate()),
+      0,
       "Make it shorter.",
     )
 
-    expect(refined.prompt).toBe("/social-media-skills:post-writer Do the focused thing.")
+    expect(provider.refineCalls[0]?.candidate.prompt).toBe("Do the focused thing.")
+    expect(provider.optimizeCalls[0]).toEqual({
+      targetTool: "codex",
+      profileRef: "native:cdx/reviewer",
+      candidates: [
+        {
+          title: "Refined",
+          prompt: "Use a concrete lesson about AI agents.",
+          notes: "Shorter and more specific.",
+        },
+      ],
+      fixedFrame: {
+        beforeBody: "/social-media-skills:post-writer ",
+        afterBody: "",
+      },
+    })
+    expect(refined).toEqual({
+      title: "Optimized refinement",
+      prompt:
+        "/social-media-skills:post-writer " +
+        "Prompt Master: Use a concrete lesson about AI agents.",
+      notes: "Prompt Master kept the concise framing.",
+    })
+  })
+
+  it("normalizes a refined exact prose-frame echo before one final render", async () => {
+    const proseGuide: ProfileGuideV1 = {
+      ...guideReviewer,
+      workflows: [
+        {
+          id: "plan",
+          description: "Draft an implementation plan.",
+          skill: "writing-plans",
+          examples: ["Plan this feature", "Draft a phased plan"],
+          promptTemplate: "Use the writing-plans skill:\n{{intent}}",
+        },
+      ],
+    }
+    const provider = new FakeGuideProvider({
+      refineResult: {
+        candidate: {
+          title: "Rollback plan",
+          prompt:
+            "Use the writing-plans skill:\n" +
+            "Plan the retry migration with rollback steps.",
+          notes: "Adds rollback steps.",
+        },
+      },
+    })
+    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "plan" })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: proseGuide,
+      body: "guide body",
+    }
+    const prior = candidate({
+      prompt: "Use the writing-plans skill:\nPlan the retry migration.",
+    })
+
+    const refined = await runGuideRefinementStep(
+      buildCatalog("/tmp-unused"),
+      provider,
+      "Plan the retry migration.",
+      chosen,
+      guideDocument,
+      refinementCandidateTriple(prior),
+      0,
+      "Add rollback steps.",
+    )
+
+    expect(provider.refineCalls[0]?.candidate.prompt).toBe("Plan the retry migration.")
+    expect(provider.optimizeCalls[0]?.candidates[0]?.prompt).toBe(
+      "Plan the retry migration with rollback steps.",
+    )
+    expect(refined).toEqual({
+      title: "Rollback plan",
+      prompt: "Use the writing-plans skill:\nPlan the retry migration with rollback steps.",
+      notes: "Adds rollback steps.",
+    })
+    expect(refined.prompt.match(/Use the writing-plans skill:/gu)).toHaveLength(1)
+  })
+
+  it("normalizes a refined exact command-frame echo before optimization", async () => {
+    const provider = new FakeGuideProvider({
+      refineResult: {
+        candidate: {
+          title: "Framed refinement",
+          prompt: "/review-diff Replace the authorized body.",
+          notes: "Echoes the selected frame around a revised body.",
+        },
+      },
+      optimizeResult: (input) => ({
+        candidates: input.candidates.map((item) => ({
+          ...item,
+          prompt: `Sharpened: ${item.prompt}`,
+        })),
+      }),
+    })
+    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: guideSkillReviewer,
+      body: "guide body",
+    }
+    const prior = candidate({
+      title: "Authorized body",
+      prompt: "/review-diff Review the queue race.",
+      notes: "Notes for the authorized body.",
+    })
+
+    const refined = await runGuideRefinementStep(
+      buildCatalog("/tmp-unused"),
+      provider,
+      "Review the queue race",
+      chosen,
+      guideDocument,
+      refinementCandidateTriple(prior),
+      0,
+      "Make it more specific.",
+    )
+
+    expect(provider.refineCalls[0]?.candidate).toEqual({
+      title: "Authorized body",
+      prompt: "Review the queue race.",
+      notes: "Notes for the authorized body.",
+    })
+    expect(provider.optimizeCalls[0]?.candidates).toEqual([
+      {
+        title: "Framed refinement",
+        prompt: "Replace the authorized body.",
+        notes: "Echoes the selected frame around a revised body.",
+      },
+    ])
+    expect(refined).toEqual({
+      title: "Framed refinement",
+      prompt: "/review-diff Sharpened: Replace the authorized body.",
+      notes: "Echoes the selected frame around a revised body.",
+    })
+    expect(refined.prompt.match(/\/review-diff/gu)).toHaveLength(1)
+  })
+
+  it("keeps the exact ce-compound argument once when refinement echoes only the command", async () => {
+    const compoundGuide: ProfileGuideV1 = {
+      ...guideSkillReviewer,
+      workflows: [
+        {
+          id: "compound",
+          description: "Capture a verified repository learning.",
+          skill: "ce-compound",
+          examples: ["Capture this fix", "Record this solution"],
+          promptTemplate: "/ce-compound mode:non-interactive {{intent}}",
+        },
+        {
+          id: "lfg",
+          description: "Deliver a change.",
+          skill: "lfg",
+          examples: ["Ship this feature", "Open a pull request"],
+          promptTemplate: "/lfg {{intent}}",
+        },
+      ],
+    }
+    const provider = new FakeGuideProvider({
+      refineResult: {
+        candidate: {
+          title: "Echoed command",
+          prompt: "/ce-compound Capture more detail about the retry fix.",
+          notes: "Adds detail to the verified learning.",
+        },
+      },
+    })
+    const chosen = recommendation({
+      profileRef: "native:cdx/reviewer",
+      workflowId: "compound",
+    })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: compoundGuide,
+      body: "guide body",
+    }
+    const prior = candidate({
+      title: "Verified learning",
+      prompt: "/ce-compound mode:non-interactive Capture the verified retry fix.",
+      notes: "Captures the verified cause and solution.",
+    })
+
+    const refined = await runGuideRefinementStep(
+      buildCatalog("/tmp-unused"),
+      provider,
+      "Capture the verified retry fix.",
+      chosen,
+      guideDocument,
+      refinementCandidateTriple(prior),
+      0,
+      "Add more detail.",
+    )
+
+    expect(provider.refineCalls[0]?.candidate.prompt).toBe("Capture the verified retry fix.")
+    expect(provider.optimizeCalls[0]?.candidates).toEqual([
+      {
+        title: "Echoed command",
+        prompt: "Capture more detail about the retry fix.",
+        notes: "Adds detail to the verified learning.",
+      },
+    ])
+    expect(refined).toEqual({
+      title: "Echoed command",
+      prompt:
+        "/ce-compound mode:non-interactive Capture more detail about the retry fix.",
+      notes: "Adds detail to the verified learning.",
+    })
+    expect(refined.prompt.match(/\/ce-compound/gu)).toHaveLength(1)
+    expect(refined.prompt.match(/mode:non-interactive/gu)).toHaveLength(1)
+  })
+
+  it.each(fallbackRoundTripCases)(
+    "keeps an unchanged $name template fallback exact through refinement",
+    async ({ guide, workflowId, intent, candidateIndex, expectedDraft }) => {
+      const prior = templatePromptCandidates(guide, workflowId, intent)[candidateIndex]
+      const workflow = guide.workflows[0]
+      if (workflow === undefined) throw new Error("Fallback workflow is required")
+      const refinementCandidate =
+        workflow.skill === undefined ? prior : { ...prior, prompt: expectedDraft }
+      const provider = new FakeGuideProvider({
+        refineResult: { candidate: refinementCandidate },
+        optimizeResult: (input) => ({ candidates: input.candidates }),
+      })
+      const chosen = recommendation({
+        workflowId,
+        workflow: {
+          id: workflowId,
+          description: workflow.description,
+          examples: workflow.examples,
+        },
+      })
+      const guideDocument: SelectedGuideDocument = {
+        ref: chosen.profileRef,
+        guide,
+        body: "guide body",
+      }
+
+      const refined = await runGuideRefinementStep(
+        buildCatalog("/tmp-unused"),
+        provider,
+        intent,
+        chosen,
+        guideDocument,
+        refinementCandidateTriple(prior),
+        0,
+        "Keep this fallback unchanged.",
+      )
+
+      expect(provider.refineCalls[0]?.candidate).toEqual(refinementCandidate)
+      expect(provider.optimizeCalls[0]?.candidates).toEqual([refinementCandidate])
+      expect(refined).toEqual(prior)
+    },
+  )
+
+  it("treats a non-exact direct edit as the refinement body, then restores the frame", async () => {
+    const provider = new FakeGuideProvider({
+      refineResult: {
+        candidate: {
+          title: "Refined edit",
+          prompt: "/different-command Keep the user's changed frame text and add tests.",
+          notes: "Preserves the direct edit.",
+        },
+      },
+    })
+    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const guideDocument: SelectedGuideDocument = {
+      ref: "native:cdx/reviewer",
+      guide: guideSkillReviewer,
+      body: "guide body",
+    }
+    const edited = candidate({
+      prompt: "/different-command Keep the user's changed frame text.",
+    })
+
+    const refined = await runGuideRefinementStep(
+      buildCatalog("/tmp-unused"),
+      provider,
+      "Review my PR",
+      chosen,
+      guideDocument,
+      refinementCandidateTriple(edited),
+      0,
+      "Add a test requirement.",
+    )
+
+    expect(provider.refineCalls[0]?.candidate.prompt).toBe(edited.prompt)
+    expect(provider.optimizeCalls[0]?.candidates[0]?.prompt).toBe(
+      "/different-command Keep the user's changed frame text and add tests.",
+    )
+    expect(refined.prompt).toBe(
+      "/review-diff /different-command Keep the user's changed frame text and add tests.",
+    )
+    expect(refined.prompt.match(/\/review-diff/gu)).toHaveLength(1)
   })
 
   it.each([
@@ -1449,7 +2413,8 @@ describe("runGuideRefinementStep", () => {
         "Implement the feature with isolated workers.",
         chosen,
         guideDocument,
-        candidate(),
+        refinementCandidateTriple(candidate()),
+        0,
         "Make the worker boundaries explicit.",
       )
 
@@ -1742,7 +2707,10 @@ describe("destinationOptions", () => {
             phase: GuideGenerationPhase.GeneratingCandidates,
             label: "Draft three profile-specific approaches",
           },
-          { phase: GuideGenerationPhase.ApplyingWorkflow, label: "Apply the review workflow" },
+          {
+            phase: GuideGenerationPhase.ApplyingWorkflow,
+            label: "Prepare the review workflow body",
+          },
           {
             phase: GuideGenerationPhase.OptimizingCandidates,
             label: "Improve clarity and completeness with Prompt Master",

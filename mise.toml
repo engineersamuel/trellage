@@ -18,6 +18,10 @@ run = "env TRELLAGE_TRX_SOURCE_ROOT=\"$MISE_PROJECT_ROOT/prototypes/trellage-rou
 description = "Refresh native trx/launchers + rebuild all sandbox profile images"
 run = "./scripts/rebuild-profile-images.sh --install"
 
+[tasks.rebuild-native-profiles]
+description = "Refresh native trx/launchers without replacing the installed Trellage CLI"
+run = "./scripts/rebuild-profile-images.sh --native-only"
+
 [tasks.trellage-clean-orphans]
 description = "Preview cleanup of Trellage containers for deleted worktrees"
 run = "./scripts/cleanup-orphaned-trellage-containers.sh"

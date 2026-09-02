@@ -23,6 +23,8 @@ interface ProfileGuideScenario {
   readonly id: string
   readonly intent: string
   readonly expectedProfiles: ReadonlyArray<string>
+  /** Partial workflow assertions; expected profiles without an entry remain rank-only checks. */
+  readonly expectedWorkflows?: Readonly<Record<string, string>>
   readonly maxRank: number
   readonly excludedProfiles: ReadonlyArray<string>
 }
@@ -32,9 +34,14 @@ interface ProfileGuideScenarios {
   readonly scenarios: ReadonlyArray<ProfileGuideScenario>
 }
 
+interface LiveScenarioParserModule {
+  readonly parseProfileGuideScenarios: (value: unknown) => ReadonlyArray<ProfileGuideScenario>
+}
+
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")
 const scenarioPath = path.join(repositoryRoot, "tests", "fixtures", "profile-guide-scenarios.json")
+const liveEvaluatorUrl = new URL("../../../scripts/evaluate-profile-guides.mjs", import.meta.url)
 
 const text = (value: unknown, name: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`${name} must be text`)
@@ -46,6 +53,12 @@ const record = (value: unknown, name: string): Record<string, unknown> => {
     throw new Error(`${name} must be an object`)
   }
   return value as Record<string, unknown>
+}
+
+const exactKeys = (value: Record<string, unknown>, name: string, allowedKeys: ReadonlyArray<string>): void => {
+  const allowed = new Set(allowedKeys)
+  const unexpected = Object.keys(value).filter((key) => !allowed.has(key))
+  if (unexpected.length > 0) throw new Error(`${name} contains unsupported keys: ${unexpected.join(", ")}`)
 }
 
 const stringArray = (value: unknown, name: string): ReadonlyArray<string> => {
@@ -62,6 +75,23 @@ const rank = (value: unknown, name: string): number => {
   return value
 }
 
+const expectedWorkflowMap = (
+  value: unknown,
+  name: string,
+  expectedProfiles: ReadonlyArray<string>,
+): Readonly<Record<string, string>> | undefined => {
+  if (value === undefined) return undefined
+  const expectedProfileSet = new Set(expectedProfiles)
+  const entries = Object.entries(record(value, name)).map(([profileRef, workflowId]) => {
+    text(profileRef, `${name} profile key`)
+    if (!expectedProfileSet.has(profileRef)) {
+      throw new Error(`${name} key ${profileRef} must also appear in expectedProfiles`)
+    }
+    return [profileRef, text(workflowId, `${name}.${profileRef}`)] as const
+  })
+  return Object.fromEntries(entries)
+}
+
 const validateScenarioSet = (scenarios: ReadonlyArray<ProfileGuideScenario>): ReadonlyArray<ProfileGuideScenario> => {
   const ids = scenarios.map(({ id }) => id)
   if (new Set(ids).size !== ids.length) throw new Error("profile guide scenario IDs must be unique")
@@ -76,32 +106,54 @@ const validateScenarioSet = (scenarios: ReadonlyArray<ProfileGuideScenario>): Re
   return scenarios
 }
 
-const loadScenarios = async (): Promise<ProfileGuideScenarios> => {
-  const value: unknown = JSON.parse(await readFile(scenarioPath, "utf8"))
+const parseScenario = (item: unknown, index: number): ProfileGuideScenario => {
+  const scenario = record(item, `scenario ${index}`)
+  exactKeys(scenario, `scenario ${index}`, [
+    "id",
+    "intent",
+    "expectedProfiles",
+    "maxRank",
+    "excludedProfiles",
+    "expectedWorkflows",
+  ])
+  const expectedProfiles = stringArray(scenario.expectedProfiles, `scenario ${index}.expectedProfiles`)
+  const expectedWorkflows = expectedWorkflowMap(
+    scenario.expectedWorkflows,
+    `scenario ${index}.expectedWorkflows`,
+    expectedProfiles,
+  )
+  return {
+    id: text(scenario.id, `scenario ${index}.id`),
+    intent: text(scenario.intent, `scenario ${index}.intent`),
+    expectedProfiles,
+    ...(expectedWorkflows === undefined ? {} : { expectedWorkflows }),
+    maxRank: rank(scenario.maxRank, `scenario ${index}.maxRank`),
+    excludedProfiles: stringArray(scenario.excludedProfiles, `scenario ${index}.excludedProfiles`),
+  }
+}
+
+const parseScenarioRoot = (value: unknown): ProfileGuideScenarios => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("profile guide scenarios must be an object")
   }
   const root = value as Record<string, unknown>
+  exactKeys(root, "profile guide scenarios", ["schemaVersion", "scenarios"])
   if (root.schemaVersion !== 1 || !Array.isArray(root.scenarios)) {
     throw new Error("profile guide scenarios must use schemaVersion 1")
   }
-  const scenarios = root.scenarios.map((item, index) => {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error(`scenario ${index} must be an object`)
-    }
-    const scenario = item as Record<string, unknown>
-    return {
-      id: text(scenario.id, `scenario ${index}.id`),
-      intent: text(scenario.intent, `scenario ${index}.intent`),
-      expectedProfiles: stringArray(scenario.expectedProfiles, `scenario ${index}.expectedProfiles`),
-      maxRank: rank(scenario.maxRank, `scenario ${index}.maxRank`),
-      excludedProfiles: stringArray(scenario.excludedProfiles, `scenario ${index}.excludedProfiles`),
-    }
-  })
+  const scenarios = root.scenarios.map(parseScenario)
   return {
     schemaVersion: 1,
     scenarios: validateScenarioSet(scenarios),
   }
+}
+
+const loadScenarios = async (): Promise<ProfileGuideScenarios> =>
+  parseScenarioRoot(JSON.parse(await readFile(scenarioPath, "utf8")))
+
+const loadLiveScenarioParser = async (): Promise<LiveScenarioParserModule["parseProfileGuideScenarios"]> => {
+  const liveModule = (await import(liveEvaluatorUrl.href)) as LiveScenarioParserModule
+  return liveModule.parseProfileGuideScenarios
 }
 
 const sandboxHeadless: HeadlessCapabilitiesV1 = {
@@ -268,6 +320,89 @@ const loadCatalog = async (): Promise<CombinedGuideCatalog> => {
 }
 
 describe("profile guide recommendation scenarios", () => {
+  it("rejects unsupported root keys", () => {
+    for (const unsupportedKey of ["expectedWorkflows", "scenario"]) {
+      expect(() =>
+        parseScenarioRoot({
+          schemaVersion: 1,
+          scenarios: [],
+          [unsupportedKey]: {},
+        }),
+      ).toThrow(`profile guide scenarios contains unsupported keys: ${unsupportedKey}`)
+    }
+  })
+
+  it("keeps live evaluator scenario root keys exact", async () => {
+    const parseProfileGuideScenarios = await loadLiveScenarioParser()
+    for (const unsupportedKey of ["expectedWorkflows", "scenario"]) {
+      expect(() =>
+        parseProfileGuideScenarios({
+          schemaVersion: 1,
+          scenarios: [],
+          [unsupportedKey]: {},
+        }),
+      ).toThrow(`profile guide scenarios has unexpected keys: ${unsupportedKey}`)
+    }
+  })
+
+  it("accepts omitted and partial expected workflow assertions", () => {
+    const baseScenario = {
+      id: "workflow-schema",
+      intent: "Select a profile",
+      expectedProfiles: ["native:test/one", "native:test/two"],
+      maxRank: 3,
+      excludedProfiles: [],
+    }
+    expect(parseScenario(baseScenario, 0).expectedWorkflows).toBeUndefined()
+    expect(
+      parseScenario(
+        {
+          ...baseScenario,
+          expectedWorkflows: { "native:test/one": "workflow-one" },
+        },
+        0,
+      ).expectedWorkflows,
+    ).toEqual({ "native:test/one": "workflow-one" })
+  })
+
+  it("rejects misspelled scenario keys", () => {
+    expect(() =>
+      parseScenario(
+        {
+          id: "workflow-schema",
+          intent: "Select a profile",
+          expectedProfiles: ["native:test/one"],
+          expectedWorkflow: { "native:test/one": "workflow-one" },
+          maxRank: 3,
+          excludedProfiles: [],
+        },
+        0,
+      ),
+    ).toThrow("scenario 0 contains unsupported keys: expectedWorkflow")
+  })
+
+  it("validates expected workflow assertion keys and values", () => {
+    const baseScenario = {
+      id: "workflow-schema",
+      intent: "Select a profile",
+      expectedProfiles: ["native:test/one"],
+      maxRank: 3,
+      excludedProfiles: [],
+    }
+    expect(() => parseScenario({ ...baseScenario, expectedWorkflows: [] }, 0)).toThrow(
+      "scenario 0.expectedWorkflows must be an object",
+    )
+    expect(() => parseScenario({ ...baseScenario, expectedWorkflows: { "": "workflow-one" } }, 0)).toThrow(
+      "scenario 0.expectedWorkflows profile key must be text",
+    )
+    expect(() =>
+      parseScenario({ ...baseScenario, expectedWorkflows: { "native:test/one": " " } }, 0),
+    ).toThrow("scenario 0.expectedWorkflows.native:test/one must be text")
+    expect(() =>
+      parseScenario({ ...baseScenario, expectedWorkflows: { "native:test/two": "workflow-two" } }, 0),
+    ).toThrow("scenario 0.expectedWorkflows key native:test/two must also appear in expectedProfiles")
+  })
+
   it("keeps expected profiles visible and known poor fits out of the literal top five", async () => {
     const [catalog, scenarios] = await Promise.all([loadCatalog(), loadScenarios()])
     const pinnedProfiles = new Set(["native:cpx/hve", "sandbox:claude-council", "sandbox:claude-research"])
@@ -280,7 +415,8 @@ describe("profile guide recommendation scenarios", () => {
     expect(coveredProfiles).toEqual(eligibleProfiles)
 
     for (const scenario of scenarios.scenarios) {
-      const refs = literalGuideMatch(catalog, scenario.intent).map(({ profileRef }) => profileRef)
+      const candidates = literalGuideMatch(catalog, scenario.intent)
+      const refs = candidates.map(({ profileRef }) => profileRef)
       for (const profileRef of scenario.expectedProfiles) {
         expect(knownProfiles.has(profileRef), `${scenario.id} references unknown profile ${profileRef}`).toBe(true)
         const profileRank = refs.indexOf(profileRef) + 1
@@ -292,6 +428,17 @@ describe("profile guide recommendation scenarios", () => {
           profileRank,
           `${scenario.id} should rank ${profileRef} at ${scenario.maxRank} or better`,
         ).toBeLessThanOrEqual(scenario.maxRank)
+      }
+      for (const [profileRef, expectedWorkflowId] of Object.entries(scenario.expectedWorkflows ?? {})) {
+        expect(
+          knownProfiles.has(profileRef),
+          `${scenario.id}.expectedWorkflows references unknown profile ${profileRef}`,
+        ).toBe(true)
+        const profileRank = refs.indexOf(profileRef) + 1
+        expect(
+          candidates[profileRank - 1]?.workflowId,
+          `${scenario.id} should select workflow ${expectedWorkflowId} for ${profileRef}`,
+        ).toBe(expectedWorkflowId)
       }
       const expectedRank = Math.min(...scenario.expectedProfiles.map((profileRef) => refs.indexOf(profileRef) + 1))
       for (const profileRef of scenario.excludedProfiles) {

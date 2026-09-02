@@ -3,6 +3,7 @@ import { GuideValidationError } from "../src/guide-text.js"
 import {
   assertGuideGenerateInput,
   assertGuideMatchInput,
+  assertGuideOptimizeInput,
   validateGuideGenerateResult,
   validateGuideMatchResult,
   validateGuideRefineResult,
@@ -362,5 +363,33 @@ describe("assertGuideGenerateInput", () => {
   it("allows a multiline guideBody containing real newlines", () => {
     const input = { ...validInput(), guideBody: "# Title\n\nFirst paragraph.\n\nSecond paragraph." }
     expect(() => assertGuideGenerateInput(input)).not.toThrow()
+  })
+})
+
+describe("assertGuideOptimizeInput", () => {
+  const validInput = () => ({
+    targetTool: "copilot",
+    profileRef: "native:cpx/compound-engineering",
+    candidates: [validGenerateCandidate()],
+    fixedFrame: {
+      beforeBody: "/ce-compound mode:non-interactive ",
+      afterBody: "",
+    },
+  })
+
+  it("accepts an optional fixed body frame with an empty side", () => {
+    expect(() => assertGuideOptimizeInput(validInput())).not.toThrow()
+  })
+
+  it("rejects malformed or unsupported fixed-frame fields", () => {
+    const input = {
+      ...validInput(),
+      fixedFrame: {
+        beforeBody: "/ce-compound ",
+        afterBody: "",
+        promptTemplate: "/ce-compound {{intent}}",
+      },
+    }
+    expect(() => assertGuideOptimizeInput(input)).toThrow(GuideValidationError)
   })
 })

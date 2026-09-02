@@ -276,6 +276,10 @@ describe("parseGuideCatalog", () => {
     expect(() => parseGuideCatalog(JSON.stringify(withSkill))).not.toThrow()
   })
 
+  it("accepts a promptTemplate containing exactly one {{intent}} placeholder", () => {
+    expect(() => parseGuideCatalog(JSON.stringify(validCatalog))).not.toThrow()
+  })
+
   it("rejects a promptTemplate missing the {{intent}} placeholder", () => {
     const broken = {
       ...validCatalog,
@@ -286,7 +290,25 @@ describe("parseGuideCatalog", () => {
         },
       ],
     }
-    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow("must contain the {{intent}} placeholder")
+  })
+
+  it("rejects a promptTemplate containing more than one {{intent}} placeholder", () => {
+    const broken = {
+      ...validCatalog,
+      native: [
+        {
+          ...validCatalog.native[0],
+          guide: {
+            ...guide,
+            workflows: [{ ...guide.workflows[0], promptTemplate: "Review {{intent}}, then summarize {{intent}}." }],
+          },
+        },
+      ],
+    }
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(
+      "must contain exactly one {{intent}} placeholder",
+    )
   })
 
   it("rejects a promptTemplate containing an unsupported placeholder alongside {{intent}}", () => {
@@ -302,7 +324,7 @@ describe("parseGuideCatalog", () => {
         },
       ],
     }
-    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow("contains unsupported placeholder: {{ref}}")
   })
 })
 

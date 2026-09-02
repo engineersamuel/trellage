@@ -95,8 +95,12 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
     fail(`${path}.skill`, "must be a portable skill or command identifier")
   }
   const promptTemplate = text(fields.promptTemplate, `${path}.promptTemplate`, 16000, { multiline: true })
-  if (!promptTemplate.includes("{{intent}}")) {
+  const intentPlaceholderCount = promptTemplate.split("{{intent}}").length - 1
+  if (intentPlaceholderCount === 0) {
     fail(`${path}.promptTemplate`, "must contain the {{intent}} placeholder")
+  }
+  if (intentPlaceholderCount > 1) {
+    fail(`${path}.promptTemplate`, "must contain exactly one {{intent}} placeholder")
   }
   for (const match of promptTemplate.matchAll(placeholderPattern)) {
     if (match[1] !== "intent") {
