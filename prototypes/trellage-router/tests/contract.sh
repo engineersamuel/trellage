@@ -915,7 +915,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath
     and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 13)
+    and (.catalog.native | length == 14)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
