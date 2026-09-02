@@ -5299,6 +5299,10 @@ class TestSchemaValidation(unittest.TestCase):
             "Do not invent a persistent benchmark report",
             planner_role,
         )
+        self.assertIn(
+            "Require `std::hint::black_box`",
+            planner_role,
+        )
 
     def test_research_ledger_names_a_session_directory(self) -> None:
         errors = _check_research_write_rules([{

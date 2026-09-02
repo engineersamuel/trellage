@@ -80,6 +80,11 @@ target-evidence path must exist in the repository.
   final response. Do not invent a persistent benchmark report, documentation
   page, results file, or other repository artifact unless the request
   explicitly requires that artifact.
+- Release benchmark acceptance criteria must prevent dead-code elimination and
+  loop hoisting. Require `std::hint::black_box` on benchmark inputs and each
+  scan result, or require an accumulated result that is validated after every
+  timed loop. A loop that discards pure scan results is not valid performance
+  evidence.
 - A node that only adds benchmark or validation artifacts is not a product
   behavior change. Set `behavior_change` to `false` and use final gates only.
   Do not invent red and green gates for a benchmark command. If a benchmark
