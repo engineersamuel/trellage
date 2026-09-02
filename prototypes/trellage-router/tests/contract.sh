@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+unset TRELLAGE_TRX_SOURCE_ROOT
+
 prototype_root="$(cd -P "$(dirname "$0")/.." && pwd -P)"
 . "$prototype_root/../../tests/helpers/floating_skills_fixture.sh"
 fixture_root="$prototype_root/.contract-fixture.$$"

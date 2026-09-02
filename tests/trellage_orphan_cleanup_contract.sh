@@ -104,14 +104,21 @@ chmod +x "$fake_bin/docker"
 run_cleanup_task() {
   local task="$1" task_command
   task_command="$(
-    python3 - "$repo_root/mise.toml" "$task" <<'PY'
-import sys
-import tomllib
-
-with open(sys.argv[1], "rb") as config_file:
-    config = tomllib.load(config_file)
-print(config["tasks"][sys.argv[2]]["run"])
-PY
+    awk -v section="[tasks.$task]" '
+      $0 == section { in_task = 1; next }
+      in_task && /^\[/ { exit(found ? 0 : 1) }
+      in_task && /^[[:space:]]*run[[:space:]]*=/ {
+        command = $0
+        sub(/^[^=]*=[[:space:]]*/, "", command)
+        if (command !~ /^".*"$/) exit 2
+        sub(/^"/, "", command)
+        sub(/"$/, "", command)
+        print command
+        found = 1
+        exit
+      }
+      END { if (!found) exit 1 }
+    ' "$repo_root/mise.toml"
   )"
   (
     cd "$repo_root"

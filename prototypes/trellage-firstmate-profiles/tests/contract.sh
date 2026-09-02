@@ -270,8 +270,9 @@ case "$mode" in
     if [[ "${NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT-}" == TERM ]]; then
       kill -TERM "$PPID"
     fi
-    if [[ -n "${NATIVE_CLAUDE_PREPARE_HOLD-}" ]]; then
-      sleep "$NATIVE_CLAUDE_PREPARE_HOLD"
+    if [[ -n "${NATIVE_CLAUDE_PREPARE_READY-}" ]]; then
+      : >"$NATIVE_CLAUDE_PREPARE_READY"
+      while [[ ! -e "${NATIVE_CLAUDE_PREPARE_RELEASE:?}" ]]; do sleep 0.01; done
     fi
     mkdir -p "$config_home"
     # The real prepare runs a skills installer that reads standard input. A
@@ -280,8 +281,9 @@ case "$mode" in
     exit 0
     ;;
   doctor)
-    if [[ -n "${NATIVE_CLAUDE_DOCTOR_HOLD-}" ]]; then
-      sleep "$NATIVE_CLAUDE_DOCTOR_HOLD"
+    if [[ -n "${NATIVE_CLAUDE_DOCTOR_READY-}" ]]; then
+      : >"$NATIVE_CLAUDE_DOCTOR_READY"
+      while [[ ! -e "${NATIVE_CLAUDE_DOCTOR_RELEASE:?}" ]]; do sleep 0.01; done
     fi
     [[ -d "$config_home" ]] || { printf 'native-claude: home is missing\n' >&2; exit 1; }
     exit "${NATIVE_CLAUDE_DOCTOR_STATUS:-0}"
@@ -316,8 +318,9 @@ case "$mode" in
       "${FM_SUPERVISION_MODEL-unset}" \
       "$(pwd -P)" "$config_home" "$bridge" "$profile" "$*" \
       >>"$NATIVE_CLAUDE_LAUNCH_LOG"
-    if [[ -n "${NATIVE_CLAUDE_LAUNCH_HOLD-}" ]]; then
-      sleep "$NATIVE_CLAUDE_LAUNCH_HOLD"
+    if [[ -n "${NATIVE_CLAUDE_LAUNCH_READY-}" ]]; then
+      : >"$NATIVE_CLAUDE_LAUNCH_READY"
+      while [[ ! -e "${NATIVE_CLAUDE_LAUNCH_RELEASE:?}" ]]; do sleep 0.01; done
     fi
     exit 0
     ;;
@@ -503,42 +506,52 @@ github.com:
 HOSTS
 
 fmx() {
-  env -i \
-    HOME="$home" \
-    PATH="$fake_bin" \
-    GH_CONFIG_DIR="$gh_config" \
-    TMPDIR="${TMPDIR:-/tmp}" \
-    FAKE_GIT_LOG="$FAKE_GIT_LOG" \
-    FAKE_GH_LOG="$FAKE_GH_LOG" \
-    FAKE_TMUX_LOG="$FAKE_TMUX_LOG" \
-    FAKE_HERDR_LOG="$FAKE_HERDR_LOG" \
-    FAKE_PREREQUISITE_LOG="$FAKE_PREREQUISITE_LOG" \
-    FAKE_PREREQUISITE_INSTALL_STATUS="${FAKE_PREREQUISITE_INSTALL_STATUS:-0}" \
-    FAKE_EXPECT_LAUNCH_MUTATION_PROFILE="${FAKE_EXPECT_LAUNCH_MUTATION_PROFILE-}" \
-    FAKE_CLAUDE_LOG="$FAKE_CLAUDE_LOG" \
-    FAKE_GIT_SOURCE_TREE="$FAKE_GIT_SOURCE_TREE" \
-    FAKE_GIT_HEAD="${FAKE_GIT_HEAD-}" \
-    FAKE_GIT_FETCH_STATUS="${FAKE_GIT_FETCH_STATUS:-0}" \
-    FAKE_GIT_TAMPER_FILE="${FAKE_GIT_TAMPER_FILE-}" \
-    FAKE_GIT_STAGE_EXTRA="${FAKE_GIT_STAGE_EXTRA-}" \
-    FAKE_GH_STATUS="${FAKE_GH_STATUS:-0}" \
-    NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
-    NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-    NATIVE_CLAUDE_DOCTOR_STATUS="${NATIVE_CLAUDE_DOCTOR_STATUS:-0}" \
-    NATIVE_CLAUDE_DOCTOR_HOLD="${NATIVE_CLAUDE_DOCTOR_HOLD-}" \
-    NATIVE_CLAUDE_LAUNCH_HOLD="${NATIVE_CLAUDE_LAUNCH_HOLD-}" \
-    NATIVE_CLAUDE_PREPARE_HOLD="${NATIVE_CLAUDE_PREPARE_HOLD-}" \
-    NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT="${NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT-}" \
-    HERDR_ENV="${TEST_HERDR_ENV-}" \
-    HERDR_PANE_ID="${TEST_HERDR_PANE-}" \
-    GH_TOKEN=fixture-gh-token \
-    GITHUB_TOKEN=fixture-github-token \
-    COPILOT_GITHUB_TOKEN=fixture-copilot-token \
-    COPILOT_PROXY_GITHUB_TOKEN=fixture-proxy-token \
-    GH_ENTERPRISE_TOKEN=fixture-enterprise-token \
-    GITHUB_ENTERPRISE_TOKEN=fixture-github-enterprise-token \
-    COPILOT_TOKEN=fixture-copilot-only-token \
-    "$install_root/bin/fmx" "$@"
+  local -a command=(
+    env -i
+    "HOME=$home"
+    "PATH=$fake_bin"
+    "GH_CONFIG_DIR=$gh_config"
+    "TMPDIR=${TMPDIR:-/tmp}"
+    "FAKE_GIT_LOG=$FAKE_GIT_LOG"
+    "FAKE_GH_LOG=$FAKE_GH_LOG"
+    "FAKE_TMUX_LOG=$FAKE_TMUX_LOG"
+    "FAKE_HERDR_LOG=$FAKE_HERDR_LOG"
+    "FAKE_PREREQUISITE_LOG=$FAKE_PREREQUISITE_LOG"
+    "FAKE_PREREQUISITE_INSTALL_STATUS=${FAKE_PREREQUISITE_INSTALL_STATUS:-0}"
+    "FAKE_EXPECT_LAUNCH_MUTATION_PROFILE=${FAKE_EXPECT_LAUNCH_MUTATION_PROFILE-}"
+    "FAKE_CLAUDE_LOG=$FAKE_CLAUDE_LOG"
+    "FAKE_GIT_SOURCE_TREE=$FAKE_GIT_SOURCE_TREE"
+    "FAKE_GIT_HEAD=${FAKE_GIT_HEAD-}"
+    "FAKE_GIT_FETCH_STATUS=${FAKE_GIT_FETCH_STATUS:-0}"
+    "FAKE_GIT_TAMPER_FILE=${FAKE_GIT_TAMPER_FILE-}"
+    "FAKE_GIT_STAGE_EXTRA=${FAKE_GIT_STAGE_EXTRA-}"
+    "FAKE_GH_STATUS=${FAKE_GH_STATUS:-0}"
+    "NATIVE_CLAUDE_LOG=$NATIVE_CLAUDE_LOG"
+    "NATIVE_CLAUDE_LAUNCH_LOG=$NATIVE_CLAUDE_LAUNCH_LOG"
+    "NATIVE_CLAUDE_DOCTOR_STATUS=${NATIVE_CLAUDE_DOCTOR_STATUS:-0}"
+    "NATIVE_CLAUDE_DOCTOR_READY=${NATIVE_CLAUDE_DOCTOR_READY-}"
+    "NATIVE_CLAUDE_DOCTOR_RELEASE=${NATIVE_CLAUDE_DOCTOR_RELEASE-}"
+    "NATIVE_CLAUDE_LAUNCH_READY=${NATIVE_CLAUDE_LAUNCH_READY-}"
+    "NATIVE_CLAUDE_LAUNCH_RELEASE=${NATIVE_CLAUDE_LAUNCH_RELEASE-}"
+    "NATIVE_CLAUDE_PREPARE_READY=${NATIVE_CLAUDE_PREPARE_READY-}"
+    "NATIVE_CLAUDE_PREPARE_RELEASE=${NATIVE_CLAUDE_PREPARE_RELEASE-}"
+    "NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT=${NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT-}"
+    "HERDR_ENV=${TEST_HERDR_ENV-}"
+    "HERDR_PANE_ID=${TEST_HERDR_PANE-}"
+    GH_TOKEN=fixture-gh-token
+    GITHUB_TOKEN=fixture-github-token
+    COPILOT_GITHUB_TOKEN=fixture-copilot-token
+    COPILOT_PROXY_GITHUB_TOKEN=fixture-proxy-token
+    GH_ENTERPRISE_TOKEN=fixture-enterprise-token
+    GITHUB_ENTERPRISE_TOKEN=fixture-github-enterprise-token
+    COPILOT_TOKEN=fixture-copilot-only-token
+    "$install_root/bin/fmx"
+    "$@"
+  )
+  case "${1-}" in
+    setup | repair) "${command[@]}" </dev/null ;;
+    *) "${command[@]}" ;;
+  esac
 }
 
 # ===========================================================================
@@ -1292,23 +1305,29 @@ jq -e --arg commit "$pinned_commit" '
 # Inventory during a first setup must report busy, not not-setup: the profile
 # is being created, it is not missing.
 first_setup_done="$fixture_root/first-setup-done"
-rm -f -- "$first_setup_done"
+first_setup_ready="$fixture_root/first-setup-ready"
+first_setup_release="$fixture_root/first-setup-release"
+rm -f -- "$first_setup_done" "$first_setup_ready" "$first_setup_release"
 (
-  NATIVE_CLAUDE_PREPARE_HOLD=4 fmx setup default >/dev/null 2>&1
+  NATIVE_CLAUDE_PREPARE_READY="$first_setup_ready" \
+    NATIVE_CLAUDE_PREPARE_RELEASE="$first_setup_release" \
+    fmx setup default >/dev/null 2>&1
   printf 'done\n' >"$first_setup_done"
 ) &
 first_setup_pid=$!
 first_mutation_lock="$profiles_root/default/locks/mutation"
 for _ in $(seq 1 200); do
-  if [[ -f "$first_mutation_lock/pid" ]]; then break; fi
+  if [[ -f "$first_mutation_lock/pid" && -f "$first_setup_ready" ]]; then break; fi
   sleep 0.05
 done
 [[ -f "$first_mutation_lock/pid" ]] || fail 'the first setup never published a lock'
+[[ -f "$first_setup_ready" ]] || fail 'the first setup never reached prepare'
 fmx inventory default --json >"$logs/inventory-first-setup.json" \
   || fail 'inventory failed during a first setup'
 jq -e '.readiness == "busy" and .mutation == "active"' \
   "$logs/inventory-first-setup.json" >/dev/null \
   || fail 'inventory during a first setup did not report busy'
+: >"$first_setup_release"
 wait "$first_setup_pid"
 [[ -f "$first_setup_done" ]] || fail 'the first setup did not complete'
 
@@ -1518,24 +1537,30 @@ jq -e --arg manifestDigest "$expected_manifest_digest" \
 # snapshot. Force a publication while the first doctor pass is held; inventory
 # must discard that pass and retry against the new generation.
 : >"$NATIVE_CLAUDE_LOG"
-NATIVE_CLAUDE_DOCTOR_HOLD=2 \
+inventory_race_ready="$fixture_root/inventory-race-ready"
+inventory_race_release="$fixture_root/inventory-race-release"
+rm -f -- "$inventory_race_ready" "$inventory_race_release"
+NATIVE_CLAUDE_DOCTOR_READY="$inventory_race_ready" \
+  NATIVE_CLAUDE_DOCTOR_RELEASE="$inventory_race_release" \
   fmx inventory default --json >"$logs/inventory-generation-race.json" \
   2>"$logs/inventory-generation-race.err" &
 inventory_race_pid=$!
 for _ in $(seq 1 200); do
-  grep -Fq "doctor|home=$profiles_root/default/captain/claude" \
-    "$NATIVE_CLAUDE_LOG" && break
+  if grep -Fq "doctor|home=$profiles_root/default/captain/claude" \
+    "$NATIVE_CLAUDE_LOG" && [[ -f "$inventory_race_ready" ]]; then break; fi
   sleep 0.01
 done
 grep -Fq "doctor|home=$profiles_root/default/captain/claude" \
   "$NATIVE_CLAUDE_LOG" \
   || fail 'inventory did not reach the held doctor pass'
+[[ -f "$inventory_race_ready" ]] || fail 'inventory doctor did not publish its barrier'
 jq '.commit = "7777777777777777777777777777777777777777"' \
   "$profiles_root/default/receipts/source.json" >"$fixture_root/receipt.generation-race"
 mv "$fixture_root/receipt.generation-race" \
   "$profiles_root/default/receipts/source.json"
 fmx update default >/dev/null 2>"$logs/update-generation-race.err" \
   || { cat "$logs/update-generation-race.err" >&2; fail 'race publication failed'; }
+: >"$inventory_race_release"
 wait "$inventory_race_pid" \
   || { cat "$logs/inventory-generation-race.err" >&2; fail 'inventory race probe failed'; }
 [[ "$(grep -Fc "doctor|home=$profiles_root/default/captain/claude" \
@@ -2067,17 +2092,23 @@ rm -rf -- "$profiles_root/default/locks/session"
 # Synchronized concurrency: the first process is stalled while it holds a
 # complete lock, and no second mutation may enter.
 mutation_first="$fixture_root/mutation-first"
-rm -f -- "$mutation_first"
+mutation_ready="$fixture_root/mutation-ready"
+mutation_release="$fixture_root/mutation-release"
+rm -f -- "$mutation_first" "$mutation_ready" "$mutation_release"
 (
-  NATIVE_CLAUDE_PREPARE_HOLD=4 fmx repair default >/dev/null 2>&1
+  NATIVE_CLAUDE_PREPARE_READY="$mutation_ready" \
+    NATIVE_CLAUDE_PREPARE_RELEASE="$mutation_release" \
+    fmx repair default >/dev/null 2>&1
   printf 'done\n' >"$mutation_first"
 ) &
 first_pid=$!
 for _ in $(seq 1 200); do
-  if [[ -f "$mutation_lock/owner" && -f "$mutation_lock/pid" ]]; then break; fi
+  if [[ -f "$mutation_lock/owner" && -f "$mutation_lock/pid" \
+    && -f "$mutation_ready" ]]; then break; fi
   sleep 0.05
 done
 [[ -f "$mutation_lock/owner" ]] || fail 'the first mutation never published a lock'
+[[ -f "$mutation_ready" ]] || fail 'the first mutation never reached prepare'
 for command_name in setup repair update; do
   status=0
   fmx "$command_name" default >/dev/null 2>"$logs/$command_name-concurrent.err" || status=$?
@@ -2090,6 +2121,7 @@ fmx inventory default --json >"$logs/inventory-concurrent.json" || fail 'invento
 jq -e '.readiness == "busy" and .mutation == "active"' \
   "$logs/inventory-concurrent.json" >/dev/null \
   || fail 'inventory did not report a concurrent mutation as busy'
+: >"$mutation_release"
 wait "$first_pid"
 [[ -f "$mutation_first" ]] || fail 'the first mutation did not complete'
 [[ ! -e "$mutation_lock" ]] || fail 'the first mutation did not release its lock'
@@ -2538,20 +2570,42 @@ mkdir -p "$concurrent_status"
 # The winner holds the session open, exactly as a real captain would; without
 # that the losers would legitimately reclaim an already-finished session.
 concurrent_gate="$fixture_root/concurrent-gate"
-rm -f -- "$concurrent_gate"
+concurrent_launch_ready="$fixture_root/concurrent-launch-ready"
+concurrent_launch_release="$fixture_root/concurrent-launch-release"
+rm -f -- "$concurrent_gate" "$concurrent_launch_ready" "$concurrent_launch_release"
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
   (
+    : >"$concurrent_status/$attempt.ready"
     # Spin on a gate so every attempt reaches acquisition at once, which is
     # what makes a check-then-act or mkdir-then-write claim visibly fail.
     while [[ ! -e "$concurrent_gate" ]]; do :; done
     status=0
-    NATIVE_CLAUDE_LAUNCH_HOLD=3 fmx default \
+    NATIVE_CLAUDE_LAUNCH_READY="$concurrent_launch_ready" \
+      NATIVE_CLAUDE_LAUNCH_RELEASE="$concurrent_launch_release" \
+      fmx default \
       >/dev/null 2>"$logs/concurrent-$attempt.err" || status=$?
     printf '%s\n' "$status" >"$concurrent_status/$attempt"
   ) &
 done
-sleep 0.5
+for _ in $(seq 1 200); do
+  [[ "$(find "$concurrent_status" -name '*.ready' -type f | wc -l | tr -d ' ')" == 12 ]] && break
+  sleep 0.01
+done
+[[ "$(find "$concurrent_status" -name '*.ready' -type f | wc -l | tr -d ' ')" == 12 ]] \
+  || fail 'concurrent launches did not reach the acquisition gate'
 : >"$concurrent_gate"
+for _ in $(seq 1 200); do
+  [[ -f "$concurrent_launch_ready" ]] && break
+  sleep 0.01
+done
+[[ -f "$concurrent_launch_ready" ]] || fail 'the winning launch did not reach the runtime'
+for _ in $(seq 1 200); do
+  [[ "$(find "$concurrent_status" -type f ! -name '*.ready' | wc -l | tr -d ' ')" == 11 ]] && break
+  sleep 0.01
+done
+[[ "$(find "$concurrent_status" -type f ! -name '*.ready' | wc -l | tr -d ' ')" == 11 ]] \
+  || fail 'concurrent launch losers did not fail while the winner held the session'
+: >"$concurrent_launch_release"
 wait
 launched="$(grep -c '^launch|' "$NATIVE_CLAUDE_LAUNCH_LOG" || true)"
 [[ "$launched" -eq 1 ]] \

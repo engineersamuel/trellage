@@ -126,10 +126,12 @@ while IFS= read -r evidence_path; do
     || fail "unsafe or missing deterministic evidence path: $evidence_path"
 done < <(jq -r '.contracts[].deterministicEvidence[].path' "$ledger" | sort -u)
 
-(
-  cd packages/trellage-cli
-  npm test -- --run test/headless-publication.test.ts
-) || fail 'publication gate test failed'
+if [[ "${TRELLAGE_HEADLESS_SKIP_PUBLICATION_TEST-}" != 1 ]]; then
+  (
+    cd packages/trellage-cli
+    npm test -- --run test/headless-publication.test.ts
+  ) || fail 'publication gate test failed'
+fi
 
 headless_section="$({
   awk '

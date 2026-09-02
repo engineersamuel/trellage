@@ -23,12 +23,16 @@ cat >"$fixture_bin/mise" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\n' "$*" >>"$TRELLAGE_TEST_MISE_CALL_LOG"
+wait_for_install_release() {
+  : >"${TRELLAGE_TEST_MISE_INSTALL_READY:?}"
+  while [[ ! -e "${TRELLAGE_TEST_MISE_INSTALL_RELEASE:?}" ]]; do sleep 0.01; done
+}
 case "$*" in
   *'install --dry-run-code')
     exit 1
     ;;
   *' install')
-    sleep 3
+    wait_for_install_release
     exit 0
     ;;
   *'exec -- uvx --offline yt-dlp --version')
@@ -42,7 +46,7 @@ case "$*" in
     exit 1
     ;;
   *'install uv@latest')
-    sleep 3
+    wait_for_install_release
     exit 0
     ;;
   *'exec uv@latest -- uvx --offline yt-dlp --version')
@@ -60,6 +64,8 @@ EOF
 chmod 0755 "$fixture_bin/mise"
 mkdir -p "$state_root/dependency-bootstrap.lock"
 printf '%s\n' '99999999' >"$state_root/dependency-bootstrap.lock/pid"
+install_ready="$fixture_root/install-ready"
+install_release="$fixture_root/install-release"
 
 started_at="$(date +%s)"
 env \
@@ -67,9 +73,18 @@ env \
   MISE_PROJECT_ROOT="$repository_root" \
   TRELLAGE_BOOTSTRAP_STATE_DIR="$state_root" \
   TRELLAGE_TEST_MISE_CALL_LOG="$call_log" \
+  TRELLAGE_TEST_MISE_INSTALL_READY="$install_ready" \
+  TRELLAGE_TEST_MISE_INSTALL_RELEASE="$install_release" \
   "$bootstrap" --background
 elapsed="$(( $(date +%s) - started_at ))"
 (( elapsed < 2 )) || fail "background request blocked startup for ${elapsed}s"
+
+for _ in {1..50}; do
+  [[ -f "$install_ready" ]] && break
+  sleep 0.1
+done
+[[ -f "$install_ready" ]] || fail 'background mise install did not start'
+: >"$install_release"
 
 for _ in {1..50}; do
   [[ -f "$call_log" ]] \
@@ -94,13 +109,24 @@ mkdir -p "$installed_root/lib"
 cp "$bootstrap" "$installed_bootstrap"
 chmod 0755 "$installed_bootstrap"
 : >"$call_log"
+install_ready="$fixture_root/installed-install-ready"
+install_release="$fixture_root/installed-install-release"
 
 env \
   PATH="$fixture_bin:/usr/bin:/bin" \
   MISE_PROJECT_ROOT="$installed_root" \
   TRELLAGE_BOOTSTRAP_STATE_DIR="$installed_state" \
   TRELLAGE_TEST_MISE_CALL_LOG="$call_log" \
+  TRELLAGE_TEST_MISE_INSTALL_READY="$install_ready" \
+  TRELLAGE_TEST_MISE_INSTALL_RELEASE="$install_release" \
   "$installed_bootstrap" --background
+
+for _ in {1..50}; do
+  [[ -f "$install_ready" ]] && break
+  sleep 0.1
+done
+[[ -f "$install_ready" ]] || fail 'installed trx mise install did not start'
+: >"$install_release"
 
 for _ in {1..50}; do
   grep -Fq 'exec uv@latest -- uvx yt-dlp --version' "$call_log" 2>/dev/null \

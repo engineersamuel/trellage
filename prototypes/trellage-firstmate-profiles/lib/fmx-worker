@@ -303,6 +303,7 @@ TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx \
   --marker-value "$ownership_value" \
   --bridge disabled \
   --profile "$profile" \
+  </dev/null \
   || die "could not prepare the worker Claude home: $worker_home"
 
 # Liveness marker. It is written before the worker starts and is never removed
