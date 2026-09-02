@@ -69,11 +69,12 @@ target-evidence path must exist in the repository.
   A test of only the public dispatcher cannot claim that both backends ran.
 - A successful `cargo test --no-run` line does not by itself prove which
   private seam a compiled test references. Prove that property by combining a
-  deterministic source inspection of the target-gated test with its successful
-  cross-target test build, or cite the implementation node's recorded red and
-  green evidence where the red failure was caused by the missing private seam.
-  Do not make a later validation node infer private-symbol references from
-  ordinary Cargo output.
+  target-specific red gate that fails because the referenced private seam is
+  missing with the identical green gate passing after implementation. Require
+  this recorded red and green evidence for every requested compile-only target.
+  A grep for a symbol name is not proof: comments, strings, and cfg-excluded
+  code can satisfy it. Do not make a later validation node infer
+  private-symbol references from ordinary Cargo output or text search.
 - A SIMD-node red gate must fail before that SIMD backend exists. Prefer a
   crate-internal test that directly references the missing backend and later
   proves positive vector execution; comparing a scalar dispatcher with a

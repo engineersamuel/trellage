@@ -231,11 +231,19 @@ def _behavior_change_errors(node: dict[str, Any]) -> list[str]:
         for phase in ("red", "green", "final")
         if phase not in phases
     )
-    red = [gate for gate in node["gates"] if gate.get("phase") == "red"]
-    green = [gate for gate in node["gates"] if gate.get("phase") == "green"]
-    if red and green and red[0]["argv"] != green[0]["argv"]:
+    red = sorted(
+        tuple(gate["argv"])
+        for gate in node["gates"]
+        if gate.get("phase") == "red"
+    )
+    green = sorted(
+        tuple(gate["argv"])
+        for gate in node["gates"]
+        if gate.get("phase") == "green"
+    )
+    if red and green and red != green:
         errors.append(
-            f"behavior-change node '{node['id']}' red and green gate argv differ"
+            f"behavior-change node '{node['id']}' red and green gate argv sets differ"
         )
     if not node.get("test_write_set"):
         errors.append(

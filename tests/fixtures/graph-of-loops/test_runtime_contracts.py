@@ -33,7 +33,7 @@ sys.path.insert(0, str(ASSETS_DIR))
 FIXTURES = Path(__file__).resolve().parent
 
 from trellage_graph.contracts import (
-    _check_research_write_rules,
+    _behavior_change_errors, _check_research_write_rules,
     validate_plan, validate_codex_review, validate_proof_policy,
     validate_planning_decision, PlanValidationError, content_digest,
     planning_decision_schema, redact_sensitive,
@@ -1137,6 +1137,25 @@ class TestGates(unittest.TestCase):
                 "passed"
             ]
         )
+
+    def test_static_contract_compares_every_red_green_argv(self) -> None:
+        node = {
+            "id": "dual-target",
+            "behavior_change": True,
+            "gates": [
+                {"phase": "red", "argv": ["cargo", "test", "--target", "x86"]},
+                {"phase": "red", "argv": ["cargo", "test", "--target", "x64"]},
+                {"phase": "green", "argv": ["cargo", "test", "--target", "x86"]},
+                {"phase": "green", "argv": ["cargo", "test", "--target", "arm"]},
+                {"phase": "final", "argv": ["cargo", "test"]},
+            ],
+            "test_write_set": ["tests/**"],
+        }
+
+        self.assertTrue(any(
+            "red and green gate argv sets differ" in error
+            for error in _behavior_change_errors(node)
+        ))
 
     def test_red_green_final(self) -> None:
         runner = FakeSubprocessRunner()
@@ -5417,7 +5436,7 @@ class TestSchemaValidation(unittest.TestCase):
             planner_role,
         )
         self.assertIn(
-            "does not by itself prove which",
+            "A grep for a symbol name is not proof",
             planner_role,
         )
         self.assertIn(
