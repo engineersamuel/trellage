@@ -32,7 +32,7 @@ import type { CombinedGuideCatalog } from "./guide-catalog.js"
 import type { CommandRunner, HerdrEnvironment } from "./guide-launch.js"
 import { CommandRunnerError } from "./guide-launch.js"
 import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
-import { formatVersionCell } from "./admin-version-check.js"
+import { type AdminVersionColumns, versionColumnsFor as versionColumnsForCheck } from "./admin-version-check.js"
 import {
   defaultAdminVersionCachePath,
   loadVersionCache,
@@ -69,6 +69,19 @@ const StatusText = ({ status, tick, bold = false, dimColor = false }: { readonly
     {statusLabel(status)}
   </Text>
 )
+
+/**
+ * Colors a `VERSION`/`LATEST VERSION` cell by comparison status: green when
+ * a completed check confirms the installed release matches the latest
+ * (`"match"`), yellow when a completed check names a newer release
+ * (`"mismatch"` — orange isn't part of Ink's base 16-color palette, so
+ * yellow is the closest accessible equivalent), or plain/dim when the
+ * launcher doesn't support checks, no check has run yet, or the result was
+ * malformed (`"unknown"`) — color is always an accent on top of the same
+ * readable text, never the only way the state is conveyed.
+ */
+const versionCellColor = (status: AdminVersionColumns["status"]): "green" | "yellow" | undefined =>
+  status === "match" ? "green" : status === "mismatch" ? "yellow" : undefined
 
 /**
  * Renders `[key] label` shortcut hints with the bracketed key highlighted
@@ -248,30 +261,40 @@ const AdminDetailPanel = ({
       <Text wrap="wrap">{entry.description}</Text>
       <Text>
         Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
-        {entry.version === undefined ? "" : ` · Version: ${entry.version}`}
       </Text>
-      {entry.updateCheckSupported ? (
-        <Text wrap="wrap">
-          Latest:{" "}
-          {versionRunning ? (
-            <Text color="cyan">
-              {spinnerFrameAt(tick)} checking…
-            </Text>
-          ) : versionResult === undefined ? (
-            <Text dimColor>not yet checked</Text>
-          ) : "malformed" in versionResult ? (
-            <Text dimColor>{versionResult.diagnostic}</Text>
-          ) : versionResult.current ? (
-            <Text bold color="green">
-              up to date
-            </Text>
-          ) : (
-            <Text bold color="yellow">
-              update available: {versionResult.latest}
-            </Text>
-          )}
-        </Text>
-      ) : null}
+      {(() => {
+        const versionCols = versionColumnsForCheck(entry.version, entry.updateCheckSupported, versionResult)
+        const versionColor = versionCellColor(versionCols.status)
+        if (!entry.updateCheckSupported && entry.version === undefined) return null
+        return (
+          <Text wrap="wrap">
+            Version:{" "}
+            {versionRunning ? (
+              <Text color="cyan">{spinnerFrameAt(tick)} checking…</Text>
+            ) : (
+              <Text bold {...(versionColor === undefined ? {} : { color: versionColor })}>
+                {versionCols.installed}
+              </Text>
+            )}
+            {entry.updateCheckSupported ? (
+              <>
+                {" · Latest version: "}
+                {versionRunning ? (
+                  <Text color="cyan">{spinnerFrameAt(tick)} checking…</Text>
+                ) : versionResult !== undefined && "malformed" in versionResult ? (
+                  <Text dimColor>{versionResult.diagnostic}</Text>
+                ) : versionResult === undefined ? (
+                  <Text dimColor>not yet checked</Text>
+                ) : (
+                  <Text bold {...(versionColor === undefined ? {} : { color: versionColor })}>
+                    {versionCols.latest}
+                  </Text>
+                )}
+              </>
+            ) : null}
+          </Text>
+        )
+      })()}
       {entry.healthDiagnostic === undefined ? null : (
         <Text dimColor wrap="wrap">
           {entry.healthDiagnostic}
@@ -797,23 +820,23 @@ export const AdminApp = ({
   const versionResultFor = (entry: AdminProfileEntry) =>
     versionCheckResultForEntry(entry, versionRunManager) ?? versionCache.entries[entry.ref]?.result
   const versionRunning = (entry: AdminProfileEntry) => versionRunManager.status(updateCheckRefFor(entry.ref)).state === "running"
-  const versionLabelFor = (entry: AdminProfileEntry) =>
-    versionRunning(entry) ? "checking…" : formatVersionCell(entry.version, entry.updateCheckSupported, versionResultFor(entry))
+  const versionColumnsFor = (entry: AdminProfileEntry) =>
+    versionColumnsForCheck(entry.version, entry.updateCheckSupported, versionResultFor(entry))
   const statusesByRef = useMemo(() => {
     const map = new Map<string, AdminStatus>()
     for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)))
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed on every tick so live status changes are reflected
   }, [sorted, runManager, tick])
-  const versionLabelsByRef = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const entry of sorted) map.set(entry.ref, versionLabelFor(entry))
+  const versionColumnsByRef = useMemo(() => {
+    const map = new Map<string, AdminVersionColumns>()
+    for (const entry of sorted) map.set(entry.ref, versionColumnsFor(entry))
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed on every tick so live version-check state changes are reflected
   }, [sorted, versionRunManager, versionCache, tick])
   const widths = useMemo(
-    () => adminTableColumnWidths(sorted, statusesByRef, columns, versionLabelsByRef),
-    [sorted, statusesByRef, versionLabelsByRef, columns],
+    () => adminTableColumnWidths(sorted, statusesByRef, columns, versionColumnsByRef),
+    [sorted, statusesByRef, versionColumnsByRef, columns],
   )
 
   useInput((char, key) => {
@@ -947,11 +970,18 @@ export const AdminApp = ({
                 VERSION
               </Text>
             </Box>
+            <Box width={widths.latestVersion}>
+              <Text bold color="blue">
+                LATEST VERSION
+              </Text>
+            </Box>
           </Box>
           {sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
             const active = index === boundedIndex
             const status = runStatusOf(entry, runManager.status(entry.ref))
             const versionRunningNow = versionRunning(entry)
+            const versionCols = versionColumnsByRef.get(entry.ref) ?? versionColumnsFor(entry)
+            const versionColor = versionCellColor(versionCols.status)
             return (
               <Box key={entry.ref}>
                 <Box width={2}>
@@ -978,9 +1008,14 @@ export const AdminApp = ({
                   <StatusText status={status} tick={tick} bold={active} dimColor={!active} />
                 </Box>
                 <Box width={widths.version}>
-                  <Text bold={active} dimColor={!active} wrap="truncate-end">
+                  <Text bold={active} {...(versionColor === undefined ? { dimColor: !active } : { color: versionColor })} wrap="truncate-end">
                     {versionRunningNow ? <Text color="cyan">{spinnerFrameAt(tick)} </Text> : null}
-                    {versionRunningNow ? "checking…" : versionLabelFor(entry)}
+                    {versionRunningNow ? "checking…" : versionCols.installed}
+                  </Text>
+                </Box>
+                <Box width={widths.latestVersion}>
+                  <Text bold={active} {...(versionColor === undefined ? { dimColor: !active } : { color: versionColor })} wrap="truncate-end">
+                    {versionRunningNow ? "" : versionCols.latest}
                   </Text>
                 </Box>
               </Box>

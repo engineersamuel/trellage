@@ -38,9 +38,12 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 const parseResult = (value: unknown): AdminUpdateCheckResult | undefined => {
   if (!isPlainObject(value)) return undefined
+  const installed = typeof value.installed === "string" ? value.installed : undefined
   if (value.malformed === true && typeof value.diagnostic === "string") return { malformed: true, diagnostic: value.diagnostic }
-  if (value.current === true) return { current: true }
-  if (value.current === false && typeof value.latest === "string") return { current: false, latest: value.latest }
+  if (value.current === true) return { current: true, ...(installed === undefined ? {} : { installed }) }
+  if (value.current === false && typeof value.latest === "string") {
+    return { current: false, latest: value.latest, ...(installed === undefined ? {} : { installed }) }
+  }
   return undefined
 }
 

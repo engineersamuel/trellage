@@ -88,6 +88,23 @@ describe("parseVersionCacheRecord", () => {
     const bloated = JSON.stringify({ schemaVersion: 1, entries: {}, padding: "x".repeat(300 * 1024) })
     expect(parseVersionCacheRecord(bloated)).toEqual({ schemaVersion: 1, entries: {} })
   })
+
+  it("preserves the installed version through a save/load round trip for both current and mismatched results", () => {
+    const source = JSON.stringify({
+      schemaVersion: 1,
+      entries: {
+        current: { result: { current: true, installed: "0.8.1" }, checkedAt: 1000 },
+        stale: { result: { current: false, installed: "0.8.1", latest: "0.9.0" }, checkedAt: 2000 },
+      },
+    })
+    expect(parseVersionCacheRecord(source)).toEqual({
+      schemaVersion: 1,
+      entries: {
+        current: { result: { current: true, installed: "0.8.1" }, checkedAt: 1000 },
+        stale: { result: { current: false, installed: "0.8.1", latest: "0.9.0" }, checkedAt: 2000 },
+      },
+    })
+  })
 })
 
 describe("defaultAdminVersionCachePath", () => {

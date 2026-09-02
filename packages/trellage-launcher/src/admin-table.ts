@@ -4,6 +4,7 @@
  * `CommandRunner` — search/filter/sort must never re-run discovery or
  * doctor commands (see plan Functional Requirements).
  */
+import type { AdminVersionColumns } from "./admin-version-check.js"
 import type { AdminProfileEntry } from "./admin-model.js"
 import type { AdminStatus } from "./admin-status.js"
 import { statusLabel } from "./admin-status.js"
@@ -80,6 +81,7 @@ export interface AdminTableColumnWidths {
   readonly type: number
   readonly status: number
   readonly version: number
+  readonly latestVersion: number
 }
 
 const longest = (values: ReadonlyArray<string>, heading: string): number =>
@@ -101,7 +103,7 @@ export const adminTableColumnWidths = (
   entries: ReadonlyArray<AdminProfileEntry>,
   statusesByRef: ReadonlyMap<string, AdminStatus>,
   terminalWidth: number,
-  versionLabelsByRef: ReadonlyMap<string, string> = new Map(),
+  versionColumnsByRef: ReadonlyMap<string, AdminVersionColumns> = new Map(),
 ): AdminTableColumnWidths => {
   const available = Math.max(40, terminalWidth - 4)
   const harness = bounded(
@@ -122,8 +124,10 @@ export const adminTableColumnWidths = (
   )
   const statusLabels = entries.map((entry) => statusLabel(statusesByRef.get(entry.ref) ?? "idle"))
   const status = bounded(longest(statusLabels, "STATUS") + 4, 14, Math.max(14, Math.floor(available * 0.42)))
-  const versionLabels = entries.map((entry) => versionLabelsByRef.get(entry.ref) ?? "—")
-  const version = bounded(longest(versionLabels, "VERSION") + 2, 9, Math.max(9, Math.floor(available * 0.2)))
-  const name = Math.max(10, available - harness - type - status - version)
-  return { harness, name, type, status, version }
+  const installedLabels = entries.map((entry) => versionColumnsByRef.get(entry.ref)?.installed ?? "—")
+  const version = bounded(longest(installedLabels, "VERSION") + 2, 9, Math.max(9, Math.floor(available * 0.16)))
+  const latestLabels = entries.map((entry) => versionColumnsByRef.get(entry.ref)?.latest ?? "—")
+  const latestVersion = bounded(longest(latestLabels, "LATEST VERSION") + 2, 14, Math.max(14, Math.floor(available * 0.2)))
+  const name = Math.max(10, available - harness - type - status - version - latestVersion)
+  return { harness, name, type, status, version, latestVersion }
 }

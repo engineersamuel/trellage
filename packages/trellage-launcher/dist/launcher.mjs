@@ -37581,7 +37581,7 @@ var require_backend = __commonJS({
                 var symbolOrNumber = renderer_typeof(type) === "object" && type !== null ? type.$$typeof : type;
                 return renderer_typeof(symbolOrNumber) === "symbol" ? symbolOrNumber.toString() : symbolOrNumber;
               }
-              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment4 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
+              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment5 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
               function resolveFiberType(type) {
                 var typeSymbol = getTypeSymbol(type);
                 switch (typeSymbol) {
@@ -37637,7 +37637,7 @@ var require_backend = __commonJS({
                   case HostPortal:
                   case HostText:
                     return null;
-                  case Fragment4:
+                  case Fragment5:
                     return "Fragment";
                   case LazyComponent:
                     return "Lazy";
@@ -37792,7 +37792,7 @@ var require_backend = __commonJS({
             function renderer_attach(hook, rendererID, renderer2, global2, shouldStartProfilingNow, profilingSettings) {
               var version2 = renderer2.reconcilerVersion || renderer2.version;
               var _getInternalReactCons = getInternalReactConstants(version2), getDisplayNameForFiber = _getInternalReactCons.getDisplayNameForFiber, getTypeSymbol = _getInternalReactCons.getTypeSymbol, ReactPriorityLevels = _getInternalReactCons.ReactPriorityLevels, ReactTypeOfWork = _getInternalReactCons.ReactTypeOfWork, StrictModeBits = _getInternalReactCons.StrictModeBits, SuspenseyImagesMode = _getInternalReactCons.SuspenseyImagesMode;
-              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment4 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
+              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment5 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
               var ImmediatePriority = ReactPriorityLevels.ImmediatePriority, UserBlockingPriority = ReactPriorityLevels.UserBlockingPriority, NormalPriority = ReactPriorityLevels.NormalPriority, LowPriority = ReactPriorityLevels.LowPriority, IdlePriority = ReactPriorityLevels.IdlePriority, NoPriority = ReactPriorityLevels.NoPriority;
               var getLaneLabelMap = renderer2.getLaneLabelMap, injectProfilingHooks = renderer2.injectProfilingHooks, overrideHookState = renderer2.overrideHookState, overrideHookStateDeletePath = renderer2.overrideHookStateDeletePath, overrideHookStateRenamePath = renderer2.overrideHookStateRenamePath, overrideProps = renderer2.overrideProps, overridePropsDeletePath = renderer2.overridePropsDeletePath, overridePropsRenamePath = renderer2.overridePropsRenamePath, scheduleRefresh = renderer2.scheduleRefresh, setErrorHandler = renderer2.setErrorHandler, setSuspenseHandler = renderer2.setSuspenseHandler, scheduleUpdate = renderer2.scheduleUpdate, scheduleRetry = renderer2.scheduleRetry, getCurrentFiber = renderer2.getCurrentFiber;
               var supportsTogglingError = typeof setErrorHandler === "function" && typeof scheduleUpdate === "function";
@@ -38153,7 +38153,7 @@ var require_backend = __commonJS({
                     return true;
                   case HostRoot:
                     return false;
-                  case Fragment4:
+                  case Fragment5:
                     return key === null;
                   default:
                     var typeSymbol = getTypeSymbol(type);
@@ -38227,7 +38227,7 @@ var require_backend = __commonJS({
                     return ElementTypeHostComponent;
                   case HostPortal:
                   case HostText:
-                  case Fragment4:
+                  case Fragment5:
                     return ElementTypeOtherOrUnknown;
                   case MemoComponent:
                   case SimpleMemoComponent:
@@ -83685,7 +83685,7 @@ var resolveAdminViewState = (entries, filtered, loading) => {
 var adminProfileType = (entry) => entry.surface === "native" ? "Native" : "Container";
 var longest2 = (values, heading) => Math.max(heading.length, ...values.map((value) => value.length));
 var bounded2 = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
-var adminTableColumnWidths = (entries, statusesByRef, terminalWidth, versionLabelsByRef = /* @__PURE__ */ new Map()) => {
+var adminTableColumnWidths = (entries, statusesByRef, terminalWidth, versionColumnsByRef = /* @__PURE__ */ new Map()) => {
   const available = Math.max(40, terminalWidth - 4);
   const harness = bounded2(
     longest2(
@@ -83705,10 +83705,12 @@ var adminTableColumnWidths = (entries, statusesByRef, terminalWidth, versionLabe
   );
   const statusLabels = entries.map((entry) => statusLabel(statusesByRef.get(entry.ref) ?? "idle"));
   const status = bounded2(longest2(statusLabels, "STATUS") + 4, 14, Math.max(14, Math.floor(available * 0.42)));
-  const versionLabels = entries.map((entry) => versionLabelsByRef.get(entry.ref) ?? "\u2014");
-  const version2 = bounded2(longest2(versionLabels, "VERSION") + 2, 9, Math.max(9, Math.floor(available * 0.2)));
-  const name = Math.max(10, available - harness - type - status - version2);
-  return { harness, name, type, status, version: version2 };
+  const installedLabels = entries.map((entry) => versionColumnsByRef.get(entry.ref)?.installed ?? "\u2014");
+  const version2 = bounded2(longest2(installedLabels, "VERSION") + 2, 9, Math.max(9, Math.floor(available * 0.16)));
+  const latestLabels = entries.map((entry) => versionColumnsByRef.get(entry.ref)?.latest ?? "\u2014");
+  const latestVersion = bounded2(longest2(latestLabels, "LATEST VERSION") + 2, 14, Math.max(14, Math.floor(available * 0.2)));
+  const name = Math.max(10, available - harness - type - status - version2 - latestVersion);
+  return { harness, name, type, status, version: version2, latestVersion };
 };
 
 // src/admin-batch-scheduler.ts
@@ -83829,11 +83831,14 @@ var notInstalledPatterns = [
   /:\s*not installed\b/i,
   /\bis not set up\b/i
 ];
-var formatVersionCell = (installedVersion, supported, result) => {
-  if (!supported) return installedVersion ?? "\u2014";
-  if (result === void 0 || "malformed" in result) return installedVersion ?? "\u2014";
-  const installed = result.installed ?? installedVersion;
-  return result.current ? installed ?? "\u2014" : `${installed ?? "?"} \u2192 ${result.latest}`;
+var versionColumnsFor = (installedVersion, supported, result) => {
+  const installedFallback = installedVersion ?? "\u2014";
+  if (!supported || result === void 0 || "malformed" in result) {
+    return { installed: installedFallback, latest: "\u2014", status: "unknown" };
+  }
+  const installed = result.installed ?? installedVersion ?? "\u2014";
+  if (result.current) return { installed, latest: installed, status: "match" };
+  return { installed, latest: result.latest, status: "mismatch" };
 };
 var parseUpdateCheckOutput = (stdout, installedVersion) => {
   const trimmed = stdout.trim();
@@ -83874,9 +83879,12 @@ var isMissingFile = (error) => error instanceof Error && "code" in error && erro
 var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var parseResult = (value) => {
   if (!isPlainObject(value)) return void 0;
+  const installed = typeof value.installed === "string" ? value.installed : void 0;
   if (value.malformed === true && typeof value.diagnostic === "string") return { malformed: true, diagnostic: value.diagnostic };
-  if (value.current === true) return { current: true };
-  if (value.current === false && typeof value.latest === "string") return { current: false, latest: value.latest };
+  if (value.current === true) return { current: true, ...installed === void 0 ? {} : { installed } };
+  if (value.current === false && typeof value.latest === "string") {
+    return { current: false, latest: value.latest, ...installed === void 0 ? {} : { installed } };
+  }
   return void 0;
 };
 var parseEntry = (value) => {
@@ -84039,6 +84047,7 @@ var StatusText = ({ status, tick, bold = false, dimColor = false }) => /* @__PUR
   ] }) : null,
   statusLabel(status)
 ] });
+var versionCellColor = (status) => status === "match" ? "green" : status === "mismatch" ? "yellow" : void 0;
 var ShortcutHints = ({ items }) => items.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: items.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
   index > 0 ? "   " : "",
   /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
@@ -84158,20 +84167,28 @@ var AdminDetailPanel = ({
       "Health: ",
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.health }),
       " \xB7 Install: ",
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install }),
-      entry.version === void 0 ? "" : ` \xB7 Version: ${entry.version}`
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install })
     ] }),
-    entry.updateCheckSupported ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
-      "Latest:",
-      " ",
-      versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
-        spinnerFrameAt(tick),
-        " checking\u2026"
-      ] }) : versionResult === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : "malformed" in versionResult ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: versionResult.diagnostic }) : versionResult.current ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "up to date" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "yellow", children: [
-        "update available: ",
-        versionResult.latest
-      ] })
-    ] }) : null,
+    (() => {
+      const versionCols = versionColumnsFor(entry.version, entry.updateCheckSupported, versionResult);
+      const versionColor = versionCellColor(versionCols.status);
+      if (!entry.updateCheckSupported && entry.version === void 0) return null;
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
+        "Version:",
+        " ",
+        versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+          spinnerFrameAt(tick),
+          " checking\u2026"
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.installed }),
+        entry.updateCheckSupported ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+          " \xB7 Latest version: ",
+          versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+            spinnerFrameAt(tick),
+            " checking\u2026"
+          ] }) : versionResult !== void 0 && "malformed" in versionResult ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: versionResult.diagnostic }) : versionResult === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.latest })
+        ] }) : null
+      ] });
+    })(),
     entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
@@ -84502,20 +84519,20 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   const selected = sorted[boundedIndex];
   const versionResultFor = (entry) => versionCheckResultForEntry(entry, versionRunManager) ?? versionCache.entries[entry.ref]?.result;
   const versionRunning = (entry) => versionRunManager.status(updateCheckRefFor(entry.ref)).state === "running";
-  const versionLabelFor = (entry) => versionRunning(entry) ? "checking\u2026" : formatVersionCell(entry.version, entry.updateCheckSupported, versionResultFor(entry));
+  const versionColumnsFor2 = (entry) => versionColumnsFor(entry.version, entry.updateCheckSupported, versionResultFor(entry));
   const statusesByRef = (0, import_react37.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
     for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)));
     return map;
   }, [sorted, runManager, tick]);
-  const versionLabelsByRef = (0, import_react37.useMemo)(() => {
+  const versionColumnsByRef = (0, import_react37.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
-    for (const entry of sorted) map.set(entry.ref, versionLabelFor(entry));
+    for (const entry of sorted) map.set(entry.ref, versionColumnsFor2(entry));
     return map;
   }, [sorted, versionRunManager, versionCache, tick]);
   const widths = (0, import_react37.useMemo)(
-    () => adminTableColumnWidths(sorted, statusesByRef, columns, versionLabelsByRef),
-    [sorted, statusesByRef, versionLabelsByRef, columns]
+    () => adminTableColumnWidths(sorted, statusesByRef, columns, versionColumnsByRef),
+    [sorted, statusesByRef, versionColumnsByRef, columns]
   );
   use_input_default((char, key) => {
     if (key.ctrl && char === "c") {
@@ -84624,25 +84641,29 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE NAME" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "TYPE" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "STATUS" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "blue", children: "VERSION" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "blue", children: "VERSION" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.latestVersion, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "blue", children: "LATEST VERSION" }) })
       ] }),
       sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
         const active = index === boundedIndex;
         const status = runStatusOf(entry, runManager.status(entry.ref));
         const versionRunningNow = versionRunning(entry);
+        const versionCols = versionColumnsByRef.get(entry.ref) ?? versionColumnsFor2(entry);
+        const versionColor = versionCellColor(versionCols.status);
         return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u203A " : "  " }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness ?? "\u2014" }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.name }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: adminProfileType(entry) }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: active, dimColor: !active }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: active, dimColor: !active, wrap: "truncate-end", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: active, ...versionColor === void 0 ? { dimColor: !active } : { color: versionColor }, wrap: "truncate-end", children: [
             versionRunningNow ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
               spinnerFrameAt(tick),
               " "
             ] }) : null,
-            versionRunningNow ? "checking\u2026" : versionLabelFor(entry)
-          ] }) })
+            versionRunningNow ? "checking\u2026" : versionCols.installed
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.latestVersion, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...versionColor === void 0 ? { dimColor: !active } : { color: versionColor }, wrap: "truncate-end", children: versionRunningNow ? "" : versionCols.latest }) })
         ] }, entry.ref);
       })
     ] }) : null,

@@ -53,23 +53,44 @@ const notInstalledPatterns: ReadonlyArray<RegExp> = [
 ]
 
 /**
- * Formats the compact table-cell label for a profile's version column:
- * `"—"` when unsupported/not yet checked and no installed version is known,
- * the installed version alone when current, or `"installed → latest"` once a
- * check finds a newer release. Prefers the version the check's own output
- * named (`result.installed`) over the caller-supplied `installedVersion`
- * fallback, since the former reflects the most recent live check. Never
- * fabricates a value beyond what either source actually contains.
+ * A profile's `VERSION` (installed) and `LATEST VERSION` (catalog/upstream)
+ * table cells, plus a comparison status the UI uses purely for color: `"match"`
+ * when a completed check confirms the installed release is current (both
+ * columns render the same value in green), `"mismatch"` when a completed
+ * check names a newer release (installed in yellow/orange, latest in
+ * yellow/orange), or `"unknown"` when the launcher doesn't support
+ * `update --check`, no check has run yet, or the check's output was
+ * malformed — in every `"unknown"` case `latest` is always `"—"` since no
+ * value is actually known, never fabricated.
  */
-export const formatVersionCell = (
+export type AdminVersionComparisonStatus = "match" | "mismatch" | "unknown"
+
+export interface AdminVersionColumns {
+  readonly installed: string
+  readonly latest: string
+  readonly status: AdminVersionComparisonStatus
+}
+
+/**
+ * Derives the `VERSION` and `LATEST VERSION` table cells and their
+ * match/mismatch/unknown comparison status for a profile. Prefers the
+ * version the check's own output named (`result.installed`) over the
+ * caller-supplied `installedVersion` fallback, since the former reflects the
+ * most recent live check. Never fabricates a value beyond what either source
+ * actually contains.
+ */
+export const versionColumnsFor = (
   installedVersion: string | undefined,
   supported: boolean,
   result: AdminUpdateCheckResult | undefined,
-): string => {
-  if (!supported) return installedVersion ?? "—"
-  if (result === undefined || "malformed" in result) return installedVersion ?? "—"
-  const installed = result.installed ?? installedVersion
-  return result.current ? (installed ?? "—") : `${installed ?? "?"} → ${result.latest}`
+): AdminVersionColumns => {
+  const installedFallback = installedVersion ?? "—"
+  if (!supported || result === undefined || "malformed" in result) {
+    return { installed: installedFallback, latest: "—", status: "unknown" }
+  }
+  const installed = result.installed ?? installedVersion ?? "—"
+  if (result.current) return { installed, latest: installed, status: "match" }
+  return { installed, latest: result.latest, status: "mismatch" }
 }
 
 /**

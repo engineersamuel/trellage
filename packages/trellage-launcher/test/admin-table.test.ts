@@ -113,6 +113,8 @@ describe("adminTableColumnWidths", () => {
     expect(widths.name).toBeGreaterThanOrEqual("PROFILE NAME".length)
     expect(widths.type).toBeGreaterThanOrEqual("TYPE".length)
     expect(widths.status).toBeGreaterThanOrEqual("STATUS".length)
+    expect(widths.version).toBeGreaterThanOrEqual("VERSION".length)
+    expect(widths.latestVersion).toBeGreaterThanOrEqual("LATEST VERSION".length)
   })
 
   it("widens a column to fit its longest value plus the header", () => {
@@ -123,7 +125,21 @@ describe("adminTableColumnWidths", () => {
 
   it("sums to at most the available width bounded by the terminal width", () => {
     const widths = adminTableColumnWidths(fixture, statuses(fixture.map((e) => [e.ref, "idle"] as const)), 100)
-    expect(widths.harness + widths.name + widths.type + widths.status).toBeLessThanOrEqual(100)
+    expect(widths.harness + widths.name + widths.type + widths.status + widths.version + widths.latestVersion).toBeLessThanOrEqual(
+      100,
+    )
+  })
+
+  it("widens the version and latest-version columns to fit a longer checked value", () => {
+    const checked = entry({ ref: "native:cpx/hve" })
+    const widths = adminTableColumnWidths(
+      [checked],
+      statuses([[checked.ref, "idle"]]),
+      200,
+      new Map([[checked.ref, { installed: "1.2.3-longer", latest: "1.3.0-longer", status: "mismatch" as const }]]),
+    )
+    expect(widths.version).toBeGreaterThan("1.2.3-longer".length)
+    expect(widths.latestVersion).toBeGreaterThan("1.3.0-longer".length)
   })
 
   it("never collapses the name column even for a very narrow terminal", () => {

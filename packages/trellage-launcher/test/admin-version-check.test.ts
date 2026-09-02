@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { AdminProfileEntry } from "../src/admin-model.js"
-import { buildUpdateCheckCommand, formatVersionCell, parseUpdateCheckOutput } from "../src/admin-version-check.js"
+import { buildUpdateCheckCommand, parseUpdateCheckOutput, versionColumnsFor } from "../src/admin-version-check.js"
 
 const entry: AdminProfileEntry = {
   ref: "native:prx:default",
@@ -92,28 +92,44 @@ describe("parseUpdateCheckOutput", () => {
   })
 })
 
-describe("formatVersionCell", () => {
-  it("shows the installed version for an unsupported launcher, ignoring any stray result", () => {
-    expect(formatVersionCell("1.0.0", false, { current: false, latest: "2.0.0" })).toBe("1.0.0")
+describe("versionColumnsFor", () => {
+  it("shows the installed version for an unsupported launcher with an unknown latest, ignoring any stray result", () => {
+    expect(versionColumnsFor("1.0.0", false, { current: false, latest: "2.0.0" })).toEqual({
+      installed: "1.0.0",
+      latest: "—",
+      status: "unknown",
+    })
   })
 
-  it("shows only the installed version once a check confirms it is current", () => {
-    expect(formatVersionCell("0.8.1", true, { current: true })).toBe("0.8.1")
+  it("marks both columns as matching once a check confirms the installed version is current", () => {
+    expect(versionColumnsFor("0.8.1", true, { current: true })).toEqual({
+      installed: "0.8.1",
+      latest: "0.8.1",
+      status: "match",
+    })
   })
 
-  it("shows installed and latest once a check finds an update", () => {
-    expect(formatVersionCell("0.8.1", true, { current: false, latest: "0.9.0" })).toBe("0.8.1 → 0.9.0")
+  it("marks both columns as mismatched once a check finds a newer release", () => {
+    expect(versionColumnsFor("0.8.1", true, { current: false, latest: "0.9.0" })).toEqual({
+      installed: "0.8.1",
+      latest: "0.9.0",
+      status: "mismatch",
+    })
   })
 
-  it("shows only the installed version when no check result is available yet", () => {
-    expect(formatVersionCell("0.8.1", true, undefined)).toBe("0.8.1")
+  it("shows an unknown latest when no check result is available yet", () => {
+    expect(versionColumnsFor("0.8.1", true, undefined)).toEqual({ installed: "0.8.1", latest: "—", status: "unknown" })
   })
 
-  it("shows only the installed version when the check result is malformed", () => {
-    expect(formatVersionCell("0.8.1", true, { malformed: true, diagnostic: "boom" })).toBe("0.8.1")
+  it("shows an unknown latest when the check result is malformed", () => {
+    expect(versionColumnsFor("0.8.1", true, { malformed: true, diagnostic: "boom" })).toEqual({
+      installed: "0.8.1",
+      latest: "—",
+      status: "unknown",
+    })
   })
 
-  it("shows an em dash when neither the installed version nor a result is known", () => {
-    expect(formatVersionCell(undefined, true, undefined)).toBe("—")
+  it("shows an em dash for both columns when neither the installed version nor a result is known", () => {
+    expect(versionColumnsFor(undefined, true, undefined)).toEqual({ installed: "—", latest: "—", status: "unknown" })
   })
 })
