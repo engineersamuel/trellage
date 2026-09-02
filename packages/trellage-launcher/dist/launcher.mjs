@@ -10427,10 +10427,10 @@ var require_react_reconciler_development = __commonJS({
           fiber = fiber.next, id--;
         return fiber;
       }
-      function copyWithSetImpl(obj, path9, index, value) {
-        if (index >= path9.length) return value;
-        var key = path9[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        updated[key] = copyWithSetImpl(obj[key], path9, index + 1, value);
+      function copyWithSetImpl(obj, path11, index, value) {
+        if (index >= path11.length) return value;
+        var key = path11[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        updated[key] = copyWithSetImpl(obj[key], path11, index + 1, value);
         return updated;
       }
       function copyWithRename(obj, oldPath, newPath) {
@@ -10457,11 +10457,11 @@ var require_react_reconciler_development = __commonJS({
         );
         return updated;
       }
-      function copyWithDeleteImpl(obj, path9, index) {
-        var key = path9[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
-        if (index + 1 === path9.length)
+      function copyWithDeleteImpl(obj, path11, index) {
+        var key = path11[index], updated = isArrayImpl(obj) ? obj.slice() : assign({}, obj);
+        if (index + 1 === path11.length)
           return isArrayImpl(updated) ? updated.splice(key, 1) : delete updated[key], updated;
-        updated[key] = copyWithDeleteImpl(obj[key], path9, index + 1);
+        updated[key] = copyWithDeleteImpl(obj[key], path11, index + 1);
         return updated;
       }
       function shouldSuspendImpl() {
@@ -23738,29 +23738,29 @@ var require_react_reconciler_development = __commonJS({
       var didWarnAboutNestedUpdates = false;
       var didWarnAboutFindNodeInStrictMode = {};
       var overrideHookState = null, overrideHookStateDeletePath = null, overrideHookStateRenamePath = null, overrideProps = null, overridePropsDeletePath = null, overridePropsRenamePath = null, scheduleUpdate = null, scheduleRetry = null, setErrorHandler = null, setSuspenseHandler = null;
-      overrideHookState = function(fiber, id, path9, value) {
+      overrideHookState = function(fiber, id, path11, value) {
         id = findHook(fiber, id);
-        null !== id && (path9 = copyWithSetImpl(id.memoizedState, path9, 0, value), id.memoizedState = path9, id.baseState = path9, fiber.memoizedProps = assign({}, fiber.memoizedProps), path9 = enqueueConcurrentRenderForLane(fiber, 2), null !== path9 && scheduleUpdateOnFiber(path9, fiber, 2));
+        null !== id && (path11 = copyWithSetImpl(id.memoizedState, path11, 0, value), id.memoizedState = path11, id.baseState = path11, fiber.memoizedProps = assign({}, fiber.memoizedProps), path11 = enqueueConcurrentRenderForLane(fiber, 2), null !== path11 && scheduleUpdateOnFiber(path11, fiber, 2));
       };
-      overrideHookStateDeletePath = function(fiber, id, path9) {
+      overrideHookStateDeletePath = function(fiber, id, path11) {
         id = findHook(fiber, id);
-        null !== id && (path9 = copyWithDeleteImpl(id.memoizedState, path9, 0), id.memoizedState = path9, id.baseState = path9, fiber.memoizedProps = assign({}, fiber.memoizedProps), path9 = enqueueConcurrentRenderForLane(fiber, 2), null !== path9 && scheduleUpdateOnFiber(path9, fiber, 2));
+        null !== id && (path11 = copyWithDeleteImpl(id.memoizedState, path11, 0), id.memoizedState = path11, id.baseState = path11, fiber.memoizedProps = assign({}, fiber.memoizedProps), path11 = enqueueConcurrentRenderForLane(fiber, 2), null !== path11 && scheduleUpdateOnFiber(path11, fiber, 2));
       };
       overrideHookStateRenamePath = function(fiber, id, oldPath, newPath) {
         id = findHook(fiber, id);
         null !== id && (oldPath = copyWithRename(id.memoizedState, oldPath, newPath), id.memoizedState = oldPath, id.baseState = oldPath, fiber.memoizedProps = assign({}, fiber.memoizedProps), oldPath = enqueueConcurrentRenderForLane(fiber, 2), null !== oldPath && scheduleUpdateOnFiber(oldPath, fiber, 2));
       };
-      overrideProps = function(fiber, path9, value) {
-        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path9, 0, value);
+      overrideProps = function(fiber, path11, value) {
+        fiber.pendingProps = copyWithSetImpl(fiber.memoizedProps, path11, 0, value);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path9 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path9 && scheduleUpdateOnFiber(path9, fiber, 2);
+        path11 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path11 && scheduleUpdateOnFiber(path11, fiber, 2);
       };
-      overridePropsDeletePath = function(fiber, path9) {
-        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path9, 0);
+      overridePropsDeletePath = function(fiber, path11) {
+        fiber.pendingProps = copyWithDeleteImpl(fiber.memoizedProps, path11, 0);
         fiber.alternate && (fiber.alternate.pendingProps = fiber.pendingProps);
-        path9 = enqueueConcurrentRenderForLane(fiber, 2);
-        null !== path9 && scheduleUpdateOnFiber(path9, fiber, 2);
+        path11 = enqueueConcurrentRenderForLane(fiber, 2);
+        null !== path11 && scheduleUpdateOnFiber(path11, fiber, 2);
       };
       overridePropsRenamePath = function(fiber, oldPath, newPath) {
         fiber.pendingProps = copyWithRename(
@@ -31575,8 +31575,8 @@ var require_backend = __commonJS({
               }
               return false;
             }
-            function utils_getInObject(object, path9) {
-              return path9.reduce(function(reduced, attr) {
+            function utils_getInObject(object, path11) {
+              return path11.reduce(function(reduced, attr) {
                 if (reduced) {
                   if (utils_hasOwnProperty.call(reduced, attr)) {
                     return reduced[attr];
@@ -31588,11 +31588,11 @@ var require_backend = __commonJS({
                 return null;
               }, object);
             }
-            function deletePathInObject(object, path9) {
-              var length = path9.length;
-              var last = path9[length - 1];
+            function deletePathInObject(object, path11) {
+              var length = path11.length;
+              var last = path11[length - 1];
               if (object != null) {
-                var parent = utils_getInObject(object, path9.slice(0, length - 1));
+                var parent = utils_getInObject(object, path11.slice(0, length - 1));
                 if (parent) {
                   if (src_isArray(parent)) {
                     parent.splice(last, 1);
@@ -31618,11 +31618,11 @@ var require_backend = __commonJS({
                 }
               }
             }
-            function utils_setInObject(object, path9, value) {
-              var length = path9.length;
-              var last = path9[length - 1];
+            function utils_setInObject(object, path11, value) {
+              var length = path11.length;
+              var last = path11[length - 1];
               if (object != null) {
-                var parent = utils_getInObject(object, path9.slice(0, length - 1));
+                var parent = utils_getInObject(object, path11.slice(0, length - 1));
                 if (parent) {
                   parent[last] = value;
                 }
@@ -31698,7 +31698,7 @@ var require_backend = __commonJS({
                       return "html_all_collection";
                     }
                   }
-                  if (!isPlainObject(data)) {
+                  if (!isPlainObject2(data)) {
                     return "class_instance";
                   }
                   return "object";
@@ -31957,7 +31957,7 @@ var require_backend = __commonJS({
                   }
                 case "thenable":
                   var displayName;
-                  if (isPlainObject(data)) {
+                  if (isPlainObject2(data)) {
                     displayName = "Thenable";
                   } else {
                     var _resolvedConstructorName = data.constructor.name;
@@ -32025,7 +32025,7 @@ var require_backend = __commonJS({
                   }
               }
             }
-            var isPlainObject = function isPlainObject2(object) {
+            var isPlainObject2 = function isPlainObject3(object) {
               var objectPrototype = Object.getPrototypeOf(object);
               if (!objectPrototype) return true;
               var objectParentPrototype = Object.getPrototypeOf(objectPrototype);
@@ -32155,8 +32155,8 @@ var require_backend = __commonJS({
               unserializable: Symbol("unserializable")
             };
             var LEVEL_THRESHOLD = 2;
-            function createDehydrated(type, inspectable, data, cleaned, path9) {
-              cleaned.push(path9);
+            function createDehydrated(type, inspectable, data, cleaned, path11) {
+              cleaned.push(path11);
               var dehydrated = {
                 inspectable,
                 type,
@@ -32174,13 +32174,13 @@ var require_backend = __commonJS({
               }
               return dehydrated;
             }
-            function dehydrate(data, cleaned, unserializable, path9, isPathAllowed) {
+            function dehydrate(data, cleaned, unserializable, path11, isPathAllowed) {
               var level = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : 0;
               var type = getDataType(data);
               var isPathAllowedCheck;
               switch (type) {
                 case "html_element":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32189,7 +32189,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "function":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32198,14 +32198,14 @@ var require_backend = __commonJS({
                     type
                   };
                 case "string":
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (isPathAllowedCheck) {
                     return data;
                   } else {
                     return data.length <= 500 ? data : data.slice(0, 500) + "...";
                   }
                 case "bigint":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32214,7 +32214,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "symbol":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32223,9 +32223,9 @@ var require_backend = __commonJS({
                     type
                   };
                 case "react_element": {
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path9);
+                    cleaned.push(path11);
                     return {
                       inspectable: true,
                       preview_short: formatDataForPreview(data, false),
@@ -32242,19 +32242,19 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: getDisplayNameForReactElement(data) || "Unknown"
                   };
-                  unserializableValue.key = dehydrate(data.key, cleaned, unserializable, path9.concat(["key"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializableValue.key = dehydrate(data.key, cleaned, unserializable, path11.concat(["key"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   if (data.$$typeof === REACT_LEGACY_ELEMENT_TYPE) {
-                    unserializableValue.ref = dehydrate(data.ref, cleaned, unserializable, path9.concat(["ref"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    unserializableValue.ref = dehydrate(data.ref, cleaned, unserializable, path11.concat(["ref"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
-                  unserializableValue.props = dehydrate(data.props, cleaned, unserializable, path9.concat(["props"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  unserializable.push(path9);
+                  unserializableValue.props = dehydrate(data.props, cleaned, unserializable, path11.concat(["props"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializable.push(path11);
                   return unserializableValue;
                 }
                 case "react_lazy": {
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   var payload = data._payload;
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path9);
+                    cleaned.push(path11);
                     var inspectable = payload !== null && hydration_typeof(payload) === "object" && (payload._status === 1 || payload._status === 2 || payload.status === "fulfilled" || payload.status === "rejected");
                     return {
                       inspectable,
@@ -32271,13 +32271,13 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: "lazy()"
                   };
-                  _unserializableValue._payload = dehydrate(payload, cleaned, unserializable, path9.concat(["_payload"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  unserializable.push(path9);
+                  _unserializableValue._payload = dehydrate(payload, cleaned, unserializable, path11.concat(["_payload"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  unserializable.push(path11);
                   return _unserializableValue;
                 }
                 case "array_buffer":
                 case "data_view":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32287,21 +32287,21 @@ var require_backend = __commonJS({
                     type
                   };
                 case "array":
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path9);
+                    return createDehydrated(type, true, data, cleaned, path11);
                   }
                   var arr = [];
                   for (var i = 0; i < data.length; i++) {
-                    arr[i] = dehydrateKey(data, i, cleaned, unserializable, path9.concat([i]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    arr[i] = dehydrateKey(data, i, cleaned, unserializable, path11.concat([i]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
                   return arr;
                 case "html_all_collection":
                 case "typed_array":
                 case "iterator":
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path9);
+                    return createDehydrated(type, true, data, cleaned, path11);
                   } else {
                     var _unserializableValue2 = {
                       unserializable: true,
@@ -32313,13 +32313,13 @@ var require_backend = __commonJS({
                       name: typeof data.constructor !== "function" || typeof data.constructor.name !== "string" || data.constructor.name === "Object" ? "" : data.constructor.name
                     };
                     Array.from(data).forEach(function(item, i2) {
-                      return _unserializableValue2[i2] = dehydrate(item, cleaned, unserializable, path9.concat([i2]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      return _unserializableValue2[i2] = dehydrate(item, cleaned, unserializable, path11.concat([i2]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                     });
-                    unserializable.push(path9);
+                    unserializable.push(path11);
                     return _unserializableValue2;
                   }
                 case "opaque_iterator":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32328,7 +32328,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "date":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32337,7 +32337,7 @@ var require_backend = __commonJS({
                     type
                   };
                 case "regexp":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     inspectable: false,
                     preview_short: formatDataForPreview(data, false),
@@ -32346,9 +32346,9 @@ var require_backend = __commonJS({
                     type
                   };
                 case "thenable":
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    cleaned.push(path9);
+                    cleaned.push(path11);
                     return {
                       inspectable: data.status === "fulfilled" || data.status === "rejected",
                       preview_short: formatDataForPreview(data, false),
@@ -32369,8 +32369,8 @@ var require_backend = __commonJS({
                         preview_long: formatDataForPreview(data, true),
                         name: "fulfilled Thenable"
                       };
-                      _unserializableValue3.value = dehydrate(data.value, cleaned, unserializable, path9.concat(["value"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                      unserializable.push(path9);
+                      _unserializableValue3.value = dehydrate(data.value, cleaned, unserializable, path11.concat(["value"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      unserializable.push(path11);
                       return _unserializableValue3;
                     }
                     case "rejected": {
@@ -32381,12 +32381,12 @@ var require_backend = __commonJS({
                         preview_long: formatDataForPreview(data, true),
                         name: "rejected Thenable"
                       };
-                      _unserializableValue4.reason = dehydrate(data.reason, cleaned, unserializable, path9.concat(["reason"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                      unserializable.push(path9);
+                      _unserializableValue4.reason = dehydrate(data.reason, cleaned, unserializable, path11.concat(["reason"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      unserializable.push(path11);
                       return _unserializableValue4;
                     }
                     default:
-                      cleaned.push(path9);
+                      cleaned.push(path11);
                       return {
                         inspectable: false,
                         preview_short: formatDataForPreview(data, false),
@@ -32396,21 +32396,21 @@ var require_backend = __commonJS({
                       };
                   }
                 case "object":
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path9);
+                    return createDehydrated(type, true, data, cleaned, path11);
                   } else {
                     var object = {};
                     getAllEnumerableKeys(data).forEach(function(key) {
                       var name = key.toString();
-                      object[name] = dehydrateKey(data, key, cleaned, unserializable, path9.concat([name]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                      object[name] = dehydrateKey(data, key, cleaned, unserializable, path11.concat([name]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                     });
                     return object;
                   }
                 case "class_instance": {
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path9);
+                    return createDehydrated(type, true, data, cleaned, path11);
                   }
                   var value = {
                     unserializable: true,
@@ -32422,15 +32422,15 @@ var require_backend = __commonJS({
                   };
                   getAllEnumerableKeys(data).forEach(function(key) {
                     var keyAsString = key.toString();
-                    value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path9.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path11.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   });
-                  unserializable.push(path9);
+                  unserializable.push(path11);
                   return value;
                 }
                 case "error": {
-                  isPathAllowedCheck = isPathAllowed(path9);
+                  isPathAllowedCheck = isPathAllowed(path11);
                   if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
-                    return createDehydrated(type, true, data, cleaned, path9);
+                    return createDehydrated(type, true, data, cleaned, path11);
                   }
                   var _value = {
                     unserializable: true,
@@ -32440,22 +32440,22 @@ var require_backend = __commonJS({
                     preview_long: formatDataForPreview(data, true),
                     name: data.name
                   };
-                  _value.message = dehydrate(data.message, cleaned, unserializable, path9.concat(["message"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
-                  _value.stack = dehydrate(data.stack, cleaned, unserializable, path9.concat(["stack"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  _value.message = dehydrate(data.message, cleaned, unserializable, path11.concat(["message"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                  _value.stack = dehydrate(data.stack, cleaned, unserializable, path11.concat(["stack"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   if ("cause" in data) {
-                    _value.cause = dehydrate(data.cause, cleaned, unserializable, path9.concat(["cause"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    _value.cause = dehydrate(data.cause, cleaned, unserializable, path11.concat(["cause"]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   }
                   getAllEnumerableKeys(data).forEach(function(key) {
                     var keyAsString = key.toString();
-                    _value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path9.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
+                    _value[keyAsString] = dehydrate(data[key], cleaned, unserializable, path11.concat([keyAsString]), isPathAllowed, isPathAllowedCheck ? 1 : level + 1);
                   });
-                  unserializable.push(path9);
+                  unserializable.push(path11);
                   return _value;
                 }
                 case "infinity":
                 case "nan":
                 case "undefined":
-                  cleaned.push(path9);
+                  cleaned.push(path11);
                   return {
                     type
                   };
@@ -32463,10 +32463,10 @@ var require_backend = __commonJS({
                   return data;
               }
             }
-            function dehydrateKey(parent, key, cleaned, unserializable, path9, isPathAllowed) {
+            function dehydrateKey(parent, key, cleaned, unserializable, path11, isPathAllowed) {
               var level = arguments.length > 6 && arguments[6] !== void 0 ? arguments[6] : 0;
               try {
-                return dehydrate(parent[key], cleaned, unserializable, path9, isPathAllowed, level);
+                return dehydrate(parent[key], cleaned, unserializable, path11, isPathAllowed, level);
               } catch (error) {
                 var preview = "";
                 if (hydration_typeof(error) === "object" && error !== null && typeof error.stack === "string") {
@@ -32474,7 +32474,7 @@ var require_backend = __commonJS({
                 } else if (typeof error === "string") {
                   preview = error;
                 }
-                cleaned.push(path9);
+                cleaned.push(path11);
                 return {
                   inspectable: false,
                   preview_short: "[Exception]",
@@ -32484,8 +32484,8 @@ var require_backend = __commonJS({
                 };
               }
             }
-            function fillInPath(object, data, path9, value) {
-              var target = getInObject(object, path9);
+            function fillInPath(object, data, path11, value) {
+              var target = getInObject(object, path11);
               if (target != null) {
                 if (!target[meta.unserializable]) {
                   delete target[meta.inspectable];
@@ -32500,9 +32500,9 @@ var require_backend = __commonJS({
               }
               if (value !== null && data.unserializable.length > 0) {
                 var unserializablePath = data.unserializable[0];
-                var isMatch = unserializablePath.length === path9.length;
-                for (var i = 0; i < path9.length; i++) {
-                  if (path9[i] !== unserializablePath[i]) {
+                var isMatch = unserializablePath.length === path11.length;
+                for (var i = 0; i < path11.length; i++) {
+                  if (path11[i] !== unserializablePath[i]) {
                     isMatch = false;
                     break;
                   }
@@ -32511,13 +32511,13 @@ var require_backend = __commonJS({
                   upgradeUnserializable(value, value);
                 }
               }
-              setInObject(object, path9, value);
+              setInObject(object, path11, value);
             }
             function hydrate(object, cleaned, unserializable) {
-              cleaned.forEach(function(path9) {
-                var length = path9.length;
-                var last = path9[length - 1];
-                var parent = getInObject(object, path9.slice(0, length - 1));
+              cleaned.forEach(function(path11) {
+                var length = path11.length;
+                var last = path11[length - 1];
+                var parent = getInObject(object, path11.slice(0, length - 1));
                 if (!parent || !parent.hasOwnProperty(last)) {
                   return;
                 }
@@ -32543,10 +32543,10 @@ var require_backend = __commonJS({
                   parent[last] = replaced;
                 }
               });
-              unserializable.forEach(function(path9) {
-                var length = path9.length;
-                var last = path9[length - 1];
-                var parent = getInObject(object, path9.slice(0, length - 1));
+              unserializable.forEach(function(path11) {
+                var length = path11.length;
+                var last = path11[length - 1];
+                var parent = getInObject(object, path11.slice(0, length - 1));
                 if (!parent || !parent.hasOwnProperty(last)) {
                   return;
                 }
@@ -32667,11 +32667,11 @@ var require_backend = __commonJS({
               return gte(version2, FIRST_DEVTOOLS_BACKEND_LOCKSTEP_VER);
             }
             function cleanForBridge(data, isPathAllowed) {
-              var path9 = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
+              var path11 = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
               if (data !== null) {
                 var cleanedPaths = [];
                 var unserializablePaths = [];
-                var cleanedData = dehydrate(data, cleanedPaths, unserializablePaths, path9, isPathAllowed);
+                var cleanedData = dehydrate(data, cleanedPaths, unserializablePaths, path11, isPathAllowed);
                 return {
                   data: cleanedData,
                   cleaned: cleanedPaths,
@@ -32681,18 +32681,18 @@ var require_backend = __commonJS({
                 return null;
               }
             }
-            function copyWithDelete(obj, path9) {
+            function copyWithDelete(obj, path11) {
               var index = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 0;
-              var key = path9[index];
+              var key = path11[index];
               var updated = shared_isArray(obj) ? obj.slice() : utils_objectSpread({}, obj);
-              if (index + 1 === path9.length) {
+              if (index + 1 === path11.length) {
                 if (shared_isArray(updated)) {
                   updated.splice(key, 1);
                 } else {
                   delete updated[key];
                 }
               } else {
-                updated[key] = copyWithDelete(obj[key], path9, index + 1);
+                updated[key] = copyWithDelete(obj[key], path11, index + 1);
               }
               return updated;
             }
@@ -32713,14 +32713,14 @@ var require_backend = __commonJS({
               }
               return updated;
             }
-            function copyWithSet(obj, path9, value) {
+            function copyWithSet(obj, path11, value) {
               var index = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : 0;
-              if (index >= path9.length) {
+              if (index >= path11.length) {
                 return value;
               }
-              var key = path9[index];
+              var key = path11[index];
               var updated = shared_isArray(obj) ? obj.slice() : utils_objectSpread({}, obj);
-              updated[key] = copyWithSet(obj[key], path9, value, index + 1);
+              updated[key] = copyWithSet(obj[key], path11, value, index + 1);
               return updated;
             }
             function getEffectDurations(root) {
@@ -33996,12 +33996,12 @@ var require_backend = __commonJS({
                   }
                 });
                 bridge_defineProperty(_this, "overrideValueAtPath", function(_ref) {
-                  var id = _ref.id, path9 = _ref.path, rendererID = _ref.rendererID, type = _ref.type, value = _ref.value;
+                  var id = _ref.id, path11 = _ref.path, rendererID = _ref.rendererID, type = _ref.type, value = _ref.value;
                   switch (type) {
                     case "context":
                       _this.send("overrideContext", {
                         id,
-                        path: path9,
+                        path: path11,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34010,7 +34010,7 @@ var require_backend = __commonJS({
                     case "hooks":
                       _this.send("overrideHookState", {
                         id,
-                        path: path9,
+                        path: path11,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34019,7 +34019,7 @@ var require_backend = __commonJS({
                     case "props":
                       _this.send("overrideProps", {
                         id,
-                        path: path9,
+                        path: path11,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34028,7 +34028,7 @@ var require_backend = __commonJS({
                     case "state":
                       _this.send("overrideState", {
                         id,
-                        path: path9,
+                        path: path11,
                         rendererID,
                         wasForwarded: true,
                         value
@@ -34366,12 +34366,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "copyElementPath", function(_ref5) {
-                  var id = _ref5.id, path9 = _ref5.path, rendererID = _ref5.rendererID;
+                  var id = _ref5.id, path11 = _ref5.path, rendererID = _ref5.rendererID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    var value = renderer2.getSerializedElementValueByPath(id, path9);
+                    var value = renderer2.getSerializedElementValueByPath(id, path11);
                     if (value != null) {
                       _this._bridge.send("saveToClipboard", value);
                     } else {
@@ -34380,12 +34380,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "deletePath", function(_ref6) {
-                  var hookID = _ref6.hookID, id = _ref6.id, path9 = _ref6.path, rendererID = _ref6.rendererID, type = _ref6.type;
+                  var hookID = _ref6.hookID, id = _ref6.id, path11 = _ref6.path, rendererID = _ref6.rendererID, type = _ref6.type;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.deletePath(type, id, hookID, path9);
+                    renderer2.deletePath(type, id, hookID, path11);
                   }
                 });
                 agent_defineProperty(_this, "getBackendVersion", function() {
@@ -34422,12 +34422,12 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "inspectElement", function(_ref9) {
-                  var forceFullData = _ref9.forceFullData, id = _ref9.id, path9 = _ref9.path, rendererID = _ref9.rendererID, requestID = _ref9.requestID;
+                  var forceFullData = _ref9.forceFullData, id = _ref9.id, path11 = _ref9.path, rendererID = _ref9.rendererID, requestID = _ref9.requestID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    _this._bridge.send("inspectedElement", renderer2.inspectElement(requestID, id, path9, forceFullData));
+                    _this._bridge.send("inspectedElement", renderer2.inspectElement(requestID, id, path11, forceFullData));
                     if (_this._persistedSelectionMatch === null || _this._persistedSelectionMatch.id !== id) {
                       _this._persistedSelection = null;
                       _this._persistedSelectionMatch = null;
@@ -34461,15 +34461,15 @@ var require_backend = __commonJS({
                   }
                   for (var rendererID in _this._rendererInterfaces) {
                     var renderer2 = _this._rendererInterfaces[rendererID];
-                    var path9 = null;
+                    var path11 = null;
                     if (suspendedByPathIndex !== null && rendererPath !== null) {
                       var suspendedByPathRendererIndex = suspendedByPathIndex - suspendedByOffset;
                       var rendererHasRequestedSuspendedByPath = renderer2.getElementAttributeByPath(id, ["suspendedBy", suspendedByPathRendererIndex]) !== void 0;
                       if (rendererHasRequestedSuspendedByPath) {
-                        path9 = ["suspendedBy", suspendedByPathRendererIndex].concat(rendererPath);
+                        path11 = ["suspendedBy", suspendedByPathRendererIndex].concat(rendererPath);
                       }
                     }
-                    var inspectedRootsPayload = renderer2.inspectElement(requestID, id, path9, forceFullData);
+                    var inspectedRootsPayload = renderer2.inspectElement(requestID, id, path11, forceFullData);
                     switch (inspectedRootsPayload.type) {
                       case "hydrated-path":
                         inspectedRootsPayload.path[1] += suspendedByOffset;
@@ -34563,20 +34563,20 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideValueAtPath", function(_ref15) {
-                  var hookID = _ref15.hookID, id = _ref15.id, path9 = _ref15.path, rendererID = _ref15.rendererID, type = _ref15.type, value = _ref15.value;
+                  var hookID = _ref15.hookID, id = _ref15.id, path11 = _ref15.path, rendererID = _ref15.rendererID, type = _ref15.type, value = _ref15.value;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.overrideValueAtPath(type, id, hookID, path9, value);
+                    renderer2.overrideValueAtPath(type, id, hookID, path11, value);
                   }
                 });
                 agent_defineProperty(_this, "overrideContext", function(_ref16) {
-                  var id = _ref16.id, path9 = _ref16.path, rendererID = _ref16.rendererID, wasForwarded = _ref16.wasForwarded, value = _ref16.value;
+                  var id = _ref16.id, path11 = _ref16.path, rendererID = _ref16.rendererID, wasForwarded = _ref16.wasForwarded, value = _ref16.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path9,
+                      path: path11,
                       rendererID,
                       type: "context",
                       value
@@ -34584,11 +34584,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideHookState", function(_ref17) {
-                  var id = _ref17.id, hookID = _ref17.hookID, path9 = _ref17.path, rendererID = _ref17.rendererID, wasForwarded = _ref17.wasForwarded, value = _ref17.value;
+                  var id = _ref17.id, hookID = _ref17.hookID, path11 = _ref17.path, rendererID = _ref17.rendererID, wasForwarded = _ref17.wasForwarded, value = _ref17.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path9,
+                      path: path11,
                       rendererID,
                       type: "hooks",
                       value
@@ -34596,11 +34596,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideProps", function(_ref18) {
-                  var id = _ref18.id, path9 = _ref18.path, rendererID = _ref18.rendererID, wasForwarded = _ref18.wasForwarded, value = _ref18.value;
+                  var id = _ref18.id, path11 = _ref18.path, rendererID = _ref18.rendererID, wasForwarded = _ref18.wasForwarded, value = _ref18.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path9,
+                      path: path11,
                       rendererID,
                       type: "props",
                       value
@@ -34608,11 +34608,11 @@ var require_backend = __commonJS({
                   }
                 });
                 agent_defineProperty(_this, "overrideState", function(_ref19) {
-                  var id = _ref19.id, path9 = _ref19.path, rendererID = _ref19.rendererID, wasForwarded = _ref19.wasForwarded, value = _ref19.value;
+                  var id = _ref19.id, path11 = _ref19.path, rendererID = _ref19.rendererID, wasForwarded = _ref19.wasForwarded, value = _ref19.value;
                   if (!wasForwarded) {
                     _this.overrideValueAtPath({
                       id,
-                      path: path9,
+                      path: path11,
                       rendererID,
                       type: "state",
                       value
@@ -34679,12 +34679,12 @@ var require_backend = __commonJS({
                   _this._bridge.send("stopInspectingHost", selected);
                 });
                 agent_defineProperty(_this, "storeAsGlobal", function(_ref23) {
-                  var count = _ref23.count, id = _ref23.id, path9 = _ref23.path, rendererID = _ref23.rendererID;
+                  var count = _ref23.count, id = _ref23.id, path11 = _ref23.path, rendererID = _ref23.rendererID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
                   if (renderer2 == null) {
                     console.warn('Invalid renderer id "'.concat(rendererID, '" for element "').concat(id, '"'));
                   } else {
-                    renderer2.storeAsGlobal(id, path9, count);
+                    renderer2.storeAsGlobal(id, path11, count);
                   }
                 });
                 agent_defineProperty(_this, "updateHookSettings", function(settings) {
@@ -34701,12 +34701,12 @@ var require_backend = __commonJS({
                     var rendererID = +rendererIDString;
                     var renderer2 = _this._rendererInterfaces[rendererID];
                     if (_this._lastSelectedRendererID === rendererID) {
-                      var path9 = renderer2.getPathForElement(_this._lastSelectedElementID);
-                      if (path9 !== null) {
-                        renderer2.setTrackedPath(path9);
+                      var path11 = renderer2.getPathForElement(_this._lastSelectedElementID);
+                      if (path11 !== null) {
+                        renderer2.setTrackedPath(path11);
                         _this._persistedSelection = {
                           rendererID,
-                          path: path9
+                          path: path11
                         };
                       }
                     }
@@ -34781,11 +34781,11 @@ var require_backend = __commonJS({
                   var rendererID = _this._lastSelectedRendererID;
                   var id = _this._lastSelectedElementID;
                   var renderer2 = _this._rendererInterfaces[rendererID];
-                  var path9 = renderer2 != null ? renderer2.getPathForElement(id) : null;
-                  if (path9 !== null) {
+                  var path11 = renderer2 != null ? renderer2.getPathForElement(id) : null;
+                  if (path11 !== null) {
                     storage_sessionStorageSetItem(SESSION_STORAGE_LAST_SELECTION_KEY, JSON.stringify({
                       rendererID,
-                      path: path9
+                      path: path11
                     }));
                   } else {
                     storage_sessionStorageRemoveItem(SESSION_STORAGE_LAST_SELECTION_KEY);
@@ -35494,7 +35494,7 @@ var require_backend = __commonJS({
                 hasElementWithId: function hasElementWithId() {
                   return false;
                 },
-                inspectElement: function inspectElement(requestID, id, path9) {
+                inspectElement: function inspectElement(requestID, id, path11) {
                   return {
                     id,
                     responseID: requestID,
@@ -40745,9 +40745,9 @@ var require_backend = __commonJS({
                 }
                 return null;
               }
-              function getElementAttributeByPath(id, path9) {
+              function getElementAttributeByPath(id, path11) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  return utils_getInObject(mostRecentlyInspectedElement, path9);
+                  return utils_getInObject(mostRecentlyInspectedElement, path11);
                 }
                 return void 0;
               }
@@ -41454,9 +41454,9 @@ var require_backend = __commonJS({
               function isMostRecentlyInspectedElementCurrent(id) {
                 return isMostRecentlyInspectedElement(id) && !hasElementUpdatedSinceLastInspected;
               }
-              function mergeInspectedPaths(path9) {
+              function mergeInspectedPaths(path11) {
                 var current = currentlyInspectedPaths;
-                path9.forEach(function(key) {
+                path11.forEach(function(key) {
                   if (!current[key]) {
                     current[key] = {};
                   }
@@ -41464,21 +41464,21 @@ var require_backend = __commonJS({
                 });
               }
               function createIsPathAllowed(key, secondaryCategory) {
-                return function isPathAllowed(path9) {
+                return function isPathAllowed(path11) {
                   switch (secondaryCategory) {
                     case "hooks":
-                      if (path9.length === 1) {
+                      if (path11.length === 1) {
                         return true;
                       }
-                      if (path9[path9.length - 2] === "hookSource" && path9[path9.length - 1] === "fileName") {
+                      if (path11[path11.length - 2] === "hookSource" && path11[path11.length - 1] === "fileName") {
                         return true;
                       }
-                      if (path9[path9.length - 1] === "subHooks" || path9[path9.length - 2] === "subHooks") {
+                      if (path11[path11.length - 1] === "subHooks" || path11[path11.length - 2] === "subHooks") {
                         return true;
                       }
                       break;
                     case "suspendedBy":
-                      if (path9.length < 5) {
+                      if (path11.length < 5) {
                         return true;
                       }
                       break;
@@ -41489,8 +41489,8 @@ var require_backend = __commonJS({
                   if (!current) {
                     return false;
                   }
-                  for (var i = 0; i < path9.length; i++) {
-                    current = current[path9[i]];
+                  for (var i = 0; i < path11.length; i++) {
+                    current = current[path11[i]];
                     if (!current) {
                       return false;
                     }
@@ -41544,38 +41544,38 @@ var require_backend = __commonJS({
                     break;
                 }
               }
-              function storeAsGlobal(id, path9, count) {
+              function storeAsGlobal(id, path11, count) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  var value = utils_getInObject(mostRecentlyInspectedElement, path9);
+                  var value = utils_getInObject(mostRecentlyInspectedElement, path11);
                   var key = "$reactTemp".concat(count);
                   window[key] = value;
                   console.log(key);
                   console.log(value);
                 }
               }
-              function getSerializedElementValueByPath(id, path9) {
+              function getSerializedElementValueByPath(id, path11) {
                 if (isMostRecentlyInspectedElement(id)) {
-                  var valueToCopy = utils_getInObject(mostRecentlyInspectedElement, path9);
+                  var valueToCopy = utils_getInObject(mostRecentlyInspectedElement, path11);
                   return serializeToString(valueToCopy);
                 }
               }
-              function inspectElement(requestID, id, path9, forceFullData) {
-                if (path9 !== null) {
-                  mergeInspectedPaths(path9);
+              function inspectElement(requestID, id, path11, forceFullData) {
+                if (path11 !== null) {
+                  mergeInspectedPaths(path11);
                 }
                 if (isMostRecentlyInspectedElement(id) && !forceFullData) {
                   if (!hasElementUpdatedSinceLastInspected) {
-                    if (path9 !== null) {
+                    if (path11 !== null) {
                       var secondaryCategory = null;
-                      if (path9[0] === "hooks" || path9[0] === "suspendedBy") {
-                        secondaryCategory = path9[0];
+                      if (path11[0] === "hooks" || path11[0] === "suspendedBy") {
+                        secondaryCategory = path11[0];
                       }
                       return {
                         id,
                         responseID: requestID,
                         type: "hydrated-path",
-                        path: path9,
-                        value: cleanForBridge(utils_getInObject(mostRecentlyInspectedElement, path9), createIsPathAllowed(null, secondaryCategory), path9)
+                        path: path11,
+                        value: cleanForBridge(utils_getInObject(mostRecentlyInspectedElement, path11), createIsPathAllowed(null, secondaryCategory), path11)
                       };
                     } else {
                       return {
@@ -41764,7 +41764,7 @@ var require_backend = __commonJS({
                   console.groupEnd();
                 }
               }
-              function deletePath(type, id, hookID, path9) {
+              function deletePath(type, id, hookID, path11) {
                 var devtoolsInstance = idToDevToolsInstanceMap.get(id);
                 if (devtoolsInstance === void 0) {
                   console.warn('Could not find DevToolsInstance with id "'.concat(id, '"'));
@@ -41778,12 +41778,12 @@ var require_backend = __commonJS({
                   var instance = fiber.stateNode;
                   switch (type) {
                     case "context":
-                      path9 = path9.slice(1);
+                      path11 = path11.slice(1);
                       switch (fiber.tag) {
                         case ClassComponent:
-                          if (path9.length === 0) {
+                          if (path11.length === 0) {
                           } else {
-                            deletePathInObject(instance.context, path9);
+                            deletePathInObject(instance.context, path11);
                           }
                           instance.forceUpdate();
                           break;
@@ -41793,21 +41793,21 @@ var require_backend = __commonJS({
                       break;
                     case "hooks":
                       if (typeof overrideHookStateDeletePath === "function") {
-                        overrideHookStateDeletePath(fiber, hookID, path9);
+                        overrideHookStateDeletePath(fiber, hookID, path11);
                       }
                       break;
                     case "props":
                       if (instance === null) {
                         if (typeof overridePropsDeletePath === "function") {
-                          overridePropsDeletePath(fiber, path9);
+                          overridePropsDeletePath(fiber, path11);
                         }
                       } else {
-                        fiber.pendingProps = copyWithDelete(instance.props, path9);
+                        fiber.pendingProps = copyWithDelete(instance.props, path11);
                         instance.forceUpdate();
                       }
                       break;
                     case "state":
-                      deletePathInObject(instance.state, path9);
+                      deletePathInObject(instance.state, path11);
                       instance.forceUpdate();
                       break;
                   }
@@ -41863,7 +41863,7 @@ var require_backend = __commonJS({
                   }
                 }
               }
-              function overrideValueAtPath(type, id, hookID, path9, value) {
+              function overrideValueAtPath(type, id, hookID, path11, value) {
                 var devtoolsInstance = idToDevToolsInstanceMap.get(id);
                 if (devtoolsInstance === void 0) {
                   console.warn('Could not find DevToolsInstance with id "'.concat(id, '"'));
@@ -41877,13 +41877,13 @@ var require_backend = __commonJS({
                   var instance = fiber.stateNode;
                   switch (type) {
                     case "context":
-                      path9 = path9.slice(1);
+                      path11 = path11.slice(1);
                       switch (fiber.tag) {
                         case ClassComponent:
-                          if (path9.length === 0) {
+                          if (path11.length === 0) {
                             instance.context = value;
                           } else {
-                            utils_setInObject(instance.context, path9, value);
+                            utils_setInObject(instance.context, path11, value);
                           }
                           instance.forceUpdate();
                           break;
@@ -41893,18 +41893,18 @@ var require_backend = __commonJS({
                       break;
                     case "hooks":
                       if (typeof overrideHookState === "function") {
-                        overrideHookState(fiber, hookID, path9, value);
+                        overrideHookState(fiber, hookID, path11, value);
                       }
                       break;
                     case "props":
                       switch (fiber.tag) {
                         case ClassComponent:
-                          fiber.pendingProps = copyWithSet(instance.props, path9, value);
+                          fiber.pendingProps = copyWithSet(instance.props, path11, value);
                           instance.forceUpdate();
                           break;
                         default:
                           if (typeof overrideProps === "function") {
-                            overrideProps(fiber, path9, value);
+                            overrideProps(fiber, path11, value);
                           }
                           break;
                       }
@@ -41912,7 +41912,7 @@ var require_backend = __commonJS({
                     case "state":
                       switch (fiber.tag) {
                         case ClassComponent:
-                          utils_setInObject(instance.state, path9, value);
+                          utils_setInObject(instance.state, path11, value);
                           instance.forceUpdate();
                           break;
                       }
@@ -42198,14 +42198,14 @@ var require_backend = __commonJS({
               var trackedPathMatchInstance = null;
               var trackedPathMatchDepth = -1;
               var mightBeOnTrackedPath = false;
-              function setTrackedPath(path9) {
-                if (path9 === null) {
+              function setTrackedPath(path11) {
+                if (path11 === null) {
                   trackedPathMatchFiber = null;
                   trackedPathMatchInstance = null;
                   trackedPathMatchDepth = -1;
                   mightBeOnTrackedPath = false;
                 }
-                trackedPath = path9;
+                trackedPath = path11;
               }
               function updateTrackedPathStateBeforeMount(fiber, fiberInstance) {
                 if (trackedPath === null || !mightBeOnTrackedPath) {
@@ -42973,9 +42973,9 @@ var require_backend = __commonJS({
               }
               var currentlyInspectedElementID = null;
               var currentlyInspectedPaths = {};
-              function mergeInspectedPaths(path9) {
+              function mergeInspectedPaths(path11) {
                 var current = currentlyInspectedPaths;
-                path9.forEach(function(key) {
+                path11.forEach(function(key) {
                   if (!current[key]) {
                     current[key] = {};
                   }
@@ -42983,13 +42983,13 @@ var require_backend = __commonJS({
                 });
               }
               function createIsPathAllowed(key) {
-                return function isPathAllowed(path9) {
+                return function isPathAllowed(path11) {
                   var current = currentlyInspectedPaths[key];
                   if (!current) {
                     return false;
                   }
-                  for (var i = 0; i < path9.length; i++) {
-                    current = current[path9[i]];
+                  for (var i = 0; i < path11.length; i++) {
+                    current = current[path11[i]];
                     if (!current) {
                       return false;
                     }
@@ -43039,24 +43039,24 @@ var require_backend = __commonJS({
                     break;
                 }
               }
-              function storeAsGlobal(id, path9, count) {
+              function storeAsGlobal(id, path11, count) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  var value = utils_getInObject(inspectedElement, path9);
+                  var value = utils_getInObject(inspectedElement, path11);
                   var key = "$reactTemp".concat(count);
                   window[key] = value;
                   console.log(key);
                   console.log(value);
                 }
               }
-              function getSerializedElementValueByPath(id, path9) {
+              function getSerializedElementValueByPath(id, path11) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  var valueToCopy = utils_getInObject(inspectedElement, path9);
+                  var valueToCopy = utils_getInObject(inspectedElement, path11);
                   return serializeToString(valueToCopy);
                 }
               }
-              function inspectElement(requestID, id, path9, forceFullData) {
+              function inspectElement(requestID, id, path11, forceFullData) {
                 if (forceFullData || currentlyInspectedElementID !== id) {
                   currentlyInspectedElementID = id;
                   currentlyInspectedPaths = {};
@@ -43069,8 +43069,8 @@ var require_backend = __commonJS({
                     type: "not-found"
                   };
                 }
-                if (path9 !== null) {
-                  mergeInspectedPaths(path9);
+                if (path11 !== null) {
+                  mergeInspectedPaths(path11);
                 }
                 updateSelectedElement(id);
                 inspectedElement.context = cleanForBridge(inspectedElement.context, createIsPathAllowed("context"));
@@ -43273,10 +43273,10 @@ var require_backend = __commonJS({
                   console.groupEnd();
                 }
               }
-              function getElementAttributeByPath(id, path9) {
+              function getElementAttributeByPath(id, path11) {
                 var inspectedElement = inspectElementRaw(id);
                 if (inspectedElement !== null) {
-                  return utils_getInObject(inspectedElement, path9);
+                  return utils_getInObject(inspectedElement, path11);
                 }
                 return void 0;
               }
@@ -43293,14 +43293,14 @@ var require_backend = __commonJS({
                 }
                 return element.type;
               }
-              function deletePath(type, id, hookID, path9) {
+              function deletePath(type, id, hookID, path11) {
                 var internalInstance = idToInternalInstanceMap.get(id);
                 if (internalInstance != null) {
                   var publicInstance = internalInstance._instance;
                   if (publicInstance != null) {
                     switch (type) {
                       case "context":
-                        deletePathInObject(publicInstance.context, path9);
+                        deletePathInObject(publicInstance.context, path11);
                         forceUpdate(publicInstance);
                         break;
                       case "hooks":
@@ -43308,12 +43308,12 @@ var require_backend = __commonJS({
                       case "props":
                         var element = internalInstance._currentElement;
                         internalInstance._currentElement = legacy_renderer_objectSpread(legacy_renderer_objectSpread({}, element), {}, {
-                          props: copyWithDelete(element.props, path9)
+                          props: copyWithDelete(element.props, path11)
                         });
                         forceUpdate(publicInstance);
                         break;
                       case "state":
-                        deletePathInObject(publicInstance.state, path9);
+                        deletePathInObject(publicInstance.state, path11);
                         forceUpdate(publicInstance);
                         break;
                     }
@@ -43347,14 +43347,14 @@ var require_backend = __commonJS({
                   }
                 }
               }
-              function overrideValueAtPath(type, id, hookID, path9, value) {
+              function overrideValueAtPath(type, id, hookID, path11, value) {
                 var internalInstance = idToInternalInstanceMap.get(id);
                 if (internalInstance != null) {
                   var publicInstance = internalInstance._instance;
                   if (publicInstance != null) {
                     switch (type) {
                       case "context":
-                        utils_setInObject(publicInstance.context, path9, value);
+                        utils_setInObject(publicInstance.context, path11, value);
                         forceUpdate(publicInstance);
                         break;
                       case "hooks":
@@ -43362,12 +43362,12 @@ var require_backend = __commonJS({
                       case "props":
                         var element = internalInstance._currentElement;
                         internalInstance._currentElement = legacy_renderer_objectSpread(legacy_renderer_objectSpread({}, element), {}, {
-                          props: copyWithSet(element.props, path9, value)
+                          props: copyWithSet(element.props, path11, value)
                         });
                         forceUpdate(publicInstance);
                         break;
                       case "state":
-                        utils_setInObject(publicInstance.state, path9, value);
+                        utils_setInObject(publicInstance.state, path11, value);
                         forceUpdate(publicInstance);
                         break;
                     }
@@ -43412,7 +43412,7 @@ var require_backend = __commonJS({
               }
               function setTraceUpdatesEnabled(enabled) {
               }
-              function setTrackedPath(path9) {
+              function setTrackedPath(path11) {
               }
               function getOwnersList(id) {
                 return null;
@@ -45085,17 +45085,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path9) {
-      const ctrl = callVisitor(key, node, visitor, path9);
+    function visit_(key, node, visitor, path11) {
+      const ctrl = callVisitor(key, node, visitor, path11);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path9, ctrl);
-        return visit_(key, ctrl, visitor, path9);
+        replaceNode(key, path11, ctrl);
+        return visit_(key, ctrl, visitor, path11);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path9 = Object.freeze(path9.concat(node));
+          path11 = Object.freeze(path11.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path9);
+            const ci = visit_(i, node.items[i], visitor, path11);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -45106,13 +45106,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path9 = Object.freeze(path9.concat(node));
-          const ck = visit_("key", node.key, visitor, path9);
+          path11 = Object.freeze(path11.concat(node));
+          const ck = visit_("key", node.key, visitor, path11);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path9);
+          const cv = visit_("value", node.value, visitor, path11);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -45133,17 +45133,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path9) {
-      const ctrl = await callVisitor(key, node, visitor, path9);
+    async function visitAsync_(key, node, visitor, path11) {
+      const ctrl = await callVisitor(key, node, visitor, path11);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path9, ctrl);
-        return visitAsync_(key, ctrl, visitor, path9);
+        replaceNode(key, path11, ctrl);
+        return visitAsync_(key, ctrl, visitor, path11);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path9 = Object.freeze(path9.concat(node));
+          path11 = Object.freeze(path11.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path9);
+            const ci = await visitAsync_(i, node.items[i], visitor, path11);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -45154,13 +45154,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path9 = Object.freeze(path9.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path9);
+          path11 = Object.freeze(path11.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path11);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path9);
+          const cv = await visitAsync_("value", node.value, visitor, path11);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -45187,23 +45187,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path9) {
+    function callVisitor(key, node, visitor, path11) {
       if (typeof visitor === "function")
-        return visitor(key, node, path9);
+        return visitor(key, node, path11);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path9);
+        return visitor.Map?.(key, node, path11);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path9);
+        return visitor.Seq?.(key, node, path11);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path9);
+        return visitor.Pair?.(key, node, path11);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path9);
+        return visitor.Scalar?.(key, node, path11);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path9);
+        return visitor.Alias?.(key, node, path11);
       return void 0;
     }
-    function replaceNode(key, path9, node) {
-      const parent = path9[path9.length - 1];
+    function replaceNode(key, path11, node) {
+      const parent = path11[path11.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -45813,10 +45813,10 @@ var require_Collection = __commonJS({
     var createNode2 = require_createNode();
     var identity = require_identity();
     var Node2 = require_Node();
-    function collectionFromPath(schema, path9, value) {
+    function collectionFromPath(schema, path11, value) {
       let v = value;
-      for (let i = path9.length - 1; i >= 0; --i) {
-        const k = path9[i];
+      for (let i = path11.length - 1; i >= 0; --i) {
+        const k = path11[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -45835,7 +45835,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path9) => path9 == null || typeof path9 === "object" && !!path9[Symbol.iterator]().next().done;
+    var isEmptyPath = (path11) => path11 == null || typeof path11 === "object" && !!path11[Symbol.iterator]().next().done;
     var Collection = class extends Node2.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -45865,11 +45865,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path9, value) {
-        if (isEmptyPath(path9))
+      addIn(path11, value) {
+        if (isEmptyPath(path11))
           this.add(value);
         else {
-          const [key, ...rest] = path9;
+          const [key, ...rest] = path11;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -45883,8 +45883,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path9) {
-        const [key, ...rest] = path9;
+      deleteIn(path11) {
+        const [key, ...rest] = path11;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -45898,8 +45898,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path9, keepScalar) {
-        const [key, ...rest] = path9;
+      getIn(path11, keepScalar) {
+        const [key, ...rest] = path11;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -45917,8 +45917,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path9) {
-        const [key, ...rest] = path9;
+      hasIn(path11) {
+        const [key, ...rest] = path11;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -45928,8 +45928,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path9, value) {
-        const [key, ...rest] = path9;
+      setIn(path11, value) {
+        const [key, ...rest] = path11;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -48444,9 +48444,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path9, value) {
+      addIn(path11, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path9, value);
+          this.contents.addIn(path11, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -48521,14 +48521,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path9) {
-        if (Collection.isEmptyPath(path9)) {
+      deleteIn(path11) {
+        if (Collection.isEmptyPath(path11)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path9) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path11) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -48543,10 +48543,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path9, keepScalar) {
-        if (Collection.isEmptyPath(path9))
+      getIn(path11, keepScalar) {
+        if (Collection.isEmptyPath(path11))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path9, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path11, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -48557,10 +48557,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path9) {
-        if (Collection.isEmptyPath(path9))
+      hasIn(path11) {
+        if (Collection.isEmptyPath(path11))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path9) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path11) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -48577,13 +48577,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path9, value) {
-        if (Collection.isEmptyPath(path9)) {
+      setIn(path11, value) {
+        if (Collection.isEmptyPath(path11)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path9), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path11), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path9, value);
+          this.contents.setIn(path11, value);
         }
       }
       /**
@@ -50543,9 +50543,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path9) => {
+    visit.itemAtPath = (cst, path11) => {
       let item = cst;
-      for (const [field, index] of path9) {
+      for (const [field, index] of path11) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -50554,23 +50554,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path9) => {
-      const parent = visit.itemAtPath(cst, path9.slice(0, -1));
-      const field = path9[path9.length - 1][0];
+    visit.parentCollection = (cst, path11) => {
+      const parent = visit.itemAtPath(cst, path11.slice(0, -1));
+      const field = path11[path11.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path9, item, visitor) {
-      let ctrl = visitor(item, path9);
+    function _visit(path11, item, visitor) {
+      let ctrl = visitor(item, path11);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path9.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path11.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -50581,10 +50581,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path9);
+            ctrl = ctrl(item, path11);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path9) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path11) : ctrl;
     }
     exports.visit = visit;
   }
@@ -55347,8 +55347,8 @@ var require_main = __commonJS({
     exports.createMessageConnection = exports.createServerSocketTransport = exports.createClientSocketTransport = exports.createServerPipeTransport = exports.createClientPipeTransport = exports.generateRandomPipeName = exports.StreamMessageWriter = exports.StreamMessageReader = exports.SocketMessageWriter = exports.SocketMessageReader = exports.PortMessageWriter = exports.PortMessageReader = exports.IPCMessageWriter = exports.IPCMessageReader = void 0;
     var ril_1 = require_ril();
     ril_1.default.install();
-    var path9 = __require("path");
-    var os5 = __require("os");
+    var path11 = __require("path");
+    var os7 = __require("os");
     var crypto_1 = __require("crypto");
     var net_1 = __require("net");
     var api_1 = require_api();
@@ -55483,9 +55483,9 @@ var require_main = __commonJS({
       }
       let result;
       if (XDG_RUNTIME_DIR) {
-        result = path9.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
+        result = path11.join(XDG_RUNTIME_DIR, `vscode-ipc-${randomSuffix}.sock`);
       } else {
-        result = path9.join(os5.tmpdir(), `vscode-${randomSuffix}.sock`);
+        result = path11.join(os7.tmpdir(), `vscode-${randomSuffix}.sock`);
       }
       const limit = safeIpcPathLengths.get(process.platform);
       if (limit !== void 0 && result.length > limit) {
@@ -56605,7 +56605,7 @@ var require_jsx_runtime = __commonJS({
 // src/cli.tsx
 var import_react38 = __toESM(require_react(), 1);
 import { constants as constants5, openSync } from "node:fs";
-import { readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
+import { readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
 import tty3 from "node:tty";
 
 // node_modules/ink/build/render.js
@@ -63694,8 +63694,8 @@ function Text({ color, backgroundColor, dimColor = false, bold = false, italic =
 }
 
 // node_modules/ink/build/components/ErrorOverview.js
-var cleanupPath = (path9) => {
-  return path9?.replace(`file://${cwd()}/`, "");
+var cleanupPath = (path11) => {
+  return path11?.replace(`file://${cwd()}/`, "");
 };
 var stackUtils = new import_stack_utils.default({
   cwd: cwd(),
@@ -66189,10 +66189,10 @@ import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 var ProfileGuideValidationError = class extends Error {
   path;
-  constructor(path9, message) {
-    super(`${path9}: ${message}`);
+  constructor(path11, message) {
+    super(`${path11}: ${message}`);
     this.name = "ProfileGuideValidationError";
-    this.path = path9;
+    this.path = path11;
   }
 };
 var identityPart = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
@@ -66200,64 +66200,64 @@ var skillIdentifier = /^[a-z0-9][a-z0-9._:/-]*$/u;
 var controls2 = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 var singleLineControls = /[\u0000-\u001f\u007f-\u009f]/u;
 var isLaunchAgentIdentifier = (value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value);
-var fail = (path9, message) => {
-  throw new ProfileGuideValidationError(path9, message);
+var fail = (path11, message) => {
+  throw new ProfileGuideValidationError(path11, message);
 };
-var record2 = (value, path9) => {
+var record2 = (value, path11) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail(path9, "must be an object");
+    return fail(path11, "must be an object");
   }
   return value;
 };
-var exactKeys = (value, path9, required, optional = []) => {
+var exactKeys = (value, path11, required, optional = []) => {
   const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
   const missing = required.filter((key) => !(key in value));
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
   if (missing.length > 0)
-    fail(path9, `missing required keys: ${missing.join(", ")}`);
+    fail(path11, `missing required keys: ${missing.join(", ")}`);
   if (unexpected.length > 0)
-    fail(path9, `contains unsupported keys: ${unexpected.join(", ")}`);
+    fail(path11, `contains unsupported keys: ${unexpected.join(", ")}`);
 };
-var text2 = (value, path9, maximum, options = {}) => {
+var text2 = (value, path11, maximum, options = {}) => {
   if (typeof value !== "string")
-    return fail(path9, "must be a string");
+    return fail(path11, "must be a string");
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ");
   if (normalized.length === 0)
-    return fail(path9, "must not be empty");
+    return fail(path11, "must not be empty");
   if (normalized.length > maximum)
-    return fail(path9, `must contain at most ${maximum} characters`);
+    return fail(path11, `must contain at most ${maximum} characters`);
   if ((options.multiline ? controls2 : singleLineControls).test(normalized)) {
-    return fail(path9, "must not contain control characters");
+    return fail(path11, "must not contain control characters");
   }
   return normalized;
 };
-var identifier = (value, path9) => {
-  const result = text2(value, path9, 128);
+var identifier = (value, path11) => {
+  const result = text2(value, path11, 128);
   if (!identityPart.test(result))
-    return fail(path9, "must be a lowercase kebab-case identifier");
+    return fail(path11, "must be a lowercase kebab-case identifier");
   return result;
 };
-var stringArray2 = (value, path9, options = {}) => {
+var stringArray2 = (value, path11, options = {}) => {
   if (!Array.isArray(value))
-    return fail(path9, "must be an array");
+    return fail(path11, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximumItems = options.maximumItems ?? 64;
   if (value.length < minimum)
-    return fail(path9, `must contain at least ${minimum} entries`);
+    return fail(path11, `must contain at least ${minimum} entries`);
   if (value.length > maximumItems)
-    return fail(path9, `must contain at most ${maximumItems} entries`);
-  const result = value.map((item, index) => options.identifiers ? identifier(item, `${path9}[${index}]`) : text2(item, `${path9}[${index}]`, options.itemMaximum ?? 1e3));
+    return fail(path11, `must contain at most ${maximumItems} entries`);
+  const result = value.map((item, index) => options.identifiers ? identifier(item, `${path11}[${index}]`) : text2(item, `${path11}[${index}]`, options.itemMaximum ?? 1e3));
   if (new Set(result).size !== result.length)
-    return fail(path9, "must contain unique entries");
+    return fail(path11, "must contain unique entries");
   return result;
 };
-var prerequisites = (value, path9) => {
+var prerequisites = (value, path11) => {
   if (!Array.isArray(value))
-    return fail(path9, "must be an array");
+    return fail(path11, "must be an array");
   if (value.length > 32)
-    return fail(path9, "must contain at most 32 entries");
+    return fail(path11, "must contain at most 32 entries");
   const result = value.map((item, index) => {
-    const itemPath = `${path9}[${index}]`;
+    const itemPath = `${path11}[${index}]`;
     const fields = record2(item, itemPath);
     exactKeys(fields, itemPath, ["id", "description"]);
     return {
@@ -66266,19 +66266,19 @@ var prerequisites = (value, path9) => {
     };
   });
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
-    return fail(path9, "must contain unique prerequisite IDs");
+    return fail(path11, "must contain unique prerequisite IDs");
   }
   return result;
 };
-var workflows = (value, path9) => {
+var workflows = (value, path11) => {
   if (!Array.isArray(value))
-    return fail(path9, "must be an array");
+    return fail(path11, "must be an array");
   if (value.length === 0)
-    return fail(path9, "must contain at least one workflow");
+    return fail(path11, "must contain at least one workflow");
   if (value.length > 32)
-    return fail(path9, "must contain at most 32 workflows");
+    return fail(path11, "must contain at most 32 workflows");
   const result = value.map((item, index) => {
-    const itemPath = `${path9}[${index}]`;
+    const itemPath = `${path11}[${index}]`;
     const fields = record2(item, itemPath);
     exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"]);
     const skill = fields.skill === void 0 ? void 0 : text2(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en");
@@ -66318,23 +66318,23 @@ var workflows = (value, path9) => {
     };
   });
   if (new Set(result.map(({ id }) => id)).size !== result.length) {
-    return fail(path9, "must contain unique workflow IDs");
+    return fail(path11, "must contain unique workflow IDs");
   }
   return result;
 };
-var parseFrontmatter = (path9, source) => {
+var parseFrontmatter = (path11, source) => {
   if (source.length > 128e3)
-    fail(path9, "must contain at most 128000 characters");
+    fail(path11, "must contain at most 128000 characters");
   const normalized = source.replace(/\r\n?/gu, "\n");
   if (!normalized.startsWith("---\n"))
-    fail(path9, "must start with YAML frontmatter");
+    fail(path11, "must start with YAML frontmatter");
   const closing = normalized.indexOf("\n---\n", 4);
   if (closing === -1)
-    fail(path9, "must close YAML frontmatter with ---");
+    fail(path11, "must close YAML frontmatter with ---");
   const frontmatter = normalized.slice(4, closing);
   const body = normalized.slice(closing + 5).trim();
   if (body.length === 0)
-    fail(path9, "must contain a Markdown body");
+    fail(path11, "must contain a Markdown body");
   try {
     return {
       value: (0, import_yaml.parse)(frontmatter, { merge: false, uniqueKeys: true }),
@@ -66342,13 +66342,13 @@ var parseFrontmatter = (path9, source) => {
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    return fail(path9, `contains invalid YAML: ${message}`);
+    return fail(path11, `contains invalid YAML: ${message}`);
   }
 };
-var parseProfileGuide = (path9, source) => {
-  const parsed = parseFrontmatter(path9, source);
-  const fields = record2(parsed.value, `${path9} frontmatter`);
-  exactKeys(fields, `${path9} frontmatter`, [
+var parseProfileGuide = (path11, source) => {
+  const parsed = parseFrontmatter(path11, source);
+  const fields = record2(parsed.value, `${path11} frontmatter`);
+  exactKeys(fields, `${path11} frontmatter`, [
     "schemaVersion",
     "capabilities",
     "bestFor",
@@ -66357,27 +66357,27 @@ var parseProfileGuide = (path9, source) => {
     "workflows"
   ]);
   if (fields.schemaVersion !== 1)
-    fail(`${path9} frontmatter.schemaVersion`, "must equal 1");
+    fail(`${path11} frontmatter.schemaVersion`, "must equal 1");
   return {
     guide: {
       schemaVersion: 1,
-      capabilities: stringArray2(fields.capabilities, `${path9} frontmatter.capabilities`, {
+      capabilities: stringArray2(fields.capabilities, `${path11} frontmatter.capabilities`, {
         minimum: 1,
         maximumItems: 64,
         identifiers: true
       }),
-      bestFor: stringArray2(fields.bestFor, `${path9} frontmatter.bestFor`, {
+      bestFor: stringArray2(fields.bestFor, `${path11} frontmatter.bestFor`, {
         minimum: 2,
         maximumItems: 32,
         itemMaximum: 2e3
       }),
-      avoidFor: stringArray2(fields.avoidFor, `${path9} frontmatter.avoidFor`, {
+      avoidFor: stringArray2(fields.avoidFor, `${path11} frontmatter.avoidFor`, {
         minimum: 2,
         maximumItems: 32,
         itemMaximum: 2e3
       }),
-      prerequisites: prerequisites(fields.prerequisites, `${path9} frontmatter.prerequisites`),
-      workflows: workflows(fields.workflows, `${path9} frontmatter.workflows`)
+      prerequisites: prerequisites(fields.prerequisites, `${path11} frontmatter.prerequisites`),
+      workflows: workflows(fields.workflows, `${path11} frontmatter.workflows`)
     },
     body: parsed.body
   };
@@ -66536,164 +66536,164 @@ var singleLineControls2 = /[\u0000-\u001f\u007f-\u009f]/u;
 var portableIdentifierPattern = /^[a-z0-9][a-z0-9._:/-]*$/u;
 var GuideValidationError = class extends Error {
   path;
-  constructor(path9, message) {
-    super(`${path9}: ${message}`);
+  constructor(path11, message) {
+    super(`${path11}: ${message}`);
     this.name = "GuideValidationError";
-    this.path = path9;
+    this.path = path11;
   }
 };
-var fail2 = (path9, message) => {
-  throw new GuideValidationError(path9, message);
+var fail2 = (path11, message) => {
+  throw new GuideValidationError(path11, message);
 };
-var record4 = (value, path9) => {
+var record4 = (value, path11) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail2(path9, "must be an object");
+    return fail2(path11, "must be an object");
   }
   return value;
 };
-var exactKeys2 = (value, path9, required, optional = []) => {
+var exactKeys2 = (value, path11, required, optional = []) => {
   const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
   const missing = required.filter((key) => !(key in value));
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
-  if (missing.length > 0) fail2(path9, `missing required keys: ${missing.join(", ")}`);
-  if (unexpected.length > 0) fail2(path9, `contains unsupported keys: ${unexpected.join(", ")}`);
+  if (missing.length > 0) fail2(path11, `missing required keys: ${missing.join(", ")}`);
+  if (unexpected.length > 0) fail2(path11, `contains unsupported keys: ${unexpected.join(", ")}`);
 };
-var text3 = (value, path9, maximum, options = {}) => {
-  if (typeof value !== "string") return fail2(path9, "must be a string");
+var text3 = (value, path11, maximum, options = {}) => {
+  if (typeof value !== "string") return fail2(path11, "must be a string");
   const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ");
-  if (normalized.length === 0) return fail2(path9, "must not be empty");
-  if ([...normalized].length > maximum) return fail2(path9, `must contain at most ${maximum} characters`);
+  if (normalized.length === 0) return fail2(path11, "must not be empty");
+  if ([...normalized].length > maximum) return fail2(path11, `must contain at most ${maximum} characters`);
   if ((options.multiline ? multilineControls : singleLineControls2).test(normalized)) {
-    return fail2(path9, "must not contain control characters");
+    return fail2(path11, "must not contain control characters");
   }
   return normalized;
 };
-var boolean = (value, path9) => {
-  if (typeof value !== "boolean") return fail2(path9, "must be a boolean");
+var boolean = (value, path11) => {
+  if (typeof value !== "boolean") return fail2(path11, "must be a boolean");
   return value;
 };
-var literal = (value, path9, allowed) => {
+var literal = (value, path11, allowed) => {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    return fail2(path9, `must be one of: ${allowed.join(", ")}`);
+    return fail2(path11, `must be one of: ${allowed.join(", ")}`);
   }
   return value;
 };
-var boundedNumber = (value, path9, minimum, maximum) => {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fail2(path9, "must be a finite number");
-  if (value < minimum || value > maximum) return fail2(path9, `must be between ${minimum} and ${maximum}`);
+var boundedNumber = (value, path11, minimum, maximum) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fail2(path11, "must be a finite number");
+  if (value < minimum || value > maximum) return fail2(path11, `must be between ${minimum} and ${maximum}`);
   return value;
 };
-var stringArray3 = (value, path9, options = {}) => {
-  if (!Array.isArray(value)) return fail2(path9, "must be an array");
+var stringArray3 = (value, path11, options = {}) => {
+  if (!Array.isArray(value)) return fail2(path11, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximumItems = options.maximumItems ?? 256;
-  if (value.length < minimum) return fail2(path9, `must contain at least ${minimum} entries`);
-  if (value.length > maximumItems) return fail2(path9, `must contain at most ${maximumItems} entries`);
-  return value.map((item, index) => text3(item, `${path9}[${index}]`, options.itemMaximum ?? 2e3));
+  if (value.length < minimum) return fail2(path11, `must contain at least ${minimum} entries`);
+  if (value.length > maximumItems) return fail2(path11, `must contain at most ${maximumItems} entries`);
+  return value.map((item, index) => text3(item, `${path11}[${index}]`, options.itemMaximum ?? 2e3));
 };
-var uniqueArray = (values, path9, label) => {
-  if (new Set(values).size !== values.length) fail2(path9, `must contain unique ${label}`);
+var uniqueArray = (values, path11, label) => {
+  if (new Set(values).size !== values.length) fail2(path11, `must contain unique ${label}`);
   return values;
 };
-var array = (value, path9, options = {}) => {
-  if (!Array.isArray(value)) return fail2(path9, "must be an array");
+var array = (value, path11, options = {}) => {
+  if (!Array.isArray(value)) return fail2(path11, "must be an array");
   const minimum = options.minimum ?? 0;
   const maximum = options.maximum ?? 256;
-  if (value.length < minimum) return fail2(path9, `must contain at least ${minimum} entries`);
-  if (value.length > maximum) return fail2(path9, `must contain at most ${maximum} entries`);
+  if (value.length < minimum) return fail2(path11, `must contain at least ${minimum} entries`);
+  if (value.length > maximum) return fail2(path11, `must contain at most ${maximum} entries`);
   return value;
 };
 
 // src/guide-catalog.ts
 var identifierPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-var identifier3 = (value, path9) => {
-  const result = text3(value, path9, 128);
-  if (!identifierPattern.test(result)) fail2(path9, "must be a lowercase kebab-case identifier");
+var identifier3 = (value, path11) => {
+  const result = text3(value, path11, 128);
+  if (!identifierPattern.test(result)) fail2(path11, "must be a lowercase kebab-case identifier");
   return result;
 };
-var identifierArray = (value, path9, options) => {
-  const items = array(value, path9, {
+var identifierArray = (value, path11, options) => {
+  const items = array(value, path11, {
     ...options.minimum === void 0 ? {} : { minimum: options.minimum },
     maximum: options.maximumItems ?? 64
-  }).map((item, index) => identifier3(item, `${path9}[${index}]`));
-  return uniqueArray(items, path9, "entries");
+  }).map((item, index) => identifier3(item, `${path11}[${index}]`));
+  return uniqueArray(items, path11, "entries");
 };
-var nullableText = (value, path9, maximum) => {
+var nullableText = (value, path11, maximum) => {
   if (value === null) return null;
-  return text3(value, path9, maximum);
+  return text3(value, path11, maximum);
 };
 var absolutePath = (value, fieldPath, maximum) => {
   const result = text3(value, fieldPath, maximum);
   if (!nodePath.isAbsolute(result)) fail2(fieldPath, "must be an absolute path");
   return result;
 };
-var validatePrerequisite = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, ["id", "description"]);
+var validatePrerequisite = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, ["id", "description"]);
   return {
-    id: identifier3(fields.id, `${path9}.id`),
-    description: text3(fields.description, `${path9}.description`, 1e3)
+    id: identifier3(fields.id, `${path11}.id`),
+    description: text3(fields.description, `${path11}.description`, 1e3)
   };
 };
 var placeholderPattern = /\{\{([^{}]+)\}\}/gu;
-var validateWorkflow = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"]);
-  const skill = fields.skill === void 0 ? void 0 : text3(fields.skill, `${path9}.skill`, 256).toLocaleLowerCase("en");
+var validateWorkflow = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"]);
+  const skill = fields.skill === void 0 ? void 0 : text3(fields.skill, `${path11}.skill`, 256).toLocaleLowerCase("en");
   if (skill !== void 0 && !portableIdentifierPattern.test(skill)) {
-    fail2(`${path9}.skill`, "must be a portable skill or command identifier");
+    fail2(`${path11}.skill`, "must be a portable skill or command identifier");
   }
-  const launchAgent = fields.launchAgent === void 0 ? void 0 : text3(fields.launchAgent, `${path9}.launchAgent`, 128);
+  const launchAgent = fields.launchAgent === void 0 ? void 0 : text3(fields.launchAgent, `${path11}.launchAgent`, 128);
   if (launchAgent !== void 0 && !isLaunchAgentIdentifier(launchAgent)) {
-    fail2(`${path9}.launchAgent`, "must be a portable agent identifier");
+    fail2(`${path11}.launchAgent`, "must be a portable agent identifier");
   }
-  const promptTemplate = text3(fields.promptTemplate, `${path9}.promptTemplate`, 16e3, { multiline: true });
+  const promptTemplate = text3(fields.promptTemplate, `${path11}.promptTemplate`, 16e3, { multiline: true });
   const intentPlaceholderCount = promptTemplate.split("{{intent}}").length - 1;
   if (intentPlaceholderCount === 0) {
-    fail2(`${path9}.promptTemplate`, "must contain the {{intent}} placeholder");
+    fail2(`${path11}.promptTemplate`, "must contain the {{intent}} placeholder");
   }
   if (intentPlaceholderCount > 1) {
-    fail2(`${path9}.promptTemplate`, "must contain exactly one {{intent}} placeholder");
+    fail2(`${path11}.promptTemplate`, "must contain exactly one {{intent}} placeholder");
   }
   for (const match of promptTemplate.matchAll(placeholderPattern)) {
     if (match[1] !== "intent") {
-      fail2(`${path9}.promptTemplate`, `contains unsupported placeholder: {{${match[1]}}}`);
+      fail2(`${path11}.promptTemplate`, `contains unsupported placeholder: {{${match[1]}}}`);
     }
   }
   return {
-    id: identifier3(fields.id, `${path9}.id`),
-    description: text3(fields.description, `${path9}.description`, 2e3),
+    id: identifier3(fields.id, `${path11}.id`),
+    description: text3(fields.description, `${path11}.description`, 2e3),
     ...skill === void 0 ? {} : { skill },
     ...launchAgent === void 0 ? {} : { launchAgent },
-    examples: stringArray3(fields.examples, `${path9}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
+    examples: stringArray3(fields.examples, `${path11}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
     promptTemplate
   };
 };
-var validateProfileGuideV1 = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"]);
-  if (fields.schemaVersion !== 1) fail2(`${path9}.schemaVersion`, "must equal 1");
-  const prerequisites2 = array(fields.prerequisites, `${path9}.prerequisites`, { maximum: 32 }).map(
-    (item, index) => validatePrerequisite(item, `${path9}.prerequisites[${index}]`)
+var validateProfileGuideV1 = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"]);
+  if (fields.schemaVersion !== 1) fail2(`${path11}.schemaVersion`, "must equal 1");
+  const prerequisites2 = array(fields.prerequisites, `${path11}.prerequisites`, { maximum: 32 }).map(
+    (item, index) => validatePrerequisite(item, `${path11}.prerequisites[${index}]`)
   );
   uniqueArray(
     prerequisites2.map(({ id }) => id),
-    `${path9}.prerequisites`,
+    `${path11}.prerequisites`,
     "prerequisite IDs"
   );
-  const workflows2 = array(fields.workflows, `${path9}.workflows`, { minimum: 1, maximum: 32 }).map(
-    (item, index) => validateWorkflow(item, `${path9}.workflows[${index}]`)
+  const workflows2 = array(fields.workflows, `${path11}.workflows`, { minimum: 1, maximum: 32 }).map(
+    (item, index) => validateWorkflow(item, `${path11}.workflows[${index}]`)
   );
   uniqueArray(
     workflows2.map(({ id }) => id),
-    `${path9}.workflows`,
+    `${path11}.workflows`,
     "workflow IDs"
   );
   return {
     schemaVersion: 1,
-    capabilities: identifierArray(fields.capabilities, `${path9}.capabilities`, { minimum: 1, maximumItems: 64 }),
-    bestFor: stringArray3(fields.bestFor, `${path9}.bestFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
-    avoidFor: stringArray3(fields.avoidFor, `${path9}.avoidFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
+    capabilities: identifierArray(fields.capabilities, `${path11}.capabilities`, { minimum: 1, maximumItems: 64 }),
+    bestFor: stringArray3(fields.bestFor, `${path11}.bestFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
+    avoidFor: stringArray3(fields.avoidFor, `${path11}.avoidFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2e3 }),
     prerequisites: prerequisites2,
     workflows: workflows2
   };
@@ -66715,47 +66715,47 @@ var headlessKeys = [
   "trellageEventContract",
   "usage"
 ];
-var validateHeadlessCapabilitiesV1 = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, headlessKeys);
-  if (fields.schemaVersion !== 1) fail2(`${path9}.schemaVersion`, "must equal 1");
+var validateHeadlessCapabilitiesV1 = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, headlessKeys);
+  if (fields.schemaVersion !== 1) fail2(`${path11}.schemaVersion`, "must equal 1");
   const outputFormats = uniqueArray(
-    array(fields.outputFormats, `${path9}.outputFormats`, { maximum: 3 }).map(
-      (item, index) => literal(item, `${path9}.outputFormats[${index}]`, ["text", "json", "jsonl"])
+    array(fields.outputFormats, `${path11}.outputFormats`, { maximum: 3 }).map(
+      (item, index) => literal(item, `${path11}.outputFormats[${index}]`, ["text", "json", "jsonl"])
     ),
-    `${path9}.outputFormats`,
+    `${path11}.outputFormats`,
     "output formats"
   );
   return {
     schemaVersion: 1,
-    prompt: boolean(fields.prompt, `${path9}.prompt`),
+    prompt: boolean(fields.prompt, `${path11}.prompt`),
     outputFormats,
-    eventContract: nullableText(fields.eventContract, `${path9}.eventContract`, 256),
-    trellageEventContract: fields.trellageEventContract === null ? null : literal(fields.trellageEventContract, `${path9}.trellageEventContract`, ["trellage-headless-v1"]),
-    sessionId: literal(fields.sessionId, `${path9}.sessionId`, ["native", "trellage", "none"]),
-    resume: boolean(fields.resume, `${path9}.resume`),
-    resumeWithPrompt: boolean(fields.resumeWithPrompt, `${path9}.resumeWithPrompt`),
-    questionToolControl: literal(fields.questionToolControl, `${path9}.questionToolControl`, [
+    eventContract: nullableText(fields.eventContract, `${path11}.eventContract`, 256),
+    trellageEventContract: fields.trellageEventContract === null ? null : literal(fields.trellageEventContract, `${path11}.trellageEventContract`, ["trellage-headless-v1"]),
+    sessionId: literal(fields.sessionId, `${path11}.sessionId`, ["native", "trellage", "none"]),
+    resume: boolean(fields.resume, `${path11}.resume`),
+    resumeWithPrompt: boolean(fields.resumeWithPrompt, `${path11}.resumeWithPrompt`),
+    questionToolControl: literal(fields.questionToolControl, `${path11}.questionToolControl`, [
       "hard-deny",
       "prompt-only",
       "none"
     ]),
-    changedFiles: literal(fields.changedFiles, `${path9}.changedFiles`, ["native", "git-diff", "none"]),
-    usage: boolean(fields.usage, `${path9}.usage`),
-    cost: boolean(fields.cost, `${path9}.cost`),
-    modelOverride: boolean(fields.modelOverride, `${path9}.modelOverride`),
-    effortOverride: boolean(fields.effortOverride, `${path9}.effortOverride`),
-    testedHarnessVersion: nullableText(fields.testedHarnessVersion, `${path9}.testedHarnessVersion`, 128)
+    changedFiles: literal(fields.changedFiles, `${path11}.changedFiles`, ["native", "git-diff", "none"]),
+    usage: boolean(fields.usage, `${path11}.usage`),
+    cost: boolean(fields.cost, `${path11}.cost`),
+    modelOverride: boolean(fields.modelOverride, `${path11}.modelOverride`),
+    effortOverride: boolean(fields.effortOverride, `${path11}.effortOverride`),
+    testedHarnessVersion: nullableText(fields.testedHarnessVersion, `${path11}.testedHarnessVersion`, 128)
   };
 };
-var validateHerdrCompatibility = (value, path9) => {
-  const fields = record4(value, path9);
-  text3(fields.status, `${path9}.status`, 64);
+var validateHerdrCompatibility = (value, path11) => {
+  const fields = record4(value, path11);
+  text3(fields.status, `${path11}.status`, 64);
   return fields;
 };
-var validateNativeEntry = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, [
+var validateNativeEntry = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, [
     "launcher",
     "harness",
     "name",
@@ -66767,20 +66767,20 @@ var validateNativeEntry = (value, path9) => {
     "commandPath"
   ]);
   return {
-    launcher: identifier3(fields.launcher, `${path9}.launcher`),
-    harness: identifier3(fields.harness, `${path9}.harness`),
-    name: identifier3(fields.name, `${path9}.name`),
-    description: text3(fields.description, `${path9}.description`, 2e3),
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path9}.headless`),
-    sandbox: boolean(fields.sandbox, `${path9}.sandbox`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path9}.herdrCompatibility`),
-    guide: validateProfileGuideV1(fields.guide, `${path9}.guide`),
-    commandPath: absolutePath(fields.commandPath, `${path9}.commandPath`, 4096)
+    launcher: identifier3(fields.launcher, `${path11}.launcher`),
+    harness: identifier3(fields.harness, `${path11}.harness`),
+    name: identifier3(fields.name, `${path11}.name`),
+    description: text3(fields.description, `${path11}.description`, 2e3),
+    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path11}.headless`),
+    sandbox: boolean(fields.sandbox, `${path11}.sandbox`),
+    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path11}.herdrCompatibility`),
+    guide: validateProfileGuideV1(fields.guide, `${path11}.guide`),
+    commandPath: absolutePath(fields.commandPath, `${path11}.commandPath`, 4096)
   };
 };
-var validateSandboxEntry = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, [
+var validateSandboxEntry = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, [
     "name",
     "description",
     "guide",
@@ -66801,43 +66801,43 @@ var validateSandboxEntry = (value, path9) => {
     "locked",
     "herdrCompatibility"
   ]);
-  if (fields.sandbox !== true) fail2(`${path9}.sandbox`, "must equal true");
-  const harness = record4(fields.harness, `${path9}.harness`);
-  exactKeys2(harness, `${path9}.harness`, ["kind", "version"], ["model"]);
+  if (fields.sandbox !== true) fail2(`${path11}.sandbox`, "must equal true");
+  const harness = record4(fields.harness, `${path11}.harness`);
+  exactKeys2(harness, `${path11}.harness`, ["kind", "version"], ["model"]);
   return {
-    name: identifier3(fields.name, `${path9}.name`),
-    description: text3(fields.description, `${path9}.description`, 2e3),
-    guide: validateProfileGuideV1(fields.guide, `${path9}.guide`),
-    path: absolutePath(fields.path, `${path9}.path`, 4096),
-    supportedPlatforms: stringArray3(fields.supportedPlatforms, `${path9}.supportedPlatforms`, {
+    name: identifier3(fields.name, `${path11}.name`),
+    description: text3(fields.description, `${path11}.description`, 2e3),
+    guide: validateProfileGuideV1(fields.guide, `${path11}.guide`),
+    path: absolutePath(fields.path, `${path11}.path`, 4096),
+    supportedPlatforms: stringArray3(fields.supportedPlatforms, `${path11}.supportedPlatforms`, {
       minimum: 1,
       maximumItems: 16,
       itemMaximum: 64
     }),
     harness: {
-      kind: identifier3(harness.kind, `${path9}.harness.kind`),
-      version: text3(harness.version, `${path9}.harness.version`, 128),
-      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path9}.harness.model`, 128) }
+      kind: identifier3(harness.kind, `${path11}.harness.kind`),
+      version: text3(harness.version, `${path11}.harness.version`, 128),
+      ...harness.model === void 0 ? {} : { model: text3(harness.model, `${path11}.harness.model`, 128) }
     },
-    resolutionPolicy: literal(fields.resolutionPolicy, `${path9}.resolutionPolicy`, ["floating"]),
-    locallyResolved: boolean(fields.locallyResolved, `${path9}.locallyResolved`),
-    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path9}.releaseLockAvailable`),
-    skillBundles: stringArray3(fields.skillBundles, `${path9}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
-    skillsMode: literal(fields.skillsMode, `${path9}.skillsMode`, ["floating", "locked"]),
-    finalDigestLocked: boolean(fields.finalDigestLocked, `${path9}.finalDigestLocked`),
-    skills: array(fields.skills, `${path9}.skills`, { maximum: 256 }).map(
-      (item, index) => record4(item, `${path9}.skills[${index}]`)
+    resolutionPolicy: literal(fields.resolutionPolicy, `${path11}.resolutionPolicy`, ["floating"]),
+    locallyResolved: boolean(fields.locallyResolved, `${path11}.locallyResolved`),
+    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path11}.releaseLockAvailable`),
+    skillBundles: stringArray3(fields.skillBundles, `${path11}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
+    skillsMode: literal(fields.skillsMode, `${path11}.skillsMode`, ["floating", "locked"]),
+    finalDigestLocked: boolean(fields.finalDigestLocked, `${path11}.finalDigestLocked`),
+    skills: array(fields.skills, `${path11}.skills`, { maximum: 256 }).map(
+      (item, index) => record4(item, `${path11}.skills[${index}]`)
     ),
-    plugins: array(fields.plugins, `${path9}.plugins`, { maximum: 64 }).map(
-      (item, index) => record4(item, `${path9}.plugins[${index}]`)
+    plugins: array(fields.plugins, `${path11}.plugins`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path11}.plugins[${index}]`)
     ),
-    mcps: array(fields.mcps, `${path9}.mcps`, { maximum: 64 }).map(
-      (item, index) => record4(item, `${path9}.mcps[${index}]`)
+    mcps: array(fields.mcps, `${path11}.mcps`, { maximum: 64 }).map(
+      (item, index) => record4(item, `${path11}.mcps[${index}]`)
     ),
     sandbox: true,
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path9}.headless`),
-    locked: boolean(fields.locked, `${path9}.locked`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path9}.herdrCompatibility`)
+    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path11}.headless`),
+    locked: boolean(fields.locked, `${path11}.locked`),
+    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path11}.herdrCompatibility`)
   };
 };
 var parseGuideCatalog = (source) => {
@@ -68760,16 +68760,16 @@ var guideEffortFromLiteral = (raw) => {
       return "max" /* Max */;
   }
 };
-var parseGuideEffort = (value, path9) => guideEffortFromLiteral(literal(value, path9, guideEffortLiterals));
+var parseGuideEffort = (value, path11) => guideEffortFromLiteral(literal(value, path11, guideEffortLiterals));
 var guideIntentMaximumLength = 6e4;
 var profileRefMaximumLength = 256;
 var modelIdentifierMaximumLength = 128;
 var modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u;
-var validateGuideIntent = (value, path9) => text3(value, path9, guideIntentMaximumLength, { multiline: true });
-var validateProfileRef = (value, path9) => text3(value, path9, profileRefMaximumLength);
-var validateModelId = (value, path9) => {
-  const trimmed = text3(value, path9, modelIdentifierMaximumLength);
-  if (!modelIdentifierPattern.test(trimmed)) fail2(path9, "must be a safe lowercase model identifier");
+var validateGuideIntent = (value, path11) => text3(value, path11, guideIntentMaximumLength, { multiline: true });
+var validateProfileRef = (value, path11) => text3(value, path11, profileRefMaximumLength);
+var validateModelId = (value, path11) => {
+  const trimmed = text3(value, path11, modelIdentifierMaximumLength);
+  if (!modelIdentifierPattern.test(trimmed)) fail2(path11, "must be a safe lowercase model identifier");
   return trimmed;
 };
 var tokenize2 = (value) => new Set(
@@ -71984,40 +71984,40 @@ function normalizeSqliteParams(params) {
 }
 function createSessionFsAdapter(provider) {
   return {
-    readFile: async ({ path: path9 }) => {
+    readFile: async ({ path: path11 }) => {
       try {
-        const content = await provider.readFile(path9);
+        const content = await provider.readFile(path11);
         return { content };
       } catch (err) {
         return { content: "", error: toSessionFsError(err) };
       }
     },
-    writeFile: async ({ path: path9, content, mode }) => {
+    writeFile: async ({ path: path11, content, mode }) => {
       try {
-        await provider.writeFile(path9, content, mode);
+        await provider.writeFile(path11, content, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    appendFile: async ({ path: path9, content, mode }) => {
+    appendFile: async ({ path: path11, content, mode }) => {
       try {
-        await provider.appendFile(path9, content, mode);
+        await provider.appendFile(path11, content, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    exists: async ({ path: path9 }) => {
+    exists: async ({ path: path11 }) => {
       try {
-        return { exists: await provider.exists(path9) };
+        return { exists: await provider.exists(path11) };
       } catch {
         return { exists: false };
       }
     },
-    stat: async ({ path: path9 }) => {
+    stat: async ({ path: path11 }) => {
       try {
-        return await provider.stat(path9);
+        return await provider.stat(path11);
       } catch (err) {
         return {
           isFile: false,
@@ -72029,33 +72029,33 @@ function createSessionFsAdapter(provider) {
         };
       }
     },
-    mkdir: async ({ path: path9, recursive, mode }) => {
+    mkdir: async ({ path: path11, recursive, mode }) => {
       try {
-        await provider.mkdir(path9, recursive ?? false, mode);
+        await provider.mkdir(path11, recursive ?? false, mode);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
       }
     },
-    readdir: async ({ path: path9 }) => {
+    readdir: async ({ path: path11 }) => {
       try {
-        const entries = await provider.readdir(path9);
+        const entries = await provider.readdir(path11);
         return { entries };
       } catch (err) {
         return { entries: [], error: toSessionFsError(err) };
       }
     },
-    readdirWithTypes: async ({ path: path9 }) => {
+    readdirWithTypes: async ({ path: path11 }) => {
       try {
-        const entries = await provider.readdirWithTypes(path9);
+        const entries = await provider.readdirWithTypes(path11);
         return { entries };
       } catch (err) {
         return { entries: [], error: toSessionFsError(err) };
       }
     },
-    rm: async ({ path: path9, recursive, force }) => {
+    rm: async ({ path: path11, recursive, force }) => {
       try {
-        await provider.rm(path9, recursive ?? false, force ?? false);
+        await provider.rm(path11, recursive ?? false, force ?? false);
         return void 0;
       } catch (err) {
         return toSessionFsError(err);
@@ -74368,16 +74368,16 @@ function toCanvasRpcError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return new import_node.ResponseError(import_node.ErrorCodes.InternalError, message, { code, message });
 }
-function strictJsonValidationError(context, category, message, path9) {
+function strictJsonValidationError(context, category, message, path11) {
   return new import_node.ResponseError(import_node.ErrorCodes.InternalError, message, {
     code: context.code,
     category,
-    path: path9
+    path: path11
   });
 }
 function assertStrictJson(value, context) {
   const ancestors = /* @__PURE__ */ new Set();
-  const visit = (current, path9, allowUndefined) => {
+  const visit = (current, path11, allowUndefined) => {
     if (current === void 0) {
       if (allowUndefined) {
         return;
@@ -74385,8 +74385,8 @@ function assertStrictJson(value, context) {
       throw strictJsonValidationError(
         context,
         "nested_undefined",
-        `${context.label} contains nested undefined at ${path9}`,
-        path9
+        `${context.label} contains nested undefined at ${path11}`,
+        path11
       );
     }
     if (current === null || typeof current === "boolean" || typeof current === "string") {
@@ -74397,16 +74397,16 @@ function assertStrictJson(value, context) {
         throw strictJsonValidationError(
           context,
           "non_finite_number",
-          `${context.label} contains a non-finite number at ${path9}`,
-          path9
+          `${context.label} contains a non-finite number at ${path11}`,
+          path11
         );
       }
       if (Object.is(current, -0)) {
         throw strictJsonValidationError(
           context,
           "negative_zero",
-          `${context.label} contains negative zero at ${path9}; normalize it to 0`,
-          path9
+          `${context.label} contains negative zero at ${path11}; normalize it to 0`,
+          path11
         );
       }
       return;
@@ -74415,24 +74415,24 @@ function assertStrictJson(value, context) {
       throw strictJsonValidationError(
         context,
         "unsupported_type",
-        `${context.label} contains a function, symbol, or BigInt at ${path9}`,
-        path9
+        `${context.label} contains a function, symbol, or BigInt at ${path11}`,
+        path11
       );
     }
     if (typeof current !== "object") {
       throw strictJsonValidationError(
         context,
         "unsupported_type",
-        `${context.label} contains a function, symbol, or BigInt at ${path9}`,
-        path9
+        `${context.label} contains a function, symbol, or BigInt at ${path11}`,
+        path11
       );
     }
     if (ancestors.has(current)) {
       throw strictJsonValidationError(
         context,
         "cyclic_value",
-        `${context.label} contains a cyclic reference at ${path9}`,
-        path9
+        `${context.label} contains a cyclic reference at ${path11}`,
+        path11
       );
     }
     ancestors.add(current);
@@ -74445,8 +74445,8 @@ function assertStrictJson(value, context) {
           throw strictJsonValidationError(
             context,
             "unsupported_object",
-            `${context.label} contains a non-JSON array property at ${path9}`,
-            path9
+            `${context.label} contains a non-JSON array property at ${path11}`,
+            path11
           );
         }
         for (let index = 0; index < current.length; index++) {
@@ -74455,11 +74455,11 @@ function assertStrictJson(value, context) {
             throw strictJsonValidationError(
               context,
               "unsupported_object",
-              `${context.label} contains a non-JSON array property at ${path9}[${index}]`,
-              `${path9}[${index}]`
+              `${context.label} contains a non-JSON array property at ${path11}[${index}]`,
+              `${path11}[${index}]`
             );
           }
-          visit(descriptor.value, `${path9}[${index}]`, false);
+          visit(descriptor.value, `${path11}[${index}]`, false);
         }
         return;
       }
@@ -74468,8 +74468,8 @@ function assertStrictJson(value, context) {
         throw strictJsonValidationError(
           context,
           "unsupported_object",
-          `${context.label} contains a non-JSON object at ${path9}`,
-          path9
+          `${context.label} contains a non-JSON object at ${path11}`,
+          path11
         );
       }
       for (const key of Reflect.ownKeys(current)) {
@@ -74477,11 +74477,11 @@ function assertStrictJson(value, context) {
           throw strictJsonValidationError(
             context,
             "unsupported_type",
-            `${context.label} contains a function, symbol, or BigInt at ${path9}`,
-            path9
+            `${context.label} contains a function, symbol, or BigInt at ${path11}`,
+            path11
           );
         }
-        const propertyPath = /^[A-Za-z_$][\w$]*$/.test(key) ? `${path9}.${key}` : `${path9}[${JSON.stringify(key)}]`;
+        const propertyPath = /^[A-Za-z_$][\w$]*$/.test(key) ? `${path11}.${key}` : `${path11}[${JSON.stringify(key)}]`;
         const descriptor = Object.getOwnPropertyDescriptor(current, key);
         if (descriptor === void 0 || !descriptor.enumerable || !("value" in descriptor)) {
           throw strictJsonValidationError(
@@ -74943,10 +74943,10 @@ var CopilotClient = class _CopilotClient {
       this.validateSessionFsConfig(options.sessionFs);
     }
     if (options.builtinPluginDirectories) {
-      for (const path9 of options.builtinPluginDirectories) {
-        if (!isAbsolute(path9)) {
+      for (const path11 of options.builtinPluginDirectories) {
+        if (!isAbsolute(path11)) {
           throw new Error(
-            `builtinPluginDirectories must contain only absolute paths: ${path9}`
+            `builtinPluginDirectories must contain only absolute paths: ${path11}`
           );
         }
       }
@@ -76824,28 +76824,28 @@ var assertGuideEnrichInput = (input) => {
   return input;
 };
 var fixedFrameControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
-var validateFixedFrameText = (value, path9) => {
-  if (typeof value !== "string") return fail2(path9, "must be a string");
-  if ([...value].length > 16e3) return fail2(path9, "must contain at most 16000 characters");
-  if (fixedFrameControls.test(value)) return fail2(path9, "must not contain control characters");
+var validateFixedFrameText = (value, path11) => {
+  if (typeof value !== "string") return fail2(path11, "must be a string");
+  if ([...value].length > 16e3) return fail2(path11, "must contain at most 16000 characters");
+  if (fixedFrameControls.test(value)) return fail2(path11, "must not contain control characters");
   return value;
 };
-var validateMatchCandidate = (value, path9, workflowIndex) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
-  const profileRef = text3(fields.profileRef, `${path9}.profileRef`, 256);
+var validateMatchCandidate = (value, path11, workflowIndex) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"]);
+  const profileRef = text3(fields.profileRef, `${path11}.profileRef`, 256);
   const workflowIds = workflowIndex.get(profileRef);
-  if (workflowIds === void 0) return fail2(`${path9}.profileRef`, `must reference a known profile: ${profileRef}`);
-  const workflowId = text3(fields.workflowId, `${path9}.workflowId`, 128);
+  if (workflowIds === void 0) return fail2(`${path11}.profileRef`, `must reference a known profile: ${profileRef}`);
+  const workflowId = text3(fields.workflowId, `${path11}.workflowId`, 128);
   if (!workflowIds.has(workflowId)) {
-    fail2(`${path9}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`);
+    fail2(`${path11}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`);
   }
   return {
     profileRef,
     workflowId,
-    confidence: boundedNumber(fields.confidence, `${path9}.confidence`, 0, 1),
-    reason: text3(fields.reason, `${path9}.reason`, 500),
-    tradeoff: text3(fields.tradeoff, `${path9}.tradeoff`, 500)
+    confidence: boundedNumber(fields.confidence, `${path11}.confidence`, 0, 1),
+    reason: text3(fields.reason, `${path11}.reason`, 500),
+    tradeoff: text3(fields.tradeoff, `${path11}.tradeoff`, 500)
   };
 };
 var validateGuideMatchResult = (value, workflowIndex) => {
@@ -76869,13 +76869,13 @@ var validateGuideMatchResult = (value, workflowIndex) => {
   }
   return { candidates };
 };
-var validateGenerateCandidate = (value, path9) => {
-  const fields = record4(value, path9);
-  exactKeys2(fields, path9, ["title", "prompt", "notes"]);
+var validateGenerateCandidate = (value, path11) => {
+  const fields = record4(value, path11);
+  exactKeys2(fields, path11, ["title", "prompt", "notes"]);
   return {
-    title: text3(fields.title, `${path9}.title`, 200),
-    prompt: text3(fields.prompt, `${path9}.prompt`, 8e3, { multiline: true }),
-    notes: text3(fields.notes, `${path9}.notes`, 1e3, { multiline: true })
+    title: text3(fields.title, `${path11}.title`, 200),
+    prompt: text3(fields.prompt, `${path11}.prompt`, 8e3, { multiline: true }),
+    notes: text3(fields.notes, `${path11}.notes`, 1e3, { multiline: true })
   };
 };
 var validateGuideGenerateResult = (value) => {
@@ -83384,12 +83384,26 @@ var import_react37 = __toESM(require_react(), 1);
 
 // src/admin-model.ts
 var launchersWithoutDoctorSupport = /* @__PURE__ */ new Set([]);
+var launchersWithoutUpdateCheckSupport = /* @__PURE__ */ new Set(["cldx"]);
 var nativeLauncherCapabilities = (launcher) => {
   const supported = !launchersWithoutDoctorSupport.has(launcher);
-  return { doctorSupported: supported, inventorySupported: supported };
+  return {
+    doctorSupported: supported,
+    inventorySupported: supported,
+    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher)
+  };
 };
 var commandPathFor = (entry, catalog) => entry.surface === "sandbox" ? catalog.sandboxCommandPath : catalog.native.find((native2) => native2.launcher === entry.launcher && native2.name === entry.name)?.commandPath ?? "";
 var readinessFor = (ref, inputs) => inputs.find((input) => input.ref === ref);
+var updateCheckFor = (ref, inputs) => inputs.find((input) => input.ref === ref);
+var deriveUpdateCheck = (updateCheckSupported, input) => {
+  if (!updateCheckSupported) return { updateCheckStale: false };
+  if (input?.result === void 0) return { updateCheckStale: true };
+  const base = { updateCheckStale: false, ...input.checkedAt === void 0 ? {} : { updateCheckedAt: input.checkedAt } };
+  if ("malformed" in input.result) return { ...base, updateCheckDiagnostic: input.result.diagnostic };
+  if (input.result.current) return { ...base, updateAvailable: false };
+  return { ...base, updateAvailable: true, latestVersion: input.result.latest };
+};
 var deriveNativeStatus = (capabilities, readiness) => {
   if (!capabilities.doctorSupported) return { health: "unsupported", install: "unsupported" };
   if (readiness?.result === void 0) return { health: "unknown", install: "unknown" };
@@ -83412,10 +83426,11 @@ var deriveSandboxStatus = (readiness) => {
   }
   return readiness.result.kind === "ready" /* Ready */ ? { health: "healthy", install: "installed" } : { health: "unhealthy", install: "not-installed", diagnostic: readiness.result.diagnostic };
 };
-var aggregateAdminProfiles = (catalog, readinessInputs = []) => guideCatalogEntries(catalog).map((entry) => {
+var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs = []) => guideCatalogEntries(catalog).map((entry) => {
   const readiness = readinessFor(entry.ref, readinessInputs);
-  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : { doctorSupported: true, inventorySupported: true };
+  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : { doctorSupported: true, inventorySupported: true, updateCheckSupported: false };
   const derived = entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness);
+  const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs));
   return {
     ref: entry.ref,
     surface: entry.surface,
@@ -83430,6 +83445,12 @@ var aggregateAdminProfiles = (catalog, readinessInputs = []) => guideCatalogEntr
     ...derived.diagnostic === void 0 ? {} : { healthDiagnostic: derived.diagnostic },
     install: derived.install,
     ...readiness?.version === void 0 ? {} : { version: readiness.version },
+    updateCheckSupported: capabilities.updateCheckSupported,
+    ...updateCheck.latestVersion === void 0 ? {} : { latestVersion: updateCheck.latestVersion },
+    ...updateCheck.updateAvailable === void 0 ? {} : { updateAvailable: updateCheck.updateAvailable },
+    ...updateCheck.updateCheckDiagnostic === void 0 ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic },
+    updateCheckStale: updateCheck.updateCheckStale,
+    ...updateCheck.updateCheckedAt === void 0 ? {} : { updateCheckedAt: updateCheck.updateCheckedAt },
     stale: readiness?.result === void 0,
     ...readiness?.checkedAt === void 0 ? {} : { lastCheckedAt: readiness.checkedAt }
   };
@@ -83525,6 +83546,78 @@ var refreshAdminEntries = async (runner, catalog, cwd2, now = () => Date.now()) 
   return aggregateAdminProfiles(catalog, readinessInputs);
 };
 
+// src/admin-run-manager.ts
+var defaultHistoryCap = 5;
+var defaultTimeoutMs = 3e4;
+var isCommandRunnerError = (error) => error instanceof Error && error.name === "CommandRunnerError";
+var AdminRunManager = class {
+  runner;
+  timeoutMs;
+  historyCap;
+  now;
+  inFlight = /* @__PURE__ */ new Map();
+  history = /* @__PURE__ */ new Map();
+  states = /* @__PURE__ */ new Map();
+  constructor(options) {
+    this.runner = options.runner;
+    this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+    this.historyCap = options.historyCap ?? defaultHistoryCap;
+    this.now = options.now ?? (() => Date.now());
+  }
+  status(ref) {
+    const history = this.history.get(ref) ?? [];
+    return {
+      ref,
+      state: this.states.get(ref) ?? "idle",
+      ...history.length > 0 ? { latest: history[history.length - 1] } : {},
+      history
+    };
+  }
+  /** Triggers a run for the profile. If one is already in flight, this attaches to it instead of spawning a second process. */
+  trigger(ref, executable, args) {
+    const existing = this.inFlight.get(ref);
+    if (existing !== void 0) return existing.promise;
+    return this.startRun(ref, executable, args);
+  }
+  /** Re-issues a fresh, independent run for the profile, regardless of its previous terminal state. */
+  retry(ref, executable, args) {
+    if (this.inFlight.has(ref)) return this.inFlight.get(ref).promise;
+    return this.startRun(ref, executable, args);
+  }
+  /** Cancels the in-flight run for the profile, if any. No-ops when nothing is running. */
+  cancel(ref) {
+    this.inFlight.get(ref)?.controller.abort();
+  }
+  startRun(ref, executable, args) {
+    const controller = new AbortController();
+    const startedAt = this.now();
+    this.states.set(ref, "running");
+    const promise = this.runner.run(executable, args, { timeoutMs: this.timeoutMs, signal: controller.signal }).then((result) => {
+      this.record(ref, { state: "success", stdout: result.stdout, stderr: result.stderr, startedAt, endedAt: this.now() });
+    }).catch((error) => {
+      const terminal = this.classifyFailure(error, controller.signal.aborted);
+      const stdout = isCommandRunnerError(error) ? error.stdout : "";
+      const stderr = isCommandRunnerError(error) ? error.stderr : String(error);
+      this.record(ref, { state: terminal, stdout, stderr, startedAt, endedAt: this.now() });
+    }).finally(() => {
+      this.inFlight.delete(ref);
+    });
+    this.inFlight.set(ref, { controller, promise });
+    return promise;
+  }
+  classifyFailure(error, aborted) {
+    if (aborted || isCommandRunnerError(error) && error.kind === "aborted") return "cancelled";
+    if (isCommandRunnerError(error) && error.kind === "timed-out") return "timed-out";
+    return "failure";
+  }
+  record(ref, entry) {
+    this.states.set(ref, entry.state);
+    const existing = this.history.get(ref) ?? [];
+    const next = [...existing, entry];
+    this.history.set(ref, next.length > this.historyCap ? next.slice(next.length - this.historyCap) : next);
+  }
+};
+
 // src/admin-status.ts
 var labels = {
   idle: "Not yet checked",
@@ -83581,7 +83674,7 @@ var resolveAdminViewState = (entries, filtered, loading) => {
 var adminProfileType = (entry) => entry.surface === "native" ? "Native" : "Container";
 var longest2 = (values, heading) => Math.max(heading.length, ...values.map((value) => value.length));
 var bounded2 = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
-var adminTableColumnWidths = (entries, statusesByRef, terminalWidth) => {
+var adminTableColumnWidths = (entries, statusesByRef, terminalWidth, versionLabelsByRef = /* @__PURE__ */ new Map()) => {
   const available = Math.max(40, terminalWidth - 4);
   const harness = bounded2(
     longest2(
@@ -83601,8 +83694,10 @@ var adminTableColumnWidths = (entries, statusesByRef, terminalWidth) => {
   );
   const statusLabels = entries.map((entry) => statusLabel(statusesByRef.get(entry.ref) ?? "idle"));
   const status = bounded2(longest2(statusLabels, "STATUS") + 4, 14, Math.max(14, Math.floor(available * 0.42)));
-  const name = Math.max(10, available - harness - type - status);
-  return { harness, name, type, status };
+  const versionLabels = entries.map((entry) => versionLabelsByRef.get(entry.ref) ?? "\u2014");
+  const version2 = bounded2(longest2(versionLabels, "VERSION") + 2, 9, Math.max(9, Math.floor(available * 0.2)));
+  const name = Math.max(10, available - harness - type - status - version2);
+  return { harness, name, type, status, version: version2 };
 };
 
 // src/admin-batch-scheduler.ts
@@ -83699,6 +83794,172 @@ var forkFailureToHerdrWorktree = async (runner, request, options) => {
   }
 };
 
+// src/admin-version-check.ts
+var buildUpdateCheckCommand = (entry) => ({
+  executable: entry.commandPath,
+  args: ["update", "--check", entry.name]
+});
+var currentPatterns = [
+  // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
+  /\bis current\b/i,
+  // fmx: "fmx update: default is current (abc123def456)"
+  // cpx/grx: "default: current (1.2.3)"
+  /\bcurrent\b\s*\(/i
+];
+var updateAvailablePatterns = [
+  // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
+  /([^\s:][^\s]*)\s*->\s*([^\s]+?)\s+available/i,
+  // cpx/grx: "default: update available (1.2.3 -> 1.3.0)"
+  /update available\s*\(\s*([^\s]+?)\s*->\s*([^\s)]+?)\s*\)/i,
+  // fmx: "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)"
+  /is stale\s*\(installed\s+([^\s,]+),\s*catalog pin\s+([^\s)]+)\)/i
+];
+var notInstalledPatterns = [
+  /:\s*not installed\b/i,
+  /\bis not set up\b/i
+];
+var formatVersionCell = (installedVersion, supported, result) => {
+  if (!supported) return installedVersion ?? "\u2014";
+  if (result !== void 0 && !("malformed" in result) && !result.current) {
+    return `${installedVersion ?? "?"} \u2192 ${result.latest}`;
+  }
+  return installedVersion ?? "\u2014";
+};
+var parseUpdateCheckOutput = (stdout, installedVersion) => {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return { malformed: true, diagnostic: "update --check produced no output" };
+  for (const pattern of notInstalledPatterns) {
+    if (pattern.test(trimmed)) return { malformed: true, diagnostic: trimmed.split("\n")[0] ?? trimmed };
+  }
+  for (const pattern of updateAvailablePatterns) {
+    const match = pattern.exec(trimmed);
+    if (match?.[2] !== void 0) return { current: false, latest: match[2] };
+  }
+  for (const pattern of currentPatterns) {
+    if (pattern.test(trimmed)) return { current: true };
+  }
+  return {
+    malformed: true,
+    diagnostic: `unrecognized update --check output${installedVersion === void 0 ? "" : ` (installed ${installedVersion})`}: ${trimmed.split("\n")[0] ?? trimmed}`
+  };
+};
+
+// src/admin-version-cache.ts
+import { mkdir as mkdir2, readFile as readFile3, rename as rename2, unlink as unlink3, writeFile as writeFile2 } from "node:fs/promises";
+import os5 from "node:os";
+import path9 from "node:path";
+import { randomUUID as randomUUID3 } from "node:crypto";
+var maximumCacheBytes = 256 * 1024;
+var maximumCacheEntries = 512;
+var versionCacheTtlMs = 24 * 60 * 60 * 1e3;
+var emptyRecord = { schemaVersion: 1, entries: {} };
+var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
+var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var parseResult = (value) => {
+  if (!isPlainObject(value)) return void 0;
+  if (value.malformed === true && typeof value.diagnostic === "string") return { malformed: true, diagnostic: value.diagnostic };
+  if (value.current === true) return { current: true };
+  if (value.current === false && typeof value.latest === "string") return { current: false, latest: value.latest };
+  return void 0;
+};
+var parseEntry = (value) => {
+  if (!isPlainObject(value)) return void 0;
+  const result = parseResult(value.result);
+  if (result === void 0 || typeof value.checkedAt !== "number" || !Number.isFinite(value.checkedAt)) return void 0;
+  return { result, checkedAt: value.checkedAt };
+};
+var parseVersionCacheRecord = (source) => {
+  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return emptyRecord;
+  let payload;
+  try {
+    payload = JSON.parse(source);
+  } catch {
+    return emptyRecord;
+  }
+  if (!isPlainObject(payload) || payload.schemaVersion !== 1 || !isPlainObject(payload.entries)) return emptyRecord;
+  const entries = {};
+  for (const [ref, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
+    const entry = parseEntry(value);
+    if (entry !== void 0) entries[ref] = entry;
+  }
+  return { schemaVersion: 1, entries };
+};
+var loadVersionCache = async (cachePath) => {
+  let source;
+  try {
+    source = await readFile3(cachePath, "utf8");
+  } catch (error) {
+    if (isMissingFile(error)) return emptyRecord;
+    return emptyRecord;
+  }
+  return parseVersionCacheRecord(source);
+};
+var removeTemporaryCache = async (temporaryPath) => {
+  try {
+    await unlink3(temporaryPath);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+};
+var saveVersionCache = async (cachePath, value) => {
+  await mkdir2(path9.dirname(cachePath), { recursive: true, mode: 448 });
+  const temporaryPath = `${cachePath}.${process.pid}.${randomUUID3()}.tmp`;
+  const source = `${JSON.stringify(value)}
+`;
+  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
+    throw new Error(`admin version cache exceeds ${maximumCacheBytes} bytes`);
+  }
+  try {
+    await writeFile2(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 384 });
+    await rename2(temporaryPath, cachePath);
+  } catch (error) {
+    await removeTemporaryCache(temporaryPath);
+    throw new Error(`could not write admin version cache: ${cachePath}`, { cause: error });
+  }
+};
+var defaultAdminVersionCachePath = (env3 = process.env) => {
+  const cacheRoot = env3.XDG_CACHE_HOME ?? path9.join(os5.homedir(), ".cache");
+  return path9.join(cacheRoot, "trellage", "trx-admin", "version-cache.json");
+};
+var isVersionCacheStale = (entry, now) => entry === void 0 || now - entry.checkedAt >= versionCacheTtlMs;
+
+// src/admin-version-scheduler.ts
+var defaultMaxConcurrent2 = 4;
+var runManagerRefFor = (ref) => `${ref}::update-check`;
+var updateCheckRefFor = runManagerRefFor;
+var versionCheckResultForEntry = (entry, runManager) => {
+  const status = runManager.status(updateCheckRefFor(entry.ref));
+  const latest = status.latest;
+  if (latest === void 0) return void 0;
+  if (latest.state === "success") return parseUpdateCheckOutput(latest.stdout, entry.version);
+  const reason = latest.stderr.trim() || latest.stdout.trim() || latest.state;
+  return { malformed: true, diagnostic: `update --check ${latest.state}: ${reason.split("\n")[0] ?? reason}` };
+};
+var resultFromRun = (entry, runManager) => versionCheckResultForEntry(entry, runManager) ?? { malformed: true, diagnostic: "update --check did not complete" };
+var runBatchedVersionChecks = async (entries, runManager, cache3, options = {}) => {
+  const maxConcurrent = options.maxConcurrent ?? defaultMaxConcurrent2;
+  const now = options.now ?? (() => Date.now());
+  const forceResync = options.forceResync ?? false;
+  const queue = entries.filter((entry) => entry.updateCheckSupported).filter((entry) => forceResync || isVersionCacheStale(cache3.entries[entry.ref], now())).slice();
+  if (queue.length === 0) return;
+  const worker = async () => {
+    for (; ; ) {
+      const entry = queue.shift();
+      if (entry === void 0) return;
+      const command = buildUpdateCheckCommand(entry);
+      const ref = updateCheckRefFor(entry.ref);
+      if (forceResync) {
+        await runManager.retry(ref, command.executable, command.args);
+      } else {
+        await runManager.trigger(ref, command.executable, command.args);
+      }
+      options.onResult?.(entry.ref, { result: resultFromRun(entry, runManager), checkedAt: now() });
+    }
+  };
+  const workerCount = Math.max(1, Math.min(maxConcurrent, queue.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+};
+
 // src/admin-ui.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
 var sortCycle = ["name", "health", "install", "surface"];
@@ -83731,7 +83992,10 @@ var AdminDetailPanel = ({
   herdrAvailable,
   onForkToFix,
   onOpenGuide,
-  tick
+  tick,
+  versionResult,
+  versionRunning,
+  onForceResyncVersion
 }) => {
   const [, forceRender] = (0, import_react37.useState)(0);
   const [launchConfirming, setLaunchConfirming] = (0, import_react37.useState)(false);
@@ -83810,6 +84074,7 @@ var AdminDetailPanel = ({
     else if (input === "l") setLaunchConfirming(true);
     else if (input === "f" && canFork) setForkConfirming(true);
     else if (input === "p" && canRepair) setRepairConfirming(true);
+    else if (input === "u" && entry.updateCheckSupported && !versionRunning) onForceResyncVersion(entry);
   });
   const latest = snapshot.latest;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1, marginTop: 1, children: [
@@ -83830,6 +84095,17 @@ var AdminDetailPanel = ({
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install }),
       entry.version === void 0 ? "" : ` \xB7 Version: ${entry.version}`
     ] }),
+    entry.updateCheckSupported ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
+      "Latest:",
+      " ",
+      versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+        spinnerFrameAt(tick),
+        " checking\u2026"
+      ] }) : versionResult === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : "malformed" in versionResult ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: versionResult.diagnostic }) : versionResult.current ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "up to date" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "yellow", children: [
+        "update available: ",
+        versionResult.latest
+      ] })
+    ] }) : null,
     entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
@@ -83855,7 +84131,8 @@ var AdminDetailPanel = ({
             { key: "g", label: "view guide" },
             { key: "l", label: "launch in terminal" },
             canFork ? { key: "f", label: "fork to fix" } : void 0,
-            canRepair ? { key: "p", label: "repair profile" } : void 0
+            canRepair ? { key: "p", label: "repair profile" } : void 0,
+            entry.updateCheckSupported && !versionRunning ? { key: "u", label: "resync version" } : void 0
           ].filter((item) => item !== void 0)
         }
       ) })
@@ -83942,6 +84219,13 @@ var AdminApp = ({
   const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const diagnosedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const repairAttemptedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const versionRunManagerRef = (0, import_react37.useRef)(void 0);
+  if (versionRunManagerRef.current === void 0) versionRunManagerRef.current = new AdminRunManager({ runner });
+  const versionRunManager = versionRunManagerRef.current;
+  const versionBatchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
+  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 1, entries: {} });
+  const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react37.useState)(false);
+  const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminVersionCachePath(), []);
   const openGuideOverlay = (entry) => {
     setGuideOverlay({ entry, body: void 0, note: void 0 });
     loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
@@ -83965,6 +84249,45 @@ var AdminApp = ({
     batchStartedRefs.current = new Set(doctorRefs);
     void runBatchedDoctorChecks(entries, runManager);
   }, [entries, runManager]);
+  (0, import_react37.useEffect)(() => {
+    let cancelled = false;
+    loadVersionCache(versionCachePath).then((record5) => {
+      if (!cancelled) setVersionCache(record5);
+    }).finally(() => {
+      if (!cancelled) setVersionCacheLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  (0, import_react37.useEffect)(() => {
+    if (!versionCacheLoaded) return;
+    const supportedRefs = entries.filter((entry) => entry.updateCheckSupported).map((entry) => entry.ref);
+    if (!shouldStartBatch(supportedRefs, versionBatchStartedRefs.current)) return;
+    versionBatchStartedRefs.current = new Set(supportedRefs);
+    void runBatchedVersionChecks(entries, versionRunManager, versionCache, {
+      onResult: (ref, cacheEntry) => {
+        setVersionCache((previous) => {
+          const next = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } };
+          void saveVersionCache(versionCachePath, next).catch(() => void 0);
+          return next;
+        });
+      }
+    });
+  }, [entries, versionRunManager, versionCacheLoaded, versionCachePath]);
+  const forceResyncVersion = (entry) => {
+    void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
+      forceResync: true,
+      onResult: (ref, cacheEntry) => {
+        setVersionCache((previous) => {
+          const next = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } };
+          void saveVersionCache(versionCachePath, next).catch(() => void 0);
+          return next;
+        });
+      }
+    }).finally(() => setTick((value) => value + 1));
+    setTick((value) => value + 1);
+  };
   (0, import_react37.useEffect)(() => {
     const statusesByRef2 = new Map(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
@@ -84035,12 +84358,23 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   const viewState = resolveAdminViewState(entries, sorted, false);
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1);
   const selected = sorted[boundedIndex];
+  const versionResultFor = (entry) => versionCheckResultForEntry(entry, versionRunManager) ?? versionCache.entries[entry.ref]?.result;
+  const versionRunning = (entry) => versionRunManager.status(updateCheckRefFor(entry.ref)).state === "running";
+  const versionLabelFor = (entry) => versionRunning(entry) ? "checking\u2026" : formatVersionCell(entry.version, entry.updateCheckSupported, versionResultFor(entry));
   const statusesByRef = (0, import_react37.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
     for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)));
     return map;
   }, [sorted, runManager, tick]);
-  const widths = (0, import_react37.useMemo)(() => adminTableColumnWidths(sorted, statusesByRef, columns), [sorted, statusesByRef, columns]);
+  const versionLabelsByRef = (0, import_react37.useMemo)(() => {
+    const map = /* @__PURE__ */ new Map();
+    for (const entry of sorted) map.set(entry.ref, versionLabelFor(entry));
+    return map;
+  }, [sorted, versionRunManager, versionCache, tick]);
+  const widths = (0, import_react37.useMemo)(
+    () => adminTableColumnWidths(sorted, statusesByRef, columns, versionLabelsByRef),
+    [sorted, statusesByRef, versionLabelsByRef, columns]
+  );
   use_input_default((char, key) => {
     if (key.ctrl && char === "c") {
       exit();
@@ -84132,17 +84466,26 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE NAME" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "TYPE" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "STATUS" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "STATUS" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "blue", children: "VERSION" }) })
       ] }),
       sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
         const active = index === boundedIndex;
         const status = runStatusOf(entry, runManager.status(entry.ref));
+        const versionRunningNow = versionRunning(entry);
         return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u203A " : "  " }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness ?? "\u2014" }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.name }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: adminProfileType(entry) }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: active, dimColor: !active }) })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: active, dimColor: !active }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: active, dimColor: !active, wrap: "truncate-end", children: [
+            versionRunningNow ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+              spinnerFrameAt(tick),
+              " "
+            ] }) : null,
+            versionRunningNow ? "checking\u2026" : versionLabelFor(entry)
+          ] }) })
         ] }, entry.ref);
       })
     ] }) : null,
@@ -84155,7 +84498,10 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         herdrAvailable,
         onForkToFix,
         onOpenGuide: openGuideOverlay,
-        tick
+        tick,
+        versionResult: versionResultFor(selected),
+        versionRunning: versionRunning(selected),
+        onForceResyncVersion: forceResyncVersion
       }
     ) : null
   ] });
@@ -84203,81 +84549,9 @@ var AdminRoot = ({
   ] });
 };
 
-// src/admin-run-manager.ts
-var defaultHistoryCap = 5;
-var defaultTimeoutMs = 3e4;
-var isCommandRunnerError = (error) => error instanceof Error && error.name === "CommandRunnerError";
-var AdminRunManager = class {
-  runner;
-  timeoutMs;
-  historyCap;
-  now;
-  inFlight = /* @__PURE__ */ new Map();
-  history = /* @__PURE__ */ new Map();
-  states = /* @__PURE__ */ new Map();
-  constructor(options) {
-    this.runner = options.runner;
-    this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
-    this.historyCap = options.historyCap ?? defaultHistoryCap;
-    this.now = options.now ?? (() => Date.now());
-  }
-  status(ref) {
-    const history = this.history.get(ref) ?? [];
-    return {
-      ref,
-      state: this.states.get(ref) ?? "idle",
-      ...history.length > 0 ? { latest: history[history.length - 1] } : {},
-      history
-    };
-  }
-  /** Triggers a run for the profile. If one is already in flight, this attaches to it instead of spawning a second process. */
-  trigger(ref, executable, args) {
-    const existing = this.inFlight.get(ref);
-    if (existing !== void 0) return existing.promise;
-    return this.startRun(ref, executable, args);
-  }
-  /** Re-issues a fresh, independent run for the profile, regardless of its previous terminal state. */
-  retry(ref, executable, args) {
-    if (this.inFlight.has(ref)) return this.inFlight.get(ref).promise;
-    return this.startRun(ref, executable, args);
-  }
-  /** Cancels the in-flight run for the profile, if any. No-ops when nothing is running. */
-  cancel(ref) {
-    this.inFlight.get(ref)?.controller.abort();
-  }
-  startRun(ref, executable, args) {
-    const controller = new AbortController();
-    const startedAt = this.now();
-    this.states.set(ref, "running");
-    const promise = this.runner.run(executable, args, { timeoutMs: this.timeoutMs, signal: controller.signal }).then((result) => {
-      this.record(ref, { state: "success", stdout: result.stdout, stderr: result.stderr, startedAt, endedAt: this.now() });
-    }).catch((error) => {
-      const terminal = this.classifyFailure(error, controller.signal.aborted);
-      const stdout = isCommandRunnerError(error) ? error.stdout : "";
-      const stderr = isCommandRunnerError(error) ? error.stderr : String(error);
-      this.record(ref, { state: terminal, stdout, stderr, startedAt, endedAt: this.now() });
-    }).finally(() => {
-      this.inFlight.delete(ref);
-    });
-    this.inFlight.set(ref, { controller, promise });
-    return promise;
-  }
-  classifyFailure(error, aborted) {
-    if (aborted || isCommandRunnerError(error) && error.kind === "aborted") return "cancelled";
-    if (isCommandRunnerError(error) && error.kind === "timed-out") return "timed-out";
-    return "failure";
-  }
-  record(ref, entry) {
-    this.states.set(ref, entry.state);
-    const existing = this.history.get(ref) ?? [];
-    const next = [...existing, entry];
-    this.history.set(ref, next.length > this.historyCap ? next.slice(next.length - this.historyCap) : next);
-  }
-};
-
 // src/admin-diagnosis-provider.ts
-import os4 from "node:os";
-import path8 from "node:path";
+import os6 from "node:os";
+import path10 from "node:path";
 var defaultClientFactory2 = (options) => new CopilotClient(options);
 var defaultModel = "gpt-5.6-sol";
 var defaultEffort = "medium";
@@ -84368,8 +84642,8 @@ var DoctorFailureDiagnosisProvider = class {
     this.model = options.model ?? defaultModel;
     this.effort = options.effort ?? defaultEffort;
     this.systemPrompt = options.systemPrompt ?? defaultSystemPrompt;
-    this.baseDirectory = options.baseDirectory ?? path8.join(os4.homedir(), ".copilot", "trx-admin-diagnosis");
-    this.workingDirectory = options.workingDirectory ?? os4.tmpdir();
+    this.baseDirectory = options.baseDirectory ?? path10.join(os6.homedir(), ".copilot", "trx-admin-diagnosis");
+    this.workingDirectory = options.workingDirectory ?? os6.tmpdir();
     this.clientName = options.clientName ?? "trellage-trx-admin-diagnosis";
     this.copilotCliPath = options.copilotCliPath;
     this.timeoutMs = options.timeoutMs ?? defaultTimeoutMs2;
@@ -84465,7 +84739,7 @@ var DoctorFailureDiagnosisProvider = class {
 // src/cli.tsx
 var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
-  if (filename !== void 0) return readFile3(filename, "utf8");
+  if (filename !== void 0) return readFile4(filename, "utf8");
   const chunks = [];
   let length = 0;
   for await (const chunk of process.stdin) {
@@ -85096,7 +85370,7 @@ var main = async () => {
 `;
     const resultPath = process.argv[3];
     if (resultPath === void 0) process.stdout.write(serialized);
-    else await writeFile2(resultPath, serialized, { mode: 384 });
+    else await writeFile3(resultPath, serialized, { mode: 384 });
   } finally {
     if (input !== process.stdin) input.destroy();
     if (output !== process.stderr) output.destroy();

@@ -31,6 +31,8 @@ const nativeEntry: AdminProfileEntry = {
   health: "healthy",
   install: "installed",
   stale: false,
+  updateCheckSupported: true,
+  updateCheckStale: false,
 }
 
 const sandboxEntry: AdminProfileEntry = {
@@ -45,6 +47,8 @@ const sandboxEntry: AdminProfileEntry = {
   health: "unknown",
   install: "unknown",
   stale: false,
+  updateCheckSupported: false,
+  updateCheckStale: false,
 }
 
 /** A hypothetical native launcher that lacks doctor support, to exercise the generic doctorSupported=false gate — no current native launcher (including cdx) actually lacks doctor support. */

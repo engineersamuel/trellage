@@ -49,14 +49,32 @@ const allNativeLaunchers: ReadonlyArray<NativeLauncherAlias> = [
  */
 const launchersWithoutDoctorSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
 
+/**
+ * `cldx` (Claude native) is the one current native launcher whose `bin/cldx`
+ * usage text never lists an `update`/`update --check` subcommand (verified
+ * directly against `prototypes/trellage-claude-profiles/bin/cldx`) — every
+ * other native launcher, including `cdx` via the shared `native-codex`
+ * dispatch, implements `update --check PROFILE`. Kept as an explicit
+ * exclusion set, matching `launchersWithoutDoctorSupport`, so a future
+ * launcher without update-check support can be added here without
+ * fabricating version data for it.
+ */
+const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>(["cldx"])
+
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean
   readonly inventorySupported: boolean
+  /** Whether this launcher's `update --check PROFILE` (a read-only, non-mutating command) is safe to run in the background. */
+  readonly updateCheckSupported: boolean
 }
 
 export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapabilities => {
   const supported = !launchersWithoutDoctorSupport.has(launcher as NativeLauncherAlias)
-  return { doctorSupported: supported, inventorySupported: supported }
+  return {
+    doctorSupported: supported,
+    inventorySupported: supported,
+    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher as NativeLauncherAlias),
+  }
 }
 
 export const isKnownNativeLauncher = (launcher: string): launcher is NativeLauncherAlias =>
@@ -80,6 +98,16 @@ export interface AdminProfileEntry {
   readonly healthDiagnostic?: string
   readonly install: AdminInstallStatus
   readonly version?: string
+  /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
+  readonly updateCheckSupported: boolean
+  /** The latest version reported by the most recent successful `update --check`, when it differs from `version`. `undefined` while unchecked, unsupported, or when already current. */
+  readonly latestVersion?: string
+  /** `true` only when a successful check found a newer version than `version`. `undefined` while unchecked/unsupported/malformed. */
+  readonly updateAvailable?: boolean
+  readonly updateCheckDiagnostic?: string
+  /** True until this entry's own update-check has completed after the most recent refresh trigger (startup or forced resync). */
+  readonly updateCheckStale: boolean
+  readonly updateCheckedAt?: number
   /** True until this entry's own health/install check has completed after the most recent refresh trigger. */
   readonly stale: boolean
   readonly lastCheckedAt?: number
@@ -94,6 +122,20 @@ export interface AdminReadinessInput {
   readonly checkedAt?: number
 }
 
+/** The outcome of a single `update --check` parse (see `admin-version-check.ts`). */
+export type AdminUpdateCheckResult =
+  | { readonly malformed: true; readonly diagnostic: string }
+  | { readonly current: true }
+  | { readonly current: false; readonly latest: string }
+
+/** Per-profile update-check input, keyed by the same `ref` used in `AdminProfileEntry`. */
+export interface AdminUpdateCheckInput {
+  readonly ref: string
+  /** `undefined` means "not yet checked" (kept `updateCheckStale`). */
+  readonly result?: AdminUpdateCheckResult
+  readonly checkedAt?: number
+}
+
 const commandPathFor = (entry: GuideCatalogEntryRef, catalog: CombinedGuideCatalog): string =>
   entry.surface === "sandbox"
     ? catalog.sandboxCommandPath
@@ -102,6 +144,27 @@ const commandPathFor = (entry: GuideCatalogEntryRef, catalog: CombinedGuideCatal
 
 const readinessFor = (ref: string, inputs: ReadonlyArray<AdminReadinessInput>): AdminReadinessInput | undefined =>
   inputs.find((input) => input.ref === ref)
+
+const updateCheckFor = (ref: string, inputs: ReadonlyArray<AdminUpdateCheckInput>): AdminUpdateCheckInput | undefined =>
+  inputs.find((input) => input.ref === ref)
+
+const deriveUpdateCheck = (
+  updateCheckSupported: boolean,
+  input: AdminUpdateCheckInput | undefined,
+): {
+  readonly latestVersion?: string
+  readonly updateAvailable?: boolean
+  readonly updateCheckDiagnostic?: string
+  readonly updateCheckStale: boolean
+  readonly updateCheckedAt?: number
+} => {
+  if (!updateCheckSupported) return { updateCheckStale: false }
+  if (input?.result === undefined) return { updateCheckStale: true }
+  const base = { updateCheckStale: false, ...(input.checkedAt === undefined ? {} : { updateCheckedAt: input.checkedAt }) }
+  if ("malformed" in input.result) return { ...base, updateCheckDiagnostic: input.result.diagnostic }
+  if (input.result.current) return { ...base, updateAvailable: false }
+  return { ...base, updateAvailable: true, latestVersion: input.result.latest }
+}
 
 const deriveNativeStatus = (
   capabilities: NativeLauncherCapabilities,
@@ -143,13 +206,17 @@ const deriveSandboxStatus = (
 export const aggregateAdminProfiles = (
   catalog: CombinedGuideCatalog,
   readinessInputs: ReadonlyArray<AdminReadinessInput> = [],
+  updateCheckInputs: ReadonlyArray<AdminUpdateCheckInput> = [],
 ): ReadonlyArray<AdminProfileEntry> =>
   guideCatalogEntries(catalog).map((entry): AdminProfileEntry => {
     const readiness = readinessFor(entry.ref, readinessInputs)
     const capabilities =
-      entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : { doctorSupported: true, inventorySupported: true }
+      entry.surface === "native"
+        ? nativeLauncherCapabilities(entry.launcher ?? "")
+        : { doctorSupported: true, inventorySupported: true, updateCheckSupported: false }
     const derived =
       entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
+    const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
     return {
       ref: entry.ref,
       surface: entry.surface,
@@ -164,6 +231,12 @@ export const aggregateAdminProfiles = (
       ...(derived.diagnostic === undefined ? {} : { healthDiagnostic: derived.diagnostic }),
       install: derived.install,
       ...(readiness?.version === undefined ? {} : { version: readiness.version }),
+      updateCheckSupported: capabilities.updateCheckSupported,
+      ...(updateCheck.latestVersion === undefined ? {} : { latestVersion: updateCheck.latestVersion }),
+      ...(updateCheck.updateAvailable === undefined ? {} : { updateAvailable: updateCheck.updateAvailable }),
+      ...(updateCheck.updateCheckDiagnostic === undefined ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic }),
+      updateCheckStale: updateCheck.updateCheckStale,
+      ...(updateCheck.updateCheckedAt === undefined ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }),
       stale: readiness?.result === undefined,
       ...(readiness?.checkedAt === undefined ? {} : { lastCheckedAt: readiness.checkedAt }),
     }

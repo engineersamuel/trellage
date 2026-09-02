@@ -106,8 +106,15 @@ const fixtureCatalog = () =>
 describe("nativeLauncherCapabilities", () => {
   it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
     for (const launcher of ["cpx", "cdx", "cldx", "grx", "jcx", "omp", "picx", "prx"]) {
-      expect(nativeLauncherCapabilities(launcher)).toEqual({ doctorSupported: true, inventorySupported: true })
+      expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
+  })
+
+  it("marks every native launcher except cldx as supporting update --check", () => {
+    for (const launcher of ["cpx", "cdx", "grx", "jcx", "omp", "picx", "prx"]) {
+      expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
+    }
+    expect(nativeLauncherCapabilities("cldx").updateCheckSupported).toBe(false)
   })
 })
 
@@ -224,6 +231,8 @@ describe("toProfileGuideIdentity", () => {
         health: "healthy",
         install: "installed",
         stale: false,
+        updateCheckSupported: true,
+        updateCheckStale: false,
       }),
     ).toEqual({ surface: "native", launcher: "cpx", profile: "hve" })
   })
@@ -241,6 +250,8 @@ describe("toProfileGuideIdentity", () => {
         health: "healthy",
         install: "installed",
         stale: false,
+        updateCheckSupported: false,
+        updateCheckStale: false,
       }),
     ).toEqual({ surface: "sandbox", profile: "prime-agent" })
   })

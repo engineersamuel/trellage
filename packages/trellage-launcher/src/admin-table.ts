@@ -79,6 +79,7 @@ export interface AdminTableColumnWidths {
   readonly name: number
   readonly type: number
   readonly status: number
+  readonly version: number
 }
 
 const longest = (values: ReadonlyArray<string>, heading: string): number =>
@@ -100,6 +101,7 @@ export const adminTableColumnWidths = (
   entries: ReadonlyArray<AdminProfileEntry>,
   statusesByRef: ReadonlyMap<string, AdminStatus>,
   terminalWidth: number,
+  versionLabelsByRef: ReadonlyMap<string, string> = new Map(),
 ): AdminTableColumnWidths => {
   const available = Math.max(40, terminalWidth - 4)
   const harness = bounded(
@@ -120,6 +122,8 @@ export const adminTableColumnWidths = (
   )
   const statusLabels = entries.map((entry) => statusLabel(statusesByRef.get(entry.ref) ?? "idle"))
   const status = bounded(longest(statusLabels, "STATUS") + 4, 14, Math.max(14, Math.floor(available * 0.42)))
-  const name = Math.max(10, available - harness - type - status)
-  return { harness, name, type, status }
+  const versionLabels = entries.map((entry) => versionLabelsByRef.get(entry.ref) ?? "—")
+  const version = bounded(longest(versionLabels, "VERSION") + 2, 9, Math.max(9, Math.floor(available * 0.2)))
+  const name = Math.max(10, available - harness - type - status - version)
+  return { harness, name, type, status, version }
 }

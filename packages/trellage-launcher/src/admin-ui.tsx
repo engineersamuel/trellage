@@ -9,7 +9,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 
-import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry } from "./admin-model.js"
+import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry, type AdminUpdateCheckResult } from "./admin-model.js"
 import { refreshAdminEntries } from "./admin-refresh.js"
 import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.js"
 import {
@@ -31,6 +31,15 @@ import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutco
 import type { CombinedGuideCatalog } from "./guide-catalog.js"
 import type { CommandRunner, HerdrEnvironment } from "./guide-launch.js"
 import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
+import { formatVersionCell } from "./admin-version-check.js"
+import {
+  defaultAdminVersionCachePath,
+  loadVersionCache,
+  saveVersionCache,
+  type AdminVersionCacheEntry,
+  type AdminVersionCacheRecord,
+} from "./admin-version-cache.js"
+import { runBatchedVersionChecks, updateCheckRefFor, versionCheckResultForEntry } from "./admin-version-scheduler.js"
 
 type DiagnosisState =
   | { readonly status: "diagnosing" }
@@ -88,6 +97,9 @@ const AdminDetailPanel = ({
   onForkToFix,
   onOpenGuide,
   tick,
+  versionResult,
+  versionRunning,
+  onForceResyncVersion,
 }: {
   readonly entry: AdminProfileEntry
   readonly runManager: AdminRunManager
@@ -96,6 +108,9 @@ const AdminDetailPanel = ({
   readonly onForkToFix: (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined) => Promise<HerdrForkOutcome>
   readonly onOpenGuide: (entry: AdminProfileEntry) => void
   readonly tick: number
+  readonly versionResult: AdminUpdateCheckResult | undefined
+  readonly versionRunning: boolean
+  readonly onForceResyncVersion: (entry: AdminProfileEntry) => void
 }) => {
   const [, forceRender] = useState(0)
   const [launchConfirming, setLaunchConfirming] = useState(false)
@@ -212,6 +227,7 @@ const AdminDetailPanel = ({
     else if (input === "l") setLaunchConfirming(true)
     else if (input === "f" && canFork) setForkConfirming(true)
     else if (input === "p" && canRepair) setRepairConfirming(true)
+    else if (input === "u" && entry.updateCheckSupported && !versionRunning) onForceResyncVersion(entry)
   })
 
   const latest = snapshot.latest
@@ -229,6 +245,28 @@ const AdminDetailPanel = ({
         Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
         {entry.version === undefined ? "" : ` · Version: ${entry.version}`}
       </Text>
+      {entry.updateCheckSupported ? (
+        <Text wrap="wrap">
+          Latest:{" "}
+          {versionRunning ? (
+            <Text color="cyan">
+              {spinnerFrameAt(tick)} checking…
+            </Text>
+          ) : versionResult === undefined ? (
+            <Text dimColor>not yet checked</Text>
+          ) : "malformed" in versionResult ? (
+            <Text dimColor>{versionResult.diagnostic}</Text>
+          ) : versionResult.current ? (
+            <Text bold color="green">
+              up to date
+            </Text>
+          ) : (
+            <Text bold color="yellow">
+              update available: {versionResult.latest}
+            </Text>
+          )}
+        </Text>
+      ) : null}
       {entry.healthDiagnostic === undefined ? null : (
         <Text dimColor wrap="wrap">
           {entry.healthDiagnostic}
@@ -257,6 +295,7 @@ const AdminDetailPanel = ({
               { key: "l", label: "launch in terminal" },
               canFork ? { key: "f", label: "fork to fix" } : undefined,
               canRepair ? { key: "p", label: "repair profile" } : undefined,
+              entry.updateCheckSupported && !versionRunning ? { key: "u", label: "resync version" } : undefined,
             ].filter((item): item is { readonly key: string; readonly label: string } => item !== undefined)}
           />
         </Box>
@@ -396,6 +435,13 @@ export const AdminApp = ({
   const batchStartedRefs = useRef<Set<string>>(new Set())
   const diagnosedRefs = useRef<Set<string>>(new Set())
   const repairAttemptedRefs = useRef<Set<string>>(new Set())
+  const versionRunManagerRef = useRef<AdminRunManager | undefined>(undefined)
+  if (versionRunManagerRef.current === undefined) versionRunManagerRef.current = new AdminRunManager({ runner })
+  const versionRunManager = versionRunManagerRef.current
+  const versionBatchStartedRefs = useRef<Set<string>>(new Set())
+  const [versionCache, setVersionCache] = useState<AdminVersionCacheRecord>({ schemaVersion: 1, entries: {} })
+  const [versionCacheLoaded, setVersionCacheLoaded] = useState(false)
+  const versionCachePath = useMemo(() => defaultAdminVersionCachePath(), [])
 
   /**
    * Opens the full-screen guide overlay immediately (showing a loading
@@ -435,6 +481,77 @@ export const AdminApp = ({
     batchStartedRefs.current = new Set(doctorRefs)
     void runBatchedDoctorChecks(entries, runManager)
   }, [entries, runManager])
+
+  /**
+   * Loads the on-disk 24h version-check cache once at startup so a fresh
+   * result from an earlier session is honored immediately (no redundant
+   * `update --check` subprocess for a profile checked recently). A missing
+   * or corrupt cache file resolves to an empty record (see
+   * `admin-version-cache.ts`), never blocking the rest of the UI.
+   */
+  useEffect(() => {
+    let cancelled = false
+    loadVersionCache(versionCachePath)
+      .then((record) => {
+        if (!cancelled) setVersionCache(record)
+      })
+      .finally(() => {
+        if (!cancelled) setVersionCacheLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+    // The cache path and loader are fixed for the session; this runs exactly once at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /**
+   * Once the on-disk cache has loaded, runs the bounded-concurrency
+   * `update --check` batch (see `admin-version-scheduler.ts`) for every
+   * update-check-supporting profile whose cached result is stale or
+   * missing. Persists each result to disk as soon as it settles
+   * (`onResult`) so a crash mid-batch never loses earlier profiles'
+   * results, mirroring the doctor batch's one-shot-per-session dispatch via
+   * `shouldStartBatch`.
+   */
+  useEffect(() => {
+    if (!versionCacheLoaded) return
+    const supportedRefs = entries.filter((entry) => entry.updateCheckSupported).map((entry) => entry.ref)
+    if (!shouldStartBatch(supportedRefs, versionBatchStartedRefs.current)) return
+    versionBatchStartedRefs.current = new Set(supportedRefs)
+    void runBatchedVersionChecks(entries, versionRunManager, versionCache, {
+      onResult: (ref, cacheEntry) => {
+        setVersionCache((previous) => {
+          const next: AdminVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } }
+          void saveVersionCache(versionCachePath, next).catch(() => undefined)
+          return next
+        })
+      },
+    })
+    // Re-runs only when the cache finishes loading or the profile set changes; `versionCache`
+    // itself is read once at dispatch time via the closure and updated incrementally afterward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, versionRunManager, versionCacheLoaded, versionCachePath])
+
+  /**
+   * Forces an immediate re-check of one profile's version, bypassing the
+   * 24h cache entirely (the manual `[u]` resync action). Reuses the same
+   * batch scheduler with a single-entry list so the isolation and
+   * cache-persistence behavior stay identical to the startup batch.
+   */
+  const forceResyncVersion = (entry: AdminProfileEntry) => {
+    void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
+      forceResync: true,
+      onResult: (ref, cacheEntry) => {
+        setVersionCache((previous) => {
+          const next: AdminVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [ref]: cacheEntry } }
+          void saveVersionCache(versionCachePath, next).catch(() => undefined)
+          return next
+        })
+      },
+    }).finally(() => setTick((value) => value + 1))
+    setTick((value) => value + 1)
+  }
 
   /**
    * Attempts one automatic `repair` for every repair-capable profile that
@@ -531,13 +648,27 @@ export const AdminApp = ({
   const viewState = resolveAdminViewState(entries, sorted, false)
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1)
   const selected = sorted[boundedIndex]
+  const versionResultFor = (entry: AdminProfileEntry) =>
+    versionCheckResultForEntry(entry, versionRunManager) ?? versionCache.entries[entry.ref]?.result
+  const versionRunning = (entry: AdminProfileEntry) => versionRunManager.status(updateCheckRefFor(entry.ref)).state === "running"
+  const versionLabelFor = (entry: AdminProfileEntry) =>
+    versionRunning(entry) ? "checking…" : formatVersionCell(entry.version, entry.updateCheckSupported, versionResultFor(entry))
   const statusesByRef = useMemo(() => {
     const map = new Map<string, AdminStatus>()
     for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)))
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed on every tick so live status changes are reflected
   }, [sorted, runManager, tick])
-  const widths = useMemo(() => adminTableColumnWidths(sorted, statusesByRef, columns), [sorted, statusesByRef, columns])
+  const versionLabelsByRef = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const entry of sorted) map.set(entry.ref, versionLabelFor(entry))
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed on every tick so live version-check state changes are reflected
+  }, [sorted, versionRunManager, versionCache, tick])
+  const widths = useMemo(
+    () => adminTableColumnWidths(sorted, statusesByRef, columns, versionLabelsByRef),
+    [sorted, statusesByRef, versionLabelsByRef, columns],
+  )
 
   useInput((char, key) => {
     if (key.ctrl && char === "c") {
@@ -648,10 +779,16 @@ export const AdminApp = ({
                 STATUS
               </Text>
             </Box>
+            <Box width={widths.version}>
+              <Text bold color="blue">
+                VERSION
+              </Text>
+            </Box>
           </Box>
           {sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
             const active = index === boundedIndex
             const status = runStatusOf(entry, runManager.status(entry.ref))
+            const versionRunningNow = versionRunning(entry)
             return (
               <Box key={entry.ref}>
                 <Box width={2}>
@@ -677,6 +814,12 @@ export const AdminApp = ({
                 <Box width={widths.status}>
                   <StatusText status={status} tick={tick} bold={active} dimColor={!active} />
                 </Box>
+                <Box width={widths.version}>
+                  <Text bold={active} dimColor={!active} wrap="truncate-end">
+                    {versionRunningNow ? <Text color="cyan">{spinnerFrameAt(tick)} </Text> : null}
+                    {versionRunningNow ? "checking…" : versionLabelFor(entry)}
+                  </Text>
+                </Box>
               </Box>
             )
           })}
@@ -691,6 +834,9 @@ export const AdminApp = ({
           onForkToFix={onForkToFix}
           onOpenGuide={openGuideOverlay}
           tick={tick}
+          versionResult={versionResultFor(selected)}
+          versionRunning={versionRunning(selected)}
+          onForceResyncVersion={forceResyncVersion}
         />
       ) : null}
     </Box>

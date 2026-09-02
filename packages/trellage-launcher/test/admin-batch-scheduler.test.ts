@@ -47,6 +47,8 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   health: "healthy",
   install: "installed",
   stale: false,
+  updateCheckSupported: true,
+  updateCheckStale: false,
   ...overrides,
 })
 
