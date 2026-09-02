@@ -2181,6 +2181,7 @@ class TestSpecialist(unittest.TestCase):
             "discovery_gaps_carried_forward": [],
             "base_revision": "model-selected-revision",
             "discovery_fallback_note": "fallback was not required",
+            "serena_fallback": "Rust language server unavailable",
         }
 
         normalized = SpecialistLauncher._normalize_planning_decision(

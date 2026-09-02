@@ -66,6 +66,31 @@ class SpecialistError(Exception):
     pass
 
 
+def _expanded_existing_paths(root: Path, value: str) -> list[str] | None:
+    stripped = re.sub(r"\s+\([^()]+\)$", "", value)
+    parts = re.split(r"\s+/\s+|,\s*", stripped)
+    if len(parts) < 2:
+        return None
+    first = Path(parts[0])
+    resolved: list[str] = []
+    for index, part in enumerate(parts):
+        candidates = [Path(part)]
+        if index > 0:
+            candidates = [ancestor / part for ancestor in first.parents] + candidates
+        existing = next(
+            (
+                candidate
+                for candidate in candidates
+                if (root / candidate).resolve().exists()
+            ),
+            None,
+        )
+        if existing is None:
+            return None
+        resolved.append(existing.as_posix())
+    return resolved
+
+
 @dataclass(frozen=True)
 class PlanningResult:
     plan: dict[str, Any] | None
@@ -642,31 +667,10 @@ class SpecialistLauncher:
                 return [normalized_value]
             if (root / normalized_value).resolve().exists():
                 return [normalized_value]
-            stripped = re.sub(r"\s+\([^()]+\)$", "", normalized_value)
-            parts = re.split(r"\s+/\s+|,\s*", stripped)
-            if len(parts) < 2:
-                return [normalized_value]
-            first = Path(parts[0])
-            resolved: list[str] = []
-            for index, part in enumerate(parts):
-                candidates = [Path(part)]
-                if index > 0:
-                    candidates = [
-                        ancestor / part
-                        for ancestor in first.parents
-                    ] + candidates
-                existing = next(
-                    (
-                        candidate
-                        for candidate in candidates
-                        if (root / candidate).resolve().exists()
-                    ),
-                    None,
-                )
-                if existing is None:
-                    return [normalized_value]
-                resolved.append(existing.as_posix())
-            return resolved
+            return (
+                _expanded_existing_paths(root, normalized_value)
+                or [normalized_value]
+            )
 
         evidence = normalized.get("repository_evidence")
         if isinstance(evidence, list):
@@ -932,6 +936,7 @@ class SpecialistLauncher:
             "discovery_gaps_carried_forward",
             "base_revision",
             "discovery_fallback_note",
+            "serena_fallback",
         ):
             decision.pop(key, None)
         plan = decision.get("plan")
