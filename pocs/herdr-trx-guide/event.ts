@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+// @ts-nocheck -- Legacy Herdr event adapter; state modules are type-checked.
 import {
   getAgent,
   getProcessInfo,
   HerdrRequestError,
   requestHerdr,
-} from "./lib/herdr.mjs"
-import { removeCompletionMarker, writeCompletionMarker } from "./lib/state.mjs"
+} from "./lib/herdr.ts"
+import { removeCompletionMarker, writeCompletionMarker } from "./lib/state.ts"
 
 const trellageTokenNames = [
   "trellage_surface",

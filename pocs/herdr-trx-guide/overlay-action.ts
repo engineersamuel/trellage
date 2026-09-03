@@ -1,17 +1,18 @@
 #!/usr/bin/env node
+// @ts-nocheck -- Legacy macOS overlay adapter; protocol modules are type-checked.
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { runHerdr } from "./lib/herdr.mjs"
+import { runHerdr } from "./lib/herdr.ts"
 import {
   consumeOverlayRequest,
   parseOverlayInvocationContext,
-} from "./lib/overlay-request.mjs"
+} from "./lib/overlay-request.ts"
 import {
   appendCaptureQueue,
   readCaptureQueue,
   resolvePluginStateDirectory,
-} from "./lib/state.mjs"
+} from "./lib/state.ts"
 
 const pluginId = "trellage.guide-handoff"
 const addActionId = "queue-add-selection"

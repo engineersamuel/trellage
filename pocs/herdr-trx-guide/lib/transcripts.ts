@@ -7,8 +7,9 @@ import {
   codexSessionMetadata,
   copilotWorkspaceCwd,
   extractTranscriptFinalMessage,
-} from "./transcript-format.mjs"
-import { trellageSessionIdentity } from "./trellage-session.mjs"
+  extractTranscriptConversation,
+} from "./transcript-format.ts"
+import { trellageSessionIdentity } from "./trellage-session.ts"
 
 const maximumRoots = 80
 const maximumCandidates = 512
@@ -159,7 +160,11 @@ const walkBudgetAvailable = (state) =>
 
 const walkCanContinue = (state) => state.pending.length > 0 && walkBudgetAvailable(state)
 
-const walkJsonl = async (root, maximumDepth, matchesName = () => true) => {
+const walkJsonl = async (
+  root,
+  maximumDepth,
+  matchesName: (name: string) => boolean = () => true,
+) => {
   if (!(await safeDirectory(root))) return []
   const state = { files: [], pending: [{ directory: root, depth: 0 }], visitedEntries: 0 }
   while (walkCanContinue(state)) {
@@ -411,4 +416,20 @@ export const captureStructuredFinalMessage = async (options) => {
         identitySource: transcript.identitySource,
         profile: transcript.profile,
       }
+}
+
+export const captureStructuredConversation = async (options) => {
+  const transcript = await findTranscript(options)
+  if (transcript === undefined) return undefined
+  const roots = await transcriptRoots(options.agent, options.env, transcript.profile)
+  const messages = extractTranscriptConversation(options.agent, await readTail(transcript.path, roots))
+  if (messages.length === 0) return undefined
+  return {
+    messages,
+    agent: options.agent,
+    sessionId: transcript.id,
+    transcriptPath: transcript.path,
+    identitySource: transcript.identitySource,
+    profile: transcript.profile,
+  }
 }

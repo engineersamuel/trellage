@@ -1,4 +1,5 @@
-import { getAgent, HerdrRequestError, listAgents } from "./herdr.mjs"
+// @ts-nocheck -- Existing Herdr response adapter; exact capture is revalidated downstream.
+import { getAgent, HerdrRequestError, listAgents } from "./herdr.ts"
 
 const completed = (agent) =>
   agent.agent_status === "done" || agent.agent_status === "idle"

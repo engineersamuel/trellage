@@ -1,14 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { captureFinalAnswer } from "../lib/capture.mjs"
+import { captureAgentContent } from "../lib/capture.ts"
 import {
   assertCompletedAgent,
   guideIntentMaximumLength,
   parseInvocationContext,
   parsePanelChoice,
   validateAnswer,
-} from "../lib/context.mjs"
+} from "../lib/context.ts"
 
 const context = {
   workspaceId: "w1",
@@ -54,6 +54,22 @@ test("parses private source-picker choices", () => {
     {
       kind: "selection",
       selectedText: "Highlighted\ntext",
+    },
+  )
+  assert.deepEqual(
+    parsePanelChoice({
+      schemaVersion: 1,
+      kind: "conversation",
+      paneId: "w1:p2",
+      stateChangeSeq: 10,
+      sessionId: "session-2",
+    }),
+    {
+      kind: "conversation",
+      sourcePaneId: "w1:p2",
+      captureMode: "conversation",
+      expectedSessionId: "session-2",
+      expectedStateChangeSeq: 10,
     },
   )
   assert.deepEqual(
@@ -114,6 +130,10 @@ test("accepts done or matching seen-idle completion state", () => {
       ),
     /recorded completed/,
   )
+  assert.throws(
+    () => assertCompletedAgent({ ...doneAgent, agent_status: "working" }, null),
+    /still working/u,
+  )
 })
 
 test("enforces the shared multiline answer boundary", () => {
@@ -130,7 +150,7 @@ test("enforces the shared multiline answer boundary", () => {
 test("selected text has priority over transcript and terminal output", async () => {
   let structuredCalled = false
   let terminalCalled = false
-  const result = await captureFinalAnswer({
+  const result = await captureAgentContent({
     context: { ...context, selectedText: "Selected\nanswer" },
     agentInfo: undefined,
     structuredLookup: async () => {
@@ -152,7 +172,7 @@ test("selected text has priority over transcript and terminal output", async () 
 })
 
 test("uses a structured final message before terminal fallback", async () => {
-  const result = await captureFinalAnswer({
+  const result = await captureAgentContent({
     context,
     agentInfo: doneAgent,
     marker: null,
@@ -176,10 +196,54 @@ test("uses a structured final message before terminal fallback", async () => {
   })
 })
 
+test("formats an exact conversation for the guide", async () => {
+  const result = await captureAgentContent({
+    context,
+    agentInfo: doneAgent,
+    marker: null,
+    processInfo: {},
+    mode: "conversation",
+    conversationLookup: async () => ({
+      messages: [
+        { role: "user", text: "Find the next step" },
+        { role: "assistant", text: "The parser is ready" },
+      ],
+      sessionId: "session-1",
+      identitySource: "herdr-session-id",
+      profile: "hve",
+    }),
+  })
+
+  assert.equal(result.source, "conversation-transcript")
+  assert.equal(result.messageCount, 2)
+  assert.equal(result.omittedMessageCount, 0)
+  assert.match(result.answer, /# Continue this Herdr conversation/u)
+  assert.match(result.answer, /Find the next step/u)
+  assert.match(result.answer, /Profile: hve/u)
+})
+
+test("rejects a conversation when the exact session changes after selection", async () => {
+  await assert.rejects(
+    captureAgentContent({
+      context: { ...context, expectedSessionId: "session-before" },
+      agentInfo: doneAgent,
+      marker: null,
+      processInfo: {},
+      mode: "conversation",
+      conversationLookup: async () => ({
+        messages: [{ role: "assistant", text: "Finished" }],
+        sessionId: "session-after",
+        identitySource: "herdr-session-id",
+      }),
+    }),
+    /session changed after the source picker opened/u,
+  )
+})
+
 test("does not replace an oversized structured answer with terminal fallback", async () => {
   let terminalCalled = false
   await assert.rejects(
-    captureFinalAnswer({
+    captureAgentContent({
       context,
       agentInfo: doneAgent,
       marker: null,
@@ -207,7 +271,7 @@ test("requires explicit terminal capture and rejects truncated output", async ()
     structuredLookup: async () => undefined,
   }
   assert.deepEqual(
-    await captureFinalAnswer({
+    await captureAgentContent({
       ...base,
       mode: "terminal",
       terminalReader: async () => ({ text: "Terminal\nanswer", truncated: false }),
@@ -220,7 +284,7 @@ test("requires explicit terminal capture and rejects truncated output", async ()
     },
   )
   await assert.rejects(
-    captureFinalAnswer({
+    captureAgentContent({
       ...base,
       mode: "terminal",
       terminalReader: async () => ({ text: "Partial", truncated: true }),
@@ -232,7 +296,7 @@ test("requires explicit terminal capture and rejects truncated output", async ()
 test("does not silently replace a missing exact session with terminal output", async () => {
   let terminalCalled = false
   await assert.rejects(
-    captureFinalAnswer({
+    captureAgentContent({
       context,
       agentInfo: doneAgent,
       marker: null,

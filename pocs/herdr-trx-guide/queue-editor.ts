@@ -1,9 +1,10 @@
 #!/usr/bin/env node
+// @ts-nocheck -- Legacy terminal UI adapter; queue state modules are type-checked.
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { main as runCustomPopup } from "./custom-popup.mjs"
-import { parseInvocationContext } from "./lib/context.mjs"
+import { main as runCustomPopup } from "./custom-popup.ts"
+import { parseInvocationContext } from "./lib/context.ts"
 
 export const main = async (env = process.env) => {
   if (typeof env.HERDR_PLUGIN_CONTEXT_JSON !== "string") {

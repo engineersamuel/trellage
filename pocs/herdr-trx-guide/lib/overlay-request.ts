@@ -1,3 +1,4 @@
+// @ts-nocheck -- Existing overlay protocol adapter pending a dedicated typed schema.
 import { constants } from "node:fs"
 import { chmod, lstat, mkdir, open, readdir, rm, unlink } from "node:fs/promises"
 import path from "node:path"
@@ -5,7 +6,7 @@ import path from "node:path"
 import {
   parseInvocationContext,
   validateAnswer,
-} from "./context.mjs"
+} from "./context.ts"
 
 export const overlayInvocationSource = "trellage-guide-overlay"
 const maximumRequestBytes = 512 * 1024

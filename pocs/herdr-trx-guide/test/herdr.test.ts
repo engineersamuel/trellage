@@ -8,11 +8,11 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { requestHerdr } from "../lib/herdr.mjs"
-import { readCompletionMarker, writeCompletionMarker } from "../lib/state.mjs"
+import { requestHerdr } from "../lib/herdr.ts"
+import { readCompletionMarker, writeCompletionMarker } from "../lib/state.ts"
 
 const execFileAsync = promisify(execFile)
-const eventEntrypoint = fileURLToPath(new URL("../event.mjs", import.meta.url))
+const eventEntrypoint = fileURLToPath(new URL("../event.ts", import.meta.url))
 
 const socketServer = async (t, responseFor) => {
   const directory = await mkdtemp(path.join(tmpdir(), "herdr-guide-socket-"))

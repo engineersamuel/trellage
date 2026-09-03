@@ -18,6 +18,53 @@ const recordsFromJsonl = (source) => {
   return records
 }
 
+export type ConversationRole = "user" | "assistant"
+
+export interface ConversationMessage {
+  readonly role: ConversationRole
+  readonly text: string
+}
+
+const appendConversationMessage = (messages, message) => {
+  if (message === undefined) return
+  const previous = messages.at(-1)
+  if (previous?.role === message.role && previous.text === message.text) return
+  messages.push(message)
+}
+
+const messageBlockText = (content, acceptedTypes) => {
+  if (typeof content === "string") return meaningfulText(content)
+  if (!Array.isArray(content)) return undefined
+  const parts = content
+    .filter(isRecord)
+    .filter((part) => acceptedTypes.has(part.type))
+    .map((part) => meaningfulText(part.text))
+    .filter((part) => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join("\n")
+}
+
+const copilotConversationMessage = (event) => {
+  const data = isRecord(event.data) ? event.data : undefined
+  if (isNestedCopilotEvent(event, data)) return undefined
+  if (event.type === "user.message") {
+    const text = meaningfulText(data?.content) ?? meaningfulText(event.content)
+    return text === undefined ? undefined : { role: "user", text }
+  }
+  if (event.type !== "assistant.message") return undefined
+  const toolRequests = data?.toolRequests ?? event.toolRequests
+  if (Array.isArray(toolRequests) && toolRequests.length > 0) return undefined
+  const text = meaningfulText(data?.content) ?? meaningfulText(event.content)
+  return text === undefined ? undefined : { role: "assistant", text }
+}
+
+export const extractCopilotConversation = (source) => {
+  const messages = []
+  for (const event of recordsFromJsonl(source)) {
+    appendConversationMessage(messages, copilotConversationMessage(event))
+  }
+  return messages
+}
+
 const isNestedCopilotEvent = (event, data) =>
   identifierText(event.agentId) !== undefined || identifierText(data?.parentToolCallId) !== undefined
 
@@ -58,6 +105,35 @@ const codexMessageText = (payload) => {
     .map((part) => meaningfulText(part.text))
     .filter((part) => part !== undefined)
   return parts.length === 0 ? undefined : parts.join("\n")
+}
+
+const codexUserText = (payload) => {
+  const metadata = isRecord(payload.internal_chat_message_metadata_passthrough)
+    ? payload.internal_chat_message_metadata_passthrough
+    : undefined
+  const kinds = Array.isArray(metadata?.content_item_kinds) ? metadata.content_item_kinds : []
+  if (!kinds.includes("user.text")) return undefined
+  return messageBlockText(payload.content, new Set(["input_text", "text"]))
+}
+
+const codexConversationMessage = (entry) => {
+  const payload = isRecord(entry.payload) ? entry.payload : undefined
+  if (entry.type !== "response_item" || payload?.type !== "message") return undefined
+  if (payload.role === "user") {
+    const text = codexUserText(payload)
+    return text === undefined ? undefined : { role: "user", text }
+  }
+  if (payload.role !== "assistant" || payload.phase === "commentary") return undefined
+  const text = codexMessageText(payload)
+  return text === undefined ? undefined : { role: "assistant", text }
+}
+
+export const extractCodexConversation = (source) => {
+  const messages = []
+  for (const entry of recordsFromJsonl(source)) {
+    appendConversationMessage(messages, codexConversationMessage(entry))
+  }
+  return messages
 }
 
 const codexResponseMessage = (entry) => {
@@ -110,6 +186,32 @@ const appendClaudeRecord = (messages, entry, index) => {
   messages.set(messageId, current)
 }
 
+const claudeUserMessage = (entry, index) => {
+  if (entry.type !== "user" || !isRecord(entry.message)) return undefined
+  const text = messageBlockText(entry.message.content, new Set(["text", "input_text"]))
+  return text === undefined ? undefined : { role: "user", text, index }
+}
+
+export const extractClaudeConversation = (source) => {
+  const assistantMessages = new Map()
+  const messages = []
+  let index = 0
+  for (const entry of recordsFromJsonl(source)) {
+    index += 1
+    const user = claudeUserMessage(entry, index)
+    if (user !== undefined) messages.push(user)
+    appendClaudeRecord(assistantMessages, entry, index)
+  }
+  for (const message of assistantMessages.values()) {
+    if (message.endTurn && message.texts.length > 0) {
+      messages.push({ role: "assistant", text: message.texts.join("\n"), index: message.lastIndex })
+    }
+  }
+  return messages
+    .sort((left, right) => left.index - right.index)
+    .map(({ role, text }) => ({ role, text }))
+}
+
 export const extractClaudeFinalMessage = (source) => {
   const messages = new Map()
   let index = 0
@@ -128,6 +230,13 @@ export const extractTranscriptFinalMessage = (agent, source) => {
   if (agent === "codex") return extractCodexFinalMessage(source)
   if (agent === "claude") return extractClaudeFinalMessage(source)
   return undefined
+}
+
+export const extractTranscriptConversation = (agent, source) => {
+  if (agent === "copilot") return extractCopilotConversation(source)
+  if (agent === "codex") return extractCodexConversation(source)
+  if (agent === "claude") return extractClaudeConversation(source)
+  return []
 }
 
 export const copilotWorkspaceCwd = (source) => {

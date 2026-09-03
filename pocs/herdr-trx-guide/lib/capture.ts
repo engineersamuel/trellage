@@ -1,12 +1,14 @@
-import { assertCompletedAgent, sourceWorkingDirectory, validateAnswer } from "./context.mjs"
-import { readAgent } from "./herdr.mjs"
-import { captureSandboxFinalMessage } from "./sandbox-bridge.mjs"
-import { trellageSessionIdentity } from "./trellage-session.mjs"
+import { assertCompletedAgent, sourceWorkingDirectory, validateAnswer } from "./context.ts"
+import { readAgent } from "./herdr.ts"
+import { captureSandboxFinalMessage } from "./sandbox-bridge.ts"
+import { formatConversationIntent } from "./conversation.ts"
+import { trellageSessionIdentity } from "./trellage-session.ts"
 import {
   captureStructuredFinalMessage,
+  captureStructuredConversation,
   sessionIdFromAgentSession,
   sessionIdFromProcessInfo,
-} from "./transcripts.mjs"
+} from "./transcripts.ts"
 
 const diagnostic = (callback, error) => {
   const message = error instanceof Error ? error.message : String(error)
@@ -74,6 +76,7 @@ const directSessionId = (agentSessionId, processSessionId) => {
 }
 
 const captureStructuredAnswer = async ({
+  mode,
   identity,
   agent,
   cwd,
@@ -81,18 +84,21 @@ const captureStructuredAnswer = async ({
   processInfo,
   env,
   structuredLookup,
+  conversationLookup,
   sandboxLookup,
-}) =>
-  identity?.surface === "sandbox"
-    ? sandboxLookup({ identity, cwd, env })
-    : structuredLookup({
-        agent,
-        cwd,
-        agentSession: agentInfo.agent_session,
-        processInfo,
-        tokens: identity === undefined ? {} : agentInfo.tokens,
-        env,
-      })
+}) => {
+  if (mode === "conversation" && identity?.surface === "sandbox") return undefined
+  if (identity?.surface === "sandbox") return sandboxLookup({ identity, cwd, env })
+  const options = {
+    agent,
+    cwd,
+    agentSession: agentInfo.agent_session,
+    processInfo,
+    tokens: identity === undefined ? {} : agentInfo.tokens,
+    env,
+  }
+  return mode === "conversation" ? conversationLookup(options) : structuredLookup(options)
+}
 
 const assertMatchingSandboxSession = (identity, structured, agentSessionId, processSessionId) => {
   if (identity?.surface !== "sandbox") return
@@ -103,11 +109,13 @@ const assertMatchingSandboxSession = (identity, structured, agentSessionId, proc
 }
 
 const captureExactAnswer = async ({
+  mode,
   context,
   agentInfo,
   processInfo,
   env,
   structuredLookup,
+  conversationLookup,
   sandboxLookup,
   onDiagnostic,
 }) => {
@@ -127,6 +135,7 @@ const captureExactAnswer = async ({
       onDiagnostic,
     })
     structured = await captureStructuredAnswer({
+      mode,
       identity,
       agent,
       cwd,
@@ -134,6 +143,7 @@ const captureExactAnswer = async ({
       processInfo,
       env,
       structuredLookup,
+      conversationLookup,
       sandboxLookup,
     })
     assertMatchingSandboxSession(identity, structured, agentSessionId, processSessionId)
@@ -143,20 +153,39 @@ const captureExactAnswer = async ({
   }
   if (structured === undefined) {
     throw new ExactCaptureUnavailableError(
-      "No exact session identity is available. Choose a highlighted selection or review the terminal snapshot.",
+      mode === "conversation"
+        ? "No exact conversation is available. Sandbox conversations are not supported yet."
+        : "No exact session identity is available. Choose a highlighted selection or review the terminal snapshot.",
     )
   }
   if (context.expectedSessionId !== undefined && structured.sessionId !== context.expectedSessionId) {
     throw new Error("The selected agent session changed after the source picker opened")
   }
+  const formatted = mode === "conversation"
+    ? formatConversationIntent(
+        {
+          agent,
+          cwd,
+          sessionId: structured.sessionId,
+          ...(structured.profile === undefined ? {} : { profile: structured.profile }),
+        },
+        structured.messages,
+      )
+    : undefined
   return {
-    answer: validateAnswer(structured.text, `${agent} transcript`),
-    source: structured.source ?? "transcript",
+    answer: validateAnswer(formatted?.text ?? structured.text, `${agent} transcript`),
+    source: mode === "conversation" ? "conversation-transcript" : structured.source ?? "transcript",
     confidence: "exact",
     agent,
     sessionId: structured.sessionId,
     identitySource: structured.identitySource,
     ...(structured.profile === undefined ? {} : { profile: structured.profile }),
+    ...(formatted === undefined
+      ? {}
+      : {
+          messageCount: formatted.messageCount,
+          omittedMessageCount: formatted.omittedMessageCount,
+        }),
   }
 }
 
@@ -176,13 +205,14 @@ const captureTerminalAnswer = async ({ context, agentInfo, terminalReader }) => 
   }
 }
 
-export const captureFinalAnswer = async ({
+export const captureAgentContent = async ({
   context,
   agentInfo,
   marker,
   processInfo,
   env = process.env,
   structuredLookup = captureStructuredFinalMessage,
+  conversationLookup = captureStructuredConversation,
   sandboxLookup = captureSandboxFinalMessage,
   terminalReader = (paneId) => readAgent(paneId),
   onDiagnostic,
@@ -191,13 +221,15 @@ export const captureFinalAnswer = async ({
   if (context.selectedText !== undefined) return selectedCapture(context.selectedText)
   assertCompletedAgent(agentInfo, marker)
   assertExpectedAgentState(context, agentInfo)
-  if (mode === "exact") {
+  if (mode === "exact" || mode === "conversation") {
     return captureExactAnswer({
+      mode,
       context,
       agentInfo,
       processInfo,
       env,
       structuredLookup,
+      conversationLookup,
       sandboxLookup,
       onDiagnostic,
     })

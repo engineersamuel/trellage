@@ -27,11 +27,11 @@ import {
   writeGuideIntent,
   writeInvocation,
   withCaptureQueueLock,
-} from "../lib/state.mjs"
-import { guideIntentMaximumLength } from "../lib/context.mjs"
+} from "../lib/state.ts"
+import { guideIntentMaximumLength } from "../lib/context.ts"
 
 const execFileAsync = promisify(execFile)
-const stateModuleUrl = new URL("../lib/state.mjs", import.meta.url).href
+const stateModuleUrl = new URL("../lib/state.ts", import.meta.url).href
 
 test("completion markers and invocations are private and one-use", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-state-"))

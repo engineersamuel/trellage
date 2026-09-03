@@ -5,8 +5,15 @@ export const guideIntentMaximumLength = 60_000
 const multilineControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u
 const identifierControls = /[\u0000-\u001f\u007f-\u009f]/u
 const safeSessionId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
-const captureModes = new Set(["exact", "terminal"])
-const captureSources = new Set(["selection", "transcript", "sandbox-transcript", "terminal", "capture-queue"])
+const captureModes = new Set(["conversation", "exact", "terminal"])
+const captureSources = new Set([
+  "selection",
+  "conversation-transcript",
+  "transcript",
+  "sandbox-transcript",
+  "terminal",
+  "capture-queue",
+])
 const captureConfidences = new Set(["user-selected", "exact", "snapshot", "user-curated"])
 
 export const panelInvocationSource = "trellage-guide-panel"

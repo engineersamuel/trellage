@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-import { captureFinalAnswer, captureProvenance } from "./lib/capture.mjs"
+// @ts-nocheck -- Legacy Herdr entrypoint adapter; core capture modules are type-checked.
+import { captureAgentContent, captureProvenance } from "./lib/capture.ts"
 import {
   panelInvocationSource,
   parseInvocationContext,
   parsePanelChoice,
   sourceWorkingDirectory,
-} from "./lib/context.mjs"
+} from "./lib/context.ts"
 import {
   getProcessInfo,
   HerdrRequestError,
   notify,
   requestHerdr,
   runHerdr,
-} from "./lib/herdr.mjs"
-import { resolveSourceAgent } from "./lib/source-agent.mjs"
+} from "./lib/herdr.ts"
+import { resolveSourceAgent } from "./lib/source-agent.ts"
 import {
   appendCaptureQueue,
   captureQueueIntent,
@@ -23,7 +24,7 @@ import {
   removeCaptureQueueEntries,
   removeInvocation,
   writeInvocation,
-} from "./lib/state.mjs"
+} from "./lib/state.ts"
 
 const pluginId = "trellage.guide-handoff"
 
@@ -66,7 +67,7 @@ const processInfoFor = async (paneId) => {
 const captureLatestAnswer = async (context, stateDir) => {
   const agentInfo = await resolveSourceAgent(context)
   const agentContext = { ...context, paneId: agentInfo.pane_id }
-  const captured = await captureFinalAnswer({
+  const captured = await captureAgentContent({
     context: agentContext,
     agentInfo,
     marker: await completionMarker(
@@ -89,7 +90,7 @@ const captureLatestAnswer = async (context, stateDir) => {
 const captureInvocation = async (context, stateDir) => {
   if (context.selectedText === undefined) return captureLatestAnswer(context, stateDir)
   return {
-    captured: await captureFinalAnswer({ context }),
+    captured: await captureAgentContent({ context }),
     cwd: context.cwd,
     paneId: context.paneId,
   }

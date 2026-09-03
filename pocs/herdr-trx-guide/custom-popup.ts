@@ -1,16 +1,17 @@
 #!/usr/bin/env node
+// @ts-nocheck -- Legacy terminal UI adapter; source/capture modules are type-checked.
 import readline from "node:readline"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { readClipboard } from "./lib/clipboard.mjs"
-import { inspectCaptureOptions, selectedTextChoice } from "./lib/capture-options.mjs"
+import { readClipboard } from "./lib/clipboard.ts"
+import { inspectCaptureOptions, selectedTextChoice } from "./lib/capture-options.ts"
 import {
   panelInvocationSource,
   parseCustomPopupContext,
   validateAnswer,
-} from "./lib/context.mjs"
-import { requestHerdr } from "./lib/herdr.mjs"
+} from "./lib/context.ts"
+import { requestHerdr } from "./lib/herdr.ts"
 import {
   captureQueueIntent,
   clearCaptureQueue,
@@ -19,8 +20,8 @@ import {
   removeChoice,
   resolvePluginStateDirectory,
   writeChoice,
-} from "./lib/state.mjs"
-import { stringWidth, truncateToWidth, wrapText } from "./lib/terminal-text.mjs"
+} from "./lib/state.ts"
+import { stringWidth, truncateToWidth, wrapText } from "./lib/terminal-text.ts"
 
 export { panelInvocationSource }
 const actionId = "trellage.guide-handoff.open"

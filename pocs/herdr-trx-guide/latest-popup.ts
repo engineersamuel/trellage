@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+// @ts-nocheck -- Legacy terminal UI adapter; capture modules are type-checked.
 import { fileURLToPath } from "node:url"
 
-import { captureFinalAnswer, captureProvenance } from "./lib/capture.mjs"
-import { parseCustomPopupContext, sourceWorkingDirectory } from "./lib/context.mjs"
-import { getProcessInfo } from "./lib/herdr.mjs"
-import { resolveSourceAgent } from "./lib/source-agent.mjs"
-import { findTrellageRoot, runGuide, waitForDismissal } from "./popup.mjs"
+import { captureAgentContent, captureProvenance } from "./lib/capture.ts"
+import { parseCustomPopupContext, sourceWorkingDirectory } from "./lib/context.ts"
+import { getProcessInfo } from "./lib/herdr.ts"
+import { resolveSourceAgent } from "./lib/source-agent.ts"
+import { findTrellageRoot, runGuide, waitForDismissal } from "./popup.ts"
 
 const completionMarkerFor = (agentInfo) =>
   agentInfo.agent_status === "idle"
@@ -29,7 +30,7 @@ const directInvocation = async (context) => {
     console.error(`Structured session discovery cannot inspect processes: ${message}`)
   }
 
-  const captured = await captureFinalAnswer({
+  const captured = await captureAgentContent({
     context: agentContext,
     agentInfo,
     marker: completionMarkerFor(agentInfo),

@@ -15,13 +15,13 @@ import {
   readCaptureQueue,
   writeChoice,
   writeInvocation,
-} from "../lib/state.mjs"
+} from "../lib/state.ts"
 
 const execFileAsync = promisify(execFile)
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url))
-const actionEntrypoint = path.join(pluginRoot, "action.mjs")
-const latestPopupEntrypoint = path.join(pluginRoot, "latest-popup.mjs")
-const popupEntrypoint = path.join(pluginRoot, "popup.mjs")
+const actionEntrypoint = path.join(pluginRoot, "action.ts")
+const latestPopupEntrypoint = path.join(pluginRoot, "latest-popup.ts")
+const popupEntrypoint = path.join(pluginRoot, "popup.ts")
 
 const execFileWithInput = (executable, args, options, input) =>
   new Promise((resolve, reject) => {
@@ -236,7 +236,7 @@ test("action preserves captures appended after the opened queue snapshot", async
   t.after(() => rm(root, { recursive: true, force: true }))
   const capturePath = path.join(root, "herdr-call.json")
   const fakeHerdr = path.join(root, "herdr")
-  const stateModuleUrl = new URL("../lib/state.mjs", import.meta.url).href
+  const stateModuleUrl = new URL("../lib/state.ts", import.meta.url).href
   await writeFile(
     fakeHerdr,
     `#!/usr/bin/env node

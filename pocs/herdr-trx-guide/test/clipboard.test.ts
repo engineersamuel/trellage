@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { readClipboard } from "../lib/clipboard.mjs"
+import { readClipboard } from "../lib/clipboard.ts"
 
 test("reads the first available Linux clipboard adapter", () => {
   const calls = []

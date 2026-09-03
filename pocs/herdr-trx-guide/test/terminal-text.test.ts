@@ -5,7 +5,7 @@ import {
   stringWidth,
   truncateToWidth,
   wrapText,
-} from "../lib/terminal-text.mjs"
+} from "../lib/terminal-text.ts"
 
 test("measures, truncates, and wraps wide terminal text", () => {
   assert.equal(stringWidth("a界b"), 4)

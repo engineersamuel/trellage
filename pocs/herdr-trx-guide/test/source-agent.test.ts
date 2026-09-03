@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { HerdrRequestError } from "../lib/herdr.mjs"
-import { resolveSourceAgent, sourceAgentCandidates } from "../lib/source-agent.mjs"
+import { HerdrRequestError } from "../lib/herdr.ts"
+import { resolveSourceAgent, sourceAgentCandidates } from "../lib/source-agent.ts"
 
 const context = {
   workspaceId: "w1",
