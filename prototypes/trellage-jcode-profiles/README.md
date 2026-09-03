@@ -94,7 +94,7 @@ make native-jcode-profile
 After changing `config-manager.source.mjs`, rebuild its standalone runtime copy:
 
 ```bash
-./node_modules/.bin/esbuild \
+packages/trellage-launcher/node_modules/.bin/esbuild \
   prototypes/trellage-jcode-profiles/config-manager.source.mjs \
   --bundle --platform=node --format=esm --target=node18 \
   --legal-comments=inline \

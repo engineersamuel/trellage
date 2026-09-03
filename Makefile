@@ -137,7 +137,7 @@ native-grok-profiles:
 native-jcode-profile:
 	@bundle_check="$$(mktemp "$${TMPDIR:-/tmp}/trellage-jcx-config-manager.XXXXXX")"; \
 	trap 'rm -f -- "$$bundle_check"' EXIT; \
-	./node_modules/.bin/esbuild \
+	packages/trellage-launcher/node_modules/.bin/esbuild \
 		prototypes/trellage-jcode-profiles/config-manager.source.mjs \
 		--bundle --platform=node --format=esm --target=node18 \
 		--legal-comments=inline --log-level=error --outfile="$$bundle_check"; \
