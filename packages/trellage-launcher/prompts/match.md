@@ -49,9 +49,10 @@ workflows, examples, or implementation details.
 
 The interactive guide separately pins `sandbox:claude-council`,
 `sandbox:claude-research`, and `native:cpx/hve` as optional decision or
-execution lenses. When any of these profiles is present in `entries`, do not
-include it in the ranked five. Use the five ranked positions for the strongest
-task-specific profiles instead.
+execution lenses. Unless the intent explicitly names one of these profiles, do
+not include it in the ranked five. Use the five ranked positions for the
+strongest task-specific profiles instead. The explicit-identity rule above
+takes priority.
 
 Treat Headlong as a cross-cutting persistence option. If the catalog contains
 `sandbox:headlong` and the intent describes a substantial investigation,

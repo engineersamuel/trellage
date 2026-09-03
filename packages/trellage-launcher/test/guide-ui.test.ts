@@ -2800,10 +2800,10 @@ describe("destinationOptions", () => {
       })
 
       it("describes matching as concise user-facing processing steps", () => {
-        expect(matchProgressItems(12)).toEqual([
+        expect(matchProgressItems(12, 31)).toEqual([
           {
             phase: GuideMatchPhase.LoadingProfiles,
-            label: "Read 12 available profiles and their workflows",
+            label: "Read 12 out of 31 profiles and their workflows",
           },
           {
             phase: GuideMatchPhase.ComparingProfiles,

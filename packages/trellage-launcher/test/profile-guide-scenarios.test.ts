@@ -9,7 +9,7 @@ import {
 } from "../../trellage-guide-core/dist/index.js"
 import { describe, expect, it } from "vitest"
 
-import { literalGuideMatch } from "../src/guide-api.js"
+import { literalGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.js"
 import { guideCatalogEntries } from "../src/guide-catalog.js"
 import type {
   CombinedGuideCatalog,
@@ -455,5 +455,40 @@ describe("profile guide recommendation scenarios", () => {
         expect(refs, `${scenario.id} must leave ${profileRef} to its pinned lens`).not.toContain(profileRef)
       }
     }
+  })
+
+  it("prefilters high-signal intents without losing expected or explicit profiles", async () => {
+    const [catalog, scenarios] = await Promise.all([loadCatalog(), loadScenarios()])
+    const allProfileRefs = guideCatalogEntries(catalog).map(({ ref }) => ref)
+
+    for (const scenario of scenarios.scenarios) {
+      const refs = prefilterGuideMatchCatalogEntries(catalog, scenario.intent).map(({ ref }) => ref)
+      expect(refs.length, `${scenario.id} should reduce the model catalog`).toBeLessThanOrEqual(12)
+      for (const profileRef of scenario.expectedProfiles) {
+        expect(refs, `${scenario.id} should retain ${profileRef}`).toContain(profileRef)
+      }
+    }
+
+    for (const profileRef of allProfileRefs) {
+      const refs = prefilterGuideMatchCatalogEntries(catalog, `Use ${profileRef} for this task.`).map(({ ref }) => ref)
+      expect(refs, `explicit identity should retain ${profileRef}`).toContain(profileRef)
+    }
+
+    const rustSimdRefs = prefilterGuideMatchCatalogEntries(
+      catalog,
+      "Implement a stable Rust 1.85 byte-slice parenthesis matcher with scalar, AVX2, and NEON paths, documented unsafe blocks, differential tests, and release benchmarks.",
+    ).map(({ ref }) => ref)
+    expect(rustSimdRefs).toHaveLength(12)
+    expect(rustSimdRefs).toContain("native:cdx/pstack")
+    expect(rustSimdRefs).toContain("sandbox:headlong")
+  })
+
+  it("keeps the full catalog for low-signal anaphoric intents", async () => {
+    const catalog = await loadCatalog()
+    const allProfileRefs = guideCatalogEntries(catalog).map(({ ref }) => ref)
+
+    expect(prefilterGuideMatchCatalogEntries(catalog, "Add caching to step 2").map(({ ref }) => ref)).toEqual(
+      allProfileRefs,
+    )
   })
 })

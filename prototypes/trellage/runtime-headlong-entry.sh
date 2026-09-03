@@ -50,6 +50,22 @@ fail() {
   exit "${2:-1}"
 }
 
+managed_git() {
+  local directory="$1"
+  local stage_id
+  shift
+  case "$directory" in
+    "$app_home") ;;
+    "$metadata_home"/app.stage.*)
+      stage_id="${directory#"$metadata_home"/app.stage.}"
+      [[ "$stage_id" =~ ^[1-9][0-9]*$ ]] \
+        || fail "Headlong Git directory is outside managed state: $directory"
+      ;;
+    *) fail "Headlong Git directory is outside managed state: $directory" ;;
+  esac
+  git -c "safe.directory=$directory" -C "$directory" "$@"
+}
+
 # Remove ambient provider and proxy settings before controlled initialization
 # and before opening an attached shell.
 strip_provider_env() {
@@ -239,14 +255,14 @@ write_marker() {
 initialize_baseline_repository() {
   local directory="$1"
   rm -rf -- "$directory/.git"
-  git -C "$directory" init -q
-  git -C "$directory" add -A
-  git -C "$directory" \
+  managed_git "$directory" init -q
+  managed_git "$directory" add -A
+  managed_git "$directory" \
     -c user.name='Trellage Headlong' \
     -c user.email='trellage@localhost' \
     -c commit.gpgsign=false \
     commit -q -m 'Trellage Headlong image baseline'
-  [[ -z "$(git -C "$directory" remote)" ]] \
+  [[ -z "$(managed_git "$directory" remote)" ]] \
     || fail 'local Headlong baseline unexpectedly has an upstream remote'
 }
 
@@ -258,7 +274,7 @@ initialize_baseline_repository() {
 # replacement below.
 application_tree_is_dirty() {
   local status_line status_output
-  status_output="$(git -C "$app_home" status --porcelain=v1 --untracked-files=all)"
+  status_output="$(managed_git "$app_home" status --porcelain=v1 --untracked-files=all)"
   while IFS= read -r status_line; do
     [[ -z "$status_line" ]] && continue
     # Upstream's npm fallback creates this beside the committed bun.lock.
@@ -283,7 +299,7 @@ install_seed() {
   cp -R --preserve=mode --no-preserve=ownership,timestamps -- "$seed_root"/. "$staged_path"/
   mkdir -- "$staged_path/.identities"
   initialize_baseline_repository "$staged_path"
-  baseline="$(git -C "$staged_path" rev-parse HEAD)"
+  baseline="$(managed_git "$staged_path" rev-parse HEAD)"
 
   if [[ -e "$app_home" || -L "$app_home" ]]; then
     app_had_previous=true
@@ -366,7 +382,7 @@ hydrate_application() {
     || fail 'Headlong application seed metadata is missing or unsafe'
   [[ -d "$app_home/.git" && ! -L "$app_home/.git" ]] \
     || fail 'Headlong application baseline repository is missing or unsafe'
-  [[ -z "$(git -C "$app_home" remote)" ]] \
+  [[ -z "$(managed_git "$app_home" remote)" ]] \
     || fail 'Headlong application baseline must not have an upstream remote'
 
   installed_digest="$(cat "$seed_marker")"
@@ -381,7 +397,7 @@ hydrate_application() {
     || fail "Headlong source changed locally; refusing to upgrade from $installed_source to $current_source. Inspect and back up your changes first with: trellage shell headlong"
   installed_baseline="$(cat "$baseline_marker")"
   [[ "$installed_baseline" =~ ^[0-9a-f]{40,64}$ \
-    && "$(git -C "$app_home" rev-parse HEAD)" == "$installed_baseline" ]] \
+    && "$(managed_git "$app_home" rev-parse HEAD)" == "$installed_baseline" ]] \
     || fail "Headlong source history diverged; refusing to upgrade from $installed_source to $current_source. Inspect and back up your changes first with: trellage shell headlong"
   install_seed "$desired_digest" "$current_source"
 }
