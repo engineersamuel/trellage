@@ -1013,6 +1013,69 @@ describe("runGuideMatch", () => {
     }
   })
 
+  it("sends only the deterministic prefilter result to the match provider", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-prefilter-"))
+    try {
+      const baseCatalog = buildCatalog(tmpRoot)
+      const template = baseCatalog.sandbox[1]
+      if (template === undefined) throw new Error("missing Sandbox test profile")
+      const extraNames = ["headlong", ...Array.from({ length: 16 }, (_, index) => `extra-${index}`)]
+      const catalog: CombinedGuideCatalog = {
+        ...baseCatalog,
+        sandbox: [
+          ...baseCatalog.sandbox,
+          ...extraNames.map((name) => ({
+            ...template,
+            name,
+            path: path.join(tmpRoot, "profiles", name, "profile.toml"),
+          })),
+        ],
+      }
+      const provider = new FakeGuideProvider(
+        {
+          candidates: [
+            {
+              profileRef: "native:jcx/foo",
+              workflowId: "deep-refactor",
+              confidence: 0.9,
+              reason: "Strong refactoring fit.",
+              tradeoff: "Uses the Jules harness.",
+            },
+            {
+              profileRef: "native:cdx/pstack",
+              workflowId: "review",
+              confidence: 0.8,
+              reason: "Structured engineering fit.",
+              tradeoff: "Requires Codex.",
+            },
+            {
+              profileRef: "sandbox:headlong",
+              workflowId: "draft",
+              confidence: 0.7,
+              reason: "Persistent work option.",
+              tradeoff: "Adds background machinery.",
+            },
+          ],
+        },
+        genCandidates(),
+      )
+
+      await runGuideMatch(provider, catalog, {
+        intent: "Refactor the payment pipeline carefully with persistent progress",
+        model: "test-model",
+        effort: GuideEffort.Medium,
+      })
+
+      const matchEntries = provider.matchCalls[0]?.entries ?? []
+      expect(matchEntries).toHaveLength(12)
+      expect(matchEntries.map(({ ref }) => ref)).toEqual(
+        expect.arrayContaining(["native:jcx/foo", "native:cdx/pstack", "sandbox:headlong"]),
+      )
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
   it("throws when the provider does not return exactly three candidates", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-"))
     try {

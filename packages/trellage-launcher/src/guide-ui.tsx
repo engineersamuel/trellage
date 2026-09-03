@@ -35,6 +35,7 @@ import {
   guideTargetTool,
   GuideLongPromptVariant,
   literalGuideMatch,
+  prefilterGuideMatchCatalogEntries,
   publicGuideLaunchCommand,
   runGuideMatch,
   selectedProfileFromCatalogRef,
@@ -2303,10 +2304,13 @@ export interface GuideMatchProgressItem {
   readonly label: string
 }
 
-export const matchProgressItems = (profileCount: number): ReadonlyArray<GuideMatchProgressItem> => [
+export const matchProgressItems = (
+  readProfileCount: number,
+  availableProfileCount: number,
+): ReadonlyArray<GuideMatchProgressItem> => [
   {
     phase: GuideMatchPhase.LoadingProfiles,
-    label: `Read ${profileCount} available profiles and their workflows`,
+    label: `Read ${readProfileCount} out of ${availableProfileCount} profiles and their workflows`,
   },
   {
     phase: GuideMatchPhase.ComparingProfiles,
@@ -2807,18 +2811,22 @@ const MatchProgress = ({
   readonly intent: string
   readonly model: string
   readonly effort: GuideEffort
-}) => (
-  <Box flexDirection="column">
-    <ProgressPipeline
-      title="Finding the best profiles"
-      intent={intent}
-      items={matchProgressItems(catalog.native.length + catalog.sandbox.length)}
-      activePhase={phase}
-      detail={`Copilot model: ${model} · Effort: ${effort}`}
-    />
-    <Text dimColor>p view prompt · q cancel</Text>
-  </Box>
-)
+}) => {
+  const availableProfileCount = catalog.native.length + catalog.sandbox.length
+  const readProfileCount = prefilterGuideMatchCatalogEntries(catalog, intent).length
+  return (
+    <Box flexDirection="column">
+      <ProgressPipeline
+        title="Finding the best profiles"
+        intent={intent}
+        items={matchProgressItems(readProfileCount, availableProfileCount)}
+        activePhase={phase}
+        detail={`Copilot model: ${model} · Effort: ${effort}`}
+      />
+      <Text dimColor>p view prompt · q cancel</Text>
+    </Box>
+  )
+}
 
 const GenerationProgress = ({
   recommendation,

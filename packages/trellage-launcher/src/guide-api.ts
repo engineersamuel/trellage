@@ -26,11 +26,10 @@ import type {
 import { profileGuideIdentityKey } from "../../trellage-guide-core/dist/index.js"
 import {
   compactProfileGuide,
-  guideCatalogEntries,
   guideMatchCatalogEntries,
   type CombinedGuideCatalog,
   type CompactProfileGuideWorkflow,
-  type GuideCatalogEntryRef,
+  type GuideMatchCatalogEntry,
   type GuideCatalogSurface,
   type HeadlessCapabilitiesV1,
   type HerdrCompatibilityInfo,
@@ -604,7 +603,7 @@ export const runGuideMatch = async (
   request: GuideMatchRequest,
   cache?: GuideArtifactCache,
 ): Promise<GuideMatchResponse> => {
-  const entries = guideMatchCatalogEntries(catalog)
+  const entries = prefilterGuideMatchCatalogEntries(catalog, request.intent)
   const input = { intent: request.intent, entries }
   const result = await (cache === undefined ? provider.match(input) : cache.match(input, () => provider.match(input)))
   const recommendations = assertRecommendationSet(
@@ -1014,7 +1013,7 @@ export interface LiteralGuideCandidate {
 }
 
 const profileTokenOverlapScore = (
-  entry: GuideCatalogEntryRef,
+  entry: GuideMatchCatalogEntry,
   intentTokens: ReadonlySet<string>,
   normalizedIntent: string,
 ): { readonly score: number; readonly explicitIdentity: boolean; readonly identitySignals: string } => {
@@ -1040,7 +1039,7 @@ const profileTokenOverlapScore = (
 }
 
 const bestWorkflowForEntry = (
-  workflows: ReadonlyArray<ProfileGuideV1["workflows"][number]>,
+  workflows: ReadonlyArray<CompactProfileGuideWorkflow>,
   intentTokens: ReadonlySet<string>,
 ): { readonly id: string; readonly score: number } => {
   let best: { readonly id: string; readonly score: number } | undefined
@@ -1052,11 +1051,93 @@ const bestWorkflowForEntry = (
   return best
 }
 
+interface ScoredGuideEntry {
+  readonly entry: GuideMatchCatalogEntry
+  readonly workflowId: string
+  readonly score: number
+  readonly matchedTerms: number
+  readonly explicitIdentity: boolean
+  readonly index: number
+}
+
+const scoreGuideMatchEntries = (
+  entries: ReadonlyArray<GuideMatchCatalogEntry>,
+  intent: string,
+): ReadonlyArray<ScoredGuideEntry> => {
+  const intentTokens = tokenize(intent)
+  const normalizedIntent = normalizeIdentityPhrase(intent)
+  return entries
+    .map((entry, index): ScoredGuideEntry => {
+      const bestWorkflow = bestWorkflowForEntry(entry.guide.workflows, intentTokens)
+      const workflow = entry.guide.workflows.find(({ id }) => id === bestWorkflow.id)
+      if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${bestWorkflow.id}`)
+      const profileScore = profileTokenOverlapScore(entry, intentTokens, normalizedIntent)
+      const matchedTerms = tokenOverlapCount(
+        tokenize(
+          [
+            profileScore.identitySignals,
+            entry.description,
+            ...entry.guide.capabilities,
+            ...entry.guide.bestFor,
+            workflow.id,
+            workflow.description,
+            ...workflow.examples,
+          ].join(" "),
+        ),
+        intentTokens,
+      )
+      return {
+        entry,
+        workflowId: bestWorkflow.id,
+        score: profileScore.score + bestWorkflow.score * 0.55,
+        matchedTerms,
+        explicitIdentity: profileScore.explicitIdentity,
+        index,
+      }
+    })
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
+}
+
 const pinnedGuideProfileRefs: ReadonlySet<string> = new Set([
   "native:cpx/hve",
   "sandbox:claude-council",
   "sandbox:claude-research",
 ])
+
+const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:cdx/pstack", "sandbox:headlong"]
+const guideMatchPrefilterTarget = 12
+const lowSignalMatchedTermMaximum = 2
+
+/**
+ * Reduces a large match catalog before model ranking. Exact identities and the
+ * two model-prompt cross-cutting profiles are retained. Low-signal intents keep
+ * the full catalog because lexical ordering would be arbitrary.
+ */
+export const prefilterGuideMatchCatalogEntries = (
+  catalog: CombinedGuideCatalog,
+  intent: string,
+): ReadonlyArray<GuideMatchCatalogEntry> => {
+  const entries = guideMatchCatalogEntries(catalog)
+  if (entries.length <= guideMatchPrefilterTarget) return entries
+
+  const ranked = scoreGuideMatchEntries(entries, intent)
+  const explicitProfileRefs = new Set(
+    ranked.filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref),
+  )
+  if (explicitProfileRefs.size === 0 && (ranked[0]?.matchedTerms ?? 0) <= lowSignalMatchedTermMaximum) return entries
+
+  const retainedProfileRefs = new Set(explicitProfileRefs)
+  for (const profileRef of crossCuttingGuideProfileRefs) {
+    if (entries.some(({ ref }) => ref === profileRef)) retainedProfileRefs.add(profileRef)
+  }
+  for (const item of ranked) {
+    if (retainedProfileRefs.size >= guideMatchPrefilterTarget) break
+    if (!pinnedGuideProfileRefs.has(item.entry.ref) || item.explicitIdentity) {
+      retainedProfileRefs.add(item.entry.ref)
+    }
+  }
+  return entries.filter(({ ref }) => retainedProfileRefs.has(ref))
+}
 
 /**
  * Deterministic, model-free ranking of up to five known catalog profiles
@@ -1069,43 +1150,11 @@ export const literalGuideMatch = (
   catalog: CombinedGuideCatalog,
   intent: string,
 ): ReadonlyArray<LiteralGuideCandidate> => {
-  const entries = guideCatalogEntries(catalog).filter(({ ref }) => !pinnedGuideProfileRefs.has(ref))
+  const entries = guideMatchCatalogEntries(catalog).filter(({ ref }) => !pinnedGuideProfileRefs.has(ref))
   if (entries.length < 3) {
     throw new GuideServiceError(`Catalog must contain at least 3 profiles to rank literally: got ${entries.length}`)
   }
-  const intentTokens = tokenize(intent)
-  const normalizedIntent = normalizeIdentityPhrase(intent)
-  const scored = entries.map((entry, index) => {
-    const bestWorkflow = bestWorkflowForEntry(entry.guide.workflows, intentTokens)
-    const workflow = entry.guide.workflows.find(({ id }) => id === bestWorkflow.id)
-    if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${bestWorkflow.id}`)
-    const profileScore = profileTokenOverlapScore(entry, intentTokens, normalizedIntent)
-    const score = profileScore.score + bestWorkflow.score * 0.55
-    const matchedTerms = tokenOverlapCount(
-      tokenize(
-        [
-          profileScore.identitySignals,
-          entry.description,
-          ...entry.guide.capabilities,
-          ...entry.guide.bestFor,
-          workflow.id,
-          workflow.description,
-          ...workflow.examples,
-        ].join(" "),
-      ),
-      intentTokens,
-    )
-    return {
-      entry,
-      workflowId: bestWorkflow.id,
-      score,
-      matchedTerms,
-      explicitIdentity: profileScore.explicitIdentity,
-      index,
-    }
-  })
-  const ranked = [...scored].sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
-  const top = ranked.slice(0, 5)
+  const top = scoreGuideMatchEntries(entries, intent).slice(0, 5)
   const maxScore = Math.max(1, ...top.map((item) => item.score))
   const candidates = top.map(
     (item): LiteralGuideCandidate => ({

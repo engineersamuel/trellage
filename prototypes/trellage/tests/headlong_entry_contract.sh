@@ -434,8 +434,11 @@ in_fixture '
   test "$(stat -c %a /home/agent/.headlong/.env)" = 644
   grep -Fqx "ANTHROPIC_API_KEY=trellage-local-proxy" /home/agent/.headlong/.env
 ' || fail 'a rejected initializer-drifted .env mode was silently repaired or its content was modified'
-in_fixture 'rm -f /test-control/env-mode-wrong'
-in_fixture 'chmod 600 /home/agent/.headlong/.env'
+in_fixture '
+  rm -f /test-control/env-mode-wrong
+  chmod 600 /home/agent/.headlong/.env
+  test "$(stat -c %a /home/agent/.headlong/.env)" = 600
+'
 run_service_for 2
 
 in_fixture 'mv /usr/local/share/trellage/headlong-skills/managed-skills.tsv /usr/local/share/trellage/headlong-skills/managed-skills.saved'
