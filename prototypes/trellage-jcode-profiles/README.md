@@ -97,6 +97,7 @@ After changing `config-manager.source.mjs`, rebuild its standalone runtime copy:
 packages/trellage-launcher/node_modules/.bin/esbuild \
   prototypes/trellage-jcode-profiles/config-manager.source.mjs \
   --bundle --platform=node --format=esm --target=node18 \
+  --alias:smol-toml=./packages/trellage-cli/node_modules/smol-toml/dist/index.js \
   --legal-comments=inline \
   --outfile=prototypes/trellage-jcode-profiles/config-manager.mjs
 ```

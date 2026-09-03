@@ -3,7 +3,7 @@
 // prototypes/trellage-jcode-profiles/config-manager.source.mjs
 import { readFileSync } from "node:fs";
 
-// node_modules/smol-toml/dist/date.js
+// packages/trellage-cli/node_modules/smol-toml/dist/date.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -122,7 +122,7 @@ var TomlDate = class _TomlDate extends Date {
   }
 };
 
-// node_modules/smol-toml/dist/error.js
+// packages/trellage-cli/node_modules/smol-toml/dist/error.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -189,7 +189,7 @@ ${codeblock}`, options);
   }
 };
 
-// node_modules/smol-toml/dist/primitive.js
+// packages/trellage-cli/node_modules/smol-toml/dist/primitive.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -375,7 +375,7 @@ function parseValue(value, toml, ptr, integersAsBigInt) {
   return date;
 }
 
-// node_modules/smol-toml/dist/util.js
+// packages/trellage-cli/node_modules/smol-toml/dist/util.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -457,7 +457,7 @@ function skipUntil(str, ptr, sep, end, banNewLines = false) {
   });
 }
 
-// node_modules/smol-toml/dist/extract.js
+// packages/trellage-cli/node_modules/smol-toml/dist/extract.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -551,7 +551,7 @@ function extractValue(str, ptr, end, depth, integersAsBigInt) {
   ];
 }
 
-// node_modules/smol-toml/dist/struct.js
+// packages/trellage-cli/node_modules/smol-toml/dist/struct.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -720,7 +720,7 @@ function parseArray(str, ptr, depth, integersAsBigInt) {
   return [res, ptr];
 }
 
-// node_modules/smol-toml/dist/parse.js
+// packages/trellage-cli/node_modules/smol-toml/dist/parse.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -872,7 +872,7 @@ function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
   return res;
 }
 
-// node_modules/smol-toml/dist/stringify.js
+// packages/trellage-cli/node_modules/smol-toml/dist/stringify.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -1040,7 +1040,7 @@ function stringify(obj, { maxDepth = 1e3, numbersAsFloat = false } = {}) {
   return str;
 }
 
-// node_modules/smol-toml/dist/index.js
+// packages/trellage-cli/node_modules/smol-toml/dist/index.js
 /*!
  * Copyright (c) Squirrel Chat et al., All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
