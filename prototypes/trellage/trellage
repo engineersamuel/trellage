@@ -138,7 +138,7 @@ done
 mode=new
 compiler_mode=false
 case "${1:-}" in
-  validate|lock|build|upgrade|ci-verify|list)
+  validate|lock|build|upgrade|ci-verify|list|harness-version)
     mode=compiler
     compiler_mode=true
     ;;
@@ -570,7 +570,7 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
 fi
 
 case "${1:-}" in
-  validate|lock|build|upgrade|ci-verify|list)
+  validate|lock|build|upgrade|ci-verify|list|harness-version)
     discard_ambient_github_auth
     exec "${clean_child_environment[@]}" node "$compiler" "$@"
     ;;

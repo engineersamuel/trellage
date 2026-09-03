@@ -68165,8 +68165,18 @@ var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs =
     // The sandbox `trellage` launcher exposes `validate PROFILE` (doctor-equivalent) but has no
     // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
     // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
-    // "an interactive terminal is required" guard for any unrecognized mode.
-    { doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false }
+    // "an interactive terminal is required" guard for any unrecognized mode. `harness-version PROFILE`
+    // is a distinct, newly-added passthrough subcommand (see `packages/trellage-cli/src/cli.ts`'s
+    // `harness-version` Command and `prototypes/trellage/trellage`'s compiler-mode allowlists) backed
+    // by `trellage-cli`'s local lock/resolution-receipt plus a GitHub Releases lookup — currently only
+    // implemented for the `claude` harness kind, so it is supported only when `entry.harness ===
+    // "claude"` and never fabricated for any other sandbox harness kind.
+    {
+      doctorSupported: true,
+      inventorySupported: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: entry.harness === "claude"
+    }
   );
   const derived = entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness);
   const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs));
@@ -68542,10 +68552,7 @@ var forkFailureToHerdrWorktree = async (runner, request, options) => {
 };
 
 // src/admin-harness-version.ts
-var buildHarnessVersionCommand = (commandPath) => ({
-  executable: commandPath,
-  args: ["harness-version"]
-});
+var buildHarnessVersionCommand = (entry) => entry.surface === "sandbox" ? { executable: entry.commandPath, args: ["harness-version", entry.name] } : { executable: entry.commandPath, args: ["harness-version"] };
 var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var parseHarnessVersionOutput = (stdout) => {
   const trimmed = stdout.trim();
@@ -68575,7 +68582,10 @@ var harnessVersionColumnsFor = (supported, result) => {
   if (result.kind === "unknown-latest") return { installed: result.installed, latest: "\u2014", status: "unknown" };
   return result.installed === result.latest ? { installed: result.installed, latest: result.latest, status: "match" } : { installed: result.installed, latest: result.latest, status: "mismatch" };
 };
-var harnessVersionLauncherFor = (entry) => entry.surface === "native" ? entry.launcher : void 0;
+var harnessVersionLauncherFor = (entry) => {
+  if (entry.surface === "native") return entry.launcher;
+  return entry.harnessVersionSupported ? `sandbox:${entry.name}` : void 0;
+};
 
 // src/admin-harness-version-cache.ts
 import { mkdir as mkdir2, readFile as readFile3, rename as rename2, unlink as unlink3, writeFile as writeFile2 } from "node:fs/promises";
@@ -68690,7 +68700,7 @@ var runBatchedHarnessVersionChecks = async (entries, runManager, cache3, options
   const maxConcurrent = options.maxConcurrent ?? defaultMaxConcurrent2;
   const now = options.now ?? (() => Date.now());
   const forceResync = options.forceResync ?? false;
-  const queue = distinctLauncherEntries(entries).filter((entry) => forceResync || isHarnessVersionCacheStale(cache3.entries[entry.launcher ?? ""], now())).slice();
+  const queue = distinctLauncherEntries(entries).filter((entry) => forceResync || isHarnessVersionCacheStale(cache3.entries[harnessVersionLauncherFor(entry) ?? ""], now())).slice();
   if (queue.length === 0) return;
   const worker = async () => {
     for (; ; ) {
@@ -68698,7 +68708,7 @@ var runBatchedHarnessVersionChecks = async (entries, runManager, cache3, options
       if (entry === void 0) return;
       const launcher = harnessVersionLauncherFor(entry);
       if (launcher === void 0) continue;
-      const command = buildHarnessVersionCommand(entry.commandPath);
+      const command = buildHarnessVersionCommand(entry);
       const ref = harnessVersionRefFor(launcher);
       if (forceResync) {
         await runManager.retry(ref, command.executable, command.args);

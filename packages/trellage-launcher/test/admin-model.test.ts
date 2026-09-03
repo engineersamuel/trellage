@@ -103,6 +103,38 @@ const fixtureCatalog = () =>
     }),
   )
 
+const fixtureCatalogWithClaudeSandbox = () =>
+  parseGuideCatalog(
+    JSON.stringify({
+      schemaVersion: 1,
+      sandboxCommandPath: "/opt/trellage/bin/trellage",
+      native: [],
+      sandbox: [
+        {
+          name: "claude-blog",
+          description: "Sandboxed Claude profile.",
+          guide,
+          path: "/profiles/claude-blog",
+          supportedPlatforms: ["linux/amd64"],
+          harness: { kind: "claude", version: "latest" },
+          resolutionPolicy: "floating",
+          locallyResolved: false,
+          releaseLockAvailable: true,
+          skillBundles: [],
+          skillsMode: "floating",
+          finalDigestLocked: false,
+          skills: [],
+          plugins: [],
+          mcps: [],
+          sandbox: true,
+          headless,
+          locked: false,
+          herdrCompatibility: { status: "supported" },
+        },
+      ],
+    }),
+  )
+
 describe("nativeLauncherCapabilities", () => {
   it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
     for (const launcher of ["cpx", "cdx", "cldx", "grx", "jcx", "omp", "picx", "prx"]) {
@@ -129,6 +161,12 @@ describe("aggregateAdminProfiles", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
     expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false })
+  })
+
+  it("marks a claude sandbox profile as supporting harness-version, unlike other sandbox harness kinds", () => {
+    const entries = aggregateAdminProfiles(fixtureCatalogWithClaudeSandbox())
+    const claudeSandbox = entries.find((entry) => entry.ref === "sandbox:claude-blog")
+    expect(claudeSandbox).toMatchObject({ harnessVersionSupported: true })
   })
 
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {

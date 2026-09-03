@@ -28,11 +28,36 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   ...overrides,
 })
 
+const sandboxEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
+  ref: "sandbox:prime-agent",
+  surface: "sandbox",
+  harness: "claude",
+  name: "prime-agent",
+  description: "Sandboxed prime agent.",
+  commandPath: "/usr/local/bin/trellage",
+  doctorSupported: true,
+  inventorySupported: false,
+  health: "unknown",
+  install: "unknown",
+  stale: false,
+  updateCheckSupported: false,
+  harnessVersionSupported: true,
+  updateCheckStale: false,
+  ...overrides,
+})
+
 describe("buildHarnessVersionCommand", () => {
-  it("builds a bare launcher-scoped command, never taking a profile name", () => {
-    expect(buildHarnessVersionCommand("/usr/local/bin/omp")).toEqual({
+  it("builds a bare launcher-scoped command for native, never taking a profile name", () => {
+    expect(buildHarnessVersionCommand(nativeEntry())).toEqual({
       executable: "/usr/local/bin/omp",
       args: ["harness-version"],
+    })
+  })
+
+  it("builds a per-profile command for sandbox, naming the profile", () => {
+    expect(buildHarnessVersionCommand(sandboxEntry())).toEqual({
+      executable: "/usr/local/bin/trellage",
+      args: ["harness-version", "prime-agent"],
     })
   })
 })
@@ -146,24 +171,11 @@ describe("harnessVersionLauncherFor", () => {
     expect(harnessVersionLauncherFor(nativeEntry())).toBe("omp")
   })
 
-  it("returns undefined for a sandbox entry (harness-version is native-only)", () => {
-    expect(
-      harnessVersionLauncherFor({
-        ref: "sandbox:prime-agent",
-        surface: "sandbox",
-        harness: "copilot",
-        name: "prime-agent",
-        description: "Sandboxed prime agent.",
-        commandPath: "/usr/local/bin/trellage",
-        doctorSupported: false,
-        inventorySupported: false,
-        health: "unknown",
-        install: "unknown",
-        stale: false,
-        updateCheckSupported: false,
-        harnessVersionSupported: false,
-        updateCheckStale: false,
-      }),
-    ).toBeUndefined()
+  it("returns a per-profile key for a supported sandbox entry (claude)", () => {
+    expect(harnessVersionLauncherFor(sandboxEntry())).toBe("sandbox:prime-agent")
+  })
+
+  it("returns undefined for an unsupported sandbox entry", () => {
+    expect(harnessVersionLauncherFor(sandboxEntry({ harness: "copilot", harnessVersionSupported: false }))).toBeUndefined()
   })
 })

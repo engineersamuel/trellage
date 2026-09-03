@@ -1,16 +1,20 @@
 /**
  * Bounded-concurrency batch scheduler for `harness-version` runs, deduped
- * by **launcher** rather than per-profile `ref` (unlike
- * `admin-version-scheduler.ts`'s per-profile `update --check` scheduler).
- * Every profile sharing one launcher shares the exact same one harness
- * binary and `commandPath`, so running one check per profile would be
- * genuinely duplicate, unbounded work as the catalog grows — this
- * scheduler runs at most one `harness-version` invocation per distinct
- * launcher and fans the single settled result out to every profile entry
- * that shares it. Never spawns a subprocess itself: it always delegates to
- * the same `AdminRunManager.trigger()`/`.retry()` used elsewhere, so one
- * launcher's failure or timeout is isolated exactly like every other run
- * and never affects any other launcher's outcome.
+ * by `harnessVersionLauncherFor(entry)` rather than per-profile `ref`
+ * (unlike `admin-version-scheduler.ts`'s per-profile `update --check`
+ * scheduler). For native, every profile sharing one launcher shares the
+ * exact same one harness binary and `commandPath`, so running one check
+ * per profile would be genuinely duplicate, unbounded work as the catalog
+ * grows; for a supported sandbox harness (currently only `claude`), each
+ * profile's key is already scoped per-profile (`sandbox:PROFILE_NAME`)
+ * since each locked image resolves its harness version independently —
+ * this scheduler runs at most one `harness-version` invocation per
+ * distinct key and fans the single settled result out to every profile
+ * entry that shares it (native only; a sandbox key is unique to one
+ * entry). Never spawns a subprocess itself: it always delegates to the
+ * same `AdminRunManager.trigger()`/`.retry()` used elsewhere, so one
+ * launcher's or profile's failure or timeout is isolated exactly like
+ * every other run and never affects any other outcome.
  */
 import type { AdminProfileEntry } from "./admin-model.js"
 import type { AdminRunManager } from "./admin-run-manager.js"
@@ -83,7 +87,7 @@ export const runBatchedHarnessVersionChecks = async (
   const now = options.now ?? (() => Date.now())
   const forceResync = options.forceResync ?? false
   const queue = distinctLauncherEntries(entries)
-    .filter((entry) => forceResync || isHarnessVersionCacheStale(cache.entries[entry.launcher ?? ""], now()))
+    .filter((entry) => forceResync || isHarnessVersionCacheStale(cache.entries[harnessVersionLauncherFor(entry) ?? ""], now()))
     .slice()
   if (queue.length === 0) return
 
@@ -93,7 +97,7 @@ export const runBatchedHarnessVersionChecks = async (
       if (entry === undefined) return
       const launcher = harnessVersionLauncherFor(entry)
       if (launcher === undefined) continue
-      const command = buildHarnessVersionCommand(entry.commandPath)
+      const command = buildHarnessVersionCommand(entry)
       const ref = harnessVersionRefFor(launcher)
       // Each launcher's outcome is isolated by `AdminRunManager`'s own per-ref
       // state; `trigger`/`retry` already convert run failures into recorded

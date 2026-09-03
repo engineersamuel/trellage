@@ -21,6 +21,7 @@ import {
   verifyProfile,
 } from "./application.js"
 import { environmentMetadata } from "./environment.js"
+import { harnessVersionReport } from "./harness-version-report.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
 import { resolveSandboxHeadlessCapabilities } from "./headless-capabilities.js"
 import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
@@ -291,6 +292,23 @@ const metadata = Command.make("metadata", { profile: profileArgument }, ({ profi
   ),
 )
 
+/**
+ * Read-only, non-mutating `LAUNCHER harness-version`-equivalent for a
+ * sandbox profile (see `harness-version-report.ts`) — reports the harness
+ * baked into this specific profile's locked/built image, never fabricated
+ * when no local lock is ready. Mirrors every native launcher's
+ * `harness-version` JSON envelope so the Admin UI's existing parsing and
+ * scheduling machinery applies unchanged.
+ */
+const harnessVersion = Command.make("harness-version", { profile: profileArgument }, ({ profile }) =>
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) => harnessVersionReport(selected, target.platform, cacheHome)),
+      Effect.flatMap((result) => Console.log(JSON.stringify(result))),
+    ),
+  ),
+)
+
 const ciVerify = Command.make("ci-verify", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform, "release").pipe(
@@ -324,8 +342,23 @@ const choices = Command.make("choices", {}, () =>
 )
 
 const root = Command.make("trellage-profile", {}, () =>
-  Console.log("Use validate, lock, build, upgrade, ci-verify, metadata, environment, choices, or list."),
-).pipe(Command.withSubcommands([validate, lock, build, upgrade, ciVerify, list, metadata, environment, choices]))
+  Console.log(
+    "Use validate, lock, build, upgrade, ci-verify, metadata, harness-version, environment, choices, or list.",
+  ),
+).pipe(
+  Command.withSubcommands([
+    validate,
+    lock,
+    build,
+    upgrade,
+    ciVerify,
+    list,
+    metadata,
+    harnessVersion,
+    environment,
+    choices,
+  ]),
+)
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 

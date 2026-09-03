@@ -183,6 +183,83 @@ describe("runBatchedHarnessVersionChecks", () => {
     await expect(runBatchedHarnessVersionChecks([], manager, emptyCache)).resolves.toBeUndefined()
     expect(runner.calls.length).toBe(0)
   })
+
+  it("keys a sandbox claude profile's check per-profile, invoking `harness-version PROFILE_NAME` and never fanning out to another profile", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const claudeSandbox = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
+      ref: overrides.ref ?? "sandbox:claude-blog",
+      surface: "sandbox",
+      harness: "claude",
+      name: overrides.name ?? "claude-blog",
+      description: "Sandboxed Claude profile.",
+      commandPath: "/opt/trellage/bin/trellage",
+      doctorSupported: true,
+      inventorySupported: false,
+      health: "unknown",
+      install: "unknown",
+      stale: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: true,
+      updateCheckStale: false,
+      ...overrides,
+    })
+    const entries = [
+      claudeSandbox({}),
+      claudeSandbox({ ref: "sandbox:claude-docs", name: "claude-docs" }),
+    ]
+
+    const batch = runBatchedHarnessVersionChecks(entries, manager, emptyCache)
+    await flush()
+    expect(runner.calls).toEqual([
+      { executable: "/opt/trellage/bin/trellage", args: ["harness-version", "claude-blog"] },
+      { executable: "/opt/trellage/bin/trellage", args: ["harness-version", "claude-docs"] },
+    ])
+    runner.resolveNext({
+      stdout: JSON.stringify({ schemaVersion: 1, harness: "claude", installed: "2.1.222", latest: "2.1.230", latestKnown: true }),
+      stderr: "",
+      exitCode: 0,
+    })
+    runner.resolveNext({
+      stdout: JSON.stringify({ schemaVersion: 1, harness: "claude", installed: "2.1.100", latest: "2.1.230", latestKnown: true }),
+      stderr: "",
+      exitCode: 0,
+    })
+    await batch
+
+    expect(manager.status(harnessVersionRefFor("sandbox:claude-blog")).state).toBe("success")
+    expect(manager.status(harnessVersionRefFor("sandbox:claude-docs")).state).toBe("success")
+  })
+
+  it("respects a fresh per-profile cache entry for a sandbox profile using the fixed sandbox: cache key", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const claudeSandbox: AdminProfileEntry = {
+      ref: "sandbox:claude-blog",
+      surface: "sandbox",
+      harness: "claude",
+      name: "claude-blog",
+      description: "Sandboxed Claude profile.",
+      commandPath: "/opt/trellage/bin/trellage",
+      doctorSupported: true,
+      inventorySupported: false,
+      health: "unknown",
+      install: "unknown",
+      stale: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: true,
+      updateCheckStale: false,
+    }
+    const freshCache: AdminHarnessVersionCacheRecord = {
+      schemaVersion: 1,
+      entries: {
+        "sandbox:claude-blog": { result: { kind: "known-latest", installed: "2.1.222", latest: "2.1.222" }, checkedAt: Date.now() },
+      },
+    }
+
+    await runBatchedHarnessVersionChecks([claudeSandbox], manager, freshCache)
+    expect(runner.calls.length).toBe(0)
+  })
 })
 
 describe("harnessVersionResultForLauncher", () => {

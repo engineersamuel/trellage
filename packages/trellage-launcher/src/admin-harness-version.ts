@@ -1,16 +1,23 @@
 /**
- * Builds the launcher-scoped `harness-version` command and tolerantly
+ * Builds the `harness-version` command for a profile entry and tolerantly
  * parses its stdout. Unlike `admin-version-check.ts`'s `update --check
  * PROFILE` (which for `cpx`/`cdx`/`grx` genuinely compares a named
  * profile's plugin/skill bundle version against a marketplace manifest,
  * not the harness CLI's own version), `harness-version` reports the
  * installed **harness binary's own version** — e.g. `copilot --version`,
- * not the "awesome" plugin bundle's version. It is scoped to the launcher,
- * not the profile: every profile sharing one launcher (e.g. `omp`'s
- * "local"/"copilot" profiles) shares the exact same one harness binary, so
- * this command never takes a profile name argument and its result is fanned
- * out to every profile sharing that launcher (see
- * `admin-harness-version-scheduler.ts`).
+ * not the "awesome" plugin bundle's version.
+ *
+ * For native, this is scoped to the launcher, not the profile: every
+ * profile sharing one launcher (e.g. `omp`'s "local"/"copilot" profiles)
+ * shares the exact same one harness binary, so the command never takes a
+ * profile name argument and its result is fanned out to every profile
+ * sharing that launcher (see `admin-harness-version-scheduler.ts`). For
+ * sandbox, this is scoped to the individual profile: each locked image can
+ * resolve `harness.version = "latest"` to a different exact version
+ * independently (via `trellage-cli`'s local lock/resolution-receipt), so
+ * the sandbox `commandPath` (`prototypes/trellage/trellage`) is invoked as
+ * `harness-version PROFILE_NAME` and its result applies only to that one
+ * profile — never fanned out.
  *
  * Each native launcher emits one line of JSON:
  * `{schemaVersion: 1, launcher, harness, installed, latest, latestKnown}`
@@ -22,16 +29,24 @@
  * confirmed by research), and `true` for `mise`-managed single-binary
  * launchers (`jcx`/`omp`/`picx`/`prx`) whose `latest` is resolved via
  * `mise_env latest`. `latest` is never fabricated when it isn't knowable.
+ *
+ * The sandbox `claude` harness kind emits the same JSON shape (without a
+ * `launcher` field, which `parseHarnessVersionOutput` never requires) via
+ * `packages/trellage-cli/src/harness-version-report.ts`'s `harness-version`
+ * subcommand: `installed` comes from the profile's local lock/resolution
+ * receipt (never fabricated when not yet resolved) and `latest` comes from
+ * a GitHub Releases lookup against `anthropics/claude-code`
+ * (`latestKnown: false` on lookup failure, `installed` still preserved).
  */
 import type { AdminProfileEntry } from "./admin-model.js"
 import type { AdminVersionColumns } from "./admin-version-check.js"
 import type { CommandSpec } from "./guide-launch.js"
 
-/** Builds `LAUNCHER harness-version` for any profile of that launcher. Callers must check `entry.harnessVersionSupported` first. */
-export const buildHarnessVersionCommand = (commandPath: string): CommandSpec => ({
-  executable: commandPath,
-  args: ["harness-version"],
-})
+/** Builds the `harness-version` command for one profile entry: no-arg `LAUNCHER harness-version` for native (shared per launcher), `trellage harness-version PROFILE_NAME` for a sandbox profile (harness version is genuinely per-profile, since each locked image can float independently). Callers must check `entry.harnessVersionSupported` first. */
+export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec =>
+  entry.surface === "sandbox"
+    ? { executable: entry.commandPath, args: ["harness-version", entry.name] }
+    : { executable: entry.commandPath, args: ["harness-version"] }
 
 /**
  * A launcher's harness-version outcome. `"unavailable"` covers a genuine
@@ -102,6 +117,21 @@ export const harnessVersionColumnsFor = (
     : { installed: result.installed, latest: result.latest, status: "mismatch" }
 }
 
-/** The distinct launcher for a native profile entry, or `undefined` for a sandbox entry (harness-version is native-only). */
-export const harnessVersionLauncherFor = (entry: AdminProfileEntry): string | undefined =>
-  entry.surface === "native" ? entry.launcher : undefined
+/**
+ * The distinct cache/scheduler key for a profile entry's harness-version
+ * check: for native, the shared launcher alias (every profile sharing one
+ * launcher shares the exact same one harness binary); for a sandbox entry
+ * whose harness supports version detection (currently only `claude`, via
+ * the CLI's `harness-version PROFILE` subcommand backed by the profile's
+ * local lock/resolution-receipt and a GitHub Releases lookup — see
+ * `packages/trellage-cli/src/harness-version-report.ts`), a per-profile
+ * `sandbox:PROFILE_NAME` key, since each locked sandbox image can float to
+ * a different resolved harness version independently of any other. Any
+ * other sandbox entry (or a native entry lacking a `launcher`) yields
+ * `undefined` — callers must check `entry.harnessVersionSupported` first,
+ * which is `false` for those cases.
+ */
+export const harnessVersionLauncherFor = (entry: AdminProfileEntry): string | undefined => {
+  if (entry.surface === "native") return entry.launcher
+  return entry.harnessVersionSupported ? `sandbox:${entry.name}` : undefined
+}

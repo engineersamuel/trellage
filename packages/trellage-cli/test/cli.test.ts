@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest"
 const cliHarness = vi.hoisted(() => ({
   main: undefined as unknown,
   selected: [] as Array<string>,
+  harnessVersionSelected: [] as Array<string>,
   upgraded: [] as Array<string>,
   registries: [] as Array<string | undefined>,
   guide: {
@@ -79,6 +80,25 @@ vi.mock("../src/application.js", async (importOriginal) => {
           return yield* Effect.fail(new actual.ApplicationError({ message: "VPN blocked beta" }))
         }
         return { image: `image:${path.basename(path.dirname(profilePath))}`, digest: "sha256:updated" }
+      }),
+  }
+})
+
+vi.mock("../src/harness-version-report.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/harness-version-report.js")>()
+  const { Effect } = await import("effect")
+  return {
+    ...actual,
+    harnessVersionReport: (profilePath: string) =>
+      Effect.sync(() => {
+        cliHarness.harnessVersionSelected.push(profilePath)
+        return {
+          schemaVersion: 1 as const,
+          harness: "claude",
+          installed: "2.1.222",
+          latest: "2.1.230",
+          latestKnown: true,
+        }
       }),
   }
 })
@@ -230,11 +250,43 @@ const runList = async (
   }
 }
 
+const runHarnessVersion = async (
+  args: ReadonlyArray<string>,
+): Promise<{
+  readonly selected: ReadonlyArray<string>
+  readonly logs: ReadonlyArray<string>
+  readonly exitCode: number | undefined
+}> => {
+  const originalArgv = process.argv
+  const originalExitCode = process.exitCode
+  const logs: Array<string> = []
+  const originalLog = console.log
+  try {
+    process.argv = [process.execPath, "trellage-profile", "harness-version", ...args]
+    process.exitCode = undefined
+    cliHarness.main = undefined
+    cliHarness.harnessVersionSelected = []
+    console.log = (...parts: Array<unknown>) => {
+      logs.push(parts.map(String).join(" "))
+    }
+    vi.resetModules()
+    await import("../src/cli.js")
+    if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
+    await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
+    return { selected: [...cliHarness.harnessVersionSelected], logs, exitCode: process.exitCode }
+  } finally {
+    process.argv = originalArgv
+    process.exitCode = originalExitCode
+    console.log = originalLog
+  }
+}
+
 describe("CLI identity and failure reporting", () => {
   it("uses Trellage identity and prints the full failure cause tree", () => {
     expect.soft(cliSource).toContain('Command.make("trellage-profile"')
     expect.soft(cliSource).toContain('Command.make("choices"')
     expect.soft(cliSource).toContain('Command.make("list"')
+    expect.soft(cliSource).toContain('Command.make("harness-version"')
     expect.soft(cliSource).toContain('Options.boolean("json")')
     expect.soft(cliSource).toContain('Options.boolean("json-full")')
     expect.soft(cliSource).toContain('Options.boolean("full")')
@@ -266,6 +318,20 @@ describe("CLI identity and failure reporting", () => {
     const selected = await runMetadata([], { harness: "legacy.toml" })
     expect(selected).toHaveLength(1)
     expect(selected[0]).not.toBe(legacy)
+  })
+
+  it("resolves the profile and prints the harness-version report", async () => {
+    const result = await runHarnessVersion(["explicit.toml"])
+
+    expect(result.exitCode ?? 0).toBe(0)
+    expect(result.selected).toEqual([path.resolve("explicit.toml")])
+    expect(JSON.parse(result.logs.join("\n"))).toEqual({
+      schemaVersion: 1,
+      harness: "claude",
+      installed: "2.1.222",
+      latest: "2.1.230",
+      latestKnown: true,
+    })
   })
 
   it("lists simplified and full JSON catalogs", async () => {

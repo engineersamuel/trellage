@@ -117,7 +117,7 @@ export interface AdminProfileEntry {
   readonly version?: string
   /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
   readonly updateCheckSupported: boolean
-  /** Whether this profile's launcher supports a read-only, launcher-scoped `harness-version` (see `launchersWithoutHarnessVersionSupport`). Always `false` for sandbox profiles. */
+  /** Whether this profile's launcher/harness supports a read-only `harness-version` check (see `launchersWithoutHarnessVersionSupport` for native; sandbox is currently supported only for `entry.harness === "claude"`, via `packages/trellage-cli/src/harness-version-report.ts`). */
   readonly harnessVersionSupported: boolean
   /** The latest version reported by the most recent successful `update --check`, when it differs from `version`. `undefined` while unchecked, unsupported, or when already current. */
   readonly latestVersion?: string
@@ -240,8 +240,18 @@ export const aggregateAdminProfiles = (
         : // The sandbox `trellage` launcher exposes `validate PROFILE` (doctor-equivalent) but has no
           // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
           // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
-          // "an interactive terminal is required" guard for any unrecognized mode.
-          { doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false }
+          // "an interactive terminal is required" guard for any unrecognized mode. `harness-version PROFILE`
+          // is a distinct, newly-added passthrough subcommand (see `packages/trellage-cli/src/cli.ts`'s
+          // `harness-version` Command and `prototypes/trellage/trellage`'s compiler-mode allowlists) backed
+          // by `trellage-cli`'s local lock/resolution-receipt plus a GitHub Releases lookup — currently only
+          // implemented for the `claude` harness kind, so it is supported only when `entry.harness ===
+          // "claude"` and never fabricated for any other sandbox harness kind.
+          {
+              doctorSupported: true,
+              inventorySupported: false,
+              updateCheckSupported: false,
+              harnessVersionSupported: entry.harness === "claude",
+            }
     const derived =
       entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
     const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
