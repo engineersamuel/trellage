@@ -175,7 +175,13 @@ describe("harnessVersionLauncherFor", () => {
     expect(harnessVersionLauncherFor(sandboxEntry())).toBe("sandbox:prime-agent")
   })
 
-  it("returns undefined for an unsupported sandbox entry", () => {
-    expect(harnessVersionLauncherFor(sandboxEntry({ harness: "copilot", harnessVersionSupported: false }))).toBeUndefined()
+  it("returns a per-profile key for a supported sandbox entry of a non-claude harness kind (installed resolves for any kind)", () => {
+    expect(harnessVersionLauncherFor(sandboxEntry({ harness: "copilot", ref: "sandbox:copilot-hve", name: "copilot-hve" }))).toBe(
+      "sandbox:copilot-hve",
+    )
+  })
+
+  it("returns undefined for a sandbox entry where harnessVersionSupported is false", () => {
+    expect(harnessVersionLauncherFor(sandboxEntry({ harnessVersionSupported: false }))).toBeUndefined()
   })
 })

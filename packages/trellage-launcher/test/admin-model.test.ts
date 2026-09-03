@@ -160,10 +160,10 @@ describe("aggregateAdminProfiles", () => {
   it("marks a sandbox profile as not supporting inventory (the sandbox launcher has no `inventory` subcommand)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false })
+    expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: true })
   })
 
-  it("marks a claude sandbox profile as supporting harness-version, unlike other sandbox harness kinds", () => {
+  it("marks every sandbox profile as supporting harness-version, regardless of harness kind (installed resolves for any kind; only latest is claude-only)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalogWithClaudeSandbox())
     const claudeSandbox = entries.find((entry) => entry.ref === "sandbox:claude-blog")
     expect(claudeSandbox).toMatchObject({ harnessVersionSupported: true })

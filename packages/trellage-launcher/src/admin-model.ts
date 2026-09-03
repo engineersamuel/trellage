@@ -117,7 +117,7 @@ export interface AdminProfileEntry {
   readonly version?: string
   /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
   readonly updateCheckSupported: boolean
-  /** Whether this profile's launcher/harness supports a read-only `harness-version` check (see `launchersWithoutHarnessVersionSupport` for native; sandbox is currently supported only for `entry.harness === "claude"`, via `packages/trellage-cli/src/harness-version-report.ts`). */
+  /** Whether this profile's launcher/harness supports a read-only `harness-version` check (see `launchersWithoutHarnessVersionSupport` for native; `true` for every sandbox profile, since `packages/trellage-cli/src/harness-version-report.ts`'s `installed` resolution works for every harness kind — only its `latest` lookup is currently `claude`-only, reported as `latestKnown: false` for other kinds rather than gating the whole check). */
   readonly harnessVersionSupported: boolean
   /** The latest version reported by the most recent successful `update --check`, when it differs from `version`. `undefined` while unchecked, unsupported, or when already current. */
   readonly latestVersion?: string
@@ -243,14 +243,16 @@ export const aggregateAdminProfiles = (
           // "an interactive terminal is required" guard for any unrecognized mode. `harness-version PROFILE`
           // is a distinct, newly-added passthrough subcommand (see `packages/trellage-cli/src/cli.ts`'s
           // `harness-version` Command and `prototypes/trellage/trellage`'s compiler-mode allowlists) backed
-          // by `trellage-cli`'s local lock/resolution-receipt plus a GitHub Releases lookup — currently only
-          // implemented for the `claude` harness kind, so it is supported only when `entry.harness ===
-          // "claude"` and never fabricated for any other sandbox harness kind.
+          // by `trellage-cli`'s local lock/resolution-receipt for `installed` (works for every harness kind)
+          // plus a GitHub Releases lookup for `latest` (`claude` only today — every other kind reports
+          // `latestKnown: false` rather than fabricating a latest version, exactly like the native
+          // `cpx`/`cdx`/`grx`/`cldx` launchers). So `harnessVersionSupported` is `true` for every sandbox
+          // profile, matching every native launcher's blanket support.
           {
               doctorSupported: true,
               inventorySupported: false,
               updateCheckSupported: false,
-              harnessVersionSupported: entry.harness === "claude",
+              harnessVersionSupported: true,
             }
     const derived =
       entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
