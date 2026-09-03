@@ -1274,7 +1274,8 @@ prepare_claude_attachment_tty() {
   claude_attachment_tty_state="$saved_state"
   claude_attachment_tty_restore_pending=true
   # Claude probes terminal capabilities before Docker switches the host PTY.
-  if ! stty -echo -icanon min 1 time 0 2>/dev/null </dev/tty; then
+  # Preserve CR so Claude can distinguish Enter from multiline input.
+  if ! stty -echo -icanon -icrnl -inlcr -igncr min 1 time 0 2>/dev/null </dev/tty; then
     restore_claude_attachment_tty >/dev/null 2>&1 || true
     return 1
   fi

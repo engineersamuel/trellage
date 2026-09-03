@@ -71,6 +71,9 @@ assert_prepared_agent_tty() {
   [[ "$tty_settings" =~ (^|[[:space:];])-icanon([[:space:];]|$) ]] || exit 93
   [[ "$tty_settings" =~ (^|[[:space:];])-echo([[:space:];]|$) ]] || exit 94
   [[ "$tty_settings" =~ (^|[[:space:];])isig([[:space:];]|$) ]] || exit 95
+  [[ "$tty_settings" =~ (^|[[:space:];])-icrnl([[:space:];]|$) ]] || exit 96
+  [[ "$tty_settings" =~ (^|[[:space:];])-inlcr([[:space:];]|$) ]] || exit 97
+  [[ "$tty_settings" =~ (^|[[:space:];])-igncr([[:space:];]|$) ]] || exit 98
   printf 'AGENT_TTY\tprepared\n' >>"$log"
 }
 
