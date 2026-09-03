@@ -3297,7 +3297,7 @@ while [[ "\$#" -gt 0 ]]; do
   esac
 done
 mkdir -p "\$config_home"
-printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.233","shiftEnterKeyBindingInstalled":true,"theme":"dark"}\\n' \
+printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.233","shiftEnterKeyBindingInstalled":true}\\n' \
   >"\$config_home/.claude.json"
 chmod 0600 "\$config_home/.claude.json"
 # ensure_settings runs unconditionally in the real prepare, so the stub must
@@ -3555,7 +3555,7 @@ FAKE_CURL
   bridge_marker="$bridge_home_root/$(basename "$install_root/.managed-by-trellage-firstmate-profiles")"
   mkdir -p "$bridge_home/.trellage"
   printf '%s\n' "$ownership_value" >"$bridge_marker"
-  printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.233","shiftEnterKeyBindingInstalled":true,"theme":"dark"}\n' \
+  printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.233","shiftEnterKeyBindingInstalled":true}\n' \
     >"$bridge_home/.claude.json"
   printf '{"outputStyle":"Rundown"}\n' >"$bridge_home/settings.json"
   cp "$install_root/lib/trellage-session-bridge.py" "$bridge_home/.trellage/trellage-session-bridge.py"

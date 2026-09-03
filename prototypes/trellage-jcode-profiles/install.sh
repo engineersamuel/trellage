@@ -25,6 +25,7 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
+installed_config_manager="$install_root/config-manager.mjs"
 installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
@@ -70,6 +71,11 @@ require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellag
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+[[ -f "$source_dir/config-manager.mjs" && ! -L "$source_dir/config-manager.mjs" ]] \
+  || refuse "invalid config manager: $source_dir/config-manager.mjs"
+[[ ! -L "$installed_config_manager" \
+  && ( ! -e "$installed_config_manager" || -f "$installed_config_manager" ) ]] \
+  || refuse "unsafe managed config manager: $installed_config_manager"
 for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
   if [[ -e "$receipt" || -L "$receipt" ]]; then
     [[ -f "$receipt" && ! -L "$receipt" ]] \
@@ -79,13 +85,16 @@ done
 
 launcher_stage="$(mktemp "$install_root/bin/.jcx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
+config_manager_stage="$(mktemp "$install_root/.config-manager.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 install -m 0755 "$source_dir/bin/jcx" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
+install -m 0644 "$source_dir/config-manager.mjs" "$config_manager_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$catalog_stage" "$installed_catalog"
+mv -f "$config_manager_stage" "$installed_config_manager"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then

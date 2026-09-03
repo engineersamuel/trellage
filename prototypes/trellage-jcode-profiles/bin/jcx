@@ -63,6 +63,7 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
 readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
 readonly legacy_version_file="$runtime_root/version"
+readonly config_manager="$runtime_root/config-manager.mjs"
 readonly profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
@@ -86,6 +87,12 @@ ensure_floating_skills() {
     --bundle native-common \
     --target "$profile_home/skills" \
     || die 'failed to install floating skills'
+}
+
+require_config_manager() {
+  require_command node
+  [[ -f "$config_manager" && ! -L "$config_manager" ]] \
+    || die "invalid config manager: $config_manager"
 }
 
 validate_catalog() {
@@ -253,19 +260,74 @@ managed_config() {
 default_provider = "$provider"
 default_model = "$model_id"
 openai_reasoning_effort = "$reasoning_effort"
+cross_provider_failover = "manual"
 
 [providers.$provider]
-type = "openai-compatible"
+type = "open-ai-compatible"
 base_url = "$proxy_base_url"
 auth = "none"
 default_model = "$model_id"
 requires_api_key = false
+provider_routing = false
 model_catalog = true
+allow_provider_pinning = false
 supports_reasoning_effort = true
 
 [[providers.$provider.models]]
 id = "$model_id"
 EOF
+}
+
+managed_config_is_current() {
+  local config_path="${1:-$profile_config}"
+
+  require_config_manager
+  node "$config_manager" validate \
+    "$config_path" "$provider" "$model_id" "$reasoning_effort" "$proxy_base_url"
+}
+
+merge_managed_config() {
+  local config_path="$1"
+
+  require_config_manager
+  node "$config_manager" repair \
+    "$config_path" "$provider" "$model_id" "$reasoning_effort" "$proxy_base_url"
+}
+
+parsed_managed_config_is_current() {
+  local binary="$1" config_path="${2:-$profile_config}"
+  local check_root output status=0
+
+  check_root="$(mktemp -d "$profile_root/.config-check.XXXXXX")" || return 1
+  chmod 0700 "$check_root"
+  cp "$config_path" "$check_root/config.toml" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    chmod 0600 "$check_root/config.toml"
+    output="$(
+      clear_jcode_environment
+      export JCODE_HOME="$check_root"
+      export JCODE_NO_TELEMETRY=1
+      export JCODE_OPENAI_EXTRA_BODY='{}'
+      export JCODE_CROSS_PROVIDER_FAILOVER=manual
+      "$binary" --no-update provider current --json </dev/null 2>/dev/null
+    )" || status=$?
+  fi
+  rm -rf -- "$check_root"
+  [[ "$status" -eq 0 ]] || return 1
+  jq -e --arg provider "$provider" --arg model "$model_id" '
+    type == "object"
+    and .resolved_provider == $provider
+    and .selected_model == $model
+  ' <<<"$output" >/dev/null 2>&1
+}
+
+clear_jcode_environment() {
+  local name
+
+  while IFS= read -r name; do
+    [[ "$name" == JCODE_* ]] && unset "$name"
+  done < <(compgen -e)
+  return 0
 }
 
 publish_managed_profile() {
@@ -277,6 +339,33 @@ publish_managed_profile() {
   config_stage="$(mktemp "$profile_home/.config.XXXXXX")" \
     || die 'could not stage jcode config'
   managed_config >"$config_stage"
+  chmod 0600 "$config_stage"
+  mv -f "$config_stage" "$profile_config"
+}
+
+repair_managed_profile() {
+  local binary="$1" config_stage
+
+  prepare_profile
+  [[ ! -L "$profile_config" && ( ! -e "$profile_config" || -f "$profile_config" ) ]] \
+    || die "unsafe managed config: $profile_config"
+  config_stage="$(mktemp "$profile_home/.config.XXXXXX")" \
+    || die 'could not stage jcode config'
+  if [[ -f "$profile_config" ]]; then
+    merge_managed_config "$profile_config" >"$config_stage"
+  else
+    managed_config >"$config_stage"
+  fi
+  if ! managed_config_is_current "$config_stage" \
+    || ! parsed_managed_config_is_current "$binary" "$config_stage"; then
+    managed_config >"$config_stage"
+  fi
+  managed_config_is_current "$config_stage" \
+    && parsed_managed_config_is_current "$binary" "$config_stage" \
+    || {
+      rm -f -- "$config_stage"
+      die 'could not produce valid managed config'
+    }
   chmod 0600 "$config_stage"
   mv -f "$config_stage" "$profile_config"
 }
@@ -319,29 +408,35 @@ require_owned_profile() {
 }
 
 verify_managed_profile() {
+  local binary="$1"
+
   require_owned_profile
   [[ -f "$profile_config" && ! -L "$profile_config" ]] \
     || die "managed config is missing: $profile_config"
-  cmp -s "$profile_config" <(managed_config) \
+  managed_config_is_current \
     || die 'managed config differs; run jcx repair'
+  parsed_managed_config_is_current "$binary" \
+    || die 'managed config is invalid; run jcx repair'
 }
 
 ensure_managed_profile_for_launch() {
+  local binary="$1"
+
   require_owned_profile
   if [[ -f "$profile_config" && ! -L "$profile_config" ]] \
-    && cmp -s "$profile_config" <(managed_config); then
+    && managed_config_is_current \
+    && parsed_managed_config_is_current "$binary"; then
     return
   fi
-  publish_managed_profile
+  repair_managed_profile "$binary"
   ensure_floating_skills
 }
 
-ensure_profile_ready_for_launch() {
+ensure_profile_installed_for_launch() {
   require_safe_profile_path
   if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
     setup_profile >/dev/null
   fi
-  ensure_managed_profile_for_launch
 }
 
 require_exact_version() {
@@ -506,7 +601,7 @@ check_proxy() {
 }
 
 setup_profile() {
-  local version
+  local version binary
 
   require_command mise
   if [[ -e "$receipt_file" || -L "$receipt_file" \
@@ -517,6 +612,9 @@ setup_profile() {
   fi
   install_exact_version "$version"
   publish_managed_profile
+  binary="$(installed_binary "$version")"
+  parsed_managed_config_is_current "$binary" \
+    || die 'managed config is invalid after setup'
   ensure_floating_skills
   ensure_onboarding_skipped
   publish_installed_version "$version"
@@ -524,12 +622,13 @@ setup_profile() {
 }
 
 repair_profile() {
-  local version
+  local version binary
 
   require_command mise
   version="$(read_installed_version)"
   install_exact_version "$version"
-  publish_managed_profile
+  binary="$(installed_binary "$version")"
+  repair_managed_profile "$binary"
   ensure_onboarding_skipped
   printf 'jcx repair: restored (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
 }
@@ -567,10 +666,10 @@ doctor_profile() {
   local version binary
 
   require_command mise
-  verify_managed_profile
   version="$(read_installed_version)"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
+  verify_managed_profile "$binary"
   jq -e '
     type == "object"
     and (.launch_count | type == "number")
@@ -626,20 +725,23 @@ launch_jcode() {
   local version binary
 
   require_command mise
-  ensure_profile_ready_for_launch
-  ensure_floating_skills
+  ensure_profile_installed_for_launch
   version="$(read_installed_version)"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
+  ensure_managed_profile_for_launch "$binary"
+  ensure_floating_skills
   ensure_onboarding_skipped
   check_proxy
-  exec env \
-    JCODE_HOME="$profile_home" \
-    JCODE_NO_TELEMETRY=1 \
-    JCODE_PROVIDER="$provider" \
-    JCODE_MODEL="$model_id" \
-    JCODE_OPENAI_REASONING_EFFORT="$reasoning_effort" \
-    "$binary" --no-update "$@"
+  clear_jcode_environment
+  export JCODE_HOME="$profile_home"
+  export JCODE_NO_TELEMETRY=1
+  export JCODE_PROVIDER="$provider"
+  export JCODE_MODEL="$model_id"
+  export JCODE_OPENAI_REASONING_EFFORT="$reasoning_effort"
+  export JCODE_OPENAI_EXTRA_BODY='{}'
+  export JCODE_CROSS_PROVIDER_FAILOVER=manual
+  exec "$binary" --no-update "$@"
 }
 
 require_command jq

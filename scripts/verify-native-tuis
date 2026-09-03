@@ -1,0 +1,1310 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import pty
+import re
+import select
+import signal
+import string
+import struct
+import subprocess
+import sys
+import termios
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SCRIPT_ROOT = Path(__file__).resolve().parent
+DEFAULT_CONFIG = SCRIPT_ROOT / "native-tui-adapters.json"
+
+
+class MatrixFailure(RuntimeError):
+    pass
+
+
+class MatrixTermination(BaseException):
+    def __init__(self, signal_number: int):
+        super().__init__(signal_number)
+        self.signal_number = signal_number
+
+
+@dataclass(frozen=True)
+class InputStep:
+    data: bytes
+    delay_seconds: float
+
+
+@dataclass(frozen=True)
+class Adapter:
+    name: str
+    ready_patterns: tuple[bytes, ...]
+    numbered_ready_pattern: str | None
+    ready_quiet: float
+    turn_ready_patterns: tuple[bytes, ...] | None
+    turn_ready_quiet: float | None
+    environment: dict[str, str]
+    blocked_patterns: tuple[bytes, ...]
+    launch_args: tuple[str, ...]
+    exit_steps: tuple[InputStep, ...]
+    allowed_exit_codes: frozenset[int]
+    skill_prefix: str
+    ready_timeout: float
+    ready_settle: float
+    turn_timeout: float
+    exit_timeout: float
+    submit_delay: float
+    max_output_bytes: int
+
+
+@dataclass(frozen=True)
+class LiveContract:
+    turn_one_prompt: str
+    turn_two_prompt: str
+    skill_prompt: str
+    skill_required_patterns: tuple[bytes, ...]
+
+
+@dataclass(frozen=True)
+class MatrixConfig:
+    adapters: dict[str, Adapter]
+    launchers: dict[str, str]
+    live: LiveContract
+
+
+@dataclass(frozen=True)
+class Profile:
+    launcher: str
+    harness: str
+    name: str
+
+
+def require_object(value: Any, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise MatrixFailure(f"{label} must be an object")
+    return value
+
+
+def require_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise MatrixFailure(f"{label} must be a non-empty string")
+    return value
+
+
+def require_string_list(value: Any, label: str, *, allow_empty: bool = False) -> tuple[str, ...]:
+    if not isinstance(value, list) or (not allow_empty and not value):
+        raise MatrixFailure(f"{label} must be a{' possibly empty' if allow_empty else ' non-empty'} string array")
+    result = tuple(require_string(entry, f"{label} entry") for entry in value)
+    return result
+
+
+def require_string_map(value: Any, label: str) -> dict[str, str]:
+    raw = require_object(value, label)
+    result: dict[str, str] = {}
+    for key, entry in raw.items():
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            raise MatrixFailure(f"{label} has an invalid environment name")
+        result[key] = require_string(entry, f"{label}.{key}")
+    return result
+
+
+def require_number(value: Any, label: str, *, minimum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < minimum:
+        raise MatrixFailure(f"{label} must be a number greater than or equal to {minimum}")
+    return float(value)
+
+
+def require_integer(value: Any, label: str, *, minimum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise MatrixFailure(f"{label} must be an integer greater than or equal to {minimum}")
+    return value
+
+
+def validate_template(
+    value: str,
+    label: str,
+    allowed_fields: frozenset[str],
+    required_fields: frozenset[str] = frozenset(),
+) -> str:
+    fields: list[str] = []
+    try:
+        parsed = string.Formatter().parse(value)
+        for _, field_name, format_spec, conversion in parsed:
+            if field_name is None:
+                continue
+            if field_name not in allowed_fields:
+                raise MatrixFailure(f"{label} has unsupported placeholder: {field_name}")
+            if format_spec or conversion:
+                raise MatrixFailure(f"{label} placeholders must not use formatting")
+            fields.append(field_name)
+    except ValueError as error:
+        raise MatrixFailure(f"{label} has invalid placeholder syntax: {error}") from error
+    missing = sorted(required_fields - set(fields))
+    if missing:
+        raise MatrixFailure(f"{label} is missing placeholder: {', '.join(missing)}")
+    return value
+
+
+def parse_step(value: Any, label: str) -> InputStep:
+    step = require_object(value, label)
+    if set(step) != {"data", "delayMilliseconds"}:
+        raise MatrixFailure(f"{label} has unsupported keys")
+    data = require_string(step["data"], f"{label}.data").encode()
+    delay = require_number(step["delayMilliseconds"], f"{label}.delayMilliseconds", minimum=0)
+    return InputStep(data=data, delay_seconds=delay / 1000)
+
+
+def parse_steps(value: Any, label: str) -> tuple[InputStep, ...]:
+    if not isinstance(value, list) or not value:
+        raise MatrixFailure(f"{label} must be a non-empty array")
+    return tuple(parse_step(step, f"{label}[{index}]") for index, step in enumerate(value))
+
+
+def parse_exit_codes(value: Any, label: str) -> frozenset[int]:
+    if not isinstance(value, list) or not value:
+        raise MatrixFailure(f"{label} must be a non-empty integer array")
+    codes = frozenset(require_integer(code, f"{label} entry", minimum=0) for code in value)
+    return codes
+
+
+def adapter_number(raw: dict[str, Any], defaults: dict[str, Any], key: str, *, minimum: float) -> float:
+    return require_number(raw.get(key, defaults[key]), f"adapter.{key}", minimum=minimum)
+
+
+def parse_adapter(name: str, value: Any, defaults: dict[str, Any]) -> Adapter:
+    raw = require_object(value, f"adapter {name}")
+    allowed = {
+        "readyPatterns",
+        "numberedReadyPattern",
+        "readyQuietMilliseconds",
+        "turnReadyPatterns",
+        "turnReadyQuietMilliseconds",
+        "environment",
+        "blockedPatterns",
+        "launchArgs",
+        "exitSteps",
+        "allowedExitCodes",
+        "skillPrefix",
+        "readyTimeoutSeconds",
+        "readySettleMilliseconds",
+        "turnTimeoutSeconds",
+        "exitTimeoutSeconds",
+        "submitDelayMilliseconds",
+        "maxOutputBytes",
+    }
+    if not set(raw).issubset(allowed):
+        raise MatrixFailure(f"adapter {name} has unsupported keys")
+    ready = require_string_list(raw.get("readyPatterns"), f"adapter {name}.readyPatterns")
+    numbered_ready_value = raw.get("numberedReadyPattern")
+    numbered_ready_pattern = (
+        None
+        if numbered_ready_value is None
+        else validate_template(
+            require_string(
+                numbered_ready_value,
+                f"adapter {name}.numberedReadyPattern",
+            ),
+            f"adapter {name}.numberedReadyPattern",
+            frozenset({"turn"}),
+            frozenset({"turn"}),
+        )
+    )
+    ready_quiet = require_number(
+        raw.get("readyQuietMilliseconds", 0),
+        f"adapter {name}.readyQuietMilliseconds",
+        minimum=0,
+    )
+    turn_ready_patterns = (
+        None
+        if "turnReadyPatterns" not in raw
+        else tuple(
+            pattern.encode()
+            for pattern in require_string_list(
+                raw["turnReadyPatterns"],
+                f"adapter {name}.turnReadyPatterns",
+                allow_empty=True,
+            )
+        )
+    )
+    turn_ready_quiet = (
+        None
+        if "turnReadyQuietMilliseconds" not in raw
+        else require_number(
+            raw["turnReadyQuietMilliseconds"],
+            f"adapter {name}.turnReadyQuietMilliseconds",
+            minimum=0,
+        )
+        / 1000
+    )
+    if turn_ready_patterns == () and not (turn_ready_quiet or ready_quiet):
+        raise MatrixFailure(
+            f"adapter {name} quiet turn readiness must be greater than zero"
+        )
+    blocked = require_string_list(
+        raw.get("blockedPatterns", []),
+        f"adapter {name}.blockedPatterns",
+        allow_empty=True,
+    )
+    launch_args = require_string_list(
+        raw.get("launchArgs", []),
+        f"adapter {name}.launchArgs",
+        allow_empty=True,
+    )
+    launch_args = tuple(
+        validate_template(
+            value,
+            f"adapter {name}.launchArgs[{index}]",
+            frozenset({"launcher", "profile", "sessionId"}),
+        )
+        for index, value in enumerate(launch_args)
+    )
+    skill_prefix = raw.get("skillPrefix", "")
+    if not isinstance(skill_prefix, str):
+        raise MatrixFailure(f"adapter {name}.skillPrefix must be a string")
+    max_output = require_integer(
+        raw.get("maxOutputBytes", defaults["maxOutputBytes"]),
+        f"adapter {name}.maxOutputBytes",
+        minimum=1024,
+    )
+    return Adapter(
+        name=name,
+        ready_patterns=tuple(pattern.encode() for pattern in ready),
+        numbered_ready_pattern=numbered_ready_pattern,
+        ready_quiet=ready_quiet / 1000,
+        turn_ready_patterns=turn_ready_patterns,
+        turn_ready_quiet=turn_ready_quiet,
+        environment=require_string_map(
+            raw.get("environment", {}),
+            f"adapter {name}.environment",
+        ),
+        blocked_patterns=tuple(pattern.encode() for pattern in blocked),
+        launch_args=launch_args,
+        exit_steps=parse_steps(raw.get("exitSteps"), f"adapter {name}.exitSteps"),
+        allowed_exit_codes=parse_exit_codes(raw.get("allowedExitCodes"), f"adapter {name}.allowedExitCodes"),
+        skill_prefix=skill_prefix,
+        ready_timeout=adapter_number(raw, defaults, "readyTimeoutSeconds", minimum=1),
+        ready_settle=adapter_number(raw, defaults, "readySettleMilliseconds", minimum=0) / 1000,
+        turn_timeout=adapter_number(raw, defaults, "turnTimeoutSeconds", minimum=1),
+        exit_timeout=adapter_number(raw, defaults, "exitTimeoutSeconds", minimum=1),
+        submit_delay=adapter_number(raw, defaults, "submitDelayMilliseconds", minimum=0) / 1000,
+        max_output_bytes=max_output,
+    )
+
+
+def parse_defaults(value: Any) -> dict[str, Any]:
+    defaults = require_object(value, "defaults")
+    required = {
+        "readyTimeoutSeconds",
+        "readySettleMilliseconds",
+        "turnTimeoutSeconds",
+        "exitTimeoutSeconds",
+        "submitDelayMilliseconds",
+        "maxOutputBytes",
+    }
+    if set(defaults) != required:
+        raise MatrixFailure("defaults keys differ")
+    return defaults
+
+
+def parse_live(value: Any) -> LiveContract:
+    live = require_object(value, "live")
+    required = {"turnOnePrompt", "turnTwoPrompt", "skillPrompt", "skillRequiredPatterns"}
+    if set(live) != required:
+        raise MatrixFailure("live contract keys differ")
+    required_patterns = require_string_list(live["skillRequiredPatterns"], "live.skillRequiredPatterns")
+    return LiveContract(
+        turn_one_prompt=validate_template(
+            require_string(live["turnOnePrompt"], "live.turnOnePrompt"),
+            "live.turnOnePrompt",
+            frozenset({"encodedMarker"}),
+            frozenset({"encodedMarker"}),
+        ),
+        turn_two_prompt=validate_template(
+            require_string(live["turnTwoPrompt"], "live.turnTwoPrompt"),
+            "live.turnTwoPrompt",
+            frozenset({"encodedSuffix"}),
+            frozenset({"encodedSuffix"}),
+        ),
+        skill_prompt=validate_template(
+            require_string(live["skillPrompt"], "live.skillPrompt"),
+            "live.skillPrompt",
+            frozenset({"skillPrefix", "encodedMarker"}),
+            frozenset({"skillPrefix", "encodedMarker"}),
+        ),
+        skill_required_patterns=tuple(pattern.encode() for pattern in required_patterns),
+    )
+
+
+def parse_launchers(value: Any, adapters: dict[str, Adapter]) -> dict[str, str]:
+    raw = require_object(value, "launchers")
+    launchers: dict[str, str] = {}
+    for launcher, adapter_name_value in raw.items():
+        if not NAME_PATTERN.fullmatch(launcher):
+            raise MatrixFailure(f"invalid launcher name in config: {launcher}")
+        adapter_name = require_string(adapter_name_value, f"launcher {launcher} adapter")
+        if adapter_name not in adapters:
+            raise MatrixFailure(f"launcher {launcher} references unknown adapter: {adapter_name}")
+        launchers[launcher] = adapter_name
+    if not launchers:
+        raise MatrixFailure("launchers must not be empty")
+    return launchers
+
+
+def load_config(path: Path) -> MatrixConfig:
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise MatrixFailure(f"cannot read adapter config {path}: {error}") from error
+    root = require_object(raw, "adapter config")
+    required = {"schemaVersion", "defaults", "live", "adapters", "launchers"}
+    if set(root) != required or root["schemaVersion"] != 1:
+        raise MatrixFailure("adapter config schema differs")
+    defaults = parse_defaults(root["defaults"])
+    adapter_values = require_object(root["adapters"], "adapters")
+    adapters = {name: parse_adapter(name, value, defaults) for name, value in adapter_values.items()}
+    return MatrixConfig(
+        adapters=adapters,
+        launchers=parse_launchers(root["launchers"], adapters),
+        live=parse_live(root["live"]),
+    )
+
+
+def command_error(command: list[str], result: subprocess.CompletedProcess[str]) -> MatrixFailure:
+    detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+    return MatrixFailure(f"{' '.join(command)} failed: {detail}")
+
+
+def run_json(command: list[str], timeout: float) -> dict[str, Any]:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise MatrixFailure(f"cannot run {' '.join(command)}: {error}") from error
+    if result.returncode != 0:
+        raise command_error(command, result)
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise MatrixFailure(f"{' '.join(command)} returned invalid JSON") from error
+    return require_object(value, f"{' '.join(command)} output")
+
+
+def parse_profile(value: Any) -> Profile:
+    raw = require_object(value, "profile")
+    launcher = require_string(raw.get("launcher"), "profile.launcher")
+    harness = require_string(raw.get("harness"), "profile.harness")
+    name = require_string(raw.get("name"), "profile.name")
+    if not NAME_PATTERN.fullmatch(launcher) or not NAME_PATTERN.fullmatch(name):
+        raise MatrixFailure(f"invalid discovered profile: {launcher}/{name}")
+    return Profile(launcher=launcher, harness=harness, name=name)
+
+
+def discover_profiles(trx: str) -> list[Profile]:
+    catalog = run_json([trx, "list", "--json"], 60)
+    if catalog.get("schemaVersion") != 1 or not isinstance(catalog.get("profiles"), list):
+        raise MatrixFailure("trx list --json schema differs")
+    profiles = [parse_profile(value) for value in catalog["profiles"]]
+    if not profiles:
+        raise MatrixFailure("trx list --json returned no profiles")
+    identities = [(profile.launcher, profile.name) for profile in profiles]
+    if len(identities) != len(set(identities)):
+        raise MatrixFailure("trx list --json returned duplicate profiles")
+    return profiles
+
+
+def selected_profiles(profiles: list[Profile], launchers: set[str], names: set[str]) -> list[Profile]:
+    selected = [
+        profile
+        for profile in profiles
+        if (not launchers or profile.launcher in launchers) and (not names or profile.name in names)
+    ]
+    if not selected:
+        raise MatrixFailure("profile filters matched no discovered profile")
+    return selected
+
+
+def validate_discovery(
+    config: MatrixConfig,
+    profiles: list[Profile],
+    launchers: set[str],
+    names: set[str],
+) -> None:
+    discovered_launchers = {profile.launcher for profile in profiles}
+    missing_adapters = sorted(discovered_launchers - set(config.launchers))
+    if missing_adapters:
+        raise MatrixFailure(
+            "no PTY adapter for discovered launcher: " + ", ".join(missing_adapters)
+        )
+    unknown_launchers = sorted(launchers - discovered_launchers)
+    if unknown_launchers:
+        raise MatrixFailure(
+            "launcher filter was not discovered: " + ", ".join(unknown_launchers)
+        )
+    discovered_names = {profile.name for profile in profiles}
+    unknown_names = sorted(names - discovered_names)
+    if unknown_names:
+        raise MatrixFailure(
+            "profile filter was not discovered: " + ", ".join(unknown_names)
+        )
+
+
+def validate_selected_filters(
+    selected: list[Profile],
+    launchers: set[str],
+    names: set[str],
+) -> None:
+    selected_launchers = {profile.launcher for profile in selected}
+    missing_launchers = sorted(launchers - selected_launchers)
+    if missing_launchers:
+        raise MatrixFailure(
+            "launcher filter matched no selected profile: " + ", ".join(missing_launchers)
+        )
+    selected_names = {profile.name for profile in selected}
+    missing_names = sorted(names - selected_names)
+    if missing_names:
+        raise MatrixFailure(
+            "profile filter matched no selected launcher: " + ", ".join(missing_names)
+        )
+
+
+def inventory_readiness(trx: str, profile: Profile) -> tuple[str, str | None]:
+    command = [trx, "inventory", profile.launcher, profile.name, "--json"]
+    try:
+        inventory = run_json(command, 60)
+    except MatrixFailure as error:
+        return "error", str(error)
+    if (
+        inventory.get("schemaVersion") != 1
+        or inventory.get("launcher") != profile.launcher
+        or inventory.get("profile") != profile.name
+    ):
+        return "error", "inventory identity differs"
+    readiness = inventory.get("readiness")
+    if readiness not in {"healthy", "unhealthy", "not-setup", "busy"}:
+        return "error", "inventory readiness differs"
+    return str(readiness), None
+
+
+def normalized_status(status: int) -> int:
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        return 128 + os.WTERMSIG(status)
+    return 1
+
+
+CONTROL_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+
+
+class PtyProcess:
+    def __init__(
+        self,
+        command: list[str],
+        output_path: Path,
+        max_output_bytes: int,
+        environment_overrides: dict[str, str],
+    ):
+        self.command = command
+        self.output_path = output_path
+        self.max_output_bytes = max_output_bytes
+        self.buffer = bytearray()
+        self.last_output_at: float | None = None
+        self.status: int | None = None
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(output_path, flags, 0o600)
+        except OSError as error:
+            raise MatrixFailure(f"cannot create PTY evidence {output_path}: {error}") from error
+        self.output = os.fdopen(descriptor, "wb", buffering=0)
+        blocked_signals = set(CONTROL_SIGNALS)
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked_signals)
+        try:
+            self.pid, self.terminal = pty.fork()
+        except BaseException as error:
+            self.output.close()
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            if isinstance(error, OSError):
+                raise MatrixFailure(
+                    f"cannot create PTY for {' '.join(command)}: {error}"
+                ) from error
+            raise
+        if self.pid == 0:
+            try:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+                environment = os.environ.copy()
+                environment["TERM"] = "xterm-256color"
+                environment["COLORTERM"] = "truecolor"
+                environment.update(environment_overrides)
+                os.execvpe(command[0], command, environment)
+            except BaseException:
+                os._exit(1)
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            fcntl.ioctl(self.terminal, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+        except BaseException as error:
+            try:
+                self.terminate()
+            finally:
+                os.close(self.terminal)
+                self.output.close()
+            if isinstance(error, OSError):
+                raise MatrixFailure(
+                    f"cannot size PTY for {' '.join(command)}: {error}"
+                ) from error
+            raise
+
+    def poll(self) -> int | None:
+        if self.status is not None:
+            return self.status
+        try:
+            waited, wait_status = os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
+            self.status = 137
+            return self.status
+        if waited:
+            self.status = normalized_status(wait_status)
+        return self.status
+
+    def pump(self, timeout: float) -> None:
+        ready, _, _ = select.select([self.terminal], [], [], timeout)
+        if ready:
+            try:
+                chunk = os.read(self.terminal, 65536)
+            except OSError:
+                chunk = b""
+            if chunk:
+                if len(self.buffer) + len(chunk) > self.max_output_bytes:
+                    raise MatrixFailure(f"PTY output exceeded {self.max_output_bytes} bytes")
+                self.buffer.extend(chunk)
+                self.last_output_at = time.monotonic()
+                self.output.write(chunk)
+        self.poll()
+
+    def wait_for_event(
+        self,
+        wanted: tuple[bytes, ...],
+        blocked: tuple[bytes, ...],
+        start: int,
+        timeout: float,
+    ) -> int:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            event = first_event(self.buffer, wanted, blocked, start)
+            if event is not None:
+                kind, pattern, end = event
+                if kind == "blocked":
+                    raise MatrixFailure(f"TUI blocked by: {pattern.decode(errors='replace')}")
+                return end
+            if self.status is not None:
+                raise MatrixFailure(f"TUI exited before the expected marker with status {self.status}")
+            self.pump(min(0.1, max(0, deadline - time.monotonic())))
+        expected = ", ".join(pattern.decode(errors="replace") for pattern in wanted)
+        raise MatrixFailure(f"timed out waiting for TUI marker: {expected}")
+
+    def wait_for_quiet(
+        self,
+        quiet_seconds: float,
+        blocked: tuple[bytes, ...],
+        start: int,
+        timeout: float,
+    ) -> int:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.reject_blocked_event(blocked, start)
+            if self.status is not None:
+                raise MatrixFailure(
+                    f"TUI exited before quiet readiness with status {self.status}"
+                )
+            if (
+                self.last_output_at is not None
+                and time.monotonic() - self.last_output_at >= quiet_seconds
+            ):
+                return len(self.buffer)
+            self.pump(min(0.05, max(0, deadline - time.monotonic())))
+        raise MatrixFailure(
+            f"timed out waiting for {quiet_seconds:g}s of quiet TUI output"
+        )
+
+    def reject_blocked_event(self, blocked: tuple[bytes, ...], start: int) -> None:
+        event = first_event(self.buffer, (), blocked, start)
+        if event is not None:
+            _, pattern, _ = event
+            raise MatrixFailure(f"TUI blocked by: {pattern.decode(errors='replace')}")
+
+    def send(self, data: bytes) -> None:
+        if self.status is not None:
+            raise MatrixFailure(f"cannot write to exited TUI with status {self.status}")
+        try:
+            os.write(self.terminal, data)
+        except OSError as error:
+            raise MatrixFailure(f"cannot write to TUI: {error}") from error
+
+    def send_line(
+        self,
+        text: str,
+        delay: float,
+        blocked: tuple[bytes, ...],
+        start: int,
+    ) -> None:
+        self.reject_blocked_event(blocked, start)
+        if delay:
+            self.monitor_blockers_for(delay, blocked, start)
+        else:
+            self.pump(0)
+        self.reject_blocked_event(blocked, start)
+        self.send(text.encode())
+        if delay:
+            deadline = time.monotonic() + delay
+            while time.monotonic() < deadline:
+                self.pump(min(0.05, max(0, deadline - time.monotonic())))
+                self.reject_blocked_event(blocked, start)
+                if self.status is not None:
+                    raise MatrixFailure(
+                        f"TUI exited before the prompt was submitted with status {self.status}"
+                    )
+        self.reject_blocked_event(blocked, start)
+        self.send(b"\r")
+
+    def wait_for_exit(
+        self,
+        timeout: float,
+        blocked: tuple[bytes, ...] = (),
+        start: int = 0,
+    ) -> int | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.reject_blocked_event(blocked, start)
+            if self.status is not None:
+                self.pump(0)
+                self.reject_blocked_event(blocked, start)
+                return self.status
+            self.pump(min(0.1, max(0, deadline - time.monotonic())))
+            self.reject_blocked_event(blocked, start)
+        return self.status
+
+    def require_running_for(
+        self,
+        duration: float,
+        blocked: tuple[bytes, ...],
+        start: int,
+        operation: str,
+    ) -> None:
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            self.pump(min(0.05, max(0, deadline - time.monotonic())))
+            self.reject_blocked_event(blocked, start)
+            if self.status is not None:
+                raise MatrixFailure(
+                    f"TUI exited before {operation} with status {self.status}"
+                )
+
+    def monitor_blockers_for(
+        self,
+        duration: float,
+        blocked: tuple[bytes, ...],
+        start: int,
+    ) -> None:
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            self.pump(min(0.05, max(0, deadline - time.monotonic())))
+            self.reject_blocked_event(blocked, start)
+            if self.status is not None:
+                return
+
+    def wait_for_reap(self, timeout: float) -> int | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.poll() is not None:
+                return self.status
+            time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+        return self.poll()
+
+    def signal_group(self, value: int) -> bool:
+        try:
+            os.killpg(self.pid, value)
+            return True
+        except (PermissionError, ProcessLookupError):
+            return False
+
+    def signal_leader(self, value: int) -> None:
+        try:
+            os.kill(self.pid, value)
+        except (PermissionError, ProcessLookupError):
+            pass
+
+    def terminate_with_signals_blocked(self) -> None:
+        if self.poll() is None:
+            if not self.signal_group(signal.SIGTERM):
+                self.signal_leader(signal.SIGTERM)
+            self.wait_for_reap(1)
+        self.signal_group(signal.SIGKILL)
+        if self.status is None:
+            self.signal_leader(signal.SIGKILL)
+            self.wait_for_reap(1)
+
+    def terminate(self) -> None:
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(CONTROL_SIGNALS))
+        try:
+            self.terminate_with_signals_blocked()
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+    def close(self) -> None:
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(CONTROL_SIGNALS))
+        try:
+            self.terminate_with_signals_blocked()
+            try:
+                os.close(self.terminal)
+            except OSError:
+                pass
+            if self.status is None:
+                self.wait_for_reap(1)
+            if self.status is None:
+                raise MatrixFailure(f"PTY child {self.pid} could not be reaped after SIGKILL")
+        finally:
+            self.output.close()
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+
+def first_event(
+    buffer: bytearray,
+    wanted: tuple[bytes, ...],
+    blocked: tuple[bytes, ...],
+    start: int,
+) -> tuple[str, bytes, int] | None:
+    segment = bytes(buffer[start:])
+    blocked_events: list[tuple[int, bytes, int]] = []
+    for pattern in blocked:
+        match = find_terminal_pattern(segment, pattern)
+        if match is not None:
+            blocked_events.append((match[0], pattern, match[1]))
+    if blocked_events:
+        position, pattern, end = min(blocked_events, key=lambda event: event[0])
+        return "blocked", pattern, start + end
+    wanted_events: list[tuple[int, bytes, int]] = []
+    for pattern in wanted:
+        match = find_terminal_pattern(segment, pattern)
+        if match is not None:
+            wanted_events.append((match[0], pattern, match[1]))
+    if not wanted_events:
+        return None
+    position, pattern, end = min(wanted_events, key=lambda event: event[0])
+    return "wanted", pattern, start + end
+
+
+TEXT_STYLE_ESCAPE = rb"\x1b\[[0-9:;]*m"
+TEXT_STYLE_GAP = rb"(?:" + TEXT_STYLE_ESCAPE + rb")*"
+
+
+def find_terminal_pattern(
+    segment: bytes,
+    pattern: bytes,
+) -> tuple[int, int] | None:
+    position = segment.find(pattern)
+    if position >= 0:
+        return position, position + len(pattern)
+    if not pattern:
+        return 0, 0
+    expression = TEXT_STYLE_GAP.join(re.escape(bytes([value])) for value in pattern)
+    match = re.search(expression, segment)
+    if match is None:
+        return None
+    return match.start(), match.end()
+
+
+def wait_for_ready(
+    process: PtyProcess,
+    adapter: Adapter,
+    start: int,
+    timeout: float,
+    turn: int,
+    after_turn: bool,
+) -> int:
+    ready_patterns = adapter.ready_patterns
+    ready_quiet = adapter.ready_quiet
+    if after_turn:
+        if adapter.turn_ready_patterns is not None:
+            ready_patterns = adapter.turn_ready_patterns
+        if adapter.turn_ready_quiet is not None:
+            ready_quiet = adapter.turn_ready_quiet
+    if adapter.numbered_ready_pattern is not None:
+        ready_patterns = (
+            adapter.numbered_ready_pattern.format_map({"turn": turn}).encode(),
+        )
+    cursor = start
+    if ready_patterns:
+        cursor = process.wait_for_event(
+            ready_patterns,
+            adapter.blocked_patterns,
+            start,
+            timeout,
+        )
+    if ready_quiet:
+        cursor = process.wait_for_quiet(
+            ready_quiet,
+            adapter.blocked_patterns,
+            cursor,
+            timeout,
+        )
+    return cursor
+
+
+def render_values(values: tuple[str, ...], context: dict[str, str]) -> list[str]:
+    rendered: list[str] = []
+    for value in values:
+        try:
+            rendered.append(value.format_map(context))
+        except (KeyError, ValueError) as error:
+            raise MatrixFailure(f"cannot render adapter template: {error}") from error
+    return rendered
+
+
+def render_template(value: str, context: dict[str, str]) -> str:
+    try:
+        return value.format_map(context)
+    except (KeyError, ValueError) as error:
+        raise MatrixFailure(f"cannot render live prompt template: {error}") from error
+
+
+def encoded_ascii(value: str) -> str:
+    return " ".join(str(ord(character)) for character in value)
+
+
+def live_markers(profile: Profile) -> tuple[str, str, str]:
+    identity = re.sub(r"[^A-Z0-9]+", "_", f"{profile.launcher}_{profile.name}".upper()).strip("_")
+    first = f"TUI_MATRIX_{identity}_{uuid.uuid4().hex[:10].upper()}"
+    return first, f"{first}_TWO", f"{first}_SKILL"
+
+
+def run_turn(
+    process: PtyProcess,
+    adapter: Adapter,
+    ready_cursor: int,
+    prompt: str,
+    marker: str,
+    next_ready_turn: int,
+    required_patterns: tuple[bytes, ...] = (),
+) -> int:
+    process.require_running_for(
+        adapter.ready_settle,
+        adapter.blocked_patterns,
+        ready_cursor,
+        "prompt input",
+    )
+    start = len(process.buffer)
+    process.send_line(
+        prompt,
+        adapter.submit_delay,
+        adapter.blocked_patterns,
+        ready_cursor,
+    )
+    marker_end = process.wait_for_event((marker.encode(),), adapter.blocked_patterns, start, adapter.turn_timeout)
+    segment = bytes(process.buffer[start:marker_end])
+    pattern_cursor = 0
+    for pattern in required_patterns:
+        match = find_terminal_pattern(segment[pattern_cursor:], pattern)
+        if match is None:
+            label = pattern.decode(errors="replace")
+            raise MatrixFailure(f"response omitted or misordered required pattern: {label}")
+        pattern_cursor += match[1]
+    return wait_for_ready(
+        process,
+        adapter,
+        marker_end,
+        adapter.turn_timeout,
+        next_ready_turn,
+        True,
+    )
+
+
+def perform_live_contract(
+    process: PtyProcess,
+    adapter: Adapter,
+    contract: LiveContract,
+    profile: Profile,
+    stages: dict[str, str],
+    cursor: int,
+) -> int:
+    first, second, skill = live_markers(profile)
+    suffix = second.removeprefix(first)
+    cursor = run_turn(
+        process,
+        adapter,
+        cursor,
+        render_template(
+            contract.turn_one_prompt,
+            {"encodedMarker": encoded_ascii(first)},
+        ),
+        first,
+        2,
+    )
+    stages["turnOne"] = "pass"
+    cursor = run_turn(
+        process,
+        adapter,
+        cursor,
+        render_template(
+            contract.turn_two_prompt,
+            {"encodedSuffix": encoded_ascii(suffix)},
+        ),
+        second,
+        3,
+    )
+    stages["turnTwo"] = "pass"
+    skill_prompt = render_template(
+        contract.skill_prompt,
+        {
+            "skillPrefix": adapter.skill_prefix,
+            "encodedMarker": encoded_ascii(skill),
+        },
+    )
+    cursor = run_turn(
+        process,
+        adapter,
+        cursor,
+        skill_prompt,
+        skill,
+        4,
+        contract.skill_required_patterns,
+    )
+    stages["skill"] = "pass"
+    return cursor
+
+
+def perform_exit(process: PtyProcess, adapter: Adapter, start: int) -> int:
+    process.require_running_for(
+        adapter.ready_settle,
+        adapter.blocked_patterns,
+        start,
+        "exit keys were sent",
+    )
+    status = process.poll()
+    if status is not None:
+        raise MatrixFailure(f"TUI exited before exit keys were sent with status {status}")
+    delivered = False
+    for step in adapter.exit_steps:
+        if process.poll() is not None:
+            break
+        process.send(step.data)
+        delivered = True
+        if step.delay_seconds:
+            process.monitor_blockers_for(
+                step.delay_seconds,
+                adapter.blocked_patterns,
+                start,
+            )
+    if not delivered:
+        raise MatrixFailure("TUI exited before any configured exit key was sent")
+    status = process.wait_for_exit(
+        adapter.exit_timeout,
+        adapter.blocked_patterns,
+        start,
+    )
+    if status is None:
+        process.terminate()
+        raise MatrixFailure("TUI did not exit after the configured exit keys")
+    if status not in adapter.allowed_exit_codes:
+        raise MatrixFailure(f"TUI exited with unexpected status {status}")
+    return status
+
+
+def empty_stages(live: bool) -> dict[str, str]:
+    stages = {
+        "adapter": "not-run",
+        "preflight": "not-run",
+        "ready": "not-run",
+        "exit": "not-run",
+        "postflight": "not-run",
+    }
+    if live:
+        stages.update({"turnOne": "not-run", "turnTwo": "not-run", "skill": "not-run"})
+    return stages
+
+
+def profile_result(profile: Profile, live: bool) -> dict[str, Any]:
+    return {
+        "launcher": profile.launcher,
+        "harness": profile.harness,
+        "profile": profile.name,
+        "mode": "live" if live else "lifecycle",
+        "outcome": "fail",
+        "stages": empty_stages(live),
+        "errors": [],
+        "command": None,
+        "exitCode": None,
+        "rawOutput": None,
+    }
+
+
+def prepare_command(trx: str, profile: Profile, adapter: Adapter) -> list[str]:
+    context = {
+        "launcher": profile.launcher,
+        "profile": profile.name,
+        "sessionId": str(uuid.uuid4()),
+    }
+    launch_args = render_values(adapter.launch_args, context)
+    command = [trx, "run", profile.launcher, profile.name]
+    if launch_args:
+        command.extend(["--", *launch_args])
+    return command
+
+
+def adapter_for_profile(config: MatrixConfig, profile: Profile) -> Adapter:
+    adapter_name = config.launchers.get(profile.launcher)
+    if adapter_name is None:
+        raise MatrixFailure(f"no PTY adapter for discovered launcher: {profile.launcher}")
+    return config.adapters[adapter_name]
+
+
+def run_profile(
+    trx: str,
+    config: MatrixConfig,
+    profile: Profile,
+    evidence_dir: Path,
+    live: bool,
+) -> dict[str, Any]:
+    result = profile_result(profile, live)
+    stages = result["stages"]
+    try:
+        adapter = adapter_for_profile(config, profile)
+        stages["adapter"] = "pass"
+    except MatrixFailure as error:
+        stages["adapter"] = "fail"
+        result["errors"].append(str(error))
+        return result
+    readiness, detail = inventory_readiness(trx, profile)
+    if readiness != "healthy":
+        stages["preflight"] = "fail"
+        result["errors"].append(detail or f"preflight readiness is {readiness}")
+        return result
+    stages["preflight"] = "pass"
+    raw_path = evidence_dir / f"{profile.launcher}-{profile.name}.raw"
+    command = prepare_command(trx, profile, adapter)
+    result["command"] = command
+    process: PtyProcess | None = None
+    try:
+        process = PtyProcess(
+            command,
+            raw_path,
+            adapter.max_output_bytes,
+            adapter.environment,
+        )
+        result["rawOutput"] = str(raw_path)
+        cursor = wait_for_ready(
+            process,
+            adapter,
+            0,
+            adapter.ready_timeout,
+            1,
+            False,
+        )
+        stages["ready"] = "pass"
+        if live:
+            cursor = perform_live_contract(
+                process,
+                adapter,
+                config.live,
+                profile,
+                stages,
+                cursor,
+            )
+        result["exitCode"] = perform_exit(process, adapter, cursor)
+        stages["exit"] = "pass"
+    except MatrixFailure as error:
+        for stage in ("ready", "turnOne", "turnTwo", "skill", "exit"):
+            if stage in stages and stages[stage] == "not-run":
+                stages[stage] = "fail"
+                break
+        result["errors"].append(str(error))
+    finally:
+        if process is not None:
+            process.close()
+            if result["exitCode"] is None:
+                result["exitCode"] = process.status
+    post_readiness, post_detail = inventory_readiness(trx, profile)
+    if post_readiness == "healthy":
+        stages["postflight"] = "pass"
+    else:
+        stages["postflight"] = "fail"
+        result["errors"].append(post_detail or f"postflight readiness is {post_readiness}")
+    required = [value for value in stages.values()]
+    if all(value == "pass" for value in required):
+        result["outcome"] = "pass"
+    return result
+
+
+def state_root() -> Path:
+    configured = os.environ.get("XDG_STATE_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".local" / "state"
+
+
+def absolute_path(path: Path) -> Path:
+    return Path(os.path.abspath(os.fspath(path.expanduser())))
+
+
+def reject_symlink_path(path: Path) -> None:
+    try:
+        if path.is_symlink():
+            raise MatrixFailure(f"evidence directory must not be a symlink: {path}")
+    except OSError as error:
+        raise MatrixFailure(f"cannot inspect evidence path {path}: {error}") from error
+
+
+def prepare_evidence_dir(requested: str | None) -> Path:
+    if requested:
+        path = absolute_path(Path(requested))
+    else:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = absolute_path(
+            state_root() / "trellage" / "native-tui-matrix" / f"{stamp}-{os.getpid()}"
+        )
+    reject_symlink_path(path)
+    path = path.resolve(strict=False)
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as error:
+        raise MatrixFailure(f"cannot create evidence directory {path}: {error}") from error
+    reject_symlink_path(path)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+        try:
+            if os.listdir(descriptor):
+                raise MatrixFailure(f"evidence directory must be empty: {path}")
+            os.fchmod(descriptor, 0o700)
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise MatrixFailure(f"evidence path is not a safe directory {path}: {error}") from error
+    return path
+
+
+def write_result(path: Path, result: dict[str, Any]) -> None:
+    temporary = path / f".result.json.{os.getpid()}.{uuid.uuid4().hex}"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(temporary, flags, 0o600)
+        with os.fdopen(descriptor, "w") as output:
+            output.write(f"{json.dumps(result, indent=2, sort_keys=True)}\n")
+        os.link(temporary, path / "result.json", follow_symlinks=False)
+    except OSError as error:
+        raise MatrixFailure(f"cannot write matrix result in {path}: {error}") from error
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def escape_cell(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "\\n")
+
+
+def print_table(result: dict[str, Any]) -> None:
+    live = result["mode"] == "live"
+    columns = ["Launcher", "Profile", "Preflight", "Ready"]
+    keys = ["launcher", "profile", "preflight", "ready"]
+    if live:
+        columns.extend(["Turn 1", "Turn 2", "Skill"])
+        keys.extend(["turnOne", "turnTwo", "skill"])
+    columns.extend(["Exit", "Postflight", "Outcome"])
+    keys.extend(["exit", "postflight", "outcome"])
+    print("| " + " | ".join(columns) + " |")
+    print("|" + "|".join("---" for _ in columns) + "|")
+    for profile in result["profiles"]:
+        values: list[str] = []
+        for key in keys:
+            value = profile[key] if key in profile else profile["stages"][key]
+            values.append(escape_cell(str(value)))
+        print("| " + " | ".join(values) + " |")
+    print(f"\nEvidence: {result['evidenceDirectory']}")
+    for profile in result["profiles"]:
+        for error in profile["errors"]:
+            print(f"{profile['launcher']}/{profile['profile']}: {error}", file=sys.stderr)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="scripts/verify-native-tuis",
+        description="Run sequential PTY lifecycle or live checks for profiles discovered from trx.",
+    )
+    parser.add_argument("--live", action="store_true", help="run paid multi-turn and skill probes")
+    parser.add_argument("--launcher", action="append", default=[], help="select a launcher; repeatable")
+    parser.add_argument("--profile", action="append", default=[], help="select a profile name; repeatable")
+    parser.add_argument("--json", action="store_true", help="write the result JSON to stdout")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="adapter configuration file")
+    parser.add_argument("--trx", default=os.environ.get("TRELLAGE_NATIVE_TUI_TRX", "trx"), help="trx executable")
+    parser.add_argument("--evidence-dir", help="directory for raw PTY output and result.json")
+    return parser.parse_args()
+
+
+def build_result(mode: str, evidence_dir: Path, profiles: list[dict[str, Any]]) -> dict[str, Any]:
+    outcome = "pass" if all(profile["outcome"] == "pass" for profile in profiles) else "fail"
+    return {
+        "schemaVersion": 1,
+        "mode": mode,
+        "outcome": outcome,
+        "evidenceDirectory": str(evidence_dir),
+        "profiles": profiles,
+    }
+
+
+TERMINATION_SIGNALS = CONTROL_SIGNALS
+
+
+def handle_termination(signal_number: int, _frame: Any) -> None:
+    for value in TERMINATION_SIGNALS:
+        signal.signal(value, signal.SIG_IGN)
+    raise MatrixTermination(signal_number)
+
+
+def main() -> int:
+    for value in TERMINATION_SIGNALS:
+        signal.signal(value, handle_termination)
+    try:
+        arguments = parse_args()
+        config = load_config(Path(arguments.config).expanduser().resolve())
+        discovered = discover_profiles(arguments.trx)
+        launcher_filters = set(arguments.launcher)
+        profile_filters = set(arguments.profile)
+        validate_discovery(config, discovered, launcher_filters, profile_filters)
+        profiles = selected_profiles(discovered, launcher_filters, profile_filters)
+        validate_selected_filters(profiles, launcher_filters, profile_filters)
+        evidence_dir = prepare_evidence_dir(arguments.evidence_dir)
+        results = [
+            run_profile(arguments.trx, config, profile, evidence_dir, arguments.live)
+            for profile in profiles
+        ]
+        result = build_result("live" if arguments.live else "lifecycle", evidence_dir, results)
+        write_result(evidence_dir, result)
+    except MatrixFailure as error:
+        print(f"verify-native-tuis: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("verify-native-tuis: interrupted", file=sys.stderr)
+        return 130
+    except MatrixTermination as termination:
+        print(
+            f"verify-native-tuis: terminated by signal {termination.signal_number}",
+            file=sys.stderr,
+        )
+        return 128 + termination.signal_number
+    if arguments.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        print_table(result)
+    return 0 if result["outcome"] == "pass" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

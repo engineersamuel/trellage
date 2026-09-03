@@ -71,6 +71,7 @@ const detailColors: Record<
   Harness: "yellow",
   Model: "magenta",
   Plugins: "blue",
+  Run: "green",
   Skills: "green",
   MCPs: "cyan",
   Sandbox: "green",

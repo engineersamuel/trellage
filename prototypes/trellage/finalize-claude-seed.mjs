@@ -585,7 +585,6 @@ const main = async () => {
   const onboardingDefaults = {
     hasCompletedOnboarding: true,
     lastOnboardingVersion: harnessVersion,
-    theme: "dark",
     shiftEnterKeyBindingInstalled: true,
   }
   const manifest = await readJson(manifestPath, "locked Claude marketplace manifest")

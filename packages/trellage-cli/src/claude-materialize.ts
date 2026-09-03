@@ -81,10 +81,10 @@ const graphOfLoopsSettings = {
   },
 } as const
 
+/** Theme is a user preference in settings.json, not legacy onboarding state. */
 export const claudeDefaultOnboarding = (version: string) => ({
   hasCompletedOnboarding: true,
   lastOnboardingVersion: version,
-  theme: "dark",
   shiftEnterKeyBindingInstalled: true,
 })
 

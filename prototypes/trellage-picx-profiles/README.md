@@ -27,6 +27,8 @@ host Pi installation. The old
 `~/.omp/profiles/trellage-picx-default` profile is not used or deleted.
 
 Managed `settings.json` declares the ten packages and selects the proxy model.
+Pi owns and can update a string `lastChangelogVersion`; doctor accepts that UI
+state and repair preserves it. Invalid non-string values are removed by repair.
 Managed `models.json` defines the proxy-backed model. Managed `mcp.json` sets
 `settings.hostConfigDiscovery` to `off` and has no imports, so host-specific
 Claude, Codex, Cursor, or OMP MCP configuration is not loaded. Standard shared

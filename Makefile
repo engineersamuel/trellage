@@ -1,10 +1,11 @@
-.PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime trellage-host-headless trellage-host-headless-test azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean
+.PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime trellage-host-headless trellage-host-headless-test azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
+NATIVE_TUI_MATRIX_ARGS ?=
 HEADLESS_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := trellage-host-runtime native-copilot-profiles native-firstmate-profile native-prime-profile claude-entry copilot-entry native-claude-profile native-omp-profile launcher dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-agency-profile native-jcode-profile native-picx-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract
+PARALLEL_TEST_TARGETS := trellage-host-runtime native-copilot-profiles native-firstmate-profile native-prime-profile claude-entry copilot-entry native-claude-profile native-omp-profile launcher dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-agency-profile native-jcode-profile native-picx-profile native-tui-matrix-test manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract
 TIMING_SENSITIVE_TEST_TARGETS := native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles
 FINAL_TEST_TARGETS := native-profile-router trellage-host-headless-test
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
@@ -134,6 +135,14 @@ native-grok-profiles:
 	bash prototypes/trellage-grok-profiles/tests/contract.sh
 
 native-jcode-profile:
+	@bundle_check="$$(mktemp "$${TMPDIR:-/tmp}/trellage-jcx-config-manager.XXXXXX")"; \
+	trap 'rm -f -- "$$bundle_check"' EXIT; \
+	./node_modules/.bin/esbuild \
+		prototypes/trellage-jcode-profiles/config-manager.source.mjs \
+		--bundle --platform=node --format=esm --target=node18 \
+		--legal-comments=inline --log-level=error --outfile="$$bundle_check"; \
+	cmp -s "$$bundle_check" prototypes/trellage-jcode-profiles/config-manager.mjs \
+		|| { printf '%s\n' 'jcx config manager bundle is stale' >&2; exit 1; }
 	bash prototypes/trellage-jcode-profiles/tests/contract.sh
 
 native-omp-profile:
@@ -190,6 +199,15 @@ profile-matrix:
 
 profile-matrix-test:
 	bash tests/agent_profile_matrix.sh
+
+native-tui-matrix:
+	scripts/verify-native-tuis $(NATIVE_TUI_MATRIX_ARGS)
+
+native-tui-matrix-live:
+	scripts/verify-native-tuis --live $(NATIVE_TUI_MATRIX_ARGS)
+
+native-tui-matrix-test:
+	python3 tests/native_tui_matrix_test.py
 
 headless-matrix:
 	scripts/verify-headless-contracts $(HEADLESS_MATRIX_ARGS)

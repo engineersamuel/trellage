@@ -280,6 +280,7 @@ ensure_floating_skills() {
 ensure_onboarding() {
   local home="$1" version="$2" onboarding="$home/.claude.json" staged
 
+  # Claude stores theme choices in settings.json; preserve legacy fields but do not create one.
   [[ ! -L "$onboarding" && ( ! -e "$onboarding" || -f "$onboarding" ) ]] \
     || die "unsafe Claude onboarding state: $onboarding"
   staged="$(mktemp "$home/.claude.json.XXXXXX")" \
@@ -290,14 +291,12 @@ ensure_onboarding() {
       | .hasCompletedOnboarding = true
       | .lastOnboardingVersion = $version
       | .shiftEnterKeyBindingInstalled = true
-      | .theme = (.theme // "dark")
     ' "$onboarding" >"$staged" || die "invalid Claude onboarding state: $onboarding"
   else
     jq -n --arg version "$version" '{
       hasCompletedOnboarding: true,
       lastOnboardingVersion: $version,
-      shiftEnterKeyBindingInstalled: true,
-      theme: "dark"
+      shiftEnterKeyBindingInstalled: true
     }' >"$staged"
   fi
   chmod 0600 "$staged"
@@ -315,7 +314,6 @@ verify_onboarding() {
     and (.lastOnboardingVersion | type == "string"
       and test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
     and .shiftEnterKeyBindingInstalled == true
-    and (.theme | type == "string" and length > 0)
   ' "$onboarding" >/dev/null \
     || die "Claude onboarding state differs; run: $launcher_name repair"
 }

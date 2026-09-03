@@ -65976,6 +65976,7 @@ var detailRows = (entry, model, columns, forwardedModel) => {
     ...entry.passthroughArgs ?? []
   ];
   const invocation = [
+    ...entry.commandAlias === void 0 || entry.profileArgument === void 0 ? [] : fieldRows("Run", `trx run ${entry.commandAlias} ${entry.profileArgument}`, width),
     ...entry.commandAlias === void 0 ? [] : fieldRows("Alias", entry.commandAlias, width),
     ...entry.commandPath === void 0 ? [] : fieldRows("Binary", entry.commandPath, width),
     ...entry.commandAlias === void 0 && entry.commandPath === void 0 ? [] : fieldRows("Arguments", JSON.stringify(invocationArgs), width)
@@ -83357,6 +83358,7 @@ var detailColors = {
   Harness: "yellow",
   Model: "magenta",
   Plugins: "blue",
+  Run: "green",
   Skills: "green",
   MCPs: "cyan",
   Sandbox: "green",

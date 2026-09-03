@@ -130,14 +130,12 @@ jq -e '
   and keys == [
     "hasCompletedOnboarding",
     "lastOnboardingVersion",
-    "shiftEnterKeyBindingInstalled",
-    "theme"
+    "shiftEnterKeyBindingInstalled"
   ]
   and .hasCompletedOnboarding == true
   and (.lastOnboardingVersion | type == "string")
   and (.lastOnboardingVersion | test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
   and .shiftEnterKeyBindingInstalled == true
-  and .theme == "dark"
 ' "$default_onboarding" >/dev/null || fail 'baked Claude onboarding defaults are invalid'
 mkdir -p "$runtime_home"
 [[ -d "$runtime_home" && ! -L "$runtime_home" ]] || fail 'Claude runtime home must be a directory'

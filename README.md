@@ -343,9 +343,10 @@ trellage --profile claude-social-media
 Trellage forwards only variables that are present to the final Claude process;
 neither variable is required or stored in the profile or lock.
 
-Trellage also completes Claude Code's first-run onboarding with the dark theme. Later
-theme changes and unrelated Claude user state are preserved. The current mounted
-worktree is pre-approved as trusted inside the isolated container.
+Trellage also completes Claude Code's first-run onboarding without managing the
+user's theme preference in `settings.json`. Theme choices and unrelated Claude user
+state are preserved. The current mounted worktree is pre-approved as trusted inside
+the isolated container.
 ## Automatic Varlock Environment Loading
 
 Trellage bundles Varlock and uses it automatically for Sandbox new, prompt,
@@ -1240,6 +1241,83 @@ Exit statuses:
 
 - `0`: all required checks pass.
 - `1`: a required launcher is missing, or discovery, static verification, or live verification fails.
+- `2`: invalid usage.
+
+## Native TUI Matrix
+
+The Native TUI matrix discovers its complete profile set from
+`trx list --json`. Profile names are not hardcoded. A new profile under an
+existing launcher is included automatically. A new launcher must select a
+versioned PTY adapter in
+[`scripts/native-tui-adapters.json`](scripts/native-tui-adapters.json);
+discovery fails closed when that adapter is missing.
+
+Run the sequential, no-model lifecycle matrix:
+
+```bash
+scripts/verify-native-tuis
+make native-tui-matrix
+```
+
+Filter a run without changing discovery:
+
+```bash
+scripts/verify-native-tuis --launcher cldx --profile default
+```
+
+The runner still validates adapter coverage for the complete discovered
+catalog before it applies filters. Unknown or partly invalid selectors fail
+instead of being ignored.
+
+Lifecycle mode uses each real current profile home. It requires healthy
+machine-readable inventory before launch, starts the profile through
+`trx run`, waits for the harness-specific input marker, sends only configured
+control keys to exit, and requires healthy inventory afterward. It does not
+run setup, repair, login, or a model prompt. Harnesses can still write normal
+session, history, cache, usage, and UI state. Profiles run one at a time.
+Recognized trust, consent, login, and onboarding screens fail as blockers; the
+matrix does not answer or persist those decisions.
+
+Live mode is an explicit paid probe:
+
+```bash
+scripts/verify-native-tuis --live --launcher cldx --profile default
+make native-tui-matrix-live NATIVE_TUI_MATRIX_ARGS='--launcher cldx --profile default'
+```
+
+For every selected profile, live mode enters text through the real TUI and
+proves a decoded nonce response, a second response that depends on conversation
+memory, and a `justify`-prefixed behavioral smoke that requires a verdict line.
+Expected response markers are encoded as decimal ASCII in the typed prompt, so
+input echo cannot satisfy the check. This verifies TUI invocation and response
+shape; it is not a proof that the model did not inspect other files. Live mode
+can consume model quota and must not run from `make test`.
+
+Each run writes mode-0600 raw PTY streams and `result.json` beneath
+`~/.local/state/trellage/native-tui-matrix/`. Use `--evidence-dir PATH` to
+select another fresh, empty, non-symlink directory. Run the deterministic
+fixture contract with:
+
+```bash
+make native-tui-matrix-test
+```
+
+To test uninstalled launcher changes from the current worktree, opt in to
+source launcher resolution:
+
+```bash
+TRELLAGE_TRX_SOURCE_ROOT="$PWD/prototypes/trellage-router" \
+TRELLAGE_TRX_NATIVE_SOURCE=1 \
+scripts/verify-native-tuis \
+  --trx "$PWD/prototypes/trellage-router/bin/trx" \
+  --launcher cldx --profile default
+```
+
+Exit statuses:
+
+- `0`: every selected profile passes.
+- `1`: discovery, adapter validation, readiness, PTY interaction, exit, or
+  postflight readiness fails.
 - `2`: invalid usage.
 
 ## Headless Contract Matrix

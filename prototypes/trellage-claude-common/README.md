@@ -70,7 +70,7 @@ this form so neither of its Bash boundaries depends on a pane daemon's PATH.
 - Onboarding state (`.claude.json`) and trust acceptance for the current
   workspace.
 - Claude settings (`settings.json`), including the default `Rundown` output
-  style.
+  style. Theme preferences remain user-owned.
 - Installing the floating `native-common` skills bundle.
 - copilot-proxy-rs health/model-catalog checks.
 - Explicit provider/token environment scrubbing (see "Provider/token scrub

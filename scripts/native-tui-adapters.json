@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "readyTimeoutSeconds": 45,
+    "readySettleMilliseconds": 100,
+    "turnTimeoutSeconds": 180,
+    "exitTimeoutSeconds": 15,
+    "submitDelayMilliseconds": 200,
+    "maxOutputBytes": 4194304
+  },
+  "live": {
+    "turnOnePrompt": "Decode these decimal ASCII values and reply with only the decoded text: {encodedMarker}",
+    "turnTwoPrompt": "Append the ASCII suffix represented by decimal values {encodedSuffix} to your previous reply. Reply with only the combined text.",
+    "skillPrompt": "{skillPrefix}Use the installed justify skill to audit the factual claim that two plus two equals four. Include the skill's canonical verdict label with calibrated confidence, and include only the decoded ASCII text from these decimal values on its own line: {encodedMarker}",
+    "skillRequiredPatterns": [
+      "Verdict:"
+    ]
+  },
+  "adapters": {
+    "agency-copilot": {
+      "readyPatterns": [
+        "/ commands"
+      ],
+      "blockedPatterns": [
+        "Select a session",
+        "Confirm folder trust",
+        "Do you trust the files in this folder"
+      ],
+      "launchArgs": [
+        "--session-id",
+        "{sessionId}"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "/justify "
+    },
+    "claude": {
+      "readyPatterns": [
+        "\u276f"
+      ],
+      "blockedPatterns": [
+        "Do you trust the files in this folder",
+        "Choose the text style"
+      ],
+      "launchArgs": [
+        "--session-id",
+        "{sessionId}"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "/justify "
+    },
+    "codex": {
+      "readyPatterns": [
+        "Ask Codex to do anything"
+      ],
+      "turnReadyPatterns": [],
+      "turnReadyQuietMilliseconds": 2000,
+      "blockedPatterns": [
+        "Do you trust the contents of this directory",
+        "Sign in with ChatGPT",
+        "Update available!"
+      ],
+      "launchArgs": [],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "$justify "
+    },
+    "copilot": {
+      "readyPatterns": [
+        "/ commands"
+      ],
+      "blockedPatterns": [
+        "Select a session",
+        "Confirm folder trust",
+        "Do you trust the files in this folder"
+      ],
+      "launchArgs": [
+        "--session-id",
+        "{sessionId}"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "/justify "
+    },
+    "firstmate": {
+      "readyPatterns": [
+        "\u276f"
+      ],
+      "blockedPatterns": [
+        "Do you trust the files in this folder",
+        "Choose the text style"
+      ],
+      "launchArgs": [
+        "--session-id",
+        "{sessionId}"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "/justify "
+    },
+    "grok": {
+      "readyPatterns": [
+        "\u276f"
+      ],
+      "blockedPatterns": [
+        "Help improve Grok",
+        "Log in to Grok"
+      ],
+      "launchArgs": [
+        "--session-id",
+        "{sessionId}"
+      ],
+      "readySettleMilliseconds": 5000,
+      "exitSteps": [
+        {
+          "data": "\u0004",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0004",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "/justify "
+    },
+    "jcode": {
+      "readyPatterns": [
+        "1> "
+      ],
+      "numberedReadyPattern": "{turn}> ",
+      "blockedPatterns": [],
+      "launchArgs": [],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": ""
+    },
+    "oh-my-pi": {
+      "readyPatterns": [
+        "Type your message",
+        "Enter your message",
+        "\n> "
+      ],
+      "blockedPatterns": [
+        "Select a provider",
+        "Login required"
+      ],
+      "launchArgs": [
+        "--no-session"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": ""
+    },
+    "pi": {
+      "readyPatterns": [
+        "Ponytail loaded:"
+      ],
+      "readyQuietMilliseconds": 750,
+      "turnReadyPatterns": [],
+      "turnReadyQuietMilliseconds": 750,
+      "environment": {
+        "PONYTAIL_QUIET_STARTUP": "0"
+      },
+      "blockedPatterns": [
+        "Select a provider",
+        "Login required"
+      ],
+      "launchArgs": [],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": ""
+    },
+    "prime": {
+      "readyPatterns": [
+        "Type your message",
+        "Enter your message",
+        "\n> "
+      ],
+      "blockedPatterns": [
+        "Login required"
+      ],
+      "launchArgs": [],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": ""
+    }
+  },
+  "launchers": {
+    "agx": "agency-copilot",
+    "cdx": "codex",
+    "cldx": "claude",
+    "cpx": "copilot",
+    "fmx": "firstmate",
+    "grx": "grok",
+    "jcx": "jcode",
+    "omp": "oh-my-pi",
+    "picx": "pi",
+    "prx": "prime"
+  }
+}

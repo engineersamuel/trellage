@@ -51,6 +51,8 @@ or unrelated paths instead of replacing them.
 trx
 trx --profile agency
 trx run cpx hve -- --prompt "Reply exactly OK"
+trx run cpx tufte-vdqi
+trx run cldx default
 trx --model gpt-5.6-terra
 trx list
 trx list --json
@@ -67,6 +69,8 @@ installed `trx`:
 ```sh
 mise run trx
 mise run trx -- --profile agency
+mise run trx -- run cpx tufte-vdqi
+mise run trx -- run cldx default
 mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
 mise run trx -- guide --intent "Write a technical LinkedIn post"
@@ -161,6 +165,15 @@ validation as the picker, rejects unknown launcher/profile pairs, then
 executes the exact owned launcher with the selected profile and unchanged
 arguments. Arguments must follow `--` so router options cannot be confused
 with launcher options.
+
+The picker’s **HARNESS** and **PROFILE** columns are display labels, not a
+single command-line profile name. Use the exact **Run** command in the selected
+row’s detail pane. For example, `copilot / tufte-vdqi` runs as
+`trx run cpx tufte-vdqi`, while `claude / default` runs as
+`trx run cldx default`. From this repository, prefix the same route with
+`mise run trx --`, such as `mise run trx -- run cpx tufte-vdqi`.
+`--profile agency` is the only direct profile alias. Use `trx run` for exact
+launcher/profile pairs.
 
 The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default

@@ -291,12 +291,9 @@ prepare_profile_directories() {
 }
 
 managed_settings() {
-  local version="$1"
-
   jq -S \
     --arg provider "$provider" \
-    --arg model "$model_id" \
-    --arg version "$version" '
+    --arg model "$model_id" '
     {
       defaultProvider: $provider,
       defaultModel: $model,
@@ -304,10 +301,23 @@ managed_settings() {
       enabledModels: [($provider + "/" + $model + ":medium")],
       defaultProjectTrust: "never",
       enableInstallTelemetry: false,
-      lastChangelogVersion: $version,
       packages: [.profiles.default.extensions[].installSpec]
     }
   ' "$catalog"
+}
+
+managed_settings_are_current() {
+  jq -eS '
+    if type == "object"
+      and ((has("lastChangelogVersion") | not)
+        or (.lastChangelogVersion | type == "string"))
+    then
+      del(.lastChangelogVersion)
+    else
+      error("settings must be an object")
+    end
+  ' "$agent_root/settings.json" 2>/dev/null \
+    | cmp -s - <(managed_settings)
 }
 
 managed_models() {
@@ -393,7 +403,7 @@ cleanup_profile_transaction() {
 
 publish_managed_profile() {
   local version="$1"
-  local settings_stage models_stage mcp_stage marker_stage target
+  local settings_stage settings_merge_stage models_stage mcp_stage marker_stage target
 
   prepare_profile_directories
   for target in "$agent_root/settings.json" "$agent_root/models.json" "$agent_root/mcp.json"; do
@@ -405,7 +415,22 @@ publish_managed_profile() {
   models_stage="$(mktemp "$agent_root/.models.json.XXXXXX")"
   mcp_stage="$(mktemp "$agent_root/.mcp.json.XXXXXX")"
   marker_stage="$(mktemp "$profile_root/.profile-marker.XXXXXX")"
-  managed_settings "$version" >"$settings_stage"
+  managed_settings >"$settings_stage"
+  if [[ -f "$agent_root/settings.json" ]] \
+    && jq -e -s '
+      length == 1
+      and (.[0]
+        | type == "object"
+        and has("lastChangelogVersion")
+        and (.lastChangelogVersion | type == "string"))
+    ' \
+      "$agent_root/settings.json" >/dev/null 2>&1; then
+    settings_merge_stage="$(mktemp "$agent_root/.settings-merged.json.XXXXXX")"
+    jq -S --slurpfile managed "$settings_stage" '
+      $managed[0] + {lastChangelogVersion: .lastChangelogVersion}
+    ' "$agent_root/settings.json" >"$settings_merge_stage"
+    mv -f "$settings_merge_stage" "$settings_stage"
+  fi
   managed_models >"$models_stage"
   managed_mcp >"$mcp_stage"
   printf '%s\n' "$profile_marker_value" >"$marker_stage"
@@ -635,7 +660,7 @@ verify_managed_profile() {
     || die "managed models config is missing: $agent_root/models.json"
   [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] \
     || die "managed MCP config is missing: $agent_root/mcp.json"
-  cmp -s "$agent_root/settings.json" <(managed_settings "$version") \
+  managed_settings_are_current \
     || die "managed settings differ; run picx repair $profile_key"
   cmp -s "$agent_root/models.json" <(managed_models) \
     || die "managed models config differs; run picx repair $profile_key"
@@ -649,7 +674,7 @@ managed_profile_is_current() {
   [[ -f "$agent_root/settings.json" && ! -L "$agent_root/settings.json" ]] || return 1
   [[ -f "$agent_root/models.json" && ! -L "$agent_root/models.json" ]] || return 1
   [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] || return 1
-  cmp -s "$agent_root/settings.json" <(managed_settings "$version") || return 1
+  managed_settings_are_current || return 1
   cmp -s "$agent_root/models.json" <(managed_models) || return 1
   cmp -s "$agent_root/mcp.json" <(managed_mcp)
 }

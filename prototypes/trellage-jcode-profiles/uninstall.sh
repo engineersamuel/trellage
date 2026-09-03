@@ -20,6 +20,7 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 install_root="$home/.local/share/trellage/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
+installed_config_manager="$install_root/config-manager.mjs"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
 command_path="$home/.local/bin/jcx"
 
@@ -42,6 +43,10 @@ fi
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ -f "$installed_catalog" && ! -L "$installed_catalog" ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+if [[ -e "$installed_config_manager" || -L "$installed_config_manager" ]]; then
+  [[ -f "$installed_config_manager" && ! -L "$installed_config_manager" ]] \
+    || refuse "unsafe managed config manager: $installed_config_manager"
+fi
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \

@@ -9,6 +9,7 @@ export interface DetailRow {
     | "Harness"
     | "Model"
     | "Plugins"
+    | "Run"
     | "Skills"
     | "MCPs"
     | "Sandbox"
@@ -65,6 +66,9 @@ export const detailRows = (
     ...(entry.passthroughArgs ?? []),
   ]
   const invocation = [
+    ...(entry.commandAlias === undefined || entry.profileArgument === undefined
+      ? []
+      : fieldRows("Run", `trx run ${entry.commandAlias} ${entry.profileArgument}`, width)),
     ...(entry.commandAlias === undefined ? [] : fieldRows("Alias", entry.commandAlias, width)),
     ...(entry.commandPath === undefined ? [] : fieldRows("Binary", entry.commandPath, width)),
     ...(entry.commandAlias === undefined && entry.commandPath === undefined

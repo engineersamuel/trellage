@@ -263,9 +263,34 @@ jq -e '
   and .defaultThinkingLevel == "medium"
   and .defaultProjectTrust == "never"
   and .enableInstallTelemetry == false
-  and .lastChangelogVersion == "0.84.2"
+  and (has("lastChangelogVersion") | not)
   and (.packages | length) == 10
 ' "$agent_root/settings.json" >/dev/null || fail 'managed Pi settings differ'
+jq -S '.lastChangelogVersion = "0.84.4"' "$agent_root/settings.json" \
+  >"$fixture_root/settings-with-ui-state.json"
+mv -f "$fixture_root/settings-with-ui-state.json" "$agent_root/settings.json"
+"$command_path" doctor >/dev/null \
+  || fail 'doctor rejected Pi-owned changelog state'
+"$command_path" inventory default --json >"$fixture_root/ui-state-inventory.json"
+jq -e '.readiness == "healthy"' "$fixture_root/ui-state-inventory.json" >/dev/null \
+  || fail 'Pi-owned changelog state made inventory unhealthy'
+cp "$FAKE_EXTENSION_LOG" "$fixture_root/setup-extension-log"
+for invalid_changelog in 'true' '1' '[]' '{}'; do
+  jq --argjson value "$invalid_changelog" '.lastChangelogVersion = $value' \
+    "$agent_root/settings.json" >"$fixture_root/settings-invalid-ui-state.json"
+  mv -f "$fixture_root/settings-invalid-ui-state.json" "$agent_root/settings.json"
+  status=0
+  "$command_path" doctor >"$fixture_root/invalid-ui-state.out" 2>&1 || status=$?
+  [[ "$status" == 1 ]] || fail "doctor accepted invalid changelog state: $invalid_changelog"
+  "$command_path" repair >/dev/null \
+    || fail "repair rejected invalid changelog state: $invalid_changelog"
+  jq -e 'has("lastChangelogVersion") | not' "$agent_root/settings.json" >/dev/null \
+    || fail "repair preserved invalid changelog state: $invalid_changelog"
+  jq -S '.lastChangelogVersion = "0.84.4"' "$agent_root/settings.json" \
+    >"$fixture_root/settings-valid-ui-state.json"
+  mv -f "$fixture_root/settings-valid-ui-state.json" "$agent_root/settings.json"
+done
+cp "$fixture_root/setup-extension-log" "$FAKE_EXTENSION_LOG"
 jq -e '
   .providers["copilot-proxy-rs"].baseUrl == "http://127.0.0.1:8080/v1"
   and .providers["copilot-proxy-rs"].api == "openai-responses"
@@ -344,8 +369,26 @@ jq -e '
 "$command_path" repair >/dev/null
 [[ -f "$agent_root/npm/node_modules/@ff-labs/fff-bun/package.json" ]] \
   || fail 'repair did not restore the FFF dependency'
+jq -e '.lastChangelogVersion == "0.84.4"' "$agent_root/settings.json" >/dev/null \
+  || fail 'repair did not preserve Pi-owned changelog state'
 cmp -s "$fixture_root/expected-extensions" "$FAKE_EXTENSION_LOG" \
   || fail 'repair did not reinstall the exact extension order'
+cp "$agent_root/settings.json" "$fixture_root/settings-first-document.json"
+{
+  cat "$fixture_root/settings-first-document.json"
+  printf '%s\n' '{"lastChangelogVersion":"corrupt-second-document"}'
+} >"$agent_root/settings.json"
+: >"$FAKE_EXTENSION_LOG"
+"$command_path" repair >/dev/null
+jq -e -s '
+  length == 1
+  and (.[0] | type == "object")
+  and (.[0] | has("lastChangelogVersion") | not)
+' "$agent_root/settings.json" >/dev/null \
+  || fail 'repair preserved invalid multi-document Pi settings'
+jq -S '.lastChangelogVersion = "0.84.4"' "$agent_root/settings.json" \
+  >"$fixture_root/settings-restored-ui-state.json"
+mv -f "$fixture_root/settings-restored-ui-state.json" "$agent_root/settings.json"
 
 cp "$agent_root/settings.json" "$fixture_root/settings.before"
 status=0

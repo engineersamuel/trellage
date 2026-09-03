@@ -149,7 +149,6 @@ describe("readClaudeMarketplace", () => {
           {
             hasCompletedOnboarding: true,
             lastOnboardingVersion: "2.1.222",
-            theme: "dark",
             shiftEnterKeyBindingInstalled: true,
           },
           null,

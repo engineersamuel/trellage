@@ -40,7 +40,6 @@ describe("authored Claude Research profile", () => {
     expect(claudeDefaultOnboarding("2.1.222")).toEqual({
       hasCompletedOnboarding: true,
       lastOnboardingVersion: "2.1.222",
-      theme: "dark",
       shiftEnterKeyBindingInstalled: true,
     })
   })
