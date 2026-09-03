@@ -4,16 +4,11 @@
  * shared by every sandbox profile of that harness kind regardless of which
  * profile's `harness-version` subprocess happens to run first.
  *
- * `harnessVersionReport` is invoked as a fresh subprocess per profile (see
- * `packages/trellage-launcher/src/admin-harness-version.ts`'s
- * `buildHarnessVersionCommand`, which runs `trellage harness-version
- * PROFILE_NAME` once per sandbox profile), so an in-memory cache cannot be
- * shared across profiles. Persisting the resolved "latest" version to disk
- * under the caller-supplied `xdgCacheHome` lets the first profile of a
- * harness kind pay the GitHub Releases network cost, and every other
- * profile sharing that same harness kind (e.g. seven separate Claude
- * profiles) reuse the cached value for the remainder of the TTL instead of
- * repeating an identical lookup.
+ * The Admin scheduler normally invokes one representative sandbox profile
+ * per release identity. This persistent cache also deduplicates direct CLI
+ * calls and later Admin startups, where an in-memory cache would not
+ * survive. The first successful lookup pays the network cost and every
+ * subsequent profile of that harness kind reuses it for the TTL.
  *
  * Mirrors `admin-harness-version-cache.ts`'s atomic-write convention
  * (write to a `.tmp` sibling with `wx`+`0o600`, then `rename` into place)
@@ -27,6 +22,8 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
+
+import lockfile from "proper-lockfile"
 
 import type { Platform } from "./platform.js"
 
@@ -130,21 +127,31 @@ export const recordLatestVersion = async (
 ): Promise<void> => {
   const cachePath = harnessLatestVersionCachePath(xdgCacheHome)
   try {
-    const current = await loadHarnessLatestVersionCache(cachePath)
-    const key = harnessLatestVersionCacheKey(harnessKind, platform)
-    const entries = { ...current.entries, [key]: { version, checkedAt: now } }
-    const trimmedEntries = Object.fromEntries(Object.entries(entries).slice(-maximumCacheEntries))
-    const value: HarnessLatestVersionCacheRecord = { schemaVersion: 1, entries: trimmedEntries }
-    const source = `${JSON.stringify(value)}\n`
-    if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return
     await mkdir(path.dirname(cachePath), { recursive: true, mode: 0o700 })
-    const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`
+    const release = await lockfile.lock(cachePath, {
+      realpath: false,
+      stale: 10_000,
+      update: 5_000,
+      retries: { retries: 50, factor: 1, minTimeout: 10, maxTimeout: 50 },
+    })
     try {
-      await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 0o600 })
-      await rename(temporaryPath, cachePath)
-    } catch (error) {
-      await removeTemporaryCache(temporaryPath)
-      throw error
+      const current = await loadHarnessLatestVersionCache(cachePath)
+      const key = harnessLatestVersionCacheKey(harnessKind, platform)
+      const entries = { ...current.entries, [key]: { version, checkedAt: now } }
+      const trimmedEntries = Object.fromEntries(Object.entries(entries).slice(-maximumCacheEntries))
+      const value: HarnessLatestVersionCacheRecord = { schemaVersion: 1, entries: trimmedEntries }
+      const source = `${JSON.stringify(value)}\n`
+      if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return
+      const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 0o600 })
+        await rename(temporaryPath, cachePath)
+      } catch (error) {
+        await removeTemporaryCache(temporaryPath)
+        throw error
+      }
+    } finally {
+      await release()
     }
   } catch {
     // Never fail the version report over a cache-write problem.

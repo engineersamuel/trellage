@@ -1,140 +1,265 @@
 /**
- * Builds the `harness-version` command for a profile entry and tolerantly
- * parses its stdout. Unlike `admin-version-check.ts`'s `update --check
- * PROFILE` (which for `cpx`/`cdx`/`grx` genuinely compares a named
- * profile's plugin/skill bundle version against a marketplace manifest,
- * not the harness CLI's own version), `harness-version` reports the
- * installed **harness binary's own version** — e.g. `copilot --version`,
- * not the "awesome" plugin bundle's version.
- *
- * For native, this is scoped to the launcher, not the profile: every
- * profile sharing one launcher (e.g. `omp`'s "local"/"copilot" profiles)
- * shares the exact same one harness binary, so the command never takes a
- * profile name argument and its result is fanned out to every profile
- * sharing that launcher (see `admin-harness-version-scheduler.ts`). For
- * sandbox, this is scoped to the individual profile: each locked image can
- * resolve `harness.version = "latest"` to a different exact version
- * independently (via `trellage-cli`'s local lock/resolution-receipt), so
- * the sandbox `commandPath` (`prototypes/trellage/trellage`) is invoked as
- * `harness-version PROFILE_NAME` and its result applies only to that one
- * profile — never fanned out.
- *
- * Each native launcher emits one line of JSON:
- * `{schemaVersion: 1, launcher, harness, installed, latest, latestKnown}`
- * (verified directly against `prototypes/trellage-*-profiles/bin/*` and
- * `prototypes/trellage-codex-common/native-codex`). `latestKnown` is
- * `false` for launchers that wrap a host-installed CLI with no known
- * latest-version mechanism (`cpx`/`cdx`/`grx`/`cldx` — no npm-registry or
- * GitHub-release lookup exists anywhere in this codebase for these tools,
- * confirmed by research), and `true` for `mise`-managed single-binary
- * launchers (`jcx`/`omp`/`picx`/`prx`) whose `latest` is resolved via
- * `mise_env latest`. `latest` is never fabricated when it isn't knowable.
- *
- * The sandbox harness-version subcommand emits the same JSON shape
- * (without a `launcher` field, which `parseHarnessVersionOutput` never
- * requires) via `packages/trellage-cli/src/harness-version-report.ts`,
- * for every sandbox harness kind: `installed` comes from the profile's
- * local lock/resolution receipt (never fabricated when not yet resolved),
- * regardless of harness kind. `latest` is currently only resolved for the
- * `claude` harness kind, via a GitHub Releases lookup against
- * `anthropics/claude-code` (`latestKnown: false` on lookup failure or
- * for any non-claude harness kind, exactly like `cpx`/`cdx`/`grx`/`cldx`
- * natively — `installed` is still preserved either way).
+ * Harness-version command identity, parsing, and row reconciliation.
+ * Operation keys scope subprocesses and cached installed state. Release
+ * keys scope only a validated latest value, so equivalent native and
+ * sandbox rows can share latest without copying another row's installed
+ * revision.
  */
-import type { AdminProfileEntry } from "./admin-model.js"
+import { isKnownNativeLauncher, type AdminProfileEntry, type NativeLauncherAlias } from "./admin-model.js"
 import type { AdminVersionColumns } from "./admin-version-check.js"
 import type { CommandSpec } from "./guide-launch.js"
 
-/** Builds the `harness-version` command for one profile entry: no-arg `LAUNCHER harness-version` for native (shared per launcher), `trellage harness-version PROFILE_NAME` for a sandbox profile (harness version is genuinely per-profile, since each locked image can float independently). Callers must check `entry.harnessVersionSupported` first. */
-export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec =>
-  entry.surface === "sandbox"
-    ? { executable: entry.commandPath, args: ["harness-version", entry.name] }
-    : { executable: entry.commandPath, args: ["harness-version"] }
+export type HarnessReleaseKey =
+  | "claude-code"
+  | "codex"
+  | "copilot-cli"
+  | "firstmate"
+  | "grok"
+  | "headlong-main"
+  | "jcode"
+  | "oh-my-pi"
+  | "pi-coding-agent"
+  | "prime"
+
+const nativeReleaseKeys: Readonly<Partial<Record<NativeLauncherAlias, HarnessReleaseKey>>> = {
+  cpx: "copilot-cli",
+  cdx: "codex",
+  cldx: "claude-code",
+  fmx: "firstmate",
+  grx: "grok",
+  jcx: "jcode",
+  omp: "oh-my-pi",
+  picx: "pi-coding-agent",
+  prx: "prime",
+}
+
+const sandboxReleaseKeys: Readonly<Record<string, HarnessReleaseKey>> = {
+  claude: "claude-code",
+  codex: "codex",
+  copilot: "copilot-cli",
+  headlong: "headlong-main",
+  pi: "oh-my-pi",
+  prime: "prime",
+}
+
+const nativeLatestLookupLaunchers: ReadonlySet<NativeLauncherAlias> = new Set([
+  "cdx",
+  "fmx",
+  "grx",
+  "jcx",
+  "omp",
+  "picx",
+  "prx",
+])
+
+export const harnessVersionReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined => {
+  if (entry.surface === "sandbox") return entry.harness === undefined ? undefined : sandboxReleaseKeys[entry.harness]
+  if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
+  return nativeReleaseKeys[entry.launcher]
+}
+
+export const harnessVersionLatestLookupSupported = (entry: AdminProfileEntry): boolean => {
+  if (!entry.harnessVersionSupported) return false
+  if (entry.surface === "sandbox") return harnessVersionReleaseKeyFor(entry) !== undefined
+  return (
+    entry.launcher !== undefined &&
+    isKnownNativeLauncher(entry.launcher) &&
+    nativeLatestLookupLaunchers.has(entry.launcher)
+  )
+}
 
 /**
- * A launcher's harness-version outcome. `"unavailable"` covers a genuine
- * failure (malformed JSON, an unrecognized shape, or a `null` installed
- * value the launcher itself could not determine) and never carries a
- * version. `"unknown-latest"` is the honest "installed is known, latest is
- * architecturally unknowable" state (`cpx`/`cdx`/`grx`/`cldx`) — distinct
- * from `"unavailable"` so the table can still show the real installed
- * version rather than blanking it. `"known-latest"` is the fully-resolved
- * comparison state (`jcx`/`omp`/`picx`/`prx`).
+ * Cache/run identity. Firstmate owns one installed receipt per profile;
+ * ordinary native launchers own one host binary; sandbox operations own a
+ * shared latest lookup per explicit release identity.
  */
-export type AdminHarnessVersionResult =
+export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string | undefined => {
+  if (!entry.harnessVersionSupported) return undefined
+  if (entry.surface === "sandbox") {
+    const releaseKey = harnessVersionReleaseKeyFor(entry)
+    return releaseKey === undefined ? undefined : `sandbox:${releaseKey}`
+  }
+  if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
+  return entry.launcher === "fmx" ? `native:fmx:${entry.name}` : `native:${entry.launcher}`
+}
+
+export interface BuildHarnessVersionCommandOptions {
+  readonly refreshLatest?: boolean
+}
+
+export const buildHarnessVersionCommand = (
+  entry: AdminProfileEntry,
+  options: BuildHarnessVersionCommandOptions = {},
+): CommandSpec => {
+  if (entry.surface === "sandbox") {
+    return {
+      executable: entry.commandPath,
+      args: ["harness-version", entry.name, ...(options.refreshLatest === true ? ["--refresh-latest"] : [])],
+    }
+  }
+  return {
+    executable: entry.commandPath,
+    args: entry.launcher === "fmx" ? ["harness-version", entry.name] : ["harness-version"],
+  }
+}
+
+export type AdminInstalledVersionState =
+  | { readonly kind: "known"; readonly version: string }
   | { readonly kind: "unavailable"; readonly diagnostic: string }
-  | { readonly kind: "unknown-latest"; readonly installed: string }
-  | { readonly kind: "known-latest"; readonly installed: string; readonly latest: string }
+
+export type AdminLatestVersionState =
+  | { readonly kind: "known"; readonly version: string }
+  | { readonly kind: "unsupported" }
+  | { readonly kind: "failed"; readonly diagnostic: string }
+
+export interface AdminHarnessVersionResult {
+  readonly installed: AdminInstalledVersionState
+  readonly latest: AdminLatestVersionState
+}
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-/**
- * Parses one launcher's `harness-version` stdout. Fails closed to
- * `{ kind: "unavailable" }` on empty output, invalid JSON, an unexpected
- * shape, an unsupported `schemaVersion`, or a `null`/non-string `installed`
- * (the launcher itself could not determine its own harness's installed
- * version — never guessed at).
- */
+const validVersion = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\u0000\r\n]/u.test(value)
+    ? value
+    : undefined
+
+const validDiagnostic = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 && value.length <= 500 && !/[\u0000\r\n]/u.test(value)
+    ? value
+    : undefined
+
+export const failedHarnessVersionResult = (diagnostic: string): AdminHarnessVersionResult => ({
+  installed: { kind: "unavailable", diagnostic },
+  latest: { kind: "failed", diagnostic },
+})
+
+export const refreshedSandboxInstalledState = (
+  result: AdminHarnessVersionResult,
+): AdminInstalledVersionState | undefined =>
+  result.installed.kind === "known" || result.latest.kind !== "failed" ? result.installed : undefined
+
+const parseInstalledState = (value: unknown): AdminInstalledVersionState => {
+  const version = validVersion(value)
+  return version === undefined
+    ? { kind: "unavailable", diagnostic: "harness-version could not determine the installed harness version" }
+    : { kind: "known", version }
+}
+
+const parseLatestState = (payload: Record<string, unknown>): AdminLatestVersionState => {
+  if (payload.latestKnown === true) {
+    const version = validVersion(payload.latest)
+    return version === undefined
+      ? { kind: "failed", diagnostic: "harness-version claimed a known latest version without a valid value" }
+      : { kind: "known", version }
+  }
+  if (payload.latestKnown !== false || (payload.latest !== null && payload.latest !== undefined)) {
+    return { kind: "failed", diagnostic: "harness-version produced an inconsistent latest-version result" }
+  }
+  if (payload.latestDiagnostic === undefined) return { kind: "unsupported" }
+  const diagnostic = validDiagnostic(payload.latestDiagnostic)
+  return diagnostic === undefined
+    ? { kind: "failed", diagnostic: "harness-version produced an invalid latest-version diagnostic" }
+    : { kind: "failed", diagnostic }
+}
+
 export const parseHarnessVersionOutput = (stdout: string): AdminHarnessVersionResult => {
   const trimmed = stdout.trim()
-  if (trimmed.length === 0) return { kind: "unavailable", diagnostic: "harness-version produced no output" }
+  if (trimmed.length === 0) return failedHarnessVersionResult("harness-version produced no output")
   let payload: unknown
   try {
     payload = JSON.parse(trimmed)
   } catch {
-    return { kind: "unavailable", diagnostic: `harness-version produced non-JSON output: ${trimmed.split("\n")[0] ?? trimmed}` }
+    return failedHarnessVersionResult(
+      `harness-version produced non-JSON output: ${trimmed.split("\n")[0]?.slice(0, 400) ?? ""}`,
+    )
   }
   if (!isPlainObject(payload) || payload.schemaVersion !== 1) {
-    return { kind: "unavailable", diagnostic: "harness-version produced an unrecognized schema" }
+    return failedHarnessVersionResult("harness-version produced an unrecognized schema")
   }
-  const installed = typeof payload.installed === "string" ? payload.installed : undefined
-  if (installed === undefined) {
-    return { kind: "unavailable", diagnostic: "harness-version could not determine the installed harness version" }
-  }
-  const latestKnown = payload.latestKnown === true
-  const latest = typeof payload.latest === "string" ? payload.latest : undefined
-  if (!latestKnown || latest === undefined) return { kind: "unknown-latest", installed }
-  return { kind: "known-latest", installed, latest }
+
+  return { installed: parseInstalledState(payload.installed), latest: parseLatestState(payload) }
 }
 
-/**
- * Derives the `VERSION` and `LATEST VERSION` table cells for a harness's
- * version-check result: `"match"` (both green) when installed equals
- * latest, `"mismatch"` (both yellow/orange) when they differ, or
- * `"unknown"` when the launcher doesn't support harness-version, no check
- * has run yet, the check failed, or latest is architecturally unknowable
- * for this launcher family — in the latter case the real installed value
- * is still shown (never blanked), only `latest` renders as `"—"`.
- */
 export const harnessVersionColumnsFor = (
   supported: boolean,
   result: AdminHarnessVersionResult | undefined,
 ): AdminVersionColumns => {
-  if (!supported || result === undefined || result.kind === "unavailable") {
-    return { installed: "—", latest: "—", status: "unknown" }
+  if (!supported || result === undefined) return { installed: "—", latest: "—", status: "unknown" }
+  const installed = result.installed.kind === "known" ? result.installed.version : "—"
+  const latest = result.latest.kind === "known" ? result.latest.version : "—"
+  if (result.installed.kind !== "known" || result.latest.kind !== "known") {
+    return { installed, latest, status: "unknown" }
   }
-  if (result.kind === "unknown-latest") return { installed: result.installed, latest: "—", status: "unknown" }
-  return result.installed === result.latest
-    ? { installed: result.installed, latest: result.latest, status: "match" }
-    : { installed: result.installed, latest: result.latest, status: "mismatch" }
+  return {
+    installed,
+    latest,
+    status: result.installed.version === result.latest.version ? "match" : "mismatch",
+  }
+}
+
+const resultForEntry = (
+  entry: AdminProfileEntry,
+  resultForOperation: (operationKey: string) => AdminHarnessVersionResult | undefined,
+  sandboxInstalledForRef: (ref: string) => AdminInstalledVersionState | undefined,
+): AdminHarnessVersionResult | undefined => {
+  const operationKey = harnessVersionOperationKeyFor(entry)
+  const raw = operationKey === undefined ? undefined : resultForOperation(operationKey)
+  if (entry.surface === "native") return raw
+  const installed: AdminInstalledVersionState =
+    sandboxInstalledForRef(entry.ref) ??
+    (validVersion(entry.version) === undefined
+      ? { kind: "unavailable", diagnostic: "sandbox profile has no ready installed harness resolution" }
+      : { kind: "known", version: entry.version! })
+  return { installed, latest: raw?.latest ?? { kind: "unsupported" } }
 }
 
 /**
- * The distinct cache/scheduler key for a profile entry's harness-version
- * check: for native, the shared launcher alias (every profile sharing one
- * launcher shares the exact same one harness binary); for a sandbox entry
- * (via the CLI's `harness-version PROFILE` subcommand backed by the
- * profile's local lock/resolution-receipt, with a GitHub Releases lookup
- * for `latest` currently limited to the `claude` harness kind — see
- * `packages/trellage-cli/src/harness-version-report.ts`), a per-profile
- * `sandbox:PROFILE_NAME` key, since each locked sandbox image can float to
- * a different resolved harness version independently of any other. Any
- * entry with `harnessVersionSupported === false` (or a native entry
- * lacking a `launcher`) yields `undefined` — callers must check
- * `entry.harnessVersionSupported` first.
+ * Produces one effective result per row. Conflicting latest values disable
+ * cross-row promotion for that release identity rather than selecting an
+ * arbitrary winner.
  */
-export const harnessVersionLauncherFor = (entry: AdminProfileEntry): string | undefined => {
-  if (entry.surface === "native") return entry.launcher
-  return entry.harnessVersionSupported ? `sandbox:${entry.name}` : undefined
+export const reconcileHarnessVersionResults = (
+  entries: ReadonlyArray<AdminProfileEntry>,
+  resultForOperation: (operationKey: string) => AdminHarnessVersionResult | undefined,
+  sandboxInstalledForRef: (ref: string) => AdminInstalledVersionState | undefined = () => undefined,
+): ReadonlyMap<string, AdminHarnessVersionResult> => {
+  const results = new Map<string, AdminHarnessVersionResult>()
+  const latestByRelease = new Map<HarnessReleaseKey, Set<string>>()
+  for (const entry of entries) {
+    const result = resultForEntry(entry, resultForOperation, sandboxInstalledForRef)
+    if (result === undefined) continue
+    results.set(entry.ref, result)
+    const releaseKey = harnessVersionReleaseKeyFor(entry)
+    if (releaseKey === undefined || result.latest.kind !== "known") continue
+    const versions = latestByRelease.get(releaseKey) ?? new Set<string>()
+    versions.add(result.latest.version)
+    latestByRelease.set(releaseKey, versions)
+  }
+
+  for (const entry of entries) {
+    const result = results.get(entry.ref)
+    const releaseKey = harnessVersionReleaseKeyFor(entry)
+    if (result === undefined || releaseKey === undefined || result.latest.kind === "known") continue
+    const versions = latestByRelease.get(releaseKey)
+    if (versions?.size !== 1) continue
+    results.set(entry.ref, { installed: result.installed, latest: { kind: "known", version: [...versions][0]! } })
+  }
+  return results
+}
+
+export const harnessVersionEntriesForForceResync = (
+  selected: AdminProfileEntry,
+  entries: ReadonlyArray<AdminProfileEntry>,
+): ReadonlyArray<AdminProfileEntry> => {
+  const operationKey = harnessVersionOperationKeyFor(selected)
+  if (operationKey === undefined) return []
+  if (selected.launcher === "fmx") {
+    return entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey)
+  }
+  const releaseKey = harnessVersionReleaseKeyFor(selected)
+  return releaseKey === undefined
+    ? entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey)
+    : entries.filter((entry) => harnessVersionReleaseKeyFor(entry) === releaseKey)
 }

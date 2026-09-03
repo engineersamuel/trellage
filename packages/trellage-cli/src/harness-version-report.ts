@@ -1,7 +1,8 @@
 /**
  * Read-only `harness-version` report for one sandbox profile, emitting the
  * same JSON envelope (`{schemaVersion, harness, installed, latest,
- * latestKnown}`) every native launcher's `LAUNCHER harness-version`
+ * latestKnown, latestDiagnostic?}`) every native launcher's
+ * `LAUNCHER harness-version`
  * subcommand emits, so the Admin UI's existing
  * `packages/trellage-launcher/src/admin-harness-version.ts`
  * `parseHarnessVersionOutput`/`harnessVersionColumnsFor`/scheduler/cache
@@ -13,27 +14,20 @@
  * specific profile's locked/built image and can genuinely differ per
  * profile (e.g. two Claude profiles pinned to different releases via
  * `[harness].version`). "Installed" is therefore resolved per-profile from
- * whichever locally-known lock is ready — the development resolution
- * receipt from a prior `trellage build`/`trellage lock` (preferred, as the
- * most recently resolved state; see `resolution-receipt.ts`) or the
- * checked-in release lock adjacent to `profile.toml` (`loadReleaseLock`) —
- * mirroring `profileMetadata`'s own `resolved_version` derivation
- * (`application.ts`'s `metadataResolvedVersion`). Never fabricated: when
- * neither lock is ready, `installed` is `null`, exactly like a native
+ * a ready development resolution receipt from a prior `trellage
+ * build`/`trellage lock`, mirroring `profileMetadata`'s own
+ * `resolved_version` derivation. A checked-in release lock describes what
+ * can be built, not what is installed. Never fabricated: when no receipt
+ * is ready, `installed` is `null`, exactly like a native
  * launcher's `installed: null` for a harness it could not determine.
  *
  * "Latest" is resolved for every harness kind that has a known GitHub
- * Releases lookup already used by `trellage lock` itself to resolve a
- * floating `version = "latest"` selector: `claude`
- * (`resolveClaudeRelease`/`claude-release.ts`, `anthropics/claude-code`)
- * and `codex` (`resolveCodexRelease`/`codex-release.ts`,
- * `openai/codex`, `rust-vX.Y.Z` tags). Every other sandbox harness kind
- * reports `latestKnown: false` with a `null` `latest` — exactly like
- * `cpx`/`grx`/`cldx` today, since no npm-registry or GitHub-release lookup
- * exists anywhere in this codebase for those harness CLIs. A lookup
- * failure (network, rate limit, malformed response) for a supported kind
- * also reports `latestKnown: false` rather than fabricating a value;
- * `installed` is unaffected either way.
+ * source already used by Trellage itself: Claude, Codex, Copilot, Oh My
+ * Pi, Prime, and Headlong's Git ref. Unsupported kinds report
+ * `latestKnown: false` without a diagnostic. A failed supported lookup
+ * reports `latestKnown: false` with `latestDiagnostic`, so callers can
+ * distinguish an intentional unknown from a retryable failure while
+ * preserving `installed`.
  *
  * A successfully-resolved "latest" version is cached on disk per harness
  * kind for 24 hours (`harness-latest-version-cache.ts`), so once any
@@ -45,9 +39,11 @@
  */
 import { Effect } from "effect"
 
-import { ApplicationError, loadProfile, loadReleaseLock } from "./application.js"
+import { ApplicationError, loadProfile } from "./application.js"
 import { GitHubClaudeReleaseClient, resolveClaudeRelease, type ClaudeReleaseClient } from "./claude-release.js"
 import { GitHubCodexReleaseClient, resolveCodexRelease, type CodexReleaseClient } from "./codex-release.js"
+import { GitHubCopilotReleaseClient, resolveCopilotRelease, type CopilotReleaseClient } from "./copilot-release.js"
+import { NodeGitClient, type GitClient } from "./github-cache.js"
 import {
   cachedLatestVersion,
   harnessLatestVersionCachePath,
@@ -55,7 +51,9 @@ import {
   recordLatestVersion,
 } from "./harness-latest-version-cache.js"
 import { harnessPackageRevision, lockIsReady, type ProfileLock } from "./lock.js"
+import { GitHubPiReleaseClient, resolvePiRelease, type PiReleaseClient } from "./pi-release.js"
 import type { Platform } from "./platform.js"
+import { PrimeReleaseHttpClient, resolvePrimeRelease, type PrimeReleaseClient } from "./prime-release.js"
 import type { ProfileDocument } from "./profile.js"
 import { loadResolutionReceipt } from "./resolution-receipt.js"
 
@@ -65,11 +63,20 @@ export interface HarnessVersionReport {
   readonly installed: string | null
   readonly latest: string | null
   readonly latestKnown: boolean
+  readonly latestDiagnostic?: string
 }
 
 export interface HarnessVersionReleaseClients {
   readonly claude?: ClaudeReleaseClient
   readonly codex?: CodexReleaseClient
+  readonly copilot?: CopilotReleaseClient
+  readonly pi?: PiReleaseClient
+  readonly prime?: PrimeReleaseClient
+  readonly git?: GitClient
+}
+
+export interface HarnessVersionReportOptions {
+  readonly refreshLatest?: boolean
 }
 
 const resolveInstalledVersion = (
@@ -81,25 +88,77 @@ const resolveInstalledVersion = (
     ? harnessPackageRevision(current.packages.harness)
     : undefined
 
-/** Resolves the latest version for a harness kind with a known GitHub Releases lookup, or `undefined` when the kind has none or the lookup fails. Never throws: every failure path is absorbed into `undefined`. */
+type LatestVersionResolution =
+  | { readonly kind: "known"; readonly version: string }
+  | { readonly kind: "unsupported" }
+  | { readonly kind: "failed"; readonly diagnostic: string }
+
+const latestVersionFailure = (harnessKind: string, cause: unknown): LatestVersionResolution => {
+  const detail = cause instanceof Error ? cause.message : "lookup failed"
+  const normalized = detail.replace(/\s+/g, " ").trim().slice(0, 400)
+  return {
+    kind: "failed",
+    diagnostic: `${harnessKind} latest-version lookup failed${normalized.length > 0 ? `: ${normalized}` : ""}`,
+  }
+}
+
+const resolveKnownVersion = <A>(
+  harnessKind: string,
+  effect: Effect.Effect<A, unknown>,
+  revision: (value: A) => string,
+): Effect.Effect<LatestVersionResolution> =>
+  effect.pipe(
+    Effect.map((value): LatestVersionResolution => ({ kind: "known", version: revision(value) })),
+    Effect.catchAll((cause) => Effect.succeed(latestVersionFailure(harnessKind, cause))),
+  )
+
+const latestVersionHarnessKinds = new Set(["claude", "codex", "copilot", "headlong", "pi", "prime"])
+
+/** Resolves one authoritative latest source and preserves unsupported versus failed states. */
 const fetchLatestVersion = (
   harnessKind: string,
   platform: Platform,
   clients: Required<HarnessVersionReleaseClients>,
-): Effect.Effect<string | undefined> => {
+): Effect.Effect<LatestVersionResolution> => {
   if (harnessKind === "claude") {
-    return resolveClaudeRelease("latest", platform, clients.claude).pipe(
-      Effect.map((lock): string | undefined => harnessPackageRevision(lock)),
-      Effect.orElseSucceed((): string | undefined => undefined),
+    return resolveKnownVersion(harnessKind, resolveClaudeRelease("latest", platform, clients.claude), (lock) =>
+      harnessPackageRevision(lock),
     )
   }
   if (harnessKind === "codex") {
-    return resolveCodexRelease("latest", platform, clients.codex).pipe(
-      Effect.map((lock): string | undefined => harnessPackageRevision(lock.harness)),
-      Effect.orElseSucceed((): string | undefined => undefined),
+    return resolveKnownVersion(harnessKind, resolveCodexRelease("latest", platform, clients.codex), (lock) =>
+      harnessPackageRevision(lock.harness),
     )
   }
-  return Effect.succeed(undefined)
+  if (harnessKind === "copilot") {
+    return resolveKnownVersion(harnessKind, resolveCopilotRelease("latest", platform, clients.copilot), (lock) =>
+      harnessPackageRevision(lock),
+    )
+  }
+  if (harnessKind === "pi") {
+    return resolveKnownVersion(harnessKind, resolvePiRelease("latest", platform, clients.pi), (lock) =>
+      harnessPackageRevision(lock),
+    )
+  }
+  if (harnessKind === "prime") {
+    return resolveKnownVersion(harnessKind, resolvePrimeRelease("latest", platform, clients.prime), (lock) =>
+      harnessPackageRevision(lock),
+    )
+  }
+  if (harnessKind === "headlong") {
+    return resolveKnownVersion(
+      harnessKind,
+      clients.git
+        .resolveRef("https://github.com/laude-institute/headlong.git", "refs/heads/main")
+        .pipe(
+          Effect.flatMap((commit) =>
+            /^[0-9a-f]{40}$/.test(commit) ? Effect.succeed(commit) : Effect.fail(new Error("ref did not resolve")),
+          ),
+        ),
+      (commit) => commit,
+    )
+  }
+  return Effect.succeed({ kind: "unsupported" })
 }
 
 /**
@@ -117,16 +176,20 @@ const resolveLatestVersion = (
   platform: Platform,
   clients: Required<HarnessVersionReleaseClients>,
   xdgCacheHome: string,
-): Effect.Effect<string | undefined> =>
+  refreshLatest: boolean,
+): Effect.Effect<LatestVersionResolution> =>
   Effect.gen(function* () {
+    if (!latestVersionHarnessKinds.has(harnessKind)) return { kind: "unsupported" as const }
     const cachePath = harnessLatestVersionCachePath(xdgCacheHome)
-    const record = yield* Effect.promise(() => loadHarnessLatestVersionCache(cachePath))
     const now = Date.now()
-    const cached = cachedLatestVersion(record, harnessKind, platform, now)
-    if (cached !== undefined) return cached
+    if (!refreshLatest) {
+      const record = yield* Effect.promise(() => loadHarnessLatestVersionCache(cachePath))
+      const cached = cachedLatestVersion(record, harnessKind, platform, now)
+      if (cached !== undefined) return { kind: "known" as const, version: cached }
+    }
     const resolved = yield* fetchLatestVersion(harnessKind, platform, clients)
-    if (resolved !== undefined) {
-      yield* Effect.promise(() => recordLatestVersion(xdgCacheHome, harnessKind, platform, resolved, now))
+    if (resolved.kind === "known") {
+      yield* Effect.promise(() => recordLatestVersion(xdgCacheHome, harnessKind, platform, resolved.version, now))
     }
     return resolved
   })
@@ -136,30 +199,35 @@ export const harnessVersionReport = (
   platform: Platform,
   xdgCacheHome: string,
   releaseClients: HarnessVersionReleaseClients = {},
+  options: HarnessVersionReportOptions = {},
 ): Effect.Effect<HarnessVersionReport, ApplicationError> =>
   Effect.gen(function* () {
     const document = yield* loadProfile(profilePath)
-    const release = yield* loadReleaseLock(profilePath, platform)
     const receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
       Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
     )
-    const current = receipt ?? release
-    const installed = resolveInstalledVersion(document, current, platform) ?? null
+    const installed = resolveInstalledVersion(document, receipt, platform) ?? null
     const harnessKind = document.profile.harness.kind
-    const latest = yield* resolveLatestVersion(
+    const latestResolution = yield* resolveLatestVersion(
       harnessKind,
       platform,
       {
         claude: releaseClients.claude ?? GitHubClaudeReleaseClient,
         codex: releaseClients.codex ?? GitHubCodexReleaseClient,
+        copilot: releaseClients.copilot ?? GitHubCopilotReleaseClient,
+        pi: releaseClients.pi ?? GitHubPiReleaseClient,
+        prime: releaseClients.prime ?? PrimeReleaseHttpClient,
+        git: releaseClients.git ?? NodeGitClient,
       },
       xdgCacheHome,
+      options.refreshLatest ?? false,
     )
     return {
       schemaVersion: 1 as const,
       harness: harnessKind,
       installed,
-      latest: latest ?? null,
-      latestKnown: latest !== undefined,
+      latest: latestResolution.kind === "known" ? latestResolution.version : null,
+      latestKnown: latestResolution.kind === "known",
+      ...(latestResolution.kind === "failed" ? { latestDiagnostic: latestResolution.diagnostic } : {}),
     }
   })

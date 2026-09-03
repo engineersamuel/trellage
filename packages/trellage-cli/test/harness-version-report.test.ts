@@ -7,6 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { ClaudeReleaseClient } from "../src/claude-release.js"
 import type { CodexReleaseClient } from "../src/codex-release.js"
+import type { CopilotReleaseClient } from "../src/copilot-release.js"
+import type { GitClient } from "../src/github-cache.js"
+import type { PiReleaseClient } from "../src/pi-release.js"
+import type { PrimeReleaseClient } from "../src/prime-release.js"
 import type { loadProfile as loadProfileType, loadReleaseLock as loadReleaseLockType } from "../src/application.js"
 import type { lockIsReady as lockIsReadyType, ProfileLock } from "../src/lock.js"
 import type { loadResolutionReceipt as loadResolutionReceiptType } from "../src/resolution-receipt.js"
@@ -42,6 +46,16 @@ const codexDocument = (): ProfileDocument => ({ profile: { harness: { kind: "cod
 const copilotDocument = (): ProfileDocument =>
   ({ profile: { harness: { kind: "copilot" } } }) as unknown as ProfileDocument
 
+const piDocument = (): ProfileDocument => ({ profile: { harness: { kind: "pi" } } }) as unknown as ProfileDocument
+
+const primeDocument = (): ProfileDocument => ({ profile: { harness: { kind: "prime" } } }) as unknown as ProfileDocument
+
+const headlongDocument = (): ProfileDocument =>
+  ({ profile: { harness: { kind: "headlong" } } }) as unknown as ProfileDocument
+
+const unsupportedDocument = (): ProfileDocument =>
+  ({ profile: { harness: { kind: "unsupported" } } }) as unknown as ProfileDocument
+
 const claudeLock = (version: string): ProfileLock =>
   ({
     packages: { harness: { kind: "claude", selector: "latest", version, integrity: "sha256:x", url: "x", size: 1 } },
@@ -57,8 +71,35 @@ const copilotLock = (version: string): ProfileLock =>
     packages: { harness: { kind: "copilot", selector: "latest", version, integrity: "sha256:x", url: "x", size: 1 } },
   }) as unknown as ProfileLock
 
+const piLock = (version: string): ProfileLock =>
+  ({
+    packages: { harness: { kind: "pi", selector: "latest", version, integrity: "sha256:x", url: "x", size: 1 } },
+  }) as unknown as ProfileLock
+
+const primeLock = (version: string): ProfileLock =>
+  ({
+    packages: { harness: { kind: "prime", selector: "latest", version, integrity: "sha256:x", url: "x", size: 1 } },
+  }) as unknown as ProfileLock
+
+const headlongLock = (commit: string): ProfileLock =>
+  ({
+    packages: { harness: { kind: "headlong", selector: "main", commit, integrity: "sha256:x" } },
+  }) as unknown as ProfileLock
+
 const fakeClaudeClient = (payload: unknown): ClaudeReleaseClient => ({ release: () => Effect.succeed(payload) })
 const fakeCodexClient = (payload: unknown): CodexReleaseClient => ({ release: () => Effect.succeed(payload) })
+const fakeCopilotClient = (payload: unknown): CopilotReleaseClient => ({ release: () => Effect.succeed(payload) })
+const fakePiClient = (payload: unknown): PiReleaseClient => ({ release: () => Effect.succeed(payload) })
+
+const fakePrimeClient = (version: string): PrimeReleaseClient => ({
+  text: (url) => Effect.succeed(url.endsWith("/stable") ? version : `${"a".repeat(64)}  prime-agent-${version}.tgz`),
+  artifactSize: () => Effect.succeed(1),
+})
+
+const fakeGitClient = (commit: string): GitClient => ({
+  resolveRef: () => Effect.succeed(commit),
+  checkout: () => Effect.void,
+})
 
 const claudeReleasePayload = (version: string) => ({
   tag_name: `v${version}`,
@@ -90,6 +131,34 @@ const codexReleasePayload = (version: string) => ({
       browser_download_url: `https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz`,
       size: 1,
       digest: `sha256:${"b".repeat(64)}`,
+    },
+  ],
+})
+
+const copilotReleasePayload = (version: string) => ({
+  tag_name: `v${version}`,
+  draft: false,
+  prerelease: false,
+  assets: [
+    {
+      name: "copilot-linux-arm64.tar.gz",
+      browser_download_url: `https://github.com/github/copilot-cli/releases/download/v${version}/copilot-linux-arm64.tar.gz`,
+      size: 1,
+      digest: `sha256:${"a".repeat(64)}`,
+    },
+  ],
+})
+
+const piReleasePayload = (version: string) => ({
+  tag_name: `v${version}`,
+  draft: false,
+  prerelease: false,
+  assets: [
+    {
+      name: "omp-linux-arm64",
+      browser_download_url: `https://github.com/can1357/oh-my-pi/releases/download/v${version}/omp-linux-arm64`,
+      size: 1,
+      digest: `sha256:${"a".repeat(64)}`,
     },
   ],
 })
@@ -137,7 +206,7 @@ describe("harnessVersionReport", () => {
     expect(result.installed).toBe("2.1.222")
   })
 
-  it("falls back to the release lock when no development receipt exists", async () => {
+  it("does not treat a release lock as installed when no development receipt exists", async () => {
     setup({ document: claudeDocument(), release: claudeLock("2.1.100"), ready: true })
 
     const result = await Effect.runPromise(
@@ -146,7 +215,7 @@ describe("harnessVersionReport", () => {
       }),
     )
 
-    expect(result.installed).toBe("2.1.100")
+    expect(result.installed).toBeNull()
   })
 
   it("never fabricates an installed version when no lock is ready", async () => {
@@ -170,12 +239,13 @@ describe("harnessVersionReport", () => {
       }),
     )
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       schemaVersion: 1,
       harness: "claude",
       installed: "2.1.222",
       latest: null,
       latestKnown: false,
+      latestDiagnostic: expect.stringContaining("claude latest-version lookup failed"),
     })
   })
 
@@ -206,12 +276,13 @@ describe("harnessVersionReport", () => {
       }),
     )
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       schemaVersion: 1,
       harness: "codex",
       installed: "0.146.1",
       latest: null,
       latestKnown: false,
+      latestDiagnostic: expect.stringContaining("codex latest-version lookup failed"),
     })
   })
 
@@ -230,15 +301,106 @@ describe("harnessVersionReport", () => {
     expect(claudeSpy).not.toHaveBeenCalled()
   })
 
-  it("never resolves a latest version for a sandbox harness kind with no known release lookup", async () => {
+  it("reports the latest Copilot release through the existing validated resolver", async () => {
+    setup({ document: copilotDocument(), receipt: copilotLock("1.0.82"), ready: true })
+
+    await expect(
+      Effect.runPromise(
+        harnessVersionReport("/profiles/copilot/profile.toml", "linux/arm64", "/cache", {
+          copilot: fakeCopilotClient(copilotReleasePayload("1.0.90")),
+        }),
+      ),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      harness: "copilot",
+      installed: "1.0.82",
+      latest: "1.0.90",
+      latestKnown: true,
+    })
+  })
+
+  it("reports the latest Oh My Pi release through the existing validated resolver", async () => {
+    setup({ document: piDocument(), receipt: piLock("18.1.1"), ready: true })
+
+    await expect(
+      Effect.runPromise(
+        harnessVersionReport("/profiles/pi/profile.toml", "linux/arm64", "/cache", {
+          pi: fakePiClient(piReleasePayload("18.1.3")),
+        }),
+      ),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      harness: "pi",
+      installed: "18.1.1",
+      latest: "18.1.3",
+      latestKnown: true,
+    })
+  })
+
+  it("reports the latest Prime release through the existing validated resolver", async () => {
+    setup({ document: primeDocument(), receipt: primeLock("0.8.1"), ready: true })
+
+    await expect(
+      Effect.runPromise(
+        harnessVersionReport("/profiles/prime/profile.toml", "linux/arm64", "/cache", {
+          prime: fakePrimeClient("0.9.1"),
+        }),
+      ),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      harness: "prime",
+      installed: "0.8.1",
+      latest: "0.9.1",
+      latestKnown: true,
+    })
+  })
+
+  it("reports the latest Headlong main commit through the existing Git client", async () => {
+    const installed = "1".repeat(40)
+    const latest = "2".repeat(40)
+    setup({ document: headlongDocument(), receipt: headlongLock(installed), ready: true })
+
+    await expect(
+      Effect.runPromise(
+        harnessVersionReport("/profiles/headlong/profile.toml", "linux/arm64", "/cache", {
+          git: fakeGitClient(latest),
+        }),
+      ),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      harness: "headlong",
+      installed,
+      latest,
+      latestKnown: true,
+    })
+  })
+
+  it("rejects a malformed Headlong ref as a retryable latest failure", async () => {
+    setup({ document: headlongDocument(), receipt: headlongLock("1".repeat(40)), ready: true })
+
+    const result = await Effect.runPromise(
+      harnessVersionReport("/profiles/headlong/profile.toml", "linux/arm64", "/cache", {
+        git: fakeGitClient("not-a-commit"),
+      }),
+    )
+
+    expect(result).toMatchObject({
+      installed: "1".repeat(40),
+      latest: null,
+      latestKnown: false,
+      latestDiagnostic: expect.stringContaining("headlong latest-version lookup failed"),
+    })
+  })
+
+  it("reports an unsupported latest kind without a retryable diagnostic", async () => {
     const claudeClient = fakeClaudeClient(claudeReleasePayload("2.1.230"))
     const codexClient = fakeCodexClient(codexReleasePayload("0.152.1"))
     const claudeSpy = vi.spyOn(claudeClient, "release")
     const codexSpy = vi.spyOn(codexClient, "release")
-    setup({ document: copilotDocument(), receipt: copilotLock("1.0.82"), ready: true })
+    setup({ document: unsupportedDocument(), ready: false })
 
     const result = await Effect.runPromise(
-      harnessVersionReport("/profiles/copilot/profile.toml", "linux/arm64", "/cache", {
+      harnessVersionReport("/profiles/unsupported/profile.toml", "linux/arm64", "/cache", {
         claude: claudeClient,
         codex: codexClient,
       }),
@@ -246,8 +408,8 @@ describe("harnessVersionReport", () => {
 
     expect(result).toEqual({
       schemaVersion: 1,
-      harness: "copilot",
-      installed: "1.0.82",
+      harness: "unsupported",
+      installed: null,
       latest: null,
       latestKnown: false,
     })
@@ -303,6 +465,42 @@ describe("harnessVersionReport latest-version caching", () => {
       latestKnown: true,
     })
     expect(releaseSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("bypasses a fresh latest cache entry when refreshLatest is true and republishes the result", async () => {
+    const xdgCacheHome = await temporaryXdgCacheHome()
+    const initialClient = fakeClaudeClient(claudeReleasePayload("2.1.259"))
+    setup({ document: claudeDocument(), receipt: claudeLock("2.1.252"), ready: true })
+    await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-blog/profile.toml", "linux/arm64", xdgCacheHome, {
+        claude: initialClient,
+      }),
+    )
+
+    const refreshedClient = fakeClaudeClient(claudeReleasePayload("2.1.260"))
+    const refreshSpy = vi.spyOn(refreshedClient, "release")
+    const refreshed = await Effect.runPromise(
+      harnessVersionReport(
+        "/profiles/claude-blog/profile.toml",
+        "linux/arm64",
+        xdgCacheHome,
+        { claude: refreshedClient },
+        { refreshLatest: true },
+      ),
+    )
+
+    expect(refreshed.latest).toBe("2.1.260")
+    expect(refreshSpy).toHaveBeenCalledTimes(1)
+
+    const cachedClient = fakeClaudeClient(claudeReleasePayload("2.1.999"))
+    const cachedSpy = vi.spyOn(cachedClient, "release")
+    const cached = await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-blog/profile.toml", "linux/arm64", xdgCacheHome, {
+        claude: cachedClient,
+      }),
+    )
+    expect(cached.latest).toBe("2.1.260")
+    expect(cachedSpy).not.toHaveBeenCalled()
   })
 
   it("keeps a cached Codex latest version isolated from a cached Claude latest version", async () => {

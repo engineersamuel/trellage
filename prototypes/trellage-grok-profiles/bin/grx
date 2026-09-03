@@ -271,16 +271,63 @@ grok_version_if_available() {
 }
 
 print_harness_version_json() {
-  local installed
+  local executable installed output current latest latest_diagnostic
+
+  executable="$(command -v grok 2>/dev/null || :)"
   installed="$(grok_version_if_available)"
-  jq -cn --arg installed "$installed" '{
-    schemaVersion: 1,
-    launcher: "grx",
-    harness: "grok",
-    installed: ($installed | if length > 0 then . else null end),
-    latest: null,
-    latestKnown: false
-  }'
+  latest=''
+  latest_diagnostic=''
+  if [[ "$executable" != */* || ! -x "$executable" ]]; then
+    latest_diagnostic='grok latest-version check could not find the installed executable'
+  elif ! output="$("$executable" update --check --json 2>/dev/null)"; then
+    latest_diagnostic='grok latest-version check failed'
+  else
+    current="$(jq -er '
+      select(
+        type == "object"
+        and .channel == "stable"
+        and .error == null
+        and (.currentVersion | type) == "string"
+        and (.latestVersion | type) == "string"
+      )
+      | .currentVersion
+    ' <<<"$output" 2>/dev/null || :)"
+    latest="$(jq -er '
+      select(
+        type == "object"
+        and .channel == "stable"
+        and .error == null
+        and (.currentVersion | type) == "string"
+        and (.latestVersion | type) == "string"
+      )
+      | .latestVersion
+    ' <<<"$output" 2>/dev/null || :)"
+    if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ \
+      || ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      latest=''
+      latest_diagnostic='grok latest-version check returned invalid JSON'
+    elif [[ -z "$installed" || "$current" != "$installed" ]]; then
+      latest=''
+      latest_diagnostic='grok latest-version check did not match the installed version'
+    fi
+  fi
+  jq -cn \
+    --arg installed "$installed" \
+    --arg latest "$latest" \
+    --arg latestDiagnostic "$latest_diagnostic" '
+    {
+      schemaVersion: 1,
+      launcher: "grx",
+      harness: "grok",
+      installed: ($installed | if length > 0 then . else null end),
+      latest: ($latest | if length > 0 then . else null end),
+      latestKnown: ($latest | length > 0)
+    }
+    | if ($latestDiagnostic | length) > 0
+      then . + {latestDiagnostic: $latestDiagnostic}
+      else .
+      end
+  '
 }
 
 conservative_headless() {

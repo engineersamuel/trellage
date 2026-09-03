@@ -72,6 +72,7 @@ const locked = Options.boolean("locked")
 const json = Options.boolean("json").pipe(Options.withDefault(false))
 const jsonFull = Options.boolean("json-full").pipe(Options.withDefault(false))
 const full = Options.boolean("full").pipe(Options.withDefault(false))
+const refreshLatestOption = Options.boolean("refresh-latest").pipe(Options.withDefault(false))
 
 const currentGitWorktree = (cwd: string) =>
   Effect.tryPromise({
@@ -300,14 +301,22 @@ const metadata = Command.make("metadata", { profile: profileArgument }, ({ profi
  * `harness-version` JSON envelope so the Admin UI's existing parsing and
  * scheduling machinery applies unchanged.
  */
-const harnessVersion = Command.make("harness-version", { profile: profileArgument }, ({ profile }) =>
+const runHarnessVersion = ({
+  profile,
+  refreshLatest,
+}: {
+  readonly profile: Option.Option<string>
+  readonly refreshLatest: boolean
+}) =>
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform).pipe(
-      Effect.flatMap((selected) => harnessVersionReport(selected, target.platform, cacheHome)),
+      Effect.flatMap((selected) => harnessVersionReport(selected, target.platform, cacheHome, {}, { refreshLatest })),
       Effect.flatMap((result) => Console.log(JSON.stringify(result))),
     ),
-  ),
-)
+  )
+
+const harnessVersionArguments = { profile: profileArgument, refreshLatest: refreshLatestOption }
+const harnessVersion = Command.make("harness-version", harnessVersionArguments, runHarnessVersion)
 
 const ciVerify = Command.make("ci-verify", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>

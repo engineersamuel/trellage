@@ -62,6 +62,22 @@ describe("recordLatestVersion / loadHarnessLatestVersionCache", () => {
     })
   })
 
+  it("preserves independently completed entries when different harness kinds write concurrently", async () => {
+    const xdgCacheHome = await temporaryXdgCacheHome()
+    await Promise.all([
+      recordLatestVersion(xdgCacheHome, "claude", "linux/arm64", "2.1.259", 1000),
+      recordLatestVersion(xdgCacheHome, "codex", "linux/arm64", "0.153.0", 2000),
+      recordLatestVersion(xdgCacheHome, "copilot", "linux/arm64", "1.0.90", 3000),
+    ])
+
+    const record = await loadHarnessLatestVersionCache(harnessLatestVersionCachePath(xdgCacheHome))
+    expect(record.entries).toEqual({
+      "claude:linux/arm64": { version: "2.1.259", checkedAt: 1000 },
+      "codex:linux/arm64": { version: "0.153.0", checkedAt: 2000 },
+      "copilot:linux/arm64": { version: "1.0.90", checkedAt: 3000 },
+    })
+  })
+
   it("overwrites a stale entry for the same harness kind and platform", async () => {
     const xdgCacheHome = await temporaryXdgCacheHome()
     await recordLatestVersion(xdgCacheHome, "claude", "linux/arm64", "2.1.252", 1000)

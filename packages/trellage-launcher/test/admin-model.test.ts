@@ -88,6 +88,7 @@ const fixtureCatalog = () =>
           resolutionPolicy: "floating",
           locallyResolved: false,
           releaseLockAvailable: true,
+          resolvedVersion: "1.0.70",
           skillBundles: [],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -120,6 +121,7 @@ const fixtureCatalogWithClaudeSandbox = () =>
           resolutionPolicy: "floating",
           locallyResolved: false,
           releaseLockAvailable: true,
+          resolvedVersion: null,
           skillBundles: [],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -137,16 +139,31 @@ const fixtureCatalogWithClaudeSandbox = () =>
 
 describe("nativeLauncherCapabilities", () => {
   it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
-    for (const launcher of ["cpx", "cdx", "cldx", "grx", "jcx", "omp", "picx", "prx"]) {
+    for (const launcher of ["agx", "cpx", "cdx", "cldx", "fmx", "grx", "jcx", "omp", "picx", "prx"]) {
       expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
   })
 
-  it("marks every native launcher except cldx as supporting update --check", () => {
-    for (const launcher of ["cpx", "cdx", "grx", "jcx", "omp", "picx", "prx"]) {
+  it("marks every native launcher except agx and cldx as supporting update --check", () => {
+    for (const launcher of ["cpx", "cdx", "fmx", "grx", "jcx", "omp", "picx", "prx"]) {
       expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
     }
+    expect(nativeLauncherCapabilities("agx").updateCheckSupported).toBe(false)
     expect(nativeLauncherCapabilities("cldx").updateCheckSupported).toBe(false)
+  })
+
+  it("supports profile-scoped Firstmate harness versions but not Agency", () => {
+    expect(nativeLauncherCapabilities("fmx").harnessVersionSupported).toBe(true)
+    expect(nativeLauncherCapabilities("agx").harnessVersionSupported).toBe(false)
+  })
+
+  it("fails closed for an unrecognized future native launcher", () => {
+    expect(nativeLauncherCapabilities("futurex")).toEqual({
+      doctorSupported: false,
+      inventorySupported: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: false,
+    })
   })
 })
 
@@ -160,13 +177,24 @@ describe("aggregateAdminProfiles", () => {
   it("marks a sandbox profile as not supporting inventory (the sandbox launcher has no `inventory` subcommand)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: true })
+    expect(sandbox).toMatchObject({
+      doctorSupported: true,
+      inventorySupported: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: true,
+    })
   })
 
-  it("marks every sandbox profile as supporting harness-version, regardless of harness kind (installed resolves for any kind; only latest is claude-only)", () => {
+  it("marks every sandbox profile as supporting harness-version", () => {
     const entries = aggregateAdminProfiles(fixtureCatalogWithClaudeSandbox())
     const claudeSandbox = entries.find((entry) => entry.ref === "sandbox:claude-blog")
     expect(claudeSandbox).toMatchObject({ harnessVersionSupported: true })
+  })
+
+  it("projects a ready sandbox resolution as its installed harness version", () => {
+    const entries = aggregateAdminProfiles(fixtureCatalog())
+    const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
+    expect(sandbox).toMatchObject({ version: "1.0.70" })
   })
 
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {

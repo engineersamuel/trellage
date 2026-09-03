@@ -11,9 +11,8 @@
  * `prototypes/trellage-codex-common/native-codex`). Every native launcher,
  * including `cdx` (Codex, which delegates its `doctor`/`inventory --json`/
  * `repair` dispatch to `native-codex`), implements `doctor PROFILE` and
- * `inventory PROFILE --json`. If a future native launcher genuinely lacks
- * doctor support, add it to `launchersWithoutDoctorSupport` below so it is
- * never shown with a fabricated healthy/unhealthy status.
+ * `inventory PROFILE --json`. Capabilities fail closed for aliases not
+ * listed below.
  */
 import {
   loadProfileGuide,
@@ -25,12 +24,14 @@ import { guideCatalogEntries } from "./guide-catalog.js"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.js"
 
 /** Native launcher command aliases, matching `guide-catalog.ts` `launcher` values. */
-export type NativeLauncherAlias = "cpx" | "cdx" | "cldx" | "grx" | "jcx" | "omp" | "picx" | "prx"
+export type NativeLauncherAlias = "agx" | "cpx" | "cdx" | "cldx" | "fmx" | "grx" | "jcx" | "omp" | "picx" | "prx"
 
 const allNativeLaunchers: ReadonlyArray<NativeLauncherAlias> = [
+  "agx",
   "cpx",
   "cdx",
   "cldx",
+  "fmx",
   "grx",
   "jcx",
   "omp",
@@ -59,21 +60,17 @@ const launchersWithoutDoctorSupport: ReadonlySet<NativeLauncherAlias> = new Set<
  * launcher without update-check support can be added here without
  * fabricating version data for it.
  */
-const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>(["cldx"])
+const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([
+  "agx",
+  "cldx",
+])
 
 /**
- * Every current native launcher exposes a launcher-scoped `harness-version`
- * subcommand reporting the installed harness CLI's own version (verified
- * directly against each of `prototypes/trellage-*-profiles/bin/*` and
- * `prototypes/trellage-codex-common/native-codex`) — including `cldx`,
- * which lacks `update --check` support but does support `harness-version`
- * via `native-claude`'s existing internal version helper. Kept as an
- * explicit exclusion set, matching `launchersWithoutDoctorSupport` and
- * `launchersWithoutUpdateCheckSupport`, so a future launcher without a
- * coherent single-binary "harness version" concept (e.g. a multi-tool
- * toolchain launcher) can be added here without fabricating a version.
+ * Every listed native launcher except Agency exposes `harness-version`.
+ * Firstmate's command is profile-scoped because installed receipts differ;
+ * the others report one host harness binary shared by their profiles.
  */
-const launchersWithoutHarnessVersionSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
+const launchersWithoutHarnessVersionSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>(["agx"])
 
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean
@@ -85,12 +82,20 @@ export interface NativeLauncherCapabilities {
 }
 
 export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapabilities => {
-  const supported = !launchersWithoutDoctorSupport.has(launcher as NativeLauncherAlias)
+  if (!isKnownNativeLauncher(launcher)) {
+    return {
+      doctorSupported: false,
+      inventorySupported: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: false,
+    }
+  }
+  const supported = !launchersWithoutDoctorSupport.has(launcher)
   return {
     doctorSupported: supported,
     inventorySupported: supported,
-    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher as NativeLauncherAlias),
-    harnessVersionSupported: supported && !launchersWithoutHarnessVersionSupport.has(launcher as NativeLauncherAlias),
+    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher),
+    harnessVersionSupported: supported && !launchersWithoutHarnessVersionSupport.has(launcher),
   }
 }
 
@@ -117,7 +122,7 @@ export interface AdminProfileEntry {
   readonly version?: string
   /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
   readonly updateCheckSupported: boolean
-  /** Whether this profile's launcher/harness supports a read-only `harness-version` check (see `launchersWithoutHarnessVersionSupport` for native; `true` for every sandbox profile, since `packages/trellage-cli/src/harness-version-report.ts`'s `installed` resolution works for every harness kind — only its `latest` lookup is currently `claude`-only, reported as `latestKnown: false` for other kinds rather than gating the whole check). */
+  /** Whether this profile supports the read-only `harness-version` report. Sandbox reports use receipt-backed installed revisions and authoritative latest sources where defined. */
   readonly harnessVersionSupported: boolean
   /** The latest version reported by the most recent successful `update --check`, when it differs from `version`. `undefined` while unchecked, unsupported, or when already current. */
   readonly latestVersion?: string
@@ -163,8 +168,8 @@ export interface AdminUpdateCheckInput {
 const commandPathFor = (entry: GuideCatalogEntryRef, catalog: CombinedGuideCatalog): string =>
   entry.surface === "sandbox"
     ? catalog.sandboxCommandPath
-    : (catalog.native.find((native) => native.launcher === entry.launcher && native.name === entry.name)
-        ?.commandPath ?? "")
+    : (catalog.native.find((native) => native.launcher === entry.launcher && native.name === entry.name)?.commandPath ??
+      "")
 
 const readinessFor = (ref: string, inputs: ReadonlyArray<AdminReadinessInput>): AdminReadinessInput | undefined =>
   inputs.find((input) => input.ref === ref)
@@ -184,7 +189,10 @@ const deriveUpdateCheck = (
 } => {
   if (!updateCheckSupported) return { updateCheckStale: false }
   if (input?.result === undefined) return { updateCheckStale: true }
-  const base = { updateCheckStale: false, ...(input.checkedAt === undefined ? {} : { updateCheckedAt: input.checkedAt }) }
+  const base = {
+    updateCheckStale: false,
+    ...(input.checkedAt === undefined ? {} : { updateCheckedAt: input.checkedAt }),
+  }
   if ("malformed" in input.result) return { ...base, updateCheckDiagnostic: input.result.diagnostic }
   if (input.result.current) return { ...base, updateAvailable: false }
   return { ...base, updateAvailable: true, latestVersion: input.result.latest }
@@ -221,6 +229,74 @@ const deriveSandboxStatus = (
     : { health: "unhealthy", install: "not-installed", diagnostic: readiness.result.diagnostic }
 }
 
+const sandboxCapabilities: NativeLauncherCapabilities = {
+  doctorSupported: true,
+  inventorySupported: false,
+  updateCheckSupported: false,
+  harnessVersionSupported: true,
+}
+
+const optionalIdentityFields = (entry: GuideCatalogEntryRef): Pick<AdminProfileEntry, "launcher" | "harness"> => ({
+  ...(entry.launcher === undefined ? {} : { launcher: entry.launcher }),
+  ...(entry.harness === undefined ? {} : { harness: entry.harness }),
+})
+
+const optionalReadinessFields = (
+  entry: GuideCatalogEntryRef,
+  readiness: AdminReadinessInput | undefined,
+  derived: { readonly diagnostic?: string },
+): Pick<AdminProfileEntry, "healthDiagnostic" | "version" | "lastCheckedAt"> => {
+  const version = readiness?.version ?? entry.resolvedVersion
+  return {
+    ...(derived.diagnostic === undefined ? {} : { healthDiagnostic: derived.diagnostic }),
+    ...(version === undefined ? {} : { version }),
+    ...(readiness?.checkedAt === undefined ? {} : { lastCheckedAt: readiness.checkedAt }),
+  }
+}
+
+const optionalUpdateFields = (
+  updateCheck: ReturnType<typeof deriveUpdateCheck>,
+): Pick<AdminProfileEntry, "latestVersion" | "updateAvailable" | "updateCheckDiagnostic" | "updateCheckedAt"> => ({
+  ...(updateCheck.latestVersion === undefined ? {} : { latestVersion: updateCheck.latestVersion }),
+  ...(updateCheck.updateAvailable === undefined ? {} : { updateAvailable: updateCheck.updateAvailable }),
+  ...(updateCheck.updateCheckDiagnostic === undefined
+    ? {}
+    : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic }),
+  ...(updateCheck.updateCheckedAt === undefined ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }),
+})
+
+const aggregateAdminProfile = (
+  entry: GuideCatalogEntryRef,
+  catalog: CombinedGuideCatalog,
+  readinessInputs: ReadonlyArray<AdminReadinessInput>,
+  updateCheckInputs: ReadonlyArray<AdminUpdateCheckInput>,
+): AdminProfileEntry => {
+  const readiness = readinessFor(entry.ref, readinessInputs)
+  const capabilities =
+    entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : sandboxCapabilities
+  const derived =
+    entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
+  const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
+  return {
+    ref: entry.ref,
+    surface: entry.surface,
+    ...optionalIdentityFields(entry),
+    name: entry.name,
+    description: entry.description,
+    commandPath: commandPathFor(entry, catalog),
+    doctorSupported: capabilities.doctorSupported,
+    inventorySupported: capabilities.inventorySupported,
+    health: derived.health,
+    install: derived.install,
+    ...optionalReadinessFields(entry, readiness, derived),
+    updateCheckSupported: capabilities.updateCheckSupported,
+    harnessVersionSupported: capabilities.harnessVersionSupported,
+    ...optionalUpdateFields(updateCheck),
+    updateCheckStale: updateCheck.updateCheckStale,
+    stale: readiness?.result === undefined,
+  }
+}
+
 /**
  * Pure aggregation: merges catalog entries with already-produced readiness
  * results by stable `ref` identity. A malformed/missing readiness result for
@@ -232,56 +308,7 @@ export const aggregateAdminProfiles = (
   readinessInputs: ReadonlyArray<AdminReadinessInput> = [],
   updateCheckInputs: ReadonlyArray<AdminUpdateCheckInput> = [],
 ): ReadonlyArray<AdminProfileEntry> =>
-  guideCatalogEntries(catalog).map((entry): AdminProfileEntry => {
-    const readiness = readinessFor(entry.ref, readinessInputs)
-    const capabilities =
-      entry.surface === "native"
-        ? nativeLauncherCapabilities(entry.launcher ?? "")
-        : // The sandbox `trellage` launcher exposes `validate PROFILE` (doctor-equivalent) but has no
-          // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
-          // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
-          // "an interactive terminal is required" guard for any unrecognized mode. `harness-version PROFILE`
-          // is a distinct, newly-added passthrough subcommand (see `packages/trellage-cli/src/cli.ts`'s
-          // `harness-version` Command and `prototypes/trellage/trellage`'s compiler-mode allowlists) backed
-          // by `trellage-cli`'s local lock/resolution-receipt for `installed` (works for every harness kind)
-          // plus a GitHub Releases lookup for `latest` (`claude` only today — every other kind reports
-          // `latestKnown: false` rather than fabricating a latest version, exactly like the native
-          // `cpx`/`cdx`/`grx`/`cldx` launchers). So `harnessVersionSupported` is `true` for every sandbox
-          // profile, matching every native launcher's blanket support.
-          {
-              doctorSupported: true,
-              inventorySupported: false,
-              updateCheckSupported: false,
-              harnessVersionSupported: true,
-            }
-    const derived =
-      entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
-    const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
-    return {
-      ref: entry.ref,
-      surface: entry.surface,
-      ...(entry.launcher === undefined ? {} : { launcher: entry.launcher }),
-      ...(entry.harness === undefined ? {} : { harness: entry.harness }),
-      name: entry.name,
-      description: entry.description,
-      commandPath: commandPathFor(entry, catalog),
-      doctorSupported: capabilities.doctorSupported,
-      inventorySupported: capabilities.inventorySupported,
-      health: derived.health,
-      ...(derived.diagnostic === undefined ? {} : { healthDiagnostic: derived.diagnostic }),
-      install: derived.install,
-      ...(readiness?.version === undefined ? {} : { version: readiness.version }),
-      updateCheckSupported: capabilities.updateCheckSupported,
-      harnessVersionSupported: capabilities.harnessVersionSupported,
-      ...(updateCheck.latestVersion === undefined ? {} : { latestVersion: updateCheck.latestVersion }),
-      ...(updateCheck.updateAvailable === undefined ? {} : { updateAvailable: updateCheck.updateAvailable }),
-      ...(updateCheck.updateCheckDiagnostic === undefined ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic }),
-      updateCheckStale: updateCheck.updateCheckStale,
-      ...(updateCheck.updateCheckedAt === undefined ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }),
-      stale: readiness?.result === undefined,
-      ...(readiness?.checkedAt === undefined ? {} : { lastCheckedAt: readiness.checkedAt }),
-    }
-  })
+  guideCatalogEntries(catalog).map((entry) => aggregateAdminProfile(entry, catalog, readinessInputs, updateCheckInputs))
 
 /** Maps an admin entry back to the identity `loadProfileGuide` expects. Native entries always carry a `launcher`. */
 export const toProfileGuideIdentity = (entry: AdminProfileEntry): ProfileGuideIdentity =>

@@ -34,20 +34,24 @@ import { CommandRunnerError } from "./guide-launch.js"
 import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
 import { type AdminVersionColumns } from "./admin-version-check.js"
 import {
+  harnessVersionEntriesForForceResync,
   harnessVersionColumnsFor,
-  harnessVersionLauncherFor,
+  harnessVersionOperationKeyFor,
+  reconcileHarnessVersionResults,
+  refreshedSandboxInstalledState,
   type AdminHarnessVersionResult,
+  type AdminInstalledVersionState,
 } from "./admin-harness-version.js"
 import {
+  createHarnessVersionCacheSaveQueue,
   defaultAdminHarnessVersionCachePath,
   loadHarnessVersionCache,
-  saveHarnessVersionCache,
   type AdminHarnessVersionCacheEntry,
   type AdminHarnessVersionCacheRecord,
 } from "./admin-harness-version-cache.js"
 import {
   harnessVersionRefFor,
-  harnessVersionResultForLauncher,
+  harnessVersionResultForOperation,
   runBatchedHarnessVersionChecks,
 } from "./admin-harness-version-scheduler.js"
 import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.js"
@@ -112,6 +116,57 @@ const ShortcutHints = ({ items }: { readonly items: ReadonlyArray<{ readonly key
       ))}
     </Text>
   )
+
+const HarnessVersionDetail = ({
+  supported,
+  result,
+  running,
+  tick,
+}: {
+  readonly supported: boolean
+  readonly result: AdminHarnessVersionResult | undefined
+  readonly running: boolean
+  readonly tick: number
+}) => {
+  if (!supported) return <Text dimColor>Harness version: not supported by this launcher.</Text>
+  const columns = harnessVersionColumnsFor(true, result)
+  const color = versionCellColor(columns.status)
+  const valueStyle = color === undefined ? {} : { color }
+  return (
+    <Box flexDirection="column">
+      <Text wrap="wrap">
+        Harness version:{" "}
+        {running ? (
+          <Text color="cyan">{spinnerFrameAt(tick)} checking…</Text>
+        ) : (
+          <Text bold {...valueStyle}>
+            {columns.installed}
+          </Text>
+        )}
+        {" · Latest version: "}
+        {running ? (
+          <Text color="cyan">{spinnerFrameAt(tick)} checking…</Text>
+        ) : result === undefined ? (
+          <Text dimColor>not yet checked</Text>
+        ) : (
+          <Text bold {...valueStyle}>
+            {columns.latest}
+          </Text>
+        )}
+      </Text>
+      {result?.installed.kind === "unavailable" ? (
+        <Text dimColor wrap="wrap">
+          {result.installed.diagnostic}
+        </Text>
+      ) : null}
+      {result?.latest.kind === "failed" ? (
+        <Text color="red" wrap="wrap">
+          {result.latest.diagnostic}
+        </Text>
+      ) : null}
+    </Box>
+  )
+}
 
 const AdminDetailPanel = ({
   entry,
@@ -271,35 +326,12 @@ const AdminDetailPanel = ({
       <Text>
         Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
       </Text>
-      {(() => {
-        if (!entry.harnessVersionSupported) return null
-        const versionCols = harnessVersionColumnsFor(entry.harnessVersionSupported, versionResult)
-        const versionColor = versionCellColor(versionCols.status)
-        return (
-          <Text wrap="wrap">
-            Harness version:{" "}
-            {versionRunning ? (
-              <Text color="cyan">{spinnerFrameAt(tick)} checking…</Text>
-            ) : (
-              <Text bold {...(versionColor === undefined ? {} : { color: versionColor })}>
-                {versionCols.installed}
-              </Text>
-            )}
-            {" · Latest version: "}
-            {versionRunning ? (
-              <Text color="cyan">{spinnerFrameAt(tick)} checking…</Text>
-            ) : versionResult !== undefined && versionResult.kind === "unavailable" ? (
-              <Text dimColor>{versionResult.diagnostic}</Text>
-            ) : versionResult === undefined ? (
-              <Text dimColor>not yet checked</Text>
-            ) : (
-              <Text bold {...(versionColor === undefined ? {} : { color: versionColor })}>
-                {versionCols.latest}
-              </Text>
-            )}
-          </Text>
-        )
-      })()}
+      <HarnessVersionDetail
+        supported={entry.harnessVersionSupported}
+        result={versionResult}
+        running={versionRunning}
+        tick={tick}
+      />
       {entry.healthDiagnostic === undefined ? null : (
         <Text dimColor wrap="wrap">
           {entry.healthDiagnostic}
@@ -577,11 +609,14 @@ export const AdminApp = ({
   if (versionRunManagerRef.current === undefined) versionRunManagerRef.current = new AdminRunManager({ runner })
   const versionRunManager = versionRunManagerRef.current
   const versionBatchStartedRefs = useRef<Set<string>>(new Set())
-  /** Launchers already given one automatic retry after an unavailable `harness-version` result this session — bounds automatic retries to exactly one per launcher so a persistently-failing check never loops silently; the user's `[u]` resync remains available afterward. */
-  const versionAutoRetriedRefs = useRef<Set<string>>(new Set())
-  const [versionCache, setVersionCache] = useState<AdminHarnessVersionCacheRecord>({ schemaVersion: 1, entries: {} })
+  const [versionCache, setVersionCache] = useState<AdminHarnessVersionCacheRecord>({ schemaVersion: 2, entries: {} })
+  const [versionCacheError, setVersionCacheError] = useState<string | undefined>(undefined)
+  const [sandboxInstalledByRef, setSandboxInstalledByRef] = useState<ReadonlyMap<string, AdminInstalledVersionState>>(
+    new Map(),
+  )
   const [versionCacheLoaded, setVersionCacheLoaded] = useState(false)
   const versionCachePath = useMemo(() => defaultAdminHarnessVersionCachePath(), [])
+  const versionCacheSaveQueue = useMemo(() => createHarnessVersionCacheSaveQueue(versionCachePath), [versionCachePath])
 
   /**
    * Opens the full-screen guide overlay immediately (showing a loading
@@ -682,64 +717,53 @@ export const AdminApp = ({
   }, [])
 
   /**
-   * Persists one launcher's settled `harness-version` result to the
-   * in-memory cache state and, best-effort, to disk. Shared by the startup
-   * batch, the automatic unavailable-result retry, and the manual `[u]`
-   * resync so all three paths keep the on-disk cache consistent
-   * identically.
+   * Persists each settled operation result to memory and an ordered disk
+   * queue. Shared by startup, bounded retries, fallbacks, and manual resync.
    */
-  const persistVersionResult = (launcher: string, cacheEntry: AdminHarnessVersionCacheEntry): void => {
+  const persistVersionResult = (
+    operationKey: string,
+    cacheEntry: AdminHarnessVersionCacheEntry,
+    sourceEntry: AdminProfileEntry,
+  ): void => {
+    const refreshedInstalled =
+      sourceEntry.surface === "sandbox" ? refreshedSandboxInstalledState(cacheEntry.result) : undefined
+    if (refreshedInstalled !== undefined) {
+      setSandboxInstalledByRef((previous) => new Map(previous).set(sourceEntry.ref, refreshedInstalled))
+    }
     setVersionCache((previous) => {
-      const next: AdminHarnessVersionCacheRecord = { schemaVersion: 1, entries: { ...previous.entries, [launcher]: cacheEntry } }
-      void saveHarnessVersionCache(versionCachePath, next).catch(() => undefined)
+      const next: AdminHarnessVersionCacheRecord = {
+        schemaVersion: 2,
+        entries: { ...previous.entries, [operationKey]: cacheEntry },
+      }
+      void versionCacheSaveQueue
+        .enqueue(next)
+        .then(() => setVersionCacheError(undefined))
+        .catch((error: unknown) => setVersionCacheError(error instanceof Error ? error.message : String(error)))
       return next
-    })
-  }
-
-  /**
-   * Automatically retries exactly once, bypassing the cache, any launcher
-   * whose `harness-version` came back unavailable (unparseable output, a
-   * transient failure, etc.) — an unavailable result never reflects a real
-   * version, so leaving it to sit as "—" for a full day (or until the user
-   * manually presses `[u]`) would strand the VERSION/LATEST VERSION columns
-   * unnecessarily. Bounded to one retry per launcher per session via
-   * `versionAutoRetriedRefs` so a persistently-failing check never loops;
-   * the user's manual `[u]` resync remains available beyond that.
-   */
-  const autoRetryUnavailableVersion = (entries: ReadonlyArray<AdminProfileEntry>, launcher: string, cacheEntry: AdminHarnessVersionCacheEntry): void => {
-    if (cacheEntry.result.kind !== "unavailable" || versionAutoRetriedRefs.current.has(launcher)) return
-    versionAutoRetriedRefs.current.add(launcher)
-    const launcherEntries = entries.filter((entry) => harnessVersionLauncherFor(entry) === launcher)
-    void runBatchedHarnessVersionChecks(launcherEntries, versionRunManager, versionCache, {
-      forceResync: true,
-      onResult: persistVersionResult,
     })
   }
 
   /**
    * Once the on-disk cache has loaded, runs the bounded-concurrency
    * `harness-version` batch (see `admin-harness-version-scheduler.ts`) for
-   * every distinct, harness-version-supporting launcher whose cached
-   * result is stale, missing, or unavailable (see
-   * `isHarnessVersionCacheStale`) — never once per profile, since every
-   * profile sharing a launcher shares the same one harness binary
-   * ("prevent duplicate or unbounded work"). Persists each result to disk
-   * as soon as it settles (`onResult`) so a crash mid-batch never loses
-   * earlier launchers' results, mirroring the doctor batch's
-   * one-shot-per-session dispatch via `shouldStartBatch`.
+   * every required operation whose cached result is stale, missing, or
+   * incomplete. Native installed checks retain their natural scope while
+   * latest lookups are deduplicated by release identity. Each result is
+   * persisted as it settles.
    */
   useEffect(() => {
     if (!versionCacheLoaded) return
-    const supportedLaunchers = Array.from(
-      new Set(entries.filter((entry) => entry.harnessVersionSupported).map((entry) => harnessVersionLauncherFor(entry) ?? "")),
-    ).filter((launcher) => launcher.length > 0)
-    if (!shouldStartBatch(supportedLaunchers, versionBatchStartedRefs.current)) return
-    versionBatchStartedRefs.current = new Set(supportedLaunchers)
+    const supportedOperations = Array.from(
+      new Set(
+        entries
+          .filter((entry) => entry.harnessVersionSupported)
+          .map((entry) => harnessVersionOperationKeyFor(entry) ?? ""),
+      ),
+    ).filter((operationKey) => operationKey.length > 0)
+    if (!shouldStartBatch(supportedOperations, versionBatchStartedRefs.current)) return
+    versionBatchStartedRefs.current = new Set(supportedOperations)
     void runBatchedHarnessVersionChecks(entries, versionRunManager, versionCache, {
-      onResult: (launcher, cacheEntry) => {
-        persistVersionResult(launcher, cacheEntry)
-        autoRetryUnavailableVersion(entries, launcher, cacheEntry)
-      },
+      onResult: persistVersionResult,
     })
     // Re-runs only when the cache finishes loading or the profile set changes; `versionCache`
     // itself is read once at dispatch time via the closure and updated incrementally afterward.
@@ -747,20 +771,15 @@ export const AdminApp = ({
   }, [entries, versionRunManager, versionCacheLoaded, versionCachePath])
 
   /**
-   * Forces an immediate re-check of one profile's launcher's harness
-   * version, bypassing the 24h cache entirely (the manual `[u]` resync
-   * action). Reuses the same batch scheduler, passing every entry that
-   * shares this profile's launcher so the dedup-by-launcher behavior stays
-   * identical to the startup batch. Clears the automatic-retry guard for
-   * this launcher so a future unavailable result (e.g. after a later
-   * reload) can still trigger one more automatic retry.
+   * Forces the selected installed scope and its release group through the
+   * same bounded scheduler. Sandbox producers receive `--refresh-latest`,
+   * bypassing both the Admin cache and the CLI's 24-hour latest cache.
    */
   const forceResyncVersion = (entry: AdminProfileEntry) => {
-    const launcher = harnessVersionLauncherFor(entry)
-    if (launcher !== undefined) versionAutoRetriedRefs.current.delete(launcher)
-    const launcherEntries = entries.filter((candidate) => harnessVersionLauncherFor(candidate) === launcher)
-    void runBatchedHarnessVersionChecks(launcherEntries, versionRunManager, versionCache, {
+    const relatedEntries = harnessVersionEntriesForForceResync(entry, entries)
+    void runBatchedHarnessVersionChecks(relatedEntries, versionRunManager, versionCache, {
       forceResync: true,
+      selectedEntryRef: entry.ref,
       onResult: persistVersionResult,
     }).finally(() => setTick((value) => value + 1))
     setTick((value) => value + 1)
@@ -861,14 +880,22 @@ export const AdminApp = ({
   const viewState = resolveAdminViewState(entries, sorted, false)
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1)
   const selected = sorted[boundedIndex]
-  const versionResultFor = (entry: AdminProfileEntry) => {
-    const launcher = harnessVersionLauncherFor(entry)
-    if (launcher === undefined) return undefined
-    return harnessVersionResultForLauncher(launcher, versionRunManager) ?? versionCache.entries[launcher]?.result
-  }
+  const versionResultsByRef = reconcileHarnessVersionResults(
+    entries,
+    (operationKey) =>
+      versionCache.entries[operationKey]?.result ?? harnessVersionResultForOperation(operationKey, versionRunManager),
+    (ref) => sandboxInstalledByRef.get(ref),
+  )
+  const versionResultFor = (entry: AdminProfileEntry) => versionResultsByRef.get(entry.ref)
   const versionRunning = (entry: AdminProfileEntry) => {
-    const launcher = harnessVersionLauncherFor(entry)
-    return launcher !== undefined && versionRunManager.status(harnessVersionRefFor(launcher)).state === "running"
+    const operationKeys = new Set(
+      harnessVersionEntriesForForceResync(entry, entries)
+        .map(harnessVersionOperationKeyFor)
+        .filter((operationKey): operationKey is string => operationKey !== undefined),
+    )
+    return [...operationKeys].some(
+      (operationKey) => versionRunManager.status(harnessVersionRefFor(operationKey)).state === "running",
+    )
   }
   const versionColumnsFor = (entry: AdminProfileEntry) =>
     harnessVersionColumnsFor(entry.harnessVersionSupported, versionResultFor(entry))
@@ -985,6 +1012,11 @@ export const AdminApp = ({
             { key: "q", label: "quit" },
           ]}
         />
+      )}
+      {versionCacheError === undefined ? null : (
+        <Text color="red" wrap="wrap">
+          Harness-version cache error: {versionCacheError}
+        </Text>
       )}
       {viewState === "discovering" ? <Text color="yellow">Discovering profiles…</Text> : null}
       {viewState === "empty-no-profiles" ? <Text color="yellow">No profiles were discovered.</Text> : null}

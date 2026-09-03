@@ -1,25 +1,24 @@
 /**
- * File-based 24-hour cache for `harness-version` results, keyed by
- * **launcher** (e.g. `"cpx"`, `"omp"`) rather than profile `ref` — every
- * profile sharing one launcher shares the exact same one harness binary,
- * so caching per-launcher is both correct and exactly matches the
- * per-launcher scheduling dedup in `admin-harness-version-scheduler.ts`
- * ("prevent duplicate or unbounded work"). Mirrors
- * `admin-version-cache.ts`'s atomic-write convention (write to a `.tmp`
- * sibling with `wx`+`0o600`, then `rename` into place) so a crash mid-write
- * can never leave a half-written cache file. A missing, corrupt, or
- * oversized cache file is treated as "no cache yet" (fail-open to a fresh
- * check) rather than blocking startup.
+ * Atomic 24-hour cache for harness-version operation results. Schema 2
+ * stores installed and latest state independently and is keyed by explicit
+ * operation identity. Schema 1 is intentionally treated as empty because
+ * its profile/launcher keys and combined result states cannot be migrated
+ * safely.
  */
+import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
 
-import type { AdminHarnessVersionResult } from "./admin-harness-version.js"
+import type {
+  AdminHarnessVersionResult,
+  AdminInstalledVersionState,
+  AdminLatestVersionState,
+} from "./admin-harness-version.js"
 
 const maximumCacheBytes = 256 * 1024
 const maximumCacheEntries = 64
+const maximumDiagnosticLength = 500
 
 export const harnessVersionCacheTtlMs = 24 * 60 * 60 * 1000
 
@@ -29,29 +28,54 @@ export interface AdminHarnessVersionCacheEntry {
 }
 
 export interface AdminHarnessVersionCacheRecord {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly entries: Readonly<Record<string, AdminHarnessVersionCacheEntry>>
 }
 
-const emptyRecord: AdminHarnessVersionCacheRecord = { schemaVersion: 1, entries: {} }
+const emptyRecord: AdminHarnessVersionCacheRecord = { schemaVersion: 2, entries: {} }
 
 const isMissingFile = (error: unknown): boolean => error instanceof Error && "code" in error && error.code === "ENOENT"
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const parseResult = (value: unknown): AdminHarnessVersionResult | undefined => {
+const validText = (value: unknown, maximum: number): string | undefined =>
+  typeof value === "string" && value.length > 0 && value.length <= maximum && !/[\u0000\r\n]/u.test(value)
+    ? value
+    : undefined
+
+const parseInstalled = (value: unknown): AdminInstalledVersionState | undefined => {
   if (!isPlainObject(value)) return undefined
-  if (value.kind === "unavailable" && typeof value.diagnostic === "string") {
-    return { kind: "unavailable", diagnostic: value.diagnostic }
+  if (value.kind === "known") {
+    const version = validText(value.version, 128)
+    return version === undefined ? undefined : { kind: "known", version }
   }
-  if (value.kind === "unknown-latest" && typeof value.installed === "string") {
-    return { kind: "unknown-latest", installed: value.installed }
-  }
-  if (value.kind === "known-latest" && typeof value.installed === "string" && typeof value.latest === "string") {
-    return { kind: "known-latest", installed: value.installed, latest: value.latest }
+  if (value.kind === "unavailable") {
+    const diagnostic = validText(value.diagnostic, maximumDiagnosticLength)
+    return diagnostic === undefined ? undefined : { kind: "unavailable", diagnostic }
   }
   return undefined
+}
+
+const parseLatest = (value: unknown): AdminLatestVersionState | undefined => {
+  if (!isPlainObject(value)) return undefined
+  if (value.kind === "known") {
+    const version = validText(value.version, 128)
+    return version === undefined ? undefined : { kind: "known", version }
+  }
+  if (value.kind === "unsupported") return { kind: "unsupported" }
+  if (value.kind === "failed") {
+    const diagnostic = validText(value.diagnostic, maximumDiagnosticLength)
+    return diagnostic === undefined ? undefined : { kind: "failed", diagnostic }
+  }
+  return undefined
+}
+
+const parseResult = (value: unknown): AdminHarnessVersionResult | undefined => {
+  if (!isPlainObject(value)) return undefined
+  const installed = parseInstalled(value.installed)
+  const latest = parseLatest(value.latest)
+  return installed === undefined || latest === undefined ? undefined : { installed, latest }
 }
 
 const parseEntry = (value: unknown): AdminHarnessVersionCacheEntry | undefined => {
@@ -61,7 +85,6 @@ const parseEntry = (value: unknown): AdminHarnessVersionCacheEntry | undefined =
   return { result, checkedAt: value.checkedAt }
 }
 
-/** Tolerantly parses a cache file's contents. Any structural problem yields the empty record rather than throwing, since a corrupt cache must never block startup. */
 export const parseHarnessVersionCacheRecord = (source: string): AdminHarnessVersionCacheRecord => {
   if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return emptyRecord
   let payload: unknown
@@ -70,25 +93,21 @@ export const parseHarnessVersionCacheRecord = (source: string): AdminHarnessVers
   } catch {
     return emptyRecord
   }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 1 || !isPlainObject(payload.entries)) return emptyRecord
+  if (!isPlainObject(payload) || payload.schemaVersion !== 2 || !isPlainObject(payload.entries)) return emptyRecord
   const entries: Record<string, AdminHarnessVersionCacheEntry> = {}
-  for (const [launcher, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
+  for (const [operationKey, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
     const entry = parseEntry(value)
-    if (entry !== undefined) entries[launcher] = entry
+    if (entry !== undefined) entries[operationKey] = entry
   }
-  return { schemaVersion: 1, entries }
+  return { schemaVersion: 2, entries }
 }
 
-/** Loads the cache from disk. A missing or corrupt file resolves to an empty record; only an unexpected read error (not ENOENT) is swallowed the same way. */
 export const loadHarnessVersionCache = async (cachePath: string): Promise<AdminHarnessVersionCacheRecord> => {
-  let source: string
   try {
-    source = await readFile(cachePath, "utf8")
-  } catch (error) {
-    if (isMissingFile(error)) return emptyRecord
+    return parseHarnessVersionCacheRecord(await readFile(cachePath, "utf8"))
+  } catch {
     return emptyRecord
   }
-  return parseHarnessVersionCacheRecord(source)
 }
 
 const removeTemporaryCache = async (temporaryPath: string): Promise<void> => {
@@ -99,8 +118,10 @@ const removeTemporaryCache = async (temporaryPath: string): Promise<void> => {
   }
 }
 
-/** Atomically persists the cache. Failures are surfaced to the caller (unlike `loadHarnessVersionCache`) so a write-permission problem can be surfaced once rather than silently discarding every check result. */
-export const saveHarnessVersionCache = async (cachePath: string, value: AdminHarnessVersionCacheRecord): Promise<void> => {
+export const saveHarnessVersionCache = async (
+  cachePath: string,
+  value: AdminHarnessVersionCacheRecord,
+): Promise<void> => {
   await mkdir(path.dirname(cachePath), { recursive: true, mode: 0o700 })
   const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`
   const source = `${JSON.stringify(value)}\n`
@@ -116,19 +137,44 @@ export const saveHarnessVersionCache = async (cachePath: string, value: AdminHar
   }
 }
 
-export const defaultAdminHarnessVersionCachePath = (env: Readonly<Record<string, string | undefined>> = process.env): string => {
+export interface AdminHarnessVersionCacheSaveQueue {
+  readonly enqueue: (value: AdminHarnessVersionCacheRecord) => Promise<void>
+}
+
+/** Orders full-record snapshots so an older save can never finish after a newer one. */
+export const createHarnessVersionCacheSaveQueue = (
+  cachePath: string,
+  save: (cachePath: string, value: AdminHarnessVersionCacheRecord) => Promise<void> = saveHarnessVersionCache,
+): AdminHarnessVersionCacheSaveQueue => {
+  let pending: Promise<void> = Promise.resolve()
+  return {
+    enqueue: (value) => {
+      const current = pending.catch(() => undefined).then(() => save(cachePath, value))
+      pending = current
+      return current
+    },
+  }
+}
+
+export const defaultAdminHarnessVersionCachePath = (
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string => {
   const cacheRoot = env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache")
   return path.join(cacheRoot, "trellage", "trx-admin", "harness-version-cache.json")
 }
 
-/**
- * A cache entry is stale once `harnessVersionCacheTtlMs` has elapsed since
- * it was recorded, if it was never recorded, or if the recorded result
- * itself is `"unavailable"`. An unavailable result never reflects a real
- * installed/latest version, so honoring it as "fresh" for a full day would
- * strand the VERSION/LATEST VERSION columns on "—" until a manual
- * force-resync — treating it as stale instead lets the next startup batch
- * retry it automatically.
- */
-export const isHarnessVersionCacheStale = (entry: AdminHarnessVersionCacheEntry | undefined, now: number): boolean =>
-  entry === undefined || now - entry.checkedAt >= harnessVersionCacheTtlMs || entry.result.kind === "unavailable"
+export interface HarnessVersionCacheStaleOptions {
+  readonly requiresInstalled?: boolean
+  readonly requiresLatest?: boolean
+}
+
+export const isHarnessVersionCacheStale = (
+  entry: AdminHarnessVersionCacheEntry | undefined,
+  now: number,
+  options: HarnessVersionCacheStaleOptions = {},
+): boolean =>
+  entry === undefined ||
+  now - entry.checkedAt >= harnessVersionCacheTtlMs ||
+  entry.result.latest.kind === "failed" ||
+  ((options.requiresLatest ?? false) && entry.result.latest.kind !== "known") ||
+  ((options.requiresInstalled ?? true) && entry.result.installed.kind === "unavailable")

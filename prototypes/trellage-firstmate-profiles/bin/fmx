@@ -28,6 +28,7 @@ Usage:
   fmx PROFILE [FIRSTMATE_ARGS...]
   fmx list [--json]
   fmx inventory PROFILE --json
+  fmx harness-version PROFILE
   fmx setup PROFILE|--all
   fmx doctor PROFILE
   fmx repair PROFILE
@@ -1836,6 +1837,30 @@ check_update() {
   fi
 }
 
+print_harness_version_json() {
+  local commit installed before after
+
+  commit="$(catalog_commit)"
+  before="$(mutation_generation_value)"
+  mutation_reader_blocked \
+    && die "harness-version refused: a mutation is in progress for $profile_key"
+  installed="$(installed_commit || printf '')"
+  after="$(mutation_generation_value)"
+  if [[ "$before" != "$after" ]] || mutation_reader_blocked; then
+    die "harness-version could not get a stable snapshot for $profile_key; retry after the current mutation"
+  fi
+  jq -cn \
+    --arg installed "$installed" \
+    --arg latest "$commit" '{
+      schemaVersion: 1,
+      launcher: "fmx",
+      harness: "firstmate",
+      installed: ($installed | if length > 0 then . else null end),
+      latest: $latest,
+      latestKnown: true
+    }'
+}
+
 update_profile() {
   local commit repository overlay_commit installed checkout staged_receipt
 
@@ -2140,6 +2165,14 @@ case "${1-}" in
     require_safe_home
     select_profile "$1"
     inventory_profile
+    ;;
+  harness-version)
+    shift
+    [[ "$#" -eq 1 ]] || die 'usage: fmx harness-version PROFILE'
+    [[ "$1" != --all ]] || die 'usage: fmx harness-version PROFILE'
+    require_safe_home
+    select_profile "$1"
+    print_harness_version_json
     ;;
   setup)
     shift

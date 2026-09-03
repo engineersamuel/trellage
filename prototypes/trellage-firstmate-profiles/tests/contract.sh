@@ -1533,6 +1533,20 @@ jq -e --arg manifestDigest "$expected_manifest_digest" \
 ' "$logs/inventory-pstack.json" >/dev/null \
   || fail 'the second profile did not report the same overlay identity'
 
+for profile in default pstack-workers; do
+  fmx harness-version "$profile" >"$logs/harness-version-$profile.json" \
+    || fail "harness-version failed for $profile"
+  jq -e --arg commit "$pinned_commit" '
+    .schemaVersion == 1
+    and .launcher == "fmx"
+    and .harness == "firstmate"
+    and .installed == $commit
+    and .latest == $commit
+    and .latestKnown == true
+  ' "$logs/harness-version-$profile.json" >/dev/null \
+    || fail "harness-version did not report the installed and catalog versions for $profile"
+done
+
 # Inventory verifies that no mutating generation changed across its complete
 # snapshot. Force a publication while the first doctor pass is held; inventory
 # must discard that pass and retry against the new generation.
@@ -1627,6 +1641,14 @@ fmx update --check default >"$logs/update-check-stale.out" 2>&1 \
   || fail 'update --check on a stale profile failed'
 assert_contains 'is stale (installed 111111111111, catalog pin 4ad8cbaeafc1' \
   "$logs/update-check-stale.out"
+fmx harness-version default >"$logs/harness-version-stale.json" \
+  || fail 'harness-version on a stale profile failed'
+jq -e --arg latest "$pinned_commit" '
+  .installed == "1111111111111111111111111111111111111111"
+  and .latest == $latest
+  and .latestKnown == true
+' "$logs/harness-version-stale.json" >/dev/null \
+  || fail 'harness-version did not preserve the stale Firstmate installed commit'
 fmx update default >"$logs/update-stale.out" 2>&1 || fail 'update on a stale profile failed'
 assert_contains "fmx update: default 111111111111 -> 4ad8cbaeafc1 installed" \
   "$logs/update-stale.out"

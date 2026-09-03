@@ -310,6 +310,14 @@ if [ "${1-}" = '--version' ]; then
   exit 0
 fi
 
+if [ "${1-}" = 'update' ] && [ "${2-}" = '--check' ] && [ "${3-}" = '--json' ]; then
+  if [ "${FAKE_GROK_UPDATE_CHECK_STATUS:-0}" -ne 0 ]; then
+    exit "$FAKE_GROK_UPDATE_CHECK_STATUS"
+  fi
+  printf '%s\n' "${FAKE_GROK_UPDATE_CHECK_JSON:-{\"currentVersion\":\"0.2.112\",\"latestVersion\":\"0.2.120\",\"channel\":\"stable\",\"updateAvailable\":true,\"error\":null}}"
+  exit 0
+fi
+
 : "${GROK_HOME:?GROK_HOME is required}"
 : "${FAKE_GROK_LOG:?FAKE_GROK_LOG is required}"
 
@@ -834,6 +842,39 @@ assert_line '  grx doctor PROFILE' "$help_output"
 assert_line '  grx update --check PROFILE|--all' "$help_output"
 assert_line '  grx update PROFILE|--all' "$help_output"
 assert_line '  grx repair PROFILE' "$help_output"
+assert_line '  grx harness-version' "$help_output"
+
+./bin/grx harness-version >"$fixture_root/harness-version.json"
+jq -e '
+  .schemaVersion == 1
+  and .launcher == "grx"
+  and .harness == "grok"
+  and .installed == "0.2.112"
+  and .latest == "0.2.120"
+  and .latestKnown == true
+  and (has("latestDiagnostic") | not)
+' "$fixture_root/harness-version.json" >/dev/null \
+  || fail 'harness-version did not report the installed and latest Grok versions'
+
+FAKE_GROK_UPDATE_CHECK_JSON='not-json' \
+  ./bin/grx harness-version >"$fixture_root/harness-version-malformed.json"
+jq -e '
+  .installed == "0.2.112"
+  and .latest == null
+  and .latestKnown == false
+  and (.latestDiagnostic | contains("invalid JSON"))
+' "$fixture_root/harness-version-malformed.json" >/dev/null \
+  || fail 'harness-version did not preserve installed Grok after malformed update JSON'
+
+FAKE_GROK_UPDATE_CHECK_STATUS=71 \
+  ./bin/grx harness-version >"$fixture_root/harness-version-failed.json"
+jq -e '
+  .installed == "0.2.112"
+  and .latest == null
+  and .latestKnown == false
+  and (.latestDiagnostic | contains("check failed"))
+' "$fixture_root/harness-version-failed.json" >/dev/null \
+  || fail 'harness-version did not surface a failed Grok update check'
 
 assert_invalid_catalog() {
   local invalid_catalog="$1"

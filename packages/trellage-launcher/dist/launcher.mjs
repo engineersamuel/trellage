@@ -51531,7 +51531,7 @@ var validateSandboxEntry = (value, path11) => {
     "headless",
     "locked",
     "herdrCompatibility"
-  ]);
+  ], ["resolvedVersion"]);
   if (fields.sandbox !== true) fail2(`${path11}.sandbox`, "must equal true");
   const harness = record4(fields.harness, `${path11}.harness`);
   exactKeys2(harness, `${path11}.harness`, ["kind", "version"], ["model"]);
@@ -51553,6 +51553,7 @@ var validateSandboxEntry = (value, path11) => {
     resolutionPolicy: literal(fields.resolutionPolicy, `${path11}.resolutionPolicy`, ["floating"]),
     locallyResolved: boolean(fields.locallyResolved, `${path11}.locallyResolved`),
     releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path11}.releaseLockAvailable`),
+    resolvedVersion: fields.resolvedVersion === void 0 ? null : nullableText(fields.resolvedVersion, `${path11}.resolvedVersion`, 128),
     skillBundles: stringArray3(fields.skillBundles, `${path11}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
     skillsMode: literal(fields.skillsMode, `${path11}.skillsMode`, ["floating", "locked"]),
     finalDigestLocked: boolean(fields.finalDigestLocked, `${path11}.finalDigestLocked`),
@@ -51616,6 +51617,7 @@ var guideCatalogEntries = (catalog) => [
       surface: "sandbox",
       name: entry.name,
       harness: entry.harness.kind,
+      ...entry.resolvedVersion === null ? {} : { resolvedVersion: entry.resolvedVersion },
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide
@@ -68114,10 +68116,33 @@ var ForkPreviewApp = ({ variant }) => {
 var import_react37 = __toESM(require_react(), 1);
 
 // src/admin-model.ts
+var allNativeLaunchers = [
+  "agx",
+  "cpx",
+  "cdx",
+  "cldx",
+  "fmx",
+  "grx",
+  "jcx",
+  "omp",
+  "picx",
+  "prx"
+];
 var launchersWithoutDoctorSupport = /* @__PURE__ */ new Set([]);
-var launchersWithoutUpdateCheckSupport = /* @__PURE__ */ new Set(["cldx"]);
-var launchersWithoutHarnessVersionSupport = /* @__PURE__ */ new Set([]);
+var launchersWithoutUpdateCheckSupport = /* @__PURE__ */ new Set([
+  "agx",
+  "cldx"
+]);
+var launchersWithoutHarnessVersionSupport = /* @__PURE__ */ new Set(["agx"]);
 var nativeLauncherCapabilities = (launcher) => {
+  if (!isKnownNativeLauncher(launcher)) {
+    return {
+      doctorSupported: false,
+      inventorySupported: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: false
+    };
+  }
   const supported = !launchersWithoutDoctorSupport.has(launcher);
   return {
     doctorSupported: supported,
@@ -68126,13 +68151,17 @@ var nativeLauncherCapabilities = (launcher) => {
     harnessVersionSupported: supported && !launchersWithoutHarnessVersionSupport.has(launcher)
   };
 };
+var isKnownNativeLauncher = (launcher) => allNativeLaunchers.includes(launcher);
 var commandPathFor = (entry, catalog) => entry.surface === "sandbox" ? catalog.sandboxCommandPath : catalog.native.find((native2) => native2.launcher === entry.launcher && native2.name === entry.name)?.commandPath ?? "";
 var readinessFor = (ref, inputs) => inputs.find((input) => input.ref === ref);
 var updateCheckFor = (ref, inputs) => inputs.find((input) => input.ref === ref);
 var deriveUpdateCheck = (updateCheckSupported, input) => {
   if (!updateCheckSupported) return { updateCheckStale: false };
   if (input?.result === void 0) return { updateCheckStale: true };
-  const base = { updateCheckStale: false, ...input.checkedAt === void 0 ? {} : { updateCheckedAt: input.checkedAt } };
+  const base = {
+    updateCheckStale: false,
+    ...input.checkedAt === void 0 ? {} : { updateCheckedAt: input.checkedAt }
+  };
   if ("malformed" in input.result) return { ...base, updateCheckDiagnostic: input.result.diagnostic };
   if (input.result.current) return { ...base, updateAvailable: false };
   return { ...base, updateAvailable: true, latestVersion: input.result.latest };
@@ -68159,54 +68188,55 @@ var deriveSandboxStatus = (readiness) => {
   }
   return readiness.result.kind === "ready" /* Ready */ ? { health: "healthy", install: "installed" } : { health: "unhealthy", install: "not-installed", diagnostic: readiness.result.diagnostic };
 };
-var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs = []) => guideCatalogEntries(catalog).map((entry) => {
+var sandboxCapabilities = {
+  doctorSupported: true,
+  inventorySupported: false,
+  updateCheckSupported: false,
+  harnessVersionSupported: true
+};
+var optionalIdentityFields = (entry) => ({
+  ...entry.launcher === void 0 ? {} : { launcher: entry.launcher },
+  ...entry.harness === void 0 ? {} : { harness: entry.harness }
+});
+var optionalReadinessFields = (entry, readiness, derived) => {
+  const version2 = readiness?.version ?? entry.resolvedVersion;
+  return {
+    ...derived.diagnostic === void 0 ? {} : { healthDiagnostic: derived.diagnostic },
+    ...version2 === void 0 ? {} : { version: version2 },
+    ...readiness?.checkedAt === void 0 ? {} : { lastCheckedAt: readiness.checkedAt }
+  };
+};
+var optionalUpdateFields = (updateCheck) => ({
+  ...updateCheck.latestVersion === void 0 ? {} : { latestVersion: updateCheck.latestVersion },
+  ...updateCheck.updateAvailable === void 0 ? {} : { updateAvailable: updateCheck.updateAvailable },
+  ...updateCheck.updateCheckDiagnostic === void 0 ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic },
+  ...updateCheck.updateCheckedAt === void 0 ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }
+});
+var aggregateAdminProfile = (entry, catalog, readinessInputs, updateCheckInputs) => {
   const readiness = readinessFor(entry.ref, readinessInputs);
-  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : (
-    // The sandbox `trellage` launcher exposes `validate PROFILE` (doctor-equivalent) but has no
-    // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
-    // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
-    // "an interactive terminal is required" guard for any unrecognized mode. `harness-version PROFILE`
-    // is a distinct, newly-added passthrough subcommand (see `packages/trellage-cli/src/cli.ts`'s
-    // `harness-version` Command and `prototypes/trellage/trellage`'s compiler-mode allowlists) backed
-    // by `trellage-cli`'s local lock/resolution-receipt for `installed` (works for every harness kind)
-    // plus a GitHub Releases lookup for `latest` (`claude` only today — every other kind reports
-    // `latestKnown: false` rather than fabricating a latest version, exactly like the native
-    // `cpx`/`cdx`/`grx`/`cldx` launchers). So `harnessVersionSupported` is `true` for every sandbox
-    // profile, matching every native launcher's blanket support.
-    {
-      doctorSupported: true,
-      inventorySupported: false,
-      updateCheckSupported: false,
-      harnessVersionSupported: true
-    }
-  );
+  const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : sandboxCapabilities;
   const derived = entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness);
   const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs));
   return {
     ref: entry.ref,
     surface: entry.surface,
-    ...entry.launcher === void 0 ? {} : { launcher: entry.launcher },
-    ...entry.harness === void 0 ? {} : { harness: entry.harness },
+    ...optionalIdentityFields(entry),
     name: entry.name,
     description: entry.description,
     commandPath: commandPathFor(entry, catalog),
     doctorSupported: capabilities.doctorSupported,
     inventorySupported: capabilities.inventorySupported,
     health: derived.health,
-    ...derived.diagnostic === void 0 ? {} : { healthDiagnostic: derived.diagnostic },
     install: derived.install,
-    ...readiness?.version === void 0 ? {} : { version: readiness.version },
+    ...optionalReadinessFields(entry, readiness, derived),
     updateCheckSupported: capabilities.updateCheckSupported,
     harnessVersionSupported: capabilities.harnessVersionSupported,
-    ...updateCheck.latestVersion === void 0 ? {} : { latestVersion: updateCheck.latestVersion },
-    ...updateCheck.updateAvailable === void 0 ? {} : { updateAvailable: updateCheck.updateAvailable },
-    ...updateCheck.updateCheckDiagnostic === void 0 ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic },
+    ...optionalUpdateFields(updateCheck),
     updateCheckStale: updateCheck.updateCheckStale,
-    ...updateCheck.updateCheckedAt === void 0 ? {} : { updateCheckedAt: updateCheck.updateCheckedAt },
-    stale: readiness?.result === void 0,
-    ...readiness?.checkedAt === void 0 ? {} : { lastCheckedAt: readiness.checkedAt }
+    stale: readiness?.result === void 0
   };
-});
+};
+var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs = []) => guideCatalogEntries(catalog).map((entry) => aggregateAdminProfile(entry, catalog, readinessInputs, updateCheckInputs));
 var toProfileGuideIdentity = (entry) => entry.surface === "native" ? { surface: "native", launcher: entry.launcher ?? "", profile: entry.name } : { surface: "sandbox", profile: entry.name };
 var loadAdminProfileGuideBody = async (profileGuidesRoot, identity) => {
   try {
@@ -68554,64 +68584,201 @@ var forkFailureToHerdrWorktree = async (runner, request, options) => {
 };
 
 // src/admin-harness-version.ts
-var buildHarnessVersionCommand = (entry) => entry.surface === "sandbox" ? { executable: entry.commandPath, args: ["harness-version", entry.name] } : { executable: entry.commandPath, args: ["harness-version"] };
+var nativeReleaseKeys = {
+  cpx: "copilot-cli",
+  cdx: "codex",
+  cldx: "claude-code",
+  fmx: "firstmate",
+  grx: "grok",
+  jcx: "jcode",
+  omp: "oh-my-pi",
+  picx: "pi-coding-agent",
+  prx: "prime"
+};
+var sandboxReleaseKeys = {
+  claude: "claude-code",
+  codex: "codex",
+  copilot: "copilot-cli",
+  headlong: "headlong-main",
+  pi: "oh-my-pi",
+  prime: "prime"
+};
+var nativeLatestLookupLaunchers = /* @__PURE__ */ new Set([
+  "cdx",
+  "fmx",
+  "grx",
+  "jcx",
+  "omp",
+  "picx",
+  "prx"
+]);
+var harnessVersionReleaseKeyFor = (entry) => {
+  if (entry.surface === "sandbox") return entry.harness === void 0 ? void 0 : sandboxReleaseKeys[entry.harness];
+  if (entry.launcher === void 0 || !isKnownNativeLauncher(entry.launcher)) return void 0;
+  return nativeReleaseKeys[entry.launcher];
+};
+var harnessVersionLatestLookupSupported = (entry) => {
+  if (!entry.harnessVersionSupported) return false;
+  if (entry.surface === "sandbox") return harnessVersionReleaseKeyFor(entry) !== void 0;
+  return entry.launcher !== void 0 && isKnownNativeLauncher(entry.launcher) && nativeLatestLookupLaunchers.has(entry.launcher);
+};
+var harnessVersionOperationKeyFor = (entry) => {
+  if (!entry.harnessVersionSupported) return void 0;
+  if (entry.surface === "sandbox") {
+    const releaseKey = harnessVersionReleaseKeyFor(entry);
+    return releaseKey === void 0 ? void 0 : `sandbox:${releaseKey}`;
+  }
+  if (entry.launcher === void 0 || !isKnownNativeLauncher(entry.launcher)) return void 0;
+  return entry.launcher === "fmx" ? `native:fmx:${entry.name}` : `native:${entry.launcher}`;
+};
+var buildHarnessVersionCommand = (entry, options = {}) => {
+  if (entry.surface === "sandbox") {
+    return {
+      executable: entry.commandPath,
+      args: ["harness-version", entry.name, ...options.refreshLatest === true ? ["--refresh-latest"] : []]
+    };
+  }
+  return {
+    executable: entry.commandPath,
+    args: entry.launcher === "fmx" ? ["harness-version", entry.name] : ["harness-version"]
+  };
+};
 var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var validVersion = (value) => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\u0000\r\n]/u.test(value) ? value : void 0;
+var validDiagnostic = (value) => typeof value === "string" && value.length > 0 && value.length <= 500 && !/[\u0000\r\n]/u.test(value) ? value : void 0;
+var failedHarnessVersionResult = (diagnostic2) => ({
+  installed: { kind: "unavailable", diagnostic: diagnostic2 },
+  latest: { kind: "failed", diagnostic: diagnostic2 }
+});
+var refreshedSandboxInstalledState = (result) => result.installed.kind === "known" || result.latest.kind !== "failed" ? result.installed : void 0;
+var parseInstalledState = (value) => {
+  const version2 = validVersion(value);
+  return version2 === void 0 ? { kind: "unavailable", diagnostic: "harness-version could not determine the installed harness version" } : { kind: "known", version: version2 };
+};
+var parseLatestState = (payload) => {
+  if (payload.latestKnown === true) {
+    const version2 = validVersion(payload.latest);
+    return version2 === void 0 ? { kind: "failed", diagnostic: "harness-version claimed a known latest version without a valid value" } : { kind: "known", version: version2 };
+  }
+  if (payload.latestKnown !== false || payload.latest !== null && payload.latest !== void 0) {
+    return { kind: "failed", diagnostic: "harness-version produced an inconsistent latest-version result" };
+  }
+  if (payload.latestDiagnostic === void 0) return { kind: "unsupported" };
+  const diagnostic2 = validDiagnostic(payload.latestDiagnostic);
+  return diagnostic2 === void 0 ? { kind: "failed", diagnostic: "harness-version produced an invalid latest-version diagnostic" } : { kind: "failed", diagnostic: diagnostic2 };
+};
 var parseHarnessVersionOutput = (stdout) => {
   const trimmed = stdout.trim();
-  if (trimmed.length === 0) return { kind: "unavailable", diagnostic: "harness-version produced no output" };
+  if (trimmed.length === 0) return failedHarnessVersionResult("harness-version produced no output");
   let payload;
   try {
     payload = JSON.parse(trimmed);
   } catch {
-    return { kind: "unavailable", diagnostic: `harness-version produced non-JSON output: ${trimmed.split("\n")[0] ?? trimmed}` };
+    return failedHarnessVersionResult(
+      `harness-version produced non-JSON output: ${trimmed.split("\n")[0]?.slice(0, 400) ?? ""}`
+    );
   }
   if (!isPlainObject(payload) || payload.schemaVersion !== 1) {
-    return { kind: "unavailable", diagnostic: "harness-version produced an unrecognized schema" };
+    return failedHarnessVersionResult("harness-version produced an unrecognized schema");
   }
-  const installed = typeof payload.installed === "string" ? payload.installed : void 0;
-  if (installed === void 0) {
-    return { kind: "unavailable", diagnostic: "harness-version could not determine the installed harness version" };
-  }
-  const latestKnown = payload.latestKnown === true;
-  const latest = typeof payload.latest === "string" ? payload.latest : void 0;
-  if (!latestKnown || latest === void 0) return { kind: "unknown-latest", installed };
-  return { kind: "known-latest", installed, latest };
+  return { installed: parseInstalledState(payload.installed), latest: parseLatestState(payload) };
 };
 var harnessVersionColumnsFor = (supported, result) => {
-  if (!supported || result === void 0 || result.kind === "unavailable") {
-    return { installed: "\u2014", latest: "\u2014", status: "unknown" };
+  if (!supported || result === void 0) return { installed: "\u2014", latest: "\u2014", status: "unknown" };
+  const installed = result.installed.kind === "known" ? result.installed.version : "\u2014";
+  const latest = result.latest.kind === "known" ? result.latest.version : "\u2014";
+  if (result.installed.kind !== "known" || result.latest.kind !== "known") {
+    return { installed, latest, status: "unknown" };
   }
-  if (result.kind === "unknown-latest") return { installed: result.installed, latest: "\u2014", status: "unknown" };
-  return result.installed === result.latest ? { installed: result.installed, latest: result.latest, status: "match" } : { installed: result.installed, latest: result.latest, status: "mismatch" };
+  return {
+    installed,
+    latest,
+    status: result.installed.version === result.latest.version ? "match" : "mismatch"
+  };
 };
-var harnessVersionLauncherFor = (entry) => {
-  if (entry.surface === "native") return entry.launcher;
-  return entry.harnessVersionSupported ? `sandbox:${entry.name}` : void 0;
+var resultForEntry = (entry, resultForOperation, sandboxInstalledForRef) => {
+  const operationKey = harnessVersionOperationKeyFor(entry);
+  const raw = operationKey === void 0 ? void 0 : resultForOperation(operationKey);
+  if (entry.surface === "native") return raw;
+  const installed = sandboxInstalledForRef(entry.ref) ?? (validVersion(entry.version) === void 0 ? { kind: "unavailable", diagnostic: "sandbox profile has no ready installed harness resolution" } : { kind: "known", version: entry.version });
+  return { installed, latest: raw?.latest ?? { kind: "unsupported" } };
+};
+var reconcileHarnessVersionResults = (entries, resultForOperation, sandboxInstalledForRef = () => void 0) => {
+  const results = /* @__PURE__ */ new Map();
+  const latestByRelease = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const result = resultForEntry(entry, resultForOperation, sandboxInstalledForRef);
+    if (result === void 0) continue;
+    results.set(entry.ref, result);
+    const releaseKey = harnessVersionReleaseKeyFor(entry);
+    if (releaseKey === void 0 || result.latest.kind !== "known") continue;
+    const versions = latestByRelease.get(releaseKey) ?? /* @__PURE__ */ new Set();
+    versions.add(result.latest.version);
+    latestByRelease.set(releaseKey, versions);
+  }
+  for (const entry of entries) {
+    const result = results.get(entry.ref);
+    const releaseKey = harnessVersionReleaseKeyFor(entry);
+    if (result === void 0 || releaseKey === void 0 || result.latest.kind === "known") continue;
+    const versions = latestByRelease.get(releaseKey);
+    if (versions?.size !== 1) continue;
+    results.set(entry.ref, { installed: result.installed, latest: { kind: "known", version: [...versions][0] } });
+  }
+  return results;
+};
+var harnessVersionEntriesForForceResync = (selected, entries) => {
+  const operationKey = harnessVersionOperationKeyFor(selected);
+  if (operationKey === void 0) return [];
+  if (selected.launcher === "fmx") {
+    return entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey);
+  }
+  const releaseKey = harnessVersionReleaseKeyFor(selected);
+  return releaseKey === void 0 ? entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey) : entries.filter((entry) => harnessVersionReleaseKeyFor(entry) === releaseKey);
 };
 
 // src/admin-harness-version-cache.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
 import { mkdir as mkdir2, readFile as readFile3, rename as rename2, unlink as unlink3, writeFile as writeFile2 } from "node:fs/promises";
 import os5 from "node:os";
 import path9 from "node:path";
-import { randomUUID as randomUUID3 } from "node:crypto";
 var maximumCacheBytes = 256 * 1024;
 var maximumCacheEntries = 64;
+var maximumDiagnosticLength = 500;
 var harnessVersionCacheTtlMs = 24 * 60 * 60 * 1e3;
-var emptyRecord = { schemaVersion: 1, entries: {} };
+var emptyRecord = { schemaVersion: 2, entries: {} };
 var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
 var isPlainObject2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var parseResult = (value) => {
+var validText = (value, maximum) => typeof value === "string" && value.length > 0 && value.length <= maximum && !/[\u0000\r\n]/u.test(value) ? value : void 0;
+var parseInstalled = (value) => {
   if (!isPlainObject2(value)) return void 0;
-  if (value.kind === "unavailable" && typeof value.diagnostic === "string") {
-    return { kind: "unavailable", diagnostic: value.diagnostic };
+  if (value.kind === "known") {
+    const version2 = validText(value.version, 128);
+    return version2 === void 0 ? void 0 : { kind: "known", version: version2 };
   }
-  if (value.kind === "unknown-latest" && typeof value.installed === "string") {
-    return { kind: "unknown-latest", installed: value.installed };
-  }
-  if (value.kind === "known-latest" && typeof value.installed === "string" && typeof value.latest === "string") {
-    return { kind: "known-latest", installed: value.installed, latest: value.latest };
+  if (value.kind === "unavailable") {
+    const diagnostic2 = validText(value.diagnostic, maximumDiagnosticLength);
+    return diagnostic2 === void 0 ? void 0 : { kind: "unavailable", diagnostic: diagnostic2 };
   }
   return void 0;
+};
+var parseLatest = (value) => {
+  if (!isPlainObject2(value)) return void 0;
+  if (value.kind === "known") {
+    const version2 = validText(value.version, 128);
+    return version2 === void 0 ? void 0 : { kind: "known", version: version2 };
+  }
+  if (value.kind === "unsupported") return { kind: "unsupported" };
+  if (value.kind === "failed") {
+    const diagnostic2 = validText(value.diagnostic, maximumDiagnosticLength);
+    return diagnostic2 === void 0 ? void 0 : { kind: "failed", diagnostic: diagnostic2 };
+  }
+  return void 0;
+};
+var parseResult = (value) => {
+  if (!isPlainObject2(value)) return void 0;
+  const installed = parseInstalled(value.installed);
+  const latest = parseLatest(value.latest);
+  return installed === void 0 || latest === void 0 ? void 0 : { installed, latest };
 };
 var parseEntry = (value) => {
   if (!isPlainObject2(value)) return void 0;
@@ -68627,23 +68794,20 @@ var parseHarnessVersionCacheRecord = (source) => {
   } catch {
     return emptyRecord;
   }
-  if (!isPlainObject2(payload) || payload.schemaVersion !== 1 || !isPlainObject2(payload.entries)) return emptyRecord;
+  if (!isPlainObject2(payload) || payload.schemaVersion !== 2 || !isPlainObject2(payload.entries)) return emptyRecord;
   const entries = {};
-  for (const [launcher, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
+  for (const [operationKey, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
     const entry = parseEntry(value);
-    if (entry !== void 0) entries[launcher] = entry;
+    if (entry !== void 0) entries[operationKey] = entry;
   }
-  return { schemaVersion: 1, entries };
+  return { schemaVersion: 2, entries };
 };
 var loadHarnessVersionCache = async (cachePath) => {
-  let source;
   try {
-    source = await readFile3(cachePath, "utf8");
-  } catch (error) {
-    if (isMissingFile(error)) return emptyRecord;
+    return parseHarnessVersionCacheRecord(await readFile3(cachePath, "utf8"));
+  } catch {
     return emptyRecord;
   }
-  return parseHarnessVersionCacheRecord(source);
 };
 var removeTemporaryCache = async (temporaryPath) => {
   try {
@@ -68668,60 +68832,164 @@ var saveHarnessVersionCache = async (cachePath, value) => {
     throw new Error(`could not write admin harness-version cache: ${cachePath}`, { cause: error });
   }
 };
+var createHarnessVersionCacheSaveQueue = (cachePath, save = saveHarnessVersionCache) => {
+  let pending = Promise.resolve();
+  return {
+    enqueue: (value) => {
+      const current = pending.catch(() => void 0).then(() => save(cachePath, value));
+      pending = current;
+      return current;
+    }
+  };
+};
 var defaultAdminHarnessVersionCachePath = (env3 = process.env) => {
   const cacheRoot = env3.XDG_CACHE_HOME ?? path9.join(os5.homedir(), ".cache");
   return path9.join(cacheRoot, "trellage", "trx-admin", "harness-version-cache.json");
 };
-var isHarnessVersionCacheStale = (entry, now) => entry === void 0 || now - entry.checkedAt >= harnessVersionCacheTtlMs || entry.result.kind === "unavailable";
+var isHarnessVersionCacheStale = (entry, now, options = {}) => entry === void 0 || now - entry.checkedAt >= harnessVersionCacheTtlMs || entry.result.latest.kind === "failed" || (options.requiresLatest ?? false) && entry.result.latest.kind !== "known" || (options.requiresInstalled ?? true) && entry.result.installed.kind === "unavailable";
 
 // src/admin-harness-version-scheduler.ts
 var defaultMaxConcurrent2 = 4;
-var harnessVersionRefFor = (launcher) => `harness-version::${launcher}`;
-var harnessVersionResultForLauncher = (launcher, runManager) => {
-  const status = runManager.status(harnessVersionRefFor(launcher));
-  const latest = status.latest;
+var harnessVersionRefFor = (operationKey) => `harness-version::${operationKey}`;
+var harnessVersionResultForOperation = (operationKey, runManager) => {
+  const latest = runManager.status(harnessVersionRefFor(operationKey)).latest;
   if (latest === void 0) return void 0;
   if (latest.state === "success") return parseHarnessVersionOutput(latest.stdout);
   const reason = latest.stderr.trim() || latest.stdout.trim() || latest.state;
-  return { kind: "unavailable", diagnostic: `harness-version ${latest.state}: ${reason.split("\n")[0] ?? reason}` };
+  return failedHarnessVersionResult(
+    `harness-version ${latest.state}: ${(reason.split("\n")[0] ?? reason).slice(0, 450)}`
+  );
 };
-var resultFromRun = (launcher, runManager) => harnessVersionResultForLauncher(launcher, runManager) ?? { kind: "unavailable", diagnostic: "harness-version did not complete" };
-var distinctLauncherEntries = (entries) => {
-  const seen = /* @__PURE__ */ new Set();
-  const result = [];
-  for (const entry of entries) {
-    if (!entry.harnessVersionSupported) continue;
-    const launcher = harnessVersionLauncherFor(entry);
-    if (launcher === void 0 || seen.has(launcher)) continue;
-    seen.add(launcher);
-    result.push(entry);
+var resultFromRun = (operationKey, runManager) => harnessVersionResultForOperation(operationKey, runManager) ?? failedHarnessVersionResult("harness-version did not complete");
+var operationSort = (left, right, preferredEntryRef) => {
+  if (left.ref === preferredEntryRef) return -1;
+  if (right.ref === preferredEntryRef) return 1;
+  const leftMissingVersion = left.surface === "sandbox" && left.version === void 0;
+  const rightMissingVersion = right.surface === "sandbox" && right.version === void 0;
+  if (leftMissingVersion !== rightMissingVersion) return leftMissingVersion ? 1 : -1;
+  return left.ref.localeCompare(right.ref);
+};
+var harnessVersionOperations = (entries, preferredEntryRef) => {
+  const operations = /* @__PURE__ */ new Map();
+  for (const entry of [...entries].sort((left, right) => operationSort(left, right, preferredEntryRef))) {
+    const key = harnessVersionOperationKeyFor(entry);
+    if (key === void 0 || operations.has(key)) continue;
+    operations.set(key, {
+      key,
+      entry,
+      releaseKey: harnessVersionReleaseKeyFor(entry),
+      latestLookupSupported: harnessVersionLatestLookupSupported(entry),
+      requiresInstalled: entry.surface === "native"
+    });
   }
-  return result;
+  return [...operations.values()];
+};
+var primaryOperations = (operations, selectedEntryRef, forceResync) => {
+  const selected = /* @__PURE__ */ new Map();
+  if (forceResync && selectedEntryRef !== void 0) {
+    const selectedOperation = operations.find((operation) => operation.entry.ref === selectedEntryRef);
+    if (selectedOperation !== void 0) selected.set(selectedOperation.key, selectedOperation);
+  } else {
+    for (const operation of operations) {
+      if (operation.entry.surface === "native") selected.set(operation.key, operation);
+    }
+  }
+  const releaseKeys = new Set(
+    operations.map((operation) => operation.releaseKey).filter((releaseKey) => releaseKey !== void 0)
+  );
+  for (const releaseKey of releaseKeys) {
+    const candidates = operations.filter(
+      (operation) => operation.releaseKey === releaseKey && operation.latestLookupSupported
+    );
+    if ([...selected.values()].some((operation) => operation.releaseKey === releaseKey && operation.latestLookupSupported)) {
+      continue;
+    }
+    const candidate = candidates[0];
+    if (candidate !== void 0) selected.set(candidate.key, candidate);
+  }
+  return [...selected.values()];
+};
+var freshCachedResults = (operations, cache3, now, forceResync) => {
+  const results = /* @__PURE__ */ new Map();
+  if (forceResync) return results;
+  for (const operation of operations) {
+    const cached = cache3.entries[operation.key];
+    if (!isHarnessVersionCacheStale(cached, now, {
+      requiresInstalled: operation.requiresInstalled,
+      requiresLatest: operation.latestLookupSupported
+    })) {
+      results.set(operation.key, cached.result);
+    }
+  }
+  return results;
+};
+var releaseHasKnownLatest = (releaseKey, operations, results) => operations.some(
+  (operation) => operation.releaseKey === releaseKey && results.get(operation.key)?.latest.kind === "known"
+);
+var operationNeedsRetry = (operation, result, operations, results) => {
+  if (result === void 0) return false;
+  if (operation.requiresInstalled && result.installed.kind === "unavailable") return true;
+  return result.latest.kind === "failed" && (operation.releaseKey === void 0 || !releaseHasKnownLatest(operation.releaseKey, operations, results));
+};
+var mergeAttemptResult = (previous, current) => {
+  if (previous === void 0) return current;
+  const installed = current.installed.kind === "known" || previous.installed.kind !== "known" ? current.installed : previous.installed;
+  const latest = current.latest.kind === "known" || previous.latest.kind !== "known" ? current.latest.kind === "unsupported" && previous.latest.kind === "failed" ? previous.latest : current.latest : previous.latest;
+  return { installed, latest };
 };
 var runBatchedHarnessVersionChecks = async (entries, runManager, cache3, options = {}) => {
+  const operations = harnessVersionOperations(entries, options.selectedEntryRef);
+  if (operations.length === 0) return;
   const maxConcurrent = options.maxConcurrent ?? defaultMaxConcurrent2;
   const now = options.now ?? (() => Date.now());
   const forceResync = options.forceResync ?? false;
-  const queue = distinctLauncherEntries(entries).filter((entry) => forceResync || isHarnessVersionCacheStale(cache3.entries[harnessVersionLauncherFor(entry) ?? ""], now())).slice();
-  if (queue.length === 0) return;
-  const worker = async () => {
-    for (; ; ) {
-      const entry = queue.shift();
-      if (entry === void 0) return;
-      const launcher = harnessVersionLauncherFor(entry);
-      if (launcher === void 0) continue;
-      const command = buildHarnessVersionCommand(entry);
-      const ref = harnessVersionRefFor(launcher);
-      if (forceResync) {
-        await runManager.retry(ref, command.executable, command.args);
-      } else {
-        await runManager.trigger(ref, command.executable, command.args);
+  const results = freshCachedResults(operations, cache3, now(), forceResync);
+  const attempted = /* @__PURE__ */ new Set();
+  const runOperations = async (candidates, forceRun) => {
+    const queue = candidates.filter(
+      (operation) => forceRun || isHarnessVersionCacheStale(cache3.entries[operation.key], now(), {
+        requiresInstalled: operation.requiresInstalled,
+        requiresLatest: operation.latestLookupSupported
+      })
+    );
+    if (queue.length === 0) return;
+    const worker = async () => {
+      for (; ; ) {
+        const operation = queue.shift();
+        if (operation === void 0) return;
+        const command = buildHarnessVersionCommand(operation.entry, {
+          refreshLatest: forceRun && operation.entry.surface === "sandbox"
+        });
+        const ref = harnessVersionRefFor(operation.key);
+        if (forceRun) {
+          await runManager.retry(ref, command.executable, command.args);
+        } else {
+          await runManager.trigger(ref, command.executable, command.args);
+        }
+        const result = mergeAttemptResult(results.get(operation.key), resultFromRun(operation.key, runManager));
+        results.set(operation.key, result);
+        attempted.add(operation.key);
+        options.onResult?.(operation.key, { result, checkedAt: now() }, operation.entry);
       }
-      options.onResult?.(launcher, { result: resultFromRun(launcher, runManager), checkedAt: now() });
-    }
+    };
+    const workerCount = Math.max(1, Math.min(maxConcurrent, queue.length));
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
   };
-  const workerCount = Math.max(1, Math.min(maxConcurrent, queue.length));
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const primary = primaryOperations(operations, options.selectedEntryRef, forceResync);
+  await runOperations(primary, forceResync);
+  const primaryRetries = primary.filter(
+    (operation) => operationNeedsRetry(operation, results.get(operation.key), operations, results)
+  );
+  await runOperations(primaryRetries, true);
+  const primaryKeys = new Set(primary.map((operation) => operation.key));
+  const fallbacks = operations.filter(
+    (operation) => operation.latestLookupSupported && !primaryKeys.has(operation.key) && operation.releaseKey !== void 0 && !releaseHasKnownLatest(operation.releaseKey, operations, results)
+  );
+  await runOperations(fallbacks, forceResync);
+  const fallbackRetries = fallbacks.filter(
+    (operation) => attempted.has(operation.key) && operationNeedsRetry(operation, results.get(operation.key), operations, results)
+  );
+  await runOperations(fallbackRetries, true);
 };
 
 // src/admin-inventory.ts
@@ -68797,6 +69065,34 @@ var ShortcutHints = ({ items }) => items.length === 0 ? null : /* @__PURE__ */ (
   " ",
   /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: item.label })
 ] }, item.key)) });
+var HarnessVersionDetail = ({
+  supported,
+  result,
+  running,
+  tick
+}) => {
+  if (!supported) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Harness version: not supported by this launcher." });
+  const columns = harnessVersionColumnsFor(true, result);
+  const color = versionCellColor(columns.status);
+  const valueStyle = color === void 0 ? {} : { color };
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
+      "Harness version:",
+      " ",
+      running ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+        spinnerFrameAt(tick),
+        " checking\u2026"
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...valueStyle, children: columns.installed }),
+      " \xB7 Latest version: ",
+      running ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+        spinnerFrameAt(tick),
+        " checking\u2026"
+      ] }) : result === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...valueStyle, children: columns.latest })
+    ] }),
+    result?.installed.kind === "unavailable" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: result.installed.diagnostic }) : null,
+    result?.latest.kind === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "red", wrap: "wrap", children: result.latest.diagnostic }) : null
+  ] });
+};
 var AdminDetailPanel = ({
   entry,
   runManager,
@@ -68908,24 +69204,15 @@ var AdminDetailPanel = ({
       " \xB7 Install: ",
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install })
     ] }),
-    (() => {
-      if (!entry.harnessVersionSupported) return null;
-      const versionCols = harnessVersionColumnsFor(entry.harnessVersionSupported, versionResult);
-      const versionColor = versionCellColor(versionCols.status);
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
-        "Harness version:",
-        " ",
-        versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
-          spinnerFrameAt(tick),
-          " checking\u2026"
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.installed }),
-        " \xB7 Latest version: ",
-        versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
-          spinnerFrameAt(tick),
-          " checking\u2026"
-        ] }) : versionResult !== void 0 && versionResult.kind === "unavailable" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: versionResult.diagnostic }) : versionResult === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.latest })
-      ] });
-    })(),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      HarnessVersionDetail,
+      {
+        supported: entry.harnessVersionSupported,
+        result: versionResult,
+        running: versionRunning,
+        tick
+      }
+    ),
     entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
@@ -69104,10 +69391,14 @@ var AdminApp = ({
   if (versionRunManagerRef.current === void 0) versionRunManagerRef.current = new AdminRunManager({ runner });
   const versionRunManager = versionRunManagerRef.current;
   const versionBatchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const versionAutoRetriedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 1, entries: {} });
+  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 2, entries: {} });
+  const [versionCacheError, setVersionCacheError] = (0, import_react37.useState)(void 0);
+  const [sandboxInstalledByRef, setSandboxInstalledByRef] = (0, import_react37.useState)(
+    /* @__PURE__ */ new Map()
+  );
   const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react37.useState)(false);
   const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminHarnessVersionCachePath(), []);
+  const versionCacheSaveQueue = (0, import_react37.useMemo)(() => createHarnessVersionCacheSaveQueue(versionCachePath), [versionCachePath]);
   const openGuideOverlay = (entry) => {
     setGuideOverlay({ entry, body: void 0, note: void 0 });
     loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
@@ -69157,42 +69448,38 @@ var AdminApp = ({
       cancelled = true;
     };
   }, []);
-  const persistVersionResult = (launcher, cacheEntry) => {
+  const persistVersionResult = (operationKey, cacheEntry, sourceEntry) => {
+    const refreshedInstalled = sourceEntry.surface === "sandbox" ? refreshedSandboxInstalledState(cacheEntry.result) : void 0;
+    if (refreshedInstalled !== void 0) {
+      setSandboxInstalledByRef((previous) => new Map(previous).set(sourceEntry.ref, refreshedInstalled));
+    }
     setVersionCache((previous) => {
-      const next = { schemaVersion: 1, entries: { ...previous.entries, [launcher]: cacheEntry } };
-      void saveHarnessVersionCache(versionCachePath, next).catch(() => void 0);
+      const next = {
+        schemaVersion: 2,
+        entries: { ...previous.entries, [operationKey]: cacheEntry }
+      };
+      void versionCacheSaveQueue.enqueue(next).then(() => setVersionCacheError(void 0)).catch((error) => setVersionCacheError(error instanceof Error ? error.message : String(error)));
       return next;
-    });
-  };
-  const autoRetryUnavailableVersion = (entries2, launcher, cacheEntry) => {
-    if (cacheEntry.result.kind !== "unavailable" || versionAutoRetriedRefs.current.has(launcher)) return;
-    versionAutoRetriedRefs.current.add(launcher);
-    const launcherEntries = entries2.filter((entry) => harnessVersionLauncherFor(entry) === launcher);
-    void runBatchedHarnessVersionChecks(launcherEntries, versionRunManager, versionCache, {
-      forceResync: true,
-      onResult: persistVersionResult
     });
   };
   (0, import_react37.useEffect)(() => {
     if (!versionCacheLoaded) return;
-    const supportedLaunchers = Array.from(
-      new Set(entries.filter((entry) => entry.harnessVersionSupported).map((entry) => harnessVersionLauncherFor(entry) ?? ""))
-    ).filter((launcher) => launcher.length > 0);
-    if (!shouldStartBatch(supportedLaunchers, versionBatchStartedRefs.current)) return;
-    versionBatchStartedRefs.current = new Set(supportedLaunchers);
+    const supportedOperations = Array.from(
+      new Set(
+        entries.filter((entry) => entry.harnessVersionSupported).map((entry) => harnessVersionOperationKeyFor(entry) ?? "")
+      )
+    ).filter((operationKey) => operationKey.length > 0);
+    if (!shouldStartBatch(supportedOperations, versionBatchStartedRefs.current)) return;
+    versionBatchStartedRefs.current = new Set(supportedOperations);
     void runBatchedHarnessVersionChecks(entries, versionRunManager, versionCache, {
-      onResult: (launcher, cacheEntry) => {
-        persistVersionResult(launcher, cacheEntry);
-        autoRetryUnavailableVersion(entries, launcher, cacheEntry);
-      }
+      onResult: persistVersionResult
     });
   }, [entries, versionRunManager, versionCacheLoaded, versionCachePath]);
   const forceResyncVersion = (entry) => {
-    const launcher = harnessVersionLauncherFor(entry);
-    if (launcher !== void 0) versionAutoRetriedRefs.current.delete(launcher);
-    const launcherEntries = entries.filter((candidate) => harnessVersionLauncherFor(candidate) === launcher);
-    void runBatchedHarnessVersionChecks(launcherEntries, versionRunManager, versionCache, {
+    const relatedEntries = harnessVersionEntriesForForceResync(entry, entries);
+    void runBatchedHarnessVersionChecks(relatedEntries, versionRunManager, versionCache, {
       forceResync: true,
+      selectedEntryRef: entry.ref,
       onResult: persistVersionResult
     }).finally(() => setTick((value) => value + 1));
     setTick((value) => value + 1);
@@ -69267,14 +69554,19 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   const viewState = resolveAdminViewState(entries, sorted, false);
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1);
   const selected = sorted[boundedIndex];
-  const versionResultFor = (entry) => {
-    const launcher = harnessVersionLauncherFor(entry);
-    if (launcher === void 0) return void 0;
-    return harnessVersionResultForLauncher(launcher, versionRunManager) ?? versionCache.entries[launcher]?.result;
-  };
+  const versionResultsByRef = reconcileHarnessVersionResults(
+    entries,
+    (operationKey) => versionCache.entries[operationKey]?.result ?? harnessVersionResultForOperation(operationKey, versionRunManager),
+    (ref) => sandboxInstalledByRef.get(ref)
+  );
+  const versionResultFor = (entry) => versionResultsByRef.get(entry.ref);
   const versionRunning = (entry) => {
-    const launcher = harnessVersionLauncherFor(entry);
-    return launcher !== void 0 && versionRunManager.status(harnessVersionRefFor(launcher)).state === "running";
+    const operationKeys = new Set(
+      harnessVersionEntriesForForceResync(entry, entries).map(harnessVersionOperationKeyFor).filter((operationKey) => operationKey !== void 0)
+    );
+    return [...operationKeys].some(
+      (operationKey) => versionRunManager.status(harnessVersionRefFor(operationKey)).state === "running"
+    );
   };
   const versionColumnsFor = (entry) => harnessVersionColumnsFor(entry.harnessVersionSupported, versionResultFor(entry));
   const statusesByRef = (0, import_react37.useMemo)(() => {
@@ -69384,6 +69676,10 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         ]
       }
     ),
+    versionCacheError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "red", wrap: "wrap", children: [
+      "Harness-version cache error: ",
+      versionCacheError
+    ] }),
     viewState === "discovering" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "Discovering profiles\u2026" }) : null,
     viewState === "empty-no-profiles" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "No profiles were discovered." }) : null,
     viewState === "empty-no-match" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [

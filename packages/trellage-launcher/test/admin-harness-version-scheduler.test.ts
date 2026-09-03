@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest"
 
-import type { AdminHarnessVersionCacheRecord } from "../src/admin-harness-version-cache.js"
-import { harnessVersionRefFor, harnessVersionResultForLauncher, runBatchedHarnessVersionChecks } from "../src/admin-harness-version-scheduler.js"
+import type {
+  AdminHarnessVersionCacheEntry,
+  AdminHarnessVersionCacheRecord,
+} from "../src/admin-harness-version-cache.js"
+import {
+  harnessVersionRefFor,
+  harnessVersionResultForOperation,
+  runBatchedHarnessVersionChecks,
+} from "../src/admin-harness-version-scheduler.js"
 import type { AdminProfileEntry } from "../src/admin-model.js"
 import { AdminRunManager } from "../src/admin-run-manager.js"
-import { CommandRunnerError, type CommandRunOptions, type CommandRunner, type CommandRunResult } from "../src/guide-launch.js"
+import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
 
-/** A controllable fake runner: each `run()` call gets its own deferred resolve/reject, released manually by the test. */
 class DeferredRunner implements CommandRunner {
   readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []
-  private readonly pending: Array<{ resolve: (value: CommandRunResult) => void; reject: (error: unknown) => void }> = []
+  private readonly pending: Array<{
+    resolve: (value: CommandRunResult) => void
+    reject: (error: unknown) => void
+  }> = []
 
   run(executable: string, args: ReadonlyArray<string>, _options?: CommandRunOptions): Promise<CommandRunResult> {
     this.calls.push({ executable, args })
@@ -19,24 +28,20 @@ class DeferredRunner implements CommandRunner {
   }
 
   resolveNext(result: CommandRunResult): void {
-    const entry = this.pending.shift()
-    if (entry === undefined) throw new Error("no pending run to resolve")
-    entry.resolve(result)
+    const pending = this.pending.shift()
+    if (pending === undefined) throw new Error("no pending run to resolve")
+    pending.resolve(result)
   }
 
   rejectNext(error: unknown): void {
-    const entry = this.pending.shift()
-    if (entry === undefined) throw new Error("no pending run to reject")
-    entry.reject(error)
-  }
-
-  get pendingCount(): number {
-    return this.pending.length
+    const pending = this.pending.shift()
+    if (pending === undefined) throw new Error("no pending run to reject")
+    pending.reject(error)
   }
 }
 
-const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
-  ref: overrides.ref ?? "native:omp/local",
+const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
+  ref: "native:omp/local",
   surface: "native",
   launcher: "omp",
   harness: "oh-my-pi",
@@ -54,264 +59,306 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   ...overrides,
 })
 
-const knownLatest = (): CommandRunResult => ({
-  stdout: JSON.stringify({ schemaVersion: 1, launcher: "omp", harness: "oh-my-pi", installed: "18.1.1", latest: "18.1.1", latestKnown: true }),
+const sandboxEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
+  ref: "sandbox:claude-blog",
+  surface: "sandbox",
+  harness: "claude",
+  name: "claude-blog",
+  description: "Sandboxed Claude profile.",
+  commandPath: "/opt/trellage/bin/trellage",
+  doctorSupported: true,
+  inventorySupported: false,
+  health: "healthy",
+  install: "installed",
+  version: "2.1.222",
+  stale: false,
+  updateCheckSupported: false,
+  harnessVersionSupported: true,
+  updateCheckStale: false,
+  ...overrides,
+})
+
+const runResult = (installed: string | null, latest: string | null, latestDiagnostic?: string): CommandRunResult => ({
+  stdout: JSON.stringify({
+    schemaVersion: 1,
+    installed,
+    latest,
+    latestKnown: latest !== null,
+    ...(latestDiagnostic === undefined ? {} : { latestDiagnostic }),
+  }),
   stderr: "",
   exitCode: 0,
 })
 
-const emptyCache: AdminHarnessVersionCacheRecord = { schemaVersion: 1, entries: {} }
+const emptyCache = (): AdminHarnessVersionCacheRecord => ({ schemaVersion: 2, entries: {} })
 
 const flush = async (): Promise<void> => {
   for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
 }
 
 describe("runBatchedHarnessVersionChecks", () => {
-  it("runs exactly one check for two profiles sharing the same launcher (dedup by launcher, not by ref)", async () => {
+  it("runs one Claude latest lookup for multiple sandbox profiles", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:omp/local", name: "local" }), entry({ ref: "native:omp/copilot", name: "copilot" })]
+    const results: Record<string, AdminHarnessVersionCacheEntry> = {}
+    const batch = runBatchedHarnessVersionChecks(
+      [
+        sandboxEntry(),
+        sandboxEntry({
+          ref: "sandbox:claude-docs",
+          name: "claude-docs",
+          version: "2.1.220",
+        }),
+      ],
+      manager,
+      emptyCache(),
+      { onResult: (key, result) => (results[key] = result) },
+    )
 
-    const batch = runBatchedHarnessVersionChecks(entries, manager, emptyCache)
-    await flush()
-    expect(runner.calls.length).toBe(1)
-    runner.resolveNext(knownLatest())
-    await batch
-
-    expect(runner.calls).toEqual([{ executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] }])
-  })
-
-  it("skips a launcher whose cache entry is still fresh", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const entries = [entry({})]
-    const freshCache: AdminHarnessVersionCacheRecord = {
-      schemaVersion: 1,
-      entries: { omp: { result: { kind: "known-latest", installed: "18.1.1", latest: "18.1.1" }, checkedAt: Date.now() } },
-    }
-
-    await runBatchedHarnessVersionChecks(entries, manager, freshCache)
-    expect(runner.calls.length).toBe(0)
-    expect(manager.status(harnessVersionRefFor("omp")).state).toBe("idle")
-  })
-
-  it("checks a launcher whose cache entry is stale", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const entries = [entry({})]
-    const staleCache: AdminHarnessVersionCacheRecord = {
-      schemaVersion: 1,
-      entries: {
-        omp: { result: { kind: "known-latest", installed: "18.1.1", latest: "18.1.1" }, checkedAt: Date.now() - 25 * 60 * 60 * 1000 },
-      },
-    }
-
-    const batch = runBatchedHarnessVersionChecks(entries, manager, staleCache)
-    await flush()
-    runner.resolveNext(knownLatest())
-    await batch
-
-    expect(runner.calls.length).toBe(1)
-  })
-
-  it("never checks a launcher that does not support harness-version", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:fmx/default", launcher: "fmx", harnessVersionSupported: false })]
-
-    await runBatchedHarnessVersionChecks(entries, manager, emptyCache)
-    expect(runner.calls.length).toBe(0)
-  })
-
-  it("isolates one launcher's failure from another launcher's result", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const entries = [
-      entry({ ref: "native:omp/local", launcher: "omp", commandPath: "/opt/trellage/omp/bin/omp" }),
-      entry({ ref: "native:picx/default", launcher: "picx", commandPath: "/opt/trellage/picx/bin/picx" }),
-    ]
-
-    const batch = runBatchedHarnessVersionChecks(entries, manager, emptyCache, { maxConcurrent: 1 })
-    await flush()
-    runner.rejectNext(new Error("boom"))
-    await flush()
-    runner.resolveNext(knownLatest())
-    await batch
-
-    expect(manager.status(harnessVersionRefFor("omp")).state).toBe("failure")
-    expect(manager.status(harnessVersionRefFor("picx")).state).toBe("success")
-  })
-
-  it("bypasses a fresh cache entry when forceResync is set", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const entries = [entry({})]
-    const freshCache: AdminHarnessVersionCacheRecord = {
-      schemaVersion: 1,
-      entries: { omp: { result: { kind: "known-latest", installed: "18.1.1", latest: "18.1.1" }, checkedAt: Date.now() } },
-    }
-
-    const batch = runBatchedHarnessVersionChecks(entries, manager, freshCache, { forceResync: true })
-    await flush()
-    runner.resolveNext(knownLatest())
-    await batch
-
-    expect(runner.calls.length).toBe(1)
-  })
-
-  it("invokes onResult exactly once per checked launcher with the parsed result", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:omp/local" }), entry({ ref: "native:omp/copilot", name: "copilot" })]
-    const results: Array<{ launcher: string; result: unknown }> = []
-
-    const batch = runBatchedHarnessVersionChecks(entries, manager, emptyCache, {
-      onResult: (launcher, cacheEntry) => results.push({ launcher, result: cacheEntry.result }),
-    })
-    await flush()
-    runner.resolveNext(knownLatest())
-    await batch
-
-    expect(results).toHaveLength(1)
-    expect(results[0]!.launcher).toBe("omp")
-    expect(results[0]!.result).toEqual({ kind: "known-latest", installed: "18.1.1", latest: "18.1.1" })
-  })
-
-  it("resolves immediately when nothing is scheduled", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    await expect(runBatchedHarnessVersionChecks([], manager, emptyCache)).resolves.toBeUndefined()
-    expect(runner.calls.length).toBe(0)
-  })
-
-  it("keys a sandbox claude profile's check per-profile, invoking `harness-version PROFILE_NAME` and never fanning out to another profile", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const claudeSandbox = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
-      ref: overrides.ref ?? "sandbox:claude-blog",
-      surface: "sandbox",
-      harness: "claude",
-      name: overrides.name ?? "claude-blog",
-      description: "Sandboxed Claude profile.",
-      commandPath: "/opt/trellage/bin/trellage",
-      doctorSupported: true,
-      inventorySupported: false,
-      health: "unknown",
-      install: "unknown",
-      stale: false,
-      updateCheckSupported: false,
-      harnessVersionSupported: true,
-      updateCheckStale: false,
-      ...overrides,
-    })
-    const entries = [
-      claudeSandbox({}),
-      claudeSandbox({ ref: "sandbox:claude-docs", name: "claude-docs" }),
-    ]
-
-    const batch = runBatchedHarnessVersionChecks(entries, manager, emptyCache)
     await flush()
     expect(runner.calls).toEqual([
-      { executable: "/opt/trellage/bin/trellage", args: ["harness-version", "claude-blog"] },
-      { executable: "/opt/trellage/bin/trellage", args: ["harness-version", "claude-docs"] },
+      {
+        executable: "/opt/trellage/bin/trellage",
+        args: ["harness-version", "claude-blog"],
+      },
     ])
-    runner.resolveNext({
-      stdout: JSON.stringify({ schemaVersion: 1, harness: "claude", installed: "2.1.222", latest: "2.1.230", latestKnown: true }),
-      stderr: "",
-      exitCode: 0,
-    })
-    runner.resolveNext({
-      stdout: JSON.stringify({ schemaVersion: 1, harness: "claude", installed: "2.1.100", latest: "2.1.230", latestKnown: true }),
-      stderr: "",
-      exitCode: 0,
-    })
+    runner.resolveNext(runResult(null, "2.1.259"))
     await batch
 
-    expect(manager.status(harnessVersionRefFor("sandbox:claude-blog")).state).toBe("success")
-    expect(manager.status(harnessVersionRefFor("sandbox:claude-docs")).state).toBe("success")
+    expect(results["sandbox:claude-code"]?.result.latest).toEqual({
+      kind: "known",
+      version: "2.1.259",
+    })
   })
 
-  it("respects a fresh per-profile cache entry for a sandbox profile using the fixed sandbox: cache key", async () => {
+  it("prefers an already-required native latest producer and suppresses its sandbox fallback", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    const claudeSandbox: AdminProfileEntry = {
-      ref: "sandbox:claude-blog",
-      surface: "sandbox",
-      harness: "claude",
-      name: "claude-blog",
-      description: "Sandboxed Claude profile.",
-      commandPath: "/opt/trellage/bin/trellage",
-      doctorSupported: true,
-      inventorySupported: false,
-      health: "unknown",
-      install: "unknown",
-      stale: false,
-      updateCheckSupported: false,
-      harnessVersionSupported: true,
-      updateCheckStale: false,
-    }
-    const freshCache: AdminHarnessVersionCacheRecord = {
-      schemaVersion: 1,
+    const batch = runBatchedHarnessVersionChecks(
+      [nativeEntry(), sandboxEntry({ ref: "sandbox:pi", harness: "pi", name: "pi" })],
+      manager,
+      emptyCache(),
+    )
+
+    await flush()
+    expect(runner.calls).toEqual([{ executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] }])
+    runner.resolveNext(runResult("18.1.1", "18.1.2"))
+    await batch
+
+    expect(runner.calls).toHaveLength(1)
+    expect(manager.status(harnessVersionRefFor("sandbox:oh-my-pi")).state).toBe("idle")
+  })
+
+  it("retries a failed primary once, then runs one sandbox fallback", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const batch = runBatchedHarnessVersionChecks(
+      [nativeEntry(), sandboxEntry({ ref: "sandbox:pi", harness: "pi", name: "pi" })],
+      manager,
+      emptyCache(),
+    )
+
+    await flush()
+    runner.resolveNext(runResult("18.1.1", null, "npm registry unavailable"))
+    await flush()
+    expect(runner.calls).toHaveLength(2)
+    runner.resolveNext(runResult("18.1.1", null, "npm registry unavailable"))
+    await flush()
+    expect(runner.calls).toHaveLength(3)
+    runner.resolveNext(runResult(null, "18.1.2"))
+    await batch
+
+    expect(runner.calls).toEqual([
+      { executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] },
+      { executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] },
+      { executable: "/opt/trellage/bin/trellage", args: ["harness-version", "pi"] },
+    ])
+  })
+
+  it("preserves successful installed and latest dimensions across a bounded retry", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const settled: AdminHarnessVersionCacheEntry[] = []
+    const batch = runBatchedHarnessVersionChecks([nativeEntry()], manager, emptyCache(), {
+      onResult: (_key, result) => settled.push(result),
+    })
+
+    await flush()
+    runner.resolveNext(runResult("18.1.1", null, "npm registry unavailable"))
+    await flush()
+    runner.resolveNext(runResult(null, "18.1.2"))
+    await batch
+
+    expect(settled.at(-1)?.result).toEqual({
+      installed: { kind: "known", version: "18.1.1" },
+      latest: { kind: "known", version: "18.1.2" },
+    })
+  })
+
+  it("bypasses both admin and CLI latest caches during force refresh", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const now = Date.now()
+    const cache: AdminHarnessVersionCacheRecord = {
+      schemaVersion: 2,
       entries: {
-        "sandbox:claude-blog": { result: { kind: "known-latest", installed: "2.1.222", latest: "2.1.222" }, checkedAt: Date.now() },
+        "sandbox:claude-code": {
+          checkedAt: now,
+          result: {
+            installed: { kind: "unavailable", diagnostic: "representative unresolved" },
+            latest: { kind: "known", version: "2.1.258" },
+          },
+        },
+      },
+    }
+    const batch = runBatchedHarnessVersionChecks([sandboxEntry()], manager, cache, {
+      forceResync: true,
+      now: () => now,
+    })
+
+    await flush()
+    expect(runner.calls).toEqual([
+      {
+        executable: "/opt/trellage/bin/trellage",
+        args: ["harness-version", "claude-blog", "--refresh-latest"],
+      },
+    ])
+    runner.resolveNext(runResult(null, "2.1.259"))
+    await batch
+  })
+
+  it("uses the selected sandbox profile as the sole force-refresh latest producer", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const first = sandboxEntry({ ref: "sandbox:pi-alpha", harness: "pi", name: "pi-alpha", version: "18.1.0" })
+    const selected = sandboxEntry({
+      ref: "sandbox:pi-selected",
+      harness: "pi",
+      name: "pi-selected",
+      version: "18.1.1",
+    })
+    const sources: string[] = []
+    const batch = runBatchedHarnessVersionChecks([nativeEntry(), first, selected], manager, emptyCache(), {
+      forceResync: true,
+      selectedEntryRef: selected.ref,
+      onResult: (_key, _result, source) => sources.push(source.ref),
+    })
+
+    await flush()
+    expect(runner.calls).toEqual([
+      {
+        executable: "/opt/trellage/bin/trellage",
+        args: ["harness-version", "pi-selected", "--refresh-latest"],
+      },
+    ])
+    runner.resolveNext(runResult("18.1.1", "18.1.2"))
+    await batch
+    expect(sources).toEqual(["sandbox:pi-selected"])
+  })
+
+  it("reuses complete fresh operation results", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const now = Date.now()
+    const cpx = nativeEntry({
+      ref: "native:cpx/default",
+      launcher: "cpx",
+      harness: "copilot",
+      name: "default",
+    })
+    const sandbox = sandboxEntry({
+      ref: "sandbox:copilot-awesome",
+      harness: "copilot",
+      name: "copilot-awesome",
+      version: "1.0.70",
+    })
+    const cache: AdminHarnessVersionCacheRecord = {
+      schemaVersion: 2,
+      entries: {
+        "native:cpx": {
+          checkedAt: now - 1000,
+          result: {
+            installed: { kind: "known", version: "1.0.82" },
+            latest: { kind: "unsupported" },
+          },
+        },
+        "sandbox:copilot-cli": {
+          checkedAt: now - 1000,
+          result: {
+            installed: { kind: "unavailable", diagnostic: "representative unresolved" },
+            latest: { kind: "known", version: "1.0.90" },
+          },
+        },
       },
     }
 
-    await runBatchedHarnessVersionChecks([claudeSandbox], manager, freshCache)
-    expect(runner.calls.length).toBe(0)
+    await runBatchedHarnessVersionChecks([cpx, sandbox], manager, cache, { now: () => now })
+    expect(runner.calls).toEqual([])
+  })
+
+  it("keeps independent success when another operation and its retry fail", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const settled: Array<{ key: string; result: AdminHarnessVersionCacheEntry }> = []
+    const batch = runBatchedHarnessVersionChecks(
+      [
+        nativeEntry({
+          ref: "native:cpx/default",
+          launcher: "cpx",
+          harness: "copilot",
+          commandPath: "/opt/trellage/cpx/bin/cpx",
+        }),
+        nativeEntry(),
+      ],
+      manager,
+      emptyCache(),
+      {
+        maxConcurrent: 1,
+        onResult: (key, result) => settled.push({ key, result }),
+      },
+    )
+
+    await flush()
+    runner.rejectNext(new Error("copilot executable failed"))
+    await flush()
+    runner.resolveNext(runResult("18.1.1", "18.1.2"))
+    await flush()
+    runner.rejectNext(new Error("copilot executable still failed"))
+    await batch
+
+    expect(manager.status(harnessVersionRefFor("native:cpx")).state).toBe("failure")
+    expect(manager.status(harnessVersionRefFor("native:omp")).state).toBe("success")
+    expect(settled.some(({ key, result }) => key === "native:omp" && result.result.latest.kind === "known")).toBe(true)
+  })
+
+  it("resolves immediately when no operation is supported", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    await expect(
+      runBatchedHarnessVersionChecks(
+        [nativeEntry({ launcher: "agx", harnessVersionSupported: false })],
+        manager,
+        emptyCache(),
+      ),
+    ).resolves.toBeUndefined()
+    expect(runner.calls).toEqual([])
   })
 })
 
-describe("harnessVersionResultForLauncher", () => {
-  it("returns undefined when no check has run yet this session", () => {
+describe("harnessVersionResultForOperation", () => {
+  it("is absent until an operation has run and parses its eventual result", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    expect(harnessVersionResultForLauncher("omp", manager)).toBeUndefined()
-  })
+    expect(harnessVersionResultForOperation("native:omp", manager)).toBeUndefined()
 
-  it("returns the parsed result once a check succeeds", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const batch = runBatchedHarnessVersionChecks([entry({})], manager, emptyCache)
+    const batch = runBatchedHarnessVersionChecks([nativeEntry()], manager, emptyCache())
     await flush()
-    runner.resolveNext(knownLatest())
+    runner.resolveNext(runResult("18.1.1", "18.1.2"))
     await batch
 
-    expect(harnessVersionResultForLauncher("omp", manager)).toEqual({ kind: "known-latest", installed: "18.1.1", latest: "18.1.1" })
-  })
-
-  it("returns an unavailable result when the run itself fails", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const batch = runBatchedHarnessVersionChecks([entry({})], manager, emptyCache)
-    await flush()
-    runner.rejectNext(new Error("boom"))
-    await batch
-
-    expect(harnessVersionResultForLauncher("omp", manager)).toMatchObject({ kind: "unavailable" })
-  })
-
-  it("returns an unavailable result for a non-zero exit whose stdout does not parse", async () => {
-    const runner = new DeferredRunner()
-    const manager = new AdminRunManager({ runner })
-    const batch = runBatchedHarnessVersionChecks([entry({})], manager, emptyCache)
-    await flush()
-    runner.rejectNext(
-      new CommandRunnerError({
-        kind: "exited",
-        executable: "/opt/trellage/omp/bin/omp",
-        args: ["harness-version"],
-        stdout: "",
-        stderr: "omp: mise is not installed",
-        exitCode: 1,
-        message: "command exited with status 1",
-      }),
-    )
-    await batch
-
-    expect(harnessVersionResultForLauncher("omp", manager)).toMatchObject({
-      kind: "unavailable",
-      diagnostic: "harness-version failure: omp: mise is not installed",
+    expect(harnessVersionResultForOperation("native:omp", manager)).toEqual({
+      installed: { kind: "known", version: "18.1.1" },
+      latest: { kind: "known", version: "18.1.2" },
     })
   })
 })

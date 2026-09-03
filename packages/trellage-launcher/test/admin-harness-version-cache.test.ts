@@ -1,11 +1,11 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import os from "node:os"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
-  defaultAdminHarnessVersionCachePath,
+  createHarnessVersionCacheSaveQueue,
   harnessVersionCacheTtlMs,
   isHarnessVersionCacheStale,
   loadHarnessVersionCache,
@@ -14,123 +14,248 @@ import {
   type AdminHarnessVersionCacheEntry,
   type AdminHarnessVersionCacheRecord,
 } from "../src/admin-harness-version-cache.js"
+import type { AdminHarnessVersionResult } from "../src/admin-harness-version.js"
 
-const temporaryRoots: string[] = []
+const roots: string[] = []
 
-const temporaryCachePath = async (): Promise<string> => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "trellage-harness-version-cache-test-"))
-  temporaryRoots.push(root)
+const cachePath = async (): Promise<string> => {
+  const root = await mkdtemp(path.join(tmpdir(), "trellage-admin-harness-cache-"))
+  roots.push(root)
   return path.join(root, "harness-version-cache.json")
 }
 
+const knownResult = (installed = "1.0.0", latest = "1.0.1"): AdminHarnessVersionResult => ({
+  installed: { kind: "known", version: installed },
+  latest: { kind: "known", version: latest },
+})
+
+const unsupportedResult = (): AdminHarnessVersionResult => ({
+  installed: { kind: "known", version: "1.0.82" },
+  latest: { kind: "unsupported" },
+})
+
 afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map(async (root) => rm(root, { recursive: true, force: true })))
 })
 
-describe("loadHarnessVersionCache / saveHarnessVersionCache", () => {
-  it("round-trips a saved record, keyed by launcher rather than profile ref", async () => {
-    const cachePath = await temporaryCachePath()
-    const record = {
-      schemaVersion: 1 as const,
+describe("harness version cache schema", () => {
+  it("ignores the incompatible schema-1 cache instead of guessing new identities", () => {
+    expect(
+      parseHarnessVersionCacheRecord(
+        JSON.stringify({
+          schemaVersion: 1,
+          entries: {
+            "native:omp/local": {
+              checkedAt: 1000,
+              result: { kind: "known-latest", installed: "18.1.1", latest: "18.1.2" },
+            },
+          },
+        }),
+      ),
+    ).toEqual({ schemaVersion: 2, entries: {} })
+  })
+
+  it("round trips independent installed and latest states", async () => {
+    const filePath = await cachePath()
+    const cache: AdminHarnessVersionCacheRecord = {
+      schemaVersion: 2,
       entries: {
-        omp: { result: { kind: "known-latest", installed: "18.1.1", latest: "18.1.2" }, checkedAt: 1000 },
-        cpx: { result: { kind: "unknown-latest", installed: "1.0.82" }, checkedAt: 2000 },
+        "native:grx": {
+          checkedAt: 1000,
+          result: {
+            installed: { kind: "known", version: "1.0.3" },
+            latest: { kind: "failed", diagnostic: "release service unavailable" },
+          },
+        },
+        "sandbox:claude-code": {
+          checkedAt: 2000,
+          result: {
+            installed: { kind: "unavailable", diagnostic: "representative is unresolved" },
+            latest: { kind: "known", version: "2.1.259" },
+          },
+        },
       },
-    } satisfies AdminHarnessVersionCacheRecord
+    }
 
-    await saveHarnessVersionCache(cachePath, record)
-    expect(await loadHarnessVersionCache(cachePath)).toEqual(record)
+    await saveHarnessVersionCache(filePath, cache)
+    await expect(loadHarnessVersionCache(filePath)).resolves.toEqual(cache)
   })
 
-  it("resolves to an empty record when the cache file does not exist", async () => {
-    const cachePath = await temporaryCachePath()
-    expect(await loadHarnessVersionCache(cachePath)).toEqual({ schemaVersion: 1, entries: {} })
-  })
-
-  it("resolves to an empty record for a corrupt cache file rather than throwing", async () => {
-    const cachePath = await temporaryCachePath()
-    await writeFile(cachePath, "{not valid json", "utf8")
-    expect(await loadHarnessVersionCache(cachePath)).toEqual({ schemaVersion: 1, entries: {} })
-  })
-
-  it("creates parent directories on save", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-harness-version-cache-test-"))
-    temporaryRoots.push(root)
-    const cachePath = path.join(root, "nested", "deeper", "harness-version-cache.json")
-    await saveHarnessVersionCache(cachePath, { schemaVersion: 1, entries: {} })
-    expect(await loadHarnessVersionCache(cachePath)).toEqual({ schemaVersion: 1, entries: {} })
-  })
-})
-
-describe("parseHarnessVersionCacheRecord", () => {
-  it("drops an entry with a malformed result rather than failing the whole record", () => {
-    const source = JSON.stringify({
-      schemaVersion: 1,
+  it("drops malformed entries while preserving valid peers", () => {
+    expect(
+      parseHarnessVersionCacheRecord(
+        JSON.stringify({
+          schemaVersion: 2,
+          entries: {
+            valid: { checkedAt: 1000, result: knownResult() },
+            malformed: {
+              checkedAt: 1000,
+              result: {
+                installed: { kind: "known", version: "" },
+                latest: { kind: "known", version: "1.0.1" },
+              },
+            },
+          },
+        }),
+      ),
+    ).toEqual({
+      schemaVersion: 2,
       entries: {
-        good: { result: { kind: "known-latest", installed: "1.0.0", latest: "1.0.0" }, checkedAt: 1000 },
-        bad: { result: { nonsense: true }, checkedAt: 1000 },
+        valid: { checkedAt: 1000, result: knownResult() },
       },
     })
-    expect(parseHarnessVersionCacheRecord(source)).toEqual({
-      schemaVersion: 1,
-      entries: { good: { result: { kind: "known-latest", installed: "1.0.0", latest: "1.0.0" }, checkedAt: 1000 } },
-    })
   })
 
-  it("returns the empty record for an unrecognized schema version", () => {
-    expect(parseHarnessVersionCacheRecord(JSON.stringify({ schemaVersion: 2, entries: {} }))).toEqual({
-      schemaVersion: 1,
-      entries: {},
-    })
+  it("returns an empty schema-2 record for a missing or corrupt file", async () => {
+    const filePath = await cachePath()
+    await expect(loadHarnessVersionCache(filePath)).resolves.toEqual({ schemaVersion: 2, entries: {} })
+    await writeFile(filePath, "{not json", "utf8")
+    await expect(loadHarnessVersionCache(filePath)).resolves.toEqual({ schemaVersion: 2, entries: {} })
   })
 
-  it("returns the empty record for a cache file over the size limit", () => {
-    const bloated = JSON.stringify({ schemaVersion: 1, entries: {}, padding: "x".repeat(300 * 1024) })
-    expect(parseHarnessVersionCacheRecord(bloated)).toEqual({ schemaVersion: 1, entries: {} })
-  })
+  it("writes atomically with schema 2", async () => {
+    const filePath = await cachePath()
+    await saveHarnessVersionCache(filePath, {
+      schemaVersion: 2,
+      entries: {
+        "native:omp": { checkedAt: 1000, result: knownResult("18.1.1", "18.1.2") },
+      },
+    })
 
-  it("preserves an unknown-latest result (installed known, latest architecturally unknowable) through a round trip", () => {
-    const source = JSON.stringify({
-      schemaVersion: 1,
-      entries: { cpx: { result: { kind: "unknown-latest", installed: "1.0.82" }, checkedAt: 1000 } },
-    })
-    expect(parseHarnessVersionCacheRecord(source)).toEqual({
-      schemaVersion: 1,
-      entries: { cpx: { result: { kind: "unknown-latest", installed: "1.0.82" }, checkedAt: 1000 } },
-    })
+    const parsed = JSON.parse(await readFile(filePath, "utf8")) as AdminHarnessVersionCacheRecord
+    expect(parsed.schemaVersion).toBe(2)
+    expect(parsed.entries["native:omp"]?.result).toEqual(knownResult("18.1.1", "18.1.2"))
   })
 })
 
-describe("defaultAdminHarnessVersionCachePath", () => {
-  it("uses XDG_CACHE_HOME and a distinct harness-version-cache filename", () => {
-    expect(defaultAdminHarnessVersionCachePath({ XDG_CACHE_HOME: "/tmp/custom-cache" })).toBe(
-      "/tmp/custom-cache/trellage/trx-admin/harness-version-cache.json",
-    )
+describe("harness version cache freshness", () => {
+  const now = 1_000_000_000
+
+  it("requires every state promised by the operation", () => {
+    expect(
+      isHarnessVersionCacheStale(
+        {
+          checkedAt: now - 1_000,
+          result: {
+            installed: { kind: "unavailable", diagnostic: "not installed" },
+            latest: { kind: "known", version: "2.1.259" },
+          },
+        },
+        now,
+        { requiresInstalled: true, requiresLatest: true },
+      ),
+    ).toBe(true)
+    expect(
+      isHarnessVersionCacheStale(
+        {
+          checkedAt: now - 1_000,
+          result: {
+            installed: { kind: "known", version: "1.0.3" },
+            latest: { kind: "failed", diagnostic: "network failure" },
+          },
+        },
+        now,
+        { requiresInstalled: true, requiresLatest: true },
+      ),
+    ).toBe(true)
+  })
+
+  it("accepts a sandbox latest result without requiring a representative installed version", () => {
+    expect(
+      isHarnessVersionCacheStale(
+        {
+          checkedAt: now - 1_000,
+          result: {
+            installed: { kind: "unavailable", diagnostic: "representative is unresolved" },
+            latest: { kind: "known", version: "2.1.259" },
+          },
+        },
+        now,
+        { requiresInstalled: false, requiresLatest: true },
+      ),
+    ).toBe(false)
+  })
+
+  it("accepts intentional latest unsupported only when latest is not required", () => {
+    const entry = { checkedAt: now - 1_000, result: unsupportedResult() }
+    expect(
+      isHarnessVersionCacheStale(entry, now, {
+        requiresInstalled: true,
+        requiresLatest: false,
+      }),
+    ).toBe(false)
+    expect(
+      isHarnessVersionCacheStale(entry, now, {
+        requiresInstalled: true,
+        requiresLatest: true,
+      }),
+    ).toBe(true)
+  })
+
+  it("expires complete results at the 24-hour boundary", () => {
+    const entry: AdminHarnessVersionCacheEntry = {
+      checkedAt: now - harnessVersionCacheTtlMs + 1,
+      result: knownResult(),
+    }
+    expect(isHarnessVersionCacheStale(entry, now, { requiresLatest: true })).toBe(false)
+    expect(
+      isHarnessVersionCacheStale({ ...entry, checkedAt: now - harnessVersionCacheTtlMs }, now, {
+        requiresLatest: true,
+      }),
+    ).toBe(true)
   })
 })
 
-describe("isHarnessVersionCacheStale", () => {
-  it("treats a missing entry as stale", () => {
-    expect(isHarnessVersionCacheStale(undefined, 1000)).toBe(true)
+describe("harness version cache publication", () => {
+  it("serializes slow saves in enqueue order", async () => {
+    const events: string[] = []
+    let releaseFirst!: () => void
+    const firstMayFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const queue = createHarnessVersionCacheSaveQueue("/unused/cache.json", async (_path, cache) => {
+      const key = Object.keys(cache.entries)[0] ?? "empty"
+      events.push(`start:${key}`)
+      if (key === "first") await firstMayFinish
+      events.push(`finish:${key}`)
+    })
+    const first = queue.enqueue({
+      schemaVersion: 2,
+      entries: { first: { checkedAt: 1000, result: knownResult() } },
+    })
+    const second = queue.enqueue({
+      schemaVersion: 2,
+      entries: { second: { checkedAt: 2000, result: knownResult() } },
+    })
+
+    for (let tick = 0; tick < 10 && events.length === 0; tick += 1) {
+      await Promise.resolve()
+    }
+    expect(events).toEqual(["start:first"])
+    releaseFirst()
+    await Promise.all([first, second])
+    expect(events).toEqual(["start:first", "finish:first", "start:second", "finish:second"])
   })
 
-  it("treats a fresh entry as not stale", () => {
-    const entry: AdminHarnessVersionCacheEntry = { result: { kind: "known-latest", installed: "1.0.0", latest: "1.0.0" }, checkedAt: 1000 }
-    expect(isHarnessVersionCacheStale(entry, 1000 + harnessVersionCacheTtlMs - 1)).toBe(false)
-  })
+  it("continues the queue after a failed save", async () => {
+    const saved: string[] = []
+    const queue = createHarnessVersionCacheSaveQueue("/unused/cache.json", async (_path, cache) => {
+      const key = Object.keys(cache.entries)[0] ?? "empty"
+      if (key === "first") throw new Error("disk full")
+      saved.push(key)
+    })
 
-  it("treats an entry past the 24h TTL as stale", () => {
-    const entry: AdminHarnessVersionCacheEntry = { result: { kind: "known-latest", installed: "1.0.0", latest: "1.0.0" }, checkedAt: 1000 }
-    expect(isHarnessVersionCacheStale(entry, 1000 + harnessVersionCacheTtlMs)).toBe(true)
-  })
+    const first = queue.enqueue({
+      schemaVersion: 2,
+      entries: { first: { checkedAt: 1000, result: knownResult() } },
+    })
+    const second = queue.enqueue({
+      schemaVersion: 2,
+      entries: { second: { checkedAt: 2000, result: knownResult() } },
+    })
 
-  it("treats an unavailable result as stale even well within the TTL, so it is retried automatically", () => {
-    const entry: AdminHarnessVersionCacheEntry = { result: { kind: "unavailable", diagnostic: "boom" }, checkedAt: 1000 }
-    expect(isHarnessVersionCacheStale(entry, 1000 + 1)).toBe(true)
-  })
-
-  it("treats an unknown-latest result as fresh (not unavailable), since it is a legitimate architectural limit, not a failure", () => {
-    const entry: AdminHarnessVersionCacheEntry = { result: { kind: "unknown-latest", installed: "1.0.82" }, checkedAt: 1000 }
-    expect(isHarnessVersionCacheStale(entry, 1000 + 1)).toBe(false)
+    await expect(first).rejects.toThrow("disk full")
+    await expect(second).resolves.toBeUndefined()
+    expect(saved).toEqual(["second"])
   })
 })
