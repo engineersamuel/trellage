@@ -197,16 +197,29 @@ codex_version_if_available() {
   printf '%s\n' "$version"
 }
 
+resolve_latest_codex_version() {
+  local response tag version
+
+  command -v curl >/dev/null 2>&1 || return 2
+  response="$(curl -fsS --max-time 5 -H 'Accept: application/vnd.github+json' -H 'User-Agent: trellage-cdx' \
+    'https://api.github.com/repos/openai/codex/releases/latest' 2>/dev/null)" || return 2
+  tag="$(printf '%s' "$response" | jq -r 'select(.draft != true and .prerelease != true) | .tag_name // empty' 2>/dev/null)" || return 2
+  version="${tag#rust-v}"
+  [[ "$tag" == rust-v* && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 2
+  printf '%s\n' "$version"
+}
+
 print_harness_version_json() {
-  local installed
+  local installed latest
   installed="$(codex_version_if_available)"
-  jq -cn --arg installed "$installed" '{
+  latest="$(resolve_latest_codex_version 2>/dev/null || :)"
+  jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
     launcher: "cdx",
     harness: "codex",
     installed: ($installed | if length > 0 then . else null end),
-    latest: null,
-    latestKnown: false
+    latest: ($latest | if length > 0 then . else null end),
+    latestKnown: ($latest | length > 0)
   }'
 }
 
