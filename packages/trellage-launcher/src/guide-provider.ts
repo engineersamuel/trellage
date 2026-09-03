@@ -1,8 +1,8 @@
 /**
  * Provider-neutral contracts for the `trx guide` model-backed core: the
- * `match` / `generate` / `refine` phases, their strictly validated inputs and
- * outputs, and the `GuideProvider` interface a model adapter (such as
- * `CopilotGuideProvider`) implements.
+ * `match` / `generate` / `refine` / `enrich` phases, their strictly validated
+ * inputs and outputs, and the `GuideProvider` interface a model adapter (such
+ * as `CopilotGuideProvider`) implements.
  *
  * Validation here is the single point of trust between an LLM's raw JSON
  * output and the rest of the launcher: exact keys (no `command` or any other
@@ -11,6 +11,8 @@
  * catalog, and uniqueness constraints.
  */
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
+// `guide-api.ts` imports this module type-only, so this value import adds no runtime cycle.
+import { guideIntentMaximumLength } from "./guide-api.js"
 import type { GuideMatchCatalogEntry } from "./guide-catalog.js"
 import { array, boundedNumber, exactKeys, fail, record, text, uniqueArray } from "./guide-text.js"
 
@@ -57,6 +59,16 @@ export interface GuideOptimizeResult {
   readonly candidates: ReadonlyArray<GuideGenerateCandidate>
 }
 
+export interface GuideEnrichInput {
+  readonly intent: string
+  /** A packed repository (repomix Markdown), loaded by the caller. Untrusted reference material for the model. */
+  readonly pack: string
+}
+
+export interface GuideEnrichResult {
+  readonly intent: string
+}
+
 export interface GuideMatchInput {
   readonly intent: string
   readonly entries: ReadonlyArray<GuideMatchCatalogEntry>
@@ -82,10 +94,20 @@ export interface GuideProvider {
   generate(input: GuideGenerateInput): Promise<GuideGenerateResult>
   refine(input: GuideRefineInput): Promise<GuideRefineResult>
   optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult>
+  /** Optional: only adapters that back the in-TUI codebase augmenter implement it. */
+  enrich?(input: GuideEnrichInput, onActivity?: (line: string) => void): Promise<GuideEnrichResult>
 }
 
 /** Maximum length for the authored Markdown guide body carried in generate/refine input, mirroring `trellage-guide-core`'s source-document bound. */
 export const guideBodyMaximumLength = 128_000
+
+/**
+ * Maximum length of the packed repository carried in enrich input. The caller
+ * checks this bound before packing costs a model call, so an over-budget
+ * repository fails with actionable `--include` / `--ignore` guidance rather
+ * than as a validation error here.
+ */
+export const guideEnrichPackMaximumLength = 400_000
 
 /** Fails closed unless `input` has at least three candidate entries to rank. */
 export const assertGuideMatchInput = (input: GuideMatchInput): GuideMatchInput => {
@@ -127,6 +149,13 @@ export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimi
       fail("optimize input.fixedFrame", "must contain at most 16000 characters in total")
     }
   }
+  return input
+}
+
+/** Fails closed unless the intent is a non-empty bounded string and the pack fits the inline budget. */
+export const assertGuideEnrichInput = (input: GuideEnrichInput): GuideEnrichInput => {
+  text(input.intent, "enrich input.intent", guideIntentMaximumLength, { multiline: true })
+  text(input.pack, "enrich input.pack", guideEnrichPackMaximumLength, { multiline: true })
   return input
 }
 
@@ -224,6 +253,13 @@ export const validateGuideRefineResult = (value: unknown): GuideRefineResult => 
   const fields = record(value, "refine result")
   exactKeys(fields, "refine result", ["candidate"])
   return { candidate: validateGenerateCandidate(fields.candidate, "refine result.candidate") }
+}
+
+/** Validates a raw model enrich response: one rewritten intent, bounded like a typed intent. */
+export const validateGuideEnrichResult = (value: unknown): GuideEnrichResult => {
+  const fields = record(value, "enrich result")
+  exactKeys(fields, "enrich result", ["intent"])
+  return { intent: text(fields.intent, "enrich result.intent", guideIntentMaximumLength, { multiline: true }) }
 }
 
 /** Validates a Prompt Master rewrite response and preserves the requested candidate count. */

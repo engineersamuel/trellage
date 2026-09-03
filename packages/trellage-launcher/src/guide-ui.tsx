@@ -28,6 +28,13 @@ import {
   countTextLines,
   type BasketBlockPreview,
 } from "./basket.js"
+import {
+  GuideAugmentKind,
+  GuideAugmentPhase,
+  runCodebaseAugment,
+  runResearchAugment,
+  type GuideAugmentContext,
+} from "./guide-augment.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
   applyRequiredProfilePromptTemplate,
@@ -169,6 +176,8 @@ const selectedGuideWorkflow = (guide: ProfileGuideV1, workflowId: string): Profi
 
 export enum GuideUiStage {
   Intent = "intent",
+  Augment = "augment",
+  Augmenting = "augmenting",
   Matching = "matching",
   MatchFailed = "match-failed",
   Recommendations = "recommendations",
@@ -237,6 +246,8 @@ export enum GuideMatchPhase {
 
 const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefined>> = {
   [GuideUiStage.Intent]: undefined,
+  [GuideUiStage.Augment]: undefined,
+  [GuideUiStage.Augmenting]: undefined,
   [GuideUiStage.Matching]: GuideWizardStep.Profile,
   [GuideUiStage.MatchFailed]: GuideWizardStep.Profile,
   [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
@@ -284,6 +295,29 @@ export const destinationOptions = (
 // State.
 // ---------------------------------------------------------------------------
 
+/**
+ * A prompt augmentation running in the background. It is one record on shared
+ * state rather than a stage, so starting one gives the screen straight back and
+ * the user can keep matching, drafting and queueing on the base prompt while a
+ * multi-minute research run works.
+ */
+export interface GuideAugmentJob {
+  readonly kind: GuideAugmentKind
+  /** Bumped on every start and retry, so the effect runs exactly once per run. */
+  readonly runId: number
+  /** The prompt this run started from, frozen at start; later edits do not reach it. */
+  readonly source: string
+  /** Where the augmented text lands when the user applies it. */
+  readonly returnStage: GuideUiStage.Intent | GuideUiStage.PromptReview
+  readonly status: "running" | "ready" | "failed"
+  readonly phase: GuideAugmentPhase | undefined
+  /** The tail of the run's output, newest last, bounded by `augmentLogLimit`. */
+  readonly log: ReadonlyArray<string>
+  /** The augmented prompt, once the run is `ready`. */
+  readonly text: string | undefined
+  readonly errorMessage: string | undefined
+}
+
 export interface GuideUiState {
   readonly stage: GuideUiStage
   /** The confirmed intent used for match/generate calls; `undefined` until the intent editor is submitted. */
@@ -291,6 +325,11 @@ export interface GuideUiState {
   /** Shared free-text editing buffer for the intent editor, refine feedback, direct edit, and worktree branch editors. */
   readonly textDraft: string
   readonly errorMessage: string | undefined
+  readonly augmentIndex: number
+  /** The augmentation running in the background, or waiting to be applied. */
+  readonly augmentJob: GuideAugmentJob | undefined
+  /** Where `Esc` leaves the watch screen: the stage the user opened it from. */
+  readonly augmentViewReturnStage: GuideUiStage | undefined
   readonly matchPhase: GuideMatchPhase | undefined
   readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
   readonly recommendationIndex: number
@@ -314,6 +353,8 @@ export interface GuideUiState {
     | GuideUiStage.Recommendations
     | undefined
   readonly promptReviewEditing: boolean
+  /** The augmented prompt now on the prompt page. Set means leaving that page re-matches on it. */
+  readonly promptReviewAugmented: string | undefined
   readonly queue: GuideQueueState
   /** Where `b` returns from the worktree sub-flow, which both placement screens share. */
   readonly worktreeReturnStage: GuideUiStage.Destination | GuideUiStage.QueuePlacement
@@ -335,6 +376,9 @@ const emptyState: GuideUiState = {
   intent: undefined,
   textDraft: "",
   errorMessage: undefined,
+  augmentIndex: 0,
+  augmentJob: undefined,
+  augmentViewReturnStage: undefined,
   matchPhase: undefined,
   recommendations: undefined,
   recommendationIndex: 0,
@@ -354,6 +398,7 @@ const emptyState: GuideUiState = {
   worktreeConfirmations: 0,
   promptReviewReturnStage: undefined,
   promptReviewEditing: false,
+  promptReviewAugmented: undefined,
   queue: emptyGuideQueue(),
   worktreeReturnStage: GuideUiStage.Destination,
   primaryCheckoutPath: undefined,
@@ -402,6 +447,7 @@ export const worktreeDirtyWarning = (dirty: boolean): string | undefined =>
 /** The state the main screen and every fork share. Everything else is per fork. */
 type GuideForkSharedKey =
   | "intent"
+  | "augmentJob"
   | "matchPhase"
   | "recommendations"
   | "recommendationIndex"
@@ -426,6 +472,7 @@ export interface GuideForkTab {
 /** Drops every shared field, so a parked fork can never overwrite the intent, the recommendations or the queue. */
 const forkSlice = ({
   intent: _intent,
+  augmentJob: _augmentJob,
   matchPhase: _matchPhase,
   recommendations: _recommendations,
   recommendationIndex: _recommendationIndex,
@@ -539,6 +586,17 @@ export enum GuideUiActionType {
   IntentChange = "intent/change",
   IntentBackspace = "intent/backspace",
   IntentSubmit = "intent/submit",
+  AugmentOpen = "augment/open",
+  AugmentMove = "augment/move",
+  AugmentConfirm = "augment/confirm",
+  AugmentProgress = "augment/progress",
+  AugmentOutput = "augment/output",
+  AugmentSucceeded = "augment/succeeded",
+  AugmentFailed = "augment/failed",
+  AugmentRetry = "augment/retry",
+  AugmentApply = "augment/apply",
+  AugmentDiscard = "augment/discard",
+  AugmentBack = "augment/back",
   MatchRetry = "match/retry",
   MatchProgress = "match/progress",
   MatchSucceeded = "match/succeeded",
@@ -621,6 +679,17 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.IntentChange; readonly text: string }
   | { readonly type: GuideUiActionType.IntentBackspace }
   | { readonly type: GuideUiActionType.IntentSubmit }
+  | { readonly type: GuideUiActionType.AugmentOpen }
+  | { readonly type: GuideUiActionType.AugmentMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.AugmentConfirm }
+  | { readonly type: GuideUiActionType.AugmentProgress; readonly runId: number; readonly phase: GuideAugmentPhase }
+  | { readonly type: GuideUiActionType.AugmentOutput; readonly runId: number; readonly line: string }
+  | { readonly type: GuideUiActionType.AugmentSucceeded; readonly runId: number; readonly text: string }
+  | { readonly type: GuideUiActionType.AugmentFailed; readonly runId: number; readonly message: string }
+  | { readonly type: GuideUiActionType.AugmentRetry }
+  | { readonly type: GuideUiActionType.AugmentApply }
+  | { readonly type: GuideUiActionType.AugmentDiscard }
+  | { readonly type: GuideUiActionType.AugmentBack }
   | { readonly type: GuideUiActionType.MatchRetry }
   | { readonly type: GuideUiActionType.MatchProgress; readonly phase: GuideMatchPhase }
   | { readonly type: GuideUiActionType.MatchSucceeded; readonly recommendations: ReadonlyArray<GuideRecommendation> }
@@ -733,14 +802,272 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       if (state.stage !== GuideUiStage.Intent) return state
       const trimmed = state.textDraft.trim()
       if (trimmed.length === 0) return state
+      // A background augmentation is shared state and outlives a re-match: the
+      // user started it to keep working, so submitting must not kill it.
       return {
         ...emptyState,
         queue: state.queue,
+        augmentJob: state.augmentJob,
         stage: GuideUiStage.Matching,
         intent: trimmed,
         matchPhase: GuideMatchPhase.LoadingProfiles,
       }
     }
+
+    default:
+      return state
+  }
+}
+
+/** The augmenters offered on the augment screen, in display order. */
+export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase] as const
+
+const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string; readonly detail: string }>> = {
+  [GuideAugmentKind.Research]: {
+    title: "Research",
+    detail: "Run HVE Core rpi-research and replace the draft with its note",
+  },
+  [GuideAugmentKind.Codebase]: {
+    title: "Codebase",
+    detail: "Pack this repository with repomix and rewrite the draft",
+  },
+}
+
+/** How many recent output lines the augment panel keeps on screen. */
+export const augmentLogLimit = 14
+
+/**
+ * A bounded, newest-last window on the running augmenter's output. It exists so
+ * a multi-minute research run shows that something is happening; it is not a
+ * transcript, so old lines fall off rather than scroll. The panel is padded to
+ * its full height so it never grows line by line under the spinner.
+ */
+const AugmentActivity = ({
+  title,
+  lines,
+  height = augmentLogLimit,
+}: {
+  readonly title: string
+  readonly lines: ReadonlyArray<string>
+  readonly height?: number
+}) => {
+  if (lines.length === 0) return null
+  const recent = lines.slice(-height)
+  const rows = [...recent, ...Array.from({ length: height - recent.length }, () => "")]
+  return (
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="gray" paddingX={1}>
+      <Text bold color="cyan">
+        {title}
+      </Text>
+      {rows.map((line, index) => (
+        <Text key={`${index}-${line}`} dimColor wrap="truncate-end">
+          {line}
+        </Text>
+      ))}
+    </Box>
+  )
+}
+
+const augmentPhaseLabels: Readonly<Record<GuideAugmentPhase, string>> = {
+  [GuideAugmentPhase.RunningResearch]: "Running HVE Core research",
+  [GuideAugmentPhase.ReadingNote]: "Reading the research note",
+  [GuideAugmentPhase.PackingRepository]: "Packing this repository with repomix",
+  [GuideAugmentPhase.RewritingIntent]: "Rewriting the prompt against the pack",
+}
+
+/** The running job, for screens that show it beside their own content. */
+const AugmentJobContext = createContext<GuideAugmentJob | undefined>(undefined)
+
+/** What the live output panel is showing, so its heading names the real source. */
+const augmentSourceLabels: Readonly<Record<GuideAugmentKind, string>> = {
+  [GuideAugmentKind.Research]: "Live output · cpx hve",
+  [GuideAugmentKind.Codebase]: "Live output · repomix",
+}
+
+const augmentRunningLabels: Readonly<Record<GuideAugmentKind, string>> = {
+  [GuideAugmentKind.Research]: "Researching your request",
+  [GuideAugmentKind.Codebase]: "Reading your codebase",
+}
+
+/**
+ * The augment sub-flow. Confirming a choice starts a background job and hands
+ * the screen straight back, so a multi-minute run never blocks the wizard. The
+ * job carries its own source prompt, live output and result; nothing lands in
+ * the draft until the user applies it.
+ */
+const startAugmentJob = (
+  state: GuideUiState,
+  kind: GuideAugmentKind,
+  source: string,
+  returnStage: GuideUiStage.Intent | GuideUiStage.PromptReview,
+  runId: number,
+): GuideUiState => ({
+  ...state,
+  stage: returnStage,
+  augmentJob: {
+    kind,
+    runId,
+    source,
+    returnStage,
+    status: "running",
+    phase: undefined,
+    log: [],
+    text: undefined,
+    errorMessage: undefined,
+  },
+  augmentViewReturnStage: undefined,
+  errorMessage: undefined,
+})
+
+/** Opens the chooser, recording where the augmented text should land. */
+const openAugmentChooser = (
+  state: GuideUiState,
+  returnStage: GuideUiStage.Intent | GuideUiStage.PromptReview,
+  textDraft: string,
+): GuideUiState => ({
+  ...state,
+  stage: GuideUiStage.Augment,
+  textDraft,
+  augmentIndex: 0,
+  augmentViewReturnStage: returnStage,
+  errorMessage: undefined,
+})
+
+/**
+ * Auto-apply is the point of the feature, so it is the default. It waits only
+ * where replacing the text would throw away something the user is doing: a
+ * half-typed prompt edit, or a draft that belongs to a fork tab rather than to
+ * the main screen.
+ */
+const canAutoApplyAugment = (state: GuideUiState): boolean =>
+  state.activeForkId === undefined && !state.promptReviewEditing
+
+/** Puts the augmented text where the run was started from, and ends the job. */
+const applyAugmentJob = (state: GuideUiState, job: GuideAugmentJob, text: string): GuideUiState => ({
+  // The augmented text is the main screen's prompt, not a fork's draft, so
+  // applying from inside a tab parks that tab and comes back to the main screen.
+  ...(state.activeForkId === undefined ? state : enterMainScreen(state)),
+  stage: job.returnStage,
+  textDraft: text,
+  // On the prompt page the augmented text is the new baseline: reverting an
+  // edit returns to it, and leaving the page re-matches on it.
+  ...(job.returnStage === GuideUiStage.PromptReview
+    ? { promptReviewAugmented: text, promptReviewEditing: false }
+    : {}),
+  augmentJob: undefined,
+  augmentViewReturnStage: undefined,
+  errorMessage: undefined,
+})
+
+/** Only the run that is still current may write to the job. */
+const liveJob = (state: GuideUiState, runId: number): GuideAugmentJob | undefined =>
+  state.augmentJob?.runId === runId && state.augmentJob.status === "running" ? state.augmentJob : undefined
+
+const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.AugmentOpen: {
+      // A job already exists: the same key watches it rather than starting another.
+      if (state.augmentJob !== undefined) {
+        return state.stage === GuideUiStage.Augmenting
+          ? state
+          : { ...state, stage: GuideUiStage.Augmenting, augmentViewReturnStage: state.stage }
+      }
+      if (state.stage === GuideUiStage.Intent) {
+        return state.textDraft.trim().length === 0
+          ? state
+          : openAugmentChooser(state, GuideUiStage.Intent, state.textDraft)
+      }
+      // From the prompt page the draft is already the prompt, and the augmented
+      // text goes back to that same page rather than to the intent editor.
+      if (state.stage === GuideUiStage.PromptReview) {
+        return state.promptReviewEditing || state.textDraft.trim().length === 0
+          ? state
+          : openAugmentChooser(state, GuideUiStage.PromptReview, state.textDraft)
+      }
+      if (state.stage !== GuideUiStage.MatchFailed || state.intent === undefined) return state
+      return openAugmentChooser(state, GuideUiStage.Intent, state.intent)
+    }
+
+    case GuideUiActionType.AugmentMove:
+      return state.stage === GuideUiStage.Augment
+        ? {
+            ...state,
+            augmentIndex: (state.augmentIndex + action.delta + augmentOptions.length) % augmentOptions.length,
+          }
+        : state
+
+    case GuideUiActionType.AugmentConfirm: {
+      if (state.stage !== GuideUiStage.Augment) return state
+      const kind = augmentOptions[state.augmentIndex]
+      if (kind === undefined || state.textDraft.trim().length === 0) return state
+      const returnStage =
+        state.augmentViewReturnStage === GuideUiStage.PromptReview ? GuideUiStage.PromptReview : GuideUiStage.Intent
+      return startAugmentJob(state, kind, state.textDraft, returnStage, 1)
+    }
+
+    case GuideUiActionType.AugmentProgress: {
+      const job = liveJob(state, action.runId)
+      return job === undefined ? state : { ...state, augmentJob: { ...job, phase: action.phase } }
+    }
+
+    case GuideUiActionType.AugmentOutput: {
+      const job = liveJob(state, action.runId)
+      return job === undefined
+        ? state
+        : { ...state, augmentJob: { ...job, log: [...job.log, action.line].slice(-augmentLogLimit) } }
+    }
+
+    case GuideUiActionType.AugmentSucceeded: {
+      const job = liveJob(state, action.runId)
+      if (job === undefined) return state
+      if (canAutoApplyAugment(state)) return applyAugmentJob(state, job, action.text)
+      // Applying here would destroy work in progress, so the result waits and
+      // the prompt page offers `a` to take it.
+      return { ...state, augmentJob: { ...job, status: "ready", phase: undefined, text: action.text } }
+    }
+
+    case GuideUiActionType.AugmentFailed: {
+      const job = liveJob(state, action.runId)
+      return job === undefined
+        ? state
+        : { ...state, augmentJob: { ...job, status: "failed", phase: undefined, errorMessage: action.message } }
+    }
+
+    case GuideUiActionType.AugmentRetry: {
+      const job = state.augmentJob
+      if (job === undefined || job.status !== "failed") return state
+      return {
+        ...startAugmentJob(state, job.kind, job.source, job.returnStage, job.runId + 1),
+        stage: state.stage,
+      }
+    }
+
+    case GuideUiActionType.AugmentApply: {
+      const job = state.augmentJob
+      return job?.status === "ready" && job.text !== undefined ? applyAugmentJob(state, job, job.text) : state
+    }
+
+    case GuideUiActionType.AugmentDiscard: {
+      if (state.augmentJob === undefined) return state
+      return {
+        ...state,
+        stage: state.stage === GuideUiStage.Augmenting ? (state.augmentViewReturnStage ?? GuideUiStage.Intent) : state.stage,
+        augmentJob: undefined,
+        augmentViewReturnStage: undefined,
+      }
+    }
+
+    case GuideUiActionType.AugmentBack:
+      // Leaving the chooser or the watch screen. A running job keeps running.
+      return state.stage === GuideUiStage.Augment || state.stage === GuideUiStage.Augmenting
+        ? {
+            ...state,
+            stage: state.augmentViewReturnStage ?? GuideUiStage.Intent,
+            augmentViewReturnStage: undefined,
+            errorMessage: undefined,
+          }
+        : state
+
 
     default:
       return state
@@ -783,15 +1110,24 @@ const openPromptReview = (state: GuideUiState): GuideUiState => {
       }
 }
 
-const closePromptReview = (state: GuideUiState): GuideUiState =>
-  state.promptReviewEditing
-    ? { ...state, promptReviewEditing: false, textDraft: state.intent ?? state.textDraft }
-    : {
-        ...state,
-        stage: state.promptReviewReturnStage ?? GuideUiStage.Matching,
-        textDraft: "",
-        promptReviewReturnStage: undefined,
-      }
+const closePromptReview = (state: GuideUiState): GuideUiState => {
+  // Discarding an edit falls back to the augmented prompt when there is one.
+  if (state.promptReviewEditing) {
+    return {
+      ...state,
+      promptReviewEditing: false,
+      textDraft: state.promptReviewAugmented ?? state.intent ?? state.textDraft,
+    }
+  }
+  // Leaving the page after an augmentation re-matches on the augmented prompt.
+  if (state.promptReviewAugmented !== undefined) return submitPromptReview(state)
+  return {
+    ...state,
+    stage: state.promptReviewReturnStage ?? GuideUiStage.Matching,
+    textDraft: "",
+    promptReviewReturnStage: undefined,
+  }
+}
 
 const submitPromptReview = (state: GuideUiState): GuideUiState => {
   const intent = state.textDraft.trim()
@@ -803,11 +1139,13 @@ const submitPromptReview = (state: GuideUiState): GuideUiState => {
       textDraft: "",
       promptReviewReturnStage: undefined,
       promptReviewEditing: false,
+      promptReviewAugmented: undefined,
     }
   }
   return {
     ...emptyState,
     queue: state.queue,
+    augmentJob: state.augmentJob,
     stage: GuideUiStage.Matching,
     intent,
     matchPhase: GuideMatchPhase.LoadingProfiles,
@@ -1285,7 +1623,12 @@ const reduceQueueContents = (state: GuideUiState, action: GuideUiAction): GuideU
     case GuideUiActionType.QueueAddAnother:
       if (state.stage !== GuideUiStage.Queue) return state
       return state.recommendations === undefined
-        ? { ...emptyState, queue: state.queue, primaryCheckoutPath: state.primaryCheckoutPath }
+        ? {
+            ...emptyState,
+            queue: state.queue,
+            augmentJob: state.augmentJob,
+            primaryCheckoutPath: state.primaryCheckoutPath,
+          }
         : enterMainScreen(state)
     case GuideUiActionType.QueueExecuteBlocked:
       return state.stage === GuideUiStage.Queue ? { ...state, errorMessage: action.message } : state
@@ -1522,6 +1865,17 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.IntentChange]: reduceIntent,
   [GuideUiActionType.IntentBackspace]: reduceIntent,
   [GuideUiActionType.IntentSubmit]: reduceIntent,
+  [GuideUiActionType.AugmentOpen]: reduceAugment,
+  [GuideUiActionType.AugmentMove]: reduceAugment,
+  [GuideUiActionType.AugmentConfirm]: reduceAugment,
+  [GuideUiActionType.AugmentProgress]: reduceAugment,
+  [GuideUiActionType.AugmentOutput]: reduceAugment,
+  [GuideUiActionType.AugmentSucceeded]: reduceAugment,
+  [GuideUiActionType.AugmentFailed]: reduceAugment,
+  [GuideUiActionType.AugmentRetry]: reduceAugment,
+  [GuideUiActionType.AugmentApply]: reduceAugment,
+  [GuideUiActionType.AugmentDiscard]: reduceAugment,
+  [GuideUiActionType.AugmentBack]: reduceAugment,
   [GuideUiActionType.MatchRetry]: reduceMatch,
   [GuideUiActionType.MatchProgress]: reduceMatchProgress,
   [GuideUiActionType.MatchSucceeded]: reduceMatch,
@@ -2917,13 +3271,22 @@ const PromptReviewHeader = ({
   </Box>
 )
 
-const PromptReviewFooter = ({ editing }: { readonly editing: boolean }) => (
-  <Text dimColor wrap="truncate-end">
-    {editing
-      ? "Type, paste, or Backspace edit · PgUp/PgDn review · Enter re-match · Esc discard edits"
-      : "PgUp/PgDn review · e edit · Enter or Esc return"}
-  </Text>
-)
+const promptReviewAugmentKey = (job: GuideAugmentJob | undefined): string => {
+  if (job === undefined) return "a augment"
+  if (job.status === "ready") return "a review and apply"
+  return job.status === "failed" ? "a details" : "a watch"
+}
+
+const PromptReviewFooter = ({ editing }: { readonly editing: boolean }) => {
+  const job = useContext(AugmentJobContext)
+  return (
+    <Text dimColor wrap="truncate-end">
+      {editing
+        ? "Type, paste, or Backspace edit · PgUp/PgDn review · Enter re-match · Esc discard edits"
+        : `PgUp/PgDn review · ${promptReviewAugmentKey(job)} · e edit · Enter or Esc return`}
+    </Text>
+  )
+}
 
 const PagerPromptReview = ({
   textDraft,
@@ -3126,6 +3489,32 @@ const PromptReview = ({
   }
 }
 
+/**
+ * The prompt page with the running job above it. The strip is chrome: the page
+ * below shrinks by its rows, so nothing overflows the terminal.
+ */
+const PromptReviewStage = ({
+  textDraft,
+  variant,
+  editing,
+  job,
+}: {
+  readonly textDraft: string
+  readonly variant: GuideLongPromptVariant
+  readonly editing: boolean
+  readonly job: GuideAugmentJob | undefined
+}) => {
+  const chromeRows = useContext(ChromeRowsContext)
+  return (
+    <AugmentJobContext.Provider value={job}>
+      <AugmentInline job={job} />
+      <ChromeRowsContext.Provider value={chromeRows + augmentInlineRows(job)}>
+        <PromptReview textDraft={textDraft} variant={variant} editing={editing} />
+      </ChromeRowsContext.Provider>
+    </AugmentJobContext.Provider>
+  )
+}
+
 const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
   const { rows, columns } = useGuideWindowSize()
   return (
@@ -3140,10 +3529,26 @@ const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
         startAtEnd
         cursor
       />
-      <Text dimColor>Type your intent · PgUp/PgDn scroll · ↵ submit · Ctrl-C cancel</Text>
+      <Text dimColor>Type your intent · Ctrl-G augment · PgUp/PgDn scroll · ↵ submit · Ctrl-C cancel</Text>
     </Box>
   )
 }
+
+const AugmentChooser = ({ index }: { readonly index: number }) => (
+  <Box flexDirection="column" paddingX={1}>
+    <Text bold color="cyan">
+      Augment your prompt
+    </Text>
+    {augmentOptions.map((option, itemIndex) => (
+      <Text key={option} bold={itemIndex === index} {...(itemIndex === index ? { color: "green" as const } : {})}>
+        {itemIndex === index ? "❯ " : "  "}
+        {augmentLabels[option].title}
+        <Text dimColor> · {augmentLabels[option].detail}</Text>
+      </Text>
+    ))}
+    <Text dimColor>↑/↓ or j/k select · ↵ run it · b back · q cancel</Text>
+  </Box>
+)
 
 const ErrorPanel = ({
   title,
@@ -3162,6 +3567,166 @@ const ErrorPanel = ({
     <Text dimColor>{keys}</Text>
   </Box>
 )
+
+/** How many lines of a ready augmented prompt the watch screen previews. */
+const augmentPreviewLines = 12
+
+/**
+ * The augment watch screen: one screen for all three states of a background
+ * job. `Esc` always leaves it running, so this is somewhere you look, never
+ * somewhere you wait.
+ */
+const AugmentWatch = ({ job }: { readonly job: GuideAugmentJob | undefined }) => {
+  if (job === undefined) return null
+  if (job.status === "failed") {
+    return (
+      <Box flexDirection="column">
+        <ErrorPanel
+          title={`${augmentLabels[job.kind].title} failed`}
+          message={job.errorMessage}
+          keys="r retry · x discard · Esc back · q cancel"
+        />
+        {/* The last output the run produced is what explains the failure, so it stays on screen. */}
+        <AugmentActivity title="Last output" lines={job.log} />
+      </Box>
+    )
+  }
+  if (job.status === "ready") {
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        <Text bold color="green">
+          ✓ {augmentLabels[job.kind].title} is ready
+        </Text>
+        <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="green" paddingX={1}>
+          {(job.text ?? "")
+            .split("\n")
+            .slice(0, augmentPreviewLines)
+            .map((line, index) => (
+              <Text key={`${index}-${line}`} wrap="truncate-end">
+                {line}
+              </Text>
+            ))}
+        </Box>
+        <Text dimColor>↵ replace the prompt · x discard · Esc back · q cancel</Text>
+      </Box>
+    )
+  }
+  return (
+    <Box flexDirection="column">
+      <Spinner
+        label={augmentRunningLabels[job.kind]}
+        {...(job.phase === undefined ? {} : { detail: augmentPhaseLabels[job.phase] })}
+        messages={["This can take several minutes", "Esc leaves it running in the background"]}
+      />
+      <Box flexDirection="column" paddingX={1}>
+        <AugmentActivity title={augmentSourceLabels[job.kind]} lines={job.log} />
+        <Text dimColor>Esc back · x stop · q cancel</Text>
+      </Box>
+    </Box>
+  )
+}
+
+/** Rows the augment status line takes above a stage, for the chrome accounting. */
+const augmentStatusRows = 1
+
+/**
+ * The status line is a reminder for screens that show nothing of the run. The
+ * prompt page and the watch screen already show it, so it would only repeat
+ * itself there.
+ */
+const showsAugmentStatusBar = (state: GuideUiState): boolean =>
+  state.augmentJob !== undefined &&
+  state.stage !== GuideUiStage.PromptReview &&
+  state.stage !== GuideUiStage.Augmenting
+
+/**
+ * The one line that makes a background job visible from every screen. Without
+ * it a running augmentation would be invisible the moment the user navigates
+ * away from the watch screen.
+ */
+const AugmentStatusBar = ({ job }: { readonly job: GuideAugmentJob }) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80)
+    return () => clearInterval(timer)
+  }, [])
+  const title = augmentLabels[job.kind].title
+  if (job.status === "ready") {
+    return (
+      <Box paddingX={1}>
+        <Text color="green" wrap="truncate-end">
+          ✓ {title} ready · p then a to apply
+        </Text>
+      </Box>
+    )
+  }
+  if (job.status === "failed") {
+    return (
+      <Box paddingX={1}>
+        <Text color="red" wrap="truncate-end">
+          ✗ {title} failed · p then a for details
+        </Text>
+      </Box>
+    )
+  }
+  return (
+    <Box paddingX={1}>
+      <Text wrap="truncate-end">
+        <Text color="cyan">{spinnerFrameAt(tick)}</Text> {title}
+        {job.phase === undefined ? "" : ` · ${augmentPhaseLabels[job.phase]}`} · p then a to watch
+      </Text>
+    </Box>
+  )
+}
+
+/** Output lines the prompt page shows beside the prompt. */
+const augmentInlineLogLines = 6
+
+/** Rows the inline strip takes, so the prompt page shrinks by exactly that much. */
+const augmentInlineRows = (job: GuideAugmentJob | undefined): number =>
+  // Margin, both borders and the heading, on top of the output lines themselves.
+  job === undefined ? 0 : job.status === "running" ? augmentInlineLogLines + 4 : 1
+
+/**
+ * A running augmentation, shown on the prompt page itself. Without it the page
+ * looks unchanged while a multi-minute run works on the very prompt it shows.
+ */
+const AugmentInline = ({ job }: { readonly job: GuideAugmentJob | undefined }) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 80)
+    return () => clearInterval(timer)
+  }, [])
+  if (job === undefined) return null
+  const title = augmentLabels[job.kind].title
+  if (job.status === "ready") {
+    return (
+      <Box paddingX={1}>
+        <Text color="green" wrap="truncate-end">
+          ✓ {title} ready · a to review and apply it
+        </Text>
+      </Box>
+    )
+  }
+  if (job.status === "failed") {
+    return (
+      <Box paddingX={1}>
+        <Text color="red" wrap="truncate-end">
+          ✗ {title} failed · a for details
+        </Text>
+      </Box>
+    )
+  }
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <AugmentActivity
+        title={`${spinnerFrameAt(tick)} ${title}${job.phase === undefined ? "" : ` · ${augmentPhaseLabels[job.phase]}`}`}
+        lines={job.log.length === 0 ? [""] : job.log}
+        height={augmentInlineLogLines}
+      />
+    </Box>
+  )
+}
 
 const launcherHarnessLabels: Readonly<Record<string, string>> = {
   cdx: "Codex",
@@ -3876,6 +4441,56 @@ const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispa
   }, [state.stage])
 }
 
+/**
+ * Rewrites the draft with one of the augmenters. The abort controller is what
+ * makes a multi-minute research run interruptible: `createNodeCommandRunner`
+ * honours a mid-run signal, so leaving this stage kills the child process
+ * instead of orphaning it.
+ */
+/**
+ * Runs the background augmentation. It is keyed on the job, not the stage, so
+ * navigating away never abandons the child process; only discarding the job or
+ * leaving the app aborts it.
+ */
+const useGuideAugmentEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
+  const job = state.augmentJob
+  const runId = job?.runId
+  const running = job?.status === "running"
+  useEffect(() => {
+    if (job === undefined || runId === undefined || !running) return undefined
+    let cancelled = false
+    const abort = new AbortController()
+    const { kind, source } = job
+    void (async () => {
+      const context: GuideAugmentContext = {
+        runner: props.runner,
+        cwd: props.cwd,
+        signal: abort.signal,
+        onPhase: (phase) => {
+          if (!cancelled) dispatch({ type: GuideUiActionType.AugmentProgress, runId, phase })
+        },
+        onActivity: (line) => {
+          if (!cancelled) dispatch({ type: GuideUiActionType.AugmentOutput, runId, line })
+        },
+      }
+      try {
+        const text =
+          kind === GuideAugmentKind.Research
+            ? await runResearchAugment(source, props.catalog, context)
+            : await runCodebaseAugment(source, props.provider, context)
+        if (!cancelled) dispatch({ type: GuideUiActionType.AugmentSucceeded, runId, text })
+      } catch (error) {
+        if (!cancelled)
+          dispatch({ type: GuideUiActionType.AugmentFailed, runId, message: describeGuideUiError(error) })
+      }
+    })()
+    return () => {
+      cancelled = true
+      abort.abort()
+    }
+  }, [runId, running])
+}
+
 const worktreeInspectionAction = (inspection: Awaited<ReturnType<typeof inspectGitWorktreeIntent>>): GuideUiAction => {
   if (inspection.kind === "invalid-branch") return { type: GuideUiActionType.WorktreeInvalidBranch }
   if (inspection.kind === "collision") return { type: GuideUiActionType.WorktreeCollision, inspection }
@@ -3980,14 +4595,41 @@ const handleMatchingInput: GuideInputHandler = ({ dispatch, cancel }, input) => 
 }
 
 const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
-  if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
+  // Checked before the printable branch: every other key on this screen is
+  // text, so only a Ctrl chord can be a shortcut here.
+  if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
+  else if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
   else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.IntentBackspace })
   else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, guideIntentMaximumLength)) {
     dispatch({ type: GuideUiActionType.IntentChange, text: state.textDraft + input })
   }
 }
 
+const handleAugmentInput: GuideInputHandler = ({ dispatch, cancel }, input, key) => {
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.AugmentMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.AugmentMove, delta: 1 })
+  else if (key.return) dispatch({ type: GuideUiActionType.AugmentConfirm })
+  else if (key.escape || input === "b") dispatch({ type: GuideUiActionType.AugmentBack })
+  else if (input === "q") cancel()
+}
+
+/**
+ * The watch screen never blocks: every key here either leaves the job running
+ * or ends it on purpose.
+ */
+const handleAugmentingInput: GuideInputHandler = ({ state, dispatch, cancel }, input, key) => {
+  if (key.escape || input === "b") dispatch({ type: GuideUiActionType.AugmentBack })
+  else if (key.return && state.augmentJob?.status === "ready") dispatch({ type: GuideUiActionType.AugmentApply })
+  else if (input === "r" && state.augmentJob?.status === "failed") dispatch({ type: GuideUiActionType.AugmentRetry })
+  else if (input === "x") dispatch({ type: GuideUiActionType.AugmentDiscard })
+  else if (input === "q") cancel()
+}
+
 const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input) => {
+  if (input === "a") {
+    dispatch({ type: GuideUiActionType.AugmentOpen })
+    return
+  }
   if (input === "p") {
     dispatch({ type: GuideUiActionType.PromptReviewOpen })
     return
@@ -4039,7 +4681,8 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
 
 const handlePromptReviewInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
   if (!state.promptReviewEditing) {
-    if (input === "e") dispatch({ type: GuideUiActionType.PromptReviewEdit, editing: true })
+    if (input === "a") dispatch({ type: GuideUiActionType.AugmentOpen })
+    else if (input === "e") dispatch({ type: GuideUiActionType.PromptReviewEdit, editing: true })
     else if (key.escape || key.return || input === "p" || input === "b") {
       dispatch({ type: GuideUiActionType.PromptReviewBack })
     }
@@ -4330,6 +4973,8 @@ const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch }, input,
 
 const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.Intent]: handleIntentInput,
+  [GuideUiStage.Augment]: handleAugmentInput,
+  [GuideUiStage.Augmenting]: handleAugmentingInput,
   [GuideUiStage.Matching]: handleMatchingInput,
   [GuideUiStage.MatchFailed]: handleMatchFailedInput,
   [GuideUiStage.Recommendations]: handleRecommendationsInput,
@@ -4363,6 +5008,8 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
 const acceptsGlobalKeys = (state: GuideUiState): boolean =>
   state.stage !== GuideUiStage.Intent &&
   state.stage !== GuideUiStage.Launching &&
+  // The watch screen owns `x`: there it stops the job, never drops a fork tab.
+  state.stage !== GuideUiStage.Augmenting &&
   !editingStages.has(state.stage) &&
   !(state.stage === GuideUiStage.PromptReview && state.promptReviewEditing)
 
@@ -4592,20 +5239,23 @@ const LaunchProgress = ({ state }: { readonly state: GuideUiState }) => {
 
 const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
+  [GuideUiStage.Augment]: ({ state }) => <AugmentChooser index={state.augmentIndex} />,
+  [GuideUiStage.Augmenting]: ({ state }) => <AugmentWatch job={state.augmentJob} />,
   [GuideUiStage.Matching]: matchingProgress,
   [GuideUiStage.MatchFailed]: ({ state }) => (
     <ErrorPanel
       title="Match failed"
       message={state.errorMessage}
-      keys="r retry · l literal match · p view prompt · q cancel"
+      keys="r retry · a augment prompt · l literal match · p view prompt · q cancel"
     />
   ),
   [GuideUiStage.Recommendations]: renderRecommendations,
   [GuideUiStage.PromptReview]: ({ props, state }) => (
-    <PromptReview
+    <PromptReviewStage
       textDraft={state.textDraft}
       variant={props.uiVariant ?? GuideLongPromptVariant.Dashboard}
       editing={state.promptReviewEditing}
+      job={state.augmentJob}
     />
   ),
   [GuideUiStage.Generating]: ({ props, state }) =>
@@ -4700,6 +5350,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   // The main screen owns only its own async work; each fork's runs in its own
   // ForkWorker below, so parking a fork never abandons the call it started.
   const mainState = state.activeForkId === undefined ? state : { ...state, ...mainForkSlice }
+  useGuideAugmentEffect(props, mainState, dispatch)
   useGuideMatchEffect(props, mainState, dispatch)
   useGuideGenerationEffect(props, mainState, dispatch)
   useGuideRefinementEffect(props, mainState, dispatch)
@@ -4731,8 +5382,13 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
           <ForkWorker key={fork.id} props={props} state={slice} forkId={fork.id} dispatch={dispatch} />
         )
       })}
+      {showsAugmentStatusBar(state) && state.augmentJob !== undefined ? (
+        <AugmentStatusBar job={state.augmentJob} />
+      ) : null}
       {state.forks.length === 0 ? null : <ForkTabBar state={state} />}
-      <ChromeRowsContext.Provider value={state.forks.length === 0 ? 0 : forkTabBarRows}>
+      <ChromeRowsContext.Provider
+        value={(state.forks.length === 0 ? 0 : forkTabBarRows) + (showsAugmentStatusBar(state) ? augmentStatusRows : 0)}
+      >
         {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
         {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })}
       </ChromeRowsContext.Provider>

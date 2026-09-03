@@ -60,12 +60,14 @@ const routing = {
   generate: { model: "generate-model", effort: "medium" as const },
   optimize: { model: "optimize-model", effort: "high" as const },
   refine: { model: "refine-model", effort: "medium" as const },
+  enrich: { model: "enrich-model", effort: "medium" as const },
 }
 const prompts = {
   match: "Match profiles.",
   generate: "Generate candidates.",
   optimize: "Optimize candidates.",
   refine: "Refine one candidate.",
+  enrich: "Enrich a thin intent.",
 }
 const matchResult: GuideMatchResult = {
   candidates: ["one", "two", "three"].map((name, index) => ({

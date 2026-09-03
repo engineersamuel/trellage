@@ -99,6 +99,11 @@ export interface CommandRunOptions {
   readonly timeoutMs?: number
   readonly signal?: AbortSignal
   readonly outputOverflow?: "terminate" | "truncate"
+  /**
+   * Called with each raw chunk as the child writes it, before any buffering or
+   * truncation, so a caller can show live progress. It must never throw.
+   */
+  readonly onOutput?: (text: string, stream: "stdout" | "stderr") => void
 }
 
 export interface CommandRunResult {
@@ -746,11 +751,17 @@ export const createNodeCommandRunner = (): CommandRunner => ({
         return
       }
 
+      const publishChunk = (chunk: Buffer | string, stream: "stdout" | "stderr") => {
+        if (options?.onOutput === undefined) return
+        options.onOutput(typeof chunk === "string" ? chunk : chunk.toString("utf8"), stream)
+      }
       child.stdout?.on("data", (chunk: Buffer | string) => {
         appendChunk(stdoutChunks, chunk, "stdout")
+        publishChunk(chunk, "stdout")
       })
       child.stderr?.on("data", (chunk: Buffer | string) => {
         appendChunk(stderrChunks, chunk, "stderr")
+        publishChunk(chunk, "stderr")
       })
       child.once("error", (error) => {
         const output = snapshotOutput()

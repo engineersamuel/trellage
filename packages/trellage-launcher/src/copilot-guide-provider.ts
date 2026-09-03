@@ -68,13 +68,17 @@ import {
 } from "./guide-model-routing.js"
 import type { GuideModelPrompts } from "./guide-prompts.js"
 import {
+  assertGuideEnrichInput,
   assertGuideGenerateInput,
   assertGuideMatchInput,
   assertGuideOptimizeInput,
+  validateGuideEnrichResult,
   validateGuideGenerateResult,
   validateGuideMatchResult,
   validateGuideOptimizeResult,
   validateGuideRefineResult,
+  type GuideEnrichInput,
+  type GuideEnrichResult,
   type GuideGenerateInput,
   type GuideGenerateResult,
   type GuideMatchInput,
@@ -180,6 +184,8 @@ export interface CopilotGuideProviderOptions {
   readonly promptMasterSkillDirectory?: string
   /** Milliseconds allowed for the Prompt Master phase's `sendAndWait`. @default 60000 */
   readonly optimizeTimeoutMs?: number
+  /** Milliseconds allowed for the enrich phase's `sendAndWait`. Longer than the other phases: it reads a packed repository. @default 180000 */
+  readonly enrichTimeoutMs?: number
   /** Injectable client constructor, so unit tests never spawn a real Copilot runtime. */
   readonly clientFactory?: (options: CopilotClientOptions) => GuideModelClient
 }
@@ -201,6 +207,7 @@ const resolveProviderRouting = (options: CopilotGuideProviderOptions): GuideMode
     generate: applyGlobalModelOverrides(routing.generate, options),
     optimize: applyGlobalModelOverrides(routing.optimize, options),
     refine: applyGlobalModelOverrides(routing.refine, options),
+    enrich: applyGlobalModelOverrides(routing.enrich, options),
   }
 }
 
@@ -304,6 +311,7 @@ export class CopilotGuideProvider implements GuideProvider {
   private readonly refineTimeoutMs: number
   private readonly promptMasterSkillDirectory: string | undefined
   private readonly optimizeTimeoutMs: number
+  private readonly enrichTimeoutMs: number
   private readonly clientFactory: (options: CopilotClientOptions) => GuideModelClient
 
   constructor(options: CopilotGuideProviderOptions) {
@@ -319,6 +327,7 @@ export class CopilotGuideProvider implements GuideProvider {
     this.refineTimeoutMs = options.refineTimeoutMs ?? 60_000
     this.promptMasterSkillDirectory = options.promptMasterSkillDirectory
     this.optimizeTimeoutMs = options.optimizeTimeoutMs ?? 60_000
+    this.enrichTimeoutMs = options.enrichTimeoutMs ?? 180_000
     this.clientFactory = options.clientFactory ?? defaultClientFactory
   }
 
@@ -367,6 +376,19 @@ export class CopilotGuideProvider implements GuideProvider {
     )
   }
 
+  /**
+   * Rewrites a thin intent with the user's packed repository as reference.
+   * The pack travels as prompt content inside `<untrusted-data>`, so this
+   * phase keeps the same locked-down session policy as every other phase: no
+   * tools, no plugins, and a working directory outside the repository.
+   */
+  async enrich(input: GuideEnrichInput, onActivity?: (line: string) => void): Promise<GuideEnrichResult> {
+    assertGuideEnrichInput(input)
+    return this.run("enrich", this.prompts.enrich, input, this.enrichTimeoutMs, validateGuideEnrichResult, {
+      ...(onActivity === undefined ? {} : { onActivity }),
+    })
+  }
+
   private async run<Input, Output>(
     phase: GuideModelPhase,
     systemPrompt: string,
@@ -376,6 +398,8 @@ export class CopilotGuideProvider implements GuideProvider {
     options: {
       readonly message?: (input: Input) => string
       readonly skillDirectory?: string
+      /** Receives one short line per session event, for a live progress window. */
+      readonly onActivity?: (line: string) => void
     } = {},
   ): Promise<Output> {
     const config = this.routing[phase]
@@ -435,6 +459,11 @@ export class CopilotGuideProvider implements GuideProvider {
         enableSessionTelemetry: false,
         remoteSession: "off",
         onPermissionRequest: () => ({ kind: "reject" }),
+        // Session events are the only visible sign of a long model call. Only
+        // the event type is surfaced: content stays out of the progress window.
+        ...(options.onActivity === undefined
+          ? {}
+          : { onEvent: (event: { readonly type: string }) => options.onActivity?.(`${phase}: ${event.type}`) }),
         systemMessage:
           this.systemMessageMode === "replace"
             ? { mode: "replace", content: systemPrompt }
