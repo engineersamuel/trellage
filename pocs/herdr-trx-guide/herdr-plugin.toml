@@ -13,7 +13,7 @@ id = "open"
 title = "Open text in Trellage guide"
 description = "Open highlighted terminal text or the focused completed agent's final answer in trx guide."
 contexts = ["pane"]
-command = ["node", "action.mjs"]
+command = ["node", "action.ts"]
 
 [[actions]]
 id = "queue-add-selection"
@@ -21,7 +21,7 @@ title = "Add selection to Trellage guide queue"
 description = "Add a private macOS overlay selection request to the Trellage guide queue."
 contexts = ["pane"]
 platforms = ["macos"]
-command = ["node", "overlay-action.mjs"]
+command = ["node", "overlay-action.ts"]
 
 [[actions]]
 id = "queue-add-selection-open"
@@ -29,15 +29,15 @@ title = "Add selection and open Trellage guide queue"
 description = "Add a private macOS overlay selection request and open the Trellage guide queue editor."
 contexts = ["pane"]
 platforms = ["macos"]
-command = ["node", "overlay-action.mjs"]
+command = ["node", "overlay-action.ts"]
 
 [[events]]
 on = "pane.agent_status_changed"
-command = ["node", "event.mjs"]
+command = ["node", "event.ts"]
 
 [[events]]
 on = "pane.closed"
-command = ["node", "event.mjs"]
+command = ["node", "event.ts"]
 
 [[panes]]
 id = "guide"
@@ -45,7 +45,7 @@ title = "Trellage guide"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ["node", "popup.mjs"]
+command = ["node", "popup.ts"]
 
 [[panes]]
 id = "queue-editor"
@@ -53,4 +53,4 @@ title = "Trellage guide queue"
 placement = "popup"
 width = 88
 height = 20
-command = ["node", "queue-editor.mjs"]
+command = ["node", "queue-editor.ts"]

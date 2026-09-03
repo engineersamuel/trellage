@@ -18,14 +18,14 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { main as runQueueEditor } from "../custom-popup.mjs"
+import { main as runQueueEditor } from "../custom-popup.ts"
 import {
   main as runOverlayActionMain,
   openOverlayQueueEditor,
   queueEditorOpenTimeoutMs,
   runOverlayAction,
-} from "../overlay-action.mjs"
-import { runHerdr } from "../lib/herdr.mjs"
+} from "../overlay-action.ts"
+import { runHerdr } from "../lib/herdr.ts"
 import {
   cleanupStaleOverlayRequests,
   consumeOverlayRequest,
@@ -34,17 +34,17 @@ import {
   overlayRequestDirectories,
   overlayRequestId,
   parseOverlayInvocationContext,
-} from "../lib/overlay-request.mjs"
+} from "../lib/overlay-request.ts"
 import {
   appendCaptureQueue,
   captureQueueIntent,
   consumeChoice,
   readCaptureQueue,
-} from "../lib/state.mjs"
+} from "../lib/state.ts"
 
 const execFileAsync = promisify(execFile)
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url))
-const overlayEntrypoint = path.join(pluginRoot, "overlay-action.mjs")
+const overlayEntrypoint = path.join(pluginRoot, "overlay-action.ts")
 const requestId = "11111111-2222-4333-8444-555555555555"
 const requestToken = `trellage-guide-overlay-request:v1:${requestId}`
 
@@ -542,7 +542,7 @@ test("direct queue editor navigates, removes, clears, closes, and opens the queu
 
 test("manifest registers both pane actions on one entrypoint and the queue editor pane", async () => {
   const manifest = await readFile(path.join(pluginRoot, "herdr-plugin.toml"), "utf8")
-  assert.match(manifest, /id = "queue-add-selection"[\s\S]*command = \["node", "overlay-action\.mjs"\]/u)
-  assert.match(manifest, /id = "queue-add-selection-open"[\s\S]*command = \["node", "overlay-action\.mjs"\]/u)
-  assert.match(manifest, /id = "queue-editor"[\s\S]*command = \["node", "queue-editor\.mjs"\]/u)
+  assert.match(manifest, /id = "queue-add-selection"[\s\S]*command = \["node", "overlay-action\.ts"\]/u)
+  assert.match(manifest, /id = "queue-add-selection-open"[\s\S]*command = \["node", "overlay-action\.ts"\]/u)
+  assert.match(manifest, /id = "queue-editor"[\s\S]*command = \["node", "queue-editor\.ts"\]/u)
 })

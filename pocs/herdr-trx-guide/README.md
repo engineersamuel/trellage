@@ -1,8 +1,8 @@
 # Herdr to Trellage guide handoff
 
-This proof-of-concept Herdr plugin opens highlighted terminal text or the final
-answer from the focused, completed agent as the intent in a modal `trx guide`
-popup.
+This proof-of-concept Herdr plugin opens highlighted terminal text, the final
+answer, or the filtered conversation from an exactly identified completed
+agent as the intent in a modal `trx guide` popup.
 
 It follows the selection flow used by
 [Herdr Annotate](https://github.com/plannotator/herdr-annotate): Herdr copies a
@@ -13,7 +13,7 @@ prepare a prompt, and hand the work to a Herdr workspace or worktree.
 ## Requirements
 
 - Herdr 0.8.2 or newer
-- Node.js 22 or newer
+- Node.js 22.18 or newer
 - Python 3
 - `mise`
 - A local Trellage checkout with a trusted `mise.toml`
@@ -47,15 +47,15 @@ Add these bindings to `~/.config/herdr/config.toml`:
 [[keys.command]]
 key = "prefix+shift+h"
 type = "popup"
-command = "node /absolute/path/to/trellage/pocs/herdr-trx-guide/latest-popup.mjs"
+command = "node /absolute/path/to/trellage/pocs/herdr-trx-guide/latest-popup.ts"
 description = "Open latest agent result in Trellage guide"
 width = "90%"
 height = "90%"
 
 [[keys.command]]
-key = "prefix+shift+b"
+key = "prefix+ctrl+b"
 type = "popup"
-command = "node /absolute/path/to/trellage/pocs/herdr-trx-guide/custom-popup.mjs"
+command = "node /absolute/path/to/trellage/pocs/herdr-trx-guide/custom-popup.ts"
 description = "Choose highlighted text or latest agent result for Trellage guide"
 width = 88
 height = 20
@@ -68,14 +68,14 @@ Reload the Herdr configuration after you save it.
 To collect highlighted text before opening the guide:
 
 1. Drag to highlight terminal text. Herdr copies it to the clipboard.
-2. Press `prefix+shift+b`.
+2. Press `prefix+ctrl+b`.
 3. **Open highlighted text** is selected first. Verify the preview, then press
    `a` to add it to the capture queue. The picker stays open and selects
    **Open capture queue in trx guide (N)** so you can press `Enter` immediately
    if finished.
 4. Press `q` or `Esc` when you want to close the picker and collect another
    highlighted section or exact agent result.
-5. Press `prefix+shift+b` again, move to **Open capture queue in trx guide
+5. Press `prefix+ctrl+b` again, move to **Open capture queue in trx guide
    (N)**, and press `Enter`. The full guide opens with every captured item in
    insertion order. The capture queue clears only after the guide popup opens.
 
@@ -92,8 +92,8 @@ To open the latest complete agent response directly:
 1. Wait for the focused agent to finish.
 2. Press `prefix+shift+h`.
 
-You can also press `prefix+shift+b`, select an exact agent result or an
-explicit terminal snapshot, then press `Enter`.
+You can also press `prefix+ctrl+b`, select the current filtered conversation,
+an exact final result, or an explicit terminal snapshot, then press `Enter`.
 
 Press `e` to edit the capture queue on a separate screen. There, use `j`/`k`
 or the arrow keys to select an item, `x` to remove that item, `a` to return to
@@ -110,7 +110,7 @@ The macOS overlay invokes one of two pane-context plugin actions:
 - `trellage.guide-handoff.queue-add-selection-open` adds one selection and
   opens the dedicated `queue-editor` plugin popup without clearing the queue.
 
-Both actions use `overlay-action.mjs`. The invocation source must be
+Both actions use `overlay-action.ts`. The invocation source must be
 `trellage-guide-overlay`. The action context `selected_text` contains only:
 
 ```text
@@ -185,6 +185,11 @@ selection. It shows the clipboard text before you choose it.
 
 - **Open highlighted text** uses Herdr's copied mouse selection. It works for
   any terminal pane and does not require a completed agent.
+- **Current agent conversation** uses the exact direct or Trellage Native
+  session transcript. It includes human user messages and completed assistant
+  responses, while excluding system/developer instructions, tool calls,
+  reasoning, commentary, nested-agent traffic, and duplicate records. Recent
+  messages are retained when the complete history exceeds the guide limit.
 - **Exact agent result** uses a structured final answer from a safely
   identified Copilot, Codex, or Claude session.
 - **Terminal snapshot** explicitly uses Herdr `agent.read` output with the
@@ -223,6 +228,10 @@ fixed `trellage session final-message` command then validates the exact
 container, profile, worktree, image, state volume, agent, mapping, and
 transcript before it returns the final message. Copilot nested-agent records
 and Claude subagent sessions are excluded.
+
+Sandbox conversation capture is not available yet because the bridge exposes
+only `session final-message`. The picker reports that limitation and does not
+substitute a terminal snapshot. Exact final-message capture remains available.
 
 ## Completion tracking
 
@@ -365,7 +374,8 @@ herdr plugin log list --plugin trellage.guide-handoff
 ## Development checks
 
 ```sh
-node --test pocs/herdr-trx-guide/test/*.test.mjs
+npm test --prefix pocs/herdr-trx-guide
+npm run check --prefix pocs/herdr-trx-guide
 python3 tests/trellage_session_bridge_test.py
 npm test --prefix packages/trellage-launcher
 npm run check --prefix packages/trellage-launcher

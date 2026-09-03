@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { captureFinalAnswer } from "../lib/capture.mjs"
+import { captureAgentContent } from "../lib/capture.ts"
 import {
   captureSandboxFinalMessage,
   sandboxBridgeMaximumOutputBytes,
-} from "../lib/sandbox-bridge.mjs"
+} from "../lib/sandbox-bridge.ts"
 
 const identity = {
   surface: "sandbox",
@@ -69,7 +69,7 @@ test("the bridge buffer holds a maximum-length unescaped Unicode answer", () => 
 test("capture uses the Sandbox bridge instead of host transcript discovery", async () => {
   let structuredCalled = false
   let bridgeCwd
-  const result = await captureFinalAnswer({
+  const result = await captureAgentContent({
     context: {
       paneId: "w1:p1",
       workspaceId: "w1",
@@ -127,7 +127,7 @@ test("a resumed Sandbox session stays bound to the bridge and exact session", as
   let structuredCalled = false
   let sandboxCalled = false
   const sessionId = "33333333-3333-4333-8333-333333333333"
-  const result = await captureFinalAnswer({
+  const result = await captureAgentContent({
     context: {
       paneId: "w1:p1",
       workspaceId: "w1",
@@ -180,7 +180,7 @@ test("a resumed Sandbox session stays bound to the bridge and exact session", as
 
 test("a current direct harness session takes precedence over stale Trellage metadata", async () => {
   let receivedTokens
-  const result = await captureFinalAnswer({
+  const result = await captureAgentContent({
     context: {
       paneId: "w1:p1",
       workspaceId: "w1",

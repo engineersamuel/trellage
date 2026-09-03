@@ -6,11 +6,15 @@ import test from "node:test"
 
 import {
   codexSessionMetadata,
+  extractClaudeConversation,
   extractClaudeFinalMessage,
+  extractCodexConversation,
   extractCodexFinalMessage,
+  extractCopilotConversation,
   extractCopilotFinalMessage,
-} from "../lib/transcript-format.mjs"
-import { captureStructuredFinalMessage, findTranscript, sessionIdFromProcessInfo } from "../lib/transcripts.mjs"
+} from "../lib/transcript-format.ts"
+import { formatConversationIntent } from "../lib/conversation.ts"
+import { captureStructuredFinalMessage, findTranscript, sessionIdFromProcessInfo } from "../lib/transcripts.ts"
 
 const fixtures = path.join(import.meta.dirname, "fixtures")
 const fixture = (name) => readFile(path.join(fixtures, name), "utf8")
@@ -25,6 +29,118 @@ test("extracts Copilot, Codex, and split Claude final answers", async () => {
     extractClaudeFinalMessage(await fixture("claude.jsonl")),
     "Final Claude answer.\nHand this to the guide.",
   )
+})
+
+test("extracts Copilot conversation messages without tool or nested-agent traffic", () => {
+  const source = [
+    { type: "user.message", data: { content: "Investigate the failure." } },
+    { type: "assistant.message", data: { content: "I will inspect it.", toolRequests: [{ name: "bash" }] } },
+    { type: "assistant.message", data: { content: "The cache key is stale.", toolRequests: [] } },
+    { type: "assistant.message", agentId: "child", data: { content: "Nested answer", toolRequests: [] } },
+  ].map(JSON.stringify).join("\n")
+
+  assert.deepEqual(extractCopilotConversation(source), [
+    { role: "user", text: "Investigate the failure." },
+    { role: "assistant", text: "The cache key is stale." },
+  ])
+})
+
+test("extracts only human Codex input and completed assistant responses", () => {
+  const message = (role, text, kinds, phase) => ({
+    type: "response_item",
+    payload: {
+      type: "message",
+      role,
+      ...(phase === undefined ? {} : { phase }),
+      content: [{ type: role === "assistant" ? "output_text" : "input_text", text }],
+      internal_chat_message_metadata_passthrough: { content_item_kinds: kinds },
+    },
+  })
+  const source = [
+    message("developer", "Runtime policy", ["host_skills.instructions"]),
+    message("user", "Repository instructions", ["agents_md.instructions"]),
+    message("user", "Fix the session handoff", ["user.text"]),
+    message("user", "Selected skill instructions", ["skills.selected_skill_instructions"]),
+    message("assistant", "Working on it", ["unknown"], "commentary"),
+    message("assistant", "The handoff now works", ["unknown"], "final_answer"),
+    { type: "event_msg", payload: { type: "agent_message", message: "The handoff now works" } },
+  ].map(JSON.stringify).join("\n")
+
+  assert.deepEqual(extractCodexConversation(source), [
+    { role: "user", text: "Fix the session handoff" },
+    { role: "assistant", text: "The handoff now works" },
+  ])
+})
+
+test("extracts Claude text while excluding tool results", () => {
+  const source = [
+    {
+      type: "user",
+      message: { content: [{ type: "text", text: "Review this change" }] },
+    },
+    {
+      type: "user",
+      message: { content: [{ type: "tool_result", content: "tool output" }] },
+    },
+    {
+      type: "assistant",
+      message: { id: "answer", content: [{ type: "text", text: "Review complete" }] },
+    },
+    {
+      type: "assistant",
+      message: { id: "answer", stop_reason: "end_turn", content: [] },
+    },
+  ].map(JSON.stringify).join("\n")
+
+  assert.deepEqual(extractClaudeConversation(source), [
+    { role: "user", text: "Review this change" },
+    { role: "assistant", text: "Review complete" },
+  ])
+})
+
+test("formats the newest complete conversation excerpt within the guide limit", () => {
+  const result = formatConversationIntent(
+    { agent: "codex", profile: "pstack", sessionId: "session-1", cwd: "/repo" },
+    [
+      { role: "user", text: "Old request" },
+      { role: "assistant", text: "Old answer" },
+      { role: "user", text: "Current request" },
+      { role: "assistant", text: "Current answer" },
+    ],
+    413,
+  )
+
+  assert.equal(result.messageCount, 2)
+  assert.equal(result.omittedMessageCount, 2)
+  assert.doesNotMatch(result.text, /Old request/u)
+  assert.match(result.text, /Older history omitted: 2 messages/u)
+  assert.match(result.text, /Current request/u)
+  assert.match(result.text, /Repository: \/repo/u)
+})
+
+test("rejects a latest conversation message that cannot fit the guide limit", () => {
+  assert.throws(
+    () =>
+      formatConversationIntent(
+        { agent: "codex", sessionId: "session-1", cwd: "/repo" },
+        [{ role: "assistant", text: "x".repeat(100) }],
+        300,
+      ),
+    /latest conversation message exceeds/u,
+  )
+})
+
+test("does not add an older-history marker when the complete conversation fits", () => {
+  const result = formatConversationIntent(
+    { agent: "codex", sessionId: "session-1", cwd: "/repo" },
+    [
+      { role: "user", text: "Current request" },
+      { role: "assistant", text: "Current answer" },
+    ],
+  )
+
+  assert.equal(result.omittedMessageCount, 0)
+  assert.doesNotMatch(result.text, /Older history omitted/u)
 })
 
 test("uses the newest Copilot task completion summary", () => {

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import path from "node:path"
 import { promisify } from "node:util"
 
-import { findTrellageRoot } from "./trellage-root.mjs"
+import { findTrellageRoot } from "./trellage-root.ts"
 
 const execFileAsync = promisify(execFile)
 export const sandboxBridgeMaximumOutputBytes = 512 * 1024

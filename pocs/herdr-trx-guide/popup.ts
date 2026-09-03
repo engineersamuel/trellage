@@ -1,17 +1,18 @@
 #!/usr/bin/env node
+// @ts-nocheck -- Legacy process-launch adapter; intent/state modules are type-checked.
 import { spawn } from "node:child_process"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { parsePopupInvocation } from "./lib/context.mjs"
+import { parsePopupInvocation } from "./lib/context.ts"
 import {
   consumeInvocation,
   removeGuideIntent,
   removeGuideIntentSync,
   resolvePluginStateDirectory,
   writeGuideIntent,
-} from "./lib/state.mjs"
-import { findTrellageRoot } from "./lib/trellage-root.mjs"
+} from "./lib/state.ts"
+import { findTrellageRoot } from "./lib/trellage-root.ts"
 
 export { findTrellageRoot }
 

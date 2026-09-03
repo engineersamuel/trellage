@@ -7,9 +7,9 @@ import {
   panelInvocationSource,
   sourcePickerStatus,
   waitForCaptureQueueGrowth,
-} from "../custom-popup.mjs"
-import { ExactCaptureUnavailableError } from "../lib/capture.mjs"
-import { inspectCaptureOptions, selectedTextChoice } from "../lib/capture-options.mjs"
+} from "../custom-popup.ts"
+import { ExactCaptureUnavailableError } from "../lib/capture.ts"
+import { inspectCaptureOptions, selectedTextChoice } from "../lib/capture-options.ts"
 
 const context = {
   workspaceId: "w1",
@@ -151,6 +151,33 @@ test("invokes the latest-result path without clipboard text", async () => {
   assert.equal(calls[0].params.context.expected_state_change_seq, undefined)
 })
 
+test("serializes a conversation choice with exact revalidation fields", async () => {
+  let written
+  await invokeGuideChoice({
+    choice: {
+      kind: "conversation",
+      paneId: "w1:p2",
+      stateChangeSeq: 13,
+      sessionId: "session-2",
+    },
+    context,
+    stateDir: "/plugin-state",
+    request: async () => undefined,
+    choiceWriter: async (_stateDir, value) => {
+      written = value
+      return "trellage-guide-choice:v1:66666666-6666-4666-8666-666666666666"
+    },
+  })
+
+  assert.deepEqual(written, {
+    schemaVersion: 1,
+    kind: "conversation",
+    paneId: "w1:p2",
+    stateChangeSeq: 13,
+    sessionId: "session-2",
+  })
+})
+
 test("invokes an explicit terminal snapshot path", async () => {
   const calls = []
   const choiceToken = "trellage-guide-choice:v1:33333333-3333-4333-8333-333333333333"
@@ -197,7 +224,7 @@ test("removes the private choice when Herdr rejects action invocation", async ()
   assert.deepEqual(removed, [{ stateDir: "/plugin-state", token: choiceToken }])
 })
 
-test("offers exact and explicitly labeled terminal choices for each completed agent", async () => {
+test("offers conversation, exact result, and explicitly labeled terminal choices", async () => {
   const result = await inspectCaptureOptions(context, {
     candidateResolver: async () => [
       {
@@ -210,7 +237,16 @@ test("offers exact and explicitly labeled terminal choices for each completed ag
     ],
     processReader: async () => ({ foreground_processes: [] }),
     capture: async ({ mode }) =>
-      mode === "exact"
+      mode === "conversation"
+        ? {
+            answer: "Conversation transcript",
+            source: "conversation-transcript",
+            confidence: "exact",
+            sessionId: "session-1",
+            messageCount: 4,
+            omittedMessageCount: 1,
+          }
+        : mode === "exact"
         ? {
             answer: "Exact answer",
             source: "transcript",
@@ -232,6 +268,11 @@ test("offers exact and explicitly labeled terminal choices for each completed ag
     })),
     [
       {
+        kind: "conversation",
+        label: "Open current Copilot conversation",
+        preview: "Conversation transcript",
+      },
+      {
         kind: "exact",
         label: "Open exact Copilot result",
         preview: "Exact answer",
@@ -243,7 +284,8 @@ test("offers exact and explicitly labeled terminal choices for each completed ag
       },
     ],
   )
-  assert.match(result.choices[1].detail, /Not exact/)
+  assert.match(result.choices[0].detail, /4 recent messages, 1 older omitted/u)
+  assert.match(result.choices[2].detail, /Not exact/u)
 })
 
 test("keeps terminal capture explicit when exact identity is unavailable", async () => {
@@ -259,7 +301,7 @@ test("keeps terminal capture explicit when exact identity is unavailable", async
     ],
     processReader: async () => ({ foreground_processes: [] }),
     capture: async ({ mode }) => {
-      if (mode === "exact") throw new ExactCaptureUnavailableError()
+      if (mode === "exact" || mode === "conversation") throw new ExactCaptureUnavailableError()
       return {
         answer: "Visible terminal output",
         source: "terminal",

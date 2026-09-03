@@ -1,6 +1,6 @@
-import { captureFinalAnswer, ExactCaptureUnavailableError } from "./capture.mjs"
-import { getProcessInfo } from "./herdr.mjs"
-import { sourceAgentCandidates } from "./source-agent.mjs"
+import { captureAgentContent, ExactCaptureUnavailableError } from "./capture.ts"
+import { getProcessInfo } from "./herdr.ts"
+import { sourceAgentCandidates } from "./source-agent.ts"
 
 const completedStatus = (agent) =>
   agent.agent_status === "done" || agent.agent_status === "idle"
@@ -34,6 +34,19 @@ const exactChoice = (agent, captured) => ({
   sessionId: captured.sessionId,
 })
 
+const conversationChoice = (agent, captured) => ({
+  id: `conversation:${agent.pane_id}`,
+  kind: "conversation",
+  label: `Open current ${agentLabel(agent)} conversation`,
+  detail: `${captured.messageCount} recent message${captured.messageCount === 1 ? "" : "s"}${
+    captured.omittedMessageCount > 0 ? `, ${captured.omittedMessageCount} older omitted` : ""
+  } from exact session ${shortSessionId(captured.sessionId)}.`,
+  preview: captured.answer,
+  paneId: agent.pane_id,
+  stateChangeSeq: agent.state_change_seq,
+  sessionId: captured.sessionId,
+})
+
 const terminalChoice = (agent, captured) => ({
   id: `terminal:${agent.pane_id}`,
   kind: "terminal",
@@ -52,14 +65,14 @@ const processInfoFor = async (paneId, processReader) => {
   }
 }
 
-const exactCaptureFor = async (agent, context, processInfo, capture) => {
+const exactCaptureFor = async (agent, context, processInfo, capture, mode = "exact") => {
   try {
     return await capture({
       context: { ...context, paneId: agent.pane_id },
       agentInfo: agent,
       marker: completionMarkerFor(agent),
       processInfo,
-      mode: "exact",
+      mode,
     })
   } catch (error) {
     if (error instanceof ExactCaptureUnavailableError) return undefined
@@ -77,6 +90,12 @@ const choicesForAgent = async (agent, context, dependencies) => {
   const processInfo = await processInfoFor(agent.pane_id, dependencies.processReader)
   const choices = []
   const notes = []
+  try {
+    const conversation = await exactCaptureFor(agent, context, processInfo, dependencies.capture, "conversation")
+    if (conversation !== undefined) choices.push(conversationChoice(agent, conversation))
+  } catch (error) {
+    notes.push(error instanceof Error ? error.message : String(error))
+  }
   try {
     const exact = await exactCaptureFor(agent, context, processInfo, dependencies.capture)
     if (exact === undefined) {
@@ -106,7 +125,7 @@ export const inspectCaptureOptions = async (
   context,
   {
     candidateResolver = sourceAgentCandidates,
-    capture = captureFinalAnswer,
+    capture = captureAgentContent,
     processReader = getProcessInfo,
   } = {},
 ) => {

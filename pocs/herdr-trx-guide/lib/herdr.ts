@@ -3,10 +3,25 @@ import { spawn } from "node:child_process"
 
 const responseMaximumBytes = 16 * 1024 * 1024
 
-const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+type JsonRecord = Record<string, unknown>
+
+interface HerdrRequestOptions {
+  readonly socketPath?: string
+  readonly timeoutMs?: number
+}
+
+interface HerdrRunOptions {
+  readonly binary?: string
+  readonly timeoutMs?: number
+}
+
+const isRecord = (value: unknown): value is JsonRecord =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
 
 export class HerdrRequestError extends Error {
-  constructor(method, code, message) {
+  readonly code: string
+
+  constructor(method: string, code: string, message: string) {
     super(`Herdr ${method} failed (${code}): ${message}`)
     this.name = "HerdrRequestError"
     this.code = code
@@ -14,11 +29,11 @@ export class HerdrRequestError extends Error {
 }
 
 export const requestHerdr = (
-  method,
-  params,
+  method: string,
+  params: JsonRecord,
   { socketPath = process.env.HERDR_SOCKET_PATH, timeoutMs = 5000 } = {},
-) =>
-  new Promise((resolve, reject) => {
+): Promise<JsonRecord> =>
+  new Promise<JsonRecord>((resolve, reject) => {
     if (typeof socketPath !== "string" || socketPath.length === 0) {
       reject(new Error("HERDR_SOCKET_PATH is not set"))
       return
@@ -27,13 +42,14 @@ export const requestHerdr = (
     const socket = net.createConnection(socketPath)
     let buffer = ""
     let settled = false
-    const finish = (error, value) => {
+    const finish = (error?: Error, value?: JsonRecord) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       socket.destroy()
       if (error) reject(error)
-      else resolve(value)
+      else if (value !== undefined) resolve(value)
+      else reject(new Error(`Herdr ${method} returned no result`))
     }
     const timer = setTimeout(() => finish(new Error(`Herdr ${method} timed out`)), timeoutMs)
     socket.setEncoding("utf8")
@@ -77,7 +93,7 @@ export const requestHerdr = (
     })
   })
 
-export const getAgent = async (paneId, options) => {
+export const getAgent = async (paneId: string, options?: HerdrRequestOptions) => {
   const result = await requestHerdr("agent.get", { target: paneId }, options)
   if (result.type !== "agent_info" || !isRecord(result.agent)) {
     throw new Error("Herdr agent.get returned an invalid result")
@@ -85,7 +101,7 @@ export const getAgent = async (paneId, options) => {
   return result.agent
 }
 
-export const listAgents = async (options) => {
+export const listAgents = async (options?: HerdrRequestOptions) => {
   const result = await requestHerdr("agent.list", {}, options)
   if (
     result.type !== "agent_list" ||
@@ -97,7 +113,7 @@ export const listAgents = async (options) => {
   return result.agents
 }
 
-export const readAgent = async (paneId, options) => {
+export const readAgent = async (paneId: string, options?: HerdrRequestOptions) => {
   const result = await requestHerdr(
     "agent.read",
     { target: paneId, source: "recent_unwrapped", format: "text", strip_ansi: true },
@@ -109,7 +125,7 @@ export const readAgent = async (paneId, options) => {
   return result.read
 }
 
-export const getProcessInfo = async (paneId, options) => {
+export const getProcessInfo = async (paneId: string, options?: HerdrRequestOptions) => {
   const result = await requestHerdr("pane.process_info", { pane_id: paneId }, options)
   if (result.type !== "pane_process_info" || !isRecord(result.process_info)) {
     throw new Error("Herdr pane.process_info returned an invalid result")
@@ -118,16 +134,16 @@ export const getProcessInfo = async (paneId, options) => {
 }
 
 export const runHerdr = (
-  args,
-  { binary = process.env.HERDR_BIN_PATH ?? "herdr", timeoutMs } = {},
-) => {
+  args: ReadonlyArray<string>,
+  { binary = process.env.HERDR_BIN_PATH ?? "herdr", timeoutMs }: HerdrRunOptions = {},
+): Promise<void> => {
   if (
     timeoutMs !== undefined &&
     (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)
   ) {
     return Promise.reject(new Error("Herdr command timeout must be a positive integer"))
   }
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const child = spawn(binary, [...args], {
       shell: false,
       windowsHide: true,
@@ -173,7 +189,7 @@ export const runHerdr = (
   })
 }
 
-export const notify = async (title, body) => {
+export const notify = async (title: string, body: string) => {
   try {
     await runHerdr(["notification", "show", title, "--body", body])
   } catch (error) {

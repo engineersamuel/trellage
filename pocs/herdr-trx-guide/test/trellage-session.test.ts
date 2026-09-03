@@ -4,7 +4,7 @@ import test from "node:test"
 import {
   TrellageSessionIdentityError,
   trellageSessionIdentity,
-} from "../lib/trellage-session.mjs"
+} from "../lib/trellage-session.ts"
 
 test("parses Native and Sandbox pane metadata", () => {
   assert.deepEqual(
