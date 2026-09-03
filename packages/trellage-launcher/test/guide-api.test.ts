@@ -881,6 +881,7 @@ describe("resolveGuideModelConfig", () => {
       generate: { model: "gpt-5.4", effort: GuideEffort.High },
       optimize: { model: "gpt-5.4", effort: GuideEffort.High },
       refine: { model: "gpt-5.4", effort: GuideEffort.High },
+      enrich: { model: "gpt-5.4", effort: GuideEffort.High },
     })
   })
 
@@ -895,6 +896,7 @@ describe("resolveGuideModelConfig", () => {
       generate: { model: "claude-opus-5", effort: GuideEffort.Max },
       optimize: { model: "claude-opus-5", effort: GuideEffort.Max },
       refine: { model: "claude-opus-5", effort: GuideEffort.Max },
+      enrich: { model: "claude-opus-5", effort: GuideEffort.Max },
     })
   })
 
@@ -909,6 +911,7 @@ describe("resolveGuideModelConfig", () => {
       generate: { model: "claude-opus-5", effort: GuideEffort.Max },
       optimize: { model: "claude-opus-5", effort: GuideEffort.Max },
       refine: { model: "claude-opus-5", effort: GuideEffort.Max },
+      enrich: { model: "claude-opus-5", effort: GuideEffort.Max },
     })
   })
 
@@ -918,6 +921,7 @@ describe("resolveGuideModelConfig", () => {
       generate: { model: "gpt-5.6-luna", effort: GuideEffort.High },
       optimize: { model: "gpt-5.6-sol", effort: GuideEffort.High },
       refine: { model: "gpt-5.6-sol", effort: GuideEffort.High },
+      enrich: { model: "gpt-5.6-sol", effort: GuideEffort.High },
     })
   })
 
@@ -1195,7 +1199,7 @@ describe("runGuideGenerate", () => {
       const cache = new GuideArtifactCache({
         cwd: tmpRoot,
         routing: defaultGuideModelRouting,
-        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine", enrich: "enrich" },
       })
       const request = {
         intent: "Plan the next milestone",

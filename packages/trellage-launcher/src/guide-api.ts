@@ -410,6 +410,7 @@ export const defaultGuideMatchModelId = baseDefaultGuideModelRouting.match.model
 export const defaultGuideGenerateModelId = baseDefaultGuideModelRouting.generate.model
 export const defaultGuideOptimizeModelId = baseDefaultGuideModelRouting.optimize.model
 export const defaultGuideRefineModelId = baseDefaultGuideModelRouting.refine.model
+export const defaultGuideEnrichModelId = baseDefaultGuideModelRouting.enrich.model
 export const defaultGuideModelId = defaultGuideMatchModelId
 export const defaultGuideEffort = GuideEffort.Medium
 
@@ -426,6 +427,7 @@ export const defaultGuideModelRouting: GuideResolvedModelRouting = {
   generate: { model: defaultGuideGenerateModelId, effort: defaultGuideEffort },
   optimize: { model: defaultGuideOptimizeModelId, effort: defaultGuideEffort },
   refine: { model: defaultGuideRefineModelId, effort: defaultGuideEffort },
+  enrich: { model: defaultGuideEnrichModelId, effort: defaultGuideEffort },
 }
 
 const applyResolvedOverrides = (
@@ -469,6 +471,7 @@ export const resolveGuideModelRouting = (
     generate: applyResolvedOverrides(defaultGuideModelRouting.generate, model, effort),
     optimize: applyResolvedOverrides(defaultGuideModelRouting.optimize, model, effort),
     refine: applyResolvedOverrides(defaultGuideModelRouting.refine, model, effort),
+    enrich: applyResolvedOverrides(defaultGuideModelRouting.enrich, model, effort),
   }
 }
 

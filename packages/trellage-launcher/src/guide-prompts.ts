@@ -18,14 +18,16 @@ export interface GuideModelPrompts {
   readonly generate: string
   readonly refine: string
   readonly optimize: string
+  readonly enrich: string
 }
 
 export const loadDefaultGuidePrompts = async (): Promise<GuideModelPrompts> => {
-  const [match, generate, refine, optimize] = await Promise.all([
+  const [match, generate, refine, optimize, enrich] = await Promise.all([
     import("../prompts/match.md"),
     import("../prompts/generate.md"),
     import("../prompts/refine.md"),
     import("../prompts/optimize.md"),
+    import("../prompts/enrich.md"),
   ])
-  return { match: match.default, generate: generate.default, refine: refine.default, optimize: optimize.default }
+  return { match: match.default, generate: generate.default, refine: refine.default, optimize: optimize.default, enrich: enrich.default }
 }

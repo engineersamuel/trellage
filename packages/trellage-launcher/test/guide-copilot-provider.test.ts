@@ -25,6 +25,7 @@ const prompts = {
   generate: "GENERATE SYSTEM PROMPT",
   refine: "REFINE SYSTEM PROMPT",
   optimize: "OPTIMIZE SYSTEM PROMPT",
+  enrich: "ENRICH SYSTEM PROMPT",
 }
 
 const workingModel: ModelInfo = {
@@ -342,6 +343,80 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       systemMessage: { mode: "append", content: "REFINE SYSTEM PROMPT" },
     })
     expect(client.session?.disconnectCalls).toBe(1)
+    expect(client.stopCalls).toBe(1)
+  })
+
+  it("enriches a thin intent with the packed repository as untrusted reference", async () => {
+    const client = new FakeClient([workingModel], [message('{"intent":"Fix the flaky retry test in src/retry.ts"}')])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+
+    const result = await provider.enrich({ intent: "fix the flaky test", pack: "# Repository\n\nsrc/retry.ts" })
+
+    expect(result.intent).toBe("Fix the flaky retry test in src/retry.ts")
+    expect(client.createSessionCalls[0]).toMatchObject({
+      model: "gpt-5.6-sol",
+      reasoningEffort: "medium",
+      tools: [],
+      availableTools: [],
+      systemMessage: { mode: "append", content: "ENRICH SYSTEM PROMPT" },
+    })
+    expect(client.session?.prompts[0]).toContain("<untrusted-data>")
+    expect(client.session?.prompts[0]).toContain('"pack":"# Repository')
+    expect(client.session?.disconnectCalls).toBe(1)
+    expect(client.stopCalls).toBe(1)
+  })
+
+  it("reports session activity to the caller without leaking event content", async () => {
+    const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const activity: string[] = []
+
+    await provider.enrich({ intent: "fix the flaky test", pack: "pack" }, (line) => activity.push(line))
+
+    const config = client.createSessionCalls[0] as { readonly onEvent?: (event: { readonly type: string }) => void }
+    expect(config.onEvent).toBeTypeOf("function")
+    config.onEvent?.({ type: "assistant.message" })
+    expect(activity).toEqual(["enrich: assistant.message"])
+  })
+
+  it("does not subscribe to session events when no activity callback is given", async () => {
+    const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+
+    await provider.enrich({ intent: "fix the flaky test", pack: "pack" })
+
+    expect(client.createSessionCalls[0]).not.toHaveProperty("onEvent")
+  })
+
+  it("reports session activity to the caller without leaking event content", async () => {
+    const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const activity: string[] = []
+
+    await provider.enrich({ intent: "fix the flaky test", pack: "pack" }, (line) => activity.push(line))
+
+    const config = client.createSessionCalls[0] as { readonly onEvent?: (event: { readonly type: string }) => void }
+    expect(config.onEvent).toBeTypeOf("function")
+    config.onEvent?.({ type: "assistant.message" })
+    expect(activity).toEqual(["enrich: assistant.message"])
+  })
+
+  it("does not subscribe to session events when no activity callback is given", async () => {
+    const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+
+    await provider.enrich({ intent: "fix the flaky test", pack: "pack" })
+
+    expect(client.createSessionCalls[0]).not.toHaveProperty("onEvent")
+  })
+
+  it("rejects an enrich response that carries any key but intent", async () => {
+    const client = new FakeClient([workingModel], [message('{"intent":"Fix it","notes":"extra"}')])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+
+    await expect(provider.enrich({ intent: "fix the flaky test", pack: "pack" })).rejects.toThrow(
+      GuideModelResponseError,
+    )
     expect(client.stopCalls).toBe(1)
   })
 

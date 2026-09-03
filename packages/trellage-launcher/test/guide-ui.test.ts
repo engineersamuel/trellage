@@ -4,6 +4,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
+import { GuideAugmentKind, GuideAugmentPhase } from "../src/guide-augment.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
 import {
   GuideEffort,
@@ -48,6 +49,8 @@ import {
   candidateRailWidth,
   captureSourcePresentation,
   compactCommandPreview,
+  augmentLogLimit,
+  augmentOptions,
   createInitialGuideUiState,
   describeGuideUiError,
   destinationLabels,
@@ -905,6 +908,212 @@ describe("guideUiReducer: intent and match", () => {
     expect(state.textDraft).toBe("Review ")
   })
 
+  describe("guideUiReducer: prompt augmentation", () => {
+    const withDraft = (text: string): GuideUiState =>
+      guideUiReducer(createInitialGuideUiState(), { type: GuideUiActionType.IntentChange, text })
+
+    /** A running research job started from the intent editor. */
+    const started = (text = "fix the flaky test"): GuideUiState =>
+      guideUiReducer(guideUiReducer(withDraft(text), { type: GuideUiActionType.AugmentOpen }), {
+        type: GuideUiActionType.AugmentConfirm,
+      })
+
+    it("opens the chooser from the intent editor only when a draft exists", () => {
+      expect(guideUiReducer(createInitialGuideUiState(), { type: GuideUiActionType.AugmentOpen }).stage).toBe(
+        GuideUiStage.Intent,
+      )
+      expect(guideUiReducer(withDraft("fix the flaky test"), { type: GuideUiActionType.AugmentOpen })).toMatchObject({
+        stage: GuideUiStage.Augment,
+        augmentIndex: 0,
+      })
+    })
+
+    it("copies the confirmed intent into the draft when opened after a failed match", () => {
+      const failed = guideUiReducer(createInitialGuideUiState("fix the flaky test"), {
+        type: GuideUiActionType.MatchFailed,
+        message: "no profile matched",
+      })
+      expect(failed.stage).toBe(GuideUiStage.MatchFailed)
+      expect(guideUiReducer(failed, { type: GuideUiActionType.AugmentOpen })).toMatchObject({
+        stage: GuideUiStage.Augment,
+        textDraft: "fix the flaky test",
+      })
+    })
+
+    it("starts the chosen augmenter in the background and hands the screen straight back", () => {
+      let state = guideUiReducer(withDraft("fix the flaky test"), { type: GuideUiActionType.AugmentOpen })
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
+      expect(state.augmentIndex).toBe(augmentOptions.length - 1)
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentConfirm })
+      expect(state.stage).toBe(GuideUiStage.Intent)
+      expect(state.augmentJob).toMatchObject({
+        kind: augmentOptions[augmentOptions.length - 1],
+        status: "running",
+        source: "fix the flaky test",
+        returnStage: GuideUiStage.Intent,
+      })
+    })
+
+    it("keeps the user working while the job runs, then applies the result without asking", () => {
+      let state = guideUiReducer(started(), {
+        type: GuideUiActionType.IntentChange,
+        text: "fix the flaky test in src/retry.ts",
+      })
+      expect(state.textDraft).toBe("fix the flaky test in src/retry.ts")
+      // The run keeps the prompt it started from; later edits do not reach it.
+      expect(state.augmentJob?.source).toBe("fix the flaky test")
+      const runId = state.augmentJob?.runId ?? 0
+      state = guideUiReducer(state, { type: GuideUiActionType.IntentSubmit })
+      expect(state.stage).toBe(GuideUiStage.Matching)
+
+      state = guideUiReducer(state, {
+        type: GuideUiActionType.AugmentProgress,
+        runId,
+        phase: GuideAugmentPhase.RunningResearch,
+      })
+      expect(state.augmentJob?.phase).toBe(GuideAugmentPhase.RunningResearch)
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentSucceeded, runId, text: "Research note body" })
+      // Enhancing the prompt is the point, so the result lands where the run
+      // was started from, with no approval step.
+      expect(state).toMatchObject({
+        stage: GuideUiStage.Intent,
+        textDraft: "Research note body",
+        augmentJob: undefined,
+      })
+    })
+
+    it("ignores progress and output from a run that is no longer current", () => {
+      const state = guideUiReducer(started(), { type: GuideUiActionType.AugmentOutput, runId: 99, line: "stale" })
+      expect(state.augmentJob?.log).toEqual([])
+    })
+
+    it("watches a running job from any screen and leaves it running on back", () => {
+      const running = guideUiReducer(started(), { type: GuideUiActionType.IntentSubmit })
+      const watching = guideUiReducer(running, { type: GuideUiActionType.AugmentOpen })
+      expect(watching).toMatchObject({
+        stage: GuideUiStage.Augmenting,
+        augmentViewReturnStage: GuideUiStage.Matching,
+      })
+      const back = guideUiReducer(watching, { type: GuideUiActionType.AugmentBack })
+      expect(back.stage).toBe(GuideUiStage.Matching)
+      expect(back.augmentJob?.status).toBe("running")
+    })
+
+    it("holds the result instead of overwriting a prompt edit in progress, and applies it on demand", () => {
+      const editing = guideUiReducer(
+        guideUiReducer(
+          guideUiReducer(createInitialGuideUiState("fix the flaky test"), { type: GuideUiActionType.PromptReviewOpen }),
+          { type: GuideUiActionType.AugmentOpen },
+        ),
+        { type: GuideUiActionType.AugmentConfirm },
+      )
+      const typing = guideUiReducer(editing, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+      const settled = guideUiReducer(typing, {
+        type: GuideUiActionType.AugmentSucceeded,
+        runId: 1,
+        text: "Research note body",
+      })
+      expect(settled.textDraft).toBe("fix the flaky test")
+      expect(settled.augmentJob).toMatchObject({ status: "ready", text: "Research note body" })
+
+      expect(guideUiReducer(settled, { type: GuideUiActionType.AugmentApply })).toMatchObject({
+        stage: GuideUiStage.PromptReview,
+        textDraft: "Research note body",
+        promptReviewEditing: false,
+        augmentJob: undefined,
+      })
+    })
+
+    it("retries a failed job under a new run id, and discards it on demand", () => {
+      const failed = guideUiReducer(started(), {
+        type: GuideUiActionType.AugmentFailed,
+        runId: 1,
+        message: "cpx hve research failed",
+      })
+      expect(failed.augmentJob).toMatchObject({ status: "failed", errorMessage: "cpx hve research failed" })
+      const retried = guideUiReducer(failed, { type: GuideUiActionType.AugmentRetry })
+      expect(retried.augmentJob).toMatchObject({ status: "running", runId: 2, kind: GuideAugmentKind.Research })
+      expect(guideUiReducer(failed, { type: GuideUiActionType.AugmentDiscard }).augmentJob).toBeUndefined()
+    })
+
+    it("augments from the prompt page and re-matches on the augmented prompt when it closes", () => {
+      const opened = guideUiReducer(createInitialGuideUiState("fix the flaky test"), {
+        type: GuideUiActionType.PromptReviewOpen,
+      })
+      let state = guideUiReducer(opened, { type: GuideUiActionType.AugmentOpen })
+      expect(state).toMatchObject({ stage: GuideUiStage.Augment, textDraft: "fix the flaky test" })
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentConfirm })
+      expect(state).toMatchObject({
+        stage: GuideUiStage.PromptReview,
+        augmentJob: { returnStage: GuideUiStage.PromptReview, status: "running" },
+      })
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentSucceeded, runId: 1, text: "Research note body" })
+      expect(state).toMatchObject({
+        stage: GuideUiStage.PromptReview,
+        textDraft: "Research note body",
+        promptReviewEditing: false,
+        augmentJob: undefined,
+      })
+      expect(guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack })).toMatchObject({
+        stage: GuideUiStage.Matching,
+        intent: "Research note body",
+        matchPhase: GuideMatchPhase.LoadingProfiles,
+      })
+    })
+
+    it("discards a prompt-page edit back to the augmented prompt, not the original", () => {
+      const opened = guideUiReducer(createInitialGuideUiState("fix the flaky test"), {
+        type: GuideUiActionType.PromptReviewOpen,
+      })
+      let state = guideUiReducer(opened, { type: GuideUiActionType.AugmentOpen })
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentConfirm })
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentSucceeded, runId: 1, text: "Research note body" })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewChange, text: "Hand edit" })
+      state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewBack })
+      expect(state).toMatchObject({
+        stage: GuideUiStage.PromptReview,
+        textDraft: "Research note body",
+        promptReviewEditing: false,
+      })
+    })
+
+    it("cancels the chooser back to the prompt page, and never opens while editing", () => {
+      const opened = guideUiReducer(createInitialGuideUiState("fix the flaky test"), {
+        type: GuideUiActionType.PromptReviewOpen,
+      })
+      const cancelled = guideUiReducer(guideUiReducer(opened, { type: GuideUiActionType.AugmentOpen }), {
+        type: GuideUiActionType.AugmentBack,
+      })
+      expect(cancelled).toMatchObject({ stage: GuideUiStage.PromptReview, textDraft: "fix the flaky test" })
+      expect(guideUiReducer(cancelled, { type: GuideUiActionType.PromptReviewBack }).stage).toBe(GuideUiStage.Matching)
+
+      const editing = guideUiReducer(opened, { type: GuideUiActionType.PromptReviewEdit, editing: true })
+      expect(guideUiReducer(editing, { type: GuideUiActionType.AugmentOpen }).stage).toBe(GuideUiStage.PromptReview)
+    })
+
+    it("keeps only the most recent output lines while an augmenter runs", () => {
+      let state = started()
+      for (let index = 0; index < augmentLogLimit + 4; index += 1) {
+        state = guideUiReducer(state, { type: GuideUiActionType.AugmentOutput, runId: 1, line: `line ${index}` })
+      }
+      expect(state.augmentJob?.log).toHaveLength(augmentLogLimit)
+      expect(state.augmentJob?.log.at(-1)).toBe(`line ${augmentLogLimit + 3}`)
+      expect(state.augmentJob?.log.at(0)).toBe("line 4")
+
+      // Output that arrives after the run settled never reaches the window.
+      const failed = guideUiReducer(state, { type: GuideUiActionType.AugmentFailed, runId: 1, message: "boom" })
+      expect(
+        guideUiReducer(failed, { type: GuideUiActionType.AugmentOutput, runId: 1, line: "late" }).augmentJob?.log,
+      ).toHaveLength(augmentLogLimit)
+    })
+
+    it("keeps the augment stages outside the wizard breadcrumb", () => {
+      expect(wizardStepForStage(GuideUiStage.Augment)).toBeUndefined()
+      expect(wizardStepForStage(GuideUiStage.Augmenting)).toBeUndefined()
+    })
+  })
+
   describe("guideUiReducer: prompt review", () => {
     it("opens the prompt dashboard from matching and returns without rematching when unchanged", () => {
       const matching = createInitialGuideUiState("# Goal\n\nReview this")
@@ -1693,8 +1902,9 @@ describe("runGuideMatchingStep", () => {
           generate: { model: "test-model", effort: GuideEffort.Medium },
           optimize: { model: "test-model", effort: GuideEffort.Medium },
           refine: { model: "test-model", effort: GuideEffort.Medium },
+          enrich: { model: "test-model", effort: GuideEffort.Medium },
         },
-        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine", enrich: "enrich" },
       })
       const request = { intent: "Review my PR", model: "test-model", effort: GuideEffort.Medium }
 
@@ -1770,8 +1980,9 @@ describe("runGuideGenerationStep", () => {
           generate: { model: "test", effort: GuideEffort.Medium },
           optimize: { model: "test", effort: GuideEffort.Medium },
           refine: { model: "test", effort: GuideEffort.Medium },
+          enrich: { model: "test", effort: GuideEffort.Medium },
         },
-        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine", enrich: "enrich" },
       })
 
       await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen, undefined, undefined, cache)
@@ -2042,8 +2253,9 @@ describe("runGuideRefinementStep", () => {
           generate: { model: "test", effort: GuideEffort.Medium },
           optimize: { model: "test", effort: GuideEffort.Medium },
           refine: { model: "test", effort: GuideEffort.Medium },
+          enrich: { model: "test", effort: GuideEffort.Medium },
         },
-        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine" },
+        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine", enrich: "enrich" },
       })
       const args = [
         buildCatalog("/tmp-unused"),
@@ -3392,6 +3604,45 @@ describe("guideUiReducer: fork tabs", () => {
     const resumed = guideUiReducer(parked, { type: GuideUiActionType.ForkSelect, index: 0 })
     expect(resumed.stage).toBe(GuideUiStage.Generating)
     expect(resumed.activeForkId).toBe(1)
+  })
+
+  it("keeps a background augmentation running across a fork round trip", () => {
+    const started = guideUiReducer(
+      guideUiReducer(guideUiReducer(matched(), { type: GuideUiActionType.PromptReviewOpen }), {
+        type: GuideUiActionType.AugmentOpen,
+      }),
+      { type: GuideUiActionType.AugmentConfirm },
+    )
+    expect(started.augmentJob?.status).toBe("running")
+
+    const inFork = fork(guideUiReducer(started, { type: GuideUiActionType.PromptReviewBack }))
+    expect(inFork.augmentJob?.status).toBe("running")
+    const back = guideUiReducer(inFork, { type: GuideUiActionType.ForkMain })
+    expect(back.augmentJob).toMatchObject({ status: "running", source: "Review my PR" })
+  })
+
+  it("applies a ready augmentation on the main screen, not inside the active fork", () => {
+    const started = guideUiReducer(
+      guideUiReducer(guideUiReducer(matched(), { type: GuideUiActionType.PromptReviewOpen }), {
+        type: GuideUiActionType.AugmentOpen,
+      }),
+      { type: GuideUiActionType.AugmentConfirm },
+    )
+    const inFork = guideUiReducer(fork(guideUiReducer(started, { type: GuideUiActionType.PromptReviewBack })), {
+      type: GuideUiActionType.AugmentSucceeded,
+      runId: 1,
+      text: "Research note body",
+    })
+    expect(inFork.activeForkId).toBe(1)
+
+    const applied = guideUiReducer(inFork, { type: GuideUiActionType.AugmentApply })
+    expect(applied).toMatchObject({
+      activeForkId: undefined,
+      stage: GuideUiStage.PromptReview,
+      textDraft: "Research note body",
+      augmentJob: undefined,
+    })
+    expect(applied.forks).toHaveLength(1)
   })
 
   it("gives each fork its own draft and shares the intent, recommendations and queue", () => {

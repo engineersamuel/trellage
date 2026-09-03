@@ -941,6 +941,73 @@ or `dashboard` to select another layout. Each viewer supports Page Up/Page
 Down. Press `e` to edit the raw prompt, then Enter to re-run matching when the
 prompt changed.
 
+#### Prompt augmentation
+
+A short intent gives the match model little to work with. Open the augment menu
+to rewrite the prompt: press `Ctrl-G` on the intent screen, or `a` on the prompt
+page (`p`) or after a failed match.
+
+- **Research** runs HVE Core's `rpi-research` skill through the installed native
+  `cpx hve` profile and replaces the draft with the research note it writes. It
+  runs out of process because that skill needs the `hve-core` plugin, file-write
+  tools, and this repository as its working directory; the guide's own model
+  sessions deny all three. It fails with `cpx setup hve` guidance when the
+  profile is not installed. Set `TRELLAGE_GUIDE_RESEARCH_TIMEOUT_MS` to change
+  the 15-minute limit.
+- **Codebase** packs this repository with `repomix` and asks the guide's
+  `enrich` phase to restate the draft with that pack as reference. The pack
+  travels as prompt content, so the model session stays locked down. `repomix`
+  already honours `.gitignore` and skips `.git/` and `node_modules/`; on top of
+  that the guide drops built output, vendored trees, lockfiles, snapshots, and
+  binary assets. If the pack is still over the 400,000-character budget it
+  narrows once to source, entry points, and `docs/`, and once more to source
+  signatures with comments removed. Only when the narrowest scope is still too
+  large does it fail, and it then names `repomix.config.json` and running from a
+  single package directory as the fix.
+
+Augmentation runs in the background. Choosing an augmenter gives the screen back
+at once and puts a one-line status bar above the tab bar:
+
+```
+⠋ Research · Reading the research note · p then a to watch
+✓ Research ready · p then a to apply
+✗ Research failed · p then a for details
+```
+
+A research run takes minutes, so you keep working while it runs: edit the draft,
+match on the base prompt, browse recommendations, open a fork, queue a job. The
+run holds the prompt it started from, so later edits do not reach it, and a
+queued job carries its own prompt.
+
+The prompt page (`p`) shows the run above the prompt it is rewriting: a spinner,
+the current phase, and the last few output lines. `a` there opens the full watch
+screen, with a taller output panel, so you can see which files `repomix` is
+reading or what the research run is doing. The panel keeps the last few lines;
+it is progress, not a transcript. `Esc` leaves the watch screen and the run
+keeps going.
+
+When the run finishes it replaces the prompt itself, on the screen you started
+it from; enhancing the prompt is the point, so there is no approval step.
+Applying from the prompt page re-matches the profiles as soon as you leave that
+page with `Esc`.
+
+It waits only where replacing the text would throw away work: while you are
+editing the prompt with `e`, and while you are inside a fork tab, where the
+draft belongs to the tab rather than to the main screen. Then the status bar
+reads ready and `p` then `a` takes it. A failed run offers `r` to retry.
+`x` on a running job stops the child process; so does quitting the guide.
+
+One augmentation runs at a time, because both rewrite the same prompt. Discard
+the current one before you start another.
+
+The research note stays on disk at
+`.copilot-tracking/research/{date}/{slug}-research.md`; it is durable evidence
+by design. Add `.copilot-tracking/` to `.gitignore` if you do not want it
+committed. Researching the same intent twice resumes that same note rather than
+writing a second one, and the augmenter takes the resumed note. A run that
+writes nothing at all fails, and the failure quotes the run's own closing words
+and its last output so you can see why.
+
 `trx guide --preview` renders the staged prompt basket composer overlay from
 fixture data. The preview is fixture-only: it makes no model call, reads no
 profile catalog, and launches nothing, so it opens with Docker stopped and with

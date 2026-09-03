@@ -10,6 +10,7 @@ export interface GuideModelRouting<Effort extends string = GuideReasoningEffort>
   readonly generate: GuideModelConfig<Effort>
   readonly optimize: GuideModelConfig<Effort>
   readonly refine: GuideModelConfig<Effort>
+  readonly enrich: GuideModelConfig<Effort>
 }
 
 export type GuideModelPhase = keyof GuideModelRouting
@@ -19,4 +20,5 @@ export const defaultGuideModelRouting = {
   generate: { model: "gpt-5.6-luna", effort: "medium" },
   optimize: { model: "gpt-5.6-sol", effort: "medium" },
   refine: { model: "gpt-5.6-sol", effort: "medium" },
+  enrich: { model: "gpt-5.6-sol", effort: "medium" },
 } as const satisfies GuideModelRouting
