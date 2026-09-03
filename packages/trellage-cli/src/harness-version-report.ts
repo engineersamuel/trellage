@@ -34,12 +34,26 @@
  * failure (network, rate limit, malformed response) for a supported kind
  * also reports `latestKnown: false` rather than fabricating a value;
  * `installed` is unaffected either way.
+ *
+ * A successfully-resolved "latest" version is cached on disk per harness
+ * kind for 24 hours (`harness-latest-version-cache.ts`), so once any
+ * profile of a given harness kind (e.g. one of several Claude profiles)
+ * has resolved "latest", every other profile sharing that harness kind
+ * reuses the cached value for the remainder of the TTL instead of
+ * repeating an identical GitHub Releases lookup. A lookup failure is
+ * never cached, so the next check retries rather than being stuck.
  */
 import { Effect } from "effect"
 
 import { ApplicationError, loadProfile, loadReleaseLock } from "./application.js"
 import { GitHubClaudeReleaseClient, resolveClaudeRelease, type ClaudeReleaseClient } from "./claude-release.js"
 import { GitHubCodexReleaseClient, resolveCodexRelease, type CodexReleaseClient } from "./codex-release.js"
+import {
+  cachedLatestVersion,
+  harnessLatestVersionCachePath,
+  loadHarnessLatestVersionCache,
+  recordLatestVersion,
+} from "./harness-latest-version-cache.js"
 import { harnessPackageRevision, lockIsReady, type ProfileLock } from "./lock.js"
 import type { Platform } from "./platform.js"
 import type { ProfileDocument } from "./profile.js"
@@ -68,7 +82,7 @@ const resolveInstalledVersion = (
     : undefined
 
 /** Resolves the latest version for a harness kind with a known GitHub Releases lookup, or `undefined` when the kind has none or the lookup fails. Never throws: every failure path is absorbed into `undefined`. */
-const resolveLatestVersion = (
+const fetchLatestVersion = (
   harnessKind: string,
   platform: Platform,
   clients: Required<HarnessVersionReleaseClients>,
@@ -88,6 +102,35 @@ const resolveLatestVersion = (
   return Effect.succeed(undefined)
 }
 
+/**
+ * Resolves the latest version for a harness kind, checking the shared
+ * on-disk `harness-latest-version-cache.json` first so that once any
+ * profile of a given harness kind (e.g. one of several Claude profiles)
+ * has resolved "latest" within the last 24 hours, every other profile of
+ * that same harness kind reuses the cached value instead of repeating an
+ * identical GitHub Releases lookup. Only a successful lookup is cached;
+ * a lookup failure is never persisted, so the next check retries rather
+ * than being stuck on a stale failure.
+ */
+const resolveLatestVersion = (
+  harnessKind: string,
+  platform: Platform,
+  clients: Required<HarnessVersionReleaseClients>,
+  xdgCacheHome: string,
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    const cachePath = harnessLatestVersionCachePath(xdgCacheHome)
+    const record = yield* Effect.promise(() => loadHarnessLatestVersionCache(cachePath))
+    const now = Date.now()
+    const cached = cachedLatestVersion(record, harnessKind, platform, now)
+    if (cached !== undefined) return cached
+    const resolved = yield* fetchLatestVersion(harnessKind, platform, clients)
+    if (resolved !== undefined) {
+      yield* Effect.promise(() => recordLatestVersion(xdgCacheHome, harnessKind, platform, resolved, now))
+    }
+    return resolved
+  })
+
 export const harnessVersionReport = (
   profilePath: string,
   platform: Platform,
@@ -103,10 +146,15 @@ export const harnessVersionReport = (
     const current = receipt ?? release
     const installed = resolveInstalledVersion(document, current, platform) ?? null
     const harnessKind = document.profile.harness.kind
-    const latest = yield* resolveLatestVersion(harnessKind, platform, {
-      claude: releaseClients.claude ?? GitHubClaudeReleaseClient,
-      codex: releaseClients.codex ?? GitHubCodexReleaseClient,
-    })
+    const latest = yield* resolveLatestVersion(
+      harnessKind,
+      platform,
+      {
+        claude: releaseClients.claude ?? GitHubClaudeReleaseClient,
+        codex: releaseClients.codex ?? GitHubCodexReleaseClient,
+      },
+      xdgCacheHome,
+    )
     return {
       schemaVersion: 1 as const,
       harness: harnessKind,

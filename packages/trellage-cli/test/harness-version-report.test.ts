@@ -1,5 +1,9 @@
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+
 import { Effect } from "effect"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { ClaudeReleaseClient } from "../src/claude-release.js"
 import type { CodexReleaseClient } from "../src/codex-release.js"
@@ -249,5 +253,107 @@ describe("harnessVersionReport", () => {
     })
     expect(claudeSpy).not.toHaveBeenCalled()
     expect(codexSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe("harnessVersionReport latest-version caching", () => {
+  const temporaryRoots: string[] = []
+
+  const temporaryXdgCacheHome = async (): Promise<string> => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-harness-version-report-test-"))
+    temporaryRoots.push(root)
+    return root
+  }
+
+  afterEach(async () => {
+    await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  })
+
+  it("reuses a cached latest version across two profiles of the same harness kind, never calling the release client twice", async () => {
+    const xdgCacheHome = await temporaryXdgCacheHome()
+    const claudeClient = fakeClaudeClient(claudeReleasePayload("2.1.259"))
+    const releaseSpy = vi.spyOn(claudeClient, "release")
+
+    setup({ document: claudeDocument(), receipt: claudeLock("2.1.252"), ready: true })
+    const first = await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-blog/profile.toml", "linux/arm64", xdgCacheHome, {
+        claude: claudeClient,
+      }),
+    )
+
+    setup({ document: claudeDocument(), receipt: claudeLock("2.1.251"), ready: true })
+    const second = await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-council/profile.toml", "linux/arm64", xdgCacheHome, {
+        claude: claudeClient,
+      }),
+    )
+
+    expect(first).toEqual({
+      schemaVersion: 1,
+      harness: "claude",
+      installed: "2.1.252",
+      latest: "2.1.259",
+      latestKnown: true,
+    })
+    expect(second).toEqual({
+      schemaVersion: 1,
+      harness: "claude",
+      installed: "2.1.251",
+      latest: "2.1.259",
+      latestKnown: true,
+    })
+    expect(releaseSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps a cached Codex latest version isolated from a cached Claude latest version", async () => {
+    const xdgCacheHome = await temporaryXdgCacheHome()
+    const claudeClient = fakeClaudeClient(claudeReleasePayload("2.1.259"))
+    const codexClient = fakeCodexClient(codexReleasePayload("0.153.0"))
+
+    setup({ document: claudeDocument(), receipt: claudeLock("2.1.252"), ready: true })
+    await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-blog/profile.toml", "linux/arm64", xdgCacheHome, { claude: claudeClient }),
+    )
+
+    setup({ document: codexDocument(), receipt: codexLock("0.146.1"), ready: true })
+    const codexResult = await Effect.runPromise(
+      harnessVersionReport("/profiles/codex-superpowers/profile.toml", "linux/arm64", xdgCacheHome, {
+        codex: codexClient,
+      }),
+    )
+
+    expect(codexResult).toEqual({
+      schemaVersion: 1,
+      harness: "codex",
+      installed: "0.146.1",
+      latest: "0.153.0",
+      latestKnown: true,
+    })
+  })
+
+  it("never caches a lookup failure, so the next profile of the same harness kind retries", async () => {
+    const xdgCacheHome = await temporaryXdgCacheHome()
+
+    setup({ document: claudeDocument(), receipt: claudeLock("2.1.252"), ready: true })
+    const failed = await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-blog/profile.toml", "linux/arm64", xdgCacheHome, {
+        claude: { release: () => Effect.fail(new Error("network down")) },
+      }),
+    )
+    expect(failed.latestKnown).toBe(false)
+
+    setup({ document: claudeDocument(), receipt: claudeLock("2.1.251"), ready: true })
+    const succeeded = await Effect.runPromise(
+      harnessVersionReport("/profiles/claude-council/profile.toml", "linux/arm64", xdgCacheHome, {
+        claude: fakeClaudeClient(claudeReleasePayload("2.1.259")),
+      }),
+    )
+    expect(succeeded).toEqual({
+      schemaVersion: 1,
+      harness: "claude",
+      installed: "2.1.251",
+      latest: "2.1.259",
+      latestKnown: true,
+    })
   })
 })
