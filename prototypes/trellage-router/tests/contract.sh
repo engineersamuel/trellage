@@ -506,6 +506,15 @@ assert_contains 'trx guide --preview' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
+assert_contains 'trx run cpx tufte-vdqi' "$fixture_root/help.out"
+
+status=0
+"$fixture_bin/trx" --profile cpx-p >"$fixture_root/profile-option.out" \
+  2>"$fixture_root/profile-option.err" || status=$?
+[[ "$status" == 1 ]] || fail "invalid router --profile option exited $status instead of 1"
+assert_contains \
+  'unknown profile alias: cpx-p; use: trx run LAUNCHER PROFILE' \
+  "$fixture_root/profile-option.err"
 
 : >"$argument_log"
 TRX_ARGUMENT_LOG="$argument_log" \
@@ -954,7 +963,7 @@ selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
-  .description == "Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries."
+  .description == "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries."
   and (.choices[0]
     | .label == "copilot / cpx-p"
       and (.description | length == 1200)

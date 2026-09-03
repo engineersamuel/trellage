@@ -65,7 +65,6 @@ cat >"$seed/default-onboarding.json" <<'JSON'
 {
   "hasCompletedOnboarding": true,
   "lastOnboardingVersion": "2.1.222",
-  "theme": "dark",
   "shiftEnterKeyBindingInstalled": true
 }
 JSON
@@ -145,8 +144,8 @@ jq -e '
 jq -e '
   .hasCompletedOnboarding == true
   and .lastOnboardingVersion == "2.1.222"
-  and .theme == "dark"
   and .shiftEnterKeyBindingInstalled == true
+  and (has("theme") | not)
 ' "$runtime/.claude.json" >/dev/null
 workspace="$(pwd -P)"
 jq -e --arg workspace "$workspace" \

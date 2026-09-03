@@ -77,7 +77,9 @@ Usage:
 Select an installed native harness/profile interactively, or list available
 profiles. Bare trx opens the launcher. `--profile agency` directly launches
 `agx/trellage-azure`. `trx run` validates an exact installed
-launcher/profile pair and executes it without the picker. `trx guide`
+launcher/profile pair and executes it without the picker. For example:
+`trx run cpx tufte-vdqi`. The picker shows this exact command for each row.
+`trx guide`
 recommends a profile and builds prompt candidates; its JSON mode is
 non-interactive and has no launch or Herdr side effects. `trx inventory`
 reports the live readiness (`healthy`, `unhealthy`, `not-setup`, or `busy`) of
@@ -409,7 +411,7 @@ build_choices() {
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries.",
+      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries.",
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),
@@ -538,7 +540,7 @@ case "${1-}" in
         run_launcher='agx'
         run_profile='trellage-azure'
         ;;
-      *) die "unknown profile alias: $1" ;;
+      *) die "unknown profile alias: $1; use: trx run LAUNCHER PROFILE" ;;
     esac
     shift
     run_args=("$@")
@@ -551,7 +553,7 @@ case "${1-}" in
         run_profile='trellage-azure'
         ;;
       '') die '--profile requires a profile name' ;;
-      *) die "unknown profile alias: ${1#--profile=}" ;;
+      *) die "unknown profile alias: ${1#--profile=}; use: trx run LAUNCHER PROFILE" ;;
     esac
     shift
     run_args=("$@")

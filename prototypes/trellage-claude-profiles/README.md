@@ -39,8 +39,8 @@ The installer publishes `~/.local/bin/cldx` and owns its runtime beneath
 ```
 
 `CLAUDE_CONFIG_DIR` points to that home. Setup completes first-run onboarding
-without overwriting an existing theme or unrelated state. Sessions remain
-isolated from direct `claude` use.
+without managing the user's theme preference in `settings.json` or changing
+unrelated state. Sessions remain isolated from direct `claude` use.
 
 Bare and explicit launches are equivalent:
 

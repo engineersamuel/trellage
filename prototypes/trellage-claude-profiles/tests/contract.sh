@@ -261,7 +261,7 @@ jq -e '
   .hasCompletedOnboarding == true
   and .lastOnboardingVersion == "2.1.233"
   and .shiftEnterKeyBindingInstalled == true
-  and .theme == "dark"
+  and (has("theme") | not)
 ' "$profile_home/.claude.json" >/dev/null || fail 'setup onboarding state differs'
 output_style="$profile_home/output-styles/rundown.md"
 [[ -f "$output_style" && ! -L "$output_style" ]] || fail 'setup did not seed the output style'
@@ -509,7 +509,7 @@ grep -Fq 'copilot-proxy-rs health response is invalid' "$fixture_root/health-jso
 jq '.theme = "light" | .preserve = "user-state" | .hasCompletedOnboarding = false' \
   "$profile_home/.claude.json" >"$fixture_root/onboarding.json"
 mv "$fixture_root/onboarding.json" "$profile_home/.claude.json"
-jq '.outputStyle = "Explanatory" | .preserve = "user-state"' \
+jq '.outputStyle = "Explanatory" | .theme = "light" | .preserve = "user-state"' \
   "$settings" >"$fixture_root/settings.json"
 mv "$fixture_root/settings.json" "$settings"
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
@@ -520,6 +520,7 @@ jq -e '
 ' "$profile_home/.claude.json" >/dev/null || fail 'repair did not preserve user state'
 jq -e '
   .outputStyle == "Explanatory"
+  and .theme == "light"
   and .preserve == "user-state"
   and any(.hooks.SessionStart[]; any(.hooks[]; .command == "user-session-start"))
   and any(.hooks.SessionStart[]; any(.hooks[]; .command == "cccc-session-start"))

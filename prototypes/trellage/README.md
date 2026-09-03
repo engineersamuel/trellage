@@ -349,9 +349,10 @@ trellage --profile claude-social-media
 Trellage forwards only present variables to the final Claude process and never records
 their values in the profile, lock, image, or persistent Claude seed.
 
-The managed Claude seed completes first-run onboarding with the dark theme. Runtime
-synchronization fills only missing onboarding fields, preserving later user choices
-and unrelated Claude state. The current mounted worktree is pre-approved as trusted
+The managed Claude seed completes first-run onboarding without managing Claude's
+theme preference. Claude stores that user choice in `settings.json`. Runtime
+synchronization fills only missing onboarding fields, preserving user choices and
+unrelated Claude state. The current mounted worktree is pre-approved as trusted
 inside the isolated container.
 
 ## GitHub CLI Delivery

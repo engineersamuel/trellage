@@ -8,13 +8,17 @@ reasoning.
 ## Requirements
 
 - `mise`
+- `node`
 - `curl`
 - `jq`
 - `copilot-proxy-rs` listening on `http://127.0.0.1:8080`
 
 No API key is written. The launcher materializes an owned, keyless named
 OpenAI-compatible provider and also applies the provider, model, and reasoning
-defaults through process environment variables.
+defaults through process environment variables. It forces cross-provider
+failover to `manual`, clears inherited `JCODE_*` overrides, and neutralizes
+file-based request-body overrides so a proxy failure cannot resend the prompt
+through another provider.
 
 Every launch sets `JCODE_NO_TELEMETRY=1`. Setup seeds jcode's launch state past
 the first-run threshold, and launches repair a lowered counter while preserving
@@ -62,9 +66,15 @@ jcx run "Reply exactly JCODE_OK"
 
 The launcher passes `--no-update` before caller arguments; explicit jcode CLI
 flags can override other launcher defaults. `doctor` and every launch verify the
-proxy health response and confirm that `gpt-5.6-sol` is advertised.
-Launches automatically restore the owned managed config when it is missing or
-differs; unsafe paths and unowned profile state still fail closed.
+proxy health response and confirm that `gpt-5.6-sol` is advertised. JCode can
+expand `config.toml` with its own defaults during normal use. The launcher
+preserves those normalized settings while strictly checking the managed
+provider, model, proxy URL, keyless authentication, catalog, pinning, and
+reasoning fields through a bundled structural TOML manager and JCode's own
+parser. Launches and `repair` preserve valid JCode-owned values, including
+multiline arrays, while restoring managed fields. A missing or malformed config
+is replaced with the minimal managed config. Unsafe paths and unowned profile
+state still fail closed.
 
 `jcx` adds no containment. jcode runs with all host access available to the
 process.
@@ -79,4 +89,15 @@ process.
 
 ```bash
 make native-jcode-profile
+```
+
+After changing `config-manager.source.mjs`, rebuild its standalone runtime copy:
+
+```bash
+packages/trellage-launcher/node_modules/.bin/esbuild \
+  prototypes/trellage-jcode-profiles/config-manager.source.mjs \
+  --bundle --platform=node --format=esm --target=node18 \
+  --alias:smol-toml=./packages/trellage-cli/node_modules/smol-toml/dist/index.js \
+  --legal-comments=inline \
+  --outfile=prototypes/trellage-jcode-profiles/config-manager.mjs
 ```

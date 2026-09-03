@@ -51,6 +51,7 @@ describe("profile detail layout", () => {
     const rows = detailRows(entry, "gpt-fast", 200, "gpt-fast")
     const fields = Object.fromEntries(rows.filter((row) => row.label !== undefined).map((row) => [row.label, row.text]))
 
+    expect(fields.Run).toBe("trx run cpx copilot")
     expect(fields.Alias).toBe("cpx")
     expect(fields.Binary).toBe("/opt/trellage/cpx/bin/cpx")
     expect(fields.Arguments).toBe('["copilot","--model","gpt-fast","two words","","--literal=*"]')
